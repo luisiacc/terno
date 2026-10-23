@@ -5,3 +5,4 @@ export * from "./search";
 export * from "./learning";
 export * from "./keybindings";
 export * from "./address";
+export * from "./ai";

@@ -1,6 +1,6 @@
 /** Messages between main and the backend utility process (parent port). */
 export type MainToBackend =
-  | { type: "init"; dbPath: string; demo: boolean; socketPath: string; tokenPath: string; version: string }
+  | { type: "init"; dbPath: string; demo: boolean; dev: boolean; socketPath: string; tokenPath: string; version: string }
   | { type: "port"; clientId: string }
   | { type: "secret-result"; id: number; ok: boolean; value?: string | number[]; error?: string };
 

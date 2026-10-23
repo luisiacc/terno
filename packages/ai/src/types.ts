@@ -1,46 +1,7 @@
-import type { FilterRule } from "@unica/core";
+import type { AiErrorKind, AiProviderId, Capabilities, CompatiblePreset, FilterRule, ModelInfo, OutputMode } from "@unica/core";
 import type { z } from "zod";
 
-export type AiProviderId = "anthropic" | "openai" | "compatible" | "ollama" | "lmstudio" | "fake" | "none";
-export type CompatiblePreset = "openrouter" | "groq" | "together" | "azure" | "custom";
-/** How the model is asked for JSON, strongest first (see the fallback ladder). */
-export type OutputMode = "json_schema" | "json_object" | "text";
-
-/** Static registry entry; also sent to the UI. */
-export interface ProviderDescriptor {
-  id: AiProviderId;
-  label: string;
-  /** compatible is "by-url": a loopback endpoint makes it local */
-  locality: "local" | "cloud" | "by-url";
-  needsKey: boolean;
-  defaultBaseURL?: string;
-  presets?: CompatiblePreset[];
-  declared: { output: OutputMode; embeddings: boolean };
-  discovery: "openai" | "ollama" | "lmstudio" | "anthropic" | "none";
-}
-
-export interface PresetDescriptor {
-  id: CompatiblePreset;
-  label: string;
-  baseURL?: string;
-  needsKey: boolean;
-}
-
-export interface Capabilities {
-  output: OutputMode;
-  contextTokens: number | null;
-  embeddings: boolean;
-  /** null: declared by the provider, never observed by Test connection */
-  probedAt: number | null;
-}
-
-export interface ModelInfo {
-  id: string;
-  label?: string;
-  contextTokens?: number;
-  sizeBytes?: number;
-  loaded?: boolean;
-}
+export type { AiErrorKind, AiProviderId, Capabilities, CompatiblePreset, ModelInfo, OutputMode, PresetDescriptor, ProviderDescriptor } from "@unica/core";
 
 export interface ProviderConfig {
   id: AiProviderId;
@@ -107,18 +68,6 @@ export interface AiTasks {
   /** declared only; built with the categorization agent */
   embed?: (texts: string[], signal?: AbortSignal) => Promise<Float32Array[]>;
 }
-
-export type AiErrorKind =
-  | "invalid_output"
-  | "refused"
-  | "auth"
-  | "rate_limited"
-  | "unavailable"
-  | "timeout"
-  | "blocked"
-  | "not_configured"
-  | "unsupported"
-  | "cancelled";
 
 export class AiError extends Error {
   constructor(

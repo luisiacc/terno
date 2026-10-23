@@ -59,6 +59,12 @@ it("idle: RPC round trip adds little over the query itself", async () => {
   await run("rpc: open thread", 2, () => client.call("threads.get", { threadId: ids[i++ % ids.length]! }));
   await run("rpc: search 'factura'", 25, () => client.call("threads.search", { query: "factura" }));
   await run("rpc: sidebar counts", 5, () => client.call("counts.get", {}));
+  // boot path: settings now carry AI profiles and owner identity, which must not slow the first paint
+  await run("rpc: app.bootstrap", 8, () => client.call("app.bootstrap", {}));
+  const boot = await client.call("app.bootstrap", {});
+  const settingsBytes = JSON.stringify(boot.settings).length;
+  stats.push({ name: `wire size of bootstrap settings: ${settingsBytes} bytes`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+  expect(settingsBytes).toBeLessThan(2_000);
   // payload budget: a page of 100 rows must stay small on the wire
   const bytes = JSON.stringify(await client.call("threads.list", { view: "inbox" })).length;
   stats.push({ name: `wire size of a 100-row page: ${bytes} bytes`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });

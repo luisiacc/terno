@@ -2,7 +2,6 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createAi } from "@unica/ai";
 import { createMemoryTransportPair, RpcClient, type Events } from "@unica/core/rpc";
 import { claimReadyOps, createAccount, enqueueOp, getOp, type IncomingMessage } from "@unica/db";
 import { ProviderError, type MailProvider, type ProviderOp, type ProviderRegistry, type SyncSink } from "@unica/mail";
@@ -69,7 +68,7 @@ function setup(options: { dir?: string } = {}) {
     version: "test",
     cipher: plaintextCipher,
     providers: registry,
-    aiFactory: (config) => (config.id === "fake" ? createAi(config) : null),
+    demoAi: true,
     now: () => NOW,
     autoSync: false,
   });
@@ -392,7 +391,7 @@ describe("AI filters", () => {
   it("generates with the configured provider and explains when none is configured", async () => {
     const { client } = setup();
     await expect(client.call("filters.generate", { prompt: "archiva lo de uber.com" })).rejects.toMatchObject({ code: "UNAVAILABLE" });
-    await client.call("settings.update", { aiProvider: "fake" });
+    await client.call("settings.update", { ai: { provider: "fake" } });
     const out = await client.call("filters.generate", { prompt: "archiva lo de uber.com" });
     expect(out.rule.conditions).toEqual([{ field: "fromDomain", op: "equals", value: "uber.com" }]);
   });

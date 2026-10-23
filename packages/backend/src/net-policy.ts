@@ -29,6 +29,8 @@ export interface NetworkPolicy {
   assert(purpose: NetPurpose, url: string | URL, meta?: NetMeta): Promise<{ pinnedHost?: string }>;
   /** A fetch that asserts every request (and pins local AI to the IP it checked) before any socket opens. */
   fetchFor(purpose: NetPurpose, meta?: NetMeta): typeof fetch;
+  /** whether every address of the URL's host is loopback (what local mode would accept for AI) */
+  isLoopbackEndpoint(url: string): Promise<boolean>;
   readonly localMode: boolean;
 }
 
@@ -86,6 +88,13 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
 
   return {
     assert,
+    async isLoopbackEndpoint(url) {
+      try {
+        return (await loopbackTarget(new URL(url).hostname)) !== null;
+      } catch {
+        return false;
+      }
+    },
     get localMode() {
       return options.localMode();
     },

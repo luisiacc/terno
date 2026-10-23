@@ -80,10 +80,11 @@ parentPort.on("message", async (event) => {
         cipher,
         providers: createRegistry(),
         openExternal: async (url) => send({ type: "open-external", url }),
+        demoAi: msg.demo || msg.dev,
         log: (level, message, extra) => send({ type: "log", level, message: extra ? `${message} ${typeof extra === "string" ? extra : JSON.stringify(extra)}` : message }),
       });
       if (msg.demo && seedDemo(backend.db, { threads: 3000, accounts: 4 })) {
-        backend.db.run("INSERT OR REPLACE INTO settings (key, value_json) VALUES ('app', ?)", JSON.stringify({ aiProvider: "fake" }));
+        backend.db.run("INSERT OR REPLACE INTO settings (key, value_json) VALUES ('app', ?)", JSON.stringify({ ai: { provider: "fake" } }));
       }
       backend.start();
       await startAgentSocket(backend, msg.socketPath, msg.tokenPath).catch((e) =>

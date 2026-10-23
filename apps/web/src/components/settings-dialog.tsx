@@ -1,5 +1,5 @@
 import type { CategoryColor } from "@unica/core";
-import type { AppSettings } from "@unica/core/rpc";
+import type { AppSettings, SettingsPatch } from "@unica/core/rpc";
 import { Button } from "@unica/ui/components/button";
 import { CategoryDot } from "@unica/ui/components/category-dot";
 import { Dialog, DialogContent, DialogTitle } from "@unica/ui/components/dialog";
@@ -61,7 +61,7 @@ export function SettingsDialog() {
   }, [open]);
 
   if (!settings) return null;
-  const update = async (patch: Partial<Omit<AppSettings, "hasAiKey">>) => {
+  const update = async (patch: SettingsPatch) => {
     const next = await client.call("settings.update", patch);
     setApp({ settings: next });
     if (patch.theme) applyTheme(patch.theme);
@@ -156,7 +156,7 @@ export function SettingsDialog() {
 
             <TabsContent value="ai">
               <Row label="Proveedor" hint="La IA crea filtros a partir de tu descripción.">
-                <Select value={settings.aiProvider} onValueChange={(v) => update({ aiProvider: v as AppSettings["aiProvider"] })} items={[{ value: "anthropic", label: "Claude (Anthropic)" }, { value: "fake", label: "Demo sin conexión" }, { value: "none", label: "Desactivada" }]}>
+                <Select value={settings.ai.provider} onValueChange={(v) => update({ ai: { provider: v as AppSettings["ai"]["provider"] } })} items={[{ value: "anthropic", label: "Claude (Anthropic)" }, { value: "fake", label: "Demo sin conexión" }, { value: "none", label: "Desactivada" }]}>
                   <SelectTrigger size="sm" className="w-48" data-testid="ai-provider"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="anthropic">Claude (Anthropic)</SelectItem>
@@ -165,21 +165,20 @@ export function SettingsDialog() {
                   </SelectContent>
                 </Select>
               </Row>
-              {settings.aiProvider === "anthropic" && (
+              {settings.ai.provider === "anthropic" && (
                 <>
                   <Row label="Modelo">
-                    <Input className="h-8 w-48 font-mono text-xs" defaultValue={settings.aiModel} onBlur={(e) => update({ aiModel: e.target.value.trim() })} />
+                    <Input className="h-8 w-48 font-mono text-xs" defaultValue={settings.ai.model} onBlur={(e) => update({ ai: { model: e.target.value.trim() } })} />
                   </Row>
                   <div className="space-y-2 py-3">
-                    <Label htmlFor="ai-key">API key de Anthropic {settings.hasAiKey && <span className="text-success">· guardada</span>}</Label>
+                    <Label htmlFor="ai-key">API key de Anthropic {settings.ai.hasKey && <span className="text-success">· guardada</span>}</Label>
                     <div className="flex gap-2">
                       <Input id="ai-key" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-ant-…" />
                       <Button
                         disabled={!apiKey}
                         onClick={async () => {
-                          await client.call("settings.setSecret", { name: "anthropicApiKey", value: apiKey.trim() });
+                          setApp({ settings: await client.call("ai.setKey", { provider: "anthropic", value: apiKey.trim() }) });
                           setApiKey("");
-                          setApp({ settings: { ...settings, hasAiKey: true } });
                           toast.success("API key guardada en el llavero");
                         }}
                       >

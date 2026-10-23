@@ -45,7 +45,7 @@ import {
 } from "@unica/db";
 import type { GmailAccountConfig, ImapAccountConfig, SendPayload } from "@unica/mail";
 import { Backend } from "./backend";
-import { readSettings, updateSettings } from "./settings";
+import { readSettings, SettingsError, updateSettings } from "./settings";
 
 const ACCOUNT_COLORS = ["indigo", "emerald", "amber", "cyan", "violet", "rose", "lime", "slate"];
 
@@ -188,19 +188,7 @@ export function createHandlers(b: Backend): Handlers {
       b.notifyChanged(touched);
       return { matchedMessages: applied, affectedThreads: touched.size };
     },
-    "filters.generate": async ({ prompt }) => {
-      const ai = await b.ai();
-      if (!ai) throw new RpcError("UNAVAILABLE", "Connect an AI provider in Settings → AI to create filters with AI.");
-      try {
-        return await ai.generateFilter(prompt, {
-          now: b.now(),
-          categories: listCategories(db()).map((c) => ({ id: c.id, name: c.name })),
-          accounts: listAccounts(db()).map((a) => ({ id: a.id, email: a.email, displayName: a.displayName })),
-        });
-      } catch (error) {
-        throw new RpcError("UNAVAILABLE", error instanceof Error ? error.message : String(error));
-      }
-    },
+    "filters.generate": ({ prompt }, ctx) => b.aiService.generateFilter(prompt, ctx.clientId),
 
     "learning.proposals": () =>
       proposeLearnedFilters(loadUserActions(db(), b.now() - 60 * 86_400_000), {
@@ -380,13 +368,26 @@ export function createHandlers(b: Backend): Handlers {
       return { ok: true as const };
     },
 
-    "settings.update": (patch) => updateSettings(db(), patch),
-    "settings.setSecret": async ({ name: requested, value }) => {
-      const name = requested === "anthropicApiKey" ? "ai:anthropic:apiKey" : requested;
+    "settings.update": async (patch) => {
+      const endpoint = patch.ai?.baseURL ?? readSettings(db()).ai.profiles.compatible?.baseURL;
+      const endpointIsLocal = endpoint ? await b.net.isLoopbackEndpoint(endpoint) : false;
+      try {
+        return updateSettings(db(), patch, { endpointIsLocal });
+      } catch (error) {
+        if (error instanceof SettingsError) throw new RpcError("BAD_REQUEST", error.message);
+        throw error;
+      }
+    },
+    "settings.setSecret": async ({ name, value }) => {
       if (value) await b.setSecret(name, value);
       else db().run("DELETE FROM secrets WHERE name = ?", name);
       return { ok: true as const };
     },
+
+    "ai.providers": () => b.aiService.providers(),
+    "ai.listModels": ({ provider, baseURL, preset }) => b.aiService.listModels({ provider, baseURL, preset }),
+    "ai.test": ({ provider, model, baseURL, preset }) => b.aiService.test({ provider, model, baseURL, preset }),
+    "ai.setKey": ({ provider, preset, value }) => b.aiService.setKey(provider, preset, value),
 
     "ops.list": () => listRecentOps(db()).map((op) => b.opInfo(op)),
     "ops.resolveUnknown": ({ opId, resolution }) => {

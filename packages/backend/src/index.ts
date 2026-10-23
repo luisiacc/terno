@@ -1,4 +1,5 @@
 export * from "./backend";
+export * from "./ai-service";
 export * from "./settings";
 export * from "./transports";
 export * from "./agent-socket";

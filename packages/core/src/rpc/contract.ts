@@ -1,4 +1,15 @@
 import { z } from "zod";
+import {
+  AI_PROVIDER_IDS,
+  COMPATIBLE_PRESETS,
+  type AiErrorKind,
+  type AiProviderId,
+  type Capabilities,
+  type CompatiblePreset,
+  type ModelInfo,
+  type PresetDescriptor,
+  type ProviderDescriptor,
+} from "../ai";
 import type { LearnedProposal } from "../learning/propose";
 import { filterRuleSchema, type Filter, type FilterRule } from "../rules/schema";
 import {
@@ -29,15 +40,34 @@ export interface SearchPage extends ThreadPage {
   complete: boolean;
 }
 
+/** Per-provider choices, kept when switching providers back and forth. */
+export interface AiProfile {
+  model: string;
+  baseURL?: string;
+  preset?: CompatiblePreset;
+}
+
+export interface AiSettings {
+  provider: AiProviderId;
+  model: string;
+  baseURL: string | null;
+  preset: CompatiblePreset | null;
+  /** keys never cross to the renderer: only whether one is saved and its last 4 characters */
+  hasKey: boolean;
+  keyHint: string | null;
+  /** the model runs on this Mac */
+  local: boolean;
+  capabilities: Capabilities | null;
+  profiles: Partial<Record<AiProviderId, AiProfile>>;
+}
+
 export interface AppSettings {
   /** nothing leaves this Mac except mail with the user's own servers (and loopback AI) */
   localMode: boolean;
   theme: "system" | "light" | "dark";
   density: "comfortable" | "compact";
   remoteImages: "ask" | "always";
-  aiProvider: "anthropic" | "fake" | "none";
-  aiModel: string;
-  hasAiKey: boolean;
+  ai: AiSettings;
   allowAgentSend: boolean;
   gmailClientId: string;
   syncWindowDays: number;
@@ -80,6 +110,47 @@ export interface Draft {
   inReplyToMessageId: number | null;
   updatedAt: number;
 }
+
+export interface AiTestResult {
+  ok: boolean;
+  latencyMs: number;
+  capabilities?: Capabilities;
+  warning?: string;
+  error?: { kind: AiErrorKind; message: string };
+}
+
+/** http(s) only; the network policy decides whether the host is reachable. */
+const endpointUrl = z
+  .string()
+  .trim()
+  .max(500)
+  .url()
+  .refine((u) => /^https?:\/\//i.test(u), "Must be an http(s) URL");
+const aiTarget = z.object({
+  provider: z.enum(AI_PROVIDER_IDS),
+  baseURL: endpointUrl.optional(),
+  preset: z.enum(COMPATIBLE_PRESETS).optional(),
+});
+
+const settingsPatch = z.object({
+  localMode: z.boolean().optional(),
+  theme: z.enum(["system", "light", "dark"]).optional(),
+  density: z.enum(["comfortable", "compact"]).optional(),
+  remoteImages: z.enum(["ask", "always"]).optional(),
+  ai: z
+    .object({
+      provider: z.enum(AI_PROVIDER_IDS).optional(),
+      model: z.string().trim().max(200).optional(),
+      baseURL: endpointUrl.nullable().optional(),
+      preset: z.enum(COMPATIBLE_PRESETS).nullable().optional(),
+    })
+    .strict()
+    .optional(),
+  allowAgentSend: z.boolean().optional(),
+  gmailClientId: z.string().max(300).optional(),
+  syncWindowDays: z.number().int().min(7).max(3650).optional(),
+});
+export type SettingsPatch = z.output<typeof settingsPatch>;
 
 const imapServer = z.object({
   host: z.string().min(1).max(255),
@@ -221,21 +292,14 @@ export const contract = {
   ),
   "accounts.remove": m<{ ok: true }>()(z.object({ id })),
 
-  "settings.update": m<AppSettings>()(
-    z.object({
-      localMode: z.boolean().optional(),
-      theme: z.enum(["system", "light", "dark"]).optional(),
-      density: z.enum(["comfortable", "compact"]).optional(),
-      remoteImages: z.enum(["ask", "always"]).optional(),
-      aiProvider: z.enum(["anthropic", "fake", "none"]).optional(),
-      aiModel: z.string().max(100).optional(),
-      allowAgentSend: z.boolean().optional(),
-      gmailClientId: z.string().max(300).optional(),
-      syncWindowDays: z.number().int().min(7).max(3650).optional(),
-    }),
-  ),
-  "settings.setSecret": m<{ ok: true }>()(
-    z.object({ name: z.enum(["anthropicApiKey", "gmailClientSecret"]), value: z.string().max(500) }),
+  "settings.update": m<AppSettings>()(settingsPatch),
+  "settings.setSecret": m<{ ok: true }>()(z.object({ name: z.enum(["gmailClientSecret"]), value: z.string().max(500) })),
+
+  "ai.providers": m<{ providers: ProviderDescriptor[]; presets: PresetDescriptor[] }>()(empty),
+  "ai.listModels": m<{ models: ModelInfo[]; tookMs: number }>()(aiTarget, { timeoutMs: 15_000 }),
+  "ai.test": m<AiTestResult>()(aiTarget.extend({ model: z.string().trim().min(1).max(200) }), { timeoutMs: 120_000 }),
+  "ai.setKey": m<AppSettings>()(
+    z.object({ provider: z.enum(AI_PROVIDER_IDS), preset: z.enum(COMPATIBLE_PRESETS).optional(), value: z.string().trim().max(1000) }),
   ),
 
   "ops.list": m<OpInfo[]>()(empty),

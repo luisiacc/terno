@@ -27,7 +27,7 @@ for (const suffix of ["", "-wal", "-shm"]) rmSync(dbPath + suffix, { force: true
 const started = performance.now();
 const db = openDatabase(dbPath);
 seedDemo(db, { accounts, threads, now: Date.now() });
-db.run("INSERT OR REPLACE INTO settings (key, value_json) VALUES ('app', ?)", JSON.stringify({ aiProvider: "fake" }));
+db.run("INSERT OR REPLACE INTO settings (key, value_json) VALUES ('app', ?)", JSON.stringify({ ai: { provider: "fake" } }));
 const counts = db.get<{ m: number; t: number }>("SELECT (SELECT count(*) FROM messages) AS m, (SELECT count(*) FROM threads) AS t")!;
 db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
 db.close();

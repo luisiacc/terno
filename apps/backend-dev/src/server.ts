@@ -1,7 +1,7 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
-import { Backend, plaintextCipher, seedDemo, webSocketTransport, type AiFactory } from "@unica/backend";
+import { Backend, plaintextCipher, seedDemo, webSocketTransport, type AiFactory, type LookupAll } from "@unica/backend";
 import { demoRegistry, type ProviderRegistry } from "@unica/mail";
 import { WebSocketServer } from "ws";
 
@@ -17,6 +17,7 @@ export interface DevServerOptions {
   providers?: ProviderRegistry;
   aiFactory?: AiFactory;
   autoSync?: boolean;
+  lookup?: LookupAll;
 }
 
 export interface DevServer {
@@ -40,12 +41,14 @@ export async function startDevServer(o: DevServerOptions): Promise<DevServer> {
     cipher: plaintextCipher,
     providers: o.providers ?? demoRegistry,
     aiFactory: o.aiFactory,
+    demoAi: true,
+    lookup: o.lookup,
     now: o.now,
     autoSync: o.autoSync ?? true,
     log: (level, message, extra) => (level === "error" ? console.error : console.log)(`[backend] ${message}`, extra ?? ""),
   });
   if (seedDemo(backend.db, { threads: o.threads, accounts: o.accounts })) {
-    backend.db.run("INSERT OR REPLACE INTO settings (key, value_json) VALUES ('app', ?)", JSON.stringify({ aiProvider: "fake" }));
+    backend.db.run("INSERT OR REPLACE INTO settings (key, value_json) VALUES ('app', ?)", JSON.stringify({ ai: { provider: "fake" } }));
   }
   backend.start();
 

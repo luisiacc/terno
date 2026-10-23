@@ -142,6 +142,7 @@ function startBackend() {
     type: "init",
     dbPath: join(userData, "unica.db"),
     demo,
+    dev: isDev,
     ...agentPaths(),
     version: app.getVersion(),
   } satisfies MainToBackend);

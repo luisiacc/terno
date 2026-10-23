@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { setImmediate as yieldToLoop } from "node:timers/promises";
-import { createAi, type AiTasks, type ProviderConfig } from "@unica/ai";
+import type { AiTasks } from "@unica/ai";
 import type { Account, AccountSyncState, FilterAction, ThreadAction } from "@unica/core";
 import { RpcServer, type CallContext, type MethodName, type OpInfo, type Transport } from "@unica/core/rpc";
 import {
@@ -39,9 +39,10 @@ import {
   type OpRow,
 } from "@unica/db";
 import { ProviderError, type MailProvider, type ProviderRegistry, type SyncSink } from "@unica/mail";
+import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { createHandlers } from "./handlers";
 import { createNetworkPolicy, type LookupAll, type NetworkPolicy } from "./net-policy";
-import { readSettings } from "./settings";
+import { readLocalMode, readSettings } from "./settings";
 
 export interface SecretCipher {
   encrypt(plain: string): Promise<Uint8Array>;
@@ -58,16 +59,14 @@ export const plaintextCipher: SecretCipher = {
   },
 };
 
-export type AiFactory = (config: ProviderConfig) => AiTasks | null;
-
-export const defaultAiFactory: AiFactory = (config) => createAi(config);
-
 export interface BackendOptions {
   dbPath: string;
   version: string;
   cipher: SecretCipher;
   providers: ProviderRegistry;
   aiFactory?: AiFactory;
+  /** offer the offline demo model in Settings (dev, demo and test hosts) */
+  demoAi?: boolean;
   openExternal?: (url: string) => Promise<void>;
   now?: () => number;
   log?: (level: "info" | "warn" | "error", message: string, extra?: unknown) => void;
@@ -114,13 +113,15 @@ export class Backend {
   readonly abort = new AbortController();
   /** the only way out of the backend: every outbound request asks it first */
   readonly net: NetworkPolicy;
+  readonly aiService: AiService;
 
   constructor(options: BackendOptions) {
     // explicit `undefined` must not clobber defaults
     const defined = Object.fromEntries(Object.entries(options).filter(([, v]) => v !== undefined)) as BackendOptions;
     this.options = { now: Date.now, sliceBudgetMs: 8, syncIntervalMs: 120_000, ...defined };
     this.db = openDatabase(options.dbPath);
-    this.net = createNetworkPolicy({ localMode: () => readSettings(this.db).localMode, lookup: options.lookup });
+    this.net = createNetworkPolicy({ localMode: () => readLocalMode(this.db), lookup: options.lookup });
+    this.aiService = new AiService(this, options.aiFactory ?? defaultAiFactory);
     this.checkpointer = startCheckpointWorker(this.db);
     const recovered = recoverOps(this.db, this.now());
     if (recovered.requeued || recovered.unknown) this.log("info", "recovered ops after restart", recovered);
@@ -565,20 +566,9 @@ export class Backend {
 
   // ───────────────────────────── AI ─────────────────────────────
 
-  async ai(): Promise<AiTasks | null> {
-    const settings = readSettings(this.db);
-    if (settings.aiProvider === "none") return null;
-    const apiKey = await this.getSecret("ai:anthropic:apiKey");
-    if (settings.aiProvider === "anthropic" && !apiKey) return null;
-    const factory = this.options.aiFactory ?? defaultAiFactory;
-    return factory({
-      id: settings.aiProvider,
-      model: settings.aiModel,
-      apiKey,
-      fetch: this.net.fetchFor("ai", { providerLocality: settings.aiProvider === "fake" ? "local" : "cloud" }),
-      timeoutMs: 30_000,
-      maxRetries: 1,
-    });
+  /** The configured AI, ready to run tasks; throws AiError (not configured, paused by local mode, blocked). */
+  ai(): Promise<AiTasks> {
+    return this.aiService.current();
   }
 
   newMessageId(email: string): string {
