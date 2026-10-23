@@ -3,6 +3,7 @@ import { RpcError } from "@unica/core/rpc";
 import type { MockDataset } from "@unica/mock-data";
 import {
   UNVERSIONED,
+  type AddedBy,
   type ClassifierInput,
   type Cursor,
   type IncomingMessage,
@@ -13,6 +14,7 @@ import {
   type SearchCursor,
   type SearchRequest,
   type StoreCapabilities,
+  type StoreSnapshot,
   type StoreSearchPage,
 } from "@unica/store";
 import { applyMessageAction, applyThreadAction, type ActionResult } from "./actions";
@@ -99,6 +101,7 @@ import {
 import { findRuleMatches } from "./rules";
 import { resolveQuery } from "./search";
 import { Fts5SearchEngine } from "./search-engine";
+import { messageDocs, threadDocs } from "./search-docs";
 import { seedDataset } from "./seed";
 import { SqlProviderStore } from "./sql-provider-store";
 import type { Db } from "./sqlite";
@@ -632,6 +635,14 @@ export class SqlMailStore implements MailStore {
     return s;
   }
 
+  readonly debug: MailStore["debug"] = {
+    snapshot: async () => storeSnapshot(this.db),
+    verify: async () => {
+      // rank=1 compares the index against the external content, not only its own structure
+      this.db.exec("INSERT INTO messages_fts(messages_fts, rank) VALUES('integrity-check', 1)");
+    },
+  };
+
   readonly dev: MailStore["dev"] = {
     seed: async (data, options) => seedDataset(this.db, data as MockDataset, options),
   };
@@ -646,4 +657,71 @@ function withKey(cursor: Cursor & Partial<Pick<SearchCursor, "revision" | "query
 export function sqlDb(store: MailStore): Db {
   if (!(store instanceof SqlMailStore)) throw new Error(`not a SQL store: ${store.capabilities.engine}`);
   return store.db;
+}
+
+function storeSnapshot(db: Db): StoreSnapshot {
+  const b = (v: unknown) => v === 1;
+  const cats = new Map<number, number[]>();
+  const memberships = db
+    .all<{ thread_id: number; category_id: number; added_by: AddedBy; batch_id: number | null }>("SELECT thread_id, category_id, added_by, batch_id FROM thread_categories ORDER BY thread_id, category_id")
+    .map((r) => {
+      cats.set(r.thread_id, [...(cats.get(r.thread_id) ?? []), r.category_id]);
+      return { threadId: r.thread_id, categoryId: r.category_id, addedBy: r.added_by, batchId: r.batch_id };
+    });
+  return {
+    accounts: db.all("SELECT id, email, display_name FROM accounts ORDER BY id"),
+    categories: db.all("SELECT id, name FROM categories ORDER BY id"),
+    messages: db.all<Record<string, unknown>>("SELECT * FROM messages ORDER BY id").map((m) => ({
+      id: m.id as number,
+      threadId: m.thread_id as number,
+      accountId: m.account_id as number,
+      providerMsgId: m.provider_msg_id as string | null,
+      rfcMessageId: m.rfc_message_id as string | null,
+      date: m.date as number,
+      fromName: m.from_name as string,
+      fromEmail: m.from_email as string,
+      recipients: m.recipients_text as string,
+      subject: m.subject as string,
+      bodyText: m.body_text as string | null,
+      bodyState: m.body_state as "none" | "partial" | "full",
+      listId: m.list_id as string | null,
+      hasAttachments: b(m.has_attachments),
+      isRead: b(m.is_read),
+      isStarred: b(m.is_starred),
+      inInbox: b(m.in_inbox),
+      isSent: b(m.is_sent),
+      isDraft: b(m.is_draft),
+      isTrash: b(m.is_trash),
+      isSpam: b(m.is_spam),
+    })),
+    threads: db.all<Record<string, unknown>>("SELECT * FROM threads ORDER BY id").map((t) => ({
+      id: t.id as number,
+      accountId: t.account_id as number,
+      providerThreadId: t.provider_thread_id as string | null,
+      subject: t.subject as string,
+      snippet: t.snippet as string,
+      lastDate: t.last_date as number,
+      lastFromName: t.last_from_name as string,
+      lastFromEmail: t.last_from_email as string,
+      messageCount: t.message_count as number,
+      unreadCount: t.unread_count as number,
+      hasAttachments: b(t.has_attachments),
+      isStarred: b(t.is_starred),
+      inInbox: b(t.in_inbox),
+      hasSent: b(t.has_sent),
+      inTrash: b(t.in_trash),
+      inSpam: b(t.in_spam),
+      categoryIds: cats.get(t.id as number) ?? [],
+    })),
+    memberships,
+    examples: db
+      .all<{ thread_id: number; category_id: number; label: 1 | -1; source: string; weight: number; content: number; sender: string; batch_id: number | null }>(
+        "SELECT thread_id, category_id, label, source, weight, content, sender, batch_id FROM cls_examples ORDER BY thread_id, category_id",
+      )
+      .map((e) => ({ threadId: e.thread_id, categoryId: e.category_id, label: e.label, source: e.source, weight: e.weight, content: e.content === 1, sender: e.sender, batchId: e.batch_id })),
+    ops: db
+      .all<{ id: string; account_id: number; kind: string; state: StoreSnapshot["ops"][number]["state"]; attempts: number; target_json: string }>("SELECT id, account_id, kind, state, attempts, target_json FROM ops ORDER BY seq")
+      .map((o) => ({ id: o.id, accountId: o.account_id, kind: o.kind, state: o.state, attempts: o.attempts, messageIds: (JSON.parse(o.target_json) as { messageIds?: number[] }).messageIds ?? [] })),
+    search: { messages: messageDocs(db), threads: threadDocs(db) },
+  };
 }

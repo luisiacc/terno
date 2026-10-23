@@ -23,7 +23,7 @@ import type {
   Vetoes,
 } from "@unica/core";
 import type { OwnerIdentity } from "@unica/core/rpc";
-import type { MailStoreSearch, SearchCursor, StoreSearchPage } from "./search";
+import type { MailStoreSearch, SearchCursor, SearchMessageDoc, SearchThreadDoc, StoreSearchPage } from "./search";
 import type {
   AddedBy,
   ClassifyResult,
@@ -41,6 +41,62 @@ import type {
   PendingSuggestion,
   ThreadFeatureSet,
 } from "./types";
+
+export interface SnapshotMessage {
+  id: number;
+  threadId: number;
+  accountId: number;
+  providerMsgId: string | null;
+  rfcMessageId: string | null;
+  date: number;
+  fromName: string;
+  fromEmail: string;
+  recipients: string;
+  subject: string;
+  bodyText: string | null;
+  bodyState: "none" | "partial" | "full";
+  listId: string | null;
+  hasAttachments: boolean;
+  isRead: boolean;
+  isStarred: boolean;
+  inInbox: boolean;
+  isSent: boolean;
+  isDraft: boolean;
+  isTrash: boolean;
+  isSpam: boolean;
+}
+
+export interface SnapshotThread {
+  id: number;
+  accountId: number;
+  providerThreadId: string | null;
+  subject: string;
+  snippet: string;
+  lastDate: number;
+  lastFromName: string;
+  lastFromEmail: string;
+  messageCount: number;
+  unreadCount: number;
+  hasAttachments: boolean;
+  isStarred: boolean;
+  inInbox: boolean;
+  hasSent: boolean;
+  inTrash: boolean;
+  inSpam: boolean;
+  categoryIds: number[];
+}
+
+export interface StoreSnapshot {
+  accounts: { id: number; email: string; display_name: string }[];
+  categories: { id: number; name: string }[];
+  messages: SnapshotMessage[];
+  threads: SnapshotThread[];
+  memberships: { threadId: number; categoryId: number; addedBy: AddedBy; batchId: number | null }[];
+  examples: { threadId: number; categoryId: number; label: 1 | -1; source: string; weight: number; content: boolean; sender: string; batchId: number | null }[];
+  ops: { id: string; accountId: number; kind: string; state: OpState; attempts: number; messageIds: number[] }[];
+  /** what a search engine indexes */
+  search: { messages: SearchMessageDoc[]; threads: SearchThreadDoc[] };
+}
 
 export interface StoreCapabilities {
   /** "sqlite-node" | "sqlite-wasm-opfs" | "indexeddb" | … */
@@ -301,6 +357,13 @@ export interface MailStore {
   };
 
   providerStore(accountId: number): ProviderStore;
+
+  /** test-only, required: plain rows for oracles and property tests */
+  debug: {
+    snapshot(): Promise<StoreSnapshot>;
+    /** internal consistency (FTS5: integrity-check against the content) */
+    verify(): Promise<void>;
+  };
 
   /** development hosts and tests */
   dev: {

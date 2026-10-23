@@ -1,19 +1,15 @@
-import { CategorizerModel, contentTokens, encodeFeatures, extractFeatures, featuresFromBlob, termsQuery } from "@unica/core";
+import { CategorizerModel, contentTokens, encodeFeatures, extractFeatures, termsQuery } from "@unica/core";
 import { describe, expect, it } from "vitest";
 import {
   addToCategory,
   backfillExamples,
   backgroundCandidates,
   classifyNewThreads,
-  createBatch,
-  finishBatch,
   loadExamples,
   matureDecisions,
   rejectSuggestion,
   removeFromCategory,
   threadFeatures,
-  undoBatch,
-  type ModelDelta,
 } from "./categorize";
 import { countScope, quickActions, resolveScope, scopeCountSql } from "./categorize-bulk";
 import { ingestMessages, type IncomingMessage } from "./ingest";
@@ -53,55 +49,6 @@ describe("categorization training signals", () => {
     return { db, acct: acct!, cat, other, thread, examples };
   }
 
-  it("explicit adds record a positive example in the same transaction; filter and auto adds never train", () => {
-    const { db, cat, thread, examples } = setup();
-    const [a, b, c, d] = [thread(), thread(), thread(), thread()];
-    const user = addToCategory(db, { categoryId: cat, threadIds: [a, a], addedBy: "user", now: NOW });
-    expect(user.added).toEqual([a]);
-    expect(user.deltas.map((x) => x.op)).toEqual(["unbackground", "train"]);
-    addToCategory(db, { categoryId: cat, threadIds: [b], addedBy: "agent", now: NOW });
-    addToCategory(db, { categoryId: cat, threadIds: [c], addedBy: "filter", now: NOW });
-    const auto = addToCategory(db, { categoryId: cat, threadIds: [d], addedBy: "auto", now: NOW });
-    expect(auto.deltas.map((x) => x.op)).toEqual(["unbackground"]);
-    expect(examples()).toEqual([
-      { thread_id: a, category_id: cat, label: 1, weight: 1, source: "user", content: 1, sender: "uber.receipts@uber.com", batch_id: null },
-      { thread_id: b, category_id: cat, label: 1, weight: 0.5, source: "agent", content: 1, sender: "uber.receipts@uber.com", batch_id: null },
-    ]);
-    // the stored features are the trained ones
-    const delta = user.deltas[1] as Extract<ModelDelta, { example: unknown }>;
-    const blob = db.get<{ features: Uint8Array }>("SELECT features FROM cls_examples WHERE thread_id = ?", a)!.features;
-    expect([...featuresFromBlob(blob)]).toEqual([...delta.example.features]);
-    // adding again changes nothing
-    expect(addToCategory(db, { categoryId: cat, threadIds: [a], addedBy: "user", now: NOW })).toEqual({ added: [], deltas: [] });
-  });
-
-  it("bulk adds weigh half and stop teaching content after 50 per sender and category", () => {
-    const { db, cat, other, thread, examples } = setup();
-    const ids = Array.from({ length: 53 }, () => thread());
-    addToCategory(db, { categoryId: cat, threadIds: ids, addedBy: "bulk", now: NOW, batchId: 1 });
-    const rows = examples().filter((e) => e.category_id === cat);
-    expect(rows.every((e) => e.weight === 0.5 && e.source === "bulk")).toBe(true);
-    expect(rows.filter((e) => e.content === 1)).toHaveLength(50);
-    // another category has its own cap
-    addToCategory(db, { categoryId: other, threadIds: ids.slice(0, 3), addedBy: "bulk", now: NOW });
-    expect(examples().filter((e) => e.category_id === other && e.content === 1)).toHaveLength(3);
-  });
-
-  it("a user removal is a strong negative and replaces the positive (untrained from RAM)", () => {
-    const { db, cat, thread, examples } = setup();
-    const a = thread();
-    addToCategory(db, { categoryId: cat, threadIds: [a], addedBy: "user", now: NOW });
-    const r = removeFromCategory(db, { categoryId: cat, threadIds: [a, 999], reason: "user", now: NOW + 1 });
-    expect(r.removed).toEqual([a]);
-    // ten days old and in no category anymore: back to the background
-    expect(r.deltas.map((d) => [d.op, d.op === "train" || d.op === "untrain" ? d.example.label : null])).toEqual([["untrain", 1], ["train", -1], ["background", null]]);
-    expect(examples()).toMatchObject([{ thread_id: a, label: -1, weight: 3, source: "removal" }]);
-    // putting it back (the user changed their mind) lifts the negative
-    const back = addToCategory(db, { categoryId: cat, threadIds: [a], addedBy: "user", now: NOW + 2 });
-    expect(back.deltas.filter((d) => d.op !== "unbackground").map((d) => d.op)).toEqual(["untrain", "train"]);
-    expect(examples()).toMatchObject([{ thread_id: a, label: 1, source: "user" }]);
-  });
-
   it("removing an auto add reverts its decision within 30 days; filter rows become negatives too", () => {
     const { db, cat, thread, examples } = setup();
     const [a, b, c] = [thread(), thread(), thread()];
@@ -115,33 +62,6 @@ describe("categorization training signals", () => {
     expect(outcome(a)).toBe("reverted");
     expect(outcome(b)).toBeNull();
     expect(examples().map((e) => [e.thread_id, e.label])).toEqual([[a, -1], [b, -1], [c, -1]]);
-  });
-
-  it("undo takes back the user's own add without learning a negative", () => {
-    const { db, cat, thread, examples } = setup();
-    const a = thread();
-    addToCategory(db, { categoryId: cat, threadIds: [a], addedBy: "user", now: NOW });
-    const r = removeFromCategory(db, { categoryId: cat, threadIds: [a], reason: "undo", now: NOW });
-    expect(r.deltas.map((d) => d.op)).toEqual(["untrain", "background"]);
-    expect(examples()).toEqual([]);
-    expect(db.get("SELECT 1 FROM thread_categories WHERE thread_id = ?", a)).toBeUndefined();
-  });
-
-  it("batch undo removes exactly the batch's rows and examples, once", () => {
-    const { db, cat, thread, examples } = setup();
-    const [before, a, b] = [thread(), thread(), thread()];
-    addToCategory(db, { categoryId: cat, threadIds: [before], addedBy: "user", now: NOW });
-    const batch = createBatch(db, cat, "snackbar", { kind: "sender", email: "uber.receipts@uber.com" }, NOW);
-    const added = addToCategory(db, { categoryId: cat, threadIds: [before, a, b], addedBy: "bulk", now: NOW, batchId: batch });
-    finishBatch(db, batch, added.added.length);
-    expect(added.added).toEqual([a, b]);
-    const undo = undoBatch(db, batch, NOW + 1);
-    expect(undo.removed.sort()).toEqual([a, b].sort());
-    expect(undo.deltas.map((d) => d.op)).toEqual(["untrain", "untrain", "background", "background"]);
-    expect(db.all<{ thread_id: number }>("SELECT thread_id FROM thread_categories").map((r) => r.thread_id)).toEqual([before]);
-    expect(examples().map((e) => e.thread_id)).toEqual([before]);
-    expect(db.get<{ added: number; undone_at: number }>("SELECT added, undone_at FROM cat_batches WHERE id = ?", batch)).toEqual({ added: 2, undone_at: NOW + 1 });
-    expect(undoBatch(db, batch, NOW + 2).removed).toEqual([]);
   });
 
   it("accepting a suggestion records it; rejecting one is a weight-1 negative", () => {
@@ -212,55 +132,6 @@ describe("categorization training signals", () => {
     expect(db.all<{ thread_id: number }>("SELECT thread_id FROM cls_decisions").map((r) => r.thread_id)).toEqual([survivor]);
   });
 
-  it("a merge honors the newest explicit decision per category: a removal is not undone by the other half", () => {
-    const { db, acct, cat } = setup();
-    const ana = { name: "Ana", email: "ana@cafealtura.mx" };
-    const a = msg({ accountId: acct, rfcMessageId: "ma@x", from: ana });
-    const c = msg({ accountId: acct, rfcMessageId: "mc@x", references: ["mb@x"], from: ana });
-    ingestMessages(db, [a, c]);
-    const [ta, tc] = [threadOf(db, a.providerMsgId!), threadOf(db, c.providerMsgId!)];
-    // the merged-away half is filed (older); the survivor was filed and then removed (newer)
-    addToCategory(db, { categoryId: cat, threadIds: [tc], addedBy: "user", now: NOW - 10 * DAY });
-    addToCategory(db, { categoryId: cat, threadIds: [ta], addedBy: "user", now: NOW - 5 * DAY });
-    removeFromCategory(db, { categoryId: cat, threadIds: [ta], reason: "user", now: NOW - DAY });
-    const r = ingestMessages(db, [msg({ accountId: acct, rfcMessageId: "mb@x", references: ["ma@x"], from: ana })]);
-    const survivor = Math.min(ta, tc);
-    expect(survivor).toBe(ta);
-    expect(db.get("SELECT 1 FROM thread_categories WHERE thread_id = ?", survivor)).toBeUndefined();
-    expect(db.all("SELECT thread_id, label FROM cls_examples")).toEqual([{ thread_id: survivor, label: -1 }]);
-    // the merged half's positive left the training set: RAM untrains it after commit
-    expect(r.deltas.map((d) => [d.op, "example" in d ? d.example.label : null])).toEqual([["untrain", 1]]);
-  });
-
-  it("a merge keeps the category when the newest decision is a filing", () => {
-    const { db, acct, cat } = setup();
-    const ana = { name: "Ana", email: "ana@cafealtura.mx" };
-    const a = msg({ accountId: acct, rfcMessageId: "na@x", from: ana });
-    const c = msg({ accountId: acct, rfcMessageId: "nc@x", references: ["nb@x"], from: ana });
-    ingestMessages(db, [a, c]);
-    const [ta, tc] = [threadOf(db, a.providerMsgId!), threadOf(db, c.providerMsgId!)];
-    addToCategory(db, { categoryId: cat, threadIds: [ta], addedBy: "user", now: NOW - 10 * DAY });
-    removeFromCategory(db, { categoryId: cat, threadIds: [ta], reason: "user", now: NOW - 9 * DAY });
-    addToCategory(db, { categoryId: cat, threadIds: [tc], addedBy: "user", now: NOW - DAY });
-    const r = ingestMessages(db, [msg({ accountId: acct, rfcMessageId: "nb@x", references: ["na@x"], from: ana })]);
-    expect(db.get("SELECT added_by FROM thread_categories WHERE thread_id = ?", ta)).toEqual({ added_by: "user" });
-    expect(db.all("SELECT thread_id, label FROM cls_examples")).toEqual([{ thread_id: ta, label: 1 }]);
-    expect(r.deltas.map((d) => [d.op, "example" in d ? d.example.label : null])).toEqual([["untrain", -1]]);
-  });
-
-  it("records nothing when the transaction rolls back", () => {
-    const { db, cat, thread, examples } = setup();
-    const a = thread();
-    expect(() =>
-      db.tx(() => {
-        addToCategory(db, { categoryId: cat, threadIds: [a], addedBy: "user", now: NOW });
-        throw new Error("boom");
-      }),
-    ).toThrow("boom");
-    expect(examples()).toEqual([]);
-    expect(db.get("SELECT 1 FROM thread_categories")).toBeUndefined();
-  });
-
   it("auto decisions mature as kept after 30 days", () => {
     const { db, cat, thread } = setup();
     const [a, b] = [thread(), thread()];
@@ -285,20 +156,6 @@ describe("bulk scopes, counts and quick actions", () => {
       add({ from: { name: "Uber Receipts", email: "uber.receipts@uber.com" }, subject: "Tu recibo de Uber", bodyText: "Total $10.00 MXN. Factura disponible. Viaje al aeropuerto.", ...over });
     return { db, acct: acct!, cat, add, uber };
   }
-
-  it("sender scope: received mail only, not filed, not removed, outside spam and trash", () => {
-    const { db, cat, add, uber } = mailbox();
-    const [filed, removed, a, b] = [uber(), uber(), uber(), uber()];
-    uber({ isSpam: true, inInbox: false });
-    uber({ isTrash: true, inInbox: false });
-    addToCategory(db, { categoryId: cat, threadIds: [filed, removed], addedBy: "user", now: NOW });
-    removeFromCategory(db, { categoryId: cat, threadIds: [removed], reason: "user", now: NOW });
-    // the user's own sent mail never matches a sender scope, even for their own address
-    add({ from: { name: "Me", email: "me0@example.com" }, isSent: true, to: [{ name: "Uber", email: "uber.receipts@uber.com" }] });
-    expect(resolveScope(db, cat, { kind: "sender", email: "Uber.Receipts@uber.com" }, NOW).sort()).toEqual([a, b].sort());
-    expect(countScope(db, cat, { kind: "sender", email: "uber.receipts@uber.com" }, NOW)).toEqual({ count: 2, capped: false });
-    expect(resolveScope(db, cat, { kind: "sender", email: "me0@example.com" }, NOW)).toEqual([]);
-  });
 
   it("domain and list scopes match their column (not free text), uncapped", () => {
     const { db, cat, add } = mailbox();
@@ -328,16 +185,6 @@ describe("bulk scopes, counts and quick actions", () => {
     addToCategory(db, { categoryId: cat, threadIds: [a], addedBy: "user", now: NOW });
     expect(resolveScope(db, cat, { kind: "query", query: termsQuery(["factura"], "Facturas") }, NOW).sort()).toEqual([b, other].sort());
     expect(resolveScope(db, cat, { kind: "query", query: '"factura" from:uber.receipts@uber.com' }, NOW)).toEqual([b]);
-  });
-
-  it("query scopes never reach trash or spam, even when the query asks for them", () => {
-    const { db, cat, uber } = mailbox();
-    const inbox = uber();
-    uber({ isTrash: true, inInbox: false });
-    uber({ isSpam: true, inInbox: false });
-    for (const query of ["factura", "in:trash factura", "in:spam factura", "in:all factura"]) {
-      expect(resolveScope(db, cat, { kind: "query", query }, NOW), query).toEqual(query === "factura" || query === "in:all factura" ? [inbox] : []);
-    }
   });
 
   it("counts walk the sender, domain and list indexes and exclude filed threads through thread_categories_c", () => {
