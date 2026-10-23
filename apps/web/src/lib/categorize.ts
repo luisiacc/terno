@@ -55,10 +55,7 @@ export async function addToCategory(categoryId: number, threadIds: readonly numb
   patch(fresh, categoryId, true);
   // the sidebar count moves in the same frame; the backend's counts event confirms it
   const unread = fresh.filter((id) => items[index.get(id) ?? -1]?.unread).length;
-  if (unread) {
-    const counts = getApp().counts;
-    setApp({ counts: { ...counts, categoryUnread: { ...counts.categoryUnread, [categoryId]: (counts.categoryUnread[categoryId] ?? 0) + unread } } });
-  }
+  const bumped = unread ? bumpUnread(categoryId, unread) : null;
   try {
     // a move is one backend transaction (added here, removed there); its undo is one too
     const res =
@@ -71,8 +68,36 @@ export async function addToCategory(categoryId: number, threadIds: readonly numb
     return filed;
   } catch (error) {
     toast.error(`No se pudo añadir: ${error instanceof Error ? error.message : error}`);
+    if (bumped) void reconcileCounts(bumped);
     void reloadList({ keepSelection: true });
     return null;
+  }
+}
+
+/** The optimistic +n on a category's unread count. */
+interface Bump {
+  categoryId: number;
+  n: number;
+}
+
+function bumpUnread(categoryId: number, n: number): Bump {
+  const counts = getApp().counts;
+  setApp({ counts: { ...counts, categoryUnread: { ...counts.categoryUnread, [categoryId]: (counts.categoryUnread[categoryId] ?? 0) + n } } });
+  return { categoryId, n };
+}
+
+/**
+ * The add failed: take the bump back at once, then ask the backend for the
+ * real numbers (a reloaded list doesn't reload counts).
+ */
+async function reconcileCounts(b: Bump): Promise<void> {
+  const now = getApp().counts;
+  const unread = now.categoryUnread[b.categoryId] ?? 0;
+  setApp({ counts: { ...now, categoryUnread: { ...now.categoryUnread, [b.categoryId]: Math.max(0, unread - b.n) } } });
+  try {
+    setApp({ counts: await client.call("counts.get", {}) });
+  } catch {
+    /* the reverted value stands until the next counts event */
   }
 }
 
