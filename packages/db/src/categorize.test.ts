@@ -293,6 +293,16 @@ describe("bulk scopes, counts and quick actions", () => {
     expect(resolveScope(db, cat, { kind: "query", query: '"factura" from:uber.receipts@uber.com' }, NOW)).toEqual([b]);
   });
 
+  it("query scopes never reach trash or spam, even when the query asks for them", () => {
+    const { db, cat, uber } = mailbox();
+    const inbox = uber();
+    uber({ isTrash: true, inInbox: false });
+    uber({ isSpam: true, inInbox: false });
+    for (const query of ["factura", "in:trash factura", "in:spam factura", "in:all factura"]) {
+      expect(resolveScope(db, cat, { kind: "query", query }, NOW), query).toEqual(query === "factura" || query === "in:all factura" ? [inbox] : []);
+    }
+  });
+
   it("counts walk the sender, domain and list indexes and exclude filed threads through thread_categories_c", () => {
     const { db, cat } = mailbox();
     const plan = (scope: Parameters<typeof scopeCountSql>[2]) => {

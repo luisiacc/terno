@@ -50,6 +50,8 @@ function scopeSql(db: Db, categoryId: number, scope: CategorizeScope): { sql: st
 }
 
 const QUERY_EXCLUSIONS = [
+  // whatever the query says (in:trash, in:spam): bulk filing never reaches them
+  "t.in_trash = 0 AND t.in_spam = 0",
   "t.id NOT IN (SELECT thread_id FROM thread_categories INDEXED BY thread_categories_c WHERE category_id = ?)",
   "NOT EXISTS (SELECT 1 FROM cls_examples e WHERE e.thread_id = t.id AND e.category_id = ? AND e.label < 0)",
 ];
