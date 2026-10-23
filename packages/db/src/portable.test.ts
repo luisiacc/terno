@@ -35,6 +35,7 @@ function resolveFile(base: string): string {
 
 it("the portable layers (core, store contracts, db without the node driver) import no node: modules", () => {
   expect(nodeImports(join(packages, "db/src/portable.ts"))).toEqual([]);
+  expect(nodeImports(join(packages, "db/src/wasm.ts"))).toEqual([]);
   expect(nodeImports(join(packages, "store/src/index.ts"))).toEqual([]);
 });
 

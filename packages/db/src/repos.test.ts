@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { sqliteDriver } from "./index";
 import { ingestMessages } from "./ingest";
 import { claimReadyOps, enqueueOp, failOp } from "./repos";
 import { msg, testDb, withAccounts } from "./test/helpers";
@@ -26,7 +27,8 @@ describe("ops state machine", () => {
   });
 });
 
-describe("checkpoint worker", () => {
+// desktop only: the web engine has no WAL and no second connection
+describe.runIf(sqliteDriver().features.checkpointWorker)("checkpoint worker", () => {
   it("keeps the WAL bounded without in-thread autocheckpoints, and falls back if it dies", async () => {
     const { startCheckpointWorker } = await import("./checkpoint");
     const { statSync } = await import("node:fs");

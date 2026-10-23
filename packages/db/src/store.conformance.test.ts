@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll } from "vitest";
-import { openDatabase } from "./index";
+import { openDatabase, sqliteDriver } from "./index";
 import { writeLegacyCopy } from "./test/legacy";
 import { sqlDb, SqlMailStore } from "./sql-store";
 
@@ -18,7 +18,8 @@ const tempDir = () => {
   return d;
 };
 
-defineStoreConformance("SqlMailStore (node:sqlite)", {
+// node:sqlite here; SQLite-WASM in the db-wasm project
+defineStoreConformance(`SqlMailStore (${sqliteDriver().id})`, {
   strategies: true,
   open: async () => new SqlMailStore(openDatabase(join(tempDir(), "s.db"))),
   reopen: async (store) => {

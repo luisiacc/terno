@@ -18,6 +18,19 @@ export default defineConfig({
         },
       },
       {
+        // the db and store suites again on SQLite-WASM, the web's engine (in-memory images in Node)
+        test: {
+          name: "db-wasm",
+          include: ["packages/db/src/**/*.test.ts"],
+          // node:sqlite specifics (driver pragmas, the checkpoint worker) and source scans
+          exclude: ["**/*.perf.test.ts", "packages/db/src/sqlite.test.ts", "packages/db/src/portable.test.ts", "**/node_modules/**"],
+          setupFiles: ["packages/db/src/test/wasm-setup.ts"],
+          environment: "node",
+          testTimeout: 60_000,
+          hookTimeout: 180_000,
+        },
+      },
+      {
         test: {
           name: "perf",
           include: ["packages/*/src/**/*.perf.test.ts"],

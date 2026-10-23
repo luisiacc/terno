@@ -14,12 +14,21 @@ export interface SqliteStatement {
   finalize(): void;
 }
 
+/** Page cache counters (sqlite3_db_status), for the web perf gate's miss ratio. */
+export interface CacheStatus {
+  hit: number;
+  miss: number;
+  usedBytes: number;
+}
+
 export interface SqliteConnection {
   exec(sql: string): void;
   prepare(sql: string): SqliteStatement;
   function(name: string, options: { deterministic?: boolean }, fn: (...args: SqlValue[]) => SqlValue): void;
   readonly isOpen: boolean;
   close(): void;
+  /** drivers that can read their page cache counters */
+  cacheStatus?(): CacheStatus;
 }
 
 export interface CheckpointWorker {

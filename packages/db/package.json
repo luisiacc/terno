@@ -5,12 +5,14 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./portable": "./src/portable.ts"
+    "./portable": "./src/portable.ts",
+    "./wasm": "./src/wasm.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@sqlite.org/sqlite-wasm": "3.54.1-build1",
     "@unica/core": "workspace:*",
     "@unica/store": "workspace:*"
   },

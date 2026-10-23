@@ -1,4 +1,4 @@
-import type { Row, SqlValue, SqliteConnection, SqliteDriver, SqliteStatement } from "./connection";
+import type { CacheStatus, Row, SqlValue, SqliteConnection, SqliteDriver, SqliteStatement } from "./connection";
 
 export type Param = SqlValue;
 export type { Row } from "./connection";
@@ -116,6 +116,11 @@ export class Db {
 
   get isOpen(): boolean {
     return this.conn.isOpen;
+  }
+
+  /** page cache hits and misses since open, where the driver can tell */
+  cacheStatus(): CacheStatus | null {
+    return this.conn.cacheStatus?.() ?? null;
   }
 
   /** Changes made by *other* connections since the last call (MCP / external writers). */
