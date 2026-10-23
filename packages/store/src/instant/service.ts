@@ -21,7 +21,7 @@ export interface InstantSearchOptions {
   sliceMs?: number;
   /** quiet time after a commit before catching up, so a burst of writes applies together */
   settleMs?: number;
-  /** the longest catching up waits for writes to settle */
+  /** the longest catching up waits for writes to settle (an import runs at full speed; FTS5 answers meanwhile) */
   maxLagMs?: number;
   /** a snapshot is written after this many applied changes, or this long after the first unsaved one */
   snapshotEvery?: { changes: number; ms: number };
@@ -57,6 +57,7 @@ export class InstantSearch {
   private wakeUp: (() => void) | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private pending = false;
+  private settling = false;
   private dirtyAt = 0;
   private firstDirtyAt = 0;
   private unsaved = 0;
@@ -92,7 +93,8 @@ export class InstantSearch {
     this.pending = true;
     this.dirtyAt = now;
     if (!this.firstDirtyAt) this.firstDirtyAt = now;
-    this.wake();
+    // a loop waiting for writes to settle looks again when its timer fires
+    if (!this.settling) this.wake();
   }
 
   /** Tests and perf gates: resolves true once the engine is current at the feed's head, false if it gave up. */
@@ -103,7 +105,7 @@ export class InstantSearch {
       const head = await this.o.feed.head();
       if (this.at(head)) return true;
       if (this.now() > deadline) throw new Error(`instant search didn't settle (${this.report.state})`);
-      // a sleeping loop looks at the head again (without waiting for writes to settle)
+      // a sleeping loop looks at the head again (one waiting for writes to settle keeps waiting)
       if (!this.pending) this.wake();
       await new Promise((r) => setTimeout(r, 5));
     }
@@ -171,16 +173,14 @@ export class InstantSearch {
           continue;
         }
         const e = this.engine;
+        // writes are still arriving (an import): FTS5 answers until they settle
+        if (this.pending && (await this.settle())) continue;
         if (await this.catchUp(e)) {
           if (!this.withinCaps(e, this.memory.steadyBytes)) return;
           this.update("ready");
           continue;
         }
         this.failures = 0;
-        if (this.pending) {
-          await this.settle();
-          continue;
-        }
         if (e.needsCompaction() && !this.noCompaction) {
           await this.compact(e);
           continue;
@@ -209,13 +209,19 @@ export class InstantSearch {
     }
   }
 
-  /** Waits until writes have been quiet for settleMs (or lagged maxLagMs). */
-  private async settle(): Promise<void> {
-    const due = Math.min(this.dirtyAt + (this.o.settleMs ?? 25), this.firstDirtyAt + (this.o.maxLagMs ?? 1000));
+  /** Sleeps toward the moment writes have been quiet for settleMs (or lagged maxLagMs); false once it has come. */
+  private async settle(): Promise<boolean> {
+    const due = Math.min(this.dirtyAt + (this.o.settleMs ?? 25), this.firstDirtyAt + (this.o.maxLagMs ?? 5000));
     const wait = due - this.now();
-    if (wait > 0) return this.sleep(wait);
+    if (wait > 0) {
+      this.settling = true;
+      await this.sleep(wait);
+      this.settling = false;
+      return true;
+    }
     this.pending = false;
     this.firstDirtyAt = 0;
+    return false;
   }
 
   /** Applies committed batches up to the head; true if it applied anything. */

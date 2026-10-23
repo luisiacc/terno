@@ -16,7 +16,8 @@ export const SEARCH_LOG_BYTES = 32 * 1024 * 1024;
 const BATCH_IDS = `SELECT '[[' || coalesce((SELECT group_concat(id) FROM search_dirty WHERE kind = 0), '') || '],[' ||
   coalesce((SELECT group_concat(id) FROM search_dirty WHERE kind = 1), '') || ']]' AS changes`;
 
-function materialize(db: Db, messageIds: readonly number[], threadIds: readonly number[]): IndexChange[] {
+/** Absolute projections (or tombstones) of the given ids, read now. */
+export function materializeChanges(db: Db, messageIds: readonly number[], threadIds: readonly number[]): IndexChange[] {
   const changes: IndexChange[] = [];
   if (messageIds.length) {
     const docs = new Map(messageDocs(db, messageIds).map((d) => [d.messageId, d]));
@@ -87,8 +88,20 @@ export function searchHead(db: Db): Revision {
   return { epoch: r.epoch, seq: r.seq };
 }
 
+export interface ChangeIds {
+  from: Revision;
+  to: Revision;
+  messageIds: number[];
+  threadIds: number[];
+}
+
 /** Committed batches in (after, through], oldest first. A gap (pruned log) or another epoch is refused: rebuild. */
 export function searchChanges(db: Db, after: Revision, through: Revision, maxCommits: number): IndexBatch[] {
+  return searchChangeIds(db, after, through, maxCommits).map((c) => ({ from: c.from, to: c.to, changes: materializeChanges(db, c.messageIds, c.threadIds) }));
+}
+
+/** The ids each committed batch in (after, through] touched, oldest first, without reading projections. */
+export function searchChangeIds(db: Db, after: Revision, through: Revision, maxCommits: number): ChangeIds[] {
   const head = searchHead(db);
   if (after.epoch !== head.epoch || through.epoch !== head.epoch) throw new RevisionError("epoch", "the search log belongs to another database");
   if (after.seq > head.seq || through.seq > head.seq) throw new RevisionError("ahead", "that revision hasn't been committed");
@@ -99,7 +112,7 @@ export function searchChanges(db: Db, after: Revision, through: Revision, maxCom
     .all<{ seq: number; changes: string }>("SELECT seq, changes FROM search_outbox WHERE seq > ? AND seq <= ? ORDER BY seq LIMIT ?", after.seq, through.seq, maxCommits)
     .map((r) => {
       const [messageIds, threadIds] = JSON.parse(r.changes) as [number[], number[]];
-      return { from: { epoch: head.epoch, seq: r.seq - 1 }, to: { epoch: head.epoch, seq: r.seq }, changes: materialize(db, messageIds, threadIds) };
+      return { from: { epoch: head.epoch, seq: r.seq - 1 }, to: { epoch: head.epoch, seq: r.seq }, messageIds, threadIds };
     });
 }
 

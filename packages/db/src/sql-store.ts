@@ -6,6 +6,7 @@ import {
   type ClassifierInput,
   type Cursor,
   type IncomingMessage,
+  type IndexBatch,
   type MailStore,
   type ModelDelta,
   type Platform,
@@ -100,7 +101,7 @@ import {
   updateAccount,
   updateCategory,
 } from "./repos";
-import { beginSearchBuild, searchChanges, searchHead } from "./outbox";
+import { beginSearchBuild, materializeChanges, searchChangeIds, searchHead } from "./outbox";
 import { SCHEMA_VERSION } from "./migrations";
 import { findRuleMatches } from "./rules";
 import { ftsTermMessages, resolveQuery } from "./search";
@@ -109,6 +110,9 @@ import { messageDocs, threadDocs } from "./search-docs";
 import { seedDataset } from "./seed";
 import { SqlProviderStore } from "./sql-provider-store";
 import type { Db } from "./sqlite";
+
+/** Ids read per slice when the feed serves a large commit (500 thread docs read in ~1 ms). */
+const MATERIALIZE_SLICE = 500;
 
 /** Counted up to here: "how much mail can't be searched yet" never pays for a huge count. */
 const PENDING_BODIES_CAP = 1000;
@@ -156,15 +160,18 @@ export class SqlMailStore implements MailStore {
   /** the in-memory index searches use when it is current (instantSearch option) */
   readonly instant: InstantSearch | null;
 
+  private readonly yieldTo: () => Promise<void>;
+
   constructor(
     readonly db: Db,
     options: SqlMailStoreOptions = {},
   ) {
     this.fts = new Fts5SearchEngine(db);
+    const platform = options.platform ?? { yield: () => new Promise<void>((r) => setTimeout(r, 0)) };
+    this.yieldTo = () => platform.yield();
     this.log = options.log ?? (() => {});
     this.checkpointer = options.checkpointWorker ? startCheckpointWorker(db) : null;
     if (options.instantSearch) {
-      const platform = options.platform ?? { yield: () => new Promise<void>((r) => setTimeout(r, 0)) };
       this.instant = new InstantSearch({
         ...(options.instantSearch === true ? {} : options.instantSearch),
         feed: this.feed,
@@ -206,7 +213,21 @@ export class SqlMailStore implements MailStore {
 
   readonly feed: SearchFeed = {
     head: async () => searchHead(this.db),
-    changes: async (after, through, maxCommits) => searchChanges(this.db, after, through, maxCommits),
+    changes: async (after, through, maxCommits) => {
+      const batches: IndexBatch[] = [];
+      for (const c of searchChangeIds(this.db, after, through, maxCommits)) {
+        // a large commit (a 5,000-thread move) is read in slices: each doc is still the newest committed state
+        // when read, never older than its batch, which is all replaying needs to converge
+        const changes = materializeChanges(this.db, c.messageIds.slice(0, MATERIALIZE_SLICE), c.threadIds.slice(0, MATERIALIZE_SLICE));
+        for (let m = MATERIALIZE_SLICE, t = MATERIALIZE_SLICE; m < c.messageIds.length || t < c.threadIds.length; m += MATERIALIZE_SLICE, t += MATERIALIZE_SLICE) {
+          await this.yieldTo();
+          if (!this.db.isOpen) throw new Error("the store closed");
+          changes.push(...materializeChanges(this.db, c.messageIds.slice(m, m + MATERIALIZE_SLICE), c.threadIds.slice(t, t + MATERIALIZE_SLICE)));
+        }
+        batches.push({ from: c.from, to: c.to, changes });
+      }
+      return batches;
+    },
     beginBuild: async () => beginSearchBuild(this.db),
   };
 

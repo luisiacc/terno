@@ -639,7 +639,10 @@ export class InstantSearchEngine implements CachedSearchEngine {
 
   private upsertThread(doc: SearchThreadDoc): void {
     const t = this.threadSlot(doc.threadId);
-    if (this.indexed && this.thrFlags[t]! & T_EXISTS) this.orderRemove(t);
+    // flags and categories change in place; only a new date moves the thread in the order
+    const exists = (this.thrFlags[t]! & T_EXISTS) !== 0;
+    const move = this.indexed && (!exists || this.thrDate[t] !== doc.lastDate);
+    if (move && exists) this.orderRemove(t);
     this.thrDate[t] = doc.lastDate;
     this.thrAccount[t] = doc.accountId;
     this.thrFlags[t] =
@@ -651,7 +654,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
       (doc.isStarred ? T_STARRED : 0) |
       (doc.unreadCount > 0 ? T_UNREAD : 0);
     this.setCats(t, doc.categoryIds);
-    if (this.indexed) this.orderInsert(t);
+    if (move) this.orderInsert(t);
   }
 
   private removeThread(threadId: number): void {
@@ -727,11 +730,12 @@ export class InstantSearchEngine implements CachedSearchEngine {
       next.beginBuild(this.rev);
       const clock = this.clock();
       const fields: string[][] = [[], [], [], []];
-      // oldest first, as a build from the store scans them
-      const docs: number[] = [];
-      for (const d of this.msgToDoc.values()) docs.push(d);
-      docs.sort((a, b) => this.docMsg[a]! - this.docMsg[b]!);
-      for (const d of docs) {
+      // room for what is alive, so the copy doesn't grow (and copy) its buffers on the way
+      next.ensureDocs(this.n - this.dead);
+      next.ensureFwd(this.fwdLen);
+      // in slot order: any order serves, and sorting would block
+      for (let d = 0; d < this.n; d++) {
+        if (!has(this.alive, d)) continue;
         for (const f of fields) f.length = 0;
         const f = this.fwd;
         let p = this.docFwd[d]!;
@@ -757,8 +761,8 @@ export class InstantSearchEngine implements CachedSearchEngine {
         await clock.tick();
       }
       for (let i = 0; i < this.orderLen; i++) {
-        const t = this.order[i]!;
-        next.upsertThread(this.threadDoc(t));
+        next.upsertThread(this.threadDoc(this.order[i]!));
+        if ((i & 1023) === 0) await clock.tick();
       }
       await next.finishBuild();
       return next;

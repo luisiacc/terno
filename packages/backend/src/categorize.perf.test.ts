@@ -34,8 +34,8 @@ function percentiles(name: string, budgetMs: number, samples: number[], note?: s
   return stat;
 }
 
-function open(path: string) {
-  return new Backend({ dbPath: path, version: "perf", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false });
+function open(path: string, instantSearch = true) {
+  return new Backend({ dbPath: path, version: "perf", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, instantSearch });
 }
 
 beforeAll(() => {
@@ -391,7 +391,8 @@ async function importAB(label: string, shape: (m: IncomingMessage) => IncomingMe
     const path = join(dir, `ab-${mode}-${round}.db`);
     // the WAL too: the checkpoint worker may keep the last frames (the snapshot) out of the main file
     for (const s of ["", "-wal"]) if (existsSync(join(dir, `base.db${s}`))) copyFileSync(join(dir, `base.db${s}`), path + s);
-    const b = open(path);
+    // classification's cost alone: a fresh copy would build its search index during the import (gated in instant.perf)
+    const b = open(path, false);
     try {
       await b.ready;
       expect(b.categorizer.ready).toBe(true);

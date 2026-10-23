@@ -10,7 +10,7 @@ import { parseSearch, resolveSearch } from "@unica/core";
 import { generateDataset } from "@unica/mock-data";
 import type { Revision, SearchMessageDoc } from "@unica/store";
 import { InstantSearchEngine } from "@unica/store/instant";
-import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { copyFileSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { loadavg, tmpdir } from "node:os";
 import { join } from "node:path";
 import { monitorEventLoopDelay } from "node:perf_hooks";
@@ -41,7 +41,7 @@ const heap = async () => {
   return m.heapUsed + m.arrayBuffers;
 };
 const note = (name: string, value: number, unit = "ms") =>
-  stats.push({ name: name.startsWith("build attempt") ? name : `${name}: ${value.toFixed(unit === "ms" ? 1 : 2)} ${unit}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+  stats.push({ name: /^(build attempt|import|index catch-up)/.test(name) ? name : `${name}: ${value.toFixed(unit === "ms" ? 1 : 2)} ${unit}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
 
 function gate(s: Stat): Stat {
   stats.push(s);
@@ -174,6 +174,58 @@ describe("the store's search path", () => {
       s.note = `${page.items.length} rows`;
     }
   });
+});
+
+describe("the write path", () => {
+  it("new mail commits at the same speed with the index on; the index catches up once writes settle", async () => {
+    const accounts = store.db.all<{ id: number }>("SELECT id FROM accounts ORDER BY id").map((r) => r.id);
+    const batch = (tag: string) =>
+      generateDataset({ threads: 1_200, accounts: 8, seed: 31, now: NOW, bodyScale: 4 }).messages.map((m) => ({
+        ...m,
+        providerMsgId: `${tag}-${m.providerMsgId}`,
+        rfcMessageId: `${tag}-${m.rfcMessageId}`,
+        references: m.references.map((r) => `${tag}-${r}`),
+        inReplyTo: m.inReplyTo ? `${tag}-${m.inReplyTo}` : null,
+        accountId: accounts[m.accountIndex]!,
+      }));
+    const ingest = async (s: SqlMailStore, tag: string) => {
+      const msgs = batch(tag);
+      const cpu = process.cpuUsage();
+      const t = performance.now();
+      for (let i = 0; i < msgs.length; i += 200) {
+        await s.sync.ingest(msgs.slice(i, i + 200), { applyFilters: true, now: NOW, classifier: null });
+        await nodePlatform.yield();
+      }
+      const used = process.cpuUsage(cpu);
+      return { n: msgs.length, wall: performance.now() - t, cpu: (used.user + used.system) / 1000 };
+    };
+    // the same import into a copy without the index, interleaved: on, off, on, off
+    const copyPath = join(dir, "noindex.db");
+    store.db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    copyFileSync(path, copyPath);
+    const plain = new SqlMailStore(openDatabase(copyPath));
+    const on: number[] = [];
+    const off: number[] = [];
+    const catchUp: number[] = [];
+    let n = 0;
+    for (let round = 0; round < 2; round++) {
+      const a = await ingest(store, `on${round}`);
+      const c0 = performance.now();
+      expect(await store.instant!.settled()).toBe(true);
+      catchUp.push(performance.now() - c0);
+      on.push(a.cpu);
+      off.push((await ingest(plain, `off${round}`)).cpu);
+      n = a.n;
+    }
+    await plain.close();
+    const ratio = Math.min(...on) / Math.min(...off);
+    note(`import ${n} msgs (200-msg slices), CPU with the index current ${Math.min(...on).toFixed(0)} ms vs without ${Math.min(...off).toFixed(0)} ms: ×${ratio.toFixed(3)}`, 0);
+    note(`index catch-up after that import (settle + replay), best of 2: ${Math.min(...catchUp).toFixed(0)} ms, ${((Math.min(...catchUp) * 1000) / n).toFixed(0)} µs/msg`, 0);
+    head = await store.feed.head();
+    engine = store.instant!.at(head)!;
+    // committing new mail doesn't wait for indexing: within the ingestion gate's 3% plus noise
+    expect(ratio).toBeLessThanOrEqual(1.1);
+  }, 300_000);
 });
 
 describe("updates, snapshots, compaction", () => {
