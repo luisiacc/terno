@@ -71,16 +71,28 @@ export function flushSearchOutbox(db: Db, maxBytes = SEARCH_LOG_BYTES): void {
   db.run("UPDATE search_state SET seq = ?, bytes = ? WHERE id = 1", seq, bytes);
 }
 
-/** Drops the oldest batches (never the newest, never past an active build's start); returns the bytes freed. */
+/** Oldest batches looked at per prune step; a commit inspects at most PRUNE_PAGES of them. */
+const PRUNE_PAGE = 256;
+const PRUNE_PAGES = 4;
+
+/**
+ * Drops the oldest batches (never the newest, never past an active build's
+ * start); returns the bytes freed. Bounded work per commit: what is still in
+ * excess afterwards is freed by the next commits.
+ */
 function pruneLog(db: Db, excess: number, newest: number): number {
   const lease = db.get<{ s: number | null }>("SELECT min(from_seq) AS s FROM search_leases")!.s;
   const keepFrom = Math.min(newest, lease === null ? newest : lease + 1);
   let freed = 0;
   let last = 0;
-  for (const r of db.all<{ seq: number; bytes: number }>("SELECT seq, bytes FROM search_outbox WHERE seq < ? ORDER BY seq", keepFrom)) {
-    if (freed >= excess) break;
-    freed += r.bytes;
-    last = r.seq;
+  for (let page = 0; page < PRUNE_PAGES && freed < excess; page++) {
+    const rows = db.all<{ seq: number; bytes: number }>("SELECT seq, bytes FROM search_outbox WHERE seq > ? AND seq < ? ORDER BY seq LIMIT ?", last, keepFrom, PRUNE_PAGE);
+    for (const r of rows) {
+      if (freed >= excess) break;
+      freed += r.bytes;
+      last = r.seq;
+    }
+    if (rows.length < PRUNE_PAGE) break;
   }
   if (last) db.run("DELETE FROM search_outbox WHERE seq <= ?", last);
   return freed;
