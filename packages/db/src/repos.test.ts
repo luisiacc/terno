@@ -268,3 +268,32 @@ describe("checkpoint worker", () => {
     expect(statSync(`${db.path}-wal`).size).toBe(0); // TRUNCATE on stop
   });
 });
+
+describe("migrations", () => {
+  it("upgrades a v1 database and backfills the op target index for unsettled ops", async () => {
+    const { MIGRATIONS, migrate } = await import("./migrations");
+    const { Db } = await import("./sqlite");
+    const { mkdtempSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const db = new Db(join(mkdtempSync(join(tmpdir(), "unica-mig-")), "v1.db"));
+    db.exec(MIGRATIONS[0]!.sql);
+    db.exec("PRAGMA user_version = 1");
+    db.run("INSERT INTO accounts (id, kind, email, created_at) VALUES (1, 'imap', 'a@b.c', 0)");
+    db.run("INSERT INTO ops (id, seq, account_id, kind, target_json, state, created_at, updated_at) VALUES ('q', 1, 1, 'markRead', '{\"messageIds\":[7,8]}', 'queued', 0, 0)");
+    db.run("INSERT INTO ops (id, seq, account_id, kind, target_json, state, created_at, updated_at) VALUES ('s', 2, 1, 'archive', '{\"messageIds\":[9]}', 'succeeded', 0, 0)");
+    expect(migrate(db)).toEqual({ from: 1, to: 2 });
+    expect(db.all("SELECT op_id, message_id, grp FROM op_targets ORDER BY message_id")).toEqual([
+      { op_id: "q", message_id: 7, grp: "read" },
+      { op_id: "q", message_id: 8, grp: "read" },
+    ]);
+    db.close();
+  });
+
+  it("refuses to open a database from a newer app version", async () => {
+    const { migrate } = await import("./migrations");
+    const db = testDb();
+    db.exec("PRAGMA user_version = 99");
+    expect(() => migrate(db)).toThrow(/newer/);
+  });
+});

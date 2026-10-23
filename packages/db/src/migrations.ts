@@ -270,7 +270,33 @@ CREATE TRIGGER messages_fts_au AFTER UPDATE OF subject, from_name, from_email, r
 END;
 `;
 
-export const MIGRATIONS: readonly Migration[] = [{ version: 1, name: "initial schema", sql: SCHEMA_V1 }];
+/**
+ * v2: index of which messages each unsettled op targets. Superseding older ops
+ * and the sync's pending-op guard become indexed lookups instead of scanning
+ * and JSON-parsing every queued op (quadratic when many ops pile up offline).
+ */
+const OP_TARGETS_V2 = /* sql */ `
+CREATE TABLE op_targets (
+  op_id TEXT NOT NULL REFERENCES ops(id) ON DELETE CASCADE,
+  message_id INTEGER NOT NULL,
+  grp TEXT NOT NULL,
+  PRIMARY KEY (op_id, message_id)
+) WITHOUT ROWID;
+CREATE INDEX op_targets_msg ON op_targets(message_id, grp);
+INSERT OR IGNORE INTO op_targets (op_id, message_id, grp)
+  SELECT o.id, j.value,
+         CASE WHEN o.kind IN ('markRead','markUnread') THEN 'read'
+              WHEN o.kind IN ('star','unstar') THEN 'star'
+              WHEN o.kind IN ('archive','trash','spam','notSpam','moveToInbox') THEN 'location'
+              ELSE o.kind END
+  FROM ops o, json_each(o.target_json, '$.messageIds') j
+  WHERE o.state IN ('queued', 'running');
+`;
+
+export const MIGRATIONS: readonly Migration[] = [
+  { version: 1, name: "initial schema", sql: SCHEMA_V1 },
+  { version: 2, name: "op target index", sql: OP_TARGETS_V2 },
+];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;
 

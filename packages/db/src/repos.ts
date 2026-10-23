@@ -373,17 +373,22 @@ export function enqueueOp(
     }
     if (group && op.target.messageIds?.length) {
       const mine = new Set(op.target.messageIds);
-      const kinds = Object.keys(GROUP).filter((k) => GROUP[k] === group);
-      for (const older of db.all<{ id: string; target_json: string }>(
-        `SELECT id, target_json FROM ops WHERE account_id = ? AND state = 'queued' AND kind IN (${placeholders(kinds.length)})`,
+      const overlapping = db.all<{ id: string; target_json: string }>(
+        `SELECT DISTINCT o.id, o.target_json FROM op_targets t JOIN ops o ON o.id = t.op_id
+         WHERE t.grp = ? AND t.message_id IN (SELECT value FROM json_each(?)) AND o.account_id = ? AND o.state = 'queued'`,
+        group,
+        JSON.stringify(op.target.messageIds),
         op.accountId,
-        ...kinds,
-      )) {
+      );
+      for (const older of overlapping) {
         const target = JSON.parse(older.target_json) as { messageIds?: number[] };
         const remaining = (target.messageIds ?? []).filter((m) => !mine.has(m));
-        if (remaining.length === (target.messageIds ?? []).length) continue;
-        if (remaining.length === 0) db.run("DELETE FROM ops WHERE id = ?", older.id);
-        else db.run("UPDATE ops SET target_json = ? WHERE id = ?", JSON.stringify({ ...target, messageIds: remaining }), older.id);
+        if (remaining.length === 0) {
+          db.run("DELETE FROM ops WHERE id = ?", older.id);
+        } else {
+          db.run("UPDATE ops SET target_json = ? WHERE id = ?", JSON.stringify({ ...target, messageIds: remaining }), older.id);
+          db.run(`DELETE FROM op_targets WHERE op_id = ? AND message_id IN (SELECT value FROM json_each(?))`, older.id, JSON.stringify([...mine]));
+        }
       }
     }
     const id = randomUUID();
@@ -398,6 +403,9 @@ export function enqueueOp(
       now,
       now,
     );
+    for (const messageId of new Set(op.target.messageIds ?? [])) {
+      db.run("INSERT OR IGNORE INTO op_targets (op_id, message_id, grp) VALUES (?, ?, ?)", id, messageId, group ?? op.kind);
+    }
     return id;
   });
 }
@@ -423,6 +431,7 @@ export function claimReadyOps(db: Db, now = Date.now(), limit = 20, accountId?: 
 
 export function completeOp(db: Db, id: string, now = Date.now()): void {
   db.run("UPDATE ops SET state = 'succeeded', last_error = NULL, updated_at = ? WHERE id = ?", now, id);
+  db.run("DELETE FROM op_targets WHERE op_id = ?", id); // settled: no longer protects anything
 }
 
 /** Retryable failure: exponential backoff (1s, 2s, 4s … capped at 5 min), then `failed`. */
@@ -439,6 +448,7 @@ export function failOp(db: Db, id: string, error: string, retryable: boolean, no
     now,
     id,
   );
+  if (state === "failed") db.run("DELETE FROM op_targets WHERE op_id = ?", id);
   return state;
 }
 
@@ -480,14 +490,15 @@ export function listRecentOps(db: Db, limit = 100): OpRow[] {
  * their flags with (older) provider state until the op settles.
  */
 export function messagesWithPendingOps(db: Db, accountId: number): Set<number> {
-  const ids = new Set<number>();
-  for (const r of db.all<{ target_json: string }>(
-    "SELECT target_json FROM ops WHERE account_id = ? AND state IN ('queued', 'running')",
-    accountId,
-  )) {
-    for (const id of (JSON.parse(r.target_json) as { messageIds?: number[] }).messageIds ?? []) ids.add(id);
-  }
-  return ids;
+  return new Set(
+    db
+      .all<{ message_id: number }>(
+        `SELECT DISTINCT t.message_id FROM op_targets t JOIN ops o ON o.id = t.op_id
+         WHERE o.account_id = ? AND o.state IN ('queued', 'running')`,
+        accountId,
+      )
+      .map((r) => r.message_id),
+  );
 }
 
 // ───────────────────────────── user actions (learning) ─────────────────────────────
