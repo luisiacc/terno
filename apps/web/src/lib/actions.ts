@@ -1,5 +1,6 @@
 import { formatAddressList, isValidEmail, parseAddressList, type ThreadAction, type ThreadSummary, type View } from "@unica/core";
 import { toast } from "sonner";
+import { reflowRemoval } from "~/lib/flash";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, type ComposeDraft } from "~/state/app";
 import { patchRows, reloadList, useList } from "~/state/list";
@@ -49,6 +50,7 @@ export async function act(action: ThreadAction, ids?: number[]): Promise<void> {
     const next = items.slice(start + 1).find((t) => !removed.has(t.id)) ?? items.slice(0, start).reverse().find((t) => !removed.has(t.id));
     setApp({ selectedId: next?.id ?? null });
   }
+  if (leaving) reflowRemoval(targets);
   patchRows(targets, (t): ThreadSummary | null => {
     if (leaving) return null;
     switch (action) {

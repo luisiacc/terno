@@ -248,9 +248,15 @@ function CategorySnackbar({ filed, onClose }: { filed: Filed; onClose: () => voi
       <div className="flex items-center gap-2 text-sm">
         <CategoryDot color={category.color as CategoryColor} />
         <span className="min-w-0 flex-1 truncate font-medium" data-testid="snackbar-title">
-          {many ? `${filed.threadIds.length} conversaciones añadidas a ${category.name}` : `Añadido a ${category.name}`}
+          {filed.movedFrom
+            ? many
+              ? `${filed.threadIds.length} conversaciones movidas a ${category.name}`
+              : `Movido a ${category.name}`
+            : many
+              ? `${filed.threadIds.length} conversaciones añadidas a ${category.name}`
+              : `Añadido a ${category.name}`}
         </span>
-        {filed.batchId !== null && (
+        {(filed.batchId !== null || filed.movedFrom) && (
           <button type="button" data-testid="snackbar-undo" onClick={undo} className="inline-flex h-6 items-center gap-1.5 rounded-md px-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground">
             <Undo2 className="size-3.5" /> Deshacer <Kbd className="h-4 min-w-4 text-2xs">z</Kbd>
           </button>

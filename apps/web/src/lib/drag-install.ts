@@ -105,12 +105,16 @@ function end() {
 
 let latest: PointerLike | null = null;
 let frame = 0;
+let alt = false;
 
 /** One frame per burst of pointermoves: ghost position, ⌥ hint, sidebar auto-scroll. */
 function tick() {
   frame = 0;
   if (!latest || !ghost || ghost.hidden) return;
   placeGhost(latest);
+  const moving = alt && getApp().categoryId !== null;
+  const hint = ghost.querySelector<HTMLElement>("[data-ghost-move]");
+  if (hint && hint.hidden === moving) hint.hidden = !moving;
   const nav = scroller();
   if (!nav) return;
   const r = nav.getBoundingClientRect();
@@ -142,14 +146,17 @@ export function installDragController(list: HTMLElement): () => void {
     },
     move: (at) => {
       latest = at;
+      alt = !!at.altKey;
       if (!frame) frame = requestAnimationFrame(tick);
     },
     target: (overTarget, overState) => useDrag.setState({ overTarget, overState }),
-    drop: (categoryId, ids) => {
+    drop: (categoryId, ids, { move }) => {
+      const s = getApp();
+      const from = move && s.categoryId !== null && s.reviewCategoryId === null && s.categoryId !== categoryId ? s.categoryId : null;
       flyGhost(categoryId);
       end();
       const added = newIds(ids, categoryId, (id) => row(id)?.categoryIds);
-      void addToCategory(categoryId, ids, { source: "dnd" });
+      void addToCategory(categoryId, ids, { source: "dnd", movedFrom: from ?? undefined });
       flashDrop(added.length ? added : ids, categoryId);
     },
     cancel: () => {
@@ -206,6 +213,10 @@ export function installDragController(list: HTMLElement): () => void {
       e.preventDefault();
       e.stopImmediatePropagation();
       onCancel();
+    } else if (e.key === "Alt") {
+      alt = e.type === "keydown";
+      if (latest) latest = { ...latest, altKey: alt };
+      if (!frame) frame = requestAnimationFrame(tick);
     }
   }
   function onScroll() {

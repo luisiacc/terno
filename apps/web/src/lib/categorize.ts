@@ -1,6 +1,7 @@
 import type { CategorizeSource } from "@unica/core/rpc";
 import { toast } from "sonner";
 import { client } from "~/rpc/connection";
+import { reflowRemoval } from "~/lib/flash";
 import { patchRows, reloadList, useList } from "~/state/list";
 import { invalidateThreads, loadThread } from "~/state/threads";
 import { getApp, setApp } from "~/state/app";
@@ -12,6 +13,8 @@ export interface Filed {
   /** the ones that were not in the category before: undo removes exactly these */
   addedIds: number[];
   batchId: number | null;
+  /** ⌥-drag in a category view: the threads also left this category (undo puts them back) */
+  movedFrom?: { categoryId: number; threadIds: number[] };
 }
 
 type Listener = (filed: Filed, source: CategorizeSource) => void;
@@ -42,10 +45,12 @@ function refreshReader(threadIds: readonly number[]): void {
  * frame, the backend records the training signal, and listeners (the
  * snackbar) get what changed so it can be undone.
  */
-export async function addToCategory(categoryId: number, threadIds: readonly number[], options: { source?: CategorizeSource } = {}): Promise<Filed | null> {
+export async function addToCategory(categoryId: number, threadIds: readonly number[], options: { source?: CategorizeSource; movedFrom?: number } = {}): Promise<Filed | null> {
   const ids = [...new Set(threadIds)];
   if (ids.length === 0) return null;
   const { items, index } = useList.getState();
+  const from = options.movedFrom;
+  if (from !== undefined) leaveView(ids, from);
   const fresh = ids.filter((id) => !items[index.get(id) ?? -1]?.categoryIds.includes(categoryId));
   patch(fresh, categoryId, true);
   // the sidebar count moves in the same frame; the backend's counts event confirms it
@@ -57,7 +62,8 @@ export async function addToCategory(categoryId: number, threadIds: readonly numb
   try {
     const res = await client.call("categories.addThreads", { categoryId, threadIds: ids, source: options.source ?? "picker" });
     refreshReader(ids);
-    const filed: Filed = { categoryId, threadIds: ids, addedIds: res.addedIds, batchId: res.batchId };
+    if (from !== undefined) await client.call("categories.removeThreads", { categoryId: from, threadIds: ids, reason: "user" });
+    const filed: Filed = { categoryId, threadIds: ids, addedIds: res.addedIds, batchId: res.batchId, movedFrom: from === undefined ? undefined : { categoryId: from, threadIds: ids } };
     for (const l of listeners) l(filed, options.source ?? "picker");
     return filed;
   } catch (error) {
@@ -65,6 +71,25 @@ export async function addToCategory(categoryId: number, threadIds: readonly numb
     void reloadList({ keepSelection: true });
     return null;
   }
+}
+
+/**
+ * ⌥-move out of the category being viewed: the rows leave the list in this
+ * frame (the rest slide up) and the selection moves on, as with archive.
+ */
+function leaveView(ids: readonly number[], from: number): void {
+  const s = getApp();
+  if (s.categoryId !== from) return;
+  const { items, index } = useList.getState();
+  const leaving = new Set(ids);
+  if (s.selectedId !== null && leaving.has(s.selectedId)) {
+    const start = index.get(s.selectedId) ?? 0;
+    const next = items.slice(start + 1).find((t) => !leaving.has(t.id)) ?? items.slice(0, start).reverse().find((t) => !leaving.has(t.id));
+    setApp({ selectedId: next?.id ?? null });
+  }
+  reflowRemoval(ids);
+  patchRows(ids, () => null);
+  if (s.checked.size) setApp({ checked: new Set() });
 }
 
 /** A user removal: the engine learns from it (unless it undoes the user's own add a moment ago). */
@@ -81,11 +106,14 @@ export async function removeFromCategory(categoryId: number, threadIds: readonly
 }
 
 /** Takes back one categorization exactly (its batch), whether one thread or a thousand. */
-export async function undoFiled(filed: Pick<Filed, "categoryId" | "addedIds" | "batchId">): Promise<number> {
-  if (filed.batchId === null) return 0;
+export async function undoFiled(filed: Pick<Filed, "categoryId" | "addedIds" | "batchId" | "movedFrom">): Promise<number> {
+  const moved = filed.movedFrom;
+  if (filed.batchId === null && !moved) return 0;
   patch(filed.addedIds, filed.categoryId, false);
-  const { removed } = await client.call("categorize.undo", { batchId: filed.batchId });
-  refreshReader(filed.addedIds);
+  const { removed } = filed.batchId === null ? { removed: 0 } : await client.call("categorize.undo", { batchId: filed.batchId });
+  // a move also puts the threads back where they were
+  if (moved) await client.call("categories.addThreads", { categoryId: moved.categoryId, threadIds: moved.threadIds, source: "dnd" });
+  refreshReader(moved ? [...new Set([...filed.addedIds, ...moved.threadIds])] : filed.addedIds);
   void reloadList({ keepSelection: true });
   return removed;
 }

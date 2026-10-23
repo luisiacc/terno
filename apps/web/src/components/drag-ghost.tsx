@@ -14,6 +14,9 @@ export function DragGhost() {
         <span data-ghost-stack className="absolute inset-0 hidden translate-x-0.75 translate-y-0.75 rounded-lg border border-border bg-popover shadow-sm" />
         <div className="relative flex max-w-64 items-center gap-2 rounded-lg border border-border bg-popover py-1.5 pr-1.5 pl-2.5 text-sm text-popover-foreground shadow-lg">
           <span data-ghost-subject className="min-w-0 truncate" />
+          <span data-ghost-move hidden className="shrink-0 text-2xs text-muted-foreground">
+            Mover
+          </span>
           <span data-ghost-count data-testid="drag-ghost-count" className="min-w-5 shrink-0 rounded-full bg-primary px-1.5 text-center font-mono text-2xs leading-5 text-primary-foreground tabular" />
         </div>
       </div>

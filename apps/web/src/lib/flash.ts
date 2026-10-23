@@ -52,3 +52,28 @@ export function flashDrop(ids: readonly number[], categoryId: number): void {
     Math.min(motionMs() * 1.33, 100),
   );
 }
+
+let reflowTimer: ReturnType<typeof setTimeout> | null = null;
+/**
+ * Rows are leaving the list (archive, trash, ⌥-move): the ones leaving fade
+ * out as detached copies while the rest slide up. data-reflow enables the
+ * slide on the listbox only for this window, so navigation never animates.
+ */
+export function reflowRemoval(ids: readonly number[]): void {
+  const ms = motionMs();
+  const list = document.querySelector<HTMLElement>("[role=listbox]");
+  if (!list || ms === 0) return;
+  for (const row of list.querySelectorAll<HTMLElement>(rowSelector(ids))) {
+    const ghost = row.cloneNode(true) as HTMLElement;
+    ghost.removeAttribute("data-thread-id");
+    ghost.removeAttribute("data-testid");
+    ghost.setAttribute("aria-hidden", "true");
+    ghost.style.pointerEvents = "none";
+    row.parentElement?.appendChild(ghost);
+    const fade = ghost.animate([{ opacity: 1 }, { opacity: 0 }], { duration: Math.round(ms * 0.66), easing: "ease-out", fill: "forwards" });
+    fade.onfinish = fade.oncancel = () => ghost.remove();
+  }
+  list.dataset.reflow = "";
+  if (reflowTimer) clearTimeout(reflowTimer);
+  reflowTimer = setTimeout(() => delete list.dataset.reflow, Math.min(ms * 1.33, 100) + 60);
+}

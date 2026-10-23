@@ -210,6 +210,10 @@
 :root[data-dragging] [role="listbox"] [data-thread-id]:not([aria-selected="true"], [data-checked]):hover {
   background-color: transparent;
 }
+/* a removal's window: the remaining rows slide up into place */
+[data-reflow] [data-thread-id] {
+  transition: transform var(--motion-slow) var(--motion-ease);
+}
 @keyframes drop-flash {
   from {
     background-color: var(--color-drop-target);
