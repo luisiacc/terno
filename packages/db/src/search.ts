@@ -287,6 +287,17 @@ function excludeClause(): string {
                        WHERE messages_fts MATCH ?)`;
 }
 
+/**
+ * Ids of the messages one term matches, exactly (FTS5's doclist: phrases stay
+ * inside one column, the last token may be a prefix). The instant engine asks
+ * it for frequent words that are rarely adjacent, inside the store's unit of work.
+ */
+export function ftsTermMessages(db: Db, term: MessageTerm): number[] {
+  const expr = ftsTerm(term);
+  if (!expr) return [];
+  return db.all<{ id: number }>("SELECT rowid AS id FROM messages_fts WHERE messages_fts MATCH ?", expr).map((r) => r.id);
+}
+
 /** True while some messages still lack a full body (search may be incomplete). */
 export function searchIsComplete(db: Db): boolean {
   return db.get("SELECT 1 FROM messages WHERE body_state != 'full' LIMIT 1") === undefined;
