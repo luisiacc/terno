@@ -18,10 +18,14 @@ const url = `http://localhost:${port}`;
 const build = spawnSync(process.execPath, [join(here, "build.mjs"), "--no-renderer"], { stdio: "inherit" });
 if (build.status !== 0) process.exit(build.status ?? 1);
 
-const vite = spawn(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["--filter", "@unica/web", "exec", "vite", "--port", String(port), "--strictPort"], {
-  cwd: repo,
+// Run Vite's own entry directly (not via pnpm, which doesn't forward signals), so stopping dev stops it.
+const webRequire = createRequire(join(repo, "apps/web/package.json"));
+const viteBin = join(dirname(webRequire.resolve("vite/package.json")), "bin", "vite.js");
+const vite = spawn(process.execPath, [viteBin, "--port", String(port), "--strictPort"], {
+  cwd: join(repo, "apps/web"),
   stdio: ["ignore", "inherit", "inherit"],
 });
+const killVite = () => vite.kill("SIGTERM");
 
 async function waitForVite(timeoutMs = 30_000) {
   const until = Date.now() + timeoutMs;
@@ -40,7 +44,7 @@ async function waitForVite(timeoutMs = 30_000) {
 let electron;
 const shutdown = (code = 0) => {
   electron?.kill();
-  vite.kill();
+  killVite();
   process.exit(code);
 };
 process.on("SIGINT", () => shutdown(0));
