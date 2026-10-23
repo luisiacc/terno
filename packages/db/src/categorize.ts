@@ -481,15 +481,6 @@ export function beginMove(db: Db, m: { from: number; to: number; threadIds: read
       batchId,
     );
     db.run(
-      `INSERT INTO cat_move_examples (batch_id, thread_id, category_id, label, weight, source, at, sender, content, example_batch_id, features)
-       SELECT ?, thread_id, category_id, label, weight, source, at, sender, content, batch_id, features FROM cls_examples
-       WHERE category_id IN (?, ?) AND thread_id IN (${mine})`,
-      batchId,
-      m.from,
-      m.to,
-      batchId,
-    );
-    db.run(
       `INSERT INTO cat_move_decisions (batch_id, thread_id, category_id, outcome)
        SELECT ?, thread_id, category_id, outcome FROM cls_decisions WHERE category_id IN (?, ?) AND thread_id IN (${mine})`,
       batchId,
@@ -544,6 +535,17 @@ export function trainMoveSlice(db: Db, batchId: number, threadIds: readonly numb
       "SELECT thread_id, added, moved FROM cat_move_threads WHERE batch_id = ? AND done = 0 AND thread_id IN (SELECT value FROM json_each(?))",
       batchId,
       JSON.stringify(threadIds),
+    );
+    // the examples this slice overwrites go to the journal first (undo puts them back); journaling them here
+    // instead of in beginMove keeps feature blobs out of the membership commit
+    db.run(
+      `INSERT OR IGNORE INTO cat_move_examples (batch_id, thread_id, category_id, label, weight, source, at, sender, content, example_batch_id, features)
+       SELECT ?, thread_id, category_id, label, weight, source, at, sender, content, batch_id, features FROM cls_examples
+       WHERE category_id IN (?, ?) AND thread_id IN (SELECT value FROM json_each(?))`,
+      batchId,
+      meta.from,
+      meta.to,
+      JSON.stringify(rows.map((r) => r.thread_id)),
     );
     const deltas: ModelDelta[] = [];
     const source = TRAINING_SOURCE[meta.addedBy];

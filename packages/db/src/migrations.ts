@@ -430,7 +430,7 @@ CREATE TABLE cls_snapshot (
 /**
  * v5: the ⌥-move journal. A move commits its memberships in one transaction
  * and keeps here what it overwrote (source rows with their origin and batch,
- * both categories' examples, decision outcomes) plus per-thread progress of
+ * both categories' examples as training replaces them, decision outcomes) plus per-thread progress of
  * the training it applies afterwards in slices. Undo reads it back.
  */
 const MOVES_V5 = `
