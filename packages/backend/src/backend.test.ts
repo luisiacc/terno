@@ -20,6 +20,7 @@ afterEach(async () => {
 interface ScriptedProvider extends MailProvider {
   executed: ProviderOp[];
   failNext: ProviderError | null;
+  beforeExecute?: (op: ProviderOp) => void;
   sink: SyncSink | null;
 }
 
@@ -36,6 +37,7 @@ function scriptedRegistry() {
           p.sink = sink;
         },
         async execute(op) {
+          p.beforeExecute?.(op);
           if (p.failNext) {
             const e = p.failNext;
             p.failNext = null;
@@ -202,6 +204,26 @@ describe("sending", () => {
     expect(providers.get(accountId)!.executed).toEqual([]); // never retried automatically
     await client.call("ops.resolveUnknown", { opId: sent.opId, resolution: "discard" });
     expect(backend.db.get("SELECT count(*) c FROM messages")).toEqual({ c: 0 });
+  });
+
+  it("an op superseded while its batch runs is skipped and the rest of the batch still runs", async () => {
+    const { backend, client, providers, accountId } = setup();
+    await backend.ingestSliced([incoming(accountId, { listId: null, from: { name: "A", email: "a@x.io" } })]);
+    const [t] = (await client.call("threads.list", { view: "inbox" })).items;
+    backend.provider(accountId);
+    const p = providers.get(accountId)!;
+    await client.call("threads.act", { threadIds: [t!.id], action: "markRead" });
+    const sent = await client.call("compose.send", { accountId, to: [{ name: "", email: "b@y.com" }], subject: "s", bodyText: "t" });
+    const markRead = backend.db.get<{ id: string }>("SELECT id FROM ops WHERE kind = 'markRead'")!.id;
+    p.beforeExecute = (op) => {
+      if (op.kind !== "markRead") return;
+      // the user flips it back while the provider call is in flight, then the call fails
+      enqueueOp(backend.db, { accountId, kind: "markUnread", target: { messageIds: op.target.messageIds! } });
+      p.failNext = new ProviderError("ETIMEDOUT", true);
+    };
+    await backend.runWorker();
+    expect(getOp(backend.db, markRead)).toBeNull(); // superseded, never retried
+    expect(getOp(backend.db, sent.opId)!.state).toBe("succeeded"); // not stranded in running
   });
 
   it("a send interrupted by a crash is reported as unknown after restart, not resent", async () => {

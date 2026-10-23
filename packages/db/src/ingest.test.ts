@@ -104,6 +104,15 @@ describe("derived thread state", () => {
     expect(db.get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", t, cat.id)).toBeTruthy();
   });
 
+  it("never reuses a message id, even after deleting the newest message", () => {
+    const db = testDb();
+    const [a] = withAccounts(db);
+    const first = ingestMessages(db, [msg({ accountId: a! }), msg({ accountId: a! })]);
+    deleteMessages(db, [first.inserted[1]!]);
+    const next = ingestMessages(db, [msg({ accountId: a! })]);
+    expect(next.inserted[0]).toBeGreaterThan(first.inserted[1]!);
+  });
+
   it("deleting the last message of a thread deletes the thread", () => {
     const db = testDb();
     const [a] = withAccounts(db);

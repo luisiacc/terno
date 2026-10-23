@@ -169,12 +169,26 @@ export function mergeThreads(db: Db, into: number, from: number, result: IngestR
 
 const INSERT_MESSAGE = `
 INSERT INTO messages (
-  account_id, thread_id, provider_msg_id, rfc_message_id, in_reply_to, references_json,
+  id, account_id, thread_id, provider_msg_id, rfc_message_id, in_reply_to, references_json,
   from_name, from_email, from_domain, from_name_norm, to_json, cc_json, bcc_json,
   recipients_text, recipients_norm, subject, subject_norm, date, snippet,
   body_text, body_html, body_tail_norm, body_state, list_id, is_read, is_starred, in_inbox, is_sent,
   is_draft, is_trash, is_spam, has_attachments, gmail_labels, size, created_at
-) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+
+/**
+ * Message ids are never reused (SQLite would reuse the max rowid after a
+ * delete): ops, filter claims and the UI refer to messages by id, so a stale
+ * reference must never resolve to an unrelated new message.
+ */
+function nextMessageIdAllocator(db: Db): { next(): number; persist(): void } {
+  const stored = db.get<{ value_json: string }>("SELECT value_json FROM settings WHERE key = 'message_id_hwm'");
+  let hwm = Math.max(stored ? Number(JSON.parse(stored.value_json)) : 0, db.get<{ m: number | null }>("SELECT max(id) AS m FROM messages")!.m ?? 0);
+  return {
+    next: () => ++hwm,
+    persist: () => db.run("INSERT OR REPLACE INTO settings (key, value_json) VALUES ('message_id_hwm', ?)", JSON.stringify(hwm)),
+  };
+}
 
 /**
  * Upserts a batch of messages in ONE transaction. Existing messages (same
@@ -185,6 +199,7 @@ INSERT INTO messages (
 export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now = Date.now()): IngestResult {
   const result: IngestResult = { inserted: [], updated: [], touchedThreads: new Set(), mergedThreads: new Map(), bodyCompleted: [] };
   db.tx(() => {
+    const ids = nextMessageIdAllocator(db);
     for (const msg of messages) {
       let existing = msg.providerMsgId
         ? db.get<{ id: number; thread_id: number }>(
@@ -220,6 +235,7 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
       const recipients = recipientsText(msg.to, msg.cc, msg.bcc);
       const id = db.run(
         INSERT_MESSAGE,
+        ids.next(),
         msg.accountId,
         threadId,
         msg.providerMsgId,
@@ -275,6 +291,7 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
       result.touchedThreads.add(threadId);
     }
     recomputeThreads(db, result.touchedThreads);
+    ids.persist();
   });
   return result;
 }

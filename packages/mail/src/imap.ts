@@ -207,9 +207,13 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       const uidvalidity = Number(mb.uidValidity);
       let state = cursor.mailboxes[path];
       const reset = Boolean(state && state.uidvalidity !== uidvalidity);
+      const resetOrphans = new Set<number>();
       if (state && state.uidvalidity !== uidvalidity) {
         // UIDVALIDITY changed: every UID we stored for this mailbox is meaningless now
-        for (const r of db.all<{ message_id: number }>("SELECT message_id FROM message_locations WHERE account_id = ? AND mailbox = ?", accountId, path)) touched.add(r.message_id);
+        for (const r of db.all<{ message_id: number }>("SELECT message_id FROM message_locations WHERE account_id = ? AND mailbox = ?", accountId, path)) {
+          touched.add(r.message_id);
+          resetOrphans.add(r.message_id);
+        }
         db.run("DELETE FROM message_locations WHERE account_id = ? AND mailbox = ?", accountId, path);
         state = undefined;
       }
@@ -256,6 +260,35 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             if (!sameContent) {
               key = `${key}#${fingerprint()}`;
               existing = db.get<{ id: number; subject: string; from_email: string }>("SELECT id, subject, from_email FROM messages WHERE account_id = ? AND provider_msg_id = ?", accountId, key);
+            }
+          }
+          if (existing && !messageKey(env?.messageId)) {
+            // A fingerprint is only evidence enough to re-attach a message that currently has no
+            // live location (it moved, or its mailbox was reset). Otherwise two distinct messages
+            // with identical envelopes must stay separate.
+            const live = db.get<{ c: number }>("SELECT count(*) AS c FROM message_locations WHERE message_id = ?", existing.id)!.c;
+            if (live > 0) {
+              key = `${key}#${path}:${uidvalidity}:${m.uid}`;
+              existing = db.get<{ id: number; subject: string; from_email: string }>("SELECT id, subject, from_email FROM messages WHERE account_id = ? AND provider_msg_id = ?", accountId, key);
+            }
+          }
+          if (!existing && resetOrphans.size) {
+            // After a reset, recognise previously-located mail by envelope even if its stored key is
+            // from an older scheme, before anything is treated as an orphan.
+            const candidate = db.get<{ id: number; subject: string; from_email: string }>(
+              `SELECT id, subject, from_email FROM messages WHERE account_id = ? AND id IN (SELECT value FROM json_each(?))
+                 AND subject = ? AND from_email = ? AND date = ? LIMIT 1`,
+              accountId,
+              JSON.stringify([...resetOrphans]),
+              env?.subject ?? "",
+              (env?.from?.[0]?.address ?? "").toLowerCase(),
+              new Date(env?.date ?? m.internalDate ?? 0).getTime(),
+            );
+            if (candidate) {
+              resetOrphans.delete(candidate.id);
+              upsertLocation(candidate.id, path, uidvalidity, m.uid, flags);
+              touched.add(candidate.id);
+              continue;
             }
           }
           if (existing) {

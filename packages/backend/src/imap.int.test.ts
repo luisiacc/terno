@@ -355,6 +355,32 @@ describe("IMAP identity and safety (review fixes)", () => {
     expect(backend.db.all("SELECT id FROM messages ORDER BY id")).toEqual(before); // same rows, not re-imported
   });
 
+  it("keeps distinct ID-less messages with identical envelopes in different folders", async () => {
+    const { imap, backend, addAccount } = await setup();
+    const date = new Date().toUTCString();
+    const twin = (body: string) => `From: x@y.z\r\nSubject: Igual\r\nDate: ${date}\r\n\r\n${body}\r\n`;
+    imap.server.control.addMessage("INBOX", { raw: twin("AAAA") });
+    imap.server.control.addMessage("Archive", { raw: twin("BBBB") });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(2);
+    expect(count(backend, "SELECT 1 FROM message_locations GROUP BY message_id HAVING count(*) > 1")).toBe(0);
+  });
+
+  it("recognises cached mail stored under an older identity scheme after a reset", async () => {
+    const { imap, backend, addAccount } = await setup();
+    const old = new Date(Date.now() - 400 * 86_400_000);
+    imap.server.control.addMessage("INBOX", { raw: `From: x@y.z\r\nSubject: Antiguo\r\nDate: ${old.toUTCString()}\r\n\r\nhola\r\n`, internaldate: old });
+    await backend.server.invoke("settings.update", { syncWindowDays: 3650 }, { clientId: "t", origin: "renderer" });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    backend.db.run("UPDATE messages SET provider_msg_id = 'INBOX:1:1'"); // legacy location-based key
+    await backend.server.invoke("settings.update", { syncWindowDays: 30 }, { clientId: "t", origin: "renderer" });
+    imap.server.control.resetUidValidity("INBOX", { uids: "renumber" });
+    await backend.syncAccount(account.id);
+    expect(backend.db.all("SELECT subject, body_state FROM messages")).toEqual([{ subject: "Antiguo", body_state: "full" }]);
+  });
+
   it("doesn't merge unrelated messages that reuse a Message-ID across folders", async () => {
     const { imap, backend, addAccount } = await setup();
     imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Factura", id: "same@x", from: "a@uno.com" }) });

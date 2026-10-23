@@ -481,7 +481,15 @@ export class Backend {
           for (const op of batch) byAccount.set(op.account_id, [...(byAccount.get(op.account_id) ?? []), op]);
           await Promise.all(
             [...byAccount.values()].map(async (ops) => {
-              for (const op of ops) await this.executeOp(op);
+              for (const op of ops) {
+                try {
+                  await this.executeOp(op);
+                } catch (error) {
+                  // never strand the rest of the batch in "running"
+                  this.log("error", `op ${op.id} crashed`, error instanceof Error ? error.stack : error);
+                  if (this.db.raw.isOpen && getOp(this.db, op.id)?.state === "running") failOp(this.db, op.id, String(error), true, this.now());
+                }
+              }
             }),
           );
           processed += batch.length;
@@ -502,7 +510,11 @@ export class Backend {
     this.workerTimer = setTimeout(() => void this.runWorker(), Math.max(0, next - this.now()));
   }
 
-  private async executeOp(op: OpRow): Promise<void> {
+  private async executeOp(claimed: OpRow): Promise<void> {
+    // Re-read right before dispatch: while earlier ops of the batch ran, this one may have
+    // been superseded (deleted), pruned (deleted messages) or narrowed.
+    const op = getOp(this.db, claimed.id);
+    if (!op || op.state !== "running") return;
     const provider = this.provider(op.account_id);
     const target = JSON.parse(op.target_json) as { messageIds?: number[] };
     try {
@@ -529,8 +541,8 @@ export class Backend {
       if (error instanceof ProviderError && error.ambiguous) markOpUnknown(this.db, op.id, message, this.now());
       else failOp(this.db, op.id, message, error instanceof ProviderError ? error.retryable : true, this.now());
     }
-    const info = this.opInfo(getOp(this.db, op.id)!);
-    this.server.emit("op", info);
+    const after = getOp(this.db, op.id);
+    if (after) this.server.emit("op", this.opInfo(after)); // a superseded op is simply gone
   }
 
   opInfo(op: OpRow): OpInfo {
