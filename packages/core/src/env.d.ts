@@ -4,3 +4,4 @@ declare function setTimeout(callback: (...args: never[]) => void, ms?: number): 
 declare function clearTimeout(handle: unknown): void;
 declare function queueMicrotask(callback: () => void): void;
 declare function structuredClone<T>(value: T): T;
+declare const performance: { now(): number };

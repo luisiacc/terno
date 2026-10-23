@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./instant": "./src/instant/index.ts",
     "./conformance": "./src/conformance/index.ts"
   },
   "scripts": {

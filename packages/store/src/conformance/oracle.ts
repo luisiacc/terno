@@ -18,8 +18,16 @@ export interface UiScope {
   categoryId?: number;
 }
 
-function phraseIn(columnText: string, term: MessageTerm): boolean {
-  const tokens = tokenize(columnText);
+/** tokenize() per column, remembered per doc object (docs are immutable projections) */
+const columnTokens = new WeakMap<SearchMessageDoc, Record<"subject" | "from" | "to" | "body", string[]>>();
+
+function columnsOf(m: SearchMessageDoc): Record<"subject" | "from" | "to" | "body", string[]> {
+  let c = columnTokens.get(m);
+  if (!c) columnTokens.set(m, (c = { subject: tokenize(m.subject), from: tokenize(m.fromText), to: tokenize(m.recipients), body: tokenize(m.body) }));
+  return c;
+}
+
+function phraseIn(tokens: readonly string[], term: MessageTerm): boolean {
   const needle = tokenize(term.value);
   if (needle.length === 0) return false;
   for (let i = 0; i + needle.length <= tokens.length; i++) {
@@ -30,8 +38,9 @@ function phraseIn(columnText: string, term: MessageTerm): boolean {
   return false;
 }
 
-function termMatches(m: SearchMessageDoc, term: MessageTerm): boolean {
-  const columns = { subject: m.subject, from: m.fromText, to: m.recipients, body: m.body };
+/** One message term on one message, by brute force (also a reference phrase doclist for engines' fallbacks). */
+export function termMatches(m: SearchMessageDoc, term: MessageTerm): boolean {
+  const columns = columnsOf(m);
   if (term.field === "text") return Object.values(columns).some((c) => phraseIn(c, term));
   return phraseIn(columns[term.field], term);
 }
