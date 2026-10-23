@@ -360,6 +360,16 @@ export function recomputeThreads(db: Db, threadIds: Iterable<number>): void {
        ORDER BY (is_trash OR is_spam) ASC, date DESC, id DESC LIMIT 1`,
       threadId,
     )!;
+    // The list shows the other party, not me: latest received sender, falling back to the latest message.
+    const counterpart = db.get<{ from_name: string; from_email: string }>(
+      `SELECT from_name, from_email FROM messages WHERE thread_id = ? AND is_sent = 0
+       ORDER BY (is_trash OR is_spam) ASC, date DESC, id DESC LIMIT 1`,
+      threadId,
+    );
+    if (counterpart) {
+      latest.from_name = counterpart.from_name;
+      latest.from_email = counterpart.from_email;
+    }
     const first = db.get<{ subject: string }>(
       "SELECT subject FROM messages WHERE thread_id = ? ORDER BY date ASC, id ASC LIMIT 1",
       threadId,

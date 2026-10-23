@@ -111,7 +111,9 @@ export class Backend {
   readonly abort = new AbortController();
 
   constructor(options: BackendOptions) {
-    this.options = { now: Date.now, sliceBudgetMs: 8, syncIntervalMs: 120_000, ...options };
+    // explicit `undefined` must not clobber defaults
+    const defined = Object.fromEntries(Object.entries(options).filter(([, v]) => v !== undefined)) as BackendOptions;
+    this.options = { now: Date.now, sliceBudgetMs: 8, syncIntervalMs: 120_000, ...defined };
     this.db = openDatabase(options.dbPath);
     this.checkpointer = startCheckpointWorker(this.db);
     const recovered = recoverOps(this.db, this.now());

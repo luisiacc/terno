@@ -15,3 +15,4 @@ playwright-report/
 *.sqlite-shm
 .env
 .env.local
+apps/backend-dev/.data/

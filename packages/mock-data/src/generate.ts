@@ -319,7 +319,8 @@ export function generateDataset(options: GenerateOptions): MockDataset {
         });
         previousBody = text;
         date += int(10, 60 * 24) * 60_000;
-        if (date > now) date = now - int(0, 600_000);
+        // a conversation can't continue into the future: stop it here
+        if (date > now) break;
       }
     } else {
       const s = pick(B.SPAMMERS);
