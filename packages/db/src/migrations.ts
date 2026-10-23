@@ -345,10 +345,87 @@ INSERT INTO settings (key, value_json)
 UPDATE settings SET value_json = json_set(value_json, '$.localMode', json('false')) WHERE key = 'app';
 `;
 
+/**
+ * v4: smart categorization (plan 02).
+ * - thread_categories is rebuilt (a CHECK can't be altered) to allow 'auto' and
+ *   'bulk' and to record the batch an add belongs to (undo). Only its own index
+ *   is recreated: no trigger, view or FTS object references it.
+ * - cls_examples is the training source of truth, removals included (label -1).
+ * - cls_decisions holds suggestions and auto outcomes (safety valve, undo).
+ */
+const CATEGORIZATION_V4 = /* sql */ `
+CREATE TABLE thread_categories_new (
+  thread_id INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+  category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+  added_by TEXT NOT NULL DEFAULT 'user' CHECK (added_by IN ('user', 'filter', 'agent', 'suggestion', 'auto', 'bulk')),
+  added_at INTEGER NOT NULL DEFAULT 0,
+  batch_id INTEGER,
+  PRIMARY KEY (thread_id, category_id)
+) WITHOUT ROWID;
+INSERT INTO thread_categories_new (thread_id, category_id, added_by, added_at)
+  SELECT thread_id, category_id, added_by, added_at FROM thread_categories;
+DROP TABLE thread_categories;
+ALTER TABLE thread_categories_new RENAME TO thread_categories;
+CREATE INDEX thread_categories_c ON thread_categories(category_id, thread_id);
+CREATE INDEX thread_categories_batch ON thread_categories(batch_id) WHERE batch_id IS NOT NULL;
+
+ALTER TABLE categories ADD COLUMN auto_apply INTEGER NOT NULL DEFAULT 1;
+
+-- labeled examples; features = hashed feature vector (core/categorize encodeFeatures)
+CREATE TABLE cls_examples (
+  thread_id INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+  category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+  label INTEGER NOT NULL CHECK (label IN (-1, 1)),
+  weight REAL NOT NULL,
+  source TEXT NOT NULL CHECK (source IN ('user', 'suggestion', 'bulk', 'agent', 'removal', 'reject')),
+  at INTEGER NOT NULL,
+  sender TEXT NOT NULL DEFAULT '',
+  -- 0 for bulk adds past the per-sender content cap: they teach identity only
+  content INTEGER NOT NULL DEFAULT 1,
+  batch_id INTEGER,
+  features BLOB NOT NULL,
+  PRIMARY KEY (thread_id, category_id)
+) WITHOUT ROWID;
+CREATE INDEX cls_examples_cat ON cls_examples(category_id, label);
+CREATE INDEX cls_examples_sender ON cls_examples(category_id, sender, at);
+
+CREATE TABLE cls_decisions (
+  thread_id INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+  category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('auto', 'suggest')),
+  p REAL NOT NULL,
+  explain_json TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  outcome TEXT CHECK (outcome IN ('kept', 'reverted', 'accepted', 'rejected')),
+  PRIMARY KEY (thread_id, category_id)
+) WITHOUT ROWID;
+CREATE INDEX cls_decisions_pending ON cls_decisions(category_id, at) WHERE kind = 'suggest' AND outcome IS NULL;
+CREATE INDEX cls_decisions_auto ON cls_decisions(category_id, outcome, at) WHERE kind = 'auto';
+
+CREATE TABLE cat_batches (
+  id INTEGER PRIMARY KEY,
+  category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+  source TEXT NOT NULL,
+  scope_json TEXT NOT NULL,
+  added INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  undone_at INTEGER
+);
+
+CREATE TABLE cls_snapshot (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  features_v INTEGER NOT NULL,
+  built_at INTEGER NOT NULL,
+  fingerprint TEXT NOT NULL,
+  blob BLOB NOT NULL
+);
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "initial schema", sql: SCHEMA_V1 },
   { version: 2, name: "op target index", sql: OP_TARGETS_V2 },
   { version: 3, name: "owner identity, ai secrets, local mode", sql: OWNER_V3 },
+  { version: 4, name: "smart categorization", sql: CATEGORIZATION_V4 },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

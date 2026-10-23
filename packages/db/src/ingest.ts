@@ -156,11 +156,14 @@ export function adoptProviderThread(db: Db, threadId: number, accountId: number,
 export function mergeThreads(db: Db, into: number, from: number, result: IngestResult): void {
   db.run("UPDATE messages SET thread_id = ? WHERE thread_id = ?", into, from);
   db.run(
-    `INSERT OR IGNORE INTO thread_categories (thread_id, category_id, added_by, added_at)
-     SELECT ?, category_id, added_by, added_at FROM thread_categories WHERE thread_id = ?`,
+    `INSERT OR IGNORE INTO thread_categories (thread_id, category_id, added_by, added_at, batch_id)
+     SELECT ?, category_id, added_by, added_at, batch_id FROM thread_categories WHERE thread_id = ?`,
     into,
     from,
   );
+  // the user's labels and the engine's decisions follow the conversation (the survivor's own win)
+  db.run("UPDATE OR IGNORE cls_examples SET thread_id = ? WHERE thread_id = ?", into, from);
+  db.run("UPDATE OR IGNORE cls_decisions SET thread_id = ? WHERE thread_id = ?", into, from);
   db.run("DELETE FROM threads WHERE id = ?", from);
   result.touchedThreads.delete(from);
   result.touchedThreads.add(into);
