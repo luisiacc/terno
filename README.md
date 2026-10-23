@@ -43,6 +43,7 @@ pnpm dev:desktop:seeded  # 8 accounts / ~21k messages, seeded once (--reseed to 
 ```
 Renderer (React 19, sandboxed) ──MessagePort──▶ Backend (Electron utilityProcess)
                                                  ├─ MailStore → node:sqlite (WAL, FTS5, search outbox), sole writer
+                                                 │    └─ instant search index (RAM, fed by the outbox)
                                                  ├─ ops queue → IMAP / SMTP / Gmail
                                                  └─ unix socket ◀── unica-mcp (Claude Code / Codex)
 Main process: windows, app:// protocol, Keychain (safeStorage)
@@ -50,7 +51,7 @@ Main process: windows, app:// protocol, Keychain (safeStorage)
 
 - **SQLite via `node:sqlite`:** no native modules. Tests run the same SQLite build the app ships.
 - **Every action is local-first.** The optimistic state and a durable op are written in one transaction, and the op worker syncs to the provider afterwards. A send whose outcome is ambiguous is marked *unknown* and never resent automatically.
-- **Search** uses a selectivity-based planner over FTS5 and partial indexes. Message predicates (`from:`, words, `has:attachment`, dates) must all match the *same* message.
+- **Search** answers from an in-memory instant index (typed-array postings, a newest-first walk over threads) whenever it is exactly at the database's revision, and from a selectivity-based planner over FTS5 otherwise (while it builds or catches up after a write), with identical results. Message predicates (`from:`, words, `has:attachment`, dates) must all match the *same* message.
 - **Background work** (imports, bulk filters) runs in ~8 ms adaptive slices, and WAL checkpoints run on a worker thread, so typing and navigation never stall.
 
 ## Performance (measured, enforced by tests)
@@ -62,7 +63,11 @@ Main process: windows, app:// protocol, Keychain (safeStorage)
 | Open a view / page deep with keyset | ≤ 5 ms | ~0.3 ms |
 | Category view (5k threads) | ≤ 5 ms | ~2 ms |
 | Sidebar unread counts | ≤ 5 ms | ~2.7 ms |
-| Full-text search (common, rare, prefix, operators) | ≤ 25 ms | 0.05–20 ms |
+| Instant search, every keystroke of `p…presupuesto` (engine) | ≤ 2 ms cold · ≤ 1 ms warm | ≤ 0.2 ms · ≤ 0.1 ms |
+| Instant search, phrases (incl. frequent words rarely adjacent) | ≤ 5 ms | 0.2–2 ms |
+| Search RPC while typing (backend, end to end) | ≤ 5 ms | ~0.7 ms |
+| Instant index: memory · background build · stalls while building | ≤ 64 MiB · reported · ≤ 16 ms | ~39 MiB · ~1.3 s · ≤ 12 ms |
+| Full-text search on FTS5 (the fallback) | ≤ 25 ms | 0.05–20 ms |
 | Filter preview over all mail | ≤ 50 ms | ≤ 30 ms |
 | RPC round trip (list) | ≤ 3 ms | ~0.4 ms |
 | Search **during** a 14k-message import + bulk filter | ≤ 45 ms | ~35 ms |
@@ -75,7 +80,7 @@ Main process: windows, app:// protocol, Keychain (safeStorage)
 | What | Target (p95) | Measured |
 |---|---|---|
 | Holding `j`: keydown → selection committed (300 presses) | ≤ 16 ms | ~1 ms |
-| Search: keystroke → results rendered | ≤ 100 ms | ~19 ms |
+| Search: keystroke → results rendered | ≤ 100 ms | ~9 ms p50, ~20 ms p95 |
 | Scroll to the end → next 100 rows rendered | ≤ 150 ms | ~35 ms |
 | DOM rows while scrolling 2,000 threads | bounded | ≤ 33 |
 | Theme switch → painted (double rAF, so ≥ 2 frames) | ≤ 50 ms | ~35 ms, 0 row renders |
@@ -97,7 +102,7 @@ pnpm test:smoke         # Playwright against the PACKAGED arm64 app (run dist:ma
 
 What the tests cover:
 
-- Search results checked against a brute-force oracle over a seeded mailbox.
+- Search results checked against a brute-force oracle over a seeded mailbox, for FTS5 and the instant engine alike (every page of 500 generated queries, mutation sequences, snapshot round-trips, damaged snapshots), and the two engines against each other.
 - WCAG AA contrast for every theme (49 token pairs each), a generated-CSS drift check, and a scan that rejects literal colors and durations in app code.
 - An offline categorization accuracy eval (AI off, network guarded) over an adversarial mailbox: auto-apply precision ≥ 0.97, recall ≥ 0.80; reports in `test-results/categorize/`.
 - JS ↔ SQL filter-rule parity across hundreds of generated rules.
@@ -145,7 +150,7 @@ apps/desktop      Electron main/preload/utility backend, packaging, packaged-app
 apps/web          Renderer (React 19 + Vite + Tailwind v4), Playwright e2e/visual/perf
 apps/backend-dev  WebSocket host of the backend for browser dev and e2e
 packages/core     Pure domain: types, typed RPC, search parser, filter DSL, learning, keybindings
-packages/store    MailStore and search contracts (async store commands, revisions, search feed) + adapter conformance suite
+packages/store    MailStore and search contracts (async store commands, revisions, search feed), the instant search engine + adapter and engine conformance suites
 packages/db       SQL layer and SqlMailStore: connection seam, node:sqlite driver, schema, FTS, planner, rule compiler, ops, outbox, perf gate
 packages/backend  Service layer: RPC handlers, ops worker, sync, filters, agent socket
 packages/mail     IMAP (imapflow), SMTP (nodemailer), Gmail (REST + OAuth), MIME
