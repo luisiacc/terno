@@ -1,0 +1,17 @@
+node_modules/
+dist/
+dist-electron/
+out/
+release/
+.vite/
+coverage/
+*.tsbuildinfo
+.DS_Store
+test-results/
+playwright-report/
+.data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+.env
+.env.local
