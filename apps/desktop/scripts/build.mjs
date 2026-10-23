@@ -63,8 +63,11 @@ for (const r of results) {
   }
 }
 
-const web = join(repo, "apps/web/dist");
-if (!existsSync(join(web, "index.html"))) throw new Error("apps/web/dist missing: run `pnpm --filter @unica/web build` first");
-cpSync(web, join(out, "renderer"), { recursive: true });
+// dev mode loads the renderer from the Vite dev server instead
+if (!process.argv.includes("--no-renderer")) {
+  const web = join(repo, "apps/web/dist");
+  if (!existsSync(join(web, "index.html"))) throw new Error("apps/web/dist missing: run `pnpm --filter @unica/web build` first");
+  cpSync(web, join(out, "renderer"), { recursive: true });
+}
 cpSync(join(repo, "packages/mcp/SKILL.md"), join(out, "mcp/SKILL.md"));
 console.log(`built desktop bundles → ${out}`);

@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@12.2.1",
-  "engines": { "node": ">=24.0.0" },
+  "engines": {
+    "node": ">=24.0.0"
+  },
   "scripts": {
     "postinstall": "node apps/desktop/scripts/ensure-electron.mjs",
     "dev": "pnpm --filter @unica/backend-dev dev & pnpm --filter @unica/web dev",
@@ -16,7 +18,8 @@
     "test:watch": "vitest",
     "test:perf": "vitest run --project perf",
     "test:e2e": "pnpm --filter @unica/web test:e2e",
-    "test:smoke": "pnpm --filter @unica/desktop test:smoke"
+    "test:smoke": "pnpm --filter @unica/desktop test:smoke",
+    "dev:desktop:demo": "pnpm --filter @unica/desktop dev:demo"
   },
   "devDependencies": {
     "@types/node": "catalog:",
