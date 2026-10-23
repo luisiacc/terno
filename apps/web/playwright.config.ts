@@ -38,7 +38,8 @@ export default defineConfig({
     { name: "perf", testMatch: /perf\.spec\.ts/, dependencies: ["e2e"], fullyParallel: false, workers: 1, use: { deviceScaleFactor: 1 } },
   ],
   webServer: {
-    command: `pnpm vite build && pnpm vite preview --port ${PORT} --strictPort --host 127.0.0.1`,
+    // a test build (render probe on) in its own directory, so it never ships
+    command: `VITE_RENDER_PROBE=1 pnpm vite build --outDir dist-e2e && pnpm vite preview --outDir dist-e2e --port ${PORT} --strictPort --host 127.0.0.1`,
     url: `http://127.0.0.1:${PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

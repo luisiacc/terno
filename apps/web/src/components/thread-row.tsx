@@ -4,6 +4,7 @@ import { cn } from "@unica/ui/lib/utils";
 import { Paperclip, Star } from "lucide-react";
 import { memo } from "react";
 import { listDate } from "~/lib/format";
+import { renderProbe } from "~/lib/render-probe";
 import { setApp, useApp } from "~/state/app";
 
 const ACCOUNT_BAR: Record<CategoryColor, string> = {
@@ -33,6 +34,7 @@ interface Props {
  * re-renders exactly two rows.
  */
 export const ThreadRow = memo(function ThreadRow({ thread: t, top, height, compact, showAccount }: Props) {
+  renderProbe("ThreadRow");
   const selected = useApp((s) => s.selectedId === t.id);
   const checked = useApp((s) => s.checked.has(t.id));
   const accountColor = useApp((s) => (showAccount ? s.accounts.find((a) => a.id === t.accountId)?.color : undefined)) as CategoryColor | undefined;

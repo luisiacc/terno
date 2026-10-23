@@ -12,6 +12,7 @@ import { navigate, setApp, useApp } from "~/state/app";
 import { client } from "~/rpc/connection";
 import { CATEGORY_COLORS } from "@unica/core";
 import { toast } from "sonner";
+import { renderProbe } from "~/lib/render-probe";
 import { LocalPill } from "./local-pill";
 
 const VIEWS: { view: View; icon: typeof Inbox; keys?: string }[] = [
@@ -39,6 +40,7 @@ function NavItem({
   count?: number;
   testId?: string;
 }) {
+  renderProbe("NavItem");
   return (
     <button
       type="button"

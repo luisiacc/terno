@@ -22,7 +22,11 @@ function stat(name: string, budgetMs: number, samples: number[]): Stat {
 }
 
 test.describe.configure({ mode: "serial" });
-test.use({ fixedClock: false });
+// motion on (the config forces reduced motion elsewhere): the gates hold with animations running
+test.use({ fixedClock: false, reducedMotion: "no-preference" });
+
+/** Render counts from the test build's probe (window.__renders). */
+const renders = (page: import("@playwright/test").Page, name: string) => page.evaluate((n) => (window as unknown as { __renders?: Record<string, number> }).__renders?.[n] ?? 0, name);
 
 test.afterAll(() => {
   const dir = join(dirname(fileURLToPath(import.meta.url)), "../../../test-results/perf");
@@ -58,6 +62,21 @@ test("holding j: every move commits within a frame and the DOM stays bounded", a
       }
     }).observe(document.querySelector("[role=listbox]")!, { attributes: true, subtree: true, attributeFilter: ["aria-selected"] });
   });
+  // list navigation never animates: count finite animations started while j is held
+  await page.evaluate(() => {
+    const w = window as unknown as { __jAnims: number };
+    w.__jAnims = 0;
+    const seen = new WeakSet<Animation>();
+    const tick = () => {
+      for (const a of document.getAnimations()) {
+        if (seen.has(a) || a.effect?.getTiming().iterations === Infinity) continue;
+        seen.add(a);
+        w.__jAnims++;
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
   const N = 300;
   for (let i = 0; i < N; i++) {
     await page.keyboard.press("j");
@@ -71,6 +90,9 @@ test("holding j: every move commits within a frame and the DOM stays bounded", a
   stats.push({ name: `max DOM rows while navigating: ${r.maxRows}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
   expect(commit.p95).toBeLessThanOrEqual(16 * MULT);
   expect(r.maxRows).toBeLessThanOrEqual(60);
+  const anims = await page.evaluate(() => (window as unknown as { __jAnims: number }).__jAnims);
+  stats.push({ name: `animations started while holding j: ${anims}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+  expect(anims).toBe(0);
   // we navigated past the first page: pagination kept up
   expect(await page.locator("[aria-selected=true]").getAttribute("data-thread-id")).not.toBeNull();
 });
@@ -86,7 +108,8 @@ test("typing a search: each keystroke renders its results fast", async ({ app: p
     new MutationObserver(() => {
       const key = list.getAttribute("data-results-for");
       if (!key) return;
-      const q = (JSON.parse(key) as unknown[])[3] as string;
+      // the query is the last element of the list key
+      const q = (JSON.parse(key) as unknown[]).at(-1) as string;
       const t0 = w.__search.started.get(q);
       if (t0 !== undefined && !w.__search.done.has(q)) w.__search.done.set(q, performance.now() - t0);
     }).observe(list, { attributes: true, attributeFilter: ["data-results-for"] });
@@ -140,4 +163,37 @@ test("scrolling 2,000 threads deep: pages load quickly and the DOM stays bounded
   expect(result.rows).toBeGreaterThanOrEqual(2000);
   expect(result.maxRows).toBeLessThanOrEqual(60);
   expect(s.p95).toBeLessThanOrEqual(150 * MULT);
+});
+
+test("switching theme: painted within 50 ms, no row re-renders", async ({ app: page }) => {
+  await expect(rows(page).first()).toBeVisible();
+  const before = await renders(page, "ThreadRow");
+  expect(before).toBeGreaterThan(0); // the probe is compiled into this build
+  const samples = await page.evaluate(async () => {
+    const u = (window as unknown as { __unica: { updateAppearance(p: object): Promise<unknown> } }).__unica;
+    const frame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
+    const out: number[] = [];
+    // alternate light/dark and named palettes: mode, data-theme and every color change each time
+    const steps = [
+      { theme: "dark", darkTheme: "dracula" },
+      { theme: "light", lightTheme: "solarized-light" },
+      { theme: "dark", darkTheme: "nord" },
+      { theme: "light", lightTheme: "unica-light" },
+    ];
+    for (let i = 0; i < 32; i++) {
+      const t0 = performance.now();
+      const done = u.updateAppearance(steps[i % steps.length]!);
+      await frame();
+      await frame(); // the frame after the new colors were painted
+      out.push(performance.now() - t0);
+      await done;
+    }
+    return out;
+  });
+  await page.waitForTimeout(300);
+  const after = await renders(page, "ThreadRow");
+  const s = stat("theme switch → painted (double rAF)", 50, samples.slice(2));
+  stats.push({ name: `ThreadRow renders during 32 theme switches: ${after - before}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+  expect(after - before).toBe(0);
+  expect(s.p95).toBeLessThanOrEqual(50 * MULT);
 });

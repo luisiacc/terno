@@ -4,7 +4,8 @@ import { getApp, navigate, setApp } from "~/state/app";
 import { reloadList } from "~/state/list";
 import { invalidateThreads, loadThread } from "~/state/threads";
 import { toast } from "sonner";
-import { applyAppearance, installAppearanceListeners } from "~/lib/appearance";
+import { applyAppearance, installAppearanceListeners, updateAppearance } from "~/lib/appearance";
+import { exposeForTests } from "~/lib/render-probe";
 
 export async function boot(): Promise<void> {
   try {
@@ -13,6 +14,7 @@ export async function boot(): Promise<void> {
     applyAppearance(b.settings);
     setApp({ ready: true, accounts: b.accounts, categories: b.categories, counts: b.counts, settings: b.settings, owner: b.owner, demo: b.demo, version: b.version });
     installAppearanceListeners();
+    exposeForTests({ updateAppearance, getApp });
 
     let refreshQueued = false;
     client.on("changed", ({ threadIds }) => {
