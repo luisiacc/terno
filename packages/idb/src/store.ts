@@ -123,14 +123,18 @@ import {
 import type { Key, MemDb } from "./mem";
 import { IdbProviderStore } from "./provider-store";
 import { createMemDb, EARLY_TABLES, idbExists, LATE_TABLES, LOGICAL_SCHEMA, loadAll, openIdb, persist, readAll, readLazy, writeMeta } from "./schema";
+import { sameRevision } from "@unica/store";
 import { appendOutbox, checkCursor, columnsOf, materializeChanges, pageOf, planScan, scanPage, searchChangeIds, searchHead } from "./search";
 
 const PENDING_BODIES_CAP = 1000;
 /** bodies kept in memory after a unit of work (read ahead or written), by count and bytes; the rest stay in IndexedDB */
 const BODY_CACHE = 2000;
 const BODY_CACHE_BYTES = 8 * 1024 * 1024;
-/** ids per exclusive slice when the feed or a scan reads bodies */
+/** ids per exclusive slice when the feed reads bodies */
 const SLICE = 500;
+/** a scan's slice: this long at most, in chunks of this many messages, before yielding */
+const SCAN_SLICE_MS = 8;
+const SCAN_CHUNK = 64;
 
 const FLAG_COLUMNS: Record<string, string> = { isRead: "is_read", isStarred: "is_starred", inInbox: "in_inbox", isTrash: "is_trash", isSpam: "is_spam", isSent: "is_sent", isDraft: "is_draft" };
 const NO_CLASSIFICATION: ClassifyResult = { deltas: [], auto: new Map(), touched: new Set(), suggested: 0, uncertain: [], backfill: 0 };
@@ -210,7 +214,7 @@ export class IdbMailStore implements MailStore {
     const idb = await openIdb(o.factory, o.name);
     const db = createMemDb();
     const timings: Record<string, number> = {};
-    const meta = await loadAll(idb, db, timings, EARLY_TABLES);
+    const meta = await loadAll(idb, db, timings, EARLY_TABLES, () => o.platform.yield());
     if (!db.table("search_state").get(1)) {
       // a new database: its epoch, the search log's head
       db.tx(() => db.table("search_state").insert({ id: 1, epoch: o.platform.uuid(), seq: 0, bytes: 0 }));
@@ -222,7 +226,7 @@ export class IdbMailStore implements MailStore {
     const store = new IdbMailStore(idb, db, o);
     Object.assign(store.openTimings, timings);
     // the first screen needs none of it: messages load while it paints (writes to these tables wait for them)
-    store.loaded = loadAll(idb, db, {}, LATE_TABLES).then(
+    store.loaded = loadAll(idb, db, {}, LATE_TABLES, () => o.platform.yield()).then(
       () => undefined,
       (error: unknown) => {
         store.log("error", "could not load the mailbox", error instanceof Error ? error.message : error);
@@ -242,6 +246,11 @@ export class IdbMailStore implements MailStore {
 
   get name(): string {
     return this.o.name;
+  }
+
+  /** resolves once every table is in memory (messages load after open) */
+  whenLoaded(): Promise<void> {
+    return this.loaded;
   }
 
   async close(): Promise<void> {
@@ -385,29 +394,30 @@ export class IdbMailStore implements MailStore {
       return batches;
     },
     beginBuild: async () => {
-      const { from, lease } = await this.exclusive(async () => {
+      const { from, lease, messageIds, threadIds } = await this.exclusive(async () => {
         const from = this.revision();
         const row: R = { id: undefined, from_seq: from.seq, created_at: Date.now() };
         this.db.tx(() => this.db.table("search_leases").insert(row));
         this.db.takeCommit();
         this.db.confirm();
-        return { from, lease: row.id as number };
+        const sorted = (t: string) => Int32Array.from(this.db.table(t).rows.keys() as Iterable<number>).sort();
+        return { from, lease: row.id as number, messageIds: [...sorted("messages")], threadIds: [...sorted("threads")] };
       });
-      const messagesAfter = (after: number) =>
+      // the ids as of the lease, in order, once: rows written later come through the replay of (from, head]
+      const page = async <D,>(table: string, ids: number[], at: number, read: (id: number) => D | null, before?: (ids: number[]) => Promise<void>) =>
         this.exclusive(async () => {
-          const messages = this.db.table<R>("messages");
-          const ids = [...messages.rows.keys()].map(Number).filter((id) => id > after).sort((a, b) => a - b).slice(0, SLICE);
-          await this.readBodies(ids);
-          const docs: SearchMessageDoc[] = ids.map((id) => messageDoc(messages.get(id)!, this.c.body(id)?.body_text ?? null));
-          this.evictBodies();
-          return docs;
+          const slice = ids.slice(at, at + SLICE);
+          await before?.(slice);
+          const docs: D[] = [];
+          for (const id of slice) {
+            const d = this.db.table<R>(table).has(id) ? read(id) : null;
+            if (d) docs.push(d);
+          }
+          return { docs, next: at + slice.length };
         });
-      const threadsAfter = (after: number) =>
-        this.exclusive(async () => {
-          const threads = this.db.table<R>("threads");
-          const ids = [...threads.rows.keys()].map(Number).filter((id) => id > after).sort((a, b) => a - b).slice(0, SLICE);
-          return ids.map((id): SearchThreadDoc => threadDoc(this.c, threads.get(id)!));
-        });
+      const messagesAt = (at: number) =>
+        page<SearchMessageDoc>("messages", messageIds, at, (id) => messageDoc(this.db.table<R>("messages").get(id)!, this.c.body(id)?.body_text ?? null), (slice) => this.readBodies(slice));
+      const threadsAt = (at: number) => page<SearchThreadDoc>("threads", threadIds, at, (id) => threadDoc(this.c, this.db.table<R>("threads").get(id)!));
       const release = async () => {
         if (!this.open) return;
         await this.exclusive(async () => {
@@ -419,19 +429,17 @@ export class IdbMailStore implements MailStore {
       const build: SearchBuild = {
         from,
         async *messages() {
-          for (let after = 0; ; ) {
-            const page = await messagesAfter(after);
-            if (page.length === 0) return;
-            yield page;
-            after = page[page.length - 1]!.messageId;
+          for (let at = 0; at < messageIds.length; ) {
+            const p = await messagesAt(at);
+            at = p.next;
+            if (p.docs.length) yield p.docs;
           }
         },
         async *threads() {
-          for (let after = 0; ; ) {
-            const page = await threadsAfter(after);
-            if (page.length === 0) return;
-            yield page;
-            after = page[page.length - 1]!.threadId;
+          for (let at = 0; at < threadIds.length; ) {
+            const p = await threadsAt(at);
+            at = p.next;
+            if (p.docs.length) yield p.docs;
           }
         },
         release,
@@ -445,29 +453,61 @@ export class IdbMailStore implements MailStore {
    * revision it answers at and its result. Bodies are read in slices only
    * when a term needs them.
    */
-  private scan(req: SearchRequest, extra?: (t: R) => boolean, limit = req.limit + 1): Promise<{ ids: number[]; revision: Revision }> {
-    return this.exclusive(async () => {
-      const revision = this.revision();
-      checkCursor(req, revision);
-      const plan = planScan(this.c, req.search);
-      if (plan.impossible) return { ids: [], revision };
-      const messages = [...this.db.table<R>("messages").all()];
+  private async scan<X>(req: SearchRequest, finish: (ids: number[], revision: Revision) => X, extra?: (t: R) => boolean, limit = req.limit + 1): Promise<X> {
+    for (let attempt = 0; ; attempt++) {
+      // writes kept landing under two passes: the third holds the queue (still yielding to the event loop between slices)
+      const out = await this.scanPass(req, finish, extra, limit, attempt >= 2);
+      if (out.done) return out.value;
+    }
+  }
+
+  /**
+   * One pass of the exact scan in time slices. Each slice is its own unit
+   * (commands run between them) and checks that the revision it started at
+   * still holds; the result is read in a final unit at that revision, or the
+   * pass reports it must start over.
+   */
+  private async scanPass<X>(req: SearchRequest, finish: (ids: number[], revision: Revision) => X, extra: ((t: R) => boolean) | undefined, limit: number, hold: boolean): Promise<{ done: true; value: X } | { done: false }> {
+    const pass = async (unit: <V>(f: () => Promise<V>) => Promise<V>): Promise<{ done: true; value: X } | { done: false }> => {
+      const messages = this.db.table<R>("messages");
+      const start = await unit(async () => {
+        const revision = this.revision();
+        checkCursor(req, revision);
+        return { revision, plan: planScan(this.c, req.search), ids: [...messages.rows.keys()] as number[] };
+      });
+      const { plan, ids, revision } = start;
       const matched = plan.messageLevel ? new Set<number>() : null;
       const excluded = new Set<number>();
-      for (let i = 0; i < messages.length; i += SLICE) {
-        const slice = messages.slice(i, i + SLICE);
-        if (plan.needsBodies) await this.readBodies(slice.map((m) => m.id as number));
-        for (const m of slice) {
-          let cols: ReturnType<typeof columnsOf> | null = null;
-          const columns = () => (cols ??= columnsOf(m, plan.needsBodies ? (this.c.body(m.id)?.body_text ?? null) : null));
-          if (matched) {
-            if (!matched.has(m.thread_id) && plan.messageOk(m, columns)) matched.add(m.thread_id);
-          } else if (!excluded.has(m.thread_id) && plan.excludes(m, columns)) excluded.add(m.thread_id);
-        }
-        if (plan.needsBodies) this.evictBodies();
+      for (let i = 0; i < ids.length && !plan.impossible; ) {
+        const current = await unit(async () => {
+          if (!sameRevision(this.revision(), revision)) return false;
+          const sliceStarted = performance.now();
+          while (i < ids.length && performance.now() - sliceStarted < SCAN_SLICE_MS) {
+            const chunk = ids.slice(i, i + SCAN_CHUNK);
+            if (plan.needsBodies) await this.readBodies(chunk);
+            for (const id of chunk) {
+              const m = messages.get(id);
+              if (!m) continue;
+              let cols: ReturnType<typeof columnsOf> | null = null;
+              const columns = () => (cols ??= columnsOf(m, plan.needsBodies ? (this.c.body(id)?.body_text ?? null) : null));
+              if (matched) {
+                if (!matched.has(m.thread_id) && plan.messageOk(m, columns)) matched.add(m.thread_id);
+              } else if (!excluded.has(m.thread_id) && plan.excludes(m, columns)) excluded.add(m.thread_id);
+            }
+            i += chunk.length;
+          }
+          return true;
+        });
+        if (!current) return { done: false };
+        if (hold) this.evictBodies();
+        await this.o.platform.yield();
       }
-      return { ids: scanPage(this.c, plan, matched, excluded, req.cursor, limit, extra), revision };
-    });
+      return unit(async () => {
+        if (!sameRevision(this.revision(), revision)) return { done: false } as const;
+        return { done: true, value: finish(plan.impossible ? [] : scanPage(this.c, plan, matched, excluded, req.cursor, limit, extra), revision) } as const;
+      });
+    };
+    return hold ? this.exclusive(() => pass((f) => f())) : pass((f) => this.exclusive(f));
   }
 
   private async searchPage(req: SearchRequest): Promise<StoreSearchPage> {
@@ -480,11 +520,14 @@ export class IdbMailStore implements MailStore {
       const ids = ram.search(req, revision);
       page = { items: summariesInOrder(this.c, ids.threadIds), nextCursor: ids.nextCursor, strategy: ids.strategy };
     } else {
-      const scanned = await this.scan(req);
-      revision = scanned.revision;
       const threads = T(this.c, "threads");
-      const p = pageOf(scanned.ids, req, revision, (id) => threads.get(id)!);
-      page = { items: summariesInOrder(this.c, p.threadIds), nextCursor: p.nextCursor, strategy: "scan" };
+      // the page is read in the scan's last unit, at the revision the scan answered for
+      const scanned = await this.scan(req, (ids, at) => {
+        const p = pageOf(ids, req, at, (id) => threads.get(id)!);
+        return { at, items: summariesInOrder(this.c, p.threadIds), nextCursor: p.nextCursor };
+      });
+      revision = scanned.at;
+      page = { items: scanned.items, nextCursor: scanned.nextCursor, strategy: "scan" };
     }
     let pendingBodies = 0;
     await this.loaded;
@@ -881,7 +924,7 @@ export class IdbMailStore implements MailStore {
       const search = this.resolve({ query: scope.query, now });
       const ids = this.instant?.at(this.revision())
         ? this.queryIdsFromIndex(search, categoryId, limit)
-        : (await this.scan({ search, limit: limit < 0 ? Number.MAX_SAFE_INTEGER : limit }, (t) => scopeOpen(this.c, categoryId, t), limit)).ids;
+        : await this.scan({ search, limit: limit < 0 ? Number.MAX_SAFE_INTEGER : limit }, (found) => found, (t) => scopeOpen(this.c, categoryId, t), limit);
       return limit < 0 ? ids : ids.slice(0, limit);
     },
     predict: async (threadId, model, mode, now) => {

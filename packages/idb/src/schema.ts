@@ -148,7 +148,14 @@ export const EARLY_TABLES = PERSISTED.filter((t) => !t.lazy && t.early).map((t) 
 export const LATE_TABLES = PERSISTED.filter((t) => !t.lazy && !t.early).map((t) => t.name);
 
 /** Reads tables into memory (bodies stay in IndexedDB), with the meta store. */
-export async function loadAll(idb: IDBDatabase, mem: MemDb, timings: Record<string, number> = {}, eager: readonly string[] = [...EARLY_TABLES, ...LATE_TABLES]): Promise<Record<string, unknown>> {
+export async function loadAll(
+  idb: IDBDatabase,
+  mem: MemDb,
+  timings: Record<string, number> = {},
+  eager: readonly string[] = [...EARLY_TABLES, ...LATE_TABLES],
+  /** given: memory is built in ~8 ms slices with a yield between them (the late tables load while the app runs) */
+  yieldTo?: () => Promise<void>,
+): Promise<Record<string, unknown>> {
   const started = performance.now();
   const tx = idb.transaction([...eager, "meta"], "readonly");
   const finished = done(tx);
@@ -159,10 +166,17 @@ export async function loadAll(idb: IDBDatabase, mem: MemDb, timings: Record<stri
   ]);
   await finished;
   timings.read = performance.now() - started;
-  eager.forEach((name, i) => {
+  let slice = performance.now();
+  for (const [i, name] of eager.entries()) {
     const t = mem.table(name);
-    for (const row of tables[i]!) t.load(row);
-  });
+    for (const row of tables[i]!) {
+      t.load(row);
+      if (yieldTo && performance.now() - slice > 8) {
+        await yieldTo();
+        slice = performance.now();
+      }
+    }
+  }
   timings.build = performance.now() - started - timings.read;
   return Object.fromEntries(metaKeys.map((k, i) => [String(k), metaValues[i]]));
 }
