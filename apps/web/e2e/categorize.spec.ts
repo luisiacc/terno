@@ -1,6 +1,13 @@
 import type { Page } from "@playwright/test";
+import { termsQuery } from "@unica/core";
 import type { DevServer } from "../../backend-dev/src/server";
 import { expect, focusList, selectThread, test } from "./fixtures";
+
+/** What the backend would add for a scope (the same RPC the chips call). */
+async function countOf(server: DevServer, categoryId: number, query: string): Promise<number> {
+  const r = await server.backend.server.invoke("categorize.count", { categoryId, scope: { kind: "query", query } }, { clientId: "test", origin: "dev" });
+  return r.count;
+}
 
 const toast = (page: Page, text: string | RegExp) => page.locator("[data-sonner-toast]").filter({ hasText: text });
 
@@ -116,5 +123,61 @@ test.describe("categorization snackbar", () => {
     await expect(snack.getByTestId("snackbar-sender-count")).toHaveText(`· ${githubOutside()}`);
     await page.keyboard.press("1");
     await expect.poll(githubOutside).toBe(0);
+  });
+});
+
+test.describe("everything about X and Y", () => {
+  test("topic chips recount as they toggle, Ver previews the query, 4 files it", async ({ app: page, server }) => {
+    const { db, facturas, target } = uberSetup(server);
+    await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
+    await fileWithPicker(page, facturas);
+    const snack = page.getByTestId("category-snackbar");
+    const chips = snack.getByTestId("snackbar-term");
+    await expect(chips.first()).toBeVisible();
+    const pressed = snack.locator("[data-testid=snackbar-term][aria-pressed=true]");
+    await expect(pressed).toHaveCount(2);
+    const selected = await pressed.allTextContents();
+    const count = (terms: string[]) => countOf(server, facturas, termsQuery(terms, "Facturas"));
+    const both = await count(selected);
+    await expect(snack.getByTestId("snackbar-topic-count")).toHaveText(`· ${both}`);
+    // one word alone matches at least as much
+    await pressed.first().click();
+    await expect(snack.getByTestId("snackbar-topic-count")).toHaveText(`· ${await count(selected.slice(1))}`);
+    await pressed.first().click(); // back off: nothing selected
+    await expect(snack.getByTestId("snackbar-topic-count")).toHaveCount(0);
+    await chips.filter({ hasText: selected[0]! }).click();
+    await chips.filter({ hasText: selected[1]! }).click();
+    await expect(snack.getByTestId("snackbar-topic-count")).toHaveText(`· ${both}`);
+
+    await snack.getByTestId("snackbar-view").click();
+    await expect(page.getByTestId("search-input")).toHaveValue(termsQuery(selected, "Facturas"));
+    await expect(page.getByTestId("search-stats")).toBeVisible();
+
+    // filing it from a fresh snackbar with the keyboard
+    await page.getByTestId("search-input").fill("in:inbox from:uber.receipts@uber.com");
+    await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
+    await fileWithPicker(page, db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id);
+    await expect(page.getByTestId("snackbar-topic-count")).toBeVisible();
+    await expect(page.getByTestId("snackbar-topic-count")).not.toHaveText("·");
+    await page.keyboard.press("4");
+    await expect(toast(page, /añadidas? a Viajes/)).toBeVisible();
+  });
+
+  test("Más… takes the search language", async ({ app: page, server }) => {
+    const { facturas, target } = uberSetup(server);
+    await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
+    await fileWithPicker(page, facturas);
+    const snack = page.getByTestId("category-snackbar");
+    await snack.getByTestId("snackbar-more").click();
+    const field = snack.getByTestId("snackbar-query");
+    await expect(field).toBeFocused();
+    await field.fill("recibo from:recibos@rappi.com");
+    const expected = await countOf(server, facturas, "recibo from:recibos@rappi.com");
+    expect(expected).toBeGreaterThan(0);
+    await expect(snack.getByTestId("snackbar-topic-count")).toHaveText(`· ${expected}`);
+    // typing doesn't trigger the snackbar's keys
+    await field.press("Enter");
+    await expect(toast(page, `${expected} ${expected === 1 ? "añadida" : "añadidas"} a Facturas`)).toBeVisible();
+    await expect.poll(() => countOf(server, facturas, "recibo from:recibos@rappi.com")).toBe(0);
   });
 });

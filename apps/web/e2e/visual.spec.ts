@@ -22,10 +22,9 @@ async function aiTabWithOllama(page: Page, ollamaUrl: string) {
 
 /** The snackbar with its counts loaded, nothing hovered (toasts stay visible). */
 async function snackbarReady(page: Page) {
-  // stabilize() hides toasts; the snackbar is one
-  await page.addStyleTag({ content: "[data-sonner-toaster]{display:block!important}" });
   await expect(page.getByTestId("snackbar-sender-count")).toBeVisible();
   await expect(page.getByTestId("snackbar-count-loading")).toHaveCount(0);
+  await expect(page.getByTestId("snackbar-topic-count")).toHaveText(/· \d/);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.mouse.move(0, 0);
 }

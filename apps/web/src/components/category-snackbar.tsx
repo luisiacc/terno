@@ -1,16 +1,20 @@
 import { termsQuery, type CategorizeScope, type CategoryColor, type QuickActions } from "@unica/core";
 import { CategoryDot } from "@unica/ui/components/category-dot";
 import { Kbd } from "@unica/ui/components/kbd";
-import { Filter, Undo2, X } from "lucide-react";
+import { cn } from "@unica/ui/lib/utils";
+import { Check, Filter, Search, Undo2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { create } from "zustand";
 import { undoFiled, type Filed } from "~/lib/categorize";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";
 import { reloadList } from "~/state/list";
 
-const TOAST_ID = "category-snackbar";
 const LIFETIME_MS = 10_000;
+
+/** At most one snackbar; a new categorization replaces it. */
+const useSnackbar = create<{ filed: Filed | null; seq: number }>(() => ({ filed: null, seq: 0 }));
 
 interface Controls {
   action(n: number): void;
@@ -27,11 +31,23 @@ const formatCount = (c: { count: number; capped: boolean }) => (c.capped ? "1 00
 
 /** After any categorization (picker, accepted suggestion, drag and drop): the bulk actions it makes obvious. */
 export function showCategorySnackbar(filed: Filed): void {
-  toast.custom((id) => <CategorySnackbar key={`${filed.categoryId}:${filed.batchId}:${filed.threadIds.join(",")}`} filed={filed} toastId={id} />, {
-    id: TOAST_ID,
-    duration: Number.POSITIVE_INFINITY,
-    unstyled: true,
-  });
+  useSnackbar.setState((s) => ({ filed, seq: s.seq + 1 }));
+}
+
+/**
+ * Its own fixed layer rather than a toast: it grows as counts and words
+ * arrive, and a toast stack measures its height once.
+ */
+export function CategorySnackbarHost() {
+  const { filed, seq } = useSnackbar();
+  if (!filed) return null;
+  return (
+    <div className="pointer-events-none fixed bottom-4 left-4 z-50 flex">
+      <div className="pointer-events-auto animate-in fade-in-0 slide-in-from-bottom-2 duration-150">
+        <CategorySnackbar key={seq} filed={filed} onClose={() => useSnackbar.setState((s) => (s.seq === seq ? { filed: null } : s))} />
+      </div>
+    </div>
+  );
 }
 
 /** Files a whole scope, with a progress toast that ends in "N añadidas · Deshacer". */
@@ -61,7 +77,7 @@ function Chip({ n, label, count, onClick, testId, children }: { n: number; label
         {count === "loading" ? (
           <span data-testid="snackbar-count-loading" className="h-3 w-5 animate-pulse rounded bg-muted" />
         ) : count ? (
-          <span data-testid={`${testId}-count`} className="font-mono text-2xs text-muted-foreground tabular">
+          <span data-testid={`${testId}-count`} className="font-mono text-2xs whitespace-nowrap text-muted-foreground tabular">
             · {formatCount(count)}
           </span>
         ) : null}
@@ -71,14 +87,16 @@ function Chip({ n, label, count, onClick, testId, children }: { n: number; label
   );
 }
 
-function CategorySnackbar({ filed, toastId }: { filed: Filed; toastId: string | number }) {
+function CategorySnackbar({ filed, onClose }: { filed: Filed; onClose: () => void }) {
   const category = useApp((s) => s.categories.find((c) => c.id === filed.categoryId));
   const [qa, setQa] = useState<QuickActions | null>(null);
   const [counts, setCounts] = useState<Partial<Record<Slot, Count | "loading">>>({});
   const [terms, setTerms] = useState<Set<string>>(new Set());
+  /** "Más…": anything in the search language ("factura uber from:@uber.com") */
+  const [custom, setCustom] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
   const left = useRef(LIFETIME_MS);
-  const close = () => toast.dismiss(toastId);
+  const close = onClose;
 
   const scopes = (): Partial<Record<Slot, CategorizeScope>> => {
     if (!qa || !category) return {};
@@ -86,7 +104,9 @@ function CategorySnackbar({ filed, toastId }: { filed: Filed; toastId: string | 
     if (qa.sender) out.sender = { kind: "sender", email: qa.sender.email };
     if (qa.domain) out.domain = { kind: "domain", domain: qa.domain };
     if (qa.list) out.list = { kind: "list", listId: qa.list };
-    if (terms.size) out.topic = { kind: "query", query: termsQuery([...terms], category.name) };
+    const text = custom?.trim();
+    if (text) out.topic = { kind: "query", query: text };
+    else if (terms.size) out.topic = { kind: "query", query: termsQuery([...terms], category.name) };
     return out;
   };
 
@@ -124,6 +144,38 @@ function CategorySnackbar({ filed, toastId }: { filed: Filed; toastId: string | 
     };
   }, [qa]);
 
+  // the topic recounts as words are toggled or typed (debounced)
+  const topicQuery = (() => {
+    const t = scopes().topic;
+    return t?.kind === "query" ? t.query : null;
+  })();
+  useEffect(() => {
+    if (!topicQuery) {
+      setCounts((c) => ({ ...c, topic: undefined }));
+      return;
+    }
+    let alive = true;
+    setCounts((c) => ({ ...c, topic: "loading" }));
+    const t = setTimeout(() => {
+      void client
+        .call("categorize.count", { categoryId: filed.categoryId, scope: { kind: "query", query: topicQuery } })
+        .then((r) => alive && setCounts((c) => ({ ...c, topic: r })))
+        .catch(() => alive && setCounts((c) => ({ ...c, topic: { count: 0, capped: false } })));
+    }, 150);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [topicQuery]);
+
+  /** "Ver": the topic as a search, so the user sees exactly what would be added. */
+  const view = () => {
+    if (!topicQuery || !category) return;
+    close();
+    const query = custom?.trim() ? `${custom.trim()} ${termsQuery([], category.name)}` : topicQuery;
+    setApp({ query, view: "all", categoryId: null });
+  };
+
   // own lifetime: 10 s, paused while hovered or focused
   useEffect(() => {
     if (paused) return;
@@ -137,7 +189,8 @@ function CategorySnackbar({ filed, toastId }: { filed: Filed; toastId: string | 
 
   const run = (slot: Slot) => {
     const scope = scopes()[slot];
-    if (!scope || !counts[slot] || counts[slot] === "loading") return;
+    const count = counts[slot];
+    if (!scope || !count || count === "loading" || count.count === 0) return;
     close();
     void applyScope(filed.categoryId, scope);
   };
@@ -200,7 +253,7 @@ function CategorySnackbar({ filed, toastId }: { filed: Filed; toastId: string | 
           <X className="size-3.5" />
         </button>
       </div>
-      {qa && (qa.sender || qa.domain || qa.list || qa.terms.length > 0 || qa.filterDraft) && (
+      {qa && (qa.sender || qa.domain || qa.list || qa.filterDraft) && (
         <div className="mt-2.5 flex flex-wrap gap-1.5">
           {qa.sender && <Chip n={1} testId="snackbar-sender" label={`Todo de ${qa.sender.name}`} count={counts.sender} onClick={() => run("sender")} />}
           {qa.domain && !sameAsSender("domain") && <Chip n={2} testId="snackbar-domain" label={`Todo de @${qa.domain}`} count={counts.domain} onClick={() => run("domain")} />}
@@ -213,6 +266,70 @@ function CategorySnackbar({ filed, toastId }: { filed: Filed; toastId: string | 
               </button>
             </span>
           )}
+        </div>
+      )}
+      {qa && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5" data-testid="snackbar-topic">
+          <span className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-background pr-1 pl-2 text-xs">
+            <button type="button" onClick={() => run("topic")} disabled={!topicQuery} className="inline-flex items-center gap-1.5 disabled:opacity-60" data-testid="snackbar-topic-apply">
+              <Kbd className="h-4 min-w-4 text-2xs">4</Kbd>
+              Sobre:
+            </button>
+            {custom === null ? (
+              <>
+                {qa.terms.map(({ term }) => (
+                  <button
+                    key={term}
+                    type="button"
+                    data-testid="snackbar-term"
+                    aria-pressed={terms.has(term)}
+                    onClick={() =>
+                      setTerms((s) => {
+                        const n = new Set(s);
+                        if (n.has(term)) n.delete(term);
+                        else n.add(term);
+                        return n;
+                      })
+                    }
+                    className={cn(
+                      "inline-flex h-5 items-center gap-0.5 rounded-full border px-1.5 text-2xs",
+                      terms.has(term) ? "border-primary/40 bg-accent text-accent-foreground" : "border-border text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {term}
+                    {terms.has(term) && <Check className="size-2.5" />}
+                  </button>
+                ))}
+                <button type="button" data-testid="snackbar-more" onClick={() => setCustom("")} className="px-1 text-2xs text-muted-foreground hover:text-foreground">
+                  Más…
+                </button>
+              </>
+            ) : (
+              <input
+                autoFocus
+                data-testid="snackbar-query"
+                value={custom}
+                placeholder="Añadir todo lo que hable de…"
+                onChange={(e) => setCustom(e.target.value)}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === "Enter") run("topic");
+                  if (e.key === "Escape") setCustom(null);
+                }}
+                className="h-5 w-56 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+              />
+            )}
+            {topicQuery && counts.topic !== undefined && (
+              <span data-testid="snackbar-topic-count" className="font-mono text-2xs whitespace-nowrap text-muted-foreground tabular">
+                {counts.topic === "loading" ? "·" : counts.topic ? `· ${formatCount(counts.topic)}` : "· 0"}
+              </span>
+            )}
+            {topicQuery && (
+              <button type="button" data-testid="snackbar-view" onClick={view} className="ml-0.5 inline-flex h-5 items-center gap-1 rounded px-1 text-2xs text-primary hover:bg-muted">
+                <Search className="size-3" /> Ver
+              </button>
+            )}
+          </span>
         </div>
       )}
     </div>

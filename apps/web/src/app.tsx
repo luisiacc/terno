@@ -5,7 +5,7 @@ import { onFiled } from "~/lib/categorize";
 import { installKeyboard } from "~/lib/keyboard";
 import { useApp } from "~/state/app";
 import { CategoryPicker } from "./components/category-picker";
-import { showCategorySnackbar } from "./components/category-snackbar";
+import { CategorySnackbarHost, showCategorySnackbar } from "./components/category-snackbar";
 import { CommandPalette } from "./components/command-palette";
 import { Composer } from "./components/composer";
 import { Reader } from "./components/reader";
@@ -67,6 +67,7 @@ export function App() {
         {dialog === "shortcuts" && <ShortcutsDialog />}
         {fresh && dialog === null && needsFirstRun() && <FirstRun />}
       </Suspense>
+      <CategorySnackbarHost />
       <Toaster position="bottom-left" theme={theme} />
     </TooltipProvider>
   );
