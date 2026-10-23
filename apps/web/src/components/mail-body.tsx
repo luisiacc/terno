@@ -1,16 +1,8 @@
 import DOMPurify from "dompurify";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ImageOff } from "lucide-react";
-
-/** Remote resources are blocked unless the user opts in: tracking pixels, remote CSS and fonts included. */
-function csp(allowRemote: boolean): string {
-  const remote = allowRemote ? " https: http:" : "";
-  return `default-src 'none'; img-src data: cid:${remote}; style-src 'unsafe-inline'${remote}; font-src data:${remote}; media-src 'none'; frame-src 'none'; form-action 'none'`;
-}
-
-function hasRemoteContent(html: string): boolean {
-  return /\b(src|background)\s*=\s*["']?\s*https?:/i.test(html) || /url\(\s*["']?https?:/i.test(html);
-}
+import { mailColors, useAppearance } from "~/lib/appearance";
+import { csp, hasOwnColors, hasRemoteContent } from "~/lib/mail";
 
 function openLink(href: string) {
   if (!/^(https?:|mailto:)/i.test(href)) return;
@@ -23,17 +15,23 @@ function openLink(href: string) {
  * scripts (sandbox without allow-scripts), strict CSP, links opened externally.
  * allow-same-origin (without scripts) only lets the parent measure the height.
  */
-export function HtmlBody({ html, remoteImages, localMode }: { html: string; remoteImages: "ask" | "always"; localMode: boolean }) {
+export function HtmlBody({ html, remoteImages, localMode, appearance }: { html: string; remoteImages: "ask" | "always"; localMode: boolean; appearance: "auto" | "paper" }) {
   const ref = useRef<HTMLIFrameElement>(null);
   const [userAllowed, setAllowRemote] = useState(remoteImages === "always");
   // local mode: remote content is never loaded, whatever the setting or a click says
   const allowRemote = userAllowed && !localMode;
   const [height, setHeight] = useState(120);
   const blocked = !allowRemote && hasRemoteContent(html);
+  // re-rendered when the painted theme changes (the colors are literals inside the document)
+  const themeKey = useAppearance((s) => s.themeKey);
+  const mode = useAppearance((s) => s.mode);
+  const clean = useMemo(() => DOMPurify.sanitize(html, { WHOLE_DOCUMENT: false, FORBID_TAGS: ["style"], FORBID_ATTR: ["srcset"], ADD_ATTR: ["target"] }), [html]);
+  const paper = appearance === "paper" || hasOwnColors(clean);
   const doc = useMemo(() => {
-    const clean = DOMPurify.sanitize(html, { WHOLE_DOCUMENT: false, FORBID_TAGS: ["style"], FORBID_ATTR: ["srcset"], ADD_ATTR: ["target"] });
-    return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(allowRemote)}"><base target="_blank"><style>html,body{margin:0;padding:0;background:#fff;color:#1f2330;font:14px/1.55 -apple-system,BlinkMacSystemFont,"Geist Variable",sans-serif;overflow-wrap:anywhere}body{padding:16px}img{max-width:100%;height:auto}a{color:#4f46e5}table{max-width:100%}</style></head><body>${clean}</body></html>`;
-  }, [html, allowRemote]);
+    const c = mailColors()[paper ? "paper" : "themed"];
+    // the CSP is unchanged by theming: local mode keeps the strict policy (allowRemote is false there)
+    return `<!doctype html><html data-mail="${paper ? "paper" : "themed"}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(allowRemote)}"><base target="_blank"><style>html,body{margin:0;padding:0;background:${c.bg};color:${c.fg};font:14px/1.55 -apple-system,BlinkMacSystemFont,"Geist Variable",sans-serif;overflow-wrap:anywhere;color-scheme:${paper ? "light" : mode}}body{padding:16px}img{max-width:100%;height:auto}a{color:${c.link}}table{max-width:100%}</style></head><body>${clean}</body></html>`;
+  }, [clean, allowRemote, paper, themeKey, mode]);
 
   useEffect(() => {
     const frame = ref.current;
@@ -75,7 +73,8 @@ export function HtmlBody({ html, remoteImages, localMode }: { html: string; remo
         sandbox="allow-same-origin allow-popups"
         srcDoc={doc}
         style={{ height }}
-        className="block w-full border-0 bg-white"
+        data-mail={paper ? "paper" : "themed"}
+        className="block w-full border-0"
       />
     </div>
   );
@@ -101,7 +100,7 @@ export function TextBody({ text }: { text: string }) {
       ),
     );
   return (
-    <div className="text-base leading-relaxed whitespace-pre-wrap text-foreground/90 [overflow-wrap:anywhere]">
+    <div className="text-base leading-relaxed whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]">
       {render(main)}
       {quoted && (
         <>

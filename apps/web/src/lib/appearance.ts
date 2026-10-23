@@ -24,8 +24,10 @@ export interface CachedAppearance {
 }
 
 /** The resolved mode (sonner and anything else that needs "light" | "dark"). */
-export const useAppearance = create<{ mode: ThemeMode; reducedMotion: boolean; motionMs: number }>(() => ({
+export const useAppearance = create<{ mode: ThemeMode; reducedMotion: boolean; motionMs: number; themeKey: string }>(() => ({
   mode: document.documentElement.classList.contains("dark") ? "dark" : "light",
+  /** changes whenever the painted colors change (theme id or custom tokens) */
+  themeKey: "",
   reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches,
   motionMs: 75,
 }));
@@ -80,7 +82,6 @@ export function applyAppearance(a: Appearance): void {
   const custom = theme.id.startsWith(CUSTOM_PREFIX);
   const vibrancy = isMacDesktop() && theme.vibrancy;
   const key = JSON.stringify([mode, theme.id, custom ? theme.tokens : null, ms, reduced, vibrancy]);
-  useAppearance.setState({ mode, reducedMotion: reduced, motionMs: ms });
   if (key !== applied) {
     applied = key;
     html.setAttribute("data-theme-switching", "");
@@ -98,6 +99,9 @@ export function applyAppearance(a: Appearance): void {
       unswitch = requestAnimationFrame(() => html.removeAttribute("data-theme-switching"));
     });
   }
+
+  // after the DOM: listeners (the mail iframe) read the painted colors
+  useAppearance.setState({ mode, reducedMotion: reduced, motionMs: ms, themeKey: `${theme.id}:${custom ? JSON.stringify(theme.tokens) : ""}` });
 
   const light = resolveTheme(a, "light");
   const dark = resolveTheme(a, "dark");
@@ -149,4 +153,31 @@ export async function updateAppearance(patch: Pick<SettingsPatch, "theme" | "lig
     toast.error(`No se pudo cambiar la apariencia: ${error instanceof Error ? error.message : error}`);
     return null;
   }
+}
+
+export interface MailColors {
+  /** the theme itself: mail that brings no colors of its own */
+  themed: { bg: string; fg: string; link: string };
+  /** the light card designed mail sits on, so it is never inverted */
+  paper: { bg: string; fg: string; link: string };
+}
+
+/**
+ * The iframe can't see the app's CSS variables: its colors are read from the
+ * painted theme and passed in as literals (hex: the iframe's CSP has no say on colors).
+ */
+export function mailColors(): MailColors {
+  const cs = getComputedStyle(document.documentElement);
+  const hex = (token: string, fallback: string) => {
+    try {
+      return toHex(cs.getPropertyValue(`--${token}`).trim() || fallback);
+    } catch {
+      return toHex(fallback);
+    }
+  };
+  const ink = builtinTheme(DEFAULT_THEME.light)!.tokens;
+  return {
+    themed: { bg: hex("background", ink.background), fg: hex("foreground", ink.foreground), link: hex("primary", ink.primary) },
+    paper: { bg: hex("mail-paper", ink["mail-paper"]), fg: hex("mail-ink", ink["mail-ink"]), link: hex("mail-link", ink["mail-link"]) },
+  };
 }

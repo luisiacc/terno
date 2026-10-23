@@ -9,8 +9,8 @@ describe("WCAG AA in every built-in theme", () => {
   });
 
   it("checks the pairs the plan requires", () => {
-    // 9 + 9 fg/muted-fg surfaces, 8 single text pairs, 8 badge inks, 5 UI pairs, 8 dots
-    expect(CONTRAST_PAIRS).toHaveLength(47);
+    // 9 + 9 fg/muted-fg surfaces, 8 single text pairs + 2 on the mail paper, 8 badge inks, 5 UI pairs, 8 dots
+    expect(CONTRAST_PAIRS).toHaveLength(49);
   });
 
   it("reports a failing pair with its ratio", () => {

@@ -56,6 +56,7 @@ function Reasons({ title, reasons, hint }: { title: string; reasons: string[]; h
 function Message({ m, expanded, onToggle }: { m: MessageDetail; expanded: boolean; onToggle: () => void }) {
   const remoteImages = useApp((s) => s.settings?.remoteImages ?? "ask");
   const localMode = useApp((s) => s.settings?.localMode ?? true);
+  const mailAppearance = useApp((s) => s.settings?.htmlMailAppearance ?? "auto");
   const color = avatarColor(m.from.email);
   return (
     <article data-testid="message" className={cn("rounded-xl border border-border bg-card", !expanded && "cursor-pointer hover:bg-row-hover")} onClick={!expanded ? onToggle : undefined}>
@@ -82,7 +83,7 @@ function Message({ m, expanded, onToggle }: { m: MessageDetail; expanded: boolea
       {expanded && (
         <div className="px-4 pb-4 pl-15">
           {m.bodyHtml ? (
-            <HtmlBody html={m.bodyHtml} remoteImages={remoteImages} localMode={localMode} />
+            <HtmlBody html={m.bodyHtml} remoteImages={remoteImages} localMode={localMode} appearance={mailAppearance} />
           ) : m.bodyText !== null ? (
             <TextBody text={m.bodyText} />
           ) : (

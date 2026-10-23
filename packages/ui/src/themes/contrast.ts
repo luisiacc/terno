@@ -27,6 +27,8 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   ...text("row-selected-foreground", ["row-selected"]),
   ...text("destructive", ["background", "popover"]),
   ...text("success", ["background"]),
+  ...text("mail-ink", ["mail-paper"]),
+  ...text("mail-link", ["mail-paper"]),
   ...CAT_NAMES.map((c): ContrastPair => ({ fg: `cat-${c}-ink`, bg: `cat-${c}`, tint: true, min: 4.5 })),
   ...ui("unread", ["background", "row-selected"]),
   ...ui("row-rail", ["row-selected"]),
