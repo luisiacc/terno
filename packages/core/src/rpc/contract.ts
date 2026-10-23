@@ -391,6 +391,8 @@ export const contract = {
     { timeoutMs: 60_000 },
   ),
   "accounts.connectGmail": m<Account>()(empty, { timeoutMs: 300_000 }),
+  /** web: an access token from Google's token model (the page signs in); connects the mailbox or renews its token */
+  "accounts.connectGmailToken": m<Account>()(z.object({ accessToken: z.string().min(1).max(4096), expiresIn: z.number().int().min(60).max(86_400) }), { timeoutMs: 60_000 }),
   "accounts.update": m<Account>()(
     z.object({ id, displayName: z.string().trim().max(200).optional(), color: z.string().max(40).optional() }),
   ),

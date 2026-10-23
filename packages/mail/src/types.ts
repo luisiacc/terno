@@ -102,9 +102,19 @@ export interface GmailConnectResult {
   emailVerified: boolean;
 }
 
+/** The web's Gmail sign-in: short-lived access tokens from Google's token model, kept in memory. */
+export interface GmailTokenBroker {
+  /** whose mailbox the token opens (Gmail profile + OpenID userinfo) */
+  inspect(accessToken: string, netFetch: typeof fetch): Promise<Omit<GmailConnectResult, "refreshToken">>;
+  /** hands the token to that account's provider until it expires */
+  set(accountId: number, accessToken: string, expiresAt: number): void;
+}
+
 export interface ProviderRegistry {
   /** demo registries never verify anything, so they never establish an owner */
   readonly kind?: "demo";
+  /** web: Gmail connects through the page's Google sign-in instead of connectGmail */
+  readonly gmailTokens?: GmailTokenBroker;
   create(ctx: ProviderContext): MailProvider;
   verifyImap(config: ImapAccountConfig, password: string): Promise<void>;
   connectGmail(options: { clientId: string; clientSecret: string | null; openExternal: (url: string) => Promise<void>; signal?: AbortSignal; fetch: typeof fetch; loginHint?: string }): Promise<GmailConnectResult>;

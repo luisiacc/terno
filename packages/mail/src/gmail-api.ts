@@ -1,0 +1,320 @@
+import type { IncomingMessage } from "@unica/store";
+import { parseRaw } from "./mime";
+import { ProviderError, type FlagUpdate, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
+
+export interface GmailEndpoints {
+  auth: string;
+  token: string;
+  api: string;
+  userinfo: string;
+}
+
+export const GOOGLE_ENDPOINTS: GmailEndpoints = {
+  auth: "https://accounts.google.com/o/oauth2/v2/auth",
+  token: "https://oauth2.googleapis.com/token",
+  api: "https://gmail.googleapis.com/gmail/v1/users/me",
+  userinfo: "https://openidconnect.googleapis.com/v1/userinfo",
+};
+
+export const GMAIL_SCOPES = ["openid", "email", "profile", "https://www.googleapis.com/auth/gmail.modify"];
+
+/** base64url without Buffer (the Gmail API's raw messages) */
+export function toBase64url(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+export function fromBase64url(text: string): Uint8Array {
+  const binary = atob(text.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(text.length / 4) * 4, "="));
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+  return out;
+}
+
+// ───────────────────────────── API client ─────────────────────────────
+
+interface GmailMessage {
+  id: string;
+  threadId: string;
+  labelIds?: string[];
+  historyId?: string;
+  internalDate?: string;
+  sizeEstimate?: number;
+  raw?: string;
+}
+
+interface Cursor {
+  historyId: string;
+}
+
+function labelState(labels: string[]): FlagUpdate["flags"] {
+  const has = (l: string) => labels.includes(l);
+  return {
+    inInbox: has("INBOX") && !has("TRASH") && !has("SPAM"),
+    isRead: !has("UNREAD"),
+    isStarred: has("STARRED"),
+    isSent: has("SENT"),
+    isDraft: has("DRAFT"),
+    isTrash: has("TRASH"),
+    isSpam: has("SPAM"),
+  };
+}
+
+const LABEL_OPS: Record<string, { add?: string[]; remove?: string[] }> = {
+  archive: { remove: ["INBOX"] },
+  spam: { add: ["SPAM"], remove: ["INBOX"] },
+  notSpam: { add: ["INBOX"], remove: ["SPAM"] },
+  markRead: { remove: ["UNREAD"] },
+  markUnread: { add: ["UNREAD"] },
+  star: { add: ["STARRED"] },
+  unstar: { remove: ["STARRED"] },
+};
+
+/** Where the provider gets access tokens: a refresh token on desktop, Google's token model (memory only) on the web. */
+export interface GmailTokenSource {
+  /** a valid access token, renewed as the platform can (throws ProviderError when the user must reconnect) */
+  get(): Promise<string>;
+  /** the API refused it (401): forget it so the next get() renews */
+  invalidate(): void;
+}
+
+export interface GmailApiOptions {
+  endpoints?: Partial<GmailEndpoints>;
+  tokens: GmailTokenSource;
+  /** the RFC 5322 source of a message to send (Bcc kept: the Gmail API reads recipients from headers) */
+  buildRaw(payload: SendPayload): Promise<Uint8Array>;
+}
+
+/** The Gmail REST client (sync, history, labels, send) over any token source: no Node APIs. */
+export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOptions): MailProvider {
+  const ep = { ...GOOGLE_ENDPOINTS, ...options.endpoints };
+  const netFetch = ctx.fetch;
+  const store = ctx.store;
+  const accountId = ctx.account.id;
+  const tokens = options.tokens;
+
+  async function api<T>(path: string, init: RequestInit & { ambiguousOnFailure?: boolean } = {}, retried = false): Promise<T> {
+    const token = await tokens.get();
+    let res: Response;
+    try {
+      res = await netFetch(`${ep.api}${path}`, { ...init, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...init.headers } });
+    } catch (e) {
+      throw new ProviderError(`Network error: ${e instanceof Error ? e.message : e}`, !init.ambiguousOnFailure, init.ambiguousOnFailure);
+    }
+    if (res.status === 401 && !retried) {
+      tokens.invalidate();
+      return api<T>(path, init, true);
+    }
+    if (res.ok && init.ambiguousOnFailure) {
+      // The request was accepted; if the body can't be read we don't know the outcome (no resend).
+      try {
+        return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+      } catch (e) {
+        throw new ProviderError(`Unreadable response after a successful request: ${e instanceof Error ? e.message : e}`, false, true);
+      }
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      const err = new ProviderError(`Gmail API ${res.status}: ${text.slice(0, 200)}`, res.status === 429 || res.status >= 500, Boolean(init.ambiguousOnFailure && res.status >= 500));
+      (err as ProviderError & { status: number }).status = res.status;
+      throw err;
+    }
+    return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+  }
+
+  async function fetchFull(ids: string[]): Promise<IncomingMessage[]> {
+    const out: IncomingMessage[] = [];
+    const queue = [...ids];
+    const worker = async () => {
+      for (let id = queue.shift(); id; id = queue.shift()) {
+        const m = await api<GmailMessage>(`/messages/${id}?format=raw`);
+        const parsed = await parseRaw(fromBase64url(m.raw ?? ""));
+        const labels = m.labelIds ?? [];
+        const st = labelState(labels);
+        out.push({
+          accountId,
+          providerMsgId: m.id,
+          providerThreadId: m.threadId,
+          rfcMessageId: parsed.rfcMessageId,
+          inReplyTo: parsed.inReplyTo,
+          references: parsed.references,
+          from: parsed.from,
+          to: parsed.to,
+          cc: parsed.cc,
+          bcc: parsed.bcc,
+          subject: parsed.subject,
+          date: Number(m.internalDate ?? parsed.date ?? Date.now()),
+          snippet: "",
+          bodyText: parsed.text,
+          bodyHtml: parsed.html,
+          bodyState: "full",
+          listId: parsed.listId,
+          isRead: st.isRead!,
+          isStarred: st.isStarred!,
+          inInbox: st.inInbox!,
+          isSent: st.isSent!,
+          isDraft: st.isDraft!,
+          isTrash: st.isTrash!,
+          isSpam: st.isSpam!,
+          hasAttachments: parsed.attachments.length > 0,
+          gmailLabels: labels,
+          size: m.sizeEstimate ?? 0,
+          attachments: parsed.attachments,
+        });
+      }
+    };
+    await Promise.all(Array.from({ length: 6 }, worker));
+    return out;
+  }
+
+  async function fullSync(sink: SyncSink) {
+    const profile = await api<{ historyId: string }>("/profile");
+    const after = Math.floor(sink.windowStart / 1000);
+    const freshlyIngested = new Set<string>();
+    let pageToken: string | undefined;
+    do {
+      const q = new URLSearchParams({ q: `after:${after}`, maxResults: "500", includeSpamTrash: "true" });
+      if (pageToken) q.set("pageToken", pageToken);
+      const page = await api<{ messages?: { id: string }[]; nextPageToken?: string }>(`/messages?${q}`);
+      const pageIds = (page.messages ?? []).map((m) => m.id);
+      const ids: string[] = [];
+      for (const id of pageIds) if (!(await store.messageByProviderId(id))) ids.push(id);
+      for (let i = 0; i < ids.length; i += 50) {
+        if (sink.signal.aborted) return;
+        const batch = ids.slice(i, i + 50);
+        await sink.ingest(await fetchFull(batch));
+        for (const id of batch) freshlyIngested.add(id);
+      }
+      pageToken = page.nextPageToken;
+    } while (pageToken);
+    // A resync (history expired) must also refresh what we already had: labels may have
+    // changed and messages may have been deleted during the gap.
+    const cached = await store.syncedMessages();
+    // Every cached message is checked (also ones older than the window): explicit 404s are
+    // deletions; any other failure aborts before the cursor advances, so nothing is skipped.
+    const updates: FlagUpdate[] = [];
+    const gone: number[] = [];
+    const queue = cached.filter((m) => !freshlyIngested.has(m.providerMsgId));
+    await Promise.all(
+      Array.from({ length: 6 }, async () => {
+        for (let m = queue.shift(); m; m = queue.shift()) {
+          try {
+            const full = await api<GmailMessage>(`/messages/${m.providerMsgId}?format=minimal`);
+            updates.push({ messageId: m.id, flags: labelState(full.labelIds ?? []) });
+          } catch (e) {
+            if ((e as { status?: number }).status === 404) gone.push(m.id);
+            else throw e;
+          }
+        }
+      }),
+    );
+    if (updates.length) await sink.updateFlags(updates);
+    if (gone.length) await sink.removeMessages(gone);
+    await ctx.saveCursor({ historyId: profile.historyId } satisfies Cursor);
+  }
+
+  async function incremental(sink: SyncSink, cursor: Cursor) {
+    const added = new Set<string>();
+    const changed = new Set<string>();
+    const deleted = new Set<string>();
+    let pageToken: string | undefined;
+    let latest = cursor.historyId;
+    do {
+      const q = new URLSearchParams({ startHistoryId: cursor.historyId, maxResults: "500" });
+      for (const t of ["messageAdded", "messageDeleted", "labelAdded", "labelRemoved"]) q.append("historyTypes", t);
+      if (pageToken) q.set("pageToken", pageToken);
+      const page = await api<{ history?: { messagesAdded?: { message: GmailMessage }[]; messagesDeleted?: { message: GmailMessage }[]; labelsAdded?: { message: GmailMessage }[]; labelsRemoved?: { message: GmailMessage }[] }[]; historyId: string; nextPageToken?: string }>(`/history?${q}`);
+      for (const h of page.history ?? []) {
+        for (const a of h.messagesAdded ?? []) added.add(a.message.id);
+        for (const d of h.messagesDeleted ?? []) deleted.add(d.message.id);
+        for (const l of [...(h.labelsAdded ?? []), ...(h.labelsRemoved ?? [])]) changed.add(l.message.id);
+      }
+      latest = page.historyId;
+      pageToken = page.nextPageToken;
+    } while (pageToken);
+
+    const known = async (id: string) => (await store.messageByProviderId(id))?.id;
+    const toFetch: string[] = [];
+    for (const id of added) if (!deleted.has(id) && !(await known(id))) toFetch.push(id);
+    for (let i = 0; i < toFetch.length; i += 50) await sink.ingest(await fetchFull(toFetch.slice(i, i + 50)));
+
+    const updates: FlagUpdate[] = [];
+    for (const gid of changed) {
+      if (deleted.has(gid)) continue;
+      const local = await known(gid);
+      if (!local) continue;
+      try {
+        const m = await api<GmailMessage>(`/messages/${gid}?format=minimal`);
+        updates.push({ messageId: local, flags: labelState(m.labelIds ?? []) });
+      } catch (e) {
+        if ((e as { status?: number }).status === 404) deleted.add(gid);
+        else throw e;
+      }
+    }
+    if (updates.length) await sink.updateFlags(updates);
+    const removals: number[] = [];
+    for (const gid of deleted) {
+      const id = await known(gid);
+      if (id !== undefined) removals.push(id);
+    }
+    if (removals.length) await sink.removeMessages(removals);
+    await ctx.saveCursor({ historyId: latest } satisfies Cursor);
+  }
+
+  return {
+    async verify() {
+      await api("/profile");
+    },
+
+    async sync(sink) {
+      const cursor = await ctx.loadCursor<Cursor>();
+      if (!cursor) return fullSync(sink);
+      try {
+        await incremental(sink, cursor);
+      } catch (e) {
+        // History records expire (~1 week): Google answers 404 and a full resync is required.
+        if ((e as { status?: number }).status === 404) {
+          await ctx.saveCursor(null);
+          return fullSync(sink);
+        }
+        throw e;
+      }
+    },
+
+    async execute(op: ProviderOp) {
+      if (op.kind === "send") {
+        const payload = op.payload as SendPayload;
+        const raw = await options.buildRaw(payload);
+        const res = await api<{ id: string; threadId?: string }>("/messages/send", {
+          method: "POST",
+          body: JSON.stringify({ raw: toBase64url(raw), threadId: payload.providerThreadId ?? undefined }),
+          ambiguousOnFailure: true,
+        });
+        return { providerMsgId: res.id, providerThreadId: res.threadId };
+      }
+      const ids = op.target.messageIds ?? [];
+      if (!ids.length) return;
+      const gmailIds = [...(await store.providerIds(ids))]
+        .sort(([a], [b]) => a - b)
+        .flatMap(([, p]) => (p && !p.startsWith("local:") ? [p] : []));
+      if (!gmailIds.length) return;
+      if (op.kind === "trash") {
+        for (const id of gmailIds) await api(`/messages/${id}/trash`, { method: "POST" });
+        return;
+      }
+      if (op.kind === "moveToInbox") {
+        for (const id of gmailIds) await api(`/messages/${id}/untrash`, { method: "POST" }).catch(() => undefined);
+        await api("/messages/batchModify", { method: "POST", body: JSON.stringify({ ids: gmailIds, addLabelIds: ["INBOX"], removeLabelIds: ["SPAM"] }) });
+        return;
+      }
+      const labels = LABEL_OPS[op.kind];
+      if (!labels) throw new ProviderError(`Unsupported operation ${op.kind}`, false);
+      for (let i = 0; i < gmailIds.length; i += 1000) {
+        await api("/messages/batchModify", { method: "POST", body: JSON.stringify({ ids: gmailIds.slice(i, i + 1000), addLabelIds: labels.add ?? [], removeLabelIds: labels.remove ?? [] }) });
+      }
+    },
+
+    async close() {},
+  };
+}

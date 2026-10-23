@@ -8,7 +8,7 @@ import { createServer, type IncomingMessage as Req, type ServerResponse } from "
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@unica/core/rpc";
-import { createRegistry } from "@unica/mail";
+import { createGmailTokenBroker, createRegistry, GMAIL_RECONNECT, type ProviderRegistry } from "@unica/mail";
 import { afterEach, describe, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { sqlDb } from "@unica/db";
@@ -85,7 +85,7 @@ class FakeGoogle {
     this.validTokens.clear();
   }
 
-  private issue() {
+  issue() {
     const t = `tok-${++this.tokenSeq}`;
     this.validTokens.add(t);
     return t;
@@ -443,5 +443,76 @@ describe("Gmail operations", () => {
     await backend.syncAccount(account.id);
     expect(sqlDb(backend.store).get("SELECT count(*) c FROM messages WHERE is_sent = 1 AND subject = 'Re: Viaje a Oaxaca'")).toEqual({ c: 1 });
     expect((await client.call("threads.get", { threadId: thread("Viaje a Oaxaca") })).messages).toHaveLength(3);
+  });
+});
+
+describe("Gmail on the web (Google's token model, no refresh token)", () => {
+  async function webSetup() {
+    const google = await new FakeGoogle().start();
+    cleanups.push(() => google.stop());
+    const broker = createGmailTokenBroker({ endpoints: google.endpoints() });
+    const providers: ProviderRegistry = {
+      gmailTokens: broker,
+      create: (ctx) => broker.provider(ctx),
+      verifyImap: async () => Promise.reject(new Error("desktop only")),
+      connectGmail: async () => Promise.reject(new Error("token model only")),
+    };
+    const dir = mkdtempSync(join(tmpdir(), "unica-gmail-web-"));
+    const backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers, autoSync: false });
+    cleanups.push(async () => {
+      await backend.stop();
+      rmSync(dir, { recursive: true, force: true });
+    });
+    const [c, s] = createMemoryTransportPair();
+    backend.connect(s, { clientId: "r", origin: "renderer" });
+    return { google, backend, client: new RpcClient(c, { defaultTimeoutMs: 20_000 }) };
+  }
+
+  it("connects the mailbox a page-provided token opens (owner, sync); the same mailbox again only renews the token", async () => {
+    const { google, backend, client } = await webSetup();
+    seed(google);
+    const account = await client.call("accounts.connectGmailToken", { accessToken: google.issue(), expiresIn: 3600 });
+    expect(account).toMatchObject({ kind: "gmail", email: "luis@gmail.com" });
+    expect(await client.call("identity.get", {})).toMatchObject({ email: "luis@gmail.com", verifiedBy: "google_oauth" });
+    await backend.syncAccount(account.id);
+    expect(sqlDb(backend.store).get("SELECT count(*) c FROM messages")).toEqual({ c: 5 });
+    // no secret is stored: the token lives in memory only
+    expect(sqlDb(backend.store).get("SELECT count(*) c FROM secrets")).toEqual({ c: 0 });
+    const again = await client.call("accounts.connectGmailToken", { accessToken: google.issue(), expiresIn: 3600 });
+    expect(again.id).toBe(account.id);
+    expect((await client.call("app.bootstrap", {})).accounts).toHaveLength(1);
+    await expect(client.call("accounts.connectGmailToken", { accessToken: "not-a-token", expiresIn: 3600 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("without a live token, sync and actions wait (retryable) behind reconnecting, then go through", async () => {
+    const { google, backend, client } = await webSetup();
+    seed(google);
+    const account = await client.call("accounts.connectGmailToken", { accessToken: google.issue(), expiresIn: 3600 });
+    await backend.syncAccount(account.id);
+    google.expireTokens();
+    const thread = sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE subject = 'Viaje a Oaxaca'")!.thread_id;
+    await client.call("threads.act", { threadIds: [thread], action: "archive" });
+    await backend.runWorker();
+    expect(sqlDb(backend.store).get("SELECT state, last_error FROM ops")).toEqual({ state: "queued", last_error: GMAIL_RECONNECT });
+    await backend.syncAccount(account.id);
+    expect((await client.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "offline", lastError: GMAIL_RECONNECT });
+    await client.call("accounts.connectGmailToken", { accessToken: google.issue(), expiresIn: 3600 });
+    sqlDb(backend.store).run("UPDATE ops SET next_attempt_at = 0");
+    await backend.runWorker();
+    expect(sqlDb(backend.store).get("SELECT state FROM ops")).toEqual({ state: "succeeded" });
+    expect(google.messages.get("g1")!.labelIds).not.toContain("INBOX");
+  });
+
+  it("sends through the API with the portable MIME builder (UTF-8 subject and names, Bcc kept for Gmail)", async () => {
+    const { google, backend, client } = await webSetup();
+    const account = await client.call("accounts.connectGmailToken", { accessToken: google.issue(), expiresIn: 3600 });
+    await client.call("compose.send", { accountId: account.id, to: [{ name: "Ana Pérez", email: "ana@example.com" }], bcc: [{ name: "", email: "oculto@example.com" }], subject: "Reunión mañana", bodyText: "¿Nos vemos?\nSaludos" });
+    await backend.runWorker();
+    const raw = google.sent[0]!.raw;
+    expect(raw).toMatch(/^Bcc: oculto@example\.com/m);
+    const { parseRaw } = await import("@unica/mail");
+    const parsed = await parseRaw(raw);
+    expect(parsed).toMatchObject({ subject: "Reunión mañana", to: [{ name: "Ana Pérez", email: "ana@example.com" }], text: expect.stringMatching(/^¿Nos vemos\?\r?\nSaludos$/) });
+    expect(sqlDb(backend.store).get("SELECT state FROM ops WHERE kind = 'send'")).toEqual({ state: "succeeded" });
   });
 });

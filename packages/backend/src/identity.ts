@@ -14,7 +14,7 @@ export function imapClaim(account: { email: string }, config: ImapAccountConfig,
   };
 }
 
-export function gmailClaim(result: GmailConnectResult): Omit<OwnerClaim, "accountId" | "email"> {
+export function gmailClaim(result: Omit<GmailConnectResult, "refreshToken">): Omit<OwnerClaim, "accountId" | "email"> {
   return {
     displayName: result.name,
     provider: "gmail",

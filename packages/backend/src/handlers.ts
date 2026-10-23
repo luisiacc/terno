@@ -302,6 +302,7 @@ export function createHandlers(b: Backend): Handlers {
     },
 
     "accounts.addImap": async (p) => {
+      if (!b.host.capabilities.imap) throw new RpcError("UNAVAILABLE", "IMAP/SMTP needs the desktop app.");
       const config: ImapAccountConfig = {
         imap: p.imap,
         smtp: p.smtp,
@@ -362,6 +363,39 @@ export function createHandlers(b: Backend): Handlers {
         ownerClaim: b.canClaimOwner() ? gmailClaim({ ...result, name: result.name || result.email }) : undefined,
         now: b.now(),
       });
+      await b.emitAccounts();
+      if (claimed) await b.emitOwner();
+      b.startAccount(account);
+      return account;
+    },
+
+    "accounts.connectGmailToken": async ({ accessToken, expiresIn }) => {
+      const tokens = b.options.providers.gmailTokens;
+      if (!tokens) throw new RpcError("UNAVAILABLE", "This host connects Gmail with accounts.connectGmail.");
+      const who = await tokens.inspect(accessToken, b.net.fetchFor("mail")).catch((error: unknown) => {
+        throw new RpcError("BAD_REQUEST", error instanceof Error ? error.message : String(error));
+      });
+      const expiresAt = b.now() + expiresIn * 1000;
+      const existing = (await store.accounts.list()).find((a) => a.email === who.email.toLowerCase());
+      if (existing) {
+        if (existing.kind !== "gmail") throw new RpcError("BAD_REQUEST", `${who.email} is already connected over IMAP.`);
+        // reconnect: the same mailbox gets a fresh token and syncs what it missed
+        tokens.set(existing.id, accessToken, expiresAt);
+        void b.syncAccount(existing.id);
+        b.kickWorker();
+        return existing;
+      }
+      const config: GmailAccountConfig = { senderName: who.name || who.email };
+      const { account, claimed } = await store.accounts.create({
+        kind: "gmail",
+        email: who.email,
+        displayName: who.email.split("@")[0]!,
+        color: await nextAccountColor(),
+        providerConfig: config,
+        ownerClaim: b.canClaimOwner() ? gmailClaim({ ...who, name: who.name || who.email }) : undefined,
+        now: b.now(),
+      });
+      tokens.set(account.id, accessToken, expiresAt);
       await b.emitAccounts();
       if (claimed) await b.emitOwner();
       b.startAccount(account);

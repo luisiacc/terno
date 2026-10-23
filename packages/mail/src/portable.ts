@@ -2,3 +2,6 @@
 export * from "./types";
 export * from "./demo";
 export * from "./mime";
+export * from "./compose-portable";
+export * from "./gmail-api";
+export * from "./gmail-web";
