@@ -19,9 +19,9 @@ import {
   batchThreads,
   finishUndo,
   undoBatchPart,
-  undoMove,
+  beginMove,
   isMoveBatch,
-  moveToCategory,
+  undoMoveCommit,
   claimFilterApplications,
   claimOwner,
   completeOp,
@@ -187,12 +187,14 @@ export function createHandlers(b: Backend): Handlers {
       return { ok: true as const };
     },
     "categories.addThreads": ({ categoryId, threadIds, source }, ctx) => fileThreads(categoryId, threadIds, ctx.origin === "mcp" ? "agent" : ADDED_BY[source], source),
-    "categories.moveThreads": ({ from, to, threadIds, source }, ctx) => {
+    "categories.moveThreads": async ({ from, to, threadIds, source }, ctx) => {
       requireCategory(from);
       requireCategory(to);
-      const r = moveToCategory(db(), { from, to, threadIds, addedBy: ctx.origin === "mcp" ? "agent" : ADDED_BY[source], now: b.now(), source });
+      // memberships move in one transaction; the training follows in slices (journaled)
+      const r = beginMove(db(), { from, to, threadIds, addedBy: ctx.origin === "mcp" ? "agent" : ADDED_BY[source], now: b.now(), source });
       b.categorizer.apply(r.deltas);
-      b.notifyChanged([...new Set([...r.added, ...r.moved, ...threadIds])]);
+      b.notifyChanged([...new Set([...r.added, ...r.moved])]);
+      await b.finishMove(r.batchId);
       return { added: r.added.length, addedIds: r.added, batchId: r.batchId, moved: r.moved };
     },
     "categories.removeThreads": async ({ categoryId, threadIds, reason }) => {
@@ -260,10 +262,12 @@ export function createHandlers(b: Backend): Handlers {
     "categorize.stats": () => categoryStats(db()),
     "categorize.undo": async ({ batchId }) => {
       if (isMoveBatch(db(), batchId)) {
-        // one transaction: the destination and the source come back together or not at all
-        const r = undoMove(db(), batchId, b.now());
+        // memberships and decisions come back in one transaction; examples follow in slices
+        await b.finishMove(batchId);
+        const r = undoMoveCommit(db(), batchId, b.now());
         b.categorizer.apply(r.deltas);
         b.notifyChanged([...new Set([...r.removed, ...r.restored])]);
+        await b.finishMove(batchId);
         return { removed: r.removed.length, restored: r.restored.length };
       }
       let removed = 0;

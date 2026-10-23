@@ -164,7 +164,7 @@ describe("migration v4: smart categorization", () => {
     const { db } = seededV3();
     const before = db.all("SELECT thread_id, category_id, added_by, added_at FROM thread_categories ORDER BY thread_id, category_id");
     const ftsBefore = db.get<{ c: number }>("SELECT count(*) AS c FROM messages_fts WHERE messages_fts MATCH 'factura'")!.c;
-    expect(migrate(db)).toEqual({ from: 3, to: 4 });
+    expect(migrate(db)).toEqual({ from: 3, to: SCHEMA_VERSION });
     expect(db.all("SELECT thread_id, category_id, added_by, added_at FROM thread_categories ORDER BY thread_id, category_id")).toEqual(before);
     expect(db.get<{ c: number }>("SELECT count(*) AS c FROM thread_categories WHERE batch_id IS NOT NULL")!.c).toBe(0);
     // external-content FTS: triggers survive and the index still matches its content

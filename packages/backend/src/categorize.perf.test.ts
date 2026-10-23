@@ -321,6 +321,39 @@ it("large UI adds, removals and undo are sliced: no long stall, interactive RPCs
   await client.call("categories.delete", { id: cat });
 }, 600_000);
 
+it("an ⌥-move of the largest selection (5,000 threads) and its undo: atomic, no long stall, lists keep flowing", async () => {
+  if (!backend.categorizer.ready) backend.categorizer.rebuildSync();
+  const [c, srv] = createMemoryTransportPair();
+  backend.connect(srv, { clientId: "move", origin: "renderer" });
+  const client = new RpcClient(c);
+  const from = (await client.call("categories.create", { name: "Mover desde", color: "rose" })).id;
+  const to = (await client.call("categories.create", { name: "Mover a", color: "cyan" })).id;
+  const ids = backend.db.all<{ id: number }>("SELECT id FROM threads WHERE in_trash = 0 AND in_spam = 0 ORDER BY id LIMIT 5000").map((r) => r.id);
+  expect(ids).toHaveLength(5000);
+  await client.call("categories.addThreads", { categoryId: from, threadIds: ids, source: "snackbar" });
+  const p95 = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.ceil(xs.length * 0.95) - 1] ?? 0;
+  let batchId = 0;
+  const inCat = (cat: number) => backend.db.get<{ n: number }>("SELECT count(*) AS n FROM thread_categories WHERE category_id = ?", cat)!.n;
+  const runs: [string, () => Promise<unknown>][] = [
+    ["move 5,000 threads (⌥-drag)", async () => (batchId = (await client.call("categories.moveThreads", { from, to, threadIds: ids, source: "dnd" })).batchId)],
+    ["undo that move", () => client.call("categorize.undo", { batchId })],
+  ];
+  const results: { name: string; stall: number; list: number }[] = [];
+  for (const [name, fn] of runs) {
+    const { stall, rpc } = await underLoad(fn);
+    results.push({ name, stall, list: p95(rpc) });
+    stats.push({ name: `${name}: max event-loop stall ${stall.toFixed(1)} ms, list RPC p95 ${p95(rpc).toFixed(1)} ms (${rpc.length})`, budgetMs: 50, p50: stall, p95: stall, max: stall, iterations: rpc.length });
+    if (name.startsWith("move")) expect([inCat(from), inCat(to)]).toEqual([0, 5000]);
+    else expect([inCat(from), inCat(to)]).toEqual([5000, 0]);
+  }
+  await client.call("categories.delete", { id: from });
+  await client.call("categories.delete", { id: to });
+  for (const r of results) {
+    expect(r.stall, r.name).toBeLessThanOrEqual(50 * BUDGET_MULTIPLIER);
+    expect(r.list, r.name).toBeLessThanOrEqual(20 * BUDGET_MULTIPLIER);
+  }
+}, 600_000);
+
 it("a rebuild never stalls the event loop for long, even with 40,000 training examples", async () => {
   if (!backend.categorizer.ready) backend.categorizer.rebuildSync();
   const [c, srv] = createMemoryTransportPair();

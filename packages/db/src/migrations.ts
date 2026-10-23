@@ -427,11 +427,61 @@ CREATE TABLE cls_snapshot (
 );
 `;
 
+/**
+ * v5: the ⌥-move journal. A move commits its memberships in one transaction
+ * and keeps here what it overwrote (source rows with their origin and batch,
+ * both categories' examples, decision outcomes) plus per-thread progress of
+ * the training it applies afterwards in slices. Undo reads it back.
+ */
+const MOVES_V5 = `
+CREATE TABLE cat_move_threads (
+  batch_id INTEGER NOT NULL REFERENCES cat_batches(id) ON DELETE CASCADE,
+  thread_id INTEGER NOT NULL,
+  -- 1: not in the destination before the move
+  added INTEGER NOT NULL,
+  -- 1: was in the source (it gets a removal example)
+  moved INTEGER NOT NULL DEFAULT 0,
+  -- training (after the move) or example restore (after its undo) done for this thread
+  done INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (batch_id, thread_id)
+) WITHOUT ROWID;
+CREATE TABLE cat_move_rows (
+  batch_id INTEGER NOT NULL REFERENCES cat_batches(id) ON DELETE CASCADE,
+  thread_id INTEGER NOT NULL,
+  added_by TEXT NOT NULL,
+  added_at INTEGER NOT NULL,
+  prev_batch_id INTEGER,
+  PRIMARY KEY (batch_id, thread_id)
+) WITHOUT ROWID;
+CREATE TABLE cat_move_examples (
+  batch_id INTEGER NOT NULL REFERENCES cat_batches(id) ON DELETE CASCADE,
+  thread_id INTEGER NOT NULL,
+  category_id INTEGER NOT NULL,
+  label INTEGER NOT NULL,
+  weight REAL NOT NULL,
+  source TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  sender TEXT NOT NULL,
+  content INTEGER NOT NULL,
+  example_batch_id INTEGER,
+  features BLOB NOT NULL,
+  PRIMARY KEY (batch_id, thread_id, category_id)
+) WITHOUT ROWID;
+CREATE TABLE cat_move_decisions (
+  batch_id INTEGER NOT NULL REFERENCES cat_batches(id) ON DELETE CASCADE,
+  thread_id INTEGER NOT NULL,
+  category_id INTEGER NOT NULL,
+  outcome TEXT,
+  PRIMARY KEY (batch_id, thread_id, category_id)
+) WITHOUT ROWID;
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "initial schema", sql: SCHEMA_V1 },
   { version: 2, name: "op target index", sql: OP_TARGETS_V2 },
   { version: 3, name: "owner identity, ai secrets, local mode", sql: OWNER_V3 },
   { version: 4, name: "smart categorization", sql: CATEGORIZATION_V4 },
+  { version: 5, name: "move journal", sql: MOVES_V5 },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

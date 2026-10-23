@@ -41,6 +41,12 @@ import {
   type IncomingMessage,
   type ModelDelta,
   type OpRow,
+  ownAddresses,
+  movePending,
+  movePhase,
+  restoreMoveSlice,
+  trainMoveSlice,
+  unfinishedMoves,
 } from "@unica/db";
 import { ProviderError, type MailProvider, type ProviderRegistry, type SyncSink } from "@unica/mail";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
@@ -171,6 +177,7 @@ export class Backend {
 
   start(): void {
     if (!this.categorizer.ready) void this.categorizer.rebuild();
+    for (const m of unfinishedMoves(this.db)) void this.finishMove(m.batchId);
     if (this.options.autoSync === false) return;
     this.idleTimer = setInterval(() => void this.categorizer.idle(), 10 * 60_000);
     this.idleTimer.unref?.();
@@ -439,6 +446,34 @@ export class Backend {
       }, wait);
       notice.timer.unref?.();
     }
+  }
+
+  private readonly moves = new Map<number, Promise<void>>();
+
+  /**
+   * Runs (or joins) whatever a move still has to do in slices: its training
+   * after the move, or its example restore after an undo. Resumable: progress
+   * is per thread in the journal, so after a crash start() picks it up.
+   */
+  finishMove(batchId: number): Promise<void> {
+    const running = this.moves.get(batchId);
+    if (running) return running;
+    const own = ownAddresses(this.db);
+    const job = (async () => {
+      for (;;) {
+        const phase = movePhase(this.db, batchId);
+        if (phase !== "training" && phase !== "restoring") return;
+        const pending = movePending(this.db, batchId);
+        if (pending.length === 0) return;
+        await this.runSliced(pending, 50, (chunk) => {
+          const deltas = phase === "training" ? trainMoveSlice(this.db, batchId, chunk, this.now(), own) : restoreMoveSlice(this.db, batchId, chunk);
+          this.categorizer.apply(deltas);
+        });
+        if (this.stopped) return;
+      }
+    })().finally(() => this.moves.delete(batchId));
+    this.moves.set(batchId, job);
+    return job;
   }
 
   /**

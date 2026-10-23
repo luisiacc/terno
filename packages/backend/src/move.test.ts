@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@unica/core/rpc";
-import { createCategory, seedDataset } from "@unica/db";
+import { beginMove, createCategory, movePhase, seedDataset } from "@unica/db";
 import { demoRegistry } from "@unica/mail";
 import { generateDataset } from "@unica/mock-data";
 import { afterEach, describe, expect, it } from "vitest";
@@ -19,9 +19,11 @@ afterEach(async () => {
   for (const c of cleanups.splice(0).reverse()) await c();
 });
 
+const open = (dir: string) => new Backend({ dbPath: join(dir, "unica.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false });
+
 function setup() {
   const dir = mkdtempSync(join(tmpdir(), "unica-move-"));
-  const backend = new Backend({ dbPath: join(dir, "unica.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false });
+  const backend = open(dir);
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "renderer", origin: "renderer" });
   cleanups.push(async () => {
@@ -35,7 +37,7 @@ function setup() {
   const threads = backend.db
     .all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 AND last_from_email NOT LIKE '%luis%' AND id NOT IN (SELECT thread_id FROM thread_categories) ORDER BY id LIMIT 3")
     .map((r) => r.id);
-  return { backend, client: new RpcClient(c), a, b, threads };
+  return { backend, client: new RpcClient(c), a, b, threads, dir };
 }
 
 type Row = { added_by: string; batch_id: number | null } | undefined;
@@ -111,5 +113,28 @@ describe("moving threads between categories", () => {
     // retrying succeeds
     expect(await client.call("categorize.undo", { batchId: move.batchId })).toEqual({ removed: 1, restored: 1 });
     expect(membership(backend, t1, a)).toMatchObject({ added_by: "user" });
+  });
+
+  it("a move interrupted after its memberships committed finishes its training on the next start", async () => {
+    const { backend, a, b, threads, dir } = setup();
+    const [t1, t2] = threads as [number, number];
+    backend.db.run("INSERT INTO thread_categories (thread_id, category_id, added_by, added_at) VALUES (?, ?, 'user', 0), (?, ?, 'user', 0)", t1, a, t2, a);
+    // the commit happened, the sliced training never ran (the app quit)
+    const m = beginMove(backend.db, { from: a, to: b, threadIds: [t1, t2], addedBy: "user", now: NOW, source: "dnd" });
+    expect(movePhase(backend.db, m.batchId)).toBe("training");
+    expect([membership(backend, t1, a), membership(backend, t1, b)?.batch_id]).toEqual([undefined, m.batchId]);
+    expect(example(backend, t1, b)).toBeUndefined();
+    await backend.stop();
+    const again = open(dir);
+    try {
+      again.start();
+      await expect.poll(() => movePhase(again.db, m.batchId)).toBe("done");
+      for (const t of [t1, t2]) {
+        expect(example(again, t, b)).toMatchObject({ label: 1, source: "user", batch_id: m.batchId });
+        expect(example(again, t, a)).toMatchObject({ label: -1, source: "removal" });
+      }
+    } finally {
+      await again.stop();
+    }
   });
 });
