@@ -157,3 +157,15 @@ Split 03/04 into independently green commits:
 10. **IDB later:** full semantics and recovery first; automatic fallback only after conformance and real-browser perf pass.
 
 At each relevant commit retain the existing SQL, import-contention, renderer and packaged-app gates. Add instant-search gates without replacing fallback gates or changing `PERF_BUDGET_MULTIPLIER`. Test cold startup and missing/corrupt snapshots explicitly. Prototype timings support the direction; they are not implementation acceptance evidence.
+
+## Implementation notes: steps 1–5 (2026-10-23)
+
+Landed as the commits for steps 1–5 above, with migration numbers shifted by one (v1–v5 were already taken, v4 by 02 and v5 by 02's move journal): **v6 is the body split, v7 the outbox.**
+
+- **Contracts** live in `@unica/store` (`search.ts`, `mail-store.ts`, `types.ts`, `platform.ts`); `resolveSearch` is pure in `@unica/core`. `ResolvedSearch` gained `key` (the query as typed plus its UI scope): relative dates move with time, so a key derived from the parsed query would never match its own next page. RPC search cursors carry `revision` and `queryKey`; keyset-only cursors from older renderers still page.
+- `MailStore.threads` implements `MailStoreSearch.search(req)` for pre-resolved requests and adds `searchText(...)`, which resolves `account:`/`category:` inside the same unit of work as the engine query and hydration. FTS5 keeps its fused statement (`Fts5SearchEngine.page`); `query()` returns ids for other callers.
+- `complete` is true for every FTS5 answer; `pendingBodies` is a count capped at 1,000. The RPC's `complete` keeps its old meaning (`complete && pendingBodies === 0`).
+- Classification stays inside the ingestion command with the in-memory model passed as a pure input (`ClassifierInput`); settings are read by the backend and passed in (`mode`). The AI assist re-checks its settings in the backend and its data conditions inside `recordAiSuggestion`.
+- The outbox finalizer is a `Db` before-commit hook, so *every* top-level transaction on the connection is captured, not only store commands; writes outside a transaction are batched by the next one and on open. Batches are built by SQLite from the dirty ids in a compact encoding (decoded by `changes()`), and the log is pruned past 32 MiB (never the newest batch, never past an active build lease; leases are cleared on open). Dirty-marking triggers use `INSERT OR IGNORE` except on `message_bodies`, whose upsert would override a trigger's conflict clause.
+- Any future rebuild of `messages`, `message_bodies`, `threads` or `thread_categories` must recreate both the FTS and the `search_dirty_*` triggers.
+- Measured at 51k messages: the v5→v6 migration takes ~1 s (no FTS rebuild); a real v5 profile (21k messages) upgrades to v7 in ~0.2 s with rows, memberships, ops, settings and FTS answers unchanged. The outbox writes ~1.15× the imported mail's bytes, a triage action ~35 bytes; ingestion throughput is ~10% lower than before steps 4–5, a 5,000-thread ⌥-move ~5 ms longer (still inside its 50 ms gate).

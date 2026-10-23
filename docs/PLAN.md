@@ -82,9 +82,10 @@ Pragmas: WAL, `synchronous=NORMAL`, `foreign_keys=ON`, `busy_timeout=2000`, `tem
 accounts(id, kind, email, display_name, color, provider_config_json, secret_ref, sync_state_json, created_at)
 messages(id INTEGER PK, account_id, thread_id, provider_msg_id, rfc_message_id, in_reply_to, references_json,
          from_name, from_email, from_domain, to_json, cc_json, recipients_text, subject, date, snippet,
-         body_text, body_html, body_state['none'|'partial'|'full'], list_id,
+         body_state['none'|'partial'|'full'], body_tail_norm, list_id,
          is_read, is_starred, in_inbox, is_sent, is_draft, is_trash, is_spam, has_attachments,
          gmail_labels_json, size)
+message_bodies(message_id PK, body_text, body_html)       -- v6; no row for a message without a body
 message_locations(message_id, mailbox, uidvalidity, uid)  -- IMAP identity; remapped after MOVE
 threads(id INTEGER PK, account_id, provider_thread_id, subject, snippet, participants_json,
         last_date, message_count,
@@ -97,8 +98,9 @@ ops(id TEXT uuid, account_id, kind, target_json, payload_json,
     state['queued'|'running'|'succeeded'|'failed'|'unknown'], attempts, next_attempt_at, last_error, created_at)
 user_actions(id, thread_id, action, from_email, from_domain, list_id, at)   -- explicit actions only
 dismissed_suggestions(key, at) ; settings(key, value_json)
-messages_fts USING fts5(subject, from_text, recipients, body, content='messages_fts_src' /*view*/, content_rowid='id',
-                        tokenize="unicode61 remove_diacritics 2", prefix='2 3')
+messages_fts USING fts5(subject, from_text, recipients, body, content='messages_fts_src' /*view over messages ⟕ message_bodies*/,
+                        content_rowid='id', tokenize="unicode61 remove_diacritics 2", prefix='2 3')
+search_state(epoch, seq) ; search_outbox(seq, changes) -- v7: one revisioned batch of search projections per write transaction
 ```
 
 **Thread semantics:**
@@ -143,6 +145,7 @@ Sidebar counts are computed with `count(*)` over partial indexes (measured; no t
 - Rules evaluate **per message**. Actions apply to the matched messages; category actions apply to their thread.
 - JS `evaluate(rule, msg)` (incoming) and `compileRuleToSql(rule)` (preview / apply-existing) share normalization. A **parity test** runs both over thousands of adversarial mock messages and they must agree.
 - AI: prompt + JSON schema → `FilterRule` → zod validation. One repair retry, then the error is shown. The result always lands in the visual builder with a live preview before saving.
+- **Storage boundary** (plans 03/04 reconciliation): the backend, providers (`ProviderStore`), categorizer and MCP reach storage only through `MailStore` (`packages/store`), async, one atomic store command per method; `SqlMailStore` implements it over the synchronous SQL layer on a `SqliteConnection` (node:sqlite driver on desktop). One conformance suite (`@unica/store/conformance`) defines the contract for every adapter, including the brute-force search oracle. Every write transaction appends its search changes to the outbox (v7) as absolute projections under a revision; searches report the revision they answered at. No in-memory engine consumes it yet.
 - Smart categorization (plan 02, migration v4): pure `core/categorize` (features, grouped Naive Bayes with a positive-unlabeled correction, policy, explanations) and `db/categorize*.ts` store commands; `cls_examples` is the training source of truth (user removals are weight-3 negatives; categories are additive, so another category is never a negative). Classification runs inside the ingestion transaction; the in-memory model is updated only after commit. Auto requires p ≥ 0.97, ≥ 5 examples and a calibrated identity (or a content-only path for unknown senders), with hard/sender/look-alike vetoes and a Beta safety valve that waits for 10 matured outcomes. One `categories.addThreads` path serves the picker, accepted suggestions and drag and drop; bulk applies are undoable batches.
 - Learned filters (pure `core/learning`): per key (sender/List-Id/domain) over the last 60 days, ≥5 explicit actions with ≥85% the same destructive action (archive/trash/spam) and no star/important/reply signal → propose a rule. Dismissals are remembered.
 

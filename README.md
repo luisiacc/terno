@@ -42,7 +42,7 @@ pnpm dev:desktop:seeded  # 8 accounts / ~21k messages, seeded once (--reseed to 
 
 ```
 Renderer (React 19, sandboxed) ──MessagePort──▶ Backend (Electron utilityProcess)
-                                                 ├─ node:sqlite (WAL, FTS5), sole writer
+                                                 ├─ MailStore → node:sqlite (WAL, FTS5, search outbox), sole writer
                                                  ├─ ops queue → IMAP / SMTP / Gmail
                                                  └─ unix socket ◀── unica-mcp (Claude Code / Codex)
 Main process: windows, app:// protocol, Keychain (safeStorage)
@@ -145,7 +145,8 @@ apps/desktop      Electron main/preload/utility backend, packaging, packaged-app
 apps/web          Renderer (React 19 + Vite + Tailwind v4), Playwright e2e/visual/perf
 apps/backend-dev  WebSocket host of the backend for browser dev and e2e
 packages/core     Pure domain: types, typed RPC, search parser, filter DSL, learning, keybindings
-packages/db       node:sqlite store: schema, FTS, planner, rule compiler, ops, perf gate
+packages/store    MailStore and search contracts (async store commands, revisions, search feed) + adapter conformance suite
+packages/db       SQL layer and SqlMailStore: connection seam, node:sqlite driver, schema, FTS, planner, rule compiler, ops, outbox, perf gate
 packages/backend  Service layer: RPC handlers, ops worker, sync, filters, agent socket
 packages/mail     IMAP (imapflow), SMTP (nodemailer), Gmail (REST + OAuth), MIME
 packages/ai       AI transports (Anthropic, OpenAI-compatible incl. Ollama/LM Studio/Azure), structured-output ladder, discovery, offline fake
