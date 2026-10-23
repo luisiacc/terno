@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { fakeTransport } from "./fake";
 import { extractJsonObject } from "./json";
-import { createAi } from "./tasks";
+import { createAi, probe } from "./tasks";
 import { AiError, type CompletionRequest, type FilterGenerationContext, type ModelTransport, type ProviderConfig } from "./types";
 import { convertWireFilter, wireFilterSchema, type WireFilter } from "./wire";
 
@@ -245,5 +245,31 @@ describe("classify", () => {
     // the label set is enforced by the schema, not trusted from the model
     const strict = scripted([JSON.stringify({ results: [{ id: "a", label: "Spam", confidence: 1 }] }), JSON.stringify({ results: [{ id: "a", label: "Viajes", confidence: 1 }] })]);
     await expect(createAi(config(), { transport: strict }).classify({ items: [{ id: "a", text: "x" }], labels, instructions: "" })).resolves.toEqual([{ id: "a", label: "Viajes", confidence: 1 }]);
+  });
+});
+
+describe("probe (Test connection)", () => {
+  /** The model answers at once, but discovery never returns until it is aborted. */
+  const hangingDiscovery = (): ModelTransport => ({
+    complete: async () => ({ text: '{"ok":true}', stop: "end" }),
+    listModels: (signal) => new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true })),
+  });
+
+  it("has one end-to-end deadline that covers discovery", async () => {
+    const started = performance.now();
+    await expect(probe(config(), new AbortController().signal, hangingDiscovery(), 100)).rejects.toMatchObject({ kind: "timeout" });
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
+  it("stays cancellable during discovery", async () => {
+    const controller = new AbortController();
+    const pending = probe(config(), controller.signal, hangingDiscovery(), 60_000);
+    setTimeout(() => controller.abort(), 30);
+    await expect(pending).rejects.toMatchObject({ kind: "cancelled" });
+  });
+
+  it("ignores a failing discovery when the model answered", async () => {
+    const t: ModelTransport = { complete: async () => ({ text: '{"ok":true}', stop: "end" }), listModels: async () => Promise.reject(new Error("404")) };
+    await expect(probe(config(), new AbortController().signal, t, 1000)).resolves.toMatchObject({ capabilities: { output: "json_schema", contextTokens: null } });
   });
 });

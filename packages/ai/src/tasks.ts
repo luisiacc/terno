@@ -12,6 +12,8 @@ export const FILTER_PROMPT_TOKENS = 1500;
 export const FILTER_MAX_TOKENS = 4000;
 /** One filters.generate, downgrades and repairs included; below the 120 s RPC timeout. */
 export const GENERATE_DEADLINE_MS = 100_000;
+/** Test connection end to end (probe + discovery), below the 120 s ai.test RPC timeout. */
+export const PROBE_DEADLINE_MS = 100_000;
 
 export function transportFor(config: ProviderConfig): ModelTransport {
   switch (config.id) {
@@ -133,12 +135,18 @@ export interface ProbeResult {
  * Test connection: a tiny structured request that walks the ladder from the
  * top, so the saved capability is what this server and model actually do.
  */
-export async function probe(config: ProviderConfig, signal: AbortSignal, transport: ModelTransport = transportFor(config)): Promise<ProbeResult> {
+export async function probe(
+  config: ProviderConfig,
+  signal: AbortSignal,
+  transport: ModelTransport = transportFor(config),
+  deadlineMs: number = PROBE_DEADLINE_MS,
+): Promise<ProbeResult> {
   const descriptor = describeProvider(config.id);
   let output: OutputMode = "json_schema";
   const started = performance.now();
-  await withDeadline(signal, config.timeoutMs * 3, (s) =>
-    runStructured(
+  // One deadline for the whole test, discovery included, so it always ends before the RPC times out.
+  return withDeadline(signal, deadlineMs, async (s) => {
+    await runStructured(
       transport,
       {
         system: 'This is a connectivity test. Reply with the JSON object {"ok": true}.',
@@ -149,13 +157,19 @@ export async function probe(config: ProviderConfig, signal: AbortSignal, transpo
         validate: (v) => ({ ok: true, value: v }),
       },
       { output, signal: s, onDowngrade: (m) => (output = m) },
-    ),
-  );
-  const latencyMs = Math.round(performance.now() - started);
-  const models = transport.listModels ? await transport.listModels(signal).catch(() => []) : [];
-  const contextTokens = models.find((m) => m.id === config.model)?.contextTokens ?? null;
-  const capabilities: Capabilities = { output, contextTokens, embeddings: descriptor.declared.embeddings, probedAt: Date.now() };
-  const needed = FILTER_PROMPT_TOKENS + FILTER_MAX_TOKENS;
-  const warning = contextTokens !== null && contextTokens < needed ? `El modelo admite ${contextTokens.toLocaleString("es")} tokens de contexto; los filtros necesitan unos ${needed.toLocaleString("es")}.` : undefined;
-  return { latencyMs, capabilities, warning };
+    );
+    const latencyMs = Math.round(performance.now() - started);
+    // discovery only adds the context window; its failures don't fail the test, but running out of time does
+    const models = transport.listModels
+      ? await transport.listModels(s).catch((error: unknown) => {
+          if (s.aborted) throw error;
+          return [];
+        })
+      : [];
+    const contextTokens = models.find((m) => m.id === config.model)?.contextTokens ?? null;
+    const capabilities: Capabilities = { output, contextTokens, embeddings: descriptor.declared.embeddings, probedAt: Date.now() };
+    const needed = FILTER_PROMPT_TOKENS + FILTER_MAX_TOKENS;
+    const warning = contextTokens !== null && contextTokens < needed ? `El modelo admite ${contextTokens.toLocaleString("es")} tokens de contexto; los filtros necesitan unos ${needed.toLocaleString("es")}.` : undefined;
+    return { latencyMs, capabilities, warning };
+  });
 }
