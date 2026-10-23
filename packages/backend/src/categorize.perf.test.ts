@@ -12,6 +12,7 @@ import { CategorizerModel, encodeFeatures, extractFeatures, FEATURES_V, type Tra
 import { addToCategory, countScope, createAccount, createCategory, ingestMessages, openDatabase, ownAddresses, quickActions, rootMessages, seedDataset, type IncomingMessage } from "@unica/db";
 import { demoRegistry } from "@unica/mail";
 import { generateDataset } from "@unica/mock-data";
+import { createMemoryTransportPair, RpcClient } from "@unica/core/rpc";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { BUDGET_MULTIPLIER, report, type Stat } from "../../db/src/test/perf";
@@ -223,6 +224,67 @@ it("bulk-filing 12,000 threads of one sender stays linear (the content cap is a 
     expect(db.get<{ n: number }>("SELECT count(*) AS n FROM cls_examples WHERE content = 1")!.n).toBe(50);
   } finally {
     db.close();
+  }
+}, 600_000);
+
+/** Runs fn while sampling the event loop (max gap between 1 ms ticks) and a concurrent list RPC. */
+async function underLoad(fn: () => Promise<unknown>): Promise<{ stall: number; rpc: number[] }> {
+  const [c, srv] = createMemoryTransportPair();
+  backend.connect(srv, { clientId: `load-${Math.random()}`, origin: "renderer" });
+  const client = new RpcClient(c);
+  let last = performance.now();
+  let stall = 0;
+  const tick = setInterval(() => {
+    const now = performance.now();
+    stall = Math.max(stall, now - last);
+    last = now;
+  }, 1);
+  const rpc: number[] = [];
+  let done = false;
+  const probe = (async () => {
+    while (!done) {
+      const t = performance.now();
+      await client.call("threads.list", { view: "inbox" });
+      rpc.push(performance.now() - t);
+      // a renderer's requests arrive as macrotasks: let slices run between them
+      await new Promise((r) => setTimeout(r, 2));
+    }
+  })();
+  try {
+    await fn();
+  } finally {
+    done = true;
+    await probe;
+    // one more tick measures a block that ended just now
+    await new Promise((r) => setTimeout(r, 5));
+    clearInterval(tick);
+  }
+  return { stall, rpc };
+}
+
+it("large UI adds, removals and undo are sliced: no long stall, interactive RPCs keep flowing", async () => {
+  if (!backend.categorizer.ready) backend.categorizer.rebuildSync();
+  const [c, srv] = createMemoryTransportPair();
+  backend.connect(srv, { clientId: "big", origin: "renderer" });
+  const client = new RpcClient(c);
+  const cat = (await client.call("categories.create", { name: "Grande", color: "rose" })).id;
+  const ids = backend.db.all<{ id: number }>("SELECT id FROM threads ORDER BY id LIMIT 12000").map((r) => r.id);
+  const p95 = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.ceil(xs.length * 0.95) - 1] ?? 0;
+  const runs: [string, () => Promise<unknown>][] = [];
+  let batchId: number | null = null;
+  runs.push(["add 5,000 threads (picker)", async () => (batchId = (await client.call("categories.addThreads", { categoryId: cat, threadIds: ids.slice(0, 5000) })).batchId)]);
+  runs.push(["remove 5,000 threads", () => client.call("categories.removeThreads", { categoryId: cat, threadIds: ids.slice(0, 5000) })]);
+  let big: { batchId: number | null; added: number } = { batchId: null, added: 0 };
+  runs.push(["bulk-apply every thread (one batch)", async () => (big = await client.call("categorize.apply", { categoryId: cat, scope: { kind: "query", query: "in:all" } }))]);
+  runs.push(["undo that batch", async () => {
+    expect(big.added).toBeGreaterThan(12_000);
+    await client.call("categorize.undo", { batchId: big.batchId! });
+  }]);
+  for (const [name, fn] of runs) {
+    const { stall, rpc } = await underLoad(fn);
+    stats.push({ name: `${name}: max event-loop stall ${stall.toFixed(1)} ms, list RPC p95 ${p95(rpc).toFixed(1)} ms (${rpc.length})`, budgetMs: 50, p50: stall, p95: stall, max: stall, iterations: rpc.length });
+    expect(stall, name).toBeLessThanOrEqual(50 * BUDGET_MULTIPLIER);
+    expect(p95(rpc), name).toBeLessThanOrEqual(25 * BUDGET_MULTIPLIER);
   }
 }, 600_000);
 

@@ -360,17 +360,45 @@ export interface UndoResult {
 /** Takes back one batch exactly: its rows and the examples it recorded, nothing else. */
 export function undoBatch(db: Db, batchId: number, now: number): UndoResult {
   return db.tx(() => {
+    const out = undoBatchPart(db, batchId, batchThreads(db, batchId));
+    if (out.categoryId !== null) finishUndo(db, batchId, now);
+    return out;
+  });
+}
+
+/** Threads a batch still holds (large undos take them back in slices). */
+export function batchThreads(db: Db, batchId: number): number[] {
+  return db.all<{ thread_id: number }>("SELECT thread_id FROM thread_categories INDEXED BY thread_categories_batch WHERE batch_id = ?", batchId).map((r) => r.thread_id);
+}
+
+/** One slice of an undo: these threads' rows and examples from the batch. */
+export function undoBatchPart(db: Db, batchId: number, threadIds: readonly number[]): UndoResult {
+  return db.tx(() => {
     const batch = db.get<{ category_id: number; undone_at: number | null }>("SELECT category_id, undone_at FROM cat_batches WHERE id = ?", batchId);
-    if (!batch || batch.undone_at !== null) return { categoryId: batch?.category_id ?? null, removed: [], deltas: [] };
+    if (!batch || batch.undone_at !== null) return { categoryId: null, removed: [], deltas: [] };
+    const ids = JSON.stringify(threadIds);
     const removed = db
-      .all<{ thread_id: number }>("DELETE FROM thread_categories WHERE batch_id = ? AND category_id = ? RETURNING thread_id", batchId, batch.category_id)
+      .all<{ thread_id: number }>(
+        "DELETE FROM thread_categories WHERE batch_id = ? AND category_id = ? AND thread_id IN (SELECT value FROM json_each(?)) RETURNING thread_id",
+        batchId,
+        batch.category_id,
+        ids,
+      )
       .map((r) => r.thread_id);
     const deltas: ModelDelta[] = db
-      .all<ExampleRow>("DELETE FROM cls_examples WHERE batch_id = ? AND category_id = ? AND label = 1 RETURNING *", batchId, batch.category_id)
+      .all<ExampleRow>(
+        "DELETE FROM cls_examples WHERE batch_id = ? AND category_id = ? AND label = 1 AND thread_id IN (SELECT value FROM json_each(?)) RETURNING *",
+        batchId,
+        batch.category_id,
+        ids,
+      )
       .map((r) => ({ op: "untrain", example: toExample(r) }));
-    db.run("UPDATE cat_batches SET undone_at = ? WHERE id = ?", now, batchId);
     return { categoryId: batch.category_id, removed, deltas };
   });
+}
+
+export function finishUndo(db: Db, batchId: number, now: number): void {
+  db.run("UPDATE cat_batches SET undone_at = ? WHERE id = ? AND undone_at IS NULL", now, batchId);
 }
 
 // ───────────────────────────── rebuild ─────────────────────────────

@@ -16,7 +16,9 @@ import {
   createBatch,
   finishBatch,
   removeFromCategory,
-  undoBatch,
+  batchThreads,
+  finishUndo,
+  undoBatchPart,
   claimFilterApplications,
   claimOwner,
   completeOp,
@@ -64,6 +66,9 @@ import { changeOwnerTo, gmailClaim, imapClaim } from "./identity";
 import { readAutoCategorize, readSettings, SettingsError, updateSettings } from "./settings";
 
 /** How a UI entry point is recorded: bulk (snackbar) adds weigh half and their content is capped per sender. */
+/** More ids than this and a categorization runs in time slices (plan 02 §6). */
+const SLICE_ABOVE = 200;
+
 const ADDED_BY = { picker: "user", dnd: "user", suggestion: "suggestion", snackbar: "bulk" } as const;
 
 const ACCOUNT_COLORS = ["indigo", "emerald", "amber", "cyan", "violet", "rose", "lime", "slate"];
@@ -86,18 +91,31 @@ export function createHandlers(b: Backend): Handlers {
   const requireCategory = (id: number) => {
     if (!db().get("SELECT 1 FROM categories WHERE id = ?", id)) throw new RpcError("NOT_FOUND", `Category ${id} not found`);
   };
-  /** The one store command behind every UI way of filing threads; returns what changed for undo. */
-  const fileThreads = (categoryId: number, threadIds: readonly number[], addedBy: AddedBy, source: string) => {
+  /** Small sets in one go (same tick), large ones through the backend's slicer. */
+  const sliced = async <T,>(items: T[], work: (chunk: T[]) => void) => {
+    if (items.length <= SLICE_ABOVE) work(items);
+    else await b.runSliced(items, 100, work);
+  };
+  /**
+   * The one store command behind every UI way of filing threads; returns
+   * what changed for undo. Above SLICE_ABOVE ids it runs in time slices (one
+   * batch, several transactions) so interactive RPCs keep flowing.
+   */
+  const fileThreads = async (categoryId: number, threadIds: readonly number[], addedBy: AddedBy, source: string) => {
     requireCategory(categoryId);
-    const result = db().tx(() => {
-      const batchId = createBatch(db(), categoryId, source, { kind: "threads" }, b.now());
-      const r = addToCategory(db(), { categoryId, threadIds, addedBy, now: b.now(), batchId });
-      finishBatch(db(), batchId, r.added.length);
-      return { ...r, batchId };
+    const batchId = createBatch(db(), categoryId, source, { kind: "threads" }, b.now());
+    const added: number[] = [];
+    await sliced([...new Set(threadIds)], (chunk) => {
+      const r = db().tx(() => {
+        const r = addToCategory(db(), { categoryId, threadIds: chunk, addedBy, now: b.now(), batchId });
+        finishBatch(db(), batchId, r.added.length);
+        return r;
+      });
+      b.categorizer.apply(r.deltas);
+      added.push(...r.added);
+      b.notifyChanged(chunk);
     });
-    b.categorizer.apply(result.deltas);
-    b.notifyChanged(threadIds);
-    return { added: result.added.length, addedIds: result.added, batchId: result.added.length ? result.batchId : null };
+    return { added: added.length, addedIds: added, batchId: added.length ? batchId : null };
   };
   const nextAccountColor = () => ACCOUNT_COLORS[listAccounts(db()).length % ACCOUNT_COLORS.length]!;
 
@@ -166,11 +184,15 @@ export function createHandlers(b: Backend): Handlers {
       return { ok: true as const };
     },
     "categories.addThreads": ({ categoryId, threadIds, source }, ctx) => fileThreads(categoryId, threadIds, ctx.origin === "mcp" ? "agent" : ADDED_BY[source], source),
-    "categories.removeThreads": ({ categoryId, threadIds, reason }) => {
-      const result = removeFromCategory(db(), { categoryId, threadIds, reason, now: b.now() });
-      b.categorizer.apply(result.deltas);
-      b.notifyChanged(threadIds);
-      return { removed: result.removed.length };
+    "categories.removeThreads": async ({ categoryId, threadIds, reason }) => {
+      let removed = 0;
+      await sliced([...new Set(threadIds)], (chunk) => {
+        const r = removeFromCategory(db(), { categoryId, threadIds: chunk, reason, now: b.now() });
+        b.categorizer.apply(r.deltas);
+        removed += r.removed.length;
+        b.notifyChanged(chunk);
+      });
+      return { removed };
     },
     "categorize.quickActions": ({ categoryId, threadIds }) => {
       requireCategory(categoryId);
@@ -214,10 +236,10 @@ export function createHandlers(b: Backend): Handlers {
         }),
       };
     },
-    "categorize.feedback": ({ threadId, categoryId, verdict }) => {
+    "categorize.feedback": async ({ threadId, categoryId, verdict }) => {
       requireCategory(categoryId);
       if (verdict === "accept") {
-        fileThreads(categoryId, [threadId], "suggestion", "suggestion");
+        await fileThreads(categoryId, [threadId], "suggestion", "suggestion");
         return { ok: true as const };
       }
       b.categorizer.apply(rejectSuggestion(db(), threadId, categoryId, b.now()));
@@ -225,11 +247,16 @@ export function createHandlers(b: Backend): Handlers {
       return { ok: true as const };
     },
     "categorize.stats": () => categoryStats(db()),
-    "categorize.undo": ({ batchId }) => {
-      const result = undoBatch(db(), batchId, b.now());
-      b.categorizer.apply(result.deltas);
-      b.notifyChanged(result.removed);
-      return { removed: result.removed.length };
+    "categorize.undo": async ({ batchId }) => {
+      let removed = 0;
+      await sliced(batchThreads(db(), batchId), (chunk) => {
+        const r = undoBatchPart(db(), batchId, chunk);
+        b.categorizer.apply(r.deltas);
+        removed += r.removed.length;
+        b.notifyChanged(r.removed);
+      });
+      finishUndo(db(), batchId, b.now());
+      return { removed };
     },
 
     "counts.get": () => getCounts(db()),
