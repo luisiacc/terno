@@ -1,6 +1,6 @@
 import { CUSTOM_PREFIX, DEFAULT_THEME, type ThemeMode } from "@unica/core";
 import type { AppSettings, SettingsPatch } from "@unica/core/rpc";
-import { applyCustomTheme, clampMotion, motionOff, motionVars } from "@unica/ui/themes/apply";
+import { applyCustomTheme, clampMotion, motionOff, motionVars, opaqueBackground } from "@unica/ui/themes/apply";
 import { toHex } from "@unica/ui/themes/color";
 import { builtinTheme, resolveCustomTheme, type Theme } from "@unica/ui/themes/registry";
 import { toast } from "sonner";
@@ -114,7 +114,7 @@ export function applyAppearance(a: Appearance): void {
   } catch {
     /* private mode / quota: theme.js falls back to defaults */
   }
-  window.unicaDesktop?.setAppearance?.({ themeSource: a.theme, background: toHex(theme.tokens.background), vibrancy });
+  window.unicaDesktop?.setAppearance?.({ themeSource: a.theme, background: opaqueBackground(theme), vibrancy });
 }
 
 /** Re-applies when the OS switches light/dark (only matters in system mode) or toggles reduced motion. */

@@ -1,5 +1,6 @@
-import { MOTION_STEPS, THEME_TOKENS, type MotionMs } from "@unica/core";
-import type { Theme } from "./registry";
+import { DEFAULT_THEME, MOTION_STEPS, THEME_TOKENS, type MotionMs } from "@unica/core";
+import { composite, oklchToRgb, parseColor, toHex } from "./color";
+import { builtinTheme, type Theme } from "./registry";
 
 /** The slowest any animation may run, whatever the setting. */
 export const MAX_MOTION_MS = 100;
@@ -41,4 +42,14 @@ export function applyCustomTheme(style: Pick<CSSStyleDeclaration, "setProperty" 
     if (theme) style.setProperty(`--${k}`, theme.tokens[k]);
     else style.removeProperty(`--${k}`);
   }
+}
+
+/**
+ * The window's native background: always opaque `#rrggbb`. A translucent
+ * theme background (a custom theme may have one) is composited over its
+ * mode's default background, which is what the page paints behind it.
+ */
+export function opaqueBackground(theme: Pick<Theme, "mode" | "tokens">): string {
+  const base = oklchToRgb(parseColor(builtinTheme(DEFAULT_THEME[theme.mode])!.tokens.background));
+  return toHex(composite(oklchToRgb(parseColor(theme.tokens.background)), { ...base, alpha: 1 }));
 }

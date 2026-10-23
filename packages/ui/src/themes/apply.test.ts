@@ -38,3 +38,17 @@ describe("applyCustomTheme", () => {
     expect(props.size).toBe(0);
   });
 });
+
+describe("opaqueBackground", () => {
+  it("is always #rrggbb; a translucent custom background is composited over its mode's default", async () => {
+    const { opaqueBackground } = await import("./apply");
+    const { resolveCustomTheme } = await import("./registry");
+    const { toHex } = await import("./color");
+    expect(opaqueBackground(builtinTheme("nord")!)).toBe(toHex(builtinTheme("nord")!.tokens.background));
+    const glassy = resolveCustomTheme({ id: "glass", name: "Glass", mode: "light", extends: "github-light", tokens: { background: "#aabbcc80" } });
+    const out = opaqueBackground(glassy);
+    expect(out).toMatch(/^#[0-9a-f]{6}$/);
+    // half #aabbcc over Única claro's paper (≈ #fcfcfa)
+    expect(out).toBe("#d3dbe3");
+  });
+});

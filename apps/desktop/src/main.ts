@@ -16,6 +16,7 @@ import {
   utilityProcess,
   type UtilityProcess,
 } from "electron";
+import { parseAppearance, type Appearance } from "./appearance";
 import type { BackendToMain, MainToBackend } from "./ipc";
 
 // V8 compile cache for the main bundle (t3code trick): faster subsequent boots.
@@ -189,22 +190,6 @@ async function connectWindow(win: BrowserWindow) {
 }
 
 // ───────────────────────────── appearance ─────────────────────────────
-
-/** What the renderer last applied: the native theme, the window background and whether the sidebar shows vibrancy. */
-interface Appearance {
-  themeSource: "system" | "light" | "dark";
-  background: string;
-  vibrancy: boolean;
-}
-
-function parseAppearance(value: unknown): Appearance | null {
-  const v = value as Partial<Appearance> | null;
-  if (!v || typeof v !== "object") return null;
-  if (v.themeSource !== "system" && v.themeSource !== "light" && v.themeSource !== "dark") return null;
-  if (typeof v.background !== "string" || !/^#[0-9a-f]{6}$/i.test(v.background)) return null;
-  if (typeof v.vibrancy !== "boolean") return null;
-  return { themeSource: v.themeSource, background: v.background.toLowerCase(), vibrancy: v.vibrancy };
-}
 
 const appearancePath = () => join(app.getPath("userData"), "appearance.json");
 
