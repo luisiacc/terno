@@ -50,6 +50,10 @@ export function isLoopbackIp(ip: string): boolean {
   return v === "::1" || /^127\.\d+\.\d+\.\d+$/.test(v) || /^::ffff:127\.\d+\.\d+\.\d+$/.test(v);
 }
 
+const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
+const MAX_REDIRECTS = 5;
+const SENSITIVE_HEADERS = ["authorization", "proxy-authorization", "cookie", "x-api-key", "api-key"];
+
 function requestUrl(input: Parameters<typeof fetch>[0]): URL {
   if (typeof input === "string" || input instanceof URL) return new URL(String(input));
   return new URL(input.url);
@@ -100,13 +104,35 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
     },
     fetchFor(purpose, meta) {
       const policed = async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-        const url = requestUrl(input);
-        const { pinnedHost } = await assert(purpose, url, meta);
-        if (!pinnedHost) return baseFetch(input, init);
-        // Connect to the address we just checked, so a DNS answer can't change between check and connect.
-        url.hostname = pinnedHost.includes(":") ? `[${pinnedHost}]` : pinnedHost;
-        if (typeof input === "string" || input instanceof URL) return baseFetch(url, init);
-        return baseFetch(new Request(url, input), init);
+        // Request objects carry a one-shot body: normalise to url + init so a redirect can be re-sent.
+        let url = requestUrl(input);
+        let request: RequestInit = input instanceof Request ? { method: input.method, headers: input.headers, body: input.body, signal: input.signal, duplex: "half", ...init } as RequestInit : { ...init };
+        for (let hop = 0; ; hop++) {
+          const { pinnedHost } = await assert(purpose, url, meta);
+          const target = new URL(url);
+          // Connect to the address we just checked, so a DNS answer can't change between check and connect.
+          if (pinnedHost) target.hostname = pinnedHost.includes(":") ? `[${pinnedHost}]` : pinnedHost;
+          // Never let fetch follow a redirect on its own: every hop must pass the policy (a loopback
+          // server could otherwise forward the prompt to any host).
+          const res = await baseFetch(target, { ...request, redirect: "manual" });
+          const location = REDIRECT_STATUS.has(res.status) ? res.headers.get("location") : null;
+          if (!location) return res;
+          if (hop >= MAX_REDIRECTS) throw new TypeError(`Too many redirects (${url.host})`);
+          await res.body?.cancel();
+          const next = new URL(location, url);
+          if (next.origin !== url.origin) {
+            // as fetch itself does across origins: credentials never follow a redirect to another host
+            const headers = new Headers(request.headers);
+            for (const h of SENSITIVE_HEADERS) headers.delete(h);
+            request = { ...request, headers };
+          }
+          url = next;
+          if (res.status === 303 || ((res.status === 301 || res.status === 302) && request.method && request.method !== "GET" && request.method !== "HEAD")) {
+            request = { ...request, method: "GET", body: undefined };
+          } else if (request.body instanceof ReadableStream) {
+            throw new TypeError("Cannot re-send a streamed body across a redirect");
+          }
+        }
       };
       return policed as typeof fetch;
     },

@@ -126,3 +126,63 @@ describe("network policy with local mode off", () => {
     await expect(net.assert("ai", "https://api.anthropic.com/v1", { providerLocality: "cloud" })).rejects.toBeInstanceOf(NetworkPolicyError);
   });
 });
+
+describe("redirects", () => {
+  /** A: a loopback "AI server" that redirects; B: where the redirect points. */
+  async function pair() {
+    const seenB: { method: string; auth: string | undefined; body: string }[] = [];
+    let bConnections = 0;
+    const b = createServer((req, res) => {
+      let data = "";
+      req.on("data", (c) => (data += c));
+      req.on("end", () => {
+        seenB.push({ method: req.method!, auth: req.headers.authorization, body: data });
+        res.writeHead(200, { "content-type": "application/json" }).end('{"from":"b"}');
+      });
+    });
+    b.on("connection", () => bConnections++);
+    await new Promise<void>((r) => b.listen(0, "127.0.0.1", r));
+    const bPort = (b.address() as AddressInfo).port;
+    const a = createServer((req, res) => {
+      req.resume();
+      req.on("end", () => {
+        if (req.url === "/same") return void res.writeHead(307, { location: "/final" }).end();
+        if (req.url === "/final") return void res.writeHead(200).end("final");
+        res.writeHead(307, { location: `http://localhost:${bPort}/steal` }).end();
+      });
+    });
+    await new Promise<void>((r) => a.listen(0, "127.0.0.1", r));
+    const aUrl = `http://127.0.0.1:${(a.address() as AddressInfo).port}`;
+    return { aUrl, seenB, bConnections: () => bConnections, close: () => (a.close(), b.close()) };
+  }
+
+  it("local mode checks every hop: a loopback server can't forward the prompt to another host", async () => {
+    const p = await pair();
+    try {
+      // the redirect target is a name that (per DNS) is not on this Mac
+      const { net } = policy(true, { localhost: ["10.0.0.5"] });
+      const err = await net
+        .fetchFor("ai", { providerLocality: "local" })(`${p.aUrl}/v1/chat/completions`, { method: "POST", body: '{"prompt":"secret"}', headers: { "content-type": "application/json" } })
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(NetworkPolicyError);
+      expect(p.bConnections()).toBe(0);
+      expect(p.seenB).toEqual([]);
+    } finally {
+      p.close();
+    }
+  });
+
+  it("allowed redirects are followed hop by hop; credentials never cross origins, bodies survive 307", async () => {
+    const p = await pair();
+    try {
+      const { net } = policy(false);
+      const res = await net.fetchFor("ai", { providerLocality: "cloud" })(`${p.aUrl}/v1`, { method: "POST", body: "payload", headers: { authorization: "Bearer sk-secret" } });
+      expect(await res.json()).toEqual({ from: "b" });
+      expect(p.seenB).toEqual([{ method: "POST", auth: undefined, body: "payload" }]);
+      const same = await net.fetchFor("mail")(`${p.aUrl}/same`);
+      expect(await same.text()).toBe("final");
+    } finally {
+      p.close();
+    }
+  });
+});
