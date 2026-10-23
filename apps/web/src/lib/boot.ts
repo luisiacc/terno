@@ -9,6 +9,7 @@ export function applyTheme(theme: "system" | "light" | "dark"): void {
   localStorage.setItem("unica:theme", theme);
   const dark = theme === "dark" || (theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
   document.documentElement.classList.toggle("dark", dark);
+  document.documentElement.dataset.theme = dark ? "unica-dark" : "unica-light";
 }
 
 export async function boot(): Promise<void> {

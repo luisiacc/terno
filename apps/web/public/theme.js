@@ -6,6 +6,7 @@
     var dark = t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
     var c = document.documentElement.classList;
     if (dark) c.add("dark");
+    document.documentElement.setAttribute("data-theme", dark ? "unica-dark" : "unica-light");
     if (window.unicaDesktop) {
       c.add("is-desktop");
       if (window.unicaDesktop.platform === "darwin") c.add("is-mac");
