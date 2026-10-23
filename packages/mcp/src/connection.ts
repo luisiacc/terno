@@ -10,7 +10,7 @@ export interface Endpoint {
 }
 
 export function defaultEndpoint(): Endpoint {
-  const dir = process.env.UNICA_USER_DATA ?? join(homedir(), "Library", "Application Support", "Única");
+  const dir = process.env.UNICA_USER_DATA ?? join(homedir(), "Library", "Application Support", "Unica");
   return {
     socketPath: process.env.UNICA_SOCKET ?? join(dir, "agent.sock"),
     tokenPath: process.env.UNICA_TOKEN_FILE ?? join(dir, "agent.token"),
@@ -87,6 +87,12 @@ export class AppConnection {
     });
     this.client = client;
     return client;
+  }
+
+  /** Resolves once no backend call is in flight (or after timeoutMs). */
+  async drain(timeoutMs = 10_000): Promise<void> {
+    const until = Date.now() + timeoutMs;
+    while ((this.client?.pendingCount ?? 0) > 0 && Date.now() < until) await new Promise((r) => setTimeout(r, 25));
   }
 
   close(): void {

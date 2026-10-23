@@ -16,3 +16,5 @@ playwright-report/
 .env
 .env.local
 apps/backend-dev/.data/
+apps/desktop/.stage/
+apps/desktop/release/

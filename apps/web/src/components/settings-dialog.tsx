@@ -66,7 +66,7 @@ export function SettingsDialog() {
     setApp({ settings: next });
     if (patch.theme) applyTheme(patch.theme);
   };
-  const mcp = agent?.mcpCommand ?? "/Applications/Única.app/Contents/Resources/bin/unica-mcp";
+  const mcp = agent?.mcpCommand ?? "/Applications/Unica.app/Contents/Resources/bin/unica-mcp";
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && setApp({ dialog: null })}>

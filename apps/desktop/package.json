@@ -1,0 +1,28 @@
+{
+  "name": "@unica/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "\u00danica: el \u00fanico cliente de email que necesitas",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/build.mjs && UNICA_DEV_URL=http://localhost:5173 electron dist/main.cjs",
+    "start": "electron dist/main.cjs",
+    "dist:mac": "node scripts/package.mjs",
+    "test:smoke": "playwright test -c playwright.smoke.config.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@unica/backend": "workspace:*",
+    "@unica/mail": "workspace:*",
+    "@unica/mcp": "workspace:*",
+    "@unica/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@playwright/test": "catalog:",
+    "@types/node": "catalog:",
+    "electron": "catalog:",
+    "electron-builder": "catalog:",
+    "esbuild": "catalog:"
+  }
+}

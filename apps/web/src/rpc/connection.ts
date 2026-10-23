@@ -52,6 +52,8 @@ function nextDesktopPort(): Promise<MessagePort> {
       }
     };
     window.addEventListener("message", onMessage);
+    // handshake: the preload hands over its port only when the page is listening
+    window.postMessage("unica:request-port", "*");
   });
 }
 

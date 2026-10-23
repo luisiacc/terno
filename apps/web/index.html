@@ -4,21 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Única</title>
-    <script>
-      // Paint the right theme before React mounts (no white flash in dark mode).
-      (function () {
-        try {
-          var t = localStorage.getItem("unica:theme") || "system";
-          var dark = t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
-          var c = document.documentElement.classList;
-          if (dark) c.add("dark");
-          if (window.unicaDesktop) {
-            c.add("is-desktop");
-            if (window.unicaDesktop.platform === "darwin") c.add("is-mac");
-          }
-        } catch (e) {}
-      })();
-    </script>
+    <script src="./theme.js"></script>
   </head>
   <body>
     <div id="root"></div>

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6d6af5"/>
+      <stop offset="1" stop-color="#3f37c9"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="184" fill="url(#bg)"/>
+  <rect x="100" y="100" width="824" height="824" rx="184" fill="url(#sheen)"/>
+  <!-- envelope -->
+  <rect x="262" y="330" width="500" height="364" rx="56" fill="none" stroke="#ffffff" stroke-width="44"/>
+  <path d="M290 372 L512 548 L734 372" fill="none" stroke="#ffffff" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- the accent of Ú -->
+  <path d="M560 210 L640 152" stroke="#ffffff" stroke-width="44" stroke-linecap="round"/>
+</svg>

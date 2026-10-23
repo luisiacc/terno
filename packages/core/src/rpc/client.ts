@@ -90,6 +90,11 @@ export class RpcClient {
     }
   }
 
+  /** Calls awaiting a response. */
+  get pendingCount(): number {
+    return this.pending.size;
+  }
+
   close(): void {
     const t = this.transport;
     this.detachTransport(new RpcError("UNAVAILABLE", "Client closed"));
