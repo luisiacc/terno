@@ -4,21 +4,15 @@ import { getApp, navigate, setApp } from "~/state/app";
 import { reloadList } from "~/state/list";
 import { invalidateThreads, loadThread } from "~/state/threads";
 import { toast } from "sonner";
-
-export function applyTheme(theme: "system" | "light" | "dark"): void {
-  localStorage.setItem("unica:theme", theme);
-  const dark = theme === "dark" || (theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
-  document.documentElement.classList.toggle("dark", dark);
-  document.documentElement.dataset.theme = dark ? "unica-dark" : "unica-light";
-}
+import { applyAppearance, installAppearanceListeners } from "~/lib/appearance";
 
 export async function boot(): Promise<void> {
   try {
     await connectBackend();
     const b = await client.call("app.bootstrap", {});
-    applyTheme(b.settings.theme);
+    applyAppearance(b.settings);
     setApp({ ready: true, accounts: b.accounts, categories: b.categories, counts: b.counts, settings: b.settings, owner: b.owner, demo: b.demo, version: b.version });
-    matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => applyTheme(getApp().settings?.theme ?? "system"));
+    installAppearanceListeners();
 
     let refreshQueued = false;
     client.on("changed", ({ threadIds }) => {

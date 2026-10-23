@@ -1,8 +1,8 @@
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
 
-// Única: theme comes from the app's settings store instead of next-themes.
-const Toaster = ({ theme = "system", ...props }: ToasterProps) => {
+// Única: the app passes the resolved mode (system is resolved by lib/appearance).
+const Toaster = ({ theme = "light", ...props }: Omit<ToasterProps, "theme"> & { theme?: "light" | "dark" }) => {
   return (
     <Sonner
       theme={theme}

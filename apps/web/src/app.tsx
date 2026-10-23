@@ -1,6 +1,7 @@
 import { Toaster } from "@unica/ui/components/sonner";
 import { TooltipProvider } from "@unica/ui/components/tooltip";
 import { lazy, Suspense, useEffect } from "react";
+import { useAppearance } from "~/lib/appearance";
 import { onFiled } from "~/lib/categorize";
 import { installKeyboard } from "~/lib/keyboard";
 import { useApp } from "~/state/app";
@@ -39,7 +40,7 @@ export function App() {
   const ready = useApp((s) => s.ready);
   const fatal = useApp((s) => s.fatal);
   const dialog = useApp((s) => s.dialog);
-  const theme = useApp((s) => s.settings?.theme ?? "system");
+  const mode = useAppearance((s) => s.mode);
   const fresh = useApp((s) => s.ready && s.accounts.length === 0 && !s.owner && !s.demo);
   useEffect(() => installKeyboard(), []);
   // every way of filing threads offers the snackbar, except its own bulk adds
@@ -68,7 +69,7 @@ export function App() {
         {fresh && dialog === null && needsFirstRun() && <FirstRun />}
       </Suspense>
       <CategorySnackbarHost />
-      <Toaster position="bottom-left" theme={theme} />
+      <Toaster position="bottom-left" theme={mode} />
     </TooltipProvider>
   );
 }

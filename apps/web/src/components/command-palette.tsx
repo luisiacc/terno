@@ -4,8 +4,7 @@ import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, Comma
 import { Archive, Inbox, Layers, Moon, PenLine, Search, Send, Settings2, Sparkles, Star, Sun, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { act, openCompose } from "~/lib/actions";
-import { applyTheme } from "~/lib/boot";
-import { client } from "~/rpc/connection";
+import { updateAppearance } from "~/lib/appearance";
 import { navigate, setApp, useApp } from "~/state/app";
 
 export function CommandPalette() {
@@ -50,9 +49,7 @@ export function CommandPalette() {
           <CommandItem
             onSelect={() =>
               run(() => {
-                const next = document.documentElement.classList.contains("dark") ? "light" : "dark";
-                applyTheme(next);
-                void client.call("settings.update", { theme: next }).then((settings) => setApp({ settings }));
+                void updateAppearance({ theme: document.documentElement.classList.contains("dark") ? "light" : "dark" });
               })
             }
           >

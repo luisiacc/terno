@@ -12,7 +12,7 @@ import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescript
 import { Check, Copy, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { applyTheme } from "~/lib/boot";
+import { updateAppearance } from "~/lib/appearance";
 import { client } from "~/rpc/connection";
 import { setApp, useApp, type SettingsTab } from "~/state/app";
 import { AiTab } from "./settings/ai-tab";
@@ -73,9 +73,9 @@ export function SettingsDialog() {
   }, [open]);
 
   const update = useCallback(async (patch: SettingsPatch) => {
+    if (patch.theme) return void (await updateAppearance(patch));
     const next = await client.call("settings.update", patch);
     setApp({ settings: next });
-    if (patch.theme) applyTheme(patch.theme);
   }, []);
   if (!settings) return null;
   const mcp = agent?.mcpCommand ?? "/Applications/Unica.app/Contents/Resources/bin/unica-mcp";
