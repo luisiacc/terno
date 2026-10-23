@@ -381,23 +381,27 @@ export function setMessageBody(
   }
 }
 
-interface ThreadAgg {
-  c: number;
-  unread: number;
-  att: number;
-  starred: number;
-  inbox: number;
-  sent: number;
-  trash_all: number;
-  visible: number;
-  visible_nonspam: number;
-}
-
-interface LatestRow {
+interface ThreadMessage {
+  id: number;
   date: number;
   from_name: string;
   from_email: string;
   snippet: string;
+  subject: string;
+  is_read: number;
+  is_trash: number;
+  is_spam: number;
+  is_starred: number;
+  in_inbox: number;
+  is_sent: number;
+  has_attachments: number;
+}
+
+/** (trash or spam) last, then newest, ties broken by id: the order the list summary reads a thread in */
+function newer(a: ThreadMessage, b: ThreadMessage): boolean {
+  const hiddenA = a.is_trash || a.is_spam ? 1 : 0;
+  const hiddenB = b.is_trash || b.is_spam ? 1 : 0;
+  return hiddenA !== hiddenB ? hiddenA < hiddenB : a.date !== b.date ? a.date > b.date : a.id > b.id;
 }
 
 /**
@@ -407,44 +411,44 @@ interface LatestRow {
 export function recomputeThreads(db: Db, threadIds: Iterable<number>): void {
   const written: number[] = [];
   for (const threadId of threadIds) {
-    const agg = db.get<ThreadAgg>(
-      `SELECT count(*) AS c,
-              coalesce(sum(is_read = 0 AND is_trash = 0), 0) AS unread,
-              coalesce(max(has_attachments), 0) AS att,
-              coalesce(max(is_starred AND is_trash = 0), 0) AS starred,
-              coalesce(max(in_inbox AND is_trash = 0 AND is_spam = 0), 0) AS inbox,
-              coalesce(max(is_sent AND is_trash = 0 AND is_spam = 0), 0) AS sent,
-              coalesce(min(is_trash), 0) AS trash_all,
-              coalesce(sum(is_trash = 0), 0) AS visible,
-              coalesce(sum(is_trash = 0 AND is_spam = 0), 0) AS visible_nonspam
+    // one read of the thread's messages; the aggregates are folded here
+    const messages = db.all<ThreadMessage>(
+      `SELECT id, date, from_name, from_email, snippet, subject, is_read, is_trash, is_spam, is_starred, in_inbox, is_sent, has_attachments
        FROM messages WHERE thread_id = ?`,
       threadId,
-    )!;
-    if (agg.c === 0) {
+    );
+    if (messages.length === 0) {
       db.run("DELETE FROM threads WHERE id = ?", threadId);
       continue;
     }
-    // Latest message: prefer messages that are neither trash nor spam; ties broken by id.
-    const latest = db.get<LatestRow>(
-      `SELECT date, from_name, from_email, snippet FROM messages WHERE thread_id = ?
-       ORDER BY (is_trash OR is_spam) ASC, date DESC, id DESC LIMIT 1`,
-      threadId,
-    )!;
-    // The list shows the other party, not me: latest received sender, falling back to the latest message.
-    const counterpart = db.get<{ from_name: string; from_email: string }>(
-      `SELECT from_name, from_email FROM messages WHERE thread_id = ? AND is_sent = 0
-       ORDER BY (is_trash OR is_spam) ASC, date DESC, id DESC LIMIT 1`,
-      threadId,
-    );
-    if (counterpart) {
-      latest.from_name = counterpart.from_name;
-      latest.from_email = counterpart.from_email;
+    let unread = 0;
+    let att = 0;
+    let starred = 0;
+    let inbox = 0;
+    let sent = 0;
+    let trashAll = 1;
+    let visible = 0;
+    let visibleNonspam = 0;
+    let latest = messages[0]!;
+    let counterpart: ThreadMessage | null = null;
+    let first = messages[0]!;
+    for (const m of messages) {
+      if (!m.is_read && !m.is_trash) unread++;
+      if (m.has_attachments) att = 1;
+      if (m.is_starred && !m.is_trash) starred = 1;
+      if (m.in_inbox && !m.is_trash && !m.is_spam) inbox = 1;
+      if (m.is_sent && !m.is_trash && !m.is_spam) sent = 1;
+      if (!m.is_trash) {
+        trashAll = 0;
+        visible++;
+        if (!m.is_spam) visibleNonspam++;
+      }
+      if (newer(m, latest)) latest = m;
+      // the list shows the other party, not me: latest received sender, falling back to the latest message
+      if (!m.is_sent && (!counterpart || newer(m, counterpart))) counterpart = m;
+      if (m.date < first.date || (m.date === first.date && m.id < first.id)) first = m;
     }
-    const first = db.get<{ subject: string }>(
-      "SELECT subject FROM messages WHERE thread_id = ? ORDER BY date ASC, id ASC LIMIT 1",
-      threadId,
-    )!;
-    const inSpam = agg.visible > 0 && agg.visible_nonspam === 0 ? 1 : 0;
+    const inSpam = visible > 0 && visibleNonspam === 0 ? 1 : 0;
     db.run(
       `UPDATE threads SET subject = ?, snippet = ?, last_date = ?, last_from_name = ?, last_from_email = ?,
          message_count = ?, unread_count = ?, has_attachments = ?, is_starred = ?, in_inbox = ?,
@@ -453,15 +457,15 @@ export function recomputeThreads(db: Db, threadIds: Iterable<number>): void {
       baseSubject(first.subject) || first.subject,
       latest.snippet,
       latest.date,
-      latest.from_name,
-      latest.from_email,
-      agg.c,
-      agg.unread,
-      agg.att,
-      agg.starred,
-      agg.inbox,
-      agg.sent,
-      agg.trash_all,
+      (counterpart ?? latest).from_name,
+      (counterpart ?? latest).from_email,
+      messages.length,
+      unread,
+      att,
+      starred,
+      inbox,
+      sent,
+      trashAll,
       inSpam,
       threadId,
     );
