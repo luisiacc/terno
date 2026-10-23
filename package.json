@@ -14,7 +14,7 @@
     "dist:mac": "pnpm build && pnpm --filter @unica/desktop dist:mac",
     "typecheck": "pnpm -r --parallel typecheck",
     "lint": "oxlint --deny-warnings apps packages",
-    "test": "vitest run --project unit --project db-wasm",
+    "test": "vitest run --project unit && vitest run --project db-wasm",
     "test:watch": "vitest",
     "test:perf": "vitest run --project perf",
     "test:e2e": "pnpm --filter @unica/web test:e2e",
