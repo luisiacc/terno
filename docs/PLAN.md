@@ -180,13 +180,16 @@ Base: **shadcn/ui, Base UI flavor** (the current shadcn default), Tailwind v4 CS
 **Personality:** calm, paper-like, typographic, quiet chrome, content first (Superhuman speed, Apple Mail restraint, Linear precision).
 
 - **Type:** Geist Variable + Geist Mono Variable, bundled offline. Scale 11/12/13/14/16/20/24; list 13px.
+- **Themes** (plan 01): mode `system | light | dark` plus a named theme per mode — Única, Apple, Solarized, Gruvbox, GitHub, Catppuccin Latte (light); Única, Dracula, Monokai, Tokyo Night, Gruvbox, Nord, Catppuccin Mocha (dark) — and custom JSON themes. The typed registry in `packages/ui/src/themes` is the source of truth; `themes.generated.css` (one `[data-theme]` block each) is generated from it and checked in. Every theme passes WCAG AA in a test. The values below are the Única themes.
 - **Light:** paper neutrals (hue 85, chroma ≤ .006).
   - background `oklch(.99 .002 85)`, sidebar `oklch(.965 .004 85 / .82)`, foreground `oklch(.22 .01 265)`, muted-fg `oklch(.52 .01 265)`, border `oklch(.91 .004 85)`.
   - Accent "Única indigo" `oklch(.56 .19 268)`. Destructive `oklch(.58 .21 25)`.
 - **Dark:** background `oklch(.17 .006 265)`, sidebar `oklch(.2 .006 265 / .78)`, foreground `oklch(.95 .004 85)`, accent `oklch(.7 .16 268)`.
 - **Interaction tokens:** `--row-hover`, `--row-selected`, `--row-selected-fg`, `--row-selected-rail`, `--unread`, `--focus-ring`. Contrast checked (AA) in a test.
 - **Category palette:** 8 hues at L .68 C .12 (rose, amber, lime, emerald, cyan, indigo, violet, slate) as dots and soft badges.
-- **Shape:** `--radius: .5rem`, hairline borders, shadows only on overlays. Motion 120–180 ms on overlays only; list navigation is instant; reduced-motion respected.
+- **Shape:** `--radius: .5rem`, hairline borders, shadows only on overlays (in the theme's `--shadow-color`).
+- **Motion** (plan 01, supersedes 120–180 ms): one setting `--motion` = 0/50/75/100 ms (default 75); fast ≈ ⅔M for hover/press/tooltips/exits, base = M for popovers and menus, slow = 4⁄3 M capped at 100 ms for dialogs, toasts and drop feedback. Nothing runs longer than 100 ms. `0` or the OS reduced-motion preference turns every animation off. j/k, selection, row hover, the reader swap and theme switches never animate.
+- **Drag and drop:** rows drag onto sidebar categories (own pointer controller, ids-only payload, no row renders during a drag); a drop is the same `addToCategory` as the `l` picker, with the categorization snackbar and undo. ⌥ in a category view moves.
 - **Layout:** sidebar 232px | thread list 400px (64px two-line rows) | reader (max 760px). Reader toolbar: Reply r, Reply all a, Forward f, Archive e, Delete #, Spam !, Category l, Unread u, Star s.
 - **Keyboard:** `j/k`, `enter/o`, `esc`, `/`, `c`, `⌘K` palette, `g i/g s/g a`, `⌘↵` send.
 - **HTML mail:** DOMPurify, then a sandboxed iframe (`srcdoc`, no scripts, no popups). Strict CSP inside: `img-src` is limited to data/cid unless the user loads remote content. Remote CSS/fonts are blocked too. Navigation is intercepted and only `http(s)`/`mailto` open externally via main's allowlisted handler. `will-navigate`/`setWindowOpenHandler` deny everything else.
@@ -214,7 +217,8 @@ Base: **shadcn/ui, Base UI flavor** (the current shadcn default), Tailwind v4 CS
    - Budgets are asserted at these values, scaled only by an explicit `PERF_BUDGET_MULTIPLIER` for slower CI machines.
    - **RPC round trip** measured in-process through the real envelope (p95 ≤ 2 ms + query time). Payload byte budgets per page.
 7. **E2E + visual (Playwright, Chromium against backend-dev with mock data):** keyboard triage, search, reply/reply-all/forward/send (captured by local SMTP), categories + suggestions, AI filter builder + preview + apply, learned-suggestion accept, add-account form, settings. `toHaveScreenshot` in light + dark.
-8. **UI perf (Playwright):** j-key handler→commit p95 and keypress→next-frame p95 (target ≤ 16 ms) over 300 consecutive moves; keystroke→results-rendered p95 ≤ 100 ms; DOM rows bounded.
+8. **UI perf (Playwright, test build with a render probe):** j-key handler→commit p95 and keypress→next-frame p95 (target ≤ 16 ms) over 300 consecutive moves, with no animation started; keystroke→results-rendered p95 ≤ 100 ms; DOM rows bounded; theme switch → painted ≤ 50 ms with zero row renders; drag start ≤ 16 ms, pointermove handler ≤ 2 ms, zero row renders during a drag, ≤ 2 NavItem renders per target change, drop → dot ≤ 16 ms.
+   - **Themes and motion:** WCAG AA for 49 token pairs in every theme; the generated CSS matches the registry (and ≤ 8 KB gzip); a scan rejects literal colors, literal durations and translucent text in app code; custom-theme schema incl. CSS-injection cases; theme.js in a `node:vm` sandbox; `themes.spec` / `motion.spec` / `dnd.spec` and a visual baseline per theme.
 9. **Electron smoke on the packaged arm64 app, copied outside the repo:** launches, utility process alive, demo seed renders, search works, thread opens, `unica-mcp` answers `list_accounts`; in local mode main cancels a remote `<img>`; `codesign --verify` passes.
 
 ## 12. Plan review with Codex: outcome

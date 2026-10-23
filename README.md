@@ -9,6 +9,8 @@
 - Filters built with AI from a plain-language description, then refined in a visual editor. The AI can run on this Mac (Ollama, LM Studio, any local OpenAI-compatible server) or in the cloud with your own key (Claude, OpenAI, OpenRouter, Groq, Together, Azure).
 - **Local mode** (on for new installs): nothing leaves the Mac except mail with your own servers.
 - Filters learned from what you archive.
+- Drag one or many conversations onto a category (⌥ moves them out of the current one); the same undoable snackbar as the `l` picker.
+- 13 themes (Única, Apple, Solarized, Gruvbox, GitHub, Catppuccin, Dracula, Monokai, Tokyo Night, Nord) with a light and a dark choice for system mode, your own themes as JSON, all checked for WCAG AA contrast; animations you can set to 0/50/75/100 ms (Ajustes → Apariencia).
 - An MCP server so **Claude Code** and **Codex** get one access point to all your email.
 
 The technical plan, and the design review held with Codex before implementation, live in [`docs/PLAN.md`](docs/PLAN.md).
@@ -76,6 +78,10 @@ Main process: windows, app:// protocol, Keychain (safeStorage)
 | Search: keystroke → results rendered | ≤ 100 ms | ~19 ms |
 | Scroll to the end → next 100 rows rendered | ≤ 150 ms | ~35 ms |
 | DOM rows while scrolling 2,000 threads | bounded | ≤ 33 |
+| Theme switch → painted (double rAF, so ≥ 2 frames) | ≤ 50 ms | ~35 ms, 0 row renders |
+| Drag start: threshold move → ghost shown, targets measured | ≤ 16 ms | ~4 ms |
+| Drag: pointermove handler · row renders during a drag | ≤ 2 ms · 0 | ~0.1 ms · 0 |
+| Drop → dot on the row | ≤ 16 ms | ~1 ms, 1 row render |
 
 **Packaged app** (`pnpm test:smoke`): about 0.5 s from a warm start to the first mail painted.
 
@@ -91,6 +97,7 @@ pnpm test:smoke         # Playwright against the PACKAGED arm64 app (run dist:ma
 What the tests cover:
 
 - Search results checked against a brute-force oracle over a seeded mailbox.
+- WCAG AA contrast for every theme (49 token pairs each), a generated-CSS drift check, and a scan that rejects literal colors and durations in app code.
 - An offline categorization accuracy eval (AI off, network guarded) over an adversarial mailbox: auto-apply precision ≥ 0.97, recall ≥ 0.80; reports in `test-results/categorize/`.
 - JS ↔ SQL filter-rule parity across hundreds of generated rules.
 - Randomized consistency checks of thread aggregates.
