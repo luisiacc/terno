@@ -83,7 +83,12 @@ export type IndexChange =
 export interface IndexBatch {
   from: Revision;
   to: Revision;
-  /** absolute post-commit projections or deletion tombstones */
+  /**
+   * Absolute projections or deletion tombstones of every id the commits in
+   * (from, to] touched, read when served: the newest committed state of each
+   * id, never older than `to`. A later change to an id always comes with a
+   * later batch, so applying batches in order converges on the store.
+   */
   changes: readonly IndexChange[];
 }
 

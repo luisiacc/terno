@@ -1,59 +1,43 @@
-import { RevisionError, type IndexBatch, type IndexChange, type Revision, type SearchBuild, type SearchMessageDoc } from "@unica/store";
-import { messageDocsAfter, threadDocsAfter } from "./search-docs";
+import { RevisionError, type IndexBatch, type IndexChange, type Revision, type SearchBuild } from "@unica/store";
+import { messageDocs, messageDocsAfter, threadDocs, threadDocsAfter } from "./search-docs";
 import type { Db } from "./sqlite";
 
 /** Batches kept for engines catching up; older ones are pruned (an engine behind them rebuilds). */
 export const SEARCH_LOG_BYTES = 32 * 1024 * 1024;
 
 /**
- * The stored form of a batch: a JSON array of compact entries, built by SQL
- * straight from the dirty ids (no rows materialized in JS, a fifth of the
- * bytes of keyed objects: a 5,000-thread move must stay inside its
- * interactive budget). changes() decodes them into IndexChanges.
- *   [0, {message doc}]  upsertMessage      [1, messageId]  removeMessage
- *   [2, threadId, accountId, lastDate, flags, unreadCount, [categoryIds]]  upsertThread
- *   [3, threadId]  removeThread
- * flags: inInbox 1, hasSent 2, inTrash 4, inSpam 8, isStarred 16.
+ * A stored batch is the ids it touched: [[messageIds], [threadIds]]. The
+ * projections are read when the batch is served (changes()), so a commit
+ * writes a few bytes per id instead of copying mail text into the log; the
+ * docs served are the newest committed state of each id, never older than
+ * the batch, and a later change to the same id always has a later batch, so
+ * replaying converges on the store.
  */
-const BATCH_JSON = `SELECT '[' || coalesce(group_concat(c, ','), '') || ']' AS changes FROM (
-  SELECT iif(m.id IS NULL, '[1,' || d.id || ']', '[0,' || json_object(
-    'messageId', m.id, 'threadId', m.thread_id, 'accountId', m.account_id, 'date', m.date, 'subject', m.subject,
-    'fromText', m.from_name || ' ' || m.from_email, 'fromEmail', m.from_email, 'recipients', m.recipients_text,
-    'body', coalesce(b.body_text, ''), 'hasAttachments', m.has_attachments, 'bodyState', m.body_state) || ']') AS c
-  FROM search_dirty d LEFT JOIN messages m ON m.id = d.id LEFT JOIN message_bodies b ON b.message_id = d.id WHERE d.kind = 0
-  UNION ALL
-  SELECT iif(t.id IS NULL, '[3,' || d.id || ']', '[2,' || t.id || ',' || t.account_id || ',' || t.last_date || ',' ||
-         (t.in_inbox + 2 * t.has_sent + 4 * t.in_trash + 8 * t.in_spam + 16 * t.is_starred) || ',' || t.unread_count || ',[' ||
-         coalesce((SELECT group_concat(category_id) FROM (SELECT category_id FROM thread_categories WHERE thread_id = t.id ORDER BY category_id)), '') || ']]')
-  FROM search_dirty d LEFT JOIN threads t ON t.id = d.id WHERE d.kind = 1
-)`;
+const BATCH_IDS = `SELECT '[[' || coalesce((SELECT group_concat(id) FROM search_dirty WHERE kind = 0), '') || '],[' ||
+  coalesce((SELECT group_concat(id) FROM search_dirty WHERE kind = 1), '') || ']]' AS changes`;
 
-type Entry = [0, Omit<SearchMessageDoc, "hasAttachments"> & { hasAttachments: number }] | [1, number] | [2, number, number, number, number, number, number[]] | [3, number];
-
-function decode(changes: string): IndexChange[] {
-  return (JSON.parse(changes) as Entry[]).map((e): IndexChange => {
-    switch (e[0]) {
-      case 0:
-        return { kind: "upsertMessage", doc: { ...e[1], hasAttachments: e[1].hasAttachments === 1 } };
-      case 1:
-        return { kind: "removeMessage", messageId: e[1] };
-      case 2: {
-        const [, threadId, accountId, lastDate, flags, unreadCount, categoryIds] = e;
-        return {
-          kind: "upsertThread",
-          doc: { threadId, accountId, lastDate, inInbox: (flags & 1) !== 0, hasSent: (flags & 2) !== 0, inTrash: (flags & 4) !== 0, inSpam: (flags & 8) !== 0, isStarred: (flags & 16) !== 0, unreadCount, categoryIds },
-        };
-      }
-      case 3:
-        return { kind: "removeThread", threadId: e[1] };
+function materialize(db: Db, messageIds: readonly number[], threadIds: readonly number[]): IndexChange[] {
+  const changes: IndexChange[] = [];
+  if (messageIds.length) {
+    const docs = new Map(messageDocs(db, messageIds).map((d) => [d.messageId, d]));
+    for (const id of messageIds) {
+      const doc = docs.get(id);
+      changes.push(doc ? { kind: "upsertMessage", doc } : { kind: "removeMessage", messageId: id });
     }
-  });
+  }
+  if (threadIds.length) {
+    const docs = new Map(threadDocs(db, threadIds).map((d) => [d.threadId, d]));
+    for (const id of threadIds) {
+      const doc = docs.get(id);
+      changes.push(doc ? { kind: "upsertThread", doc } : { kind: "removeThread", threadId: id });
+    }
+  }
+  return changes;
 }
 
 /**
- * The finalizer of every write transaction (Db's before-commit hook): turns
- * the message and thread ids the v7 triggers marked dirty into absolute
- * post-commit projections (or tombstones) and appends them as ONE revisioned
+ * The finalizer of every write transaction (Db's before-commit hook): appends
+ * the message and thread ids the v7 triggers marked dirty as ONE revisioned
  * batch, inside the same transaction. A rollback takes the batch with it.
  */
 export function flushSearchOutbox(db: Db, maxBytes = SEARCH_LOG_BYTES): void {
@@ -61,7 +45,7 @@ export function flushSearchOutbox(db: Db, maxBytes = SEARCH_LOG_BYTES): void {
   const state = db.get<{ seq: number; bytes: number }>("SELECT seq, bytes FROM search_state WHERE id = 1")!;
   const seq = state.seq + 1;
   const added = db.get<{ bytes: number }>(
-    `INSERT INTO search_outbox (seq, at, bytes, changes) SELECT ?, ?, length(CAST(changes AS BLOB)), changes FROM (${BATCH_JSON}) RETURNING bytes`,
+    `INSERT INTO search_outbox (seq, at, bytes, changes) SELECT ?, ?, length(CAST(changes AS BLOB)), changes FROM (${BATCH_IDS}) RETURNING bytes`,
     seq,
     Date.now(),
   )!.bytes;
@@ -113,7 +97,10 @@ export function searchChanges(db: Db, after: Revision, through: Revision, maxCom
   if (oldest === null || oldest > after.seq + 1) throw new RevisionError("gap", `the search log was pruned past revision ${after.seq}`);
   return db
     .all<{ seq: number; changes: string }>("SELECT seq, changes FROM search_outbox WHERE seq > ? AND seq <= ? ORDER BY seq LIMIT ?", after.seq, through.seq, maxCommits)
-    .map((r) => ({ from: { epoch: head.epoch, seq: r.seq - 1 }, to: { epoch: head.epoch, seq: r.seq }, changes: decode(r.changes) }));
+    .map((r) => {
+      const [messageIds, threadIds] = JSON.parse(r.changes) as [number[], number[]];
+      return { from: { epoch: head.epoch, seq: r.seq - 1 }, to: { epoch: head.epoch, seq: r.seq }, changes: materialize(db, messageIds, threadIds) };
+    });
 }
 
 /** Holds the log from the current head while a rebuild scans in bounded chunks. */

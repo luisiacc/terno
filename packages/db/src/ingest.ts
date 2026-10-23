@@ -386,6 +386,7 @@ interface LatestRow {
  * Threads left without messages are deleted.
  */
 export function recomputeThreads(db: Db, threadIds: Iterable<number>): void {
+  const written: number[] = [];
   for (const threadId of threadIds) {
     const agg = db.get<ThreadAgg>(
       `SELECT count(*) AS c,
@@ -445,7 +446,10 @@ export function recomputeThreads(db: Db, threadIds: Iterable<number>): void {
       inSpam,
       threadId,
     );
+    written.push(threadId);
   }
+  // the search outbox: what changed for search is decided when the batch is served
+  if (written.length) db.run("INSERT OR IGNORE INTO search_dirty (kind, id) SELECT 1, value FROM json_each(?)", JSON.stringify(written));
 }
 
 /** Deletes messages (e.g. IMAP expunge with no remaining locations) and fixes their threads. */

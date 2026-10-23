@@ -18,6 +18,17 @@ describe("search outbox (SQL)", () => {
     expect(searchHead(db).seq).toBe(1);
   });
 
+  it("logs ids, not mail: a batch costs a few bytes per message and serves the newest projection", () => {
+    const db = testDb();
+    const [a] = withAccounts(db);
+    const head = searchHead(db);
+    const [id] = ingestMessages(db, [msg({ accountId: a!, bodyText: "texto largo ".repeat(1000) })]).inserted;
+    expect(db.get<{ bytes: number }>("SELECT bytes FROM search_outbox WHERE seq = ?", head.seq + 1)!.bytes).toBeLessThan(40);
+    db.run("UPDATE message_bodies SET body_text = 'cambiado' WHERE message_id = ?", id!);
+    const [first] = searchChanges(db, head, { ...head, seq: head.seq + 1 }, 1);
+    expect(first!.changes).toContainEqual({ kind: "upsertMessage", doc: expect.objectContaining({ messageId: id, body: "cambiado" }) });
+  });
+
   it("a rolled-back transaction leaves neither its changes nor a batch", () => {
     const db = testDb();
     const [a] = withAccounts(db);
@@ -63,7 +74,7 @@ describe("search outbox (SQL)", () => {
 
   it("prunes the oldest batches past the size cap, never the newest nor past an active build; a consumer behind them must rebuild", async () => {
     const dir = mkdtempSync(join(tmpdir(), "unica-outbox-"));
-    const db = openDatabase(join(dir, "p.db"), { searchLogBytes: 4_000 });
+    const db = openDatabase(join(dir, "p.db"), { searchLogBytes: 60 });
     const [a] = withAccounts(db);
     const start = searchHead(db);
     for (let i = 0; i < 20; i++) ingestMessages(db, [msg({ accountId: a!, bodyText: "x".repeat(500) })]);

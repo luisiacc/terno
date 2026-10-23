@@ -488,7 +488,7 @@ CREATE TABLE cat_move_decisions (
  * - deleting a message (also through cascades) deletes its indexed row with
  *   the body still in place, then the body row.
  */
-const FTS_OVER_BODIES = /* sql */ `
+const FTS_SRC_VIEW = /* sql */ `
 CREATE VIEW messages_fts_src AS
   SELECT m.id,
          m.subject,
@@ -496,18 +496,29 @@ CREATE VIEW messages_fts_src AS
          m.recipients_text AS recipients,
          coalesce(b.body_text, '') AS body
   FROM messages m LEFT JOIN message_bodies b ON b.message_id = m.id;
+`;
 
+/**
+ * The FTS triggers over messages + message_bodies. With `mark` (v7) they also
+ * mark the message dirty for the search outbox: one trigger program per row
+ * instead of two, which ingestion pays for every message.
+ */
+function ftsTriggers(mark: boolean): string {
+  const dirty = (id: string) => (mark ? `\n  INSERT OR IGNORE INTO search_dirty (kind, id) VALUES (0, ${id});` : "");
+  // setMessageBody upserts bodies: its conflict clause would override OR IGNORE inside these triggers
+  const dirtyBody = (id: string) => (mark ? `\n  INSERT INTO search_dirty (kind, id) SELECT 0, ${id} WHERE NOT EXISTS (SELECT 1 FROM search_dirty WHERE kind = 0 AND id = ${id});` : "");
+  return /* sql */ `
 CREATE TRIGGER messages_fts_ai AFTER INSERT ON messages BEGIN
   INSERT INTO messages_fts(rowid, subject, from_text, recipients, body)
   VALUES (new.id, new.subject, new.from_name || ' ' || new.from_email, new.recipients_text,
-          coalesce((SELECT body_text FROM message_bodies WHERE message_id = new.id), ''));
+          coalesce((SELECT body_text FROM message_bodies WHERE message_id = new.id), ''));${dirty("new.id")}
 END;
 
 CREATE TRIGGER messages_fts_ad AFTER DELETE ON messages BEGIN
   INSERT INTO messages_fts(messages_fts, rowid, subject, from_text, recipients, body)
   VALUES ('delete', old.id, old.subject, old.from_name || ' ' || old.from_email, old.recipients_text,
           coalesce((SELECT body_text FROM message_bodies WHERE message_id = old.id), ''));
-  DELETE FROM message_bodies WHERE message_id = old.id;
+  DELETE FROM message_bodies WHERE message_id = old.id;${dirty("old.id")}
 END;
 
 CREATE TRIGGER messages_fts_au AFTER UPDATE OF subject, from_name, from_email, recipients_text ON messages BEGIN
@@ -516,7 +527,7 @@ CREATE TRIGGER messages_fts_au AFTER UPDATE OF subject, from_name, from_email, r
           coalesce((SELECT body_text FROM message_bodies WHERE message_id = old.id), ''));
   INSERT INTO messages_fts(rowid, subject, from_text, recipients, body)
   VALUES (new.id, new.subject, new.from_name || ' ' || new.from_email, new.recipients_text,
-          coalesce((SELECT body_text FROM message_bodies WHERE message_id = new.id), ''));
+          coalesce((SELECT body_text FROM message_bodies WHERE message_id = new.id), ''));${dirty("new.id")}
 END;
 
 CREATE TRIGGER message_bodies_fts_ai AFTER INSERT ON message_bodies
@@ -524,7 +535,7 @@ WHEN coalesce(new.body_text, '') != '' AND EXISTS (SELECT 1 FROM messages WHERE 
   INSERT INTO messages_fts(messages_fts, rowid, subject, from_text, recipients, body)
   SELECT 'delete', m.id, m.subject, m.from_name || ' ' || m.from_email, m.recipients_text, '' FROM messages m WHERE m.id = new.message_id;
   INSERT INTO messages_fts(rowid, subject, from_text, recipients, body)
-  SELECT m.id, m.subject, m.from_name || ' ' || m.from_email, m.recipients_text, new.body_text FROM messages m WHERE m.id = new.message_id;
+  SELECT m.id, m.subject, m.from_name || ' ' || m.from_email, m.recipients_text, new.body_text FROM messages m WHERE m.id = new.message_id;${dirtyBody("new.message_id")}
 END;
 
 CREATE TRIGGER message_bodies_fts_au AFTER UPDATE OF body_text ON message_bodies
@@ -532,7 +543,7 @@ WHEN coalesce(old.body_text, '') != coalesce(new.body_text, '') AND EXISTS (SELE
   INSERT INTO messages_fts(messages_fts, rowid, subject, from_text, recipients, body)
   SELECT 'delete', m.id, m.subject, m.from_name || ' ' || m.from_email, m.recipients_text, coalesce(old.body_text, '') FROM messages m WHERE m.id = new.message_id;
   INSERT INTO messages_fts(rowid, subject, from_text, recipients, body)
-  SELECT m.id, m.subject, m.from_name || ' ' || m.from_email, m.recipients_text, coalesce(new.body_text, '') FROM messages m WHERE m.id = new.message_id;
+  SELECT m.id, m.subject, m.from_name || ' ' || m.from_email, m.recipients_text, coalesce(new.body_text, '') FROM messages m WHERE m.id = new.message_id;${dirtyBody("new.message_id")}
 END;
 
 CREATE TRIGGER message_bodies_fts_ad AFTER DELETE ON message_bodies
@@ -540,9 +551,10 @@ WHEN coalesce(old.body_text, '') != '' AND EXISTS (SELECT 1 FROM messages WHERE 
   INSERT INTO messages_fts(messages_fts, rowid, subject, from_text, recipients, body)
   SELECT 'delete', m.id, m.subject, m.from_name || ' ' || m.from_email, m.recipients_text, old.body_text FROM messages m WHERE m.id = old.message_id;
   INSERT INTO messages_fts(rowid, subject, from_text, recipients, body)
-  SELECT m.id, m.subject, m.from_name || ' ' || m.from_email, m.recipients_text, '' FROM messages m WHERE m.id = old.message_id;
+  SELECT m.id, m.subject, m.from_name || ' ' || m.from_email, m.recipients_text, '' FROM messages m WHERE m.id = old.message_id;${dirtyBody("old.message_id")}
 END;
 `;
+}
 
 /**
  * v6: bodies move to message_bodies, so list, search and rule scans walk a
@@ -566,7 +578,7 @@ INSERT INTO message_bodies (message_id, body_text, body_html)
   SELECT id, body_text, body_html FROM messages WHERE body_text IS NOT NULL OR body_html IS NOT NULL;
 ALTER TABLE messages DROP COLUMN body_text;
 ALTER TABLE messages DROP COLUMN body_html;
-${FTS_OVER_BODIES}`;
+${FTS_SRC_VIEW}${ftsTriggers(false)}`;
 
 /**
  * v7: the search outbox (plans 03/04 reconciliation). Triggers mark the
@@ -575,7 +587,8 @@ ${FTS_OVER_BODIES}`;
  * cascades included; the before-commit finalizer (outbox.ts) turns them into
  * one revisioned batch of absolute projections or tombstones in the same
  * transaction. The epoch identifies this database's log.
- * Any future rebuild of these tables must recreate their triggers.
+ * Any future rebuild of these tables must recreate their triggers, and any
+ * new writer of thread aggregates must go through recomputeThreads.
  */
 const OUTBOX_V7 = /* sql */ `
 CREATE TABLE search_state (
@@ -595,8 +608,7 @@ CREATE TABLE search_outbox (
   changes TEXT NOT NULL
 );
 
--- 0: message, 1: thread. Empty outside a transaction. The body triggers insert with NOT EXISTS, not
--- OR IGNORE: the outer statement's conflict clause (setMessageBody's upsert) overrides a trigger's.
+-- 0: message, 1: thread. Empty outside a transaction.
 CREATE TABLE search_dirty (
   kind INTEGER NOT NULL,
   id INTEGER NOT NULL,
@@ -610,32 +622,14 @@ CREATE TABLE search_leases (
   created_at INTEGER NOT NULL
 );
 
-CREATE TRIGGER search_dirty_messages_ai AFTER INSERT ON messages BEGIN
+-- messages and bodies are marked by their FTS triggers (recreated below); these columns don't reach FTS
+CREATE TRIGGER search_dirty_messages_au AFTER UPDATE OF thread_id, account_id, date, has_attachments, body_state ON messages BEGIN
   INSERT OR IGNORE INTO search_dirty (kind, id) VALUES (0, new.id);
 END;
-CREATE TRIGGER search_dirty_messages_ad AFTER DELETE ON messages BEGIN
-  INSERT OR IGNORE INTO search_dirty (kind, id) VALUES (0, old.id);
-END;
-CREATE TRIGGER search_dirty_messages_au AFTER UPDATE OF thread_id, account_id, date, subject, from_name, from_email, recipients_text, has_attachments, body_state ON messages BEGIN
-  INSERT OR IGNORE INTO search_dirty (kind, id) VALUES (0, new.id);
-END;
-CREATE TRIGGER search_dirty_bodies_ai AFTER INSERT ON message_bodies BEGIN
-  INSERT INTO search_dirty (kind, id) SELECT 0, new.message_id WHERE NOT EXISTS (SELECT 1 FROM search_dirty WHERE kind = 0 AND id = new.message_id);
-END;
-CREATE TRIGGER search_dirty_bodies_au AFTER UPDATE OF body_text ON message_bodies BEGIN
-  INSERT INTO search_dirty (kind, id) SELECT 0, new.message_id WHERE NOT EXISTS (SELECT 1 FROM search_dirty WHERE kind = 0 AND id = new.message_id);
-END;
-CREATE TRIGGER search_dirty_bodies_ad AFTER DELETE ON message_bodies BEGIN
-  INSERT INTO search_dirty (kind, id) SELECT 0, old.message_id WHERE NOT EXISTS (SELECT 1 FROM search_dirty WHERE kind = 0 AND id = old.message_id);
-END;
-CREATE TRIGGER search_dirty_threads_ai AFTER INSERT ON threads BEGIN
-  INSERT OR IGNORE INTO search_dirty (kind, id) VALUES (1, new.id);
-END;
+-- thread inserts and aggregate updates all go through recomputeThreads, which marks what it wrote in one
+-- statement (a trigger on threads would cost every per-thread UPDATE); deletes, cascades included, here:
 CREATE TRIGGER search_dirty_threads_ad AFTER DELETE ON threads BEGIN
   INSERT OR IGNORE INTO search_dirty (kind, id) VALUES (1, old.id);
-END;
-CREATE TRIGGER search_dirty_threads_au AFTER UPDATE OF account_id, last_date, in_inbox, has_sent, in_trash, in_spam, is_starred, unread_count ON threads BEGIN
-  INSERT OR IGNORE INTO search_dirty (kind, id) VALUES (1, new.id);
 END;
 CREATE TRIGGER search_dirty_categories_ai AFTER INSERT ON thread_categories BEGIN
   INSERT OR IGNORE INTO search_dirty (kind, id) VALUES (1, new.thread_id);
@@ -647,6 +641,14 @@ CREATE TRIGGER search_dirty_categories_au AFTER UPDATE OF thread_id, category_id
   INSERT OR IGNORE INTO search_dirty (kind, id) VALUES (1, old.thread_id);
   INSERT OR IGNORE INTO search_dirty (kind, id) VALUES (1, new.thread_id);
 END;
+
+DROP TRIGGER messages_fts_ai;
+DROP TRIGGER messages_fts_ad;
+DROP TRIGGER messages_fts_au;
+DROP TRIGGER message_bodies_fts_ai;
+DROP TRIGGER message_bodies_fts_au;
+DROP TRIGGER message_bodies_fts_ad;
+${ftsTriggers(true)}
 `;
 
 export const MIGRATIONS: readonly Migration[] = [
