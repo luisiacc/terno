@@ -191,8 +191,18 @@ export function installDragController(list: HTMLElement): () => void {
         /* the pointer is already gone */
       }
       scroller()?.addEventListener("scroll", onScroll, { passive: true });
-      performance.measure("drag:start", { start: t0, end: performance.now() });
-      requestAnimationFrame(() => performance.measure("drag:start-frame", { start: t0, end: performance.now() }));
+      if (PROBE) {
+        performance.measure("drag:start", { start: t0, end: performance.now() });
+        // the frame that shows the ghost: its rAF runs before style, layout and paint; a message
+        // posted from there is handled after that frame's rendering (≈ painted)
+        requestAnimationFrame(() => {
+          const visible = !!ghost && !ghost.hidden;
+          performance.measure(visible ? "drag:start-frame" : "drag:start-frame-missed", { start: t0, end: performance.now() });
+          const ch = new MessageChannel();
+          ch.port1.onmessage = () => performance.measure(visible ? "drag:start-paint" : "drag:start-paint-missed", { start: t0, end: performance.now() });
+          ch.port2.postMessage(null);
+        });
+      }
     } else if (wasDragging && PROBE) {
       performance.measure("drag:move", { start: t0, end: performance.now() });
     }

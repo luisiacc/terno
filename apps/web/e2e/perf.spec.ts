@@ -237,17 +237,33 @@ test("dragging rows to the sidebar: starts within a frame, no row renders, two N
   const navRenders = (await renders(page, "NavItem")) - nav0;
   const m = await page.evaluate(() => {
     const d = (name: string) => performance.getEntriesByName(name).map((e) => e.duration);
-    return { start: d("drag:start"), frame: d("drag:start-frame"), move: d("drag:move") };
+    return { start: d("drag:start"), frame: d("drag:start-frame"), paint: d("drag:start-paint"), move: d("drag:move"), missed: d("drag:start-frame-missed").length };
   });
+  // the display's frame interval: the paint budget is one frame (16 ms), or one frame of a slower display
+  const interval = await page.evaluate(
+    () =>
+      new Promise<number>((resolve) => {
+        const t: number[] = [];
+        const step = (now: number) => (t.push(now), t.length < 31 ? requestAnimationFrame(step) : resolve((t[30]! - t[0]!) / 30));
+        requestAnimationFrame(step);
+      }),
+  );
+  const paintBudget = Math.round(Math.max(16, interval) * 10) / 10;
   expect(m.start).toHaveLength(DRAGS);
+  expect(m.frame).toHaveLength(DRAGS);
+  expect(m.paint).toHaveLength(DRAGS);
+  expect(m.missed).toBe(0); // every drag's first frame already had the ghost
   const start = stat("drag: threshold move → ghost shown, targets measured", 16, m.start);
-  stat("drag: threshold move → next animation frame", 0, m.frame);
+  const frame = stat("drag: threshold move → frame showing the ghost (rAF)", paintBudget, m.frame);
+  const paint = stat("drag: threshold move → that frame rendered (rAF + task)", paintBudget, m.paint);
   const move = stat("drag: pointermove handler", 2, m.move);
   stats.push({ name: `ThreadRow renders during ${DRAGS} drags: ${rowRenders}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
   stats.push({ name: `NavItem renders per target change: ${(navRenders / changes).toFixed(2)}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
   expect(rowRenders).toBe(0);
   expect(navRenders / changes).toBeLessThanOrEqual(2);
   expect(start.p95).toBeLessThanOrEqual(16 * MULT);
+  expect(frame.p95).toBeLessThanOrEqual(paintBudget * MULT);
+  expect(paint.p95).toBeLessThanOrEqual(paintBudget * MULT);
   expect(move.p95).toBeLessThanOrEqual(2 * MULT);
 });
 

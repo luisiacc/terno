@@ -79,7 +79,8 @@ Main process: windows, app:// protocol, Keychain (safeStorage)
 | Scroll to the end → next 100 rows rendered | ≤ 150 ms | ~35 ms |
 | DOM rows while scrolling 2,000 threads | bounded | ≤ 33 |
 | Theme switch → painted (double rAF, so ≥ 2 frames) | ≤ 50 ms | ~35 ms, 0 row renders |
-| Drag start: threshold move → ghost shown, targets measured | ≤ 16 ms | ~4 ms |
+| Drag start: threshold move → ghost shown, targets measured | ≤ 16 ms | ~5 ms |
+| Drag start: threshold move → the frame showing the ghost rendered | ≤ 1 frame (16.7 ms at 60 Hz) | ~6.5 ms |
 | Drag: pointermove handler · row renders during a drag | ≤ 2 ms · 0 | ~0.1 ms · 0 |
 | Drop → dot on the row | ≤ 16 ms | ~1 ms, 1 row render |
 
