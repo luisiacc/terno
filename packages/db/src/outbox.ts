@@ -16,20 +16,16 @@ export const SEARCH_LOG_BYTES = 32 * 1024 * 1024;
  * flags: inInbox 1, hasSent 2, inTrash 4, inSpam 8, isStarred 16.
  */
 const BATCH_JSON = `SELECT '[' || coalesce(group_concat(c, ','), '') || ']' AS changes FROM (
-  SELECT '[0,' || json_object(
+  SELECT iif(m.id IS NULL, '[1,' || d.id || ']', '[0,' || json_object(
     'messageId', m.id, 'threadId', m.thread_id, 'accountId', m.account_id, 'date', m.date, 'subject', m.subject,
     'fromText', m.from_name || ' ' || m.from_email, 'fromEmail', m.from_email, 'recipients', m.recipients_text,
-    'body', coalesce(b.body_text, ''), 'hasAttachments', m.has_attachments, 'bodyState', m.body_state) || ']' AS c
-  FROM search_dirty d JOIN messages m ON m.id = d.id LEFT JOIN message_bodies b ON b.message_id = m.id WHERE d.kind = 0
+    'body', coalesce(b.body_text, ''), 'hasAttachments', m.has_attachments, 'bodyState', m.body_state) || ']') AS c
+  FROM search_dirty d LEFT JOIN messages m ON m.id = d.id LEFT JOIN message_bodies b ON b.message_id = d.id WHERE d.kind = 0
   UNION ALL
-  SELECT '[1,' || d.id || ']' FROM search_dirty d WHERE d.kind = 0 AND NOT EXISTS (SELECT 1 FROM messages WHERE id = d.id)
-  UNION ALL
-  SELECT '[2,' || t.id || ',' || t.account_id || ',' || t.last_date || ',' ||
+  SELECT iif(t.id IS NULL, '[3,' || d.id || ']', '[2,' || t.id || ',' || t.account_id || ',' || t.last_date || ',' ||
          (t.in_inbox + 2 * t.has_sent + 4 * t.in_trash + 8 * t.in_spam + 16 * t.is_starred) || ',' || t.unread_count || ',[' ||
-         coalesce((SELECT group_concat(category_id) FROM (SELECT category_id FROM thread_categories WHERE thread_id = t.id ORDER BY category_id)), '') || ']]'
-  FROM search_dirty d JOIN threads t ON t.id = d.id WHERE d.kind = 1
-  UNION ALL
-  SELECT '[3,' || d.id || ']' FROM search_dirty d WHERE d.kind = 1 AND NOT EXISTS (SELECT 1 FROM threads WHERE id = d.id)
+         coalesce((SELECT group_concat(category_id) FROM (SELECT category_id FROM thread_categories WHERE thread_id = t.id ORDER BY category_id)), '') || ']]')
+  FROM search_dirty d LEFT JOIN threads t ON t.id = d.id WHERE d.kind = 1
 )`;
 
 type Entry = [0, Omit<SearchMessageDoc, "hasAttachments"> & { hasAttachments: number }] | [1, number] | [2, number, number, number, number, number, number[]] | [3, number];
