@@ -9,7 +9,7 @@ export interface RpcRequest {
 }
 
 export interface RpcErrorPayload {
-  code: "BAD_REQUEST" | "NOT_FOUND" | "UNAVAILABLE" | "TIMEOUT" | "INTERNAL" | "UNKNOWN_METHOD" | "FORBIDDEN";
+  code: "BAD_REQUEST" | "NOT_FOUND" | "UNAVAILABLE" | "TIMEOUT" | "INTERNAL" | "UNKNOWN_METHOD" | "FORBIDDEN" | "CANCELLED";
   message: string;
   details?: unknown;
 }

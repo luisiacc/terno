@@ -62,6 +62,11 @@ describe("proposeLearnedFilters", () => {
     expect(proposeLearnedFilters(actions, { now: NOW, excludedKeys: new Set(["sender:news@shop.com:archive"]) })).toEqual([]);
   });
 
+  it("an accepted/dismissed list rule still covers its senders (no redundant follow-up)", () => {
+    const actions = times(6, () => act("archive", "noreply@github.com", { listId: "repo.github.com" }));
+    expect(proposeLearnedFilters(actions, { now: NOW, excludedKeys: new Set(["list:repo.github.com:archive"]) })).toEqual([]);
+  });
+
   it("normalizes addresses so case variants accumulate together", () => {
     const actions = [...times(3, () => act("archive", "News@Shop.com")), ...times(2, () => act("archive", "news@shop.com"))];
     expect(proposeLearnedFilters(actions, { now: NOW })).toHaveLength(1);

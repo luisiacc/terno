@@ -127,10 +127,13 @@ export function proposeLearnedFilters(
       const confidence = support / total;
       if (support < minSupport || confidence < minConfidence) continue;
       const key = proposalKey(scope, b.value, action);
-      if (excluded.has(key)) continue;
       // A domain proposal is redundant when every sender in it is already covered.
       if (scope === "domain" && [...b.senders].every((s) => coveredSenders.has(s))) continue;
-      proposals.push({ key, scope, value: b.value, action, support, confidence, rule: ruleFor(scope, b.value, action) });
+      // Excluded keys (dismissed or already a filter) still cover their senders,
+      // so accepting a list rule doesn't surface a redundant per-sender rule next.
+      if (!excluded.has(key)) {
+        proposals.push({ key, scope, value: b.value, action, support, confidence, rule: ruleFor(scope, b.value, action) });
+      }
       if (scope === "list") {
         // senders whose every action came through this list are covered by it
         for (const s of b.senders) {

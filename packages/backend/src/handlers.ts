@@ -1,0 +1,404 @@
+import { RpcError, type Handlers } from "@unica/core/rpc";
+import { proposeLearnedFilters, type Address } from "@unica/core";
+import {
+  addThreadsToCategory,
+  applyThreadAction,
+  claimFilterApplications,
+  completeOp,
+  createAccount,
+  createCategory,
+  deleteCategory,
+  deleteDraft,
+  deleteFilter,
+  dismissedKeys,
+  dismissSuggestion,
+  enqueueOp,
+  findRuleMatches,
+  getAccount,
+  getAccountConfig,
+  getCounts,
+  getFilter,
+  getOp,
+  getSummaries,
+  getThread,
+  ingestMessages,
+  learnedFilterKeys,
+  listAccounts,
+  listCategories,
+  listDrafts,
+  listFilters,
+  listRecentOps,
+  listThreads,
+  loadUserActions,
+  recordUserActions,
+  removeAccount,
+  removeThreadsFromCategory,
+  saveDraft,
+  saveFilter,
+  searchIsComplete,
+  searchThreads,
+  suggestSimilarForCategory,
+  updateAccount,
+  updateCategory,
+  type DraftRow,
+} from "@unica/db";
+import type { GmailAccountConfig, ImapAccountConfig, SendPayload } from "@unica/mail";
+import { Backend } from "./backend";
+import { readSettings, updateSettings } from "./settings";
+
+const ACCOUNT_COLORS = ["indigo", "emerald", "amber", "cyan", "violet", "rose", "lime", "slate"];
+
+function toDraft(r: DraftRow) {
+  return {
+    id: r.id,
+    accountId: r.account_id,
+    to: JSON.parse(r.to_json) as Address[],
+    cc: JSON.parse(r.cc_json) as Address[],
+    subject: r.subject,
+    bodyText: r.body_text,
+    inReplyToMessageId: r.in_reply_to_message_id,
+    updatedAt: r.updated_at,
+  };
+}
+
+export function createHandlers(b: Backend): Handlers {
+  const db = () => b.db;
+  const nextAccountColor = () => ACCOUNT_COLORS[listAccounts(db()).length % ACCOUNT_COLORS.length]!;
+
+  return {
+    "app.bootstrap": () => ({
+      accounts: listAccounts(db()),
+      categories: listCategories(db()),
+      counts: getCounts(db()),
+      settings: readSettings(db()),
+      version: b.options.version,
+    }),
+
+    "threads.list": (p) => listThreads(db(), p),
+
+    "threads.search": async (p, ctx) => {
+      // Latest-wins per client: a query superseded while queued is not executed.
+      const seq = (b.searchSeq.get(ctx.clientId) ?? 0) + 1;
+      b.searchSeq.set(ctx.clientId, seq);
+      await new Promise((r) => setImmediate(r));
+      if (b.searchSeq.get(ctx.clientId) !== seq) throw new RpcError("CANCELLED", "Superseded by a newer search");
+      const started = performance.now();
+      const result = searchThreads(db(), { ...p, now: b.now() });
+      return { ...result, tookMs: performance.now() - started, complete: searchIsComplete(db()) };
+    },
+
+    "threads.get": ({ threadId }) => {
+      const thread = getThread(db(), threadId);
+      if (!thread) throw new RpcError("NOT_FOUND", `Thread ${threadId} not found`);
+      return thread;
+    },
+
+    "threads.act": ({ threadIds, action }, ctx) => {
+      const result = db().tx(() => {
+        const r = applyThreadAction(db(), threadIds, action);
+        const signal = Backend.learningSignal(action);
+        // only explicit actions from the user (renderer) feed learned filters
+        if (signal && ctx.origin === "renderer") recordUserActions(db(), threadIds, signal, b.now());
+        b.queueActionOps(r, action);
+        return r;
+      });
+      b.notifyChanged(result.threadIds);
+      return { affected: result.threadIds.length };
+    },
+
+    "categories.create": ({ name, color }) => {
+      const c = createCategory(db(), name, color);
+      b.server.emit("categories", listCategories(db()));
+      return c;
+    },
+    "categories.update": ({ id, ...patch }) => {
+      const c = updateCategory(db(), id, patch);
+      if (!c) throw new RpcError("NOT_FOUND", `Category ${id} not found`);
+      b.server.emit("categories", listCategories(db()));
+      return c;
+    },
+    "categories.delete": ({ id }) => {
+      deleteCategory(db(), id);
+      b.server.emit("categories", listCategories(db()));
+      b.notifyChanged([]);
+      return { ok: true as const };
+    },
+    "categories.addThreads": ({ categoryId, threadIds }, ctx) => {
+      const added = addThreadsToCategory(db(), categoryId, threadIds, ctx.origin === "mcp" ? "agent" : "user", b.now());
+      b.notifyChanged(threadIds);
+      return { added };
+    },
+    "categories.removeThreads": ({ categoryId, threadIds }) => {
+      const removed = removeThreadsFromCategory(db(), categoryId, threadIds);
+      b.notifyChanged(threadIds);
+      return { removed };
+    },
+    "categories.suggest": ({ categoryId, threadId }) => suggestSimilarForCategory(db(), categoryId, threadId),
+    "categories.dismissSuggestion": ({ key }) => {
+      dismissSuggestion(db(), key, b.now());
+      return { ok: true as const };
+    },
+
+    "counts.get": () => getCounts(db()),
+
+    "filters.list": () => listFilters(db()),
+    "filters.save": (p) => saveFilter(db(), p, b.now()),
+    "filters.delete": ({ id }) => {
+      deleteFilter(db(), id);
+      return { ok: true as const };
+    },
+    "filters.preview": ({ rule, limit }) => {
+      const matches = findRuleMatches(db(), rule, b.now());
+      const top = db()
+        .all<{ id: number }>(
+          "SELECT id FROM threads WHERE id IN (SELECT value FROM json_each(?)) ORDER BY last_date DESC, id DESC LIMIT ?",
+          JSON.stringify(matches.threadIds),
+          limit,
+        )
+        .map((r) => r.id);
+      return { count: matches.threadIds.length, sample: getSummaries(db(), top) };
+    },
+    "filters.apply": async ({ id }) => {
+      const filter = getFilter(db(), id);
+      if (!filter) throw new RpcError("NOT_FOUND", `Filter ${id} not found`);
+      const matches = findRuleMatches(db(), filter.rule, b.now());
+      const touched = new Set<number>();
+      let applied = 0;
+      // time-sliced so a huge bulk apply doesn't freeze list/search
+      await b.runSliced(matches.messageIds, 20, (chunk) => {
+        db().tx(() => {
+          const ids = claimFilterApplications(db(), id, chunk, b.now());
+          for (const t of b.runFilterActions(filter.rule.actions, ids)) touched.add(t);
+          applied += ids.length;
+        });
+      });
+      b.notifyChanged(touched);
+      return { matchedMessages: applied, affectedThreads: touched.size };
+    },
+    "filters.generate": async ({ prompt }) => {
+      const ai = await b.ai();
+      if (!ai) throw new RpcError("UNAVAILABLE", "Connect an AI provider in Settings → AI to create filters with AI.");
+      try {
+        return await ai.generateFilter(prompt, {
+          now: b.now(),
+          categories: listCategories(db()).map((c) => ({ id: c.id, name: c.name })),
+          accounts: listAccounts(db()).map((a) => ({ id: a.id, email: a.email, displayName: a.displayName })),
+        });
+      } catch (error) {
+        throw new RpcError("UNAVAILABLE", error instanceof Error ? error.message : String(error));
+      }
+    },
+
+    "learning.proposals": () =>
+      proposeLearnedFilters(loadUserActions(db(), b.now() - 60 * 86_400_000), {
+        now: b.now(),
+        excludedKeys: new Set([...dismissedKeys(db()), ...learnedFilterKeys(db())]),
+      }),
+    "learning.accept": ({ key }) => {
+      const proposal = proposeLearnedFilters(loadUserActions(db(), b.now() - 60 * 86_400_000), { now: b.now() }).find(
+        (p) => p.key === key,
+      );
+      if (!proposal) throw new RpcError("NOT_FOUND", "That suggestion is no longer available");
+      const verb = { archive: "Archivar", trash: "Borrar", spam: "Spam" }[proposal.action];
+      return saveFilter(db(), { name: `${verb}: ${proposal.value}`, enabled: true, source: "learned", rule: proposal.rule, learnedKey: key }, b.now());
+    },
+    "learning.dismiss": ({ key }) => {
+      dismissSuggestion(db(), key, b.now());
+      return { ok: true as const };
+    },
+
+    "compose.send": (p, ctx) => {
+      const account = getAccount(db(), p.accountId);
+      if (!account) throw new RpcError("NOT_FOUND", "Account not found");
+      const cfg = getAccountConfig<{ senderName?: string }>(db(), p.accountId)!;
+      const from: Address = { name: cfg.config.senderName || account.displayName, email: account.email };
+      let inReplyTo: string | null = null;
+      let references: string[] = [];
+      let providerThreadId: string | null = null;
+      let replyThreadId: number | null = null;
+      if (p.inReplyToMessageId) {
+        const original = db().get<{ rfc_message_id: string | null; references_json: string; thread_id: number; account_id: number }>(
+          "SELECT rfc_message_id, references_json, thread_id, account_id FROM messages WHERE id = ?",
+          p.inReplyToMessageId,
+        );
+        if (!original) throw new RpcError("NOT_FOUND", "Original message not found");
+        inReplyTo = original.rfc_message_id;
+        references = [...(JSON.parse(original.references_json) as string[]), ...(original.rfc_message_id ? [original.rfc_message_id] : [])];
+        replyThreadId = original.thread_id;
+        if (original.account_id === p.accountId) {
+          providerThreadId = db().get<{ provider_thread_id: string | null }>("SELECT provider_thread_id FROM threads WHERE id = ?", original.thread_id)!
+            .provider_thread_id;
+        }
+      }
+      const messageId = b.newMessageId(account.email);
+      const payload: SendPayload = {
+        from,
+        to: p.to,
+        cc: p.cc,
+        bcc: p.bcc,
+        subject: p.subject,
+        text: p.bodyText,
+        messageId,
+        inReplyTo,
+        references,
+        providerThreadId,
+      };
+      // Optimistic local copy + durable send op, atomically: a crash can't lose or duplicate the send.
+      const { opId, threadId } = db().tx(() => {
+        const localKey = `local:${messageId}`;
+        const ingest = ingestMessages(
+          db(),
+          [
+            {
+              accountId: p.accountId,
+              providerMsgId: localKey,
+              providerThreadId,
+              rfcMessageId: messageId,
+              inReplyTo,
+              references,
+              from,
+              to: p.to,
+              cc: p.cc,
+              bcc: p.bcc,
+              subject: p.subject,
+              date: b.now(),
+              snippet: "",
+              bodyText: p.bodyText,
+              bodyHtml: null,
+              bodyState: "full",
+              listId: null,
+              isRead: true,
+              isStarred: false,
+              inInbox: false,
+              isSent: true,
+              isDraft: false,
+              isTrash: false,
+              isSpam: false,
+              hasAttachments: false,
+              size: p.bodyText.length,
+            },
+          ],
+          b.now(),
+        );
+        const localId = ingest.inserted[0]!;
+        const opId = enqueueOp(db(), { accountId: p.accountId, kind: "send", target: { messageIds: [localId] }, payload }, b.now())!;
+        if (p.draftId) deleteDraft(db(), p.draftId);
+        if (replyThreadId && ctx.origin === "renderer") recordUserActions(db(), [replyThreadId], "reply", b.now());
+        const threadId = db().get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", localId)!.thread_id;
+        return { opId, threadId };
+      });
+      b.notifyChanged([threadId]);
+      b.kickWorker();
+      return { opId, threadId };
+    },
+
+    "drafts.save": (p) => toDraft(saveDraft(db(), p, b.now())),
+    "drafts.list": () => listDrafts(db()).map(toDraft),
+    "drafts.delete": ({ id }) => {
+      deleteDraft(db(), id);
+      return { ok: true as const };
+    },
+
+    "accounts.addImap": async (p) => {
+      const config: ImapAccountConfig = {
+        imap: p.imap,
+        smtp: p.smtp,
+        senderName: p.displayName || p.email,
+        appendToSent: !/gmail\.com$/i.test(p.imap.host),
+      };
+      if (p.verify) {
+        try {
+          await b.options.providers.verifyImap(config, p.password);
+        } catch (error) {
+          throw new RpcError("BAD_REQUEST", `Could not connect: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      const account = createAccount(
+        db(),
+        { kind: "imap", email: p.email, displayName: p.displayName || p.email, color: nextAccountColor(), providerConfig: config },
+        b.now(),
+      );
+      await b.setSecret(`account:${account.id}:password`, p.password);
+      b.emitAccounts();
+      b.startAccount(account);
+      return account;
+    },
+
+    "accounts.connectGmail": async () => {
+      const settings = readSettings(db());
+      if (!settings.gmailClientId) {
+        throw new RpcError("BAD_REQUEST", "Add your Google OAuth client ID in Settings → Accounts first.");
+      }
+      if (!b.options.openExternal) throw new RpcError("UNAVAILABLE", "Gmail sign-in needs the desktop app.");
+      const result = await b.options.providers.connectGmail({
+        clientId: settings.gmailClientId,
+        clientSecret: await b.getSecret("gmailClientSecret"),
+        openExternal: b.options.openExternal,
+        signal: b.abort.signal,
+      });
+      const existing = listAccounts(db()).find((a) => a.email === result.email.toLowerCase());
+      if (existing) throw new RpcError("BAD_REQUEST", `${result.email} is already connected.`);
+      const config: GmailAccountConfig = { senderName: result.name || result.email };
+      const account = createAccount(
+        db(),
+        { kind: "gmail", email: result.email, displayName: result.email.split("@")[0]!, color: nextAccountColor(), providerConfig: config },
+        b.now(),
+      );
+      await b.setSecret(`account:${account.id}:refreshToken`, result.refreshToken);
+      b.emitAccounts();
+      b.startAccount(account);
+      return account;
+    },
+
+    "accounts.update": ({ id, ...patch }) => {
+      const account = updateAccount(db(), id, patch);
+      if (!account) throw new RpcError("NOT_FOUND", "Account not found");
+      b.emitAccounts();
+      return account;
+    },
+
+    "accounts.remove": async ({ id }) => {
+      await b.dropAccount(id);
+      removeAccount(db(), id);
+      db().run("DELETE FROM secrets WHERE name LIKE ?", `account:${id}:%`);
+      b.emitAccounts();
+      b.notifyChanged([]);
+      return { ok: true as const };
+    },
+
+    "settings.update": (patch) => updateSettings(db(), patch),
+    "settings.setSecret": async ({ name, value }) => {
+      if (value) await b.setSecret(name, value);
+      else db().run("DELETE FROM secrets WHERE name = ?", name);
+      return { ok: true as const };
+    },
+
+    "ops.list": () => listRecentOps(db()).map((op) => b.opInfo(op)),
+    "ops.resolveUnknown": ({ opId, resolution }) => {
+      const op = getOp(db(), opId);
+      if (!op || op.state !== "unknown") throw new RpcError("NOT_FOUND", "No unresolved operation with that id");
+      if (resolution === "markSent") completeOp(db(), opId, b.now());
+      else if (resolution === "retry") {
+        db().run("UPDATE ops SET state = 'queued', next_attempt_at = 0, last_error = NULL WHERE id = ?", opId);
+        b.kickWorker();
+      } else {
+        db().tx(() => {
+          db().run("UPDATE ops SET state = 'failed', last_error = 'Discarded by user' WHERE id = ?", opId);
+          const target = JSON.parse(op.target_json) as { messageIds?: number[] };
+          if (op.kind === "send" && target.messageIds?.length) {
+            const thread = db().get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", target.messageIds[0]!);
+            db().run("DELETE FROM messages WHERE id = ? AND provider_msg_id LIKE 'local:%'", target.messageIds[0]!);
+            if (thread) b.notifyChanged([thread.thread_id]);
+          }
+        });
+      }
+      return { ok: true as const };
+    },
+
+    "sync.now": async ({ accountId }) => {
+      const ids = accountId ? [accountId] : listAccounts(db()).map((a) => a.id);
+      for (const id of ids) void b.syncAccount(id);
+      return { ok: true as const };
+    },
+  };
+}
