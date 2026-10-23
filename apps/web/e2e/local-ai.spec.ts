@@ -54,7 +54,8 @@ test.describe("local mode and AI providers", () => {
     await expect(row).toBeVisible();
     // it is the first row of General
     await expect(page.locator("[data-testid=settings-dialog] [role=tabpanel] > div").first()).toHaveAttribute("data-testid", "local-mode-row");
-    const toggle = page.getByTestId("local-mode-switch");
+    const toggle = page.getByRole("switch", { name: "Modo local" });
+    await expect(toggle).toHaveAccessibleDescription(/Nada sale de este Mac salvo el correo con tus servidores/);
     await expect(toggle).toBeChecked();
 
     await toggle.click();
@@ -89,6 +90,31 @@ test.describe("local mode and AI providers", () => {
     await expect(pill).toHaveText("Local");
     await page.getByTestId("tab-ai").click();
     await expect(page.getByTestId("ai-local-banner")).toContainText("OpenAI queda en pausa");
+  });
+
+  test("a slow connection test that finishes after switching provider doesn't touch the new one", async ({ app: page, server }) => {
+    const ollama = await startOllamaStub({ chatDelayMs: 1500 });
+    try {
+      await server.backend.server.invoke("settings.update", { localMode: false, ai: { provider: "ollama", baseURL: `${ollama.url}/v1`, model: "qwen3:8b" } }, { clientId: "setup", origin: "dev" });
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await page.getByTestId("open-settings").click();
+      await page.getByTestId("tab-ai").click();
+      await expect(page.getByTestId("ai-privacy")).toContainText("Nada sale de este Mac.");
+      await page.getByTestId("ai-test").click();
+      await page.getByTestId("ai-provider").click();
+      await page.getByTestId("ai-choice-openai").click();
+      await expect(page.getByTestId("ai-privacy")).toContainText("api.openai.com");
+      // let the Ollama probe finish
+      await expect.poll(() => ollama.requests.filter((r) => r === "POST /v1/chat/completions").length).toBe(1);
+      await page.waitForTimeout(1800);
+      await expect(page.getByTestId("ai-test-result")).toHaveCount(0);
+      await expect(page.getByTestId("ai-privacy")).toContainText("api.openai.com");
+      await expect(page.getByTestId("ai-privacy")).not.toContainText("Nada sale de este Mac");
+      await expect(page.getByTestId("local-pill")).toHaveText("IA: OpenAI (nube)");
+    } finally {
+      await ollama.close();
+    }
   });
 
   test("local mode blocks remote images in mail with no way to load them", async ({ app: page }) => {

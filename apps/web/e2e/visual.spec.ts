@@ -2,7 +2,7 @@
  * Visual regression of the key screens (light + dark). Baselines live in
  * e2e/__screenshots__; regenerate with `pnpm test:e2e --update-snapshots`.
  */
-import { expect, focusList, openRow, search, stabilize, test } from "./fixtures";
+import { expect, focusList, isolateLocalDiscovery, openRow, search, stabilize, test } from "./fixtures";
 import { startOllamaStub } from "./ollama-stub";
 import type { Page } from "@playwright/test";
 
@@ -141,8 +141,12 @@ test.describe("owner identity", () => {
 test.describe("first run", () => {
   test.use({ backendOptions: { empty: true, ownerClaims: true } });
 
-  test("step 1: local or connected", async ({ app: page }) => {
+  test("step 1: local or connected", async ({ app: page, server }) => {
+    // no real Ollama / LM Studio on the test machine may change what this screen shows
+    await isolateLocalDiscovery(server);
+    await page.reload();
     await expect(page.getByTestId("first-run")).toContainText("Paso 1 de 2");
+    await expect(page.getByTestId("first-run-found")).toHaveCount(0);
     await page.evaluate(() => document.fonts.ready);
     await stabilize(page);
     await expect(page).toHaveScreenshot("first-run.png");

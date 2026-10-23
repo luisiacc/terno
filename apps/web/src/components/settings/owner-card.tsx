@@ -52,7 +52,15 @@ function ChangeOwner({ owner, accounts, onDone }: { owner: OwnerIdentity; accoun
     >
       <p className="text-xs text-muted-foreground">La cuenta nueva se verifica ahora mismo: con Google, o escribiendo de nuevo su contraseña.</p>
       <div className="flex gap-2">
-        <Select value={accountId === null ? null : String(accountId)} onValueChange={(v) => setAccountId(Number(v))} items={candidates.map((a) => ({ value: String(a.id), label: a.email }))}>
+        <Select
+          disabled={busy}
+          value={accountId === null ? null : String(accountId)}
+          onValueChange={(v) => {
+            // a password belongs to one mailbox: never send it to another server
+            setPassword("");
+            setAccountId(Number(v));
+          }}
+          items={candidates.map((a) => ({ value: String(a.id), label: a.email }))}>
           <SelectTrigger size="sm" className="min-w-0 flex-1" data-testid="change-owner-account">
             <SelectValue />
           </SelectTrigger>
@@ -65,7 +73,7 @@ function ChangeOwner({ owner, accounts, onDone }: { owner: OwnerIdentity; accoun
           </SelectContent>
         </Select>
         {target?.kind === "imap" && (
-          <Input type="password" required autoComplete="off" className="h-7 w-44" placeholder="Contraseña" aria-label="Contraseña de la cuenta" data-testid="change-owner-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <Input type="password" required autoComplete="off" disabled={busy} className="h-7 w-44" placeholder="Contraseña" aria-label="Contraseña de la cuenta" data-testid="change-owner-password" value={password} onChange={(e) => setPassword(e.target.value)} />
         )}
       </div>
       <div className="flex justify-end gap-2">

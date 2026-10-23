@@ -18,12 +18,18 @@ import { setApp, useApp, type SettingsTab } from "~/state/app";
 import { AiTab } from "./settings/ai-tab";
 import { OwnerCard } from "./settings/owner-card";
 
-function Row({ label, hint, children, testId }: { label: string; hint?: string; children: React.ReactNode; testId?: string }) {
+function Row({ label, hint, children, testId, labelId, hintId }: { label: string; hint?: string; children: React.ReactNode; testId?: string; labelId?: string; hintId?: string }) {
   return (
     <div className="flex items-center justify-between gap-6 border-b border-border py-3 last:border-0" data-testid={testId}>
       <div>
-        <p className="text-sm font-medium">{label}</p>
-        {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
+        <p id={labelId} className="text-sm font-medium">
+          {label}
+        </p>
+        {hint && (
+          <p id={hintId} className="mt-0.5 text-xs text-muted-foreground">
+            {hint}
+          </p>
+        )}
       </div>
       <div className="shrink-0">{children}</div>
     </div>
@@ -89,9 +95,11 @@ export function SettingsDialog() {
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-2">
             <TabsContent value="general">
-              <Row label="Modo local" hint="Nada sale de este Mac salvo el correo con tus servidores. La IA solo puede usar modelos de este Mac." testId="local-mode-row">
+              <Row label="Modo local" hint="Nada sale de este Mac salvo el correo con tus servidores. La IA solo puede usar modelos de este Mac." testId="local-mode-row" labelId="local-mode-label" hintId="local-mode-hint">
                 <Switch
                   data-testid="local-mode-switch"
+                  aria-labelledby="local-mode-label"
+                  aria-describedby="local-mode-hint"
                   checked={settings.localMode}
                   onCheckedChange={(on) => (on ? void update({ localMode: true }) : setConfirmLocalOff(true))}
                 />

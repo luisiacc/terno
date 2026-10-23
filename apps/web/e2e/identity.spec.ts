@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures";
+import { expect, isolateLocalDiscovery, test } from "./fixtures";
 import { startOllamaStub } from "./ollama-stub";
 import type { Page } from "@playwright/test";
 
@@ -12,7 +12,7 @@ async function addImap(page: Page, email: string) {
 test.describe("owner identity", () => {
   test.use({ backendOptions: { ownerClaims: true } });
 
-  test("the first connected mailbox becomes the Única account, and stays it after that mailbox is removed", async ({ app: page }) => {
+  test("the first connected mailbox becomes the Única account, and stays it after that mailbox is removed", async ({ app: page, server }) => {
     await page.getByTestId("open-settings").click();
     await page.getByTestId("tab-accounts").click();
     await expect(page.getByTestId("owner-card")).toHaveText(/Tu cuenta Única será el primer correo que conectes/);
@@ -45,12 +45,30 @@ test.describe("owner identity", () => {
 
     // change it to the other mailbox: the password must be typed again
     await page.getByTestId("change-owner-open").click();
+    // a password typed for one mailbox is cleared when another is picked (it would go to that server)
+    const pick = async (name: string | RegExp) => {
+      await page.getByTestId("change-owner-account").click();
+      await page.getByRole("option", { name }).first().click();
+    };
+    await pick("work@acme.studio");
+    await page.getByTestId("change-owner-password").fill("password-typed-for-work");
+    await pick(/^(?!work@acme\.studio).*@/);
     await page.getByTestId("change-owner-account").click();
     await page.getByRole("option", { name: "work@acme.studio" }).click();
     await expect(page.getByTestId("change-owner-account")).toContainText("work@acme.studio");
+    await expect(page.getByTestId("change-owner-password")).toHaveValue("");
     await expect(page.getByTestId("change-owner-submit")).toBeDisabled();
+
+    // while verifying, the target and password are locked
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const options = server.backend.options as { providers: typeof server.backend.options.providers };
+    options.providers = { ...options.providers, verifyImap: () => gate };
     await page.getByTestId("change-owner-password").fill("app-password");
     await page.getByTestId("change-owner-submit").click();
+    await expect(page.getByTestId("change-owner-account")).toBeDisabled();
+    await expect(page.getByTestId("change-owner-password")).toBeDisabled();
+    release();
     await expect(page.getByTestId("owner-email")).toHaveText("work@acme.studio");
   });
 });
@@ -61,9 +79,7 @@ test.describe("first run", () => {
   test("fresh install: choose Local (with the Ollama model we found), then add the first account", async ({ app: page, server }) => {
     const ollama = await startOllamaStub();
     try {
-      // where this Mac's Ollama listens (the default port may be taken on the machine running the tests)
-      await server.backend.server.invoke("settings.update", { ai: { provider: "ollama", baseURL: `${ollama.url}/v1` } }, { clientId: "setup", origin: "dev" });
-      await server.backend.server.invoke("settings.update", { ai: { provider: "none" } }, { clientId: "setup", origin: "dev" });
+      await isolateLocalDiscovery(server, ollama.url);
       await page.reload();
       const dialog = page.getByTestId("first-run");
       await expect(dialog).toContainText("Paso 1 de 2");

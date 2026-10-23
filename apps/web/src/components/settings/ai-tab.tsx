@@ -29,6 +29,8 @@ import { formatBytes } from "~/lib/format";
 import { client } from "~/rpc/connection";
 import { setApp } from "~/state/app";
 
+const targetKey = (ai: AppSettings["ai"]) => [ai.provider, ai.preset ?? "", ai.baseURL ?? "", ai.model].join("|");
+
 type Catalog = { providers: ProviderDescriptor[]; presets: PresetDescriptor[] };
 type Discovery = { state: "idle" } | { state: "loading" } | { state: "done"; models: ModelInfo[] } | { state: "error"; message: string };
 
@@ -105,18 +107,30 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: (pa
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [ai.provider, ai.baseURL, ai.preset, ai.hasKey, ai.model, canDiscover]);
 
-  // ── test connection
+  // ── test connection: a result only counts for the exact target it tested
   const [testing, setTesting] = useState(false);
   const [test, setTest] = useState<AiTestResult | null>(null);
-  useEffect(() => setTest(null), [ai.provider, ai.baseURL, ai.preset, ai.model]);
+  const testSeq = useRef(0);
+  const target = targetKey(ai);
+  useEffect(() => {
+    testSeq.current++;
+    setTest(null);
+    setTesting(false);
+  }, [target]);
   const runTest = async () => {
+    const seq = ++testSeq.current;
     setTesting(true);
     try {
       const result = await client.call("ai.test", { provider: ai.provider, model: ai.model, baseURL: ai.baseURL ?? undefined, preset: ai.preset ?? undefined });
+      // the user may have switched provider meanwhile: a late answer must not touch the new one
+      if (seq !== testSeq.current) return;
       setTest(result);
-      if (result.ok && result.capabilities) setApp({ settings: { ...settings, ai: { ...ai, capabilities: result.capabilities } } });
+      const capabilities = result.ok ? result.capabilities : undefined;
+      if (capabilities) {
+        setApp((state) => (state.settings && targetKey(state.settings.ai) === target ? { settings: { ...state.settings, ai: { ...state.settings.ai, capabilities } } } : {}));
+      }
     } finally {
-      setTesting(false);
+      if (seq === testSeq.current) setTesting(false);
     }
   };
 

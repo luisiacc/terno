@@ -2,7 +2,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
 /** A stand-in for Ollama on 127.0.0.1: model list, model details and an OpenAI-compatible chat endpoint. */
-export async function startOllamaStub(): Promise<{ url: string; requests: string[]; close: () => Promise<void> }> {
+export async function startOllamaStub(options: { chatDelayMs?: number } = {}): Promise<{ url: string; requests: string[]; close: () => Promise<void> }> {
   const requests: string[] = [];
   const server: Server = createServer((req, res) => {
     let data = "";
@@ -14,14 +14,18 @@ export async function startOllamaStub(): Promise<{ url: string; requests: string
       if (req.url === "/api/ps") return json({ models: [{ name: "qwen3:8b" }] });
       if (req.url === "/api/show") return json({ model_info: { "qwen3.context_length": 40960 } });
       if (req.url === "/v1/chat/completions") {
+        if (options.chatDelayMs) return void setTimeout(() => answerChat(), options.chatDelayMs);
+        return answerChat();
+      }
+      res.writeHead(404).end();
+      function answerChat() {
         const body = JSON.parse(data);
         const probe = body.response_format?.json_schema?.name === "probe";
         const content = probe
           ? '{"ok":true}'
           : JSON.stringify({ name: "Uber", explanation: "Archiva los recibos de uber.com.", match: "all", conditions: [{ field: "fromDomain", op: "equals", value: "uber.com", negate: false }], actions: [{ type: "archive", categoryId: null }] });
-        return json({ id: "c", object: "chat.completion", created: 0, model: body.model, choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content, refusal: null } }] });
+        json({ id: "c", object: "chat.completion", created: 0, model: body.model, choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content, refusal: null } }] });
       }
-      res.writeHead(404).end();
     });
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));

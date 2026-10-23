@@ -95,3 +95,14 @@ export async function stabilize(page: Page): Promise<void> {
   await page.addStyleTag({ content: "[data-sonner-toaster]{display:none!important} *{caret-color:transparent!important}" });
   await page.mouse.move(0, 0);
 }
+
+/**
+ * First-run discovery probes Ollama and LM Studio on their default ports. Point both at
+ * known places (a stub, or a closed port) so a real server on the test machine can't leak in.
+ */
+export async function isolateLocalDiscovery(server: DevServer, ollamaUrl?: string): Promise<void> {
+  const ctx = { clientId: "setup", origin: "dev" as const };
+  await server.backend.server.invoke("settings.update", { ai: { provider: "lmstudio", baseURL: "http://127.0.0.1:9/v1" } }, ctx);
+  await server.backend.server.invoke("settings.update", { ai: { provider: "ollama", baseURL: ollamaUrl ? `${ollamaUrl}/v1` : "http://127.0.0.1:9/v1" } }, ctx);
+  await server.backend.server.invoke("settings.update", { ai: { provider: "none" } }, ctx);
+}
