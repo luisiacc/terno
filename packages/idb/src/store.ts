@@ -126,8 +126,9 @@ import { createMemDb, EARLY_TABLES, idbExists, LATE_TABLES, LOGICAL_SCHEMA, load
 import { appendOutbox, checkCursor, columnsOf, materializeChanges, pageOf, planScan, scanPage, searchChangeIds, searchHead } from "./search";
 
 const PENDING_BODIES_CAP = 1000;
-/** bodies kept in memory after a command (read ahead or written); the rest stay in IndexedDB */
+/** bodies kept in memory after a unit of work (read ahead or written), by count and bytes; the rest stay in IndexedDB */
 const BODY_CACHE = 2000;
+const BODY_CACHE_BYTES = 8 * 1024 * 1024;
 /** ids per exclusive slice when the feed or a scan reads bodies */
 const SLICE = 500;
 
@@ -257,9 +258,14 @@ export class IdbMailStore implements MailStore {
   private exclusive<V>(fn: () => Promise<V>, early = false): Promise<V> {
     // a unit that needs the late tables waits for them before queueing, so it never holds up early units
     const enqueue = () => {
-      const run = this.queue.then(() => {
+      const run = this.queue.then(async () => {
         if (!this.open) throw new Error("the store is closed");
-        return fn();
+        try {
+          return await fn();
+        } finally {
+          // whatever the unit read ahead, the cache goes back within its budget
+          this.evictBodies();
+        }
       });
       this.queue = run.catch(() => {});
       return run;
@@ -317,16 +323,27 @@ export class IdbMailStore implements MailStore {
   }
 
   private evictBodies(): void {
-    if (this.seeding) return;
-    const bodies = this.db.table("message_bodies");
-    const excess = bodies.size - BODY_CACHE;
-    if (excess <= 0) return;
+    if (this.seeding || this.db.inTransaction) return;
+    const bodies = this.db.table<R>("message_bodies");
+    let { count, bytes } = this.bodyCache();
+    if (count <= BODY_CACHE && bytes <= BODY_CACHE_BYTES) return;
+    // oldest first (insertion order)
     const keys: Key[] = [];
-    for (const k of bodies.rows.keys()) {
+    for (const [k, r] of bodies.rows) {
+      if (count <= BODY_CACHE && bytes <= BODY_CACHE_BYTES) break;
       keys.push(k);
-      if (keys.length >= excess) break;
+      count--;
+      bytes -= bodyBytes(r);
     }
     bodies.evict(keys);
+  }
+
+  /** what the body cache holds (bytes as UTF-16) and may hold */
+  bodyCache(): { count: number; bytes: number; budgetBytes: number } {
+    let bytes = 0;
+    const bodies = this.db.table<R>("message_bodies");
+    for (const r of bodies.rows.values()) bytes += bodyBytes(r);
+    return { count: bodies.size, bytes, budgetBytes: BODY_CACHE_BYTES };
   }
 
   private readBodies(ids: Iterable<number>): Promise<void> {
@@ -854,6 +871,8 @@ export class IdbMailStore implements MailStore {
     },
     countScope: async (categoryId, scope, now) => countOf((await this.categorize.resolveScope(categoryId, scope, now, COUNT_CAP + 1)).length),
     resolveScope: async (categoryId, scope, now, limit = -1) => {
+      // sender/domain/list scopes read the message indexes: the late tables must be in
+      await this.loaded;
       await this.settled();
       const direct = scopeThreads(this.c, categoryId, scope);
       if (direct) return limit < 0 ? direct : direct.slice(0, limit);
@@ -1098,6 +1117,8 @@ export class IdbMailStore implements MailStore {
     },
   };
 }
+
+const bodyBytes = (r: R) => 2 * ((r.body_text?.length ?? 0) + (r.body_html?.length ?? 0));
 
 /** Uint8Arrays compared by content */
 const bytes = (_k: string, v: unknown) => (v instanceof Uint8Array ? [...v] : v);

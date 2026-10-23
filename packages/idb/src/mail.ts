@@ -370,7 +370,7 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
         created_at: now,
       });
       if (msg.bodyText !== null || msg.bodyHtml !== null) T(c, "message_bodies").put({ message_id: id, body_text: msg.bodyText, body_html: msg.bodyHtml });
-      else T(c, "message_bodies").absent.add(id);
+      else T(c, "message_bodies").markAbsent(id);
       for (const ref of refs) T(c, "message_refs").insert({ account_id: msg.accountId, ref, message_id: id });
       for (const a of msg.attachments ?? []) {
         T(c, "attachments").insert({ id: undefined, message_id: id, filename: a.filename, mime: a.mime, size: a.size, content_id: a.contentId ?? null, provider_ref: a.providerRef ?? null });

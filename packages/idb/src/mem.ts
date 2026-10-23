@@ -35,6 +35,8 @@ interface UndoEntry {
   table: Table;
   key: Key;
   prev: Row | undefined;
+  /** a change to what a lazy table knows is absent (not a write): whether the key was known absent before */
+  wasAbsent?: boolean;
 }
 
 export class Table<R extends Row = Row> {
@@ -149,14 +151,25 @@ export class Table<R extends Row = Row> {
   private remove(k: Key): R | undefined {
     const prev = this.rows.get(k);
     if (!prev) {
-      // lazy rows may exist only in IndexedDB: record the delete anyway
-      if (this.spec.lazy && !this.absent.has(k)) this.db.logUndo(this, k, undefined, true);
+      // lazy rows may exist only in IndexedDB: record the delete anyway, and that the row is gone now
+      if (this.spec.lazy && !this.absent.has(k)) {
+        this.db.logUndo(this, k, undefined, true);
+        this.markAbsent(k);
+      }
       return undefined;
     }
     this.db.logUndo(this, k, prev);
     this.set(k, undefined, prev);
+    if (this.spec.lazy) this.markAbsent(k);
     this.db.cascade(this.spec.name, prev);
     return prev;
+  }
+
+  /** lazy tables: the key has no row (a fact of this transaction: a rollback forgets it) */
+  markAbsent(k: Key): void {
+    if (this.absent.has(k)) return;
+    this.db.logAbsent(this, k);
+    this.absent.add(k);
   }
 
   /** raw: rows and indexes only (loading, undo) */
@@ -253,6 +266,11 @@ export class MemDb {
     return this.depth > 0;
   }
 
+  logAbsent(table: Table, key: Key): void {
+    if (!this.undo) throw new Error(`write to ${table.spec.name} outside a transaction`);
+    this.undo.push({ table, key, prev: undefined, wasAbsent: table.absent.has(key) });
+  }
+
   logUndo(table: Table, key: Key, prev: Row | undefined, blind = false): void {
     if (!this.undo) throw new Error(`write to ${table.spec.name} outside a transaction`);
     this.undo.push({ table, key, prev: blind ? BLIND : prev });
@@ -314,6 +332,7 @@ export class MemDb {
     }
     const writes = new Map<Table, Map<Key, Row | null>>();
     for (const e of log) {
+      if (e.wasAbsent !== undefined) continue;
       let m = writes.get(e.table);
       if (!m) writes.set(e.table, (m = new Map()));
       m.set(e.key, e.table.rows.get(e.key) ?? null);
@@ -326,6 +345,7 @@ export class MemDb {
     const out = new Map<string, Key[]>(tables.map((t) => [t, []]));
     const seen = new Set<string>();
     for (const e of [...(this.pending ?? []), ...(this.undo ?? [])]) {
+      if (e.wasAbsent !== undefined) continue;
       const list = out.get(e.table.spec.name);
       if (!list) continue;
       const id = `${e.table.spec.name}\u0000${e.key}`;
@@ -355,6 +375,11 @@ export class MemDb {
     const log = this.undo!;
     for (let i = log.length - 1; i >= savepoint; i--) {
       const e = log[i]!;
+      if (e.wasAbsent !== undefined) {
+        if (e.wasAbsent) e.table.absent.add(e.key);
+        else e.table.absent.delete(e.key);
+        continue;
+      }
       if (e.prev === BLIND) continue;
       e.table.set(e.key, e.prev as Row | undefined);
     }
