@@ -22,7 +22,7 @@ This document is the source of truth for architecture, design system, and techni
 | Owner identity | The first verified mailbox becomes the owner ("tu cuenta Única"), separate from mailboxes; change requires live re-verification | Cloud sign-in, billing |
 | Learned filters | From **explicit user actions only** (automated filter actions are excluded): sender/List-Id/domain → proposed rules accepted in one click | ML ranking |
 | Agents | **MCP stdio server** (tools over a local socket to the running app) + **SKILL.md** | Remote MCP, headless mode, JSON CLI |
-| Platform | macOS arm64 `.app` + `.dmg`, ad-hoc signed | Notarization, Win/Linux, mobile (Expo reusing `core`) |
+| Platform | macOS arm64 `.app` + `.dmg`, ad-hoc signed. **Web** (plans 03/04 steps 8–10): the same renderer as a static site, the backend in a dedicated worker on SQLite-WASM/OPFS or IndexedDB; Gmail only (IMAP/SMTP, MCP and background sync need the Mac app) | Notarization, Win/Linux, mobile (Expo reusing `core`), WebKit/Firefox validation |
 
 ## 2. Architecture
 
@@ -38,7 +38,12 @@ This document is the source of truth for architecture, design system, and techni
 └─────────────────────────────────────────────────────────────────────────────────┘
   apps/backend-dev: same backend over WebSocket (dev-in-browser + Playwright)
   unica-mcp (stdio, ELECTRON_RUN_AS_NODE) ── unix socket ──▶ backend (app must run)
+
+  Web (VITE_TARGET=web, static site): page ── MessagePort ──▶ dedicated worker (the tab holding Web Lock
+  `unica-backend`): BackendCore → StoreRegistry → SqlMailStore on SQLite-WASM (opfs-sahpool) | IdbMailStore
 ```
+
+6. **Web host** (`apps/web/src/web`): `BackendCore` (`@unica/backend/portable`, the class desktop's `Backend` extends with Node defaults) runs in a dedicated worker. One tab leads by Web Lock; takeover asks the leader to close the store and pause the VFS before the lock passes. The adapter a mailbox was created with is pinned; an open error, a newer schema or a build mismatch is a screen, never a fallback to an empty store. A service worker precaches one build (shell, worker, `sqlite3.wasm`). The network policy has a browser mode (no DNS: only literal loopback counts as local, nothing pinned, vetted requests refuse redirects). Secrets: AES-GCM under a non-extractable key in IndexedDB. Gmail: Google Identity Services' token model with the user's client ID, tokens in worker memory only. The renderer gates features on `bootstrap.host` (IMAP, agents, background sync, how local mode is enforced). The desktop bundle contains none of it (compile-time target, build guard).
 
 1. **`node:sqlite`.** Verified: Electron 45 ships Node 24.22 + SQLite 3.53.4 with FTS5, trigram, and `remove_diacritics`; host Node 24 has the same SQLite. No native modules, so packaging is simpler and tests run the shipped engine.
 2. **Backend in an Electron `utilityProcess`.** It is the single writer and owns migrations, optimistic state, and operation scheduling. The renderer receives a MessagePort via `MessageChannelMain`, so data doesn't hop through main.
@@ -60,8 +65,10 @@ apps/web          Renderer (React 19, Vite, Tailwind v4)
 apps/backend-dev  WebSocket host for backend (dev + Playwright), seeds mock data
 packages/core     Pure TS: domain types, zod schemas, RPC contract, search parser, rule DSL + JS evaluator,
                   learning heuristics, keybinding resolver, threading. No Node/DOM deps (mobile-reusable)
-packages/db       node:sqlite wrapper (pragmas, LRU statement cache, tx helpers), migrations, repos, FTS,
-                  search & rule SQL compilers
+packages/db       SqliteConnection seam with node:sqlite and SQLite-WASM drivers (pragmas, LRU statement cache,
+                  tx helpers), migrations, repos, FTS, search & rule SQL compilers, SqlMailStore, adaptive OPFS page cache
+packages/store    MailStore/search contracts, StoreRegistry, instant search engine, conformance suites
+packages/idb      IdbMailStore: the MailStore on native IndexedDB (tables mirrored in memory, bodies on demand)
 packages/backend  Services + RPC handlers, ops state machine, sync orchestration, filters, suggestions, AI
 packages/mail     IMAP (imapflow), SMTP (nodemailer), Gmail (REST + OAuth PKCE), MIME (postal-mime)
 packages/ai       Provider interface, Anthropic provider, Fake provider, prompt + schema
@@ -223,7 +230,8 @@ Base: **shadcn/ui, Base UI flavor** (the current shadcn default), Tailwind v4 CS
 7. **E2E + visual (Playwright, Chromium against backend-dev with mock data):** keyboard triage, search, reply/reply-all/forward/send (captured by local SMTP), categories + suggestions, AI filter builder + preview + apply, learned-suggestion accept, add-account form, settings. `toHaveScreenshot` in light + dark.
 8. **UI perf (Playwright, test build with a render probe):** j-key handler→commit p95 and keypress→next-frame p95 (target ≤ 16 ms) over 300 consecutive moves, with no animation started; keystroke→results-rendered p95 ≤ 100 ms; DOM rows bounded; theme switch → painted ≤ 50 ms with zero row renders; drag start ≤ 16 ms, pointermove handler ≤ 2 ms, zero row renders during a drag, ≤ 2 NavItem renders per target change, drop → dot ≤ 16 ms.
    - **Themes and motion:** WCAG AA for 49 token pairs in every theme; the generated CSS matches the registry (and ≤ 8 KB gzip); a scan rejects literal colors, literal durations and translucent text in app code; custom-theme schema incl. CSS-injection cases; theme.js in a `node:vm` sandbox; `themes.spec` / `motion.spec` / `dnd.spec` and a visual baseline per theme.
-9. **Electron smoke on the packaged arm64 app, copied outside the repo:** launches, utility process alive, demo seed renders, search works, thread opens, `unica-mcp` answers `list_accounts`; in local mode main cancels a remote `<img>`; `codesign --verify` passes.
+9. **Web** (`apps/web/playwright.web.config.ts`): `web` (OPFS boot, repeat visit, takeover/handover, open errors never swap the mailbox, offline via the service worker, gating, the nudge, Gmail through Google's flow with routes, `?storage=idb`), `web-conformance` (the store suite on OPFS SQLite and on IndexedDB, and the engine suite, inside a Chromium worker), `web-perf` (plan 04 §8 budgets at 10k/50k messages on real OPFS, per adapter, instant and durable paths). In Node: project `db-wasm` (the whole db suite on SQLite-WASM) and the store suite on fake-indexeddb.
+10. **Electron smoke on the packaged arm64 app, copied outside the repo:** launches, utility process alive, demo seed renders, search works, thread opens, `unica-mcp` answers `list_accounts`; in local mode main cancels a remote `<img>`; `codesign --verify` passes.
 
 ## 12. Plan review with Codex: outcome
 
