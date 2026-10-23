@@ -1,4 +1,4 @@
-import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test as base, expect, type Locator, type Page } from "@playwright/test";
@@ -24,7 +24,11 @@ export const test = base.extend<Fixtures>({
     const template = process.env[TEMPLATE_ENV];
     if (!template) throw new Error("global setup did not seed a template database");
     const dir = mkdtempSync(join(tmpdir(), "unica-e2e-"));
-    if (!backendOptions.empty) copyFileSync(template, join(dir, "unica.db"));
+    if (!backendOptions.empty) {
+      copyFileSync(template, join(dir, "unica.db"));
+      // the template's search snapshot too (written on close), so each backend restores instead of building
+      if (existsSync(`${template}.search`)) copyFileSync(`${template}.search`, join(dir, "unica.db.search"));
+    }
     const server = await startDevServer({ port: 0, dataDir: dir, token: "e2e", now: () => E2E_NOW, autoSync: true, seed: !backendOptions.empty, ownerClaims: backendOptions.ownerClaims });
     await use(server);
     // Backend.stop() doesn't wait for an in-flight ops batch; let it settle first.

@@ -39,7 +39,7 @@ export interface DevServer {
 export async function startDevServer(o: DevServerOptions): Promise<DevServer> {
   mkdirSync(o.dataDir, { recursive: true });
   const dbPath = join(o.dataDir, "unica.db");
-  if (o.fresh) for (const s of ["", "-wal", "-shm"]) rmSync(dbPath + s, { force: true });
+  if (o.fresh) for (const s of ["", "-wal", "-shm", ".search"]) rmSync(dbPath + s, { force: true });
   const backend = new Backend({
     dbPath,
     version: "dev",

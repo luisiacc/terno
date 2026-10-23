@@ -22,7 +22,7 @@ const threads = Number(arg("threads", "12000"));
 
 mkdirSync(out, { recursive: true });
 const dbPath = join(out, "unica.db");
-for (const suffix of ["", "-wal", "-shm"]) rmSync(dbPath + suffix, { force: true });
+for (const suffix of ["", "-wal", "-shm", ".search"]) rmSync(dbPath + suffix, { force: true });
 
 const started = performance.now();
 const db = openDatabase(dbPath);

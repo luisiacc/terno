@@ -54,7 +54,7 @@ export interface BackendOptions {
   lookup?: LookupAll;
   /** ids, event-loop yields and files (defaults to Node's) */
   platform?: Platform;
-  /** searches answer from the in-memory instant index when it is current (FTS5 otherwise); with dbPath */
+  /** searches answer from the in-memory instant index when it is current (FTS5 otherwise); with dbPath, on by default */
   instantSearch?: boolean;
 }
 
@@ -115,7 +115,7 @@ export class Backend {
       const db = openDatabase(options.dbPath, { uuid: () => this.platform.uuid() });
       this.store = new SqlMailStore(db, {
         checkpointWorker: true,
-        instantSearch: this.options.instantSearch ?? false,
+        instantSearch: this.options.instantSearch ?? true,
         platform: this.platform,
         log: (level, message, extra) => this.log(level, message, extra),
       });
