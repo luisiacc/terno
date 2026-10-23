@@ -6,7 +6,8 @@
 
 - Unlimited accounts: Gmail via OAuth, plus any IMAP/SMTP server.
 - Categories that span accounts, with "add similar emails?" suggestions.
-- Filters built with AI from a plain-language description, then refined in a visual editor.
+- Filters built with AI from a plain-language description, then refined in a visual editor. The AI can run on this Mac (Ollama, LM Studio, any local OpenAI-compatible server) or in the cloud with your own key (Claude, OpenAI, OpenRouter, Groq, Together, Azure).
+- **Local mode** (on for new installs): nothing leaves the Mac except mail with your own servers.
 - Filters learned from what you archive.
 - An MCP server so **Claude Code** and **Codex** get one access point to all your email.
 
@@ -26,6 +27,14 @@ pnpm dev:desktop:seeded  # 8 accounts / ~21k messages, seeded once (--reseed to 
 
 - **Demo mode:** launch the packaged app with a demo mailbox: `UNICA_DEMO=1 open apps/desktop/release/mac-arm64/Unica.app`. The data is a deterministic set of ~3,000 Spanish/English conversations across 4 accounts.
 - **Gmail:** create a Google Cloud OAuth client of type *Desktop app* with the Gmail API enabled. Paste its client ID in Ajustes → Cuentas, then use "Continuar con Google".
+
+## AI providers and local mode
+
+- **Ajustes → IA** picks the provider. Local servers are discovered automatically (model, size, context, loaded state); *Probar conexión* checks latency and whether the model supports structured output, JSON mode or only text, and the app adapts.
+- API keys are encrypted with the macOS Keychain and never reach the renderer (it only sees the last 4 characters).
+- For filters, the AI receives your description, account emails and names, category names and today's date — never message content.
+- **Local mode** (Ajustes → General, first row; "Local" pill in the sidebar): the backend's network policy allows only mail with your servers and AI on loopback (resolved and pinned), main blocks the renderer's remote requests, and remote images stay off. Turning it off asks first. Existing installs keep local mode off until you turn it on.
+- **Tu cuenta Única**: the first verified mailbox becomes the owner of this install (shown in Ajustes → Cuentas). Removing that mailbox keeps it; changing it requires verifying the new mailbox again.
 
 ## Architecture (short version)
 
@@ -127,7 +136,7 @@ packages/core     Pure domain: types, typed RPC, search parser, filter DSL, lear
 packages/db       node:sqlite store: schema, FTS, planner, rule compiler, ops, perf gate
 packages/backend  Service layer: RPC handlers, ops worker, sync, filters, agent socket
 packages/mail     IMAP (imapflow), SMTP (nodemailer), Gmail (REST + OAuth), MIME
-packages/ai       AI filter generation (Anthropic structured outputs) + offline fake
+packages/ai       AI transports (Anthropic, OpenAI-compatible incl. Ollama/LM Studio/Azure), structured-output ladder, discovery, offline fake
 packages/mcp      MCP server + SKILL.md
 packages/ui       Design system: shadcn (Base UI) re-themed with Única tokens
 packages/mock-data Deterministic mock mailbox generator
