@@ -37,11 +37,13 @@ function setup(providers: ProviderRegistry = registry) {
   const [mc, ms] = createMemoryTransportPair();
   backend.connect(ms, { clientId: "m", origin: "mcp" });
   const mcp = new RpcClient(mc);
+  const mcpOwnerEvents: unknown[] = [];
+  mcp.on("owner", (o) => mcpOwnerEvents.push(o));
   cleanups.push(async () => {
     await backend.stop();
     rmSync(dir, { recursive: true, force: true });
   });
-  return { backend, client, mcp, ownerEvents, tick: (ms: number) => (clock += ms) };
+  return { backend, client, mcp, ownerEvents, mcpOwnerEvents, tick: (ms: number) => (clock += ms) };
 }
 
 const imap = (email: string, over: { password?: string; verify?: boolean; user?: string } = {}) => {
@@ -179,8 +181,13 @@ describe("changing the owner", () => {
 
 describe("agents (MCP)", () => {
   it("never see or change the owner", async () => {
-    const { client, mcp } = setup();
+    const { client, mcp, ownerEvents, mcpOwnerEvents } = setup();
+    const a = await client.call("accounts.addImap", imap("luis@fastmail.com"));
+    await client.call("accounts.remove", { id: a.id });
     await client.call("accounts.addImap", imap("luis@fastmail.com"));
+    await settle();
+    expect(ownerEvents.length).toBeGreaterThan(0);
+    expect(mcpOwnerEvents).toEqual([]);
     expect((await client.call("app.bootstrap", {})).owner).not.toBeNull();
     expect((await mcp.call("app.bootstrap", {})).owner).toBeNull();
     expect(await errorOf(mcp.call("identity.get", {}))).toMatchObject({ code: "FORBIDDEN" });

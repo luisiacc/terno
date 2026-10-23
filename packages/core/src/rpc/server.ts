@@ -70,8 +70,10 @@ export class RpcServer {
     }
   }
 
-  emit<E extends EventName>(event: E, payload: Events[E]): void {
-    for (const transport of this.connections.keys()) {
+  /** Pushes an event to every connection, or only to the given origins (e.g. keep identity away from MCP). */
+  emit<E extends EventName>(event: E, payload: Events[E], options: { origins?: readonly CallContext["origin"][] } = {}): void {
+    for (const [transport, ctx] of this.connections) {
+      if (options.origins && !options.origins.includes(ctx.origin)) continue;
       try {
         transport.send({ v: RPC_VERSION, t: "evt", e: event, p: payload });
       } catch {

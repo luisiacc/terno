@@ -241,7 +241,8 @@ export class Backend {
   }
 
   emitOwner(): void {
-    this.server.emit("owner", getOwner(this.db));
+    // the person's identity is for the user's own windows, never for agents
+    this.server.emit("owner", getOwner(this.db), { origins: ["renderer", "dev"] });
   }
 
   // ───────────────────────────── owner identity ─────────────────────────────
