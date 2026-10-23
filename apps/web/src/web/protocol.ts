@@ -14,6 +14,8 @@ export interface WorkerInit {
   demo: { threads: number; accounts: number } | null;
   /** the page's build: the worker must be the same one */
   build: string;
+  /** demo builds (perf): false measures the durable search path alone */
+  instantSearch: boolean;
 }
 
 export type PageToWorker = WorkerInit | { type: "close" } | { type: "cache-status" };

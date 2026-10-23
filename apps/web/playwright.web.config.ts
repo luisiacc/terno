@@ -42,13 +42,15 @@ export default defineConfig({
       // a demo build (seeds an empty mailbox from the mock generator; ?demo=<threads>, ?mailbox=<name>)
       command: `VITE_TARGET=web VITE_WEB_DEMO=1 pnpm vite build --outDir dist-web-e2e && pnpm vite preview --outDir dist-web-e2e --port ${WEB} --strictPort --host 127.0.0.1`,
       url: `http://127.0.0.1:${WEB}`,
-      reuseExistingServer: !process.env.CI,
+      // never reuse: the command builds this checkout, a running server may be serving an older build
+      reuseExistingServer: false,
       timeout: 120_000,
     },
     {
       command: `pnpm vite build -c e2e-web/conformance/vite.config.ts && pnpm vite preview -c e2e-web/conformance/vite.config.ts --port ${CONFORMANCE} --strictPort --host 127.0.0.1`,
       url: `http://127.0.0.1:${CONFORMANCE}`,
-      reuseExistingServer: !process.env.CI,
+      // never reuse: the command builds this checkout, a running server may be serving an older build
+      reuseExistingServer: false,
       timeout: 120_000,
     },
   ],

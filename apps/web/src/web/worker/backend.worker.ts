@@ -8,7 +8,7 @@
 import sqlite3InitModule from "@sqlite.org/sqlite-wasm";
 import { BackendCore } from "@unica/backend/portable";
 import { isRpcMessage, type HostInfo, type RpcMessage, type Transport } from "@unica/core/rpc";
-import { adaptPageCache, databaseBytes, sqlDb, SqlMailStore } from "@unica/db/wasm";
+import { adaptPageCache, cacheBytesFor, databaseBytes, setCacheBytes, sqlDb, SqlMailStore } from "@unica/db/wasm";
 import type { MailStore, Platform } from "@unica/store";
 import type { PageToWorker, WorkerInit, WorkerToPage } from "../protocol";
 import { webCipher } from "./cipher";
@@ -48,12 +48,28 @@ let release: (() => Promise<void>) | null = null;
 let cache = { hotBytes: 0, cacheBytes: 0, fileBytes: 0 };
 let retuneTimer: ReturnType<typeof setInterval> | null = null;
 
-async function tune(store: MailStore, platform: Platform): Promise<void> {
+/**
+ * Sizes the page cache to the hot set. Measuring walks the hot b-trees (one
+ * synchronous dbstat each, ~20 ms for the largest at 50k messages), so the
+ * result is kept in a file beside the database and only re-measured when
+ * the file has grown by 10 % (imports).
+ */
+async function tune(store: MailStore, platform: Platform, name: string): Promise<void> {
   if (!(store instanceof SqlMailStore) || store.db.driver.id !== "wasm-opfs") return;
   const db = sqlDb(store);
   const fileBytes = databaseBytes(db);
-  if (cache.fileBytes && fileBytes < cache.fileBytes * RETUNE_GROWTH) return;
+  const path = `/${name}.pagecache`;
+  if (!cache.fileBytes) {
+    const saved = await platform.files?.read(path).catch(() => null);
+    const known = saved ? (JSON.parse(new TextDecoder().decode(saved)) as typeof cache) : null;
+    if (known && fileBytes < known.fileBytes * RETUNE_GROWTH) {
+      cache = { ...known, cacheBytes: cacheBytesFor(known.hotBytes) };
+      setCacheBytes(db, cache.cacheBytes);
+      return;
+    }
+  } else if (fileBytes < cache.fileBytes * RETUNE_GROWTH) return;
   cache = { ...(await adaptPageCache(db, () => platform.yield())), fileBytes };
+  await platform.files?.replace(path, new TextEncoder().encode(JSON.stringify(cache))).catch(() => {});
 }
 
 async function start(init: WorkerInit): Promise<void> {
@@ -81,7 +97,7 @@ async function start(init: WorkerInit): Promise<void> {
   const log = (level: "info" | "warn" | "error", message: string, extra?: unknown) => (level === "error" ? console.error : level === "warn" ? console.warn : console.info)(`[backend] ${message}`, extra ?? "");
   let store: MailStore;
   try {
-    store = await choice.adapter.open({ name: init.name, platform, log });
+    store = await choice.adapter.open({ name: init.name, platform, log, instantSearch: init.instantSearch });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     // the mailbox stays exactly as it was: no fallback to another (empty) adapter, no repair attempt
@@ -116,8 +132,8 @@ async function start(init: WorkerInit): Promise<void> {
   mark("ready");
   post({ type: "ready", storage: choice.adapter.id, reason: choice.reason, build: BUILD, seeded, timings });
   // after the first answer: size the page cache to what searches read, and again as imports grow the file
-  void tune(store, platform);
-  retuneTimer = setInterval(() => void tune(store, platform), 5 * 60_000);
+  void tune(store, platform, init.name);
+  retuneTimer = setInterval(() => void tune(store, platform, init.name), 5 * 60_000);
 }
 
 /** Closes every storage handle, then says so: only then may another tab take over. */

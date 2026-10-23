@@ -19,6 +19,8 @@ export interface WebDebug {
   storage: string | null;
   timings: Record<string, number>;
   cacheStatus(): Promise<Extract<WorkerToPage, { type: "cache-status" }>["status"]>;
+  /** the RPC client the app uses, for measuring round trips */
+  client: RpcClient;
 }
 
 declare global {
@@ -146,6 +148,7 @@ export async function connectWorker(client: RpcClient): Promise<void> {
     pinnedStorage: localStorage.getItem(pinKey(name)),
     demo: DEMO_BUILD && demoThreads > 0 ? { threads: demoThreads, accounts: Number(params.get("accounts") ?? 4) } : null,
     build: BUILD,
+    instantSearch: !(DEMO_BUILD && params.get("instant") === "0"),
   };
   worker.postMessage(init, [channel.port2]);
   const first = (await next(worker, ["ready", "fatal"]))!;
@@ -177,6 +180,7 @@ export async function connectWorker(client: RpcClient): Promise<void> {
       build: BUILD,
       storage: first.storage,
       timings: { ...first.timings, workerReady: Math.round(performance.now() - started) },
+      client,
       async cacheStatus() {
         worker.postMessage({ type: "cache-status" } satisfies PageToWorker);
         const m = await next(worker, ["cache-status"], 5000);

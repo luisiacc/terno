@@ -44,7 +44,7 @@ export class OpfsSqliteAdapter implements StoreAdapter {
     // a main db, its journal and spare slots for a second mailbox (perf runs)
     await pool.reserveMinimumCapacity(8);
     const db = openDatabaseWith(wasmSqliteDriver(this.sqlite3, { pool }), `/${o.name}.db`, { uuid: () => o.platform.uuid() });
-    return new SqlMailStore(db, { instantSearch: { memory: WEB_SEARCH_MEMORY }, platform: o.platform, log: o.log });
+    return new SqlMailStore(db, { instantSearch: o.instantSearch === false ? false : { memory: WEB_SEARCH_MEMORY }, platform: o.platform, log: o.log });
   }
 
   /** Releases every access handle (the database must be closed): another tab may open the mailbox now. */
