@@ -1,4 +1,4 @@
-import { contentTokens, featuresFromBlob } from "@unica/core";
+import { contentTokens, featuresFromBlob, termsQuery } from "@unica/core";
 import { describe, expect, it } from "vitest";
 import {
   addToCategory,
@@ -14,6 +14,7 @@ import {
   undoBatch,
   type ModelDelta,
 } from "./categorize";
+import { countScope, quickActions, resolveScope, scopeCountSql } from "./categorize-bulk";
 import { ingestMessages, type IncomingMessage } from "./ingest";
 import { createCategory } from "./repos";
 import { msg, testDb, threadOf, withAccounts } from "./test/helpers";
@@ -229,5 +230,111 @@ describe("categorization training signals", () => {
     db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'auto', 0.99, '[]', ?), (?, ?, 'auto', 0.99, '[]', ?)", a, cat, NOW - 31 * DAY, b, cat, NOW - 5 * DAY);
     expect(matureDecisions(db, NOW)).toBe(1);
     expect(db.all("SELECT thread_id, outcome FROM cls_decisions ORDER BY thread_id")).toEqual([{ thread_id: a, outcome: "kept" }, { thread_id: b, outcome: null }]);
+  });
+});
+
+describe("bulk scopes, counts and quick actions", () => {
+  function mailbox() {
+    const db = testDb();
+    const [acct] = withAccounts(db, 1);
+    const cat = createCategory(db, "Facturas", "amber").id;
+    let n = 0;
+    const add = (over: Partial<IncomingMessage>) => {
+      const m = msg({ accountId: acct!, date: NOW - ++n * 60_000, ...over });
+      ingestMessages(db, [m]);
+      return threadOf(db, m.providerMsgId!);
+    };
+    const uber = (over: Partial<IncomingMessage> = {}) =>
+      add({ from: { name: "Uber Receipts", email: "uber.receipts@uber.com" }, subject: "Tu recibo de Uber", bodyText: "Total $10.00 MXN. Factura disponible. Viaje al aeropuerto.", ...over });
+    return { db, acct: acct!, cat, add, uber };
+  }
+
+  it("sender scope: received mail only, not filed, not removed, outside spam and trash", () => {
+    const { db, cat, add, uber } = mailbox();
+    const [filed, removed, a, b] = [uber(), uber(), uber(), uber()];
+    uber({ isSpam: true, inInbox: false });
+    uber({ isTrash: true, inInbox: false });
+    addToCategory(db, { categoryId: cat, threadIds: [filed, removed], addedBy: "user", now: NOW });
+    removeFromCategory(db, { categoryId: cat, threadIds: [removed], reason: "user", now: NOW });
+    // the user's own sent mail never matches a sender scope, even for their own address
+    add({ from: { name: "Me", email: "me0@example.com" }, isSent: true, to: [{ name: "Uber", email: "uber.receipts@uber.com" }] });
+    expect(resolveScope(db, cat, { kind: "sender", email: "Uber.Receipts@uber.com" }, NOW).sort()).toEqual([a, b].sort());
+    expect(countScope(db, cat, { kind: "sender", email: "uber.receipts@uber.com" }, NOW)).toEqual({ count: 2, capped: false });
+    expect(resolveScope(db, cat, { kind: "sender", email: "me0@example.com" }, NOW)).toEqual([]);
+  });
+
+  it("domain and list scopes match their column (not free text), uncapped", () => {
+    const { db, cat, add } = mailbox();
+    const list = Array.from({ length: 620 }, (_, i) => add({ from: { name: "Xataka", email: `boletin${i % 3}@xataka.com` }, listId: "boletin.xataka.com", subject: "Lo mejor de la semana" }));
+    // mentions the list id in its text, but isn't on the list
+    add({ from: { name: "Ana", email: "ana@gmail.com" }, subject: "boletin.xataka.com", bodyText: "mira boletin.xataka.com" });
+    const eats = add({ from: { name: "Uber Eats", email: "eats@uber.com" }, subject: "Tu pedido" });
+    const receipts = add({ from: { name: "Uber", email: "uber.receipts@uber.com" }, subject: "Recibo" });
+    expect(resolveScope(db, cat, { kind: "list", listId: "boletin.xataka.com" }, NOW)).toHaveLength(620);
+    expect(new Set(resolveScope(db, cat, { kind: "list", listId: "Boletin.Xataka.com" }, NOW))).toEqual(new Set(list));
+    expect(resolveScope(db, cat, { kind: "domain", domain: "@uber.com" }, NOW).sort()).toEqual([eats, receipts].sort());
+  });
+
+  it("counts are capped at 1 000 (\"1 000+\")", () => {
+    const { db, cat, add } = mailbox();
+    for (let i = 0; i < 1003; i++) add({ from: { name: "Morning Brew", email: "crew@morningbrew.com" }, listId: "daily.morningbrew.com" });
+    expect(countScope(db, cat, { kind: "list", listId: "daily.morningbrew.com" }, NOW)).toEqual({ count: 1000, capped: true });
+    expect(countScope(db, cat, { kind: "query", query: "from:crew@morningbrew.com" }, NOW)).toEqual({ count: 1000, capped: true });
+    expect(resolveScope(db, cat, { kind: "list", listId: "daily.morningbrew.com" }, NOW)).toHaveLength(1003);
+  });
+
+  it("query scope uses the search language, minus what is filed or removed", () => {
+    const { db, cat, uber, add } = mailbox();
+    const [a, b] = [uber(), uber()];
+    uber({ subject: "Promo", bodyText: "Descuento en tu próximo viaje" });
+    const other = add({ from: { name: "Ana", email: "ana@cafealtura.mx" }, subject: "Te mando la factura", bodyText: "Adjunto" });
+    addToCategory(db, { categoryId: cat, threadIds: [a], addedBy: "user", now: NOW });
+    expect(resolveScope(db, cat, { kind: "query", query: termsQuery(["factura"], "Facturas") }, NOW).sort()).toEqual([b, other].sort());
+    expect(resolveScope(db, cat, { kind: "query", query: '"factura" from:uber.receipts@uber.com' }, NOW)).toEqual([b]);
+  });
+
+  it("counts walk the sender, domain and list indexes and exclude filed threads through thread_categories_c", () => {
+    const { db, cat } = mailbox();
+    const plan = (scope: Parameters<typeof scopeCountSql>[2]) => {
+      const { sql, params } = scopeCountSql(db, cat, scope);
+      return db.all<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`, ...params).map((r) => r.detail).join(" | ");
+    };
+    for (const [scope, index] of [
+      [{ kind: "sender", email: "a@b.co" }, "messages_from"],
+      [{ kind: "domain", domain: "b.co" }, "messages_domain"],
+      [{ kind: "list", listId: "l.b.co" }, "messages_list"],
+    ] as const) {
+      const p = plan(scope);
+      expect(p, scope.kind).toMatch(new RegExp(`USING (COVERING )?INDEX ${index}`));
+      expect(p, scope.kind).toMatch(/thread_categories_c/);
+      expect(p, scope.kind).not.toMatch(/SCAN t\b|SCAN threads/);
+    }
+  });
+
+  it("quick actions: what the threads share, distinguishing words without the sender's brand, and a filter draft", () => {
+    const { db, cat, uber, add } = mailbox();
+    const t = uber({ subject: "Tu recibo de Uber · viaje 4821", bodyText: "Gracias por tu viaje. Total: $10.00 MXN. Factura CFDI disponible." });
+    const qa = quickActions(db, cat, [t], null);
+    expect(qa.sender).toEqual({ email: "uber.receipts@uber.com", name: "Uber Receipts" });
+    expect(qa.domain).toBe("uber.com");
+    expect(qa.list).toBeNull();
+    const words = qa.terms.map((x) => x.term);
+    expect(words).not.toContain("uber");
+    expect(words).not.toContain("receipts");
+    expect(words.some((w) => w.startsWith("#"))).toBe(false);
+    expect(qa.terms.filter((x) => x.preselected)).toHaveLength(Math.min(2, words.length));
+    expect(qa.filterDraft).toEqual({
+      name: "Uber Receipts",
+      rule: { match: "all", conditions: [{ field: "from", op: "equals", value: "uber.receipts@uber.com" }], actions: [{ type: "addCategory", categoryId: cat }] },
+    });
+    // several threads: only what all of them share
+    const eats = add({ from: { name: "Uber Eats", email: "eats@uber.com" }, subject: "Tu recibo de Uber Eats", bodyText: "Factura disponible" });
+    const both = quickActions(db, cat, [t, eats], null);
+    expect(both.sender).toBeNull();
+    expect(both.domain).toBe("uber.com");
+    expect(both.filterDraft?.rule.conditions).toEqual([{ field: "fromDomain", op: "equals", value: "uber.com" }]);
+    // consumer domains are not a group
+    const friend = add({ from: { name: "Ana", email: "ana@gmail.com" }, subject: "Hola" });
+    expect(quickActions(db, cat, [friend], null).domain).toBeNull();
   });
 });

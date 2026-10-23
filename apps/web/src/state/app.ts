@@ -49,7 +49,7 @@ export interface AppState {
   pendingKeys: string | null;
 }
 
-export const EMPTY_COUNTS: Counts = { inboxUnread: 0, inboxUnreadByAccount: {}, categoryUnread: {}, categoryTotal: {} };
+export const EMPTY_COUNTS: Counts = { inboxUnread: 0, inboxUnreadByAccount: {}, categoryUnread: {}, categoryTotal: {}, categorySuggestions: {} };
 
 export const useApp = create<AppState>(() => ({
   ready: false,

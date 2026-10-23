@@ -3,6 +3,16 @@ import { proposeLearnedFilters, type Address } from "@unica/core";
 import {
   addToCategory,
   applyThreadAction,
+  autoReasons,
+  categoryStats,
+  COUNT_CAP,
+  countScope,
+  pendingSuggestions,
+  predictThread,
+  quickActions,
+  rejectSuggestion,
+  resolveScope,
+  type AddedBy,
   createBatch,
   finishBatch,
   removeFromCategory,
@@ -44,7 +54,6 @@ import {
   saveFilter,
   searchIsComplete,
   searchThreads,
-  suggestSimilarForCategory,
   updateAccount,
   updateCategory,
   type DraftRow,
@@ -52,7 +61,7 @@ import {
 import type { GmailAccountConfig, ImapAccountConfig, SendPayload } from "@unica/mail";
 import { Backend } from "./backend";
 import { changeOwnerTo, gmailClaim, imapClaim } from "./identity";
-import { readSettings, SettingsError, updateSettings } from "./settings";
+import { readAutoCategorize, readSettings, SettingsError, updateSettings } from "./settings";
 
 /** How a UI entry point is recorded: bulk (snackbar) adds weigh half and their content is capped per sender. */
 const ADDED_BY = { picker: "user", dnd: "user", suggestion: "suggestion", snackbar: "bulk" } as const;
@@ -74,6 +83,22 @@ function toDraft(r: DraftRow) {
 
 export function createHandlers(b: Backend): Handlers {
   const db = () => b.db;
+  const requireCategory = (id: number) => {
+    if (!db().get("SELECT 1 FROM categories WHERE id = ?", id)) throw new RpcError("NOT_FOUND", `Category ${id} not found`);
+  };
+  /** The one store command behind every UI way of filing threads; returns what changed for undo. */
+  const fileThreads = (categoryId: number, threadIds: readonly number[], addedBy: AddedBy, source: string) => {
+    requireCategory(categoryId);
+    const result = db().tx(() => {
+      const batchId = createBatch(db(), categoryId, source, { kind: "threads" }, b.now());
+      const r = addToCategory(db(), { categoryId, threadIds, addedBy, now: b.now(), batchId });
+      finishBatch(db(), batchId, r.added.length);
+      return { ...r, batchId };
+    });
+    b.categorizer.apply(result.deltas);
+    b.notifyChanged(threadIds);
+    return { added: result.added.length, addedIds: result.added, batchId: result.added.length ? result.batchId : null };
+  };
   const nextAccountColor = () => ACCOUNT_COLORS[listAccounts(db()).length % ACCOUNT_COLORS.length]!;
 
   return {
@@ -104,7 +129,8 @@ export function createHandlers(b: Backend): Handlers {
     "threads.get": ({ threadId }) => {
       const thread = getThread(db(), threadId);
       if (!thread) throw new RpcError("NOT_FOUND", `Thread ${threadId} not found`);
-      return thread;
+      const suggestions = pendingSuggestions(db(), { threadId, limit: 5 }).map((s) => ({ categoryId: s.categoryId, p: s.p, reasons: s.reasons }));
+      return { ...thread, categorization: { auto: autoReasons(db(), threadId), suggestions } };
     },
 
     "threads.act": ({ threadIds, action }, ctx) => {
@@ -139,35 +165,71 @@ export function createHandlers(b: Backend): Handlers {
       b.notifyChanged([]);
       return { ok: true as const };
     },
-    "categories.addThreads": ({ categoryId, threadIds, source }, ctx) => {
-      if (!listCategories(db()).some((c) => c.id === categoryId)) throw new RpcError("NOT_FOUND", `Category ${categoryId} not found`);
-      const addedBy = ctx.origin === "mcp" ? "agent" : ADDED_BY[source];
-      const result = db().tx(() => {
-        const batchId = createBatch(db(), categoryId, source, { kind: "threads" }, b.now());
-        const r = addToCategory(db(), { categoryId, threadIds, addedBy, now: b.now(), batchId });
-        finishBatch(db(), batchId, r.added.length);
-        return { ...r, batchId };
-      });
-      b.categorizer.apply(result.deltas);
-      b.notifyChanged(threadIds);
-      return { added: result.added.length, addedIds: result.added, batchId: result.added.length ? result.batchId : null };
-    },
+    "categories.addThreads": ({ categoryId, threadIds, source }, ctx) => fileThreads(categoryId, threadIds, ctx.origin === "mcp" ? "agent" : ADDED_BY[source], source),
     "categories.removeThreads": ({ categoryId, threadIds, reason }) => {
       const result = removeFromCategory(db(), { categoryId, threadIds, reason, now: b.now() });
       b.categorizer.apply(result.deltas);
       b.notifyChanged(threadIds);
       return { removed: result.removed.length };
     },
+    "categorize.quickActions": ({ categoryId, threadIds }) => {
+      requireCategory(categoryId);
+      return quickActions(db(), categoryId, threadIds, b.categorizer.model);
+    },
+    "categorize.count": ({ categoryId, scope }) => countScope(db(), categoryId, scope, b.now()),
+    "categorize.preview": ({ categoryId, scope, limit }) => {
+      const ids = resolveScope(db(), categoryId, scope, b.now(), COUNT_CAP + 1);
+      return { count: Math.min(ids.length, COUNT_CAP), capped: ids.length > COUNT_CAP, sample: getSummaries(db(), ids.slice(0, limit)) };
+    },
+    "categorize.apply": async ({ categoryId, scope }, ctx) => {
+      requireCategory(categoryId);
+      // the set is fixed here, once: filing changes the scope's own "not yet in the category" predicate
+      const ids = resolveScope(db(), categoryId, scope, b.now());
+      const batchId = createBatch(db(), categoryId, "snackbar", scope, b.now());
+      const addedBy = ctx.origin === "mcp" ? "agent" : "bulk";
+      let added = 0;
+      await b.runSliced(ids, 100, (chunk) => {
+        const r = db().tx(() => {
+          const r = addToCategory(db(), { categoryId, threadIds: chunk, addedBy, now: b.now(), batchId });
+          finishBatch(db(), batchId, r.added.length);
+          return r;
+        });
+        b.categorizer.apply(r.deltas);
+        added += r.added.length;
+        b.notifyChanged(r.added);
+      });
+      return { batchId: added ? batchId : null, added };
+    },
+    "categorize.predict": ({ threadId }) => {
+      const model = b.categorizer.model;
+      return model ? predictThread(db(), threadId, model, readAutoCategorize(db()), b.now()) : [];
+    },
+    "categorize.suggestions": ({ categoryId, limit }) => {
+      const pending = pendingSuggestions(db(), { categoryId, limit });
+      const summaries = new Map(getSummaries(db(), [...new Set(pending.map((s) => s.threadId))]).map((t) => [t.id, t]));
+      return {
+        items: pending.flatMap((s) => {
+          const t = summaries.get(s.threadId);
+          return t ? [{ ...t, prediction: { categoryId: s.categoryId, p: s.p, decision: "suggest" as const, reasons: s.reasons } }] : [];
+        }),
+      };
+    },
+    "categorize.feedback": ({ threadId, categoryId, verdict }) => {
+      requireCategory(categoryId);
+      if (verdict === "accept") {
+        fileThreads(categoryId, [threadId], "suggestion", "suggestion");
+        return { ok: true as const };
+      }
+      b.categorizer.apply(rejectSuggestion(db(), threadId, categoryId, b.now()));
+      b.notifyChanged([threadId]);
+      return { ok: true as const };
+    },
+    "categorize.stats": () => categoryStats(db()),
     "categorize.undo": ({ batchId }) => {
       const result = undoBatch(db(), batchId, b.now());
       b.categorizer.apply(result.deltas);
       b.notifyChanged(result.removed);
       return { removed: result.removed.length };
-    },
-    "categories.suggest": ({ categoryId, threadId }) => suggestSimilarForCategory(db(), categoryId, threadId),
-    "categories.dismissSuggestion": ({ key }) => {
-      dismissSuggestion(db(), key, b.now());
-      return { ok: true as const };
     },
 
     "counts.get": () => getCounts(db()),

@@ -4,14 +4,12 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Dialog, DialogContent, DialogTitle } from "@unica/ui/components/dialog";
 import { Check, Plus } from "lucide-react";
 import { useState } from "react";
-import { toggleCategory } from "~/lib/actions";
+import { addToCategory, removeFromCategory } from "~/lib/categorize";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";
 import { useList } from "~/state/list";
-import { loadThread } from "~/state/threads";
-import { suggestionState } from "./reader";
 
-/** "l": toggle categories on the selected/checked threads; adding one suggests similar mail. */
+/** "l": toggle categories on the selected/checked threads; adding one offers the snackbar's bulk actions. */
 export function CategoryPicker() {
   const open = useApp((s) => s.dialog === "categoryPicker");
   const categories = useApp((s) => s.categories);
@@ -27,12 +25,8 @@ export function CategoryPicker() {
 
   const apply = async (categoryId: number, on: boolean) => {
     close();
-    await toggleCategory(categoryId, targets, on);
-    if (on && targets.length === 1) {
-      const suggestion = await client.call("categories.suggest", { categoryId, threadId: targets[0]! }).catch(() => null);
-      suggestionState.set?.(suggestion, categoryId);
-    }
-    if (getApp().selectedId !== null) void loadThread(getApp().selectedId!, true);
+    if (on) await addToCategory(categoryId, targets, { source: "picker" });
+    else await removeFromCategory(categoryId, targets);
   };
 
   const create = async () => {

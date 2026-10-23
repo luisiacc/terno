@@ -211,6 +211,12 @@ export class Backend {
     "categories.addThreads",
     "categories.removeThreads",
     "categories.create",
+    // agents can ask what the engine thinks and file in bulk (as agents: half weight)
+    "categorize.predict",
+    "categorize.suggestions",
+    "categorize.count",
+    "categorize.preview",
+    "categorize.apply",
     "counts.get",
     "filters.list",
     "filters.save",

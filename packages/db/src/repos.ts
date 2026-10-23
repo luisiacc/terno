@@ -8,12 +8,9 @@ import type {
   Filter,
   FilterRule,
   OpState,
-  ThreadSummary,
   UserActionKind,
 } from "@unica/core";
-import { CONSUMER_DOMAINS } from "@unica/core";
 import { addToCategory, removeFromCategory, type AddedBy } from "./categorize";
-import { getSummaries } from "./queries";
 import type { Db } from "./sqlite";
 
 // ───────────────────────────── accounts ─────────────────────────────
@@ -161,63 +158,6 @@ export function addThreadsToCategory(db: Db, categoryId: number, threadIds: read
 /** A user removal: recorded as a negative example. */
 export function removeThreadsFromCategory(db: Db, categoryId: number, threadIds: readonly number[], now = Date.now()): number {
   return removeFromCategory(db, { categoryId, threadIds, reason: "user", now }).removed.length;
-}
-
-export interface CategorySuggestionResult {
-  key: string;
-  reason: "sender" | "list" | "domain";
-  value: string;
-  threads: ThreadSummary[];
-  total: number;
-}
-
-/**
- * After a thread lands in a category, find similar threads not yet in it:
- * same sender → same mailing list → same (non-consumer) domain.
- */
-export function suggestSimilarForCategory(
-  db: Db,
-  categoryId: number,
-  threadId: number,
-  limit = 50,
-): CategorySuggestionResult | null {
-  const source = db.get<{ from_email: string; from_domain: string; list_id: string | null }>(
-    `SELECT from_email, from_domain, list_id FROM messages WHERE thread_id = ?
-     ORDER BY is_sent ASC, date DESC LIMIT 1`,
-    threadId,
-  );
-  if (!source) return null;
-  const dismissed = new Set(db.all<{ key: string }>("SELECT key FROM dismissed_suggestions").map((r) => r.key));
-  const candidates: { reason: "sender" | "list" | "domain"; value: string | null; column: string; index: string }[] = [
-    { reason: "sender", value: source.from_email, column: "from_email", index: "messages_from" },
-    { reason: "list", value: source.list_id, column: "list_id", index: "messages_list" },
-    {
-      reason: "domain",
-      value: CONSUMER_DOMAINS.has(source.from_domain) ? null : source.from_domain,
-      column: "from_domain",
-      index: "messages_domain",
-    },
-  ];
-  for (const cand of candidates) {
-    if (!cand.value) continue;
-    const key = `cat:${categoryId}:${cand.reason}:${cand.value}`;
-    if (dismissed.has(key)) continue;
-    const ids = db
-      .all<{ id: number }>(
-        `SELECT t.id FROM threads t
-         WHERE t.id IN (SELECT m.thread_id FROM messages m INDEXED BY ${cand.index} WHERE m.${cand.column} = ?)
-           AND t.id != ? AND t.in_trash = 0 AND t.in_spam = 0
-           AND NOT EXISTS (SELECT 1 FROM thread_categories tc WHERE tc.thread_id = t.id AND tc.category_id = ?)
-         ORDER BY t.last_date DESC, t.id DESC`,
-        cand.value,
-        threadId,
-        categoryId,
-      )
-      .map((r) => r.id);
-    if (ids.length === 0) continue;
-    return { key, reason: cand.reason, value: cand.value, threads: getSummaries(db, ids.slice(0, limit)), total: ids.length };
-  }
-  return null;
 }
 
 export function dismissSuggestion(db: Db, key: string, now = Date.now()): void {

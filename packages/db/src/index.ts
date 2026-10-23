@@ -22,3 +22,4 @@ export * from "./seed";
 export * from "./checkpoint";
 export * from "./owner";
 export * from "./categorize";
+export * from "./categorize-bulk";

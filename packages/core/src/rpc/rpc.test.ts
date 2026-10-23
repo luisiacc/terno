@@ -6,7 +6,7 @@ import { RpcServer, type Handlers } from "./server";
 
 function setup(overrides: Partial<Handlers> = {}) {
   const handlers = {
-    "counts.get": () => ({ inboxUnread: 3, inboxUnreadByAccount: { 1: 3 }, categoryUnread: {}, categoryTotal: {} }),
+    "counts.get": () => ({ inboxUnread: 3, inboxUnreadByAccount: { 1: 3 }, categoryUnread: {}, categoryTotal: {}, categorySuggestions: {} }),
     "threads.get": ({ threadId }: { threadId: number }) => {
       throw new RpcError("NOT_FOUND", `thread ${threadId} not found`);
     },

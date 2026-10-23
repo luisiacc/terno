@@ -200,18 +200,48 @@ function threadClause(c: Compiled, cursor: Cursor | undefined): { where: string;
  * and hits are never LIMITed before thread filtering.
  */
 export function searchThreads(db: Db, params: SearchParams): SearchResult {
+  const { rows, strategy } = runSearch<SummaryRow>(db, params, SUMMARY_COLUMNS, params.limit + 1);
+  return { ...pageFrom(rows, params.limit), strategy };
+}
+
+/**
+ * Thread ids matching a query, newest first, with extra thread predicates
+ * (alias t). No page cap unless `limit` is given: bulk operations enumerate
+ * every match once, up front.
+ */
+export function searchThreadIds(
+  db: Db,
+  params: { query: string; now?: number; limit?: number; where?: string[]; whereParams?: Param[] },
+): { ids: number[]; strategy: SearchStrategy } {
+  const { rows, strategy } = runSearch<{ id: number }>(db, { query: params.query, now: params.now, limit: 0 }, "t.id", params.limit ?? -1, {
+    where: params.where ?? [],
+    params: params.whereParams ?? [],
+  });
+  return { ids: rows.map((r) => r.id), strategy };
+}
+
+function runSearch<R>(
+  db: Db,
+  params: SearchParams,
+  columns: string,
+  /** -1: no limit */
+  limit: number,
+  extra: { where: string[]; params: Param[] } = { where: [], params: [] },
+): { rows: R[]; strategy: SearchStrategy } {
   const q = parseSearch(params.query, params.now);
   const c = compileSearch(q, params, loadScope(db));
-  if (c.impossible) return { items: [], nextCursor: null, strategy: "empty" };
+  if (c.impossible) return { rows: [], strategy: "empty" };
+  c.threadWhere.push(...extra.where);
+  c.threadParams.push(...extra.params);
   const { where, params: tParams } = threadClause(c, params.cursor);
-  const limit = params.limit + 1;
   const mWhere = c.messageWhere.length ? ` AND ${c.messageWhere.join(" AND ")}` : "";
+  const SUMMARY_COLUMNS = columns;
 
   let strategy: SearchStrategy;
-  let rows: SummaryRow[];
+  let rows: R[];
   if (c.match) {
     strategy = "fts";
-    rows = db.all<SummaryRow>(
+    rows = db.all<R>(
       `WITH hits AS MATERIALIZED (
          SELECT DISTINCT m.thread_id AS tid FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid
          WHERE messages_fts MATCH ?${mWhere}
@@ -225,7 +255,7 @@ export function searchThreads(db: Db, params: SearchParams): SearchResult {
     );
   } else if (c.senderEquals !== null) {
     strategy = "sender-index";
-    rows = db.all<SummaryRow>(
+    rows = db.all<R>(
       `WITH hits AS MATERIALIZED (
          SELECT DISTINCT m.thread_id AS tid FROM messages m INDEXED BY messages_from WHERE 1${mWhere}
        )
@@ -239,7 +269,7 @@ export function searchThreads(db: Db, params: SearchParams): SearchResult {
     );
   } else if (q.before !== undefined && q.after === undefined) {
     strategy = "date-index";
-    rows = db.all<SummaryRow>(
+    rows = db.all<R>(
       `WITH hits AS MATERIALIZED (
          SELECT DISTINCT m.thread_id AS tid FROM messages m INDEXED BY messages_date WHERE 1${mWhere}
        )
@@ -268,7 +298,7 @@ export function searchThreads(db: Db, params: SearchParams): SearchResult {
       extra.push(excludeClause());
       extraParams.push(c.excludeMatch);
     }
-    rows = db.all<SummaryRow>(
+    rows = db.all<R>(
       `SELECT ${SUMMARY_COLUMNS} FROM threads t WHERE ${where}${extra.length ? " AND " + extra.join(" AND ") : ""}
        ORDER BY t.last_date DESC, t.id DESC LIMIT ?`,
       ...tParams,
@@ -276,7 +306,7 @@ export function searchThreads(db: Db, params: SearchParams): SearchResult {
       limit,
     );
   }
-  return { ...pageFrom(rows, params.limit), strategy };
+  return { rows, strategy };
 }
 
 /** Threads with no message matching the negated terms (FTS5 NOT needs a positive left side). */

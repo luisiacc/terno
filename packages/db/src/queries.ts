@@ -217,5 +217,19 @@ export function getCounts(db: Db): Counts {
     categoryTotal[r.category_id] = r.total;
     categoryUnread[r.category_id] = r.unread;
   }
-  return { inboxUnread, inboxUnreadByAccount: byAccount, categoryUnread, categoryTotal };
+  return { inboxUnread, inboxUnreadByAccount: byAccount, categoryUnread, categoryTotal, categorySuggestions: pendingSuggestionCounts(db) };
+}
+
+/** Suggestions waiting for an answer, per category ("Revisar (N)"). */
+export function pendingSuggestionCounts(db: Db): Record<number, number> {
+  const out: Record<number, number> = {};
+  for (const r of db.all<{ category_id: number; n: number }>(
+    `SELECT d.category_id, count(*) AS n FROM cls_decisions d INDEXED BY cls_decisions_pending JOIN threads t ON t.id = d.thread_id
+     WHERE d.kind = 'suggest' AND d.outcome IS NULL AND t.in_trash = 0 AND t.in_spam = 0
+       AND NOT EXISTS (SELECT 1 FROM thread_categories tc WHERE tc.thread_id = d.thread_id AND tc.category_id = d.category_id)
+     GROUP BY d.category_id`,
+  )) {
+    out[r.category_id] = r.n;
+  }
+  return out;
 }

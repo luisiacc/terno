@@ -2,11 +2,8 @@ import { describe, expect, it } from "vitest";
 import { applyThreadAction } from "./actions";
 import { ingestMessages } from "./ingest";
 import {
-  addThreadsToCategory,
   claimReadyOps,
   completeOp,
-  createCategory,
-  dismissSuggestion,
   enqueueOp,
   failOp,
   getOp,
@@ -14,7 +11,6 @@ import {
   messagesWithPendingOps,
   MAX_OP_ATTEMPTS,
   recoverOps,
-  suggestSimilarForCategory,
   claimFilterApplications,
   saveFilter,
 } from "./repos";
@@ -216,46 +212,6 @@ describe("ops state machine", () => {
     claimReadyOps(db);
     completeOp(db, done);
     expect([...messagesWithPendingOps(db, a!)]).toEqual([3]);
-  });
-});
-
-describe("category suggestions", () => {
-  function setup() {
-    const db = testDb();
-    const [a] = withAccounts(db);
-    ingestMessages(db, [
-      msg({ accountId: a!, providerMsgId: "s1", from: { name: "Uber", email: "uber.receipts@uber.com" }, date: 1 }),
-      msg({ accountId: a!, providerMsgId: "s2", from: { name: "Uber", email: "uber.receipts@uber.com" }, date: 2 }),
-      msg({ accountId: a!, providerMsgId: "s3", from: { name: "Uber", email: "uber.receipts@uber.com" }, date: 3, isSpam: true, inInbox: false }),
-      msg({ accountId: a!, providerMsgId: "d1", from: { name: "Uber Eats", email: "eats@uber.com" }, date: 4 }),
-      msg({ accountId: a!, providerMsgId: "g1", from: { name: "Friend", email: "friend@gmail.com" }, date: 5 }),
-      msg({ accountId: a!, providerMsgId: "g2", from: { name: "Other", email: "other@gmail.com" }, date: 6 }),
-    ]);
-    const cat = createCategory(db, "Facturas", "amber");
-    return { db, cat };
-  }
-
-  it("suggests other threads from the same sender, newest first, excluding spam and current members", () => {
-    const { db, cat } = setup();
-    addThreadsToCategory(db, cat.id, [threadOf(db, "s1")], "user");
-    const s = suggestSimilarForCategory(db, cat.id, threadOf(db, "s1"))!;
-    expect(s.reason).toBe("sender");
-    expect(s.threads.map((t) => t.id)).toEqual([threadOf(db, "s2")]);
-    expect(s.total).toBe(1);
-  });
-
-  it("falls back to the domain once the sender is dismissed, but never for consumer domains", () => {
-    const { db, cat } = setup();
-    const s1 = threadOf(db, "s1");
-    addThreadsToCategory(db, cat.id, [s1], "user");
-    dismissSuggestion(db, suggestSimilarForCategory(db, cat.id, s1)!.key);
-    const s = suggestSimilarForCategory(db, cat.id, s1)!;
-    expect(s.reason).toBe("domain");
-    expect(s.threads.map((t) => t.id).sort()).toEqual([threadOf(db, "s2"), threadOf(db, "d1")].sort());
-
-    const g1 = threadOf(db, "g1");
-    addThreadsToCategory(db, cat.id, [g1], "user");
-    expect(suggestSimilarForCategory(db, cat.id, g1)).toBeNull(); // gmail.com is not a meaningful group
   });
 });
 

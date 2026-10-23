@@ -369,3 +369,85 @@ describe("categorizer: auto-apply at ingestion", () => {
     }
   });
 });
+
+describe("categorize RPCs: bulk apply, undo, predictions, suggestions", () => {
+  async function mailbox() {
+    const { backend, client } = setup();
+    const acct = createAccount(backend.db, { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const cat = createCategory(backend.db, "Lecturas", "violet").id;
+    return { backend, client, acct, cat };
+  }
+
+  it("applies a list scope to every matching thread (not a 500-capped text search) and undoes the whole batch", async () => {
+    const { backend, client, acct, cat } = await mailbox();
+    const news = Array.from({ length: 640 }, (_, i) => incoming(acct, { from: { name: "Xataka", email: "boletin@xataka.com" }, listId: "boletin.xataka.com", subject: `Lo mejor de la semana ${i}`, bodyText: "Tecnología. Darse de baja", date: NOW - (i + 1) * 3_600_000 }));
+    // mentions the list in its text: the old card's free-text search would have added it
+    const decoy = incoming(acct, { from: { name: "Ana", email: "ana@gmail.com" }, subject: "boletin.xataka.com", bodyText: "¿viste boletin.xataka.com?" });
+    ingestMessages(backend.db, [...news, decoy], NOW);
+    backend.categorizer.rebuildSync();
+    const first = backend.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = ?", news[0]!.providerMsgId)!.thread_id;
+    await client.call("categories.addThreads", { categoryId: cat, threadIds: [first] });
+
+    expect(await client.call("categorize.count", { categoryId: cat, scope: { kind: "list", listId: "boletin.xataka.com" } })).toEqual({ count: 639, capped: false });
+    const preview = await client.call("categorize.preview", { categoryId: cat, scope: { kind: "list", listId: "boletin.xataka.com" }, limit: 5 });
+    expect(preview.sample).toHaveLength(5);
+    const applied = await client.call("categorize.apply", { categoryId: cat, scope: { kind: "list", listId: "boletin.xataka.com" } });
+    expect(applied).toEqual({ batchId: expect.any(Number), added: 639 });
+    const decoyThread = backend.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = ?", decoy.providerMsgId)!.thread_id;
+    expect(backend.db.get("SELECT 1 FROM thread_categories WHERE thread_id = ?", decoyThread)).toBeUndefined();
+    // bulk adds weigh half and teach content for at most 50 threads of the sender
+    expect(backend.db.get<{ n: number; content: number }>("SELECT count(*) AS n, sum(content) AS content FROM cls_examples WHERE source = 'bulk'")).toEqual({ n: 639, content: 50 });
+    expect(backend.categorizer.model!.positives(cat)).toBe(640);
+
+    expect(await client.call("categorize.undo", { batchId: applied.batchId! })).toEqual({ removed: 639 });
+    expect(backend.db.get<{ n: number }>("SELECT count(*) AS n FROM thread_categories")!.n).toBe(1);
+    expect(backend.categorizer.model!.positives(cat)).toBe(1);
+    // nothing left to add: no undo handle
+    expect(await client.call("categorize.apply", { categoryId: cat, scope: { kind: "sender", email: "nobody@nowhere.io" } })).toEqual({ batchId: null, added: 0 });
+  });
+
+  it("quick actions come from the filed threads; topic queries count what is left", async () => {
+    const { backend, client, acct, cat } = await mailbox();
+    ingestMessages(backend.db, Array.from({ length: 8 }, (_, i) => incoming(acct, { from: { name: "Hacker Newsletter", email: "kale@hackernewsletter.com" }, listId: "hackernewsletter.com", subject: `#${i} SQLite internals and CRDTs`, bodyText: "This week: SQLite internals, CRDTs, local-first. Unsubscribe", date: NOW - (i + 1) * 86_400_000 })), NOW);
+    backend.categorizer.rebuildSync();
+    const t = backend.db.get<{ id: number }>("SELECT id FROM threads LIMIT 1")!.id;
+    await client.call("categories.addThreads", { categoryId: cat, threadIds: [t] });
+    const qa = await client.call("categorize.quickActions", { categoryId: cat, threadIds: [t] });
+    expect(qa).toMatchObject({ sender: { email: "kale@hackernewsletter.com" }, list: "hackernewsletter.com", domain: "hackernewsletter.com" });
+    const count = await client.call("categorize.count", { categoryId: cat, scope: { kind: "query", query: '"sqlite" "crdts" -category:Lecturas' } });
+    expect(count).toEqual({ count: 7, capped: false });
+  });
+
+  it("predicts with reasons, lists and answers suggestions, and reports per-category stats", async () => {
+    const { backend, client, acct, cat } = await mailbox();
+    const news = Array.from({ length: 12 }, (_, i) => incoming(acct, { from: { name: "Morning Brew", email: "crew@morningbrew.com" }, listId: "daily.morningbrew.com", subject: `Your brief ${i}`, bodyText: "Markets and streaming wars. Unsubscribe", date: NOW - (40 + i) * 86_400_000, inInbox: false }));
+    const friends = Array.from({ length: 80 }, (_, i) => incoming(acct, { from: { name: `Amigo ${i % 10}`, email: `amigo${i % 10}@gmail.com` }, subject: "¿Comida?", bodyText: "Hola, ¿comemos el sábado?", date: NOW - (20 + i) * 86_400_000, inInbox: false }));
+    ingestMessages(backend.db, [...news, ...friends], NOW);
+    const filed = backend.db.all<{ thread_id: number }>("SELECT DISTINCT thread_id FROM messages WHERE from_email = 'crew@morningbrew.com'").map((r) => r.thread_id);
+    await client.call("categories.addThreads", { categoryId: cat, threadIds: filed });
+    backend.categorizer.rebuildSync();
+    await backend.ingestSliced([incoming(acct, { from: { name: "Morning Brew", email: "crew@morningbrew.com" }, listId: "daily.morningbrew.com", subject: "Your brief", bodyText: "Markets. Unsubscribe", date: NOW - 3_600_000, providerMsgId: "new-brief" })]);
+    const fresh = backend.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = 'new-brief'")!.thread_id;
+    const [best] = await client.call("categorize.predict", { threadId: fresh });
+    expect(best).toMatchObject({ categoryId: cat, decision: "auto" });
+    expect(best!.reasons[0]).toMatch(/^mismo remitente que/);
+    const detail = await client.call("threads.get", { threadId: fresh });
+    expect(detail.categorization?.auto).toEqual([{ categoryId: cat, reasons: expect.arrayContaining([expect.stringMatching(/^mismo remitente/)]) }]);
+
+    // a suggestion waiting for an answer
+    const friend = backend.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE from_email = 'amigo1@gmail.com' LIMIT 1")!.thread_id;
+    backend.db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'suggest', 0.85, '[\"menciona «brief»\"]', ?)", friend, cat, NOW);
+    expect((await client.call("counts.get", {})).categorySuggestions).toEqual({ [cat]: 1 });
+    const { items } = await client.call("categorize.suggestions", { categoryId: cat });
+    expect(items.map((x) => [x.id, x.prediction.reasons])).toEqual([[friend, ["menciona «brief»"]]]);
+    expect((await client.call("threads.get", { threadId: friend })).categorization?.suggestions).toEqual([{ categoryId: cat, p: 0.85, reasons: ["menciona «brief»"] }]);
+    await client.call("categorize.feedback", { threadId: friend, categoryId: cat, verdict: "reject" });
+    expect(backend.db.get("SELECT label, weight, source FROM cls_examples WHERE thread_id = ?", friend)).toEqual({ label: -1, weight: 1, source: "reject" });
+    expect((await client.call("counts.get", {})).categorySuggestions).toEqual({});
+
+    const stats = await client.call("categorize.stats", {});
+    expect(stats).toEqual([{ categoryId: cat, examples: 12, autoApply: true, kept: 0, reverted: 0, autoPrecision: null, paused: false, pendingSuggestions: 0 }]);
+    await client.call("categories.update", { id: cat, autoApply: false });
+    expect((await client.call("categorize.stats", {}))[0]!.autoApply).toBe(false);
+  });
+});

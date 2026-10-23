@@ -10,6 +10,7 @@ import {
   type PresetDescriptor,
   type ProviderDescriptor,
 } from "../ai";
+import type { CategoryModelStats, Prediction, QuickActions } from "../categorize/bulk";
 import type { AutoCategorize } from "../categorize/policy";
 import type { LearnedProposal } from "../learning/propose";
 import { filterRuleSchema, type Filter, type FilterRule } from "../rules/schema";
@@ -103,14 +104,6 @@ export interface Bootstrap {
   version: string;
 }
 
-export interface CategorySuggestion {
-  key: string;
-  reason: "sender" | "list" | "domain";
-  value: string;
-  threads: ThreadSummary[];
-  total: number;
-}
-
 export const CATEGORIZE_SOURCES = ["picker", "dnd", "snackbar", "suggestion"] as const;
 export type CategorizeSource = (typeof CATEGORIZE_SOURCES)[number];
 
@@ -186,6 +179,13 @@ const settingsPatch = z.object({
 });
 export type SettingsPatch = z.output<typeof settingsPatch>;
 
+const categorizeScope = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("sender"), email: z.string().trim().email().max(320) }),
+  z.object({ kind: z.literal("domain"), domain: z.string().trim().min(1).max(253) }),
+  z.object({ kind: z.literal("list"), listId: z.string().trim().min(1).max(400) }),
+  z.object({ kind: z.literal("query"), query: z.string().trim().min(1).max(500) }),
+]);
+
 const imapServer = z.object({
   host: z.string().min(1).max(255),
   port: z.number().int().min(1).max(65535),
@@ -253,12 +253,23 @@ export const contract = {
   "categories.removeThreads": m<{ removed: number }>()(
     z.object({ categoryId: id, threadIds: ids, reason: z.enum(["user", "undo"]).default("user") }),
   ),
-  "categories.suggest": m<CategorySuggestion | null>()(
-    z.object({ categoryId: id, threadId: id }),
-  ),
-  "categories.dismissSuggestion": m<{ ok: true }>()(z.object({ key: z.string().max(400) })),
 
+  /** What the snackbar offers after filing: same sender / domain / list, distinguishing words, a filter draft. */
+  "categorize.quickActions": m<QuickActions>()(z.object({ categoryId: id, threadIds: z.array(id).min(1).max(200) })),
+  "categorize.count": m<{ count: number; capped: boolean }>()(z.object({ categoryId: id, scope: categorizeScope })),
+  "categorize.preview": m<{ count: number; capped: boolean; sample: ThreadSummary[] }>()(
+    z.object({ categoryId: id, scope: categorizeScope, limit: z.number().int().min(0).max(50).default(20) }),
+  ),
+  /** Files every thread in the scope (resolved once, then added in slices); undo with categorize.undo. */
+  "categorize.apply": m<{ batchId: number | null; added: number }>()(z.object({ categoryId: id, scope: categorizeScope }), { timeoutMs: 120_000 }),
   "categorize.undo": m<{ removed: number }>()(z.object({ batchId: id })),
+  "categorize.predict": m<Prediction[]>()(z.object({ threadId: id })),
+  "categorize.suggestions": m<{ items: (ThreadSummary & { prediction: Prediction })[] }>()(
+    z.object({ categoryId: id.optional(), limit: z.number().int().min(1).max(200).default(100) }),
+  ),
+  /** Answer to a suggestion: accept files it (as a suggestion), reject is a negative example. */
+  "categorize.feedback": m<{ ok: true }>()(z.object({ threadId: id, categoryId: id, verdict: z.enum(["accept", "reject"]) })),
+  "categorize.stats": m<CategoryModelStats[]>()(empty),
 
   "counts.get": m<Counts>()(empty),
 

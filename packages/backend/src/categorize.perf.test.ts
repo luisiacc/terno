@@ -9,7 +9,7 @@ import { join } from "node:path";
 import v8 from "node:v8";
 import vm from "node:vm";
 import { CategorizerModel, encodeFeatures, extractFeatures, FEATURES_V, type TrainExample } from "@unica/core";
-import { addToCategory, createCategory, ownAddresses, rootMessages, seedDataset, type IncomingMessage } from "@unica/db";
+import { addToCategory, countScope, createCategory, ownAddresses, quickActions, rootMessages, seedDataset, type IncomingMessage } from "@unica/db";
 import { demoRegistry } from "@unica/mail";
 import { generateDataset } from "@unica/mock-data";
 import { afterAll, beforeAll, expect, it } from "vitest";
@@ -161,6 +161,39 @@ it("a 20-category, 100k-feature model stays ≤ 30 MB and loads from its snapsho
   const load = percentiles("load the model from its snapshot, ms", 30, loads.slice(2));
   expect(mb).toBeLessThanOrEqual(30);
   expect(load.p95).toBeLessThanOrEqual(30 * BUDGET_MULTIPLIER);
+});
+
+it("snackbar counts: sender/domain/list ≤ 5 ms, topic ≤ 25 ms (capped at 1 000), quick actions ≤ 2 ms", () => {
+  if (!backend.categorizer.ready) backend.categorizer.rebuildSync();
+  const db = backend.db;
+  const model = backend.categorizer.model!;
+  const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
+  const lecturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Lecturas'")!.id;
+  const run = (name: string, budget: number, fn: () => unknown, iterations = 60) => {
+    for (let i = 0; i < 5; i++) fn();
+    const samples: number[] = [];
+    for (let i = 0; i < iterations; i++) {
+      const t = performance.now();
+      fn();
+      samples.push(performance.now() - t);
+    }
+    const s = percentiles(name, budget, samples);
+    expect(s.p95, name).toBeLessThanOrEqual(budget * BUDGET_MULTIPLIER);
+  };
+  run("count: same sender (uber.receipts@uber.com)", 5, () => countScope(db, facturas, { kind: "sender", email: "uber.receipts@uber.com" }, NOW));
+  run("count: same domain (@github.com)", 5, () => countScope(db, facturas, { kind: "domain", domain: "github.com" }, NOW));
+  run("count: same list (daily.morningbrew.com)", 5, () => countScope(db, facturas, { kind: "list", listId: "daily.morningbrew.com" }, NOW));
+  // the busiest sender of the 50k mailbox that isn't one of the user's own accounts
+  const busiest = db.get<{ from_email: string }>(
+    "SELECT from_email FROM messages WHERE is_sent = 0 AND from_email NOT IN (SELECT email FROM accounts) GROUP BY from_email ORDER BY count(*) DESC LIMIT 1",
+  )!.from_email;
+  run(`count: busiest sender (${busiest})`, 5, () => countScope(db, lecturas, { kind: "sender", email: busiest }, NOW));
+  run("count: topic \"factura\" (common word, capped)", 25, () => countScope(db, facturas, { kind: "query", query: '"factura" -category:Facturas' }, NOW));
+  run("count: topic \"semana\" \"reunion\" (AND)", 25, () => countScope(db, facturas, { kind: "query", query: '"semana" "reunion" -category:Facturas' }, NOW));
+  run("count: topic, rare word", 25, () => countScope(db, facturas, { kind: "query", query: '"cfdi" -category:Facturas' }, NOW));
+  const threads = db.all<{ id: number }>("SELECT thread_id AS id FROM messages WHERE from_email = 'uber.receipts@uber.com' LIMIT 50").map((r) => r.id);
+  let i = 0;
+  run("quickActions for one filed thread", 2, () => quickActions(db, facturas, [threads[i++ % threads.length]!], model));
 });
 
 /** The backend load test's 14k-message import, ingested into copies of the perf mailbox with the engine off and on. */

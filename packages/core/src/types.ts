@@ -81,6 +81,11 @@ export interface AttachmentInfo {
 export interface ThreadDetail {
   thread: ThreadSummary & { inInbox: boolean; inTrash: boolean; inSpam: boolean };
   messages: MessageDetail[];
+  /** what the categorization engine did or suggests here, with its reasons */
+  categorization?: {
+    auto: { categoryId: CategoryId; reasons: string[] }[];
+    suggestions: { categoryId: CategoryId; p: number; reasons: string[] }[];
+  };
 }
 
 export interface Category {
@@ -110,6 +115,8 @@ export interface Counts {
   inboxUnreadByAccount: Record<AccountId, number>;
   categoryUnread: Record<CategoryId, number>;
   categoryTotal: Record<CategoryId, number>;
+  /** suggestions waiting for an answer ("Revisar") */
+  categorySuggestions: Record<CategoryId, number>;
 }
 
 export type ThreadAction =

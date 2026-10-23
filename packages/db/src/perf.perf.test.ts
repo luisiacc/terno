@@ -11,7 +11,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { applyThreadAction } from "./actions";
 import { openDatabase } from "./index";
 import { getCounts, getThread, listThreads } from "./queries";
-import { addThreadsToCategory, suggestSimilarForCategory } from "./repos";
+import { countScope } from "./categorize-bulk";
+import { addThreadsToCategory } from "./repos";
 import { findRuleMatches } from "./rules";
 import { searchThreads } from "./search";
 import { seedDataset } from "./seed";
@@ -148,12 +149,13 @@ describe("filters & suggestions", () => {
     rules.forEach((rule, i) => gate(`filter preview #${i + 1} (${rule.conditions.map((c) => c.field).join("+")})`, 50, () => findRuleMatches(db, rule as never, NOW), 30));
   });
 
-  it("suggests similar threads for a category", () => {
+  it("counts a bulk categorization scope for the snackbar", () => {
     const category = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
     const thread = db.get<{ id: number }>(
       "SELECT t.id FROM threads t JOIN messages m ON m.thread_id = t.id WHERE m.from_email = 'uber.receipts@uber.com' LIMIT 1",
     )!.id;
     addThreadsToCategory(db, category, [thread], "user");
-    gate("category suggestions (same sender)", 10, () => suggestSimilarForCategory(db, category, thread));
+    const sender = db.get<{ from_email: string }>("SELECT from_email FROM messages WHERE thread_id = ? AND is_sent = 0 LIMIT 1", thread)!.from_email;
+    gate("bulk count: same sender, capped (snackbar chip)", 5, () => countScope(db, category, { kind: "sender", email: sender }, NOW));
   });
 });

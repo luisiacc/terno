@@ -1,18 +1,15 @@
 import type { CategoryColor, MessageDetail } from "@unica/core";
-import type { CategorySuggestion } from "@unica/core/rpc";
 import { Button } from "@unica/ui/components/button";
 import { CategoryBadge } from "@unica/ui/components/category-dot";
 import { Shortcut } from "@unica/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@unica/ui/components/tooltip";
 import { cn } from "@unica/ui/lib/utils";
-import { Archive, Forward, Inbox, MailOpen, OctagonAlert, Paperclip, Reply, ReplyAll, Sparkles, Star, Tag, Trash2, X } from "lucide-react";
+import { Archive, Forward, Inbox, MailOpen, OctagonAlert, Paperclip, Reply, ReplyAll, Star, Tag, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
-import { act, openCompose, scheduleMarkRead, toggleCategory, toggleStar } from "~/lib/actions";
+import { act, openCompose, scheduleMarkRead, toggleStar } from "~/lib/actions";
+import { removeFromCategory } from "~/lib/categorize";
 import { avatarColor, formatBytes, fullDate, initials, listDate } from "~/lib/format";
-import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
-import { reloadList } from "~/state/list";
 import { loadThread, useThread } from "~/state/threads";
 import { HtmlBody, TextBody } from "./mail-body";
 
@@ -42,67 +39,6 @@ function ToolButton({ label, keys, onClick, children, testId, active }: { label:
         {keys && <Shortcut keys={keys} />}
       </TooltipContent>
     </Tooltip>
-  );
-}
-
-export const suggestionState: { set?: (s: CategorySuggestion | null, categoryId?: number) => void } = {};
-
-function SuggestionCard({ suggestion, categoryId, onDone }: { suggestion: CategorySuggestion; categoryId: number; onDone: () => void }) {
-  const category = useApp((s) => s.categories.find((c) => c.id === categoryId));
-  const what = suggestion.reason === "sender" ? suggestion.value : suggestion.reason === "list" ? `la lista ${suggestion.value}` : `@${suggestion.value}`;
-  return (
-    <div data-testid="category-suggestion" className="mb-5 rounded-lg border border-primary/20 bg-accent/50 p-3 text-sm">
-      <div className="flex items-start gap-2">
-        <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" />
-        <div className="min-w-0 flex-1">
-          <p>
-            Hay <span className="font-medium">{suggestion.total}</span> conversaciones similares de <span className="font-medium">{what}</span>. ¿Añadirlas a{" "}
-            <span className="font-medium">{category?.name}</span>?
-          </p>
-          <ul className="mt-2 space-y-0.5 text-xs text-muted-foreground">
-            {suggestion.threads.slice(0, 3).map((t) => (
-              <li key={t.id} className="truncate">
-                {listDate(t.lastDate)} · {t.subject}
-              </li>
-            ))}
-            {suggestion.total > 3 && <li>y {suggestion.total - 3} más…</li>}
-          </ul>
-          <div className="mt-2.5 flex gap-1.5">
-            <Button
-              size="sm"
-              data-testid="suggestion-accept"
-              onClick={async () => {
-                const ids = suggestion.threads.map((t) => t.id);
-                if (suggestion.total > ids.length) {
-                  // fetch all similar ids through search when there are more than the preview
-                  const q = suggestion.reason === "sender" ? `from:${suggestion.value}` : suggestion.value;
-                  const page = await client.call("threads.search", { query: q, limit: 500 });
-                  ids.push(...page.items.map((t) => t.id).filter((id) => !ids.includes(id)));
-                }
-                await toggleCategory(categoryId, ids, true);
-                toast.success(`${ids.length} conversaciones añadidas a ${category?.name}`);
-                onDone();
-              }}
-            >
-              Añadir {suggestion.total}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={async () => {
-                await client.call("categories.dismissSuggestion", { key: suggestion.key });
-                onDone();
-              }}
-            >
-              No, gracias
-            </Button>
-          </div>
-        </div>
-        <button type="button" aria-label="Cerrar" onClick={onDone} className="text-muted-foreground hover:text-foreground">
-          <X className="size-4" />
-        </button>
-      </div>
-    </div>
   );
 }
 
@@ -191,14 +127,7 @@ export function Reader() {
   const categories = useApp((s) => s.categories);
   const accounts = useApp((s) => s.accounts);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
-  const [suggestion, setSuggestion] = useState<{ s: CategorySuggestion; categoryId: number } | null>(null);
-
   useEffect(() => {
-    suggestionState.set = (s, categoryId) => setSuggestion(s && categoryId ? { s, categoryId } : null);
-  }, []);
-
-  useEffect(() => {
-    setSuggestion(null);
     if (selectedId === null) return;
     // the header renders from the cached row immediately; the body follows (debounced while holding j)
     const t = setTimeout(() => void loadThread(selectedId), detail ? 0 : 40);
@@ -277,22 +206,12 @@ export function Reader() {
                 {cats.map((c) => (
                   <CategoryBadge key={c.id} color={c.color as CategoryColor}>
                     {c.name}
-                    <button type="button" aria-label={`Quitar ${c.name}`} className="opacity-60 hover:opacity-100" onClick={() => toggleCategory(c.id, [t!.id], false).then(() => loadThread(t!.id, true))}>
+                    <button type="button" aria-label={`Quitar ${c.name}`} className="opacity-60 hover:opacity-100" onClick={() => void removeFromCategory(c.id, [t!.id])}>
                       <X className="size-3" />
                     </button>
                   </CategoryBadge>
                 ))}
               </div>
-              {suggestion && (
-                <SuggestionCard
-                  suggestion={suggestion.s}
-                  categoryId={suggestion.categoryId}
-                  onDone={() => {
-                    setSuggestion(null);
-                    void reloadList({ keepSelection: true });
-                  }}
-                />
-              )}
               <div className="space-y-2.5">
                 {detail.messages.map((m) => (
                   <Message

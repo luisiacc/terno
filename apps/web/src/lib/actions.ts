@@ -97,21 +97,6 @@ export function scheduleMarkRead(id: number): void {
   }, 450);
 }
 
-export async function toggleCategory(categoryId: number, threadIds: number[], on: boolean): Promise<void> {
-  patchRows(threadIds, (t) => ({
-    ...t,
-    categoryIds: on ? [...new Set([...t.categoryIds, categoryId])] : t.categoryIds.filter((c) => c !== categoryId),
-  }));
-  try {
-    if (on) await client.call("categories.addThreads", { categoryId, threadIds });
-    else await client.call("categories.removeThreads", { categoryId, threadIds });
-    invalidateThreads(threadIds);
-  } catch (error) {
-    toast.error(String(error));
-    void reloadList({ keepSelection: true });
-  }
-}
-
 // ───────────────────────────── compose ─────────────────────────────
 
 // Structured formatting/parsing (quoted display names) so a crafted sender name can't add recipients.
