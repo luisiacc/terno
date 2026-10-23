@@ -18,3 +18,4 @@ playwright-report/
 apps/backend-dev/.data/
 apps/desktop/.stage/
 apps/desktop/release/
+tags
