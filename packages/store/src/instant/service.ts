@@ -58,6 +58,7 @@ export class InstantSearch {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private pending = false;
   private settling = false;
+  private resting = false;
   private dirtyAt = 0;
   private firstDirtyAt = 0;
   private unsaved = 0;
@@ -107,6 +108,16 @@ export class InstantSearch {
       if (this.now() > deadline) throw new Error(`instant search didn't settle (${this.report.state})`);
       // a sleeping loop looks at the head again (one waiting for writes to settle keeps waiting)
       if (!this.pending) this.wake();
+      await new Promise((r) => setTimeout(r, 5));
+    }
+  }
+
+  /** Perf gates: resolves once nothing is left to do (current, no writes pending, nothing to compact or save). */
+  async idle(timeoutMs = 120_000): Promise<void> {
+    const deadline = this.now() + timeoutMs;
+    while (!(this.resting && !this.pending) && this.report.state !== "disabled" && this.report.state !== "closed") {
+      if (this.now() > deadline) throw new Error(`instant search didn't come to rest (${this.report.state})`);
+      if (!this.pending && !this.settling) this.wake();
       await new Promise((r) => setTimeout(r, 5));
     }
   }
@@ -196,7 +207,9 @@ export class InstantSearch {
           continue;
         }
         const until = this.unsaved > 0 && this.o.snapshotPath ? Math.max(this.unsavedSince + this.snapshotEvery().ms, this.retrySnapshotAt) - this.now() : null;
+        this.resting = true;
         await this.sleep(until);
+        this.resting = false;
       } catch (error) {
         if (this.stopped) return;
         this.engine?.disable();

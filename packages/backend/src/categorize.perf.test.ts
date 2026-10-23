@@ -9,7 +9,7 @@ import { join } from "node:path";
 import v8 from "node:v8";
 import vm from "node:vm";
 import { CategorizerModel, encodeFeatures, extractFeatures, FEATURES_V, type TrainExample } from "@unica/core";
-import { addToCategory, countScope, createAccount, createCategory, ingestMessages, openDatabase, ownAddresses, quickActions, rootMessages, seedDataset, type IncomingMessage, sqlDb } from "@unica/db";
+import { addToCategory, countScope, createAccount, createCategory, ingestMessages, openDatabase, ownAddresses, quickActions, rootMessages, seedDataset, type IncomingMessage, sqlDb, type SqlMailStore } from "@unica/db";
 import { demoRegistry } from "@unica/mail";
 import { generateDataset } from "@unica/mock-data";
 import { createMemoryTransportPair, RpcClient } from "@unica/core/rpc";
@@ -375,6 +375,8 @@ it("a rebuild never stalls the event loop for long, even with 40,000 training ex
 /** The backend load test's 14k-message import, ingested into copies of the perf mailbox with the engine off and on. */
 async function importAB(label: string, shape: (m: IncomingMessage) => IncomingMessage, rounds: number) {
   if (!backend.categorizer.ready) await backend.categorizer.rebuildNow();
+  // process CPU is measured: the shared mailbox's search index must not be catching up on earlier tests meanwhile
+  await (backend.store as SqlMailStore).instant?.idle();
   await backend.categorizer.persist();
   sqlDb(backend.store).exec("PRAGMA wal_checkpoint(TRUNCATE)");
   const extra = generateDataset({ threads: 8_000, accounts: 8, seed: 99, now: NOW, bodyScale: 3 }).messages.map((m) =>
