@@ -207,3 +207,31 @@ test("takeover goes to the tab that asked, not to whichever tab waited longest",
   await rows(waiting).first().waitFor({ timeout: 20_000 });
   await expect(asking.getByTestId("web-taken")).toBeVisible();
 });
+
+test("blocking screens take focus, make the app behind them inert and suspend its shortcuts", async ({ context, page }) => {
+  await boot(page);
+  const second = await context.newPage();
+  await second.goto(DEMO);
+  const screen = second.getByRole("dialog", { name: "Única está abierta en otra pestaña" });
+  await expect(screen).toBeVisible();
+  await expect(screen).toHaveAttribute("aria-modal", "true");
+  await expect(second.getByTestId("web-use-here")).toBeFocused();
+  // Tab never leaves the screen; the app behind it is inert
+  for (let i = 0; i < 4; i++) {
+    await second.keyboard.press("Tab");
+    expect(await second.evaluate(() => !!document.activeElement?.closest("[data-testid=web-elsewhere]") || document.activeElement === document.body)).toBe(true);
+  }
+  expect(await second.evaluate(() => (document.getElementById("root") as HTMLElement & { inert: boolean }).inert)).toBe(true);
+  // app shortcuts don't fire behind it (c would open the composer)
+  await second.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await second.keyboard.press("c");
+  await second.keyboard.press("Meta+k");
+  await expect(second.getByTestId("composer")).toHaveCount(0);
+  await expect(second.getByRole("dialog")).toHaveCount(1);
+  // a screen that goes away gives the app back
+  await second.getByTestId("web-use-here").click();
+  await rows(second).first().waitFor();
+  expect(await second.evaluate(() => (document.getElementById("root") as HTMLElement & { inert: boolean }).inert)).toBe(false);
+  await expect(page.getByRole("dialog", { name: "Única se abrió en otra pestaña" })).toBeVisible();
+  await expect(page.getByTestId("web-take-back")).toBeFocused();
+});

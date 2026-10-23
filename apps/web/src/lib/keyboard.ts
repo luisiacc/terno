@@ -87,6 +87,8 @@ function isEditable(el: Element | null): boolean {
 export function installKeyboard(): () => void {
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.defaultPrevented || e.isComposing) return;
+    // a blocking screen (the web's lifecycle) makes the app inert: its shortcuts wait with it
+    if (document.getElementById("root")?.inert) return;
     const s = getApp();
     const result = resolveKey(
       { key: e.key, meta: e.metaKey, ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey },

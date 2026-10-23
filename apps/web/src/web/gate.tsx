@@ -1,17 +1,52 @@
 import { Button } from "@unica/ui/components/button";
 import { Loader2 } from "lucide-react";
+import { useEffect, useId, useRef } from "react";
+import { createPortal } from "react-dom";
 import { requestTakeover, takeBack } from "./connect";
 import { useWeb } from "./lifecycle";
 
+/**
+ * A blocking screen: a modal dialog over the whole page. It takes focus (its
+ * button, or itself), the app behind it is inert (nothing focusable or
+ * clickable, its shortcuts suspended) until it goes away.
+ */
 function Screen({ title, body, children, testId }: { title: string; body?: React.ReactNode; children?: React.ReactNode; testId: string }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background p-10 text-center" data-testid={testId}>
+  const ref = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const bodyId = useId();
+  useEffect(() => {
+    const root = document.getElementById("root");
+    if (root) root.inert = true;
+    const first = ref.current?.querySelector<HTMLElement>("button:not([disabled])");
+    (first ?? ref.current)?.focus();
+    return () => {
+      if (root) root.inert = false;
+    };
+  }, [testId]);
+  return createPortal(
+    <div
+      ref={ref}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={body ? bodyId : undefined}
+      tabIndex={-1}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background p-10 text-center outline-none"
+      data-testid={testId}
+    >
       <div className="max-w-md">
-        <p className="font-semibold">{title}</p>
-        {body && <div className="mt-1.5 text-sm text-muted-foreground">{body}</div>}
+        <p id={titleId} className="font-semibold">
+          {title}
+        </p>
+        {body && (
+          <div id={bodyId} className="mt-1.5 text-sm text-muted-foreground">
+            {body}
+          </div>
+        )}
         {children && <div className="mt-4 flex justify-center gap-2">{children}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
