@@ -18,6 +18,10 @@ The technical plan, and the design review held with Codex before implementation,
 pnpm install            # Node 24+, pnpm 12
 pnpm dev                # backend (WebSocket, demo mailbox) + renderer at http://localhost:5173
 pnpm dist:mac           # → apps/desktop/release/mac-arm64/Unica.app and Unica-<v>-arm64.dmg
+
+pnpm dev:desktop         # Electron + Vite HMR on your real profile
+pnpm dev:desktop:demo    # separate profile with the ~3k-thread demo mailbox
+pnpm dev:desktop:seeded  # 8 accounts / ~21k messages, seeded once (--reseed to regenerate)
 ```
 
 - **Demo mode:** launch the packaged app with a demo mailbox: `UNICA_DEMO=1 open apps/desktop/release/mac-arm64/Unica.app`. The data is a deterministic set of ~3,000 Spanish/English conversations across 4 accounts.

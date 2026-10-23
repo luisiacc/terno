@@ -2,9 +2,13 @@
 // server (renderer with HMR) and launches Electron against it.
 //   pnpm dev:desktop            → your real profile (~/Library/Application Support/Unica)
 //   pnpm dev:desktop --demo     → a separate dev profile seeded with the demo mailbox
+//   pnpm dev:desktop --seeded   → a profile pre-seeded with 8 accounts / ~20k messages
+//                                 (reused on later runs; add --reseed to start over;
+//                                  UNICA_SEED_ACCOUNTS / UNICA_SEED_THREADS to tune)
 import { spawn, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
@@ -12,8 +16,24 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
 const repo = join(root, "..", "..");
 const demo = process.argv.includes("--demo");
+const seeded = process.argv.includes("--seeded");
 const port = Number(process.env.UNICA_VITE_PORT ?? 5173);
 const url = `http://localhost:${port}`;
+
+if (seeded) {
+  const profile = (process.env.UNICA_USER_DATA ??= join(homedir(), "Library", "Application Support", "Unica-dev-seeded"));
+  if (process.argv.includes("--reseed") || !existsSync(join(profile, "unica.db"))) {
+    console.log(`[dev] seeding ${profile} …`);
+    const seed = spawnSync(
+      process.platform === "win32" ? "pnpm.cmd" : "pnpm",
+      ["--filter", "@unica/backend-dev", "exec", "tsx", "src/seed.ts", "--out", profile, "--accounts", process.env.UNICA_SEED_ACCOUNTS ?? "8", "--threads", process.env.UNICA_SEED_THREADS ?? "12000"],
+      { cwd: repo, stdio: "inherit" },
+    );
+    if (seed.status !== 0) process.exit(seed.status ?? 1);
+  } else {
+    console.log(`[dev] using seeded profile ${profile} (pass --reseed to regenerate)`);
+  }
+}
 
 const build = spawnSync(process.execPath, [join(here, "build.mjs"), "--no-renderer"], { stdio: "inherit" });
 if (build.status !== 0) process.exit(build.status ?? 1);
