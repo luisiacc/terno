@@ -43,7 +43,7 @@ export function CategorySnackbarHost() {
   if (!filed) return null;
   return (
     <div className="pointer-events-none fixed bottom-4 left-4 z-50 flex">
-      <div className="pointer-events-auto animate-in fade-in-0 slide-in-from-bottom-2 duration-150">
+      <div className="pointer-events-auto animate-in fade-in-0 slide-in-from-bottom-2 duration-slow">
         <CategorySnackbar key={seq} filed={filed} onClose={() => useSnackbar.setState((s) => (s.seq === seq ? { filed: null } : s))} />
       </div>
     </div>

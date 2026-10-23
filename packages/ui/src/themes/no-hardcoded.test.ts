@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
  * can't be contrast-tested). The registry (src/themes) is the one place colors live.
  */
 const ROOT = join(import.meta.dirname, "../../../..");
-const SCANNED = ["packages/ui/src"];
+const SCANNED = ["packages/ui/src", "apps/web/src"];
 const EXEMPT = [/\/themes\//, /\.test\.tsx?$/, /themes\.generated\.css$/];
 
 const CODE_RULES: [string, RegExp][] = [

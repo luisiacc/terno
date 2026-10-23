@@ -57,7 +57,7 @@ export const ThreadRow = memo(function ThreadRow({ thread: t, top, height, compa
       {selected && <span className="absolute inset-y-0 left-0 w-0.5 bg-row-rail" />}
       <span className={cn("absolute top-1/2 left-1.5 size-1.5 -translate-y-1/2 rounded-full bg-unread", !t.unread && "invisible")} />
       <div className="flex min-w-0 items-center gap-2">
-        <span data-testid="row-from" className={cn("min-w-0 truncate text-sm", t.unread ? "font-semibold" : "font-normal text-foreground/80")}>{t.fromName}</span>
+        <span data-testid="row-from" className={cn("min-w-0 truncate text-sm", t.unread ? "font-semibold" : "font-normal text-foreground")}>{t.fromName}</span>
         {t.messageCount > 1 && <span className="font-mono text-2xs text-muted-foreground tabular">{t.messageCount}</span>}
         {compact && (
           <span className={cn("min-w-0 flex-1 truncate text-sm", t.unread ? "text-foreground" : "text-muted-foreground")}>
@@ -76,7 +76,7 @@ export const ThreadRow = memo(function ThreadRow({ thread: t, top, height, compa
       </div>
       {!compact && (
         <div className="mt-0.5 flex min-w-0 items-baseline gap-1.5 text-sm">
-          <span data-testid="row-subject" className={cn("shrink-0 truncate", t.unread ? "font-medium text-foreground" : "text-foreground/75")} style={{ maxWidth: "60%" }}>
+          <span data-testid="row-subject" className={cn("shrink-0 truncate", t.unread ? "font-medium text-foreground" : "text-foreground")} style={{ maxWidth: "60%" }}>
             {t.subject || "(sin asunto)"}
           </span>
           <span className="min-w-0 truncate text-muted-foreground">{t.snippet}</span>

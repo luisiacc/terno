@@ -46,14 +46,14 @@ function NavItem({
       data-active={active || undefined}
       onClick={onClick}
       className={cn(
-        "group flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-left text-sm text-sidebar-foreground/85 transition-colors",
+        "group flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-left text-sm text-sidebar-foreground transition-colors",
         "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
         "data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground",
       )}
     >
-      <span className="flex size-4 items-center justify-center text-sidebar-foreground/60 group-data-active:text-sidebar-primary">{icon}</span>
+      <span className="flex size-4 items-center justify-center text-muted-foreground group-data-active:text-sidebar-primary">{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      {count ? <span className="font-mono text-2xs tabular text-sidebar-foreground/60">{count}</span> : null}
+      {count ? <span className="font-mono text-2xs tabular text-muted-foreground">{count}</span> : null}
     </button>
   );
 }
@@ -61,7 +61,7 @@ function NavItem({
 function SectionTitle({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <div className="mt-5 mb-1 flex h-5 items-center justify-between px-2">
-      <span className="text-2xs font-medium tracking-wide text-sidebar-foreground/50 uppercase">{children}</span>
+      <span className="text-2xs font-medium tracking-wide text-muted-foreground uppercase">{children}</span>
       {action}
     </div>
   );
@@ -124,7 +124,7 @@ export function Sidebar() {
 
         <SectionTitle
           action={
-            <button type="button" data-testid="new-category" aria-label="Nueva categoría" onClick={() => setCreating(true)} className="rounded p-0.5 text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground">
+            <button type="button" data-testid="new-category" aria-label="Nueva categoría" onClick={() => setCreating(true)} className="rounded p-0.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground">
               <Plus className="size-3.5" />
             </button>
           }
@@ -169,7 +169,7 @@ export function Sidebar() {
             }}
           />
         )}
-        {categories.length === 0 && !creating && <p className="px-2 py-1 text-xs text-sidebar-foreground/50">Agrupa correos de todas tus cuentas.</p>}
+        {categories.length === 0 && !creating && <p className="px-2 py-1 text-xs text-muted-foreground">Agrupa correos de todas tus cuentas.</p>}
 
         <SectionTitle>Cuentas</SectionTitle>
         <NavItem
@@ -198,13 +198,13 @@ export function Sidebar() {
         <button
           type="button"
           onClick={() => setApp({ dialog: "addAccount" })}
-          className="mt-0.5 flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-sm text-sidebar-foreground/55 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          className="mt-0.5 flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
         >
           <Plus className="size-4" /> Añadir cuenta
         </button>
       </nav>
       <div className="flex shrink-0 items-center gap-1 border-t border-sidebar-border px-2 py-2">
-        <Button data-testid="open-filters" variant="ghost" size="sm" className="flex-1 justify-start gap-2 text-sidebar-foreground/80" onClick={() => setApp({ dialog: "filters" })}>
+        <Button data-testid="open-filters" variant="ghost" size="sm" className="flex-1 justify-start gap-2 text-sidebar-foreground" onClick={() => setApp({ dialog: "filters" })}>
           <Sparkles className="text-sidebar-primary" /> Filtros
         </Button>
         <LocalPill />

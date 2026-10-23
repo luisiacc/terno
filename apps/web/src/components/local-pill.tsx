@@ -21,7 +21,7 @@ export function LocalPill() {
             data-local={localMode || undefined}
             aria-label={`${label}. ${tip}`}
             onClick={() => setApp({ dialog: "settings", settingsTab: "general" })}
-            className="flex h-6 max-w-28 shrink-0 items-center gap-1 rounded-full border border-sidebar-border px-2 text-2xs font-medium text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-foreground data-local:border-sidebar-primary/30 data-local:text-sidebar-primary"
+            className="flex h-6 max-w-28 shrink-0 items-center gap-1 rounded-full border border-sidebar-border px-2 text-2xs font-medium text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground data-local:border-sidebar-primary/30 data-local:text-sidebar-primary"
           >
             {localMode ? <LaptopMinimalCheck className="size-3" /> : <Cloud className="size-3" />}
             <span className="truncate">{label}</span>

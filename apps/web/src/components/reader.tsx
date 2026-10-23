@@ -14,14 +14,14 @@ import { loadThread, useThread } from "~/state/threads";
 import { HtmlBody, TextBody } from "./mail-body";
 
 const AVATAR_BG: Record<string, string> = {
-  rose: "bg-cat-rose/20 text-cat-rose",
-  amber: "bg-cat-amber/20 text-cat-amber",
-  lime: "bg-cat-lime/20 text-cat-lime",
-  emerald: "bg-cat-emerald/20 text-cat-emerald",
-  cyan: "bg-cat-cyan/20 text-cat-cyan",
-  indigo: "bg-cat-indigo/20 text-cat-indigo",
-  violet: "bg-cat-violet/20 text-cat-violet",
-  slate: "bg-cat-slate/20 text-cat-slate",
+  rose: "bg-cat-rose/15 text-cat-rose-ink",
+  amber: "bg-cat-amber/15 text-cat-amber-ink",
+  lime: "bg-cat-lime/15 text-cat-lime-ink",
+  emerald: "bg-cat-emerald/15 text-cat-emerald-ink",
+  cyan: "bg-cat-cyan/15 text-cat-cyan-ink",
+  indigo: "bg-cat-indigo/15 text-cat-indigo-ink",
+  violet: "bg-cat-violet/15 text-cat-violet-ink",
+  slate: "bg-cat-slate/15 text-cat-slate-ink",
 };
 
 function ToolButton({ label, keys, onClick, children, testId, active }: { label: string; keys?: string; onClick: () => void; children: React.ReactNode; testId?: string; active?: boolean }) {

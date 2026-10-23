@@ -19,7 +19,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-const fieldClass = "h-9 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/70";
+const fieldClass = "h-9 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground";
 
 export function Composer() {
   const draft = useApp((s) => s.compose);
@@ -72,7 +72,7 @@ export function Composer() {
       data-testid="composer"
       role="dialog"
       aria-label={TITLE[d.mode]}
-      className="absolute right-6 bottom-6 z-40 flex max-h-[min(640px,calc(100%-3rem))] w-[min(600px,calc(100%-3rem))] flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-2xl ring-1 ring-foreground/5 animate-in fade-in-0 slide-in-from-bottom-2 duration-150"
+      className="absolute right-6 bottom-6 z-40 flex max-h-[min(640px,calc(100%-3rem))] w-[min(600px,calc(100%-3rem))] flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-2xl ring-1 ring-foreground/5 animate-in fade-in-0 slide-in-from-bottom-2 duration-slow"
       onKeyDown={(e) => {
         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
           e.preventDefault();
