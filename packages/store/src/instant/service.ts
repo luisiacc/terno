@@ -7,6 +7,9 @@ const MiB = 1024 * 1024;
 /** Plans 03/04: desktop caps the index at 192 MiB steady, 256 MiB while building, compacting or snapshotting. */
 export const DESKTOP_SEARCH_MEMORY = { steadyBytes: 192 * MiB, peakBytes: 256 * MiB };
 
+/** The web shares the tab's memory with the page and the SQLite page cache: 96 MiB steady, 128 MiB peak. */
+export const WEB_SEARCH_MEMORY = { steadyBytes: 96 * MiB, peakBytes: 128 * MiB };
+
 export interface InstantSearchOptions {
   feed: SearchFeed;
   platform: Pick<Platform, "yield" | "files">;

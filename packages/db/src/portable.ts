@@ -36,3 +36,4 @@ export function openDatabaseWith(driver: SqliteDriver, path: string, options: Op
 }
 export * from "./sql-store";
 export * from "./sql-provider-store";
+export * from "./page-cache";
