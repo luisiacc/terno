@@ -79,6 +79,16 @@ export interface InstantEngineOptions extends SliceOptions {
   walkThreshold?: number;
   /** phrase verifications that may fail before the exact phrase doclist is asked for */
   phraseBudget?: number;
+  /** the most a build or compaction may hold, temporary buffers included: it gives up (IndexMemoryError) before allocating past it */
+  peakBytes?: number;
+}
+
+/** Building further would exceed the peak memory cap: nothing past it was allocated. */
+export class IndexMemoryError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "IndexMemoryError";
+  }
 }
 
 /** The engine can't answer at that revision (building, behind, or discarded): the store falls back. */
@@ -305,6 +315,17 @@ export class InstantSearchEngine implements CachedSearchEngine {
     };
   }
 
+  /** Refuses to allocate `bytes` more if that would pass the peak cap. */
+  private reserve(bytes: number, what: string): void {
+    const peak = this.o.peakBytes;
+    if (peak === undefined) return;
+    const held = this.allocatedBytes();
+    if (held + bytes > peak) {
+      const mib = (n: number) => (n / 1048576).toFixed(1);
+      throw new IndexMemoryError(`the index would need ${mib(held + bytes)} MiB for its ${what}, over its ${mib(peak)} MiB peak cap`);
+    }
+  }
+
   private clock(): SliceClock {
     return new SliceClock(this.o);
   }
@@ -363,11 +384,14 @@ export class InstantSearchEngine implements CachedSearchEngine {
     try {
       const clock = this.clock();
       const terms = this.terms;
+      // the sort's two id buffers, the sorted dictionary and the thread order's
+      this.reserve(terms.length * 16 + this.tCount * 12, "dictionary and thread order");
       const ids = await sortSliced(Int32Array.from(terms.keys()), (a, b) => terms[a]! < terms[b]!, clock);
       this.baseSortedIds = ids;
       this.baseSorted = Array.from(ids, (i) => terms[i]!);
       await this.buildPostings(clock);
-      // the forward index grew by half each time: give back the slack
+      // the forward index grew by half each time: give back the slack (the copy coexists with it for a moment)
+      if (this.fwd.length > this.fwdLen * 1.1) this.reserve(Math.ceil(this.fwdLen * 1.05), "forward index copy");
       if (this.fwd.length > this.fwdLen * 1.1) this.fwd = await sliceCopy(this.fwd.subarray(0, Math.ceil(this.fwdLen * 1.05)), clock);
       const exists: number[] = [];
       for (let t = 0; t < this.tCount; t++) if (this.thrFlags[t]! & T_EXISTS) exists.push(t);
@@ -400,6 +424,8 @@ export class InstantSearchEngine implements CachedSearchEngine {
       if ((d & 63) === 0) await clock.tick();
     }
     for (let t = 0; t < V; t++) counts[t + 1]! += counts[t]!;
+    // postings (doc + mask) and the fill positions, before allocating any of them
+    this.reserve(counts[V]! * 5 + V * 4, "postings");
     const off = counts;
     const pos = off.slice(0, V);
     const docs = new Uint32Array(off[V]!);
@@ -732,15 +758,16 @@ export class InstantSearchEngine implements CachedSearchEngine {
    * delta: alive docs are re-encoded from the forward index (no tokenizing).
    * Built in slices; this engine must not be mutated meanwhile (it may answer).
    */
-  async compacted(): Promise<InstantSearchEngine> {
+  async compacted(peakBytes?: number): Promise<InstantSearchEngine> {
     if (!this.indexed || !this.rev) throw new IndexNotCurrentError("instant search: compaction before the build finished");
     this.enter("compaction");
     try {
-      const next = new InstantSearchEngine(this.o);
+      const next = new InstantSearchEngine(peakBytes === undefined ? this.o : { ...this.o, peakBytes });
       next.beginBuild(this.rev);
       const clock = this.clock();
       const fields: string[][] = [[], [], [], []];
       // room for what is alive, so the copy doesn't grow (and copy) its buffers on the way
+      next.reserve((this.n - this.dead) * 41 + this.fwdLen, "compacted copy");
       next.ensureDocs(this.n - this.dead);
       next.ensureFwd(this.fwdLen);
       // in slot order: any order serves, and sorting would block

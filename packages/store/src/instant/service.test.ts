@@ -2,6 +2,7 @@ import { generateDataset } from "@unica/mock-data";
 import { describe, expect, it } from "vitest";
 import { corpusFromDataset } from "../conformance";
 import type { IndexBatch, IndexChange, Revision, SearchFeed, SearchMessageDoc, SearchThreadDoc } from "../search";
+import { InstantSearchEngine } from "./engine";
 import { InstantSearch, type InstantSearchOptions } from "./service";
 
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
@@ -92,6 +93,37 @@ describe("InstantSearch", () => {
     await until(() => fired);
     expect(await s.settled(1500)).toBe(true);
     expect(s.at(feed.rev)).toBeTruthy();
+    await s.close();
+  });
+
+  it("a build whose postings would exceed the peak cap gives up before allocating them", async () => {
+    // what loading the messages holds, and what the finished index holds
+    const probe = new InstantSearchEngine();
+    probe.beginBuild({ epoch: "mem", seq: 0 });
+    await probe.loadMessages(data.messages);
+    probe.loadThreads(data.threads);
+    const loaded = probe.allocatedBytes();
+    await probe.finishBuild();
+    const built = probe.allocatedBytes();
+    expect(built).toBeGreaterThan(loaded);
+    const peak = Math.floor((loaded + built) / 2);
+    const allocations: number[] = [];
+    const real = InstantSearchEngine.prototype.allocatedBytes;
+    const feed = new MemoryFeed();
+    const s = service(feed, { memory: { steadyBytes: 1 << 30, peakBytes: peak } });
+    try {
+      InstantSearchEngine.prototype.allocatedBytes = function (this: InstantSearchEngine) {
+        const n = real.call(this);
+        allocations.push(n);
+        return n;
+      };
+      expect(await s.settled()).toBe(false);
+    } finally {
+      InstantSearchEngine.prototype.allocatedBytes = real;
+    }
+    expect(s.report).toMatchObject({ state: "disabled", disabled: expect.stringMatching(/peak/) });
+    expect(s.at(feed.rev)).toBeNull();
+    expect(Math.max(...allocations)).toBeLessThanOrEqual(peak);
     await s.close();
   });
 

@@ -1,6 +1,6 @@
 import type { Platform } from "../platform";
 import { RevisionError, sameRevision, type Revision, type SearchFeed } from "../search";
-import { InstantSearchEngine, type PhraseSource } from "./engine";
+import { IndexMemoryError, InstantSearchEngine, type PhraseSource } from "./engine";
 
 const MiB = 1024 * 1024;
 
@@ -160,7 +160,7 @@ export class InstantSearch {
   }
 
   private engineOptions() {
-    return { yield: () => this.o.platform.yield(), sliceMs: this.o.sliceMs ?? 4, phrases: this.o.phrases, identity: this.o.identity };
+    return { yield: () => this.o.platform.yield(), sliceMs: this.o.sliceMs ?? 4, phrases: this.o.phrases, identity: this.o.identity, peakBytes: this.memory.peakBytes };
   }
 
   private disable(reason: string): void {
@@ -215,6 +215,8 @@ export class InstantSearch {
         this.resting = false;
       } catch (error) {
         if (this.stopped) return;
+        // building further would pass the peak cap: FTS5 answers, nothing past the cap was allocated
+        if (error instanceof IndexMemoryError) return this.disable(error.message);
         this.engine?.disable();
         this.engine = null;
         this.report.rebuilds++;
@@ -348,7 +350,16 @@ export class InstantSearch {
       return;
     }
     // e keeps answering at its revision meanwhile; nothing applies to it until the swap
-    const next = await e.compacted();
+    let next: InstantSearchEngine;
+    try {
+      // the copy shares the peak with the index it replaces
+      next = await e.compacted(this.memory.peakBytes - e.allocatedBytes());
+    } catch (error) {
+      if (!(error instanceof IndexMemoryError)) throw error;
+      this.noCompaction = true;
+      this.o.log?.("info", `instant search: no room to compact (${error.message})`);
+      return;
+    }
     if (this.stopped) return;
     this.engine = next;
     e.disable();
