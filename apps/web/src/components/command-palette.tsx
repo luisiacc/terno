@@ -4,13 +4,16 @@ import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, Comma
 import { Archive, Inbox, Layers, Moon, PenLine, Search, Send, Settings2, Sparkles, Star, Sun, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { act, openCompose } from "~/lib/actions";
+import { addToCategory } from "~/lib/categorize";
 import { updateAppearance } from "~/lib/appearance";
-import { navigate, setApp, useApp } from "~/state/app";
+import { getApp, navigate, setApp, useApp } from "~/state/app";
 
 export function CommandPalette() {
   const open = useApp((s) => s.dialog === "palette");
   const categories = useApp((s) => s.categories);
   const accounts = useApp((s) => s.accounts);
+  // what "Añadir a" files: the checked threads, else the selected one
+  const targets = useApp((s) => (open ? (s.checked.size ? s.checked.size : s.selectedId !== null ? 1 : 0) : 0));
   const [value, setValue] = useState("");
   const run = (fn: () => void) => {
     setApp({ dialog: null });
@@ -57,6 +60,25 @@ export function CommandPalette() {
             <Sun className="hidden dark:block" /> Cambiar tema
           </CommandItem>
         </CommandGroup>
+        {targets > 0 && (
+          <CommandGroup heading={targets > 1 ? `Añadir ${targets} conversaciones` : "Añadir a categoría"}>
+            {categories.map((c) => (
+              <CommandItem
+                key={c.id}
+                value={`añadir a ${c.name}`}
+                data-testid={`palette-add-${c.id}`}
+                onSelect={() =>
+                  run(() => {
+                    const s = getApp();
+                    void addToCategory(c.id, s.checked.size ? [...s.checked] : [s.selectedId!], { source: "picker" });
+                  })
+                }
+              >
+                <CategoryDot color={c.color as CategoryColor} /> Añadir a «{c.name}»
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
         {/* last, so Enter on an exact command/category match wins; always shown */}
         {value.trim() && (
           <CommandGroup heading="Buscar" forceMount>

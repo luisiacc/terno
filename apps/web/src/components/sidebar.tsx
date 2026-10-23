@@ -55,7 +55,11 @@ function NavItem({
     >
       <span className="flex size-4 items-center justify-center text-muted-foreground group-data-active:text-sidebar-primary">{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      {count ? <span className="font-mono text-2xs tabular text-muted-foreground">{count}</span> : null}
+      {count ? (
+        <span data-slot="nav-count" className="font-mono text-2xs tabular text-muted-foreground">
+          {count}
+        </span>
+      ) : null}
     </button>
   );
 }

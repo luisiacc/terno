@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { client } from "~/rpc/connection";
 import { patchRows, reloadList, useList } from "~/state/list";
 import { invalidateThreads, loadThread } from "~/state/threads";
-import { getApp } from "~/state/app";
+import { getApp, setApp } from "~/state/app";
 
 export interface Filed {
   categoryId: number;
@@ -48,6 +48,12 @@ export async function addToCategory(categoryId: number, threadIds: readonly numb
   const { items, index } = useList.getState();
   const fresh = ids.filter((id) => !items[index.get(id) ?? -1]?.categoryIds.includes(categoryId));
   patch(fresh, categoryId, true);
+  // the sidebar count moves in the same frame; the backend's counts event confirms it
+  const unread = fresh.filter((id) => items[index.get(id) ?? -1]?.unread).length;
+  if (unread) {
+    const counts = getApp().counts;
+    setApp({ counts: { ...counts, categoryUnread: { ...counts.categoryUnread, [categoryId]: (counts.categoryUnread[categoryId] ?? 0) + unread } } });
+  }
   try {
     const res = await client.call("categories.addThreads", { categoryId, threadIds: ids, source: options.source ?? "picker" });
     refreshReader(ids);
