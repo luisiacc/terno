@@ -1,62 +1,61 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { generateWithRepair, type WireCall } from "./generate";
-import { AiError, type AiProvider, type FilterGenerationContext } from "./types";
-import { systemPrompt, wireFilterSchema } from "./wire";
+import type Anthropic from "@anthropic-ai/sdk";
+import { resolveBaseURL } from "./providers";
+import { mapSdkError } from "./sdk-errors";
+import { AiError, type ModelInfo, type ModelTransport, type ProviderConfig } from "./types";
 
-export const DEFAULT_ANTHROPIC_MODEL = "claude-opus-5-5";
+type Sdk = typeof import("@anthropic-ai/sdk");
 
-export function createAnthropicProvider(options: { apiKey: string; model?: string; baseURL?: string; fetch?: typeof fetch }): AiProvider {
-  // authToken: null so an ambient ANTHROPIC_AUTH_TOKEN never overrides the key the user saved in Settings
-  const client = new Anthropic({ apiKey: options.apiKey, authToken: null, baseURL: options.baseURL, maxRetries: 2, timeout: 60_000, fetch: options.fetch });
-  const model = options.model || DEFAULT_ANTHROPIC_MODEL;
-
-  const call: WireCall = async ({ prompt, ctx, repair, signal }) => {
-    const messages: Anthropic.MessageParam[] = [{ role: "user", content: prompt }];
-    if (repair) {
-      messages.push(
-        { role: "assistant", content: JSON.stringify(repair.previous) },
-        { role: "user", content: `That filter is invalid: ${repair.error}. Return a corrected filter.` },
-      );
-    }
-    try {
-      const response = await client.beta.messages.create(
-        {
-          model,
-          max_tokens: 4000,
-          betas: ["server-side-fallback-2026-07-01"],
-          fallbacks: "default",
-          // a short structured extraction: low effort keeps it fast
-          output_config: { effort: "low", format: zodOutputFormat(wireFilterSchema) },
-          system: systemPrompt(ctx),
-          messages,
-        },
-        { signal },
-      );
-      // Check the stop reason before reading content: a refusal has no JSON body.
-      if (response.stop_reason === "refusal") throw new AiError("The AI declined this request.", "refused");
-      if (response.stop_reason === "max_tokens") throw new AiError("The AI response was cut off.", "invalid_output");
-      const text = response.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("");
-      let json: unknown;
-      try {
-        json = JSON.parse(text);
-      } catch {
-        throw new AiError("The AI returned malformed JSON.", "invalid_output");
-      }
-      const parsed = wireFilterSchema.safeParse(json);
-      if (!parsed.success) throw new AiError("The AI returned an unexpected shape.", "invalid_output");
-      return parsed.data;
-    } catch (error) {
-      if (error instanceof AiError) throw error;
-      if (error instanceof Anthropic.AuthenticationError) throw new AiError("Invalid Anthropic API key.", "auth");
-      if (error instanceof Anthropic.RateLimitError) throw new AiError("Rate limited by Anthropic, try again shortly.", "rate_limited");
-      if (error instanceof Anthropic.APIError) throw new AiError(`Anthropic API error: ${error.message}`, "unavailable");
-      throw new AiError(`Could not reach Anthropic: ${error instanceof Error ? error.message : String(error)}`, "unavailable");
-    }
-  };
+/** Anthropic Messages API. The SDK is imported on first use so backend boot never pays for it. */
+export function anthropicTransport(config: ProviderConfig): ModelTransport {
+  const baseURL = resolveBaseURL(config)!;
+  const info = { label: "Anthropic", local: false, host: new URL(baseURL).host };
+  let loaded: Promise<{ sdk: Sdk; client: Anthropic }> | null = null;
+  const load = () =>
+    (loaded ??= import("@anthropic-ai/sdk").then((sdk) => {
+      if (!config.apiKey) throw new AiError("Guarda tu API key de Anthropic en Ajustes → IA.", "not_configured");
+      // Every option explicit: ambient ANTHROPIC_* env vars must never redirect or re-key requests.
+      const { default: Anthropic } = sdk;
+      const client = new Anthropic({ apiKey: config.apiKey, authToken: null, baseURL, maxRetries: config.maxRetries, timeout: config.timeoutMs, fetch: config.fetch });
+      return { sdk, client };
+    }));
 
   return {
-    id: `anthropic:${model}`,
-    generateFilter: (prompt: string, ctx: FilterGenerationContext, signal?: AbortSignal) => generateWithRepair(call, prompt, ctx, signal),
+    async complete(req) {
+      const { sdk, client } = await load();
+      const { zodOutputFormat } = await import("@anthropic-ai/sdk/helpers/zod");
+      try {
+        const response = await client.beta.messages.create(
+          {
+            model: config.model,
+            max_tokens: req.maxTokens,
+            betas: ["server-side-fallback-2026-07-01"],
+            fallbacks: "default",
+            // a short structured extraction: low effort keeps it fast
+            output_config: req.output === "json_schema" && req.schema ? { effort: "low", format: zodOutputFormat(req.schema.zod) } : { effort: "low" },
+            system: req.system,
+            messages: req.messages,
+          },
+          { signal: req.signal },
+        );
+        const text = response.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("");
+        const stop = response.stop_reason === "refusal" ? "refusal" : response.stop_reason === "max_tokens" ? "length" : "end";
+        return { text, stop };
+      } catch (error) {
+        throw mapSdkError(error, sdk.default, info);
+      }
+    },
+
+    async listModels(signal) {
+      const { sdk, client } = await load();
+      try {
+        const models: ModelInfo[] = [];
+        for await (const m of client.models.list({ limit: 100 }, { signal })) {
+          models.push({ id: m.id, label: m.display_name, contextTokens: m.max_input_tokens ?? undefined });
+        }
+        return models;
+      } catch (error) {
+        throw mapSdkError(error, sdk.default, info);
+      }
+    },
   };
 }

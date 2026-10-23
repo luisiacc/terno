@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createFakeProvider } from "@unica/ai";
+import { createAi } from "@unica/ai";
 import { createMemoryTransportPair, RpcClient, type Events } from "@unica/core/rpc";
 import { claimReadyOps, createAccount, enqueueOp, getOp, type IncomingMessage } from "@unica/db";
 import { ProviderError, type MailProvider, type ProviderOp, type ProviderRegistry, type SyncSink } from "@unica/mail";
@@ -69,7 +69,7 @@ function setup(options: { dir?: string } = {}) {
     version: "test",
     cipher: plaintextCipher,
     providers: registry,
-    aiFactory: (kind) => (kind === "fake" ? createFakeProvider() : null),
+    aiFactory: (config) => (config.id === "fake" ? createAi(config) : null),
     now: () => NOW,
     autoSync: false,
   });

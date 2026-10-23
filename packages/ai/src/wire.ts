@@ -5,6 +5,8 @@ import type { FilterGenerationContext } from "./types";
 /**
  * Flat schema handed to the model (structured outputs work best without unions).
  * It is converted to the strict FilterRule DSL and validated afterwards.
+ * Primitive types only: `.int()` would emit minimum/maximum, which some local
+ * grammar engines reject in strict mode, so integers are checked in convertWireFilter.
  */
 export const wireFilterSchema = z.object({
   name: z.string().describe("Short human name for the filter, in the user's language"),
@@ -21,7 +23,7 @@ export const wireFilterSchema = z.object({
   actions: z.array(
     z.object({
       type: z.enum(["archive", "trash", "spam", "markRead", "star", "addCategory"]),
-      categoryId: z.number().int().nullable().describe("Required for addCategory, otherwise null"),
+      categoryId: z.number().nullable().describe("Required for addCategory, otherwise null"),
     }),
   ),
 });
@@ -44,15 +46,18 @@ export function convertWireFilter(wire: WireFilter, ctx: FilterGenerationContext
         if (!ctx.accounts.some((a) => a.id === id)) errors.push(`conditions[${i}]: account ${c.value} does not exist`);
         return { field: c.field, op: "is", value: id, negate };
       }
-      case "ageDays":
-        return { field: c.field, op: c.op, value: Number(c.value), negate };
+      case "ageDays": {
+        const days = Number(c.value);
+        if (!Number.isInteger(days) || days < 0) errors.push(`conditions[${i}]: ageDays value must be a whole number of days`);
+        return { field: c.field, op: c.op, value: days, negate };
+      }
       default:
         return { field: c.field, op: c.op, value: c.value, negate };
     }
   });
   const actions = wire.actions.map((a, i) => {
     if (a.type !== "addCategory") return { type: a.type };
-    if (a.categoryId === null || !ctx.categories.some((c) => c.id === a.categoryId)) {
+    if (a.categoryId === null || !Number.isInteger(a.categoryId) || !ctx.categories.some((c) => c.id === a.categoryId)) {
       errors.push(`actions[${i}]: addCategory needs an existing categoryId`);
     }
     return { type: a.type, categoryId: a.categoryId ?? 0 };
@@ -64,6 +69,15 @@ export function convertWireFilter(wire: WireFilter, ctx: FilterGenerationContext
   if (errors.length > 0 || !parsed.success) return { ok: false, error: errors.join("; ") };
   return { ok: true, name, explanation: wire.explanation.trim(), rule: parsed.data };
 }
+
+/** Shown to models without native structured output (json_object / text modes). */
+export const EXAMPLE_WIRE_FILTER: WireFilter = {
+  name: "Recibos de Uber",
+  explanation: "Archiva los recibos de uber.com.",
+  match: "all",
+  conditions: [{ field: "fromDomain", op: "equals", value: "uber.com", negate: false }],
+  actions: [{ type: "archive", categoryId: null }],
+};
 
 export function systemPrompt(ctx: FilterGenerationContext): string {
   return [

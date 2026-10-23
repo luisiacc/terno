@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { setImmediate as yieldToLoop } from "node:timers/promises";
-import type { AiProvider } from "@unica/ai";
-import { createAnthropicProvider, createFakeProvider } from "@unica/ai";
+import { createAi, type AiTasks, type ProviderConfig } from "@unica/ai";
 import type { Account, AccountSyncState, FilterAction, ThreadAction } from "@unica/core";
 import { RpcServer, type CallContext, type MethodName, type OpInfo, type Transport } from "@unica/core/rpc";
 import {
@@ -59,12 +58,9 @@ export const plaintextCipher: SecretCipher = {
   },
 };
 
-export type AiFactory = (kind: "anthropic" | "fake", options: { apiKey: string | null; model: string; fetch: typeof fetch }) => AiProvider | null;
+export type AiFactory = (config: ProviderConfig) => AiTasks | null;
 
-export const defaultAiFactory: AiFactory = (kind, { apiKey, model, fetch }) => {
-  if (kind === "fake") return createFakeProvider();
-  return apiKey ? createAnthropicProvider({ apiKey, model, fetch }) : null;
-};
+export const defaultAiFactory: AiFactory = (config) => createAi(config);
 
 export interface BackendOptions {
   dbPath: string;
@@ -569,14 +565,19 @@ export class Backend {
 
   // ───────────────────────────── AI ─────────────────────────────
 
-  async ai(): Promise<AiProvider | null> {
+  async ai(): Promise<AiTasks | null> {
     const settings = readSettings(this.db);
     if (settings.aiProvider === "none") return null;
+    const apiKey = await this.getSecret("ai:anthropic:apiKey");
+    if (settings.aiProvider === "anthropic" && !apiKey) return null;
     const factory = this.options.aiFactory ?? defaultAiFactory;
-    return factory(settings.aiProvider, {
-      apiKey: await this.getSecret("ai:anthropic:apiKey"),
+    return factory({
+      id: settings.aiProvider,
       model: settings.aiModel,
+      apiKey,
       fetch: this.net.fetchFor("ai", { providerLocality: settings.aiProvider === "fake" ? "local" : "cloud" }),
+      timeoutMs: 30_000,
+      maxRetries: 1,
     });
   }
 
