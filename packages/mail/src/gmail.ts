@@ -179,7 +179,7 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
     const token = access && access.expiresAt > Date.now() ? access.token : await refresh();
     let res: Response;
     try {
-      res = await fetch(`${ep.api}${path}`, { ...init, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...(init.headers ?? {}) } });
+      res = await fetch(`${ep.api}${path}`, { ...init, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...init.headers } });
     } catch (e) {
       throw new ProviderError(`Network error: ${e instanceof Error ? e.message : e}`, !init.ambiguousOnFailure, init.ambiguousOnFailure);
     }

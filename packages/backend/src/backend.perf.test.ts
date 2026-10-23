@@ -11,7 +11,7 @@ import { demoRegistry } from "@unica/mail";
 import { generateDataset } from "@unica/mock-data";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
-import { BUDGET_MULTIPLIER, measure, report, type Stat } from "../../db/src/test/perf";
+import { BUDGET_MULTIPLIER, report, type Stat } from "../../db/src/test/perf";
 
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
 let backend: Backend;

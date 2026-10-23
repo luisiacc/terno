@@ -17,6 +17,8 @@ interface Fixtures {
 
 export const test = base.extend<Fixtures>({
   fixedClock: [true, { option: true }],
+  // Playwright requires the destructuring pattern even when no fixtures are used
+  // oxlint-disable-next-line no-empty-pattern
   server: async ({}, use) => {
     const template = process.env[TEMPLATE_ENV];
     if (!template) throw new Error("global setup did not seed a template database");

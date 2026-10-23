@@ -10,5 +10,5 @@
       c.add("is-desktop");
       if (window.unicaDesktop.platform === "darwin") c.add("is-mac");
     }
-  } catch (e) {}
+  } catch {}
 })();

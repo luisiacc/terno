@@ -153,7 +153,7 @@ function oracle(query: string, scope: { accountId?: number; categoryId?: number 
   const excludedCategories = q.excludeCategories
     .map((token) => (categories.find((x) => normalizeText(x.name) === token) ?? categories.find((x) => normalizeText(x.name).startsWith(token)))?.id)
     .filter((x): x is number => x !== undefined);
-  const categoryIds = [...(scope.categoryId ? [scope.categoryId] : [])];
+  const categoryIds = scope.categoryId ? [scope.categoryId] : [];
   for (const token of q.categories) {
     const c = categories.find((x) => normalizeText(x.name) === token) ?? categories.find((x) => normalizeText(x.name).startsWith(token));
     if (!c) impossible = true;

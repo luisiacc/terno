@@ -462,7 +462,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const touched = new Set<number>();
         // Gmail-style servers keep archived mail only in "All Mail"
         const boxes = [r.inbox, r.sent, r.archive ?? r.all, r.junk, r.trash].filter((p): p is string => Boolean(p));
-        for (const path of [...new Set(boxes)]) {
+        for (const path of new Set(boxes)) {
           if (sink.signal.aborted) return;
           await syncMailbox(c, path, cursor, sink, touched);
         }

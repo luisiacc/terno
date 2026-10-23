@@ -155,7 +155,7 @@ export class Backend {
     if (this.syncTimer) clearInterval(this.syncTimer);
     if (this.workerTimer) clearTimeout(this.workerTimer);
     for (const off of this.unwatch.values()) off();
-    await Promise.allSettled([...this.syncing.values()]);
+    await Promise.allSettled(this.syncing.values());
     // let an in-flight ops batch finish writing before the database closes
     for (let i = 0; this.workerRunning && i < 200; i++) await new Promise((r) => setTimeout(r, 10));
     await Promise.allSettled([...this.providers.values()].map((p) => p.close()));

@@ -293,7 +293,7 @@ describe("IMAP provider against ImapKit", () => {
   });
 
   it("picks up new mail through IDLE without polling", async () => {
-    const { imap, backend, client, addAccount } = await setup();
+    const { imap, client, addAccount } = await setup();
     await addAccount(imap.port);
     await new Promise((r) => setTimeout(r, 500)); // IDLE connection established
     imap.server.control.addMessage("INBOX", { raw: raw({ subject: "¡Llegó por IDLE!" }) });
