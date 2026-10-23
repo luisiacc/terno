@@ -156,10 +156,13 @@ export class AiService {
   async listModels(target: Omit<Target, "model">): Promise<{ models: ModelInfo[]; tookMs: number }> {
     const started = performance.now();
     const settings = readSettings(this.b.db);
-    // the saved model of that provider, so Ollama can report its context window
-    const model = settings.ai.profiles[target.provider]?.model ?? "";
+    // the saved profile fills the gaps: its endpoint, and its model (so Ollama can report the context window)
+    const profile = settings.ai.profiles[target.provider];
+    const model = profile?.model ?? "";
+    const samePreset = (target.preset ?? profile?.preset) === profile?.preset;
+    const baseURL = target.baseURL ?? (samePreset ? profile?.baseURL : undefined);
     try {
-      const config = await this.config({ ...target, model });
+      const config = await this.config({ ...target, baseURL, model });
       const cacheKey = [target.provider, target.preset ?? "", config.baseURL ?? "", model, config.apiKey ? createHash("sha256").update(config.apiKey).digest("hex") : ""].join("|");
       const hit = this.models.get(cacheKey);
       if (hit && Date.now() - hit.at < MODELS_TTL_MS) return { models: hit.models, tookMs: performance.now() - started };

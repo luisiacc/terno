@@ -15,6 +15,12 @@ const FiltersDialog = lazy(() => import("./components/filters-dialog").then((m) 
 const SettingsDialog = lazy(() => import("./components/settings-dialog").then((m) => ({ default: m.SettingsDialog })));
 const AddAccountDialog = lazy(() => import("./components/add-account-dialog").then((m) => ({ default: m.AddAccountDialog })));
 const ShortcutsDialog = lazy(() => import("./components/shortcuts-dialog").then((m) => ({ default: m.ShortcutsDialog })));
+const FirstRun = lazy(() => import("./components/first-run").then((m) => ({ default: m.FirstRun })));
+
+/** Fresh install: no mailboxes, no owner, not a demo, and the first-run steps not finished. */
+function needsFirstRun(): boolean {
+  return localStorage.getItem("unica:first-run") !== "done";
+}
 
 function Fatal({ message }: { message: string }) {
   return (
@@ -32,6 +38,7 @@ export function App() {
   const fatal = useApp((s) => s.fatal);
   const dialog = useApp((s) => s.dialog);
   const theme = useApp((s) => s.settings?.theme ?? "system");
+  const fresh = useApp((s) => s.ready && s.accounts.length === 0 && !s.owner && !s.demo);
   useEffect(() => installKeyboard(), []);
 
   if (fatal) return <Fatal message={fatal} />;
@@ -54,6 +61,7 @@ export function App() {
         {dialog === "settings" && <SettingsDialog />}
         {dialog === "addAccount" && <AddAccountDialog />}
         {dialog === "shortcuts" && <ShortcutsDialog />}
+        {fresh && dialog === null && needsFirstRun() && <FirstRun />}
       </Suspense>
       <Toaster position="bottom-left" theme={theme} />
     </TooltipProvider>

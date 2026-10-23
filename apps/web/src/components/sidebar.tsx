@@ -12,6 +12,7 @@ import { navigate, setApp, useApp } from "~/state/app";
 import { client } from "~/rpc/connection";
 import { CATEGORY_COLORS } from "@unica/core";
 import { toast } from "sonner";
+import { LocalPill } from "./local-pill";
 
 const VIEWS: { view: View; icon: typeof Inbox; keys?: string }[] = [
   { view: "inbox", icon: Inbox, keys: "g i" },
@@ -191,6 +192,7 @@ export function Sidebar() {
         <Button data-testid="open-filters" variant="ghost" size="sm" className="flex-1 justify-start gap-2 text-sidebar-foreground/80" onClick={() => setApp({ dialog: "filters" })}>
           <Sparkles className="text-sidebar-primary" /> Filtros
         </Button>
+        <LocalPill />
         <Tooltip>
           <TooltipTrigger
             render={

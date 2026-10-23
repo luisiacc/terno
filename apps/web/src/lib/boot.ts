@@ -15,7 +15,7 @@ export async function boot(): Promise<void> {
     await connectBackend();
     const b = await client.call("app.bootstrap", {});
     applyTheme(b.settings.theme);
-    setApp({ ready: true, accounts: b.accounts, categories: b.categories, counts: b.counts, settings: b.settings, version: b.version });
+    setApp({ ready: true, accounts: b.accounts, categories: b.categories, counts: b.counts, settings: b.settings, owner: b.owner, demo: b.demo, version: b.version });
     matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => applyTheme(getApp().settings?.theme ?? "system"));
 
     let refreshQueued = false;
@@ -34,6 +34,7 @@ export async function boot(): Promise<void> {
     client.on("counts", (counts) => setApp({ counts }));
     client.on("accounts", (accounts) => setApp({ accounts }));
     client.on("categories", (categories) => setApp({ categories }));
+    client.on("owner", (owner) => setApp({ owner }));
     client.on("op", (op) => {
       if (op.kind === "send" && op.state === "succeeded") {
         if (op.lastError) toast.warning("Enviado, pero no a todos", { description: op.lastError, duration: 12_000 });

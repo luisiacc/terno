@@ -8,16 +8,19 @@ import { Label } from "@unica/ui/components/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@unica/ui/components/select";
 import { Switch } from "@unica/ui/components/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@unica/ui/components/tabs";
+import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@unica/ui/components/alert-dialog";
 import { Check, Copy, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { applyTheme } from "~/lib/boot";
 import { client } from "~/rpc/connection";
 import { setApp, useApp, type SettingsTab } from "~/state/app";
+import { AiTab } from "./settings/ai-tab";
+import { OwnerCard } from "./settings/owner-card";
 
-function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function Row({ label, hint, children, testId }: { label: string; hint?: string; children: React.ReactNode; testId?: string }) {
   return (
-    <div className="flex items-center justify-between gap-6 border-b border-border py-3 last:border-0">
+    <div className="flex items-center justify-between gap-6 border-b border-border py-3 last:border-0" data-testid={testId}>
       <div>
         <p className="text-sm font-medium">{label}</p>
         {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
@@ -53,19 +56,21 @@ export function SettingsDialog() {
   const tab = useApp((s) => s.settingsTab);
   const settings = useApp((s) => s.settings);
   const accounts = useApp((s) => s.accounts);
-  const [apiKey, setApiKey] = useState("");
+  const owner = useApp((s) => s.owner);
+  const demo = useApp((s) => s.demo);
+  const [confirmLocalOff, setConfirmLocalOff] = useState(false);
   const [agent, setAgent] = useState<{ mcpCommand: string; socketPath: string; skillPath: string } | null>(null);
 
   useEffect(() => {
     if (open && window.unicaDesktop) void window.unicaDesktop.agentInfo().then(setAgent).catch(() => {});
   }, [open]);
 
-  if (!settings) return null;
-  const update = async (patch: SettingsPatch) => {
+  const update = useCallback(async (patch: SettingsPatch) => {
     const next = await client.call("settings.update", patch);
     setApp({ settings: next });
     if (patch.theme) applyTheme(patch.theme);
-  };
+  }, []);
+  if (!settings) return null;
   const mcp = agent?.mcpCommand ?? "/Applications/Unica.app/Contents/Resources/bin/unica-mcp";
 
   return (
@@ -76,7 +81,7 @@ export function SettingsDialog() {
           <div className="border-b border-border px-5 pt-4 pb-3">
             <h2 className="mb-3 text-base font-semibold">Ajustes</h2>
             <TabsList>
-              <TabsTrigger value="general">General</TabsTrigger>
+              <TabsTrigger value="general" data-testid="tab-general">General</TabsTrigger>
               <TabsTrigger value="accounts" data-testid="tab-accounts">Cuentas</TabsTrigger>
               <TabsTrigger value="ai" data-testid="tab-ai">IA</TabsTrigger>
               <TabsTrigger value="agents" data-testid="tab-agents">Agentes</TabsTrigger>
@@ -84,6 +89,13 @@ export function SettingsDialog() {
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-2">
             <TabsContent value="general">
+              <Row label="Modo local" hint="Nada sale de este Mac salvo el correo con tus servidores. La IA solo puede usar modelos de este Mac." testId="local-mode-row">
+                <Switch
+                  data-testid="local-mode-switch"
+                  checked={settings.localMode}
+                  onCheckedChange={(on) => (on ? void update({ localMode: true }) : setConfirmLocalOff(true))}
+                />
+              </Row>
               <Row label="Tema">
                 <Select value={settings.theme} onValueChange={(v) => update({ theme: v as AppSettings["theme"] })} items={[{ value: "system", label: "Sistema" }, { value: "light", label: "Claro" }, { value: "dark", label: "Oscuro" }]}>
                   <SelectTrigger size="sm" className="w-32" data-testid="theme-select"><SelectValue /></SelectTrigger>
@@ -103,8 +115,8 @@ export function SettingsDialog() {
                   </SelectContent>
                 </Select>
               </Row>
-              <Row label="Cargar imágenes remotas siempre" hint="Por defecto se bloquean para evitar rastreo.">
-                <Switch checked={settings.remoteImages === "always"} onCheckedChange={(on) => update({ remoteImages: on ? "always" : "ask" })} />
+              <Row label="Cargar imágenes remotas siempre" hint={settings.localMode ? "El modo local las bloquea siempre." : "Por defecto se bloquean para evitar rastreo."}>
+                <Switch disabled={settings.localMode} checked={settings.remoteImages === "always" && !settings.localMode} onCheckedChange={(on) => update({ remoteImages: on ? "always" : "ask" })} />
               </Row>
               <Row label="Ventana de sincronización" hint="Días de correo a descargar al conectar una cuenta.">
                 <Input type="number" className="h-8 w-24" defaultValue={settings.syncWindowDays} onBlur={(e) => update({ syncWindowDays: Math.max(7, Number(e.target.value) || 90) })} />
@@ -112,6 +124,9 @@ export function SettingsDialog() {
             </TabsContent>
 
             <TabsContent value="accounts">
+              <div className="pt-2">
+                <OwnerCard owner={owner} demo={demo} accounts={accounts} />
+              </div>
               <div className="space-y-1 py-2">
                 {accounts.map((a) => (
                   <div key={a.id} className="flex items-center gap-3 rounded-lg border border-border px-3 py-2.5" data-testid="settings-account">
@@ -127,7 +142,8 @@ export function SettingsDialog() {
                       size="icon-sm"
                       aria-label={`Quitar ${a.email}`}
                       onClick={async () => {
-                        if (!confirm(`¿Quitar ${a.email}? Se borrarán sus correos locales.`)) return;
+                        const keepsOwner = owner?.accountId === a.id ? " Seguirá siendo tu cuenta Única; cámbiala en Cambiar…." : "";
+                        if (!confirm(`¿Quitar ${a.email}? Se borrarán sus correos locales.${keepsOwner}`)) return;
                         await client.call("accounts.remove", { id: a.id });
                         toast.success("Cuenta eliminada");
                       }}
@@ -155,40 +171,7 @@ export function SettingsDialog() {
             </TabsContent>
 
             <TabsContent value="ai">
-              <Row label="Proveedor" hint="La IA crea filtros a partir de tu descripción.">
-                <Select value={settings.ai.provider} onValueChange={(v) => update({ ai: { provider: v as AppSettings["ai"]["provider"] } })} items={[{ value: "anthropic", label: "Claude (Anthropic)" }, { value: "fake", label: "Demo sin conexión" }, { value: "none", label: "Desactivada" }]}>
-                  <SelectTrigger size="sm" className="w-48" data-testid="ai-provider"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="anthropic">Claude (Anthropic)</SelectItem>
-                    <SelectItem value="fake">Demo sin conexión</SelectItem>
-                    <SelectItem value="none">Desactivada</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Row>
-              {settings.ai.provider === "anthropic" && (
-                <>
-                  <Row label="Modelo">
-                    <Input className="h-8 w-48 font-mono text-xs" defaultValue={settings.ai.model} onBlur={(e) => update({ ai: { model: e.target.value.trim() } })} />
-                  </Row>
-                  <div className="space-y-2 py-3">
-                    <Label htmlFor="ai-key">API key de Anthropic {settings.ai.hasKey && <span className="text-success">· guardada</span>}</Label>
-                    <div className="flex gap-2">
-                      <Input id="ai-key" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-ant-…" />
-                      <Button
-                        disabled={!apiKey}
-                        onClick={async () => {
-                          setApp({ settings: await client.call("ai.setKey", { provider: "anthropic", value: apiKey.trim() }) });
-                          setApiKey("");
-                          toast.success("API key guardada en el llavero");
-                        }}
-                      >
-                        Guardar
-                      </Button>
-                    </div>
-                    <p className="text-xs text-muted-foreground">Se cifra con el llavero de macOS. Nunca sale de tu Mac salvo hacia Anthropic.</p>
-                  </div>
-                </>
-              )}
+              <AiTab settings={settings} update={update} />
             </TabsContent>
 
             <TabsContent value="agents" className="space-y-4 py-3">
@@ -215,6 +198,34 @@ export function SettingsDialog() {
             </TabsContent>
           </div>
         </Tabs>
+        <AlertDialog open={confirmLocalOff} onOpenChange={setConfirmLocalOff}>
+          <AlertDialogContent data-testid="local-mode-confirm">
+            <AlertDialogHeader>
+              <AlertDialogTitle>¿Desactivar el modo local?</AlertDialogTitle>
+              <AlertDialogDescription render={<div />}>
+                <p>Al desactivarlo, Única podrá:</p>
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-left">
+                  <li>usar IA en la nube (Claude, OpenAI y compatibles) con tu propia API key;</li>
+                  <li>cargar imágenes remotas de un correo cuando lo pidas.</li>
+                </ul>
+                <p className="mt-2">El correo con tus servidores funciona igual en los dos modos.</p>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Mantener activado</AlertDialogCancel>
+              <Button
+                variant="destructive"
+                data-testid="local-mode-confirm-off"
+                onClick={() => {
+                  setConfirmLocalOff(false);
+                  void update({ localMode: false });
+                }}
+              >
+                Desactivar
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );

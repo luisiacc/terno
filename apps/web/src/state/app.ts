@@ -1,5 +1,5 @@
 import type { Account, Category, Counts, View } from "@unica/core";
-import type { AppSettings } from "@unica/core/rpc";
+import type { AppSettings, OwnerIdentity } from "@unica/core/rpc";
 import { create } from "zustand";
 
 export type DialogName = "settings" | "shortcuts" | "palette" | "categoryPicker" | "filters" | "addAccount" | null;
@@ -27,6 +27,10 @@ export interface AppState {
   categories: Category[];
   counts: Counts;
   settings: AppSettings | null;
+  /** the person this install belongs to (the Única account); null until the first verified mailbox */
+  owner: OwnerIdentity | null;
+  /** demo build: no owner, no first-run */
+  demo: boolean;
 
   view: View;
   accountId: number | null;
@@ -55,6 +59,8 @@ export const useApp = create<AppState>(() => ({
   categories: [],
   counts: EMPTY_COUNTS,
   settings: null,
+  owner: null,
+  demo: false,
   view: "inbox",
   accountId: null,
   categoryId: null,

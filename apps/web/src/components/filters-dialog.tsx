@@ -11,6 +11,7 @@ import { cn } from "@unica/ui/lib/utils";
 import { Archive, Loader2, MailCheck, OctagonAlert, Plus, Sparkles, Star, Tag, Trash2, Wand2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { errorHelp, privacyLine } from "~/lib/ai";
 import { listDate } from "~/lib/format";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
@@ -212,6 +213,7 @@ export function FiltersDialog() {
   const [prompt, setPrompt] = useState("");
   const [explanation, setExplanation] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const ai = useApp((s) => s.settings?.ai);
   const [saving, setSaving] = useState(false);
 
   const refresh = async () => {
@@ -241,7 +243,13 @@ export function FiltersDialog() {
       setDraft({ id: undefined, name: out.name, enabled: true, source: "ai", rule: out.rule });
       setExplanation(out.explanation);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+      const kind = (error as { details?: { aiErrorKind?: Parameters<typeof errorHelp>[0] } }).details?.aiErrorKind;
+      if (kind === "cancelled") return;
+      const help = ai ? errorHelp(kind, ai) : null;
+      toast.error(error instanceof Error ? error.message : String(error), {
+        description: help ?? undefined,
+        action: kind === "not_configured" || kind === "blocked" ? { label: "Ajustes de IA", onClick: () => setApp({ dialog: "settings", settingsTab: "ai" }) } : undefined,
+      });
     } finally {
       setGenerating(false);
     }
@@ -359,6 +367,11 @@ export function FiltersDialog() {
                   {generating ? <Loader2 className="animate-spin" /> : <Wand2 />} Crear con IA
                 </Button>
               </div>
+              {ai && (
+                <p className="mt-2 text-2xs text-muted-foreground" data-testid="ai-privacy-notice">
+                  {privacyLine(ai)}
+                </p>
+              )}
               {explanation && (
                 <p className="mt-2 text-xs text-accent-foreground" data-testid="ai-explanation">
                   {explanation} Revisa y ajusta abajo antes de guardar.

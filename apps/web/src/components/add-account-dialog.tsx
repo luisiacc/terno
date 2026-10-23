@@ -22,6 +22,7 @@ const PRESETS: Record<string, { imap: string; smtp: string; smtpPort: number }> 
 
 export function AddAccountDialog() {
   const open = useApp((s) => s.dialog === "addAccount");
+  const firstOwner = useApp((s) => !s.owner && !s.demo);
   const [form, setForm] = useState({ email: "", name: "", password: "", imapHost: "", imapPort: 993, smtpHost: "", smtpPort: 465, user: "" });
   const [busy, setBusy] = useState<"gmail" | "imap" | null>(null);
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
@@ -72,6 +73,11 @@ export function AddAccountDialog() {
           <DialogTitle>Añadir cuenta</DialogTitle>
           <DialogDescription>Conecta todas las cuentas que quieras. Todo se guarda localmente.</DialogDescription>
         </DialogHeader>
+        {firstOwner && (
+          <p className="rounded-lg border border-primary/25 bg-accent/50 px-3 py-2 text-xs text-accent-foreground" data-testid="owner-first-copy">
+            El primer correo que conectes será tu cuenta Única: con él iniciarás sesión y te facturaremos.
+          </p>
+        )}
         <Button variant="outline" className="h-10 justify-center gap-2" onClick={connectGmail} disabled={busy !== null} data-testid="connect-gmail">
           {busy === "gmail" ? <Loader2 className="animate-spin" /> : <Mail />} Continuar con Google
         </Button>
