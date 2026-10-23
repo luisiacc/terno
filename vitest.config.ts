@@ -1,9 +1,14 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
+
+// the renderer's own "~/" imports (apps/web/vite.config.ts), for its unit tests
+const webSrc = fileURLToPath(new URL("./apps/web/src/", import.meta.url));
 
 export default defineConfig({
   test: {
     projects: [
       {
+        resolve: { alias: [{ find: /^~\//, replacement: webSrc }] },
         test: {
           name: "unit",
           include: ["packages/*/src/**/*.test.ts", "apps/*/src/**/*.test.ts"],

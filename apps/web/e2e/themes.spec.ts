@@ -104,6 +104,32 @@ test.describe("themes", () => {
     expect(await bodyBg()).toBe(rgb(toHex(dracula["mail-paper"])));
   });
 
+  test("designed mail is recognized from its parsed styles, whatever the quoting", async ({ app: page, server }) => {
+    const cases: [string, boolean][] = [
+      [`<p style="font-family:'Arial',sans-serif;color:#111">Hola</p>`, true],
+      [`<p style='font-family:"Helvetica Neue";color: rgb(17,17,17)'>Hola</p>`, true],
+      [`<div style="padding:4px;background:#eee url(cid:x)">x</div>`, true],
+      [`<div style="BACKGROUND-COLOR: white">x</div>`, true],
+      [`<table bgcolor="#ffffff"><tr><td>x</td></tr></table>`, true],
+      [`<font color="red">x</font>`, true],
+      [`<p style="font-family:'Arial';font-weight:bold;margin:0">sin colores</p>`, false],
+      [`<p style="border-color:red;font-family:'color:red'">x</p>`, false],
+      [`<p>color: red; background: blue (texto, no estilo)</p>`, false],
+      [`<p title="color:red">x</p>`, false],
+    ];
+    const results = await page.evaluate((list) => list.map(([html]) => (window as unknown as { __unica: { hasOwnColors(h: string): boolean } }).__unica.hasOwnColors(html)), cases);
+    expect(results).toEqual(cases.map(([, expected]) => expected));
+
+    // and in the reader: dark text from an ordinary inline style lands on the paper card, not on a dark theme
+    await server.backend.server.invoke("settings.update", { theme: "dark", darkTheme: "dracula" }, ctx);
+    const thread = Number(await page.locator("[data-testid=thread-row]").first().getAttribute("data-thread-id"));
+    server.backend.db.run("UPDATE messages SET body_html = ? WHERE thread_id = ?", `<p style="font-family:'Arial',sans-serif;color:#111">Texto oscuro</p>`, thread);
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await openRow(page, 0);
+    await expect(page.locator("iframe[data-mail=paper]").first()).toBeVisible();
+  });
+
   test("a custom theme imports, applies and can be deleted; invalid files are refused", async ({ app: page }) => {
     await openAppearance(page);
     const input = page.getByTestId("theme-import-input");
