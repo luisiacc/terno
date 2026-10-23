@@ -1,4 +1,4 @@
-import type { ThreadAction, ThreadSummary, View } from "@unica/core";
+import { formatAddressList, isValidEmail, parseAddressList, type ThreadAction, type ThreadSummary, type View } from "@unica/core";
 import { toast } from "sonner";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, type ComposeDraft } from "~/state/app";
@@ -114,18 +114,9 @@ export async function toggleCategory(categoryId: number, threadIds: number[], on
 
 // ───────────────────────────── compose ─────────────────────────────
 
-const formatList = (xs: { name: string; email: string }[]) => xs.map((a) => (a.name ? `${a.name} <${a.email}>` : a.email)).join(", ");
-
-export function parseAddresses(input: string): { name: string; email: string }[] {
-  return input
-    .split(/[,;\n]/)
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => {
-      const m = /^(.*?)\s*<([^>]+)>$/.exec(part);
-      return m ? { name: m[1]!.replace(/^"|"$/g, "").trim(), email: m[2]!.trim() } : { name: "", email: part };
-    });
-}
+// Structured formatting/parsing (quoted display names) so a crafted sender name can't add recipients.
+const formatList = formatAddressList;
+export const parseAddresses = parseAddressList;
 
 let composeKey = 0;
 export function openCompose(mode: ComposeDraft["mode"] = "new"): void {
@@ -184,7 +175,7 @@ export function openCompose(mode: ComposeDraft["mode"] = "new"): void {
 
 export async function sendCompose(draft: ComposeDraft): Promise<boolean> {
   const to = parseAddresses(draft.to);
-  if (to.length === 0 || to.some((a) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a.email))) {
+  if (to.length === 0 || [...to, ...parseAddresses(draft.cc)].some((a) => !isValidEmail(a.email))) {
     toast.error("Revisa los destinatarios");
     return false;
   }
