@@ -186,7 +186,8 @@ export function Reader() {
         <ToolButton label="Marcar como no leído" keys="u" onClick={() => act("markUnread")} testId="action-unread">
           <MailOpen />
         </ToolButton>
-        <ToolButton label={t?.starred ? "Quitar destacado" : "Destacar"} keys="s" onClick={toggleStar} testId="action-star" active={t?.starred}>
+        {/* keyed by thread: moving to a starred thread swaps the button instead of fading its color (navigation never animates) */}
+        <ToolButton key={t?.id ?? "none"} label={t?.starred ? "Quitar destacado" : "Destacar"} keys="s" onClick={toggleStar} testId="action-star" active={t?.starred}>
           <Star className={cn(t?.starred && "fill-star")} />
         </ToolButton>
         <div className="ml-auto flex items-center gap-0.5">
