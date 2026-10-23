@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -188,10 +188,77 @@ async function connectWindow(win: BrowserWindow) {
   win.webContents.postMessage("unica:backend-port", null, [port2]);
 }
 
+// ───────────────────────────── appearance ─────────────────────────────
+
+/** What the renderer last applied: the native theme, the window background and whether the sidebar shows vibrancy. */
+interface Appearance {
+  themeSource: "system" | "light" | "dark";
+  background: string;
+  vibrancy: boolean;
+}
+
+function parseAppearance(value: unknown): Appearance | null {
+  const v = value as Partial<Appearance> | null;
+  if (!v || typeof v !== "object") return null;
+  if (v.themeSource !== "system" && v.themeSource !== "light" && v.themeSource !== "dark") return null;
+  if (typeof v.background !== "string" || !/^#[0-9a-f]{6}$/i.test(v.background)) return null;
+  if (typeof v.vibrancy !== "boolean") return null;
+  return { themeSource: v.themeSource, background: v.background.toLowerCase(), vibrancy: v.vibrancy };
+}
+
+const appearancePath = () => join(app.getPath("userData"), "appearance.json");
+
+/** Read once at launch so the first window opens with the right background and vibrancy (no flash). */
+function readAppearance(): Appearance | null {
+  try {
+    return parseAppearance(JSON.parse(readFileSync(appearancePath(), "utf8")));
+  } catch {
+    return null;
+  }
+}
+
+let appearance: Appearance | null = null;
+let appearanceWrite: ReturnType<typeof setTimeout> | null = null;
+
+function applyAppearanceTo(win: BrowserWindow, a: Appearance) {
+  if (process.platform !== "darwin") {
+    win.setBackgroundColor(a.background);
+    return;
+  }
+  win.setVibrancy(a.vibrancy ? "sidebar" : null);
+  win.setBackgroundColor(a.vibrancy ? "#00000000" : a.background);
+}
+
+ipcMain.on("unica:appearance", (event, value: unknown) => {
+  const next = parseAppearance(value);
+  if (!next) return;
+  const changed = JSON.stringify(next) !== JSON.stringify(appearance);
+  appearance = next;
+  if (nativeTheme.themeSource !== next.themeSource) nativeTheme.themeSource = next.themeSource;
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win && !win.isDestroyed()) applyAppearanceTo(win, next);
+  if (!changed) return;
+  if (appearanceWrite) clearTimeout(appearanceWrite);
+  appearanceWrite = setTimeout(() => {
+    try {
+      writeFileSync(appearancePath(), JSON.stringify(appearance));
+    } catch (error) {
+      log("warn", `could not save appearance: ${error}`);
+    }
+  }, 300);
+});
+
 // ───────────────────────────── windows ─────────────────────────────
 
 function createWindow() {
   const isMac = process.platform === "darwin";
+  const saved = appearance ?? readAppearance();
+  if (saved && !appearance) {
+    appearance = saved;
+    nativeTheme.themeSource = saved.themeSource;
+  }
+  // named palettes render exactly: no vibrancy, the theme's own background from the first frame
+  const vibrancy = isMac && (saved?.vibrancy ?? true);
   const win = new BrowserWindow({
     width: 1400,
     height: 880,
@@ -201,9 +268,9 @@ function createWindow() {
     title: "Única",
     titleBarStyle: isMac ? "hiddenInset" : "default",
     trafficLightPosition: { x: 16, y: 15 },
-    vibrancy: isMac ? "sidebar" : undefined,
+    vibrancy: vibrancy ? "sidebar" : undefined,
     visualEffectState: "followWindow",
-    backgroundColor: isMac ? "#00000000" : nativeTheme.shouldUseDarkColors ? "#1c1d22" : "#fcfcfa",
+    backgroundColor: vibrancy ? "#00000000" : (saved?.background ?? (nativeTheme.shouldUseDarkColors ? "#1c1d22" : "#fcfcfa")),
     webPreferences: {
       preload: join(__dirname, "preload.cjs"),
       contextIsolation: true,

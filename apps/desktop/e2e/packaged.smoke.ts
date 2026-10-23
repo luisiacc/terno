@@ -3,7 +3,7 @@
  * resolve from the workspace. Demo mode seeds a mock mailbox in a temp profile.
  */
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
@@ -45,6 +45,27 @@ test("boots from app:// with the backend in a utility process", async () => {
   expect(await page.locator("[data-testid=thread-row]").count()).toBeGreaterThan(5);
   expect(await page.evaluate(() => document.documentElement.classList.contains("is-desktop"))).toBe(true);
   console.log(`cold start to first rows (includes seeding 3,000 demo threads): ${coldStartMs} ms`);
+});
+
+test("the window follows the theme: native theme, vibrancy and background, remembered for the next launch", async () => {
+  const file = join(userData, "appearance.json");
+  const read = () => (existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : null);
+  // Única claro sits on the native vibrancy
+  await expect.poll(read).toMatchObject({ themeSource: "system", vibrancy: true });
+  expect(await page.evaluate(() => document.documentElement.hasAttribute("data-vibrancy"))).toBe(true);
+  // a named palette renders exactly: opaque window in its own background
+  await page.evaluate(() => {
+    localStorage.setItem("unica:appearance", JSON.stringify({ mode: "dark", light: "unica-light", dark: "nord", motion: 75, vibrancy: { light: true, dark: false } }));
+    (window as any).unicaDesktop.setAppearance({ themeSource: "dark", background: "#2e3440", vibrancy: false });
+  });
+  await expect.poll(read).toMatchObject({ themeSource: "dark", background: "#2e3440", vibrancy: false });
+  expect(await app.evaluate(({ nativeTheme }) => nativeTheme.themeSource)).toBe("dark");
+  // put it back for the rest of the suite
+  await page.evaluate(() => {
+    localStorage.removeItem("unica:appearance");
+    (window as any).unicaDesktop.setAppearance({ themeSource: "system", background: "#fcfcfa", vibrancy: true });
+  });
+  await expect.poll(read).toMatchObject({ themeSource: "system", vibrancy: true });
 });
 
 test("searches, opens and archives with the keyboard", async () => {

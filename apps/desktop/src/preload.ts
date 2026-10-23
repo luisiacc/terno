@@ -33,4 +33,7 @@ contextBridge.exposeInMainWorld("unicaDesktop", {
   version: ipcRenderer.sendSync("unica:version") as string,
   openExternal: (url: string) => ipcRenderer.send("unica:open-external", String(url)),
   agentInfo: () => ipcRenderer.invoke("unica:agent-info"),
+  // validated in main; main also remembers it for the next window's first frame
+  setAppearance: (a: { themeSource: string; background: string; vibrancy: boolean }) =>
+    ipcRenderer.send("unica:appearance", { themeSource: String(a?.themeSource), background: String(a?.background), vibrancy: a?.vibrancy === true }),
 });
