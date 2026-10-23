@@ -177,3 +177,33 @@ test("?storage=idb runs the same app on native IndexedDB, and the mailbox stays 
   expect((await web(page)).storage).toBe("idb");
   expect(await rows(page).count()).toBeGreaterThan(10);
 });
+
+test("a tab whose worker fails to start gives leadership up: another tab opens the mailbox", async ({ context, page }) => {
+  await boot(page);
+  await page.close();
+  const failed = await context.newPage();
+  await failed.goto("/?demo=400&storage=nope");
+  await expect(failed.getByTestId("web-fatal")).toBeVisible();
+  const next = await context.newPage();
+  await next.goto(DEMO);
+  await rows(next).first().waitFor({ timeout: 20_000 });
+});
+
+test("takeover goes to the tab that asked, not to whichever tab waited longest", async ({ context, page }) => {
+  await boot(page);
+  const waiting = await context.newPage();
+  await waiting.goto(DEMO);
+  await expect(waiting.getByTestId("web-elsewhere")).toBeVisible();
+  const asking = await context.newPage();
+  await asking.goto(DEMO);
+  await expect(asking.getByTestId("web-elsewhere")).toBeVisible();
+  await asking.getByTestId("web-use-here").click();
+  await rows(asking).first().waitFor({ timeout: 20_000 });
+  await expect(page.getByTestId("web-taken")).toBeVisible();
+  await expect(waiting.getByTestId("web-elsewhere")).toBeVisible();
+  await expect(rows(waiting)).toHaveCount(0);
+  // and the one that waited can still ask for it
+  await waiting.getByTestId("web-use-here").click();
+  await rows(waiting).first().waitFor({ timeout: 20_000 });
+  await expect(asking.getByTestId("web-taken")).toBeVisible();
+});

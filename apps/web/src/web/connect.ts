@@ -1,5 +1,5 @@
 import { isRpcMessage, type RpcClient, type RpcMessage, type Transport } from "@unica/core/rpc";
-import { setWeb, useWeb } from "./lifecycle";
+import { setWeb, type WebLifecycle } from "./lifecycle";
 import type { PageToWorker, WorkerToPage } from "./protocol";
 
 const LOCK = "unica-backend";
@@ -9,8 +9,21 @@ const BUILD = import.meta.env.VITE_BUILD_ID;
 const DEMO_BUILD = import.meta.env.VITE_WEB_DEMO === "1";
 /** a closing worker that hasn't released its handles by then is terminated (the browser drops them with it) */
 const CLOSE_TIMEOUT_MS = 10_000;
+/** a waiting tab looks for a free lock this often (an owner that crashed sends nothing) */
+const POLL_MS = 1500;
+/** while a handoff to another tab is in flight, waiting tabs don't grab the lock */
+const HANDOFF_MS = 8000;
 
-type TabMessage = { type: "takeover" } | { type: "leader"; build: string };
+/**
+ * Tabs talk on one BroadcastChannel. Waiting tabs never queue on the lock
+ * (the browser would grant it first come, first served); they take it only
+ * when it is free and nobody else was named for it.
+ */
+type TabMessage =
+  | { type: "takeover"; from: string }
+  | { type: "handoff"; to: string }
+  | { type: "released" }
+  | { type: "leader"; build: string };
 
 const pinKey = (name: string) => `unica:storage:${name}`;
 
@@ -30,41 +43,115 @@ declare global {
   }
 }
 
-/**
- * Holds the Web Lock that makes this tab the mailbox's only writer. If
- * another tab has it, waits: it is granted when that tab closes or hands it
- * over (takeover, after its worker closed every handle). Resolves with the
- * function that gives leadership up.
- */
-async function lead(tabs: BroadcastChannel): Promise<() => void> {
-  const wantsTakeover = sessionStorage.getItem(TAKEOVER) === "1";
-  sessionStorage.removeItem(TAKEOVER);
-  let giveUp!: () => void;
-  const held = new Promise<void>((r) => (giveUp = r));
-  const now = await new Promise<boolean>((resolve) => {
-    void navigator.locks.request(LOCK, { ifAvailable: true }, async (lock) => {
-      resolve(lock !== null);
-      if (lock) await held;
-    });
-  });
-  if (!now) {
-    if (wantsTakeover) requestTakeover(tabs);
-    else setWeb({ phase: "elsewhere" });
-    await new Promise<void>((resolve) => {
-      void navigator.locks.request(LOCK, async () => {
-        resolve();
-        await held;
-      });
+/** This tab's side of the leadership protocol (one per page). */
+class Leadership {
+  readonly id = crypto.randomUUID();
+  readonly tabs = new BroadcastChannel(TABS);
+  private giveUp: (() => void) | null = null;
+  private granted: (() => void) | null = null;
+  private quietUntil = 0;
+  private poller: ReturnType<typeof setInterval> | null = null;
+  /** a takeover this owner was asked for while it was still starting */
+  private pending: string | null = null;
+  /** what the owner does when another tab asks: close its mailbox, then hand over */
+  onTakeover: ((to: string) => Promise<void>) | null = null;
+
+  constructor() {
+    // registered before anything starts, so no request is lost while this tab starts its worker
+    this.tabs.onmessage = (e: MessageEvent<TabMessage>) => void this.receive(e.data);
+    addEventListener("pagehide", () => {
+      if (this.giveUp) this.tabs.postMessage({ type: "released" } satisfies TabMessage);
     });
   }
-  tabs.postMessage({ type: "leader", build: BUILD } satisfies TabMessage);
-  return giveUp;
+
+  get leading(): boolean {
+    return this.giveUp !== null;
+  }
+
+  private async receive(m: TabMessage): Promise<void> {
+    if (m.type === "leader" && m.build !== BUILD) setWeb({ update: { apply: () => location.reload() } });
+    if (m.type === "takeover") {
+      if (this.leading) {
+        if (this.onTakeover) await this.onTakeover(m.from);
+        else this.pending = m.from;
+      } else this.quietUntil = Date.now() + HANDOFF_MS;
+    }
+    if (m.type === "handoff") {
+      if (m.to === this.id) void this.tryLead(10);
+      else this.quietUntil = Date.now() + 1000;
+    }
+    if (m.type === "released" && !this.leading) void this.tryLead();
+  }
+
+  /** the takeover asked for while starting, if any (the owner serves it once its worker is up or failed) */
+  takePending(): string | null {
+    const p = this.pending;
+    this.pending = null;
+    return p;
+  }
+
+  /** Takes the lock if it is free right now; retries a few times for a handoff naming this tab. */
+  private async tryLead(attempts = 1): Promise<boolean> {
+    for (let i = 0; i < attempts && !this.leading; i++) {
+      const got = await new Promise<boolean>((resolve) => {
+        void navigator.locks.request(LOCK, { ifAvailable: true }, async (lock) => {
+          if (!lock) return resolve(false);
+          const held = new Promise<void>((r) => (this.giveUp = r));
+          resolve(true);
+          await held;
+        });
+      });
+      if (got) {
+        if (this.poller) clearInterval(this.poller);
+        this.poller = null;
+        this.tabs.postMessage({ type: "leader", build: BUILD } satisfies TabMessage);
+        this.granted?.();
+        return true;
+      }
+      if (attempts > 1) await new Promise((r) => setTimeout(r, 100));
+    }
+    return false;
+  }
+
+  /** Resolves once this tab holds the lock: now, after a handoff to it, or when the owner goes away. */
+  async lead(): Promise<void> {
+    const wantsTakeover = sessionStorage.getItem(TAKEOVER) === "1";
+    sessionStorage.removeItem(TAKEOVER);
+    const granted = new Promise<void>((r) => (this.granted = r));
+    if (await this.tryLead()) return;
+    if (wantsTakeover) this.requestTakeover();
+    else setWeb({ phase: "elsewhere" });
+    this.poller = setInterval(() => {
+      if (Date.now() >= this.quietUntil) void this.tryLead();
+    }, POLL_MS);
+    await granted;
+  }
+
+  /** "Usar aquí": ask the owner to close its mailbox and hand the lock to this tab. */
+  requestTakeover(): void {
+    setWeb({ phase: "taking-over" });
+    this.tabs.postMessage({ type: "takeover", from: this.id } satisfies TabMessage);
+  }
+
+  /** Gives the lock up; `to` names the tab it goes to (others keep waiting). */
+  release(to: string | null): void {
+    const giveUp = this.giveUp;
+    if (!giveUp) return;
+    this.giveUp = null;
+    giveUp();
+    this.tabs.postMessage((to ? { type: "handoff", to } : { type: "released" }) satisfies TabMessage);
+  }
+
+  close(): void {
+    if (this.poller) clearInterval(this.poller);
+    this.tabs.close();
+  }
 }
 
-/** "Usar aquí": ask the leader to close its mailbox and hand the lock over. */
-export function requestTakeover(tabs = new BroadcastChannel(TABS)): void {
-  setWeb({ phase: "taking-over" });
-  tabs.postMessage({ type: "takeover" } satisfies TabMessage);
+let leadership: Leadership | null = null;
+
+export function requestTakeover(): void {
+  leadership?.requestTakeover();
 }
 
 /** From a tab whose mailbox was taken: start over and take it back. */
@@ -131,13 +218,34 @@ export async function connectWorker(client: RpcClient): Promise<void> {
   void registerServiceWorker().catch((error) => console.warn("[web] service worker unavailable", error));
   const params = new URLSearchParams(location.search);
   const name = (DEMO_BUILD && params.get("mailbox")) || "unica";
-  const tabs = new BroadcastChannel(TABS);
-  const giveUp = await lead(tabs);
+  const tabs = (leadership = new Leadership());
+  await tabs.lead();
   setWeb({ phase: "starting" });
 
   const started = performance.now();
   const worker = new Worker(new URL("./worker/backend.worker.ts", import.meta.url), { type: "module", name: "unica-backend-worker" });
-  worker.addEventListener("error", (e) => setWeb({ phase: "fatal", code: "CRASHED", message: e.message || "El motor de correo se detuvo" }));
+  let stopped = false;
+  /** the mailbox can't be used here: stop the worker and let another tab have it (nothing is handed over by name) */
+  const fail = (code: NonNullable<WebLifecycle["code"]>, message: string) => {
+    if (stopped) return;
+    stopped = true;
+    worker.terminate();
+    setWeb({ phase: "fatal", code, message });
+    tabs.release(null);
+    tabs.close();
+  };
+  worker.addEventListener("error", (e) => fail("CRASHED", e.message || "El motor de correo se detuvo"));
+  /** another tab asked: close every handle, then hand the lock to that tab by name */
+  const handOver = async (to: string) => {
+    if (stopped) return tabs.release(to);
+    stopped = true;
+    setWeb({ phase: "taken" });
+    worker.postMessage({ type: "close" } satisfies PageToWorker);
+    await next(worker, ["closed"], CLOSE_TIMEOUT_MS);
+    worker.terminate();
+    tabs.release(to);
+  };
+
   const channel = new MessageChannel();
   const demoThreads = Number(params.get("demo") ?? 3000);
   const init: PageToWorker = {
@@ -151,28 +259,22 @@ export async function connectWorker(client: RpcClient): Promise<void> {
     instantSearch: !(DEMO_BUILD && params.get("instant") === "0"),
   };
   worker.postMessage(init, [channel.port2]);
-  const first = (await next(worker, ["ready", "fatal"]))!;
-  if (first.type === "fatal") {
-    worker.terminate();
-    setWeb({ phase: "fatal", code: first.code, message: first.message });
-    throw new Error(first.message);
+  const first = await Promise.race([next(worker, ["ready", "fatal"]), new Promise<null>((r) => worker.addEventListener("error", () => r(null)))]);
+  if (!first || first.type === "fatal") {
+    const message = first?.type === "fatal" ? first.message : "El motor de correo se detuvo";
+    fail(first?.type === "fatal" ? first.code : "CRASHED", message);
+    throw new Error(message);
   }
   if (first.type !== "ready") throw new Error("unexpected worker message");
   // the mailbox now lives in this adapter: later opens must find it there or fail, never start empty elsewhere
   localStorage.setItem(pinKey(name), first.storage);
   setWeb({ phase: "ready", storage: first.storage, progress: null });
-
-  tabs.onmessage = (e: MessageEvent<TabMessage>) => {
-    if (e.data.type === "leader" && e.data.build !== BUILD) setWeb({ update: { apply: () => location.reload() } });
-    if (e.data.type !== "takeover" || useWeb.getState().phase !== "ready") return;
-    setWeb({ phase: "taken" });
-    void (async () => {
-      worker.postMessage({ type: "close" } satisfies PageToWorker);
-      await next(worker, ["closed"], CLOSE_TIMEOUT_MS);
-      worker.terminate();
-      giveUp();
-    })();
-  };
+  tabs.onTakeover = handOver;
+  const asked = tabs.takePending();
+  if (asked) {
+    void handOver(asked);
+    return;
+  }
 
   client.attach(portTransport(channel.port1));
   if (DEMO_BUILD) {
