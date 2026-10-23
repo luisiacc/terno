@@ -10,7 +10,7 @@ import { Switch } from "@unica/ui/components/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@unica/ui/components/tabs";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@unica/ui/components/alert-dialog";
 import { Check, Copy, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { client } from "~/rpc/connection";
 import { setApp, useApp, type SettingsTab } from "~/state/app";
@@ -19,6 +19,9 @@ import { AppearanceTab } from "./settings/appearance-tab";
 import { CategoriesTab } from "./settings/categories-tab";
 import { OwnerCard } from "./settings/owner-card";
 import { reconcileSettings } from "~/lib/appearance";
+import { DesktopOnly, MacSection } from "~/lib/web-parts";
+
+const WEB = import.meta.env.VITE_TARGET === "web";
 
 function Row({ label, hint, children, testId, labelId, hintId }: { label: string; hint?: string; children: React.ReactNode; testId?: string; labelId?: string; hintId?: string }) {
   return (
@@ -66,6 +69,7 @@ export function SettingsDialog() {
   const accounts = useApp((s) => s.accounts);
   const owner = useApp((s) => s.owner);
   const demo = useApp((s) => s.demo);
+  const agentsHere = useApp((s) => s.host?.capabilities.agents ?? true);
   const [confirmLocalOff, setConfirmLocalOff] = useState(false);
   const [agent, setAgent] = useState<{ mcpCommand: string; socketPath: string; skillPath: string } | null>(null);
 
@@ -98,7 +102,14 @@ export function SettingsDialog() {
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-2">
             <TabsContent value="general">
-              <Row label="Modo local" hint="Nada sale de este Mac salvo el correo con tus servidores. La IA solo puede usar modelos de este Mac." testId="local-mode-row" labelId="local-mode-label" hintId="local-mode-hint">
+              <Row
+                label="Modo local"
+                hint={
+                  WEB
+                    ? "Única solo se conecta con Google (tu correo) y con IA de este equipo (localhost). En el navegador no puede fijar direcciones DNS ni controlar otras pestañas o extensiones."
+                    : "Nada sale de este Mac salvo el correo con tus servidores. La IA solo puede usar modelos de este Mac."
+                }
+                testId="local-mode-row" labelId="local-mode-label" hintId="local-mode-hint">
                 <Switch
                   data-testid="local-mode-switch"
                   aria-labelledby="local-mode-label"
@@ -122,6 +133,11 @@ export function SettingsDialog() {
               <Row label="Ventana de sincronización" hint="Días de correo a descargar al conectar una cuenta.">
                 <Input type="number" className="h-8 w-24" defaultValue={settings.syncWindowDays} onBlur={(e) => update({ syncWindowDays: Math.max(7, Number(e.target.value) || 90) })} />
               </Row>
+              {MacSection && (
+                <Suspense>
+                  <MacSection />
+                </Suspense>
+              )}
             </TabsContent>
 
             <TabsContent value="appearance">
@@ -163,15 +179,21 @@ export function SettingsDialog() {
               </div>
               <div className="mt-4 space-y-2 border-t border-border pt-4">
                 <Label htmlFor="gmail-client-id">Google OAuth Client ID</Label>
-                <p className="text-xs text-muted-foreground">Crea un cliente OAuth de tipo «App de escritorio» en Google Cloud con la API de Gmail habilitada.</p>
+                <p className="text-xs text-muted-foreground">
+                  {WEB
+                    ? `Crea un cliente OAuth de tipo «Aplicación web» en Google Cloud con la API de Gmail habilitada y ${location.origin} como origen de JavaScript autorizado.`
+                    : "Crea un cliente OAuth de tipo «App de escritorio» en Google Cloud con la API de Gmail habilitada."}
+                </p>
                 <Input id="gmail-client-id" defaultValue={settings.gmailClientId} placeholder="xxxxx.apps.googleusercontent.com" onBlur={(e) => update({ gmailClientId: e.target.value.trim() })} />
-                <Input
-                  type="password"
-                  placeholder="Client secret (opcional)"
-                  onBlur={async (e) => {
-                    if (e.target.value) await client.call("settings.setSecret", { name: "gmailClientSecret", value: e.target.value.trim() });
-                  }}
-                />
+                {!WEB && (
+                  <Input
+                    type="password"
+                    placeholder="Client secret (opcional)"
+                    onBlur={async (e) => {
+                      if (e.target.value) await client.call("settings.setSecret", { name: "gmailClientSecret", value: e.target.value.trim() });
+                    }}
+                  />
+                )}
               </div>
             </TabsContent>
 
@@ -184,26 +206,34 @@ export function SettingsDialog() {
             </TabsContent>
 
             <TabsContent value="agents" className="space-y-4 py-3">
-              <p className="text-sm text-muted-foreground">
-                Conecta <span className="font-medium text-foreground">Claude Code</span> o <span className="font-medium text-foreground">Codex</span> a todas tus cuentas mediante MCP. Única debe estar abierta.
-              </p>
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium">Claude Code</p>
-                <CopyBlock testId="mcp-claude" text={`claude mcp add unica -- "${mcp}"`} />
-              </div>
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium">Codex (~/.codex/config.toml)</p>
-                <CopyBlock text={`[mcp_servers.unica]\ncommand = "${mcp}"`} />
-              </div>
-              {agent && (
-                <div className="space-y-1.5">
-                  <p className="text-xs font-medium">Skill para Claude Code</p>
-                  <CopyBlock text={`mkdir -p ~/.claude/skills/unica && cp "${agent.skillPath}" ~/.claude/skills/unica/SKILL.md`} />
-                </div>
+              {!agentsHere && DesktopOnly ? (
+                <Suspense>
+                  <DesktopOnly feature="agents" />
+                </Suspense>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    Conecta <span className="font-medium text-foreground">Claude Code</span> o <span className="font-medium text-foreground">Codex</span> a todas tus cuentas mediante MCP. Única debe estar abierta.
+                  </p>
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium">Claude Code</p>
+                    <CopyBlock testId="mcp-claude" text={`claude mcp add unica -- "${mcp}"`} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium">Codex (~/.codex/config.toml)</p>
+                    <CopyBlock text={`[mcp_servers.unica]\ncommand = "${mcp}"`} />
+                  </div>
+                  {agent && (
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-medium">Skill para Claude Code</p>
+                      <CopyBlock text={`mkdir -p ~/.claude/skills/unica && cp "${agent.skillPath}" ~/.claude/skills/unica/SKILL.md`} />
+                    </div>
+                  )}
+                  <Row label="Permitir que los agentes envíen correos" hint="Si está desactivado, los agentes solo pueden leer, organizar y crear borradores.">
+                    <Switch data-testid="allow-agent-send" checked={settings.allowAgentSend} onCheckedChange={(on) => update({ allowAgentSend: on })} />
+                  </Row>
+                </>
               )}
-              <Row label="Permitir que los agentes envíen correos" hint="Si está desactivado, los agentes solo pueden leer, organizar y crear borradores.">
-                <Switch data-testid="allow-agent-send" checked={settings.allowAgentSend} onCheckedChange={(on) => update({ allowAgentSend: on })} />
-              </Row>
             </TabsContent>
           </div>
         </Tabs>

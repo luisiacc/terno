@@ -3,13 +3,14 @@ import { Kbd } from "@unica/ui/components/kbd";
 import { Skeleton } from "@unica/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Search, X } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import { VIEW_LABEL } from "~/lib/format";
 import { getApp, setApp, useApp } from "~/state/app";
 import { installDragController } from "~/lib/drag-install";
 import { loadMore, useList } from "~/state/list";
 import { ROW_HEIGHT, ThreadRow } from "./thread-row";
 import { LearnedBanner } from "./learned-banner";
+import { DesktopBanner, GmailReconnect } from "~/lib/web-parts";
 
 export const searchInputRef: { current: HTMLInputElement | null } = { current: null };
 export const listScroller: { scrollToIndex?: (i: number) => void } = {};
@@ -126,6 +127,12 @@ export function ThreadList() {
     <section className="flex h-full min-h-0 flex-col bg-pane" data-testid="thread-list" data-results-for={itemsKey}>
       <Header />
       <LearnedBanner />
+      {DesktopBanner && GmailReconnect && (
+        <Suspense>
+          <GmailReconnect />
+          <DesktopBanner />
+        </Suspense>
+      )}
       <div ref={parentRef} role="listbox" aria-label="Conversaciones" className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain [contain:strict]">
         {loading && items.length === 0 ? (
           <div className="space-y-3 p-4">

@@ -41,6 +41,7 @@
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "@vitejs/plugin-react": "catalog:",
+    "fake-indexeddb": "6.2.6",
     "oxc-transform-react": "^0.155.0",
     "tailwindcss": "catalog:",
     "vite": "catalog:"

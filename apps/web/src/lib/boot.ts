@@ -12,7 +12,7 @@ export async function boot(): Promise<void> {
     await connectBackend();
     const b = await client.call("app.bootstrap", {});
     applyAppearance(reconcileSettings(b.settings));
-    setApp({ ready: true, accounts: b.accounts, categories: b.categories, counts: b.counts, settings: b.settings, owner: b.owner, demo: b.demo, version: b.version });
+    setApp({ ready: true, accounts: b.accounts, categories: b.categories, counts: b.counts, settings: b.settings, owner: b.owner, demo: b.demo, version: b.version, host: b.host });
     installAppearanceListeners();
     exposeForTests({ updateAppearance, getApp });
 

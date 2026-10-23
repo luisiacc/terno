@@ -3,11 +3,12 @@ import { Button } from "@unica/ui/components/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@unica/ui/components/dialog";
 import { cn } from "@unica/ui/lib/utils";
 import { Cloud, LaptopMinimalCheck } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { client } from "~/rpc/connection";
 import { setApp } from "~/state/app";
 import { reconcileSettings } from "~/lib/appearance";
+import { OnboardingNudge } from "~/lib/web-parts";
 
 const STEP_KEY = "unica:first-run";
 
@@ -76,13 +77,20 @@ export function FirstRun() {
           <>
             <DialogTitle>Bienvenido a Única</DialogTitle>
             <DialogDescription>Paso 1 de 2 · ¿Cómo quieres usarla? Puedes cambiarlo cuando quieras en Ajustes.</DialogDescription>
+            {OnboardingNudge && (
+              <Suspense>
+                <OnboardingNudge />
+              </Suspense>
+            )}
             <div className="space-y-2" role="radiogroup" aria-label="Modo">
               {card(
                 "local",
                 <LaptopMinimalCheck className="size-5" />,
                 "Local (recomendado)",
                 <>
-                  Nada sale de este Mac salvo el correo con tus servidores. La IA usa modelos de este Mac.
+                  {import.meta.env.VITE_TARGET === "web"
+                    ? "Única solo se conecta con Google (tu correo) y con IA de este equipo."
+                    : "Nada sale de este Mac salvo el correo con tus servidores. La IA usa modelos de este Mac."}
                   {found && (
                     <span className="mt-1 block text-foreground" data-testid="first-run-found">
                       Encontramos {found.label} con {found.model}

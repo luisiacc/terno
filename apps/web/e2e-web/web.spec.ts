@@ -84,3 +84,83 @@ test("offline: the service worker serves this build's shell, worker and WASM", a
   await rows(page).first().waitFor();
   await context.setOffline(false);
 });
+
+test("what the browser can't do is said plainly: IMAP and agents locked, honest local mode, one Mac nudge", async ({ page }) => {
+  await boot(page);
+  // the banner: one line, dismissed for a week (and stays dismissed across reloads)
+  await expect(page.getByTestId("mac-banner")).toBeVisible();
+  await page.getByTestId("mac-banner-dismiss").click();
+  await expect(page.getByTestId("mac-banner")).toHaveCount(0);
+  await page.reload();
+  await rows(page).first().waitFor();
+  await expect(page.getByTestId("mac-banner")).toHaveCount(0);
+
+  await page.getByTestId("open-settings").click();
+  const settings = page.getByTestId("settings-dialog");
+  await expect(settings).toBeVisible();
+  await expect(settings.getByTestId("mac-section")).toBeVisible();
+  await expect(settings.getByTestId("local-mode-row")).toContainText("no puede fijar direcciones DNS");
+  await settings.getByTestId("tab-agents").click();
+  await expect(settings.getByTestId("desktop-only-agents")).toBeVisible();
+  await expect(settings.getByTestId("mcp-claude")).toHaveCount(0);
+  await settings.getByTestId("tab-accounts").click();
+  await expect(settings).toContainText("Aplicación web");
+  await settings.getByRole("button", { name: "Añadir cuenta" }).click();
+  const add = page.getByTestId("add-account-dialog");
+  await expect(add.getByTestId("desktop-only-imap")).toBeVisible();
+  await expect(add.getByTestId("imap-email")).toHaveCount(0);
+  await expect(add.getByTestId("connect-gmail")).toBeVisible();
+});
+
+test("first run in the browser offers the Mac app once, then the usual steps", async ({ page }) => {
+  await page.goto("/?demo=0&mailbox=fresh");
+  await expect(page.getByTestId("first-run")).toBeVisible();
+  await expect(page.getByTestId("mac-onboarding")).toBeVisible();
+  await expect(page.getByTestId("mac-onboarding").getByTestId("mac-download")).toHaveAttribute("href", /^https:/);
+  await expect(page.getByTestId("first-run-local")).toContainText("Única solo se conecta con Google");
+});
+
+test("Gmail in the browser: Google's token model through the page, the mailbox synced by the worker", async ({ context, page }) => {
+  const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "authorization, content-type", "access-control-allow-methods": "GET, POST, OPTIONS" };
+  const raw = (subject: string) =>
+    Buffer.from(`From: Ana <ana@example.com>\r\nTo: Luis <luis@gmail.com>\r\nSubject: ${subject}\r\nMessage-ID: <${subject}@x>\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nhola`).toString("base64url");
+  // Google Identity Services, stubbed: the token client answers like the real popup does
+  await context.route("https://accounts.google.com/gsi/client", (route) =>
+    route.fulfill({
+      contentType: "text/javascript",
+      body: `window.google = { accounts: { oauth2: { initTokenClient: (c) => ({ requestAccessToken: () => setTimeout(() => c.callback({ access_token: "web-token", expires_in: 3599, scope: ${JSON.stringify(
+        "openid email profile https://www.googleapis.com/auth/gmail.modify",
+      )} }), 10) }) } } };`,
+    }),
+  );
+  const seen: string[] = [];
+  await context.route(/https:\/\/(gmail|openidconnect)\.googleapis\.com\/.*/, (route) => {
+    const req = route.request();
+    if (req.method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
+    const url = new URL(req.url());
+    seen.push(`${req.method()} ${url.pathname} ${req.headers().authorization ?? ""}`);
+    const json = (data: unknown) => route.fulfill({ status: 200, headers: { ...cors, "content-type": "application/json" }, body: JSON.stringify(data) });
+    if (url.hostname === "openidconnect.googleapis.com") return json({ name: "Luis Cordero", sub: "sub-1", email_verified: true });
+    const path = url.pathname.replace("/gmail/v1/users/me", "");
+    if (path === "/profile") return json({ emailAddress: "luis@gmail.com", historyId: "10" });
+    if (path === "/messages") return json({ messages: [{ id: "g1" }, { id: "g2" }] });
+    const m = /^\/messages\/(g\d)$/.exec(path);
+    if (m) return json({ id: m[1], threadId: `t-${m[1]}`, labelIds: ["INBOX", "UNREAD"], internalDate: String(Date.UTC(2026, 9, 20)), raw: raw(`Desde Gmail ${m[1]}`) });
+    return route.fulfill({ status: 404, headers: cors, body: "{}" });
+  });
+  await page.goto("/?demo=0&mailbox=gmail");
+  await page.getByTestId("first-run").waitFor();
+  await page.keyboard.press("Escape");
+  await page.getByTestId("open-settings").click();
+  const settings = page.getByTestId("settings-dialog");
+  await settings.getByTestId("tab-accounts").click();
+  await settings.locator("#gmail-client-id").fill("123-web.apps.googleusercontent.com");
+  await settings.locator("#gmail-client-id").blur();
+  await settings.getByRole("button", { name: "Añadir cuenta" }).click();
+  await page.getByTestId("connect-gmail").click();
+  await expect(page.getByText("luis@gmail.com conectada")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(rows(page)).toHaveCount(2);
+  await expect(rows(page).first()).toContainText("Desde Gmail");
+  expect(seen).toContain("GET /gmail/v1/users/me/profile Bearer web-token");
+});
