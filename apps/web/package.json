@@ -8,7 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test --project=e2e",
+    "test:e2e:update": "playwright test --project=e2e --update-snapshots",
+    "test:ui-perf": "playwright test --project=perf --no-deps"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.14.22",

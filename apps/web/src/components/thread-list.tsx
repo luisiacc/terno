@@ -6,7 +6,7 @@ import { Search, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { VIEW_LABEL } from "~/lib/format";
 import { getApp, setApp, useApp } from "~/state/app";
-import { loadMore, reloadList, useList } from "~/state/list";
+import { loadMore, useList } from "~/state/list";
 import { ROW_HEIGHT, ThreadRow } from "./thread-row";
 import { LearnedBanner } from "./learned-banner";
 
@@ -50,14 +50,10 @@ function Header() {
           className="h-8 bg-muted/60 pr-14 pl-8 text-sm"
           onChange={(e) => {
             setApp({ query: e.target.value });
-            void reloadList();
           }}
           onKeyDown={(e) => {
             if (e.key === "Escape") {
-              if (getApp().query) {
-                setApp({ query: "" });
-                void reloadList();
-              }
+              if (getApp().query) setApp({ query: "" });
               e.currentTarget.blur();
             } else if (e.key === "Enter" || e.key === "ArrowDown") {
               e.currentTarget.blur();
@@ -69,10 +65,7 @@ function Header() {
             type="button"
             aria-label="Limpiar búsqueda"
             className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              setApp({ query: "" });
-              void reloadList();
-            }}
+            onClick={() => setApp({ query: "" })}
           >
             <X className="size-3.5" />
           </button>
@@ -100,6 +93,7 @@ function EmptyState() {
 export function ThreadList() {
   const items = useList((s) => s.items);
   const loading = useList((s) => s.loading);
+  const itemsKey = useList((s) => s.itemsKey);
   const compact = useApp((s) => s.settings?.density === "compact");
   const showAccount = useApp((s) => s.accountId === null && s.accounts.length > 1);
   const height = compact ? ROW_HEIGHT.compact : ROW_HEIGHT.comfortable;
@@ -124,7 +118,7 @@ export function ThreadList() {
   }, [last?.index, items.length]);
 
   return (
-    <section className="flex h-full min-h-0 flex-col bg-pane" data-testid="thread-list">
+    <section className="flex h-full min-h-0 flex-col bg-pane" data-testid="thread-list" data-results-for={itemsKey}>
       <Header />
       <LearnedBanner />
       <div ref={parentRef} role="listbox" aria-label="Conversaciones" className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain [contain:strict]">

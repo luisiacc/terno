@@ -187,7 +187,7 @@ function Preview({ rule }: { rule: FilterRule }) {
             "Calculando…"
           )}
         </span>
-        {loading ? <Loader2 className="size-3.5 animate-spin text-muted-foreground" /> : state && <span className="font-mono text-2xs text-muted-foreground">{Math.round(state.ms)} ms</span>}
+        {loading ? <Loader2 className="size-3.5 animate-spin text-muted-foreground" /> : state && <span data-testid="preview-ms" className="font-mono text-2xs text-muted-foreground">{Math.round(state.ms)} ms</span>}
       </div>
       <ul className="divide-y divide-border/60">
         {state?.sample.map((t) => (

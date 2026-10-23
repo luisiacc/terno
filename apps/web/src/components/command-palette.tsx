@@ -1,13 +1,12 @@
 import type { CategoryColor } from "@unica/core";
 import { CategoryDot } from "@unica/ui/components/category-dot";
-import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@unica/ui/components/command";
+import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@unica/ui/components/command";
 import { Archive, Inbox, Layers, Moon, PenLine, Search, Send, Settings2, Sparkles, Star, Sun, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { act, openCompose } from "~/lib/actions";
 import { applyTheme } from "~/lib/boot";
 import { client } from "~/rpc/connection";
 import { navigate, setApp, useApp } from "~/state/app";
-import { reloadList } from "~/state/list";
 
 export function CommandPalette() {
   const open = useApp((s) => s.dialog === "palette");
@@ -21,16 +20,11 @@ export function CommandPalette() {
   };
   return (
     <CommandDialog open={open} onOpenChange={(o) => !o && setApp({ dialog: null })} title="Comandos" description="Busca una acción o un correo">
+      {/* CommandDialog (base-nova) doesn't provide the cmdk root itself */}
+      <Command>
       <CommandInput placeholder="Escribe un comando o busca…" value={value} onValueChange={setValue} data-testid="palette-input" />
       <CommandList>
         <CommandEmpty>Sin resultados</CommandEmpty>
-        {value.trim() && (
-          <CommandGroup heading="Buscar">
-            <CommandItem value={`buscar ${value}`} onSelect={() => run(() => (setApp({ query: value }), void reloadList()))}>
-              <Search /> Buscar «{value}» en todas las cuentas
-            </CommandItem>
-          </CommandGroup>
-        )}
         <CommandGroup heading="Ir a">
           <CommandItem onSelect={() => run(() => navigate({ view: "inbox" }))}><Inbox /> Entrada<CommandShortcut>G I</CommandShortcut></CommandItem>
           <CommandItem onSelect={() => run(() => navigate({ view: "starred" }))}><Star /> Destacados<CommandShortcut>G S</CommandShortcut></CommandItem>
@@ -66,7 +60,16 @@ export function CommandPalette() {
             <Sun className="hidden dark:block" /> Cambiar tema
           </CommandItem>
         </CommandGroup>
+        {/* last, so Enter on an exact command/category match wins; always shown */}
+        {value.trim() && (
+          <CommandGroup heading="Buscar" forceMount>
+            <CommandItem forceMount value={`buscar ${value}`} onSelect={() => run(() => setApp({ query: value }))}>
+              <Search /> Buscar «{value}» en todas las cuentas
+            </CommandItem>
+          </CommandGroup>
+        )}
       </CommandList>
+      </Command>
     </CommandDialog>
   );
 }

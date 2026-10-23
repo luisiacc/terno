@@ -2,10 +2,12 @@ import type { ThreadSummary } from "@unica/core";
 import { RpcError } from "@unica/core/rpc";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
-import { getApp, setApp } from "./app";
+import { getApp, setApp, useApp } from "./app";
 
 interface ListState {
   key: string;
+  /** key of the query the current items belong to (set together with items) */
+  itemsKey: string;
   items: ThreadSummary[];
   index: Map<number, number>;
   nextCursor: { lastDate: number; id: number } | null;
@@ -20,6 +22,7 @@ export const PAGE = 100;
 
 export const useList = create<ListState>(() => ({
   key: "",
+  itemsKey: "",
   items: [],
   index: new Map(),
   nextCursor: null,
@@ -67,6 +70,7 @@ export async function reloadList(options: { keepSelection?: boolean } = {}): Pro
     if (mine !== seq) return;
     useList.setState({
       key,
+      itemsKey: key,
       items: page.items,
       index: indexOf(page.items),
       nextCursor: page.nextCursor,
@@ -113,3 +117,11 @@ export function patchRows(ids: readonly number[], patch: (t: ThreadSummary) => T
   });
   useList.setState({ items, index: indexOf(items) });
 }
+
+// Any change of view / account / category / query reloads the list (navigation,
+// search box, palette, shortcuts all just update app state).
+useApp.subscribe((s, prev) => {
+  if (s.view !== prev.view || s.accountId !== prev.accountId || s.categoryId !== prev.categoryId || s.query !== prev.query) {
+    void reloadList();
+  }
+});
