@@ -235,6 +235,8 @@ export class InstantSearchEngine implements CachedSearchEngine {
   private tokens = new Int32Array(256);
   private masks = new Uint8Array(1024);
   private touched: number[] = [];
+  /** a snapshot copy while it is being packed and sealed */
+  private transientBytes = 0;
 
   /** what the last query did (tests, perf reports) */
   lastStrategy = "";
@@ -258,22 +260,30 @@ export class InstantSearchEngine implements CachedSearchEngine {
     return this.state === "ready" && sameRevision(this.rev, at);
   }
 
-  /** Bytes held: buffers at capacity, dictionary, deltas, maps and caches (estimated for JS objects). */
+  /**
+   * Bytes held: every distinct buffer behind the typed arrays at its full
+   * size (a restored index's views share the snapshot's buffer, which stays
+   * pinned as long as any of them lives, also after others grew out of it),
+   * caches, a snapshot being packed, and estimates for the JS objects
+   * (dictionary, maps, deltas).
+   */
   allocatedBytes(): number {
-    const typed = [
+    const buffers = new Set<ArrayBufferLike>();
+    for (const a of [
       this.baseSortedIds, this.baseOff, this.baseDocs, this.baseMask, this.docMsg, this.docThread, this.docDate, this.docAtt, this.docFrom,
       this.docNext, this.docFwd, this.alive, this.fwd, this.thrId, this.thrDate, this.thrFlags, this.thrAccount, this.thrHead, this.seen,
       this.order, this.tokens, this.masks,
-    ].reduce((s, a) => s + a.byteLength, 0);
-    let cached = 0;
-    for (const s of this.cache.values()) cached += s.byteLength;
-    for (const s of this.cats.values()) cached += s.byteLength;
+    ]) buffers.add(a.buffer);
+    for (const s of this.cache.values()) buffers.add(s.buffer);
+    for (const s of this.cats.values()) buffers.add(s.buffer);
+    let typed = this.transientBytes;
+    for (const b of buffers) typed += b.byteLength;
     let catLists = 0;
     for (let t = 0; t < this.tCount; t++) catLists += this.thrCats[t]!.length * 8;
     const strings = (this.termChars + this.senderChars) * 2 + (this.terms.length + this.senders.length) * 32;
     const maps = (this.termIds.size + this.senderIds.size + this.msgToDoc.size + this.threadIdx.size) * 40 + this.delta.size * 64;
     const arrays = (this.baseSorted.length + this.deltaSorted.length + this.deltaSortedIds.length + this.terms.length + this.senders.length) * 8;
-    return typed + cached + catLists + strings + maps + arrays + this.deltaEntries * 16 + this.tCount * 16;
+    return typed + catLists + strings + maps + arrays + this.deltaEntries * 16 + this.tCount * 16;
   }
 
   /** tombstones and delta docs worth folding into a new base */
@@ -1354,12 +1364,20 @@ export class InstantSearchEngine implements CachedSearchEngine {
       };
       const meta = { n, dead: this.dead, baseN: this.baseN, baseTerms: this.baseTerms, tCount: T, orderLen: this.orderLen };
       // in slices: nothing may change the index meanwhile (busy), queries still run
+      this.transientBytes = Object.values(sections).reduce((n, x) => n + ("strings" in x ? x.strings.reduce((c, t) => c + t.length * 2 + 4, 0) : x.byteLength) + 8, 0);
       packed = await packSnapshot(this.header(), this.rev, meta, sections, clock);
+    } catch (error) {
+      this.transientBytes = 0;
+      throw error;
     } finally {
       this.busy = false;
     }
     // a copy: the index may change while it is sealed
-    return sealSnapshot(packed, clock);
+    try {
+      return await sealSnapshot(packed, clock);
+    } finally {
+      this.transientBytes = 0;
+    }
   }
 
   private header(): { tokenizer: number; format: number; identity: string } {

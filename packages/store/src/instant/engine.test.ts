@@ -87,6 +87,30 @@ describe("InstantSearchEngine", () => {
     expect(await new InstantSearchEngine({ identity: "schema 7" }).restore(bytes)).toBe(true);
   });
 
+  it("a restored index accounts for the snapshot buffer its views pin, also after arrays grow out of it", async () => {
+    // every distinct buffer the engine's typed arrays hold, at its full size
+    const retained = (e: InstantSearchEngine) => {
+      const buffers = new Set<ArrayBufferLike>();
+      const visit = (v: unknown) => {
+        if (ArrayBuffer.isView(v)) buffers.add(v.buffer);
+        else if (v instanceof Map) for (const x of v.values()) visit(x);
+      };
+      for (const v of Object.values(e)) visit(v);
+      return [...buffers].reduce((n, b) => n + b.byteLength, 0);
+    };
+    const big = corpusFromDataset(generateDataset({ threads: 1500, accounts: 2, seed: 7, now: NOW, bodyScale: 4 }));
+    const e = await build(big);
+    const bytes = await e.snapshot();
+    const restored = new InstantSearchEngine();
+    expect(await restored.restore(bytes, true)).toBe(true);
+    expect(restored.allocatedBytes()).toBeGreaterThanOrEqual(retained(restored));
+    // new mail: the doc arrays and the forward index grow into fresh buffers; the snapshot's stays pinned by the rest
+    const fresh = big.messages.slice(0, 50).map((m, i) => ({ kind: "upsertMessage" as const, doc: { ...m, messageId: 1_000_000 + i } }));
+    await restored.apply({ from: at, to: { epoch: "e", seq: 2 }, changes: fresh });
+    expect(retained(restored)).toBeGreaterThanOrEqual(bytes.byteLength + restored.stats().forwardBytes);
+    expect(restored.allocatedBytes()).toBeGreaterThanOrEqual(retained(restored));
+  });
+
   it("compaction folds tombstones and the delta into a new base with the same answers", async () => {
     const e = await build(data);
     const changes = data.messages.slice(0, 3000).map((m) => ({ kind: "upsertMessage" as const, doc: { ...m, body: `${m.body} actualizado` } }));
