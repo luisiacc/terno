@@ -476,12 +476,105 @@ CREATE TABLE cat_move_decisions (
 ) WITHOUT ROWID;
 `;
 
+/**
+ * The FTS5 index over messages + message_bodies. Its rows are the projection
+ * (subject, "from_name from_email", recipients, body or ''); every 'delete'
+ * command must repeat exactly what is indexed, so:
+ * - ingestion writes a message's body row before the message itself, and the
+ *   message's insert indexes it with that body (one index write per message);
+ * - subject/sender/recipient edits reindex with the current body;
+ * - a body arriving, changing or going away reindexes its message (if the
+ *   message exists: a body written ahead of its message is indexed with it);
+ * - deleting a message (also through cascades) deletes its indexed row with
+ *   the body still in place, then the body row.
+ */
+const FTS_OVER_BODIES = /* sql */ `
+CREATE VIEW messages_fts_src AS
+  SELECT m.id,
+         m.subject,
+         m.from_name || ' ' || m.from_email AS from_text,
+         m.recipients_text AS recipients,
+         coalesce(b.body_text, '') AS body
+  FROM messages m LEFT JOIN message_bodies b ON b.message_id = m.id;
+
+CREATE TRIGGER messages_fts_ai AFTER INSERT ON messages BEGIN
+  INSERT INTO messages_fts(rowid, subject, from_text, recipients, body)
+  VALUES (new.id, new.subject, new.from_name || ' ' || new.from_email, new.recipients_text,
+          coalesce((SELECT body_text FROM message_bodies WHERE message_id = new.id), ''));
+END;
+
+CREATE TRIGGER messages_fts_ad AFTER DELETE ON messages BEGIN
+  INSERT INTO messages_fts(messages_fts, rowid, subject, from_text, recipients, body)
+  VALUES ('delete', old.id, old.subject, old.from_name || ' ' || old.from_email, old.recipients_text,
+          coalesce((SELECT body_text FROM message_bodies WHERE message_id = old.id), ''));
+  DELETE FROM message_bodies WHERE message_id = old.id;
+END;
+
+CREATE TRIGGER messages_fts_au AFTER UPDATE OF subject, from_name, from_email, recipients_text ON messages BEGIN
+  INSERT INTO messages_fts(messages_fts, rowid, subject, from_text, recipients, body)
+  VALUES ('delete', old.id, old.subject, old.from_name || ' ' || old.from_email, old.recipients_text,
+          coalesce((SELECT body_text FROM message_bodies WHERE message_id = old.id), ''));
+  INSERT INTO messages_fts(rowid, subject, from_text, recipients, body)
+  VALUES (new.id, new.subject, new.from_name || ' ' || new.from_email, new.recipients_text,
+          coalesce((SELECT body_text FROM message_bodies WHERE message_id = new.id), ''));
+END;
+
+CREATE TRIGGER message_bodies_fts_ai AFTER INSERT ON message_bodies
+WHEN coalesce(new.body_text, '') != '' AND EXISTS (SELECT 1 FROM messages WHERE id = new.message_id) BEGIN
+  INSERT INTO messages_fts(messages_fts, rowid, subject, from_text, recipients, body)
+  SELECT 'delete', m.id, m.subject, m.from_name || ' ' || m.from_email, m.recipients_text, '' FROM messages m WHERE m.id = new.message_id;
+  INSERT INTO messages_fts(rowid, subject, from_text, recipients, body)
+  SELECT m.id, m.subject, m.from_name || ' ' || m.from_email, m.recipients_text, new.body_text FROM messages m WHERE m.id = new.message_id;
+END;
+
+CREATE TRIGGER message_bodies_fts_au AFTER UPDATE OF body_text ON message_bodies
+WHEN coalesce(old.body_text, '') != coalesce(new.body_text, '') AND EXISTS (SELECT 1 FROM messages WHERE id = new.message_id) BEGIN
+  INSERT INTO messages_fts(messages_fts, rowid, subject, from_text, recipients, body)
+  SELECT 'delete', m.id, m.subject, m.from_name || ' ' || m.from_email, m.recipients_text, coalesce(old.body_text, '') FROM messages m WHERE m.id = new.message_id;
+  INSERT INTO messages_fts(rowid, subject, from_text, recipients, body)
+  SELECT m.id, m.subject, m.from_name || ' ' || m.from_email, m.recipients_text, coalesce(new.body_text, '') FROM messages m WHERE m.id = new.message_id;
+END;
+
+CREATE TRIGGER message_bodies_fts_ad AFTER DELETE ON message_bodies
+WHEN coalesce(old.body_text, '') != '' AND EXISTS (SELECT 1 FROM messages WHERE id = old.message_id) BEGIN
+  INSERT INTO messages_fts(messages_fts, rowid, subject, from_text, recipients, body)
+  SELECT 'delete', m.id, m.subject, m.from_name || ' ' || m.from_email, m.recipients_text, old.body_text FROM messages m WHERE m.id = old.message_id;
+  INSERT INTO messages_fts(rowid, subject, from_text, recipients, body)
+  SELECT m.id, m.subject, m.from_name || ' ' || m.from_email, m.recipients_text, '' FROM messages m WHERE m.id = old.message_id;
+END;
+`;
+
+/**
+ * v6: bodies move to message_bodies, so list, search and rule scans walk a
+ * messages table without the bulk of the text (page-cache fit on the web).
+ * The index content is unchanged (same projection), so it isn't rebuilt;
+ * only the view and triggers are replaced. body_tail_norm and body_state stay
+ * on messages. Messages without a body have no row.
+ */
+const BODIES_V6 = /* sql */ `
+DROP TRIGGER messages_fts_ai;
+DROP TRIGGER messages_fts_ad;
+DROP TRIGGER messages_fts_au;
+DROP VIEW messages_fts_src;
+
+CREATE TABLE message_bodies (
+  message_id INTEGER PRIMARY KEY,
+  body_text TEXT,
+  body_html TEXT
+);
+INSERT INTO message_bodies (message_id, body_text, body_html)
+  SELECT id, body_text, body_html FROM messages WHERE body_text IS NOT NULL OR body_html IS NOT NULL;
+ALTER TABLE messages DROP COLUMN body_text;
+ALTER TABLE messages DROP COLUMN body_html;
+${FTS_OVER_BODIES}`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "initial schema", sql: SCHEMA_V1 },
   { version: 2, name: "op target index", sql: OP_TARGETS_V2 },
   { version: 3, name: "owner identity, ai secrets, local mode", sql: OWNER_V3 },
   { version: 4, name: "smart categorization", sql: CATEGORIZATION_V4 },
   { version: 5, name: "move journal", sql: MOVES_V5 },
+  { version: 6, name: "message bodies", sql: BODIES_V6 },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

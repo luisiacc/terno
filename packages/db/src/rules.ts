@@ -2,6 +2,8 @@ import { BODY_TAIL_TOKENS, bodyMatches, normalizeText, tokenize, type Condition,
 import type { Db, Param } from "./sqlite";
 
 const DAY_MS = 86_400_000;
+/** the body of messages m, for the few rules FTS5 alone can't decide exactly */
+const BODY = "(SELECT body_text FROM message_bodies WHERE message_id = m.id)";
 
 function textSql(op: TextOp, column: string, value: string, params: Param[]): string {
   switch (op) {
@@ -59,7 +61,7 @@ function conditionSql(c: Condition, now: number, params: Param[], range?: { from
           return fts;
         case "equals":
           params.push(`body : ^ "${phrase}"`, "equals", c.value);
-          return `(${fts} AND unica_body_match(?, m.body_text, ?) = 1)`;
+          return `(${fts} AND unica_body_match(?, ${BODY}, ?) = 1)`;
         case "endsWith": {
           const needle = tokenize(c.value);
           if (needle.length > 0 && needle.length <= BODY_TAIL_TOKENS) {
@@ -69,7 +71,7 @@ function conditionSql(c: Condition, now: number, params: Param[], range?: { from
             return "substr(' ' || m.body_tail_norm, -length(?)) = ?";
           }
           params.push(`body : "${phrase}"`, "endsWith", c.value);
-          return `(${fts} AND unica_body_match(?, m.body_text, ?) = 1)`;
+          return `(${fts} AND unica_body_match(?, ${BODY}, ?) = 1)`;
         }
       }
     }

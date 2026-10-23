@@ -34,7 +34,7 @@ beforeAll(() => {
   meta.messages = seeded.messageCount;
   meta.threads = seeded.threadCount;
   meta.accounts = seeded.accountIds.length;
-  meta.avgBodyBytes = Math.round(db.get<{ a: number }>("SELECT avg(length(body_text)) a FROM messages")!.a);
+  meta.avgBodyBytes = Math.round(db.get<{ a: number }>("SELECT avg(length(body_text)) a FROM message_bodies")!.a);
   meta.seedSeconds = ((performance.now() - t0) / 1000).toFixed(1);
   expect(seeded.messageCount).toBeGreaterThanOrEqual(50_000);
 });

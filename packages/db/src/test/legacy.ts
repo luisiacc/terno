@@ -6,7 +6,10 @@ import { Db } from "../sqlite";
  * How today's tables read back in an older schema's shape, for tables whose
  * shape changed since. Everything else is copied column by column.
  */
-const SOURCE: Record<string, string> = {};
+const SOURCE: Record<string, string> = {
+  // v6 moved bodies out of messages
+  messages: "messages LEFT JOIN message_bodies ON message_bodies.message_id = messages.id",
+};
 
 /**
  * Writes `source`'s rows into a new database created with the schema of

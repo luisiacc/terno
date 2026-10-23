@@ -671,7 +671,7 @@ function storeSnapshot(db: Db): StoreSnapshot {
   return {
     accounts: db.all("SELECT id, email, display_name FROM accounts ORDER BY id"),
     categories: db.all("SELECT id, name FROM categories ORDER BY id"),
-    messages: db.all<Record<string, unknown>>("SELECT * FROM messages ORDER BY id").map((m) => ({
+    messages: db.all<Record<string, unknown>>("SELECT m.*, b.body_text FROM messages m LEFT JOIN message_bodies b ON b.message_id = m.id ORDER BY m.id").map((m) => ({
       id: m.id as number,
       threadId: m.thread_id as number,
       accountId: m.account_id as number,

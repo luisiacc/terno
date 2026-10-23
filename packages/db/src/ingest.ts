@@ -164,9 +164,9 @@ INSERT INTO messages (
   id, account_id, thread_id, provider_msg_id, rfc_message_id, in_reply_to, references_json,
   from_name, from_email, from_domain, from_name_norm, to_json, cc_json, bcc_json,
   recipients_text, recipients_norm, subject, subject_norm, date, snippet,
-  body_text, body_html, body_tail_norm, body_state, list_id, is_read, is_starred, in_inbox, is_sent,
+  body_tail_norm, body_state, list_id, is_read, is_starred, in_inbox, is_sent,
   is_draft, is_trash, is_spam, has_attachments, gmail_labels, size, created_at
-) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
 
 /**
  * Message ids are never reused (SQLite would reuse the max rowid after a
@@ -225,9 +225,14 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
       const threadId = resolveThread(db, msg, rfcId, refs, result);
       const fromEmail = normalizeText(msg.from.email.trim());
       const recipients = recipientsText(msg.to, msg.cc, msg.bcc);
+      const allocated = ids.next();
+      // the body goes in first: the message's insert trigger indexes it in the same write
+      if (msg.bodyText !== null || msg.bodyHtml !== null) {
+        db.run("INSERT INTO message_bodies (message_id, body_text, body_html) VALUES (?, ?, ?)", allocated, msg.bodyText, msg.bodyHtml);
+      }
       const id = db.run(
         INSERT_MESSAGE,
-        ids.next(),
+        allocated,
         msg.accountId,
         threadId,
         msg.providerMsgId,
@@ -247,8 +252,6 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
         normalizeText(msg.subject),
         msg.date,
         msg.snippet ? makeSnippet(msg.snippet) : makeSnippet(msg.bodyText),
-        msg.bodyText,
-        msg.bodyHtml,
         bodyTail(msg.bodyText),
         msg.bodyState,
         msg.listId ? normalizeText(msg.listId) : null,
@@ -331,7 +334,7 @@ function upsertLocations(db: Db, messageId: number, msg: IncomingMessage): void 
   }
 }
 
-/** Stores a downloaded body; the FTS update trigger reindexes the message. */
+/** Stores a downloaded body; the message_bodies triggers reindex the message. */
 export function setMessageBody(
   db: Db,
   messageId: number,
@@ -339,16 +342,24 @@ export function setMessageBody(
   bodyHtml: string | null,
   state: "partial" | "full",
 ): void {
-  db.run(
-    `UPDATE messages SET body_text = ?, body_html = ?, body_tail_norm = ?, body_state = ?,
-       snippet = CASE WHEN snippet = '' THEN ? ELSE snippet END WHERE id = ?`,
-    bodyText,
-    bodyHtml,
+  const updated = db.run(
+    `UPDATE messages SET body_tail_norm = ?, body_state = ?, snippet = CASE WHEN snippet = '' THEN ? ELSE snippet END WHERE id = ?`,
     bodyTail(bodyText),
     state,
     makeSnippet(bodyText),
     messageId,
   );
+  if (updated.changes === 0) return;
+  if (bodyText === null && bodyHtml === null) db.run("DELETE FROM message_bodies WHERE message_id = ?", messageId);
+  else {
+    db.run(
+      `INSERT INTO message_bodies (message_id, body_text, body_html) VALUES (?, ?, ?)
+       ON CONFLICT (message_id) DO UPDATE SET body_text = excluded.body_text, body_html = excluded.body_html`,
+      messageId,
+      bodyText,
+      bodyHtml,
+    );
+  }
 }
 
 interface ThreadAgg {

@@ -6,7 +6,8 @@ import type { Db } from "./sqlite";
  * indexes (messages_fts_src): engines and the oracle see exactly what FTS5 sees.
  */
 const MESSAGE_DOC = `SELECT m.id, m.thread_id, m.account_id, m.date, m.subject, m.from_name || ' ' || m.from_email AS from_text,
-  m.from_email, m.recipients_text, coalesce(m.body_text, '') AS body, m.has_attachments, m.body_state FROM messages m`;
+  m.from_email, m.recipients_text, coalesce(b.body_text, '') AS body, m.has_attachments, m.body_state
+  FROM messages m LEFT JOIN message_bodies b ON b.message_id = m.id`;
 
 const THREAD_DOC = `SELECT t.id, t.account_id, t.last_date, t.in_inbox, t.has_sent, t.in_trash, t.in_spam, t.is_starred, t.unread_count,
   (SELECT group_concat(category_id) FROM thread_categories WHERE thread_id = t.id) AS cats FROM threads t`;

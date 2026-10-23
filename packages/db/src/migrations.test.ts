@@ -5,7 +5,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { generateDataset } from "@unica/mock-data";
 import { ingestMessages } from "./ingest";
 import { MIGRATIONS, migrate, SCHEMA_VERSION } from "./migrations";
+import { openDatabase } from "./index";
 import { nodeSqliteDriver } from "./node-driver";
+import { writeLegacyCopy } from "./test/legacy";
 import { Db } from "./sqlite";
 
 const dirs: string[] = [];
@@ -142,16 +144,18 @@ describe("migration v4: smart categorization", () => {
   function seededV3(): { db: Db; threads: number[] } {
     const dir = mkdtempSync(join(tmpdir(), "unica-mig4-"));
     dirs.push(dir);
-    const db = new Db(nodeSqliteDriver, join(dir, "v3.db"));
-    dbs.push(db);
-    for (const m of MIGRATIONS.filter((m) => m.version <= 3)) db.exec(m.sql);
-    db.exec("PRAGMA user_version = 3");
+    // mail threaded by today's code, written into the v3 schema the way that release stored it
+    const source = openDatabase(join(dir, "source.db"));
     const data = generateDataset({ threads: 600, accounts: 3, seed: 11 });
     const accountIds = data.accounts.map((a, i) => {
-      db.run("INSERT INTO accounts (id, kind, email, created_at) VALUES (?,?,?,?)", i + 1, a.kind, a.email, 1);
+      source.run("INSERT INTO accounts (id, kind, email, created_at) VALUES (?,?,?,?)", i + 1, a.kind, a.email, 1);
       return i + 1;
     });
-    ingestMessages(db, data.messages.map((m) => ({ ...m, accountId: accountIds[m.accountIndex]! })), 1);
+    ingestMessages(source, data.messages.map((m) => ({ ...m, accountId: accountIds[m.accountIndex]! })), 1);
+    writeLegacyCopy(source, join(dir, "v3.db"), 3);
+    source.close();
+    const db = new Db(nodeSqliteDriver, join(dir, "v3.db"));
+    dbs.push(db);
     db.run("INSERT INTO categories (id, name, color, position) VALUES (1, 'Facturas', 'amber', 0), (2, 'Lecturas', 'violet', 1)");
     const threads = db.all<{ id: number }>("SELECT id FROM threads ORDER BY id").map((r) => r.id);
     const origins = ["user", "filter", "agent", "suggestion"];
@@ -172,7 +176,7 @@ describe("migration v4: smart categorization", () => {
     db.exec("INSERT INTO messages_fts(messages_fts, rank) VALUES('integrity-check', 1)");
     expect(db.get<{ c: number }>("SELECT count(*) AS c FROM messages_fts WHERE messages_fts MATCH 'factura'")!.c).toBe(ftsBefore);
     const triggers = db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'trigger' ORDER BY name").map((r) => r.name);
-    expect(triggers).toEqual(["messages_fts_ad", "messages_fts_ai", "messages_fts_au"]);
+    expect(triggers).toEqual(["message_bodies_fts_ad", "message_bodies_fts_ai", "message_bodies_fts_au", "messages_fts_ad", "messages_fts_ai", "messages_fts_au"]);
     db.run("UPDATE messages SET subject = 'zzqqmigrated' WHERE id = (SELECT min(id) FROM messages)");
     db.run("DELETE FROM messages WHERE id = (SELECT max(id) FROM messages)");
     db.exec("INSERT INTO messages_fts(messages_fts, rank) VALUES('integrity-check', 1)");

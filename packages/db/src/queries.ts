@@ -138,10 +138,10 @@ export function getThread(db: Db, threadId: number): ThreadDetail | null {
   );
   if (!row) return null;
   const messages = db.all<MessageRow>(
-    `SELECT id, thread_id, account_id, from_name, from_email, to_json, cc_json, subject, date, snippet,
-            body_text, body_html, body_state, is_read, is_starred, is_sent, has_attachments,
-            rfc_message_id, references_json, list_id
-     FROM messages WHERE thread_id = ? ORDER BY date ASC, id ASC`,
+    `SELECT m.id, m.thread_id, m.account_id, m.from_name, m.from_email, m.to_json, m.cc_json, m.subject, m.date, m.snippet,
+            b.body_text, b.body_html, m.body_state, m.is_read, m.is_starred, m.is_sent, m.has_attachments,
+            m.rfc_message_id, m.references_json, m.list_id
+     FROM messages m LEFT JOIN message_bodies b ON b.message_id = m.id WHERE m.thread_id = ? ORDER BY m.date ASC, m.id ASC`,
     threadId,
   );
   const attachments = new Map<number, AttachmentInfo[]>();

@@ -77,7 +77,7 @@ test.describe("themes", () => {
     const dracula = builtinTheme("dracula")!.tokens;
     // one thread without colors of its own (the demo's newsletters all set some)
     const plain = Number(await page.locator("[data-testid=thread-row]").first().getAttribute("data-thread-id"));
-    sqlDb(server.backend.store).run("UPDATE messages SET body_html = ? WHERE thread_id = ?", "<p>Hola, <b>sin colores</b>: <a href='https://x.test'>enlace</a></p>", plain);
+    sqlDb(server.backend.store).run("UPDATE message_bodies SET body_html = ? WHERE message_id IN (SELECT id FROM messages WHERE thread_id = ?)", "<p>Hola, <b>sin colores</b>: <a href='https://x.test'>enlace</a></p>", plain);
     await page.reload();
     await page.locator("[data-ready]").waitFor();
     const bodyBg = async () => {
@@ -124,7 +124,7 @@ test.describe("themes", () => {
     // and in the reader: dark text from an ordinary inline style lands on the paper card, not on a dark theme
     await server.backend.server.invoke("settings.update", { theme: "dark", darkTheme: "dracula" }, ctx);
     const thread = Number(await page.locator("[data-testid=thread-row]").first().getAttribute("data-thread-id"));
-    sqlDb(server.backend.store).run("UPDATE messages SET body_html = ? WHERE thread_id = ?", `<p style="font-family:'Arial',sans-serif;color:#111">Texto oscuro</p>`, thread);
+    sqlDb(server.backend.store).run("UPDATE message_bodies SET body_html = ? WHERE message_id IN (SELECT id FROM messages WHERE thread_id = ?)", `<p style="font-family:'Arial',sans-serif;color:#111">Texto oscuro</p>`, thread);
     await page.reload();
     await page.locator("[data-ready]").waitFor();
     await openRow(page, 0);

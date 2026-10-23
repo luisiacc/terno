@@ -396,7 +396,7 @@ describe("IMAP identity and safety (review fixes)", () => {
     expect(count(backend, "SELECT 1 FROM messages")).toBe(2);
     expect(count(backend, "SELECT DISTINCT uid FROM message_locations")).toBe(2);
     // trashing the row whose cached body is AAAA must move the server message AAAA
-    const a = sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE body_text LIKE 'AAAA%'")!.thread_id;
+    const a = sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages JOIN message_bodies ON message_id = id WHERE body_text LIKE 'AAAA%'")!.thread_id;
     await client.call("threads.act", { threadIds: [a], action: "trash" });
     await backend.runWorker();
     const trashed = imap.server.control.listMessages("Trash", { raw: true }) as { raw: Buffer }[];
@@ -413,7 +413,7 @@ describe("IMAP identity and safety (review fixes)", () => {
     imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Igual", id: "b@x", from: "x@y.z", date, body: "BBBB" }) });
     imap.server.control.resetUidValidity("INBOX", { uids: "renumber" });
     await backend.syncAccount(account.id);
-    expect(sqlDb(backend.store).all("SELECT rfc_message_id, substr(body_text, 1, 4) AS b FROM messages")).toEqual([{ rfc_message_id: "b@x", b: "BBBB" }]);
+    expect(sqlDb(backend.store).all("SELECT rfc_message_id, substr(body_text, 1, 4) AS b FROM messages LEFT JOIN message_bodies ON message_id = id")).toEqual([{ rfc_message_id: "b@x", b: "BBBB" }]);
   });
 
   it("doesn't merge unrelated messages that reuse a Message-ID across folders", async () => {

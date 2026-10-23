@@ -102,10 +102,10 @@ export function rootsWithBodies(db: Db, refs: readonly RootRef[]): Map<number, R
   const out = new Map<number, RootMessage>();
   if (refs.length === 0) return out;
   const rows = db.all<RootRow>(
-    `SELECT m.thread_id, m.id, m.from_email, m.from_name, m.list_id, m.subject, m.body_text, m.body_state, m.date,
+    `SELECT m.thread_id, m.id, m.from_email, m.from_name, m.list_id, m.subject, b.body_text, m.body_state, m.date,
             m.in_inbox, m.is_spam, m.is_trash, m.is_draft, m.has_attachments,
             EXISTS (SELECT 1 FROM messages s WHERE s.thread_id = m.thread_id AND s.is_sent = 1) AS replied
-     FROM json_each(?) j JOIN messages m ON m.id = j.value`,
+     FROM json_each(?) j JOIN messages m ON m.id = j.value LEFT JOIN message_bodies b ON b.message_id = m.id`,
     JSON.stringify(refs.map((r) => r.messageId)),
   );
   const withFiles = rows.filter((r) => r.has_attachments === 1).map((r) => r.id);
