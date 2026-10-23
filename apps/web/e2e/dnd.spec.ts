@@ -7,11 +7,12 @@
 import type { Locator, Page } from "@playwright/test";
 import type { DevServer } from "../../backend-dev/src/server";
 import { expect, focusList, rows, stabilize, test } from "./fixtures";
+import { sqlDb } from "../../backend-dev/src/server";
 
 test.use({ reducedMotion: "no-preference" });
 
 const ctx = { clientId: "setup", origin: "dev" as const };
-const categoryId = (server: DevServer, name: string) => server.backend.db.get<{ id: number }>("SELECT id FROM categories WHERE name = ?", name)!.id;
+const categoryId = (server: DevServer, name: string) => sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = ?", name)!.id;
 
 async function center(l: Locator) {
   const b = (await l.boundingBox())!;
@@ -63,12 +64,12 @@ test.describe("drag and drop to a category", () => {
     await expect(page.locator("html")).not.toHaveAttribute("data-dragging");
     await expect(ghost).toBeHidden();
     // the backend has it (and recorded it as a drag-and-drop filing)
-    expect(server.backend.db.get<{ added_by: string }>("SELECT added_by FROM thread_categories WHERE thread_id = ? AND category_id = ?", Number(id), viajes)).toBeTruthy();
+    expect(sqlDb(server.backend.store).get<{ added_by: string }>("SELECT added_by FROM thread_categories WHERE thread_id = ? AND category_id = ?", Number(id), viajes)).toBeTruthy();
 
     await page.getByTestId("snackbar-undo").click();
     await expect(dropped.locator(`[data-cat-dot="${viajes}"]`)).toHaveCount(0);
     await expect.poll(() => navCount(page, viajes)).toBe(before);
-    expect(server.backend.db.get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", Number(id), viajes)).toBeUndefined();
+    expect(sqlDb(server.backend.store).get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", Number(id), viajes)).toBeUndefined();
   });
 
   test("a multi-selection travels together: the ghost says 3 and all three get the dot", async ({ app: page, server }) => {
@@ -149,7 +150,7 @@ test.describe("drag and drop to a category", () => {
     await page.keyboard.up("Alt");
     await expect(page.getByTestId("snackbar-title")).toHaveText("Movido a Viajes");
     await expect(page.locator(`[data-thread-id="${id}"]`)).toHaveCount(0);
-    const inCat = (cat: number) => !!server.backend.db.get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", id, cat);
+    const inCat = (cat: number) => !!sqlDb(server.backend.store).get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", id, cat);
     await expect.poll(() => [inCat(viajes), inCat(lecturas)]).toEqual([true, false]);
     await page.getByTestId("snackbar-undo").click();
     await expect(page.locator(`[data-thread-id="${id}"]`)).toHaveCount(1);
@@ -163,8 +164,8 @@ test.describe("drag and drop to a category", () => {
     await expect(page.locator(`[data-testid=thread-row]:not(:has([data-cat-dot="${lecturas}"]))`)).toHaveCount(0);
     const row = notIn(page, viajes).first();
     const id = Number(await row.getAttribute("data-thread-id"));
-    const inCat = (cat: number) => !!server.backend.db.get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", id, cat);
-    const before = server.backend.db.get("SELECT added_by, added_at, batch_id FROM thread_categories WHERE thread_id = ? AND category_id = ?", id, lecturas);
+    const inCat = (cat: number) => !!sqlDb(server.backend.store).get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", id, cat);
+    const before = sqlDb(server.backend.store).get("SELECT added_by, added_at, batch_id FROM thread_categories WHERE thread_id = ? AND category_id = ?", id, lecturas);
     await dragTo(page, row, page.getByTestId(`nav-category-${viajes}`));
     await page.keyboard.down("Alt");
     await page.mouse.up();
@@ -173,18 +174,18 @@ test.describe("drag and drop to a category", () => {
     await expect.poll(() => [inCat(viajes), inCat(lecturas)]).toEqual([true, false]);
 
     // the backend refuses the restore: the destination must keep the thread, the snackbar stays with a retry
-    server.backend.db.exec("CREATE TRIGGER e2e_fail_restore BEFORE INSERT ON thread_categories BEGIN SELECT RAISE(ABORT, 'disco lleno'); END");
+    sqlDb(server.backend.store).exec("CREATE TRIGGER e2e_fail_restore BEFORE INSERT ON thread_categories BEGIN SELECT RAISE(ABORT, 'disco lleno'); END");
     await page.getByTestId("snackbar-undo").click();
     await expect(page.locator("[data-sonner-toast]", { hasText: "No se pudo deshacer" })).toBeVisible();
     await expect(page.getByTestId("category-snackbar")).toBeVisible();
     expect([inCat(viajes), inCat(lecturas)]).toEqual([true, false]);
 
-    server.backend.db.exec("DROP TRIGGER e2e_fail_restore");
+    sqlDb(server.backend.store).exec("DROP TRIGGER e2e_fail_restore");
     await page.locator("[data-sonner-toast]", { hasText: "No se pudo deshacer" }).getByRole("button", { name: "Reintentar" }).click();
     await expect(page.getByTestId("category-snackbar")).toHaveCount(0);
     await expect.poll(() => [inCat(viajes), inCat(lecturas)]).toEqual([false, true]);
     // back exactly as it was
-    expect(server.backend.db.get("SELECT added_by, added_at, batch_id FROM thread_categories WHERE thread_id = ? AND category_id = ?", id, lecturas)).toEqual(before);
+    expect(sqlDb(server.backend.store).get("SELECT added_by, added_at, batch_id FROM thread_categories WHERE thread_id = ? AND category_id = ?", id, lecturas)).toEqual(before);
     await expect(page.locator(`[data-thread-id="${id}"]`)).toHaveCount(1);
   });
 

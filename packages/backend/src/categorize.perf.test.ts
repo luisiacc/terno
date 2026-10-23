@@ -9,7 +9,7 @@ import { join } from "node:path";
 import v8 from "node:v8";
 import vm from "node:vm";
 import { CategorizerModel, encodeFeatures, extractFeatures, FEATURES_V, type TrainExample } from "@unica/core";
-import { addToCategory, countScope, createAccount, createCategory, ingestMessages, openDatabase, ownAddresses, quickActions, rootMessages, seedDataset, type IncomingMessage } from "@unica/db";
+import { addToCategory, countScope, createAccount, createCategory, ingestMessages, openDatabase, ownAddresses, quickActions, rootMessages, seedDataset, type IncomingMessage, sqlDb } from "@unica/db";
 import { demoRegistry } from "@unica/mail";
 import { generateDataset } from "@unica/mock-data";
 import { createMemoryTransportPair, RpcClient } from "@unica/core/rpc";
@@ -41,12 +41,12 @@ function open(path: string) {
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), "unica-catperf-"));
   backend = open(join(dir, "base.db"));
-  accountIds = seedDataset(backend.db, generateDataset({ threads: 20_000, accounts: 8, seed: 5, now: NOW, bodyScale: 3 }), { now: NOW }).accountIds;
+  accountIds = seedDataset(sqlDb(backend.store), generateDataset({ threads: 20_000, accounts: 8, seed: 5, now: NOW, bodyScale: 3 }), { now: NOW }).accountIds;
   // 20 categories: the 5 seeded ones plus 15 the user filled by hand
-  const threads = backend.db.all<{ id: number }>("SELECT id FROM threads ORDER BY id").map((r) => r.id);
+  const threads = sqlDb(backend.store).all<{ id: number }>("SELECT id FROM threads ORDER BY id").map((r) => r.id);
   for (let k = 0; k < 15; k++) {
-    const id = createCategory(backend.db, `Proyecto ${k}`, "slate").id;
-    addToCategory(backend.db, { categoryId: id, threadIds: threads.filter((_, i) => (i * 7 + k * 13) % 97 === 0), addedBy: "user", now: NOW - k * 86_400_000 });
+    const id = createCategory(sqlDb(backend.store), `Proyecto ${k}`, "slate").id;
+    addToCategory(sqlDb(backend.store), { categoryId: id, threadIds: threads.filter((_, i) => (i * 7 + k * 13) % 97 === 0), addedBy: "user", now: NOW - k * 86_400_000 });
   }
 }, 600_000);
 
@@ -66,9 +66,9 @@ it("rebuilds the model from 20k threads within 2 s (sliced: 8 ms slices)", async
   expect(took).toBeLessThanOrEqual(2000 * BUDGET_MULTIPLIER);
 });
 
-it("classifies a thread against 20 categories in ≤ 50 µs p95 (featurizing its 2 KB body: ≤ 150 µs end to end)", () => {
-  if (!backend.categorizer.ready) backend.categorizer.rebuildSync();
-  const db = backend.db;
+it("classifies a thread against 20 categories in ≤ 50 µs p95 (featurizing its 2 KB body: ≤ 150 µs end to end)", async () => {
+  if (!backend.categorizer.ready) await backend.categorizer.rebuildNow();
+  const db = sqlDb(backend.store);
   const model = backend.categorizer.model!;
   const own = ownAddresses(db);
   const ids = db.all<{ id: number }>("SELECT id FROM threads WHERE in_spam = 0 ORDER BY id DESC LIMIT 3000").map((r) => r.id);
@@ -99,9 +99,9 @@ it("classifies a thread against 20 categories in ≤ 50 µs p95 (featurizing its
   expect(full.p95).toBeLessThanOrEqual(150 * BUDGET_MULTIPLIER);
 });
 
-it("trains and untrains one example in ≤ 200 µs", () => {
-  if (!backend.categorizer.ready) backend.categorizer.rebuildSync();
-  const db = backend.db;
+it("trains and untrains one example in ≤ 200 µs", async () => {
+  if (!backend.categorizer.ready) await backend.categorizer.rebuildNow();
+  const db = sqlDb(backend.store);
   const own = ownAddresses(db);
   const roots = [...rootMessages(db, db.all<{ id: number }>("SELECT id FROM threads ORDER BY id LIMIT 600").map((r) => r.id), own).values()];
   const model = backend.categorizer.model!;
@@ -171,9 +171,9 @@ it("a 20-category, 100k-feature model stays ≤ 30 MB and loads from its snapsho
   expect(load.p95).toBeLessThanOrEqual(30 * BUDGET_MULTIPLIER);
 });
 
-it("snackbar counts: sender/domain/list ≤ 5 ms, topic ≤ 25 ms (capped at 1 000), quick actions ≤ 2 ms", () => {
-  if (!backend.categorizer.ready) backend.categorizer.rebuildSync();
-  const db = backend.db;
+it("snackbar counts: sender/domain/list ≤ 5 ms, topic ≤ 25 ms (capped at 1 000), quick actions ≤ 2 ms", async () => {
+  if (!backend.categorizer.ready) await backend.categorizer.rebuildNow();
+  const db = sqlDb(backend.store);
   const model = backend.categorizer.model!;
   const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
   const lecturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Lecturas'")!.id;
@@ -295,12 +295,12 @@ async function underLoad(fn: () => Promise<unknown>): Promise<{ stall: number; r
 }
 
 it("large UI adds, removals and undo are sliced: no long stall, interactive RPCs keep flowing", async () => {
-  if (!backend.categorizer.ready) backend.categorizer.rebuildSync();
+  if (!backend.categorizer.ready) await backend.categorizer.rebuildNow();
   const [c, srv] = createMemoryTransportPair();
   backend.connect(srv, { clientId: "big", origin: "renderer" });
   const client = new RpcClient(c);
   const cat = (await client.call("categories.create", { name: "Grande", color: "rose" })).id;
-  const ids = backend.db.all<{ id: number }>("SELECT id FROM threads ORDER BY id LIMIT 12000").map((r) => r.id);
+  const ids = sqlDb(backend.store).all<{ id: number }>("SELECT id FROM threads ORDER BY id LIMIT 12000").map((r) => r.id);
   const p95 = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.ceil(xs.length * 0.95) - 1] ?? 0;
   const runs: [string, () => Promise<unknown>][] = [];
   runs.push(["add 5,000 threads (picker)", () => client.call("categories.addThreads", { categoryId: cat, threadIds: ids.slice(0, 5000) })]);
@@ -322,18 +322,18 @@ it("large UI adds, removals and undo are sliced: no long stall, interactive RPCs
 }, 600_000);
 
 it("an ⌥-move of the largest selection (5,000 threads) and its undo: atomic, no long stall, lists keep flowing", async () => {
-  if (!backend.categorizer.ready) backend.categorizer.rebuildSync();
+  if (!backend.categorizer.ready) await backend.categorizer.rebuildNow();
   const [c, srv] = createMemoryTransportPair();
   backend.connect(srv, { clientId: "move", origin: "renderer" });
   const client = new RpcClient(c);
   const from = (await client.call("categories.create", { name: "Mover desde", color: "rose" })).id;
   const to = (await client.call("categories.create", { name: "Mover a", color: "cyan" })).id;
-  const ids = backend.db.all<{ id: number }>("SELECT id FROM threads WHERE in_trash = 0 AND in_spam = 0 ORDER BY id LIMIT 5000").map((r) => r.id);
+  const ids = sqlDb(backend.store).all<{ id: number }>("SELECT id FROM threads WHERE in_trash = 0 AND in_spam = 0 ORDER BY id LIMIT 5000").map((r) => r.id);
   expect(ids).toHaveLength(5000);
   await client.call("categories.addThreads", { categoryId: from, threadIds: ids, source: "snackbar" });
   const p95 = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.ceil(xs.length * 0.95) - 1] ?? 0;
   let batchId = 0;
-  const inCat = (cat: number) => backend.db.get<{ n: number }>("SELECT count(*) AS n FROM thread_categories WHERE category_id = ?", cat)!.n;
+  const inCat = (cat: number) => sqlDb(backend.store).get<{ n: number }>("SELECT count(*) AS n FROM thread_categories WHERE category_id = ?", cat)!.n;
   const runs: [string, () => Promise<unknown>][] = [
     ["move 5,000 threads (⌥-drag)", async () => (batchId = (await client.call("categories.moveThreads", { from, to, threadIds: ids, source: "dnd" })).batchId)],
     ["undo that move", () => client.call("categorize.undo", { batchId })],
@@ -355,14 +355,14 @@ it("an ⌥-move of the largest selection (5,000 threads) and its undo: atomic, n
 }, 600_000);
 
 it("a rebuild never stalls the event loop for long, even with 40,000 training examples", async () => {
-  if (!backend.categorizer.ready) backend.categorizer.rebuildSync();
+  if (!backend.categorizer.ready) await backend.categorizer.rebuildNow();
   const [c, srv] = createMemoryTransportPair();
   backend.connect(srv, { clientId: "rebuild", origin: "renderer" });
   const client = new RpcClient(c);
   // 40k+ examples: every thread filed in two scratch categories
   const cats = [(await client.call("categories.create", { name: "Uno", color: "rose" })).id, (await client.call("categories.create", { name: "Dos", color: "lime" })).id];
   for (const cat of cats) await client.call("categorize.apply", { categoryId: cat, scope: { kind: "query", query: "in:all" } });
-  const examples = backend.db.get<{ n: number }>("SELECT count(*) AS n FROM cls_examples")!.n;
+  const examples = sqlDb(backend.store).get<{ n: number }>("SELECT count(*) AS n FROM cls_examples")!.n;
   expect(examples).toBeGreaterThan(40_000);
   const { stall, rpc } = await underLoad(() => backend.categorizer.rebuild());
   const p95 = [...rpc].sort((a, b) => a - b)[Math.ceil(rpc.length * 0.95) - 1] ?? 0;
@@ -374,9 +374,9 @@ it("a rebuild never stalls the event loop for long, even with 40,000 training ex
 
 /** The backend load test's 14k-message import, ingested into copies of the perf mailbox with the engine off and on. */
 async function importAB(label: string, shape: (m: IncomingMessage) => IncomingMessage, rounds: number) {
-  if (!backend.categorizer.ready) backend.categorizer.rebuildSync();
-  backend.categorizer.persist();
-  backend.db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  if (!backend.categorizer.ready) await backend.categorizer.rebuildNow();
+  await backend.categorizer.persist();
+  sqlDb(backend.store).exec("PRAGMA wal_checkpoint(TRUNCATE)");
   const extra = generateDataset({ threads: 8_000, accounts: 8, seed: 99, now: NOW, bodyScale: 3 }).messages.map((m) =>
     shape({
       ...m,
@@ -393,14 +393,15 @@ async function importAB(label: string, shape: (m: IncomingMessage) => IncomingMe
     for (const s of ["", "-wal"]) if (existsSync(join(dir, `base.db${s}`))) copyFileSync(join(dir, `base.db${s}`), path + s);
     const b = open(path);
     try {
+      await b.ready;
       expect(b.categorizer.ready).toBe(true);
-      b.db.run("INSERT OR REPLACE INTO settings (key, value_json) VALUES ('app', ?)", JSON.stringify({ autoCategorize: mode }));
+      sqlDb(b.store).run("INSERT OR REPLACE INTO settings (key, value_json) VALUES ('app', ?)", JSON.stringify({ autoCategorize: mode }));
       // CPU time, not wall time: other processes (pnpm test runs the unit project alongside) don't skew it
-      const before = b.db.get<{ c: number }>("SELECT count(*) AS c FROM cls_decisions")!.c;
+      const before = sqlDb(b.store).get<{ c: number }>("SELECT count(*) AS c FROM cls_decisions")!.c;
       const cpu = process.cpuUsage();
       await b.ingestSliced(extra);
       const used = process.cpuUsage(cpu);
-      return { took: (used.user + used.system) / 1000, decided: b.db.get<{ c: number }>("SELECT count(*) AS c FROM cls_decisions")!.c - before };
+      return { took: (used.user + used.system) / 1000, decided: sqlDb(b.store).get<{ c: number }>("SELECT count(*) AS c FROM cls_decisions")!.c - before };
     } finally {
       await b.stop();
       for (const s of ["", "-wal", "-shm"]) rmSync(path + s, { force: true });

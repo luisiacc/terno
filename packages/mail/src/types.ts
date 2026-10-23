@@ -1,5 +1,7 @@
 import type { Account, AccountSyncState, Address } from "@unica/core";
-import type { Db, IncomingMessage } from "@unica/db";
+import type { FlagUpdate, IncomingMessage, ProviderStore } from "@unica/store";
+
+export type { FlagUpdate } from "@unica/store";
 
 export interface SendPayload {
   from: Address;
@@ -47,18 +49,15 @@ export interface SyncSink {
   /** Sync window start (ms): only mail newer than this is downloaded initially. */
   windowStart: number;
   /** message ids with unsettled local ops: don't overwrite their flags */
-  pendingMessageIds(): Set<number>;
-  setSyncState(patch: Partial<AccountSyncState>): void;
+  pendingMessageIds(): Promise<Set<number>>;
+  setSyncState(patch: Partial<AccountSyncState>): Promise<void>;
   signal: AbortSignal;
 }
 
-export interface FlagUpdate {
-  messageId: number;
-  flags: Partial<{ isRead: boolean; isStarred: boolean; inInbox: boolean; isTrash: boolean; isSpam: boolean; isSent: boolean; isDraft: boolean }>;
-}
 
 export interface ProviderContext {
-  db: Db;
+  /** the provider's reads and IMAP identity (never the database itself) */
+  store: ProviderStore;
   account: Account;
   config: Record<string, unknown>;
   getSecret(name: string): Promise<string | null>;
@@ -66,8 +65,8 @@ export interface ProviderContext {
   /** app-wide secrets (e.g. the Gmail OAuth client secret) */
   getAppSecret(name: string): Promise<string | null>;
   /** persistent provider sync cursor (stored on the account) */
-  loadCursor<T>(): T | null;
-  saveCursor(cursor: unknown): void;
+  loadCursor<T>(): Promise<T | null>;
+  saveCursor(cursor: unknown): Promise<void>;
   /** every HTTP request a provider makes goes through this (the backend's network policy, purpose "mail") */
   fetch: typeof fetch;
 }

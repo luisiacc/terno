@@ -11,6 +11,7 @@ import { createMemoryTransportPair, RpcClient } from "@unica/core/rpc";
 import { createRegistry } from "@unica/mail";
 import { afterEach, describe, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
+import { sqlDb } from "@unica/db";
 
 interface FakeMsg {
   id: string;
@@ -266,7 +267,7 @@ describe("Gmail and the owner identity", () => {
     const { client, backend } = await setup();
     const account = await client.call("accounts.connectGmail", {});
     expect(await client.call("identity.get", {})).toMatchObject({ email: "luis@gmail.com", displayName: "Luis Cordero", provider: "gmail", verifiedBy: "google_oauth", accountId: account.id });
-    expect(JSON.parse(backend.db.get<{ e: string }>("SELECT evidence_json AS e FROM owner")!.e)).toEqual({ googleSub: "sub-luis@gmail.com", emailVerified: true });
+    expect(JSON.parse(sqlDb(backend.store).get<{ e: string }>("SELECT evidence_json AS e FROM owner")!.e)).toEqual({ googleSub: "sub-luis@gmail.com", emailVerified: true });
   });
 
   it("changing the owner re-runs OAuth for that address; a different Google account leaves the owner unchanged", async () => {
@@ -308,7 +309,7 @@ describe("Gmail sync", () => {
     expect((await client.call("threads.list", { view: "spam" })).items).toHaveLength(1);
     expect((await client.call("threads.list", { view: "sent" })).items).toHaveLength(1);
     expect((await client.call("threads.search", { query: "factura" })).items).toHaveLength(1);
-    expect(backend.db.get("SELECT count(*) c FROM messages")).toEqual({ c: 5 });
+    expect(sqlDb(backend.store).get("SELECT count(*) c FROM messages")).toEqual({ c: 5 });
   });
 
   it("applies history: new mail, label changes and deletions", async () => {
@@ -322,7 +323,7 @@ describe("Gmail sync", () => {
     expect(inbox.items.map((t) => [t.subject, t.messageCount])).toEqual([["Viaje a Oaxaca", 3]]);
     expect((await client.call("threads.list", { view: "archive" })).items.map((t) => t.subject)).toContain("Factura octubre");
     expect((await client.call("threads.list", { view: "spam" })).items).toHaveLength(0);
-    expect(backend.db.get("SELECT is_read FROM messages WHERE provider_msg_id = 'g1'")).toEqual({ is_read: 1 });
+    expect(sqlDb(backend.store).get("SELECT is_read FROM messages WHERE provider_msg_id = 'g1'")).toEqual({ is_read: 1 });
   });
 
   it("a resync after history expiry also refreshes labels and deletions of cached mail", async () => {
@@ -332,21 +333,21 @@ describe("Gmail sync", () => {
     google.messages.get("g3")!.labelIds = []; // archived elsewhere
     google.messages.delete("g2"); // deleted elsewhere
     await backend.syncAccount(account.id);
-    expect(backend.db.get("SELECT is_read FROM messages WHERE provider_msg_id = 'g1'")).toEqual({ is_read: 1 });
-    expect(backend.db.get("SELECT count(*) c FROM messages WHERE provider_msg_id = 'g2'")).toEqual({ c: 0 });
+    expect(sqlDb(backend.store).get("SELECT is_read FROM messages WHERE provider_msg_id = 'g1'")).toEqual({ is_read: 1 });
+    expect(sqlDb(backend.store).get("SELECT count(*) c FROM messages WHERE provider_msg_id = 'g2'")).toEqual({ c: 0 });
     expect((await client.call("threads.list", { view: "archive" })).items.map((t) => t.subject)).toContain("Factura octubre");
   });
 
   it("expiry recovery also checks cached mail older than the window, and retries on transient errors", async () => {
     const { google, backend, account } = await connected();
-    backend.db.run("UPDATE messages SET date = ? WHERE provider_msg_id = 'g5'", Date.now() - 2000 * 86_400_000); // ancient cached mail
+    sqlDb(backend.store).run("UPDATE messages SET date = ? WHERE provider_msg_id = 'g5'", Date.now() - 2000 * 86_400_000); // ancient cached mail
     google.historyExpired = true;
     google.messages.delete("g5");
     google.failMinimalOnce = true;
     await backend.syncAccount(account.id); // a transient 503 must not advance the cursor
-    expect(backend.db.get<{ s: string }>("SELECT json_extract(sync_state, '$.status') s FROM accounts")!.s).toBe("offline");
+    expect(sqlDb(backend.store).get<{ s: string }>("SELECT json_extract(sync_state, '$.status') s FROM accounts")!.s).toBe("offline");
     await backend.syncAccount(account.id);
-    expect(backend.db.get("SELECT count(*) c FROM messages WHERE provider_msg_id = 'g5'")).toEqual({ c: 0 });
+    expect(sqlDb(backend.store).get("SELECT count(*) c FROM messages WHERE provider_msg_id = 'g5'")).toEqual({ c: 0 });
   });
 
   it("falls back to a full resync when history has expired, without duplicates", async () => {
@@ -354,8 +355,8 @@ describe("Gmail sync", () => {
     google.historyExpired = true;
     google.add({ id: "g7", threadId: "t9", labelIds: ["INBOX"], raw: rawMail({ subject: "Nuevo tras expirar", id: "g@x" }) }, false);
     await backend.syncAccount(account.id);
-    expect(backend.db.get("SELECT count(*) c FROM messages")).toEqual({ c: 6 });
-    expect(backend.db.get("SELECT subject FROM messages WHERE provider_msg_id = 'g7'")).toEqual({ subject: "Nuevo tras expirar" });
+    expect(sqlDb(backend.store).get("SELECT count(*) c FROM messages")).toEqual({ c: 6 });
+    expect(sqlDb(backend.store).get("SELECT subject FROM messages WHERE provider_msg_id = 'g7'")).toEqual({ subject: "Nuevo tras expirar" });
   });
 });
 
@@ -365,7 +366,7 @@ describe("Gmail operations", () => {
     seed(ctx.google);
     const account = await ctx.client.call("accounts.connectGmail", {});
     await ctx.backend.syncAccount(account.id);
-    const thread = (subject: string) => ctx.backend.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE subject = ?", subject)!.thread_id;
+    const thread = (subject: string) => sqlDb(ctx.backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE subject = ?", subject)!.thread_id;
     return { ...ctx, account, thread };
   }
 
@@ -389,9 +390,9 @@ describe("Gmail operations", () => {
     await client.call("threads.act", { threadIds: [thread("Factura octubre")], action: "markUnread" });
     await client.call("threads.act", { threadIds: [thread("Hola mamá")], action: "star" });
     // ops for one account run sequentially; force parallel API calls through a sync too
-    await Promise.all([backend.runWorker(), backend.syncAccount(backend.db.get<{ id: number }>("SELECT id FROM accounts")!.id)]);
+    await Promise.all([backend.runWorker(), backend.syncAccount(sqlDb(backend.store).get<{ id: number }>("SELECT id FROM accounts")!.id)]);
     expect(google.refreshCalls - before).toBe(1);
-    expect(backend.db.all("SELECT state FROM ops WHERE kind != 'send'").every((r) => (r as { state: string }).state === "succeeded")).toBe(true);
+    expect(sqlDb(backend.store).all("SELECT state FROM ops WHERE kind != 'send'").every((r) => (r as { state: string }).state === "succeeded")).toBe(true);
   });
 
   it("treats 429 as retryable", async () => {
@@ -416,7 +417,7 @@ describe("Gmail operations", () => {
     const { opId } = await client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "ana@example.com" }], subject: "x", bodyText: "y" });
     await backend.runWorker();
     await backend.runWorker();
-    expect(backend.db.get("SELECT state FROM ops WHERE id = ?", opId)).toEqual({ state: "unknown" });
+    expect(sqlDb(backend.store).get("SELECT state FROM ops WHERE id = ?", opId)).toEqual({ state: "unknown" });
     expect(google.sent).toHaveLength(1);
   });
 
@@ -424,7 +425,7 @@ describe("Gmail operations", () => {
     const { google, backend, client, account } = await connected();
     const sent = await client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "ana@example.com" }], subject: "Nuevo hilo", bodyText: "hola" });
     await backend.runWorker();
-    const gmailThread = backend.db.get<{ provider_thread_id: string }>("SELECT provider_thread_id FROM threads WHERE id = ?", sent.threadId)!.provider_thread_id;
+    const gmailThread = sqlDb(backend.store).get<{ provider_thread_id: string }>("SELECT provider_thread_id FROM threads WHERE id = ?", sent.threadId)!.provider_thread_id;
     expect(gmailThread).toBe("sent-1");
     google.add({ id: "reply-1", threadId: gmailThread, labelIds: ["INBOX", "UNREAD"], raw: rawMail({ subject: "Re: Nuevo hilo", id: "r1@x" }) });
     await backend.syncAccount(account.id);
@@ -440,7 +441,7 @@ describe("Gmail operations", () => {
     expect(google.sent[0]!.threadId).toBe("t1");
     expect(google.sent[0]!.raw).toMatch(/In-Reply-To: <b@x>/);
     await backend.syncAccount(account.id);
-    expect(backend.db.get("SELECT count(*) c FROM messages WHERE is_sent = 1 AND subject = 'Re: Viaje a Oaxaca'")).toEqual({ c: 1 });
+    expect(sqlDb(backend.store).get("SELECT count(*) c FROM messages WHERE is_sent = 1 AND subject = 'Re: Viaje a Oaxaca'")).toEqual({ c: 1 });
     expect((await client.call("threads.get", { threadId: thread("Viaje a Oaxaca") })).messages).toHaveLength(3);
   });
 });

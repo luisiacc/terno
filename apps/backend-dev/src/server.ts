@@ -3,6 +3,7 @@ import { createServer, type Server } from "node:http";
 import { join } from "node:path";
 import { Backend, plaintextCipher, seedDemo, webSocketTransport, type AiFactory, type LookupAll } from "@unica/backend";
 import { demoRegistry, type ProviderRegistry } from "@unica/mail";
+export { sqlDb } from "@unica/db";
 import { WebSocketServer } from "ws";
 
 export interface DevServerOptions {
@@ -52,12 +53,12 @@ export async function startDevServer(o: DevServerOptions): Promise<DevServer> {
     autoSync: o.autoSync ?? true,
     log: (level, message, extra) => (level === "error" ? console.error : console.log)(`[backend] ${message}`, extra ?? ""),
   });
-  if (o.seed !== false && seedDemo(backend.db, { threads: o.threads, accounts: o.accounts })) {
-    backend.db.run("INSERT OR REPLACE INTO settings (key, value_json) VALUES ('app', ?)", JSON.stringify({ ai: { provider: "fake" } }));
+  if (o.seed !== false && (await seedDemo(backend.store, { threads: o.threads, accounts: o.accounts }))) {
+    await backend.store.settings.set("app", { ai: { provider: "fake" } });
     // warm model from the seeded categories (persisted on close, so E2E copies start ready)
-    backend.categorizer.rebuildSync();
+    await backend.categorizer.rebuildNow();
   }
-  backend.start();
+  await backend.start();
 
   const http: Server = createServer((_req, res) => {
     res.writeHead(404).end();

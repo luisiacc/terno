@@ -2,6 +2,7 @@ import type { Page } from "@playwright/test";
 import { termsQuery } from "@unica/core";
 import type { DevServer } from "../../backend-dev/src/server";
 import { expect, focusList, selectThread, test } from "./fixtures";
+import { sqlDb } from "../../backend-dev/src/server";
 
 /** What the backend would add for a scope (the same RPC the chips call). */
 async function countOf(server: DevServer, categoryId: number, query: string): Promise<number> {
@@ -11,7 +12,7 @@ async function countOf(server: DevServer, categoryId: number, query: string): Pr
 
 /** Opening a thread marks it read after a short dwell and the reader refreshes: hover only after that. */
 async function settled(server: DevServer, threadId: number) {
-  await expect.poll(() => server.backend.db.get<{ u: number }>("SELECT unread_count AS u FROM threads WHERE id = ?", threadId)!.u).toBe(0);
+  await expect.poll(() => sqlDb(server.backend.store).get<{ u: number }>("SELECT unread_count AS u FROM threads WHERE id = ?", threadId)!.u).toBe(0);
   await new Promise((r) => setTimeout(r, 300));
 }
 
@@ -19,7 +20,7 @@ const toast = (page: Page, text: string | RegExp) => page.locator("[data-sonner-
 
 /** An Uber receipt in the inbox that isn't in Facturas yet, plus a live count of the ones still outside. */
 function uberSetup(server: DevServer) {
-  const db = server.backend.db;
+  const db = sqlDb(server.backend.store);
   const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
   const target = db.get<{ id: number }>(
     `SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND t.last_from_email = 'uber.receipts@uber.com'
@@ -99,7 +100,7 @@ test.describe("categorization snackbar", () => {
   });
 
   test("several threads: the chips cover what they share, without duplicates", async ({ app: page, server }) => {
-    const db = server.backend.db;
+    const db = sqlDb(server.backend.store);
     const lecturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Lecturas'")!.id;
     const [a, b] = db.all<{ id: number }>(
       `SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND t.last_from_email IN ('notifications@github.com')
@@ -171,7 +172,7 @@ test.describe("everything about X and Y", () => {
 
   test("Ver shows the same set bulk apply would file: no account or review scope carried over", async ({ app: page, server }) => {
     const { facturas, target } = uberSetup(server);
-    const account = server.backend.db.get<{ account_id: number }>("SELECT account_id FROM threads WHERE id = ?", target)!.account_id;
+    const account = sqlDb(server.backend.store).get<{ account_id: number }>("SELECT account_id FROM threads WHERE id = ?", target)!.account_id;
     await page.getByTestId(`nav-account-${account}`).click();
     await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
     await fileWithPicker(page, facturas);
@@ -219,7 +220,7 @@ test.describe("everything about X and Y", () => {
 test.describe("the engine's suggestions and auto adds in the UI", () => {
   /** Two uncategorized inbox threads with a pending Facturas suggestion, then a fresh page (counts at boot). */
   async function withSuggestions(page: Page, server: DevServer) {
-    const db = server.backend.db;
+    const db = sqlDb(server.backend.store);
     const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
     const threads = db
       .all<{ id: number }>(
@@ -273,7 +274,7 @@ test.describe("the engine's suggestions and auto adds in the UI", () => {
   });
 
   test("an auto add says so and why; 'No es Facturas' reverts it and teaches the engine", async ({ app: page, server }) => {
-    const db = server.backend.db;
+    const db = sqlDb(server.backend.store);
     const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
     const t = db.get<{ id: number }>(
       `SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND t.last_from_email = 'recibos@rappi.com'
@@ -296,7 +297,7 @@ test.describe("the engine's suggestions and auto adds in the UI", () => {
   });
 
   test("Settings → Categorías: the global switch, per-category auto, and stats", async ({ app: page, server }) => {
-    const db = server.backend.db;
+    const db = sqlDb(server.backend.store);
     const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
     await page.getByTestId("open-settings").click();
     await page.getByTestId("tab-categories").click();

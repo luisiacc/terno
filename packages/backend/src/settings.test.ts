@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient, type RpcError } from "@unica/core/rpc";
-import { getSetting, setSetting } from "@unica/db";
+import { getSetting, setSetting, sqlDb } from "@unica/db";
 import { demoRegistry } from "@unica/mail";
 import { afterEach, describe, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
@@ -37,7 +37,7 @@ describe("appearance settings", () => {
 
   it("a legacy blob keeps its mode and gets the new fields' defaults", async () => {
     const { backend, client } = setup();
-    setSetting(backend.db, "app", { theme: "dark", density: "compact" });
+    setSetting(sqlDb(backend.store), "app", { theme: "dark", density: "compact" });
     const s = (await client.call("app.bootstrap", {})).settings;
     expect(s).toMatchObject({ theme: "dark", density: "compact", lightTheme: "unica-light", darkTheme: "unica-dark", motionMs: 75, htmlMailAppearance: "auto", customThemes: [] });
   });
@@ -49,7 +49,7 @@ describe("appearance settings", () => {
     expect((await client.call("app.bootstrap", {})).settings).toMatchObject({ darkTheme: "custom:mi-nord", motionMs: 0 });
     for (const ms of [50, 100, 75] as const) expect((await client.call("settings.update", { motionMs: ms })).motionMs).toBe(ms);
     // persisted, not only echoed
-    expect(getSetting<{ lightTheme?: string }>(backend.db, "app", {}).lightTheme).toBe("solarized-light");
+    expect(getSetting<{ lightTheme?: string }>(sqlDb(backend.store), "app", {}).lightTheme).toBe("solarized-light");
   });
 
   it("rejects motion off the scale, unknown themes and themes of the other mode", async () => {
@@ -70,7 +70,7 @@ describe("appearance settings", () => {
     const after = await client.call("settings.update", { customThemes: [] });
     expect(after.darkTheme).toBe("unica-dark");
     // and a stored id that names nothing (edited by hand, or a removed built-in) too
-    setSetting(backend.db, "app", { lightTheme: "retired-theme", darkTheme: "github-light" });
+    setSetting(sqlDb(backend.store), "app", { lightTheme: "retired-theme", darkTheme: "github-light" });
     expect((await client.call("app.bootstrap", {})).settings).toMatchObject({ lightTheme: "unica-light", darkTheme: "unica-dark" });
   });
 });

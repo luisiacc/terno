@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@unica/core/rpc";
 import dc from "node:diagnostics_channel";
 import { encodeFeatures, extractFeatures } from "@unica/core";
-import { addToCategory, createAccount, createCategory, ingestMessages, putSecret, seedDataset, setSetting, type IncomingMessage } from "@unica/db";
+import { addToCategory, createAccount, createCategory, ingestMessages, putSecret, seedDataset, setSetting, type IncomingMessage, sqlDb } from "@unica/db";
 import { demoRegistry } from "@unica/mail";
 import { generateDataset } from "@unica/mock-data";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -32,7 +32,7 @@ function setup(options: { seed?: boolean } = {}) {
     if (!stopped) await backend.stop().catch(() => {});
     rmSync(dir, { recursive: true, force: true });
   });
-  if (options.seed) seedDataset(backend.db, generateDataset({ threads: 600, accounts: 2, seed: 9, now: NOW }), { now: NOW });
+  if (options.seed) seedDataset(sqlDb(backend.store), generateDataset({ threads: 600, accounts: 2, seed: 9, now: NOW }), { now: NOW });
   const stop = async () => {
     stopped = true;
     await backend.stop();
@@ -77,58 +77,55 @@ function incoming(accountId: number, over: Partial<IncomingMessage> = {}): Incom
 describe("categorizer: training hooks", () => {
   it("UI adds train the in-memory model only after their transaction commits", async () => {
     const { backend, client } = setup();
-    const acct = createAccount(backend.db, { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
-    const cat = createCategory(backend.db, "Facturas", "amber").id;
-    const r = ingestMessages(backend.db, [incoming(acct), incoming(acct), incoming(acct)]);
+    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
+    const r = ingestMessages(sqlDb(backend.store), [incoming(acct), incoming(acct), incoming(acct)]);
     const threads = [...r.touchedThreads];
-    backend.categorizer.rebuildSync();
+    await backend.categorizer.rebuildNow();
     const model = backend.categorizer.model!;
 
     const res = await client.call("categories.addThreads", { categoryId: cat, threadIds: threads.slice(0, 2) });
     expect(res).toEqual({ added: 2, addedIds: threads.slice(0, 2), batchId: expect.any(Number) });
     expect(model.positives(cat)).toBe(2);
 
-    // a store command that rolls back leaves RAM untouched
-    expect(() =>
-      backend.db.tx(() => {
-        const out = addToCategory(backend.db, { categoryId: cat, threadIds: [threads[2]!], addedBy: "user", now: NOW });
-        backend.categorizer.apply(out.deltas);
-      }),
-    ).toThrow(/after the transaction commits/);
+    // a store command that rolls back hands back no deltas: RAM stays untouched
+    await expect(
+      backend.store.categories.add({ categoryId: 987_654, threadIds: [threads[2]!], addedBy: "user", now: NOW }).then((out) => backend.categorizer.apply(out.deltas)),
+    ).rejects.toThrow(/FOREIGN KEY/);
     expect(model.positives(cat)).toBe(2);
-    expect(backend.db.get("SELECT 1 FROM cls_examples WHERE thread_id = ?", threads[2]!)).toBeUndefined();
+    expect(sqlDb(backend.store).get("SELECT 1 FROM cls_examples WHERE thread_id = ?", threads[2]!)).toBeUndefined();
 
     // removal: positive untrained, strong negative trained
     await client.call("categories.removeThreads", { categoryId: cat, threadIds: [threads[0]!] });
     expect(model.positives(cat)).toBe(1);
-    expect(backend.db.get("SELECT label, weight FROM cls_examples WHERE thread_id = ?", threads[0]!)).toEqual({ label: -1, weight: 3 });
+    expect(sqlDb(backend.store).get("SELECT label, weight FROM cls_examples WHERE thread_id = ?", threads[0]!)).toEqual({ label: -1, weight: 3 });
   });
 
   it("snackbar adds are bulk (half weight) and the whole batch undoes exactly", async () => {
     const { backend, client } = setup();
-    const acct = createAccount(backend.db, { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
-    const cat = createCategory(backend.db, "Facturas", "amber").id;
-    const threads = [...ingestMessages(backend.db, [incoming(acct), incoming(acct), incoming(acct)]).touchedThreads];
-    backend.categorizer.rebuildSync();
+    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
+    const threads = [...ingestMessages(sqlDb(backend.store), [incoming(acct), incoming(acct), incoming(acct)]).touchedThreads];
+    await backend.categorizer.rebuildNow();
     await client.call("categories.addThreads", { categoryId: cat, threadIds: [threads[0]!] });
     const bulk = await client.call("categories.addThreads", { categoryId: cat, threadIds: threads, source: "snackbar" });
     expect(bulk.addedIds).toEqual(threads.slice(1));
-    expect(backend.db.all<{ source: string; weight: number }>("SELECT source, weight FROM cls_examples ORDER BY thread_id").map((r) => [r.source, r.weight])).toEqual([["user", 1], ["bulk", 0.5], ["bulk", 0.5]]);
+    expect(sqlDb(backend.store).all<{ source: string; weight: number }>("SELECT source, weight FROM cls_examples ORDER BY thread_id").map((r) => [r.source, r.weight])).toEqual([["user", 1], ["bulk", 0.5], ["bulk", 0.5]]);
     expect(await client.call("categorize.undo", { batchId: bulk.batchId! })).toEqual({ removed: 2 });
     expect(backend.categorizer.model!.positives(cat)).toBe(1);
-    expect(backend.db.all<{ thread_id: number }>("SELECT thread_id FROM thread_categories").map((r) => r.thread_id)).toEqual([threads[0]]);
+    expect(sqlDb(backend.store).all<{ thread_id: number }>("SELECT thread_id FROM thread_categories").map((r) => r.thread_id)).toEqual([threads[0]]);
     // undoing the picker add (reason "undo") forgets it without a negative
     await client.call("categories.removeThreads", { categoryId: cat, threadIds: [threads[0]!], reason: "undo" });
     expect(backend.categorizer.model!.positives(cat)).toBe(0);
-    expect(backend.db.get("SELECT 1 FROM cls_examples")).toBeUndefined();
+    expect(sqlDb(backend.store).get("SELECT 1 FROM cls_examples")).toBeUndefined();
   });
 
   it("removing or undoing returns old uncategorized threads to the background", async () => {
     const { backend, client } = setup();
-    const acct = createAccount(backend.db, { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
-    const cat = createCategory(backend.db, "Facturas", "amber").id;
-    const threads = [...ingestMessages(backend.db, Array.from({ length: 6 }, (_, i) => incoming(acct, { date: NOW - (10 + i) * DAY })), NOW).touchedThreads];
-    backend.categorizer.rebuildSync();
+    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
+    const threads = [...ingestMessages(sqlDb(backend.store), Array.from({ length: 6 }, (_, i) => incoming(acct, { date: NOW - (10 + i) * DAY })), NOW).touchedThreads];
+    await backend.categorizer.rebuildNow();
     const model = backend.categorizer.model!;
     expect(model.backgroundSize).toBe(6);
     const bulk = await client.call("categories.addThreads", { categoryId: cat, threadIds: threads.slice(0, 4), source: "snackbar" });
@@ -139,15 +136,15 @@ describe("categorizer: training hooks", () => {
     await client.call("categories.removeThreads", { categoryId: cat, threadIds: threads.slice(4) });
     expect(model.backgroundSize).toBe(6);
     // RAM matches what a rebuild would compute
-    const fresh = backend.categorizer.rebuildSync();
+    const fresh = await backend.categorizer.rebuildNow();
     expect(fresh.backgroundSize).toBe(6);
   });
 
   it("an add that changes nothing returns no undo handle", async () => {
     const { backend, client } = setup();
-    const acct = createAccount(backend.db, { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
-    const cat = createCategory(backend.db, "Facturas", "amber").id;
-    const [t] = [...ingestMessages(backend.db, [incoming(acct)]).touchedThreads];
+    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
+    const [t] = [...ingestMessages(sqlDb(backend.store), [incoming(acct)]).touchedThreads];
     await client.call("categories.addThreads", { categoryId: cat, threadIds: [t!] });
     expect(await client.call("categories.addThreads", { categoryId: cat, threadIds: [t!] })).toEqual({ added: 0, addedIds: [], batchId: null });
     await expect(client.call("categories.addThreads", { categoryId: 999, threadIds: [t!] })).rejects.toThrow(/not found/);
@@ -155,31 +152,31 @@ describe("categorizer: training hooks", () => {
 
   it("a thread merge reconciles the model after commit (the losing example is untrained)", async () => {
     const { backend, client } = setup();
-    const acct = createAccount(backend.db, { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
-    const cat = createCategory(backend.db, "Clientes", "emerald").id;
+    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const cat = createCategory(sqlDb(backend.store), "Clientes", "emerald").id;
     const a = incoming(acct, { rfcMessageId: "ra@x" });
     const c = incoming(acct, { rfcMessageId: "rc@x", references: ["rb@x"] });
-    ingestMessages(backend.db, [a, c], NOW);
-    const t = (m: IncomingMessage) => backend.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = ?", m.providerMsgId)!.thread_id;
+    ingestMessages(sqlDb(backend.store), [a, c], NOW);
+    const t = (m: IncomingMessage) => sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = ?", m.providerMsgId)!.thread_id;
     const [ta, tc] = [t(a), t(c)];
-    backend.categorizer.rebuildSync();
+    await backend.categorizer.rebuildNow();
     await client.call("categories.addThreads", { categoryId: cat, threadIds: [tc] });
     await client.call("categories.addThreads", { categoryId: cat, threadIds: [ta] });
     await client.call("categories.removeThreads", { categoryId: cat, threadIds: [ta] });
     expect(backend.categorizer.model!.positives(cat)).toBe(1);
     await backend.ingestSliced([incoming(acct, { rfcMessageId: "rb@x", references: ["ra@x"] })]);
     expect(backend.categorizer.model!.positives(cat)).toBe(0);
-    expect(backend.db.get("SELECT 1 FROM thread_categories")).toBeUndefined();
+    expect(sqlDb(backend.store).get("SELECT 1 FROM thread_categories")).toBeUndefined();
   });
 
   it("a seeded mailbox starts warm: the rebuild trains every user-filed thread", async () => {
     const { backend } = setup({ seed: true });
     expect(backend.categorizer.ready).toBe(false);
-    backend.start();
+    await backend.start();
     await backend.categorizer.rebuild();
     const model = backend.categorizer.model!;
-    for (const { id } of backend.db.all<{ id: number }>("SELECT id FROM categories")) {
-      const filed = backend.db.get<{ c: number }>("SELECT count(*) AS c FROM cls_examples WHERE category_id = ? AND label = 1 AND weight > 0", id)!.c;
+    for (const { id } of sqlDb(backend.store).all<{ id: number }>("SELECT id FROM categories")) {
+      const filed = sqlDb(backend.store).get<{ c: number }>("SELECT count(*) AS c FROM cls_examples WHERE category_id = ? AND label = 1 AND weight > 0", id)!.c;
       expect(filed).toBeGreaterThan(0);
       expect(model.positives(id)).toBe(filed);
     }
@@ -188,19 +185,21 @@ describe("categorizer: training hooks", () => {
 
   it("persists a snapshot on stop and adopts it on the next start; a stale one is rebuilt", async () => {
     const { backend, dir, stop } = setup({ seed: true });
-    backend.categorizer.rebuildSync();
-    const probe = backend.db.all<{ features: Uint8Array }>("SELECT features FROM cls_examples LIMIT 5");
+    await backend.categorizer.rebuildNow();
+    const probe = sqlDb(backend.store).all<{ features: Uint8Array }>("SELECT features FROM cls_examples LIMIT 5");
     const { featuresFromBlob } = await import("@unica/core");
     const scores = probe.map((p) => backend.categorizer.model!.score(featuresFromBlob(p.features)));
     await stop();
 
     const again = open(dir);
+    await again.backend.ready;
     expect(again.backend.categorizer.ready).toBe(true);
     expect(probe.map((p) => again.backend.categorizer.model!.score(featuresFromBlob(p.features)))).toEqual(scores);
     // an example written behind the model's back (a crash before the snapshot) makes it stale
-    again.backend.db.run("UPDATE cls_examples SET weight = 0.5 WHERE thread_id = (SELECT min(thread_id) FROM cls_examples)");
+    sqlDb(again.backend.store).run("UPDATE cls_examples SET weight = 0.5 WHERE thread_id = (SELECT min(thread_id) FROM cls_examples)");
     await again.backend.stop();
     const third = open(dir);
+    await third.backend.ready;
     expect(third.backend.categorizer.ready).toBe(false);
     await third.backend.stop();
   });
@@ -208,18 +207,18 @@ describe("categorizer: training hooks", () => {
   it("a paged rebuild counts each write once, whether the scan had read that row or not", async () => {
     const { backend, client } = setup({ seed: true });
     const cat = (await client.call("categories.create", { name: "Muchos", color: "rose" })).id;
-    const ids = backend.db.all<{ id: number }>("SELECT id FROM threads ORDER BY id").map((r) => r.id);
-    addToCategory(backend.db, { categoryId: cat, threadIds: ids.slice(0, 500), addedBy: "user", now: NOW });
-    backend.categorizer.rebuildSync();
+    const ids = sqlDb(backend.store).all<{ id: number }>("SELECT id FROM threads ORDER BY id").map((r) => r.id);
+    addToCategory(sqlDb(backend.store), { categoryId: cat, threadIds: ids.slice(0, 500), addedBy: "user", now: NOW });
+    await backend.categorizer.rebuildNow();
     const rebuilding = backend.categorizer.rebuild();
     // one row the first slice has read (lowest key) and one it can't have reached (highest key), plus a new one
     await client.call("categories.removeThreads", { categoryId: cat, threadIds: [ids[0]!, ids[499]!] });
     await client.call("categories.addThreads", { categoryId: cat, threadIds: [ids[550]!] });
     await rebuilding;
     const live = backend.categorizer.model!;
-    const probe = backend.db.all<{ features: Uint8Array }>("SELECT features FROM cls_examples LIMIT 3");
+    const probe = sqlDb(backend.store).all<{ features: Uint8Array }>("SELECT features FROM cls_examples LIMIT 3");
     const { featuresFromBlob } = await import("@unica/core");
-    const fresh = backend.categorizer.rebuildSync();
+    const fresh = await backend.categorizer.rebuildNow();
     for (const c of fresh.categoryIds) expect(live.positives(c), `category ${c}`).toBe(fresh.positives(c));
     for (const p of probe) {
       const a = live.score(featuresFromBlob(p.features));
@@ -230,9 +229,9 @@ describe("categorizer: training hooks", () => {
 
   it("writes committed during a sliced rebuild are replayed onto the new model", async () => {
     const { backend, client } = setup({ seed: true });
-    const cat = backend.db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id;
-    backend.categorizer.rebuildSync();
-    const target = backend.db.get<{ id: number }>(
+    const cat = sqlDb(backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id;
+    await backend.categorizer.rebuildNow();
+    const target = sqlDb(backend.store).get<{ id: number }>(
       "SELECT id FROM threads t WHERE NOT EXISTS (SELECT 1 FROM thread_categories tc WHERE tc.thread_id = t.id) AND EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id AND m.is_sent = 0) LIMIT 1",
     )!.id;
     const before = backend.categorizer.model!.positives(cat);
@@ -262,8 +261,8 @@ describe("categorizer: auto-apply at ingestion", () => {
   /** A mailbox where the user filed 6 receipt senders into Facturas (examples 120 days old) next to uncategorized personal mail and promotions. */
   async function trained(options: { examplesAt?: number } = {}) {
     const { backend, client } = setup();
-    const acct = createAccount(backend.db, { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
-    const cat = createCategory(backend.db, "Facturas", "amber").id;
+    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
     const old: IncomingMessage[] = [];
     SENDERS.forEach((s, k) => {
       for (let i = 0; i < 6; i++) old.push(incoming(acct, { ...receipt(s, k * 10 + i), date: NOW - (40 + k * 6 + i) * DAY, inInbox: false }));
@@ -276,23 +275,23 @@ describe("categorizer: auto-apply at ingestion", () => {
     for (let i = 0; i < 100; i++) {
       old.push(incoming(acct, { from: { name: `Tienda ${i % 10}`, email: `info@tienda${i % 10}.com` }, listId: `ofertas.tienda${i % 10}.com`, subject: "Ofertas de la semana en tu cuenta", bodyText: "Descuentos en toda la tienda. Darse de baja", date: NOW - (20 + (i % 150)) * DAY, inInbox: false }));
     }
-    const r = ingestMessages(backend.db, old, NOW);
-    const filed = backend.db
+    const r = ingestMessages(sqlDb(backend.store), old, NOW);
+    const filed = sqlDb(backend.store)
       .all<{ thread_id: number }>(
         "SELECT DISTINCT thread_id FROM messages WHERE id IN (SELECT value FROM json_each(?)) AND from_email IN (SELECT value FROM json_each(?))",
         JSON.stringify(r.inserted),
         JSON.stringify(SENDERS.map((x) => x.email)),
       )
       .map((x) => x.thread_id);
-    addToCategory(backend.db, { categoryId: cat, threadIds: filed, addedBy: "user", now: options.examplesAt ?? NOW - 120 * DAY });
-    backend.categorizer.rebuildSync();
+    addToCategory(sqlDb(backend.store), { categoryId: cat, threadIds: filed, addedBy: "user", now: options.examplesAt ?? NOW - 120 * DAY });
+    await backend.categorizer.rebuildNow();
     const arrive = async (over: Partial<IncomingMessage>) => {
       const m = incoming(acct, { date: NOW - 3_600_000, ...over });
       await backend.ingestSliced([m]);
-      return { thread: backend.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = ?", m.providerMsgId)!.thread_id, message: m };
+      return { thread: sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = ?", m.providerMsgId)!.thread_id, message: m };
     };
-    const decision = (thread: number) => backend.db.get<{ kind: string; outcome: string | null; explain_json: string }>("SELECT kind, outcome, explain_json FROM cls_decisions WHERE thread_id = ? AND category_id = ?", thread, cat);
-    const inCategory = (thread: number) => backend.db.get<{ added_by: string }>("SELECT added_by FROM thread_categories WHERE thread_id = ? AND category_id = ?", thread, cat)?.added_by ?? null;
+    const decision = (thread: number) => sqlDb(backend.store).get<{ kind: string; outcome: string | null; explain_json: string }>("SELECT kind, outcome, explain_json FROM cls_decisions WHERE thread_id = ? AND category_id = ?", thread, cat);
+    const inCategory = (thread: number) => sqlDb(backend.store).get<{ added_by: string }>("SELECT added_by FROM thread_categories WHERE thread_id = ? AND category_id = ?", thread, cat)?.added_by ?? null;
     return { backend, client, acct, cat, arrive, decision, inCategory };
   }
 
@@ -306,7 +305,7 @@ describe("categorizer: auto-apply at ingestion", () => {
     expect(JSON.parse(d.explain_json)[0]).toMatch(/^mismo remitente que \d+ conversaciones en Facturas$/);
     // auto adds never train the model (no feedback loop)
     expect(backend.categorizer.model!.positives(cat)).toBe(positives);
-    expect(backend.db.get("SELECT 1 FROM cls_examples WHERE thread_id = ?", thread)).toBeUndefined();
+    expect(sqlDb(backend.store).get("SELECT 1 FROM cls_examples WHERE thread_id = ?", thread)).toBeUndefined();
   });
 
   it("only evaluates new inbound inbox mail: not archived, spam, drafts, old backfill or replies", async () => {
@@ -351,7 +350,7 @@ describe("categorizer: auto-apply at ingestion", () => {
     await backend.ingestSliced([{ ...message, bodyState: "full" }]);
     await arrive({ ...receipt(SENDERS[3]!, 2), inReplyTo: message.rfcMessageId });
     expect(inCategory(thread)).toBeNull();
-    expect(backend.db.get("SELECT label FROM cls_examples WHERE thread_id = ?", thread)).toEqual({ label: -1 });
+    expect(sqlDb(backend.store).get("SELECT label FROM cls_examples WHERE thread_id = ?", thread)).toEqual({ label: -1 });
   });
 
   it("backs off a sender after the user removes two of its threads", async () => {
@@ -369,9 +368,9 @@ describe("categorizer: auto-apply at ingestion", () => {
 
   it("pauses auto for a category whose matured outcomes fail the safety valve", async () => {
     const { backend, cat, arrive, decision, inCategory } = await trained();
-    const threads = backend.db.all<{ thread_id: number }>("SELECT thread_id FROM cls_examples LIMIT 12").map((r) => r.thread_id);
+    const threads = sqlDb(backend.store).all<{ thread_id: number }>("SELECT thread_id FROM cls_examples LIMIT 12").map((r) => r.thread_id);
     threads.forEach((t, i) =>
-      backend.db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at, outcome) VALUES (?, ?, 'auto', 0.99, '[]', ?, ?)", t, cat, NOW - 40 * DAY, i < 4 ? "reverted" : "kept"),
+      sqlDb(backend.store).run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at, outcome) VALUES (?, ?, 'auto', 0.99, '[]', ?, ?)", t, cat, NOW - 40 * DAY, i < 4 ? "reverted" : "kept"),
     );
     const { thread } = await arrive(receipt(SENDERS[0]!, 7));
     expect(inCategory(thread)).toBeNull();
@@ -396,7 +395,7 @@ describe("categorizer: auto-apply at ingestion", () => {
     const { thread } = await arrive(receipt(SENDERS[0]!, 8));
     expect(inCategory(thread)).toBe("filter");
     expect(decision(thread)).toBeUndefined();
-    expect(backend.db.get("SELECT 1 FROM cls_examples WHERE thread_id = ?", thread)).toBeUndefined();
+    expect(sqlDb(backend.store).get("SELECT 1 FROM cls_examples WHERE thread_id = ?", thread)).toBeUndefined();
   });
 
   it("reclassifies once when the body arrives; an unknown sender gets in on content alone", async () => {
@@ -412,20 +411,20 @@ describe("categorizer: auto-apply at ingestion", () => {
    * A sender the user filed only sometimes: unfiled history is added until a
    * neutral new message from it lands in the uncertain band (0.5 ≤ p < 0.8).
    */
-  function uncertainMail(backend: Backend, acct: number, cat: number, name = "Facturas Servicio"): Partial<IncomingMessage> {
+  async function uncertainMail(backend: Backend, acct: number, cat: number, name = "Facturas Servicio"): Promise<Partial<IncomingMessage>> {
     // the offline fake AI picks a label it finds in the text: the display name carries it
     const from = { name, email: "avisos@nuevo-servicio.mx" };
-    const filed = [...ingestMessages(backend.db, Array.from({ length: 4 }, (_, i) => incoming(acct, { from, subject: `Aviso ${i}`, bodyText: "Aviso de servicio.", date: NOW - (50 + i) * DAY, inInbox: false })), NOW).touchedThreads];
-    addToCategory(backend.db, { categoryId: cat, threadIds: filed, addedBy: "user", now: NOW - 40 * DAY });
+    const filed = [...ingestMessages(sqlDb(backend.store), Array.from({ length: 4 }, (_, i) => incoming(acct, { from, subject: `Aviso ${i}`, bodyText: "Aviso de servicio.", date: NOW - (50 + i) * DAY, inInbox: false })), NOW).touchedThreads];
+    addToCategory(sqlDb(backend.store), { categoryId: cat, threadIds: filed, addedBy: "user", now: NOW - 40 * DAY });
     const draft = { from, subject: "Aviso", bodyText: "Aviso de servicio." };
     const features = encodeFeatures(extractFeatures({ fromEmail: from.email, fromName: from.name, listId: null, subject: "Aviso", bodyText: draft.bodyText, replied: false, attachmentNames: [] }, { ownDomains: new Set(["example.com"]) }));
     const seen: string[] = [];
     for (let unfiled = 0; unfiled < 80; unfiled++) {
-      backend.categorizer.rebuildSync();
+      await backend.categorizer.rebuildNow();
       const s = backend.categorizer.model!.score(features).find((x) => x.categoryId === cat)!;
       seen.push(s.p.toFixed(2));
       if (s.p >= 0.5 && s.p < 0.8) return draft;
-      ingestMessages(backend.db, [incoming(acct, { from, subject: `Aviso viejo ${unfiled}`, bodyText: "Aviso de servicio.", date: NOW - (20 + unfiled) * DAY, inInbox: false })], NOW);
+      ingestMessages(sqlDb(backend.store), [incoming(acct, { from, subject: `Aviso viejo ${unfiled}`, bodyText: "Aviso de servicio.", date: NOW - (20 + unfiled) * DAY, inInbox: false })], NOW);
     }
     throw new Error(`no uncertain draft: ${seen.join(" ")}`);
   }
@@ -435,7 +434,7 @@ describe("categorizer: auto-apply at ingestion", () => {
     let asked = 0;
     const real = backend.ai.bind(backend);
     backend.ai = async () => (asked++, real());
-    const { thread } = await arrive(uncertainMail(backend, acct, cat));
+    const { thread } = await arrive(await uncertainMail(backend, acct, cat));
     await backend.aiAssist.drain();
     expect(asked).toBe(0);
     expect(decision(thread)).toBeUndefined();
@@ -443,8 +442,8 @@ describe("categorizer: auto-apply at ingestion", () => {
 
   it("with the assist on, the AI can turn 'nothing' into a suggestion, never an auto add", async () => {
     const { backend, acct, cat, arrive, decision, inCategory } = await trained();
-    setSetting(backend.db, "app", { ai: { provider: "fake" }, aiCategorize: true });
-    const { thread } = await arrive(uncertainMail(backend, acct, cat));
+    setSetting(sqlDb(backend.store), "app", { ai: { provider: "fake" }, aiCategorize: true });
+    const { thread } = await arrive(await uncertainMail(backend, acct, cat));
     await backend.aiAssist.drain();
     expect(decision(thread)?.kind).toBe("suggest");
     expect(JSON.parse(decision(thread)!.explain_json)[0]).toMatch(/^la IA .* cree que es de Facturas$/);
@@ -459,9 +458,9 @@ describe("categorizer: auto-apply at ingestion", () => {
     dc.subscribe("net.client.socket", onSocket);
     dc.subscribe("undici:client:beforeConnect", onUndici);
     try {
-      putSecret(backend.db, "ai:anthropic:apiKey", await plaintextCipher.encrypt("sk-test-key-123456"));
-      setSetting(backend.db, "app", { localMode: true, ai: { provider: "anthropic" }, aiCategorize: true });
-      const { thread } = await arrive(uncertainMail(backend, acct, cat));
+      putSecret(sqlDb(backend.store), "ai:anthropic:apiKey", await plaintextCipher.encrypt("sk-test-key-123456"));
+      setSetting(sqlDb(backend.store), "app", { localMode: true, ai: { provider: "anthropic" }, aiCategorize: true });
+      const { thread } = await arrive(await uncertainMail(backend, acct, cat));
       await backend.aiAssist.drain();
       expect(decision(thread)).toBeUndefined();
       expect(connects).toEqual([]);
@@ -474,8 +473,8 @@ describe("categorizer: auto-apply at ingestion", () => {
   it("the AI never suggests past a veto: look-alike senders aren't even asked", async () => {
     const { backend, acct, cat, arrive, decision } = await trained();
     // a trained bank's display name from another domain
-    const draft = uncertainMail(backend, acct, cat, "BBVA Facturas");
-    setSetting(backend.db, "app", { ai: { provider: "fake" }, aiCategorize: true });
+    const draft = await uncertainMail(backend, acct, cat, "BBVA Facturas");
+    setSetting(sqlDb(backend.store), "app", { ai: { provider: "fake" }, aiCategorize: true });
     let asked = 0;
     const real = backend.ai.bind(backend);
     backend.ai = async () => (asked++, real());
@@ -487,8 +486,8 @@ describe("categorizer: auto-apply at ingestion", () => {
 
   it("re-checks before writing: a removal or switching the assist off while the AI thinks wins", async () => {
     const { backend, client, acct, cat, arrive, decision } = await trained();
-    const draft = uncertainMail(backend, acct, cat);
-    setSetting(backend.db, "app", { ai: { provider: "fake" }, aiCategorize: true });
+    const draft = await uncertainMail(backend, acct, cat);
+    setSetting(sqlDb(backend.store), "app", { ai: { provider: "fake" }, aiCategorize: true });
     for (const interrupt of ["removal", "switch-off"] as const) {
       let release!: () => void;
       const answered = new Promise<void>((r) => (release = r));
@@ -508,25 +507,25 @@ describe("categorizer: auto-apply at ingestion", () => {
         await client.call("categories.addThreads", { categoryId: cat, threadIds: [thread] });
         await client.call("categories.removeThreads", { categoryId: cat, threadIds: [thread] });
       } else {
-        setSetting(backend.db, "app", { ai: { provider: "fake" }, aiCategorize: false });
+        setSetting(sqlDb(backend.store), "app", { ai: { provider: "fake" }, aiCategorize: false });
       }
       release();
       await running;
       expect(decision(thread), interrupt).toBeUndefined();
-      setSetting(backend.db, "app", { ai: { provider: "fake" }, aiCategorize: true });
+      setSetting(sqlDb(backend.store), "app", { ai: { provider: "fake" }, aiCategorize: true });
     }
   });
 
   it("asks the AI at most 20 times a minute, once per thread", async () => {
     const { backend, acct, cat, arrive } = await trained();
-    const draft = uncertainMail(backend, acct, cat);
-    setSetting(backend.db, "app", { ai: { provider: "fake" }, aiCategorize: true });
+    const draft = await uncertainMail(backend, acct, cat);
+    setSetting(sqlDb(backend.store), "app", { ai: { provider: "fake" }, aiCategorize: true });
     let asked = 0;
     const real = backend.ai.bind(backend);
     backend.ai = async () => (asked++, real());
     const threads: number[] = [];
     for (let i = 0; i < 25; i++) threads.push((await arrive(draft)).thread);
-    backend.aiAssist.enqueue(threads); // again: once per thread
+    await backend.aiAssist.enqueue(threads); // again: once per thread
     await backend.aiAssist.drain();
     expect(asked).toBe(20);
     expect(backend.aiAssist.pending).toBe(5);
@@ -562,8 +561,8 @@ describe("categorizer: auto-apply at ingestion", () => {
 describe("categorize RPCs: bulk apply, undo, predictions, suggestions", () => {
   async function mailbox() {
     const { backend, client } = setup();
-    const acct = createAccount(backend.db, { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
-    const cat = createCategory(backend.db, "Lecturas", "violet").id;
+    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const cat = createCategory(sqlDb(backend.store), "Lecturas", "violet").id;
     return { backend, client, acct, cat };
   }
 
@@ -572,9 +571,9 @@ describe("categorize RPCs: bulk apply, undo, predictions, suggestions", () => {
     const news = Array.from({ length: 640 }, (_, i) => incoming(acct, { from: { name: "Xataka", email: "boletin@xataka.com" }, listId: "boletin.xataka.com", subject: `Lo mejor de la semana ${i}`, bodyText: "Tecnología. Darse de baja", date: NOW - (i + 1) * 3_600_000 }));
     // mentions the list in its text: the old card's free-text search would have added it
     const decoy = incoming(acct, { from: { name: "Ana", email: "ana@gmail.com" }, subject: "boletin.xataka.com", bodyText: "¿viste boletin.xataka.com?" });
-    ingestMessages(backend.db, [...news, decoy], NOW);
-    backend.categorizer.rebuildSync();
-    const first = backend.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = ?", news[0]!.providerMsgId)!.thread_id;
+    ingestMessages(sqlDb(backend.store), [...news, decoy], NOW);
+    await backend.categorizer.rebuildNow();
+    const first = sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = ?", news[0]!.providerMsgId)!.thread_id;
     await client.call("categories.addThreads", { categoryId: cat, threadIds: [first] });
 
     expect(await client.call("categorize.count", { categoryId: cat, scope: { kind: "list", listId: "boletin.xataka.com" } })).toEqual({ count: 639, capped: false });
@@ -582,14 +581,14 @@ describe("categorize RPCs: bulk apply, undo, predictions, suggestions", () => {
     expect(preview.sample).toHaveLength(5);
     const applied = await client.call("categorize.apply", { categoryId: cat, scope: { kind: "list", listId: "boletin.xataka.com" } });
     expect(applied).toEqual({ batchId: expect.any(Number), added: 639 });
-    const decoyThread = backend.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = ?", decoy.providerMsgId)!.thread_id;
-    expect(backend.db.get("SELECT 1 FROM thread_categories WHERE thread_id = ?", decoyThread)).toBeUndefined();
+    const decoyThread = sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = ?", decoy.providerMsgId)!.thread_id;
+    expect(sqlDb(backend.store).get("SELECT 1 FROM thread_categories WHERE thread_id = ?", decoyThread)).toBeUndefined();
     // bulk adds weigh half and teach content for at most 50 threads of the sender
-    expect(backend.db.get<{ n: number; content: number }>("SELECT count(*) AS n, sum(content) AS content FROM cls_examples WHERE source = 'bulk'")).toEqual({ n: 639, content: 50 });
+    expect(sqlDb(backend.store).get<{ n: number; content: number }>("SELECT count(*) AS n, sum(content) AS content FROM cls_examples WHERE source = 'bulk'")).toEqual({ n: 639, content: 50 });
     expect(backend.categorizer.model!.positives(cat)).toBe(640);
 
     expect(await client.call("categorize.undo", { batchId: applied.batchId! })).toEqual({ removed: 639 });
-    expect(backend.db.get<{ n: number }>("SELECT count(*) AS n FROM thread_categories")!.n).toBe(1);
+    expect(sqlDb(backend.store).get<{ n: number }>("SELECT count(*) AS n FROM thread_categories")!.n).toBe(1);
     expect(backend.categorizer.model!.positives(cat)).toBe(1);
     // nothing left to add: no undo handle
     expect(await client.call("categorize.apply", { categoryId: cat, scope: { kind: "sender", email: "nobody@nowhere.io" } })).toEqual({ batchId: null, added: 0 });
@@ -597,9 +596,9 @@ describe("categorize RPCs: bulk apply, undo, predictions, suggestions", () => {
 
   it("quick actions come from the filed threads; topic queries count what is left", async () => {
     const { backend, client, acct, cat } = await mailbox();
-    ingestMessages(backend.db, Array.from({ length: 8 }, (_, i) => incoming(acct, { from: { name: "Hacker Newsletter", email: "kale@hackernewsletter.com" }, listId: "hackernewsletter.com", subject: `#${i} SQLite internals and CRDTs`, bodyText: "This week: SQLite internals, CRDTs, local-first. Unsubscribe", date: NOW - (i + 1) * 86_400_000 })), NOW);
-    backend.categorizer.rebuildSync();
-    const t = backend.db.get<{ id: number }>("SELECT id FROM threads LIMIT 1")!.id;
+    ingestMessages(sqlDb(backend.store), Array.from({ length: 8 }, (_, i) => incoming(acct, { from: { name: "Hacker Newsletter", email: "kale@hackernewsletter.com" }, listId: "hackernewsletter.com", subject: `#${i} SQLite internals and CRDTs`, bodyText: "This week: SQLite internals, CRDTs, local-first. Unsubscribe", date: NOW - (i + 1) * 86_400_000 })), NOW);
+    await backend.categorizer.rebuildNow();
+    const t = sqlDb(backend.store).get<{ id: number }>("SELECT id FROM threads LIMIT 1")!.id;
     await client.call("categories.addThreads", { categoryId: cat, threadIds: [t] });
     const qa = await client.call("categorize.quickActions", { categoryId: cat, threadIds: [t] });
     expect(qa).toMatchObject({ sender: { email: "kale@hackernewsletter.com" }, list: "hackernewsletter.com", domain: "hackernewsletter.com" });
@@ -611,12 +610,12 @@ describe("categorize RPCs: bulk apply, undo, predictions, suggestions", () => {
     const { backend, client, acct, cat } = await mailbox();
     const news = Array.from({ length: 12 }, (_, i) => incoming(acct, { from: { name: "Morning Brew", email: "crew@morningbrew.com" }, listId: "daily.morningbrew.com", subject: `Your brief ${i}`, bodyText: "Markets and streaming wars. Unsubscribe", date: NOW - (40 + i) * 86_400_000, inInbox: false }));
     const friends = Array.from({ length: 80 }, (_, i) => incoming(acct, { from: { name: `Amigo ${i % 10}`, email: `amigo${i % 10}@gmail.com` }, subject: "¿Comida?", bodyText: "Hola, ¿comemos el sábado?", date: NOW - (20 + i) * 86_400_000, inInbox: false }));
-    ingestMessages(backend.db, [...news, ...friends], NOW);
-    const filed = backend.db.all<{ thread_id: number }>("SELECT DISTINCT thread_id FROM messages WHERE from_email = 'crew@morningbrew.com'").map((r) => r.thread_id);
+    ingestMessages(sqlDb(backend.store), [...news, ...friends], NOW);
+    const filed = sqlDb(backend.store).all<{ thread_id: number }>("SELECT DISTINCT thread_id FROM messages WHERE from_email = 'crew@morningbrew.com'").map((r) => r.thread_id);
     await client.call("categories.addThreads", { categoryId: cat, threadIds: filed });
-    backend.categorizer.rebuildSync();
+    await backend.categorizer.rebuildNow();
     await backend.ingestSliced([incoming(acct, { from: { name: "Morning Brew", email: "crew@morningbrew.com" }, listId: "daily.morningbrew.com", subject: "Your brief", bodyText: "Markets. Unsubscribe", date: NOW - 3_600_000, providerMsgId: "new-brief" })]);
-    const fresh = backend.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = 'new-brief'")!.thread_id;
+    const fresh = sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = 'new-brief'")!.thread_id;
     const [best] = await client.call("categorize.predict", { threadId: fresh });
     expect(best).toMatchObject({ categoryId: cat, decision: "auto" });
     expect(best!.reasons[0]).toMatch(/^mismo remitente que/);
@@ -624,14 +623,14 @@ describe("categorize RPCs: bulk apply, undo, predictions, suggestions", () => {
     expect(detail.categorization?.auto).toEqual([{ categoryId: cat, reasons: expect.arrayContaining([expect.stringMatching(/^mismo remitente/)]) }]);
 
     // a suggestion waiting for an answer
-    const friend = backend.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE from_email = 'amigo1@gmail.com' LIMIT 1")!.thread_id;
-    backend.db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'suggest', 0.85, '[\"menciona «brief»\"]', ?)", friend, cat, NOW);
+    const friend = sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE from_email = 'amigo1@gmail.com' LIMIT 1")!.thread_id;
+    sqlDb(backend.store).run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'suggest', 0.85, '[\"menciona «brief»\"]', ?)", friend, cat, NOW);
     expect((await client.call("counts.get", {})).categorySuggestions).toEqual({ [cat]: 1 });
     const { items } = await client.call("categorize.suggestions", { categoryId: cat });
     expect(items.map((x) => [x.id, x.prediction.reasons])).toEqual([[friend, ["menciona «brief»"]]]);
     expect((await client.call("threads.get", { threadId: friend })).categorization?.suggestions).toEqual([{ categoryId: cat, p: 0.85, reasons: ["menciona «brief»"] }]);
     await client.call("categorize.feedback", { threadId: friend, categoryId: cat, verdict: "reject" });
-    expect(backend.db.get("SELECT label, weight, source FROM cls_examples WHERE thread_id = ?", friend)).toEqual({ label: -1, weight: 1, source: "reject" });
+    expect(sqlDb(backend.store).get("SELECT label, weight, source FROM cls_examples WHERE thread_id = ?", friend)).toEqual({ label: -1, weight: 1, source: "reject" });
     expect((await client.call("counts.get", {})).categorySuggestions).toEqual({});
 
     const stats = await client.call("categorize.stats", {});

@@ -1,11 +1,11 @@
 import type { AiTasks } from "@unica/ai";
 import { candidateCategories, POLICY, senderVetoed } from "@unica/core";
-import { rootRefs, threadFeatures, vetoesFor, type Db } from "@unica/db";
+import type { MailStore } from "@unica/store";
 import type { Categorizer } from "./categorizer";
 import { readSettings } from "./settings";
 
 export interface AiAssistHost {
-  readonly db: Db;
+  readonly store: MailStore;
   readonly categorizer: Categorizer;
   now(): number;
   ai(): Promise<AiTasks>;
@@ -38,8 +38,8 @@ export class AiAssist {
     return this.queue.length;
   }
 
-  enqueue(threadIds: readonly number[]): void {
-    if (threadIds.length === 0 || !readSettings(this.host.db).aiCategorize) return;
+  async enqueue(threadIds: readonly number[]): Promise<void> {
+    if (threadIds.length === 0 || !(await readSettings(this.host.store)).aiCategorize) return;
     for (const id of threadIds) {
       if (this.seen.has(id)) continue;
       this.seen.add(id);
@@ -69,7 +69,7 @@ export class AiAssist {
     try {
       while (this.queue.length) {
         const threadId = this.queue.shift()!;
-        if (!readSettings(this.host.db).aiCategorize) {
+        if (!(await readSettings(this.host.store)).aiCategorize) {
           this.queue.length = 0;
           break;
         }
@@ -91,35 +91,28 @@ export class AiAssist {
   }
 
   /** The assist is on, the thread is new-mail-like (inbox, not spam/trash) and nobody decided on it. */
-  private allowed(threadId: number): boolean {
-    const { db } = this.host;
-    const settings = readSettings(db);
+  private async allowed(threadId: number): Promise<boolean> {
+    const settings = await readSettings(this.host.store);
     if (!settings.aiCategorize || settings.autoCategorize === "off") return false;
-    const root = rootRefs(db, [threadId])[0];
-    if (!root || !root.inInbox || root.spam || root.trash || root.draft) return false;
-    return !db.get(
-      `SELECT 1 FROM thread_categories WHERE thread_id = ?1 UNION ALL SELECT 1 FROM cls_decisions WHERE thread_id = ?1
-       UNION ALL SELECT 1 FROM cls_examples WHERE thread_id = ?1 LIMIT 1`,
-      threadId,
-    );
+    return this.host.store.categorize.aiCandidate(threadId);
   }
 
   /** "stop" when the AI can't run at all (not configured, paused by local mode); "wait" at the rate limit. */
   private async consider(threadId: number): Promise<"done" | "wait" | "stop"> {
-    const { db } = this.host;
+    const { store } = this.host;
     const model = this.host.categorizer.model;
-    if (!model || !db.isOpen || !this.allowed(threadId)) return "done";
-    const set = threadFeatures(db, [threadId]).get(threadId);
+    if (!model || !store.isOpen || !(await this.allowed(threadId))) return "done";
+    const set = (await store.categorize.threadFeatures([threadId])).get(threadId);
     if (!set || model.lookAlike(set.encoded)) return "done";
     const scores = model.score(set.encoded);
     const decided = new Set(candidateCategories(scores));
-    const vetoes = vetoesFor(db, threadId, set.features.sender, scores.map((s) => s.categoryId), this.host.now());
+    const vetoes = await store.categorize.vetoes(threadId, set.features.sender, scores.map((s) => s.categoryId), this.host.now());
     const band = scores.filter((s) => {
       const v = vetoes.get(s.categoryId);
       return s.p >= BAND_LOW && s.p < POLICY.autoP && !decided.has(s.categoryId) && s.positives >= POLICY.suggestMinPositives && !v?.hard && !(v && senderVetoed(v));
     });
     if (band.length === 0) return "done";
-    const names = new Map(db.all<{ id: number; name: string }>("SELECT id, name FROM categories").map((c) => [c.id, c.name]));
+    const names = new Map((await store.categories.list()).map((c) => [c.id, c.name]));
     const labels = band.map((s) => names.get(s.categoryId)).filter((n): n is string => !!n);
     const now = Date.now();
     while (this.calls.length && now - this.calls[0]! > 60_000) this.calls.shift();
@@ -143,21 +136,20 @@ export class AiAssist {
       });
       if (!r?.label || r.confidence < AI_MIN_CONFIDENCE) return "done";
       const score = band.find((s) => names.get(s.categoryId) === r.label);
-      if (!score || !db.isOpen) return "done";
-      const wrote = db.tx(() => {
-        // the provider took a while: the user, the settings or the model may have spoken since
-        if (!this.allowed(threadId) || !this.host.categorizer.model) return false;
-        const v = vetoesFor(db, threadId, set.features.sender, [score.categoryId], this.host.now()).get(score.categoryId);
-        if (v?.hard || (v && senderVetoed(v)) || this.host.categorizer.model.lookAlike(set.encoded)) return false;
-        db.run(
-          "INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'suggest', ?, ?, ?)",
-          threadId,
-          score.categoryId,
-          score.p,
-          JSON.stringify([`la IA (${ai.local ? "en este Mac" : ai.providerId}) cree que es de ${r.label}`]),
-          this.host.now(),
-        );
-        return true;
+      if (!score || !store.isOpen) return "done";
+      // the provider took a while: the user, the settings or the model may have spoken since
+      const settings = await readSettings(store);
+      const current = this.host.categorizer.model;
+      if (!settings.aiCategorize || settings.autoCategorize === "off" || !current) return "done";
+      const wrote = await store.categorize.recordAiSuggestion({
+        threadId,
+        categoryId: score.categoryId,
+        p: score.p,
+        explain: [`la IA (${ai.local ? "en este Mac" : ai.providerId}) cree que es de ${r.label}`],
+        sender: set.features.sender,
+        encoded: set.encoded,
+        model: current,
+        now: this.host.now(),
       });
       if (wrote) this.host.notifyChanged([threadId], false);
     } catch (error) {

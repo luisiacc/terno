@@ -8,6 +8,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, rows, test } from "./fixtures";
+import { sqlDb } from "../../backend-dev/src/server";
 
 const MULT = Number(process.env.PERF_BUDGET_MULTIPLIER ?? "1");
 interface Stat { name: string; budgetMs: number; p50: number; p95: number; max: number; iterations: number }
@@ -199,7 +200,7 @@ test("switching theme: painted within 50 ms, no row re-renders", async ({ app: p
 });
 
 test("dragging rows to the sidebar: starts within a frame, no row renders, two NavItems per target change", async ({ app: page, server }) => {
-  const cats = server.backend.db.all<{ id: number }>("SELECT id FROM categories ORDER BY position");
+  const cats = sqlDb(server.backend.store).all<{ id: number }>("SELECT id FROM categories ORDER BY position");
   const row = rows(page).nth(2);
   const b = (await row.boundingBox())!;
   const from = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
@@ -268,7 +269,7 @@ test("dragging rows to the sidebar: starts within a frame, no row renders, two N
 });
 
 test("dropping: the dot is on the row within a frame; only the dropped row renders", async ({ app: page, server }) => {
-  const viajes = server.backend.db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id;
+  const viajes = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id;
   const target = (await page.getByTestId(`nav-category-${viajes}`).boundingBox())!;
   const samples: number[] = [];
   const renderCounts: number[] = [];

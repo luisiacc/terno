@@ -12,6 +12,7 @@ import imapkit from "imapkit";
 import { SMTPServer } from "smtp-server";
 import { afterEach, describe, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
+import { sqlDb } from "@unica/db";
 
 type ImapKitServer = ReturnType<typeof imapkit>;
 
@@ -163,7 +164,7 @@ async function setup(opts: { smtp?: Parameters<typeof startSmtp>[0] } = {}) {
   return { imap, smtp, backend, client, addAccount };
 }
 
-const count = (backend: Backend, sql: string, ...p: (string | number)[]) => backend.db.get<{ c: number }>(`SELECT count(*) AS c FROM (${sql})`, ...p)!.c;
+const count = (backend: Backend, sql: string, ...p: (string | number)[]) => sqlDb(backend.store).get<{ c: number }>(`SELECT count(*) AS c FROM (${sql})`, ...p)!.c;
 
 describe("IMAP provider against ImapKit", () => {
   it("rejects a wrong password when adding the account", async () => {
@@ -199,7 +200,7 @@ describe("IMAP provider against ImapKit", () => {
     // bodies were downloaded and indexed: HTML-only mail is searchable as text
     expect((await client.call("threads.search", { query: "estado solido" })).items.map((t) => t.subject)).toEqual(["Boletín"]);
     expect(count(backend, "SELECT 1 FROM messages WHERE body_state != 'full'")).toBe(0);
-    expect(backend.db.get("SELECT list_id FROM messages WHERE subject = 'Boletín'")).toEqual({ list_id: "boletin.xataka.com" });
+    expect(sqlDb(backend.store).get("SELECT list_id FROM messages WHERE subject = 'Boletín'")).toEqual({ list_id: "boletin.xataka.com" });
 
     // a second sync is a no-op (no duplicates)
     await backend.syncAccount(account.id);
@@ -219,7 +220,7 @@ describe("IMAP provider against ImapKit", () => {
     await backend.syncAccount(account.id);
     expect((await client.call("threads.list", { view: "archive" })).items.map((x) => x.subject)).toEqual(["Archívame"]);
     expect(count(backend, "SELECT 1 FROM messages")).toBe(1);
-    expect(backend.db.all("SELECT mailbox FROM message_locations")).toEqual([{ mailbox: "Archive" }]);
+    expect(sqlDb(backend.store).all("SELECT mailbox FROM message_locations")).toEqual([{ mailbox: "Archive" }]);
   });
 
   it("applies flag changes, expunges and moves made by other clients", async () => {
@@ -235,7 +236,7 @@ describe("IMAP provider against ImapKit", () => {
     ctl.moveMessages("INBOX", [c.uid], "Archive");
     ctl.addMessage("INBOX", { raw: raw({ subject: "D" }) });
     await backend.syncAccount(account.id);
-    const rows = backend.db.all<{ subject: string; is_read: number; is_starred: number; in_inbox: number }>("SELECT subject, is_read, is_starred, in_inbox FROM messages ORDER BY subject");
+    const rows = sqlDb(backend.store).all<{ subject: string; is_read: number; is_starred: number; in_inbox: number }>("SELECT subject, is_read, is_starred, in_inbox FROM messages ORDER BY subject");
     expect(rows).toEqual([
       { subject: "A", is_read: 1, is_starred: 1, in_inbox: 1 },
       { subject: "C", is_read: 0, is_starred: 0, in_inbox: 0 },
@@ -250,16 +251,16 @@ describe("IMAP provider against ImapKit", () => {
     for (const s of ["uno", "dos", "tres"]) ctl.addMessage("INBOX", { raw: raw({ subject: s }) });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
-    const before = backend.db.all<{ uid: number; uidvalidity: number }>("SELECT uid, uidvalidity FROM message_locations ORDER BY uid");
+    const before = sqlDb(backend.store).all<{ uid: number; uidvalidity: number }>("SELECT uid, uidvalidity FROM message_locations ORDER BY uid");
     ctl.resetUidValidity("INBOX", { uids: "offset", offset: 100 });
     await backend.syncAccount(account.id);
-    const after = backend.db.all<{ uid: number; uidvalidity: number }>("SELECT uid, uidvalidity FROM message_locations ORDER BY uid");
+    const after = sqlDb(backend.store).all<{ uid: number; uidvalidity: number }>("SELECT uid, uidvalidity FROM message_locations ORDER BY uid");
     expect(count(backend, "SELECT 1 FROM messages")).toBe(3);
     expect(after).toHaveLength(3);
     expect(after[0]!.uidvalidity).toBeGreaterThan(before[0]!.uidvalidity);
     expect(after.every((l) => l.uid > 100)).toBe(true);
     // ops still target the right message after the reset
-    const thread = backend.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE subject = 'dos'")!.thread_id;
+    const thread = sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE subject = 'dos'")!.thread_id;
     await backend.server.invoke("threads.act", { threadIds: [thread], action: "markRead" }, { clientId: "t", origin: "renderer" });
     await backend.runWorker();
     const dos = ctl.listMessages("INBOX").find((m: { uid: number }) => m.uid === after.find((_, i) => i === 1)!.uid) as { flags: string[] } | undefined;
@@ -274,10 +275,10 @@ describe("IMAP provider against ImapKit", () => {
     const [t] = (await client.call("threads.list", { view: "inbox" })).items;
     await client.call("threads.act", { threadIds: [t!.id], action: "markRead" });
     await backend.syncAccount(account.id); // server still says unseen
-    expect(backend.db.get("SELECT is_read FROM messages")).toEqual({ is_read: 1 });
+    expect(sqlDb(backend.store).get("SELECT is_read FROM messages")).toEqual({ is_read: 1 });
     await backend.runWorker();
     await backend.syncAccount(account.id);
-    expect(backend.db.get("SELECT is_read FROM messages")).toEqual({ is_read: 1 });
+    expect(sqlDb(backend.store).get("SELECT is_read FROM messages")).toEqual({ is_read: 1 });
   });
 
   it("shows two IMAP accounts in one unified inbox", async () => {
@@ -308,7 +309,7 @@ describe("IMAP identity and safety (review fixes)", () => {
     imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Copia 2", id: "dup@x" }) });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
-    expect(backend.db.all("SELECT subject FROM messages ORDER BY subject")).toEqual([{ subject: "Copia 1" }, { subject: "Copia 2" }]);
+    expect(sqlDb(backend.store).all("SELECT subject FROM messages ORDER BY subject")).toEqual([{ subject: "Copia 1" }, { subject: "Copia 2" }]);
     await backend.syncAccount(account.id);
     expect(count(backend, "SELECT 1 FROM messages")).toBe(2);
   });
@@ -322,7 +323,7 @@ describe("IMAP identity and safety (review fixes)", () => {
     await client.call("threads.act", { threadIds: [t!.id], action: "archive" });
     await backend.runWorker();
     await backend.syncAccount(account.id);
-    expect(backend.db.get<{ status: string }>("SELECT json_extract(sync_state, '$.status') AS status FROM accounts")!.status).toBe("idle");
+    expect(sqlDb(backend.store).get<{ status: string }>("SELECT json_extract(sync_state, '$.status') AS status FROM accounts")!.status).toBe("idle");
     expect(count(backend, "SELECT 1 FROM messages")).toBe(1);
     expect((await client.call("threads.list", { view: "archive" })).items).toHaveLength(1);
   });
@@ -339,7 +340,7 @@ describe("IMAP identity and safety (review fixes)", () => {
     await backend.server.invoke("settings.update", { syncWindowDays: 30 }, { clientId: "t", origin: "renderer" });
     imap.server.control.resetUidValidity("INBOX", { uids: "renumber" });
     await backend.syncAccount(account.id);
-    expect(backend.db.all("SELECT subject FROM messages ORDER BY subject")).toEqual([{ subject: "Nuevo" }, { subject: "Viejo" }]);
+    expect(sqlDb(backend.store).all("SELECT subject FROM messages ORDER BY subject")).toEqual([{ subject: "Nuevo" }, { subject: "Viejo" }]);
   });
 
   it("re-identifies mail without a Message-ID after a UIDVALIDITY reset", async () => {
@@ -349,10 +350,10 @@ describe("IMAP identity and safety (review fixes)", () => {
     imap.server.control.addMessage("INBOX", { raw: noId("sin id 2") });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
-    const before = backend.db.all("SELECT id FROM messages ORDER BY id");
+    const before = sqlDb(backend.store).all("SELECT id FROM messages ORDER BY id");
     imap.server.control.resetUidValidity("INBOX", { uids: "renumber" });
     await backend.syncAccount(account.id);
-    expect(backend.db.all("SELECT id FROM messages ORDER BY id")).toEqual(before); // same rows, not re-imported
+    expect(sqlDb(backend.store).all("SELECT id FROM messages ORDER BY id")).toEqual(before); // same rows, not re-imported
   });
 
   it("keeps distinct ID-less messages with identical envelopes in different folders", async () => {
@@ -374,11 +375,11 @@ describe("IMAP identity and safety (review fixes)", () => {
     await backend.server.invoke("settings.update", { syncWindowDays: 3650 }, { clientId: "t", origin: "renderer" });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
-    backend.db.run("UPDATE messages SET provider_msg_id = 'INBOX:1:1'"); // legacy location-based key
+    sqlDb(backend.store).run("UPDATE messages SET provider_msg_id = 'INBOX:1:1'"); // legacy location-based key
     await backend.server.invoke("settings.update", { syncWindowDays: 30 }, { clientId: "t", origin: "renderer" });
     imap.server.control.resetUidValidity("INBOX", { uids: "renumber" });
     await backend.syncAccount(account.id);
-    expect(backend.db.all("SELECT subject, body_state FROM messages")).toEqual([{ subject: "Antiguo", body_state: "full" }]);
+    expect(sqlDb(backend.store).all("SELECT subject, body_state FROM messages")).toEqual([{ subject: "Antiguo", body_state: "full" }]);
   });
 
   it("ID-less twins in one mailbox stay bound to their own server copies across a reset", async () => {
@@ -395,7 +396,7 @@ describe("IMAP identity and safety (review fixes)", () => {
     expect(count(backend, "SELECT 1 FROM messages")).toBe(2);
     expect(count(backend, "SELECT DISTINCT uid FROM message_locations")).toBe(2);
     // trashing the row whose cached body is AAAA must move the server message AAAA
-    const a = backend.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE body_text LIKE 'AAAA%'")!.thread_id;
+    const a = sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE body_text LIKE 'AAAA%'")!.thread_id;
     await client.call("threads.act", { threadIds: [a], action: "trash" });
     await backend.runWorker();
     const trashed = imap.server.control.listMessages("Trash", { raw: true }) as { raw: Buffer }[];
@@ -412,7 +413,7 @@ describe("IMAP identity and safety (review fixes)", () => {
     imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Igual", id: "b@x", from: "x@y.z", date, body: "BBBB" }) });
     imap.server.control.resetUidValidity("INBOX", { uids: "renumber" });
     await backend.syncAccount(account.id);
-    expect(backend.db.all("SELECT rfc_message_id, substr(body_text, 1, 4) AS b FROM messages")).toEqual([{ rfc_message_id: "b@x", b: "BBBB" }]);
+    expect(sqlDb(backend.store).all("SELECT rfc_message_id, substr(body_text, 1, 4) AS b FROM messages")).toEqual([{ rfc_message_id: "b@x", b: "BBBB" }]);
   });
 
   it("doesn't merge unrelated messages that reuse a Message-ID across folders", async () => {
@@ -421,7 +422,7 @@ describe("IMAP identity and safety (review fixes)", () => {
     imap.server.control.addMessage("Archive", { raw: raw({ subject: "Otra cosa", id: "same@x", from: "b@dos.com" }) });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
-    expect(backend.db.all("SELECT subject FROM messages ORDER BY subject")).toEqual([{ subject: "Factura" }, { subject: "Otra cosa" }]);
+    expect(sqlDb(backend.store).all("SELECT subject FROM messages ORDER BY subject")).toEqual([{ subject: "Factura" }, { subject: "Otra cosa" }]);
   });
 
   it("an op queued before a UIDVALIDITY reset never touches the wrong message", async () => {
@@ -430,7 +431,7 @@ describe("IMAP identity and safety (review fixes)", () => {
     for (const s of ["uno", "dos", "tres"]) ctl.addMessage("INBOX", { raw: raw({ subject: s }) });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
-    const thread = backend.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE subject = 'uno'")!.thread_id;
+    const thread = sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE subject = 'uno'")!.thread_id;
     await client.call("threads.act", { threadIds: [thread], action: "trash" });
     ctl.resetUidValidity("INBOX", { uids: "shuffle", seed: 3 }); // old UIDs now point at other messages
     await backend.runWorker();
@@ -438,7 +439,7 @@ describe("IMAP identity and safety (review fixes)", () => {
     const [op] = await client.call("ops.list", {});
     expect(op).toMatchObject({ state: "queued", lastError: expect.stringContaining("UIDVALIDITY") });
     await backend.syncAccount(account.id); // remaps locations
-    backend.db.run("UPDATE ops SET next_attempt_at = 0");
+    sqlDb(backend.store).run("UPDATE ops SET next_attempt_at = 0");
     await backend.runWorker();
     const trashed = ctl.listMessages("Trash", { raw: true }) as { raw: Buffer }[];
     expect(trashed).toHaveLength(1);
@@ -465,7 +466,7 @@ describe("sending through SMTP", () => {
     const account = await addAccount(imap.port);
     const { opId } = await client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "ana@example.com" }, { name: "", email: "nadie@example.com" }], subject: "x", bodyText: "y" });
     await backend.runWorker();
-    expect(backend.db.get("SELECT state, last_error FROM ops WHERE id = ?", opId)).toEqual({ state: "succeeded", last_error: "No se entregó a: nadie@example.com" });
+    expect(sqlDb(backend.store).get("SELECT state, last_error FROM ops WHERE id = ?", opId)).toEqual({ state: "succeeded", last_error: "No se entregó a: nadie@example.com" });
   });
 
   it("a temporary 450 rejection is retried, not failed", async () => {
@@ -473,7 +474,7 @@ describe("sending through SMTP", () => {
     const account = await addAccount(imap.port);
     const { opId } = await client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "luego@example.com" }], subject: "x", bodyText: "y" });
     await backend.runWorker();
-    expect(backend.db.get("SELECT state FROM ops WHERE id = ?", opId)).toEqual({ state: "queued" });
+    expect(sqlDb(backend.store).get("SELECT state FROM ops WHERE id = ?", opId)).toEqual({ state: "queued" });
   });
 
   it("sends a threaded reply, saves it to Sent, and adopts the server copy without duplicating", async () => {
@@ -510,7 +511,7 @@ describe("sending through SMTP", () => {
     const account = await addAccount(imap.port);
     const { opId } = await client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "nadie@example.com" }], subject: "x", bodyText: "y" });
     await backend.runWorker();
-    expect(backend.db.get("SELECT state FROM ops WHERE id = ?", opId)).toEqual({ state: "failed" });
+    expect(sqlDb(backend.store).get("SELECT state FROM ops WHERE id = ?", opId)).toEqual({ state: "failed" });
   });
 
   it("a connection lost after DATA is reported as unknown and never resent", async () => {
@@ -518,6 +519,6 @@ describe("sending through SMTP", () => {
     const account = await addAccount(imap.port);
     const { opId } = await client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "ana@example.com" }], subject: "x", bodyText: "y" });
     await backend.runWorker();
-    expect(backend.db.get("SELECT state FROM ops WHERE id = ?", opId)).toEqual({ state: "unknown" });
+    expect(sqlDb(backend.store).get("SELECT state FROM ops WHERE id = ?", opId)).toEqual({ state: "unknown" });
   });
 });

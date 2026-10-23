@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { ImapFlow, type FetchMessageObject, type MessageStructureObject } from "imapflow";
-import { placeholders, type IncomingMessage } from "@unica/db";
+import type { IncomingMessage } from "@unica/store";
 import { parseListId, parseRaw, splitIds } from "./mime";
 import { sendViaSmtp } from "./smtp";
 import { ProviderError, type FlagUpdate, type ImapAccountConfig, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
@@ -68,7 +68,8 @@ function headerValue(headers: Buffer | undefined, name: string): string | null {
 
 export function createImapProvider(ctx: ProviderContext, options: ImapProviderOptions = {}): MailProvider {
   const config = ctx.config as unknown as ImapAccountConfig;
-  const db = ctx.db;
+  const store = ctx.store;
+  const locations = store.locations;
   const accountId = ctx.account.id;
   let client: ImapFlow | null = null;
   let roles: Partial<Record<Role, string>> | null = null;
@@ -158,18 +159,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     };
   }
 
-  function upsertLocation(messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]) {
-    db.run(
-      `INSERT INTO message_locations (message_id, account_id, mailbox, uidvalidity, uid, flags) VALUES (?,?,?,?,?,?)
-       ON CONFLICT (message_id, mailbox) DO UPDATE SET uidvalidity = excluded.uidvalidity, uid = excluded.uid, flags = excluded.flags`,
-      messageId,
-      accountId,
-      mailbox,
-      uidvalidity,
-      uid,
-      JSON.stringify(flags),
-    );
-  }
+  const upsertLocation = (messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]) => locations.upsert(messageId, mailbox, uidvalidity, uid, flags);
 
   async function reconcile(messageIds: Set<number>, sink: SyncSink) {
     if (messageIds.size === 0) return;
@@ -178,18 +168,15 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     const orphans: number[] = [];
     for (let i = 0; i < ids.length; i += 500) {
       const chunk = ids.slice(i, i + 500);
-      const rows = db.all<{ message_id: number; mailbox: string; flags: string }>(
-        `SELECT message_id, mailbox, flags FROM message_locations WHERE message_id IN (${placeholders(chunk.length)})`,
-        ...chunk,
-      );
+      const rows = await locations.of(chunk);
       const byMessage = new Map<number, { mailbox: string; flags: string }[]>();
       for (const r of rows) byMessage.set(r.message_id, [...(byMessage.get(r.message_id) ?? []), r]);
+      const providerIds = await store.providerIds(chunk);
       for (const id of chunk) {
         const locs = byMessage.get(id);
         // a local optimistic send (no server copy yet) has no locations: keep it
-        const local = db.get<{ p: string | null }>("SELECT provider_msg_id AS p FROM messages WHERE id = ?", id);
         if (!locs) {
-          if (local && !local.p?.startsWith("local:")) orphans.push(id);
+          if (providerIds.has(id) && !providerIds.get(id)?.startsWith("local:")) orphans.push(id);
           continue;
         }
         updates.push({ messageId: id, flags: stateFromLocations(locs) });
@@ -210,11 +197,10 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       const resetOrphans = new Set<number>();
       if (state && state.uidvalidity !== uidvalidity) {
         // UIDVALIDITY changed: every UID we stored for this mailbox is meaningless now
-        for (const r of db.all<{ message_id: number }>("SELECT message_id FROM message_locations WHERE account_id = ? AND mailbox = ?", accountId, path)) {
-          touched.add(r.message_id);
-          resetOrphans.add(r.message_id);
+        for (const id of await locations.resetMailbox(path)) {
+          touched.add(id);
+          resetOrphans.add(id);
         }
-        db.run("DELETE FROM message_locations WHERE account_id = ? AND mailbox = ?", accountId, path);
         state = undefined;
       }
 
@@ -236,16 +222,10 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           const flags = [...(m.flags ?? new Set<string>())];
           const env = m.envelope;
           // 1) this exact location is already known (e.g. recorded from a MOVE's COPYUID)
-          const atLocation = db.get<{ message_id: number }>(
-            "SELECT message_id FROM message_locations WHERE account_id = ? AND mailbox = ? AND uidvalidity = ? AND uid = ?",
-            accountId,
-            path,
-            uidvalidity,
-            m.uid,
-          );
-          if (atLocation) {
-            upsertLocation(atLocation.message_id, path, uidvalidity, m.uid, flags);
-            touched.add(atLocation.message_id);
+          const atLocation = await locations.at(path, uidvalidity, m.uid);
+          if (atLocation !== null) {
+            await upsertLocation(atLocation, path, uidvalidity, m.uid, flags);
+            touched.add(atLocation);
             continue;
           }
           // Without a Message-ID, identify by content (date, sender, subject, size): stable across
@@ -253,58 +233,49 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           const fingerprint = () =>
             `nomid:${createHash("sha1").update(`${new Date(env?.date ?? m.internalDate ?? 0).getTime()}|${env?.from?.[0]?.address ?? ""}|${env?.subject ?? ""}|${m.size ?? 0}`).digest("hex")}`;
           let key = messageKey(env?.messageId) ?? fingerprint();
-          let existing = db.get<{ id: number; subject: string; from_email: string }>("SELECT id, subject, from_email FROM messages WHERE account_id = ? AND provider_msg_id = ?", accountId, key);
+          let existing = await store.messageByProviderId(key);
           if (existing && messageKey(env?.messageId)) {
             // Same Message-ID but clearly different content (sender/subject): a collision, not a copy.
-            const sameContent = existing.subject === (env?.subject ?? "") && existing.from_email === (env?.from?.[0]?.address ?? "").toLowerCase();
+            const sameContent = existing.subject === (env?.subject ?? "") && existing.fromEmail === (env?.from?.[0]?.address ?? "").toLowerCase();
             if (!sameContent) {
               key = `${key}#${fingerprint()}`;
-              existing = db.get<{ id: number; subject: string; from_email: string }>("SELECT id, subject, from_email FROM messages WHERE account_id = ? AND provider_msg_id = ?", accountId, key);
+              existing = await store.messageByProviderId(key);
             }
           }
           if (existing && !messageKey(env?.messageId)) {
             // A fingerprint is only evidence enough to re-attach a message that currently has no
             // live location (it moved, or its mailbox was reset). Otherwise two distinct messages
             // with identical envelopes must stay separate.
-            const live = db.get<{ c: number }>("SELECT count(*) AS c FROM message_locations WHERE message_id = ?", existing.id)!.c;
+            const live = await locations.count(existing.id);
             if (live > 0) {
               key = `${key}#${path}:${uidvalidity}:${m.uid}`;
-              existing = db.get<{ id: number; subject: string; from_email: string }>("SELECT id, subject, from_email FROM messages WHERE account_id = ? AND provider_msg_id = ?", accountId, key);
+              existing = await store.messageByProviderId(key);
             }
           }
           if (!existing && resetOrphans.size && !messageKey(env?.messageId)) {
             // After a reset, recognise previously-located ID-less mail stored under an older key
             // scheme. Only ID-less rows qualify (a row with a Message-ID is found by key), the size
             // must match, and a row already re-attached in this mailbox can't be claimed twice.
-            const candidate = db.get<{ id: number; subject: string; from_email: string }>(
-              `SELECT id, subject, from_email FROM messages WHERE account_id = ? AND id IN (SELECT value FROM json_each(?))
-                 AND rfc_message_id IS NULL AND subject = ? AND from_email = ? AND date = ? AND size = ?
-                 AND NOT EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = messages.id AND l.mailbox = ?)
-               ORDER BY id LIMIT 1`,
-              accountId,
-              JSON.stringify([...resetOrphans]),
-              env?.subject ?? "",
-              (env?.from?.[0]?.address ?? "").toLowerCase(),
-              new Date(env?.date ?? m.internalDate ?? 0).getTime(),
-              m.size ?? 0,
-              path,
-            );
+            const candidate = await locations.resetCandidate({
+              candidates: [...resetOrphans],
+              subject: env?.subject ?? "",
+              fromEmail: (env?.from?.[0]?.address ?? "").toLowerCase(),
+              date: new Date(env?.date ?? m.internalDate ?? 0).getTime(),
+              size: m.size ?? 0,
+              mailbox: path,
+            });
             if (candidate) {
               resetOrphans.delete(candidate.id);
-              upsertLocation(candidate.id, path, uidvalidity, m.uid, flags);
+              await upsertLocation(candidate.id, path, uidvalidity, m.uid, flags);
               touched.add(candidate.id);
               continue;
             }
           }
           if (existing) {
             // 2) same Message-ID: the same message in another folder (moved/copied, our sent mail)…
-            const sameMailbox = db.get<{ uid: number; uidvalidity: number }>(
-              "SELECT uid, uidvalidity FROM message_locations WHERE message_id = ? AND mailbox = ?",
-              existing.id,
-              path,
-            );
+            const sameMailbox = await locations.get(existing.id, path);
             if (!sameMailbox || sameMailbox.uidvalidity !== uidvalidity || sameMailbox.uid === m.uid) {
-              upsertLocation(existing.id, path, uidvalidity, m.uid, flags);
+              await upsertLocation(existing.id, path, uidvalidity, m.uid, flags);
               touched.add(existing.id);
               resetOrphans.delete(existing.id);
               continue;
@@ -354,16 +325,11 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       // 2) flags and expunges for what we already had
       if (state) {
         const serverUids = new Set((await c.search({ all: true }, { uid: true })) || []);
-        const known = db.all<{ message_id: number; uid: number; flags: string }>(
-          "SELECT message_id, uid, flags FROM message_locations WHERE account_id = ? AND mailbox = ? AND uidvalidity = ?",
-          accountId,
-          path,
-          uidvalidity,
-        );
+        const known = await locations.inMailbox(path, uidvalidity);
         const byUid = new Map(known.map((k) => [k.uid, k]));
         for (const k of known) {
           if (!serverUids.has(k.uid)) {
-            db.run("DELETE FROM message_locations WHERE message_id = ? AND mailbox = ?", k.message_id, path);
+            await locations.remove(k.message_id, path);
             touched.add(k.message_id);
           }
         }
@@ -374,14 +340,14 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             if (!k) continue;
             const flags = JSON.stringify([...(msg.flags ?? new Set<string>())]);
             if (flags !== k.flags) {
-              db.run("UPDATE message_locations SET flags = ? WHERE message_id = ? AND mailbox = ?", flags, k.message_id, path);
+              await locations.setFlags(k.message_id, path, flags);
               touched.add(k.message_id);
             }
           }
         }
       }
       for (const m of fresh) {
-        const row = db.get<{ id: number }>("SELECT id FROM messages WHERE account_id = ? AND provider_msg_id = ?", accountId, m.providerMsgId);
+        const row = await store.messageByProviderId(m.providerMsgId!);
         if (row) touched.add(row.id);
       }
       cursor.mailboxes[path] = { uidvalidity, uidnext: Number(mb.uidNext) };
@@ -392,12 +358,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
 
   /** Downloads bodies newest-first (search, snippets and body filters depend on them). */
   async function syncBodies(c: ImapFlow, sink: SyncSink) {
-    const pending = db.all<{ id: number; mailbox: string; uid: number; uidvalidity: number }>(
-      `SELECT m.id, l.mailbox, l.uid, l.uidvalidity FROM messages m JOIN message_locations l ON l.message_id = m.id
-       WHERE m.account_id = ? AND m.body_state != 'full' GROUP BY m.id ORDER BY m.date DESC LIMIT ?`,
-      accountId,
-      options.bodiesPerSync ?? 500,
-    );
+    const pending = await store.pendingBodies(options.bodiesPerSync ?? 500);
     const byMailbox = new Map<string, { id: number; uid: number; uidvalidity: number }[]>();
     for (const p of pending) byMailbox.set(p.mailbox, [...(byMailbox.get(p.mailbox) ?? []), p]);
     for (const [mailbox, all] of byMailbox) {
@@ -420,8 +381,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         lock.release();
       }
     }
-    const left = db.get<{ c: number }>("SELECT count(*) c FROM messages WHERE account_id = ? AND body_state != 'full'", accountId)!.c;
-    sink.setSyncState({ bodiesPending: left });
+    await sink.setSyncState({ bodiesPending: await store.countPendingBodies() });
   }
 
   type Loc = { message_id: number; mailbox: string; uid: number; uidvalidity: number };
@@ -446,9 +406,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const res = mode === "move" ? await c.messageMove(uids, target, { uid: true }) : await c.messageCopy(uids, target, { uid: true });
         if (!res) throw new ProviderError(`Could not ${mode} messages to ${target}`, true);
         for (const item of items) {
-          if (mode === "move") db.run("DELETE FROM message_locations WHERE message_id = ? AND mailbox = ?", item.message_id, mailbox);
+          if (mode === "move") await locations.remove(item.message_id, mailbox);
           const newUid = res.uidMap?.get(item.uid);
-          if (newUid && res.uidValidity) upsertLocation(item.message_id, target, Number(res.uidValidity), newUid, []);
+          if (newUid && res.uidValidity) await upsertLocation(item.message_id, target, Number(res.uidValidity), newUid, []);
         }
       } finally {
         lock.release();
@@ -497,7 +457,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     async sync(sink) {
       await withConnection(async (c) => {
         const r = await discoverRoles(c);
-        const cursor = ctx.loadCursor<Cursor>() ?? { mailboxes: {} };
+        const cursor = (await ctx.loadCursor<Cursor>()) ?? { mailboxes: {} };
         const touched = new Set<number>();
         // Gmail-style servers keep archived mail only in "All Mail"
         const boxes = [r.inbox, r.sent, r.archive ?? r.all, r.junk, r.trash].filter((p): p is string => Boolean(p));
@@ -506,8 +466,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           await syncMailbox(c, path, cursor, sink, touched);
         }
         await reconcile(touched, sink);
-        ctx.saveCursor(cursor);
-        sink.setSyncState({ syncedSince: sink.windowStart });
+        await ctx.saveCursor(cursor);
+        await sink.setSyncState({ syncedSince: sink.windowStart });
         await syncBodies(c, sink);
       });
     },
@@ -518,10 +478,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       if (ids.length === 0) return;
       await withConnection(async (c) => {
         const r = await discoverRoles(c);
-        const locs = db.all<Loc>(
-          `SELECT message_id, mailbox, uid, uidvalidity FROM message_locations WHERE message_id IN (${placeholders(ids.length)})`,
-          ...ids,
-        );
+        const locs: Loc[] = await locations.of(ids);
         const inRole = (role: Role) => locs.filter((l) => l.mailbox === r[role]);
         const flagOp = async (flag: string, add: boolean) => {
           const byMailbox = new Map<string, Loc[]>();
@@ -535,12 +492,12 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
               // imapflow resolves false when the server rejects the STORE
               if (ok === false) throw new ProviderError(`Server refused to update ${flag} in ${mailbox}`, false);
               for (const i of items) {
-                const row = db.get<{ flags: string }>("SELECT flags FROM message_locations WHERE message_id = ? AND mailbox = ?", i.message_id, mailbox);
+                const row = await locations.get(i.message_id, mailbox);
                 if (!row) continue;
                 const set = new Set(JSON.parse(row.flags) as string[]);
                 if (add) set.add(flag);
                 else set.delete(flag);
-                db.run("UPDATE message_locations SET flags = ? WHERE message_id = ? AND mailbox = ?", JSON.stringify([...set]), i.message_id, mailbox);
+                await locations.setFlags(i.message_id, mailbox, JSON.stringify([...set]));
               }
             } finally {
               lock.release();
@@ -564,7 +521,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             try {
               assertValidity(c, r.inbox!, inbox);
               await c.messageDelete(inbox.map((l) => l.uid), { uid: true });
-              for (const l of inbox) db.run("DELETE FROM message_locations WHERE message_id = ? AND mailbox = ?", l.message_id, r.inbox!);
+              for (const l of inbox) await locations.remove(l.message_id, r.inbox!);
             } finally {
               lock.release();
             }

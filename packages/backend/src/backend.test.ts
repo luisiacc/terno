@@ -3,7 +3,7 @@ import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient, type Events } from "@unica/core/rpc";
-import { claimReadyOps, createAccount, enqueueOp, getOp, type IncomingMessage } from "@unica/db";
+import { claimReadyOps, createAccount, enqueueOp, getOp, type IncomingMessage, sqlDb } from "@unica/db";
 import { ProviderError, type MailProvider, type ProviderOp, type ProviderRegistry, type SyncSink } from "@unica/mail";
 import { afterEach, describe, expect, it } from "vitest";
 import { startAgentSocket } from "./agent-socket";
@@ -81,7 +81,7 @@ function setup(options: { dir?: string } = {}) {
     await backend.stop().catch(() => {});
     if (!options.dir) rmSync(dir, { recursive: true, force: true });
   });
-  const accountId = createAccount(backend.db, { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo", providerConfig: { senderName: "Luis" } }).id;
+  const accountId = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo", providerConfig: { senderName: "Luis" } }).id;
   return { backend, client, events, providers, accountId, dir };
 }
 
@@ -127,7 +127,7 @@ describe("local-first actions", () => {
     await backend.ingestSliced([incoming(accountId), incoming(accountId)]);
     const inbox = await client.call("threads.list", { view: "inbox" });
     expect(inbox.items).toHaveLength(2);
-    backend.provider(accountId);
+    await backend.provider(accountId);
 
     await client.call("threads.act", { threadIds: [inbox.items[0]!.id], action: "archive" });
     expect((await client.call("threads.list", { view: "inbox" })).items).toHaveLength(1);
@@ -145,7 +145,7 @@ describe("local-first actions", () => {
     const { backend, client, providers, accountId } = setup();
     await backend.ingestSliced([incoming(accountId)]);
     const [t] = (await client.call("threads.list", { view: "inbox" })).items;
-    backend.provider(accountId)!;
+    await backend.provider(accountId);
     providers.get(accountId)!.failNext = new ProviderError("ETIMEDOUT", true);
     await client.call("threads.act", { threadIds: [t!.id], action: "star" });
     await backend.runWorker();
@@ -160,7 +160,7 @@ describe("sending", () => {
     await backend.ingestSliced([incoming(accountId, { from: { name: "Ana", email: "ana@corp.io" }, listId: null })]);
     const [t] = (await client.call("threads.list", { view: "inbox" })).items;
     const original = (await client.call("threads.get", { threadId: t!.id })).messages[0]!;
-    backend.provider(accountId);
+    await backend.provider(accountId);
 
     const sent = await client.call("compose.send", {
       accountId,
@@ -178,59 +178,59 @@ describe("sending", () => {
     const payload = providers.get(accountId)!.executed[0]!.payload as { inReplyTo: string; references: string[] };
     expect(payload.inReplyTo).toBe(original.rfcMessageId);
     expect(payload.references).toContain(original.rfcMessageId);
-    expect(backend.db.get("SELECT provider_msg_id FROM messages WHERE is_sent = 1")).toEqual({ provider_msg_id: `srv-${sent.opId}` });
+    expect(sqlDb(backend.store).get("SELECT provider_msg_id FROM messages WHERE is_sent = 1")).toEqual({ provider_msg_id: `srv-${sent.opId}` });
   });
 
   it("discarding an unknown send leaves no empty thread behind", async () => {
     const { backend, client, providers, accountId } = setup();
-    backend.provider(accountId);
+    await backend.provider(accountId);
     providers.get(accountId)!.failNext = new ProviderError("connection closed after DATA", false, true);
     const sent = await client.call("compose.send", { accountId, to: [{ name: "", email: "x@y.com" }], subject: "Solo", bodyText: "." });
     await backend.runWorker();
     await client.call("ops.resolveUnknown", { opId: sent.opId, resolution: "discard" });
-    expect(backend.db.get("SELECT count(*) c FROM threads")).toEqual({ c: 0 });
+    expect(sqlDb(backend.store).get("SELECT count(*) c FROM threads")).toEqual({ c: 0 });
     expect((await client.call("threads.list", { view: "sent" })).items).toEqual([]);
   });
 
   it("an ambiguous send failure becomes unknown; discarding removes the optimistic copy", async () => {
     const { backend, client, providers, accountId } = setup();
-    backend.provider(accountId);
+    await backend.provider(accountId);
     providers.get(accountId)!.failNext = new ProviderError("connection closed after DATA", false, true);
     const sent = await client.call("compose.send", { accountId, to: [{ name: "", email: "x@y.com" }], subject: "Hi", bodyText: "." });
     await backend.runWorker();
-    expect(getOp(backend.db, sent.opId)!.state).toBe("unknown");
+    expect(getOp(sqlDb(backend.store), sent.opId)!.state).toBe("unknown");
     await backend.runWorker();
     expect(providers.get(accountId)!.executed).toEqual([]); // never retried automatically
     await client.call("ops.resolveUnknown", { opId: sent.opId, resolution: "discard" });
-    expect(backend.db.get("SELECT count(*) c FROM messages")).toEqual({ c: 0 });
+    expect(sqlDb(backend.store).get("SELECT count(*) c FROM messages")).toEqual({ c: 0 });
   });
 
   it("an op superseded while its batch runs is skipped and the rest of the batch still runs", async () => {
     const { backend, client, providers, accountId } = setup();
     await backend.ingestSliced([incoming(accountId, { listId: null, from: { name: "A", email: "a@x.io" } })]);
     const [t] = (await client.call("threads.list", { view: "inbox" })).items;
-    backend.provider(accountId);
+    await backend.provider(accountId);
     const p = providers.get(accountId)!;
     await client.call("threads.act", { threadIds: [t!.id], action: "markRead" });
     const sent = await client.call("compose.send", { accountId, to: [{ name: "", email: "b@y.com" }], subject: "s", bodyText: "t" });
-    const markRead = backend.db.get<{ id: string }>("SELECT id FROM ops WHERE kind = 'markRead'")!.id;
+    const markRead = sqlDb(backend.store).get<{ id: string }>("SELECT id FROM ops WHERE kind = 'markRead'")!.id;
     p.beforeExecute = (op) => {
       if (op.kind !== "markRead") return;
       // the user flips it back while the provider call is in flight, then the call fails
-      enqueueOp(backend.db, { accountId, kind: "markUnread", target: { messageIds: op.target.messageIds! } });
+      enqueueOp(sqlDb(backend.store), { accountId, kind: "markUnread", target: { messageIds: op.target.messageIds! } });
       p.failNext = new ProviderError("ETIMEDOUT", true);
     };
     await backend.runWorker();
-    expect(getOp(backend.db, markRead)).toBeNull(); // superseded, never retried
-    expect(getOp(backend.db, sent.opId)!.state).toBe("succeeded"); // not stranded in running
+    expect(getOp(sqlDb(backend.store), markRead)).toBeNull(); // superseded, never retried
+    expect(getOp(sqlDb(backend.store), sent.opId)!.state).toBe("succeeded"); // not stranded in running
   });
 
   it("a send interrupted by a crash is reported as unknown after restart, not resent", async () => {
     const first = setup();
-    first.backend.db.run("DELETE FROM accounts"); // keep this test's account list clean
-    const accountId = createAccount(first.backend.db, { kind: "imap", email: "a@b.c", displayName: "A", color: "indigo" }).id;
-    enqueueOp(first.backend.db, { accountId, kind: "send", target: {}, payload: { subject: "x" } });
-    claimReadyOps(first.backend.db); // running when the process dies
+    sqlDb(first.backend.store).run("DELETE FROM accounts"); // keep this test's account list clean
+    const accountId = createAccount(sqlDb(first.backend.store), { kind: "imap", email: "a@b.c", displayName: "A", color: "indigo" }).id;
+    enqueueOp(sqlDb(first.backend.store), { accountId, kind: "send", target: {}, payload: { subject: "x" } });
+    claimReadyOps(sqlDb(first.backend.store)); // running when the process dies
     await first.backend.stop();
     const second = setup({ dir: first.dir });
     const [op] = await second.client.call("ops.list", {});
@@ -251,8 +251,8 @@ describe("filters on incoming mail", () => {
     await backend.ingestSliced([incoming(accountId), incoming(accountId), incoming(accountId, { listId: null, from: { name: "Ana", email: "ana@x.io" } })]);
     expect((await client.call("threads.list", { view: "inbox" })).items.map((t) => t.fromEmail)).toEqual(["ana@x.io"]);
     expect((await client.call("threads.list", { view: "all", categoryId: cat.id })).items).toHaveLength(2);
-    expect(backend.db.get("SELECT count(*) c FROM user_actions")).toEqual({ c: 0 });
-    expect(backend.db.get("SELECT count(*) c FROM ops WHERE kind = 'archive'")).toEqual({ c: 1 }); // one op for both messages
+    expect(sqlDb(backend.store).get("SELECT count(*) c FROM user_actions")).toEqual({ c: 0 });
+    expect(sqlDb(backend.store).get("SELECT count(*) c FROM ops WHERE kind = 'archive'")).toEqual({ c: 1 }); // one op for both messages
     const [filter] = await client.call("filters.list", {});
     expect(filter!.hits).toBe(2);
   });
@@ -268,11 +268,11 @@ describe("filters on incoming mail", () => {
     await backend.ingestSliced([incoming(accountId, { bodyText: null, bodyState: "none", listId: null })]);
     expect((await client.call("threads.list", { view: "inbox" })).items).toHaveLength(1);
     await backend.syncAccount(accountId);
-    const id = backend.db.get<{ id: number }>("SELECT id FROM messages")!.id;
+    const id = sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages")!.id;
     await providers.get(accountId)!.sink!.setBody(id, "Para darse de baja haz clic", null);
     expect((await client.call("threads.list", { view: "trash" })).items).toHaveLength(1);
     await providers.get(accountId)!.sink!.setBody(id, "Para darse de baja haz clic", null);
-    expect(backend.db.get("SELECT count(*) c FROM ops WHERE kind = 'trash'")).toEqual({ c: 1 }); // applied once
+    expect(sqlDb(backend.store).get("SELECT count(*) c FROM ops WHERE kind = 'trash'")).toEqual({ c: 1 }); // applied once
   });
 
   it("re-evaluates body filters when the body arrives through an upsert of the same message", async () => {
@@ -293,12 +293,12 @@ describe("filters on incoming mail", () => {
     const { backend, client, accountId } = setup();
     const cat = await client.call("categories.create", { name: "Temp", color: "rose" });
     await client.call("filters.save", { name: "c", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "subject", op: "contains", value: "brief" }], actions: [{ type: "addCategory", categoryId: cat.id }] } });
-    backend.db.run("PRAGMA foreign_keys = OFF");
-    backend.db.run("DELETE FROM categories WHERE id = ?", cat.id);
-    backend.db.run("PRAGMA foreign_keys = ON");
+    sqlDb(backend.store).run("PRAGMA foreign_keys = OFF");
+    sqlDb(backend.store).run("DELETE FROM categories WHERE id = ?", cat.id);
+    sqlDb(backend.store).run("PRAGMA foreign_keys = ON");
     await backend.ingestSliced([incoming(accountId)]);
     expect((await client.call("threads.list", { view: "inbox" })).items).toHaveLength(1);
-    expect(backend.db.get("SELECT count(*) c FROM filter_applications")).toEqual({ c: 0 }); // claim rolled back with the failed action
+    expect(sqlDb(backend.store).get("SELECT count(*) c FROM filter_applications")).toEqual({ c: 0 }); // claim rolled back with the failed action
   });
 
   it("editing a filter while it's being bulk-applied leaves no stale claims", async () => {
@@ -310,7 +310,7 @@ describe("filters on incoming mail", () => {
     await new Promise((r) => setTimeout(r, 5));
     await client.call("filters.save", { id: f.id, name: "r", enabled: true, source: "manual", rule: { ...rule, actions: [{ type: "star" as const }] } });
     await applying;
-    expect(backend.db.get("SELECT count(*) c FROM filter_applications")).toEqual({ c: 0 });
+    expect(sqlDb(backend.store).get("SELECT count(*) c FROM filter_applications")).toEqual({ c: 0 });
   });
 
   it("previews and bulk-applies a filter to existing mail", async () => {
@@ -346,7 +346,7 @@ describe("learned filters", () => {
     const [t] = (await client.call("threads.list", { view: "inbox" })).items;
     await client.call("threads.act", { threadIds: [t!.id, t!.id, t!.id, t!.id, t!.id], action: "archive" });
     await client.call("threads.act", { threadIds: [t!.id], action: "archive" }); // already archived
-    expect(backend.db.get("SELECT count(*) c FROM user_actions")).toEqual({ c: 1 });
+    expect(sqlDb(backend.store).get("SELECT count(*) c FROM user_actions")).toEqual({ c: 1 });
   });
 
   it("ignores actions taken by agents (MCP)", async () => {
@@ -358,7 +358,7 @@ describe("learned filters", () => {
     const ids = (await agent.call("threads.list", { view: "inbox" })).items.map((t) => t.id);
     for (const id of ids) await agent.call("threads.act", { threadIds: [id], action: "archive" });
     expect(await agent.call("threads.list", { view: "inbox" })).toMatchObject({ items: [] });
-    expect(backend.db.get("SELECT count(*) c FROM user_actions")).toEqual({ c: 0 });
+    expect(sqlDb(backend.store).get("SELECT count(*) c FROM user_actions")).toEqual({ c: 0 });
   });
 });
 
@@ -384,6 +384,24 @@ describe("search", () => {
     const second = client.call("threads.search", { query: "markets" });
     await expect(first).rejects.toMatchObject({ code: "CANCELLED" });
     await expect(second).resolves.toMatchObject({ items: [expect.any(Object)], complete: true });
+  });
+
+  it("pages with the cursor it returns; a keyset-only cursor still pages; another query's cursor is refused", async () => {
+    const { backend, client, accountId } = setup();
+    await backend.ingestSliced(Array.from({ length: 5 }, (_, i) => incoming(accountId, { subject: `Factura ${i}`, date: NOW - i * 1000 })));
+    const first = await client.call("threads.search", { query: "factura", limit: 2 });
+    expect(first.nextCursor).toMatchObject({ queryKey: expect.any(String), revision: { epoch: expect.any(String), seq: expect.any(Number) } });
+    const second = await client.call("threads.search", { query: "factura", limit: 2, cursor: first.nextCursor! });
+    const legacy = await client.call("threads.search", { query: "factura", limit: 2, cursor: { lastDate: first.nextCursor!.lastDate, id: first.nextCursor!.id } });
+    expect(legacy.items.map((t) => t.id)).toEqual(second.items.map((t) => t.id));
+    expect(second.items.map((t) => t.subject)).toEqual(["Factura 2", "Factura 3"]);
+    await expect(client.call("threads.search", { query: "otra", limit: 2, cursor: first.nextCursor! })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("reports bodies still to download as an incomplete search", async () => {
+    const { backend, client, accountId } = setup();
+    await backend.ingestSliced([incoming(accountId, { bodyState: "none", bodyText: null })]);
+    expect(await client.call("threads.search", { query: "x" })).toMatchObject({ complete: false });
   });
 });
 

@@ -5,6 +5,7 @@
 import { expect, focusList, isolateLocalDiscovery, openRow, search, stabilize, test } from "./fixtures";
 import { startOllamaStub } from "./ollama-stub";
 import type { Page } from "@playwright/test";
+import { sqlDb } from "../../backend-dev/src/server";
 
 /** AI tab on a local Ollama (stub) with its models listed and a successful connection test. */
 async function aiTabWithOllama(page: Page, ollamaUrl: string) {
@@ -111,9 +112,9 @@ test.describe("light", () => {
   });
 
   test("category picker and the snackbar after filing", async ({ app: page, server }) => {
-    const facturas = server.backend.db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
+    const facturas = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
     await search(page, "in:inbox from:uber.receipts@uber.com");
-    const target = server.backend.db.get<{ id: number }>(
+    const target = sqlDb(server.backend.store).get<{ id: number }>(
       `SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND t.last_from_email = 'uber.receipts@uber.com'
        AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id AND category_id = ?) ORDER BY t.last_date DESC LIMIT 1`,
       facturas,
@@ -177,8 +178,8 @@ test.describe("dark", () => {
   });
 
   test("snackbar after filing", async ({ app: page, server }) => {
-    const facturas = server.backend.db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
-    const target = server.backend.db.get<{ id: number }>(
+    const facturas = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
+    const target = sqlDb(server.backend.store).get<{ id: number }>(
       `SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND t.last_from_email = 'uber.receipts@uber.com'
        AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id AND category_id = ?) ORDER BY t.last_date DESC LIMIT 1`,
       facturas,

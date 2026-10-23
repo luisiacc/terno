@@ -1,4 +1,5 @@
 import { expect, focusList, openRow, selectThread, test } from "./fixtures";
+import { sqlDb } from "../../backend-dev/src/server";
 
 test.describe("compose, reply, reply-all, forward", () => {
   test("r prefills a reply; ⌘↵ sends and the message appears in the thread", async ({ app: page }) => {
@@ -23,7 +24,7 @@ test.describe("compose, reply, reply-all, forward", () => {
 
   test("reply-all puts the other recipients in Cc, never me", async ({ app: page, server }) => {
     // a received inbox message with several recipients besides me
-    const row = server.backend.db.get<{ thread_id: number; subject: string; email: string }>(
+    const row = sqlDb(server.backend.store).get<{ thread_id: number; subject: string; email: string }>(
       `SELECT m.thread_id, t.subject, a.email FROM messages m JOIN threads t ON t.id = m.thread_id JOIN accounts a ON a.id = m.account_id
        WHERE t.in_inbox = 1 AND m.is_sent = 0 AND json_array_length(m.to_json) >= 3
          AND m.id = (SELECT id FROM messages WHERE thread_id = m.thread_id AND is_sent = 0 ORDER BY date DESC, id DESC LIMIT 1)

@@ -1,53 +1,8 @@
 import type { AiTasks } from "@unica/ai";
-import type { Account, AccountSyncState, FilterAction, ThreadAction } from "@unica/core";
+import type { Account, AccountSyncState, ThreadAction } from "@unica/core";
 import { RpcServer, type CallContext, type MethodName, type OpInfo, type Transport } from "@unica/core/rpc";
-import {
-  addThreadsToCategory,
-  applyMessageAction,
-  classifyNewThreads,
-  claimFilterApplications,
-  claimReadyOps,
-  completeOp,
-  deleteMessages,
-  enqueueOp,
-  failOp,
-  findRuleMatches,
-  getAccount,
-  getAccountConfig,
-  getCounts,
-  getOp,
-  getOwner,
-  getSecret,
-  ingestMessages,
-  listAccounts,
-  listFilters,
-  markOpUnknown,
-  messagesWithPendingOps,
-  nodePlatform,
-  openDatabase,
-  recomputeThreads,
-  adoptProviderThread,
-  putSecret,
-  recoverOps,
-  setAccountProviderConfig,
-  setAccountSyncState,
-  setMessageBody,
-  startCheckpointWorker,
-  type CheckpointWorker,
-  type ActionResult,
-  type Db,
-  type ClassifyResult,
-  type IncomingMessage,
-  type ModelDelta,
-  type OpRow,
-  ownAddresses,
-  movePending,
-  movePhase,
-  restoreMoveSlice,
-  trainMoveSlice,
-  unfinishedMoves,
-} from "@unica/db";
-import type { Platform } from "@unica/store";
+import { nodePlatform, openDatabase, SqlMailStore } from "@unica/db";
+import type { ClassifierInput, IncomingMessage, MailStore, OpRow, Platform } from "@unica/store";
 import { ProviderError, type MailProvider, type ProviderRegistry, type SyncSink } from "@unica/mail";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { AiAssist } from "./ai-assist";
@@ -72,7 +27,9 @@ export const plaintextCipher: SecretCipher = {
 };
 
 export interface BackendOptions {
-  dbPath: string;
+  /** opened as a SqlMailStore on node:sqlite unless `store` is given */
+  dbPath?: string;
+  store?: MailStore;
   version: string;
   cipher: SecretCipher;
   providers: ProviderRegistry;
@@ -116,10 +73,10 @@ const DESTRUCTIVE_OR_SIGNAL: Partial<Record<ThreadAction, "archive" | "trash" | 
  * dev/tests) and serves any number of transports (renderer, MCP, dev WS).
  */
 export class Backend {
-  readonly db: Db;
+  readonly store: MailStore;
   readonly server: RpcServer;
   readonly options: Required<Pick<BackendOptions, "now" | "sliceBudgetMs" | "syncIntervalMs">> & BackendOptions;
-  private readonly providers = new Map<number, MailProvider>();
+  private readonly providers = new Map<number, Promise<MailProvider | null>>();
   private readonly syncing = new Map<number, Promise<void>>();
   /** a change arrived while syncing: run another pass when the current one ends */
   private readonly syncAgain = new Set<number>();
@@ -135,7 +92,6 @@ export class Backend {
   private lastCountsAt = -Infinity;
   private countsTimer: ReturnType<typeof setTimeout> | null = null;
   readonly searchSeq = new Map<string, number>();
-  private readonly checkpointer: CheckpointWorker | null;
   readonly abort = new AbortController();
   readonly platform: Platform;
   /** the only way out of the backend: every outbound request asks it first */
@@ -152,19 +108,32 @@ export class Backend {
     const defined = Object.fromEntries(Object.entries(options).filter(([, v]) => v !== undefined)) as BackendOptions;
     this.options = { now: Date.now, sliceBudgetMs: 8, syncIntervalMs: 120_000, ...defined };
     this.platform = options.platform ?? nodePlatform;
-    this.db = openDatabase(options.dbPath, { uuid: () => this.platform.uuid() });
-    this.net = createNetworkPolicy({ localMode: () => readLocalMode(this.db), lookup: options.lookup });
+    if (options.store) this.store = options.store;
+    else if (options.dbPath) {
+      const db = openDatabase(options.dbPath, { uuid: () => this.platform.uuid() });
+      this.store = new SqlMailStore(db, { checkpointWorker: true, log: (level, message, extra) => this.log(level, message, extra) });
+    } else throw new Error("Backend needs a store or a dbPath");
+    this.net = createNetworkPolicy({ localMode: () => readLocalMode(this.store), lookup: options.lookup });
     this.aiService = new AiService(this, options.aiFactory ?? defaultAiFactory);
-    this.checkpointer = startCheckpointWorker(this.db);
     this.categorizer = new Categorizer(this);
-    this.categorizer.load();
     this.aiAssist = new AiAssist(this);
-    const recovered = recoverOps(this.db, this.now());
-    if (recovered.requeued || recovered.unknown) this.log("info", "recovered ops after restart", recovered);
+    this.ready = this.init();
     this.server = new RpcServer(createHandlers(this), {
       onError: (error, method) => this.log("error", `rpc ${method} failed`, error instanceof Error ? error.stack : error),
-      authorize: (method, ctx) => this.authorize(method, ctx),
+      authorize: async (method, ctx) => {
+        await this.ready;
+        return this.authorize(method, ctx);
+      },
     });
+  }
+
+  /** Startup reads: the persisted model and crash recovery of ops, before any RPC or worker runs. */
+  readonly ready: Promise<void>;
+
+  private async init(): Promise<void> {
+    await this.categorizer.load();
+    const recovered = await this.store.ops.recover(this.now());
+    if (recovered.requeued || recovered.unknown) this.log("info", "recovered ops after restart", recovered);
   }
 
   now(): number {
@@ -179,15 +148,20 @@ export class Backend {
     return this.server.connect(transport, ctx);
   }
 
-  start(): void {
+  /** Starts background work (model rebuild, unfinished moves, sync loops, the ops worker); resolves once they are scheduled. */
+  async start(): Promise<void> {
+    await this.ready;
+    if (this.stopped) return;
     if (!this.categorizer.ready) void this.categorizer.rebuild();
-    for (const m of unfinishedMoves(this.db)) void this.finishMove(m.batchId);
+    for (const m of await this.store.categories.unfinishedMoves()) void this.finishMove(m.batchId);
     if (this.options.autoSync === false) return;
     this.idleTimer = setInterval(() => void this.categorizer.idle(), 10 * 60_000);
     this.idleTimer.unref?.();
-    for (const account of listAccounts(this.db)) this.startAccount(account);
+    for (const account of await this.store.accounts.list()) this.startAccount(account);
     this.syncTimer = setInterval(() => {
-      for (const account of listAccounts(this.db)) void this.syncAccount(account.id);
+      void this.store.accounts.list().then((accounts) => {
+        for (const account of accounts) void this.syncAccount(account.id);
+      });
     }, this.options.syncIntervalMs);
     this.kickWorker();
   }
@@ -206,14 +180,14 @@ export class Backend {
     await Promise.allSettled(this.syncing.values());
     // let an in-flight ops batch finish writing before the database closes
     for (let i = 0; this.workerRunning && i < 200; i++) await new Promise((r) => setTimeout(r, 10));
-    await Promise.allSettled([...this.providers.values()].map((p) => p.close()));
+    await Promise.allSettled([...this.providers.values()].map(async (p) => (await p)?.close()));
+    await this.ready.catch(() => {});
     try {
-      this.categorizer.persist();
+      await this.categorizer.persist();
     } catch (error) {
       this.log("warn", "could not persist the categorization model", error instanceof Error ? error.message : error);
     }
-    await this.checkpointer?.stop();
-    this.db.close();
+    await this.store.close();
   }
 
   // ───────────────────────────── permissions ─────────────────────────────
@@ -242,22 +216,22 @@ export class Backend {
     "compose.send",
   ]);
 
-  private authorize(method: MethodName, ctx: CallContext): boolean {
+  private async authorize(method: MethodName, ctx: CallContext): Promise<boolean> {
     if (ctx.origin !== "mcp") return true;
     if (!Backend.MCP_ALLOWED.has(method)) return false;
-    if (method === "compose.send") return readSettings(this.db).allowAgentSend;
+    if (method === "compose.send") return (await readSettings(this.store)).allowAgentSend;
     return true;
   }
 
   // ───────────────────────────── secrets ─────────────────────────────
 
   async getSecret(name: string): Promise<string | null> {
-    const blob = getSecret(this.db, name);
+    const blob = await this.store.secrets.get(name);
     return blob ? this.options.cipher.decrypt(blob) : null;
   }
 
   async setSecret(name: string, value: string): Promise<void> {
-    putSecret(this.db, name, await this.options.cipher.encrypt(value));
+    await this.store.secrets.put(name, await this.options.cipher.encrypt(value));
   }
 
   // ───────────────────────────── events ─────────────────────────────
@@ -289,7 +263,7 @@ export class Backend {
     const wait = this.lastCountsAt + COUNTS_EVERY_MS - performance.now();
     if (wait <= 0 && !this.countsTimer) {
       this.lastCountsAt = performance.now();
-      this.server.emit("counts", getCounts(this.db));
+      void this.sendCounts();
       return;
     }
     if (this.countsTimer) return;
@@ -297,22 +271,27 @@ export class Backend {
       this.countsTimer = null;
       if (this.stopped) return;
       this.lastCountsAt = performance.now();
-      this.server.emit("counts", getCounts(this.db));
+      void this.sendCounts();
     }, Math.max(0, wait));
   }
 
-  emitAccounts(): void {
-    this.server.emit("accounts", listAccounts(this.db));
+  private async sendCounts(): Promise<void> {
+    const counts = await this.store.threads.counts();
+    if (!this.stopped) this.server.emit("counts", counts);
+  }
+
+  async emitAccounts(): Promise<void> {
+    this.server.emit("accounts", await this.store.accounts.list());
   }
 
   /** Tells the host the current policy (at startup and whenever local mode changes). */
-  publishPolicy(): void {
-    this.options.onPolicy?.({ localMode: readLocalMode(this.db) });
+  async publishPolicy(): Promise<void> {
+    this.options.onPolicy?.({ localMode: await readLocalMode(this.store) });
   }
 
-  emitOwner(): void {
+  async emitOwner(): Promise<void> {
     // the person's identity is for the user's own windows, never for agents
-    this.server.emit("owner", getOwner(this.db), { origins: ["renderer", "dev"] });
+    this.server.emit("owner", await this.store.owner.get(), { origins: ["renderer", "dev"] });
   }
 
   // ───────────────────────────── owner identity ─────────────────────────────
@@ -329,64 +308,13 @@ export class Backend {
 
   // ───────────────────────────── actions → ops ─────────────────────────────
 
-  /** Enqueues provider ops for a locally-applied action and logs explicit user signals. */
-  queueActionOps(result: ActionResult, action: ThreadAction): string[] {
-    const ids: string[] = [];
-    for (const target of result.targets) {
-      const id = enqueueOp(this.db, { accountId: target.accountId, kind: action, target: { messageIds: target.messageIds } }, this.now());
-      if (id) ids.push(id);
-    }
-    if (ids.length) this.kickWorker();
-    return ids;
+  /** A store command queued provider ops: run them. */
+  opsQueued(opIds: readonly string[]): void {
+    if (opIds.length) this.kickWorker();
   }
 
   static learningSignal(action: ThreadAction) {
     return DESTRUCTIVE_OR_SIGNAL[action];
-  }
-
-  // ───────────────────────────── filters ─────────────────────────────
-
-  /** Applies enabled filters to new (or newly body-complete) messages. Automated: not a learning signal. */
-  applyFiltersTo(messageIds: number[], onlyBodyFilters = false): Set<number> {
-    const touched = new Set<number>();
-    if (messageIds.length === 0) return touched;
-    for (const filter of listFilters(this.db)) {
-      if (!filter.enabled) continue;
-      if (onlyBodyFilters && !filter.rule.conditions.some((c) => c.field === "body")) continue;
-      const matches = findRuleMatches(this.db, filter.rule, this.now(), messageIds);
-      if (matches.messageIds.length === 0) continue;
-      try {
-        // claims + actions + ops atomically (savepoint when nested in an ingest slice)
-        const changed = this.db.tx(() => this.runFilterActions(filter.rule.actions, claimFilterApplications(this.db, filter.id, matches.messageIds, this.now())));
-        for (const id of changed) touched.add(id);
-      } catch (error) {
-        // e.g. the filter points at a deleted category: skip it, keep ingesting
-        this.log("warn", `filter ${filter.id} (${filter.name}) failed`, error instanceof Error ? error.message : error);
-      }
-    }
-    return touched;
-  }
-
-  runFilterActions(actions: FilterAction[], messageIds: number[]): Set<number> {
-    const touched = new Set<number>();
-    if (messageIds.length === 0) return touched;
-    for (const action of actions) {
-      if (action.type === "addCategory") {
-        const threads = this.db
-          .all<{ thread_id: number }>(
-            "SELECT DISTINCT thread_id FROM messages WHERE id IN (SELECT value FROM json_each(?))",
-            JSON.stringify(messageIds),
-          )
-          .map((r) => r.thread_id);
-        addThreadsToCategory(this.db, action.categoryId, threads, "filter", this.now());
-        for (const t of threads) touched.add(t);
-      } else {
-        const result = applyMessageAction(this.db, messageIds, action.type);
-        this.queueActionOps(result, action.type);
-        for (const t of result.threadIds) touched.add(t);
-      }
-    }
-    return touched;
   }
 
   // ───────────────────────────── ingestion (time-sliced) ─────────────────────────────
@@ -397,39 +325,27 @@ export class Backend {
    */
   async ingestSliced(messages: IncomingMessage[], applyFilters = true): Promise<{ inserted: number[] }> {
     const inserted: number[] = [];
-    await this.runSliced(messages, 50, (chunk) => {
-      // One transaction per slice: messages, filter claims, filter actions and their ops,
-      // and the categorizer's decisions commit together, so a crash can't record a filter
-      // as applied without its effects, nor an auto-categorization without its message.
-      const { touched, deltas, auto, backfill, uncertain } = this.db.tx(() => {
-        const result = ingestMessages(this.db, chunk, this.now());
-        inserted.push(...result.inserted);
-        const t = new Set(result.touchedThreads);
-        if (applyFilters) {
-          for (const x of this.applyFiltersTo(result.inserted)) t.add(x);
-          // bodies that arrived through an upsert may now satisfy body filters
-          for (const x of this.applyFiltersTo(result.bodyCompleted, true)) t.add(x);
-        }
-        const c = this.classify(result.inserted, result.bodyCompleted);
-        for (const x of c.touched) t.add(x);
-        return { touched: t, deltas: [...result.deltas, ...c.deltas], auto: c.auto, backfill: c.backfill, uncertain: c.uncertain };
-      });
+    await this.runSliced(messages, 50, async (chunk) => {
+      // one store command per slice: messages, filter claims and actions with their ops, and
+      // the categorizer's decisions commit together
+      const r = await this.store.sync.ingest(chunk, { applyFilters, now: this.now(), classifier: await this.classifier() });
+      inserted.push(...r.inserted);
       // RAM follows the database, never the other way round
-      this.categorizer.apply(deltas);
-      this.categorizer.noteBackfill(backfill);
+      this.categorizer.apply(r.deltas);
+      this.categorizer.noteBackfill(r.backfill);
       // the optional AI looks at what the engine was unsure about, after commit, outside the slice
-      this.aiAssist.enqueue(uncertain);
-      this.announceAuto(auto);
-      this.notifyChanged(touched);
+      void this.aiAssist.enqueue(r.uncertain);
+      this.announceAuto(r.auto);
+      this.opsQueued(r.opIds);
+      this.notifyChanged(r.touched);
     });
     return { inserted };
   }
 
-  /** The categorizer's part of a store command (call inside its transaction). */
-  classify(inserted: readonly number[], bodyCompleted: readonly number[]): ClassifyResult {
+  /** The categorizer's pure part of an ingestion command (null until a model is ready). */
+  async classifier(): Promise<ClassifierInput | null> {
     const model = this.categorizer.model;
-    if (!model) return { deltas: [], auto: new Map(), touched: new Set(), suggested: 0, uncertain: [], backfill: 0 };
-    return classifyNewThreads(this.db, { inserted, bodyCompleted, now: this.now(), mode: readAutoCategorize(this.db), model });
+    return model ? { model, mode: await readAutoCategorize(this.store) } : null;
   }
 
   /** One "Única añadió N conversaciones a X" per category at most every 30 s. */
@@ -462,15 +378,15 @@ export class Backend {
   finishMove(batchId: number): Promise<void> {
     const running = this.moves.get(batchId);
     if (running) return running;
-    const own = ownAddresses(this.db);
     const job = (async () => {
       for (;;) {
-        const phase = movePhase(this.db, batchId);
+        const phase = await this.store.categories.movePhase(batchId);
         if (phase !== "training" && phase !== "restoring") return;
-        const pending = movePending(this.db, batchId);
+        const pending = await this.store.categories.movePending(batchId);
         if (pending.length === 0) return;
-        await this.runSliced(pending, 50, (chunk) => {
-          const deltas = phase === "training" ? trainMoveSlice(this.db, batchId, chunk, this.now(), own) : restoreMoveSlice(this.db, batchId, chunk);
+        await this.runSliced(pending, 50, async (chunk) => {
+          const deltas =
+            phase === "training" ? await this.store.categories.trainMoveSlice(batchId, chunk, this.now()) : await this.store.categories.restoreMoveSlice(batchId, chunk);
           this.categorizer.apply(deltas);
         });
         if (this.stopped) return;
@@ -486,12 +402,12 @@ export class Backend {
    * (import, bulk filter) must go through here so it never blocks interactive
    * RPCs for longer than one slice.
    */
-  async runSliced<T>(items: readonly T[], initialSize: number, work: (chunk: T[]) => void): Promise<void> {
+  async runSliced<T>(items: readonly T[], initialSize: number, work: (chunk: T[]) => void | Promise<void>): Promise<void> {
     let size = initialSize;
     for (let i = 0; i < items.length && !this.stopped; ) {
       const started = performance.now();
       const chunk = items.slice(i, i + size);
-      work(chunk);
+      await work(chunk);
       i += chunk.length;
       const took = performance.now() - started;
       // shrink immediately when over budget, grow cautiously (≤1.25× per slice) to avoid overshoot
@@ -503,45 +419,53 @@ export class Backend {
 
   // ───────────────────────────── providers & sync ─────────────────────────────
 
-  provider(accountId: number): MailProvider | null {
+  provider(accountId: number): Promise<MailProvider | null> {
     const existing = this.providers.get(accountId);
     if (existing) return existing;
-    const account = getAccount(this.db, accountId);
-    if (!account) return null;
-    const cfg = getAccountConfig<Record<string, unknown>>(this.db, accountId)!;
-    const provider = this.options.providers.create({
-      db: this.db,
-      account,
-      config: cfg.config,
-      getSecret: (name) => this.getSecret(`account:${accountId}:${name}`),
-      setSecret: (name, value) => this.setSecret(`account:${accountId}:${name}`, value),
-      getAppSecret: (name) => this.getSecret(name),
-      loadCursor: <T,>() => (getAccountConfig<{ cursor?: T }>(this.db, accountId)?.config.cursor ?? null) as T | null,
-      saveCursor: (cursor) => {
-        const current = getAccountConfig<Record<string, unknown>>(this.db, accountId);
-        if (current) setAccountProviderConfig(this.db, accountId, { ...current.config, cursor });
-      },
-      fetch: this.net.fetchFor("mail"),
+    const created = (async () => {
+      const account = await this.store.accounts.get(accountId);
+      const cfg = await this.store.accounts.config<Record<string, unknown>>(accountId);
+      if (!account || !cfg) return null;
+      return this.options.providers.create({
+        store: this.store.providerStore(accountId),
+        account,
+        config: cfg.config,
+        getSecret: (name) => this.getSecret(`account:${accountId}:${name}`),
+        setSecret: (name, value) => this.setSecret(`account:${accountId}:${name}`, value),
+        getAppSecret: (name) => this.getSecret(name),
+        loadCursor: async <T,>() => ((await this.store.accounts.config<{ cursor?: T }>(accountId))?.config.cursor ?? null) as T | null,
+        saveCursor: async (cursor) => {
+          const current = await this.store.accounts.config<Record<string, unknown>>(accountId);
+          if (current) await this.store.accounts.setProviderConfig(accountId, { ...current.config, cursor });
+        },
+        fetch: this.net.fetchFor("mail"),
+      });
+    })();
+    this.providers.set(accountId, created);
+    // a missing account is not cached: it may be created later under a fresh id only, but don't pin null
+    void created.then((p) => {
+      if (!p && this.providers.get(accountId) === created) this.providers.delete(accountId);
     });
-    this.providers.set(accountId, provider);
-    return provider;
+    return created;
   }
 
   startAccount(account: Account): void {
-    const provider = this.provider(account.id);
-    if (!provider) return;
-    if (provider.watch && !this.unwatch.has(account.id)) {
-      this.unwatch.set(account.id, provider.watch(() => void this.syncAccount(account.id)));
-    }
-    void this.syncAccount(account.id);
+    void this.provider(account.id).then((provider) => {
+      if (!provider || this.stopped) return;
+      if (provider.watch && !this.unwatch.has(account.id)) {
+        this.unwatch.set(account.id, provider.watch(() => void this.syncAccount(account.id)));
+      }
+      void this.syncAccount(account.id);
+    });
   }
 
   async dropAccount(accountId: number): Promise<void> {
     this.unwatch.get(accountId)?.();
     this.unwatch.delete(accountId);
     await this.syncing.get(accountId)?.catch(() => {});
-    await this.providers.get(accountId)?.close().catch(() => {});
+    const provider = this.providers.get(accountId);
     this.providers.delete(accountId);
+    await (await provider?.catch(() => null))?.close().catch(() => {});
   }
 
   syncAccount(accountId: number): Promise<void> {
@@ -551,81 +475,52 @@ export class Backend {
       this.syncAgain.add(accountId);
       return running.then(() => this.syncing.get(accountId));
     }
-    const provider = this.provider(accountId);
-    if (!provider) return Promise.resolve();
-    const setState = (patch: Partial<AccountSyncState>) => {
-      setAccountSyncState(this.db, accountId, patch);
-      this.emitAccounts();
-    };
-    const sink: SyncSink = {
-      signal: this.abort.signal,
-      ingest: async (messages) => {
-        await this.ingestSliced(messages);
-      },
-      windowStart: this.now() - readSettings(this.db).syncWindowDays * 86_400_000,
-      updateFlags: async (updates) => {
-        const touched = new Set<number>();
-        const columns: Record<string, string> = { isRead: "is_read", isStarred: "is_starred", inInbox: "in_inbox", isTrash: "is_trash", isSpam: "is_spam", isSent: "is_sent", isDraft: "is_draft" };
-        await this.runSliced(updates, 200, (chunk) => {
-          this.db.tx(() => {
-            // read inside this slice's transaction: a user action between slices is honoured
-            const pending = messagesWithPendingOps(this.db, accountId);
-            const threads = new Set<number>();
-            for (const u of chunk) {
-              // optimistic local state wins until its op settles
-              if (pending.has(u.messageId)) continue;
-              const sets = Object.entries(u.flags).filter(([k]) => columns[k]);
-              if (!sets.length) continue;
-              const r = this.db.get<{ thread_id: number }>(
-                `UPDATE messages SET ${sets.map(([k]) => `${columns[k]} = ?`).join(", ")} WHERE id = ? AND account_id = ? RETURNING thread_id`,
-                ...sets.map(([, v]) => (v ? 1 : 0)),
-                u.messageId,
-                accountId,
-              );
-              if (r) threads.add(r.thread_id);
-            }
-            recomputeThreads(this.db, threads);
-            for (const t of threads) touched.add(t);
-          });
-        });
-        this.notifyChanged(touched);
-      },
-      setBody: async (messageId, text, html) => {
-        const { touched, deltas, auto } = this.db.tx(() => {
-          setMessageBody(this.db, messageId, text, html, "full");
-          const owner = this.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", messageId);
-          if (owner) recomputeThreads(this.db, [owner.thread_id]);
-          const touched = this.applyFiltersTo([messageId], true);
-          // the body was the missing piece: reclassify once
-          const c = this.classify([], [messageId]);
-          for (const t of c.touched) touched.add(t);
-          if (owner) touched.add(owner.thread_id);
-          return { touched, deltas: c.deltas, auto: c.auto };
-        });
-        this.categorizer.apply(deltas);
-        this.announceAuto(auto);
-        this.notifyChanged(touched, false);
-      },
-      removeMessages: async (ids) => {
-        this.notifyChanged(deleteMessages(this.db, ids));
-      },
-      pendingMessageIds: () => messagesWithPendingOps(this.db, accountId),
-      setSyncState: setState,
+    const setState = async (patch: Partial<AccountSyncState>) => {
+      await this.store.accounts.setSyncState(accountId, patch);
+      await this.emitAccounts();
     };
     const run = (async () => {
-      setState({ status: "syncing" });
+      const provider = await this.provider(accountId);
+      if (!provider) return;
+      const sink: SyncSink = {
+        signal: this.abort.signal,
+        ingest: async (messages) => {
+          await this.ingestSliced(messages);
+        },
+        windowStart: this.now() - (await readSettings(this.store)).syncWindowDays * 86_400_000,
+        updateFlags: async (updates) => {
+          const touched = new Set<number>();
+          await this.runSliced(updates, 200, async (chunk) => {
+            for (const t of (await this.store.sync.updateFlags(accountId, chunk)).touched) touched.add(t);
+          });
+          this.notifyChanged(touched);
+        },
+        setBody: async (messageId, text, html) => {
+          const r = await this.store.sync.setBody(messageId, text, html, { now: this.now(), classifier: await this.classifier() });
+          this.categorizer.apply(r.deltas);
+          this.announceAuto(r.auto);
+          this.opsQueued(r.opIds);
+          this.notifyChanged(r.touched, false);
+        },
+        removeMessages: async (ids) => {
+          this.notifyChanged((await this.store.sync.remove(ids)).touched);
+        },
+        pendingMessageIds: () => this.store.sync.pendingMessageIds(accountId),
+        setSyncState: (patch) => setState(patch),
+      };
+      await setState({ status: "syncing" });
       try {
         await provider.sync(sink);
-        setState({ status: "idle", lastError: null, lastSyncAt: this.now() });
+        await setState({ status: "idle", lastError: null, lastSyncAt: this.now() });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         this.log("warn", `sync failed for account ${accountId}`, message);
-        setState({ status: error instanceof ProviderError && error.retryable ? "offline" : "error", lastError: message });
-      } finally {
-        this.syncing.delete(accountId);
-        if (this.syncAgain.delete(accountId) && !this.stopped) void this.syncAccount(accountId);
+        if (this.store.isOpen) await setState({ status: error instanceof ProviderError && error.retryable ? "offline" : "error", lastError: message });
       }
-    })();
+    })().finally(() => {
+      this.syncing.delete(accountId);
+      if (this.syncAgain.delete(accountId) && !this.stopped) void this.syncAccount(accountId);
+    });
     this.syncing.set(accountId, run);
     return run;
   }
@@ -649,7 +544,7 @@ export class Backend {
       do {
         this.workerKicked = false;
         for (;;) {
-          const batch = claimReadyOps(this.db, this.now(), 25);
+          const batch = await this.store.ops.claimReady(this.now(), 25);
           if (batch.length === 0) break;
           const byAccount = new Map<number, OpRow[]>();
           for (const op of batch) byAccount.set(op.account_id, [...(byAccount.get(op.account_id) ?? []), op]);
@@ -661,7 +556,7 @@ export class Backend {
                 } catch (error) {
                   // never strand the rest of the batch in "running"
                   this.log("error", `op ${op.id} crashed`, error instanceof Error ? error.stack : error);
-                  if (this.db.isOpen && getOp(this.db, op.id)?.state === "running") failOp(this.db, op.id, String(error), true, this.now());
+                  if (this.store.isOpen && (await this.store.ops.get(op.id))?.state === "running") await this.store.ops.fail(op.id, String(error), true, this.now());
                 }
               }
             }),
@@ -672,14 +567,14 @@ export class Backend {
     } finally {
       this.workerRunning = false;
     }
-    this.scheduleRetry();
+    await this.scheduleRetry();
     return processed;
   }
 
-  private scheduleRetry(): void {
+  private async scheduleRetry(): Promise<void> {
     if (this.stopped || this.options.autoSync === false) return;
-    const next = this.db.get<{ t: number | null }>("SELECT min(next_attempt_at) AS t FROM ops WHERE state = 'queued'")?.t;
-    if (next === null || next === undefined) return;
+    const next = await this.store.ops.nextAttemptAt();
+    if (next === null || this.stopped) return;
     if (this.workerTimer) clearTimeout(this.workerTimer);
     this.workerTimer = setTimeout(() => void this.runWorker(), Math.max(0, next - this.now()));
   }
@@ -687,37 +582,23 @@ export class Backend {
   private async executeOp(claimed: OpRow): Promise<void> {
     // Re-read right before dispatch: while earlier ops of the batch ran, this one may have
     // been superseded (deleted), pruned (deleted messages) or narrowed.
-    const op = getOp(this.db, claimed.id);
+    const op = await this.store.ops.get(claimed.id);
     if (!op || op.state !== "running") return;
-    const provider = this.provider(op.account_id);
+    const provider = await this.provider(op.account_id);
     const target = JSON.parse(op.target_json) as { messageIds?: number[] };
     try {
       if (!provider) throw new ProviderError("Account no longer exists", false);
       const result = await provider.execute({ id: op.id, kind: op.kind, target, payload: JSON.parse(op.payload_json) });
-      if (this.stopped && !this.db.isOpen) return;
-      const deltas: ModelDelta[] = [];
-      this.db.tx(() => {
-        completeOp(this.db, op.id, this.now());
-        if (result?.warning) this.db.run("UPDATE ops SET last_error = ? WHERE id = ?", result.warning, op.id);
-        const localId = target.messageIds?.[0];
-        if (op.kind === "send" && result && localId) {
-          if (result.providerMsgId) {
-            this.db.run("UPDATE messages SET provider_msg_id = ? WHERE id = ? AND provider_msg_id LIKE 'local:%'", result.providerMsgId, localId);
-          }
-          if (result.providerThreadId) {
-            // a conversation we started gets its Gmail thread id, so replies land in it
-            const row = this.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", localId);
-            if (row) this.notifyChanged([adoptProviderThread(this.db, row.thread_id, op.account_id, result.providerThreadId, undefined, deltas)]);
-          }
-        }
-      });
-      this.categorizer.apply(deltas);
+      if (this.stopped && !this.store.isOpen) return;
+      const done = await this.store.ops.complete(op.id, result, this.now());
+      this.categorizer.apply(done.deltas);
+      if (done.touched.length) this.notifyChanged(done.touched);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (error instanceof ProviderError && error.ambiguous) markOpUnknown(this.db, op.id, message, this.now());
-      else failOp(this.db, op.id, message, error instanceof ProviderError ? error.retryable : true, this.now());
+      if (error instanceof ProviderError && error.ambiguous) await this.store.ops.markUnknown(op.id, message, this.now());
+      else await this.store.ops.fail(op.id, message, error instanceof ProviderError ? error.retryable : true, this.now());
     }
-    const after = getOp(this.db, op.id);
+    const after = await this.store.ops.get(op.id);
     if (after) this.server.emit("op", this.opInfo(after)); // a superseded op is simply gone
   }
 
@@ -743,8 +624,4 @@ export class Backend {
     return this.aiService.current();
   }
 
-  newMessageId(email: string): string {
-    const domain = email.split("@")[1] || "unica.local";
-    return `${this.platform.uuid()}@${domain}`;
-  }
 }

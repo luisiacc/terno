@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient, type OwnerIdentity, type RpcError } from "@unica/core/rpc";
-import { createAccount, ownerHistory } from "@unica/db";
+import { createAccount, ownerHistory, sqlDb } from "@unica/db";
 import { demoRegistry, type MailProvider, type ProviderRegistry } from "@unica/mail";
 import { afterEach, describe, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
@@ -86,7 +86,7 @@ describe("owner claim", () => {
   it("concurrent adds (two windows) leave exactly one owner", async () => {
     const { backend, client } = setup();
     const added = await Promise.all([client.call("accounts.addImap", imap("a@one.dev")), client.call("accounts.addImap", imap("b@two.dev"))]);
-    expect(backend.db.get<{ n: number }>("SELECT count(*) AS n FROM owner")!.n).toBe(1);
+    expect(sqlDb(backend.store).get<{ n: number }>("SELECT count(*) AS n FROM owner")!.n).toBe(1);
     const owner = (await client.call("identity.get", {}))!;
     expect(added.map((a) => a.id)).toContain(owner.accountId);
   });
@@ -94,7 +94,7 @@ describe("owner claim", () => {
   it("records whether the IMAP login user is the address (a login doesn't prove the address)", async () => {
     const { backend, client } = setup();
     await client.call("accounts.addImap", imap("hola@luiscordero.dev", { user: "luis" }));
-    const evidence = JSON.parse(backend.db.get<{ e: string }>("SELECT evidence_json AS e FROM owner")!.e);
+    const evidence = JSON.parse(sqlDb(backend.store).get<{ e: string }>("SELECT evidence_json AS e FROM owner")!.e);
     expect(evidence).toEqual({ imapHost: "imap.luiscordero.dev", loginUser: "luis", emailMatchesLogin: false });
     // evidence never crosses the RPC boundary
     expect(JSON.stringify(await client.call("app.bootstrap", {}))).not.toMatch(/loginUser|imapHost|emailMatchesLogin/);
@@ -139,7 +139,7 @@ describe("changing the owner", () => {
     tick(60_000);
     const after = await client.call("identity.changeOwner", { accountId: work.id, password: "pw-work@acme.studio" });
     expect(after).toMatchObject({ userId: before.userId, email: "work@acme.studio", accountId: work.id, verifiedAt: NOW + 60_000, createdAt: before.createdAt, updatedAt: NOW + 60_000 });
-    expect(ownerHistory(backend.db)).toEqual([{ userId: before.userId, email: "luis@fastmail.com", provider: "imap", replacedAt: NOW + 60_000, reason: "changed by user" }]);
+    expect(ownerHistory(sqlDb(backend.store))).toEqual([{ userId: before.userId, email: "luis@fastmail.com", provider: "imap", replacedAt: NOW + 60_000, reason: "changed by user" }]);
     // the freshly verified password replaces the stored one
     expect(await backend.getSecret(`account:${work.id}:password`)).toBe("pw-work@acme.studio");
     await settle();
@@ -174,7 +174,7 @@ describe("changing the owner", () => {
 
   it("refuses demo mailboxes", async () => {
     const { backend, client } = setup();
-    const demo = createAccount(backend.db, { kind: "imap", email: "demo@demo.dev", displayName: "Demo", color: "indigo", providerConfig: { demo: true } });
+    const demo = createAccount(sqlDb(backend.store), { kind: "imap", email: "demo@demo.dev", displayName: "Demo", color: "indigo", providerConfig: { demo: true } });
     expect(await errorOf(client.call("identity.changeOwner", { accountId: demo.id, password: "x" }))).toMatchObject({ code: "BAD_REQUEST" });
   });
 });

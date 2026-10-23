@@ -29,6 +29,11 @@ import {
 const id = z.number().int().positive();
 const ids = z.array(id).min(1).max(5000);
 const cursor = z.object({ lastDate: z.number(), id: z.number().int() });
+/** a search cursor also names the query and the store revision it was minted at (older renderers send only the keyset) */
+const searchCursor = cursor.extend({
+  revision: z.object({ epoch: z.string().max(100), seq: z.number().int().min(0) }).optional(),
+  queryKey: z.string().max(5000).optional(),
+});
 const address = z.object({ name: z.string().max(300), email: z.string().email().max(320) });
 
 export interface ThreadPage {
@@ -37,6 +42,7 @@ export interface ThreadPage {
 }
 
 export interface SearchPage extends ThreadPage {
+  nextCursor: { lastDate: number; id: number; revision: { epoch: string; seq: number }; queryKey: string } | null;
   strategy: string;
   tookMs: number;
   /** false while some accounts still have bodies pending indexing */
@@ -238,7 +244,7 @@ export const contract = {
       query: z.string().max(2000),
       accountId: id.optional(),
       categoryId: id.optional(),
-      cursor: cursor.optional(),
+      cursor: searchCursor.optional(),
       limit: z.number().int().min(1).max(500).default(100),
     }),
   ),

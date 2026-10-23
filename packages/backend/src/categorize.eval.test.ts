@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@unica/core/rpc";
 import { decide, POLICY } from "@unica/core";
-import { createAccount, createCategory, threadFeatures, vetoesFor, type IncomingMessage } from "@unica/db";
+import { createAccount, createCategory, threadFeatures, vetoesFor, type IncomingMessage, sqlDb } from "@unica/db";
 import { demoRegistry } from "@unica/mail";
 import { generateDataset, MOCK_CATEGORIES, type MockMessage } from "@unica/mock-data";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -110,9 +110,9 @@ async function run(s: Scenario): Promise<Report> {
     backend.connect(srv, { clientId: "eval", origin: "renderer" });
     const client = new RpcClient(c);
     // local signals only
-    expect(readSettings(backend.db).ai.provider).toBe("none");
-    const accountIds = data.accounts.map((a) => createAccount(backend.db, { kind: a.kind, email: a.email, displayName: a.displayName, color: a.color }).id);
-    const categoryId = new Map(MOCK_CATEGORIES.map((cat) => [cat.name, createCategory(backend.db, cat.name, cat.color).id]));
+    expect((await readSettings(backend.store)).ai.provider).toBe("none");
+    const accountIds = data.accounts.map((a) => createAccount(sqlDb(backend.store), { kind: a.kind, email: a.email, displayName: a.displayName, color: a.color }).id);
+    const categoryId = new Map(MOCK_CATEGORIES.map((cat) => [cat.name, createCategory(sqlDb(backend.store), cat.name, cat.color).id]));
     const toIncoming = (m: MockMessage, test: boolean): IncomingMessage => ({
       ...m,
       accountId: accountIds[m.accountIndex]!,
@@ -127,7 +127,7 @@ async function run(s: Scenario): Promise<Report> {
 
     // 1. the user files the older mail
     const firstMessage = new Map(threads.map((t) => [t.key, t.messages[0]!.providerMsgId]));
-    const threadIdOf = (key: string) => backend.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = ?", firstMessage.get(key)!)?.thread_id;
+    const threadIdOf = (key: string) => sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = ?", firstMessage.get(key)!)?.thread_id;
     const perCategory = new Map<string, number>();
     for (const t of train) {
       const gold = goldOf(t.tags);
@@ -149,7 +149,7 @@ async function run(s: Scenario): Promise<Report> {
 
     // 2. idle rebuild at the cutoff, then new mail arrives day by day
     clock = cutoff;
-    backend.categorizer.rebuildSync();
+    await backend.categorizer.rebuildNow();
     await client.call("settings.update", { autoCategorize: "auto" });
     const testMessages = test.flatMap((t) => t.messages).sort((a, b) => a.date - b.date);
     for (let i = 0; i < testMessages.length; ) {
@@ -169,7 +169,7 @@ async function run(s: Scenario): Promise<Report> {
     let scored = 0;
     const missed: Report["missed"] = {};
     const model = backend.categorizer.model!;
-    const policies = new Map(backend.db.all<{ id: number; auto_apply: number }>("SELECT id, auto_apply FROM categories").map((c) => [c.id, { autoApply: c.auto_apply === 1, kept: 0, reverted: 0 }]));
+    const policies = new Map(sqlDb(backend.store).all<{ id: number; auto_apply: number }>("SELECT id, auto_apply FROM categories").map((c) => [c.id, { autoApply: c.auto_apply === 1, kept: 0, reverted: 0 }]));
     for (const t of test) {
       const root = t.messages.find((m) => !m.isSent);
       if (!root || root.isSpam) {
@@ -182,10 +182,10 @@ async function run(s: Scenario): Promise<Report> {
       const id = threadIdOf(t.key)!;
       scored++;
       const gold = new Set(goldOf(t.tags));
-      const decisions = backend.db.all<{ category_id: number; kind: string }>("SELECT category_id, kind FROM cls_decisions WHERE thread_id = ?", id);
+      const decisions = sqlDb(backend.store).all<{ category_id: number; kind: string }>("SELECT category_id, kind FROM cls_decisions WHERE thread_id = ?", id);
       const auto = new Set(decisions.filter((d) => d.kind === "auto").map((d) => nameOf.get(d.category_id)!));
       const suggest = new Set(decisions.filter((d) => d.kind === "suggest").map((d) => nameOf.get(d.category_id)!));
-      const set = threadFeatures(backend.db, [id]).get(id);
+      const set = threadFeatures(sqlDb(backend.store), [id]).get(id);
       if (set) {
         const scores = model.score(set.encoded);
         const ds = decide({
@@ -193,7 +193,7 @@ async function run(s: Scenario): Promise<Report> {
           autoEligible: true,
           scores,
           categories: policies,
-          vetoes: vetoesFor(backend.db, id, set.features.sender, scores.map((x) => x.categoryId), clock),
+          vetoes: vetoesFor(sqlDb(backend.store), id, set.features.sender, scores.map((x) => x.categoryId), clock),
           lookAlike: model.lookAlike(set.encoded),
           senderSupport: model.senderSupport(set.encoded),
         });
@@ -238,14 +238,14 @@ async function run(s: Scenario): Promise<Report> {
     }
 
     // 4. the user removes what the engine got wrong; nothing brings it back
-    const wrong = backend.db.all<{ thread_id: number; category_id: number }>("SELECT thread_id, category_id FROM cls_decisions WHERE kind = 'auto' LIMIT 20");
+    const wrong = sqlDb(backend.store).all<{ thread_id: number; category_id: number }>("SELECT thread_id, category_id FROM cls_decisions WHERE kind = 'auto' LIMIT 20");
     for (const w of wrong) await client.call("categories.removeThreads", { categoryId: w.category_id, threadIds: [w.thread_id] });
-    const roots = wrong.map((w) => backend.db.get<{ provider_msg_id: string }>("SELECT provider_msg_id FROM messages WHERE thread_id = ? AND is_sent = 0 ORDER BY date LIMIT 1", w.thread_id)!);
+    const roots = wrong.map((w) => sqlDb(backend.store).get<{ provider_msg_id: string }>("SELECT provider_msg_id FROM messages WHERE thread_id = ? AND is_sent = 0 ORDER BY date LIMIT 1", w.thread_id)!);
     // the same root arrives again with its body completed: the classifier looks at the thread once more
-    backend.db.run(`UPDATE messages SET body_state = 'partial' WHERE provider_msg_id IN (SELECT value FROM json_each(?))`, JSON.stringify(roots.map((r) => r.provider_msg_id)));
+    sqlDb(backend.store).run(`UPDATE messages SET body_state = 'partial' WHERE provider_msg_id IN (SELECT value FROM json_each(?))`, JSON.stringify(roots.map((r) => r.provider_msg_id)));
     const again = testMessages.filter((m) => roots.some((r) => r.provider_msg_id === m.providerMsgId)).map((m) => toIncoming(m, true));
     await backend.ingestSliced(again);
-    const readded = wrong.filter((w) => backend.db.get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", w.thread_id, w.category_id)).length;
+    const readded = wrong.filter((w) => sqlDb(backend.store).get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", w.thread_id, w.category_id)).length;
 
     const ratio = (a: number, b: number) => (b === 0 ? 1 : a / b);
     const report: Report = {

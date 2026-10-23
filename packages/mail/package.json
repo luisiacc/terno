@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@unica/core": "workspace:*",
-    "@unica/db": "workspace:*",
+    "@unica/store": "workspace:*",
     "imapflow": "^2.8.0",
     "nodemailer": "^10.2.0",
     "postal-mime": "^4.1.3"

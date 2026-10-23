@@ -1,29 +1,12 @@
 import { CategorizerModel, FEATURES_V } from "@unica/core";
-import {
-  backfillCandidates,
-  backfillExamples,
-  backgroundCandidates,
-  examplesFingerprint,
-  loadExamples,
-  loadExamplesPage,
-  type ExampleKey,
-  loadSnapshot,
-  matureDecisions,
-  ownAddresses,
-  saveSnapshot,
-  suggestBackfill,
-  threadFeatures,
-  type Db,
-  type ModelDelta,
-} from "@unica/db";
-import type { Platform } from "@unica/store";
+import type { ExampleKey, MailStore, ModelDelta, Platform } from "@unica/store";
 import { readAutoCategorize } from "./settings";
 
 export interface CategorizerHost {
-  readonly db: Db;
+  readonly store: MailStore;
   readonly platform: Platform;
   now(): number;
-  runSliced<T>(items: readonly T[], initialSize: number, work: (chunk: T[]) => void): Promise<void>;
+  runSliced<T>(items: readonly T[], initialSize: number, work: (chunk: T[]) => void | Promise<void>): Promise<void>;
   log(level: "info" | "warn" | "error", message: string, extra?: unknown): void;
   notifyChanged(threadIds: Iterable<number>, views?: boolean): void;
 }
@@ -90,18 +73,18 @@ export class Categorizer {
   }
 
   /** Startup: adopt the persisted snapshot if it still matches the training set. */
-  load(): boolean {
-    const snap = loadSnapshot(this.host.db);
-    if (!snap || snap.featuresV !== FEATURES_V || snap.fingerprint !== examplesFingerprint(this.host.db)) return false;
+  async load(): Promise<boolean> {
+    const { snapshot: snap, fingerprint } = await this.host.store.categorize.loadSnapshot();
+    if (!snap || snap.featuresV !== FEATURES_V || snap.fingerprint !== fingerprint) return false;
     const m = CategorizerModel.deserialize(snap.blob);
     if (!m) return false;
     this.current = m;
     return true;
   }
 
+  /** Deltas a store command returned, i.e. after it committed. */
   apply(deltas: readonly ModelDelta[]): void {
     if (deltas.length === 0) return;
-    if (this.host.db.inTransaction) throw new Error("model deltas must be applied after the transaction commits");
     if (this.pending) for (const delta of deltas) this.pending.push({ delta, readTo: this.readTo });
     const m = this.current;
     if (!m) return;
@@ -122,7 +105,7 @@ export class Categorizer {
     if (this.backfillTimer) clearTimeout(this.backfillTimer);
     this.backfillTimer = setTimeout(() => {
       this.backfillTimer = null;
-      if (!this.host.db.isOpen) return;
+      if (!this.host.store.isOpen) return;
       this.backfilled = 0;
       void this.rebuild();
     }, BACKFILL_SETTLE_MS);
@@ -138,15 +121,14 @@ export class Categorizer {
     this.dirty = true;
   }
 
-  /** Synchronous rebuild (seeding, tests). */
-  rebuildSync(): CategorizerModel {
-    const db = this.host.db;
-    while (backfillExamples(db) > 0);
+  /** Rebuild in one go, without yielding (seeding, tests). */
+  async rebuildNow(): Promise<CategorizerModel> {
+    const store = this.host.store;
+    while ((await store.categorize.backfillExamples(2000)) > 0);
     const now = this.host.now();
     const m = new CategorizerModel({ decayRef: now });
-    for (const ex of loadExamples(db)) m.train(ex);
-    const own = ownAddresses(db);
-    for (const [id, set] of threadFeatures(db, backgroundCandidates(db, now), own)) m.addBackground(id, set.encoded);
+    for (const ex of await store.categorize.examples()) m.train(ex);
+    for (const [id, set] of await store.categorize.threadFeatures(await store.categorize.backgroundCandidates(now))) m.addBackground(id, set.encoded);
     this.current = m;
     this.dirty = true;
     return m;
@@ -160,10 +142,10 @@ export class Categorizer {
   rebuild(): Promise<void> {
     if (this.rebuilding) return this.rebuilding;
     const run = (async () => {
-      const db = this.host.db;
+      const store = this.host.store;
       try {
         for (;;) {
-          const n = backfillExamples(db, 500);
+          const n = await store.categorize.backfillExamples(500);
           if (n === 0) break;
           await this.host.platform.yield();
         }
@@ -175,9 +157,9 @@ export class Categorizer {
         // the training set in key order, a bounded slice at a time
         for (;;) {
           const started = performance.now();
-          let page: ReturnType<typeof loadExamplesPage> = [];
+          let page: Awaited<ReturnType<MailStore["categorize"]["examplesPage"]>> = [];
           do {
-            page = loadExamplesPage(db, cursor, 250);
+            page = await store.categorize.examplesPage(cursor, 250);
             for (const { example } of page) m.train(example);
             if (page.length) this.readTo = cursor = page[page.length - 1]!.key;
           } while (page.length === 250 && performance.now() - started < SLICE_MS);
@@ -185,9 +167,8 @@ export class Categorizer {
           await this.host.platform.yield();
         }
         this.readTo = "all";
-        const own = ownAddresses(db);
-        await this.host.runSliced(backgroundCandidates(db, now), 100, (chunk) => {
-          for (const [id, set] of threadFeatures(db, chunk, own)) m.addBackground(id, set.encoded);
+        await this.host.runSliced(await store.categorize.backgroundCandidates(now), 100, async (chunk) => {
+          for (const [id, set] of await store.categorize.threadFeatures(chunk)) m.addBackground(id, set.encoded);
         });
         // a write to a row the scan had not reached yet is already in the pages it read later
         for (const { delta, readTo } of this.pending) if (scanned(delta, readTo)) applyDelta(m, delta);
@@ -196,7 +177,7 @@ export class Categorizer {
         this.pending = null;
         await this.suggestBackfill(m);
       } catch (error) {
-        if (db.isOpen) this.host.log("warn", "categorizer rebuild failed", error instanceof Error ? error.message : error);
+        if (store.isOpen) this.host.log("warn", "categorizer rebuild failed", error instanceof Error ? error.message : error);
       } finally {
         this.pending = null;
         this.readTo = null;
@@ -209,27 +190,32 @@ export class Categorizer {
 
   /** Old inbox mail that arrived as backfill gets its (never automatic) suggestions here, in slices. */
   private async suggestBackfill(m: CategorizerModel): Promise<void> {
-    const db = this.host.db;
-    const ids = backfillCandidates(db, this.host.now());
-    await this.host.runSliced(ids, 50, (chunk) => {
-      if (this.current !== m || !db.isOpen) return;
-      const r = suggestBackfill(db, { threadIds: chunk, now: this.host.now(), mode: readAutoCategorize(db), model: m });
-      if (r.touched.size) this.host.notifyChanged(r.touched, false);
+    const store = this.host.store;
+    const ids = await store.categorize.backfillCandidates(this.host.now());
+    await this.host.runSliced(ids, 50, async (chunk) => {
+      if (this.current !== m || !store.isOpen) return;
+      const r = await store.categorize.suggestBackfill({ threadIds: chunk, now: this.host.now(), mode: await readAutoCategorize(store), model: m });
+      if (r.touched.length) this.host.notifyChanged(r.touched, false);
     });
   }
 
-  persist(): void {
+  async persist(): Promise<void> {
     const m = this.current;
     if (!m || !this.dirty || this.rebuilding) return;
-    saveSnapshot(this.host.db, { featuresV: FEATURES_V, builtAt: m.decayRef, fingerprint: examplesFingerprint(this.host.db), blob: m.serialize() });
     this.dirty = false;
+    try {
+      await this.host.store.categorize.saveSnapshot({ featuresV: FEATURES_V, builtAt: m.decayRef, blob: m.serialize() });
+    } catch (error) {
+      this.dirty = true;
+      throw error;
+    }
   }
 
   /** Background upkeep: mature auto decisions, refresh decay weekly, persist. */
   async idle(): Promise<void> {
-    matureDecisions(this.host.db, this.host.now());
+    await this.host.store.categorize.matureDecisions(this.host.now());
     const m = this.current;
     if (!m || this.host.now() - m.decayRef > REBUILD_EVERY_MS) await this.rebuild();
-    this.persist();
+    await this.persist();
   }
 }

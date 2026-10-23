@@ -1,8 +1,9 @@
 import { expect, rows, search, test } from "./fixtures";
+import { sqlDb } from "../../backend-dev/src/server";
 
 test.describe("AI filters and learned filters", () => {
   test("builds a filter from a Spanish prompt, previews it live and applies it", async ({ app: page, server }) => {
-    const db = server.backend.db;
+    const db = sqlDb(server.backend.store);
     const inboxUber = () => db.get<{ c: number }>("SELECT count(*) c FROM threads WHERE in_inbox = 1 AND last_from_email = 'uber.receipts@uber.com'")!.c;
     expect(inboxUber()).toBeGreaterThan(0);
 

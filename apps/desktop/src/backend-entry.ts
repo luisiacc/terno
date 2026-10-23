@@ -85,11 +85,11 @@ parentPort.on("message", async (event) => {
         onPolicy: (policy) => send({ type: "policy", ...policy }),
         log: (level, message, extra) => send({ type: "log", level, message: extra ? `${message} ${typeof extra === "string" ? extra : JSON.stringify(extra)}` : message }),
       });
-      if (msg.demo && seedDemo(backend.db, { threads: 3000, accounts: 4 })) {
-        backend.db.run("INSERT OR REPLACE INTO settings (key, value_json) VALUES ('app', ?)", JSON.stringify({ ai: { provider: "fake" } }));
+      if (msg.demo && (await seedDemo(backend.store, { threads: 3000, accounts: 4 }))) {
+        await backend.store.settings.set("app", { ai: { provider: "fake" } });
       }
-      backend.publishPolicy();
-      backend.start();
+      await backend.publishPolicy();
+      await backend.start();
       await startAgentSocket(backend, msg.socketPath, msg.tokenPath).catch((e) =>
         send({ type: "log", level: "warn", message: `agent socket unavailable: ${e instanceof Error ? e.message : e}` }),
       );

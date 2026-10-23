@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@unica/core/rpc";
-import { seedDataset, type IncomingMessage } from "@unica/db";
+import { seedDataset, type IncomingMessage, sqlDb } from "@unica/db";
 import { demoRegistry } from "@unica/mail";
 import { generateDataset } from "@unica/mock-data";
 import { afterAll, beforeAll, expect, it } from "vitest";
@@ -22,8 +22,8 @@ const stats: Stat[] = [];
 
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), "unica-bperf-"));
-  backend = new Backend({ dbPath: join(dir, "b.db"), version: "perf", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false });
-  accountIds = seedDataset(backend.db, generateDataset({ threads: 20_000, accounts: 8, seed: 5, now: NOW, bodyScale: 3 }), { now: NOW }).accountIds;
+  backend = new Backend({ dbPath: join(dir, "sqlDb(b.store)"), version: "perf", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false });
+  accountIds = seedDataset(sqlDb(backend.store), generateDataset({ threads: 20_000, accounts: 8, seed: 5, now: NOW, bodyScale: 3 }), { now: NOW }).accountIds;
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "r", origin: "renderer" });
   client = new RpcClient(c);

@@ -1,4 +1,5 @@
 import { expect, rows, test } from "./fixtures";
+import { sqlDb } from "../../backend-dev/src/server";
 
 test.describe("categories", () => {
   test("creates a new category from the picker by typing its name", async ({ app: page }) => {
@@ -20,7 +21,7 @@ test.describe("categories", () => {
   });
 
   test("⌘K «Añadir a» files the selection with the same snackbar and undo", async ({ app: page, server }) => {
-    const viajes = server.backend.db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id;
+    const viajes = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id;
     const row = page.locator(`[data-testid=thread-row]:not(:has([data-slot=category-dot]))`).first();
     const id = (await row.getAttribute("data-thread-id"))!;
     await row.dispatchEvent("mousedown");

@@ -7,6 +7,7 @@ import { demoRegistry } from "@unica/mail";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppConnection } from "./connection";
 import { createMcpServer } from "./server";
+import { sqlDb } from "@unica/db";
 
 let dir: string;
 let backend: Backend;
@@ -30,7 +31,7 @@ beforeAll(async () => {
   // short path: unix socket paths are limited to ~104 bytes on macOS
   dir = mkdtempSync(join("/tmp", "umcp-"));
   backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false });
-  seedDemo(backend.db, { threads: 400, accounts: 3 });
+  await seedDemo(backend.store, { threads: 400, accounts: 3 });
   endpoint = await startAgentSocket(backend, join(dir, "a.sock"), join(dir, "a.token"));
   app = new AppConnection({ socketPath: endpoint.socketPath, tokenPath: endpoint.tokenPath });
   const [a, b] = InMemoryTransport.createLinkedPair();
@@ -82,8 +83,8 @@ describe("unica MCP server", () => {
     expect(after.json.threads.map((t: { threadId: number }) => t.threadId)).not.toContain(ids[0]);
     const cat = await call("categorize", { threadIds: ids, categoryName: "Agente" });
     expect(cat.json.added).toBe(3);
-    expect(backend.db.get("SELECT count(*) c FROM thread_categories WHERE added_by = 'agent'")).toEqual({ c: 3 });
-    expect(backend.db.get("SELECT count(*) c FROM user_actions WHERE at > ?", Date.now() - 60_000)).toEqual({ c: 0 });
+    expect(sqlDb(backend.store).get("SELECT count(*) c FROM thread_categories WHERE added_by = 'agent'")).toEqual({ c: 3 });
+    expect(sqlDb(backend.store).get("SELECT count(*) c FROM user_actions WHERE at > ?", Date.now() - 60_000)).toEqual({ c: 0 });
   });
 
   it("refuses to send unless the user allowed it, but can always draft", async () => {
@@ -94,7 +95,7 @@ describe("unica MCP server", () => {
     expect(denied.raw).toMatch(/create_draft/);
     const draft = await call("create_draft", msg);
     expect(draft.json.draftId).toEqual(expect.any(Number));
-    backend.db.run("INSERT OR REPLACE INTO settings (key, value_json) VALUES ('app', ?)", JSON.stringify({ allowAgentSend: true }));
+    sqlDb(backend.store).run("INSERT OR REPLACE INTO settings (key, value_json) VALUES ('app', ?)", JSON.stringify({ allowAgentSend: true }));
     expect((await call("send_email", msg)).json).toMatchObject({ queued: true, opId: expect.any(String) });
   });
 

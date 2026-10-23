@@ -9,7 +9,10 @@ import {
 } from "@unica/ai";
 import { builtinMode, CUSTOM_PREFIX, DEFAULT_THEME, type CustomTheme, type ThemeMode } from "@unica/core";
 import type { AiProfile, AiSettings, AppSettings, SettingsPatch } from "@unica/core/rpc";
-import { getSecret, getSetting, setSetting, type Db } from "@unica/db";
+import type { MailStore } from "@unica/store";
+
+/** The part of the store settings live in. */
+export type SettingsStore = Pick<MailStore, "settings" | "secrets">;
 
 type General = Omit<AppSettings, "ai">;
 
@@ -57,17 +60,17 @@ const DEFAULT_PROFILES: Partial<Record<AiProviderId, AiProfile>> = {
 /** The last 4 characters of each saved key, so the UI can say which key is stored without ever seeing it. */
 const KEY_HINTS = "ai:keyHints";
 
-function stored(db: Db): StoredSettings {
-  return getSetting<StoredSettings>(db, "app", {});
+function stored(store: SettingsStore): Promise<StoredSettings> {
+  return store.settings.get<StoredSettings>("app", {});
 }
 
 export function capabilityKey(provider: AiProviderId, profile: AiProfile): string {
   return [provider, profile.preset ?? "", profile.baseURL ?? "", profile.model].join("|");
 }
 
-function aiState(db: Db, s: StoredSettings) {
+function aiState(s: StoredSettings, hasLegacyKey: boolean) {
   // pre-v3 installs that saved an Anthropic key without ever touching the selector were using Anthropic (the old default)
-  const legacy = s.aiProvider ?? (getSecret(db, keySecretName("anthropic")) ? "anthropic" : DEFAULT_PROVIDER);
+  const legacy = s.aiProvider ?? (hasLegacyKey ? "anthropic" : DEFAULT_PROVIDER);
   const provider: AiProviderId = s.ai?.provider ?? legacy;
   const profiles: Partial<Record<AiProviderId, AiProfile>> = { ...DEFAULT_PROFILES, ...s.ai?.profiles };
   if (!s.ai?.profiles?.anthropic && s.aiModel) profiles.anthropic = { model: s.aiModel };
@@ -75,13 +78,13 @@ function aiState(db: Db, s: StoredSettings) {
 }
 
 /** Read on every ingestion slice: skips the AI and key lookups readSettings does. */
-export function readAutoCategorize(db: Db): AppSettings["autoCategorize"] {
-  return stored(db).autoCategorize ?? DEFAULT_SETTINGS.autoCategorize;
+export async function readAutoCategorize(store: SettingsStore): Promise<AppSettings["autoCategorize"]> {
+  return (await stored(store)).autoCategorize ?? DEFAULT_SETTINGS.autoCategorize;
 }
 
 /** Local mode alone: read on every outbound request, so it skips everything else. */
-export function readLocalMode(db: Db): boolean {
-  return stored(db).localMode ?? DEFAULT_SETTINGS.localMode;
+export async function readLocalMode(store: SettingsStore): Promise<boolean> {
+  return (await stored(store)).localMode ?? DEFAULT_SETTINGS.localMode;
 }
 
 /** The mode a theme id belongs to, or null when it names nothing (unknown or deleted custom theme). */
@@ -96,10 +99,10 @@ function resolveThemes(g: General): General {
   return { ...g, lightTheme: ok(g.lightTheme, "light") ? g.lightTheme : DEFAULT_THEME.light, darkTheme: ok(g.darkTheme, "dark") ? g.darkTheme : DEFAULT_THEME.dark };
 }
 
-export function readSettings(db: Db): AppSettings {
-  const s = stored(db);
+export async function readSettings(store: SettingsStore): Promise<AppSettings> {
+  const s = await stored(store);
   const { aiProvider: _p, aiModel: _m, ai: _ai, ...general } = s;
-  const { provider, profiles, capabilities } = aiState(db, s);
+  const { provider, profiles, capabilities } = aiState(s, s.aiProvider === undefined && !s.ai?.provider && (await store.secrets.has(keySecretName("anthropic"))));
   const profile = profiles[provider] ?? { model: "" };
   const secret = keySecretName(provider, profile.preset);
   const ai: AiSettings = {
@@ -107,8 +110,8 @@ export function readSettings(db: Db): AppSettings {
     model: profile.model,
     baseURL: profile.baseURL ?? null,
     preset: profile.preset ?? null,
-    hasKey: getSecret(db, secret) !== null,
-    keyHint: getSetting<Record<string, string>>(db, KEY_HINTS, {})[secret] ?? null,
+    hasKey: await store.secrets.has(secret),
+    keyHint: (await store.settings.get<Record<string, string>>(KEY_HINTS, {}))[secret] ?? null,
     local: isLocalProvider({ id: provider, baseURL: profile.baseURL, preset: profile.preset }),
     capabilities: capabilities[capabilityKey(provider, profile)] ?? null,
     profiles,
@@ -122,11 +125,16 @@ export class SettingsError extends Error {}
  * Applies a settings patch. Selecting a cloud provider while local mode is on
  * is refused; turning local mode on with a cloud provider keeps it dormant.
  */
-export function updateSettings(db: Db, patch: SettingsPatch, options: { endpointIsLocal?: boolean } = {}): AppSettings {
-  const s = stored(db);
+export async function updateSettings(store: SettingsStore, patch: SettingsPatch, options: { endpointIsLocal?: boolean } = {}): Promise<AppSettings> {
+  const hasLegacyKey = await store.secrets.has(keySecretName("anthropic"));
+  await store.settings.update<StoredSettings, void>("app", {}, (s) => ({ value: patchedSettings(s, patch, options, hasLegacyKey), result: undefined }));
+  return readSettings(store);
+}
+
+function patchedSettings(s: StoredSettings, patch: SettingsPatch, options: { endpointIsLocal?: boolean }, hasLegacyKey: boolean): StoredSettings {
   const { ai: aiPatch, ...rest } = patch;
   const general = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined));
-  const state = aiState(db, s);
+  const state = aiState(s, hasLegacyKey);
   let { provider } = state;
   const profiles = { ...state.profiles };
   let selecting = false;
@@ -164,20 +172,22 @@ export function updateSettings(db: Db, patch: SettingsPatch, options: { endpoint
     throw new SettingsError(`${describeProvider(provider).label} usa la nube y el modo local está activado. Desactívalo en Ajustes → General para usarla.`);
   }
   const { aiProvider: _p, aiModel: _m, ...kept } = s;
-  setSetting(db, "app", { ...kept, ...general, ai: { ...s.ai, provider, profiles } });
-  return readSettings(db);
+  return { ...kept, ...general, ai: { ...s.ai, provider, profiles } };
 }
 
-export function saveCapabilities(db: Db, provider: AiProviderId, profile: AiProfile, capabilities: Capabilities): void {
-  const s = stored(db);
-  const ai = s.ai ?? {};
-  setSetting(db, "app", { ...s, ai: { ...ai, capabilities: { ...ai.capabilities, [capabilityKey(provider, profile)]: capabilities } } });
+export async function saveCapabilities(store: SettingsStore, provider: AiProviderId, profile: AiProfile, capabilities: Capabilities): Promise<void> {
+  await store.settings.update<StoredSettings, void>("app", {}, (s) => {
+    const ai = s.ai ?? {};
+    return { value: { ...s, ai: { ...ai, capabilities: { ...ai.capabilities, [capabilityKey(provider, profile)]: capabilities } } }, result: undefined };
+  });
 }
 
-export function setKeyHint(db: Db, provider: AiProviderId, preset: CompatiblePreset | null | undefined, hint: string | null): void {
-  const hints = getSetting<Record<string, string>>(db, KEY_HINTS, {});
+export async function setKeyHint(store: SettingsStore, provider: AiProviderId, preset: CompatiblePreset | null | undefined, hint: string | null): Promise<void> {
   const name = keySecretName(provider, preset);
-  if (hint) hints[name] = hint;
-  else delete hints[name];
-  setSetting(db, KEY_HINTS, hints);
+  await store.settings.update<Record<string, string>, void>(KEY_HINTS, {}, (hints) => {
+    const next = { ...hints };
+    if (hint) next[name] = hint;
+    else delete next[name];
+    return { value: next, result: undefined };
+  });
 }

@@ -9,7 +9,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient, RpcError } from "@unica/core/rpc";
-import { setSetting } from "@unica/db";
+import { setSetting, sqlDb } from "@unica/db";
 import { demoRegistry } from "@unica/mail";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
@@ -84,7 +84,7 @@ function setup(options: { dns?: Record<string, string[]>; localMode?: boolean; o
     return addrs.map((address) => ({ address, family: address.includes(":") ? 6 : 4 }));
   };
   const backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, lookup, demoAi: true, onPolicy: options.onPolicy });
-  if (options.localMode === false) setSetting(backend.db, "app", { localMode: false });
+  if (options.localMode === false) setSetting(sqlDb(backend.store), "app", { localMode: false });
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "renderer", origin: "renderer" });
   const client = new RpcClient(c);
@@ -140,7 +140,7 @@ describe("settings: providers and profiles", () => {
   it("tells the host (Electron main's renderer fence) when local mode changes, and only then", async () => {
     const seen: boolean[] = [];
     const { backend, client } = setup({ onPolicy: (p) => seen.push(p.localMode) });
-    backend.publishPolicy();
+    await backend.publishPolicy();
     await client.call("settings.update", { theme: "dark" });
     await client.call("settings.update", { localMode: false });
     await client.call("settings.update", { localMode: false });
@@ -150,13 +150,13 @@ describe("settings: providers and profiles", () => {
 
   it("maps pre-v3 settings into the new shape", async () => {
     const { backend, client } = setup();
-    setSetting(backend.db, "app", { aiProvider: "anthropic", aiModel: "claude-legacy", theme: "dark" });
+    setSetting(sqlDb(backend.store), "app", { aiProvider: "anthropic", aiModel: "claude-legacy", theme: "dark" });
     const s = (await client.call("app.bootstrap", {})).settings;
     expect(s.ai).toMatchObject({ provider: "anthropic", model: "claude-legacy" });
     expect(s.theme).toBe("dark");
     expect(JSON.stringify(s)).not.toMatch(/aiProvider|aiModel/);
     // an old install that saved a key but never touched the selector used Anthropic, the old default
-    setSetting(backend.db, "app", { localMode: false });
+    setSetting(sqlDb(backend.store), "app", { localMode: false });
     await backend.setSecret("ai:anthropic:apiKey", "sk-ant-legacy-key-0001");
     expect((await client.call("app.bootstrap", {})).settings.ai).toMatchObject({ provider: "anthropic", hasKey: true });
   });
@@ -170,7 +170,7 @@ describe("keys never leave the backend", () => {
     const results: unknown[] = [];
     results.push(await client.call("ai.setKey", { provider: "openai", value: KEY }));
     // encrypted at rest (plaintextCipher marks what it wrapped); decrypts back for the backend only
-    const blob = backend.db.get<{ blob: Uint8Array }>("SELECT blob FROM secrets WHERE name = 'ai:openai:apiKey'")!.blob;
+    const blob = sqlDb(backend.store).get<{ blob: Uint8Array }>("SELECT blob FROM secrets WHERE name = 'ai:openai:apiKey'")!.blob;
     expect(new TextDecoder().decode(blob)).toBe(`plain:${KEY}`);
     expect(await backend.getSecret("ai:openai:apiKey")).toBe(KEY);
     results.push(await client.call("app.bootstrap", {}));

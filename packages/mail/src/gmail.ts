@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { placeholders, type IncomingMessage } from "@unica/db";
+import type { IncomingMessage } from "@unica/store";
 import { buildRaw } from "./compose";
 import { parseRaw } from "./mime";
 import { ProviderError, type FlagUpdate, type GmailConnectResult, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
@@ -147,7 +147,7 @@ const LABEL_OPS: Record<string, { add?: string[]; remove?: string[] }> = {
 export function createGmailProvider(ctx: ProviderContext, options: { endpoints?: Partial<GmailEndpoints> } = {}): MailProvider {
   const ep = { ...GOOGLE_ENDPOINTS, ...options.endpoints };
   const netFetch = ctx.fetch;
-  const db = ctx.db;
+  const store = ctx.store;
   const accountId = ctx.account.id;
   let access: { token: string; expiresAt: number } | null = null;
   let refreshing: Promise<string> | null = null;
@@ -158,8 +158,7 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
       try {
         const refreshToken = await ctx.getSecret("refreshToken");
         if (!refreshToken) throw new ProviderError("Gmail account needs to be reconnected", false);
-        const settings = db.get<{ value_json: string }>("SELECT value_json FROM settings WHERE key = 'app'");
-        const clientId = settings ? (JSON.parse(settings.value_json) as { gmailClientId?: string }).gmailClientId : undefined;
+        const clientId = (await store.setting<{ gmailClientId?: string }>("app"))?.gmailClientId;
         const body = new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: clientId ?? "" });
         const secret = await ctx.getAppSecret("gmailClientSecret").catch(() => null);
         if (secret) body.set("client_secret", secret);
@@ -266,7 +265,8 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
       if (pageToken) q.set("pageToken", pageToken);
       const page = await api<{ messages?: { id: string }[]; nextPageToken?: string }>(`/messages?${q}`);
       const pageIds = (page.messages ?? []).map((m) => m.id);
-      const ids = pageIds.filter((id) => !db.get("SELECT 1 FROM messages WHERE account_id = ? AND provider_msg_id = ?", accountId, id));
+      const ids: string[] = [];
+      for (const id of pageIds) if (!(await store.messageByProviderId(id))) ids.push(id);
       for (let i = 0; i < ids.length; i += 50) {
         if (sink.signal.aborted) return;
         const batch = ids.slice(i, i + 50);
@@ -277,20 +277,17 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
     } while (pageToken);
     // A resync (history expired) must also refresh what we already had: labels may have
     // changed and messages may have been deleted during the gap.
-    const cached = db.all<{ id: number; provider_msg_id: string; date: number }>(
-      "SELECT id, provider_msg_id, date FROM messages WHERE account_id = ? AND provider_msg_id NOT LIKE 'local:%'",
-      accountId,
-    );
+    const cached = await store.syncedMessages();
     // Every cached message is checked (also ones older than the window): explicit 404s are
     // deletions; any other failure aborts before the cursor advances, so nothing is skipped.
     const updates: FlagUpdate[] = [];
     const gone: number[] = [];
-    const queue = cached.filter((m) => !freshlyIngested.has(m.provider_msg_id));
+    const queue = cached.filter((m) => !freshlyIngested.has(m.providerMsgId));
     await Promise.all(
       Array.from({ length: 6 }, async () => {
         for (let m = queue.shift(); m; m = queue.shift()) {
           try {
-            const full = await api<GmailMessage>(`/messages/${m.provider_msg_id}?format=minimal`);
+            const full = await api<GmailMessage>(`/messages/${m.providerMsgId}?format=minimal`);
             updates.push({ messageId: m.id, flags: labelState(full.labelIds ?? []) });
           } catch (e) {
             if ((e as { status?: number }).status === 404) gone.push(m.id);
@@ -301,7 +298,7 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
     );
     if (updates.length) await sink.updateFlags(updates);
     if (gone.length) await sink.removeMessages(gone);
-    ctx.saveCursor({ historyId: profile.historyId } satisfies Cursor);
+    await ctx.saveCursor({ historyId: profile.historyId } satisfies Cursor);
   }
 
   async function incremental(sink: SyncSink, cursor: Cursor) {
@@ -324,14 +321,15 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
       pageToken = page.nextPageToken;
     } while (pageToken);
 
-    const known = (id: string) => db.get<{ id: number }>("SELECT id FROM messages WHERE account_id = ? AND provider_msg_id = ?", accountId, id)?.id;
-    const toFetch = [...added].filter((id) => !deleted.has(id) && !known(id));
+    const known = async (id: string) => (await store.messageByProviderId(id))?.id;
+    const toFetch: string[] = [];
+    for (const id of added) if (!deleted.has(id) && !(await known(id))) toFetch.push(id);
     for (let i = 0; i < toFetch.length; i += 50) await sink.ingest(await fetchFull(toFetch.slice(i, i + 50)));
 
     const updates: FlagUpdate[] = [];
     for (const gid of changed) {
       if (deleted.has(gid)) continue;
-      const local = known(gid);
+      const local = await known(gid);
       if (!local) continue;
       try {
         const m = await api<GmailMessage>(`/messages/${gid}?format=minimal`);
@@ -342,9 +340,13 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
       }
     }
     if (updates.length) await sink.updateFlags(updates);
-    const removals = [...deleted].map(known).filter((x): x is number => x !== undefined);
+    const removals: number[] = [];
+    for (const gid of deleted) {
+      const id = await known(gid);
+      if (id !== undefined) removals.push(id);
+    }
     if (removals.length) await sink.removeMessages(removals);
-    ctx.saveCursor({ historyId: latest } satisfies Cursor);
+    await ctx.saveCursor({ historyId: latest } satisfies Cursor);
   }
 
   return {
@@ -353,14 +355,14 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
     },
 
     async sync(sink) {
-      const cursor = ctx.loadCursor<Cursor>();
+      const cursor = await ctx.loadCursor<Cursor>();
       if (!cursor) return fullSync(sink);
       try {
         await incremental(sink, cursor);
       } catch (e) {
         // History records expire (~1 week): Google answers 404 and a full resync is required.
         if ((e as { status?: number }).status === 404) {
-          ctx.saveCursor(null);
+          await ctx.saveCursor(null);
           return fullSync(sink);
         }
         throw e;
@@ -380,9 +382,9 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
       }
       const ids = op.target.messageIds ?? [];
       if (!ids.length) return;
-      const gmailIds = db
-        .all<{ provider_msg_id: string }>(`SELECT provider_msg_id FROM messages WHERE id IN (${placeholders(ids.length)}) AND provider_msg_id NOT LIKE 'local:%'`, ...ids)
-        .map((r) => r.provider_msg_id);
+      const gmailIds = [...(await store.providerIds(ids))]
+        .sort(([a], [b]) => a - b)
+        .flatMap(([, p]) => (p && !p.startsWith("local:") ? [p] : []));
       if (!gmailIds.length) return;
       if (op.kind === "trash") {
         for (const id of gmailIds) await api(`/messages/${id}/trash`, { method: "POST" });

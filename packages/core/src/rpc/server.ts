@@ -15,7 +15,7 @@ export type Handlers = {
 export interface RpcServerOptions {
   onError?: (error: unknown, method: string) => void;
   /** Return false to reject a method for a given connection (e.g. MCP permissions). */
-  authorize?: (method: MethodName, ctx: CallContext) => boolean;
+  authorize?: (method: MethodName, ctx: CallContext) => boolean | Promise<boolean>;
 }
 
 function toErrorPayload(error: unknown): RpcErrorPayload {
@@ -51,7 +51,7 @@ export class RpcServer {
   async invoke<M extends MethodName>(method: M, params: unknown, ctx: CallContext): Promise<ResultOf<M>> {
     const def = contract[method];
     if (!def) throw new RpcError("UNKNOWN_METHOD", `Unknown method ${String(method)}`);
-    if (this.options.authorize && !this.options.authorize(method, ctx)) {
+    if (this.options.authorize && !(await this.options.authorize(method, ctx))) {
       throw new RpcError("FORBIDDEN", `${method} is not allowed for ${ctx.origin}`);
     }
     const parsed = def.params.parse(params ?? {}) as ParsedParamsOf<M>;

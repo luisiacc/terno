@@ -31,13 +31,13 @@ export interface NetworkPolicy {
   fetchFor(purpose: NetPurpose, meta?: NetMeta): typeof fetch;
   /** whether every address of the URL's host is loopback (what local mode would accept for AI) */
   isLoopbackEndpoint(url: string): Promise<boolean>;
-  readonly localMode: boolean;
+  isLocalMode(): Promise<boolean>;
 }
 
 export type LookupAll = (host: string) => Promise<{ address: string; family: number }[]>;
 
 export interface NetworkPolicyOptions {
-  localMode: () => boolean;
+  localMode: () => boolean | Promise<boolean>;
   /** injectable for tests (resolve a name to a LAN address without real DNS) */
   lookup?: LookupAll;
   fetch?: typeof fetch;
@@ -80,7 +80,7 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
 
   async function assert(purpose: NetPurpose, target: string | URL, meta: NetMeta = {}): Promise<{ pinnedHost?: string }> {
     const url = new URL(String(target));
-    if (purpose === "mail" || !options.localMode()) return {};
+    if (purpose === "mail" || !(await options.localMode())) return {};
     if (purpose !== "ai") throw new NetworkPolicyError(`El modo local bloquea las conexiones de tipo «${purpose}» (${url.host}).`, purpose, url.host);
     if (meta.providerLocality !== "local") {
       throw new NetworkPolicyError(`El modo local no permite IA en la nube (${url.host}). Desactívalo en Ajustes → General para usarla.`, purpose, url.host);
@@ -99,7 +99,7 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
         return false;
       }
     },
-    get localMode() {
+    async isLocalMode() {
       return options.localMode();
     },
     fetchFor(purpose, meta) {

@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@unica/core/rpc";
-import { beginMove, createCategory, movePhase, seedDataset } from "@unica/db";
+import { beginMove, createCategory, movePhase, seedDataset, sqlDb } from "@unica/db";
 import { demoRegistry } from "@unica/mail";
 import { generateDataset } from "@unica/mock-data";
 import { afterEach, describe, expect, it } from "vitest";
@@ -30,20 +30,20 @@ function setup() {
     await backend.stop().catch(() => {});
     rmSync(dir, { recursive: true, force: true });
   });
-  seedDataset(backend.db, generateDataset({ threads: 300, accounts: 2, seed: 5, now: NOW }), { now: NOW });
-  const a = createCategory(backend.db, "Origen", "rose").id;
-  const b = createCategory(backend.db, "Destino", "cyan").id;
+  seedDataset(sqlDb(backend.store), generateDataset({ threads: 300, accounts: 2, seed: 5, now: NOW }), { now: NOW });
+  const a = createCategory(sqlDb(backend.store), "Origen", "rose").id;
+  const b = createCategory(sqlDb(backend.store), "Destino", "cyan").id;
   // inbound threads (they have features to learn from), none in either category
-  const threads = backend.db
+  const threads = sqlDb(backend.store)
     .all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 AND last_from_email NOT LIKE '%luis%' AND id NOT IN (SELECT thread_id FROM thread_categories) ORDER BY id LIMIT 3")
     .map((r) => r.id);
   return { backend, client: new RpcClient(c), a, b, threads, dir };
 }
 
 type Row = { added_by: string; batch_id: number | null } | undefined;
-const membership = (backend: Backend, t: number, cat: number): Row => backend.db.get("SELECT added_by, batch_id FROM thread_categories WHERE thread_id = ? AND category_id = ?", t, cat);
+const membership = (backend: Backend, t: number, cat: number): Row => sqlDb(backend.store).get("SELECT added_by, batch_id FROM thread_categories WHERE thread_id = ? AND category_id = ?", t, cat);
 const example = (backend: Backend, t: number, cat: number) =>
-  backend.db.get<{ label: number; source: string; batch_id: number | null; weight: number }>("SELECT label, source, batch_id, weight FROM cls_examples WHERE thread_id = ? AND category_id = ?", t, cat);
+  sqlDb(backend.store).get<{ label: number; source: string; batch_id: number | null; weight: number }>("SELECT label, source, batch_id, weight FROM cls_examples WHERE thread_id = ? AND category_id = ?", t, cat);
 
 describe("moving threads between categories", () => {
   it("moves in one call and undoes in one call, restoring the source's provenance", async () => {
@@ -98,18 +98,18 @@ describe("moving threads between categories", () => {
     const [t1] = threads as [number];
     await client.call("categories.addThreads", { categoryId: a, threadIds: [t1], source: "picker" });
     // make the removal step fail inside the move's transaction
-    backend.db.exec("CREATE TRIGGER fail_removal BEFORE DELETE ON thread_categories BEGIN SELECT RAISE(ABORT, 'boom'); END");
+    sqlDb(backend.store).exec("CREATE TRIGGER fail_removal BEFORE DELETE ON thread_categories BEGIN SELECT RAISE(ABORT, 'boom'); END");
     await expect(client.call("categories.moveThreads", { from: a, to: b, threadIds: [t1] })).rejects.toThrow();
     expect(membership(backend, t1, a)).toMatchObject({ added_by: "user" });
     expect(membership(backend, t1, b)).toBeUndefined();
-    backend.db.exec("DROP TRIGGER fail_removal");
+    sqlDb(backend.store).exec("DROP TRIGGER fail_removal");
     // and the undo: if restoring fails, the destination keeps the threads too
     const move = await client.call("categories.moveThreads", { from: a, to: b, threadIds: [t1] });
-    backend.db.exec("CREATE TRIGGER fail_restore BEFORE INSERT ON thread_categories BEGIN SELECT RAISE(ABORT, 'boom'); END");
+    sqlDb(backend.store).exec("CREATE TRIGGER fail_restore BEFORE INSERT ON thread_categories BEGIN SELECT RAISE(ABORT, 'boom'); END");
     await expect(client.call("categorize.undo", { batchId: move.batchId })).rejects.toThrow();
     expect(membership(backend, t1, b)).toMatchObject({ batch_id: move.batchId });
     expect(membership(backend, t1, a)).toBeUndefined();
-    backend.db.exec("DROP TRIGGER fail_restore");
+    sqlDb(backend.store).exec("DROP TRIGGER fail_restore");
     // retrying succeeds
     expect(await client.call("categorize.undo", { batchId: move.batchId })).toEqual({ removed: 1, restored: 1 });
     expect(membership(backend, t1, a)).toMatchObject({ added_by: "user" });
@@ -118,17 +118,17 @@ describe("moving threads between categories", () => {
   it("a move interrupted after its memberships committed finishes its training on the next start", async () => {
     const { backend, a, b, threads, dir } = setup();
     const [t1, t2] = threads as [number, number];
-    backend.db.run("INSERT INTO thread_categories (thread_id, category_id, added_by, added_at) VALUES (?, ?, 'user', 0), (?, ?, 'user', 0)", t1, a, t2, a);
+    sqlDb(backend.store).run("INSERT INTO thread_categories (thread_id, category_id, added_by, added_at) VALUES (?, ?, 'user', 0), (?, ?, 'user', 0)", t1, a, t2, a);
     // the commit happened, the sliced training never ran (the app quit)
-    const m = beginMove(backend.db, { from: a, to: b, threadIds: [t1, t2], addedBy: "user", now: NOW, source: "dnd" });
-    expect(movePhase(backend.db, m.batchId)).toBe("training");
+    const m = beginMove(sqlDb(backend.store), { from: a, to: b, threadIds: [t1, t2], addedBy: "user", now: NOW, source: "dnd" });
+    expect(movePhase(sqlDb(backend.store), m.batchId)).toBe("training");
     expect([membership(backend, t1, a), membership(backend, t1, b)?.batch_id]).toEqual([undefined, m.batchId]);
     expect(example(backend, t1, b)).toBeUndefined();
     await backend.stop();
     const again = open(dir);
     try {
-      again.start();
-      await expect.poll(() => movePhase(again.db, m.batchId)).toBe("done");
+      await again.start();
+      await expect.poll(() => movePhase(sqlDb(again.store), m.batchId)).toBe("done");
       for (const t of [t1, t2]) {
         expect(example(again, t, b)).toMatchObject({ label: 1, source: "user", batch_id: m.batchId });
         expect(example(again, t, a)).toMatchObject({ label: -1, source: "removal" });

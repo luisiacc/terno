@@ -20,7 +20,6 @@ import {
   type ProviderConfig,
 } from "@unica/ai";
 import { RpcError, type AiTestResult, type AppSettings } from "@unica/core/rpc";
-import { listAccounts, listCategories } from "@unica/db";
 import type { Backend } from "./backend";
 import { NetworkPolicyError } from "./net-policy";
 import { readSettings, saveCapabilities, setKeyHint } from "./settings";
@@ -75,7 +74,7 @@ export class AiService {
     const local = isLocalProvider({ id: provider, baseURL: target.baseURL, preset });
     // a custom endpoint may be a name for a server on this Mac: the policy resolves it before connecting
     const declaredCloud = !local && !(provider === "compatible" && (preset ?? "custom") === "custom");
-    if (this.b.net.localMode && declaredCloud) {
+    if (declaredCloud && (await this.b.net.isLocalMode())) {
       throw new AiError(`${describeProvider(provider).label} está en pausa por el modo local. Desactívalo en Ajustes → General o elige un modelo de este Mac.`, "blocked");
     }
     const baseURL = resolveBaseURL({ id: provider, baseURL: target.baseURL, preset });
@@ -113,7 +112,7 @@ export class AiService {
 
   /** The configured provider, ready to run tasks. Throws AiError when it can't. */
   async current(): Promise<AiTasks> {
-    const settings = readSettings(this.b.db);
+    const settings = await readSettings(this.b.store);
     const target = this.currentTarget(settings);
     const config = { ...(await this.config(target)), capabilities: settings.ai.capabilities ?? undefined };
     const { fetch: _fetch, ...hashed } = config;
@@ -123,7 +122,7 @@ export class AiService {
       if (this.clients.size > 8) this.clients.clear();
       ai = this.factory(config, {
         onCapabilities: (capabilities) =>
-          saveCapabilities(this.b.db, target.provider, { model: target.model, baseURL: target.baseURL, preset: target.preset }, capabilities),
+          void saveCapabilities(this.b.store, target.provider, { model: target.model, baseURL: target.baseURL, preset: target.preset }, capabilities),
       });
       this.clients.set(key, ai);
     }
@@ -136,13 +135,13 @@ export class AiService {
     this.generating.set(clientId, controller);
     try {
       const ai = await this.current();
-      const db = this.b.db;
+      const store = this.b.store;
       return await ai.generateFilter(
         prompt,
         {
           now: this.b.now(),
-          categories: listCategories(db).map((c) => ({ id: c.id, name: c.name })),
-          accounts: listAccounts(db).map((a) => ({ id: a.id, email: a.email, displayName: a.displayName })),
+          categories: (await store.categories.list()).map((c) => ({ id: c.id, name: c.name })),
+          accounts: (await store.accounts.list()).map((a) => ({ id: a.id, email: a.email, displayName: a.displayName })),
         },
         AbortSignal.any([controller.signal, this.b.abort.signal]),
       );
@@ -155,7 +154,7 @@ export class AiService {
 
   async listModels(target: Omit<Target, "model">): Promise<{ models: ModelInfo[]; tookMs: number }> {
     const started = performance.now();
-    const settings = readSettings(this.b.db);
+    const settings = await readSettings(this.b.store);
     // the saved profile fills the gaps: its endpoint, and its model (so Ollama can report the context window)
     const profile = settings.ai.profiles[target.provider];
     const model = profile?.model ?? "";
@@ -180,7 +179,7 @@ export class AiService {
     try {
       const config = await this.config(target);
       const result = await probe(config, this.b.abort.signal);
-      saveCapabilities(this.b.db, target.provider, { model: target.model, baseURL: target.baseURL, preset: target.preset }, result.capabilities);
+      await saveCapabilities(this.b.store, target.provider, { model: target.model, baseURL: target.baseURL, preset: target.preset }, result.capabilities);
       return { ok: true, latencyMs: result.latencyMs, capabilities: result.capabilities, warning: result.warning };
     } catch (error) {
       const e = error instanceof AiError ? error : new AiError(error instanceof Error ? error.message : String(error), "unavailable");
@@ -193,13 +192,13 @@ export class AiService {
     if (value) {
       await this.b.setSecret(name, value);
       // short keys would give too much away
-      setKeyHint(this.b.db, provider, preset, value.length >= 12 ? value.slice(-4) : null);
+      await setKeyHint(this.b.store, provider, preset, value.length >= 12 ? value.slice(-4) : null);
     } else {
-      this.b.db.run("DELETE FROM secrets WHERE name = ?", name);
-      setKeyHint(this.b.db, provider, preset, null);
+      await this.b.store.secrets.delete(name);
+      await setKeyHint(this.b.store, provider, preset, null);
     }
     this.clients.clear();
     this.models.clear();
-    return readSettings(this.b.db);
+    return readSettings(this.b.store);
   }
 }

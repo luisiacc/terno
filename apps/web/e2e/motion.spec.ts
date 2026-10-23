@@ -6,6 +6,7 @@
 import type { Page } from "@playwright/test";
 import type { DevServer } from "../../backend-dev/src/server";
 import { expect, focusList, rows, test } from "./fixtures";
+import { sqlDb } from "../../backend-dev/src/server";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 
@@ -90,7 +91,7 @@ async function exerciseLoading(page: Page, server: DevServer) {
   await expect(page.getByTestId("ai-generate")).toHaveCount(0);
 
   const releaseCount = hold(server, "categorize.count");
-  const facturas = server.backend.db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
+  const facturas = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
   const row = page.locator(`[data-testid=thread-row]:not(:has([data-cat-dot="${facturas}"]))`).first();
   await row.dispatchEvent("mousedown");
   await focusList(page);
