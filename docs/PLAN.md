@@ -260,6 +260,30 @@ Round 2 refinements adopted:
 - **Delayed-body rules:** filters with body conditions re-run when `body_state` becomes `full`. Actions are idempotent (set-to-state), and `filter_applications(filter_id, message_id)` prevents double application.
 - **Background budget:** chunks are bounded by **time (≤ 8 ms) and rows**, then `setImmediate` yields. The perf suite measures interactive RPC p95 **while** an import + bulk rule run in the background.
 
+### Implementation review with Codex
+
+Codex reviewed the implementation in three rounds (`codex exec`, read-only).
+
+**Round 1:** two parallel reviews, 28 findings.
+
+- **core/db/backend:** older retries overwriting newer ops; non-atomic filter application; a stale pending-op guard; search negation semantics; Unicode parity between JS and SQL.
+- **mail/desktop/mcp:** a STARTTLS downgrade; stale UIDs after a UIDVALIDITY reset; duplicate sends on a truncated Gmail response; reply-recipient injection through display names; SMTP retry classification; a hanging MCP handshake.
+
+All were fixed with regression tests. One fix (superseding ops) introduced a quadratic slowdown, which the backend load test caught (8 s → 160 s). It was resolved with the `op_targets` index (migration v2).
+
+**Round 2** verified the fixes: 19 fully fixed, 9 partial. The remaining work was completed:
+
+- location ops run in FIFO order per message instead of being superseded
+- supersede on failure and on crash recovery
+- deleted messages are pruned from ops (rowid reuse)
+- bulk applies are cancelled when their filter is edited
+- Latin-only diacritic folding
+- content fingerprints for mail without a Message-ID
+- complete Gmail expiry recovery
+- a UI warning for partial delivery
+
+**Round 3** checked the round-2 diff for high-severity regressions.
+
 ## 13. Milestones
 
 1. Monorepo scaffold + **packaged arm64 Electron skeleton** (utility process, node:sqlite, MessagePort RPC, app:// protocol) and a smoke test of the packaged artifact

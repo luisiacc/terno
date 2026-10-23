@@ -50,9 +50,18 @@ Main process: windows, app:// protocol, Keychain (safeStorage)
 | Full-text search (common, rare, prefix, operators) | ≤ 25 ms | 0.05–20 ms |
 | Filter preview over all mail | ≤ 50 ms | ≤ 30 ms |
 | RPC round trip (list) | ≤ 3 ms | ~0.4 ms |
-| Search **during** a 14k-message import + bulk filter | ≤ 45 ms | ~36 ms |
+| Search **during** a 14k-message import + bulk filter | ≤ 45 ms | ~35 ms |
 
-The browser-level UI performance suite (held-down `j`, type-ahead search, deep scrolling) lives in `apps/web/e2e/perf.spec.ts`.
+**In the real renderer** (`apps/web/e2e/perf.spec.ts`, Chromium, production build, real backend):
+
+| What | Target (p95) | Measured |
+|---|---|---|
+| Holding `j`: keydown → selection committed (300 presses) | ≤ 16 ms | ~1 ms |
+| Search: keystroke → results rendered | ≤ 100 ms | ~19 ms |
+| Scroll to the end → next 100 rows rendered | ≤ 150 ms | ~35 ms |
+| DOM rows while scrolling 2,000 threads | bounded | ≤ 33 |
+
+**Packaged app** (`pnpm test:smoke`): about 0.5 s from a warm start to the first mail painted.
 
 ## Tests
 
