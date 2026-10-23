@@ -61,7 +61,7 @@ const VIEW_FLAGS: Record<View, [number, number]> = {
 /** Bumped whenever tokenize() changes what it emits: snapshots of another tokenizer are discarded. */
 export const TOKENIZER_VERSION = 1;
 /** Bumped whenever the snapshot's sections change meaning. */
-export const INDEX_FORMAT = 1;
+export const INDEX_FORMAT = 2;
 
 /**
  * The exact phrase doclist of another engine (FTS5): ids of messages where
@@ -238,7 +238,16 @@ export class InstantSearchEngine implements CachedSearchEngine {
   private baseDocs = new Uint32Array(0);
   private baseMask = new Uint8Array(0);
   private delta = new Map<number, number[]>();
+  /** delta entries in total: the live lists' and the restored tier's */
   private deltaEntries = 0;
+  /**
+   * The delta a snapshot carried, kept as it was restored (typed views,
+   * term ids ascending) instead of rebuilt into lists; later entries go to
+   * the live lists. Gone with the next build or compaction.
+   */
+  private restDeltaTerms = new Uint32Array(0);
+  private restDeltaOff = new Uint32Array(1);
+  private restDeltaPairs = new Uint32Array(0);
 
   // docs
   private n = 0;
@@ -317,7 +326,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
     for (const a of [
       this.baseSortedIds, this.baseOff, this.baseDocs, this.baseMask, this.docMsg, this.docThread, this.docDate, this.docAtt, this.docFrom,
       this.docNext, this.docFwd, this.alive, this.fwd, this.thrId, this.thrDate, this.thrFlags, this.thrAccount, this.thrHead, this.seen,
-      this.order, this.tokens, this.masks,
+      this.order, this.tokens, this.masks, this.restDeltaTerms, this.restDeltaOff, this.restDeltaPairs,
     ]) buffers.add(a.buffer);
     for (const s of this.cache.values()) buffers.add(s.buffer);
     for (const s of this.cats.values()) buffers.add(s.buffer);
@@ -328,7 +337,8 @@ export class InstantSearchEngine implements CachedSearchEngine {
     const strings = (this.termChars + this.senderChars) * 2 + (this.terms.length + this.senders.length) * 32;
     const maps = (this.termIds.size + this.senderIds.size + this.msgToDoc.size + this.threadIdx.size) * 40 + this.delta.size * 64;
     const arrays = (this.baseSorted.length + this.deltaSorted.length + this.deltaSortedIds.length + this.terms.length + this.senders.length) * 8;
-    return typed + catLists + strings + maps + arrays + this.deltaEntries * 16 + this.tCount * 16;
+    const liveEntries = this.deltaEntries - this.restDeltaPairs.length / 2;
+    return typed + catLists + strings + maps + arrays + liveEntries * 16 + this.tCount * 16;
   }
 
   /** tombstones and delta docs worth folding into a new base */
@@ -491,6 +501,9 @@ export class InstantSearchEngine implements CachedSearchEngine {
     this.baseTerms = V;
     this.delta.clear();
     this.deltaEntries = 0;
+    this.restDeltaTerms = new Uint32Array(0);
+    this.restDeltaOff = new Uint32Array(1);
+    this.restDeltaPairs = new Uint32Array(0);
     this.deltaSorted = [];
     this.deltaSortedIds = [];
     this.cache.clear();
@@ -1062,6 +1075,8 @@ export class InstantSearchEngine implements CachedSearchEngine {
     const count = (id: number) => {
       if (id < this.baseTerms) postings += this.baseOff[id + 1]! - this.baseOff[id]!;
       postings += (this.delta.get(id)?.length ?? 0) / 2;
+      const r = this.restDelta(id);
+      if (r >= 0) postings += (this.restDeltaOff[r + 1]! - this.restDeltaOff[r]!) / 2;
     };
     this.prefixTerms(tok, count);
     if (postings < (this.n - this.dead) / 3) return null;
@@ -1216,6 +1231,16 @@ export class InstantSearchEngine implements CachedSearchEngine {
         }
       }
     }
+    const r = this.restDelta(id);
+    if (r >= 0) {
+      const pairs = this.restDeltaPairs;
+      for (let i = this.restDeltaOff[r]!, end = this.restDeltaOff[r + 1]!; i < end; i += 2) {
+        if (pairs[i + 1]! & bits) {
+          const d = pairs[i]!;
+          out[d >>> 5]! |= 1 << (d & 31);
+        }
+      }
+    }
     const list = this.delta.get(id);
     if (list) {
       for (let i = 0; i < list.length; i += 2) {
@@ -1225,6 +1250,19 @@ export class InstantSearchEngine implements CachedSearchEngine {
         }
       }
     }
+  }
+
+  /** Index of a term in the restored delta tier, or -1. */
+  private restDelta(id: number): number {
+    const terms = this.restDeltaTerms;
+    let lo = 0;
+    let hi = terms.length;
+    while (lo < hi) {
+      const m = (lo + hi) >>> 1;
+      if (terms[m]! < id) lo = m + 1;
+      else hi = m;
+    }
+    return lo < terms.length && terms[lo] === id ? lo : -1;
   }
 
   /** The phrase's tokens adjacent inside one of its fields of doc d. */
@@ -1398,16 +1436,27 @@ export class InstantSearchEngine implements CachedSearchEngine {
     let packed: Uint8Array;
     const clock = this.clock();
     try {
-      const deltaTerms = new Uint32Array(this.delta.size);
-      const deltaOff = new Uint32Array(this.delta.size + 1);
+      // both delta tiers, term ids ascending (restore searches them)
+      const ids = new Set<number>(this.delta.keys());
+      for (const id of this.restDeltaTerms) ids.add(id);
+      const deltaTerms = Uint32Array.from(ids).sort();
+      const deltaOff = new Uint32Array(deltaTerms.length + 1);
       const deltaPairs = new Uint32Array(this.deltaEntries * 2);
-      let i = 0;
       let p = 0;
-      for (const [id, list] of this.delta) {
-        deltaTerms[i] = id;
-        deltaPairs.set(list, p);
-        p += list.length;
-        deltaOff[++i] = p;
+      for (let i = 0; i < deltaTerms.length; i++) {
+        const id = deltaTerms[i]!;
+        const r = this.restDelta(id);
+        if (r >= 0) {
+          deltaPairs.set(this.restDeltaPairs.subarray(this.restDeltaOff[r]!, this.restDeltaOff[r + 1]!), p);
+          p += this.restDeltaOff[r + 1]! - this.restDeltaOff[r]!;
+        }
+        const list = this.delta.get(id);
+        if (list) {
+          deltaPairs.set(list, p);
+          p += list.length;
+        }
+        deltaOff[i + 1] = p;
+        if ((i & 8191) === 0) await clock.tick();
       }
       const catOff = new Uint32Array(this.tCount + 1);
       let total = 0;
@@ -1523,6 +1572,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
         catOff[T] === catIds.length &&
         deltaOff.length === deltaTerms.length + 1 &&
         deltaOff[deltaTerms.length] === deltaPairs.length &&
+        deltaTerms.every((id, i) => i === 0 || id > deltaTerms[i - 1]!) &&
         baseSortedIds.length === baseTerms &&
         baseSortedIds.length + deltaSortedIds.length === terms.length;
       if (!consistent) return false;
@@ -1549,9 +1599,9 @@ export class InstantSearchEngine implements CachedSearchEngine {
       this.baseOff = baseOff;
       this.baseDocs = baseDocs;
       this.baseMask = baseMask;
-      for (let i = 0; i < deltaTerms.length; i++) {
-        this.delta.set(deltaTerms[i]!, Array.from(deltaPairs.subarray(deltaOff[i]!, deltaOff[i + 1]!)));
-      }
+      this.restDeltaTerms = deltaTerms;
+      this.restDeltaOff = deltaOff;
+      this.restDeltaPairs = deltaPairs;
       this.deltaEntries = deltaPairs.length / 2;
       await clock.tick();
 
@@ -1589,8 +1639,17 @@ export class InstantSearchEngine implements CachedSearchEngine {
       this.orderLen = orderLen;
       for (let t = 0; t < T; t++) {
         this.threadIdx.set(this.thrId[t]!, t);
-        this.thrCats[t] = EMPTY;
-        if (catOff[t + 1]! > catOff[t]!) this.setCats(t, Array.from(catIds.subarray(catOff[t]!, catOff[t + 1]!)));
+        if (catOff[t + 1]! === catOff[t]!) this.thrCats[t] = EMPTY;
+        else {
+          // a fresh engine: set the bits directly (setCats would clear and copy)
+          const ids = Array.from(catIds.subarray(catOff[t]!, catOff[t + 1]!));
+          this.thrCats[t] = ids;
+          for (const c of ids) {
+            let bits = this.cats.get(c);
+            if (!bits) this.cats.set(c, (bits = new Uint32Array(words(this.tCap))));
+            setBit(bits, t);
+          }
+        }
         if ((t & 1023) === 0) await clock.tick();
       }
       this.rev = revision;

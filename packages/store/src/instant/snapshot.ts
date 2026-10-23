@@ -50,13 +50,27 @@ function ascii(json: string): Uint8Array {
 /** FNV-style word hash: any single changed word changes the result; sliced. */
 async function checksum(bytes: Uint8Array, from: number, clock: SliceClock): Promise<number> {
   const words = new Uint32Array(bytes.buffer as ArrayBuffer, bytes.byteOffset + from, (bytes.length - from) >>> 2);
-  let h = 0x811c9dc5 ^ words.length;
+  // four independent lanes (twice as fast as one); each is a bijection per word, so any one changed word changes it
+  let h1 = 0x811c9dc5 ^ words.length;
+  let h2 = 0x9e3779b9;
+  let h3 = 0x85ebca6b;
+  let h4 = 0xc2b2ae35;
+  const P = 0x01000193;
   const CHUNK = 1 << 18;
-  for (let i = 0; i < words.length; i += CHUNK) {
-    const end = Math.min(words.length, i + CHUNK);
-    for (let j = i; j < end; j++) h = Math.imul(h ^ words[j]!, 0x01000193);
+  const whole = words.length & ~3;
+  for (let i = 0; i < whole; i += CHUNK) {
+    const end = Math.min(whole, i + CHUNK);
+    for (let j = i; j < end; j += 4) {
+      h1 = Math.imul(h1 ^ words[j]!, P);
+      h2 = Math.imul(h2 ^ words[j + 1]!, P);
+      h3 = Math.imul(h3 ^ words[j + 2]!, P);
+      h4 = Math.imul(h4 ^ words[j + 3]!, P);
+    }
     await clock.tick();
   }
+  for (let j = whole; j < words.length; j++) h1 = Math.imul(h1 ^ words[j]!, P);
+  const rotl = (x: number, r: number) => (x << r) | (x >>> (32 - r));
+  let h = h1 ^ rotl(h2, 7) ^ rotl(h3, 13) ^ rotl(h4, 19);
   h ^= h >>> 16;
   h = Math.imul(h, 0x85ebca6b);
   h ^= h >>> 13;
@@ -170,17 +184,20 @@ export async function readSnapshot(
     strings: (n) => {
       const lens = get(`${n}.len`, "u32");
       const chars = get(`${n}.chars`, "u16");
+      // one string for all of them, then slices: decoding each on its own is several times slower
+      const parts: string[] = [];
+      // apply, not a spread: spreading a typed array goes through its iterator (4× slower)
+      for (let c = 0; c < chars.length; c += 8192) parts.push(String.fromCharCode.apply(null, chars.subarray(c, Math.min(chars.length, c + 8192)) as unknown as number[]));
+      const all = parts.join("");
       const out: string[] = [];
       let at = 0;
       for (let i = 0; i < lens.length; i++) {
         const end = at + lens[i]!;
-        if (end > chars.length) throw new Error("snapshot strings truncated");
-        let str = "";
-        for (let c = at; c < end; c += 4096) str += String.fromCharCode(...chars.subarray(c, Math.min(end, c + 4096)));
-        out.push(str);
+        if (end > all.length) throw new Error("snapshot strings truncated");
+        out.push(all.slice(at, end));
         at = end;
       }
-      if (at !== chars.length) throw new Error("snapshot strings misaligned");
+      if (at !== all.length) throw new Error("snapshot strings misaligned");
       return out;
     },
   };

@@ -10,7 +10,7 @@ import { parseSearch, resolveSearch } from "@unica/core";
 import { generateDataset } from "@unica/mock-data";
 import type { Revision, SearchMessageDoc } from "@unica/store";
 import { InstantSearchEngine } from "@unica/store/instant";
-import { copyFileSync, mkdtempSync, rmSync, statSync } from "node:fs";
+import { copyFileSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { loadavg, tmpdir } from "node:os";
 import { join } from "node:path";
 import { monitorEventLoopDelay } from "node:perf_hooks";
@@ -41,7 +41,7 @@ const heap = async () => {
   return m.heapUsed + m.arrayBuffers;
 };
 const note = (name: string, value: number, unit = "ms") =>
-  stats.push({ name: /^(build attempt|import|index catch-up)/.test(name) ? name : `${name}: ${value.toFixed(unit === "ms" ? 1 : 2)} ${unit}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+  stats.push({ name: /^(build attempt|import|index catch-up|history|compaction of|snapshot with)/.test(name) ? name : `${name}: ${value.toFixed(unit === "ms" ? 1 : 2)} ${unit}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
 
 function gate(s: Stat): Stat {
   stats.push(s);
@@ -285,5 +285,136 @@ describe("updates, snapshots, compaction", () => {
     const compacted = await copy.compacted();
     note("compaction (from the forward index, sliced)", performance.now() - c0);
     expect(compacted.stats().messages).toBe(copy.stats().messages);
+  }, 300_000);
+});
+
+/** Rare tokens real mail is full of: order numbers, tracking codes, hex ids, amounts. */
+function noise(seed: number, n: number): string {
+  let x = seed >>> 0 || 1;
+  const rand = () => ((x = (Math.imul(x, 1103515245) + 12345) >>> 0) / 4294967296);
+  const hex = () => Math.floor(rand() * 0xffffffff).toString(16).padStart(8, "0");
+  const forms = [() => `PED-${Math.floor(rand() * 1e6)}`, () => `1Z${hex().toUpperCase()}${Math.floor(rand() * 1e4)}`, hex, () => `$${Math.floor(rand() * 1e5)}.${Math.floor(rand() * 100)}`, () => `ref ${hex()}${hex()}`];
+  return Array.from({ length: n }, () => forms[Math.floor(rand() * forms.length)]!()).join(" ");
+}
+
+describe("restore and compaction with a history", () => {
+  let hist: SqlMailStore;
+  let histPath: string;
+  let bytes: Uint8Array;
+  const typing = ["fa", "fac", "factura", "pr", "presu", "presupuesto", "reunión", "propuesta pre", "ped", "1z"];
+
+  /** p95 of interactive list and search calls made while `background` runs (a renderer's requests: macrotasks apart). */
+  async function interactive(s: SqlMailStore, background: Promise<unknown>) {
+    let done = false;
+    void background.then(() => (done = true));
+    const list: number[] = [];
+    const search: number[] = [];
+    const strategies = new Set<string>();
+    for (let k = 0; !done; k++) {
+      let t = performance.now();
+      await s.threads.list({ view: "inbox", limit: 100 });
+      list.push(performance.now() - t);
+      t = performance.now();
+      strategies.add((await s.threads.searchText({ query: typing[k % typing.length]!, limit: 100, now: NOW })).strategy.split(":")[0]!);
+      search.push(performance.now() - t);
+      await new Promise((r) => setTimeout(r, 1));
+    }
+    await background;
+    return { list: samplesStat("list", 0, list), search: samplesStat("search", 0, search), strategies };
+  }
+
+  beforeAll(async () => {
+    // a copy of the perf mailbox that then lived a while, through store commands: new mail and edited bodies
+    // carrying realistic rare tokens, deletions and filing. An index built at its start follows every commit.
+    histPath = join(dir, "history.db");
+    store?.db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    copyFileSync(path, histPath);
+    hist = new SqlMailStore(openDatabase(histPath));
+    const lease = await hist.feed.beginBuild();
+    const e = new InstantSearchEngine({ identity: "sqlite-schema-7", yield: nodePlatform.yield, phrases: (term) => ftsTermMessages(hist.db, term) });
+    e.beginBuild(lease.from);
+    for await (const page of lease.messages()) await e.loadMessages(page);
+    for await (const page of lease.threads()) e.loadThreads(page);
+    await e.finishBuild();
+    await lease.release();
+
+    const accounts = hist.db.all<{ id: number }>("SELECT id FROM accounts ORDER BY id").map((r) => r.id);
+    const lived = generateDataset({ threads: 3_300, accounts: 8, seed: 404, now: NOW, bodyScale: 4 }).messages.slice(0, 8_000);
+    for (let i = 0; i < lived.length; i += 200) {
+      const slice = lived.slice(i, i + 200).map((m, k) => ({
+        ...m,
+        providerMsgId: `h-${m.providerMsgId}`,
+        rfcMessageId: `h-${m.rfcMessageId}`,
+        references: m.references.map((r) => `h-${r}`),
+        inReplyTo: m.inReplyTo ? `h-${m.inReplyTo}` : null,
+        bodyText: `${m.bodyText} ${noise(i + k, 8)}`,
+        accountId: accounts[m.accountIndex]!,
+      }));
+      await hist.sync.ingest(slice, { applyFilters: true, now: NOW, classifier: null });
+    }
+    const ids = hist.db.all<{ id: number }>("SELECT id FROM messages ORDER BY id").map((r) => r.id);
+    for (let i = 0; i < 3_000; i++) await hist.sync.setBody(ids[(i * 17) % ids.length]!, `Cuerpo editado ${i}. ${noise(90_000 + i, 10)}`, null, { now: NOW, classifier: null });
+    for (let i = 0; i < 2_000; i += 100) await hist.sync.remove(ids.slice(20_000 + i, 20_100 + i));
+    const threads = hist.db.all<{ id: number }>("SELECT id FROM threads ORDER BY id LIMIT 5000").map((r) => r.id);
+    const category = hist.db.get<{ id: number }>("SELECT id FROM categories LIMIT 1")!.id;
+    await hist.categories.add({ categoryId: category, threadIds: threads, addedBy: "bulk", now: NOW });
+    for (const head = await hist.feed.head(); e.revision!.seq < head.seq; ) for (const b of await hist.feed.changes(e.revision!, head, 50)) await e.apply(b);
+
+    const st = e.stats();
+    expect(st.tombstones).toBeGreaterThan(4_000);
+    expect(st.deltaDocs).toBeGreaterThan(8_000);
+    expect(e.needsCompaction()).toBe(true);
+    meta.historyTerms = st.terms;
+    note(`history: ${st.messages} messages, ${st.terms} terms, ${st.tombstones} tombstones, ${st.deltaDocs} delta docs, ${(e.allocatedBytes() / MiB).toFixed(1)} MiB`, 0);
+    bytes = await e.snapshot();
+  }, 600_000);
+
+  afterAll(async () => {
+    await hist?.close();
+  });
+
+  const restoreOnce = async () => {
+    const own = bytes.slice();
+    const e = new InstantSearchEngine({ identity: "sqlite-schema-7", yield: nodePlatform.yield });
+    const t = performance.now();
+    expect(await e.restore(own, true)).toBe(true);
+    return performance.now() - t;
+  };
+
+  it("restores a snapshot with that history ≤ 50 ms p95", async () => {
+    const restores: number[] = [];
+    for (let i = 0; i < 20; i++) restores.push(await restoreOnce());
+    note(`snapshot with that history: ${(bytes.length / MiB).toFixed(1)} MiB`, 0);
+    gate(samplesStat("restore a snapshot with a history (decode + maps, sliced)", 50, restores));
+  }, 300_000);
+
+  it("lists and searches keep flowing while it restores (FTS5 answers meanwhile)", async () => {
+    const { list, search } = await interactive(
+      hist,
+      (async () => {
+        for (let i = 0; i < 20; i++) await restoreOnce();
+      })(),
+    );
+    gate({ ...list, name: `during restores: list inbox (${list.iterations})`, budgetMs: 10 });
+    gate({ ...search, name: `during restores: search, FTS5 answering (${search.iterations})`, budgetMs: 30 });
+  }, 300_000);
+
+  it("compacts in the background while the index it replaces keeps answering: lists and searches keep flowing", async () => {
+    await hist.close();
+    // the service restores that snapshot, catches up and then compacts on its own
+    writeFileSync(`${histPath}.search`, bytes);
+    hist = new SqlMailStore(openDatabase(histPath), { instantSearch: true, platform: nodePlatform });
+    expect(await hist.instant!.settled()).toBe(true);
+    expect(hist.instant!.report.restore).toBeDefined();
+    const t0 = performance.now();
+    const compaction = (async () => {
+      for (let i = 0; i < 6000 && hist.instant!.report.compactions === 0; i++) await new Promise((r) => setTimeout(r, 5));
+    })();
+    const { list, search, strategies } = await interactive(hist, compaction);
+    expect(hist.instant!.report.compactions).toBe(1);
+    note(`compaction of that history in the background: ${(performance.now() - t0).toFixed(0)} ms`, 0);
+    expect([...strategies]).toEqual(["instant"]);
+    gate({ ...list, name: `during compaction: list inbox (${list.iterations})`, budgetMs: 10 });
+    gate({ ...search, name: `during compaction: search, the old index answering (${search.iterations})`, budgetMs: 10 });
   }, 300_000);
 });
