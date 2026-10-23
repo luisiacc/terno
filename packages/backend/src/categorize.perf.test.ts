@@ -160,6 +160,13 @@ it("a 20-category, 100k-feature model stays ≤ 30 MB and loads from its snapsho
   }
   stats.push({ name: `model heap, 20 categories / ${features} features / 10k background threads: ${mb.toFixed(1)} MB (snapshot ${(bytes.byteLength / 1024 / 1024).toFixed(1)} MB)`, budgetMs: 30, p50: mb, p95: mb, max: mb, iterations: 1 });
   const load = percentiles("load the model from its snapshot, ms", 30, loads.slice(2));
+  // filing-rate terms settle on the first read after loading
+  const loaded = CategorizerModel.deserialize(bytes.slice())!;
+  const t = performance.now();
+  loaded.score(examples[0]!.features);
+  const first = performance.now() - t;
+  stats.push({ name: `first score after loading: ${first.toFixed(2)} ms`, budgetMs: 10, p50: first, p95: first, max: first, iterations: 1 });
+  expect(first).toBeLessThanOrEqual(10 * BUDGET_MULTIPLIER);
   expect(mb).toBeLessThanOrEqual(30);
   expect(load.p95).toBeLessThanOrEqual(30 * BUDGET_MULTIPLIER);
 });
@@ -226,6 +233,31 @@ it("bulk-filing 12,000 threads of one sender stays linear (the content cap is a 
     db.close();
   }
 }, 600_000);
+
+it("scoring right after a model change stays fast with 50,000 distinct senders (≤ 1 ms p95)", () => {
+  const f = (sender: string, words: string[]) => encodeFeatures({ v: FEATURES_V, sender, list: null, domain: sender.split("@")[1]!, rawDomain: sender.split("@")[1]!, name: "", tokens: words.map((w) => `b:${w}`), intents: [] });
+  const m = new CategorizerModel({ decayRef: NOW });
+  for (let i = 0; i < 50_000; i++) m.train({ categoryId: (i % 5) + 1, label: 1, weight: 1, at: NOW, content: true, features: f(`s${i}@d${i % 2000}.com`, [`w${i % 300}`, `x${i % 7}`]) });
+  for (let i = 0; i < 5000; i++) m.addBackground(i, f(`b${i % 900}@bg${i % 50}.com`, [`w${i % 300}`, `y${i % 11}`]));
+  const probe = f("s17@d17.com", ["w17", "x3"]);
+  m.score(probe);
+  const warm: number[] = [];
+  const afterChange: number[] = [];
+  for (let i = 0; i < 60; i++) {
+    let t = performance.now();
+    m.score(probe);
+    warm.push(performance.now() - t);
+    // a user filing, then a background thread arriving: each invalidates cached aggregates
+    if (i % 2) m.train({ categoryId: (i % 5) + 1, label: 1, weight: 1, at: NOW, content: true, features: f(`new${i}@d1.com`, ["w1"]) });
+    else m.addBackground(100_000 + i, f(`b${i}@bg1.com`, ["w2"]));
+    t = performance.now();
+    m.score(probe);
+    afterChange.push(performance.now() - t);
+  }
+  percentiles("score, warm (50k senders), ms", 1, warm);
+  const s = percentiles("score right after a model change (50k senders), ms", 1, afterChange);
+  expect(s.p95).toBeLessThanOrEqual(1 * BUDGET_MULTIPLIER);
+});
 
 /** Runs fn while sampling the event loop (max gap between 1 ms ticks) and a concurrent list RPC. */
 async function underLoad(fn: () => Promise<unknown>): Promise<{ stall: number; rpc: number[] }> {

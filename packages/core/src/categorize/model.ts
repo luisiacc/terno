@@ -102,12 +102,18 @@ interface CatState {
   senders: Map<number, number>;
   /** domain hash → positive sender hash → examples */
   domainSenders: Map<number, Map<number, number>>;
-  /** cached typical filing rate, valid while version matches the model's */
-  rate: { version: number; value: number } | null;
+  /**
+   * The filing rate as incremental aggregates: per filed sender its term
+   * (positives × filed rate of its identity key), their sum, and the senders
+   * whose term a change made stale. No scoring call scans all senders.
+   */
+  terms: Map<number, number>;
+  termSum: number;
+  stale: Set<number>;
 }
 
 const IDENTITY_ORDER: readonly IdentityKind[] = ["sender", "list", "domain"];
-const SNAPSHOT_MAGIC = 0x55434d34; // "UCM4"
+const SNAPSHOT_MAGIC = 0x55434d35; // "UCM5"
 /** floats per sparse group: slot, posW, posN, negW, negN, cached llr */
 const G = 6;
 const LITTLE_ENDIAN = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
@@ -163,6 +169,9 @@ export class CategorizerModel {
   private readonly names = new Map<number, Map<number, number>>();
   /** list and domain of each positive sender (to pick its identity key) */
   private readonly senderKeys = new Map<number, [number, number]>();
+  /** list or domain key → positive senders using it (a change to the key touches their terms) */
+  private readonly keySenders = new Map<number, Set<number>>();
+  private readonly bySlot = new Map<number, CatState>();
   /** bumped by every count change (invalidates cached filing rates) */
   private version = 0;
   private globalRate: { version: number; value: number } | null = null;
@@ -197,14 +206,17 @@ export class CategorizerModel {
   private cat(categoryId: number): CatState {
     let c = this.cats.get(categoryId);
     if (!c) {
-      c = { id: categoryId, slot: this.nextSlot++, P: 0, N: 0, nPos: 0, nNeg: 0, senders: new Map(), domainSenders: new Map(), rate: null };
+      c = { id: categoryId, slot: this.nextSlot++, P: 0, N: 0, nPos: 0, nNeg: 0, senders: new Map(), domainSenders: new Map(), terms: new Map(), termSum: 0, stale: new Set() };
       this.cats.set(categoryId, c);
+      this.bySlot.set(c.slot, c);
     }
     return c;
   }
 
   /** A deleted category stops scoring; its slot is never reused (a rebuild compacts). */
   dropCategory(categoryId: number): void {
+    const c = this.cats.get(categoryId);
+    if (c) this.bySlot.delete(c.slot);
     this.cats.delete(categoryId);
     this.version++;
   }
@@ -259,7 +271,7 @@ export class CategorizerModel {
       c.P += w;
       c.nPos += sign;
       bump(c.senders, f.sender, sign);
-      if (sign > 0) this.senderKeys.set(f.sender, [f.list, f.domain]);
+      if (sign > 0) this.setSenderKeys(f.sender, f.list, f.domain);
       if (f.domain) {
         let m = c.domainSenders.get(f.domain);
         if (!m) c.domainSenders.set(f.domain, (m = new Map()));
@@ -280,6 +292,8 @@ export class CategorizerModel {
     this.add(f.sender, c.slot, positive, w, sign);
     this.add(f.list, c.slot, positive, w, sign);
     this.add(f.domain, c.slot, positive, w, sign);
+    c.stale.add(f.sender);
+    this.touchKeys(f);
     if (!ex.content) return;
     for (const t of f.tokens) this.add(t, c.slot, positive, w, sign);
     for (const t of f.intents) this.add(t, c.slot, positive, w, sign);
@@ -302,6 +316,7 @@ export class CategorizerModel {
     this.bgTotal++;
     this.version++;
     this.forEachHash(f, (h) => (this.entry(h).bg += 1));
+    this.touchKeys(f);
   }
 
   removeBackground(threadId: number): void {
@@ -310,6 +325,7 @@ export class CategorizerModel {
     this.bgThreads.delete(threadId);
     this.bgTotal--;
     this.version++;
+    this.touchKeys(decodeFeatures(features));
     this.forEachHash(decodeFeatures(features), (h) => {
       const e = this.entries.get(h);
       if (!e) return;
@@ -399,19 +415,55 @@ export class CategorizerModel {
     return e.bg + (o < 0 ? 0 : e.c![o + 2]! + e.c![o + 4]!);
   }
 
-  /** Mean filed rate of a category's positives' identity keys (raw, cached per model version). */
-  private rawRate(c: CatState): { rate: number; n: number } {
-    if (c.rate?.version === this.version) return { rate: c.rate.value, n: c.nPos };
-    let sum = 0;
-    let n = 0;
-    for (const [sender, count] of c.senders) {
-      const [list, domain] = this.senderKeys.get(sender) ?? [0, 0];
-      sum += count * this.filedRate(this.identityEntry(sender, list, domain, c.slot), c.slot);
-      n += count;
+  private setSenderKeys(sender: number, list: number, domain: number): void {
+    const old = this.senderKeys.get(sender);
+    if (old && old[0] === list && old[1] === domain) return;
+    for (const k of old ?? []) if (k) this.keySenders.get(k)?.delete(sender);
+    this.senderKeys.set(sender, [list, domain]);
+    for (const k of [list, domain]) {
+      if (!k) continue;
+      let set = this.keySenders.get(k);
+      if (!set) this.keySenders.set(k, (set = new Set()));
+      set.add(sender);
     }
-    const rate = n > 0 ? sum / n : 1;
-    c.rate = { version: this.version, value: rate };
-    return { rate, n };
+    this.markSender(sender);
+  }
+
+  /** A thread's identity keys changed counts: the senders whose term depends on them are stale. */
+  private touchKeys(f: HashedFeatures): void {
+    this.markSender(f.sender);
+    for (const k of [f.list, f.domain]) {
+      if (!k) continue;
+      for (const s of this.keySenders.get(k) ?? []) this.markSender(s);
+    }
+  }
+
+  /** Marks a sender stale in every category it is filed in. */
+  private markSender(sender: number): void {
+    const e = this.entries.get(sender);
+    if (!e?.c) return;
+    for (let o = 0; o < e.c.length; o += G) {
+      const c = this.bySlot.get(e.c[o]!);
+      if (c) c.stale.add(sender);
+    }
+  }
+
+  /** Mean filed rate of a category's positives' identity keys, refreshing only stale senders. */
+  private rawRate(c: CatState): { rate: number; n: number } {
+    for (const sender of c.stale) {
+      c.termSum -= c.terms.get(sender) ?? 0;
+      const count = c.senders.get(sender) ?? 0;
+      if (count <= 0) {
+        c.terms.delete(sender);
+        continue;
+      }
+      const [list, domain] = this.senderKeys.get(sender) ?? [0, 0];
+      const term = count * this.filedRate(this.identityEntry(sender, list, domain, c.slot), c.slot);
+      c.terms.set(sender, term);
+      c.termSum += term;
+    }
+    c.stale.clear();
+    return { rate: c.nPos > 0 ? Math.max(0, c.termSum) / c.nPos : 1, n: c.nPos };
   }
 
   /**
@@ -742,7 +794,7 @@ export class CategorizerModel {
     m.nextSlot = header.nextSlot;
     m.bgTotal = header.bgTotal;
     for (const c of header.cats) {
-      m.cats.set(c.id, {
+      const state: CatState = {
         id: c.id,
         slot: c.slot,
         P: c.P,
@@ -751,11 +803,24 @@ export class CategorizerModel {
         nNeg: c.nNeg,
         senders: new Map(c.senders),
         domainSenders: new Map(c.domainSenders.map(([d, s]) => [d, new Map(s)])),
-        rate: null,
-      });
+        terms: new Map(),
+        termSum: 0,
+        // settled once, on the first read after loading
+        stale: new Set(c.senders.map(([sender]) => sender)),
+      };
+      m.cats.set(c.id, state);
+      m.bySlot.set(c.slot, state);
     }
     for (const [name, d] of header.names) m.names.set(name, new Map(d));
-    for (const [sender, keys] of header.senderKeys) m.senderKeys.set(sender, keys);
+    for (const [sender, keys] of header.senderKeys) {
+      m.senderKeys.set(sender, keys);
+      for (const k of keys) {
+        if (!k) continue;
+        let set = m.keySenders.get(k);
+        if (!set) m.keySenders.set(k, (set = new Set()));
+        set.add(sender);
+      }
+    }
     const pad = (x: number) => (x + 7) & ~7;
     const entriesAt = pad(16 + headerLen * 2);
     const lensAt = pad(entriesAt + n * 4);

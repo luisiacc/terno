@@ -97,6 +97,25 @@ describe("categorizer model", () => {
     expect(rare.identityFit).toBeLessThan(0.3);
   });
 
+  it("filing rates are maintained incrementally: any history equals a model built from its end state", () => {
+    const a = new CategorizerModel({ decayRef: NOW });
+    const b = new CategorizerModel({ decayRef: NOW });
+    const exs = Array.from({ length: 60 }, (_, i) => ex((i % 3) + 1, enc({ ...NEWSLETTER, fromEmail: `n${i % 9}@news${i % 4}.io` }), { label: i % 7 === 0 ? -1 : 1, weight: i % 7 === 0 ? 3 : 1 }));
+    const bg = Array.from({ length: 40 }, (_, i) => enc({ ...NEWSLETTER, fromEmail: `n${i % 12}@news${i % 4}.io` }));
+    // a: everything, with detours (untrained examples, background threads that left)
+    exs.forEach((e) => a.train(e));
+    bg.forEach((f, i) => a.addBackground(i, f));
+    exs.slice(0, 15).forEach((e) => a.untrain(e));
+    for (let i = 0; i < 10; i++) a.removeBackground(i);
+    a.removeBackground(999);
+    // b: only what is left
+    exs.slice(15).forEach((e) => b.train(e));
+    bg.slice(10).forEach((f, i) => b.addBackground(i + 10, f));
+    for (const cat of [1, 2, 3]) expect(a.labelRate(cat)).toBeCloseTo(b.labelRate(cat), 12);
+    const back = CategorizerModel.deserialize(a.serialize())!;
+    for (const cat of [1, 2, 3]) expect(back.labelRate(cat)).toBeCloseTo(a.labelRate(cat), 12);
+  });
+
   it("a domain vouches for a new sender only once several of its senders are filed", () => {
     const m = trained();
     // uber.com: one filed sender (receipts) — a new uber.com address gets no positive identity
