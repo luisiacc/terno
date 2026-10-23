@@ -6,6 +6,7 @@ import { RpcServer, type CallContext, type MethodName, type OpInfo, type Transpo
 import {
   addThreadsToCategory,
   applyMessageAction,
+  classifyNewThreads,
   claimFilterApplications,
   claimReadyOps,
   completeOp,
@@ -37,6 +38,7 @@ import {
   type ActionResult,
   type Db,
   type IncomingMessage,
+  type ModelDelta,
   type OpRow,
 } from "@unica/db";
 import { ProviderError, type MailProvider, type ProviderRegistry, type SyncSink } from "@unica/mail";
@@ -44,7 +46,7 @@ import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { Categorizer } from "./categorizer";
 import { createHandlers } from "./handlers";
 import { createNetworkPolicy, type LookupAll, type NetworkPolicy } from "./net-policy";
-import { readLocalMode, readSettings } from "./settings";
+import { readAutoCategorize, readLocalMode, readSettings } from "./settings";
 
 export interface SecretCipher {
   encrypt(plain: string): Promise<Uint8Array>;
@@ -87,6 +89,9 @@ export interface BackendOptions {
   lookup?: LookupAll;
 }
 
+const AUTO_NOTICE_GATHER_MS = 1500;
+const AUTO_NOTICE_EVERY_MS = 30_000;
+
 const DESTRUCTIVE_OR_SIGNAL: Partial<Record<ThreadAction, "archive" | "trash" | "spam" | "star">> = {
   archive: "archive",
   trash: "trash",
@@ -124,6 +129,8 @@ export class Backend {
   readonly aiService: AiService;
   readonly categorizer: Categorizer;
   private idleTimer: ReturnType<typeof setInterval> | null = null;
+  /** auto-filed threads waiting to be announced, per category */
+  private readonly autoNotices = new Map<number, { threadIds: Set<number>; timer: ReturnType<typeof setTimeout> | null; lastAt: number }>();
 
   constructor(options: BackendOptions) {
     // explicit `undefined` must not clobber defaults
@@ -172,6 +179,7 @@ export class Backend {
     this.abort.abort();
     if (this.syncTimer) clearInterval(this.syncTimer);
     if (this.idleTimer) clearInterval(this.idleTimer);
+    for (const n of this.autoNotices.values()) if (n.timer) clearTimeout(n.timer);
     if (this.workerTimer) clearTimeout(this.workerTimer);
     for (const off of this.unwatch.values()) off();
     await Promise.allSettled(this.syncing.values());
@@ -342,9 +350,10 @@ export class Backend {
   async ingestSliced(messages: IncomingMessage[], applyFilters = true): Promise<{ inserted: number[] }> {
     const inserted: number[] = [];
     await this.runSliced(messages, 50, (chunk) => {
-      // One transaction per slice: messages, filter claims, filter actions and their ops
-      // commit together, so a crash can't record a filter as applied without its effects.
-      const touched = this.db.tx(() => {
+      // One transaction per slice: messages, filter claims, filter actions and their ops,
+      // and the categorizer's decisions commit together, so a crash can't record a filter
+      // as applied without its effects, nor an auto-categorization without its message.
+      const { touched, deltas, auto } = this.db.tx(() => {
         const result = ingestMessages(this.db, chunk, this.now());
         inserted.push(...result.inserted);
         const t = new Set(result.touchedThreads);
@@ -353,11 +362,43 @@ export class Backend {
           // bodies that arrived through an upsert may now satisfy body filters
           for (const x of this.applyFiltersTo(result.bodyCompleted, true)) t.add(x);
         }
-        return t;
+        const c = this.classify(result.inserted, result.bodyCompleted);
+        for (const x of c.touched) t.add(x);
+        return { touched: t, deltas: c.deltas, auto: c.auto };
       });
+      // RAM follows the database, never the other way round
+      this.categorizer.apply(deltas);
+      this.announceAuto(auto);
       this.notifyChanged(touched);
     });
     return { inserted };
+  }
+
+  /** The categorizer's part of a store command (call inside its transaction). */
+  classify(inserted: readonly number[], bodyCompleted: readonly number[]): { deltas: ModelDelta[]; auto: Map<number, number[]>; touched: Set<number> } {
+    const model = this.categorizer.model;
+    if (!model) return { deltas: [], auto: new Map(), touched: new Set() };
+    return classifyNewThreads(this.db, { inserted, bodyCompleted, now: this.now(), mode: readAutoCategorize(this.db), model });
+  }
+
+  /** One "Única añadió N conversaciones a X" per category at most every 30 s. */
+  private announceAuto(auto: Map<number, number[]>): void {
+    for (const [categoryId, threadIds] of auto) {
+      let n = this.autoNotices.get(categoryId);
+      if (!n) this.autoNotices.set(categoryId, (n = { threadIds: new Set(), timer: null, lastAt: 0 }));
+      for (const t of threadIds) n.threadIds.add(t);
+      if (n.timer) continue;
+      const notice = n;
+      const wait = Math.max(AUTO_NOTICE_GATHER_MS, notice.lastAt + AUTO_NOTICE_EVERY_MS - Date.now());
+      notice.timer = setTimeout(() => {
+        notice.timer = null;
+        if (this.stopped || notice.threadIds.size === 0) return;
+        notice.lastAt = Date.now();
+        this.server.emit("categorized", { categoryId, threadIds: [...notice.threadIds], by: "auto" });
+        notice.threadIds.clear();
+      }, wait);
+      notice.timer.unref?.();
+    }
   }
 
   /**
@@ -471,12 +512,19 @@ export class Backend {
         this.notifyChanged(touched);
       },
       setBody: async (messageId, text, html) => {
-        setMessageBody(this.db, messageId, text, html, "full");
-        const owner = this.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", messageId);
-        if (owner) recomputeThreads(this.db, [owner.thread_id]);
-        const touched = this.applyFiltersTo([messageId], true);
-        const thread = this.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", messageId);
-        if (thread) touched.add(thread.thread_id);
+        const { touched, deltas, auto } = this.db.tx(() => {
+          setMessageBody(this.db, messageId, text, html, "full");
+          const owner = this.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", messageId);
+          if (owner) recomputeThreads(this.db, [owner.thread_id]);
+          const touched = this.applyFiltersTo([messageId], true);
+          // the body was the missing piece: reclassify once
+          const c = this.classify([], [messageId]);
+          for (const t of c.touched) touched.add(t);
+          if (owner) touched.add(owner.thread_id);
+          return { touched, deltas: c.deltas, auto: c.auto };
+        });
+        this.categorizer.apply(deltas);
+        this.announceAuto(auto);
         this.notifyChanged(touched, false);
       },
       removeMessages: async (ids) => {

@@ -34,6 +34,7 @@ export const DEFAULT_SETTINGS: General = {
   allowAgentSend: false,
   gmailClientId: "",
   syncWindowDays: 90,
+  autoCategorize: "auto",
 };
 
 const DEFAULT_PROVIDER: AiProviderId = "none";
@@ -64,6 +65,11 @@ function aiState(db: Db, s: StoredSettings) {
   const profiles: Partial<Record<AiProviderId, AiProfile>> = { ...DEFAULT_PROFILES, ...s.ai?.profiles };
   if (!s.ai?.profiles?.anthropic && s.aiModel) profiles.anthropic = { model: s.aiModel };
   return { provider, profiles, capabilities: s.ai?.capabilities ?? {} };
+}
+
+/** Read on every ingestion slice: skips the AI and key lookups readSettings does. */
+export function readAutoCategorize(db: Db): AppSettings["autoCategorize"] {
+  return stored(db).autoCategorize ?? DEFAULT_SETTINGS.autoCategorize;
 }
 
 /** Local mode alone: read on every outbound request, so it skips everything else. */

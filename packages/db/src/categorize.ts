@@ -1,12 +1,19 @@
 import {
   BULK_CONTENT_CAP,
+  candidateCategories,
+  decide,
   encodeFeatures,
+  explain,
   extractFeatures,
   featuresFromBlob,
   featuresToBlob,
   POLICY,
   SOURCE_WEIGHT,
+  type AutoCategorize,
+  type CategorizerModel,
+  type CategoryPolicy,
   type ExampleSource,
+  type Vetoes,
   type FeatureSource,
   type ThreadFeatures,
   type TrainExample,
@@ -412,4 +419,147 @@ export function matureDecisions(db: Db, now: number): number {
     "UPDATE cls_decisions SET outcome = 'kept' WHERE kind = 'auto' AND outcome IS NULL AND at < ?",
     now - POLICY.revertWindowDays * 86_400_000,
   ).changes;
+}
+
+// ───────────────────────────── classification at ingest ─────────────────────────────
+
+export interface ClassifyRequest {
+  /** messages inserted by this store command */
+  inserted: readonly number[];
+  /** existing messages whose body just became complete (reclassified once) */
+  bodyCompleted: readonly number[];
+  now: number;
+  mode: AutoCategorize;
+  /** read-only: the store command calls its pure scoring functions, nothing else */
+  model: CategorizerModel;
+}
+
+export interface ClassifyResult {
+  deltas: ModelDelta[];
+  /** threads auto-added, per category */
+  auto: Map<number, number[]>;
+  suggested: number;
+  /** threads with a decision (for change notifications) */
+  touched: Set<number>;
+  /** uncertain band threads (0.5 ≤ p < auto threshold, no decision): candidates for the optional AI assist */
+  uncertain: number[];
+}
+
+/** What the policy needs from the database: one batch of reads per store command. */
+function policyContext(db: Db): Map<number, CategoryPolicy & { name: string }> {
+  const valve = new Map(
+    db
+      .all<{ category_id: number; kept: number; reverted: number }>(
+        `SELECT category_id, coalesce(sum(outcome = 'kept'), 0) AS kept, coalesce(sum(outcome = 'reverted'), 0) AS reverted
+         FROM cls_decisions WHERE kind = 'auto' GROUP BY category_id`,
+      )
+      .map((r) => [r.category_id, r]),
+  );
+  return new Map(
+    db.all<{ id: number; name: string; auto_apply: number }>("SELECT id, name, auto_apply FROM categories").map((c) => [
+      c.id,
+      { name: c.name, autoApply: c.auto_apply === 1, kept: valve.get(c.id)?.kept ?? 0, reverted: valve.get(c.id)?.reverted ?? 0 },
+    ]),
+  );
+}
+
+export function vetoesFor(db: Db, threadId: number, sender: string, categoryIds: readonly number[], now: number): Map<number, Vetoes> {
+  const since = now - POLICY.senderVetoDays * 86_400_000;
+  const out = new Map<number, Vetoes>();
+  for (const categoryId of categoryIds) {
+    const hard =
+      db.get(
+        `SELECT 1 FROM cls_examples WHERE thread_id = ? AND category_id = ? AND label < 0
+         UNION ALL SELECT 1 FROM cls_decisions WHERE thread_id = ? AND category_id = ? AND outcome IN ('reverted', 'rejected') LIMIT 1`,
+        threadId,
+        categoryId,
+        threadId,
+        categoryId,
+      ) !== undefined;
+    const s = db.get<{ rem: number; pos: number }>(
+      `SELECT coalesce(sum(label < 0), 0) AS rem, coalesce(sum(label > 0), 0) AS pos
+       FROM cls_examples INDEXED BY cls_examples_sender WHERE category_id = ? AND sender = ? AND at >= ?`,
+      categoryId,
+      sender,
+      since,
+    )!;
+    out.set(categoryId, { hard, senderRemovals: s.rem, senderPositives: s.pos });
+  }
+  return out;
+}
+
+/**
+ * Classifies new inbound mail inside the ingestion transaction, so messages,
+ * filter effects and the engine's decisions commit (or roll back) together.
+ * Only threads nobody has decided on are evaluated: no category (filters run
+ * first), no example, no decision beyond a pending suggestion. Auto adds never
+ * train. Background (weak negative) updates come back as deltas for after commit.
+ */
+export function classifyNewThreads(db: Db, req: ClassifyRequest): ClassifyResult {
+  const out: ClassifyResult = { deltas: [], auto: new Map(), suggested: 0, touched: new Set(), uncertain: [] };
+  const changed = [...req.inserted, ...req.bodyCompleted];
+  if (changed.length === 0 || req.mode === "off") return out;
+  const fresh = new Set(changed);
+  const threadIds = db
+    .all<{ thread_id: number }>("SELECT DISTINCT thread_id FROM messages WHERE id IN (SELECT value FROM json_each(?))", JSON.stringify(changed))
+    .map((r) => r.thread_id);
+  const undecided = threadIds.filter(
+    (t) =>
+      db.get(
+        `SELECT 1 FROM thread_categories WHERE thread_id = ?1
+         UNION ALL SELECT 1 FROM cls_examples WHERE thread_id = ?1
+         UNION ALL SELECT 1 FROM cls_decisions WHERE thread_id = ?1 AND (kind = 'auto' OR outcome IS NOT NULL) LIMIT 1`,
+        t,
+      ) === undefined,
+  );
+  if (undecided.length === 0) return out;
+  const own = ownAddresses(db);
+  const sets = threadFeatures(db, undecided, own);
+  let policies: Map<number, CategoryPolicy & { name: string }> | null = null;
+  for (const [threadId, set] of sets) {
+    const { root } = set;
+    // a reply on an old conversation, or a flag update: not new mail
+    if (!fresh.has(root.messageId) || root.spam || root.trash || root.draft) continue;
+    const old = root.date <= req.now - BACKGROUND_MIN_AGE_MS;
+    if (old && req.inserted.includes(root.messageId)) out.deltas.push({ op: "background", threadId, features: set.encoded });
+    if (!root.inInbox) continue;
+    const scores = req.model.score(set.encoded);
+    const candidates = candidateCategories(scores);
+    if (candidates.length === 0) {
+      if (scores.some((s) => s.p >= 0.5)) out.uncertain.push(threadId);
+      continue;
+    }
+    policies ??= policyContext(db);
+    const decisions = decide({
+      mode: req.mode,
+      autoEligible: root.date >= req.now - POLICY.autoWindowDays * 86_400_000,
+      scores,
+      categories: policies,
+      vetoes: vetoesFor(db, threadId, set.features.sender, candidates, req.now),
+      lookAlike: req.model.lookAlike(set.encoded),
+      senderSupport: req.model.senderSupport(set.encoded),
+    });
+    for (const d of decisions) {
+      if (d.decision === "none") continue;
+      const reasons = explain(req.model, set.features, d.categoryId, policies.get(d.categoryId)?.name ?? "", root.source.fromName || set.features.sender);
+      db.run(
+        "INSERT OR REPLACE INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, ?, ?, ?, ?)",
+        threadId,
+        d.categoryId,
+        d.decision,
+        d.p,
+        JSON.stringify(reasons),
+        req.now,
+      );
+      out.touched.add(threadId);
+      if (d.decision === "suggest") {
+        out.suggested++;
+        continue;
+      }
+      const added = addToCategory(db, { categoryId: d.categoryId, threadIds: [threadId], addedBy: "auto", now: req.now, own });
+      out.deltas.push(...added.deltas);
+      if (added.added.length) out.auto.set(d.categoryId, [...(out.auto.get(d.categoryId) ?? []), threadId]);
+    }
+  }
+  return out;
 }

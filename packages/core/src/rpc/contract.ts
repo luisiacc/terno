@@ -10,6 +10,7 @@ import {
   type PresetDescriptor,
   type ProviderDescriptor,
 } from "../ai";
+import type { AutoCategorize } from "../categorize/policy";
 import type { LearnedProposal } from "../learning/propose";
 import { filterRuleSchema, type Filter, type FilterRule } from "../rules/schema";
 import {
@@ -71,6 +72,8 @@ export interface AppSettings {
   allowAgentSend: boolean;
   gmailClientId: string;
   syncWindowDays: number;
+  /** what the categorization engine may do with new mail */
+  autoCategorize: AutoCategorize;
 }
 
 /** The person this install belongs to (the future Única account). Verification evidence stays in the backend. */
@@ -179,6 +182,7 @@ const settingsPatch = z.object({
   allowAgentSend: z.boolean().optional(),
   gmailClientId: z.string().max(300).optional(),
   syncWindowDays: z.number().int().min(7).max(3650).optional(),
+  autoCategorize: z.enum(["off", "suggest", "auto"]).optional(),
 });
 export type SettingsPatch = z.output<typeof settingsPatch>;
 
@@ -363,5 +367,7 @@ export interface Events {
   categories: Category[];
   op: OpInfo;
   owner: OwnerIdentity | null;
+  /** the engine filed new mail on its own (coalesced per category, at most every 30 s) */
+  categorized: { categoryId: number; threadIds: number[]; by: "auto" };
 }
 export type EventName = keyof Events;
