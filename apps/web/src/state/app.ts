@@ -3,7 +3,7 @@ import type { AppSettings, OwnerIdentity } from "@unica/core/rpc";
 import { create } from "zustand";
 
 export type DialogName = "settings" | "shortcuts" | "palette" | "categoryPicker" | "filters" | "addAccount" | null;
-export type SettingsTab = "general" | "accounts" | "categories" | "ai" | "agents";
+export type SettingsTab = "general" | "appearance" | "accounts" | "categories" | "ai" | "agents";
 
 export interface ComposeDraft {
   key: number;

@@ -18,8 +18,8 @@ test.describe("accounts, settings and command palette", () => {
 
   test("theme switches to dark; Agents shows the MCP setup", async ({ app: page }) => {
     await page.getByTestId("open-settings").click();
-    await page.getByTestId("theme-select").click();
-    await page.getByRole("option", { name: "Oscuro" }).click();
+    await page.getByTestId("tab-appearance").click();
+    await page.getByTestId("mode-dark").click();
     await expect(page.locator("html")).toHaveClass(/dark/);
     await page.getByTestId("tab-agents").click();
     await expect(page.getByTestId("mcp-claude")).toContainText('claude mcp add unica -- "/Applications/Unica.app/Contents/Resources/bin/unica-mcp"');

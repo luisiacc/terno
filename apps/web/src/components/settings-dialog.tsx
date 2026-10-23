@@ -12,10 +12,10 @@ import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescript
 import { Check, Copy, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { updateAppearance } from "~/lib/appearance";
 import { client } from "~/rpc/connection";
 import { setApp, useApp, type SettingsTab } from "~/state/app";
 import { AiTab } from "./settings/ai-tab";
+import { AppearanceTab } from "./settings/appearance-tab";
 import { CategoriesTab } from "./settings/categories-tab";
 import { OwnerCard } from "./settings/owner-card";
 
@@ -73,7 +73,6 @@ export function SettingsDialog() {
   }, [open]);
 
   const update = useCallback(async (patch: SettingsPatch) => {
-    if (patch.theme) return void (await updateAppearance(patch));
     const next = await client.call("settings.update", patch);
     setApp({ settings: next });
   }, []);
@@ -89,6 +88,7 @@ export function SettingsDialog() {
             <h2 className="mb-3 text-base font-semibold">Ajustes</h2>
             <TabsList>
               <TabsTrigger value="general" data-testid="tab-general">General</TabsTrigger>
+              <TabsTrigger value="appearance" data-testid="tab-appearance">Apariencia</TabsTrigger>
               <TabsTrigger value="accounts" data-testid="tab-accounts">Cuentas</TabsTrigger>
               <TabsTrigger value="categories" data-testid="tab-categories">Categorías</TabsTrigger>
               <TabsTrigger value="ai" data-testid="tab-ai">IA</TabsTrigger>
@@ -106,16 +106,6 @@ export function SettingsDialog() {
                   onCheckedChange={(on) => (on ? void update({ localMode: true }) : setConfirmLocalOff(true))}
                 />
               </Row>
-              <Row label="Tema">
-                <Select value={settings.theme} onValueChange={(v) => update({ theme: v as AppSettings["theme"] })} items={[{ value: "system", label: "Sistema" }, { value: "light", label: "Claro" }, { value: "dark", label: "Oscuro" }]}>
-                  <SelectTrigger size="sm" className="w-32" data-testid="theme-select"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="system">Sistema</SelectItem>
-                    <SelectItem value="light">Claro</SelectItem>
-                    <SelectItem value="dark">Oscuro</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Row>
               <Row label="Densidad" hint="Compacta muestra una línea por conversación.">
                 <Select value={settings.density} onValueChange={(v) => update({ density: v as AppSettings["density"] })} items={[{ value: "comfortable", label: "Cómoda" }, { value: "compact", label: "Compacta" }]}>
                   <SelectTrigger size="sm" className="w-32"><SelectValue /></SelectTrigger>
@@ -131,6 +121,10 @@ export function SettingsDialog() {
               <Row label="Ventana de sincronización" hint="Días de correo a descargar al conectar una cuenta.">
                 <Input type="number" className="h-8 w-24" defaultValue={settings.syncWindowDays} onBlur={(e) => update({ syncWindowDays: Math.max(7, Number(e.target.value) || 90) })} />
               </Row>
+            </TabsContent>
+
+            <TabsContent value="appearance">
+              <AppearanceTab settings={settings} />
             </TabsContent>
 
             <TabsContent value="accounts">
