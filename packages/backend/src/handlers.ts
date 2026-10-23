@@ -19,6 +19,9 @@ import {
   batchThreads,
   finishUndo,
   undoBatchPart,
+  undoMove,
+  isMoveBatch,
+  moveToCategory,
   claimFilterApplications,
   claimOwner,
   completeOp,
@@ -184,6 +187,14 @@ export function createHandlers(b: Backend): Handlers {
       return { ok: true as const };
     },
     "categories.addThreads": ({ categoryId, threadIds, source }, ctx) => fileThreads(categoryId, threadIds, ctx.origin === "mcp" ? "agent" : ADDED_BY[source], source),
+    "categories.moveThreads": ({ from, to, threadIds, source }, ctx) => {
+      requireCategory(from);
+      requireCategory(to);
+      const r = moveToCategory(db(), { from, to, threadIds, addedBy: ctx.origin === "mcp" ? "agent" : ADDED_BY[source], now: b.now(), source });
+      b.categorizer.apply(r.deltas);
+      b.notifyChanged([...new Set([...r.added, ...r.moved, ...threadIds])]);
+      return { added: r.added.length, addedIds: r.added, batchId: r.batchId, moved: r.moved };
+    },
     "categories.removeThreads": async ({ categoryId, threadIds, reason }) => {
       let removed = 0;
       await sliced([...new Set(threadIds)], (chunk) => {
@@ -248,6 +259,13 @@ export function createHandlers(b: Backend): Handlers {
     },
     "categorize.stats": () => categoryStats(db()),
     "categorize.undo": async ({ batchId }) => {
+      if (isMoveBatch(db(), batchId)) {
+        // one transaction: the destination and the source come back together or not at all
+        const r = undoMove(db(), batchId, b.now());
+        b.categorizer.apply(r.deltas);
+        b.notifyChanged([...new Set([...r.removed, ...r.restored])]);
+        return { removed: r.removed.length, restored: r.restored.length };
+      }
       let removed = 0;
       await sliced(batchThreads(db(), batchId), (chunk) => {
         const r = undoBatchPart(db(), batchId, chunk, b.now());

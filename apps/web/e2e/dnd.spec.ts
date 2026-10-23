@@ -156,6 +156,38 @@ test.describe("drag and drop to a category", () => {
     await expect.poll(() => [inCat(viajes), inCat(lecturas)]).toEqual([false, true]);
   });
 
+  test("a move's undo is one atomic step: when it fails nothing changes and the snackbar offers a retry", async ({ app: page, server }) => {
+    const lecturas = categoryId(server, "Lecturas");
+    const viajes = categoryId(server, "Viajes");
+    await page.getByTestId(`nav-category-${lecturas}`).click();
+    await expect(page.locator(`[data-testid=thread-row]:not(:has([data-cat-dot="${lecturas}"]))`)).toHaveCount(0);
+    const row = notIn(page, viajes).first();
+    const id = Number(await row.getAttribute("data-thread-id"));
+    const inCat = (cat: number) => !!server.backend.db.get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", id, cat);
+    const before = server.backend.db.get("SELECT added_by, added_at, batch_id FROM thread_categories WHERE thread_id = ? AND category_id = ?", id, lecturas);
+    await dragTo(page, row, page.getByTestId(`nav-category-${viajes}`));
+    await page.keyboard.down("Alt");
+    await page.mouse.up();
+    await page.keyboard.up("Alt");
+    await expect(page.getByTestId("snackbar-title")).toHaveText("Movido a Viajes");
+    await expect.poll(() => [inCat(viajes), inCat(lecturas)]).toEqual([true, false]);
+
+    // the backend refuses the restore: the destination must keep the thread, the snackbar stays with a retry
+    server.backend.db.exec("CREATE TRIGGER e2e_fail_restore BEFORE INSERT ON thread_categories BEGIN SELECT RAISE(ABORT, 'disco lleno'); END");
+    await page.getByTestId("snackbar-undo").click();
+    await expect(page.locator("[data-sonner-toast]", { hasText: "No se pudo deshacer" })).toBeVisible();
+    await expect(page.getByTestId("category-snackbar")).toBeVisible();
+    expect([inCat(viajes), inCat(lecturas)]).toEqual([true, false]);
+
+    server.backend.db.exec("DROP TRIGGER e2e_fail_restore");
+    await page.locator("[data-sonner-toast]", { hasText: "No se pudo deshacer" }).getByRole("button", { name: "Reintentar" }).click();
+    await expect(page.getByTestId("category-snackbar")).toHaveCount(0);
+    await expect.poll(() => [inCat(viajes), inCat(lecturas)]).toEqual([false, true]);
+    // back exactly as it was
+    expect(server.backend.db.get("SELECT added_by, added_at, batch_id FROM thread_categories WHERE thread_id = ? AND category_id = ?", id, lecturas)).toEqual(before);
+    await expect(page.locator(`[data-thread-id="${id}"]`)).toHaveCount(1);
+  });
+
   test("a removal reflows: the leaving row fades as a copy, the rest slide only during that window", async ({ app: page }) => {
     await page.evaluate(() => {
       const w = window as unknown as { __reflow: { set: boolean; ghosts: number } };

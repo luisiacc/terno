@@ -267,6 +267,13 @@ export const contract = {
   "categories.addThreads": m<AddThreadsResult>()(
     z.object({ categoryId: id, threadIds: ids, source: z.enum(CATEGORIZE_SOURCES).default("picker") }),
   ),
+  /**
+   * ⌥-drag in a category view: added to `to` and removed from `from` in one
+   * transaction. categorize.undo on the returned batch restores both exactly.
+   */
+  "categories.moveThreads": m<AddThreadsResult & { batchId: number; moved: number[] }>()(
+    z.object({ from: id, to: id, threadIds: ids, source: z.enum(CATEGORIZE_SOURCES).default("dnd") }).refine((p) => p.from !== p.to, "from and to must differ"),
+  ),
   /** "user" removals teach the model (a strong negative); "undo" takes back the user's own add without learning anything. */
   "categories.removeThreads": m<{ removed: number }>()(
     z.object({ categoryId: id, threadIds: ids, reason: z.enum(["user", "undo"]).default("user") }),
@@ -280,7 +287,8 @@ export const contract = {
   ),
   /** Files every thread in the scope (resolved once, then added in slices); undo with categorize.undo. */
   "categorize.apply": m<{ batchId: number | null; added: number }>()(z.object({ categoryId: id, scope: categorizeScope }), { timeoutMs: 120_000 }),
-  "categorize.undo": m<{ removed: number }>()(z.object({ batchId: id })),
+  /** Takes back one batch; for a move, atomically restores the source too (`restored`). Idempotent. */
+  "categorize.undo": m<{ removed: number; restored?: number }>()(z.object({ batchId: id })),
   "categorize.predict": m<Prediction[]>()(z.object({ threadId: id })),
   "categorize.suggestions": m<{ items: (ThreadSummary & { prediction: Prediction })[] }>()(
     z.object({ categoryId: id.optional(), limit: z.number().int().min(1).max(200).default(100) }),

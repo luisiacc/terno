@@ -60,11 +60,19 @@ export async function applyScope(categoryId: number, scope: CategorizeScope): Pr
     toast.success(`${added.toLocaleString("es-MX")} ${added === 1 ? "añadida" : "añadidas"} a ${name}`, {
       id,
       duration: 8000,
-      action: batchId === null ? undefined : { label: "Deshacer", onClick: () => void undoFiled({ categoryId, addedIds: [], batchId }).then((n) => toast(`${n} quitadas de ${name}`)) },
+      action: batchId === null ? undefined : { label: "Deshacer", onClick: () => undoScope(categoryId, batchId, name) },
     });
   } catch (error) {
     toast.error(`No se pudo añadir: ${error instanceof Error ? error.message : error}`, { id });
   }
+}
+
+/** Undo of a bulk apply; a failure offers a retry (the undo is idempotent). */
+function undoScope(categoryId: number, batchId: number, name: string): void {
+  undoFiled({ categoryId, addedIds: [], batchId }).then(
+    (n) => toast(`${n} quitadas de ${name}`),
+    (error: unknown) => toast.error(`No se pudo deshacer: ${error instanceof Error ? error.message : error}`, { action: { label: "Reintentar", onClick: () => undoScope(categoryId, batchId, name) } }),
+  );
 }
 
 function Chip({ n, label, count, onClick, testId, children }: { n: number; label: string; count?: Count | "loading"; onClick: () => void; testId: string; children?: React.ReactNode }) {
@@ -198,9 +206,21 @@ function CategorySnackbar({ filed, onClose }: { filed: Filed; onClose: () => voi
     close();
     void applyScope(filed.categoryId, scope);
   };
+  const [undoing, setUndoing] = useState(false);
+  /** Closes only once the backend undid it; a failure keeps the snackbar (and offers a retry). */
   const undo = () => {
-    close();
-    void undoFiled(filed).then(() => toast(`Deshecho: ${category?.name ?? ""}`, { duration: 3000 }));
+    if (undoing) return;
+    setUndoing(true);
+    undoFiled(filed).then(
+      () => {
+        close();
+        toast(`Deshecho: ${category?.name ?? ""}`, { duration: 3000 });
+      },
+      (error: unknown) => {
+        setUndoing(false);
+        toast.error(`No se pudo deshacer: ${error instanceof Error ? error.message : error}`, { id: `undo-${filed.batchId}`, action: { label: "Reintentar", onClick: undo } });
+      },
+    );
   };
   const always = () => {
     if (!qa?.filterDraft) return;
@@ -256,8 +276,8 @@ function CategorySnackbar({ filed, onClose }: { filed: Filed; onClose: () => voi
               ? `${filed.threadIds.length} conversaciones añadidas a ${category.name}`
               : `Añadido a ${category.name}`}
         </span>
-        {(filed.batchId !== null || filed.movedFrom) && (
-          <button type="button" data-testid="snackbar-undo" onClick={undo} className="inline-flex h-6 items-center gap-1.5 rounded-md px-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground">
+        {filed.batchId !== null && (
+          <button type="button" data-testid="snackbar-undo" disabled={undoing} onClick={undo} className="inline-flex h-6 items-center gap-1.5 rounded-md px-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground">
             <Undo2 className="size-3.5" /> Deshacer <Kbd className="h-4 min-w-4 text-2xs">z</Kbd>
           </button>
         )}

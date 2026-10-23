@@ -177,7 +177,9 @@ interface ExampleRow {
   weight: number;
   source: ExampleSource;
   at: number;
+  sender: string;
   content: number;
+  batch_id: number | null;
   features: Uint8Array;
 }
 
@@ -423,6 +425,165 @@ export function undoBatchPart(db: Db, batchId: number, threadIds: readonly numbe
 
 export function finishUndo(db: Db, batchId: number, now: number): void {
   db.run("UPDATE cat_batches SET undone_at = ? WHERE id = ? AND undone_at IS NULL", now, batchId);
+}
+
+// ───────────────────────────── move (⌥-drag) ─────────────────────────────
+
+interface StoredExample extends Omit<ExampleRow, "features"> {
+  features: string;
+}
+
+/** What a move overwrote, kept in its batch's scope so the undo can put it back exactly. */
+interface MoveScope {
+  kind: "move";
+  from: number;
+  threadIds: number[];
+  /** the source memberships as they were: origin, time, the batch that added them */
+  rows: { thread_id: number; added_by: AddedBy; added_at: number; batch_id: number | null }[];
+  /** training examples of both categories for these threads before the move */
+  examples: StoredExample[];
+  /** decision outcomes the move changed (an auto filing reverted, a suggestion accepted) */
+  decisions: { thread_id: number; category_id: number; outcome: string | null }[];
+}
+
+export interface MoveResult {
+  batchId: number;
+  /** threads not in the destination before */
+  added: number[];
+  /** threads that left the source */
+  moved: number[];
+  deltas: ModelDelta[];
+}
+
+const toStored = (r: ExampleRow): StoredExample => ({ ...r, features: Buffer.from(r.features).toString("base64") });
+
+/**
+ * Moves threads from one category to another in one transaction: added to
+ * `to` (training as usual), removed from `from` as a user removal. Everything
+ * the move overwrites is snapshotted in the batch so undoMove restores it.
+ */
+export function moveToCategory(
+  db: Db,
+  m: { from: number; to: number; threadIds: readonly number[]; addedBy: AddedBy; now: number; source: string; own?: OwnAddresses },
+): MoveResult {
+  return db.tx(() => {
+    const ids = [...new Set(m.threadIds)];
+    const json = JSON.stringify(ids);
+    const scope: MoveScope = {
+      kind: "move",
+      from: m.from,
+      threadIds: ids,
+      rows: db.all(
+        "SELECT thread_id, added_by, added_at, batch_id FROM thread_categories WHERE category_id = ? AND thread_id IN (SELECT value FROM json_each(?))",
+        m.from,
+        json,
+      ),
+      examples: db
+        .all<ExampleRow>("SELECT * FROM cls_examples WHERE category_id IN (?, ?) AND thread_id IN (SELECT value FROM json_each(?))", m.from, m.to, json)
+        .map(toStored),
+      decisions: db.all(
+        "SELECT thread_id, category_id, outcome FROM cls_decisions WHERE category_id IN (?, ?) AND thread_id IN (SELECT value FROM json_each(?))",
+        m.from,
+        m.to,
+        json,
+      ),
+    };
+    const batchId = createBatch(db, m.to, m.source, scope, m.now);
+    const add = addToCategory(db, { categoryId: m.to, threadIds: ids, addedBy: m.addedBy, now: m.now, batchId, own: m.own });
+    finishBatch(db, batchId, add.added.length);
+    const removed = removeFromCategory(db, { categoryId: m.from, threadIds: ids, reason: "user", now: m.now, own: m.own });
+    return { batchId, added: add.added, moved: removed.removed, deltas: [...add.deltas, ...removed.deltas] };
+  });
+}
+
+export function isMoveBatch(db: Db, batchId: number): boolean {
+  const r = db.get<{ scope_json: string }>("SELECT scope_json FROM cat_batches WHERE id = ?", batchId);
+  return !!r && (JSON.parse(r.scope_json) as { kind?: string }).kind === "move";
+}
+
+export interface UndoMoveResult extends UndoResult {
+  /** threads back in the source category */
+  restored: number[];
+}
+
+/**
+ * Takes a move back atomically: the destination loses what the move added,
+ * the source gets its memberships back with their original origin and batch
+ * (so undoing that earlier batch still works), and both categories' training
+ * examples and decision outcomes return to what they were. Idempotent.
+ */
+export function undoMove(db: Db, batchId: number, now: number): UndoMoveResult {
+  return db.tx(() => {
+    const batch = db.get<{ category_id: number; undone_at: number | null; scope_json: string }>("SELECT category_id, undone_at, scope_json FROM cat_batches WHERE id = ?", batchId);
+    if (!batch || batch.undone_at !== null) return { categoryId: null, removed: [], restored: [], deltas: [] };
+    const scope = JSON.parse(batch.scope_json) as MoveScope;
+    if (scope.kind !== "move") throw new Error(`batch ${batchId} is not a move`);
+    const to = batch.category_id;
+    const json = JSON.stringify(scope.threadIds);
+    const deltas: ModelDelta[] = [];
+
+    const restored: number[] = [];
+    for (const r of scope.rows) {
+      const changes = db.run(
+        `INSERT OR REPLACE INTO thread_categories (thread_id, category_id, added_by, added_at, batch_id)
+         SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM threads WHERE id = ?)`,
+        r.thread_id,
+        scope.from,
+        r.added_by,
+        r.added_at,
+        r.batch_id,
+        r.thread_id,
+      ).changes;
+      if (changes > 0) {
+        restored.push(r.thread_id);
+        deltas.push({ op: "unbackground", threadId: r.thread_id });
+      }
+    }
+    const removed = db
+      .all<{ thread_id: number }>(
+        "DELETE FROM thread_categories WHERE batch_id = ? AND category_id = ? AND thread_id IN (SELECT value FROM json_each(?)) RETURNING thread_id",
+        batchId,
+        to,
+        json,
+      )
+      .map((r) => r.thread_id);
+
+    // examples of both categories: whatever is there now goes, the snapshot comes back
+    for (const r of db.all<ExampleRow>("DELETE FROM cls_examples WHERE category_id IN (?, ?) AND thread_id IN (SELECT value FROM json_each(?)) RETURNING *", scope.from, to, json)) {
+      deltas.push({ op: "untrain", example: toExample(r), key: [r.thread_id, r.category_id] });
+    }
+    for (const e of scope.examples) {
+      const features = new Uint8Array(Buffer.from(e.features, "base64"));
+      const changes = db.run(
+        `INSERT INTO cls_examples (thread_id, category_id, label, weight, source, at, sender, content, batch_id, features)
+         SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM threads WHERE id = ?)`,
+        e.thread_id,
+        e.category_id,
+        e.label,
+        e.weight,
+        e.source,
+        e.at,
+        e.sender,
+        e.content,
+        e.batch_id,
+        features,
+        e.thread_id,
+      ).changes;
+      if (changes > 0) deltas.push({ op: "train", example: toExample({ ...e, features }), key: [e.thread_id, e.category_id] });
+    }
+
+    db.run(
+      "UPDATE cls_decisions SET outcome = NULL WHERE category_id IN (?, ?) AND thread_id IN (SELECT value FROM json_each(?))",
+      scope.from,
+      to,
+      json,
+    );
+    for (const d of scope.decisions) db.run("UPDATE cls_decisions SET outcome = ? WHERE thread_id = ? AND category_id = ?", d.outcome, d.thread_id, d.category_id);
+
+    deltas.push(...backgroundDeltas(db, removed, now));
+    finishUndo(db, batchId, now);
+    return { categoryId: to, removed, restored, deltas };
+  });
 }
 
 // ───────────────────────────── rebuild ─────────────────────────────

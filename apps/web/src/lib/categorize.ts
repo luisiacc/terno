@@ -60,9 +60,12 @@ export async function addToCategory(categoryId: number, threadIds: readonly numb
     setApp({ counts: { ...counts, categoryUnread: { ...counts.categoryUnread, [categoryId]: (counts.categoryUnread[categoryId] ?? 0) + unread } } });
   }
   try {
-    const res = await client.call("categories.addThreads", { categoryId, threadIds: ids, source: options.source ?? "picker" });
+    // a move is one backend transaction (added here, removed there); its undo is one too
+    const res =
+      from === undefined
+        ? await client.call("categories.addThreads", { categoryId, threadIds: ids, source: options.source ?? "picker" })
+        : await client.call("categories.moveThreads", { from, to: categoryId, threadIds: ids, source: options.source ?? "dnd" });
     refreshReader(ids);
-    if (from !== undefined) await client.call("categories.removeThreads", { categoryId: from, threadIds: ids, reason: "user" });
     const filed: Filed = { categoryId, threadIds: ids, addedIds: res.addedIds, batchId: res.batchId, movedFrom: from === undefined ? undefined : { categoryId: from, threadIds: ids } };
     for (const l of listeners) l(filed, options.source ?? "picker");
     return filed;
@@ -105,17 +108,24 @@ export async function removeFromCategory(categoryId: number, threadIds: readonly
   }
 }
 
-/** Takes back one categorization exactly (its batch), whether one thread or a thousand. */
+/**
+ * Takes back one categorization exactly (its batch), whether one thread or a
+ * thousand; for a move, the backend restores the source in the same
+ * transaction. Throws when the backend refuses: the caller keeps its undo
+ * control so the user can retry (the undo is idempotent).
+ */
 export async function undoFiled(filed: Pick<Filed, "categoryId" | "addedIds" | "batchId" | "movedFrom">): Promise<number> {
+  if (filed.batchId === null) return 0;
   const moved = filed.movedFrom;
-  if (filed.batchId === null && !moved) return 0;
-  patch(filed.addedIds, filed.categoryId, false);
-  const { removed } = filed.batchId === null ? { removed: 0 } : await client.call("categorize.undo", { batchId: filed.batchId });
-  // a move also puts the threads back where they were
-  if (moved) await client.call("categories.addThreads", { categoryId: moved.categoryId, threadIds: moved.threadIds, source: "dnd" });
-  refreshReader(moved ? [...new Set([...filed.addedIds, ...moved.threadIds])] : filed.addedIds);
-  void reloadList({ keepSelection: true });
-  return removed;
+  if (!moved) patch(filed.addedIds, filed.categoryId, false);
+  try {
+    const { removed } = await client.call("categorize.undo", { batchId: filed.batchId });
+    refreshReader(moved ? [...new Set([...filed.addedIds, ...moved.threadIds])] : filed.addedIds);
+    return removed;
+  } finally {
+    // success shows the restored rows; failure puts the optimistic removal back
+    void reloadList({ keepSelection: true });
+  }
 }
 
 /** "Sí, es de Facturas": filed as an accepted suggestion (full weight), with the snackbar like any other add. */
