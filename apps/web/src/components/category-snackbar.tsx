@@ -94,7 +94,10 @@ function CategorySnackbar({ filed, onClose }: { filed: Filed; onClose: () => voi
   const [terms, setTerms] = useState<Set<string>>(new Set());
   /** "Más…": anything in the search language ("factura uber from:@uber.com") */
   const [custom, setCustom] = useState<string | null>(null);
-  const [paused, setPaused] = useState(false);
+  // hover and focus pause the lifetime independently: typing must not expire when the pointer leaves
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const paused = hovered || focused;
   const left = useRef(LIFETIME_MS);
   const close = onClose;
 
@@ -173,7 +176,8 @@ function CategorySnackbar({ filed, onClose }: { filed: Filed; onClose: () => voi
     if (!topicQuery || !category) return;
     close();
     const query = custom?.trim() ? `${custom.trim()} ${termsQuery([], category.name)}` : topicQuery;
-    setApp({ query, view: "all", categoryId: null });
+    // exactly the scope bulk apply uses: all accounts, no category or review view on top
+    setApp({ query, view: "all", categoryId: null, accountId: null, reviewCategoryId: null, selectedId: null });
   };
 
   // own lifetime: 10 s, paused while hovered or focused
@@ -233,10 +237,12 @@ function CategorySnackbar({ filed, onClose }: { filed: Filed; onClose: () => voi
       data-testid="category-snackbar"
       role="status"
       aria-live="polite"
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      onFocusCapture={() => setPaused(true)}
-      onBlurCapture={() => setPaused(false)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocusCapture={() => setFocused(true)}
+      onBlurCapture={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(false);
+      }}
       className="w-[min(560px,calc(100vw-2rem))] rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-lg"
     >
       <div className="flex items-center gap-2 text-sm">

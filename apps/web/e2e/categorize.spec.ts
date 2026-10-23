@@ -169,6 +169,34 @@ test.describe("everything about X and Y", () => {
     await expect(toast(page, /añadidas? a Viajes/)).toBeVisible();
   });
 
+  test("Ver shows the same set bulk apply would file: no account or review scope carried over", async ({ app: page, server }) => {
+    const { facturas, target } = uberSetup(server);
+    const account = server.backend.db.get<{ account_id: number }>("SELECT account_id FROM threads WHERE id = ?", target)!.account_id;
+    await page.getByTestId(`nav-account-${account}`).click();
+    await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
+    await fileWithPicker(page, facturas);
+    const snack = page.getByTestId("category-snackbar");
+    await expect(snack.getByTestId("snackbar-topic-count")).toHaveText(/· \d/);
+    const count = Number((await snack.getByTestId("snackbar-topic-count").textContent())!.replace(/\D/g, ""));
+    await snack.getByTestId("snackbar-view").click();
+    await expect(page.getByTestId("nav-account-all")).toHaveAttribute("data-active", "true");
+    if (count < 100) await expect(page.getByTestId("search-stats")).toContainText(`${count} resultados`);
+  });
+
+  test("typing in Más… keeps the snackbar up even after the pointer leaves", async ({ app: page, server }) => {
+    test.setTimeout(30_000);
+    const { facturas, target } = uberSetup(server);
+    await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
+    await fileWithPicker(page, facturas);
+    const snack = page.getByTestId("category-snackbar");
+    await snack.getByTestId("snackbar-more").click();
+    await expect(snack.getByTestId("snackbar-query")).toBeFocused();
+    await page.mouse.move(900, 100);
+    await page.waitForTimeout(11_000);
+    await expect(snack).toBeVisible();
+    await expect(snack.getByTestId("snackbar-query")).toBeFocused();
+  });
+
   test("Más… takes the search language", async ({ app: page, server }) => {
     const { facturas, target } = uberSetup(server);
     await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
@@ -257,7 +285,9 @@ test.describe("the engine's suggestions and auto adds in the UI", () => {
     const badge = page.getByTestId("reader").locator("[data-slot=category-badge]", { hasText: "Facturas" });
     await expect(badge.getByTestId("auto-mark")).toHaveText("auto");
     await settled(server, t);
-    await badge.getByTestId("auto-mark").hover();
+    // keyboard and assistive tech reach the explanation too
+    const mark = badge.getByRole("button", { name: /Única la añadió a Facturas: mismo remitente que 12 conversaciones en Facturas/ });
+    await mark.focus();
     await expect(page.getByTestId("category-reasons")).toContainText("Única la añadió a Facturas");
     await badge.getByRole("button", { name: "No es Facturas" }).click();
     await expect(badge).toHaveCount(0);
