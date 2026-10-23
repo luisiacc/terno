@@ -197,3 +197,112 @@ test("switching theme: painted within 50 ms, no row re-renders", async ({ app: p
   expect(after - before).toBe(0);
   expect(s.p95).toBeLessThanOrEqual(50 * MULT);
 });
+
+test("dragging rows to the sidebar: starts within a frame, no row renders, two NavItems per target change", async ({ app: page, server }) => {
+  const cats = server.backend.db.all<{ id: number }>("SELECT id FROM categories ORDER BY position");
+  const row = rows(page).nth(2);
+  const b = (await row.boundingBox())!;
+  const from = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+  const targets: { x: number; y: number }[] = [];
+  for (const c of cats) {
+    const t = (await page.getByTestId(`nav-category-${c.id}`).boundingBox())!;
+    targets.push({ x: t.x + t.width / 2, y: t.y + t.height / 2 });
+  }
+  // pressing a row selects it (two rows render, as with j): select it first so the window below is the drag alone
+  await row.dispatchEvent("mousedown");
+  await expect(row).toHaveAttribute("aria-selected", "true");
+  await page.waitForTimeout(100);
+  await page.evaluate(() => performance.clearMeasures());
+  const rows0 = await renders(page, "ThreadRow");
+  const nav0 = await renders(page, "NavItem");
+  const DRAGS = 30;
+  let changes = 0;
+  for (let i = 0; i < DRAGS; i++) {
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(from.x + 3, from.y + 1);
+    await page.mouse.move(from.x + 8, from.y + 2); // crosses the 4 px threshold
+    for (const t of targets) {
+      await page.mouse.move(t.x, t.y - 4);
+      await page.mouse.move(t.x, t.y + 4); // a second move on the same target: no change
+      changes++;
+    }
+    await page.mouse.move(from.x, from.y, { steps: 3 }); // off every target
+    changes++;
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
+  }
+  await page.waitForTimeout(200);
+  const rowRenders = (await renders(page, "ThreadRow")) - rows0;
+  const navRenders = (await renders(page, "NavItem")) - nav0;
+  const m = await page.evaluate(() => {
+    const d = (name: string) => performance.getEntriesByName(name).map((e) => e.duration);
+    return { start: d("drag:start"), frame: d("drag:start-frame"), move: d("drag:move") };
+  });
+  expect(m.start).toHaveLength(DRAGS);
+  const start = stat("drag: threshold move → ghost shown, targets measured", 16, m.start);
+  stat("drag: threshold move → next animation frame", 0, m.frame);
+  const move = stat("drag: pointermove handler", 2, m.move);
+  stats.push({ name: `ThreadRow renders during ${DRAGS} drags: ${rowRenders}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+  stats.push({ name: `NavItem renders per target change: ${(navRenders / changes).toFixed(2)}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+  expect(rowRenders).toBe(0);
+  expect(navRenders / changes).toBeLessThanOrEqual(2);
+  expect(start.p95).toBeLessThanOrEqual(16 * MULT);
+  expect(move.p95).toBeLessThanOrEqual(2 * MULT);
+});
+
+test("dropping: the dot is on the row within a frame; only the dropped row renders", async ({ app: page, server }) => {
+  const viajes = server.backend.db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id;
+  const target = (await page.getByTestId(`nav-category-${viajes}`).boundingBox())!;
+  const samples: number[] = [];
+  const renderCounts: number[] = [];
+  for (let i = 0; i < 12; i++) {
+    const row = page.locator(`[data-testid=thread-row]:not(:has([data-cat-dot="${viajes}"]))`).nth(i % 4);
+    const id = (await row.getAttribute("data-thread-id"))!;
+    await page.evaluate(
+      ({ id, cat }) => {
+        const w = window as unknown as { __drop: Promise<{ ms: number; renders: number }>; __renders?: Record<string, number> };
+        const count = () => w.__renders?.ThreadRow ?? 0;
+        w.__drop = new Promise((resolve) => {
+          // registered before the controller's own listener (added at pointerdown), so t0 precedes the drop's work
+          let t0 = 0;
+          let r0 = 0;
+          window.addEventListener(
+            "pointerup",
+            () => {
+              t0 = performance.now();
+              r0 = count();
+            },
+            { capture: true, once: true },
+          );
+          const list = document.querySelector("[role=listbox]")!;
+          const mo = new MutationObserver(() => {
+            if (t0 && list.querySelector(`[data-thread-id="${id}"] [data-cat-dot="${cat}"]`)) {
+              mo.disconnect();
+              resolve({ ms: performance.now() - t0, renders: count() - r0 });
+            }
+          });
+          mo.observe(list, { childList: true, subtree: true });
+        });
+      },
+      { id, cat: viajes },
+    );
+    const b = (await row.boundingBox())!;
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width / 2 + 8, b.y + b.height / 2 + 2);
+    await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 4 });
+    await page.mouse.up();
+    const r = await page.evaluate(() => (window as unknown as { __drop: Promise<{ ms: number; renders: number }> }).__drop);
+    samples.push(r.ms);
+    renderCounts.push(r.renders);
+    // put it back for the next round (and let the snackbar go)
+    await page.getByTestId("snackbar-undo").click();
+    await expect(page.locator(`[data-thread-id="${id}"] [data-cat-dot="${viajes}"]`)).toHaveCount(0);
+  }
+  const s = stat("drop → dot on the row (DOM)", 16, samples);
+  stats.push({ name: `ThreadRow renders from drop to dot (one row dragged): max ${Math.max(...renderCounts)}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+  expect(s.p95).toBeLessThanOrEqual(16 * MULT);
+  // exactly the dragged row renders to show its dot
+  expect(Math.max(...renderCounts)).toBe(1);
+});
