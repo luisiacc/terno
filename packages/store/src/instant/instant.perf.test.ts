@@ -1,6 +1,7 @@
 /**
  * Event-loop stalls of the engine's background work with inputs at the
- * edges: a 500k-term vocabulary (sorting it, building with it). The gap between two
+ * edges: a 500k-term vocabulary (sorting it, building with it) and a single
+ * 6 MB message body (building with it, applying it). The gap between two
  * yields is the longest the engine kept the thread; the budget is a frame.
  */
 import { generateDataset } from "@unica/mock-data";
@@ -82,4 +83,40 @@ describe("stalls with a 500k-term vocabulary", () => {
     expect(e.stats().terms).toBeGreaterThan(450_000);
     expect(stall).toBeLessThanOrEqual(FRAME * MULT);
   }, 300_000);
+});
+
+describe("stalls with a 6 MB message body", () => {
+  const base = corpusFromDataset(generateDataset({ threads: 3_000, accounts: 2, seed: 9, now: NOW, bodyScale: 4 }));
+  // a 6 MB body of real mail text (a long thread quoted in full, a log pasted in)
+  let huge = "";
+  for (let i = 0; huge.length < 6_000_000; i++) huge += `${base.messages[i % base.messages.length]!.body}\n> `;
+  const hugeDoc: SearchMessageDoc = { ...base.messages[0]!, messageId: 9_000_000, body: huge };
+
+  it("building with it yields at least every frame", async () => {
+    const m = stallMeter();
+    const e = new InstantSearchEngine({ yield: m.yield, sliceMs: 4 });
+    e.beginBuild({ epoch: "p", seq: 0 });
+    await e.loadMessages([...base.messages.slice(0, 1000), hugeDoc, ...base.messages.slice(1000)]);
+    e.loadThreads(base.threads);
+    await e.finishBuild();
+    const stall = m.done();
+    log(`build with a ${(huge.length / 1e6).toFixed(1)} MB body: longest stretch ${stall.toFixed(1)} ms`);
+    expect(stall).toBeLessThanOrEqual(FRAME * MULT);
+  }, 120_000);
+
+  it("applying it yields at least every frame", async () => {
+    let meter = stallMeter();
+    const e = new InstantSearchEngine({ yield: () => meter.yield(), sliceMs: 4 });
+    e.beginBuild({ epoch: "p", seq: 0 });
+    await e.loadMessages(base.messages);
+    e.loadThreads(base.threads);
+    await e.finishBuild();
+    meter = stallMeter();
+    const rev = e.revision!;
+    const t0 = performance.now();
+    await e.apply({ from: rev, to: { epoch: rev.epoch, seq: rev.seq + 1 }, changes: [{ kind: "upsertMessage", doc: hugeDoc }] });
+    const stall = meter.done();
+    log(`apply a ${(huge.length / 1e6).toFixed(1)} MB body: ${(performance.now() - t0).toFixed(0)} ms, longest stretch ${stall.toFixed(1)} ms`);
+    expect(stall).toBeLessThanOrEqual(FRAME * MULT);
+  }, 120_000);
 });

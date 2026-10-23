@@ -159,6 +159,41 @@ function grown<T extends Float64Array | Int32Array | Uint32Array | Uint8Array>(a
   return b;
 }
 
+/** Characters per tokenize() call while slicing a large field. */
+const TOKENIZE_CHUNK = 1 << 15;
+
+/** An ASCII separator followed by ASCII: no token, diacritic fold or canonical composition spans the boundary. */
+function cutsAt(text: string, i: number): boolean {
+  const a = text.charCodeAt(i - 1);
+  const b = text.charCodeAt(i);
+  const alnum = (a >= 48 && a <= 57) || (a >= 65 && a <= 90) || (a >= 97 && a <= 122);
+  return a < 128 && !alnum && b < 128;
+}
+
+/**
+ * tokenize() over a large text in chunks, yielding between them, with the
+ * same tokens: chunks are cut only right after an ASCII separator that is
+ * followed by ASCII, where no token, fold or composition can span. A text
+ * without such a place within reach is tokenized in one piece.
+ */
+export async function tokenizeSliced(text: string, clock: SliceClock, chunk = TOKENIZE_CHUNK): Promise<string[]> {
+  if (text.length <= chunk) return tokenize(text);
+  const out: string[] = [];
+  for (let start = 0; start < text.length; ) {
+    let end = Math.min(text.length, start + chunk);
+    if (end < text.length) {
+      let cut = -1;
+      for (let i = end; i > start && cut < 0; i--) if (cutsAt(text, i)) cut = i;
+      for (let i = end + 1; i < text.length && cut < 0; i++) if (cutsAt(text, i)) cut = i;
+      end = cut < 0 ? text.length : cut;
+    }
+    for (const t of tokenize(text.slice(start, end))) out.push(t);
+    start = end;
+    await clock.tick();
+  }
+  return out;
+}
+
 /** a copy of a (large) typed array, in slices */
 async function sliceCopy<T extends Uint8Array | Uint32Array>(src: T, clock: SliceClock): Promise<T> {
   const out = new (src.constructor as new (n: number) => T)(src.length);
@@ -364,7 +399,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
       const clock = this.clock();
       for (const doc of docs) {
         if (this.msgToDoc.has(doc.messageId)) this.removeDoc(doc.messageId);
-        this.appendDoc(doc, [tokenize(doc.subject), tokenize(doc.fromText), tokenize(doc.recipients), tokenize(doc.body)]);
+        await this.appendDoc(doc, await this.fields(doc, clock), clock);
         await clock.tick();
       }
     } finally {
@@ -429,7 +464,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
         counts[id + 1]!++;
         masks[id] = 0;
       }
-      if ((d & 63) === 0) await clock.tick();
+      if ((d & 63) === 0 || this.docFwd[d + 1]! - this.docFwd[d]! > 1 << 16) await clock.tick();
     }
     for (let t = 0; t < V; t++) counts[t + 1]! += counts[t]!;
     // postings (doc + mask) and the fill positions, before allocating any of them
@@ -447,7 +482,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
         mask[p] = masks[id]!;
         masks[id] = 0;
       }
-      if ((d & 63) === 0) await clock.tick();
+      if ((d & 63) === 0 || this.docFwd[d + 1]! - this.docFwd[d]! > 1 << 16) await clock.tick();
     }
     this.baseOff = off;
     this.baseDocs = docs;
@@ -531,6 +566,11 @@ export class InstantSearchEngine implements CachedSearchEngine {
     this.tCap = cap;
   }
 
+  /** The doc's tokens per field (subject, from, to, body), large fields in slices. */
+  private async fields(doc: SearchMessageDoc, clock: SliceClock): Promise<string[][]> {
+    return [await tokenizeSliced(doc.subject, clock), await tokenizeSliced(doc.fromText, clock), await tokenizeSliced(doc.recipients, clock), await tokenizeSliced(doc.body, clock)];
+  }
+
   private intern(tok: string): number {
     let id = this.termIds.get(tok);
     if (id !== undefined) return id;
@@ -574,8 +614,12 @@ export class InstantSearchEngine implements CachedSearchEngine {
     return t;
   }
 
-  /** Appends a doc with its tokens per field (subject, from, to, body). */
-  private appendDoc(doc: { messageId: number; threadId: number; date: number; hasAttachments: boolean; fromEmail: string }, fields: readonly (readonly string[])[]): number {
+  /** Appends a doc with its tokens per field (subject, from, to, body); a large one in slices (nothing else may change the index meanwhile). */
+  private async appendDoc(
+    doc: { messageId: number; threadId: number; date: number; hasAttachments: boolean; fromEmail: string },
+    fields: readonly (readonly string[])[],
+    clock: SliceClock,
+  ): Promise<number> {
     this.ensureDocs(1);
     let need = FIELDS;
     for (const f of fields) need += f.length * 5;
@@ -585,8 +629,10 @@ export class InstantSearchEngine implements CachedSearchEngine {
     const touched = this.touched;
     touched.length = 0;
     let p = this.fwdLen;
+    let encoded = 0;
     for (let f = 0; f < FIELDS; f++) {
       for (const tok of fields[f]!) {
+        if ((++encoded & 4095) === 0) await clock.tick();
         const id = this.intern(tok);
         if (this.indexed) {
           this.ensureMasks(id + 1);
@@ -728,7 +774,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
     try {
       const clock = this.clock();
       for (const change of batch.changes) {
-        this.applyChange(change);
+        await this.applyChange(change, clock);
         await clock.tick();
       }
       this.rev = batch.to;
@@ -741,12 +787,13 @@ export class InstantSearchEngine implements CachedSearchEngine {
     }
   }
 
-  private applyChange(c: IndexChange): void {
+  private async applyChange(c: IndexChange, clock: SliceClock): Promise<void> {
     switch (c.kind) {
       case "upsertMessage": {
         const doc = c.doc;
+        const fields = await this.fields(doc, clock);
         this.removeDoc(doc.messageId);
-        this.appendDoc(doc, [tokenize(doc.subject), tokenize(doc.fromText), tokenize(doc.recipients), tokenize(doc.body)]);
+        await this.appendDoc(doc, fields, clock);
         break;
       }
       case "removeMessage":
@@ -796,12 +843,13 @@ export class InstantSearchEngine implements CachedSearchEngine {
             shift += 7;
           } while (b & 0x80);
           if (v === 0) field++;
-          else fields[field]!.push(this.terms[v - 1]!);
+          else if (fields[field]!.push(this.terms[v - 1]!) % 65536 === 0) await clock.tick();
         }
         const t = this.docThread[d]!;
-        next.appendDoc(
+        await next.appendDoc(
           { messageId: this.docMsg[d]!, threadId: this.thrId[t]!, date: this.docDate[d]!, hasAttachments: this.docAtt[d] === 1, fromEmail: this.senders[this.docFrom[d]!]! },
           fields,
+          clock,
         );
         await clock.tick();
       }

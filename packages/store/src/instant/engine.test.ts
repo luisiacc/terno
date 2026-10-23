@@ -3,7 +3,9 @@ import { generateDataset } from "@unica/mock-data";
 import { describe, expect, it } from "vitest";
 import { corpusFromDataset, defineEngineConformance, termMatches, type SearchCorpus } from "../conformance";
 import type { SearchMessageDoc, SearchThreadDoc } from "../search";
-import { InstantSearchEngine, type InstantEngineOptions } from "./engine";
+import { tokenize } from "@unica/core";
+import { InstantSearchEngine, tokenizeSliced, type InstantEngineOptions } from "./engine";
+import { SliceClock } from "./slices";
 
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
 const data = corpusFromDataset(generateDataset({ threads: 2500, accounts: 4, seed: 11, now: NOW }));
@@ -41,6 +43,25 @@ defineEngineConformance(
   data,
   { queries: 200 },
 );
+
+describe("tokenizeSliced", () => {
+  // what could make a cut change tokens: marks (precomposed and combining), compositions with ASCII (=, <, > + U+0338),
+  // scripts kept with their marks, Hangul jamo and syllables, compatibility forms, astral chars, runs without separators
+  const pieces = ["hola", "Reunión", "reunio\u0301n", "ÁRBOL", "=\u0338", "<\u0338x", ">\u0338", "ά", "Ελλάδα", "й", "Йод", "\u1100\u1161", "한국어", "ﬁn", "😀", "x\u0301", " ", "  ", "\n", ".", ",", "-", "_", "'", "/", "=", "<", ">", "@", "a1b2", "123", "e.mail", "ÿ", "ß", "İ", "ı"];
+  let seed = 3;
+  const rand = () => ((seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 4294967296);
+  const text = (n: number) => Array.from({ length: n }, () => pieces[Math.floor(rand() * pieces.length)]).join(rand() < 0.5 ? "" : " ");
+
+  it("gives exactly tokenize()'s tokens, whatever the chunk size", async () => {
+    const clock = new SliceClock({});
+    for (let k = 0; k < 40; k++) {
+      const t = text(2000 + Math.floor(rand() * 4000));
+      for (const chunk of [7, 37, 256, 4096]) expect(await tokenizeSliced(t, clock, chunk), `${k}/${chunk}`).toEqual(tokenize(t));
+    }
+    const noSeparator = "palabra".repeat(20_000);
+    expect(await tokenizeSliced(noSeparator, clock, 100)).toEqual(tokenize(noSeparator));
+  });
+});
 
 describe("InstantSearchEngine", () => {
   const at = { epoch: "e", seq: 1 };
