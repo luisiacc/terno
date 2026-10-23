@@ -381,8 +381,8 @@ export function createHandlers(b: Backend): Handlers {
         if (existing.kind !== "gmail") throw new RpcError("BAD_REQUEST", `${who.email} is already connected over IMAP.`);
         // reconnect: the same mailbox gets a fresh token and syncs what it missed
         tokens.set(existing.id, accessToken, expiresAt);
+        await b.resumeAuth(existing.id);
         void b.syncAccount(existing.id);
-        b.kickWorker();
         return existing;
       }
       const config: GmailAccountConfig = { senderName: who.name || who.email };

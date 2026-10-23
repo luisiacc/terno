@@ -26,7 +26,7 @@ import {
   type View,
 } from "@unica/core";
 import type { OwnerIdentity } from "@unica/core/rpc";
-import type { DraftRow, IncomingMessage, ListParams, ModelDelta, OpRow, OwnerClaim, Page, SearchMessageDoc, SearchThreadDoc } from "@unica/store";
+import { AWAITING_AUTH, type DraftRow, type IncomingMessage, type ListParams, type ModelDelta, type OpRow, type OwnerClaim, type Page, type SearchMessageDoc, type SearchThreadDoc } from "@unica/store";
 import type { MemDb, Row, Table } from "./mem";
 
 /**
@@ -979,6 +979,23 @@ export function failOp(c: Ctx, id: string, error: string, retryable: boolean, no
   if (state === "failed") dropTargets(c, id);
   else if (!yieldToNewerOps(c, id)) return "succeeded";
   return state;
+}
+
+export function awaitAuthOp(c: Ctx, id: string, error: string, now: number): void {
+  const ops = T(c, "ops");
+  const op = ops.get(id);
+  if (op && op.state === "running") ops.update(op, { state: "queued", attempts: Math.max(op.attempts - 1, 0), next_attempt_at: AWAITING_AUTH, last_error: error, updated_at: now });
+}
+
+export function resumeAuthOps(c: Ctx, accountId: number, now: number): string[] {
+  const ops = T(c, "ops");
+  const out: string[] = [];
+  for (const o of ops.by("fk_account_id", accountId)) {
+    if (o.state !== "queued" || o.next_attempt_at !== AWAITING_AUTH) continue;
+    ops.update(o, { next_attempt_at: 0, updated_at: now });
+    out.push(o.id);
+  }
+  return out;
 }
 
 export function markOpUnknown(c: Ctx, id: string, error: string, now: number): void {

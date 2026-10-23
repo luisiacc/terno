@@ -2,6 +2,7 @@ import { senderVetoed, type Address, type FilterAction, type ThreadAction, type 
 import { RpcError } from "@unica/core/rpc";
 import type { MockDataset } from "@unica/mock-data";
 import {
+  AWAITING_AUTH,
   type AddedBy,
   type ClassifierInput,
   type Cursor,
@@ -61,6 +62,7 @@ import { getCounts, getSummaries, getThread, listThreads, SUMMARY_COLUMNS, toSum
 import {
   accountStamp,
   addThreadsToCategory,
+  awaitAuthOp,
   claimFilterApplications,
   claimReadyOps,
   completeOp,
@@ -93,6 +95,7 @@ import {
   recordUserActions,
   recoverOps,
   removeAccount,
+  resumeAuthOps,
   saveDraft,
   saveFilter,
   setAccountProviderConfig,
@@ -420,8 +423,10 @@ export class SqlMailStore implements MailStore {
       }),
     fail: async (id, error, retryable, now) => this.db.tx(() => failOp(this.db, id, error, retryable, now)),
     markUnknown: async (id, error, now) => markOpUnknown(this.db, id, error, now),
+    awaitAuth: async (id, error, now) => awaitAuthOp(this.db, id, error, now),
+    resumeAuth: async (accountId, now) => this.db.tx(() => resumeAuthOps(this.db, accountId, now)),
     recover: async (now) => recoverOps(this.db, now),
-    nextAttemptAt: async () => this.db.get<{ t: number | null }>("SELECT min(next_attempt_at) AS t FROM ops WHERE state = 'queued'")?.t ?? null,
+    nextAttemptAt: async () => this.db.get<{ t: number | null }>("SELECT min(next_attempt_at) AS t FROM ops WHERE state = 'queued' AND next_attempt_at < ?", AWAITING_AUTH)?.t ?? null,
     recent: async (limit) => listRecentOps(this.db, limit),
     resolveUnknown: async (id, resolution, now) =>
       this.db.tx(() => {

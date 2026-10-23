@@ -1,26 +1,27 @@
 import { COUNT_CAP, parseSearch, resolveSearch, senderVetoed, type Address, type FilterAction, type ThreadAction, type ThreadSummary } from "@unica/core";
 import { RpcError } from "@unica/core/rpc";
 import type { MockDataset } from "@unica/mock-data";
-import type {
-  ClassifierInput,
-  ClassifyResult,
-  Cursor,
-  IncomingMessage,
-  IndexBatch,
-  MailStore,
-  ModelDelta,
-  Platform,
-  ProviderStore,
-  Revision,
-  SearchBuild,
-  SearchCursor,
-  SearchFeed,
-  SearchMessageDoc,
-  SearchRequest,
-  SearchThreadDoc,
-  StoreCapabilities,
-  StoreSearchPage,
-  StoreSnapshot,
+import {
+  AWAITING_AUTH,
+  type ClassifierInput,
+  type ClassifyResult,
+  type Cursor,
+  type IncomingMessage,
+  type IndexBatch,
+  type MailStore,
+  type ModelDelta,
+  type Platform,
+  type ProviderStore,
+  type Revision,
+  type SearchBuild,
+  type SearchCursor,
+  type SearchFeed,
+  type SearchMessageDoc,
+  type SearchRequest,
+  type SearchThreadDoc,
+  type StoreCapabilities,
+  type StoreSearchPage,
+  type StoreSnapshot,
 } from "@unica/store";
 import { InstantSearch, WEB_SEARCH_MEMORY, type InstantSearchOptions } from "@unica/store/instant";
 import {
@@ -68,6 +69,7 @@ import {
   adoptProviderThread,
   applyMessageAction,
   applyThreadAction,
+  awaitAuthOp,
   changeOwner,
   claimFilterApplications,
   claimOwner,
@@ -101,6 +103,7 @@ import {
   recomputeThreads,
   recordUserActions,
   recoverOps,
+  resumeAuthOps,
   ruleNeedsBody,
   saveDraft,
   saveFilter,
@@ -649,11 +652,13 @@ export class IdbMailStore implements MailStore {
       }),
     fail: (id, error, retryable, now) => this.command(() => failOp(this.c, id, error, retryable, now)),
     markUnknown: (id, error, now) => this.command(() => markOpUnknown(this.c, id, error, now)),
+    awaitAuth: (id, error, now) => this.command(() => awaitAuthOp(this.c, id, error, now), { early: true }),
+    resumeAuth: (accountId, now) => this.command(() => resumeAuthOps(this.c, accountId, now), { early: true }),
     recover: (now) => this.command(() => recoverOps(this.c, now), { early: true }),
     nextAttemptAt: () =>
       this.read(() => {
         let t: number | null = null;
-        for (const o of T(this.c, "ops").all()) if (o.state === "queued") t = t === null ? o.next_attempt_at : Math.min(t, o.next_attempt_at);
+        for (const o of T(this.c, "ops").all()) if (o.state === "queued" && o.next_attempt_at < AWAITING_AUTH) t = t === null ? o.next_attempt_at : Math.min(t, o.next_attempt_at);
         return t;
       }),
     recent: (limit) => this.early(() => listRecentOps(this.c, limit)),

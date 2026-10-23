@@ -39,6 +39,18 @@ export class ProviderError extends Error {
   }
 }
 
+/**
+ * The user has to sign in again (expired or revoked authorization). Ops
+ * wait for it without spending attempts and resume when the account works
+ * again (a successful sync, a reconnect).
+ */
+export class ProviderAuthError extends ProviderError {
+  constructor(message: string) {
+    super(message, false);
+    this.name = "ProviderAuthError";
+  }
+}
+
 /** Where providers deliver synced data. The backend implements it (chunking, filters, events). */
 export interface SyncSink {
   ingest(messages: IncomingMessage[]): Promise<void>;

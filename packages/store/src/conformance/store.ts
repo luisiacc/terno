@@ -341,6 +341,23 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect(Math.max(...delays)).toBeLessThanOrEqual(300_000);
       });
 
+      it("an op waiting for the user to sign in again keeps its attempts, schedules nothing, and resumes at once for its account", async () => {
+        const { store, a, b, threads, act } = await mailbox(2);
+        const first = (await act(threads[0]!, "archive"))!;
+        const second = (await act(threads[1]!, "star"))!;
+        for (let round = 0; round < 12; round++) {
+          const claimed = (await store.ops.claimReady(round * 600_000, 20)).map((o) => o.id);
+          expect(claimed, `round ${round}`).toEqual(round === 0 ? [first, second] : []);
+          for (const id of claimed) await store.ops.awaitAuth(id, "Vuelve a conectar la cuenta", round * 600_000);
+        }
+        for (const id of [first, second]) expect(await store.ops.get(id)).toMatchObject({ state: "queued", attempts: 0, last_error: "Vuelve a conectar la cuenta" });
+        // nothing to schedule: a timer would spin on it
+        expect(await store.ops.nextAttemptAt()).toBeNull();
+        expect(await store.ops.resumeAuth(b, 10_000_000)).toEqual([]);
+        expect((await store.ops.resumeAuth(a, 10_000_000)).sort()).toEqual([first, second].sort());
+        expect((await store.ops.claimReady(10_000_000, 20)).map((o) => o.id)).toEqual([first, second]);
+      });
+
       it("non-retryable failures fail immediately", async () => {
         const { store, threads, act } = await mailbox(1);
         const id = (await act(threads[0]!, "archive"))!;

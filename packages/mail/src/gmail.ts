@@ -3,7 +3,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { buildRaw } from "./compose";
 import { createGmailApiProvider, GMAIL_SCOPES as SCOPES, GOOGLE_ENDPOINTS, type GmailEndpoints } from "./gmail-api";
-import { ProviderError, type GmailConnectResult, type MailProvider, type ProviderContext } from "./types";
+import { ProviderAuthError, ProviderError, type GmailConnectResult, type MailProvider, type ProviderContext } from "./types";
 
 export * from "./gmail-api";
 
@@ -106,7 +106,7 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
     refreshing ??= (async () => {
       try {
         const refreshToken = await ctx.getSecret("refreshToken");
-        if (!refreshToken) throw new ProviderError("Gmail account needs to be reconnected", false);
+        if (!refreshToken) throw new ProviderAuthError("Gmail account needs to be reconnected");
         const clientId = (await store.setting<{ gmailClientId?: string }>("app"))?.gmailClientId;
         const body = new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: clientId ?? "" });
         const secret = await ctx.getAppSecret("gmailClientSecret").catch(() => null);
@@ -118,9 +118,8 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
           throw new ProviderError(`Network error refreshing Gmail token: ${e instanceof Error ? e.message : e}`, true);
         }
         const json = (await res.json().catch(() => ({}))) as { access_token?: string; expires_in?: number; error?: string };
-        if (!res.ok || !json.access_token) {
-          throw new ProviderError(json.error === "invalid_grant" ? "Gmail access was revoked; reconnect the account" : `Gmail token refresh failed (${res.status})`, res.status >= 500);
-        }
+        if (json.error === "invalid_grant") throw new ProviderAuthError("Gmail access was revoked; reconnect the account");
+        if (!res.ok || !json.access_token) throw new ProviderError(`Gmail token refresh failed (${res.status})`, res.status >= 500);
         access = { token: json.access_token, expiresAt: Date.now() + (json.expires_in ?? 3600) * 1000 - 60_000 };
         return json.access_token;
       } finally {

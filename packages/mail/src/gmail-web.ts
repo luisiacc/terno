@@ -1,6 +1,6 @@
 import { createGmailApiProvider, GOOGLE_ENDPOINTS, type GmailEndpoints } from "./gmail-api";
 import { buildRawPortable } from "./compose-portable";
-import { ProviderError, type GmailTokenBroker, type MailProvider, type ProviderContext } from "./types";
+import { ProviderAuthError, ProviderError, type GmailTokenBroker, type MailProvider, type ProviderContext } from "./types";
 
 /** What a web Gmail account shows when its hour-long token is gone (after a reload or an hour). */
 export const GMAIL_RECONNECT = "Vuelve a conectar Gmail: en el navegador, el acceso de Google dura una hora y no se guarda.";
@@ -36,8 +36,8 @@ export function createGmailTokenBroker(o: { endpoints?: Partial<GmailEndpoints>;
         tokens: {
           async get() {
             const t = tokens.get(id);
-            // retryable: queued actions back off and go through once the user reconnects
-            if (!t || t.expiresAt - 60_000 <= now()) throw new ProviderError(GMAIL_RECONNECT, true);
+            // ops wait for the user (no attempts spent) and resume when the account is reconnected
+            if (!t || t.expiresAt - 60_000 <= now()) throw new ProviderAuthError(GMAIL_RECONNECT);
             return t.token;
           },
           invalidate: () => void tokens.delete(id),

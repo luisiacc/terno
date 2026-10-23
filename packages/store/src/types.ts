@@ -137,6 +137,13 @@ export type MovePhase = "training" | "done" | "restoring" | "undone" | "expired"
 
 // ───────────────────────────── ops, owner, drafts ─────────────────────────────
 
+/**
+ * next_attempt_at of a queued op that waits for the user to sign in again
+ * (expired or revoked authorization): never ready on its own, never counted
+ * as an attempt, resumed by ops.resumeAuth when the account works again.
+ */
+export const AWAITING_AUTH = 8_640_000_000_000_000;
+
 export interface OpRow {
   id: string;
   seq: number;

@@ -395,6 +395,20 @@ describe("Gmail operations", () => {
     expect(sqlDb(backend.store).all("SELECT state FROM ops WHERE kind != 'send'").every((r) => (r as { state: string }).state === "succeeded")).toBe(true);
   });
 
+  it("a revoked sign-in suspends actions without spending attempts; a successful sync resumes them", async () => {
+    const { google, backend, client, thread, account } = await connected();
+    const refresh = await backend.store.secrets.get(`account:${account.id}:refreshToken`);
+    await backend.store.secrets.delete(`account:${account.id}:refreshToken`);
+    google.expireTokens();
+    await client.call("threads.act", { threadIds: [thread("Viaje a Oaxaca")], action: "star" });
+    for (let i = 0; i < 10; i++) await backend.runWorker();
+    expect(sqlDb(backend.store).get("SELECT state, attempts FROM ops WHERE kind = 'star'")).toEqual({ state: "queued", attempts: 0 });
+    await backend.store.secrets.put(`account:${account.id}:refreshToken`, refresh!);
+    await backend.syncAccount(account.id);
+    await backend.runWorker();
+    expect(sqlDb(backend.store).get("SELECT state FROM ops WHERE kind = 'star'")).toEqual({ state: "succeeded" });
+  });
+
   it("treats 429 as retryable", async () => {
     const { google, backend, client, thread } = await connected();
     google.rateLimitNext = 1;
@@ -447,10 +461,10 @@ describe("Gmail operations", () => {
 });
 
 describe("Gmail on the web (Google's token model, no refresh token)", () => {
-  async function webSetup() {
+  async function webSetup(now?: () => number) {
     const google = await new FakeGoogle().start();
     cleanups.push(() => google.stop());
-    const broker = createGmailTokenBroker({ endpoints: google.endpoints() });
+    const broker = createGmailTokenBroker({ endpoints: google.endpoints(), now });
     const providers: ProviderRegistry = {
       gmailTokens: broker,
       create: (ctx) => broker.provider(ctx),
@@ -458,7 +472,7 @@ describe("Gmail on the web (Google's token model, no refresh token)", () => {
       connectGmail: async () => Promise.reject(new Error("token model only")),
     };
     const dir = mkdtempSync(join(tmpdir(), "unica-gmail-web-"));
-    const backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers, autoSync: false });
+    const backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers, autoSync: false, now });
     cleanups.push(async () => {
       await backend.stop();
       rmSync(dir, { recursive: true, force: true });
@@ -484,20 +498,28 @@ describe("Gmail on the web (Google's token model, no refresh token)", () => {
     await expect(client.call("accounts.connectGmailToken", { accessToken: "not-a-token", expiresIn: 3600 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
-  it("without a live token, sync and actions wait (retryable) behind reconnecting, then go through", async () => {
-    const { google, backend, client } = await webSetup();
+  it("without a live token, actions wait for the user however long it takes (no attempts spent), then go through on reconnect", async () => {
+    let now = Date.UTC(2026, 9, 23, 12);
+    const { google, backend, client } = await webSetup(() => now);
     seed(google);
     const account = await client.call("accounts.connectGmailToken", { accessToken: google.issue(), expiresIn: 3600 });
     await backend.syncAccount(account.id);
+    // the hour is up: Google's token expires and Única's copy with it
+    now += 3_700_000;
     google.expireTokens();
     const thread = sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE subject = 'Viaje a Oaxaca'")!.thread_id;
     await client.call("threads.act", { threadIds: [thread], action: "archive" });
-    await backend.runWorker();
-    expect(sqlDb(backend.store).get("SELECT state, last_error FROM ops")).toEqual({ state: "queued", last_error: GMAIL_RECONNECT });
+    // far longer than the 8 backoff attempts would take (~127 s): nothing is spent, nothing fails
+    for (let i = 0; i < 20; i++) {
+      await backend.runWorker();
+      now += 60_000;
+    }
+    expect(sqlDb(backend.store).get("SELECT state, attempts, last_error FROM ops")).toEqual({ state: "queued", attempts: 0, last_error: GMAIL_RECONNECT });
+    expect(await backend.store.ops.nextAttemptAt()).toBeNull();
     await backend.syncAccount(account.id);
-    expect((await client.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "offline", lastError: GMAIL_RECONNECT });
+    expect((await client.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "error", lastError: GMAIL_RECONNECT });
+    // reconnecting resumes it right away
     await client.call("accounts.connectGmailToken", { accessToken: google.issue(), expiresIn: 3600 });
-    sqlDb(backend.store).run("UPDATE ops SET next_attempt_at = 0");
     await backend.runWorker();
     expect(sqlDb(backend.store).get("SELECT state FROM ops")).toEqual({ state: "succeeded" });
     expect(google.messages.get("g1")!.labelIds).not.toContain("INBOX");

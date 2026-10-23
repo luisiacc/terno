@@ -2,7 +2,7 @@ import type { AiTasks } from "@unica/ai";
 import type { Account, AccountSyncState, ThreadAction } from "@unica/core";
 import { RpcServer, type CallContext, type HostInfo, type MethodName, type OpInfo, type Transport } from "@unica/core/rpc";
 import type { ClassifierInput, IncomingMessage, MailStore, OpRow, Platform } from "@unica/store";
-import { ProviderError, type MailProvider, type ProviderRegistry, type SyncSink } from "@unica/mail/portable";
+import { ProviderAuthError, ProviderError, type MailProvider, type ProviderRegistry, type SyncSink } from "@unica/mail/portable";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { AiAssist } from "./ai-assist";
 import { Categorizer } from "./categorizer";
@@ -519,6 +519,8 @@ export class BackendCore {
       try {
         await provider.sync(sink);
         await setState({ status: "idle", lastError: null, lastSyncAt: this.now() });
+        // the account works: whatever waited for its sign-in goes now
+        await this.resumeAuth(accountId);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         this.log("warn", `sync failed for account ${accountId}`, message);
@@ -533,6 +535,11 @@ export class BackendCore {
   }
 
   // ───────────────────────────── ops worker ─────────────────────────────
+
+  /** The account's authorization works again (sync succeeded, reconnected): its ops waiting for it run now. */
+  async resumeAuth(accountId: number): Promise<void> {
+    if ((await this.store.ops.resumeAuth(accountId, this.now())).length) this.kickWorker();
+  }
 
   kickWorker(): void {
     if (this.options.autoSync === false || this.stopped) return;
@@ -602,7 +609,8 @@ export class BackendCore {
       if (done.touched.length) this.notifyChanged(done.touched);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (error instanceof ProviderError && error.ambiguous) await this.store.ops.markUnknown(op.id, message, this.now());
+      if (error instanceof ProviderAuthError) await this.store.ops.awaitAuth(op.id, message, this.now());
+      else if (error instanceof ProviderError && error.ambiguous) await this.store.ops.markUnknown(op.id, message, this.now());
       else await this.store.ops.fail(op.id, message, error instanceof ProviderError ? error.retryable : true, this.now());
     }
     const after = await this.store.ops.get(op.id);
