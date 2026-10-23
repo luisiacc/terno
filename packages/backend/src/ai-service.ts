@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import {
   AiError,
   createAi,
@@ -20,7 +19,7 @@ import {
   type ProviderConfig,
 } from "@unica/ai";
 import { RpcError, type AiTestResult, type AppSettings } from "@unica/core/rpc";
-import type { Backend } from "./backend";
+import type { BackendCore as Backend } from "./core";
 import { NetworkPolicyError } from "./net-policy";
 import { readSettings, saveCapabilities, setKeyHint } from "./settings";
 
@@ -116,7 +115,7 @@ export class AiService {
     const target = this.currentTarget(settings);
     const config = { ...(await this.config(target)), capabilities: settings.ai.capabilities ?? undefined };
     const { fetch: _fetch, ...hashed } = config;
-    const key = createHash("sha256").update(JSON.stringify(hashed)).digest("hex");
+    const key = await sha256Hex(JSON.stringify(hashed));
     let ai = this.clients.get(key);
     if (!ai) {
       if (this.clients.size > 8) this.clients.clear();
@@ -162,7 +161,7 @@ export class AiService {
     const baseURL = target.baseURL ?? (samePreset ? profile?.baseURL : undefined);
     try {
       const config = await this.config({ ...target, baseURL, model });
-      const cacheKey = [target.provider, target.preset ?? "", config.baseURL ?? "", model, config.apiKey ? createHash("sha256").update(config.apiKey).digest("hex") : ""].join("|");
+      const cacheKey = [target.provider, target.preset ?? "", config.baseURL ?? "", model, config.apiKey ? await sha256Hex(config.apiKey) : ""].join("|");
       const hit = this.models.get(cacheKey);
       if (hit && Date.now() - hit.at < MODELS_TTL_MS) return { models: hit.models, tookMs: performance.now() - started };
       const local = isLocalProvider({ id: target.provider, baseURL: config.baseURL, preset: target.preset });
@@ -201,4 +200,10 @@ export class AiService {
     this.models.clear();
     return readSettings(this.b.store);
   }
+}
+
+/** Cache keys that must not hold a secret in clear (WebCrypto: Node and browsers alike). */
+async function sha256Hex(text: string): Promise<string> {
+  const digest = new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
+  return Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
 }

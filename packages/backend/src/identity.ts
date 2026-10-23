@@ -1,7 +1,7 @@
 import { RpcError, type OwnerIdentity } from "@unica/core/rpc";
 import type { OwnerClaim } from "@unica/store";
 import type { GmailAccountConfig, GmailConnectResult, ImapAccountConfig } from "@unica/mail";
-import type { Backend } from "./backend";
+import type { BackendCore as Backend } from "./core";
 import { readSettings } from "./settings";
 
 /** An IMAP login proves the password, not the address: record whether the login user is the address. */

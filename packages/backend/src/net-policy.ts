@@ -1,6 +1,3 @@
-import { lookup as dnsLookup } from "node:dns/promises";
-import { isIP } from "node:net";
-
 /**
  * Why a connection is being made. Every outbound call path names its purpose
  * and goes through this module (an architecture test enforces it), so local
@@ -38,12 +35,29 @@ export type LookupAll = (host: string) => Promise<{ address: string; family: num
 
 export interface NetworkPolicyOptions {
   localMode: () => boolean | Promise<boolean>;
-  /** injectable for tests (resolve a name to a LAN address without real DNS) */
+  /**
+   * DNS (Node: dns.lookup; tests resolve names without real DNS). Browsers
+   * have none: then only literal loopback hosts (127.x, ::1, localhost) count
+   * as local, nothing is pinned, and policed requests refuse redirects,
+   * because a browser hides where a redirect goes.
+   */
   lookup?: LookupAll;
   fetch?: typeof fetch;
 }
 
-const defaultLookup: LookupAll = (host) => dnsLookup(host, { all: true });
+/** 4 or 6 for an IP literal, 0 otherwise (node:net's isIP, portably). */
+export function ipFamily(host: string): 0 | 4 | 6 {
+  if (/^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/.test(host)) return 4;
+  if (!host.includes(":") || !/^[0-9a-f:.]+$/i.test(host)) return 0;
+  try {
+    return new URL(`http://[${host}]/`).hostname ? 6 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** Without DNS: a browser resolves localhost and *.localhost to loopback itself (and nothing else is knowable). */
+const literalLookup: LookupAll = async (host) => (host === "localhost" || host.endsWith(".localhost") ? [{ address: "127.0.0.1", family: 4 }] : []);
 
 export function isLoopbackIp(ip: string): boolean {
   const v = ip.toLowerCase();
@@ -60,13 +74,14 @@ function requestUrl(input: Parameters<typeof fetch>[0]): URL {
 }
 
 export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolicy {
-  const lookup = options.lookup ?? defaultLookup;
+  const browser = !options.lookup;
+  const lookup = options.lookup ?? literalLookup;
   const baseFetch = options.fetch ?? globalThis.fetch;
 
   /** The IP to connect to when every address of the host is loopback, else null. */
   async function loopbackTarget(hostname: string): Promise<string | null> {
     const host = hostname.replace(/^\[|\]$/g, "");
-    if (isIP(host)) return isLoopbackIp(host) ? host : null;
+    if (ipFamily(host)) return isLoopbackIp(host) ? host : null;
     let addresses: { address: string }[];
     try {
       addresses = await lookup(host);
@@ -109,6 +124,11 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
         let request: RequestInit = input instanceof Request ? { method: input.method, headers: input.headers, body: input.body, signal: input.signal, duplex: "half", ...init } as RequestInit : { ...init };
         for (let hop = 0; ; hop++) {
           const { pinnedHost } = await assert(purpose, url, meta);
+          if (browser) {
+            // no pinning and no manual redirects in a browser (they come back opaque): a vetted request may not be redirected at all
+            const vetted = purpose === "ai" && (await options.localMode());
+            return baseFetch(url, { ...request, redirect: vetted ? "error" : "follow" });
+          }
           const target = new URL(url);
           // Connect to the address we just checked, so a DNS answer can't change between check and connect.
           if (pinnedHost) target.hostname = pinnedHost.includes(":") ? `[${pinnedHost}]` : pinnedHost;

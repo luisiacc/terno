@@ -186,3 +186,34 @@ describe("redirects", () => {
     }
   });
 });
+
+describe("network policy without DNS (the browser)", () => {
+  const browser = (localMode: boolean) => createNetworkPolicy({ localMode: () => localMode, fetch: (input, init) => fetch(input, { ...init, headers: { ...(init?.headers as Record<string, string>), connection: "close" } }) });
+
+  it("counts only literal loopback hosts as local: names it can't resolve are refused, nothing is pinned", async () => {
+    const net = browser(true);
+    await expect(net.assert("ai", "http://127.0.0.1:11434/v1", { providerLocality: "local" })).resolves.toEqual({ pinnedHost: "127.0.0.1" });
+    await expect(net.assert("ai", "http://[::1]:1234/v1", { providerLocality: "local" })).resolves.toEqual({ pinnedHost: "::1" });
+    await expect(net.assert("ai", "http://localhost:1234/v1", { providerLocality: "local" })).resolves.toMatchObject({});
+    await expect(net.assert("ai", "http://my-llm.test:1234/v1", { providerLocality: "local" })).rejects.toBeInstanceOf(NetworkPolicyError);
+    await expect(net.assert("ai", "http://192.168.1.4:1234/v1", { providerLocality: "local" })).rejects.toBeInstanceOf(NetworkPolicyError);
+    const res = await net.fetchFor("ai", { providerLocality: "local" })(`http://127.0.0.1:${port}/v1`);
+    expect(res.status).toBe(200);
+    expect(seen.map((s) => s.host)).toEqual([`127.0.0.1:${port}`]);
+  });
+
+  it("a vetted request may not be redirected at all (a browser hides where it would go)", async () => {
+    const hop = createServer((_req, res) => void res.writeHead(307, { location: `http://127.0.0.1:${port}/elsewhere` }).end());
+    await new Promise<void>((r) => hop.listen(0, "127.0.0.1", r));
+    try {
+      const url = `http://127.0.0.1:${(hop.address() as AddressInfo).port}/v1`;
+      await expect(browser(true).fetchFor("ai", { providerLocality: "local" })(url)).rejects.toThrow();
+      expect(seen).toEqual([]);
+      // mail (always allowed) and anything outside local mode follow redirects as the browser does
+      expect((await browser(true).fetchFor("mail")(url)).status).toBe(200);
+      expect((await browser(false).fetchFor("ai", { providerLocality: "cloud" })(url)).status).toBe(200);
+    } finally {
+      hop.close();
+    }
+  });
+});

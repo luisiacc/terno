@@ -111,7 +111,27 @@ export interface OwnerIdentity {
   updatedAt: number;
 }
 
+/** What the host running the backend can do (the renderer gates features on it). */
+export interface HostCapabilities {
+  /** IMAP/SMTP accounts (raw TCP sockets) */
+  imap: boolean;
+  /** the MCP server for Claude Code / Codex (a local socket) */
+  agents: boolean;
+  /** sync keeps running with the window closed */
+  backgroundSync: boolean;
+  /** how local mode is enforced: "pinned" = names resolved and pinned, the renderer fenced by main; "browser" = only literal loopback hosts, no pinning, nothing outside Única's own requests */
+  network: "pinned" | "browser";
+}
+
+export interface HostInfo {
+  kind: "desktop" | "web";
+  capabilities: HostCapabilities;
+  /** the storage adapter ("sqlite-node-sqlite", "sqlite-wasm-opfs", "indexeddb", …) */
+  storage?: string;
+}
+
 export interface Bootstrap {
+  host: HostInfo;
   accounts: Account[];
   categories: Category[];
   counts: Counts;

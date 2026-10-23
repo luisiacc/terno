@@ -33,12 +33,16 @@ function resolveFile(base: string): string {
   throw new Error(`cannot resolve ${base}`);
 }
 
-it("the portable layers (core, store contracts, db without the node driver) import no node: modules", () => {
+it("the portable layers (core, store contracts, db without the node driver, the backend and providers the web worker hosts) import no node: modules", () => {
   expect(nodeImports(join(packages, "db/src/portable.ts"))).toEqual([]);
   expect(nodeImports(join(packages, "db/src/wasm.ts"))).toEqual([]);
   expect(nodeImports(join(packages, "store/src/index.ts"))).toEqual([]);
+  expect(nodeImports(join(packages, "store/src/instant/index.ts"))).toEqual([]);
+  expect(nodeImports(join(packages, "backend/src/portable.ts"))).toEqual([]);
+  expect(nodeImports(join(packages, "mail/src/portable.ts"))).toEqual([]);
 });
 
 it("the scan sees through to the node driver", () => {
   expect(nodeImports(join(packages, "db/src/index.ts"))).toContain("db/src/node-driver.ts → node:sqlite");
+  expect(nodeImports(join(packages, "backend/src/index.ts"))).toContain("backend/src/backend.ts → node:dns/promises");
 });

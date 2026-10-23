@@ -2,7 +2,7 @@ import { RpcError, type Handlers } from "@unica/core/rpc";
 import { COUNT_CAP, proposeLearnedFilters, type Address } from "@unica/core";
 import { StaleCursorError, type AddedBy, type DraftRow } from "@unica/store";
 import type { GmailAccountConfig, ImapAccountConfig } from "@unica/mail";
-import { Backend } from "./backend";
+import { BackendCore as Backend } from "./core";
 import { changeOwnerTo, gmailClaim, imapClaim } from "./identity";
 import { readAutoCategorize, readSettings, SettingsError, updateSettings } from "./settings";
 
@@ -58,6 +58,7 @@ export function createHandlers(b: Backend): Handlers {
 
   return {
     "app.bootstrap": async (_p, ctx) => ({
+      host: { ...b.host, storage: store.capabilities.engine },
       accounts: await store.accounts.list(),
       categories: await store.categories.list(),
       counts: await store.threads.counts(),
