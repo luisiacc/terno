@@ -1,0 +1,329 @@
+import type { CategoryColor, MessageDetail } from "@unica/core";
+import type { CategorySuggestion } from "@unica/core/rpc";
+import { Button } from "@unica/ui/components/button";
+import { CategoryBadge } from "@unica/ui/components/category-dot";
+import { Shortcut } from "@unica/ui/components/shortcut";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@unica/ui/components/tooltip";
+import { cn } from "@unica/ui/lib/utils";
+import { Archive, Forward, Inbox, MailOpen, OctagonAlert, Paperclip, Reply, ReplyAll, Sparkles, Star, Tag, Trash2, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { act, openCompose, scheduleMarkRead, toggleCategory, toggleStar } from "~/lib/actions";
+import { avatarColor, formatBytes, fullDate, initials, listDate } from "~/lib/format";
+import { client } from "~/rpc/connection";
+import { setApp, useApp } from "~/state/app";
+import { reloadList } from "~/state/list";
+import { loadThread, useThread } from "~/state/threads";
+import { HtmlBody, TextBody } from "./mail-body";
+
+const AVATAR_BG: Record<string, string> = {
+  rose: "bg-cat-rose/20 text-cat-rose",
+  amber: "bg-cat-amber/20 text-cat-amber",
+  lime: "bg-cat-lime/20 text-cat-lime",
+  emerald: "bg-cat-emerald/20 text-cat-emerald",
+  cyan: "bg-cat-cyan/20 text-cat-cyan",
+  indigo: "bg-cat-indigo/20 text-cat-indigo",
+  violet: "bg-cat-violet/20 text-cat-violet",
+  slate: "bg-cat-slate/20 text-cat-slate",
+};
+
+function ToolButton({ label, keys, onClick, children, testId, active }: { label: string; keys?: string; onClick: () => void; children: React.ReactNode; testId?: string; active?: boolean }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button variant="ghost" size="icon-sm" aria-label={label} data-testid={testId} onClick={onClick} className={cn("no-drag text-muted-foreground hover:text-foreground", active && "text-star hover:text-star")}>
+            {children}
+          </Button>
+        }
+      />
+      <TooltipContent className="flex items-center gap-2">
+        {label}
+        {keys && <Shortcut keys={keys} />}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+export const suggestionState: { set?: (s: CategorySuggestion | null, categoryId?: number) => void } = {};
+
+function SuggestionCard({ suggestion, categoryId, onDone }: { suggestion: CategorySuggestion; categoryId: number; onDone: () => void }) {
+  const category = useApp((s) => s.categories.find((c) => c.id === categoryId));
+  const what = suggestion.reason === "sender" ? suggestion.value : suggestion.reason === "list" ? `la lista ${suggestion.value}` : `@${suggestion.value}`;
+  return (
+    <div data-testid="category-suggestion" className="mb-5 rounded-lg border border-primary/20 bg-accent/50 p-3 text-sm">
+      <div className="flex items-start gap-2">
+        <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" />
+        <div className="min-w-0 flex-1">
+          <p>
+            Hay <span className="font-medium">{suggestion.total}</span> conversaciones similares de <span className="font-medium">{what}</span>. ¿Añadirlas a{" "}
+            <span className="font-medium">{category?.name}</span>?
+          </p>
+          <ul className="mt-2 space-y-0.5 text-xs text-muted-foreground">
+            {suggestion.threads.slice(0, 3).map((t) => (
+              <li key={t.id} className="truncate">
+                {listDate(t.lastDate)} · {t.subject}
+              </li>
+            ))}
+            {suggestion.total > 3 && <li>y {suggestion.total - 3} más…</li>}
+          </ul>
+          <div className="mt-2.5 flex gap-1.5">
+            <Button
+              size="sm"
+              data-testid="suggestion-accept"
+              onClick={async () => {
+                const ids = suggestion.threads.map((t) => t.id);
+                if (suggestion.total > ids.length) {
+                  // fetch all similar ids through search when there are more than the preview
+                  const q = suggestion.reason === "sender" ? `from:${suggestion.value}` : suggestion.value;
+                  const page = await client.call("threads.search", { query: q, limit: 500 });
+                  ids.push(...page.items.map((t) => t.id).filter((id) => !ids.includes(id)));
+                }
+                await toggleCategory(categoryId, ids, true);
+                toast.success(`${ids.length} conversaciones añadidas a ${category?.name}`);
+                onDone();
+              }}
+            >
+              Añadir {suggestion.total}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={async () => {
+                await client.call("categories.dismissSuggestion", { key: suggestion.key });
+                onDone();
+              }}
+            >
+              No, gracias
+            </Button>
+          </div>
+        </div>
+        <button type="button" aria-label="Cerrar" onClick={onDone} className="text-muted-foreground hover:text-foreground">
+          <X className="size-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Message({ m, expanded, onToggle }: { m: MessageDetail; expanded: boolean; onToggle: () => void }) {
+  const remoteImages = useApp((s) => s.settings?.remoteImages ?? "ask");
+  const color = avatarColor(m.from.email);
+  return (
+    <article data-testid="message" className={cn("rounded-xl border border-border bg-card", !expanded && "cursor-pointer hover:bg-row-hover")} onClick={!expanded ? onToggle : undefined}>
+      <header className={cn("flex items-start gap-3 px-4 pt-3.5", expanded ? "pb-2" : "pb-3.5")} onClick={expanded ? onToggle : undefined}>
+        <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold", AVATAR_BG[color])}>{initials(m.from.name || m.from.email)}</span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-2">
+            <span className="truncate text-sm font-medium">{m.from.name || m.from.email}</span>
+            {expanded && <span className="truncate text-xs text-muted-foreground">{m.from.email}</span>}
+            <span className="ml-auto shrink-0 font-mono text-2xs text-muted-foreground tabular" title={fullDate(m.date)}>
+              {listDate(m.date)}
+            </span>
+          </div>
+          {expanded ? (
+            <p className="truncate text-xs text-muted-foreground">
+              para {m.to.map((a) => a.name || a.email).join(", ")}
+              {m.cc.length > 0 && ` · cc ${m.cc.map((a) => a.name || a.email).join(", ")}`}
+            </p>
+          ) : (
+            <p className="truncate text-sm text-muted-foreground">{m.snippet}</p>
+          )}
+        </div>
+      </header>
+      {expanded && (
+        <div className="px-4 pb-4 pl-15">
+          {m.bodyHtml ? (
+            <HtmlBody html={m.bodyHtml} remoteImages={remoteImages} />
+          ) : m.bodyText !== null ? (
+            <TextBody text={m.bodyText} />
+          ) : (
+            <p className="text-sm text-muted-foreground italic">Descargando el contenido…</p>
+          )}
+          {m.attachments.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {m.attachments.map((a) => (
+                <span key={a.id} className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/50 px-2 py-1 text-xs">
+                  <Paperclip className="size-3 text-muted-foreground" />
+                  {a.filename}
+                  <span className="text-muted-foreground">{formatBytes(a.size)}</span>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </article>
+  );
+}
+
+function Welcome() {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-6 p-10 text-center" data-testid="reader-empty">
+      <div>
+        <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-primary text-xl font-semibold text-primary-foreground shadow-sm">Ú</div>
+        <p className="text-lg font-semibold tracking-tight">Única</p>
+        <p className="mt-1 text-sm text-muted-foreground">El único cliente de email que necesitas</p>
+      </div>
+      <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs text-muted-foreground">
+        {[
+          ["j k", "Moverse"],
+          ["e", "Archivar"],
+          ["/", "Buscar"],
+          ["mod+k", "Comandos"],
+          ["c", "Escribir"],
+          ["?", "Atajos"],
+        ].map(([k, l]) => (
+          <div key={k} className="flex items-center justify-between gap-4">
+            <span>{l}</span>
+            <Shortcut keys={k!} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function Reader() {
+  const selectedId = useApp((s) => s.selectedId);
+  const detail = useThread(selectedId);
+  const categories = useApp((s) => s.categories);
+  const accounts = useApp((s) => s.accounts);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [suggestion, setSuggestion] = useState<{ s: CategorySuggestion; categoryId: number } | null>(null);
+
+  useEffect(() => {
+    suggestionState.set = (s, categoryId) => setSuggestion(s && categoryId ? { s, categoryId } : null);
+  }, []);
+
+  useEffect(() => {
+    setSuggestion(null);
+    if (selectedId === null) return;
+    // the header renders from the cached row immediately; the body follows (debounced while holding j)
+    const t = setTimeout(() => void loadThread(selectedId), detail ? 0 : 40);
+    scheduleMarkRead(selectedId);
+    return () => clearTimeout(t);
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (!detail) return;
+    // expand unread messages and the last one
+    const open = new Set(detail.messages.filter((m) => !m.isRead).map((m) => m.id));
+    const last = detail.messages[detail.messages.length - 1];
+    if (last) open.add(last.id);
+    setExpanded(open);
+  }, [detail?.thread.id, detail?.messages.length]);
+
+  if (selectedId === null) return <Welcome />;
+  const t = detail?.thread;
+  const cats = t ? categories.filter((c) => t.categoryIds.includes(c.id)) : [];
+  const account = t ? accounts.find((a) => a.id === t.accountId) : undefined;
+
+  return (
+    <section className="flex h-full min-h-0 flex-col bg-background" data-testid="reader">
+      <div className="drag-region flex h-11 shrink-0 items-center gap-0.5 border-b border-border px-3">
+        {t?.inTrash || t?.inSpam ? (
+          <ToolButton label="Mover a Entrada" onClick={() => act(t.inSpam ? "notSpam" : "moveToInbox")} testId="action-inbox">
+            <Inbox />
+          </ToolButton>
+        ) : (
+          <ToolButton label="Archivar" keys="e" onClick={() => act("archive")} testId="action-archive">
+            <Archive />
+          </ToolButton>
+        )}
+        <ToolButton label="Eliminar" keys="#" onClick={() => act("trash")} testId="action-trash">
+          <Trash2 />
+        </ToolButton>
+        <ToolButton label="Spam" keys="!" onClick={() => act("spam")} testId="action-spam">
+          <OctagonAlert />
+        </ToolButton>
+        <span className="mx-1.5 h-4 w-px bg-border" />
+        <ToolButton label="Categoría" keys="l" onClick={() => setApp({ dialog: "categoryPicker" })} testId="action-category">
+          <Tag />
+        </ToolButton>
+        <ToolButton label="Marcar como no leído" keys="u" onClick={() => act("markUnread")} testId="action-unread">
+          <MailOpen />
+        </ToolButton>
+        <ToolButton label={t?.starred ? "Quitar destacado" : "Destacar"} keys="s" onClick={toggleStar} testId="action-star" active={t?.starred}>
+          <Star className={cn(t?.starred && "fill-star")} />
+        </ToolButton>
+        <div className="ml-auto flex items-center gap-0.5">
+          <ToolButton label="Responder" keys="r" onClick={() => openCompose("reply")} testId="action-reply">
+            <Reply />
+          </ToolButton>
+          <ToolButton label="Responder a todos" keys="a" onClick={() => openCompose("replyAll")} testId="action-reply-all">
+            <ReplyAll />
+          </ToolButton>
+          <ToolButton label="Reenviar" keys="f" onClick={() => openCompose("forward")} testId="action-forward">
+            <Forward />
+          </ToolButton>
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-[760px] px-8 pt-6 pb-16">
+          {!detail ? (
+            <div className="space-y-3">
+              <div className="h-6 w-2/3 animate-pulse rounded bg-muted" />
+              <div className="h-32 animate-pulse rounded-xl bg-muted/70" />
+            </div>
+          ) : (
+            <>
+              <h2 data-testid="reader-subject" className="text-xl leading-tight font-semibold tracking-tight text-balance">
+                {t!.subject || "(sin asunto)"}
+              </h2>
+              <div className="mt-2 mb-5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                {account && <span>{account.email}</span>}
+                {cats.map((c) => (
+                  <CategoryBadge key={c.id} color={c.color as CategoryColor}>
+                    {c.name}
+                    <button type="button" aria-label={`Quitar ${c.name}`} className="opacity-60 hover:opacity-100" onClick={() => toggleCategory(c.id, [t!.id], false).then(() => loadThread(t!.id, true))}>
+                      <X className="size-3" />
+                    </button>
+                  </CategoryBadge>
+                ))}
+              </div>
+              {suggestion && (
+                <SuggestionCard
+                  suggestion={suggestion.s}
+                  categoryId={suggestion.categoryId}
+                  onDone={() => {
+                    setSuggestion(null);
+                    void reloadList({ keepSelection: true });
+                  }}
+                />
+              )}
+              <div className="space-y-2.5">
+                {detail.messages.map((m) => (
+                  <Message
+                    key={m.id}
+                    m={m}
+                    expanded={expanded.has(m.id)}
+                    onToggle={() =>
+                      setExpanded((s) => {
+                        const n = new Set(s);
+                        if (n.has(m.id)) n.delete(m.id);
+                        else n.add(m.id);
+                        return n;
+                      })
+                    }
+                  />
+                ))}
+              </div>
+              <div className="mt-5 flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => openCompose("reply")} data-testid="quick-reply">
+                  <Reply /> Responder
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => openCompose("replyAll")}>
+                  <ReplyAll /> Responder a todos
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => openCompose("forward")}>
+                  <Forward /> Reenviar
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}

@@ -1,0 +1,112 @@
+import DOMPurify from "dompurify";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ImageOff } from "lucide-react";
+
+/** Remote resources are blocked unless the user opts in: tracking pixels, remote CSS and fonts included. */
+function csp(allowRemote: boolean): string {
+  const remote = allowRemote ? " https: http:" : "";
+  return `default-src 'none'; img-src data: cid:${remote}; style-src 'unsafe-inline'${remote}; font-src data:${remote}; media-src 'none'; frame-src 'none'; form-action 'none'`;
+}
+
+function hasRemoteContent(html: string): boolean {
+  return /\b(src|background)\s*=\s*["']?\s*https?:/i.test(html) || /url\(\s*["']?https?:/i.test(html);
+}
+
+function openLink(href: string) {
+  if (!/^(https?:|mailto:)/i.test(href)) return;
+  if (window.unicaDesktop) window.unicaDesktop.openExternal(href);
+  else window.open(href, "_blank", "noopener,noreferrer");
+}
+
+/**
+ * Renders an HTML email in a sandboxed iframe: sanitized with DOMPurify, no
+ * scripts (sandbox without allow-scripts), strict CSP, links opened externally.
+ * allow-same-origin (without scripts) only lets the parent measure the height.
+ */
+export function HtmlBody({ html, remoteImages }: { html: string; remoteImages: "ask" | "always" }) {
+  const ref = useRef<HTMLIFrameElement>(null);
+  const [allowRemote, setAllowRemote] = useState(remoteImages === "always");
+  const [height, setHeight] = useState(120);
+  const blocked = !allowRemote && hasRemoteContent(html);
+  const doc = useMemo(() => {
+    const clean = DOMPurify.sanitize(html, { WHOLE_DOCUMENT: false, FORBID_TAGS: ["style"], FORBID_ATTR: ["srcset"], ADD_ATTR: ["target"] });
+    return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(allowRemote)}"><base target="_blank"><style>html,body{margin:0;padding:0;background:#fff;color:#1f2330;font:14px/1.55 -apple-system,BlinkMacSystemFont,"Geist Variable",sans-serif;overflow-wrap:anywhere}body{padding:16px}img{max-width:100%;height:auto}a{color:#4f46e5}table{max-width:100%}</style></head><body>${clean}</body></html>`;
+  }, [html, allowRemote]);
+
+  useEffect(() => {
+    const frame = ref.current;
+    if (!frame) return;
+    const onLoad = () => {
+      const d = frame.contentDocument;
+      if (!d) return;
+      const measure = () => setHeight(Math.min(20000, d.documentElement.scrollHeight));
+      measure();
+      new ResizeObserver(measure).observe(d.body);
+      d.addEventListener("click", (e) => {
+        const a = (e.target as Element).closest("a");
+        if (a?.href) {
+          e.preventDefault();
+          openLink(a.href);
+        }
+      });
+    };
+    frame.addEventListener("load", onLoad);
+    return () => frame.removeEventListener("load", onLoad);
+  }, [doc]);
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-border">
+      {blocked && (
+        <div className="flex items-center gap-2 border-b border-border bg-muted/60 px-3 py-1.5 text-xs text-muted-foreground" data-testid="remote-blocked">
+          <ImageOff className="size-3.5" />
+          Contenido remoto bloqueado para proteger tu privacidad.
+          <button type="button" className="ml-auto font-medium text-primary hover:underline" onClick={() => setAllowRemote(true)}>
+            Cargar imágenes
+          </button>
+        </div>
+      )}
+      <iframe
+        ref={ref}
+        title="Contenido del correo"
+        sandbox="allow-same-origin allow-popups"
+        srcDoc={doc}
+        style={{ height }}
+        className="block w-full border-0 bg-white"
+      />
+    </div>
+  );
+}
+
+const URL_RE = /(https?:\/\/[^\s<>"')]+)/g;
+
+/** Plain-text body: quoted history folded, links clickable. */
+export function TextBody({ text }: { text: string }) {
+  const [showQuoted, setShowQuoted] = useState(false);
+  const lines = text.split("\n");
+  const firstQuote = lines.findIndex((l, i) => l.startsWith(">") || (/escribió:$|wrote:$/.test(l.trim()) && lines[i + 1]?.startsWith(">")));
+  const main = firstQuote > 0 ? lines.slice(0, firstQuote).join("\n").trimEnd() : text;
+  const quoted = firstQuote > 0 ? lines.slice(firstQuote).join("\n") : "";
+  const render = (s: string) =>
+    s.split(URL_RE).map((part, i) =>
+      i % 2 ? (
+        <a key={i} href={part} className="text-primary underline-offset-2 hover:underline" onClick={(e) => (e.preventDefault(), openLink(part))}>
+          {part}
+        </a>
+      ) : (
+        part
+      ),
+    );
+  return (
+    <div className="text-base leading-relaxed whitespace-pre-wrap text-foreground/90 [overflow-wrap:anywhere]">
+      {render(main)}
+      {quoted && (
+        <>
+          <button type="button" onClick={() => setShowQuoted((v) => !v)} className="mt-2 block rounded bg-muted px-1.5 text-xs leading-5 text-muted-foreground hover:text-foreground" aria-label="Mostrar texto citado">
+            •••
+          </button>
+          {showQuoted && <div className="mt-2 border-l-2 border-border pl-3 text-muted-foreground">{render(quoted)}</div>}
+        </>
+      )}
+    </div>
+  );
+}

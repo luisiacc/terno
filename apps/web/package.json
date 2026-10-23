@@ -1,0 +1,36 @@
+{
+  "name": "@unica/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@tanstack/react-virtual": "^3.14.22",
+    "@unica/core": "workspace:*",
+    "@unica/ui": "workspace:*",
+    "cmdk": "^1.1.1",
+    "dompurify": "^3.4.16",
+    "lucide-react": "^1.61.0",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "sonner": "^2.0.8",
+    "zustand": "catalog:"
+  },
+  "devDependencies": {
+    "@playwright/test": "catalog:",
+    "@tailwindcss/vite": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "oxc-transform-react": "^0.155.0",
+    "tailwindcss": "catalog:",
+    "vite": "catalog:"
+  }
+}
