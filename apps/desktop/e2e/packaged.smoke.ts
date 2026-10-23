@@ -85,3 +85,22 @@ test("the bundled unica-mcp wrapper answers MCP requests against the running app
   const payload = JSON.parse(reply.result.content[0].text);
   expect(payload.accounts).toHaveLength(4);
 });
+
+test("warm start: relaunching with an existing mailbox shows mail fast", async () => {
+  await app.close();
+  const env = { ...process.env, UNICA_DEMO: "1", UNICA_USER_DATA: userData };
+  delete env.ELECTRON_RUN_AS_NODE;
+  const samples: number[] = [];
+  for (let i = 0; i < 3; i++) {
+    const started = Date.now();
+    app = await electron.launch({ executablePath: join(appPath, "Contents/MacOS/Unica"), env });
+    page = await app.firstWindow();
+    await page.locator("[data-testid=thread-row]").first().waitFor({ timeout: 30_000 });
+    samples.push(Date.now() - started);
+    if (i < 2) await app.close();
+  }
+  const best = Math.min(...samples);
+  console.log(`warm start to first rows: ${samples.join(" / ")} ms`);
+  // includes process spawn, Chromium init, utility process + SQLite open, first query and paint
+  expect(best).toBeLessThan(1500);
+});
