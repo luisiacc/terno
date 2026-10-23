@@ -27,3 +27,5 @@ export function openDatabaseWith(driver: SqliteDriver, path: string, options: Op
   if (!options.readonly) migrate(db);
   return db;
 }
+export * from "./sql-store";
+export * from "./sql-provider-store";

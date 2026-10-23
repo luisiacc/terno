@@ -1,5 +1,6 @@
 import {
   CONSUMER_DOMAINS,
+  COUNT_CAP,
   decide,
   explain,
   fnv1a,
@@ -15,10 +16,11 @@ import {
 import { ownAddresses, threadFeatures, vetoesFor } from "./categorize";
 import { pendingSuggestionCounts } from "./queries";
 import { searchThreadIds } from "./search";
+import type { PendingSuggestion } from "@unica/store";
 import type { Db, Param } from "./sqlite";
 
-/** Counts above this show as "1 000+": a chip never pays for an exact count of a huge set. */
-export const COUNT_CAP = 1000;
+export type { PendingSuggestion } from "@unica/store";
+export { COUNT_CAP } from "@unica/core";
 
 /**
  * Every scope leaves out threads already in the category, trash and spam,
@@ -184,13 +186,6 @@ function valveStats(db: Db): Map<number, { kept: number; reverted: number }> {
   );
 }
 
-export interface PendingSuggestion {
-  threadId: number;
-  categoryId: number;
-  p: number;
-  reasons: string[];
-  at: number;
-}
 
 /** Suggestions waiting for an answer (threads still outside the category, not in trash or spam). */
 export function pendingSuggestions(db: Db, options: { categoryId?: number; threadId?: number; limit: number }): PendingSuggestion[] {

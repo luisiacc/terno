@@ -42,3 +42,17 @@ export function report(file: string, title: string, meta: Record<string, unknown
   ];
   console.log(lines.join("\n"));
 }
+
+/** measure() for async commands (store boundary): each sample awaits the command. */
+export async function measureAsync(name: string, budgetMs: number, fn: (i: number) => Promise<unknown>, iterations = 60, warmup = 5): Promise<Stat> {
+  for (let i = 0; i < warmup; i++) await fn(i);
+  const samples: number[] = [];
+  for (let i = 0; i < iterations; i++) {
+    const start = performance.now();
+    await fn(i);
+    samples.push(performance.now() - start);
+  }
+  samples.sort((a, b) => a - b);
+  const q = (p: number) => samples[Math.min(samples.length - 1, Math.ceil(p * samples.length) - 1)]!;
+  return { name, budgetMs, p50: q(0.5), p95: q(0.95), max: samples[samples.length - 1]!, iterations };
+}

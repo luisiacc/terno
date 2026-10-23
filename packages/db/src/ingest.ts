@@ -1,55 +1,12 @@
 import { BODY_TAIL_TOKENS, baseSubject, emailDomain, featuresFromBlob, normalizeText, trailingTokens, type Address } from "@unica/core";
-import type { ModelDelta } from "./categorize";
+import type { IncomingMessage, ModelDelta } from "@unica/store";
+
+export type { IncomingAttachment, IncomingLocation, IncomingMessage } from "@unica/store";
 import { placeholders, type Db } from "./sqlite";
 import { pruneOpTargets } from "./repos";
 
-export interface IncomingAttachment {
-  filename: string;
-  mime: string;
-  size: number;
-  contentId?: string | null;
-  providerRef?: string | null;
-}
 
-export interface IncomingLocation {
-  mailbox: string;
-  uidvalidity: number;
-  uid: number;
-  flags: string[];
-}
 
-export interface IncomingMessage {
-  accountId: number;
-  providerMsgId: string | null;
-  /** Gmail threadId; when null, threading uses RFC headers */
-  providerThreadId: string | null;
-  rfcMessageId: string | null;
-  inReplyTo: string | null;
-  references: string[];
-  from: Address;
-  to: Address[];
-  cc: Address[];
-  bcc: Address[];
-  subject: string;
-  date: number;
-  snippet: string;
-  bodyText: string | null;
-  bodyHtml: string | null;
-  bodyState: "none" | "partial" | "full";
-  listId: string | null;
-  isRead: boolean;
-  isStarred: boolean;
-  inInbox: boolean;
-  isSent: boolean;
-  isDraft: boolean;
-  isTrash: boolean;
-  isSpam: boolean;
-  hasAttachments: boolean;
-  gmailLabels?: string[] | null;
-  size: number;
-  attachments?: IncomingAttachment[];
-  locations?: IncomingLocation[];
-}
 
 export interface IngestResult {
   inserted: number[];

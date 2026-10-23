@@ -1,5 +1,8 @@
 import type { FilterRule } from "../rules/schema";
 
+/** Counts above this show as "1 000+": a chip never pays for an exact count of a huge set. */
+export const COUNT_CAP = 1000;
+
 /** What a bulk categorization covers. Every scope leaves out threads already filed, trash/spam and threads the user removed. */
 export type CategorizeScope =
   | { kind: "sender"; email: string }

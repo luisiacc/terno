@@ -10,7 +10,10 @@ import type {
   UserActionKind,
 } from "@unica/core";
 import { addToCategory, removeFromCategory, type AddedBy } from "./categorize";
+import type { DraftRow, OpRow } from "@unica/store";
 import type { Db } from "./sqlite";
+
+export type { DraftRow, OpRow } from "@unica/store";
 
 // ───────────────────────────── accounts ─────────────────────────────
 
@@ -259,19 +262,6 @@ export function claimFilterApplications(db: Db, filterId: number, messageIds: re
 
 // ───────────────────────────── ops ─────────────────────────────
 
-export interface OpRow {
-  id: string;
-  seq: number;
-  account_id: number;
-  kind: string;
-  target_json: string;
-  payload_json: string;
-  state: OpState;
-  attempts: number;
-  next_attempt_at: number;
-  last_error: string | null;
-  created_at: number;
-}
 
 const OPPOSITE: Record<string, string> = { markRead: "markUnread", markUnread: "markRead", star: "unstar", unstar: "star" };
 /**
@@ -576,16 +566,6 @@ export function deleteSecret(db: Db, name: string): void {
 
 // ───────────────────────────── drafts ─────────────────────────────
 
-export interface DraftRow {
-  id: number;
-  account_id: number;
-  to_json: string;
-  cc_json: string;
-  subject: string;
-  body_text: string;
-  in_reply_to_message_id: number | null;
-  updated_at: number;
-}
 
 export function saveDraft(
   db: Db,

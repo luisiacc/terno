@@ -1,19 +1,9 @@
 import type { OwnerIdentity } from "@unica/core/rpc";
+import type { OwnerClaim } from "@unica/store";
 import type { Db } from "./sqlite";
 
-/**
- * The owner is the person this install belongs to (the future "Única account"),
- * separate from mailboxes: removing its mailbox only clears account_id.
- */
-export interface OwnerClaim {
-  email: string;
-  displayName: string;
-  provider: "gmail" | "imap";
-  verifiedBy: "google_oauth" | "imap_login";
-  /** {googleSub, emailVerified} | {imapHost, loginUser, emailMatchesLogin}; never leaves the backend */
-  evidence: Record<string, unknown>;
-  accountId: number;
-}
+export type { OwnerClaim } from "@unica/store";
+
 
 interface OwnerRow {
   user_id: string;

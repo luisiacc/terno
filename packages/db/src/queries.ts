@@ -6,7 +6,10 @@ import type {
   ThreadSummary,
   View,
 } from "@unica/core";
+import type { ListParams, Page } from "@unica/store";
 import { placeholders, type Db, type Param } from "./sqlite";
+
+export type { Cursor, ListParams, Page } from "@unica/store";
 
 /**
  * WHERE fragments per view. They textually match the partial index predicates
@@ -58,23 +61,8 @@ export function toSummary(r: SummaryRow): ThreadSummary {
   };
 }
 
-export interface Cursor {
-  lastDate: number;
-  id: number;
-}
 
-export interface ListParams {
-  view: View;
-  accountId?: number;
-  categoryId?: number;
-  cursor?: Cursor;
-  limit: number;
-}
 
-export interface Page {
-  items: ThreadSummary[];
-  nextCursor: Cursor | null;
-}
 
 export function pageFrom(rows: SummaryRow[], limit: number): Page {
   const hasMore = rows.length > limit;

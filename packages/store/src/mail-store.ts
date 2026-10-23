@@ -1,0 +1,310 @@
+import type {
+  Account,
+  AccountKind,
+  AccountSyncState,
+  Address,
+  AutoCategorize,
+  CategorizeScope,
+  CategorizerModel,
+  Category,
+  CategoryColor,
+  CategoryModelStats,
+  Counts,
+  Filter,
+  FilterRule,
+  OpState,
+  Prediction,
+  QuickActions,
+  ThreadAction,
+  ThreadDetail,
+  ThreadSummary,
+  TrainExample,
+  UserActionKind,
+  Vetoes,
+} from "@unica/core";
+import type { OwnerIdentity } from "@unica/core/rpc";
+import type { MailStoreSearch, SearchCursor, StoreSearchPage } from "./search";
+import type {
+  AddedBy,
+  ClassifyResult,
+  Cursor,
+  DraftRow,
+  ExampleKey,
+  FlagUpdate,
+  IncomingMessage,
+  ListParams,
+  ModelDelta,
+  MovePhase,
+  OpRow,
+  OwnerClaim,
+  Page,
+  PendingSuggestion,
+  ThreadFeatureSet,
+} from "./types";
+
+export interface StoreCapabilities {
+  /** "sqlite-node" | "sqlite-wasm-opfs" | "indexeddb" | … */
+  engine: string;
+  /** id of the SearchEngine answering searches */
+  search: string;
+  /** filter preview/apply over all mail */
+  bulkRuleScan: "indexed" | "scan";
+  /** ImapLocationStore available */
+  imapLocations: boolean;
+  /** other connections may read the file (MCP, checkpoint worker) */
+  externalReaders: boolean;
+  durability: "fsync" | "browser";
+}
+
+/** The classifier's part of an ingestion command: pure scoring over the in-memory model, read-only. */
+export interface ClassifierInput {
+  model: CategorizerModel;
+  mode: AutoCategorize;
+}
+
+export interface IngestOutcome {
+  inserted: number[];
+  /** threads to announce as changed */
+  touched: number[];
+  deltas: ModelDelta[];
+  auto: ClassifyResult["auto"];
+  backfill: number;
+  uncertain: number[];
+  /** provider ops the command queued (filter actions) */
+  opIds: string[];
+}
+
+export interface CategorizeOutcome {
+  added: number[];
+  deltas: ModelDelta[];
+}
+
+export interface SendCommand {
+  accountId: number;
+  to: Address[];
+  cc: Address[];
+  bcc: Address[];
+  subject: string;
+  bodyText: string;
+  inReplyToMessageId?: number;
+  draftId?: number;
+  /** explicit user replies feed learned filters; agents' don't */
+  recordReply: boolean;
+  now: number;
+}
+
+/** Replaces ProviderContext.db: what providers read and write besides syncing through the backend. */
+export interface ProviderStore {
+  messageByProviderId(providerMsgId: string): Promise<{ id: number; subject: string; fromEmail: string } | null>;
+  /** synced (non-local) messages of the account */
+  syncedMessages(): Promise<{ id: number; providerMsgId: string; date: number }[]>;
+  /** messages whose body hasn't been downloaded, newest first, with one IMAP location each */
+  pendingBodies(limit: number): Promise<{ id: number; mailbox: string; uid: number; uidvalidity: number }[]>;
+  countPendingBodies(): Promise<number>;
+  /** provider ids of the given messages (missing ids are absent) */
+  providerIds(messageIds: readonly number[]): Promise<Map<number, string | null>>;
+  setting<T>(key: string): Promise<T | null>;
+  locations: ImapLocationStore;
+}
+
+export interface ImapLocation {
+  message_id: number;
+  mailbox: string;
+  uid: number;
+  uidvalidity: number;
+  flags: string;
+}
+
+export interface ImapLocationStore {
+  upsert(messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]): Promise<void>;
+  remove(messageId: number, mailbox: string): Promise<void>;
+  setFlags(messageId: number, mailbox: string, flags: string): Promise<void>;
+  of(messageIds: readonly number[]): Promise<ImapLocation[]>;
+  at(mailbox: string, uidvalidity: number, uid: number): Promise<number | null>;
+  get(messageId: number, mailbox: string): Promise<{ uid: number; uidvalidity: number; flags: string } | null>;
+  count(messageId: number): Promise<number>;
+  inMailbox(mailbox: string, uidvalidity: number): Promise<{ message_id: number; uid: number; flags: string }[]>;
+  /** UIDVALIDITY changed: forgets every location in the mailbox, returns the messages that had one */
+  resetMailbox(mailbox: string): Promise<number[]>;
+  /** after a reset: an ID-less message among `candidates` with this exact envelope, not yet re-located in `mailbox` */
+  resetCandidate(c: { candidates: readonly number[]; subject: string; fromEmail: string; date: number; size: number; mailbox: string }): Promise<{ id: number } | null>;
+}
+
+/**
+ * The storage boundary the backend uses. Every method is ONE atomic unit of
+ * work; there is no generic cross-call transaction. Returned model deltas and
+ * touched ids describe what already committed.
+ */
+export interface MailStore {
+  readonly capabilities: StoreCapabilities;
+  readonly isOpen: boolean;
+  close(): Promise<void>;
+
+  threads: MailStoreSearch & {
+    list(p: ListParams): Promise<Page>;
+    summaries(ids: readonly number[]): Promise<ThreadSummary[]>;
+    get(id: number): Promise<(ThreadDetail & { categorization: { auto: { categoryId: number; reasons: string[] }[]; suggestions: PendingSuggestion[] } }) | null>;
+    counts(): Promise<Counts>;
+    /** resolves account:/category: and searches within one unit of work */
+    /** an RPC cursor without revision/key (older renderers) continues this query */
+    searchText(p: { query: string; accountId?: number; categoryId?: number; cursor?: Cursor & Partial<Pick<SearchCursor, "revision" | "queryKey">>; limit: number; now: number }): Promise<StoreSearchPage>;
+    /** local optimistic change + learning signal + provider ops, atomically */
+    act(c: { threadIds: readonly number[]; action: ThreadAction; signal: UserActionKind | null; now: number }): Promise<{ threadIds: number[]; opIds: string[] }>;
+  };
+
+  sync: {
+    /** threading, aggregates, filters (claims, actions, ops) and classification of one slice */
+    ingest(batch: readonly IncomingMessage[], o: { applyFilters: boolean; now: number; classifier: ClassifierInput | null }): Promise<IngestOutcome>;
+    setBody(messageId: number, text: string | null, html: string | null, o: { now: number; classifier: ClassifierInput | null }): Promise<{ touched: number[]; deltas: ModelDelta[]; auto: ClassifyResult["auto"]; opIds: string[] }>;
+    /** provider state for existing messages; skips messages with unsettled ops, read inside the same unit */
+    updateFlags(accountId: number, updates: readonly FlagUpdate[]): Promise<{ touched: number[] }>;
+    remove(messageIds: readonly number[]): Promise<{ touched: number[] }>;
+    pendingMessageIds(accountId: number): Promise<Set<number>>;
+  };
+
+  ops: {
+    claimReady(now: number, limit: number): Promise<OpRow[]>;
+    get(id: string): Promise<OpRow | null>;
+    /** success, including adopting the provider's ids for a sent message */
+    complete(id: string, result: { providerMsgId?: string; providerThreadId?: string; warning?: string } | void, now: number): Promise<{ touched: number[]; deltas: ModelDelta[] }>;
+    fail(id: string, error: string, retryable: boolean, now: number): Promise<OpState>;
+    markUnknown(id: string, error: string, now: number): Promise<void>;
+    recover(now: number): Promise<{ requeued: number; unknown: number }>;
+    nextAttemptAt(): Promise<number | null>;
+    recent(limit: number): Promise<OpRow[]>;
+    resolveUnknown(id: string, resolution: "markSent" | "retry" | "discard", now: number): Promise<{ touched: number[] }>;
+  };
+
+  compose: {
+    /** optimistic local copy + durable send op (+ draft removal, reply signal), atomically */
+    queueSend(c: SendCommand): Promise<{ opId: string; threadId: number; deltas: ModelDelta[] }>;
+  };
+
+  filters: {
+    list(): Promise<Filter[]>;
+    get(id: number): Promise<Filter | null>;
+    save(f: { id?: number; name: string; enabled: boolean; source: Filter["source"]; rule: FilterRule; learnedKey?: string }, now: number): Promise<Filter>;
+    delete(id: number): Promise<void>;
+    preview(rule: FilterRule, now: number, limit: number): Promise<{ count: number; sample: ThreadSummary[] }>;
+    /** message id bounds, for windowed matching */
+    messageIdRange(): Promise<{ lo: number; hi: number } | null>;
+    /** messages matching the rule in one id window */
+    matchWindow(rule: FilterRule, now: number, window: { from: number; to: number }): Promise<number[]>;
+    /** claims + actions + ops for one chunk; refuses (CANCELLED) if the filter changed since `ruleJson` */
+    applyChunk(id: number, ruleJson: string, messageIds: readonly number[], now: number): Promise<{ applied: number; touched: number[]; opIds: string[] }>;
+  };
+
+  categories: {
+    list(): Promise<Category[]>;
+    exists(id: number): Promise<boolean>;
+    create(name: string, color: CategoryColor): Promise<Category>;
+    update(id: number, patch: { name?: string; color?: CategoryColor; position?: number; autoApply?: boolean }): Promise<Category | null>;
+    delete(id: number): Promise<void>;
+    createBatch(categoryId: number, source: string, scope: unknown, now: number): Promise<number>;
+    /** adds (and trains on explicit origins); counts the adds into the batch, in one unit */
+    add(a: { categoryId: number; threadIds: readonly number[]; addedBy: AddedBy; now: number; batchId?: number | null }): Promise<CategorizeOutcome>;
+    remove(r: { categoryId: number; threadIds: readonly number[]; reason: "user" | "undo"; now: number }): Promise<{ removed: number[]; deltas: ModelDelta[] }>;
+    batchThreads(batchId: number): Promise<number[]>;
+    undoBatchPart(batchId: number, threadIds: readonly number[], now: number): Promise<{ removed: number[]; deltas: ModelDelta[] }>;
+    finishUndo(batchId: number, now: number): Promise<void>;
+    beginMove(m: { from: number; to: number; threadIds: readonly number[]; addedBy: AddedBy; now: number; source: string }): Promise<{ batchId: number; added: number[]; moved: number[]; deltas: ModelDelta[] }>;
+    movePhase(batchId: number): Promise<MovePhase | null>;
+    movePending(batchId: number): Promise<number[]>;
+    unfinishedMoves(): Promise<{ batchId: number; phase: "training" | "restoring" }[]>;
+    trainMoveSlice(batchId: number, threadIds: readonly number[], now: number): Promise<ModelDelta[]>;
+    undoMoveCommit(batchId: number, now: number): Promise<{ removed: number[]; restored: number[]; deltas: ModelDelta[] }>;
+    restoreMoveSlice(batchId: number, threadIds: readonly number[]): Promise<ModelDelta[]>;
+  };
+
+  categorize: {
+    quickActions(categoryId: number, threadIds: readonly number[], model: CategorizerModel | null): Promise<QuickActions>;
+    countScope(categoryId: number, scope: CategorizeScope, now: number): Promise<{ count: number; capped: boolean }>;
+    /** the scope's threads, fixed once (filing changes the scope's own "not yet filed" predicate) */
+    resolveScope(categoryId: number, scope: CategorizeScope, now: number, limit?: number): Promise<number[]>;
+    predict(threadId: number, model: CategorizerModel, mode: AutoCategorize, now: number): Promise<Prediction[]>;
+    pendingSuggestions(o: { categoryId?: number; threadId?: number; limit: number }): Promise<PendingSuggestion[]>;
+    reject(threadId: number, categoryId: number, now: number): Promise<ModelDelta[]>;
+    stats(): Promise<CategoryModelStats[]>;
+    // model upkeep
+    loadSnapshot(): Promise<{ snapshot: { featuresV: number; builtAt: number; fingerprint: string; blob: Uint8Array } | null; fingerprint: string }>;
+    saveSnapshot(s: { featuresV: number; builtAt: number; blob: Uint8Array }): Promise<void>;
+    backfillExamples(limit: number): Promise<number>;
+    examples(): Promise<TrainExample[]>;
+    examplesPage(after: ExampleKey | null, limit: number): Promise<{ example: TrainExample; key: ExampleKey }[]>;
+    backgroundCandidates(now: number): Promise<number[]>;
+    threadFeatures(threadIds: readonly number[]): Promise<Map<number, ThreadFeatureSet>>;
+    backfillCandidates(now: number): Promise<number[]>;
+    suggestBackfill(r: { threadIds: readonly number[]; now: number; mode: AutoCategorize; model: CategorizerModel }): Promise<{ touched: number[] }>;
+    matureDecisions(now: number): Promise<number>;
+    /** the AI assist may look at it: a new-mail-like thread nobody decided on */
+    aiCandidate(threadId: number): Promise<boolean>;
+    vetoes(threadId: number, sender: string, categoryIds: readonly number[], now: number): Promise<Map<number, Vetoes>>;
+    /** records the AI's suggestion if the thread is still undecided and nothing vetoes it now */
+    recordAiSuggestion(s: { threadId: number; categoryId: number; p: number; explain: string[]; sender: string; encoded: Uint32Array; model: CategorizerModel; now: number }): Promise<boolean>;
+  };
+
+  accounts: {
+    list(): Promise<Account[]>;
+    get(id: number): Promise<Account | null>;
+    config<T>(id: number): Promise<{ config: T; secretRef: string | null } | null>;
+    stamp(id: number): Promise<{ id: number; email: string; createdAt: number } | null>;
+    /** the account, its first secret and (optionally) the owner claim commit together */
+    create(a: {
+      kind: AccountKind;
+      email: string;
+      displayName: string;
+      color: string;
+      providerConfig?: unknown;
+      /** stored as account:<id>:<key> */
+      secret?: { key: string; blob: Uint8Array };
+      ownerClaim?: Omit<OwnerClaim, "accountId" | "email">;
+      now: number;
+    }): Promise<{ account: Account; claimed: boolean }>;
+    update(id: number, patch: { displayName?: string; color?: string }): Promise<Account | null>;
+    /** the account, its mail and its secrets; the owner row survives with account_id cleared */
+    remove(id: number): Promise<void>;
+    setSyncState(id: number, patch: Partial<AccountSyncState>): Promise<void>;
+    setProviderConfig(id: number, config: unknown): Promise<void>;
+  };
+
+  owner: {
+    get(): Promise<OwnerIdentity | null>;
+    /** moves ownership to a re-verified account with its fresh secret, if it is still the same mailbox */
+    change(c: { claim: OwnerClaim; stamp: { createdAt: number; email: string }; secret: { name: string; blob: Uint8Array }; reason: string; now: number }): Promise<void>;
+  };
+
+  drafts: {
+    save(d: { id?: number; accountId: number; to: unknown[]; cc: unknown[]; subject: string; bodyText: string; inReplyToMessageId?: number }, now: number): Promise<DraftRow>;
+    list(): Promise<DraftRow[]>;
+    delete(id: number): Promise<void>;
+  };
+
+  settings: {
+    get<T>(key: string, fallback: T): Promise<T>;
+    set(key: string, value: unknown): Promise<void>;
+    /** read-modify-write in one unit; `fn` is pure and may throw to abort */
+    update<T, R>(key: string, fallback: T, fn: (current: T) => { value: T; result: R }): Promise<R>;
+  };
+
+  secrets: {
+    get(name: string): Promise<Uint8Array | null>;
+    has(name: string): Promise<boolean>;
+    put(name: string, blob: Uint8Array): Promise<void>;
+    delete(name: string): Promise<void>;
+  };
+
+  learning: {
+    actionsSince(since: number): Promise<{ action: UserActionKind; fromEmail: string; fromDomain: string; listId: string | null; at: number }[]>;
+    /** dismissed proposals and keys that already have a learned filter */
+    excludedKeys(): Promise<Set<string>>;
+    dismiss(key: string, now: number): Promise<void>;
+  };
+
+  providerStore(accountId: number): ProviderStore;
+
+  /** development hosts and tests */
+  dev: {
+    /** loads a mock dataset into an empty store (deterministic) */
+    seed(data: unknown, options: { now?: number; learningSignals?: boolean; categorizeRate?: number }): Promise<{ accountIds: number[]; categoryIds: number[]; messageCount: number; threadCount: number }>;
+  };
+}

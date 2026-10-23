@@ -14,13 +14,13 @@ import {
   type CategoryPolicy,
   type ExampleSource,
   type Vetoes,
-  type FeatureSource,
-  type ThreadFeatures,
   type TrainExample,
 } from "@unica/core";
+import type { AddedBy, ClassifyResult, ExampleKey, ModelDelta, MovePhase, RootMessage, ThreadFeatureSet } from "@unica/store";
 import type { Db } from "./sqlite";
 
-export type AddedBy = "user" | "filter" | "agent" | "suggestion" | "auto" | "bulk";
+export type { AddedBy, ClassifyResult, ExampleKey, ModelDelta, MovePhase, RootMessage, ThreadFeatureSet } from "@unica/store";
+
 
 /** Origins that are an explicit user (or agent) decision and therefore train the model. */
 const TRAINING_SOURCE: Partial<Record<AddedBy, ExampleSource>> = {
@@ -30,20 +30,7 @@ const TRAINING_SOURCE: Partial<Record<AddedBy, ExampleSource>> = {
   bulk: "bulk",
 };
 
-/**
- * In-memory model changes a store command produced. The caller applies them
- * only after the outermost transaction commits, so a rollback never leaves
- * RAM ahead of the database.
- */
-export type ModelDelta =
-  /** key: the example's (thread, category) row, so a paged rebuild knows whether it already read it */
-  | { op: "train" | "untrain"; example: TrainExample; key: ExampleKey }
-  /** the thread is categorized now: it stops being a background (weak negative) thread */
-  | { op: "unbackground"; threadId: number }
-  /** the thread is uncategorized again (removal, undo) and old enough: back to the background */
-  | { op: "background"; threadId: number; features: Uint32Array };
 
-export type ExampleKey = readonly [threadId: number, categoryId: number];
 
 export interface OwnAddresses {
   emails: Set<string>;
@@ -55,17 +42,6 @@ export function ownAddresses(db: Db): OwnAddresses {
   return { emails, domains: new Set([...emails].map((e) => e.slice(e.lastIndexOf("@") + 1))) };
 }
 
-export interface RootMessage {
-  threadId: number;
-  messageId: number;
-  date: number;
-  inInbox: boolean;
-  spam: boolean;
-  trash: boolean;
-  draft: boolean;
-  bodyComplete: boolean;
-  source: FeatureSource;
-}
 
 interface RootRow {
   thread_id: number;
@@ -155,11 +131,6 @@ export function rootsWithBodies(db: Db, refs: readonly RootRef[]): Map<number, R
   return out;
 }
 
-export interface ThreadFeatureSet {
-  root: RootMessage;
-  features: ThreadFeatures;
-  encoded: Uint32Array;
-}
 
 export function threadFeatures(db: Db, threadIds: Iterable<number>, own: OwnAddresses = ownAddresses(db)): Map<number, ThreadFeatureSet> {
   const out = new Map<number, ThreadFeatureSet>();
@@ -436,8 +407,6 @@ export function finishUndo(db: Db, batchId: number, now: number): void {
 // afterwards in slices tracked per thread; the in-memory model catches up as
 // it goes, as with any sliced filing. Undo mirrors it: memberships and
 // decision outcomes come back in one transaction, examples in slices.
-
-type MovePhase = "training" | "done" | "restoring" | "undone" | "expired";
 
 /** How long a move can be undone (its journal is pruned after that). */
 export const MOVE_UNDO_WINDOW_MS = 86_400_000;
@@ -781,18 +750,6 @@ export interface ClassifyRequest {
   model: CategorizerModel;
 }
 
-export interface ClassifyResult {
-  deltas: ModelDelta[];
-  /** threads auto-added, per category */
-  auto: Map<number, number[]>;
-  suggested: number;
-  /** threads with a decision (for change notifications) */
-  touched: Set<number>;
-  /** uncertain band threads (0.5 ≤ p < auto threshold, no decision): candidates for the optional AI assist */
-  uncertain: number[];
-  /** old threads that arrived (backfill): background and suggestions are stale by this many */
-  backfill: number;
-}
 
 /** What the policy needs from the database: one batch of reads per store command. */
 function policyContext(db: Db): Map<number, CategoryPolicy & { name: string }> {
