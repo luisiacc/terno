@@ -389,9 +389,9 @@ describe("categorizer: auto-apply at ingestion", () => {
    * A sender the user filed only sometimes: unfiled history is added until a
    * neutral new message from it lands in the uncertain band (0.5 ≤ p < 0.8).
    */
-  function uncertainMail(backend: Backend, acct: number, cat: number): Partial<IncomingMessage> {
+  function uncertainMail(backend: Backend, acct: number, cat: number, name = "Facturas Servicio"): Partial<IncomingMessage> {
     // the offline fake AI picks a label it finds in the text: the display name carries it
-    const from = { name: "Facturas Servicio", email: "avisos@nuevo-servicio.mx" };
+    const from = { name, email: "avisos@nuevo-servicio.mx" };
     const filed = [...ingestMessages(backend.db, Array.from({ length: 4 }, (_, i) => incoming(acct, { from, subject: `Aviso ${i}`, bodyText: "Aviso de servicio.", date: NOW - (50 + i) * DAY, inInbox: false })), NOW).touchedThreads];
     addToCategory(backend.db, { categoryId: cat, threadIds: filed, addedBy: "user", now: NOW - 40 * DAY });
     const draft = { from, subject: "Aviso", bodyText: "Aviso de servicio." };
@@ -445,6 +445,52 @@ describe("categorizer: auto-apply at ingestion", () => {
     } finally {
       dc.unsubscribe("net.client.socket", onSocket);
       dc.unsubscribe("undici:client:beforeConnect", onUndici);
+    }
+  });
+
+  it("the AI never suggests past a veto: look-alike senders aren't even asked", async () => {
+    const { backend, acct, cat, arrive, decision } = await trained();
+    // a trained bank's display name from another domain
+    const draft = uncertainMail(backend, acct, cat, "BBVA Facturas");
+    setSetting(backend.db, "app", { ai: { provider: "fake" }, aiCategorize: true });
+    let asked = 0;
+    const real = backend.ai.bind(backend);
+    backend.ai = async () => (asked++, real());
+    const { thread } = await arrive(draft);
+    await backend.aiAssist.drain();
+    expect(asked).toBe(0);
+    expect(decision(thread)).toBeUndefined();
+  });
+
+  it("re-checks before writing: a removal or switching the assist off while the AI thinks wins", async () => {
+    const { backend, client, acct, cat, arrive, decision } = await trained();
+    const draft = uncertainMail(backend, acct, cat);
+    setSetting(backend.db, "app", { ai: { provider: "fake" }, aiCategorize: true });
+    for (const interrupt of ["removal", "switch-off"] as const) {
+      let release!: () => void;
+      const answered = new Promise<void>((r) => (release = r));
+      backend.ai = async () =>
+        ({
+          providerId: "fake",
+          local: true,
+          classify: async (input: { items: { id: string }[] }) => {
+            await answered;
+            return input.items.map((i) => ({ id: i.id, label: "Facturas", confidence: 0.95 }));
+          },
+        }) as never;
+      const { thread } = await arrive(draft);
+      const running = backend.aiAssist.drain();
+      await new Promise((r) => setTimeout(r, 5));
+      if (interrupt === "removal") {
+        await client.call("categories.addThreads", { categoryId: cat, threadIds: [thread] });
+        await client.call("categories.removeThreads", { categoryId: cat, threadIds: [thread] });
+      } else {
+        setSetting(backend.db, "app", { ai: { provider: "fake" }, aiCategorize: false });
+      }
+      release();
+      await running;
+      expect(decision(thread), interrupt).toBeUndefined();
+      setSetting(backend.db, "app", { ai: { provider: "fake" }, aiCategorize: true });
     }
   });
 
