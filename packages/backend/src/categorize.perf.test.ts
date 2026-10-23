@@ -321,6 +321,24 @@ it("large UI adds, removals and undo are sliced: no long stall, interactive RPCs
   await client.call("categories.delete", { id: cat });
 }, 600_000);
 
+it("a rebuild never stalls the event loop for long, even with 40,000 training examples", async () => {
+  if (!backend.categorizer.ready) backend.categorizer.rebuildSync();
+  const [c, srv] = createMemoryTransportPair();
+  backend.connect(srv, { clientId: "rebuild", origin: "renderer" });
+  const client = new RpcClient(c);
+  // 40k+ examples: every thread filed in two scratch categories
+  const cats = [(await client.call("categories.create", { name: "Uno", color: "rose" })).id, (await client.call("categories.create", { name: "Dos", color: "lime" })).id];
+  for (const cat of cats) await client.call("categorize.apply", { categoryId: cat, scope: { kind: "query", query: "in:all" } });
+  const examples = backend.db.get<{ n: number }>("SELECT count(*) AS n FROM cls_examples")!.n;
+  expect(examples).toBeGreaterThan(40_000);
+  const { stall, rpc } = await underLoad(() => backend.categorizer.rebuild());
+  const p95 = [...rpc].sort((a, b) => a - b)[Math.ceil(rpc.length * 0.95) - 1] ?? 0;
+  stats.push({ name: `rebuild with ${examples} examples: max event-loop stall ${stall.toFixed(1)} ms, list RPC p95 ${p95.toFixed(1)} ms`, budgetMs: 50, p50: stall, p95: stall, max: stall, iterations: rpc.length });
+  for (const cat of cats) await client.call("categories.delete", { id: cat });
+  await backend.categorizer.rebuild();
+  expect(stall).toBeLessThanOrEqual(50 * BUDGET_MULTIPLIER);
+}, 600_000);
+
 /** The backend load test's 14k-message import, ingested into copies of the perf mailbox with the engine off and on. */
 async function importAB(label: string, shape: (m: IncomingMessage) => IncomingMessage, rounds: number) {
   if (!backend.categorizer.ready) backend.categorizer.rebuildSync();

@@ -182,6 +182,7 @@ export function mergeThreads(db: Db, into: number, from: number, result: IngestR
     result.deltas.push({
       op: "untrain",
       example: { categoryId: loser.category_id, label: loser.label > 0 ? 1 : -1, weight: loser.weight, at: loser.at, content: loser.content === 1, features: featuresFromBlob(loser.features) },
+      key: [loser.thread_id, loser.category_id],
     });
   }
   db.run("UPDATE OR IGNORE cls_examples SET thread_id = ? WHERE thread_id = ?", into, from);

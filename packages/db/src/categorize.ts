@@ -36,11 +36,14 @@ const TRAINING_SOURCE: Partial<Record<AddedBy, ExampleSource>> = {
  * RAM ahead of the database.
  */
 export type ModelDelta =
-  | { op: "train" | "untrain"; example: TrainExample }
+  /** key: the example's (thread, category) row, so a paged rebuild knows whether it already read it */
+  | { op: "train" | "untrain"; example: TrainExample; key: ExampleKey }
   /** the thread is categorized now: it stops being a background (weak negative) thread */
   | { op: "unbackground"; threadId: number }
   /** the thread is uncategorized again (removal, undo) and old enough: back to the background */
   | { op: "background"; threadId: number; features: Uint32Array };
+
+export type ExampleKey = readonly [threadId: number, categoryId: number];
 
 export interface OwnAddresses {
   emails: Set<string>;
@@ -194,7 +197,7 @@ function putExample(
 ): ModelDelta[] {
   const deltas: ModelDelta[] = [];
   const previous = existingExample(db, e.threadId, e.categoryId);
-  if (previous) deltas.push({ op: "untrain", example: previous });
+  if (previous) deltas.push({ op: "untrain", example: previous, key: [e.threadId, e.categoryId] });
   let content = 1;
   if (e.source === "bulk") {
     const used = db.get<{ c: number }>(
@@ -223,7 +226,7 @@ function putExample(
     e.batchId,
     featuresToBlob(e.set.encoded),
   );
-  deltas.push({ op: "train", example: { categoryId: e.categoryId, label: e.label, weight, at: e.at, content: content === 1, features: e.set.encoded } });
+  deltas.push({ op: "train", example: { categoryId: e.categoryId, label: e.label, weight, at: e.at, content: content === 1, features: e.set.encoded }, key: [e.threadId, e.categoryId] });
   return deltas;
 }
 
@@ -328,7 +331,7 @@ export function removeFromCategory(
         const previous = existingExample(db, threadId, r.categoryId);
         if (previous && previous.label > 0) {
           db.run("DELETE FROM cls_examples WHERE thread_id = ? AND category_id = ?", threadId, r.categoryId);
-          deltas.push({ op: "untrain", example: previous });
+          deltas.push({ op: "untrain", example: previous, key: [threadId, r.categoryId] });
         }
         continue;
       }
@@ -412,7 +415,7 @@ export function undoBatchPart(db: Db, batchId: number, threadIds: readonly numbe
         batch.category_id,
         ids,
       )
-      .map((r) => ({ op: "untrain", example: toExample(r) }));
+      .map((r) => ({ op: "untrain", example: toExample(r), key: [r.thread_id, r.category_id] }));
     deltas.push(...backgroundDeltas(db, removed, now));
     return { categoryId: batch.category_id, removed, deltas };
   });
@@ -427,6 +430,14 @@ export function finishUndo(db: Db, batchId: number, now: number): void {
 /** Training examples, oldest first (the bulk content cap was decided at write time). */
 export function loadExamples(db: Db): TrainExample[] {
   return db.all<ExampleRow>("SELECT * FROM cls_examples ORDER BY at, thread_id, category_id").map(toExample);
+}
+
+/** One page of the training set in key order (a rebuild reads it in bounded slices). */
+export function loadExamplesPage(db: Db, after: ExampleKey | null, limit: number): { example: TrainExample; key: ExampleKey }[] {
+  const rows = after
+    ? db.all<ExampleRow>("SELECT * FROM cls_examples WHERE (thread_id, category_id) > (?, ?) ORDER BY thread_id, category_id LIMIT ?", after[0], after[1], limit)
+    : db.all<ExampleRow>("SELECT * FROM cls_examples ORDER BY thread_id, category_id LIMIT ?", limit);
+  return rows.map((r) => ({ example: toExample(r), key: [r.thread_id, r.category_id] }));
 }
 
 /**

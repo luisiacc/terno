@@ -5,6 +5,8 @@ import {
   backgroundCandidates,
   examplesFingerprint,
   loadExamples,
+  loadExamplesPage,
+  type ExampleKey,
   loadSnapshot,
   matureDecisions,
   ownAddresses,
@@ -28,8 +30,17 @@ const DAY = 86_400_000;
 /** decay is recomputed (and the background refreshed) at most this often */
 const REBUILD_EVERY_MS = 7 * DAY;
 const BACKFILL_MIN = 200;
+/** a rebuild yields after this much work */
+const SLICE_MS = 8;
 /** quiet time after the last backfill slice before the background is rebuilt */
 const BACKFILL_SETTLE_MS = 20_000;
+
+function scanned(d: ModelDelta, readTo: ExampleKey | "all" | null): boolean {
+  if (d.op !== "train" && d.op !== "untrain") return true;
+  if (readTo === "all") return true;
+  if (readTo === null) return false;
+  return d.key[0] < readTo[0] || (d.key[0] === readTo[0] && d.key[1] <= readTo[1]);
+}
 
 function applyDelta(m: CategorizerModel, d: ModelDelta): void {
   switch (d.op) {
@@ -57,8 +68,10 @@ function applyDelta(m: CategorizerModel, d: ModelDelta): void {
 export class Categorizer {
   private current: CategorizerModel | null = null;
   private rebuilding: Promise<void> | null = null;
-  /** deltas committed while a rebuild was scanning; replayed onto the new model */
-  private pending: ModelDelta[] | null = null;
+  /** deltas committed while a rebuild was scanning, with how far the scan had read; replayed onto the new model */
+  private pending: { delta: ModelDelta; readTo: ExampleKey | "all" | null }[] | null = null;
+  /** last example key the running rebuild has read */
+  private readTo: ExampleKey | "all" | null = null;
   private dirty = false;
   /** old mail that arrived since the last build (its background counts are missing) */
   private backfilled = 0;
@@ -87,7 +100,7 @@ export class Categorizer {
   apply(deltas: readonly ModelDelta[]): void {
     if (deltas.length === 0) return;
     if (this.host.db.inTransaction) throw new Error("model deltas must be applied after the transaction commits");
-    this.pending?.push(...deltas);
+    if (this.pending) for (const delta of deltas) this.pending.push({ delta, readTo: this.readTo });
     const m = this.current;
     if (!m) return;
     for (const d of deltas) applyDelta(m, d);
@@ -153,17 +166,29 @@ export class Categorizer {
           await new Promise((r) => setImmediate(r));
         }
         this.pending = [];
+        this.readTo = null;
+        let cursor: ExampleKey | null = null;
         const now = this.host.now();
         const m = new CategorizerModel({ decayRef: now });
-        const examples = loadExamples(db);
-        await this.host.runSliced(examples, 500, (chunk) => {
-          for (const ex of chunk) m.train(ex);
-        });
+        // the training set in key order, a bounded slice at a time
+        for (;;) {
+          const started = performance.now();
+          let page: ReturnType<typeof loadExamplesPage> = [];
+          do {
+            page = loadExamplesPage(db, cursor, 250);
+            for (const { example } of page) m.train(example);
+            if (page.length) this.readTo = cursor = page[page.length - 1]!.key;
+          } while (page.length === 250 && performance.now() - started < SLICE_MS);
+          if (page.length < 250) break;
+          await new Promise((r) => setImmediate(r));
+        }
+        this.readTo = "all";
         const own = ownAddresses(db);
         await this.host.runSliced(backgroundCandidates(db, now), 100, (chunk) => {
           for (const [id, set] of threadFeatures(db, chunk, own)) m.addBackground(id, set.encoded);
         });
-        for (const d of this.pending) applyDelta(m, d);
+        // a write to a row the scan had not reached yet is already in the pages it read later
+        for (const { delta, readTo } of this.pending) if (scanned(delta, readTo)) applyDelta(m, delta);
         this.current = m;
         this.dirty = true;
         this.pending = null;
@@ -172,6 +197,7 @@ export class Categorizer {
         if (db.raw.isOpen) this.host.log("warn", "categorizer rebuild failed", error instanceof Error ? error.message : error);
       } finally {
         this.pending = null;
+        this.readTo = null;
         this.rebuilding = null;
       }
     })();

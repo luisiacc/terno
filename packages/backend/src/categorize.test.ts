@@ -205,6 +205,29 @@ describe("categorizer: training hooks", () => {
     await third.backend.stop();
   });
 
+  it("a paged rebuild counts each write once, whether the scan had read that row or not", async () => {
+    const { backend, client } = setup({ seed: true });
+    const cat = (await client.call("categories.create", { name: "Muchos", color: "rose" })).id;
+    const ids = backend.db.all<{ id: number }>("SELECT id FROM threads ORDER BY id").map((r) => r.id);
+    addToCategory(backend.db, { categoryId: cat, threadIds: ids.slice(0, 500), addedBy: "user", now: NOW });
+    backend.categorizer.rebuildSync();
+    const rebuilding = backend.categorizer.rebuild();
+    // one row the first slice has read (lowest key) and one it can't have reached (highest key), plus a new one
+    await client.call("categories.removeThreads", { categoryId: cat, threadIds: [ids[0]!, ids[499]!] });
+    await client.call("categories.addThreads", { categoryId: cat, threadIds: [ids[550]!] });
+    await rebuilding;
+    const live = backend.categorizer.model!;
+    const probe = backend.db.all<{ features: Uint8Array }>("SELECT features FROM cls_examples LIMIT 3");
+    const { featuresFromBlob } = await import("@unica/core");
+    const fresh = backend.categorizer.rebuildSync();
+    for (const c of fresh.categoryIds) expect(live.positives(c), `category ${c}`).toBe(fresh.positives(c));
+    for (const p of probe) {
+      const a = live.score(featuresFromBlob(p.features));
+      const b = fresh.score(featuresFromBlob(p.features));
+      a.forEach((x, i) => expect(x.p).toBeCloseTo(b[i]!.p, 9));
+    }
+  });
+
   it("writes committed during a sliced rebuild are replayed onto the new model", async () => {
     const { backend, client } = setup({ seed: true });
     const cat = backend.db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id;
