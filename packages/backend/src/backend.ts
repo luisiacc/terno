@@ -37,8 +37,8 @@ import {
   type CheckpointWorker,
   type ActionResult,
   type Db,
+  type ClassifyResult,
   type IncomingMessage,
-  type ModelDelta,
   type OpRow,
 } from "@unica/db";
 import { ProviderError, type MailProvider, type ProviderRegistry, type SyncSink } from "@unica/mail";
@@ -89,6 +89,7 @@ export interface BackendOptions {
   lookup?: LookupAll;
 }
 
+const COUNTS_EVERY_MS = 200;
 const AUTO_NOTICE_GATHER_MS = 1500;
 const AUTO_NOTICE_EVERY_MS = 30_000;
 
@@ -121,6 +122,8 @@ export class Backend {
   private pendingThreadIds = new Set<number>();
   private pendingViews = false;
   private flushScheduled = false;
+  private lastCountsAt = -Infinity;
+  private countsTimer: ReturnType<typeof setTimeout> | null = null;
   readonly searchSeq = new Map<string, number>();
   private readonly checkpointer: CheckpointWorker | null;
   readonly abort = new AbortController();
@@ -179,7 +182,9 @@ export class Backend {
     this.abort.abort();
     if (this.syncTimer) clearInterval(this.syncTimer);
     if (this.idleTimer) clearInterval(this.idleTimer);
+    if (this.countsTimer) clearTimeout(this.countsTimer);
     for (const n of this.autoNotices.values()) if (n.timer) clearTimeout(n.timer);
+    this.categorizer.stop();
     if (this.workerTimer) clearTimeout(this.workerTimer);
     for (const off of this.unwatch.values()) off();
     await Promise.allSettled(this.syncing.values());
@@ -249,8 +254,29 @@ export class Backend {
       this.pendingThreadIds.clear();
       this.pendingViews = false;
       this.server.emit("changed", { threadIds, views });
-      this.server.emit("counts", getCounts(this.db));
+      this.emitCounts();
     });
+  }
+
+  /**
+   * Sidebar counts cost a couple of milliseconds: once per ingestion slice
+   * that is a quarter of an 8 ms slice. Leading edge immediately, then at
+   * most every COUNTS_EVERY_MS (trailing), so the last state always arrives.
+   */
+  private emitCounts(): void {
+    const wait = this.lastCountsAt + COUNTS_EVERY_MS - performance.now();
+    if (wait <= 0 && !this.countsTimer) {
+      this.lastCountsAt = performance.now();
+      this.server.emit("counts", getCounts(this.db));
+      return;
+    }
+    if (this.countsTimer) return;
+    this.countsTimer = setTimeout(() => {
+      this.countsTimer = null;
+      if (this.stopped) return;
+      this.lastCountsAt = performance.now();
+      this.server.emit("counts", getCounts(this.db));
+    }, Math.max(0, wait));
   }
 
   emitAccounts(): void {
@@ -353,7 +379,7 @@ export class Backend {
       // One transaction per slice: messages, filter claims, filter actions and their ops,
       // and the categorizer's decisions commit together, so a crash can't record a filter
       // as applied without its effects, nor an auto-categorization without its message.
-      const { touched, deltas, auto } = this.db.tx(() => {
+      const { touched, deltas, auto, backfill } = this.db.tx(() => {
         const result = ingestMessages(this.db, chunk, this.now());
         inserted.push(...result.inserted);
         const t = new Set(result.touchedThreads);
@@ -364,10 +390,11 @@ export class Backend {
         }
         const c = this.classify(result.inserted, result.bodyCompleted);
         for (const x of c.touched) t.add(x);
-        return { touched: t, deltas: c.deltas, auto: c.auto };
+        return { touched: t, deltas: c.deltas, auto: c.auto, backfill: c.backfill };
       });
       // RAM follows the database, never the other way round
       this.categorizer.apply(deltas);
+      this.categorizer.noteBackfill(backfill);
       this.announceAuto(auto);
       this.notifyChanged(touched);
     });
@@ -375,9 +402,9 @@ export class Backend {
   }
 
   /** The categorizer's part of a store command (call inside its transaction). */
-  classify(inserted: readonly number[], bodyCompleted: readonly number[]): { deltas: ModelDelta[]; auto: Map<number, number[]>; touched: Set<number> } {
+  classify(inserted: readonly number[], bodyCompleted: readonly number[]): ClassifyResult {
     const model = this.categorizer.model;
-    if (!model) return { deltas: [], auto: new Map(), touched: new Set() };
+    if (!model) return { deltas: [], auto: new Map(), touched: new Set(), suggested: 0, uncertain: [], backfill: 0 };
     return classifyNewThreads(this.db, { inserted, bodyCompleted, now: this.now(), mode: readAutoCategorize(this.db), model });
   }
 

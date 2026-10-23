@@ -1,5 +1,6 @@
 import { CategorizerModel, FEATURES_V } from "@unica/core";
 import {
+  backfillCandidates,
   backfillExamples,
   backgroundCandidates,
   examplesFingerprint,
@@ -8,21 +9,27 @@ import {
   matureDecisions,
   ownAddresses,
   saveSnapshot,
+  suggestBackfill,
   threadFeatures,
   type Db,
   type ModelDelta,
 } from "@unica/db";
+import { readAutoCategorize } from "./settings";
 
 export interface CategorizerHost {
   readonly db: Db;
   now(): number;
   runSliced<T>(items: readonly T[], initialSize: number, work: (chunk: T[]) => void): Promise<void>;
   log(level: "info" | "warn" | "error", message: string, extra?: unknown): void;
+  notifyChanged(threadIds: Iterable<number>, views?: boolean): void;
 }
 
 const DAY = 86_400_000;
 /** decay is recomputed (and the background refreshed) at most this often */
 const REBUILD_EVERY_MS = 7 * DAY;
+const BACKFILL_MIN = 200;
+/** quiet time after the last backfill slice before the background is rebuilt */
+const BACKFILL_SETTLE_MS = 20_000;
 
 function applyDelta(m: CategorizerModel, d: ModelDelta): void {
   switch (d.op) {
@@ -34,9 +41,6 @@ function applyDelta(m: CategorizerModel, d: ModelDelta): void {
       break;
     case "unbackground":
       m.removeBackground(d.threadId);
-      break;
-    case "background":
-      m.addBackground(d.threadId, d.features);
       break;
   }
 }
@@ -53,6 +57,9 @@ export class Categorizer {
   /** deltas committed while a rebuild was scanning; replayed onto the new model */
   private pending: ModelDelta[] | null = null;
   private dirty = false;
+  /** old mail that arrived since the last build (its background counts are missing) */
+  private backfilled = 0;
+  private backfillTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly host: CategorizerHost) {}
 
@@ -82,6 +89,30 @@ export class Categorizer {
     if (!m) return;
     for (const d of deltas) applyDelta(m, d);
     this.dirty = true;
+  }
+
+  /**
+   * Old mail arrived (initial sync, backfill). Featurizing it for the
+   * background inside every import slice would cost a tenth of ingestion
+   * throughput, so the background catches up in one sliced rebuild once
+   * the import settles.
+   */
+  noteBackfill(n: number): void {
+    if (n === 0 || !this.current) return;
+    this.backfilled += n;
+    if (this.backfilled < Math.max(BACKFILL_MIN, this.current.backgroundSize * 0.05)) return;
+    if (this.backfillTimer) clearTimeout(this.backfillTimer);
+    this.backfillTimer = setTimeout(() => {
+      this.backfillTimer = null;
+      if (!this.host.db.raw.isOpen) return;
+      this.backfilled = 0;
+      void this.rebuild();
+    }, BACKFILL_SETTLE_MS);
+    this.backfillTimer.unref?.();
+  }
+
+  stop(): void {
+    if (this.backfillTimer) clearTimeout(this.backfillTimer);
   }
 
   dropCategory(categoryId: number): void {
@@ -132,6 +163,8 @@ export class Categorizer {
         for (const d of this.pending) applyDelta(m, d);
         this.current = m;
         this.dirty = true;
+        this.pending = null;
+        await this.suggestBackfill(m);
       } catch (error) {
         if (db.raw.isOpen) this.host.log("warn", "categorizer rebuild failed", error instanceof Error ? error.message : error);
       } finally {
@@ -141,6 +174,17 @@ export class Categorizer {
     })();
     this.rebuilding = run;
     return run;
+  }
+
+  /** Old inbox mail that arrived as backfill gets its (never automatic) suggestions here, in slices. */
+  private async suggestBackfill(m: CategorizerModel): Promise<void> {
+    const db = this.host.db;
+    const ids = backfillCandidates(db, this.host.now());
+    await this.host.runSliced(ids, 50, (chunk) => {
+      if (this.current !== m || !db.raw.isOpen) return;
+      const r = suggestBackfill(db, { threadIds: chunk, now: this.host.now(), mode: readAutoCategorize(db), model: m });
+      if (r.touched.size) this.host.notifyChanged(r.touched, false);
+    });
   }
 
   persist(): void {

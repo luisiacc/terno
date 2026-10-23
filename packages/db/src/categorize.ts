@@ -38,8 +38,7 @@ const TRAINING_SOURCE: Partial<Record<AddedBy, ExampleSource>> = {
 export type ModelDelta =
   | { op: "train" | "untrain"; example: TrainExample }
   /** the thread is categorized now: it stops being a background (weak negative) thread */
-  | { op: "unbackground"; threadId: number }
-  | { op: "background"; threadId: number; features: Uint32Array };
+  | { op: "unbackground"; threadId: number };
 
 export interface OwnAddresses {
   emails: Set<string>;
@@ -64,6 +63,7 @@ export interface RootMessage {
 }
 
 interface RootRow {
+  thread_id: number;
   id: number;
   from_email: string;
   from_name: string;
@@ -76,31 +76,67 @@ interface RootRow {
   is_spam: number;
   is_trash: number;
   is_draft: number;
+  has_attachments: number;
   replied: number;
 }
 
 /**
  * The root inbound message of each thread: the earliest message the user did
- * not send, from an address that is not one of the user's own.
+ * not send, from an address that is not one of the user's own. One statement
+ * for the whole batch (ingestion calls this once per slice).
  */
 export function rootMessages(db: Db, threadIds: Iterable<number>, own: OwnAddresses = ownAddresses(db)): Map<number, RootMessage> {
+  return rootsWithBodies(db, rootRefs(db, threadIds, own));
+}
+
+export interface RootRef {
+  threadId: number;
+  messageId: number;
+  date: number;
+  inInbox: boolean;
+  spam: boolean;
+  trash: boolean;
+  draft: boolean;
+}
+
+/** Root ids and flags only: cheap enough to filter a whole import slice before reading any body. */
+export function rootRefs(db: Db, threadIds: Iterable<number>, own: OwnAddresses = ownAddresses(db)): RootRef[] {
+  const ids = [...new Set(threadIds)];
+  if (ids.length === 0) return [];
+  return db
+    .all<{ thread_id: number; id: number; date: number; in_inbox: number; is_spam: number; is_trash: number; is_draft: number }>(
+      `SELECT m.thread_id, m.id, m.date, m.in_inbox, m.is_spam, m.is_trash, m.is_draft
+       FROM json_each(?1) t JOIN messages m ON m.id = (
+         SELECT r.id FROM messages r INDEXED BY messages_thread
+         WHERE r.thread_id = t.value AND r.is_sent = 0 AND r.from_email NOT IN (SELECT value FROM json_each(?2))
+         ORDER BY r.date, r.id LIMIT 1)`,
+      JSON.stringify(ids),
+      JSON.stringify([...own.emails]),
+    )
+    .map((r) => ({ threadId: r.thread_id, messageId: r.id, date: r.date, inInbox: r.in_inbox === 1, spam: r.is_spam === 1, trash: r.is_trash === 1, draft: r.is_draft === 1 }));
+}
+
+/** The featurizer's input for the given roots, in one read. */
+export function rootsWithBodies(db: Db, refs: readonly RootRef[]): Map<number, RootMessage> {
   const out = new Map<number, RootMessage>();
-  const ownJson = JSON.stringify([...own.emails]);
-  for (const threadId of threadIds) {
-    if (out.has(threadId)) continue;
-    const r = db.get<RootRow>(
-      `SELECT id, from_email, from_name, list_id, subject, body_text, body_state, date, in_inbox, is_spam, is_trash, is_draft,
-              EXISTS (SELECT 1 FROM messages s WHERE s.thread_id = m.thread_id AND s.is_sent = 1) AS replied
-       FROM messages m INDEXED BY messages_thread
-       WHERE m.thread_id = ? AND m.is_sent = 0 AND m.from_email NOT IN (SELECT value FROM json_each(?))
-       ORDER BY m.date, m.id LIMIT 1`,
-      threadId,
-      ownJson,
-    );
-    if (!r) continue;
-    const attachmentNames = db.all<{ filename: string }>("SELECT filename FROM attachments WHERE message_id = ?", r.id).map((a) => a.filename);
-    out.set(threadId, {
-      threadId,
+  if (refs.length === 0) return out;
+  const rows = db.all<RootRow>(
+    `SELECT m.thread_id, m.id, m.from_email, m.from_name, m.list_id, m.subject, m.body_text, m.body_state, m.date,
+            m.in_inbox, m.is_spam, m.is_trash, m.is_draft, m.has_attachments,
+            EXISTS (SELECT 1 FROM messages s WHERE s.thread_id = m.thread_id AND s.is_sent = 1) AS replied
+     FROM json_each(?) j JOIN messages m ON m.id = j.value`,
+    JSON.stringify(refs.map((r) => r.messageId)),
+  );
+  const withFiles = rows.filter((r) => r.has_attachments === 1).map((r) => r.id);
+  const files = new Map<number, string[]>();
+  if (withFiles.length) {
+    for (const a of db.all<{ message_id: number; filename: string }>("SELECT message_id, filename FROM attachments WHERE message_id IN (SELECT value FROM json_each(?))", JSON.stringify(withFiles))) {
+      files.set(a.message_id, [...(files.get(a.message_id) ?? []), a.filename]);
+    }
+  }
+  for (const r of rows) {
+    out.set(r.thread_id, {
+      threadId: r.thread_id,
       messageId: r.id,
       date: r.date,
       inInbox: r.in_inbox === 1,
@@ -108,7 +144,7 @@ export function rootMessages(db: Db, threadIds: Iterable<number>, own: OwnAddres
       trash: r.is_trash === 1,
       draft: r.is_draft === 1,
       bodyComplete: r.body_state === "full",
-      source: { fromEmail: r.from_email, fromName: r.from_name, listId: r.list_id, subject: r.subject, bodyText: r.body_text, replied: r.replied === 1, attachmentNames },
+      source: { fromEmail: r.from_email, fromName: r.from_name, listId: r.list_id, subject: r.subject, bodyText: r.body_text, replied: r.replied === 1, attachmentNames: files.get(r.id) ?? [] },
     });
   }
   return out;
@@ -416,7 +452,7 @@ export function saveSnapshot(db: Db, s: { featuresV: number; builtAt: number; fi
 /** Auto decisions older than the revert window without a revert matured as kept. */
 export function matureDecisions(db: Db, now: number): number {
   return db.run(
-    "UPDATE cls_decisions SET outcome = 'kept' WHERE kind = 'auto' AND outcome IS NULL AND at < ?",
+    "UPDATE cls_decisions INDEXED BY cls_decisions_maturing SET outcome = 'kept' WHERE kind = 'auto' AND outcome IS NULL AND at < ?",
     now - POLICY.revertWindowDays * 86_400_000,
   ).changes;
 }
@@ -443,6 +479,8 @@ export interface ClassifyResult {
   touched: Set<number>;
   /** uncertain band threads (0.5 ≤ p < auto threshold, no decision): candidates for the optional AI assist */
   uncertain: number[];
+  /** old threads that arrived (backfill): background and suggestions are stale by this many */
+  backfill: number;
 }
 
 /** What the policy needs from the database: one batch of reads per store command. */
@@ -451,7 +489,7 @@ function policyContext(db: Db): Map<number, CategoryPolicy & { name: string }> {
     db
       .all<{ category_id: number; kept: number; reverted: number }>(
         `SELECT category_id, coalesce(sum(outcome = 'kept'), 0) AS kept, coalesce(sum(outcome = 'reverted'), 0) AS reverted
-         FROM cls_decisions WHERE kind = 'auto' GROUP BY category_id`,
+         FROM cls_decisions INDEXED BY cls_decisions_outcomes WHERE kind = 'auto' AND outcome IS NOT NULL GROUP BY category_id`,
       )
       .map((r) => [r.category_id, r]),
   );
@@ -463,7 +501,36 @@ function policyContext(db: Db): Map<number, CategoryPolicy & { name: string }> {
   );
 }
 
-export function vetoesFor(db: Db, threadId: number, sender: string, categoryIds: readonly number[], now: number): Map<number, Vetoes> {
+/** The user's removals in the sender-veto window, per "category:sender" (a small set). */
+function recentRemovals(db: Db, now: number): Map<string, number> {
+  return new Map(
+    db
+      .all<{ category_id: number; sender: string; n: number }>(
+        "SELECT category_id, sender, count(*) AS n FROM cls_examples INDEXED BY cls_examples_removals WHERE label < 0 AND at >= ? AND source = 'removal' GROUP BY category_id, sender",
+        now - POLICY.senderVetoDays * 86_400_000,
+      )
+      .map((r) => [`${r.category_id}:${r.sender}`, r.n]),
+  );
+}
+
+function senderPositives(db: Db, categoryId: number, sender: string, now: number): number {
+  return db.get<{ n: number }>(
+    "SELECT count(*) AS n FROM cls_examples INDEXED BY cls_examples_sender WHERE category_id = ? AND sender = ? AND at >= ? AND label > 0",
+    categoryId,
+    sender,
+    now - POLICY.senderVetoDays * 86_400_000,
+  )!.n;
+}
+
+export function vetoesFor(
+  db: Db,
+  threadId: number,
+  sender: string,
+  categoryIds: readonly number[],
+  now: number,
+  /** per-store-command cache of sender histories ("category:sender") */
+  senderCache: Map<string, { rem: number; pos: number }> = new Map(),
+): Map<number, Vetoes> {
   const since = now - POLICY.senderVetoDays * 86_400_000;
   const out = new Map<number, Vetoes>();
   for (const categoryId of categoryIds) {
@@ -476,13 +543,18 @@ export function vetoesFor(db: Db, threadId: number, sender: string, categoryIds:
         threadId,
         categoryId,
       ) !== undefined;
-    const s = db.get<{ rem: number; pos: number }>(
-      `SELECT coalesce(sum(label < 0), 0) AS rem, coalesce(sum(label > 0), 0) AS pos
-       FROM cls_examples INDEXED BY cls_examples_sender WHERE category_id = ? AND sender = ? AND at >= ?`,
-      categoryId,
-      sender,
-      since,
-    )!;
+    const key = `${categoryId}:${sender}`;
+    let s = senderCache.get(key);
+    if (!s) {
+      s = db.get<{ rem: number; pos: number }>(
+        `SELECT coalesce(sum(label < 0), 0) AS rem, coalesce(sum(label > 0), 0) AS pos
+         FROM cls_examples INDEXED BY cls_examples_sender WHERE category_id = ? AND sender = ? AND at >= ?`,
+        categoryId,
+        sender,
+        since,
+      )!;
+      senderCache.set(key, s);
+    }
     out.set(categoryId, { hard, senderRemovals: s.rem, senderPositives: s.pos });
   }
   return out;
@@ -495,47 +567,118 @@ export function vetoesFor(db: Db, threadId: number, sender: string, categoryIds:
  * first), no example, no decision beyond a pending suggestion. Auto adds never
  * train. Background (weak negative) updates come back as deltas for after commit.
  */
+const UNDECIDED = `SELECT value AS t FROM json_each(?) j
+  WHERE NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = j.value)
+    AND NOT EXISTS (SELECT 1 FROM cls_examples WHERE thread_id = j.value)
+    AND NOT EXISTS (SELECT 1 FROM cls_decisions WHERE thread_id = j.value AND (kind = 'auto' OR outcome IS NOT NULL))`;
+
+/**
+ * Classifies new inbound mail inside the ingestion transaction, so messages,
+ * filter effects and the engine's decisions commit (or roll back) together.
+ * Only threads nobody has decided on are evaluated: no category (filters run
+ * first), no example, no decision beyond a pending suggestion. Auto adds never
+ * train. Mail older than the auto window is backfill: counted here, suggested
+ * later in one sliced pass (suggestBackfill), so an initial sync stays fast.
+ * Must run inside the caller's transaction (the ingestion slice).
+ */
 export function classifyNewThreads(db: Db, req: ClassifyRequest): ClassifyResult {
-  const out: ClassifyResult = { deltas: [], auto: new Map(), suggested: 0, touched: new Set(), uncertain: [] };
+  if (!db.inTransaction) throw new Error("classifyNewThreads runs inside the ingestion transaction");
+  const out = emptyResult();
   const changed = [...req.inserted, ...req.bodyCompleted];
   if (changed.length === 0 || req.mode === "off") return out;
   const fresh = new Set(changed);
+  const inserted = new Set(req.inserted);
   const threadIds = db
     .all<{ thread_id: number }>("SELECT DISTINCT thread_id FROM messages WHERE id IN (SELECT value FROM json_each(?))", JSON.stringify(changed))
     .map((r) => r.thread_id);
-  const undecided = threadIds.filter(
-    (t) =>
-      db.get(
-        `SELECT 1 FROM thread_categories WHERE thread_id = ?1
-         UNION ALL SELECT 1 FROM cls_examples WHERE thread_id = ?1
-         UNION ALL SELECT 1 FROM cls_decisions WHERE thread_id = ?1 AND (kind = 'auto' OR outcome IS NOT NULL) LIMIT 1`,
-        t,
-      ) === undefined,
-  );
+  const undecided = db.all<{ t: number }>(UNDECIDED, JSON.stringify(threadIds)).map((r) => r.t);
   if (undecided.length === 0) return out;
   const own = ownAddresses(db);
-  const sets = threadFeatures(db, undecided, own);
-  let policies: Map<number, CategoryPolicy & { name: string }> | null = null;
-  for (const [threadId, set] of sets) {
-    const { root } = set;
+  const window = req.now - POLICY.autoWindowDays * 86_400_000;
+  // flags first (one batched read), bodies and features only for what will be scored
+  const candidates: RootRef[] = [];
+  for (const ref of rootRefs(db, undecided, own)) {
     // a reply on an old conversation, or a flag update: not new mail
-    if (!fresh.has(root.messageId) || root.spam || root.trash || root.draft) continue;
-    const old = root.date <= req.now - BACKGROUND_MIN_AGE_MS;
-    if (old && req.inserted.includes(root.messageId)) out.deltas.push({ op: "background", threadId, features: set.encoded });
-    if (!root.inInbox) continue;
+    if (!fresh.has(ref.messageId) || ref.spam || ref.trash || ref.draft) continue;
+    if (ref.date < window) {
+      // old mail arriving (initial sync, backfill): background and suggestions catch up once it settles
+      if (inserted.has(ref.messageId)) out.backfill++;
+      continue;
+    }
+    if (ref.inInbox) candidates.push(ref);
+  }
+  decideThreads(db, rootsWithBodies(db, candidates), { ...req, autoEligible: true }, own, out);
+  return out;
+}
+
+/**
+ * Suggestions for undecided inbox threads older than the auto window (they
+ * arrived as backfill). Never auto-applies. One slice: call it in chunks.
+ */
+export function suggestBackfill(db: Db, req: { threadIds: readonly number[]; now: number; mode: AutoCategorize; model: CategorizerModel }): ClassifyResult {
+  const out = emptyResult();
+  if (req.mode === "off" || req.threadIds.length === 0) return out;
+  db.tx(() => {
+    const undecided = db.all<{ t: number }>(UNDECIDED, JSON.stringify(req.threadIds)).map((r) => r.t);
+    const own = ownAddresses(db);
+    const refs = rootRefs(db, undecided, own).filter((r) => r.inInbox && !r.spam && !r.trash && !r.draft);
+    decideThreads(db, rootsWithBodies(db, refs), { ...req, autoEligible: false }, own, out);
+  });
+  return out;
+}
+
+/** Inbox threads that arrived as backfill and nobody decided on yet (most recent first). */
+export function backfillCandidates(db: Db, now: number, limit = 5000): number[] {
+  return db
+    .all<{ id: number }>(
+      `SELECT t.id FROM threads t INDEXED BY threads_inbox
+       WHERE t.in_inbox = 1 AND t.last_date < ?
+         AND NOT EXISTS (SELECT 1 FROM thread_categories tc WHERE tc.thread_id = t.id)
+         AND NOT EXISTS (SELECT 1 FROM cls_decisions d WHERE d.thread_id = t.id)
+         AND NOT EXISTS (SELECT 1 FROM cls_examples e WHERE e.thread_id = t.id)
+       ORDER BY t.last_date DESC, t.id DESC LIMIT ?`,
+      now - POLICY.autoWindowDays * 86_400_000,
+      limit,
+    )
+    .map((r) => r.id);
+}
+
+function emptyResult(): ClassifyResult {
+  return { deltas: [], auto: new Map(), suggested: 0, touched: new Set(), uncertain: [], backfill: 0 };
+}
+
+function decideThreads(
+  db: Db,
+  roots: Map<number, RootMessage>,
+  req: { now: number; mode: AutoCategorize; model: CategorizerModel; autoEligible: boolean },
+  own: OwnAddresses,
+  out: ClassifyResult,
+): void {
+  let policies: Map<number, CategoryPolicy & { name: string }> | null = null;
+  let removals: Map<string, number> | null = null;
+  for (const [threadId, root] of roots) {
+    const features = extractFeatures(root.source, { ownDomains: own.domains });
+    const set: ThreadFeatureSet = { root, features, encoded: encodeFeatures(features) };
     const scores = req.model.score(set.encoded);
-    const candidates = candidateCategories(scores);
-    if (candidates.length === 0) {
+    const likely = candidateCategories(scores);
+    if (likely.length === 0) {
       if (scores.some((s) => s.p >= 0.5)) out.uncertain.push(threadId);
       continue;
     }
     policies ??= policyContext(db);
+    removals ??= recentRemovals(db, req.now);
+    const vetoes = new Map<number, Vetoes>();
+    for (const categoryId of likely) {
+      // undecided threads have no examples or settled decisions: no hard veto is possible here
+      const rem = removals.get(`${categoryId}:${set.features.sender}`) ?? 0;
+      vetoes.set(categoryId, { hard: false, senderRemovals: rem, senderPositives: rem >= POLICY.senderVetoRemovals ? senderPositives(db, categoryId, set.features.sender, req.now) : 0 });
+    }
     const decisions = decide({
       mode: req.mode,
-      autoEligible: root.date >= req.now - POLICY.autoWindowDays * 86_400_000,
+      autoEligible: req.autoEligible && root.date >= req.now - POLICY.autoWindowDays * 86_400_000,
       scores,
       categories: policies,
-      vetoes: vetoesFor(db, threadId, set.features.sender, candidates, req.now),
+      vetoes,
       lookAlike: req.model.lookAlike(set.encoded),
       senderSupport: req.model.senderSupport(set.encoded),
     });
@@ -556,10 +699,17 @@ export function classifyNewThreads(db: Db, req: ClassifyRequest): ClassifyResult
         out.suggested++;
         continue;
       }
-      const added = addToCategory(db, { categoryId: d.categoryId, threadIds: [threadId], addedBy: "auto", now: req.now, own });
-      out.deltas.push(...added.deltas);
-      if (added.added.length) out.auto.set(d.categoryId, [...(out.auto.get(d.categoryId) ?? []), threadId]);
+      // already inside the store command's transaction: no savepoint per add
+      const added = db.run(
+        "INSERT OR IGNORE INTO thread_categories (thread_id, category_id, added_by, added_at) VALUES (?, ?, 'auto', ?)",
+        threadId,
+        d.categoryId,
+        req.now,
+      ).changes;
+      if (added > 0) {
+        out.deltas.push({ op: "unbackground", threadId });
+        out.auto.set(d.categoryId, [...(out.auto.get(d.categoryId) ?? []), threadId]);
+      }
     }
   }
-  return out;
 }

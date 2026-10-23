@@ -48,7 +48,7 @@ export interface CategoryScore {
    * it doesn't depend on the category's size relative to the background.
    */
   identityShare: number;
-  /** the same with the filed share at its 90% upper bound (Wilson): small or noisy histories aren't penalized */
+  /** the same with the filed share at its 95% upper bound (Wilson): small or noisy histories aren't penalized */
   identityFit: number;
   /** content evidence (√k-normalized, clipped) */
   C: number;
@@ -66,8 +66,22 @@ export interface CategoryScore {
 interface Entry {
   /** background (uncategorized) threads with this feature */
   bg: number;
-  /** per category slot: [posW, posN, negW, negN] */
+  /** sparse per category: groups of [slot, posW, posN, negW, negN, cached llr] (most features live in one or two) */
   c: Float64Array | null;
+  /** model version the cached llrs belong to */
+  v: number;
+}
+
+interface ScoringPlan {
+  version: number;
+  cats: CatState[];
+  totals: Totals[];
+  /** category slot → index in cats (-1: not scored) */
+  index: Int32Array;
+  /** per category: llr of a token it has never seen, before subtracting the token's background term */
+  K: Float64Array;
+  sums: Float64Array;
+  ks: Int32Array;
 }
 
 interface Totals {
@@ -93,14 +107,19 @@ interface CatState {
 }
 
 const IDENTITY_ORDER: readonly IdentityKind[] = ["sender", "list", "domain"];
+const SNAPSHOT_MAGIC = 0x55434d34; // "UCM4"
+/** floats per sparse group: slot, posW, posN, negW, negN, cached llr */
+const G = 6;
+const LITTLE_ENDIAN = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
+const LN_SMOOTH = Math.log(0.1);
 /** distinct filed senders before a domain counts as positive identity evidence */
 export const DOMAIN_MIN_SENDERS = 3;
 /** below this the PU correction would turn noise into certainty */
-const MIN_LABEL_RATE = 0.1;
-/** One-sided 90% Wilson upper bound of a binomial proportion. */
+const MIN_LABEL_RATE = 0.2;
+/** One-sided 95% Wilson upper bound of a binomial proportion. */
 function wilsonUpper(k: number, n: number): number {
   if (n <= 0) return 0;
-  const z = 1.2816;
+  const z = 1.6449;
   const p = k / n;
   const z2n = (z * z) / n;
   return Math.min(1, (p + z2n / 2 + z * Math.sqrt((p * (1 - p)) / n + z2n / (4 * n))) / (1 + z2n));
@@ -108,6 +127,14 @@ function wilsonUpper(k: number, n: number): number {
 
 const sigmoid = (x: number) => 1 / (1 + Math.exp(-x));
 const clip = (x: number, m: number) => (x > m ? m : x < -m ? -m : x);
+
+/** Offset of a category slot's group in a feature's sparse counts, or -1. */
+function group(e: Entry, slot: number): number {
+  const c = e.c;
+  if (!c) return -1;
+  for (let o = 0; o < c.length; o += G) if (c[o] === slot) return o;
+  return -1;
+}
 
 function bump(map: Map<number, number>, key: number, by: number): void {
   const v = (map.get(key) ?? 0) + by;
@@ -138,6 +165,8 @@ export class CategorizerModel {
   private readonly senderKeys = new Map<number, [number, number]>();
   /** bumped by every count change (invalidates cached filing rates) */
   private version = 0;
+  private globalRate: { version: number; value: number } | null = null;
+  private scoring: ScoringPlan | null = null;
 
   constructor(options: { decayRef: number; alpha?: number }) {
     this.decayRef = options.decayRef;
@@ -177,12 +206,13 @@ export class CategorizerModel {
   /** A deleted category stops scoring; its slot is never reused (a rebuild compacts). */
   dropCategory(categoryId: number): void {
     this.cats.delete(categoryId);
+    this.version++;
   }
 
   private entry(hash: number): Entry {
     let e = this.entries.get(hash);
     if (!e) {
-      e = { bg: 0, c: null };
+      e = { bg: 0, c: null, v: -1 };
       this.entries.set(hash, e);
     }
     return e;
@@ -191,15 +221,30 @@ export class CategorizerModel {
   private add(hash: number, slot: number, positive: boolean, w: number, n: number): void {
     if (hash === 0) return;
     const e = this.entry(hash);
-    const need = (slot + 1) * 4;
-    if (!e.c || e.c.length < need) {
-      const grown = new Float64Array(Math.max(need, (e.c?.length ?? 0) * 2, 8));
+    let o = group(e, slot);
+    if (o < 0) {
+      const len = e.c?.length ?? 0;
+      const grown = new Float64Array(len + G);
       if (e.c) grown.set(e.c);
+      grown[len] = slot;
       e.c = grown;
+      o = len;
     }
-    const o = slot * 4 + (positive ? 0 : 2);
-    e.c[o] = e.c[o]! + w;
-    e.c[o + 1] = e.c[o + 1]! + n;
+    const c = e.c!;
+    const at = o + (positive ? 1 : 3);
+    c[at] = c[at]! + w;
+    c[at + 1] = c[at + 1]! + n;
+    if (c[o + 2] === 0 && c[o + 4] === 0) {
+      // untrained back to nothing: drop the group (and the entry if nothing is left)
+      if (c.length === G) e.c = null;
+      else {
+        const rest = new Float64Array(c.length - G);
+        rest.set(c.subarray(0, o));
+        rest.set(c.subarray(o + G), o);
+        e.c = rest;
+      }
+      if (!e.c && e.bg <= 0) this.entries.delete(hash);
+    }
   }
 
   /** sign −1 untrains exactly what sign +1 trained (same effective weight, same groups). */
@@ -297,7 +342,7 @@ export class CategorizerModel {
     const e = this.entries.get(decodeFeatures(features).sender);
     if (!e) return 0;
     let n = e.bg;
-    if (e.c) for (let i = 0; i < e.c.length; i += 4) n += e.c[i + 1]! + e.c[i + 3]!;
+    if (e.c) for (let i = 0; i < e.c.length; i += G) n += e.c[i + 2]! + e.c[i + 4]!;
     return n;
   }
 
@@ -306,7 +351,7 @@ export class CategorizerModel {
     const e = this.entries.get(hash);
     if (!e) return 0;
     let n = e.bg;
-    if (e.c) for (let i = 0; i < e.c.length; i += 4) n += e.c[i + 1]! + e.c[i + 3]!;
+    if (e.c) for (let i = 0; i < e.c.length; i += G) n += e.c[i + 2]! + e.c[i + 4]!;
     return n;
   }
 
@@ -320,16 +365,17 @@ export class CategorizerModel {
   positiveCount(hash: number, categoryId: number): number {
     const c = this.cats.get(categoryId);
     const e = this.entries.get(hash);
-    if (!c || !e?.c || e.c.length < (c.slot + 1) * 4) return 0;
-    return e.c[c.slot * 4 + 1]!;
+    if (!c || !e) return 0;
+    const o = group(e, c.slot);
+    return o < 0 ? 0 : e.c![o + 2]!;
   }
 
   /** Filed and total threads of an identity key in this category (removals count triple). */
   private filed(e: Entry | undefined, slot: number): { k: number; n: number } {
     if (!e) return { k: 0, n: 0 };
-    const o = slot * 4;
-    const k = e.c && e.c.length > o ? e.c[o + 1]! : 0;
-    const neg = e.c && e.c.length > o ? e.c[o + 3]! : 0;
+    const o = group(e, slot);
+    const k = o < 0 ? 0 : e.c![o + 2]!;
+    const neg = o < 0 ? 0 : e.c![o + 4]!;
     return { k, n: k + 3 * neg + e.bg };
   }
 
@@ -349,15 +395,13 @@ export class CategorizerModel {
   }
 
   private supportIn(e: Entry, slot: number): number {
-    const o = slot * 4;
-    return e.bg + (e.c && e.c.length > o ? e.c[o + 1]! + e.c[o + 3]! : 0);
+    const o = group(e, slot);
+    return e.bg + (o < 0 ? 0 : e.c![o + 2]! + e.c![o + 4]!);
   }
 
-  /** The category's typical filing rate: the mean filed rate of its positives' identity keys. */
-  labelRate(categoryId: number): number {
-    const c = this.cats.get(categoryId);
-    if (!c) return 1;
-    if (c.rate?.version === this.version) return c.rate.value;
+  /** Mean filed rate of a category's positives' identity keys (raw, cached per model version). */
+  private rawRate(c: CatState): { rate: number; n: number } {
+    if (c.rate?.version === this.version) return { rate: c.rate.value, n: c.nPos };
     let sum = 0;
     let n = 0;
     for (const [sender, count] of c.senders) {
@@ -365,9 +409,32 @@ export class CategorizerModel {
       sum += count * this.filedRate(this.identityEntry(sender, list, domain, c.slot), c.slot);
       n += count;
     }
-    const value = n > 0 ? Math.min(1, Math.max(MIN_LABEL_RATE, sum / n)) : 1;
-    c.rate = { version: this.version, value };
-    return value;
+    const rate = n > 0 ? sum / n : 1;
+    c.rate = { version: this.version, value: rate };
+    return { rate, n };
+  }
+
+  /**
+   * How diligently the user files, for the positive-unlabeled correction:
+   * the larger of this category's rate and the user's rate over all
+   * categories. A low rate in one category alone usually means selective
+   * filing ("only business trips"), not laziness, and must not turn its
+   * senders into certainties.
+   */
+  labelRate(categoryId: number): number {
+    const c = this.cats.get(categoryId);
+    if (!c || c.nPos === 0) return 1;
+    if (this.globalRate?.version !== this.version) {
+      let sum = 0;
+      let n = 0;
+      for (const other of this.cats.values()) {
+        const r = this.rawRate(other);
+        sum += r.rate * other.nPos;
+        n += other.nPos;
+      }
+      this.globalRate = { version: this.version, value: n > 0 ? sum / n : 1 };
+    }
+    return Math.min(1, Math.max(MIN_LABEL_RATE, this.rawRate(c).rate, this.globalRate.value));
   }
 
   /**
@@ -391,20 +458,45 @@ export class CategorizerModel {
 
   private stats(e: Entry | undefined, slot: number, t: Totals): { llr: number; support: number } {
     if (!e) return { llr: 0, support: 0 };
+    return this.statsAt(e, group(e, slot), t);
+  }
+
+  /** stats() for a known group offset (-1: no counts in this category). */
+  private statsAt(e: Entry, o: number, t: Totals): { llr: number; support: number } {
     let a = 0;
     let posN = 0;
     let negW = 0;
     let n = e.bg;
-    const o = slot * 4;
-    if (e.c && e.c.length > o) {
-      a = e.c[o]!;
-      posN = e.c[o + 1]!;
-      negW = e.c[o + 2]!;
-      n += posN + e.c[o + 3]!;
+    if (o >= 0) {
+      const c = e.c!;
+      a = c[o + 1]!;
+      posN = c[o + 2]!;
+      negW = c[o + 3]!;
+      n += posN + c[o + 4]!;
     }
     // the feature's unfiled positives are in its background count: take them out
     const b = negW + this.alpha * Math.max(0, e.bg - posN * (t.inv - 1));
     return { llr: Math.log(a * t.inv + 0.1) - t.lnP - Math.log(b + 0.1) + t.lnN, support: n };
+  }
+
+  /** Per-version scoring setup (totals depend only on the model's counts), reused across calls. */
+  private plan(categoryIds?: readonly number[]): ScoringPlan {
+    if (!categoryIds && this.scoring?.version === this.version) return this.scoring;
+    const cats = categoryIds ? categoryIds.map((id) => this.cats.get(id)).filter((c): c is CatState => !!c) : [...this.cats.values()];
+    const totals = cats.map((c) => this.totals(c));
+    const index = new Int32Array(this.nextSlot).fill(-1);
+    cats.forEach((c, i) => (index[c.slot] = i));
+    const plan: ScoringPlan = {
+      version: this.version,
+      cats,
+      totals,
+      index,
+      K: Float64Array.from(totals, (t) => LN_SMOOTH - t.lnP + t.lnN),
+      sums: new Float64Array(cats.length),
+      ks: new Int32Array(cats.length),
+    };
+    if (!categoryIds) this.scoring = plan;
+    return plan;
   }
 
   /** Scores every category (or the given ones) for one thread. */
@@ -415,19 +507,63 @@ export class CategorizerModel {
     const list = f.list ? this.entries.get(f.list) : undefined;
     const domain = f.domain ? this.entries.get(f.domain) : undefined;
     const tokens: Entry[] = [];
+    const tokenL: number[] = [];
     for (const t of f.tokens) {
       const e = this.entries.get(t);
-      if (e) tokens.push(e);
+      if (!e) continue;
+      tokens.push(e);
+      tokenL.push(Math.log(this.alpha * e.bg + 0.1));
     }
     const intents: Entry[] = [];
     for (const t of f.intents) {
       const e = this.entries.get(t);
       if (e) intents.push(e);
     }
+    const { cats, totals, index, K, sums, ks } = this.plan(categoryIds);
+    const nc = cats.length;
+    sums.fill(0);
+    ks.fill(0);
+
+    // Content: every token first as if the category had never seen it (K − L, arithmetic
+    // only), then the few (token, category) pairs with examples are corrected in place.
+    for (let j = 0; j < tokens.length; j++) {
+      if (tokens[j]!.bg < 2) continue;
+      const L = tokenL[j]!;
+      for (let i = 0; i < nc; i++) {
+        const v = K[i]! - L;
+        sums[i] = sums[i]! + (v > 3 ? 3 : v < -3 ? -3 : v);
+        ks[i] = ks[i]! + 1;
+      }
+    }
+    for (let j = 0; j < tokens.length; j++) {
+      const e = tokens[j]!;
+      const c = e.c;
+      if (!c) continue;
+      for (let o = 0; o < c.length; o += G) {
+        const i = index[c[o]!]!;
+        if (i < 0) continue;
+        if (e.bg >= 2) {
+          const v = K[i]! - tokenL[j]!;
+          sums[i] = sums[i]! - (v > 3 ? 3 : v < -3 ? -3 : v);
+          ks[i] = ks[i]! - 1;
+        }
+        if (e.bg + c[o + 2]! + c[o + 4]! < 2) continue;
+        // llrs only change with the model: cache them in the group, stamped with its version
+        if (e.v !== this.version) {
+          for (let x = G - 1; x < c.length; x += G) c[x] = NaN;
+          e.v = this.version;
+        }
+        let llr = c[o + G - 1]!;
+        if (llr !== llr) c[o + G - 1] = llr = this.statsAt(e, o, totals[i]!).llr;
+        sums[i] = sums[i]! + (llr > 3 ? 3 : llr < -3 ? -3 : llr);
+        ks[i] = ks[i]! + 1;
+      }
+    }
+
     const out: CategoryScore[] = [];
-    const cats = categoryIds ? categoryIds.map((id) => this.cats.get(id)).filter((c): c is CatState => !!c) : [...this.cats.values()];
-    for (const c of cats) {
-      const t = this.totals(c);
+    for (let ci = 0; ci < nc; ci++) {
+      const c = cats[ci]!;
+      const t = totals[ci]!;
       const prior = t.prior;
 
       let I = 0;
@@ -454,15 +590,7 @@ export class CategorizerModel {
         }
       }
 
-      let sum = 0;
-      let k = 0;
-      for (const e of tokens) {
-        const s = this.stats(e, c.slot, t);
-        if (s.support < 2) continue;
-        sum += clip(s.llr, 3);
-        k++;
-      }
-      const C = k ? clip(sum / Math.sqrt(k), 4) : 0;
+      const C = ks[ci]! ? clip(sums[ci]! / Math.sqrt(ks[ci]!), 4) : 0;
 
       let nint = 0;
       for (const e of intents) {
@@ -493,7 +621,11 @@ export class CategorizerModel {
 
   // ───────────────────────────── snapshot ─────────────────────────────
 
-  /** Exact binary image of the model (scores after a round trip are identical). */
+  /**
+   * Exact binary image of the model (scores after a round trip are
+   * identical): a JSON header, then little-endian sections that load as
+   * zero-copy typed-array views.
+   */
   serialize(): Uint8Array {
     const header = JSON.stringify({
       v: FEATURES_V,
@@ -514,55 +646,87 @@ export class CategorizerModel {
       names: [...this.names].map(([n, m]) => [n, [...m]]),
       senderKeys: [...this.senderKeys],
     });
-    // UTF-16 code units: no TextEncoder in core's environment-agnostic globals
-    let size = 8 + header.length * 2 + 4;
-    for (const e of this.entries.values()) size += 4 + 8 + 2 + (e.c ? e.c.length * 8 : 0);
-    size += 4;
-    for (const f of this.bgThreads.values()) size += 8 + f.length * 4;
-    const buf = new ArrayBuffer(size);
-    const dv = new DataView(buf);
-    const u8 = new Uint8Array(buf);
-    let o = 0;
-    dv.setUint32(o, 0x55434d31); // "UCM1"
-    dv.setUint32(o + 4, header.length);
-    o += 8;
-    for (let i = 0; i < header.length; i++, o += 2) dv.setUint16(o, header.charCodeAt(i));
-    dv.setUint32(o, this.entries.size);
-    o += 4;
-    for (const [h, e] of this.entries) {
-      dv.setUint32(o, h);
-      dv.setFloat64(o + 4, e.bg);
+    const n = this.entries.size;
+    const lens = new Uint16Array(n);
+    let i = 0;
+    let nC = 0;
+    for (const e of this.entries.values()) {
       const len = e.c ? e.c.length : 0;
-      dv.setUint16(o + 12, len);
-      o += 14;
-      for (let i = 0; i < len; i++, o += 8) dv.setFloat64(o, e.c![i]!);
+      lens[i++] = len;
+      nC += len;
     }
-    dv.setUint32(o, this.bgThreads.size);
-    o += 4;
+    let nWords = 0;
+    for (const f of this.bgThreads.values()) nWords += f.length;
+    const pad = (x: number) => (x + 7) & ~7;
+    const layout = { header: 16, entries: 0, lens: 0, bg: 0, c: 0, bgIds: 0, bgLens: 0, bgWords: 0, end: 0 };
+    layout.entries = pad(layout.header + header.length * 2);
+    layout.lens = pad(layout.entries + n * 4);
+    layout.bg = pad(layout.lens + n * 2);
+    layout.c = layout.bg + n * 8;
+    layout.bgIds = pad(layout.c + nC * 8);
+    layout.bgLens = pad(layout.bgIds + this.bgThreads.size * 4);
+    layout.bgWords = pad(layout.bgLens + this.bgThreads.size * 4);
+    layout.end = pad(layout.bgWords + nWords * 4);
+    const buf = new ArrayBuffer(layout.end);
+    const dv = new DataView(buf);
+    dv.setUint32(0, SNAPSHOT_MAGIC, true);
+    dv.setUint32(4, header.length, true);
+    dv.setUint32(8, n, true);
+    dv.setUint32(12, nC, true);
+    const chars = new Uint16Array(buf, layout.header, header.length);
+    for (let k = 0; k < header.length; k++) chars[k] = header.charCodeAt(k);
+    const hashes = new Uint32Array(buf, layout.entries, n);
+    new Uint16Array(buf, layout.lens, n).set(lens);
+    const bg = new Float64Array(buf, layout.bg, n);
+    const c = new Float64Array(buf, layout.c, nC);
+    i = 0;
+    let off = 0;
+    for (const [h, e] of this.entries) {
+      hashes[i] = h;
+      bg[i] = e.bg;
+      if (lens[i]) c.set(e.c!.subarray(0, lens[i]), off);
+      off += lens[i]!;
+      i++;
+    }
+    const ids = new Uint32Array(buf, layout.bgIds, this.bgThreads.size);
+    const bgLens = new Uint32Array(buf, layout.bgLens, this.bgThreads.size);
+    const words = new Uint32Array(buf, layout.bgWords, nWords);
+    i = 0;
+    off = 0;
     for (const [id, f] of this.bgThreads) {
-      dv.setUint32(o, id);
-      dv.setUint32(o + 4, f.length);
-      o += 8;
-      for (let i = 0; i < f.length; i++, o += 4) dv.setUint32(o, f[i]!);
+      ids[i] = id;
+      bgLens[i++] = f.length;
+      words.set(f, off);
+      off += f.length;
     }
-    return u8;
+    // trailing counts so the reader can find the background sections
+    const out = new Uint8Array(layout.end + 8);
+    out.set(new Uint8Array(buf));
+    new DataView(out.buffer).setUint32(layout.end, this.bgThreads.size, true);
+    new DataView(out.buffer).setUint32(layout.end + 4, nWords, true);
+    return out;
   }
 
-  /** null when the bytes are not a snapshot of this feature version. */
+  /** null when the bytes are not a snapshot of this feature version (or of another byte order). */
   static deserialize(bytes: Uint8Array): CategorizerModel | null {
-    if (bytes.byteLength < 8) return null;
-    const copy = new Uint8Array(bytes.byteLength);
-    copy.set(bytes);
-    const dv = new DataView(copy.buffer);
-    if (dv.getUint32(0) !== 0x55434d31) return null;
-    const headerLen = dv.getUint32(4);
-    let json = "";
-    for (let i = 0; i < headerLen; i += 4096) {
-      const end = Math.min(headerLen, i + 4096);
-      const codes: number[] = [];
-      for (let j = i; j < end; j++) codes.push(dv.getUint16(8 + j * 2));
-      json += String.fromCharCode(...codes);
+    if (!LITTLE_ENDIAN || bytes.byteLength < 24) return null;
+    // views need 8-byte alignment; a BLOB from SQLite owns its buffer at offset 0 (no copy)
+    let copy = bytes;
+    if (bytes.byteOffset % 8 !== 0 || bytes.byteLength !== bytes.buffer.byteLength) {
+      copy = new Uint8Array(bytes.byteLength);
+      copy.set(bytes);
     }
+    const buf = copy.buffer as ArrayBuffer;
+    const dv = new DataView(buf);
+    if (dv.getUint32(0, true) !== SNAPSHOT_MAGIC) return null;
+    const headerLen = dv.getUint32(4, true);
+    const n = dv.getUint32(8, true);
+    const nC = dv.getUint32(12, true);
+    const bgCount = dv.getUint32(bytes.byteLength - 8, true);
+    const nWords = dv.getUint32(bytes.byteLength - 4, true);
+    const chars = new Uint16Array(buf, 16, headerLen);
+    let json = "";
+    for (let k = 0; k < headerLen; k += 4096) json += String.fromCharCode(...chars.subarray(k, Math.min(headerLen, k + 4096)));
     const header = JSON.parse(json) as {
       v: number;
       alpha: number;
@@ -590,34 +754,33 @@ export class CategorizerModel {
         rate: null,
       });
     }
-    for (const [n, d] of header.names) m.names.set(n, new Map(d));
+    for (const [name, d] of header.names) m.names.set(name, new Map(d));
     for (const [sender, keys] of header.senderKeys) m.senderKeys.set(sender, keys);
-    let o = 8 + headerLen * 2;
-    const count = dv.getUint32(o);
-    o += 4;
-    for (let i = 0; i < count; i++) {
-      const h = dv.getUint32(o);
-      const bg = dv.getFloat64(o + 4);
-      const len = dv.getUint16(o + 12);
-      o += 14;
-      let c: Float64Array | null = null;
-      if (len) {
-        c = new Float64Array(len);
-        for (let j = 0; j < len; j++, o += 8) c[j] = dv.getFloat64(o);
-      }
-      m.entries.set(h, { bg, c });
+    const pad = (x: number) => (x + 7) & ~7;
+    const entriesAt = pad(16 + headerLen * 2);
+    const lensAt = pad(entriesAt + n * 4);
+    const bgAt = pad(lensAt + n * 2);
+    const cAt = bgAt + n * 8;
+    const hashes = new Uint32Array(buf, entriesAt, n);
+    const lens = new Uint16Array(buf, lensAt, n);
+    const bg = new Float64Array(buf, bgAt, n);
+    const c = new Float64Array(buf, cAt, nC);
+    let off = 0;
+    for (let k = 0; k < n; k++) {
+      const len = lens[k]!;
+      m.entries.set(hashes[k]!, { bg: bg[k]!, c: len ? c.subarray(off, off + len) : null, v: -1 });
+      off += len;
     }
-    const bgCount = dv.getUint32(o);
-    o += 4;
-    for (let i = 0; i < bgCount; i++) {
-      const id = dv.getUint32(o);
-      const len = dv.getUint32(o + 4);
-      o += 8;
-      // big-endian on disk; rebuild the native-endian array
-      const f = new Uint32Array(len);
-      for (let j = 0; j < len; j++) f[j] = dv.getUint32(o + j * 4);
-      o += len * 4;
-      m.bgThreads.set(id, f);
+    const idsAt = pad(cAt + nC * 8);
+    const bgLensAt = pad(idsAt + bgCount * 4);
+    const wordsAt = pad(bgLensAt + bgCount * 4);
+    const ids = new Uint32Array(buf, idsAt, bgCount);
+    const bgLens = new Uint32Array(buf, bgLensAt, bgCount);
+    const words = new Uint32Array(buf, wordsAt, nWords);
+    off = 0;
+    for (let k = 0; k < bgCount; k++) {
+      m.bgThreads.set(ids[k]!, words.subarray(off, off + bgLens[k]!));
+      off += bgLens[k]!;
     }
     return m;
   }

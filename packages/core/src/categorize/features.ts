@@ -85,32 +85,101 @@ export function ownBodyText(body: string | null): string {
   return own.length > BODY_BYTES ? own.slice(0, BODY_BYTES) : own;
 }
 
+/**
+ * Text made only of Latin letters, digits, combining marks and common
+ * punctuation: removing every combining mark after NFD is then exactly the
+ * Latin-only diacritic folding unicode61 does, without the per-character
+ * script checks of tokenize() (the slow part on 2 KB bodies). Anything else
+ * (other scripts, emoji, superscripts, ª/º) takes the general path.
+ */
+function isLatinText(text: string): boolean {
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (c < 0x80) continue;
+    if (c >= 0xa0 && c <= 0x24f) {
+      // ª º (letters), superscript digits, µ and fractions are tokens or digits elsewhere: general path
+      if (c === 0xaa || c === 0xb2 || c === 0xb3 || c === 0xb5 || c === 0xb9 || c === 0xba || (c >= 0xbc && c <= 0xbe) || c === 0xd7 || c === 0xf7) return false;
+      continue;
+    }
+    // Latin Extended Additional, combining marks, general punctuation, euro sign
+    if ((c >= 0x1e00 && c <= 0x1eff) || (c >= 0x300 && c <= 0x36f) || (c >= 0x2000 && c <= 0x206f) || c === 0x20ac) continue;
+    return false;
+  }
+  return true;
+}
+const MARKS = /[\u0300-\u036f]/g;
+const LATIN_WORD = /[a-z0-9\u00df-\u00f6\u00f8-\u00ff\u0100-\u024f\u1e00-\u1eff]+/g;
+
+/** Lowercased, Latin-folded text, or null when it needs the general tokenizer. */
+function foldLatin(text: string): string | null {
+  return isLatinText(text) ? text.normalize("NFD").replace(MARKS, "").toLowerCase() : null;
+}
+
+/** A token as a content feature: stopwords and single letters dropped, numbers bucketed. */
+function contentForm(t: string): string | null {
+  const len = t.length;
+  if (len > MAX_TOKEN_LENGTH) return null;
+  let digits = 0;
+  for (let i = 0; i < len; i++) {
+    const c = t.charCodeAt(i);
+    if (c >= 48 && c <= 57) digits++;
+  }
+  if (digits === len) return len <= 3 ? "#n" : "#n4";
+  if (digits > 0) return "#a";
+  return len > 1 && !STOPWORDS.has(t) ? t : null;
+}
+
 /** Content tokens: FTS-parity tokens minus stopwords, with numbers bucketed so ids don't explode the vocabulary. */
 export function contentTokens(text: string): string[] {
+  const folded = foldLatin(text);
+  const words = folded !== null ? (folded.match(LATIN_WORD) ?? []) : tokenize(text);
   const out: string[] = [];
-  for (const t of tokenize(text)) {
-    if (t.length > MAX_TOKEN_LENGTH) continue;
-    if (/^\d+$/.test(t)) out.push(t.length <= 3 ? "#n" : "#n4");
-    else if (/\d/.test(t)) out.push("#a");
-    else if (t.length > 1 && !STOPWORDS.has(t)) out.push(t);
+  for (const t of words) {
+    const w = contentForm(t);
+    if (w !== null) out.push(w);
   }
   return out;
 }
 
-const INTENT_PATTERNS: [Intent, RegExp][] = [
-  ["amount", /[$€£]\s?\d|\b\d[\d.,]*[.,]\d{2}\b|\b(mxn|usd|eur)\b/],
-  ["invoice", /\b(factura|facturas|facturacion|cfdi|recibo|recibos|receipt|invoice|comprobante|estado de cuenta)\b/],
-  ["tracking", /\b(guia|rastrea|rastrearlo|rastreo|tracking|track your|seguimiento|en camino|shipped|entregado|paquete)\b/],
-  ["unsubscribe", /\b(unsubscribe|darse de baja|dar de baja|cancelar (la )?suscripcion)\b/],
-  ["calendar", /\b(invitacion|invitation|calendar|calendario|evento)\b|@ (lun|mar|mie|jue|vie|sab|dom|mon|tue|wed|thu|fri)\b/],
-  ["otp", /\b(codigo de (verificacion|seguridad|acceso)|verification code|one-time (code|password)|otp)\b/],
-  ["travel", /\b(vuelo|vuelos|flight|reservacion|booking|aeropuerto|airport|pase de abordar|boarding|itinerario|check-in|hospedaje)\b/],
-];
+const AMOUNT = /[$€£]\s?\d|\b\d[\d.,]*[.,]\d{2}\b|\b(mxn|usd|eur)\b/;
+/** Single-word intent keywords (folded), looked up while walking the tokens. */
+const KEYWORDS = new Map<string, Intent>([
+  ...["factura", "facturas", "facturacion", "cfdi", "recibo", "recibos", "receipt", "invoice", "comprobante"].map((w) => [w, "invoice"] as const),
+  ...["guia", "rastrea", "rastrearlo", "rastreo", "tracking", "seguimiento", "shipped", "entregado", "paquete"].map((w) => [w, "tracking"] as const),
+  ...["unsubscribe"].map((w) => [w, "unsubscribe"] as const),
+  ...["invitacion", "invitation", "calendar", "calendario", "evento"].map((w) => [w, "calendar"] as const),
+  ...["otp"].map((w) => [w, "otp"] as const),
+  ...["vuelo", "vuelos", "flight", "reservacion", "booking", "aeropuerto", "airport", "boarding", "itinerario", "hospedaje"].map((w) => [w, "travel"] as const),
+]);
+/** Multi-word intents, checked only when their last word comes up. */
+const PHRASES = new Map<string, [string, Intent][]>();
+for (const [phrase, intent] of [
+  ["estado de cuenta", "invoice"],
+  ["track your", "tracking"],
+  ["en camino", "tracking"],
+  ["darse de baja", "unsubscribe"],
+  ["dar de baja", "unsubscribe"],
+  ["cancelar suscripcion", "unsubscribe"],
+  ["cancelar la suscripcion", "unsubscribe"],
+  ["codigo de verificacion", "otp"],
+  ["codigo de seguridad", "otp"],
+  ["codigo de acceso", "otp"],
+  ["verification code", "otp"],
+  ["one time code", "otp"],
+  ["one time password", "otp"],
+  ["pase de abordar", "travel"],
+  ["check in", "travel"],
+] as const) {
+  const last = phrase.slice(phrase.lastIndexOf(" ") + 1);
+  PHRASES.set(last, [...(PHRASES.get(last) ?? []), [phrase, intent]]);
+}
+const WEEKDAY = /@ (lun|mar|mie|jue|vie|sab|dom|mon|tue|wed|thu|fri)\b/;
 
 const BULK_LOCAL = /^(no-?reply|noreply|do-?not-?reply|notifications?|notificaciones|alertas?|automated|mailer|newsletter|boletin|news|info|updates|marketing|promo(ciones)?)\b/;
 
 function normalizeName(name: string): string {
-  return tokenize(name).join(" ");
+  const folded = foldLatin(name);
+  return (folded !== null ? (folded.match(LATIN_WORD) ?? []) : tokenize(name)).join(" ");
 }
 
 function domainOf(email: string): string {
@@ -129,21 +198,39 @@ export function extractFeatures(src: FeatureSource, ctx: FeatureContext): Thread
 
   const tokens: string[] = [];
   const seen = new Set<string>();
-  const push = (prefix: string, words: string[]) => {
-    for (const w of words) {
-      if (tokens.length >= MAX_TOKENS) return;
+  const found = new Set<Intent>();
+  // one walk over the words: content features (until the cap) and keyword intents (all words)
+  const walk = (raw: string, folded: string | null, prefix: string) => {
+    const words = folded !== null ? (folded.match(LATIN_WORD) ?? []) : tokenize(raw);
+    for (let i = 0; i < words.length; i++) {
+      const t = words[i]!;
+      const intent = KEYWORDS.get(t);
+      if (intent) found.add(intent);
+      const phrases = PHRASES.get(t);
+      if (phrases) {
+        for (const [phrase, it] of phrases) {
+          const n = phrase.split(" ").length;
+          if (i + 1 >= n && words.slice(i + 1 - n, i + 1).join(" ") === phrase) found.add(it);
+        }
+      }
+      if (tokens.length >= MAX_TOKENS) continue;
+      const w = contentForm(t);
+      if (w === null) continue;
       const key = prefix + w;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      tokens.push(key);
+      if (!seen.has(key)) {
+        seen.add(key);
+        tokens.push(key);
+      }
     }
   };
-  push("s:", contentTokens(src.subject));
-  push("b:", contentTokens(body));
-
-  const text = normalizeText(`${src.subject}\n${body}`);
-  const intents: Intent[] = [];
-  for (const [intent, re] of INTENT_PATTERNS) if (re.test(text)) intents.push(intent);
+  const foldedSubject = foldLatin(src.subject);
+  const foldedBody = foldLatin(body);
+  walk(src.subject, foldedSubject, "s:");
+  walk(body, foldedBody, "b:");
+  const text = `${foldedSubject ?? normalizeText(src.subject)}\n${foldedBody ?? normalizeText(body)}`;
+  if (AMOUNT.test(text)) found.add("amount");
+  if (WEEKDAY.test(text)) found.add("calendar");
+  const intents = INTENTS.filter((i) => found.has(i));
   if (src.replied) intents.push("replied");
   if (src.attachmentNames.some((n) => /\.pdf$/i.test(n))) intents.push("pdf");
   if (list || BULK_LOCAL.test(sender)) intents.push("bulk");

@@ -388,6 +388,8 @@ CREATE TABLE cls_examples (
 ) WITHOUT ROWID;
 CREATE INDEX cls_examples_cat ON cls_examples(category_id, label);
 CREATE INDEX cls_examples_sender ON cls_examples(category_id, sender, at);
+-- removals are few: the sender back-off reads them once per ingestion slice
+CREATE INDEX cls_examples_removals ON cls_examples(at) WHERE label < 0;
 
 CREATE TABLE cls_decisions (
   thread_id INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
@@ -400,7 +402,9 @@ CREATE TABLE cls_decisions (
   PRIMARY KEY (thread_id, category_id)
 ) WITHOUT ROWID;
 CREATE INDEX cls_decisions_pending ON cls_decisions(category_id, at) WHERE kind = 'suggest' AND outcome IS NULL;
-CREATE INDEX cls_decisions_auto ON cls_decisions(category_id, outcome, at) WHERE kind = 'auto';
+-- safety valve: matured outcomes only (read per ingestion slice); pending ones mature at idle
+CREATE INDEX cls_decisions_outcomes ON cls_decisions(category_id, outcome) WHERE kind = 'auto' AND outcome IS NOT NULL;
+CREATE INDEX cls_decisions_maturing ON cls_decisions(at) WHERE kind = 'auto' AND outcome IS NULL;
 
 CREATE TABLE cat_batches (
   id INTEGER PRIMARY KEY,

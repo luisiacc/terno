@@ -246,7 +246,7 @@ describe("categorizer: auto-apply at ingestion", () => {
   });
 
   it("only evaluates new inbound inbox mail: not archived, spam, drafts, old backfill or replies", async () => {
-    const { arrive, decision, inCategory } = await trained();
+    const { backend, arrive, decision, inCategory } = await trained();
     const archived = await arrive({ ...receipt(SENDERS[1]!, 1), inInbox: false });
     const spam = await arrive({ ...receipt(SENDERS[1]!, 2), inInbox: false, isSpam: true });
     const backfill = await arrive({ ...receipt(SENDERS[1]!, 3), date: NOW - 20 * DAY });
@@ -254,7 +254,9 @@ describe("categorizer: auto-apply at ingestion", () => {
       expect(decision(t)).toBeUndefined();
       expect(inCategory(t)).toBeNull();
     }
-    // older than the auto window: at most a suggestion
+    // older than the auto window (backfill): nothing during the import, a suggestion once it settles
+    expect(decision(backfill.thread)).toBeUndefined();
+    await backend.categorizer.rebuild();
     expect(decision(backfill.thread)?.kind).toBe("suggest");
     expect(inCategory(backfill.thread)).toBeNull();
     // a reply on an old, unfiled conversation is not new mail
