@@ -3,8 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "scripts": { "typecheck": "tsc -p tsconfig.json" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
   "dependencies": {
     "@unica/ai": "workspace:*",
     "@unica/core": "workspace:*",
@@ -13,5 +17,12 @@
     "@unica/mock-data": "workspace:*",
     "ws": "^8.22.0"
   },
-  "devDependencies": { "@types/node": "catalog:", "@types/ws": "^8.18.1" }
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/smtp-server": "^3.5.13",
+    "@types/ws": "^8.18.1",
+    "imapflow": "^2.8.0",
+    "imapkit": "5.1.0",
+    "smtp-server": "^3.21.0"
+  }
 }

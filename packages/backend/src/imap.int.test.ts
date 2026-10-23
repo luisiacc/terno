@@ -1,0 +1,348 @@
+/**
+ * Real imapflow ↔ in-process ImapKit (strict RFC server) and nodemailer ↔
+ * in-process smtp-server, driven through the real Backend.
+ */
+import { mkdtempSync, rmSync } from "node:fs";
+import { createServer as createTcpServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createMemoryTransportPair, RpcClient } from "@unica/core/rpc";
+import { createRegistry } from "@unica/mail";
+import imapkit from "imapkit";
+import { SMTPServer } from "smtp-server";
+import { afterEach, describe, expect, it } from "vitest";
+import { Backend, plaintextCipher } from "./backend";
+
+type ImapKitServer = ReturnType<typeof imapkit>;
+
+const STORAGE = {
+  INBOX: {},
+  "": {
+    separator: "/",
+    folders: {
+      Sent: { "special-use": "\\Sent" },
+      Archive: { "special-use": "\\Archive" },
+      Junk: { "special-use": "\\Junk" },
+      Trash: { "special-use": "\\Trash" },
+      Drafts: { "special-use": "\\Drafts" },
+    },
+  },
+};
+
+const cleanups: (() => Promise<unknown> | unknown)[] = [];
+afterEach(async () => {
+  for (const c of cleanups.splice(0).reverse()) await c();
+});
+
+let seq = 0;
+function raw(o: { from?: string; to?: string; subject: string; body?: string; html?: string; id?: string; inReplyTo?: string; listId?: string; date?: Date }) {
+  const id = o.id ?? `m${++seq}@test.local`;
+  const headers = [
+    `From: ${o.from ?? "Ana Pérez <ana@example.com>"}`,
+    `To: ${o.to ?? "Luis <luis@test.local>"}`,
+    `Subject: ${o.subject}`,
+    `Message-ID: <${id}>`,
+    `Date: ${(o.date ?? new Date()).toUTCString()}`,
+    "MIME-Version: 1.0",
+    ...(o.inReplyTo ? [`In-Reply-To: <${o.inReplyTo}>`, `References: <${o.inReplyTo}>`] : []),
+    ...(o.listId ? [`List-Id: News <${o.listId}>`] : []),
+    `Content-Type: ${o.html ? "text/html" : "text/plain"}; charset=utf-8`,
+  ];
+  return `${headers.join("\r\n")}\r\n\r\n${o.html ?? o.body ?? "hola"}\r\n`;
+}
+
+async function startImap(extra: Record<string, unknown> = {}) {
+  const server: ImapKitServer = imapkit({ plugins: ["IDLE", "MOVE", "UIDPLUS", "SPECIAL-USE", "ENABLE", "CONDSTORE"], storage: structuredClone(STORAGE), ...extra });
+  const port = await server.start(0, "127.0.0.1");
+  cleanups.push(() => server.stop());
+  return { server, port };
+}
+
+interface Captured {
+  raw: string;
+  rcpt: string[];
+}
+
+async function startSmtp(behaviour: { rejectRcpt?: string; dropDuringData?: boolean } = {}) {
+  const received: Captured[] = [];
+  const server = new SMTPServer({
+    authOptional: true,
+    disabledCommands: ["STARTTLS"],
+    logger: false,
+    onAuth: (_auth, _session, cb) => cb(null, { user: "testuser" }),
+    onRcptTo(address, _session, cb) {
+      if (behaviour.rejectRcpt && address.address === behaviour.rejectRcpt) return cb(Object.assign(new Error("No such user"), { responseCode: 550 }));
+      cb();
+    },
+    onData(stream, session, cb) {
+      let data = "";
+      stream.on("data", (c) => (data += c));
+      stream.on("end", () => {
+        if (behaviour.dropDuringData) {
+          // the message was transmitted but we never answer: the client can't know if it was accepted
+          (session as unknown as { _socket?: { destroy(): void } })._socket?.destroy();
+          return;
+        }
+        received.push({ raw: data, rcpt: session.envelope.rcptTo.map((r) => r.address) });
+        cb();
+      });
+    },
+  });
+  if (behaviour.dropDuringData) {
+    server.on("connect" as never, () => {});
+  }
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.server.address() as { port: number }).port;
+  cleanups.push(() => new Promise<void>((r) => server.close(() => r())));
+  return { received, port, server };
+}
+
+/**
+ * Minimal SMTP server that accepts the whole message and then hangs up
+ * without answering: the client cannot know whether it was delivered.
+ */
+async function startDroppingSmtp() {
+  const server = createTcpServer((socket) => {
+    socket.write("220 drop.test ESMTP\r\n");
+    let inData = false;
+    let buffer = "";
+    socket.on("data", (chunk) => {
+      buffer += chunk.toString();
+      if (inData) {
+        if (buffer.includes("\r\n.\r\n")) socket.destroy();
+        return;
+      }
+      let nl: number;
+      while ((nl = buffer.indexOf("\r\n")) !== -1) {
+        const line = buffer.slice(0, nl).toUpperCase();
+        buffer = buffer.slice(nl + 2);
+        if (line.startsWith("EHLO") || line.startsWith("HELO")) socket.write("250-drop.test\r\n250 AUTH PLAIN LOGIN\r\n");
+        else if (line.startsWith("AUTH")) socket.write("235 ok\r\n");
+        else if (line.startsWith("MAIL") || line.startsWith("RCPT")) socket.write("250 ok\r\n");
+        else if (line.startsWith("DATA")) {
+          socket.write("354 go ahead\r\n");
+          inData = true;
+        } else if (line.startsWith("QUIT")) socket.end("221 bye\r\n");
+        else socket.write("250 ok\r\n");
+      }
+    });
+    socket.on("error", () => {});
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  cleanups.push(() => new Promise<void>((r) => server.close(() => r())));
+  return { received: [] as Captured[], port: (server.address() as { port: number }).port };
+}
+
+async function setup(opts: { smtp?: Parameters<typeof startSmtp>[0] } = {}) {
+  const imap = await startImap();
+  const smtp = opts.smtp?.dropDuringData ? await startDroppingSmtp() : await startSmtp(opts.smtp);
+  const dir = mkdtempSync(join(tmpdir(), "unica-imap-"));
+  const backend = new Backend({
+    dbPath: join(dir, "u.db"),
+    version: "t",
+    cipher: plaintextCipher,
+    providers: createRegistry({ imap: { allowInsecure: true } }),
+    autoSync: false,
+  });
+  cleanups.push(async () => {
+    await backend.stop();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const [c, s] = createMemoryTransportPair();
+  backend.connect(s, { clientId: "r", origin: "renderer" });
+  const client = new RpcClient(c);
+  const addAccount = (port: number, email = "luis@test.local") =>
+    client.call("accounts.addImap", {
+      email,
+      displayName: "Luis",
+      imap: { host: "127.0.0.1", port, secure: false, user: "testuser" },
+      smtp: { host: "127.0.0.1", port: smtp.port, secure: false, user: "testuser" },
+      password: "testpass",
+    });
+  return { imap, smtp, backend, client, addAccount };
+}
+
+const count = (backend: Backend, sql: string, ...p: (string | number)[]) => backend.db.get<{ c: number }>(`SELECT count(*) AS c FROM (${sql})`, ...p)!.c;
+
+describe("IMAP provider against ImapKit", () => {
+  it("rejects a wrong password when adding the account", async () => {
+    const { client, imap, smtp } = await setup();
+    await expect(
+      client.call("accounts.addImap", {
+        email: "x@test.local",
+        displayName: "x",
+        imap: { host: "127.0.0.1", port: imap.port, secure: false, user: "testuser" },
+        smtp: { host: "127.0.0.1", port: smtp.port, secure: false, user: "testuser" },
+        password: "wrong",
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("syncs folders, threads replies, downloads bodies and derives state from folders", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.addMessage("INBOX", { raw: raw({ subject: "Presupuesto", id: "root@x", body: "Te mando el presupuesto final." }) });
+    ctl.addMessage("INBOX", { raw: raw({ subject: "Re: Presupuesto", inReplyTo: "root@x", body: "¡Gracias!" }), flags: ["\\Seen"] });
+    ctl.addMessage("INBOX", { raw: raw({ subject: "Boletín", from: "Xataka <boletin@xataka.com>", listId: "boletin.xataka.com", html: "<h1>Novedades</h1><p>Baterías de <b>estado sólido</b></p>" }) });
+    ctl.addMessage("Sent", { raw: raw({ subject: "Hola", from: "Luis <luis@test.local>", to: "ana@example.com" }), flags: ["\\Seen"] });
+    ctl.addMessage("Junk", { raw: raw({ subject: "Ganaste", from: "spam@spam.biz" }) });
+
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+
+    const inbox = await client.call("threads.list", { view: "inbox" });
+    expect(inbox.items.map((t) => t.subject).sort()).toEqual(["Boletín", "Presupuesto"]);
+    expect(inbox.items.find((t) => t.subject === "Presupuesto")!.messageCount).toBe(2);
+    expect((await client.call("threads.list", { view: "sent" })).items).toHaveLength(1);
+    expect((await client.call("threads.list", { view: "spam" })).items).toHaveLength(1);
+    // bodies were downloaded and indexed: HTML-only mail is searchable as text
+    expect((await client.call("threads.search", { query: "estado solido" })).items.map((t) => t.subject)).toEqual(["Boletín"]);
+    expect(count(backend, "SELECT 1 FROM messages WHERE body_state != 'full'")).toBe(0);
+    expect(backend.db.get("SELECT list_id FROM messages WHERE subject = 'Boletín'")).toEqual({ list_id: "boletin.xataka.com" });
+
+    // a second sync is a no-op (no duplicates)
+    await backend.syncAccount(account.id);
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(5);
+  });
+
+  it("archives on the server with MOVE and keeps the message (now in Archive) after resync", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Archívame" }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const [t] = (await client.call("threads.list", { view: "inbox" })).items;
+    await client.call("threads.act", { threadIds: [t!.id], action: "archive" });
+    await backend.runWorker();
+    expect(imap.server.control.listMessages("INBOX")).toHaveLength(0);
+    expect(imap.server.control.listMessages("Archive")).toHaveLength(1);
+    await backend.syncAccount(account.id);
+    expect((await client.call("threads.list", { view: "archive" })).items.map((x) => x.subject)).toEqual(["Archívame"]);
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(1);
+    expect(backend.db.all("SELECT mailbox FROM message_locations")).toEqual([{ mailbox: "Archive" }]);
+  });
+
+  it("applies flag changes, expunges and moves made by other clients", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    const a = ctl.addMessage("INBOX", { raw: raw({ subject: "A" }) });
+    const b = ctl.addMessage("INBOX", { raw: raw({ subject: "B" }) });
+    const c = ctl.addMessage("INBOX", { raw: raw({ subject: "C" }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    ctl.setFlags("INBOX", [a.uid], ["\\Seen", "\\Flagged"], "add");
+    ctl.expungeMessages("INBOX", [b.uid]);
+    ctl.moveMessages("INBOX", [c.uid], "Archive");
+    ctl.addMessage("INBOX", { raw: raw({ subject: "D" }) });
+    await backend.syncAccount(account.id);
+    const rows = backend.db.all<{ subject: string; is_read: number; is_starred: number; in_inbox: number }>("SELECT subject, is_read, is_starred, in_inbox FROM messages ORDER BY subject");
+    expect(rows).toEqual([
+      { subject: "A", is_read: 1, is_starred: 1, in_inbox: 1 },
+      { subject: "C", is_read: 0, is_starred: 0, in_inbox: 0 },
+      { subject: "D", is_read: 0, is_starred: 0, in_inbox: 1 },
+    ]);
+    expect((await client.call("counts.get", {})).inboxUnread).toBe(1);
+  });
+
+  it("recovers from a UIDVALIDITY reset without duplicating mail", async () => {
+    const { imap, backend, addAccount } = await setup();
+    const ctl = imap.server.control;
+    for (const s of ["uno", "dos", "tres"]) ctl.addMessage("INBOX", { raw: raw({ subject: s }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const before = backend.db.all<{ uid: number; uidvalidity: number }>("SELECT uid, uidvalidity FROM message_locations ORDER BY uid");
+    ctl.resetUidValidity("INBOX", { uids: "offset", offset: 100 });
+    await backend.syncAccount(account.id);
+    const after = backend.db.all<{ uid: number; uidvalidity: number }>("SELECT uid, uidvalidity FROM message_locations ORDER BY uid");
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(3);
+    expect(after).toHaveLength(3);
+    expect(after[0]!.uidvalidity).toBeGreaterThan(before[0]!.uidvalidity);
+    expect(after.every((l) => l.uid > 100)).toBe(true);
+    // ops still target the right message after the reset
+    const thread = backend.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE subject = 'dos'")!.thread_id;
+    await backend.server.invoke("threads.act", { threadIds: [thread], action: "markRead" }, { clientId: "t", origin: "renderer" });
+    await backend.runWorker();
+    const dos = ctl.listMessages("INBOX").find((m: { uid: number }) => m.uid === after.find((_, i) => i === 1)!.uid) as { flags: string[] } | undefined;
+    expect(dos?.flags ?? ctl.listMessages("INBOX").flatMap((m: { flags: string[] }) => m.flags)).toContain("\\Seen");
+  });
+
+  it("does not let a sync clobber an optimistic change whose op hasn't run yet", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    imap.server.control.addMessage("INBOX", { raw: raw({ subject: "pendiente" }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const [t] = (await client.call("threads.list", { view: "inbox" })).items;
+    await client.call("threads.act", { threadIds: [t!.id], action: "markRead" });
+    await backend.syncAccount(account.id); // server still says unseen
+    expect(backend.db.get("SELECT is_read FROM messages")).toEqual({ is_read: 1 });
+    await backend.runWorker();
+    await backend.syncAccount(account.id);
+    expect(backend.db.get("SELECT is_read FROM messages")).toEqual({ is_read: 1 });
+  });
+
+  it("shows two IMAP accounts in one unified inbox", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const other = await startImap();
+    imap.server.control.addMessage("INBOX", { raw: raw({ subject: "de la cuenta 1" }) });
+    other.server.control.addMessage("INBOX", { raw: raw({ subject: "de la cuenta 2" }) });
+    const a1 = await addAccount(imap.port, "uno@test.local");
+    const a2 = await addAccount(other.port, "dos@test.local");
+    await Promise.all([backend.syncAccount(a1.id), backend.syncAccount(a2.id)]);
+    const items = (await client.call("threads.list", { view: "inbox" })).items;
+    expect(new Set(items.map((t) => t.accountId))).toEqual(new Set([a1.id, a2.id]));
+  });
+
+  it("picks up new mail through IDLE without polling", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    await addAccount(imap.port);
+    await new Promise((r) => setTimeout(r, 500)); // IDLE connection established
+    imap.server.control.addMessage("INBOX", { raw: raw({ subject: "¡Llegó por IDLE!" }) });
+    await expect.poll(async () => (await client.call("threads.list", { view: "inbox" })).items.map((t) => t.subject), { timeout: 8000 }).toContain("¡Llegó por IDLE!");
+  });
+});
+
+describe("sending through SMTP", () => {
+  it("sends a threaded reply, saves it to Sent, and adopts the server copy without duplicating", async () => {
+    const { imap, smtp, backend, client, addAccount } = await setup();
+    imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Propuesta", id: "orig@example.com" }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const [t] = (await client.call("threads.list", { view: "inbox" })).items;
+    const original = (await client.call("threads.get", { threadId: t!.id })).messages[0]!;
+    await client.call("compose.send", {
+      accountId: account.id,
+      to: [{ name: "Ana", email: "ana@example.com" }],
+      bcc: [{ name: "", email: "secreto@example.com" }],
+      subject: "Re: Propuesta",
+      bodyText: "¡Me encanta! Avancemos.",
+      inReplyToMessageId: original.id,
+    });
+    await backend.runWorker();
+    expect(smtp.received).toHaveLength(1);
+    const sent = smtp.received[0]!;
+    expect(sent.raw).toMatch(/In-Reply-To: <orig@example\.com>/);
+    expect(sent.raw).toMatch(/References: <orig@example\.com>/);
+    expect(sent.raw).not.toMatch(/^Bcc:/m);
+    expect(sent.rcpt.sort()).toEqual(["ana@example.com", "secreto@example.com"]);
+    expect(imap.server.control.listMessages("Sent")).toHaveLength(1);
+
+    await backend.syncAccount(account.id);
+    expect(count(backend, "SELECT 1 FROM messages WHERE is_sent = 1")).toBe(1);
+    expect((await client.call("threads.get", { threadId: t!.id })).messages.map((m) => m.isSent)).toEqual([false, true]);
+  });
+
+  it("a rejected recipient fails permanently (no retries)", async () => {
+    const { imap, backend, client, addAccount } = await setup({ smtp: { rejectRcpt: "nadie@example.com" } });
+    const account = await addAccount(imap.port);
+    const { opId } = await client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "nadie@example.com" }], subject: "x", bodyText: "y" });
+    await backend.runWorker();
+    expect(backend.db.get("SELECT state FROM ops WHERE id = ?", opId)).toEqual({ state: "failed" });
+  });
+
+  it("a connection lost after DATA is reported as unknown and never resent", async () => {
+    const { imap, backend, client, addAccount } = await setup({ smtp: { dropDuringData: true } });
+    const account = await addAccount(imap.port);
+    const { opId } = await client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "ana@example.com" }], subject: "x", bodyText: "y" });
+    await backend.runWorker();
+    expect(backend.db.get("SELECT state FROM ops WHERE id = ?", opId)).toEqual({ state: "unknown" });
+  });
+});

@@ -42,10 +42,19 @@ export interface SyncSink {
   ingest(messages: IncomingMessage[]): Promise<void>;
   setBody(messageId: number, text: string | null, html: string | null): Promise<void>;
   removeMessages(messageIds: number[]): Promise<void>;
+  /** Applies provider-side state to existing messages (skips messages with pending local ops). */
+  updateFlags(updates: FlagUpdate[]): Promise<void>;
+  /** Sync window start (ms): only mail newer than this is downloaded initially. */
+  windowStart: number;
   /** message ids with unsettled local ops: don't overwrite their flags */
   pendingMessageIds(): Set<number>;
   setSyncState(patch: Partial<AccountSyncState>): void;
   signal: AbortSignal;
+}
+
+export interface FlagUpdate {
+  messageId: number;
+  flags: Partial<{ isRead: boolean; isStarred: boolean; inInbox: boolean; isTrash: boolean; isSpam: boolean; isSent: boolean; isDraft: boolean }>;
 }
 
 export interface ProviderContext {
@@ -54,6 +63,8 @@ export interface ProviderContext {
   config: Record<string, unknown>;
   getSecret(name: string): Promise<string | null>;
   setSecret(name: string, value: string): Promise<void>;
+  /** app-wide secrets (e.g. the Gmail OAuth client secret) */
+  getAppSecret(name: string): Promise<string | null>;
   /** persistent provider sync cursor (stored on the account) */
   loadCursor<T>(): T | null;
   saveCursor(cursor: unknown): void;

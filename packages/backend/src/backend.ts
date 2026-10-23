@@ -25,6 +25,7 @@ import {
   markOpUnknown,
   messagesWithPendingOps,
   openDatabase,
+  recomputeThreads,
   putSecret,
   recoverOps,
   setAccountProviderConfig,
@@ -97,6 +98,8 @@ export class Backend {
   readonly options: Required<Pick<BackendOptions, "now" | "sliceBudgetMs" | "syncIntervalMs">> & BackendOptions;
   private readonly providers = new Map<number, MailProvider>();
   private readonly syncing = new Map<number, Promise<void>>();
+  /** a change arrived while syncing: run another pass when the current one ends */
+  private readonly syncAgain = new Set<number>();
   private readonly unwatch = new Map<number, () => void>();
   private syncTimer: ReturnType<typeof setInterval> | null = null;
   private workerTimer: ReturnType<typeof setTimeout> | null = null;
@@ -328,6 +331,7 @@ export class Backend {
       config: cfg.config,
       getSecret: (name) => this.getSecret(`account:${accountId}:${name}`),
       setSecret: (name, value) => this.setSecret(`account:${accountId}:${name}`, value),
+      getAppSecret: (name) => this.getSecret(name),
       loadCursor: <T,>() => (getAccountConfig<{ cursor?: T }>(this.db, accountId)?.config.cursor ?? null) as T | null,
       saveCursor: (cursor) => {
         const current = getAccountConfig<Record<string, unknown>>(this.db, accountId);
@@ -357,7 +361,11 @@ export class Backend {
 
   syncAccount(accountId: number): Promise<void> {
     const running = this.syncing.get(accountId);
-    if (running) return running;
+    if (running) {
+      // Don't drop the notification (IDLE/push during a long sync): schedule one more pass.
+      this.syncAgain.add(accountId);
+      return running.then(() => this.syncing.get(accountId));
+    }
     const provider = this.provider(accountId);
     if (!provider) return Promise.resolve();
     const setState = (patch: Partial<AccountSyncState>) => {
@@ -369,8 +377,37 @@ export class Backend {
       ingest: async (messages) => {
         await this.ingestSliced(messages);
       },
+      windowStart: this.now() - readSettings(this.db).syncWindowDays * 86_400_000,
+      updateFlags: async (updates) => {
+        const pending = messagesWithPendingOps(this.db, accountId);
+        const touched = new Set<number>();
+        const columns: Record<string, string> = { isRead: "is_read", isStarred: "is_starred", inInbox: "in_inbox", isTrash: "is_trash", isSpam: "is_spam", isSent: "is_sent", isDraft: "is_draft" };
+        await this.runSliced(updates, 200, (chunk) => {
+          this.db.tx(() => {
+            const threads = new Set<number>();
+            for (const u of chunk) {
+              // optimistic local state wins until its op settles
+              if (pending.has(u.messageId)) continue;
+              const sets = Object.entries(u.flags).filter(([k]) => columns[k]);
+              if (!sets.length) continue;
+              const r = this.db.get<{ thread_id: number }>(
+                `UPDATE messages SET ${sets.map(([k]) => `${columns[k]} = ?`).join(", ")} WHERE id = ? AND account_id = ? RETURNING thread_id`,
+                ...sets.map(([, v]) => (v ? 1 : 0)),
+                u.messageId,
+                accountId,
+              );
+              if (r) threads.add(r.thread_id);
+            }
+            recomputeThreads(this.db, threads);
+            for (const t of threads) touched.add(t);
+          });
+        });
+        this.notifyChanged(touched);
+      },
       setBody: async (messageId, text, html) => {
         setMessageBody(this.db, messageId, text, html, "full");
+        const owner = this.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", messageId);
+        if (owner) recomputeThreads(this.db, [owner.thread_id]);
         const touched = this.applyFiltersTo([messageId], true);
         const thread = this.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", messageId);
         if (thread) touched.add(thread.thread_id);
@@ -393,6 +430,7 @@ export class Backend {
         setState({ status: error instanceof ProviderError && error.retryable ? "offline" : "error", lastError: message });
       } finally {
         this.syncing.delete(accountId);
+        if (this.syncAgain.delete(accountId) && !this.stopped) void this.syncAccount(accountId);
       }
     })();
     this.syncing.set(accountId, run);
