@@ -63,8 +63,20 @@ async function checksum(bytes: Uint8Array, from: number, clock: SliceClock): Pro
   return h >>> 0;
 }
 
-/** Lays the sections out in one new buffer (synchronous copy); seal it before writing it anywhere. */
-export function packSnapshot(kind: SnapshotKind, revision: Revision, meta: Record<string, unknown>, sections: Record<string, Section>): Uint8Array {
+/** Copies `src` into `dst` at `at` in chunks, yielding between them. */
+export async function copySliced(dst: Uint8Array, at: number, src: Uint8Array, clock: SliceClock): Promise<void> {
+  const CHUNK = 1 << 21;
+  for (let i = 0; i < src.length; i += CHUNK) {
+    dst.set(src.subarray(i, Math.min(src.length, i + CHUNK)), at + i);
+    await clock.tick();
+  }
+}
+
+/**
+ * Lays the sections out in one new buffer, in slices: the sections must not
+ * change until it resolves. Seal it before writing it anywhere.
+ */
+export async function packSnapshot(kind: SnapshotKind, revision: Revision, meta: Record<string, unknown>, sections: Record<string, Section>, clock: SliceClock): Promise<Uint8Array> {
   const arrays: [string, Exclude<Section, { strings: readonly string[] }>][] = [];
   for (const [name, s] of Object.entries(sections)) {
     if ("strings" in s) {
@@ -73,7 +85,11 @@ export function packSnapshot(kind: SnapshotKind, revision: Revision, meta: Recor
       for (let i = 0; i < s.strings.length; i++) total += lens[i] = s.strings[i]!.length;
       const chars = new Uint16Array(total);
       let at = 0;
-      for (const str of s.strings) for (let i = 0; i < str.length; i++) chars[at++] = str.charCodeAt(i);
+      for (let k = 0; k < s.strings.length; k++) {
+        const str = s.strings[k]!;
+        for (let i = 0; i < str.length; i++) chars[at++] = str.charCodeAt(i);
+        if ((k & 4095) === 0) await clock.tick();
+      }
       arrays.push([`${name}.len`, lens], [`${name}.chars`, chars]);
     } else arrays.push([name, s]);
   }
@@ -92,7 +108,7 @@ export function packSnapshot(kind: SnapshotKind, revision: Revision, meta: Recor
   out.set(header, 12);
   for (let i = 0; i < arrays.length; i++) {
     const a = arrays[i]![1];
-    out.set(new Uint8Array(a.buffer, a.byteOffset, a.byteLength), base + entries[i]!.offset);
+    await copySliced(out, base + entries[i]!.offset, new Uint8Array(a.buffer, a.byteOffset, a.byteLength), clock);
   }
   return out;
 }
@@ -104,10 +120,10 @@ export async function sealSnapshot(packed: Uint8Array, clock: SliceClock): Promi
 }
 
 export interface SectionReader {
-  u8(name: string): Uint8Array;
-  u32(name: string): Uint32Array;
-  i32(name: string): Int32Array;
-  f64(name: string): Float64Array;
+  u8(name: string): Uint8Array<ArrayBuffer>;
+  u32(name: string): Uint32Array<ArrayBuffer>;
+  i32(name: string): Int32Array<ArrayBuffer>;
+  f64(name: string): Float64Array<ArrayBuffer>;
   strings(name: string): string[];
 }
 

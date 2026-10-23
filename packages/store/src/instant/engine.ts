@@ -15,7 +15,7 @@ import {
 } from "../search";
 import { andInto, andNotInto, clearBit, copyWords, has, orInto, popcount, scanBits, setBit, words } from "./bits";
 import { SliceClock, sortSliced, type SliceOptions } from "./slices";
-import { packSnapshot, readSnapshot, sealSnapshot, type Section } from "./snapshot";
+import { copySliced, packSnapshot, readSnapshot, sealSnapshot, type Section } from "./snapshot";
 
 /**
  * InstantSearchEngine: the in-memory search index (plan 03 §4), exact for
@@ -106,6 +106,15 @@ interface Phrase {
   bits: number;
 }
 
+/** A single token checked per doc from the forward index instead of materializing its (dense) doc set. */
+interface TokenCheck {
+  token: string;
+  prefix: boolean;
+  /** term ids that satisfy it */
+  members: Uint8Array;
+  bits: number;
+}
+
 interface Attr {
   sender: number;
   notSenders: number[];
@@ -121,11 +130,16 @@ interface Plan {
   set: Uint32Array;
   attr: Attr | null;
   phrases: Phrase[];
+  /** dense positive tokens, checked per doc while walking */
+  lazy: TokenCheck[];
   /** an attribute-only query over every message */
   everyDoc: boolean;
 }
 
 const OVER_BUDGET = Symbol("over budget");
+const OVER_WALK = Symbol("over walk");
+/** threads a walk may pass before deduplicating the candidates is cheaper */
+const WALK_VISITS = 3000;
 const EMPTY: readonly number[] = [];
 
 function grown<T extends Float64Array | Int32Array | Uint32Array | Uint8Array>(a: T, length: number, fill?: number): T {
@@ -133,6 +147,14 @@ function grown<T extends Float64Array | Int32Array | Uint32Array | Uint8Array>(a
   b.set(a.length > length ? (a.subarray(0, length) as T) : a);
   if (fill !== undefined) b.fill(fill, a.length);
   return b;
+}
+
+/** a copy of a (large) typed array, in slices */
+async function sliceCopy<T extends Uint8Array | Uint32Array>(src: T, clock: SliceClock): Promise<T> {
+  const out = new (src.constructor as new (n: number) => T)(src.length);
+  const bytes = new Uint8Array(out.buffer, out.byteOffset, out.byteLength);
+  await copySliced(bytes, 0, new Uint8Array(src.buffer, src.byteOffset, src.byteLength), clock);
+  return out;
 }
 
 function lowerBound(sorted: readonly string[], s: string): number {
@@ -283,6 +305,11 @@ export class InstantSearchEngine implements CachedSearchEngine {
     this.busy = true;
   }
 
+  /** Forgets cached term sets (cold-keystroke measurements, memory pressure). */
+  dropCaches(): void {
+    this.cache.clear();
+  }
+
   /** Gives up the index (memory pressure, failure): it never answers again. */
   disable(): void {
     this.state = "disabled";
@@ -330,6 +357,8 @@ export class InstantSearchEngine implements CachedSearchEngine {
       this.baseSortedIds = ids;
       this.baseSorted = Array.from(ids, (i) => terms[i]!);
       await this.buildPostings(clock);
+      // the forward index grew by half each time: give back the slack
+      if (this.fwd.length > this.fwdLen * 1.1) this.fwd = await sliceCopy(this.fwd.subarray(0, Math.ceil(this.fwdLen * 1.05)), clock);
       const exists: number[] = [];
       for (let t = 0; t < this.tCount; t++) if (this.thrFlags[t]! & T_EXISTS) exists.push(t);
       const date = this.thrDate;
@@ -461,6 +490,8 @@ export class InstantSearchEngine implements CachedSearchEngine {
   private intern(tok: string): number {
     let id = this.termIds.get(tok);
     if (id !== undefined) return id;
+    // V8 slices tokens of 13+ chars out of the text they came from: a copy keeps the dictionary from pinning bodies
+    if (tok.length >= 13) tok = JSON.parse(JSON.stringify(tok)) as string;
     id = this.terms.length;
     this.terms.push(tok);
     this.termIds.set(tok, id);
@@ -778,17 +809,26 @@ export class InstantSearchEngine implements CachedSearchEngine {
       strategy = "instant:empty";
       threads = [];
     } else {
-      const walk = plan.mode !== "messages" || plan.everyDoc || popcount(plan.set) >= (this.o.walkThreshold ?? 2000);
+      const walk = plan.mode !== "messages" || plan.everyDoc || plan.lazy.length > 0 || popcount(plan.set) >= (this.o.walkThreshold ?? 2000);
       strategy = walk ? "instant:walk" : "instant:docs";
       const canFallBack = plan.phrases.length > 0 && this.o.phrases !== undefined;
       let r = walk ? this.walk(plan, c, k, canFallBack) : this.sparse(plan, c, k, canFallBack);
+      if (r === OVER_WALK) {
+        // the candidates sit in old or filtered-out threads: dedup them instead of passing every newer thread
+        strategy = "instant:docs";
+        this.materialize(plan);
+        r = this.sparse(plan, c, k, canFallBack);
+      }
       if (r === OVER_BUDGET) {
         // frequent words that are rarely adjacent: ask the exact phrase doclist instead of verifying candidates
         for (const ph of plan.phrases) andInto(plan.set, this.sourceSet(ph.term));
         plan.phrases = [];
-        strategy += "+phrases";
-        r = this.walk(plan, c, k, false);
-        if (r === OVER_BUDGET) throw new Error("unreachable");
+        this.materialize(plan);
+        const rewalk = popcount(plan.set) >= (this.o.walkThreshold ?? 2000);
+        strategy = `${rewalk ? "instant:walk" : "instant:docs"}+phrases`;
+        r = rewalk ? this.walk(plan, c, k, false) : this.sparse(plan, c, k, false);
+        if (r === OVER_WALK) r = this.sparse(plan, c, k, false);
+        if (typeof r === "symbol") throw new Error("unreachable");
       }
       threads = r;
     }
@@ -871,11 +911,11 @@ export class InstantSearchEngine implements CachedSearchEngine {
     }
     const hasMessagePredicate = positive.length > 0 || hasEmailTerm || q.hasAttachment !== undefined || q.before !== undefined || q.after !== undefined;
     if (!hasMessagePredicate) {
-      if (negative.length === 0) return { mode: "threads", filter, set: this.alive, attr: null, phrases: [], everyDoc: false };
+      if (negative.length === 0) return { mode: "threads", filter, set: this.alive, attr: null, phrases: [], lazy: [], everyDoc: false };
       // purely negative: whole threads with a matching message are excluded
       const set = new Uint32Array(this.alive.length);
       for (const term of negative) orInto(set, this.exactSet(term));
-      return { mode: "exclude", filter, set, attr: null, phrases: [], everyDoc: false };
+      return { mode: "exclude", filter, set, attr: null, phrases: [], lazy: [], everyDoc: false };
     }
     const senderId = sender === null ? -1 : (this.senderIds.get(sender) ?? -2);
     if (senderId === -2) return null;
@@ -885,23 +925,98 @@ export class InstantSearchEngine implements CachedSearchEngine {
         : null;
     let set: Uint32Array | null = null;
     const phrases: Phrase[] = [];
+    const lazy: TokenCheck[] = [];
     for (const term of positive) {
+      const check = this.denseCheck(term);
+      if (check) {
+        lazy.push(check);
+        continue;
+      }
       const e = this.termSet(term);
       set = set ? andInto(set, e.set) : e.set;
       if (e.phrase) phrases.push(e.phrase);
     }
+    if (!set && lazy.length) set = copyWords(this.alive);
     let everyDoc = false;
     if (set) andInto(set, this.alive);
-    else if (senderId >= 0) {
-      set = new Uint32Array(this.alive.length);
-      const from = this.docFrom;
-      for (let d = 0; d < this.n; d++) if (from[d] === senderId && has(this.alive, d)) setBit(set, d);
-    } else {
+    else if (senderId >= 0) set = andInto(copyWords(this.senderSet(senderId)), this.alive);
+    else if (attr && q.before !== undefined) set = this.attrSet(attr); // old mail: a walk would pass every newer thread first
+    else {
       set = copyWords(this.alive);
       everyDoc = true;
     }
     for (const term of negative) andNotInto(set, this.exactSet(term));
-    return { mode: "messages", filter, set, attr, phrases, everyDoc };
+    return { mode: "messages", filter, set, attr, phrases, lazy, everyDoc };
+  }
+
+  /**
+   * The first keystrokes: a one- or two-letter prefix whose postings cover a
+   * large part of the mailbox. A newest-first walk meets a match within a few
+   * docs, so checking docs costs far less than building its set (hundreds of
+   * thousands of postings). Longer tokens build their (cached) sets.
+   */
+  private denseCheck(term: MessageTerm): TokenCheck | null {
+    const toks = tokenize(term.value);
+    if (toks.length !== 1 || !term.prefix || toks[0]!.length > 2) return null;
+    const tok = toks[0]!;
+    const bits = FIELD_BITS[term.field];
+    if (this.cache.has(`${bits}${term.prefix ? "*" : "="}${tok}`)) return null;
+    let postings = 0;
+    const count = (id: number) => {
+      if (id < this.baseTerms) postings += this.baseOff[id + 1]! - this.baseOff[id]!;
+      postings += (this.delta.get(id)?.length ?? 0) / 2;
+    };
+    this.prefixTerms(tok, count);
+    if (postings < (this.n - this.dead) / 3) return null;
+    const members = new Uint8Array(this.terms.length);
+    this.prefixTerms(tok, (id) => void (members[id] = 1));
+    return { token: tok, prefix: true, members, bits };
+  }
+
+  /** Every check has a member term in its fields in doc d. */
+  private tokensAt(d: number, checks: TokenCheck[]): boolean {
+    const all = (1 << checks.length) - 1;
+    let met = 0;
+    const f = this.fwd;
+    let p = this.docFwd[d]!;
+    const end = this.docFwd[d + 1]!;
+    let field = 0;
+    while (p < end) {
+      let v = 0;
+      let shift = 0;
+      let b: number;
+      do {
+        b = f[p++]!;
+        v |= (b & 0x7f) << shift;
+        shift += 7;
+      } while (b & 0x80);
+      if (v === 0) {
+        field++;
+        continue;
+      }
+      const bit = 1 << field;
+      for (let i = 0; i < checks.length; i++) {
+        const c = checks[i]!;
+        if (c.bits & bit && c.members[v - 1] === 1) met |= 1 << i;
+      }
+      if (met === all) return true;
+    }
+    return false;
+  }
+
+  /** Alive docs passing the attribute predicates. */
+  private attrSet(attr: Attr): Uint32Array {
+    const set = new Uint32Array(this.alive.length);
+    for (let d = 0; d < this.n; d++) if (this.attrOk(attr, d)) setBit(set, d);
+    return andInto(set, this.alive);
+  }
+
+  /** Turns what a walk checks per doc into candidate sets (before deduplicating candidates). */
+  private materialize(plan: Plan): void {
+    for (const c of plan.lazy) andInto(plan.set, this.tokenSet(c.token, c.bits, c.prefix));
+    plan.lazy = [];
+    if (plan.everyDoc && plan.attr) andInto(plan.set, this.attrSet(plan.attr));
+    plan.everyDoc = false;
   }
 
   /** Docs holding every token of the term in its field (a superset for phrases, which come with their verifier). */
@@ -962,6 +1077,19 @@ export class InstantSearchEngine implements CachedSearchEngine {
       const id = this.termIds.get(tok);
       if (id !== undefined) this.orPostings(id, bits, out);
     }
+    this.cache.set(key, out);
+    if (this.cache.size > 64) this.cache.delete(this.cache.keys().next().value!);
+    return out;
+  }
+
+  /** Docs from one sender (cached like term sets). */
+  private senderSet(sender: number): Uint32Array {
+    const key = `@${sender}`;
+    const hit = this.cache.get(key);
+    if (hit) return hit;
+    const out = new Uint32Array(this.alive.length);
+    const from = this.docFrom;
+    for (let d = 0; d < this.n; d++) if (from[d] === sender) setBit(out, d);
     this.cache.set(key, out);
     if (this.cache.size > 64) this.cache.delete(this.cache.keys().next().value!);
     return out;
@@ -1055,7 +1183,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
   }
 
   /** Threads newest-first from the cursor; stops after k matches. */
-  private walk(plan: Plan, cursor: SearchCursor | undefined, k: number, budgeted: boolean): number[] | typeof OVER_BUDGET {
+  private walk(plan: Plan, cursor: SearchCursor | undefined, k: number, budgeted: boolean): number[] | typeof OVER_BUDGET | typeof OVER_WALK {
     const { filter, set, attr, phrases, mode } = plan;
     const order = this.order;
     const head = this.thrHead;
@@ -1064,9 +1192,14 @@ export class InstantSearchEngine implements CachedSearchEngine {
     const budget = this.o.phraseBudget ?? 512;
     let fails = 0;
     const out: number[] = [];
-    for (let i = cursor ? this.orderPos(cursor.lastDate, cursor.id, true) : 0; i < this.orderLen && out.length < k; i++) {
+    const start = cursor ? this.orderPos(cursor.lastDate, cursor.id, true) : 0;
+    const dedup = mode === "messages";
+    const lazy = plan.lazy;
+    let visits = 0;
+    for (let i = start; i < this.orderLen && out.length < k; i++) {
       const t = order[i]!;
       if (!this.threadOk(filter, t)) continue;
+      if (dedup && ++visits > WALK_VISITS) return OVER_WALK;
       if (mode === "threads") {
         out.push(t);
         continue;
@@ -1085,6 +1218,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
       for (let d = head[t]!; d >= 0; d = next[d]!) {
         if (!has(set, d) || !has(alive, d)) continue;
         if (attr && !this.attrOk(attr, d)) continue;
+        if (lazy.length && !this.tokensAt(d, lazy)) continue;
         let ok = true;
         for (const ph of phrases) {
           if (!this.phraseAt(d, ph)) {
@@ -1158,13 +1292,14 @@ export class InstantSearchEngine implements CachedSearchEngine {
   /**
    * The whole index as one buffer: a header with the revision, identity and
    * versions, the typed arrays as they are (tombstones and delta included)
-   * and a checksum over all of it. Copies synchronously (the index keeps
-   * answering and changing afterwards), checksums the copy in slices.
+   * and a checksum over all of it. Copies in slices (queries keep running,
+   * changes wait), then checksums the copy in slices.
    */
   async snapshot(): Promise<Uint8Array> {
     if (!this.indexed || !this.rev || this.state !== "ready") throw new IndexNotCurrentError("instant search: snapshot of an index that isn't current");
     this.enter("snapshot");
     let packed: Uint8Array;
+    const clock = this.clock();
     try {
       const deltaTerms = new Uint32Array(this.delta.size);
       const deltaOff = new Uint32Array(this.delta.size + 1);
@@ -1214,12 +1349,13 @@ export class InstantSearchEngine implements CachedSearchEngine {
         catIds,
       };
       const meta = { n, dead: this.dead, baseN: this.baseN, baseTerms: this.baseTerms, tCount: T, orderLen: this.orderLen };
-      packed = packSnapshot(this.header(), this.rev, meta, sections);
+      // in slices: nothing may change the index meanwhile (busy), queries still run
+      packed = await packSnapshot(this.header(), this.rev, meta, sections, clock);
     } finally {
       this.busy = false;
     }
     // a copy: the index may change while it is sealed
-    return sealSnapshot(packed, this.clock());
+    return sealSnapshot(packed, clock);
   }
 
   private header(): { tokenizer: number; format: number; identity: string } {
@@ -1227,16 +1363,19 @@ export class InstantSearchEngine implements CachedSearchEngine {
   }
 
   /**
-   * Restores a snapshot into this (unused) engine. False when it is corrupt,
+   * Restores a snapshot into this (unused) engine; with `adopt` the engine
+   * keeps and mutates `bytes` (the caller must not reuse them). False when it is corrupt,
    * truncated or written for another tokenizer, format or identity: the
    * caller rebuilds. A restored engine is current at the snapshot's revision
    * only; the caller replays the feed to the head before using it.
    */
-  async restore(bytes: Uint8Array): Promise<boolean> {
+  async restore(bytes: Uint8Array, adopt = false): Promise<boolean> {
     if (this.n || this.tCount || this.indexed) throw new Error("instant search: restore into a used engine");
     this.enter("restore");
     try {
-      const snap = await readSnapshot(bytes, this.header(), this.clock());
+      // the index lives in the buffer it restores from: adopt it (a file just read) or work on a copy
+      const own = adopt ? bytes : await sliceCopy(bytes, this.clock());
+      const snap = await readSnapshot(own, this.header(), this.clock());
       if (!snap) return false;
       const { revision, meta, sections: s } = snap;
       const num = (k: string) => (typeof meta[k] === "number" && Number.isInteger(meta[k]) && (meta[k] as number) >= 0 ? (meta[k] as number) : NaN);
@@ -1288,6 +1427,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
       for (let i = 0; i < terms.length; i++) {
         this.termIds.set(terms[i]!, i);
         this.termChars += terms[i]!.length;
+        if ((i & 4095) === 0) await clock.tick();
       }
       this.baseSortedIds = baseSortedIds.slice();
       this.baseSorted = Array.from(this.baseSortedIds, (i) => terms[i]!);
@@ -1298,52 +1438,56 @@ export class InstantSearchEngine implements CachedSearchEngine {
       for (let i = 0; i < senders.length; i++) {
         this.senderIds.set(senders[i]!, i);
         this.senderChars += senders[i]!.length;
+        if ((i & 4095) === 0) await clock.tick();
       }
       this.baseTerms = baseTerms;
-      this.baseOff = baseOff.slice();
-      this.baseDocs = baseDocs.slice();
-      this.baseMask = baseMask.slice();
+      this.baseOff = baseOff;
+      this.baseDocs = baseDocs;
+      this.baseMask = baseMask;
       for (let i = 0; i < deltaTerms.length; i++) {
         this.delta.set(deltaTerms[i]!, Array.from(deltaPairs.subarray(deltaOff[i]!, deltaOff[i + 1]!)));
       }
       this.deltaEntries = deltaPairs.length / 2;
       await clock.tick();
 
-      this.n = 0;
-      this.ensureDocs(n);
+      // the arrays stay in the snapshot's buffer until they first grow
       this.n = n;
+      this.docCap = n;
       this.dead = num("dead");
       this.baseN = num("baseN");
-      this.docMsg.set(docArrays[0] as Float64Array);
-      this.docThread.set(docArrays[1] as Int32Array);
-      this.docDate.set(docArrays[2] as Float64Array);
-      this.docAtt.set(docArrays[3] as Uint8Array);
-      this.docFrom.set(docArrays[4] as Int32Array);
-      this.docNext.set(docArrays[5] as Int32Array);
-      this.docFwd.set(docFwd);
-      this.alive.set(alive);
-      this.fwd = fwd.slice();
+      this.docMsg = docArrays[0] as Float64Array<ArrayBuffer>;
+      this.docThread = docArrays[1] as Int32Array<ArrayBuffer>;
+      this.docDate = docArrays[2] as Float64Array<ArrayBuffer>;
+      this.docAtt = docArrays[3] as Uint8Array<ArrayBuffer>;
+      this.docFrom = docArrays[4] as Int32Array<ArrayBuffer>;
+      this.docNext = docArrays[5] as Int32Array<ArrayBuffer>;
+      this.docFwd = docFwd;
+      this.alive = alive;
+      this.fwd = fwd;
       this.fwdLen = fwd.length;
       for (let d = 0; d < n; d++) {
         if (has(this.alive, d)) this.msgToDoc.set(this.docMsg[d]!, d);
         if ((d & 1023) === 0) await clock.tick();
       }
 
-      this.ensureThreads(T);
       this.tCount = T;
-      this.thrId.set(thrArrays[0] as Float64Array);
-      this.thrDate.set(thrArrays[1] as Float64Array);
-      this.thrFlags.set(thrArrays[2] as Uint8Array);
-      this.thrAccount.set(thrArrays[3] as Float64Array);
-      this.thrHead.set(thrArrays[4] as Int32Array);
+      this.tCap = T;
+      this.thrId = thrArrays[0] as Float64Array<ArrayBuffer>;
+      this.thrDate = thrArrays[1] as Float64Array<ArrayBuffer>;
+      this.thrFlags = thrArrays[2] as Uint8Array<ArrayBuffer>;
+      this.thrAccount = thrArrays[3] as Float64Array<ArrayBuffer>;
+      this.thrHead = thrArrays[4] as Int32Array<ArrayBuffer>;
+      this.seen = new Uint32Array(T);
+      // room for every thread: a removed one may come back
+      this.order = new Int32Array(T);
+      this.order.set(order);
+      this.orderLen = orderLen;
       for (let t = 0; t < T; t++) {
         this.threadIdx.set(this.thrId[t]!, t);
         this.thrCats[t] = EMPTY;
-        const ids = Array.from(catIds.subarray(catOff[t]!, catOff[t + 1]!));
-        if (ids.length) this.setCats(t, ids);
+        if (catOff[t + 1]! > catOff[t]!) this.setCats(t, Array.from(catIds.subarray(catOff[t]!, catOff[t + 1]!)));
+        if ((t & 1023) === 0) await clock.tick();
       }
-      this.order.set(order);
-      this.orderLen = orderLen;
       this.rev = revision;
       this.indexed = true;
       this.state = "ready";
