@@ -33,6 +33,7 @@ import {
   listRecentOps,
   listThreads,
   loadUserActions,
+  putSecret,
   recordUserActions,
   removeAccount,
   removeThreadsFromCategory,
@@ -322,15 +323,17 @@ export function createHandlers(b: Backend): Handlers {
       }
       // only a live login establishes the owner; it is claimed in the same transaction as the account
       const claim = p.verify && b.canClaimOwner();
+      // encrypt first, so the account, its password and the ownership commit together
+      const blob = await b.options.cipher.encrypt(p.password);
       const { account, claimed } = db().tx(() => {
         const account = createAccount(
           db(),
           { kind: "imap", email: p.email, displayName: p.displayName || p.email, color: nextAccountColor(), providerConfig: config },
           b.now(),
         );
+        putSecret(db(), `account:${account.id}:password`, blob);
         return { account, claimed: claim && claimOwner(db(), imapClaim(account, config, p.displayName || p.email), b.now()) };
       });
-      await b.setSecret(`account:${account.id}:password`, p.password);
       b.emitAccounts();
       if (claimed) b.emitOwner();
       b.startAccount(account);
@@ -353,15 +356,16 @@ export function createHandlers(b: Backend): Handlers {
       const existing = listAccounts(db()).find((a) => a.email === result.email.toLowerCase());
       if (existing) throw new RpcError("BAD_REQUEST", `${result.email} is already connected.`);
       const config: GmailAccountConfig = { senderName: result.name || result.email };
+      const blob = await b.options.cipher.encrypt(result.refreshToken);
       const { account, claimed } = db().tx(() => {
         const account = createAccount(
           db(),
           { kind: "gmail", email: result.email, displayName: result.email.split("@")[0]!, color: nextAccountColor(), providerConfig: config },
           b.now(),
         );
+        putSecret(db(), `account:${account.id}:refreshToken`, blob);
         return { account, claimed: b.canClaimOwner() && claimOwner(db(), gmailClaim(account, { ...result, name: result.name || result.email }), b.now()) };
       });
-      await b.setSecret(`account:${account.id}:refreshToken`, result.refreshToken);
       b.emitAccounts();
       if (claimed) b.emitOwner();
       b.startAccount(account);

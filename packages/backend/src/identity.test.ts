@@ -144,6 +144,32 @@ describe("changing the owner", () => {
     expect(ownerEvents.at(-1)).toEqual(after);
   });
 
+  it("a mailbox removed (and its id's slot refilled) while verifying gets no credentials and no ownership", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const slow: ProviderRegistry = {
+      ...registry,
+      async verifyImap(config, password) {
+        if (password === "slow-pw") return gate;
+        return registry.verifyImap(config, password);
+      },
+    };
+    const { backend, client } = setup(slow);
+    await client.call("accounts.addImap", imap("luis@fastmail.com"));
+    const target = await client.call("accounts.addImap", imap("work@acme.studio"));
+    const before = await client.call("identity.get", {});
+    const pending = errorOf(client.call("identity.changeOwner", { accountId: target.id, password: "slow-pw" }));
+    await new Promise((r) => setTimeout(r, 20));
+    await client.call("accounts.remove", { id: target.id });
+    const replacement = await client.call("accounts.addImap", imap("new@other.dev"));
+    expect(replacement.id).not.toBe(target.id);
+    release();
+    expect(await pending).toMatchObject({ code: "NOT_FOUND" });
+    expect(await client.call("identity.get", {})).toEqual(before);
+    expect(await backend.getSecret(`account:${replacement.id}:password`)).toBe("pw-new@other.dev");
+    expect(await backend.getSecret(`account:${target.id}:password`)).toBeNull();
+  });
+
   it("refuses demo mailboxes", async () => {
     const { backend, client } = setup();
     const demo = createAccount(backend.db, { kind: "imap", email: "demo@demo.dev", displayName: "Demo", color: "indigo", providerConfig: { demo: true } });

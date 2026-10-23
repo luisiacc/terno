@@ -334,3 +334,17 @@ describe("migrations", () => {
     expect(() => migrate(db)).toThrow(/newer/);
   });
 });
+
+describe("account ids", () => {
+  it("are never reused, even after removing the newest account (secrets and the owner refer to them)", async () => {
+    const { createAccount, removeAccount, accountStamp } = await import("./repos");
+    const db = testDb();
+    const a = createAccount(db, { kind: "imap", email: "a@x.dev", displayName: "A", color: "indigo" }, 1);
+    const b = createAccount(db, { kind: "imap", email: "b@x.dev", displayName: "B", color: "indigo" }, 2);
+    removeAccount(db, b.id);
+    const c = createAccount(db, { kind: "imap", email: "c@x.dev", displayName: "C", color: "indigo" }, 3);
+    expect(c.id).toBeGreaterThan(b.id);
+    expect(accountStamp(db, b.id)).toBeNull();
+    expect(accountStamp(db, a.id)).toEqual({ id: a.id, email: "a@x.dev", createdAt: 1 });
+  });
+});

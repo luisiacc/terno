@@ -1,5 +1,5 @@
 import { RpcError, type OwnerIdentity } from "@unica/core/rpc";
-import { changeOwner, getAccount, getAccountConfig, getOwner, type OwnerClaim } from "@unica/db";
+import { accountStamp, changeOwner, getAccount, getAccountConfig, getOwner, putSecret, type OwnerClaim } from "@unica/db";
 import type { GmailAccountConfig, GmailConnectResult, ImapAccountConfig } from "@unica/mail";
 import type { Backend } from "./backend";
 import { readSettings } from "./settings";
@@ -37,13 +37,15 @@ export async function changeOwnerTo(b: Backend, accountId: number, password: str
   const db = b.db;
   if (!b.canClaimOwner()) throw new RpcError("BAD_REQUEST", "El modo demo no tiene cuenta Única.");
   const account = getAccount(db, accountId);
-  if (!account) throw new RpcError("NOT_FOUND", "Esa cuenta ya no está conectada.");
+  const stamp = accountStamp(db, accountId);
+  if (!account || !stamp) throw new RpcError("NOT_FOUND", "Esa cuenta ya no está conectada.");
   const config = getAccountConfig<Record<string, unknown>>(db, accountId)!.config;
   if (config.demo) throw new RpcError("BAD_REQUEST", "Una cuenta de demostración no puede ser tu cuenta Única.");
   const current = getOwner(db);
   if (current?.accountId === accountId) throw new RpcError("BAD_REQUEST", `${account.email} ya es tu cuenta Única.`);
 
   let claim: OwnerClaim;
+  let secret: { name: string; blob: Uint8Array };
   if (account.kind === "imap") {
     if (!password) throw new RpcError("BAD_REQUEST", "Escribe la contraseña de la cuenta para verificarla.");
     const imap = config as unknown as ImapAccountConfig;
@@ -52,7 +54,7 @@ export async function changeOwnerTo(b: Backend, accountId: number, password: str
     } catch (error) {
       throw new RpcError("BAD_REQUEST", `No se pudo verificar ${account.email}: ${error instanceof Error ? error.message : String(error)}`);
     }
-    await b.setSecret(`account:${accountId}:password`, password);
+    secret = { name: `account:${accountId}:password`, blob: await b.options.cipher.encrypt(password) };
     claim = imapClaim(account, imap, (config as unknown as ImapAccountConfig).senderName || account.displayName);
   } else {
     const settings = readSettings(db);
@@ -69,10 +71,19 @@ export async function changeOwnerTo(b: Backend, accountId: number, password: str
     if (result.email.toLowerCase() !== account.email.toLowerCase()) {
       throw new RpcError("BAD_REQUEST", `Google verificó ${result.email}, no ${account.email}. Elige esa cuenta en la ventana de Google.`);
     }
-    await b.setSecret(`account:${accountId}:refreshToken`, result.refreshToken);
+    secret = { name: `account:${accountId}:refreshToken`, blob: await b.options.cipher.encrypt(result.refreshToken) };
     claim = gmailClaim(account, { ...result, name: result.name || (config as unknown as GmailAccountConfig).senderName });
   }
-  changeOwner(db, claim, current ? "changed by user" : "claimed by user", b.now());
+  // Verification took a while (a login, a browser round trip): commit only if it is still the same mailbox,
+  // and write its fresh credentials and the ownership together.
+  db.tx(() => {
+    const now = accountStamp(db, accountId);
+    if (!now || now.createdAt !== stamp.createdAt || now.email !== stamp.email) {
+      throw new RpcError("NOT_FOUND", `${account.email} se quitó mientras se verificaba; no se cambió nada.`);
+    }
+    putSecret(db, secret.name, secret.blob);
+    changeOwner(db, claim, current ? "changed by user" : "claimed by user", b.now());
+  });
   b.emitOwner();
   return getOwner(db)!;
 }

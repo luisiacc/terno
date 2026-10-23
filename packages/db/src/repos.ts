@@ -54,25 +54,47 @@ export function getAccountConfig<T>(db: Db, id: number): { config: T; secretRef:
   return r ? { config: JSON.parse(r.provider_config) as T, secretRef: r.secret_ref } : null;
 }
 
+/**
+ * Account ids are never reused (SQLite would hand out the max rowid again after
+ * a delete): secrets, ops and the owner refer to accounts by id, and a pending
+ * verification must never land on an unrelated replacement account.
+ */
+function nextAccountId(db: Db): number {
+  const stored = db.get<{ value_json: string }>("SELECT value_json FROM settings WHERE key = 'account_id_hwm'");
+  const next = Math.max(stored ? Number(JSON.parse(stored.value_json)) : 0, db.get<{ m: number | null }>("SELECT max(id) AS m FROM accounts")!.m ?? 0) + 1;
+  db.run("INSERT OR REPLACE INTO settings (key, value_json) VALUES ('account_id_hwm', ?)", JSON.stringify(next));
+  return next;
+}
+
 export function createAccount(
   db: Db,
   a: { kind: AccountKind; email: string; displayName: string; color: string; providerConfig?: unknown; secretRef?: string | null },
   now = Date.now(),
 ): Account {
-  const position = db.get<{ p: number }>("SELECT coalesce(max(position), -1) + 1 AS p FROM accounts")!.p;
-  const id = db.run(
-    `INSERT INTO accounts (kind, email, display_name, color, provider_config, secret_ref, position, created_at)
-     VALUES (?,?,?,?,?,?,?,?)`,
-    a.kind,
-    a.email.toLowerCase(),
-    a.displayName,
-    a.color,
-    JSON.stringify(a.providerConfig ?? {}),
-    a.secretRef ?? null,
-    position,
-    now,
-  ).lastInsertRowid;
-  return getAccount(db, id)!;
+  return db.tx(() => {
+    const id = nextAccountId(db);
+    const position = db.get<{ p: number }>("SELECT coalesce(max(position), -1) + 1 AS p FROM accounts")!.p;
+    db.run(
+      `INSERT INTO accounts (id, kind, email, display_name, color, provider_config, secret_ref, position, created_at)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+      id,
+      a.kind,
+      a.email.toLowerCase(),
+      a.displayName,
+      a.color,
+      JSON.stringify(a.providerConfig ?? {}),
+      a.secretRef ?? null,
+      position,
+      now,
+    );
+    return getAccount(db, id)!;
+  });
+}
+
+/** What identifies one specific account over time (ids alone are not enough across a remove + add). */
+export function accountStamp(db: Db, id: number): { id: number; email: string; createdAt: number } | null {
+  const r = db.get<{ email: string; created_at: number }>("SELECT email, created_at FROM accounts WHERE id = ?", id);
+  return r ? { id, email: r.email, createdAt: r.created_at } : null;
 }
 
 export function updateAccount(db: Db, id: number, patch: { displayName?: string; color?: string }): Account | null {
