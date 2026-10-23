@@ -255,6 +255,9 @@ importers:
       '@unica/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@unica/idb':
+        specifier: workspace:*
+        version: link:../../packages/idb
       '@unica/mail':
         specifier: workspace:*
         version: link:../../packages/mail

@@ -164,3 +164,16 @@ test("Gmail in the browser: Google's token model through the page, the mailbox s
   await expect(rows(page).first()).toContainText("Desde Gmail");
   expect(seen).toContain("GET /gmail/v1/users/me/profile Bearer web-token");
 });
+
+test("?storage=idb runs the same app on native IndexedDB, and the mailbox stays pinned there", async ({ page }) => {
+  await boot(page, "/?demo=400&mailbox=idb&storage=idb");
+  expect((await web(page)).storage).toBe("idb");
+  await page.getByTestId("search-input").fill("factura");
+  await expect(page.getByTestId("search-stats")).toBeVisible();
+  await rows(page).first().dispatchEvent("mousedown");
+  await expect(page.getByTestId("reader-subject")).toBeVisible();
+  // without ?storage= the mailbox is found where it lives, not recreated in OPFS
+  await boot(page, "/?demo=0&mailbox=idb");
+  expect((await web(page)).storage).toBe("idb");
+  expect(await rows(page).count()).toBeGreaterThan(10);
+});

@@ -26,10 +26,23 @@ interface Stat {
   note?: string;
 }
 
+/** plan 04 §8, per adapter (IndexedDB loads its tables into memory on open and scans rules over all mail) */
+const BUDGETS = {
+  opfs: {
+    "10k": { repeatVisit: 600, list: 2, view: 4, search: 10, action: 16, preview: 50, rpc: 3, keystroke: 100 },
+    "50k": { repeatVisit: 700, list: 2, view: 6, search: 25, action: 16, preview: 50, rpc: 3, keystroke: 100 },
+  },
+  idb: {
+    "10k": { repeatVisit: 600, list: 2, view: 4, search: 10, action: 16, preview: 150, rpc: 3, keystroke: 100 },
+    "50k": { repeatVisit: 900, list: 2, view: 4, search: 25, action: 16, preview: 600, rpc: 3, keystroke: 100 },
+  },
+} as const;
+const ADAPTER = STORAGE === "idb" ? "idb" : "opfs";
+
 const SIZES = [
   // demo threads → messages (8 accounts): 5,700 → ~10.1k, 28,400 → ~50.1k
-  { label: "10k", threads: 5700, budgets: { repeatVisit: 600, list: 2, view: 4, search: 10, action: 16, preview: 50, rpc: 3, keystroke: 100 } },
-  { label: "50k", threads: 28_400, budgets: { repeatVisit: 700, list: 2, view: 6, search: 25, action: 16, preview: 50, rpc: 3, keystroke: 100 } },
+  { label: "10k", threads: 5700, budgets: BUDGETS[ADAPTER]["10k"] },
+  { label: "50k", threads: 28_400, budgets: BUDGETS[ADAPTER]["50k"] },
 ] as const;
 
 const SEARCHES = ["factura", "reunion", "propu", "p", "from:github is:unread", "presupuesto has:attachment", '"hola equipo"', "-hola factura"];
@@ -82,11 +95,9 @@ async function installProbes(context: BrowserContext) {
 /** Waits until the instant index answers (or reports why it doesn't): the steady state the budgets describe. */
 async function waitForInstant(page: Page): Promise<string> {
   let strategy = "";
-  if (DURABLE) {
-    // the steady state: after open the backend rebuilds its categorization model in background slices
-    await page.waitForTimeout(4000);
-    return "durable";
-  }
+  // the steady state: after open the backend loads (or rebuilds) its categorization model in background slices
+  await page.waitForTimeout(4000);
+  if (DURABLE) return "durable";
   for (let i = 0; i < 240; i++) {
     strategy = await page.evaluate(async () => {
       const r = (await (window.__unicaWeb!.client as unknown as { call(m: string, p: unknown): Promise<{ strategy: string }> }).call("threads.search", { query: "factura", limit: 100 })) as { strategy: string };
@@ -99,8 +110,6 @@ async function waitForInstant(page: Page): Promise<string> {
 }
 
 const results: { size: string; storage: string; load: number[]; seedMs: number | null; threads: number; stats: Stat[]; cache: unknown }[] = [];
-
-test.describe.configure({ mode: "serial" });
 
 test.afterAll(() => {
   const dir = join(process.cwd(), "..", "..", "test-results", "perf");
@@ -172,8 +181,10 @@ for (const size of SIZES) {
         const samples = await rpc(page, "threads.search", { query, limit: 100 }, 25);
         const r = (await page.evaluate(async (q) => (window.__unicaWeb!.client as unknown as { call(m: string, p: unknown): Promise<{ strategy: string }> }).call("threads.search", { query: q, limit: 100 }), query)) as { strategy: string };
         strategies.add(r.strategy.split(":")[0]!);
-        // like desktop's FTS5 gate, the durable path is gated from two characters on; one is reported (the instant index answers it)
-        stats.push(stat(`search ${query} (RPC)`, DURABLE && query.length === 1 ? Infinity : size.budgets.search, samples, DURABLE && query.length === 1 ? `${r.strategy}, reported` : r.strategy));
+        // like desktop's FTS5 gate, the durable path is gated from two characters on; one is reported (the instant index answers it).
+        // IndexedDB's durable path is an exact scan that answers only while the index builds: reported, not gated
+        const reported = DURABLE && (query.length === 1 || STORAGE === "idb");
+        stats.push(stat(`search ${query} (RPC)`, reported ? Infinity : size.budgets.search, samples, reported ? `${r.strategy}, reported` : r.strategy));
       }
       const after = await page.evaluate(() => window.__unicaWeb!.cacheStatus());
 
@@ -224,8 +235,10 @@ for (const size of SIZES) {
         await page.waitForTimeout(150);
       }
       const keystrokes = (await page.evaluate(() => [...(window as unknown as { __search: { done: Map<string, number> } }).__search.done.entries()])).filter(([q]) => q.length > 0).map(([, ms]) => ms);
-      expect(keystrokes.length).toBeGreaterThanOrEqual(30);
-      stats.push(stat("keystroke → results rendered", size.budgets.keystroke, keystrokes));
+      // the exact scan (IndexedDB's durable path) is slower than typing: superseded keystrokes never render
+      const scanOnly = DURABLE && STORAGE === "idb";
+      expect(keystrokes.length).toBeGreaterThanOrEqual(scanOnly ? 1 : 30);
+      stats.push(stat("keystroke → results rendered", scanOnly ? Infinity : size.budgets.keystroke, keystrokes, scanOnly ? `${keystrokes.length} rendered, reported` : undefined));
 
       const cache =
         before && after

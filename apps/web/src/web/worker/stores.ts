@@ -1,5 +1,6 @@
 import type { SAHPoolUtil, Sqlite3Static } from "@sqlite.org/sqlite-wasm";
 import { openDatabaseWith, SqlMailStore, wasmSqliteDriver } from "@unica/db/wasm";
+import { idbAdapter } from "@unica/idb";
 import { StoreRegistry, type StoreAdapter } from "@unica/store";
 import { WEB_SEARCH_MEMORY } from "@unica/store/instant";
 
@@ -54,9 +55,15 @@ export class OpfsSqliteAdapter implements StoreAdapter {
   }
 }
 
-/** The adapters this browser build offers, in preference order. */
+/**
+ * The adapters this browser build offers, in preference order (see
+ * docs/STORAGE.md): SQLite on OPFS by default; IndexedDB by `?storage=idb`,
+ * for a mailbox that already lives there, and automatically only where OPFS
+ * sync handles are missing (it passed conformance in Node and Chromium and
+ * the web-perf budgets at 10k and 50k before becoming automatic).
+ */
 export function webStores(sqlite3: Sqlite3Static): { registry: StoreRegistry; release(): Promise<void> } {
   const opfs = new OpfsSqliteAdapter(sqlite3);
-  const registry = new StoreRegistry().register(opfs);
+  const registry = new StoreRegistry().register(opfs).register(idbAdapter(indexedDB, { automatic: true }));
   return { registry, release: () => opfs.release() };
 }

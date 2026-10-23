@@ -22,6 +22,7 @@
     "@unica/backend": "workspace:*",
     "@unica/core": "workspace:*",
     "@unica/db": "workspace:*",
+    "@unica/idb": "workspace:*",
     "@unica/mail": "workspace:*",
     "@unica/mock-data": "workspace:*",
     "@unica/store": "workspace:*",

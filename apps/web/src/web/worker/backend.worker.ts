@@ -80,6 +80,8 @@ async function start(init: WorkerInit): Promise<void> {
     post({ type: "fatal", code: "BUILD_MISMATCH", message: `This tab (${init.build}) and its worker (${BUILD}) come from different builds` });
     return;
   }
+  // the key store first: it must not queue behind the mailbox's own reads
+  const cipherReady = webCipher();
   const sqlite3 = await sqlite3InitModule();
   mark("wasm");
   const stores = webStores(sqlite3);
@@ -105,11 +107,14 @@ async function start(init: WorkerInit): Promise<void> {
     return;
   }
   mark("open");
+  for (const [k, v] of Object.entries((store as { openTimings?: Record<string, number> }).openTimings ?? {})) timings[`open.${k}`] = Math.round(v * 10) / 10;
+  const cipher = await cipherReady;
+  mark("cipher");
   backend = new BackendCore({
     store,
     platform,
     version: BUILD,
-    cipher: await webCipher(),
+    cipher,
     providers: webRegistry(),
     host: WEB_HOST,
     demoAi: init.demo !== null,
@@ -127,6 +132,8 @@ async function start(init: WorkerInit): Promise<void> {
       mark("seed");
     }
   }
+  await backend.ready;
+  mark("backendReady");
   await backend.start();
   backend.connect(portTransport(init.port), { clientId: "tab", origin: "renderer" });
   mark("ready");

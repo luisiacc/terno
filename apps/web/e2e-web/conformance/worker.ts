@@ -9,6 +9,7 @@ import { generateDataset } from "@unica/mock-data";
 import { openDatabaseWith, sqlDb, SqlMailStore, wasmSqliteDriver } from "@unica/db/wasm";
 import { corpusFromDataset, defineEngineConformance, defineStoreConformance } from "@unica/store/conformance";
 import { InstantSearchEngine } from "@unica/store/instant";
+import { IdbMailStore } from "@unica/idb";
 import { describe, expect, it, run, type TestResult } from "./shim";
 
 declare const self: DedicatedWorkerGlobalScope;
@@ -35,6 +36,23 @@ async function defineSuites(suite: string): Promise<void> {
         return open(path);
       },
     });
+    return;
+  }
+  if (suite === "idb") {
+    // the browser's own IndexedDB, with and without the instant index in front
+    const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((r) => setTimeout(r, 0)) };
+    let n = 0;
+    for (const instantSearch of [false, true]) {
+      const open = (name: string) => IdbMailStore.open({ name, factory: indexedDB, platform, instantSearch });
+      defineStoreConformance(`IdbMailStore (Chromium IndexedDB, ${instantSearch ? "instant index" : "exact scan"})`, {
+        open: () => open(`conformance-${Date.now()}-${++n}`),
+        reopen: async (store) => {
+          const name = (store as IdbMailStore).name;
+          await store.close();
+          return open(name);
+        },
+      });
+    }
     return;
   }
   if (suite === "engine") {

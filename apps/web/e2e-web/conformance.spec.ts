@@ -35,6 +35,14 @@ test("the MailStore contract holds on SQLite-WASM over OPFS (sahpool) in a Chrom
   expect(results.filter((r) => r.state === "skip").map((r) => r.name)).toEqual([expect.stringContaining("upgrades data written by the previous schema")]);
 });
 
+test("the MailStore contract holds on native IndexedDB in a Chromium worker (scan only, and with the instant index)", async ({ page }) => {
+  test.setTimeout(900_000);
+  const results = await runSuite(page, "idb");
+  expect(failures(results)).toEqual([]);
+  expect(results.filter((r) => r.state === "pass").length).toBeGreaterThan(180);
+  expect(results.filter((r) => r.state === "skip").map((r) => r.name)).toEqual([expect.stringContaining("upgrades data written"), expect.stringContaining("upgrades data written")]);
+});
+
 test("the instant engine's conformance holds in a Chromium worker", async ({ page }) => {
   test.setTimeout(600_000);
   const results = await runSuite(page, "engine");
