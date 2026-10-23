@@ -7,6 +7,7 @@ import {
   type Capabilities,
   type CompatiblePreset,
 } from "@unica/ai";
+import { builtinMode, CUSTOM_PREFIX, DEFAULT_THEME, type CustomTheme, type ThemeMode } from "@unica/core";
 import type { AiProfile, AiSettings, AppSettings, SettingsPatch } from "@unica/core/rpc";
 import { getSecret, getSetting, setSetting, type Db } from "@unica/db";
 
@@ -29,6 +30,11 @@ export const DEFAULT_SETTINGS: General = {
   // new installs start local; migration v3 writes false for installs that predate it
   localMode: true,
   theme: "system",
+  lightTheme: DEFAULT_THEME.light,
+  darkTheme: DEFAULT_THEME.dark,
+  motionMs: 75,
+  htmlMailAppearance: "auto",
+  customThemes: [],
   density: "comfortable",
   remoteImages: "ask",
   allowAgentSend: false,
@@ -78,6 +84,18 @@ export function readLocalMode(db: Db): boolean {
   return stored(db).localMode ?? DEFAULT_SETTINGS.localMode;
 }
 
+/** The mode a theme id belongs to, or null when it names nothing (unknown or deleted custom theme). */
+function themeMode(id: string, custom: readonly CustomTheme[]): ThemeMode | null {
+  if (id.startsWith(CUSTOM_PREFIX)) return custom.find((t) => t.id === id.slice(CUSTOM_PREFIX.length))?.mode ?? null;
+  return builtinMode(id);
+}
+
+/** A stored theme id that no longer resolves (or is of the other mode) falls back to the mode's default. */
+function resolveThemes(g: General): General {
+  const ok = (id: string, mode: ThemeMode) => themeMode(id, g.customThemes) === mode;
+  return { ...g, lightTheme: ok(g.lightTheme, "light") ? g.lightTheme : DEFAULT_THEME.light, darkTheme: ok(g.darkTheme, "dark") ? g.darkTheme : DEFAULT_THEME.dark };
+}
+
 export function readSettings(db: Db): AppSettings {
   const s = stored(db);
   const { aiProvider: _p, aiModel: _m, ai: _ai, ...general } = s;
@@ -95,7 +113,7 @@ export function readSettings(db: Db): AppSettings {
     capabilities: capabilities[capabilityKey(provider, profile)] ?? null,
     profiles,
   };
-  return { ...DEFAULT_SETTINGS, ...general, ai };
+  return { ...resolveThemes({ ...DEFAULT_SETTINGS, ...general }), ai };
 }
 
 export class SettingsError extends Error {}
@@ -131,6 +149,12 @@ export function updateSettings(db: Db, patch: SettingsPatch, options: { endpoint
     }
     if (provider === "compatible" && !current.preset) current.preset = "custom";
     profiles[provider] = current;
+  }
+  // a theme must exist and belong to its mode; deleting a custom theme in use falls back on read
+  const custom = (general.customThemes as CustomTheme[] | undefined) ?? s.customThemes ?? [];
+  for (const [key, mode] of [["lightTheme", "light"], ["darkTheme", "dark"]] as const) {
+    const id = general[key] as string | undefined;
+    if (id !== undefined && themeMode(id, custom) !== mode) throw new SettingsError(`Tema desconocido para el modo ${mode === "light" ? "claro" : "oscuro"}: ${id}`);
   }
   const localMode = (general.localMode as boolean | undefined) ?? s.localMode ?? DEFAULT_SETTINGS.localMode;
   const profile = profiles[provider] ?? { model: "" };
