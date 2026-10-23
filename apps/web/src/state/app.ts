@@ -47,6 +47,8 @@ export interface AppState {
   settingsTab: SettingsTab;
   /** e.g. "g" while waiting for the second key of a sequence */
   pendingKeys: string | null;
+  /** the categorization snackbar is up (its keys win: 1–5, z, Esc) */
+  snackbar: boolean;
 }
 
 export const EMPTY_COUNTS: Counts = { inboxUnread: 0, inboxUnreadByAccount: {}, categoryUnread: {}, categoryTotal: {}, categorySuggestions: {} };
@@ -72,6 +74,7 @@ export const useApp = create<AppState>(() => ({
   dialog: null,
   settingsTab: "general",
   pendingKeys: null,
+  snackbar: false,
 }));
 
 export const setApp = useApp.setState;

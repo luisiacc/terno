@@ -22,13 +22,24 @@ export type Command =
   | "go.sent"
   | "go.archive"
   | "go.trash"
-  | "help.shortcuts";
+  | "help.shortcuts"
+  | "snackbar.action1"
+  | "snackbar.action2"
+  | "snackbar.action3"
+  | "snackbar.action4"
+  | "snackbar.action5"
+  | "snackbar.undo"
+  | "snackbar.close"
+  | "suggestion.accept"
+  | "suggestion.reject";
 
 export interface KeyContext {
   /** focus is in an input/textarea/contenteditable */
   editable: boolean;
   composing: boolean;
   dialogOpen: boolean;
+  /** the categorization snackbar is up: its keys win */
+  snackbar?: boolean;
 }
 
 export interface KeyInput {
@@ -47,6 +58,8 @@ interface Binding {
   inEditable?: boolean;
   /** allowed while a dialog (palette, compose) is open */
   inDialog?: boolean;
+  /** only while this surface is up, and then before global bindings of the same key */
+  context?: "snackbar";
 }
 
 export const DEFAULT_BINDINGS: readonly Binding[] = [
@@ -78,6 +91,15 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "g a", command: "go.archive" },
   { keys: "g #", command: "go.trash" },
   { keys: "?", command: "help.shortcuts" },
+  { keys: "y", command: "suggestion.accept" },
+  { keys: "n", command: "suggestion.reject" },
+  { keys: "1", command: "snackbar.action1", context: "snackbar" },
+  { keys: "2", command: "snackbar.action2", context: "snackbar" },
+  { keys: "3", command: "snackbar.action3", context: "snackbar" },
+  { keys: "4", command: "snackbar.action4", context: "snackbar" },
+  { keys: "5", command: "snackbar.action5", context: "snackbar" },
+  { keys: "z", command: "snackbar.undo", context: "snackbar" },
+  { keys: "escape", command: "snackbar.close", context: "snackbar" },
 ];
 
 /** Canonical chord string for a key event: "mod+shift+k", "#", "arrowdown". */
@@ -110,9 +132,12 @@ export function resolveKey(
   const chord = chordOf(input, isMac);
   const sequence = pending ? `${pending} ${chord}` : chord;
   const eligible = bindings.filter(
-    (b) => (!context.editable || b.inEditable) && (!(context.dialogOpen || context.composing) || b.inDialog),
+    (b) =>
+      (b.context === undefined || (b.context === "snackbar" && context.snackbar === true)) &&
+      (!context.editable || b.inEditable) &&
+      (!(context.dialogOpen || context.composing) || b.inDialog),
   );
-  const exact = eligible.find((b) => b.keys === sequence);
+  const exact = eligible.find((b) => b.context !== undefined && b.keys === sequence) ?? eligible.find((b) => b.keys === sequence);
   if (exact) return { command: exact.command, pending: null };
   if (eligible.some((b) => b.keys.startsWith(`${sequence} `))) return { command: null, pending: sequence };
   // A failed sequence restarts from the current key alone ("g x" → try "x").

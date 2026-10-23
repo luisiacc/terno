@@ -1,5 +1,6 @@
 import { client, connectBackend } from "~/rpc/connection";
-import { getApp, setApp } from "~/state/app";
+import { removeFromCategory } from "~/lib/categorize";
+import { getApp, navigate, setApp } from "~/state/app";
 import { reloadList } from "~/state/list";
 import { invalidateThreads, loadThread } from "~/state/threads";
 import { toast } from "sonner";
@@ -35,6 +36,18 @@ export async function boot(): Promise<void> {
     client.on("accounts", (accounts) => setApp({ accounts }));
     client.on("categories", (categories) => setApp({ categories }));
     client.on("owner", (owner) => setApp({ owner }));
+    client.on("categorized", ({ categoryId, threadIds }) => {
+      const name = getApp().categories.find((c) => c.id === categoryId)?.name;
+      if (!name) return;
+      const n = threadIds.length;
+      toast(`Única añadió ${n} ${n === 1 ? "conversación" : "conversaciones"} a ${name}`, {
+        id: `auto-${categoryId}`,
+        duration: 8000,
+        // undoing the engine is a correction: it learns from it
+        action: { label: "Deshacer", onClick: () => void removeFromCategory(categoryId, threadIds, "user") },
+        cancel: { label: "Ver", onClick: () => navigate({ categoryId }) },
+      });
+    });
     client.on("op", (op) => {
       if (op.kind === "send" && op.state === "succeeded") {
         if (op.lastError) toast.warning("Enviado, pero no a todos", { description: op.lastError, duration: 12_000 });

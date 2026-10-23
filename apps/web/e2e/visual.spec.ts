@@ -20,6 +20,16 @@ async function aiTabWithOllama(page: Page, ollamaUrl: string) {
   await stabilize(page);
 }
 
+/** The snackbar with its counts loaded, nothing hovered (toasts stay visible). */
+async function snackbarReady(page: Page) {
+  // stabilize() hides toasts; the snackbar is one
+  await page.addStyleTag({ content: "[data-sonner-toaster]{display:block!important}" });
+  await expect(page.getByTestId("snackbar-sender-count")).toBeVisible();
+  await expect(page.getByTestId("snackbar-count-loading")).toHaveCount(0);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.mouse.move(0, 0);
+}
+
 async function ready(page: Page, { banner = true } = {}) {
   await page.evaluate(() => document.fonts.ready);
   if (banner) await expect(page.getByTestId("learned-banner")).toBeVisible();
@@ -101,7 +111,7 @@ test.describe("light", () => {
     await expect(page).toHaveScreenshot("add-account.png");
   });
 
-  test("category picker and similar-mail suggestion", async ({ app: page, server }) => {
+  test("category picker and the snackbar after filing", async ({ app: page, server }) => {
     const facturas = server.backend.db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
     await search(page, "in:inbox from:uber.receipts@uber.com");
     const target = server.backend.db.get<{ id: number }>(
@@ -116,8 +126,8 @@ test.describe("light", () => {
     await stabilize(page);
     await expect(page).toHaveScreenshot("category-picker.png", { mask: [page.getByTestId("search-stats")] });
     await page.getByTestId(`pick-category-${facturas}`).click();
-    await expect(page.getByTestId("category-suggestion")).toBeVisible();
-    await expect(page).toHaveScreenshot("category-suggestion.png", { mask: [page.getByTestId("search-stats")] });
+    await snackbarReady(page);
+    await expect(page.getByTestId("category-snackbar")).toHaveScreenshot("category-snackbar.png");
   });
 });
 
@@ -165,6 +175,22 @@ test.describe("dark", () => {
     } finally {
       await ollama.close();
     }
+  });
+
+  test("snackbar after filing", async ({ app: page, server }) => {
+    const facturas = server.backend.db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
+    const target = server.backend.db.get<{ id: number }>(
+      `SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND t.last_from_email = 'uber.receipts@uber.com'
+       AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id AND category_id = ?) ORDER BY t.last_date DESC LIMIT 1`,
+      facturas,
+    )!.id;
+    await search(page, "in:inbox from:uber.receipts@uber.com");
+    await page.locator(`[data-thread-id="${target}"]`).dispatchEvent("mousedown");
+    await focusList(page);
+    await page.keyboard.press("l");
+    await page.getByTestId(`pick-category-${facturas}`).click();
+    await snackbarReady(page);
+    await expect(page.getByTestId("category-snackbar")).toHaveScreenshot("category-snackbar-dark.png");
   });
 
   test("inbox with the reader", async ({ app: page }) => {

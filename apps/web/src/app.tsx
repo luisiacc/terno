@@ -1,9 +1,11 @@
 import { Toaster } from "@unica/ui/components/sonner";
 import { TooltipProvider } from "@unica/ui/components/tooltip";
 import { lazy, Suspense, useEffect } from "react";
+import { onFiled } from "~/lib/categorize";
 import { installKeyboard } from "~/lib/keyboard";
 import { useApp } from "~/state/app";
 import { CategoryPicker } from "./components/category-picker";
+import { showCategorySnackbar } from "./components/category-snackbar";
 import { CommandPalette } from "./components/command-palette";
 import { Composer } from "./components/composer";
 import { Reader } from "./components/reader";
@@ -40,6 +42,8 @@ export function App() {
   const theme = useApp((s) => s.settings?.theme ?? "system");
   const fresh = useApp((s) => s.ready && s.accounts.length === 0 && !s.owner && !s.demo);
   useEffect(() => installKeyboard(), []);
+  // every way of filing threads offers the snackbar, except its own bulk adds
+  useEffect(() => onFiled((filed, source) => source !== "snackbar" && showCategorySnackbar(filed)), []);
 
   if (fatal) return <Fatal message={fatal} />;
   return (

@@ -35,3 +35,21 @@ describe("resolveKey", () => {
     expect(resolveKey(key("k", { ctrl: true }), ctx, null, undefined, true).command).toBe(null);
   });
 });
+
+describe("snackbar context", () => {
+  const ctx = { editable: false, composing: false, dialogOpen: false };
+  const key = (k: string) => ({ key: k, meta: false, ctrl: false, alt: false, shift: false });
+  it("numbers, z and escape belong to the snackbar while it is up, and only then", () => {
+    expect(resolveKey(key("1"), { ...ctx, snackbar: true }, null).command).toBe("snackbar.action1");
+    expect(resolveKey(key("5"), { ...ctx, snackbar: true }, null).command).toBe("snackbar.action5");
+    expect(resolveKey(key("z"), { ...ctx, snackbar: true }, null).command).toBe("snackbar.undo");
+    expect(resolveKey(key("Escape"), { ...ctx, snackbar: true }, null).command).toBe("snackbar.close");
+    expect(resolveKey(key("1"), ctx, null).command).toBeNull();
+    expect(resolveKey(key("Escape"), ctx, null).command).toBe("reader.close");
+    // other keys keep working with the snackbar up
+    expect(resolveKey(key("j"), { ...ctx, snackbar: true }, null).command).toBe("list.next");
+  });
+  it("typing in a field is never hijacked", () => {
+    expect(resolveKey(key("1"), { ...ctx, editable: true, snackbar: true }, null).command).toBeNull();
+  });
+});

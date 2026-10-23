@@ -4,6 +4,7 @@ import { getApp, navigate, setApp } from "~/state/app";
 import { useList } from "~/state/list";
 import { loadThread } from "~/state/threads";
 import { listScroller, searchInputRef } from "~/components/thread-list";
+import { snackbarControls } from "~/components/category-snackbar";
 
 function move(delta: number) {
   const { items, index } = useList.getState();
@@ -56,6 +57,13 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "go.archive": () => navigate({ view: "archive" }),
   "go.trash": () => navigate({ view: "trash" }),
   "help.shortcuts": () => setApp({ dialog: "shortcuts" }),
+  "snackbar.action1": () => snackbarControls.current?.action(1),
+  "snackbar.action2": () => snackbarControls.current?.action(2),
+  "snackbar.action3": () => snackbarControls.current?.action(3),
+  "snackbar.action4": () => snackbarControls.current?.action(4),
+  "snackbar.action5": () => snackbarControls.current?.action(5),
+  "snackbar.undo": () => snackbarControls.current?.undo(),
+  "snackbar.close": () => snackbarControls.current?.close(),
 };
 
 function isEditable(el: Element | null): boolean {
@@ -71,7 +79,12 @@ export function installKeyboard(): () => void {
     const s = getApp();
     const result = resolveKey(
       { key: e.key, meta: e.metaKey, ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey },
-      { editable: isEditable(document.activeElement), composing: s.compose !== null && document.activeElement?.closest("[data-testid=composer]") !== null, dialogOpen: s.dialog !== null },
+      {
+        editable: isEditable(document.activeElement),
+        composing: s.compose !== null && document.activeElement?.closest("[data-testid=composer]") !== null,
+        dialogOpen: s.dialog !== null,
+        snackbar: s.snackbar,
+      },
       s.pendingKeys,
       undefined,
       navigator.platform.includes("Mac"),
