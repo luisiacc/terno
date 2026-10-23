@@ -5,10 +5,11 @@ export { IdbMailStore, type IdbMailStoreOptions } from "./store";
 export { databaseName, IDB_VERSION, LOGICAL_SCHEMA } from "./schema";
 
 /**
- * The registry entry for IndexedDB. Not automatic until it has passed
- * conformance and the browser perf gate (then hosts flip `automatic`):
- * reachable by explicit choice (`?storage=idb`) or for a mailbox that
- * already lives here.
+ * The registry entry for IndexedDB. Hosts make it automatic only once it
+ * has passed conformance and their perf gate (the web does, registered
+ * after OPFS SQLite: the fallback where OPFS sync handles are missing);
+ * otherwise it is reachable by explicit choice (`?storage=idb`) or for a
+ * mailbox that already lives here.
  */
 export function idbAdapter(factory: IDBFactory, o: { automatic?: boolean } = {}): StoreAdapter {
   return {

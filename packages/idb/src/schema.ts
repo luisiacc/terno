@@ -12,9 +12,15 @@ export const LOGICAL_SCHEMA = 7;
 
 const fk = (column: string) => ({ [`fk_${column}`]: [column] as const });
 
-export const TABLES: readonly (TableSpec & { memoryOnly?: boolean })[] = [
-  { name: "accounts", key: ["id"] },
-  { name: "threads", key: ["id"], autoId: true, indexes: { ...fk("account_id"), provider: ["account_id", "provider_thread_id"] } },
+/**
+ * `early`: loaded before the store opens (what the first screen and the
+ * backend's startup read: lists, counts, accounts, settings, ops, the
+ * training set); the rest (messages and their satellites) loads right after,
+ * and every command and read that needs it waits for it.
+ */
+export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boolean })[] = [
+  { name: "accounts", early: true, key: ["id"] },
+  { name: "threads", early: true, key: ["id"], autoId: true, indexes: { ...fk("account_id"), provider: ["account_id", "provider_thread_id"] } },
   {
     name: "messages",
     key: ["id"],
@@ -24,29 +30,29 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean })[] = [
   { name: "message_refs", key: ["account_id", "ref", "message_id"], indexes: { ...fk("message_id"), ref: ["account_id", "ref"] } },
   { name: "message_locations", key: ["message_id", "mailbox"], indexes: { ...fk("message_id"), uid: ["account_id", "mailbox", "uidvalidity", "uid"], mailbox: ["account_id", "mailbox"] } },
   { name: "attachments", key: ["id"], autoId: true, indexes: fk("message_id") },
-  { name: "categories", key: ["id"], autoId: true },
-  { name: "thread_categories", key: ["thread_id", "category_id"], indexes: { ...fk("thread_id"), ...fk("category_id"), batch: ["batch_id"] } },
-  { name: "filters", key: ["id"], autoId: true },
+  { name: "categories", early: true, key: ["id"], autoId: true },
+  { name: "thread_categories", early: true, key: ["thread_id", "category_id"], indexes: { ...fk("thread_id"), ...fk("category_id"), batch: ["batch_id"] } },
+  { name: "filters", early: true, key: ["id"], autoId: true },
   { name: "filter_applications", key: ["filter_id", "message_id"], indexes: { ...fk("filter_id"), ...fk("message_id") } },
-  { name: "ops", key: ["id"], indexes: fk("account_id") },
-  { name: "op_targets", key: ["op_id", "message_id"], indexes: { ...fk("op_id"), message: ["message_id"] } },
+  { name: "ops", early: true, key: ["id"], indexes: fk("account_id") },
+  { name: "op_targets", early: true, key: ["op_id", "message_id"], indexes: { ...fk("op_id"), message: ["message_id"] } },
   { name: "user_actions", key: ["id"], autoId: true },
-  { name: "dismissed_suggestions", key: ["key"] },
-  { name: "drafts", key: ["id"], autoId: true, indexes: fk("account_id") },
-  { name: "settings", key: ["key"] },
-  { name: "secrets", key: ["name"] },
-  { name: "owner", key: ["id"], indexes: fk("account_id") },
+  { name: "dismissed_suggestions", early: true, key: ["key"] },
+  { name: "drafts", early: true, key: ["id"], autoId: true, indexes: fk("account_id") },
+  { name: "settings", early: true, key: ["key"] },
+  { name: "secrets", early: true, key: ["name"] },
+  { name: "owner", early: true, key: ["id"], indexes: fk("account_id") },
   { name: "owner_history", key: ["id"], autoId: true },
-  { name: "cls_examples", key: ["thread_id", "category_id"], indexes: { ...fk("thread_id"), ...fk("category_id"), sender: ["category_id", "sender"], batch: ["batch_id"] } },
-  { name: "cls_decisions", key: ["thread_id", "category_id"], indexes: { ...fk("thread_id"), ...fk("category_id") } },
-  { name: "cat_batches", key: ["id"], autoId: true, indexes: fk("category_id") },
-  { name: "cls_snapshot", key: ["id"] },
+  { name: "cls_examples", early: true, key: ["thread_id", "category_id"], indexes: { ...fk("thread_id"), ...fk("category_id"), sender: ["category_id", "sender"], batch: ["batch_id"] } },
+  { name: "cls_decisions", early: true, key: ["thread_id", "category_id"], indexes: { ...fk("thread_id"), ...fk("category_id") } },
+  { name: "cat_batches", early: true, key: ["id"], autoId: true, indexes: fk("category_id") },
+  { name: "cls_snapshot", early: true, key: ["id"] },
   { name: "cat_move_threads", key: ["batch_id", "thread_id"], indexes: fk("batch_id") },
   { name: "cat_move_rows", key: ["batch_id", "thread_id"], indexes: fk("batch_id") },
   { name: "cat_move_examples", key: ["batch_id", "thread_id", "category_id"], indexes: fk("batch_id") },
   { name: "cat_move_decisions", key: ["batch_id", "thread_id", "category_id"], indexes: fk("batch_id") },
-  { name: "search_outbox", key: ["seq"] },
-  { name: "search_state", key: ["id"] },
+  { name: "search_outbox", early: true, key: ["seq"] },
+  { name: "search_state", early: true, key: ["id"] },
   // a rebuild's hold on the log: no build survives a restart (SQL clears them on open)
   { name: "search_leases", key: ["id"], autoId: true, memoryOnly: true },
 ];
@@ -138,9 +144,12 @@ export async function idbExists(factory: IDBFactory, name: string): Promise<bool
 
 const idbKey = (t: Table, key: Key): IDBValidKey => (t.spec.key.length === 1 ? (key as IDBValidKey) : (JSON.parse(key as string) as IDBValidKey));
 
-/** Reads every eager table into memory (bodies stay in IndexedDB). */
-export async function loadAll(idb: IDBDatabase, mem: MemDb): Promise<Record<string, unknown>> {
-  const eager = PERSISTED.filter((t) => !t.lazy).map((t) => t.name);
+export const EARLY_TABLES = PERSISTED.filter((t) => !t.lazy && t.early).map((t) => t.name);
+export const LATE_TABLES = PERSISTED.filter((t) => !t.lazy && !t.early).map((t) => t.name);
+
+/** Reads tables into memory (bodies stay in IndexedDB), with the meta store. */
+export async function loadAll(idb: IDBDatabase, mem: MemDb, timings: Record<string, number> = {}, eager: readonly string[] = [...EARLY_TABLES, ...LATE_TABLES]): Promise<Record<string, unknown>> {
+  const started = performance.now();
   const tx = idb.transaction([...eager, "meta"], "readonly");
   const finished = done(tx);
   const [tables, metaKeys, metaValues] = await Promise.all([
@@ -149,10 +158,12 @@ export async function loadAll(idb: IDBDatabase, mem: MemDb): Promise<Record<stri
     request(tx.objectStore("meta").getAll()),
   ]);
   await finished;
+  timings.read = performance.now() - started;
   eager.forEach((name, i) => {
     const t = mem.table(name);
     for (const row of tables[i]!) t.load(row);
   });
+  timings.build = performance.now() - started - timings.read;
   return Object.fromEntries(metaKeys.map((k, i) => [String(k), metaValues[i]]));
 }
 

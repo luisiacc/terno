@@ -119,7 +119,7 @@ import {
 } from "./mail";
 import type { Key, MemDb } from "./mem";
 import { IdbProviderStore } from "./provider-store";
-import { createMemDb, idbExists, LOGICAL_SCHEMA, loadAll, openIdb, persist, readAll, readLazy, writeMeta } from "./schema";
+import { createMemDb, EARLY_TABLES, idbExists, LATE_TABLES, LOGICAL_SCHEMA, loadAll, openIdb, persist, readAll, readLazy, writeMeta } from "./schema";
 import { appendOutbox, checkCursor, columnsOf, materializeChanges, pageOf, planScan, scanPage, searchChangeIds, searchHead } from "./search";
 
 const PENDING_BODIES_CAP = 1000;
@@ -157,11 +157,15 @@ export class IdbMailStore implements MailStore {
   readonly instant: InstantSearch | null;
   private readonly c: Ctx;
   private queue: Promise<unknown> = Promise.resolve();
+  /** the late tables (messages and their satellites) are in memory */
+  private loaded: Promise<void> = Promise.resolve();
   private inflight: Promise<unknown> | null = null;
   private open = true;
   private seeding = false;
   private readonly providerStores = new Map<number, ProviderStore>();
   private readonly log: NonNullable<IdbMailStoreOptions["log"]>;
+  /** how long opening took: reading IndexedDB, building the in-memory tables */
+  readonly openTimings: Record<string, number> = {};
 
   private constructor(
     private readonly idb: IDBDatabase,
@@ -201,7 +205,8 @@ export class IdbMailStore implements MailStore {
   static async open(o: IdbMailStoreOptions): Promise<IdbMailStore> {
     const idb = await openIdb(o.factory, o.name);
     const db = createMemDb();
-    const meta = await loadAll(idb, db);
+    const timings: Record<string, number> = {};
+    const meta = await loadAll(idb, db, timings, EARLY_TABLES);
     if (!db.table("search_state").get(1)) {
       // a new database: its epoch, the search log's head
       db.tx(() => db.table("search_state").insert({ id: 1, epoch: o.platform.uuid(), seq: 0, bytes: 0 }));
@@ -210,7 +215,17 @@ export class IdbMailStore implements MailStore {
       db.confirm();
     }
     if (meta.logicalSchema === undefined) await writeMeta(idb, { logicalSchema: LOGICAL_SCHEMA, createdAt: Date.now() });
-    return new IdbMailStore(idb, db, o);
+    const store = new IdbMailStore(idb, db, o);
+    Object.assign(store.openTimings, timings);
+    // the first screen needs none of it: messages load while it paints (writes to these tables wait for them)
+    store.loaded = loadAll(idb, db, {}, LATE_TABLES).then(
+      () => undefined,
+      (error: unknown) => {
+        store.log("error", "could not load the mailbox", error instanceof Error ? error.message : error);
+        throw error;
+      },
+    );
+    return store;
   }
 
   static exists(factory: IDBFactory, name: string): Promise<boolean> {
@@ -235,14 +250,18 @@ export class IdbMailStore implements MailStore {
 
   // ───────────────────────────── units of work ─────────────────────────────
 
-  /** One at a time: commands, scans and feed slices never interleave with a command. */
-  private exclusive<V>(fn: () => Promise<V>): Promise<V> {
-    const run = this.queue.then(() => {
-      if (!this.open) throw new Error("the store is closed");
-      return fn();
-    });
-    this.queue = run.catch(() => {});
-    return run;
+  /** One at a time: commands, scans and feed slices never interleave with a command. `early` units touch only early tables. */
+  private exclusive<V>(fn: () => Promise<V>, early = false): Promise<V> {
+    // a unit that needs the late tables waits for them before queueing, so it never holds up early units
+    const enqueue = () => {
+      const run = this.queue.then(() => {
+        if (!this.open) throw new Error("the store is closed");
+        return fn();
+      });
+      this.queue = run.catch(() => {});
+      return run;
+    };
+    return early ? enqueue() : this.loaded.then(enqueue);
   }
 
   /**
@@ -250,7 +269,7 @@ export class IdbMailStore implements MailStore {
    * unit, its search outbox batch, and one IndexedDB transaction. Resolves
    * after IndexedDB committed; if it fails, memory is put back.
    */
-  private command<V>(fn: () => V, o: { prefetch?: () => Promise<void>; durability?: "strict" | "relaxed" } = {}): Promise<V> {
+  private command<V>(fn: () => V, o: { prefetch?: () => Promise<void>; durability?: "strict" | "relaxed"; early?: boolean } = {}): Promise<V> {
     return this.exclusive(async () => {
       await o.prefetch?.();
       const result = this.db.tx(fn);
@@ -275,7 +294,7 @@ export class IdbMailStore implements MailStore {
       }
       this.evictBodies();
       return result;
-    });
+    }, o.early);
   }
 
   /** Reads see only committed state: they wait for the command whose transaction is in flight. */
@@ -283,9 +302,15 @@ export class IdbMailStore implements MailStore {
     while (this.inflight) await this.inflight.catch(() => {});
   }
 
-  private async read<V>(fn: () => V): Promise<V> {
+  /** `early`: reads only early tables (answers while messages load) */
+  private async read<V>(fn: () => V, early = false): Promise<V> {
+    if (!early) await this.loaded;
     await this.settled();
     return fn();
+  }
+
+  private early<V>(fn: () => V): Promise<V> {
+    return this.read(fn, true);
   }
 
   private evictBodies(): void {
@@ -317,7 +342,7 @@ export class IdbMailStore implements MailStore {
   }
 
   readonly feed: SearchFeed = {
-    head: async () => this.read(() => this.revision()),
+    head: async () => this.early(() => this.revision()),
     changes: async (after, through, maxCommits) => {
       const ids = await this.read(() => searchChangeIds(this.c, after, through, maxCommits));
       const batches: IndexBatch[] = [];
@@ -426,6 +451,7 @@ export class IdbMailStore implements MailStore {
   }
 
   private async searchPage(req: SearchRequest): Promise<StoreSearchPage> {
+    // the index answers from early tables (threads, memberships); a scan or the pending-body count waits for messages
     await this.settled();
     let revision = this.revision();
     const ram = this.instant?.at(revision);
@@ -441,6 +467,7 @@ export class IdbMailStore implements MailStore {
       page = { items: summariesInOrder(this.c, p.threadIds), nextCursor: p.nextCursor, strategy: "scan" };
     }
     let pendingBodies = 0;
+    await this.loaded;
     for (const m of T(this.c, "messages").all()) if (m.body_state !== "full" && ++pendingBodies >= PENDING_BODIES_CAP) break;
     return { items: page.items, nextCursor: page.nextCursor, revision, strategy: page.strategy, complete: true, pendingBodies };
   }
@@ -456,8 +483,8 @@ export class IdbMailStore implements MailStore {
   // ───────────────────────────── threads ─────────────────────────────
 
   readonly threads: MailStore["threads"] = {
-    list: (p) => this.read(() => listThreads(this.c, p)),
-    summaries: (ids) => this.read(() => summariesInOrder(this.c, ids)),
+    list: (p) => this.early(() => listThreads(this.c, p)),
+    summaries: (ids) => this.early(() => summariesInOrder(this.c, ids)),
     get: async (id) => {
       await this.settled();
       // exclusive: no command can add a message (or evict a body) between reading the bodies and the thread
@@ -468,10 +495,11 @@ export class IdbMailStore implements MailStore {
         return { ...thread, categorization: { auto: autoReasons(this.c, id), suggestions: pendingSuggestions(this.c, { threadId: id, limit: 5 }) } };
       });
     },
-    counts: () => this.read(() => getCounts(this.c)),
+    counts: () => this.early(() => getCounts(this.c)),
     search: (req) => this.searchPage(req),
     searchText: async (p) => {
       await this.settled();
+      // resolving account:/category: reads early tables only
       const search = this.resolve(p);
       const cursor = p.cursor ? { lastDate: p.cursor.lastDate, id: p.cursor.id, queryKey: p.cursor.queryKey ?? search.key, revision: p.cursor.revision ?? this.revision() } : undefined;
       return this.searchPage({ search, cursor, limit: p.limit });
@@ -596,8 +624,8 @@ export class IdbMailStore implements MailStore {
   // ───────────────────────────── ops ─────────────────────────────
 
   readonly ops: MailStore["ops"] = {
-    claimReady: (now, limit) => this.command(() => claimReadyOps(this.c, now, limit)),
-    get: (id) => this.read(() => getOp(this.c, id)),
+    claimReady: (now, limit) => this.command(() => claimReadyOps(this.c, now, limit), { early: true }),
+    get: (id) => this.early(() => getOp(this.c, id)),
     complete: (id, result, now) =>
       this.command(() => {
         const op = getOp(this.c, id);
@@ -621,14 +649,14 @@ export class IdbMailStore implements MailStore {
       }),
     fail: (id, error, retryable, now) => this.command(() => failOp(this.c, id, error, retryable, now)),
     markUnknown: (id, error, now) => this.command(() => markOpUnknown(this.c, id, error, now)),
-    recover: (now) => this.command(() => recoverOps(this.c, now)),
+    recover: (now) => this.command(() => recoverOps(this.c, now), { early: true }),
     nextAttemptAt: () =>
       this.read(() => {
         let t: number | null = null;
         for (const o of T(this.c, "ops").all()) if (o.state === "queued") t = t === null ? o.next_attempt_at : Math.min(t, o.next_attempt_at);
         return t;
       }),
-    recent: (limit) => this.read(() => listRecentOps(this.c, limit)),
+    recent: (limit) => this.early(() => listRecentOps(this.c, limit)),
     resolveUnknown: (id, resolution, now) =>
       this.command(() => {
         const op = getOp(this.c, id);
@@ -738,8 +766,8 @@ export class IdbMailStore implements MailStore {
   }
 
   readonly filters: MailStore["filters"] = {
-    list: () => this.read(() => listFilters(this.c)),
-    get: (id) => this.read(() => getFilter(this.c, id)),
+    list: () => this.early(() => listFilters(this.c)),
+    get: (id) => this.early(() => getFilter(this.c, id)),
     save: (f, now) => this.command(() => saveFilter(this.c, f, now)),
     delete: (id) => this.command(() => void T(this.c, "filters").delete(id)),
     preview: async (rule, now, limit) => {
@@ -780,8 +808,8 @@ export class IdbMailStore implements MailStore {
   // ───────────────────────────── categories ─────────────────────────────
 
   readonly categories: MailStore["categories"] = {
-    list: () => this.read(() => listCategories(this.c)),
-    exists: (id) => this.read(() => T(this.c, "categories").has(id)),
+    list: () => this.early(() => listCategories(this.c)),
+    exists: (id) => this.early(() => T(this.c, "categories").has(id)),
     create: (name, color) => this.command(() => createCategory(this.c, name, color)),
     update: (id, patch) => this.command(() => updateCategory(this.c, id, patch)),
     delete: (id) => this.command(() => void T(this.c, "categories").delete(id)),
@@ -800,9 +828,9 @@ export class IdbMailStore implements MailStore {
     undoBatchPart: (batchId, threadIds, now) => this.command(() => undoBatchPart(this.c, batchId, threadIds, now), { prefetch: () => this.prefetchRoots(threadIds) }),
     finishUndo: (batchId, now) => this.command(() => finishUndo(this.c, batchId, now)),
     beginMove: (m) => this.command(() => beginMove(this.c, m)),
-    movePhase: (batchId) => this.read(() => movePhase(this.c, batchId)),
+    movePhase: (batchId) => this.early(() => movePhase(this.c, batchId)),
     movePending: (batchId) => this.read(() => movePending(this.c, batchId)),
-    unfinishedMoves: () => this.read(() => unfinishedMoves(this.c)),
+    unfinishedMoves: () => this.early(() => unfinishedMoves(this.c)),
     trainMoveSlice: (batchId, threadIds, now) => this.command(() => trainMoveSlice(this.c, batchId, threadIds, now), { prefetch: () => this.prefetchRoots(threadIds) }),
     undoMoveCommit: (batchId, now) =>
       this.command(() => undoMoveCommit(this.c, batchId, now), {
@@ -839,10 +867,10 @@ export class IdbMailStore implements MailStore {
         return predictThread(this.c, threadId, model, mode, now);
       });
     },
-    pendingSuggestions: (o) => this.read(() => pendingSuggestions(this.c, o)),
+    pendingSuggestions: (o) => this.early(() => pendingSuggestions(this.c, o)),
     reject: (threadId, categoryId, now) => this.command(() => rejectSuggestion(this.c, threadId, categoryId, now), { prefetch: () => this.prefetchRoots([threadId]) }),
-    stats: () => this.read(() => categoryStats(this.c)),
-    loadSnapshot: () => this.read(() => ({ snapshot: loadSnapshot(this.c), fingerprint: examplesFingerprint(this.c) })),
+    stats: () => this.early(() => categoryStats(this.c)),
+    loadSnapshot: () => this.early(() => ({ snapshot: loadSnapshot(this.c), fingerprint: examplesFingerprint(this.c) })),
     saveSnapshot: (s) => this.command(() => saveSnapshot(this.c, { ...s, fingerprint: examplesFingerprint(this.c) })),
     backfillExamples: async (limit) => {
       await this.settled();
@@ -854,8 +882,8 @@ export class IdbMailStore implements MailStore {
         },
       });
     },
-    examples: () => this.read(() => loadExamples(this.c)),
-    examplesPage: (after, limit) => this.read(() => loadExamplesPage(this.c, after, limit)),
+    examples: () => this.early(() => loadExamples(this.c)),
+    examplesPage: (after, limit) => this.early(() => loadExamplesPage(this.c, after, limit)),
     backgroundCandidates: (now) => this.read(() => backgroundCandidates(this.c, now)),
     threadFeatures: async (threadIds) => {
       await this.settled();
@@ -896,9 +924,9 @@ export class IdbMailStore implements MailStore {
   // ───────────────────────────── accounts, owner, drafts, settings, secrets, learning ─────────────────────────────
 
   readonly accounts: MailStore["accounts"] = {
-    list: () => this.read(() => listAccounts(this.c)),
-    get: (id) => this.read(() => getAccount(this.c, id)),
-    config: <V,>(id: number) => this.read(() => getAccountConfig<V>(this.c, id)),
+    list: () => this.early(() => listAccounts(this.c)),
+    get: (id) => this.early(() => getAccount(this.c, id)),
+    config: <V,>(id: number) => this.early(() => getAccountConfig<V>(this.c, id)),
     stamp: (id) =>
       this.read(() => {
         const r = T(this.c, "accounts").get(id);
@@ -935,7 +963,7 @@ export class IdbMailStore implements MailStore {
   };
 
   readonly owner: MailStore["owner"] = {
-    get: () => this.read(() => getOwner(this.c)),
+    get: () => this.early(() => getOwner(this.c)),
     change: (o) =>
       this.command(() => {
         const r = T(this.c, "accounts").get(o.claim.accountId);
@@ -947,12 +975,12 @@ export class IdbMailStore implements MailStore {
 
   readonly drafts: MailStore["drafts"] = {
     save: (d, now) => this.command(() => saveDraft(this.c, d, now)),
-    list: () => this.read(() => listDrafts(this.c)),
+    list: () => this.early(() => listDrafts(this.c)),
     delete: (id) => this.command(() => void T(this.c, "drafts").delete(id)),
   };
 
   readonly settings: MailStore["settings"] = {
-    get: <V,>(key: string, fallback: V) => this.read(() => getSetting(this.c, key, fallback)),
+    get: <V,>(key: string, fallback: V) => this.early(() => getSetting(this.c, key, fallback)),
     set: (key, value) => this.command(() => setSetting(this.c, key, value)),
     update: <V, Res>(key: string, fallback: V, fn: (current: V) => { value: V; result: Res }) =>
       this.command(() => {
@@ -963,8 +991,8 @@ export class IdbMailStore implements MailStore {
   };
 
   readonly secrets: MailStore["secrets"] = {
-    get: (name) => this.read(() => (T(this.c, "secrets").get(name)?.blob as Uint8Array | undefined) ?? null),
-    has: (name) => this.read(() => T(this.c, "secrets").has(name)),
+    get: (name) => this.early(() => (T(this.c, "secrets").get(name)?.blob as Uint8Array | undefined) ?? null),
+    has: (name) => this.early(() => T(this.c, "secrets").has(name)),
     put: (name, blob) => this.command(() => void T(this.c, "secrets").put({ name, blob })),
     delete: (name) => this.command(() => void T(this.c, "secrets").delete(name)),
   };
