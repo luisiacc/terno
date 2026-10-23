@@ -25,6 +25,43 @@ const WORD_WITH_MARKS = /[\p{L}\p{N}][\p{L}\p{N}\p{M}]*/gu;
 
 /** Combining marks that follow a Latin letter (unicode61 folds diacritics for Latin script only). */
 const LATIN_MARKS = /(\p{Script=Latin})[\u0300-\u036f]+/gu;
+const NON_ASCII = /[\u0080-\uffff]/;
+/** what can combine with a neighbour under canonical (de)composition: marks and Hangul jamo/syllables */
+const COMBINES = /[\p{M}\u1100-\u11ff\u3130-\u318f\ua960-\ua97f\uac00-\ud7ff]/u;
+const NON_ASCII_CHARS = /[\u{80}-\u{10ffff}]/gu;
+const charFolds = new Map<string, string>();
+
+/**
+ * Without marks or Hangul nothing interacts across characters under NFD/NFC,
+ * so folding each character on its own (cached) equals folding the string.
+ */
+function foldEachChar(text: string): string {
+  const folded = text.replace(NON_ASCII_CHARS, (c) => {
+    let f = charFolds.get(c);
+    if (f === undefined) charFolds.set(c, (f = c.normalize("NFD").replace(LATIN_MARKS, "$1").normalize("NFC")));
+    return f;
+  });
+  return copyNarrow(folded);
+}
+
+/**
+ * The token regex runs several times slower on what replace() returns (V8
+ * keeps the source's representation) than on a fresh copy; rebuild narrow
+ * strings from their char codes.
+ */
+function copyNarrow(text: string): string {
+  const chunks: string[] = [];
+  for (let at = 0; at < text.length; at += 4096) {
+    const codes: number[] = [];
+    for (let i = at; i < Math.min(text.length, at + 4096); i++) {
+      const c = text.charCodeAt(i);
+      if (c > 0xff) return text;
+      codes.push(c);
+    }
+    chunks.push(String.fromCharCode(...codes));
+  }
+  return chunks.join("");
+}
 
 /**
  * Tokenize like SQLite's unicode61 tokenizer with remove_diacritics:
@@ -34,7 +71,12 @@ const LATIN_MARKS = /(\p{Script=Latin})[\u0300-\u036f]+/gu;
  */
 export function tokenize(text: string): string[] {
   if (!text) return [];
-  const folded = text.normalize("NFD").replace(LATIN_MARKS, "$1").normalize("NFC").toLowerCase();
+  // ASCII has nothing to fold; most other text folds character by character
+  const folded = !NON_ASCII.test(text)
+    ? text.toLowerCase()
+    : !COMBINES.test(text)
+      ? foldEachChar(text).toLowerCase()
+      : text.normalize("NFD").replace(LATIN_MARKS, "$1").normalize("NFC").toLowerCase();
   return folded.match(WORD_WITH_MARKS) ?? [];
 }
 

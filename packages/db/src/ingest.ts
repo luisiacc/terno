@@ -25,15 +25,38 @@ export function recipientsText(to: Address[], cc: Address[], bcc: Address[]): st
 }
 
 const SNIPPET_MAX = 200;
+/** Unquoted lines, whitespace collapsed, cut at SNIPPET_MAX; reads a long body only as far as the snippet needs. */
 export function makeSnippet(text: string | null | undefined): string {
   if (!text) return "";
-  const collapsed = text
-    .split("\n")
-    .filter((line) => !line.trimStart().startsWith(">"))
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return collapsed.length > SNIPPET_MAX ? `${collapsed.slice(0, SNIPPET_MAX - 1)}…` : collapsed;
+  let joined = "";
+  let first = true;
+  for (let start = 0; start <= text.length; ) {
+    let end = text.indexOf("\n", start);
+    if (end === -1) end = text.length;
+    const line = text.slice(start, end);
+    start = end + 1;
+    if (line.trimStart().startsWith(">")) continue;
+    joined += first ? line : ` ${line}`;
+    first = false;
+    if (joined.length > SNIPPET_MAX) {
+      const head = longHead(joined);
+      if (head) return head;
+    }
+  }
+  return longHead(joined) ?? joined.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * The cut snippet if the collapsed text is longer than SNIPPET_MAX. Collapsing
+ * a prefix gives a prefix of the collapsed whole, so only as much text as the
+ * snippet needs is scanned.
+ */
+function longHead(joined: string): string | null {
+  for (let size = SNIPPET_MAX + 56; ; size *= 4) {
+    const head = joined.slice(0, size).replace(/\s+/g, " ").trimStart();
+    if (head.length > SNIPPET_MAX) return `${head.slice(0, SNIPPET_MAX - 1)}…`;
+    if (size >= joined.length) return null;
+  }
 }
 
 function normalizeMessageId(id: string | null | undefined): string | null {
