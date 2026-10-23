@@ -1,8 +1,12 @@
 import { RpcError, type Handlers } from "@unica/core/rpc";
 import { proposeLearnedFilters, type Address } from "@unica/core";
 import {
-  addThreadsToCategory,
+  addToCategory,
   applyThreadAction,
+  createBatch,
+  finishBatch,
+  removeFromCategory,
+  undoBatch,
   claimFilterApplications,
   claimOwner,
   completeOp,
@@ -36,7 +40,6 @@ import {
   putSecret,
   recordUserActions,
   removeAccount,
-  removeThreadsFromCategory,
   saveDraft,
   saveFilter,
   searchIsComplete,
@@ -50,6 +53,9 @@ import type { GmailAccountConfig, ImapAccountConfig, SendPayload } from "@unica/
 import { Backend } from "./backend";
 import { changeOwnerTo, gmailClaim, imapClaim } from "./identity";
 import { readSettings, SettingsError, updateSettings } from "./settings";
+
+/** How a UI entry point is recorded: bulk (snackbar) adds weigh half and their content is capped per sender. */
+const ADDED_BY = { picker: "user", dnd: "user", suggestion: "suggestion", snackbar: "bulk" } as const;
 
 const ACCOUNT_COLORS = ["indigo", "emerald", "amber", "cyan", "violet", "rose", "lime", "slate"];
 
@@ -128,19 +134,35 @@ export function createHandlers(b: Backend): Handlers {
     },
     "categories.delete": ({ id }) => {
       deleteCategory(db(), id);
+      b.categorizer.dropCategory(id);
       b.server.emit("categories", listCategories(db()));
       b.notifyChanged([]);
       return { ok: true as const };
     },
-    "categories.addThreads": ({ categoryId, threadIds }, ctx) => {
-      const added = addThreadsToCategory(db(), categoryId, threadIds, ctx.origin === "mcp" ? "agent" : "user", b.now());
+    "categories.addThreads": ({ categoryId, threadIds, source }, ctx) => {
+      if (!listCategories(db()).some((c) => c.id === categoryId)) throw new RpcError("NOT_FOUND", `Category ${categoryId} not found`);
+      const addedBy = ctx.origin === "mcp" ? "agent" : ADDED_BY[source];
+      const result = db().tx(() => {
+        const batchId = createBatch(db(), categoryId, source, { kind: "threads" }, b.now());
+        const r = addToCategory(db(), { categoryId, threadIds, addedBy, now: b.now(), batchId });
+        finishBatch(db(), batchId, r.added.length);
+        return { ...r, batchId };
+      });
+      b.categorizer.apply(result.deltas);
       b.notifyChanged(threadIds);
-      return { added };
+      return { added: result.added.length, addedIds: result.added, batchId: result.added.length ? result.batchId : null };
     },
-    "categories.removeThreads": ({ categoryId, threadIds }) => {
-      const removed = removeThreadsFromCategory(db(), categoryId, threadIds);
+    "categories.removeThreads": ({ categoryId, threadIds, reason }) => {
+      const result = removeFromCategory(db(), { categoryId, threadIds, reason, now: b.now() });
+      b.categorizer.apply(result.deltas);
       b.notifyChanged(threadIds);
-      return { removed };
+      return { removed: result.removed.length };
+    },
+    "categorize.undo": ({ batchId }) => {
+      const result = undoBatch(db(), batchId, b.now());
+      b.categorizer.apply(result.deltas);
+      b.notifyChanged(result.removed);
+      return { removed: result.removed.length };
     },
     "categories.suggest": ({ categoryId, threadId }) => suggestSimilarForCategory(db(), categoryId, threadId),
     "categories.dismissSuggestion": ({ key }) => {

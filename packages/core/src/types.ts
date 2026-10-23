@@ -88,6 +88,8 @@ export interface Category {
   name: string;
   color: CategoryColor;
   position: number;
+  /** the engine may add new mail to it on its own (otherwise it only suggests) */
+  autoApply: boolean;
 }
 
 export const CATEGORY_COLORS = [

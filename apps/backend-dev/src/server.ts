@@ -54,6 +54,8 @@ export async function startDevServer(o: DevServerOptions): Promise<DevServer> {
   });
   if (o.seed !== false && seedDemo(backend.db, { threads: o.threads, accounts: o.accounts })) {
     backend.db.run("INSERT OR REPLACE INTO settings (key, value_json) VALUES ('app', ?)", JSON.stringify({ ai: { provider: "fake" } }));
+    // warm model from the seeded categories (persisted on close, so E2E copies start ready)
+    backend.categorizer.rebuildSync();
   }
   backend.start();
 

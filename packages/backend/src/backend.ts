@@ -41,6 +41,7 @@ import {
 } from "@unica/db";
 import { ProviderError, type MailProvider, type ProviderRegistry, type SyncSink } from "@unica/mail";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
+import { Categorizer } from "./categorizer";
 import { createHandlers } from "./handlers";
 import { createNetworkPolicy, type LookupAll, type NetworkPolicy } from "./net-policy";
 import { readLocalMode, readSettings } from "./settings";
@@ -121,6 +122,8 @@ export class Backend {
   /** the only way out of the backend: every outbound request asks it first */
   readonly net: NetworkPolicy;
   readonly aiService: AiService;
+  readonly categorizer: Categorizer;
+  private idleTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: BackendOptions) {
     // explicit `undefined` must not clobber defaults
@@ -130,6 +133,8 @@ export class Backend {
     this.net = createNetworkPolicy({ localMode: () => readLocalMode(this.db), lookup: options.lookup });
     this.aiService = new AiService(this, options.aiFactory ?? defaultAiFactory);
     this.checkpointer = startCheckpointWorker(this.db);
+    this.categorizer = new Categorizer(this);
+    this.categorizer.load();
     const recovered = recoverOps(this.db, this.now());
     if (recovered.requeued || recovered.unknown) this.log("info", "recovered ops after restart", recovered);
     this.server = new RpcServer(createHandlers(this), {
@@ -151,7 +156,10 @@ export class Backend {
   }
 
   start(): void {
+    if (!this.categorizer.ready) void this.categorizer.rebuild();
     if (this.options.autoSync === false) return;
+    this.idleTimer = setInterval(() => void this.categorizer.idle(), 10 * 60_000);
+    this.idleTimer.unref?.();
     for (const account of listAccounts(this.db)) this.startAccount(account);
     this.syncTimer = setInterval(() => {
       for (const account of listAccounts(this.db)) void this.syncAccount(account.id);
@@ -163,12 +171,18 @@ export class Backend {
     this.stopped = true;
     this.abort.abort();
     if (this.syncTimer) clearInterval(this.syncTimer);
+    if (this.idleTimer) clearInterval(this.idleTimer);
     if (this.workerTimer) clearTimeout(this.workerTimer);
     for (const off of this.unwatch.values()) off();
     await Promise.allSettled(this.syncing.values());
     // let an in-flight ops batch finish writing before the database closes
     for (let i = 0; this.workerRunning && i < 200; i++) await new Promise((r) => setTimeout(r, 10));
     await Promise.allSettled([...this.providers.values()].map((p) => p.close()));
+    try {
+      this.categorizer.persist();
+    } catch (error) {
+      this.log("warn", "could not persist the categorization model", error instanceof Error ? error.message : error);
+    }
     await this.checkpointer?.stop();
     this.db.close();
   }

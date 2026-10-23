@@ -108,6 +108,17 @@ export interface CategorySuggestion {
   total: number;
 }
 
+export const CATEGORIZE_SOURCES = ["picker", "dnd", "snackbar", "suggestion"] as const;
+export type CategorizeSource = (typeof CATEGORIZE_SOURCES)[number];
+
+export interface AddThreadsResult {
+  added: number;
+  /** threads that were not in the category before (undo removes exactly these) */
+  addedIds: number[];
+  /** undo handle (categorize.undo); null when nothing was added */
+  batchId: number | null;
+}
+
 export interface OpInfo {
   id: string;
   accountId: number;
@@ -226,17 +237,24 @@ export const contract = {
       name: z.string().trim().min(1).max(60).optional(),
       color: z.enum(CATEGORY_COLORS).optional(),
       position: z.number().int().min(0).optional(),
+      autoApply: z.boolean().optional(),
     }),
   ),
   "categories.delete": m<{ ok: true }>()(z.object({ id })),
-  "categories.addThreads": m<{ added: number }>()(z.object({ categoryId: id, threadIds: ids })),
+  /** The one way the UI files threads (picker, drag and drop, snackbar, accepted suggestion): it trains the model and returns what changed for undo. */
+  "categories.addThreads": m<AddThreadsResult>()(
+    z.object({ categoryId: id, threadIds: ids, source: z.enum(CATEGORIZE_SOURCES).default("picker") }),
+  ),
+  /** "user" removals teach the model (a strong negative); "undo" takes back the user's own add without learning anything. */
   "categories.removeThreads": m<{ removed: number }>()(
-    z.object({ categoryId: id, threadIds: ids }),
+    z.object({ categoryId: id, threadIds: ids, reason: z.enum(["user", "undo"]).default("user") }),
   ),
   "categories.suggest": m<CategorySuggestion | null>()(
     z.object({ categoryId: id, threadId: id }),
   ),
   "categories.dismissSuggestion": m<{ ok: true }>()(z.object({ key: z.string().max(400) })),
+
+  "categorize.undo": m<{ removed: number }>()(z.object({ batchId: id })),
 
   "counts.get": m<Counts>()(empty),
 

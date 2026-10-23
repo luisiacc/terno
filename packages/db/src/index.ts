@@ -21,3 +21,4 @@ export function openDatabase(path: string, options: OpenOptions = {}): Db {
 export * from "./seed";
 export * from "./checkpoint";
 export * from "./owner";
+export * from "./categorize";

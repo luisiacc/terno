@@ -11,8 +11,10 @@ import type {
   ThreadSummary,
   UserActionKind,
 } from "@unica/core";
+import { CONSUMER_DOMAINS } from "@unica/core";
+import { addToCategory, removeFromCategory, type AddedBy } from "./categorize";
 import { getSummaries } from "./queries";
-import { placeholders, type Db } from "./sqlite";
+import type { Db } from "./sqlite";
 
 // ───────────────────────────── accounts ─────────────────────────────
 
@@ -124,61 +126,41 @@ export function removeAccount(db: Db, id: number): void {
 // ───────────────────────────── categories ─────────────────────────────
 
 export function listCategories(db: Db): Category[] {
-  return db.all<Category>("SELECT id, name, color, position FROM categories ORDER BY position, id");
+  return db
+    .all<Category & { auto_apply: number }>("SELECT id, name, color, position, auto_apply FROM categories ORDER BY position, id")
+    .map(({ auto_apply, ...c }) => ({ ...c, autoApply: auto_apply === 1 }));
 }
 
 export function createCategory(db: Db, name: string, color: CategoryColor): Category {
   const position = db.get<{ p: number }>("SELECT coalesce(max(position), -1) + 1 AS p FROM categories")!.p;
   const id = db.run("INSERT INTO categories (name, color, position) VALUES (?, ?, ?)", name, color, position).lastInsertRowid;
-  return { id, name, color, position };
+  return { id, name, color, position, autoApply: true };
 }
 
 export function updateCategory(
   db: Db,
   id: number,
-  patch: { name?: string; color?: CategoryColor; position?: number },
+  patch: { name?: string; color?: CategoryColor; position?: number; autoApply?: boolean },
 ): Category | null {
   if (patch.name !== undefined) db.run("UPDATE categories SET name = ? WHERE id = ?", patch.name, id);
   if (patch.color !== undefined) db.run("UPDATE categories SET color = ? WHERE id = ?", patch.color, id);
   if (patch.position !== undefined) db.run("UPDATE categories SET position = ? WHERE id = ?", patch.position, id);
-  return db.get<Category>("SELECT id, name, color, position FROM categories WHERE id = ?", id) ?? null;
+  if (patch.autoApply !== undefined) db.run("UPDATE categories SET auto_apply = ? WHERE id = ?", patch.autoApply ? 1 : 0, id);
+  return listCategories(db).find((c) => c.id === id) ?? null;
 }
 
 export function deleteCategory(db: Db, id: number): void {
   db.run("DELETE FROM categories WHERE id = ?", id);
 }
 
-export function addThreadsToCategory(
-  db: Db,
-  categoryId: number,
-  threadIds: readonly number[],
-  addedBy: "user" | "filter" | "agent" | "suggestion",
-  now = Date.now(),
-): number {
-  let added = 0;
-  db.tx(() => {
-    for (const threadId of threadIds) {
-      added += db.run(
-        `INSERT OR IGNORE INTO thread_categories (thread_id, category_id, added_by, added_at)
-         SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM threads WHERE id = ?)`,
-        threadId,
-        categoryId,
-        addedBy,
-        now,
-        threadId,
-      ).changes;
-    }
-  });
-  return added;
+/** Adds threads (explicit origins also record training examples); returns how many were new. */
+export function addThreadsToCategory(db: Db, categoryId: number, threadIds: readonly number[], addedBy: AddedBy, now = Date.now()): number {
+  return addToCategory(db, { categoryId, threadIds, addedBy, now }).added.length;
 }
 
-export function removeThreadsFromCategory(db: Db, categoryId: number, threadIds: readonly number[]): number {
-  if (threadIds.length === 0) return 0;
-  return db.run(
-    `DELETE FROM thread_categories WHERE category_id = ? AND thread_id IN (${placeholders(threadIds.length)})`,
-    categoryId,
-    ...threadIds,
-  ).changes;
+/** A user removal: recorded as a negative example. */
+export function removeThreadsFromCategory(db: Db, categoryId: number, threadIds: readonly number[], now = Date.now()): number {
+  return removeFromCategory(db, { categoryId, threadIds, reason: "user", now }).removed.length;
 }
 
 export interface CategorySuggestionResult {
@@ -188,8 +170,6 @@ export interface CategorySuggestionResult {
   threads: ThreadSummary[];
   total: number;
 }
-
-const CONSUMER_DOMAINS = new Set(["gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "yahoo.com", "icloud.com", "me.com", "live.com", "proton.me", "protonmail.com"]);
 
 /**
  * After a thread lands in a category, find similar threads not yet in it:
