@@ -71,6 +71,7 @@ export function Sidebar() {
   const view = useApp((s) => s.view);
   const accountId = useApp((s) => s.accountId);
   const categoryId = useApp((s) => s.categoryId);
+  const reviewCategoryId = useApp((s) => s.reviewCategoryId);
   const accounts = useApp((s) => s.accounts);
   const categories = useApp((s) => s.categories);
   const counts = useApp((s) => s.counts);
@@ -131,15 +132,29 @@ export function Sidebar() {
           Categorías
         </SectionTitle>
         {categories.map((c) => (
-          <NavItem
-            key={c.id}
-            testId={`nav-category-${c.id}`}
-            active={categoryId === c.id}
-            onClick={() => navigate({ categoryId: c.id })}
-            icon={<CategoryDot color={c.color as CategoryColor} />}
-            label={c.name}
-            count={counts.categoryUnread[c.id] || undefined}
-          />
+          <div key={c.id}>
+            <NavItem
+              testId={`nav-category-${c.id}`}
+              active={categoryId === c.id && reviewCategoryId === null}
+              onClick={() => navigate({ categoryId: c.id })}
+              icon={<CategoryDot color={c.color as CategoryColor} />}
+              label={c.name}
+              count={counts.categoryUnread[c.id] || undefined}
+            />
+            {(counts.categorySuggestions[c.id] ?? 0) > 0 && (
+              <button
+                type="button"
+                data-testid={`nav-review-${c.id}`}
+                data-active={reviewCategoryId === c.id || undefined}
+                onClick={() => navigate({ view: "all", reviewCategoryId: c.id })}
+                className="flex h-6 w-full items-center gap-2 rounded-md pr-2 pl-8 text-left text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
+              >
+                <Sparkles className="size-3 text-sidebar-primary" />
+                <span className="flex-1">Revisar</span>
+                <span className="font-mono text-2xs tabular">{counts.categorySuggestions[c.id]}</span>
+              </button>
+            )}
+          </div>
         ))}
         {creating && (
           <input

@@ -2,7 +2,8 @@ import { resolveKey, type Command } from "@unica/core";
 import { act, openCompose, toggleStar } from "~/lib/actions";
 import { getApp, navigate, setApp } from "~/state/app";
 import { useList } from "~/state/list";
-import { loadThread } from "~/state/threads";
+import { loadThread, useThreads } from "~/state/threads";
+import { acceptSuggestion, rejectSuggestion } from "~/lib/categorize";
 import { listScroller, searchInputRef } from "~/components/thread-list";
 import { snackbarControls } from "~/components/category-snackbar";
 
@@ -21,6 +22,14 @@ function move(delta: number) {
     const t = items[n];
     if (t) void loadThread(t.id);
   }
+}
+
+/** y / n answer the reader's first "¿Categoría?" chip. */
+function answerSuggestion(yes: boolean) {
+  const id = getApp().selectedId;
+  const s = id === null ? undefined : useThreads.getState().details.get(id)?.categorization?.suggestions[0];
+  if (id === null || !s) return;
+  void (yes ? acceptSuggestion(id, s.categoryId) : rejectSuggestion(id, s.categoryId));
 }
 
 const HANDLERS: Partial<Record<Command, () => void>> = {
@@ -57,6 +66,8 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "go.archive": () => navigate({ view: "archive" }),
   "go.trash": () => navigate({ view: "trash" }),
   "help.shortcuts": () => setApp({ dialog: "shortcuts" }),
+  "suggestion.accept": () => answerSuggestion(true),
+  "suggestion.reject": () => answerSuggestion(false),
   "snackbar.action1": () => snackbarControls.current?.action(1),
   "snackbar.action2": () => snackbarControls.current?.action(2),
   "snackbar.action3": () => snackbarControls.current?.action(3),

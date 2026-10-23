@@ -3,7 +3,7 @@ import type { AppSettings, OwnerIdentity } from "@unica/core/rpc";
 import { create } from "zustand";
 
 export type DialogName = "settings" | "shortcuts" | "palette" | "categoryPicker" | "filters" | "addAccount" | null;
-export type SettingsTab = "general" | "accounts" | "ai" | "agents";
+export type SettingsTab = "general" | "accounts" | "categories" | "ai" | "agents";
 
 export interface ComposeDraft {
   key: number;
@@ -35,6 +35,8 @@ export interface AppState {
   view: View;
   accountId: number | null;
   categoryId: number | null;
+  /** "Revisar": the engine's pending suggestions for this category */
+  reviewCategoryId: number | null;
   query: string;
   selectedId: number | null;
   /** multi-selection (x) */
@@ -66,6 +68,7 @@ export const useApp = create<AppState>(() => ({
   view: "inbox",
   accountId: null,
   categoryId: null,
+  reviewCategoryId: null,
   query: "",
   selectedId: null,
   checked: new Set(),
@@ -80,8 +83,9 @@ export const useApp = create<AppState>(() => ({
 export const setApp = useApp.setState;
 export const getApp = useApp.getState;
 
-export function navigate(to: { view?: View; accountId?: number | null; categoryId?: number | null }): void {
+export function navigate(to: { view?: View; accountId?: number | null; categoryId?: number | null; reviewCategoryId?: number | null }): void {
   setApp((s) => ({
+    reviewCategoryId: to.reviewCategoryId ?? null,
     view: to.view ?? (to.categoryId ? "all" : s.view),
     accountId: to.accountId === undefined ? s.accountId : to.accountId,
     categoryId: to.categoryId === undefined ? null : to.categoryId,

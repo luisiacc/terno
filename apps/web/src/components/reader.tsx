@@ -1,13 +1,13 @@
 import type { CategoryColor, MessageDetail } from "@unica/core";
 import { Button } from "@unica/ui/components/button";
-import { CategoryBadge } from "@unica/ui/components/category-dot";
+import { CategoryBadge, CategoryDot } from "@unica/ui/components/category-dot";
 import { Shortcut } from "@unica/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@unica/ui/components/tooltip";
 import { cn } from "@unica/ui/lib/utils";
 import { Archive, Forward, Inbox, MailOpen, OctagonAlert, Paperclip, Reply, ReplyAll, Star, Tag, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { act, openCompose, scheduleMarkRead, toggleStar } from "~/lib/actions";
-import { removeFromCategory } from "~/lib/categorize";
+import { acceptSuggestion, rejectSuggestion, removeFromCategory } from "~/lib/categorize";
 import { avatarColor, formatBytes, fullDate, initials, listDate } from "~/lib/format";
 import { setApp, useApp } from "~/state/app";
 import { loadThread, useThread } from "~/state/threads";
@@ -39,6 +39,17 @@ function ToolButton({ label, keys, onClick, children, testId, active }: { label:
         {keys && <Shortcut keys={keys} />}
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+/** Why the engine did or suggests something: its reasons, in plain words. */
+function Reasons({ title, reasons, hint }: { title: string; reasons: string[]; hint?: string }) {
+  return (
+    <TooltipContent className="max-w-72 flex-col items-start gap-1 text-left" data-testid="category-reasons">
+      <p className="font-medium">{title}</p>
+      {reasons.length > 0 && <p className="opacity-80">{reasons.join(" · ")}</p>}
+      {hint && <p className="opacity-60">{hint}</p>}
+    </TooltipContent>
   );
 }
 
@@ -203,14 +214,44 @@ export function Reader() {
               </h2>
               <div className="mt-2 mb-5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                 {account && <span>{account.email}</span>}
-                {cats.map((c) => (
-                  <CategoryBadge key={c.id} color={c.color as CategoryColor}>
-                    {c.name}
-                    <button type="button" aria-label={`Quitar ${c.name}`} className="opacity-60 hover:opacity-100" onClick={() => void removeFromCategory(c.id, [t!.id])}>
-                      <X className="size-3" />
-                    </button>
-                  </CategoryBadge>
-                ))}
+                {cats.map((c) => {
+                  const auto = detail.categorization?.auto.find((a) => a.categoryId === c.id);
+                  return (
+                    <CategoryBadge key={c.id} color={c.color as CategoryColor}>
+                      {c.name}
+                      {auto && (
+                        <Tooltip>
+                          <TooltipTrigger render={<span data-testid="auto-mark" className="rounded-sm bg-foreground/10 px-1 text-[10px] font-medium uppercase">auto</span>} />
+                          <Reasons title={`Única la añadió a ${c.name}`} reasons={auto.reasons} hint={`¿No es de ${c.name}? Quítala y aprenderá.`} />
+                        </Tooltip>
+                      )}
+                      <button type="button" aria-label={auto ? `No es ${c.name}` : `Quitar ${c.name}`} className="opacity-60 hover:opacity-100" onClick={() => void removeFromCategory(c.id, [t!.id])}>
+                        <X className="size-3" />
+                      </button>
+                    </CategoryBadge>
+                  );
+                })}
+                {detail.categorization?.suggestions.map((sg, i) => {
+                  const c = categories.find((x) => x.id === sg.categoryId);
+                  if (!c) return null;
+                  return (
+                    <span key={sg.categoryId} data-testid="suggestion-chip" className="inline-flex h-5 items-center rounded-full border border-dashed border-primary/40 text-xs text-foreground">
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <button type="button" data-testid="suggestion-accept" onClick={() => void acceptSuggestion(t!.id, c.id)} className="inline-flex h-full items-center gap-1 rounded-l-full pr-1 pl-1.5 hover:bg-accent">
+                              <CategoryDot color={c.color as CategoryColor} />¿{c.name}?{i === 0 && <Shortcut keys="y" className="ml-0.5 [&_kbd]:h-3.5 [&_kbd]:min-w-3.5 [&_kbd]:text-[10px]" />}
+                            </button>
+                          }
+                        />
+                        <Reasons title={`Parece de ${c.name} (${Math.round(sg.p * 100)}%)`} reasons={sg.reasons} hint={i === 0 ? "y: añadir · n: no es" : undefined} />
+                      </Tooltip>
+                      <button type="button" aria-label={`No es ${c.name}`} data-testid="suggestion-reject" onClick={() => void rejectSuggestion(t!.id, c.id)} className="inline-flex h-full items-center rounded-r-full px-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+                        <X className="size-3" />
+                      </button>
+                    </span>
+                  );
+                })}
               </div>
               <div className="space-y-2.5">
                 {detail.messages.map((m) => (

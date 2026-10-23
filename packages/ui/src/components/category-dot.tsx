@@ -29,9 +29,9 @@ function CategoryDot({ color, className }: { color: CategoryColor; className?: s
 }
 
 /** Soft pill with a category name. */
-function CategoryBadge({ color, children, className }: { color: CategoryColor; children: React.ReactNode; className?: string }) {
+function CategoryBadge({ color, children, className, ...props }: { color: CategoryColor; children: React.ReactNode } & React.ComponentProps<"span">) {
   return (
-    <span data-slot="category-badge" className={cn("inline-flex h-5 items-center gap-1 rounded-md px-1.5 text-2xs font-medium", SOFT[color] ?? SOFT.slate, className)}>
+    <span data-slot="category-badge" {...props} className={cn("inline-flex h-5 items-center gap-1 rounded-md px-1.5 text-2xs font-medium", SOFT[color] ?? SOFT.slate, className)}>
       {children}
     </span>
   )

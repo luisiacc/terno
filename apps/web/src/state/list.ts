@@ -39,13 +39,19 @@ function indexOf(items: ThreadSummary[]): Map<number, number> {
 
 export function listKey(): string {
   const s = getApp();
-  return JSON.stringify([s.view, s.accountId, s.categoryId, s.query.trim()]);
+  return JSON.stringify([s.view, s.accountId, s.categoryId, s.reviewCategoryId, s.query.trim()]);
 }
 
 let seq = 0;
 
 async function fetchPage(cursor?: { lastDate: number; id: number }, limit = PAGE) {
   const s = getApp();
+  if (s.reviewCategoryId !== null) {
+    // one bounded page of suggestions (each row carries its prediction)
+    if (cursor) return { items: [], nextCursor: null };
+    const { items } = await client.call("categorize.suggestions", { categoryId: s.reviewCategoryId, limit: 200 });
+    return { items: items.map(({ prediction: _p, ...t }) => t), nextCursor: null };
+  }
   const scope = { accountId: s.accountId ?? undefined, categoryId: s.categoryId ?? undefined };
   const q = s.query.trim();
   if (q) {
@@ -121,7 +127,7 @@ export function patchRows(ids: readonly number[], patch: (t: ThreadSummary) => T
 // Any change of view / account / category / query reloads the list (navigation,
 // search box, palette, shortcuts all just update app state).
 useApp.subscribe((s, prev) => {
-  if (s.view !== prev.view || s.accountId !== prev.accountId || s.categoryId !== prev.categoryId || s.query !== prev.query) {
+  if (s.view !== prev.view || s.accountId !== prev.accountId || s.categoryId !== prev.categoryId || s.reviewCategoryId !== prev.reviewCategoryId || s.query !== prev.query) {
     void reloadList();
   }
 });

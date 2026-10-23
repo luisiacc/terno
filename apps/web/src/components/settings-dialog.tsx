@@ -16,6 +16,7 @@ import { applyTheme } from "~/lib/boot";
 import { client } from "~/rpc/connection";
 import { setApp, useApp, type SettingsTab } from "~/state/app";
 import { AiTab } from "./settings/ai-tab";
+import { CategoriesTab } from "./settings/categories-tab";
 import { OwnerCard } from "./settings/owner-card";
 
 function Row({ label, hint, children, testId, labelId, hintId }: { label: string; hint?: string; children: React.ReactNode; testId?: string; labelId?: string; hintId?: string }) {
@@ -89,6 +90,7 @@ export function SettingsDialog() {
             <TabsList>
               <TabsTrigger value="general" data-testid="tab-general">General</TabsTrigger>
               <TabsTrigger value="accounts" data-testid="tab-accounts">Cuentas</TabsTrigger>
+              <TabsTrigger value="categories" data-testid="tab-categories">Categorías</TabsTrigger>
               <TabsTrigger value="ai" data-testid="tab-ai">IA</TabsTrigger>
               <TabsTrigger value="agents" data-testid="tab-agents">Agentes</TabsTrigger>
             </TabsList>
@@ -176,6 +178,10 @@ export function SettingsDialog() {
                   }}
                 />
               </div>
+            </TabsContent>
+
+            <TabsContent value="categories">
+              <CategoriesTab settings={settings} />
             </TabsContent>
 
             <TabsContent value="ai">

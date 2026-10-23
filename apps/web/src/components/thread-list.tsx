@@ -16,13 +16,14 @@ export const listScroller: { scrollToIndex?: (i: number) => void } = {};
 function Header() {
   const view = useApp((s) => s.view);
   const category = useApp((s) => s.categories.find((c) => c.id === s.categoryId));
+  const review = useApp((s) => s.categories.find((c) => c.id === s.reviewCategoryId));
   const account = useApp((s) => s.accounts.find((a) => a.id === s.accountId));
   const query = useApp((s) => s.query);
   const searchMs = useList((s) => s.searchMs);
   const count = useList((s) => s.items.length);
   const more = useList((s) => s.nextCursor !== null);
   const complete = useList((s) => s.complete);
-  const title = category?.name ?? VIEW_LABEL[view];
+  const title = review ? `Revisar · ${review.name}` : (category?.name ?? VIEW_LABEL[view]);
 
   return (
     <div className="drag-region shrink-0 border-b border-border px-3 pt-2.5 pb-2">

@@ -9,6 +9,12 @@ async function countOf(server: DevServer, categoryId: number, query: string): Pr
   return r.count;
 }
 
+/** Opening a thread marks it read after a short dwell and the reader refreshes: hover only after that. */
+async function settled(server: DevServer, threadId: number) {
+  await expect.poll(() => server.backend.db.get<{ u: number }>("SELECT unread_count AS u FROM threads WHERE id = ?", threadId)!.u).toBe(0);
+  await new Promise((r) => setTimeout(r, 300));
+}
+
 const toast = (page: Page, text: string | RegExp) => page.locator("[data-sonner-toast]").filter({ hasText: text });
 
 /** An Uber receipt in the inbox that isn't in Facturas yet, plus a live count of the ones still outside. */
@@ -179,5 +185,99 @@ test.describe("everything about X and Y", () => {
     await field.press("Enter");
     await expect(toast(page, `${expected} ${expected === 1 ? "añadida" : "añadidas"} a Facturas`)).toBeVisible();
     await expect.poll(() => countOf(server, facturas, "recibo from:recibos@rappi.com")).toBe(0);
+  });
+});
+
+test.describe("the engine's suggestions and auto adds in the UI", () => {
+  /** Two uncategorized inbox threads with a pending Facturas suggestion, then a fresh page (counts at boot). */
+  async function withSuggestions(page: Page, server: DevServer) {
+    const db = server.backend.db;
+    const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
+    const threads = db
+      .all<{ id: number }>(
+        `SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND t.last_from_email = 'recibos@rappi.com'
+         AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id) ORDER BY t.last_date DESC LIMIT 2`,
+      )
+      .map((r) => r.id);
+    expect(threads).toHaveLength(2);
+    for (const t of threads) {
+      db.run(
+        "INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'suggest', 0.91, ?, ?)",
+        t,
+        facturas,
+        JSON.stringify(["mismo remitente que 12 conversaciones en Facturas", "incluye un importe"]),
+        Date.now(),
+      );
+    }
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    return { db, facturas, threads };
+  }
+
+  test("Revisar lists the suggestions; y accepts (with the snackbar), n rejects", async ({ app: page, server }) => {
+    const { db, facturas, threads } = await withSuggestions(page, server);
+    const review = page.getByTestId(`nav-review-${facturas}`);
+    await expect(review).toContainText("2");
+    await review.click();
+    await expect(page.getByTestId("list-title")).toHaveText("Revisar · Facturas");
+    await expect(page.getByTestId("thread-row")).toHaveCount(2);
+
+    await page.locator(`[data-thread-id="${threads[0]}"]`).dispatchEvent("mousedown");
+    const chip = page.getByTestId("reader").getByTestId("suggestion-chip");
+    await expect(chip).toContainText("¿Facturas?");
+    await settled(server, threads[0]!);
+    await chip.getByTestId("suggestion-accept").hover();
+    await expect(page.getByTestId("category-reasons")).toContainText("mismo remitente que 12 conversaciones en Facturas");
+    await focusList(page);
+    await page.keyboard.press("y");
+    await expect(page.getByTestId("category-snackbar")).toBeVisible();
+    await expect.poll(() => db.get("SELECT added_by FROM thread_categories WHERE thread_id = ? AND category_id = ?", threads[0]!, facturas)).toEqual({ added_by: "suggestion" });
+    expect(db.get("SELECT outcome FROM cls_decisions WHERE thread_id = ?", threads[0]!)).toEqual({ outcome: "accepted" });
+
+    await page.keyboard.press("Escape");
+    await page.locator(`[data-thread-id="${threads[1]}"]`).dispatchEvent("mousedown");
+    await expect(page.getByTestId("reader").getByTestId("suggestion-chip")).toBeVisible();
+    await focusList(page);
+    await page.keyboard.press("n");
+    await expect.poll(() => db.get("SELECT label, weight, source FROM cls_examples WHERE thread_id = ?", threads[1]!)).toEqual({ label: -1, weight: 1, source: "reject" });
+    await expect(page.getByTestId("reader").getByTestId("suggestion-chip")).toHaveCount(0);
+    await expect(page.getByTestId(`nav-review-${facturas}`)).toHaveCount(0);
+  });
+
+  test("an auto add says so and why; 'No es Facturas' reverts it and teaches the engine", async ({ app: page, server }) => {
+    const db = server.backend.db;
+    const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
+    const t = db.get<{ id: number }>(
+      `SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND t.last_from_email = 'recibos@rappi.com'
+       AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id) ORDER BY t.last_date DESC LIMIT 1`,
+    )!.id;
+    db.run("INSERT INTO thread_categories (thread_id, category_id, added_by, added_at) VALUES (?, ?, 'auto', ?)", t, facturas, Date.now());
+    db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'auto', 0.99, ?, ?)", t, facturas, JSON.stringify(["mismo remitente que 12 conversaciones en Facturas"]), Date.now());
+    await selectThread(page, t, "in:inbox from:recibos@rappi.com");
+    const badge = page.getByTestId("reader").locator("[data-slot=category-badge]", { hasText: "Facturas" });
+    await expect(badge.getByTestId("auto-mark")).toHaveText("auto");
+    await settled(server, t);
+    await badge.getByTestId("auto-mark").hover();
+    await expect(page.getByTestId("category-reasons")).toContainText("Única la añadió a Facturas");
+    await badge.getByRole("button", { name: "No es Facturas" }).click();
+    await expect(badge).toHaveCount(0);
+    await expect.poll(() => db.get("SELECT outcome FROM cls_decisions WHERE thread_id = ?", t)).toEqual({ outcome: "reverted" });
+    expect(db.get("SELECT label, weight FROM cls_examples WHERE thread_id = ?", t)).toEqual({ label: -1, weight: 3 });
+  });
+
+  test("Settings → Categorías: the global switch, per-category auto, and stats", async ({ app: page, server }) => {
+    const db = server.backend.db;
+    const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
+    await page.getByTestId("open-settings").click();
+    await page.getByTestId("tab-categories").click();
+    const row = page.getByTestId(`category-stats-${facturas}`);
+    const examples = db.get<{ n: number }>("SELECT count(*) AS n FROM cls_examples WHERE category_id = ? AND label = 1 AND weight > 0", facturas)!.n;
+    await expect(row).toContainText(`${examples} ejemplos`);
+    await page.getByTestId(`category-auto-${facturas}`).click();
+    await expect.poll(() => db.get("SELECT auto_apply FROM categories WHERE id = ?", facturas)).toEqual({ auto_apply: 0 });
+    await page.getByTestId("auto-categorize-select").click();
+    await page.getByTestId("auto-categorize-suggest").click();
+    await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, { clientId: "t", origin: "dev" })).settings.autoCategorize).toBe("suggest");
+    await expect(page.getByTestId(`category-auto-${facturas}`)).toBeDisabled();
   });
 });

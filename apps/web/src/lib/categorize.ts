@@ -83,3 +83,18 @@ export async function undoFiled(filed: Pick<Filed, "categoryId" | "addedIds" | "
   void reloadList({ keepSelection: true });
   return removed;
 }
+
+/** "Sí, es de Facturas": filed as an accepted suggestion (full weight), with the snackbar like any other add. */
+export function acceptSuggestion(threadId: number, categoryId: number): Promise<Filed | null> {
+  return addToCategory(categoryId, [threadId], { source: "suggestion" });
+}
+
+/** "No": a negative example of weight 1 for that category. */
+export async function rejectSuggestion(threadId: number, categoryId: number): Promise<void> {
+  try {
+    await client.call("categorize.feedback", { threadId, categoryId, verdict: "reject" });
+    refreshReader([threadId]);
+  } catch (error) {
+    toast.error(`No se pudo guardar: ${error instanceof Error ? error.message : error}`);
+  }
+}
