@@ -18,6 +18,8 @@ export interface RuleMessage {
 }
 
 const DAY_MS = 86_400_000;
+/** The DB keeps this many trailing body tokens (body_tail_norm) so body endsWith is index-free SQL. */
+export const BODY_TAIL_TOKENS = 32;
 const WORD = /[\p{L}\p{N}]+/gu;
 
 /** Tokenize like SQLite's unicode61 tokenizer with remove_diacritics. */
@@ -38,27 +40,63 @@ function textOp(op: TextOp, haystack: string, needle: string): boolean {
   }
 }
 
+/** Index of a whitespace character at or before `at` (or -1). Whitespace is a separator for every tokenizer we mirror. */
+function whitespaceBefore(text: string, at: number): number {
+  for (let i = Math.min(at, text.length - 1); i >= 0; i--) if (/\s/.test(text[i]!)) return i;
+  return -1;
+}
+function whitespaceAfter(text: string, at: number): number {
+  for (let i = Math.max(0, at); i < text.length; i++) if (/\s/.test(text[i]!)) return i;
+  return -1;
+}
+
+/** First `n` tokens, normalizing only as much of the text as needed (cuts on whitespace so no token is split). */
+function leadingTokens(text: string, n: number): string[] {
+  for (let size = 256; ; size *= 4) {
+    const cut = text.length <= size ? -1 : whitespaceBefore(text, size);
+    const tokens = tokenize(cut === -1 ? text : text.slice(0, cut));
+    if (cut === -1 || tokens.length >= n) return tokens.slice(0, n);
+  }
+}
+
+/** Last `n` tokens, scanning from the end. */
+export function trailingTokens(text: string, n: number): string[] {
+  for (let size = 256; ; size *= 4) {
+    const cut = text.length <= size ? -1 : whitespaceAfter(text, text.length - size);
+    const tokens = tokenize(cut === -1 ? text : text.slice(cut));
+    if (cut === -1 || tokens.length >= n) return tokens.slice(Math.max(0, tokens.length - n));
+  }
+}
+
+const sameTokens = (a: string[], b: string[]) => a.length === b.length && a.every((t, i) => t === b[i]);
+
 /**
  * `body` uses word/phrase semantics (backed by FTS in SQL): the needle's token
  * sequence must appear contiguously in the body's tokens. `equals` means the
  * whole body is exactly that token sequence; startsWith/endsWith anchor it.
+ * Anchored ops only normalize the head/tail of the body (filters over 50k mails).
  */
 export function bodyMatches(op: TextOp, body: string | null, value: string): boolean {
   if (body === null) return false;
   const needle = tokenize(value);
   if (needle.length === 0) return false;
-  const tokens = tokenize(body);
-  const at = (i: number) => needle.every((t, j) => tokens[i + j] === t);
   switch (op) {
-    case "contains":
-      for (let i = 0; i + needle.length <= tokens.length; i++) if (at(i)) return true;
+    case "contains": {
+      const tokens = tokenize(body);
+      outer: for (let i = 0; i + needle.length <= tokens.length; i++) {
+        for (let j = 0; j < needle.length; j++) if (tokens[i + j] !== needle[j]) continue outer;
+        return true;
+      }
       return false;
-    case "equals":
-      return tokens.length === needle.length && at(0);
+    }
     case "startsWith":
-      return tokens.length >= needle.length && at(0);
+      return sameTokens(leadingTokens(body, needle.length), needle);
     case "endsWith":
-      return tokens.length >= needle.length && at(tokens.length - needle.length);
+      return sameTokens(trailingTokens(body, needle.length), needle);
+    case "equals": {
+      const head = leadingTokens(body, needle.length + 1);
+      return sameTokens(head, needle);
+    }
   }
 }
 
