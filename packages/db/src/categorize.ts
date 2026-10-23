@@ -38,7 +38,9 @@ const TRAINING_SOURCE: Partial<Record<AddedBy, ExampleSource>> = {
 export type ModelDelta =
   | { op: "train" | "untrain"; example: TrainExample }
   /** the thread is categorized now: it stops being a background (weak negative) thread */
-  | { op: "unbackground"; threadId: number };
+  | { op: "unbackground"; threadId: number }
+  /** the thread is uncategorized again (removal, undo) and old enough: back to the background */
+  | { op: "background"; threadId: number; features: Uint32Array };
 
 export interface OwnAddresses {
   emails: Set<string>;
@@ -277,6 +279,23 @@ export function addToCategory(
   return { added, deltas };
 }
 
+/** Threads that just lost their last category and qualify as background (as a rebuild would count them). */
+function backgroundDeltas(db: Db, threadIds: readonly number[], now: number, own?: OwnAddresses): ModelDelta[] {
+  if (threadIds.length === 0) return [];
+  const bare = db
+    .all<{ t: number }>(
+      `SELECT value AS t FROM json_each(?) j JOIN threads th ON th.id = j.value
+       WHERE th.in_trash = 0 AND th.in_spam = 0 AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = j.value)`,
+      JSON.stringify(threadIds),
+    )
+    .map((r) => r.t);
+  const out: ModelDelta[] = [];
+  for (const [threadId, set] of threadFeatures(db, bare, own)) {
+    if (set.root.date <= now - BACKGROUND_MIN_AGE_MS) out.push({ op: "background", threadId, features: set.encoded });
+  }
+  return out;
+}
+
 export interface RemoveResult {
   removed: number[];
   deltas: ModelDelta[];
@@ -329,6 +348,7 @@ export function removeFromCategory(
       const set = sets.get(threadId);
       if (set) deltas.push(...putExample(db, { threadId, categoryId: r.categoryId, label: -1, source: "removal", at: r.now, batchId: null, set }));
     }
+    deltas.push(...backgroundDeltas(db, removed, r.now, r.own));
   });
   return { removed, deltas };
 }
@@ -360,7 +380,7 @@ export interface UndoResult {
 /** Takes back one batch exactly: its rows and the examples it recorded, nothing else. */
 export function undoBatch(db: Db, batchId: number, now: number): UndoResult {
   return db.tx(() => {
-    const out = undoBatchPart(db, batchId, batchThreads(db, batchId));
+    const out = undoBatchPart(db, batchId, batchThreads(db, batchId), now);
     if (out.categoryId !== null) finishUndo(db, batchId, now);
     return out;
   });
@@ -372,7 +392,7 @@ export function batchThreads(db: Db, batchId: number): number[] {
 }
 
 /** One slice of an undo: these threads' rows and examples from the batch. */
-export function undoBatchPart(db: Db, batchId: number, threadIds: readonly number[]): UndoResult {
+export function undoBatchPart(db: Db, batchId: number, threadIds: readonly number[], now: number): UndoResult {
   return db.tx(() => {
     const batch = db.get<{ category_id: number; undone_at: number | null }>("SELECT category_id, undone_at FROM cat_batches WHERE id = ?", batchId);
     if (!batch || batch.undone_at !== null) return { categoryId: null, removed: [], deltas: [] };
@@ -393,6 +413,7 @@ export function undoBatchPart(db: Db, batchId: number, threadIds: readonly numbe
         ids,
       )
       .map((r) => ({ op: "untrain", example: toExample(r) }));
+    deltas.push(...backgroundDeltas(db, removed, now));
     return { categoryId: batch.category_id, removed, deltas };
   });
 }

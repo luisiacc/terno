@@ -250,7 +250,7 @@ export function createHandlers(b: Backend): Handlers {
     "categorize.undo": async ({ batchId }) => {
       let removed = 0;
       await sliced(batchThreads(db(), batchId), (chunk) => {
-        const r = undoBatchPart(db(), batchId, chunk);
+        const r = undoBatchPart(db(), batchId, chunk, b.now());
         b.categorizer.apply(r.deltas);
         removed += r.removed.length;
         b.notifyChanged(r.removed);

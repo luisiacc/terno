@@ -271,8 +271,7 @@ it("large UI adds, removals and undo are sliced: no long stall, interactive RPCs
   const ids = backend.db.all<{ id: number }>("SELECT id FROM threads ORDER BY id LIMIT 12000").map((r) => r.id);
   const p95 = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.ceil(xs.length * 0.95) - 1] ?? 0;
   const runs: [string, () => Promise<unknown>][] = [];
-  let batchId: number | null = null;
-  runs.push(["add 5,000 threads (picker)", async () => (batchId = (await client.call("categories.addThreads", { categoryId: cat, threadIds: ids.slice(0, 5000) })).batchId)]);
+  runs.push(["add 5,000 threads (picker)", () => client.call("categories.addThreads", { categoryId: cat, threadIds: ids.slice(0, 5000) })]);
   runs.push(["remove 5,000 threads", () => client.call("categories.removeThreads", { categoryId: cat, threadIds: ids.slice(0, 5000) })]);
   let big: { batchId: number | null; added: number } = { batchId: null, added: 0 };
   runs.push(["bulk-apply every thread (one batch)", async () => (big = await client.call("categorize.apply", { categoryId: cat, scope: { kind: "query", query: "in:all" } }))]);

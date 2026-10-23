@@ -92,7 +92,8 @@ describe("categorization training signals", () => {
     addToCategory(db, { categoryId: cat, threadIds: [a], addedBy: "user", now: NOW });
     const r = removeFromCategory(db, { categoryId: cat, threadIds: [a, 999], reason: "user", now: NOW + 1 });
     expect(r.removed).toEqual([a]);
-    expect(r.deltas.map((d) => [d.op, d.op === "train" || d.op === "untrain" ? d.example.label : null])).toEqual([["untrain", 1], ["train", -1]]);
+    // ten days old and in no category anymore: back to the background
+    expect(r.deltas.map((d) => [d.op, d.op === "train" || d.op === "untrain" ? d.example.label : null])).toEqual([["untrain", 1], ["train", -1], ["background", null]]);
     expect(examples()).toMatchObject([{ thread_id: a, label: -1, weight: 3, source: "removal" }]);
     // putting it back (the user changed their mind) lifts the negative
     const back = addToCategory(db, { categoryId: cat, threadIds: [a], addedBy: "user", now: NOW + 2 });
@@ -120,7 +121,7 @@ describe("categorization training signals", () => {
     const a = thread();
     addToCategory(db, { categoryId: cat, threadIds: [a], addedBy: "user", now: NOW });
     const r = removeFromCategory(db, { categoryId: cat, threadIds: [a], reason: "undo", now: NOW });
-    expect(r.deltas.map((d) => d.op)).toEqual(["untrain"]);
+    expect(r.deltas.map((d) => d.op)).toEqual(["untrain", "background"]);
     expect(examples()).toEqual([]);
     expect(db.get("SELECT 1 FROM thread_categories WHERE thread_id = ?", a)).toBeUndefined();
   });
@@ -135,8 +136,7 @@ describe("categorization training signals", () => {
     expect(added.added).toEqual([a, b]);
     const undo = undoBatch(db, batch, NOW + 1);
     expect(undo.removed.sort()).toEqual([a, b].sort());
-    expect(undo.deltas).toHaveLength(2);
-    expect(undo.deltas.every((d) => d.op === "untrain")).toBe(true);
+    expect(undo.deltas.map((d) => d.op)).toEqual(["untrain", "untrain", "background", "background"]);
     expect(db.all<{ thread_id: number }>("SELECT thread_id FROM thread_categories").map((r) => r.thread_id)).toEqual([before]);
     expect(examples().map((e) => e.thread_id)).toEqual([before]);
     expect(db.get<{ added: number; undone_at: number }>("SELECT added, undone_at FROM cat_batches WHERE id = ?", batch)).toEqual({ added: 2, undone_at: NOW + 1 });

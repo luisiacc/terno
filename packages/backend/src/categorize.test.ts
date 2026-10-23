@@ -123,6 +123,26 @@ describe("categorizer: training hooks", () => {
     expect(backend.db.get("SELECT 1 FROM cls_examples")).toBeUndefined();
   });
 
+  it("removing or undoing returns old uncategorized threads to the background", async () => {
+    const { backend, client } = setup();
+    const acct = createAccount(backend.db, { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const cat = createCategory(backend.db, "Facturas", "amber").id;
+    const threads = [...ingestMessages(backend.db, Array.from({ length: 6 }, (_, i) => incoming(acct, { date: NOW - (10 + i) * DAY })), NOW).touchedThreads];
+    backend.categorizer.rebuildSync();
+    const model = backend.categorizer.model!;
+    expect(model.backgroundSize).toBe(6);
+    const bulk = await client.call("categories.addThreads", { categoryId: cat, threadIds: threads.slice(0, 4), source: "snackbar" });
+    await client.call("categories.addThreads", { categoryId: cat, threadIds: threads.slice(4) });
+    expect(model.backgroundSize).toBe(0);
+    await client.call("categorize.undo", { batchId: bulk.batchId! });
+    expect(model.backgroundSize).toBe(4);
+    await client.call("categories.removeThreads", { categoryId: cat, threadIds: threads.slice(4) });
+    expect(model.backgroundSize).toBe(6);
+    // RAM matches what a rebuild would compute
+    const fresh = backend.categorizer.rebuildSync();
+    expect(fresh.backgroundSize).toBe(6);
+  });
+
   it("an add that changes nothing returns no undo handle", async () => {
     const { backend, client } = setup();
     const acct = createAccount(backend.db, { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;

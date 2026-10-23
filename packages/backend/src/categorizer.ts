@@ -42,6 +42,9 @@ function applyDelta(m: CategorizerModel, d: ModelDelta): void {
     case "unbackground":
       m.removeBackground(d.threadId);
       break;
+    case "background":
+      m.addBackground(d.threadId, d.features);
+      break;
   }
 }
 
