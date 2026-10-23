@@ -1,0 +1,112 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`model discovery > an unprobed compatible server is asked for json_object; the strict schema sent to json_schema servers is pinned 1`] = `
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "actions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "categoryId": {
+            "description": "Required for addCategory, otherwise null",
+            "type": [
+              "number",
+              "null",
+            ],
+          },
+          "type": {
+            "enum": [
+              "archive",
+              "trash",
+              "spam",
+              "markRead",
+              "star",
+              "addCategory",
+            ],
+            "type": "string",
+          },
+        },
+        "required": [
+          "type",
+          "categoryId",
+        ],
+        "type": "object",
+      },
+      "type": "array",
+    },
+    "conditions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "enum": [
+              "from",
+              "fromDomain",
+              "recipients",
+              "subject",
+              "body",
+              "listId",
+              "hasAttachment",
+              "account",
+              "ageDays",
+            ],
+            "type": "string",
+          },
+          "negate": {
+            "type": "boolean",
+          },
+          "op": {
+            "enum": [
+              "contains",
+              "equals",
+              "startsWith",
+              "endsWith",
+              "is",
+              "gt",
+              "lt",
+            ],
+            "type": "string",
+          },
+          "value": {
+            "description": "Text value; 'true'/'false' for hasAttachment; account id for account; days for ageDays",
+            "type": "string",
+          },
+        },
+        "required": [
+          "field",
+          "op",
+          "value",
+          "negate",
+        ],
+        "type": "object",
+      },
+      "type": "array",
+    },
+    "explanation": {
+      "description": "One sentence explaining what the filter does, in the user's language",
+      "type": "string",
+    },
+    "match": {
+      "enum": [
+        "all",
+        "any",
+      ],
+      "type": "string",
+    },
+    "name": {
+      "description": "Short human name for the filter, in the user's language",
+      "type": "string",
+    },
+  },
+  "required": [
+    "name",
+    "explanation",
+    "match",
+    "conditions",
+    "actions",
+  ],
+  "type": "object",
+}
+`;

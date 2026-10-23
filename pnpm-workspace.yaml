@@ -31,3 +31,4 @@ catalog:
 minimumReleaseAgeExclude:
   - '@tanstack/react-virtual@3.14.22'
   - '@tanstack/virtual-core@3.19.7'
+  - openai@7.43.0

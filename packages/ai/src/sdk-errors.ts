@@ -17,19 +17,42 @@ function causes(error: unknown): unknown[] {
 /** A schema the server can't (or won't) honour: the ladder downgrades instead of failing. */
 const UNSUPPORTED_OUTPUT = /response_format|json_schema|json_object|structured output|schema|grammar/i;
 
-export function mapSdkError(error: unknown, sdk: SdkErrors, info: { label: string; local: boolean; host: string }): AiError {
+export interface ErrorInfo {
+  label: string;
+  local: boolean;
+  host: string;
+}
+
+function connectionError(chain: unknown[], info: ErrorInfo): AiError {
+  const refused = chain.some((e) => (e as { code?: string })?.code === "ECONNREFUSED");
+  if (refused && info.local) return new AiError(`No encontramos ${info.label} en ${info.host}. ¿Está abierto?`, "unavailable");
+  return new AiError(`No se pudo conectar con ${info.label} (${info.host}).`, "unavailable");
+}
+
+/** the network policy refused the request inside our fetch: no socket was opened */
+function policyError(chain: unknown[]): AiError | null {
+  const policy = chain.find((e) => (e as { name?: string })?.name === "NetworkPolicyError") as Error | undefined;
+  return policy ? new AiError(policy.message, "blocked") : null;
+}
+
+/** Errors from a plain fetch (native discovery endpoints). */
+export function mapNetworkError(error: unknown, info: ErrorInfo): AiError {
   if (error instanceof AiError) return error;
   const chain = causes(error);
-  // the network policy refused the request inside our fetch: no socket was opened
-  const policy = chain.find((e) => (e as { name?: string })?.name === "NetworkPolicyError") as Error | undefined;
-  if (policy) return new AiError(policy.message, "blocked");
+  const name = (error as { name?: string })?.name;
+  if (name === "AbortError") return new AiError("Cancelado.", "cancelled");
+  if (name === "TimeoutError") return new AiError(`${info.label} no respondió a tiempo.`, "timeout");
+  return policyError(chain) ?? connectionError(chain, info);
+}
+
+export function mapSdkError(error: unknown, sdk: SdkErrors, info: ErrorInfo): AiError {
+  if (error instanceof AiError) return error;
+  const chain = causes(error);
+  const blocked = policyError(chain);
+  if (blocked) return blocked;
   if (error instanceof sdk.APIUserAbortError) return new AiError("Cancelado.", "cancelled");
   if (error instanceof sdk.APIConnectionTimeoutError) return new AiError(`${info.label} no respondió a tiempo.`, "timeout");
-  if (error instanceof sdk.APIConnectionError) {
-    const refused = chain.some((e) => (e as { code?: string })?.code === "ECONNREFUSED");
-    if (refused && info.local) return new AiError(`No encontramos ${info.label} en ${info.host}. ¿Está abierto?`, "unavailable");
-    return new AiError(`No se pudo conectar con ${info.label} (${info.host}).`, "unavailable");
-  }
+  if (error instanceof sdk.APIConnectionError) return connectionError(chain, info);
   if (error instanceof sdk.APIError) {
     const status = error.status;
     if (status === 401 || status === 403) return new AiError(`${info.label} rechazó la API key.`, "auth");

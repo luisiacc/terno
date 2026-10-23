@@ -6,3 +6,4 @@ export * from "./ladder";
 export * from "./tasks";
 export * from "./anthropic";
 export * from "./fake";
+export * from "./openai-chat";

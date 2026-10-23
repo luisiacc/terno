@@ -2,6 +2,7 @@ import { z } from "zod";
 import { anthropicTransport } from "./anthropic";
 import { fakeTransport } from "./fake";
 import { runStructured, type StructuredTask } from "./ladder";
+import { openaiChatTransport } from "./openai-chat";
 import { describeProvider, isLocalProvider } from "./providers";
 import { AiError, type AiTasks, type Capabilities, type ClassifyInput, type ModelInfo, type ModelTransport, type OutputMode, type ProviderConfig } from "./types";
 import { convertWireFilter, EXAMPLE_WIRE_FILTER, systemPrompt, wireFilterSchema } from "./wire";
@@ -20,7 +21,7 @@ export function transportFor(config: ProviderConfig): ModelTransport {
     case "compatible":
     case "ollama":
     case "lmstudio":
-      throw new AiError("OpenAI-compatible providers are not available yet.", "not_configured");
+      return openaiChatTransport(config);
     case "fake":
       return fakeTransport();
     case "none":
