@@ -572,5 +572,6 @@ export function resolveCustomTheme(custom: CustomTheme): Theme {
     else overrides[k as ThemeToken] = v;
   }
   const catList = CAT_NAMES.map((n, i) => own[`cat-${n}`] ?? input.cats[i]!) as unknown as Cats;
-  return { id: `custom:${custom.id}`, name: custom.name, mode: custom.mode, vibrancy: base.vibrancy, font: base.font, tokens: derive({ mode: custom.mode, tokens, cats: catList, overrides }) };
+  // custom colors render exactly: no native vibrancy behind them
+  return { id: `custom:${custom.id}`, name: custom.name, mode: custom.mode, vibrancy: false, font: base.font, tokens: derive({ mode: custom.mode, tokens, cats: catList, overrides }) };
 }

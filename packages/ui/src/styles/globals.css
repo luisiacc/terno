@@ -103,6 +103,14 @@
   --shadow-xl: 0 20px 25px -5px var(--shadow-color), 0 8px 10px -6px var(--shadow-color);
   --shadow-2xl: 0 25px 50px -12px var(--shadow-color);
 
+  /* motion: one setting (--motion, 0/50/75/100 ms) behind every duration */
+  --default-transition-duration: var(--motion-fast);
+  --default-transition-timing-function: var(--motion-ease);
+  --transition-duration-fast: var(--motion-fast);
+  --transition-duration-base: var(--motion-base);
+  --transition-duration-slow: var(--motion-slow);
+  --ease-motion: var(--motion-ease);
+
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -114,6 +122,13 @@
 
 :root {
   --radius: 0.5rem;
+
+  /* motion at the default 75 ms; theme.js and applyAppearance set the user's value */
+  --motion: 75ms;
+  --motion-fast: 50ms;
+  --motion-base: 75ms;
+  --motion-slow: 100ms;
+  --motion-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 /*
@@ -144,15 +159,37 @@
   ::selection {
     background: color-mix(in oklab, var(--primary) 28%, transparent);
   }
-  /* Overlays animate; navigation never does. */
-  @media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-      animation-duration: 0.01ms !important;
-      transition-duration: 0.01ms !important;
-    }
+  /* tw-animate enter/exit without an explicit duration-* class run at base */
+  [class*="animate-in"],
+  [class*="animate-out"] {
+    --tw-duration: var(--motion-base);
+    --tw-ease: var(--motion-ease);
   }
+}
+
+/*
+ * Motion off (setting 0, or the OS asks for reduced motion): nothing animates,
+ * loops included. Base UI then unmounts popups at once (no running animations).
+ */
+:root[data-motion="off"] *,
+:root[data-motion="off"] *::before,
+:root[data-motion="off"] *::after {
+  animation: none !important;
+  transition: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+/* switching theme or motion repaints in one frame: no color transitions */
+:root[data-theme-switching] *,
+:root[data-theme-switching] *::before,
+:root[data-theme-switching] *::after {
+  transition: none !important;
 }
 
 @utility drag-region {
