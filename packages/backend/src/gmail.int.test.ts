@@ -46,6 +46,7 @@ class FakeGoogle {
   rateLimitNext = 0;
   historyExpired = false;
   sent: { raw: string; threadId?: string }[] = [];
+  truncateSendResponse = false;
   private tokenSeq = 0;
   url = "";
   private server = createServer((req, res) => void this.handle(req, res));
@@ -147,6 +148,13 @@ class FakeGoogle {
     if (path === "/messages/send") {
       const b = JSON.parse(body) as { raw: string; threadId?: string };
       this.sent.push({ raw: Buffer.from(b.raw, "base64url").toString(), threadId: b.threadId });
+      if (this.truncateSendResponse) {
+        // accepted, but the connection dies while the body is in flight
+        res.writeHead(200, { "content-type": "application/json", "content-length": "500" });
+        res.write('{"id":"sen');
+        res.destroy();
+        return;
+      }
       const id = `sent-${this.sent.length}`;
       this.add({ id, threadId: b.threadId ?? id, labelIds: ["SENT"], raw: Buffer.from(b.raw, "base64url").toString() });
       return json(200, { id, threadId: b.threadId ?? id });
@@ -280,6 +288,18 @@ describe("Gmail sync", () => {
     expect(backend.db.get("SELECT is_read FROM messages WHERE provider_msg_id = 'g1'")).toEqual({ is_read: 1 });
   });
 
+  it("a resync after history expiry also refreshes labels and deletions of cached mail", async () => {
+    const { google, backend, client, account } = await connected();
+    google.historyExpired = true;
+    google.messages.get("g1")!.labelIds = ["INBOX"]; // read elsewhere during the gap
+    google.messages.get("g3")!.labelIds = []; // archived elsewhere
+    google.messages.delete("g2"); // deleted elsewhere
+    await backend.syncAccount(account.id);
+    expect(backend.db.get("SELECT is_read FROM messages WHERE provider_msg_id = 'g1'")).toEqual({ is_read: 1 });
+    expect(backend.db.get("SELECT count(*) c FROM messages WHERE provider_msg_id = 'g2'")).toEqual({ c: 0 });
+    expect((await client.call("threads.list", { view: "archive" })).items.map((t) => t.subject)).toContain("Factura octubre");
+  });
+
   it("falls back to a full resync when history has expired, without duplicates", async () => {
     const { google, backend, account } = await connected();
     google.historyExpired = true;
@@ -332,6 +352,34 @@ describe("Gmail operations", () => {
     await backend.runWorker();
     const [op] = await client.call("ops.list", {});
     expect(op).toMatchObject({ state: "queued", lastError: expect.stringContaining("429") });
+  });
+
+  it("keeps Bcc recipients in the message Gmail receives", async () => {
+    const { google, backend, client, account } = await connected();
+    await client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "ana@example.com" }], bcc: [{ name: "", email: "oculto@example.com" }], subject: "Bcc", bodyText: "." });
+    await backend.runWorker();
+    expect(google.sent[0]!.raw).toMatch(/^Bcc: oculto@example\.com/m);
+  });
+
+  it("an accepted send whose response is cut off becomes unknown, never resent", async () => {
+    const { google, backend, client, account } = await connected();
+    google.truncateSendResponse = true;
+    const { opId } = await client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "ana@example.com" }], subject: "x", bodyText: "y" });
+    await backend.runWorker();
+    await backend.runWorker();
+    expect(backend.db.get("SELECT state FROM ops WHERE id = ?", opId)).toEqual({ state: "unknown" });
+    expect(google.sent).toHaveLength(1);
+  });
+
+  it("a new conversation adopts its Gmail thread id so replies join it", async () => {
+    const { google, backend, client, account } = await connected();
+    const sent = await client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "ana@example.com" }], subject: "Nuevo hilo", bodyText: "hola" });
+    await backend.runWorker();
+    const gmailThread = backend.db.get<{ provider_thread_id: string }>("SELECT provider_thread_id FROM threads WHERE id = ?", sent.threadId)!.provider_thread_id;
+    expect(gmailThread).toBe("sent-1");
+    google.add({ id: "reply-1", threadId: gmailThread, labelIds: ["INBOX", "UNREAD"], raw: rawMail({ subject: "Re: Nuevo hilo", id: "r1@x" }) });
+    await backend.syncAccount(account.id);
+    expect((await client.call("threads.get", { threadId: sent.threadId })).messages).toHaveLength(2);
   });
 
   it("sends a reply in the Gmail thread and adopts the server copy from history", async () => {

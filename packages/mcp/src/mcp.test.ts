@@ -109,6 +109,20 @@ describe("unica MCP server", () => {
     expect(bad.isError).toBe(true);
   });
 
+  it("fails fast (no hang) if the app drops the connection during the handshake", async () => {
+    const { createServer } = await import("node:net");
+    const { writeFileSync } = await import("node:fs");
+    const sock = join(dir, "drop.sock");
+    const server = createServer((s) => s.destroy());
+    await new Promise<void>((r) => server.listen(sock, () => r()));
+    writeFileSync(join(dir, "drop.token"), "x");
+    const { connectToApp } = await import("./connection");
+    const started = Date.now();
+    await expect(connectToApp({ socketPath: sock, tokenPath: join(dir, "drop.token") })).rejects.toThrow(/not running/);
+    expect(Date.now() - started).toBeLessThan(2000);
+    server.close();
+  });
+
   it("reports clearly when the app is not running", async () => {
     const offline = new AppConnection({ socketPath: join(dir, "nope.sock"), tokenPath: join(dir, "nope.token") });
     const [a, b] = InMemoryTransport.createLinkedPair();

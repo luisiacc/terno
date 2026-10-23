@@ -26,23 +26,20 @@ interface SmtpLikeError extends Error {
  */
 export function classifySmtpError(error: unknown, dataStarted = false): ProviderError {
   const e = error as SmtpLikeError;
-  // Once the server said "354" the body may have been accepted even if the connection then died.
-  if (dataStarted && !(e.responseCode && e.responseCode >= 400)) {
-    return new ProviderError(`Connection lost while sending: ${e?.message ?? String(error)}`, false, true);
-  }
   const message = e?.message ?? String(error);
+  // An explicit reply code is a definitive answer: 5xx permanent, 4xx temporary (retry),
+  // whether it came for a recipient (450/550) or after the body (451/554).
+  if (e.responseCode && e.responseCode >= 500) return new ProviderError(e.code === "EENVELOPE" ? `Recipient rejected: ${message}` : message, false);
+  if (e.responseCode && e.responseCode >= 400) return new ProviderError(message, true);
   if (e.code === "EAUTH") return new ProviderError(`SMTP authentication failed: ${message}`, false);
   if (e.code === "EENVELOPE") return new ProviderError(`Recipient rejected: ${message}`, false);
-  const duringData = e.command === "DATA" || e.command === "DATA_END" || /after DATA|message body/i.test(message);
-  if (e.responseCode && e.responseCode >= 500) return new ProviderError(message, false);
-  if (e.responseCode && e.responseCode >= 400 && !duringData) return new ProviderError(message, true);
-  if (duringData || e.code === "ETIMEDOUT" && e.command === "DATA") return new ProviderError(`Connection lost while sending: ${message}`, false, true);
-  if (["ECONNECTION", "ETIMEDOUT", "ESOCKET", "EDNS", "ECONNREFUSED", "ECONNRESET"].includes(e.code ?? "")) return new ProviderError(message, true);
+  // No answer after the server said "354": it may have accepted the message.
+  if (dataStarted) return new ProviderError(`Connection lost while sending: ${message}`, false, true);
   return new ProviderError(message, true);
 }
 
 /** Sends a message; returns the raw source so the caller can APPEND it to Sent. */
-export async function sendViaSmtp(config: SmtpConfig, payload: SendPayload): Promise<Buffer> {
+export async function sendViaSmtp(config: SmtpConfig, payload: SendPayload): Promise<{ raw: Buffer; rejected: string[] }> {
   const raw = await buildRaw(payload);
   // nodemailer reports a dropped connection as "CONN" no matter the stage, so we
   // follow the SMTP transcript to know whether the body was already handed over.
@@ -68,8 +65,10 @@ export async function sendViaSmtp(config: SmtpConfig, payload: SendPayload): Pro
     tls: config.allowInsecure ? { rejectUnauthorized: false } : undefined,
   });
   try {
-    await transport.sendMail({ envelope: envelopeOf(payload), raw });
-    return raw;
+    const info = (await transport.sendMail({ envelope: envelopeOf(payload), raw })) as { rejected?: (string | { address: string })[] };
+    const rejected = (info.rejected ?? []).map((r) => (typeof r === "string" ? r : r.address));
+    // nodemailer resolves when at least one recipient was accepted; report the rest
+    return { raw, rejected };
   } catch (error) {
     throw classifySmtpError(error, dataStarted);
   } finally {
@@ -82,6 +81,7 @@ export async function verifySmtp(config: SmtpConfig): Promise<void> {
     host: config.host,
     port: config.port,
     secure: config.secure,
+    requireTLS: !config.secure && !config.allowInsecure,
     ignoreTLS: config.allowInsecure,
     auth: { user: config.user, pass: config.password },
     connectionTimeout: 15_000,

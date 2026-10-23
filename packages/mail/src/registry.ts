@@ -26,7 +26,7 @@ export function createRegistry(options: RegistryOptions = {}): ProviderRegistry 
         host: config.imap.host,
         port: config.imap.port,
         secure: config.imap.secure,
-        doSTARTTLS: options.imap?.allowInsecure ? false : undefined,
+        doSTARTTLS: options.imap?.allowInsecure ? false : config.imap.secure ? undefined : true,
         auth: { user: config.imap.user, pass: password },
         logger: false,
         tls: options.imap?.allowInsecure ? { rejectUnauthorized: false } : undefined,

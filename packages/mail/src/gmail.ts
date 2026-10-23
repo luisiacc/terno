@@ -187,6 +187,14 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
       access = null;
       return api<T>(path, init, true);
     }
+    if (res.ok && init.ambiguousOnFailure) {
+      // The request was accepted; if the body can't be read we don't know the outcome (no resend).
+      try {
+        return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+      } catch (e) {
+        throw new ProviderError(`Unreadable response after a successful request: ${e instanceof Error ? e.message : e}`, false, true);
+      }
+    }
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       const err = new ProviderError(`Gmail API ${res.status}: ${text.slice(0, 200)}`, res.status === 429 || res.status >= 500, Boolean(init.ambiguousOnFailure && res.status >= 500));
@@ -244,18 +252,42 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
   async function fullSync(sink: SyncSink) {
     const profile = await api<{ historyId: string }>("/profile");
     const after = Math.floor(sink.windowStart / 1000);
+    const listed = new Set<string>();
     let pageToken: string | undefined;
     do {
       const q = new URLSearchParams({ q: `after:${after}`, maxResults: "500", includeSpamTrash: "true" });
       if (pageToken) q.set("pageToken", pageToken);
       const page = await api<{ messages?: { id: string }[]; nextPageToken?: string }>(`/messages?${q}`);
-      const ids = (page.messages ?? []).map((m) => m.id).filter((id) => !db.get("SELECT 1 FROM messages WHERE account_id = ? AND provider_msg_id = ?", accountId, id));
+      const pageIds = (page.messages ?? []).map((m) => m.id);
+      for (const id of pageIds) listed.add(id);
+      const ids = pageIds.filter((id) => !db.get("SELECT 1 FROM messages WHERE account_id = ? AND provider_msg_id = ?", accountId, id));
       for (let i = 0; i < ids.length; i += 50) {
         if (sink.signal.aborted) return;
         await sink.ingest(await fetchFull(ids.slice(i, i + 50)));
       }
       pageToken = page.nextPageToken;
     } while (pageToken);
+    // A resync (history expired) must also refresh what we already had: labels may have
+    // changed and messages may have been deleted during the gap.
+    const cached = db.all<{ id: number; provider_msg_id: string; date: number }>(
+      "SELECT id, provider_msg_id, date FROM messages WHERE account_id = ? AND provider_msg_id NOT LIKE 'local:%'",
+      accountId,
+    );
+    const known = cached.filter((m) => listed.has(m.provider_msg_id));
+    const updates: FlagUpdate[] = [];
+    const queue = [...known];
+    await Promise.all(
+      Array.from({ length: 6 }, async () => {
+        for (let m = queue.shift(); m; m = queue.shift()) {
+          const full = await api<GmailMessage>(`/messages/${m.provider_msg_id}?format=minimal`).catch(() => null);
+          if (full) updates.push({ messageId: m.id, flags: labelState(full.labelIds ?? []) });
+        }
+      }),
+    );
+    if (updates.length) await sink.updateFlags(updates);
+    // within the window, anything Gmail no longer lists was deleted
+    const gone = cached.filter((m) => !listed.has(m.provider_msg_id) && m.date >= sink.windowStart).map((m) => m.id);
+    if (gone.length) await sink.removeMessages(gone);
     ctx.saveCursor({ historyId: profile.historyId } satisfies Cursor);
   }
 
@@ -325,13 +357,13 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
     async execute(op: ProviderOp) {
       if (op.kind === "send") {
         const payload = op.payload as SendPayload;
-        const raw = await buildRaw(payload);
-        const res = await api<{ id: string }>("/messages/send", {
+        const raw = await buildRaw(payload, { keepBcc: true });
+        const res = await api<{ id: string; threadId?: string }>("/messages/send", {
           method: "POST",
           body: JSON.stringify({ raw: raw.toString("base64url"), threadId: payload.providerThreadId ?? undefined }),
           ambiguousOnFailure: true,
         });
-        return { providerMsgId: res.id };
+        return { providerMsgId: res.id, providerThreadId: res.threadId };
       }
       const ids = op.target.messageIds ?? [];
       if (!ids.length) return;

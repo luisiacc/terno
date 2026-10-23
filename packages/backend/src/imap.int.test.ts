@@ -63,7 +63,7 @@ interface Captured {
   rcpt: string[];
 }
 
-async function startSmtp(behaviour: { rejectRcpt?: string; dropDuringData?: boolean } = {}) {
+async function startSmtp(behaviour: { rejectRcpt?: string; dropDuringData?: boolean; tempFailRcpt?: string } = {}) {
   const received: Captured[] = [];
   const server = new SMTPServer({
     authOptional: true,
@@ -72,6 +72,7 @@ async function startSmtp(behaviour: { rejectRcpt?: string; dropDuringData?: bool
     onAuth: (_auth, _session, cb) => cb(null, { user: "testuser" }),
     onRcptTo(address, _session, cb) {
       if (behaviour.rejectRcpt && address.address === behaviour.rejectRcpt) return cb(Object.assign(new Error("No such user"), { responseCode: 550 }));
+      if (behaviour.tempFailRcpt && address.address === behaviour.tempFailRcpt) return cb(Object.assign(new Error("Greylisted, try later"), { responseCode: 450 }));
       cb();
     },
     onData(stream, session, cb) {
@@ -300,7 +301,99 @@ describe("IMAP provider against ImapKit", () => {
   });
 });
 
+describe("IMAP identity and safety (review fixes)", () => {
+  it("keeps two distinct messages that share a Message-ID in the same mailbox", async () => {
+    const { imap, backend, addAccount } = await setup();
+    imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Copia 1", id: "dup@x" }) });
+    imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Copia 2", id: "dup@x" }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    expect(backend.db.all("SELECT subject FROM messages ORDER BY subject")).toEqual([{ subject: "Copia 1" }, { subject: "Copia 2" }]);
+    await backend.syncAccount(account.id);
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(2);
+  });
+
+  it("archiving mail without a Message-ID doesn't wedge the next sync", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    imap.server.control.addMessage("INBOX", { raw: "From: x@y.z\r\nSubject: Sin ID\r\n\r\nhola\r\n" });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const [t] = (await client.call("threads.list", { view: "inbox" })).items;
+    await client.call("threads.act", { threadIds: [t!.id], action: "archive" });
+    await backend.runWorker();
+    await backend.syncAccount(account.id);
+    expect(backend.db.get<{ status: string }>("SELECT json_extract(sync_state, '$.status') AS status FROM accounts")!.status).toBe("idle");
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(1);
+    expect((await client.call("threads.list", { view: "archive" })).items).toHaveLength(1);
+  });
+
+  it("keeps old cached mail (outside the sync window) across a UIDVALIDITY reset", async () => {
+    const { imap, backend, addAccount } = await setup();
+    const old = new Date(Date.now() - 400 * 86_400_000);
+    imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Viejo", date: old }), internaldate: old });
+    imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Nuevo" }) });
+    await backend.server.invoke("settings.update", { syncWindowDays: 3650 }, { clientId: "t", origin: "renderer" });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(2);
+    await backend.server.invoke("settings.update", { syncWindowDays: 30 }, { clientId: "t", origin: "renderer" });
+    imap.server.control.resetUidValidity("INBOX", { uids: "renumber" });
+    await backend.syncAccount(account.id);
+    expect(backend.db.all("SELECT subject FROM messages ORDER BY subject")).toEqual([{ subject: "Nuevo" }, { subject: "Viejo" }]);
+  });
+
+  it("an op queued before a UIDVALIDITY reset never touches the wrong message", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    for (const s of ["uno", "dos", "tres"]) ctl.addMessage("INBOX", { raw: raw({ subject: s }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const thread = backend.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE subject = 'uno'")!.thread_id;
+    await client.call("threads.act", { threadIds: [thread], action: "trash" });
+    ctl.resetUidValidity("INBOX", { uids: "shuffle", seed: 3 }); // old UIDs now point at other messages
+    await backend.runWorker();
+    expect(ctl.listMessages("Trash")).toHaveLength(0); // refused: stale UIDVALIDITY
+    const [op] = await client.call("ops.list", {});
+    expect(op).toMatchObject({ state: "queued", lastError: expect.stringContaining("UIDVALIDITY") });
+    await backend.syncAccount(account.id); // remaps locations
+    backend.db.run("UPDATE ops SET next_attempt_at = 0");
+    await backend.runWorker();
+    const trashed = ctl.listMessages("Trash", { raw: true }) as { raw: Buffer }[];
+    expect(trashed).toHaveLength(1);
+    expect(trashed[0]!.raw.toString()).toContain("Subject: uno");
+  });
+
+  it("refuses to log in over plaintext when the server doesn't offer STARTTLS", async () => {
+    const imap = await startImap();
+    const { createRegistry: strictRegistry } = await import("@unica/mail");
+    const registry = strictRegistry(); // production: allowInsecure off
+    await expect(
+      registry.verifyImap(
+        { imap: { host: "127.0.0.1", port: imap.port, secure: false, user: "testuser" }, smtp: { host: "127.0.0.1", port: 1, secure: false, user: "testuser" }, senderName: "x", appendToSent: true },
+        "testpass",
+      ),
+    ).rejects.toThrow();
+    expect(imap.server.control.sessions().filter((s: { state: string }) => s.state !== "Not Authenticated")).toEqual([]);
+  });
+});
+
 describe("sending through SMTP", () => {
+  it("partial delivery succeeds but records which recipients were rejected", async () => {
+    const { imap, backend, client, addAccount } = await setup({ smtp: { rejectRcpt: "nadie@example.com" } });
+    const account = await addAccount(imap.port);
+    const { opId } = await client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "ana@example.com" }, { name: "", email: "nadie@example.com" }], subject: "x", bodyText: "y" });
+    await backend.runWorker();
+    expect(backend.db.get("SELECT state, last_error FROM ops WHERE id = ?", opId)).toEqual({ state: "succeeded", last_error: "No se entregó a: nadie@example.com" });
+  });
+
+  it("a temporary 450 rejection is retried, not failed", async () => {
+    const { imap, backend, client, addAccount } = await setup({ smtp: { tempFailRcpt: "luego@example.com" } });
+    const account = await addAccount(imap.port);
+    const { opId } = await client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "luego@example.com" }], subject: "x", bodyText: "y" });
+    await backend.runWorker();
+    expect(backend.db.get("SELECT state FROM ops WHERE id = ?", opId)).toEqual({ state: "queued" });
+  });
+
   it("sends a threaded reply, saves it to Sent, and adopts the server copy without duplicating", async () => {
     const { imap, smtp, backend, client, addAccount } = await setup();
     imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Propuesta", id: "orig@example.com" }) });

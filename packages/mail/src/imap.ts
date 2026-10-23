@@ -79,7 +79,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       host: config.imap.host,
       port: config.imap.port,
       secure: config.imap.secure,
-      doSTARTTLS: options.allowInsecure ? false : undefined,
+      // never fall back to plaintext on a non-TLS port: a stripped STARTTLS would leak the password
+      doSTARTTLS: options.allowInsecure ? false : config.imap.secure ? undefined : true,
       auth: { user: config.imap.user, pass: password },
       logger: false,
       disableAutoIdle: !forIdle,
@@ -204,6 +205,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       if (!mb) return;
       const uidvalidity = Number(mb.uidValidity);
       let state = cursor.mailboxes[path];
+      const reset = Boolean(state && state.uidvalidity !== uidvalidity);
       if (state && state.uidvalidity !== uidvalidity) {
         // UIDVALIDITY changed: every UID we stored for this mailbox is meaningless now
         for (const r of db.all<{ message_id: number }>("SELECT message_id FROM message_locations WHERE account_id = ? AND mailbox = ?", accountId, path)) touched.add(r.message_id);
@@ -212,24 +214,56 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       }
 
       // 1) messages we haven't seen
+      // After a UIDVALIDITY reset every message must be re-identified, including ones older
+      // than the sync window that we already have (otherwise they'd be dropped as orphans).
       const found = state
         ? ((await c.search({ uid: `${state.uidnext}:*` }, { uid: true })) || []).filter((u) => u >= state!.uidnext)
-        : (await c.search({ since: new Date(sink.windowStart) }, { uid: true })) || [];
+        : reset
+          ? (await c.search({ all: true }, { uid: true })) || []
+          : (await c.search({ since: new Date(sink.windowStart) }, { uid: true })) || [];
       const fresh: IncomingMessage[] = [];
+      /** provider keys already claimed in this pass (by UID): duplicates within one batch stay distinct */
+      const claimed = new Map<string, number>();
       for (let i = 0; i < found.length; i += 250) {
         const batch = found.slice(i, i + 250);
         for await (const msg of c.fetch(batch, { uid: true, flags: true, envelope: true, internalDate: true, size: true, bodyStructure: true, headers: ["references", "list-id"] }, { uid: true })) {
           const m = msg as FetchMessageObject;
           const flags = [...(m.flags ?? new Set<string>())];
           const env = m.envelope;
-          const key = messageKey(env?.messageId) ?? `${path}:${uidvalidity}:${m.uid}`;
-          const existing = db.get<{ id: number }>("SELECT id FROM messages WHERE account_id = ? AND provider_msg_id = ?", accountId, key);
-          if (existing) {
-            // known message in another folder (moved/copied, or our own sent mail): just record the location
-            upsertLocation(existing.id, path, uidvalidity, m.uid, flags);
-            touched.add(existing.id);
+          // 1) this exact location is already known (e.g. recorded from a MOVE's COPYUID)
+          const atLocation = db.get<{ message_id: number }>(
+            "SELECT message_id FROM message_locations WHERE account_id = ? AND mailbox = ? AND uidvalidity = ? AND uid = ?",
+            accountId,
+            path,
+            uidvalidity,
+            m.uid,
+          );
+          if (atLocation) {
+            upsertLocation(atLocation.message_id, path, uidvalidity, m.uid, flags);
+            touched.add(atLocation.message_id);
             continue;
           }
+          let key = messageKey(env?.messageId) ?? `${path}:${uidvalidity}:${m.uid}`;
+          const existing = db.get<{ id: number }>("SELECT id FROM messages WHERE account_id = ? AND provider_msg_id = ?", accountId, key);
+          if (existing) {
+            // 2) same Message-ID: the same message in another folder (moved/copied, our sent mail)…
+            const sameMailbox = db.get<{ uid: number; uidvalidity: number }>(
+              "SELECT uid, uidvalidity FROM message_locations WHERE message_id = ? AND mailbox = ?",
+              existing.id,
+              path,
+            );
+            if (!sameMailbox || sameMailbox.uidvalidity !== uidvalidity || sameMailbox.uid === m.uid) {
+              upsertLocation(existing.id, path, uidvalidity, m.uid, flags);
+              touched.add(existing.id);
+              continue;
+            }
+            // …unless a different UID in the same mailbox already holds it: a distinct message
+            // that reuses the Message-ID. Keep both instead of collapsing them.
+            key = `${key}#${path}:${uidvalidity}:${m.uid}`;
+          }
+          if (claimed.has(key) && claimed.get(key) !== m.uid) key = `${key}#${path}:${uidvalidity}:${m.uid}`;
+          claimed.set(key, m.uid);
+          if (reset && new Date(env?.date ?? m.internalDate ?? Date.now()).getTime() < sink.windowStart) continue; // only re-identify old mail
           const role = roleOf(path);
           const addr = (list?: { name?: string; address?: string }[]) => (list ?? []).filter((a) => a.address).map((a) => ({ name: a.name ?? "", email: a.address!.toLowerCase() }));
           fresh.push({
@@ -306,18 +340,20 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
 
   /** Downloads bodies newest-first (search, snippets and body filters depend on them). */
   async function syncBodies(c: ImapFlow, sink: SyncSink) {
-    const pending = db.all<{ id: number; mailbox: string; uid: number }>(
-      `SELECT m.id, l.mailbox, l.uid FROM messages m JOIN message_locations l ON l.message_id = m.id
+    const pending = db.all<{ id: number; mailbox: string; uid: number; uidvalidity: number }>(
+      `SELECT m.id, l.mailbox, l.uid, l.uidvalidity FROM messages m JOIN message_locations l ON l.message_id = m.id
        WHERE m.account_id = ? AND m.body_state != 'full' GROUP BY m.id ORDER BY m.date DESC LIMIT ?`,
       accountId,
       options.bodiesPerSync ?? 500,
     );
-    const byMailbox = new Map<string, { id: number; uid: number }[]>();
+    const byMailbox = new Map<string, { id: number; uid: number; uidvalidity: number }[]>();
     for (const p of pending) byMailbox.set(p.mailbox, [...(byMailbox.get(p.mailbox) ?? []), p]);
-    for (const [mailbox, items] of byMailbox) {
+    for (const [mailbox, all] of byMailbox) {
       if (sink.signal.aborted) return;
       const lock = await c.getMailboxLock(mailbox);
       try {
+        // UIDs are only meaningful with their UIDVALIDITY: skip stale ones (the next sync remaps them)
+        const items = all.filter((i) => i.uidvalidity === Number(c.mailbox && c.mailbox.uidValidity));
         const byUid = new Map(items.map((i) => [i.uid, i.id]));
         for (let i = 0; i < items.length; i += 25) {
           const uids = items.slice(i, i + 25).map((x) => x.uid);
@@ -336,13 +372,24 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     sink.setSyncState({ bodiesPending: left });
   }
 
-  async function moveLocations(c: ImapFlow, locs: { message_id: number; mailbox: string; uid: number }[], target: string, mode: "move" | "copy" = "move") {
+  type Loc = { message_id: number; mailbox: string; uid: number; uidvalidity: number };
+
+  /** Throws (retryable) if the mailbox's UIDVALIDITY no longer matches our stored UIDs. */
+  function assertValidity(c: ImapFlow, mailbox: string, items: Loc[]) {
+    const current = Number(c.mailbox && c.mailbox.uidValidity);
+    if (items.some((i) => i.uidvalidity !== current)) {
+      throw new ProviderError(`UIDVALIDITY of ${mailbox} changed; waiting for resync before touching messages`, true);
+    }
+  }
+
+  async function moveLocations(c: ImapFlow, locs: Loc[], target: string, mode: "move" | "copy" = "move") {
     const byMailbox = new Map<string, typeof locs>();
     for (const l of locs) byMailbox.set(l.mailbox, [...(byMailbox.get(l.mailbox) ?? []), l]);
     for (const [mailbox, items] of byMailbox) {
       if (mailbox === target) continue;
       const lock = await c.getMailboxLock(mailbox);
       try {
+        assertValidity(c, mailbox, items);
         const uids = items.map((i) => i.uid);
         const res = mode === "move" ? await c.messageMove(uids, target, { uid: true }) : await c.messageCopy(uids, target, { uid: true });
         if (!res) throw new ProviderError(`Could not ${mode} messages to ${target}`, true);
@@ -365,10 +412,10 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     return fallbackName;
   }
 
-  async function send(payload: SendPayload): Promise<{ providerMsgId: string }> {
+  async function send(payload: SendPayload): Promise<{ providerMsgId: string; warning?: string }> {
     const password = await ctx.getSecret("password");
     if (!password) throw new ProviderError("Missing password", false);
-    const raw = await sendViaSmtp({ ...config.smtp, password, allowInsecure: options.allowInsecure }, payload);
+    const { raw, rejected } = await sendViaSmtp({ ...config.smtp, password, allowInsecure: options.allowInsecure }, payload);
     if (config.appendToSent) {
       // Best effort: the message is already sent; a failed APPEND must not resend it.
       try {
@@ -379,7 +426,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         /* next sync still shows the local copy */
       }
     }
-    return { providerMsgId: messageKey(payload.messageId)! };
+    return { providerMsgId: messageKey(payload.messageId)!, warning: rejected.length ? `No se entregó a: ${rejected.join(", ")}` : undefined };
   }
 
   return {
@@ -419,19 +466,30 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       if (ids.length === 0) return;
       await withConnection(async (c) => {
         const r = await discoverRoles(c);
-        const locs = db.all<{ message_id: number; mailbox: string; uid: number }>(
-          `SELECT message_id, mailbox, uid FROM message_locations WHERE message_id IN (${placeholders(ids.length)})`,
+        const locs = db.all<Loc>(
+          `SELECT message_id, mailbox, uid, uidvalidity FROM message_locations WHERE message_id IN (${placeholders(ids.length)})`,
           ...ids,
         );
         const inRole = (role: Role) => locs.filter((l) => l.mailbox === r[role]);
         const flagOp = async (flag: string, add: boolean) => {
-          const byMailbox = new Map<string, number[]>();
-          for (const l of locs) byMailbox.set(l.mailbox, [...(byMailbox.get(l.mailbox) ?? []), l.uid]);
-          for (const [mailbox, uids] of byMailbox) {
+          const byMailbox = new Map<string, Loc[]>();
+          for (const l of locs) byMailbox.set(l.mailbox, [...(byMailbox.get(l.mailbox) ?? []), l]);
+          for (const [mailbox, items] of byMailbox) {
             const lock = await c.getMailboxLock(mailbox);
             try {
-              if (add) await c.messageFlagsAdd(uids, [flag], { uid: true });
-              else await c.messageFlagsRemove(uids, [flag], { uid: true });
+              assertValidity(c, mailbox, items);
+              const uids = items.map((i) => i.uid);
+              const ok = add ? await c.messageFlagsAdd(uids, [flag], { uid: true }) : await c.messageFlagsRemove(uids, [flag], { uid: true });
+              // imapflow resolves false when the server rejects the STORE
+              if (ok === false) throw new ProviderError(`Server refused to update ${flag} in ${mailbox}`, false);
+              for (const i of items) {
+                const row = db.get<{ flags: string }>("SELECT flags FROM message_locations WHERE message_id = ? AND mailbox = ?", i.message_id, mailbox);
+                if (!row) continue;
+                const set = new Set(JSON.parse(row.flags) as string[]);
+                if (add) set.add(flag);
+                else set.delete(flag);
+                db.run("UPDATE message_locations SET flags = ? WHERE message_id = ? AND mailbox = ?", JSON.stringify([...set]), i.message_id, mailbox);
+              }
             } finally {
               lock.release();
             }
@@ -452,6 +510,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             // Gmail-style: archiving = removing the INBOX copy; All Mail keeps it
             const lock = await c.getMailboxLock(r.inbox!);
             try {
+              assertValidity(c, r.inbox!, inbox);
               await c.messageDelete(inbox.map((l) => l.uid), { uid: true });
               for (const l of inbox) db.run("DELETE FROM message_locations WHERE message_id = ? AND mailbox = ?", l.message_id, r.inbox!);
             } finally {

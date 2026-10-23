@@ -35,6 +35,15 @@ export function connectToApp(endpoint: Endpoint): Promise<RpcClient> {
     }
     const socket = connect(endpoint.socketPath);
     socket.once("error", () => reject(new NotRunningError()));
+    // never hang a tool call: bound the handshake and fail if the app goes away mid-handshake
+    const timer = setTimeout(() => {
+      reject(new NotRunningError());
+      socket.destroy();
+    }, 5000);
+    socket.once("close", () => {
+      clearTimeout(timer);
+      if (!authed) reject(new NotRunningError());
+    });
     socket.once("connect", () => socket.write(`${token}\n`));
     let buffer = "";
     let authed = false;
@@ -52,6 +61,7 @@ export function connectToApp(endpoint: Endpoint): Promise<RpcClient> {
         if (!authed) {
           if (msg.ok) {
             authed = true;
+            clearTimeout(timer);
             const transport: Transport = {
               send: (m) => socket.write(`${JSON.stringify(m)}\n`),
               onMessage: (l) => (listeners.add(l), () => listeners.delete(l)),
