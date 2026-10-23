@@ -214,3 +214,20 @@ describe("filter applications", () => {
     expect(db.get<{ hits: number }>("SELECT hits FROM filters WHERE id = ?", f.id)!.hits).toBe(2);
   });
 });
+
+describe("checkpoint worker", () => {
+  it("keeps the WAL bounded without in-thread autocheckpoints, and falls back if it dies", async () => {
+    const { startCheckpointWorker } = await import("./checkpoint");
+    const { statSync } = await import("node:fs");
+    const db = testDb();
+    const [a] = withAccounts(db);
+    const worker = startCheckpointWorker(db, 20)!;
+    expect(db.get("PRAGMA wal_autocheckpoint")).toEqual({ wal_autocheckpoint: 0 });
+    for (let i = 0; i < 20; i++) ingestMessages(db, Array.from({ length: 200 }, () => msg({ accountId: a!, bodyText: "x".repeat(2000) })));
+    await new Promise((r) => setTimeout(r, 200));
+    // a passive checkpoint ran: the main db file has grown well beyond the empty schema
+    expect(statSync(db.path).size).toBeGreaterThan(4_000_000);
+    await worker.stop();
+    expect(statSync(`${db.path}-wal`).size).toBe(0); // TRUNCATE on stop
+  });
+});

@@ -203,3 +203,14 @@ describe("full-text index maintenance", () => {
     ftsIntegrity(db);
   });
 });
+
+describe("sent message reconciliation", () => {
+  it("adopts the optimistic local copy when the server copy of a sent message syncs", () => {
+    const db = testDb();
+    const [a] = withAccounts(db);
+    ingestMessages(db, [msg({ accountId: a!, providerMsgId: "local:op1", rfcMessageId: "<abc@me>", isSent: true, inInbox: false })]);
+    const r = ingestMessages(db, [msg({ accountId: a!, providerMsgId: "imap-77", rfcMessageId: "abc@me", isSent: true, inInbox: false, isRead: true })]);
+    expect(r.inserted).toEqual([]);
+    expect(db.all("SELECT provider_msg_id FROM messages")).toEqual([{ provider_msg_id: "imap-77" }]);
+  });
+});

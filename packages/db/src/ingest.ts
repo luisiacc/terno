@@ -160,13 +160,23 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
   const result: IngestResult = { inserted: [], updated: [], touchedThreads: new Set(), mergedThreads: new Map() };
   db.tx(() => {
     for (const msg of messages) {
-      const existing = msg.providerMsgId
+      let existing = msg.providerMsgId
         ? db.get<{ id: number; thread_id: number }>(
             "SELECT id, thread_id FROM messages WHERE account_id = ? AND provider_msg_id = ?",
             msg.accountId,
             msg.providerMsgId,
           )
         : undefined;
+      // The server copy of a message we sent: adopt the optimistic local row instead of duplicating it.
+      const rfcLookup = normalizeMessageId(msg.rfcMessageId);
+      if (!existing && rfcLookup) {
+        existing = db.get<{ id: number; thread_id: number }>(
+          "SELECT id, thread_id FROM messages WHERE account_id = ? AND rfc_message_id = ? AND provider_msg_id LIKE 'local:%'",
+          msg.accountId,
+          rfcLookup,
+        );
+        if (existing) db.run("UPDATE messages SET provider_msg_id = ? WHERE id = ?", msg.providerMsgId, existing.id);
+      }
       if (existing) {
         updateExisting(db, existing.id, msg);
         result.updated.push(existing.id);
