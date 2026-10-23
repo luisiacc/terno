@@ -40,6 +40,7 @@ const ALLOWED: Record<string, { patterns: string[]; why: string }> = {
   "packages/ai/src/openai-chat.ts": { patterns: ["OpenAI client"], why: "constructed with the policy fetch (checked below)" },
   "apps/desktop/src/main.ts": { patterns: ["Electron net"], why: "app:// handler reading bundled files (file: URLs only)" },
   "apps/web/src/rpc/connection.ts": { patterns: ["WebSocket client"], why: "renderer ↔ loopback backend-dev; the renderer is fenced by main's webRequest backstop" },
+  "apps/web/src/web/sw.js": { patterns: ["global fetch"], why: "web build's service worker: same-origin app files only (cross-origin requests are not intercepted)" },
   "packages/mcp/src/connection.ts": { patterns: ["raw sockets"], why: "unix socket to the local backend" },
 };
 

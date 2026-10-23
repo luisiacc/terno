@@ -20,6 +20,8 @@ const SettingsDialog = lazy(() => import("./components/settings-dialog").then((m
 const AddAccountDialog = lazy(() => import("./components/add-account-dialog").then((m) => ({ default: m.AddAccountDialog })));
 const ShortcutsDialog = lazy(() => import("./components/shortcuts-dialog").then((m) => ({ default: m.ShortcutsDialog })));
 const FirstRun = lazy(() => import("./components/first-run").then((m) => ({ default: m.FirstRun })));
+// web build only (a compile-time constant): which tab owns the mailbox, open errors, updates
+const WebGate = import.meta.env.VITE_TARGET === "web" ? lazy(() => import("./web/gate").then((m) => ({ default: m.WebGate }))) : null;
 
 /** Fresh install: no mailboxes, no owner, not a demo, and the first-run steps not finished. */
 function needsFirstRun(): boolean {
@@ -47,9 +49,15 @@ export function App() {
   // every way of filing threads offers the snackbar, except its own bulk adds
   useEffect(() => onFiled((filed, source) => source !== "snackbar" && showCategorySnackbar(filed)), []);
 
-  if (fatal) return <Fatal message={fatal} />;
+  const gate = WebGate && (
+    <Suspense>
+      <WebGate />
+    </Suspense>
+  );
+  if (fatal) return gate ?? <Fatal message={fatal} />;
   return (
     <TooltipProvider delay={500}>
+      {gate}
       <div className="grid h-screen grid-cols-[232px_minmax(340px,400px)_minmax(0,1fr)] overflow-hidden" data-ready={ready || undefined}>
         <Sidebar />
         <div className="min-h-0 border-r border-l border-border">

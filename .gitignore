@@ -1,6 +1,8 @@
 node_modules/
 dist/
 dist-e2e/
+dist-web/
+dist-web-*/
 dist-electron/
 out/
 release/

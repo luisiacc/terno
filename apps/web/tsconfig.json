@@ -1,13 +1,28 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "jsx": "react-jsx",
-    "types": ["vite/client"],
+    "types": [
+      "vite/client"
+    ],
     "paths": {
-      "~/*": ["./src/*"],
-      "@unica/ui/*": ["../../packages/ui/src/*"]
+      "~/*": [
+        "./src/*"
+      ],
+      "@unica/ui/*": [
+        "../../packages/ui/src/*"
+      ]
     }
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ],
+  "exclude": [
+    "src/web/worker"
+  ]
 }

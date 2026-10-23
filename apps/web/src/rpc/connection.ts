@@ -60,6 +60,11 @@ function nextDesktopPort(): Promise<MessagePort> {
 export const client = new RpcClient(undefined, { defaultTimeoutMs: 30_000 });
 
 export async function connectBackend(): Promise<void> {
+  // the web build's backend is a worker in this tab (compile-time constant: desktop never bundles it)
+  if (import.meta.env.VITE_TARGET === "web") {
+    const { connectWorker } = await import("~/web/connect");
+    return connectWorker(client);
+  }
   if (window.unicaDesktop) {
     client.attach(portTransport(await nextDesktopPort()));
     // main re-sends a fresh port if the backend restarts; reattach transparently

@@ -240,12 +240,30 @@ importers:
 
   apps/web:
     dependencies:
+      '@sqlite.org/sqlite-wasm':
+        specifier: 3.54.1-build1
+        version: 3.54.1-build1
       '@tanstack/react-virtual':
         specifier: ^3.14.22
         version: 3.14.22(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@unica/backend':
+        specifier: workspace:*
+        version: link:../../packages/backend
       '@unica/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@unica/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@unica/mail':
+        specifier: workspace:*
+        version: link:../../packages/mail
+      '@unica/mock-data':
+        specifier: workspace:*
+        version: link:../../packages/mock-data
+      '@unica/store':
+        specifier: workspace:*
+        version: link:../../packages/store
       '@unica/ui':
         specifier: workspace:*
         version: link:../../packages/ui

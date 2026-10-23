@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": [
+      "ES2023",
+      "WebWorker"
+    ],
+    "types": [
+      "vite/client"
+    ]
+  },
+  "include": [
+    "src/web/worker",
+    "src/web/protocol.ts"
+  ]
+}

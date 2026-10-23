@@ -20,7 +20,11 @@
     "test:e2e": "pnpm --filter @unica/web test:e2e",
     "test:smoke": "pnpm --filter @unica/desktop test:smoke",
     "dev:desktop:demo": "pnpm --filter @unica/desktop dev:demo",
-    "dev:desktop:seeded": "pnpm --filter @unica/desktop dev:seeded"
+    "dev:desktop:seeded": "pnpm --filter @unica/desktop dev:seeded",
+    "dev:web": "pnpm --filter @unica/web dev:web",
+    "build:web": "pnpm --filter @unica/web build:web",
+    "test:web": "pnpm --filter @unica/web test:web",
+    "test:web-perf": "pnpm --filter @unica/web test:web-perf"
   },
   "devDependencies": {
     "@types/node": "catalog:",

@@ -1,0 +1,143 @@
+/// <reference lib="webworker" />
+/**
+ * The web's backend: the same BackendCore as desktop's utility process, in a
+ * dedicated worker (unica-backend-worker), on SQLite-WASM over OPFS. The tab
+ * that holds the Web Lock starts it; RPC runs over a MessagePort with the
+ * same envelope as desktop.
+ */
+import sqlite3InitModule from "@sqlite.org/sqlite-wasm";
+import { BackendCore } from "@unica/backend/portable";
+import { isRpcMessage, type HostInfo, type RpcMessage, type Transport } from "@unica/core/rpc";
+import { adaptPageCache, databaseBytes, sqlDb, SqlMailStore } from "@unica/db/wasm";
+import type { MailStore, Platform } from "@unica/store";
+import type { PageToWorker, WorkerInit, WorkerToPage } from "../protocol";
+import { webCipher } from "./cipher";
+import { opfsFiles, webPlatform } from "./platform";
+import { webRegistry } from "./providers";
+import { webStores } from "./stores";
+
+declare const self: DedicatedWorkerGlobalScope;
+
+const WEB_HOST: HostInfo = { kind: "web", capabilities: { imap: false, agents: false, backgroundSync: false, network: "browser" } };
+const BUILD = import.meta.env.VITE_BUILD_ID;
+/** re-measure the page cache's hot set when the file grew this much (imports) */
+const RETUNE_GROWTH = 1.1;
+
+const post = (m: WorkerToPage) => self.postMessage(m);
+
+function portTransport(port: MessagePort): Transport {
+  const listeners = new Set<(m: RpcMessage) => void>();
+  const closeListeners = new Set<() => void>();
+  port.onmessage = (e) => {
+    if (isRpcMessage(e.data)) for (const l of listeners) l(e.data);
+  };
+  port.start();
+  return {
+    send: (m) => port.postMessage(m),
+    onMessage: (l) => (listeners.add(l), () => listeners.delete(l)),
+    onClose: (l) => (closeListeners.add(l), () => closeListeners.delete(l)),
+    close: () => {
+      port.close();
+      for (const l of closeListeners) l();
+    },
+  };
+}
+
+let backend: BackendCore | null = null;
+let release: (() => Promise<void>) | null = null;
+let cache = { hotBytes: 0, cacheBytes: 0, fileBytes: 0 };
+let retuneTimer: ReturnType<typeof setInterval> | null = null;
+
+async function tune(store: MailStore, platform: Platform): Promise<void> {
+  if (!(store instanceof SqlMailStore) || store.db.driver.id !== "wasm-opfs") return;
+  const db = sqlDb(store);
+  const fileBytes = databaseBytes(db);
+  if (cache.fileBytes && fileBytes < cache.fileBytes * RETUNE_GROWTH) return;
+  cache = { ...(await adaptPageCache(db, () => platform.yield())), fileBytes };
+}
+
+async function start(init: WorkerInit): Promise<void> {
+  const timings: Record<string, number> = {};
+  const t0 = performance.now();
+  const mark = (name: string) => (timings[name] = Math.round((performance.now() - t0) * 10) / 10);
+  if (init.build !== BUILD) {
+    post({ type: "fatal", code: "BUILD_MISMATCH", message: `This tab (${init.build}) and its worker (${BUILD}) come from different builds` });
+    return;
+  }
+  const sqlite3 = await sqlite3InitModule();
+  mark("wasm");
+  const stores = webStores(sqlite3);
+  release = stores.release;
+  const choice = await stores.registry.pick({ name: init.name, requested: init.requestedStorage, pinned: init.pinnedStorage }).catch((error: unknown) => ({
+    adapter: null,
+    reason: "unavailable" as const,
+    message: error instanceof Error ? error.message : String(error),
+  }));
+  if (!choice.adapter) {
+    post({ type: "fatal", code: "UNAVAILABLE", message: choice.message });
+    return;
+  }
+  const platform = webPlatform(await opfsFiles().catch(() => undefined));
+  const log = (level: "info" | "warn" | "error", message: string, extra?: unknown) => (level === "error" ? console.error : level === "warn" ? console.warn : console.info)(`[backend] ${message}`, extra ?? "");
+  let store: MailStore;
+  try {
+    store = await choice.adapter.open({ name: init.name, platform, log });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // the mailbox stays exactly as it was: no fallback to another (empty) adapter, no repair attempt
+    post({ type: "fatal", code: /newer than this app/.test(message) ? "SCHEMA_NEWER" : "OPEN_FAILED", message });
+    return;
+  }
+  mark("open");
+  backend = new BackendCore({
+    store,
+    platform,
+    version: BUILD,
+    cipher: await webCipher(),
+    providers: webRegistry(),
+    host: WEB_HOST,
+    demoAi: init.demo !== null,
+    log,
+  });
+  let seeded = false;
+  if (init.demo) {
+    post({ type: "progress", message: "Creando el buzón de demostración…" });
+    // the mock generator is its own chunk: release builds never load it
+    const { seedDemo } = await import("@unica/backend/demo");
+    if (await seedDemo(store, init.demo)) {
+      seeded = true;
+      await store.settings.set("app", { ai: { provider: "fake" } });
+      await backend.categorizer.rebuildNow();
+      mark("seed");
+    }
+  }
+  await backend.start();
+  backend.connect(portTransport(init.port), { clientId: "tab", origin: "renderer" });
+  mark("ready");
+  post({ type: "ready", storage: choice.adapter.id, reason: choice.reason, build: BUILD, seeded, timings });
+  // after the first answer: size the page cache to what searches read, and again as imports grow the file
+  void tune(store, platform);
+  retuneTimer = setInterval(() => void tune(store, platform), 5 * 60_000);
+}
+
+/** Closes every storage handle, then says so: only then may another tab take over. */
+async function close(): Promise<void> {
+  if (retuneTimer) clearInterval(retuneTimer);
+  await backend?.stop().catch((error) => console.error("[backend] stop failed", error));
+  backend = null;
+  await release?.();
+  post({ type: "closed" });
+}
+
+self.onmessage = (event: MessageEvent<PageToWorker>) => {
+  const m = event.data;
+  if (m.type === "init") {
+    void start(m).catch((error) => post({ type: "fatal", code: "OPEN_FAILED", message: error instanceof Error ? error.message : String(error) }));
+  } else if (m.type === "close") {
+    void close();
+  } else if (m.type === "cache-status") {
+    const db = backend && backend.store instanceof SqlMailStore ? sqlDb(backend.store) : null;
+    const status = db?.cacheStatus();
+    post({ type: "cache-status", status: status ? { ...status, cacheBytes: cache.cacheBytes, hotBytes: cache.hotBytes } : null });
+  }
+};
