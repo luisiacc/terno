@@ -7,3 +7,4 @@ export * from "./categorize";
 export * from "./keybindings";
 export * from "./address";
 export * from "./ai";
+export * from "./themes";
