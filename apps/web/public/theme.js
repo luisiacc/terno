@@ -9,7 +9,10 @@
     document.documentElement.setAttribute("data-theme", dark ? "unica-dark" : "unica-light");
     if (window.unicaDesktop) {
       c.add("is-desktop");
-      if (window.unicaDesktop.platform === "darwin") c.add("is-mac");
+      if (window.unicaDesktop.platform === "darwin") {
+        c.add("is-mac");
+        document.documentElement.setAttribute("data-vibrancy", "");
+      }
     }
   } catch {}
 })();

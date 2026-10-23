@@ -18,7 +18,8 @@
 
 @theme inline {
   --font-heading: var(--font-sans);
-  --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  /* a theme may bring its own UI font (Apple: the system font) */
+  --font-sans: var(--theme-font, "Geist Variable", ui-sans-serif, system-ui, -apple-system, sans-serif);
   --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", monospace;
 
   /* dense type scale for a mail client */
@@ -80,6 +81,27 @@
   --color-cat-indigo: var(--cat-indigo);
   --color-cat-violet: var(--cat-violet);
   --color-cat-slate: var(--cat-slate);
+  --color-cat-rose-ink: var(--cat-rose-ink);
+  --color-cat-amber-ink: var(--cat-amber-ink);
+  --color-cat-lime-ink: var(--cat-lime-ink);
+  --color-cat-emerald-ink: var(--cat-emerald-ink);
+  --color-cat-cyan-ink: var(--cat-cyan-ink);
+  --color-cat-indigo-ink: var(--cat-indigo-ink);
+  --color-cat-violet-ink: var(--cat-violet-ink);
+  --color-cat-slate-ink: var(--cat-slate-ink);
+
+  /* chrome */
+  --color-overlay: var(--overlay);
+  --color-drop-target: color-mix(in oklch, var(--primary) 16%, transparent);
+
+  /* shadows take the theme's shadow color (deeper in dark themes) */
+  --shadow-2xs: 0 1px color-mix(in oklab, var(--shadow-color) 50%, transparent);
+  --shadow-xs: 0 1px 2px 0 color-mix(in oklab, var(--shadow-color) 50%, transparent);
+  --shadow-sm: 0 1px 3px 0 var(--shadow-color), 0 1px 2px -1px var(--shadow-color);
+  --shadow-md: 0 4px 6px -1px var(--shadow-color), 0 2px 4px -2px var(--shadow-color);
+  --shadow-lg: 0 10px 15px -3px var(--shadow-color), 0 4px 6px -4px var(--shadow-color);
+  --shadow-xl: 0 20px 25px -5px var(--shadow-color), 0 8px 10px -6px var(--shadow-color);
+  --shadow-2xl: 0 25px 50px -12px var(--shadow-color);
 
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
@@ -94,17 +116,18 @@
   --radius: 0.5rem;
 }
 
-/* Electron on macOS: the sidebar sits on native vibrancy (window background is transparent). */
-.is-desktop.is-mac {
-  --sidebar: oklch(0.965 0.004 85 / 0.72);
-}
-.is-desktop.is-mac.dark {
-  --sidebar: oklch(0.2 0.006 265 / 0.62);
+/*
+ * Electron on macOS with a theme that allows it: the sidebar sits on the
+ * window's native vibrancy (the window background is transparent). (0,2,0)
+ * beats the theme blocks; a nested [data-theme] preview defines its own.
+ */
+:root[data-vibrancy] {
+  --sidebar: var(--sidebar-translucent);
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring;
   }
   html {
     @apply font-sans antialiased;
@@ -115,8 +138,11 @@
     @apply bg-background text-foreground;
     overscroll-behavior: none;
   }
-  .is-desktop.is-mac body {
+  :root[data-vibrancy] body {
     background: transparent;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--primary) 28%, transparent);
   }
   /* Overlays animate; navigation never does. */
   @media (prefers-reduced-motion: reduce) {
