@@ -1,0 +1,159 @@
+# Plans 03 + 04 reconciliation (Codex review, 2026-10-23)
+
+Binding for implementation: where this conflicts with plans 03 or 04, this document wins.
+
+Use [03’s engine-owned filtering and paging](/Users/Luis/projects/emailclient/docs/plans/03-search-engine.md:123), wrapped by [04’s async `MailStore`](/Users/Luis/projects/emailclient/docs/plans/04-storage-and-web.md:100). Delete 04’s `SearchHost` design: returning message hits to storage for deduplication, filtering and sorting recreates the bottleneck 03 measured.
+
+The architecture is sound once freshness becomes an explicit contract. Neither plan currently specifies enough to guarantee it.
+
+1. Reconcile the seam as follows.
+
+Keep 03’s `SearchMessageDoc`, `SearchThreadDoc`, `IndexChange` and `ResolvedSearch` projections; add `bodyState` to the message projection. Use this single interface set:
+
+```ts
+type Revision = { epoch: string; seq: number };
+
+type SearchCursor = {
+  revision: Revision;
+  queryKey: string;
+  lastDate: number;
+  id: number;
+};
+
+interface SearchRequest {
+  search: ResolvedSearch;
+  cursor?: SearchCursor;
+  limit: number;
+}
+
+interface SearchIdsPage {
+  threadIds: number[];
+  nextCursor: SearchCursor | null;
+  revision: Revision;
+  strategy: string;
+}
+
+interface SearchEngine {
+  readonly id: string;
+  // Exact over locally stored text, including all supported operators.
+  query(req: SearchRequest, at: Revision): Promise<SearchIdsPage>;
+}
+
+interface IndexBatch {
+  from: Revision;
+  to: Revision;
+  // Absolute post-commit projections or deletion tombstones.
+  changes: readonly IndexChange[];
+}
+
+interface CachedSearchEngine extends SearchEngine {
+  status(): {
+    revision: Revision | null;
+    state: "building" | "ready" | "stale" | "disabled";
+    allocatedBytes: number;
+  };
+  apply(batch: IndexBatch): Promise<void>;
+  snapshot(): Promise<Uint8Array>;
+  restore(bytes: Uint8Array): Promise<boolean>;
+}
+
+interface SearchFeed {
+  head(): Promise<Revision>;
+  changes(
+    after: Revision, through: Revision, maxCommits: number
+  ): Promise<readonly IndexBatch[]>;
+  beginBuild(): Promise<{
+    from: Revision; // Retains subsequent log entries until release.
+    messages(): AsyncIterable<readonly SearchMessageDoc[]>;
+    threads(): AsyncIterable<readonly SearchThreadDoc[]>;
+    release(): Promise<void>;
+  }>;
+}
+
+interface MailStoreSearch {
+  search(req: SearchRequest): Promise<{
+    items: ThreadSummary[];
+    nextCursor: SearchCursor | null;
+    revision: Revision;
+    strategy: string;
+    complete: boolean;
+    pendingBodies: number;
+  }>;
+}
+```
+
+`MailStore.threads` implements `MailStoreSearch`. Backend/RPC callers never access engines directly.
+
+**Ownership:** the engine evaluates message predicates, deduplicates threads, applies every thread predicate, orders by `(lastDate DESC, id DESC)`, and selects `limit + 1`. The store resolves account/category names through shared pure logic and hydrates summaries in the returned order. FTS5 retains its fused SQL implementation.
+
+**Read consistency:** store search captures revision R and prevents writes from interleaving between scope resolution, engine query and hydration. Maintain one writer on both platforms. Use RAM only when its revision equals R; otherwise use the durable fallback. A cursor with a different revision or query key requires restart/reconciliation, matching the existing live-list policy rather than promising snapshot pagination indefinitely.
+
+**Write consistency:** use a transactional outbox on both adapters, never direct engine calls inside write transactions.
+
+- SQLite triggers collect dirty message/thread IDs. A store-command finalizer coalesces them, materializes absolute projections and appends one revisioned batch **inside that transaction**. Cover bodies, membership changes, cascades and both sides of thread merges—not just `messages` and `threads`.
+- IndexedDB commands explicitly append the identical batch and advance `meta.searchRevision` in their existing readwrite transaction. Publish only after transaction completion. IDB transactions can become inactive between event-loop tasks, so network and unrelated asynchronous work stay outside them. [IndexedDB specification](https://www.w3.org/TR/IndexedDB/)
+- Apply batches after commit. Advance the engine watermark only after the entire batch succeeds. Ignore duplicates, reject gaps/epoch mismatches, and discard an engine left partially mutated by failure. Write acknowledgements need not await indexing; subsequent searches fall back until caught up.
+
+This requires all domain writes—including sync, rules, categorization, compose and MCP actions—to use store commands.
+
+**Startup and snapshots:** persist `{database epoch, schema/tokenizer/index versions, revision, checksum}` with the arrays. Publish snapshots atomically through a replaceable file or transactional IDB manifest. A restored snapshot becomes usable only after replay reaches the store head.
+
+For rebuilding, retain the log at W0, scan in bounded chunks, capture W1 after scanning, then replay all absolute batches `(W0, W1]`. This repairs rows changed during the scan. Catch up and promote under the writer guard. Log gaps force another rebuild. Prune only behind a durable snapshot and active build leases; cap retention and invalidate older snapshots when necessary.
+
+SQLite answers immediately through FTS5 during restore/build. A fresh FTS5 answer can have `complete=true`; index warming alone is not incomplete mail. `pendingBodies` describes corpus coverage separately.
+
+IDB has no FTS5. Its correctness fallback must be an exact, sliced store scan, or fully conformant persistent postings—not the prototype’s limited free-text engine. Slow searches may remain pending; silently incomplete pages are unacceptable.
+
+**Memory policy:** initially cap steady index allocation at 192 MiB desktop / 96 MiB web, with explicit peak budgets of 256/128 MiB. Include buffers, dictionary, deltas, caches and serialization copies. On pressure, disable RAM and use exact fallback. Avoid a partial hot tier in v1: globally correct ordering and pagination require a proper merge with cold results.
+
+2. Resolve these problems before implementation.
+
+- **Freshness claims are too strong.** “Same thread” does not imply immediate read-your-writes when draining yields. Conversely, 04’s in-command indexing can survive a rolled-back database write in RAM. The revision contract above resolves both.
+
+- **Search semantics need one executable specification.** Preserve same-message conjunctions, exact full-email matching, field-local phrases and last-token prefixes. Preserve today’s special negation rule: `from:ana -factura` tests one message; purely negative text excludes whole threads. Neither token intersection across messages nor phrases spanning fields is valid. Keep an independent brute-force oracle; moving it beside production code must not make it reuse the implementation’s matcher.
+
+- **Rules and MCP are mischaracterized in 03.** Rules need message IDs and their own DSL semantics; they cannot consume paged thread results. Keep `filters.preview/applyChunk` store-owned, using SQL compilation or the JS evaluator. MCP already calls `threads.search`; retain that shared route and authorization rather than introducing an FTS-only MCP route. Plan 02’s query-based bulk operations need bounded enumeration with defined mutation behavior, especially when adding a category changes their own exclusion predicate.
+
+- **The body split is a correctness migration.** Moving FTS triggers solely onto `message_bodies` misses subject/sender/recipient edits and messages without bodies. Deletes must retain the exact old indexed projection, including during cascades. Update rule SQL still referencing `m.body_text`, reader queries, ingestion and fixtures together. Run external-content integrity checks with `rank=1`. [SQLite FTS5 documentation](https://www.sqlite.org/fts5.html)
+
+- **500k-message costs exceed the headline numbers.** 03 estimates roughly 450 MB before realistic vocabulary growth. Restore, compaction, structured cloning and old/new buffers increase peaks. Its 51k-message build already takes approximately 3.6 seconds; startup cannot depend on rebuilding. Sorted vocabulary insertion, recency-array movement and tombstone accumulation also need sustained-update benchmarks. Budget rebuild CPU and memory together.
+
+- **OPFS remains vulnerable beyond 50k.** Body splitting moves the cache cliff; it does not eliminate it. A 192 MB cache ceiling cannot guarantee a larger working set fits. Measure cold fallback search, rules, imports and concurrent interaction—not merely warm cache-hit ratios. Larger batches must still preserve the interactive latency gate.
+
+- **Several performance promises are unproven.** Phrase fallback’s ≤5 ms is projected; the IDB prototype lacks essential semantics and transactional work. A batched timer measures throughput, not individual-request p95. Preserve one-character searches: raising the minimum prefix to make the fallback gate pass changes product behavior.
+
+- **Cross-plan transactions need adjustment.** Plan 02’s RAM model updates must also happen after commit. Its category-table rebuild must preserve/recreate search triggers. Ingestion/classification must remain one atomic store command, with pure classification dependencies—not SQL callbacks exposed to Backend. Its “another category means negative” training signal conflicts with additive categories; its safety valve also needs a minimum number of matured outcomes.
+
+- **Web is more than a browser-safe bundle.** Plan 05’s DNS pinning and Electron network interception need a browser-specific policy implementation and honest guarantees. Serialize tab takeover, close storage handles before releasing leadership, and coordinate worker/service-worker/schema versions. Never silently switch an existing OPFS mailbox to an empty IDB database following an open error.
+
+For v1, defer Postgres scaffolding, compression/positional sidecars, partial hot tiers and the full native-IDB implementation until OPFS is proven. Keep IDB’s contract specified now. The repeated desktop nudges and hypothetical Mac comparison are also unnecessary launch scope.
+
+3. Land the work in this order.
+
+Preserve the active sequence **05 → 02 → 01**, then **04 foundations → 03 desktop → 04 web**. Agree on the shared contract now, so 02 uses store-command-shaped operations and 01’s picker/DnD share the same categorization action.
+
+| Migration | Assignment |
+|---|---|
+| v1–v2 | Existing schema and operation-target index |
+| v3 | 05 identity, secrets and local mode; already present |
+| v4 | 02 categorization |
+| v5 | 04 body split |
+| v6 | 03 search revision/outbox |
+| None | 01 appearance settings |
+
+Keep logical migration IDs stable across adapters; IDB schema upgrades and resumable data jobs are adapter implementations of those IDs. Give v5’s FTS/rule changes one owner. Do not renumber landed migrations.
+
+Split 03/04 into independently green commits:
+
+1. **Shared contracts and conformance:** extract the oracle, wrap existing FTS search, preserve behavior and strategies.
+2. **04 node foundations:** connection interface, explicit statement disposal, node driver and platform injection; retain current pragmas/checkpoint behavior.
+3. **04 store extraction:** move composite transactions and provider SQL behind `SqlMailStore`; include 02/05 operations. Add store-level perf coverage before removing `Backend.db`.
+4. **v5 body split:** complete readers, writers, rules and FTS migration together.
+5. **v6 outbox:** capture every mutation, with RAM disabled. Test aborts, cascades, merges, replay gaps and crash recovery; measure write amplification.
+6. **03 engine:** pure implementation and differential tests, then mutation support; keep production on FTS.
+7. **03 activation:** revision-gated routing, snapshots, sliced rebuild, memory caps and phrase fallback. Enable only after measured gates pass.
+8. **04 WASM:** full DB/store suites against WASM-memory, then OPFS worker demo, lifecycle tests and browser perf.
+9. **04 web release:** Gmail auth, capabilities, browser network policy, offline/version handling and cross-browser validation.
+10. **IDB later:** full semantics and recovery first; automatic fallback only after conformance and real-browser perf pass.
+
+At each relevant commit retain the existing SQL, import-contention, renderer and packaged-app gates. Add instant-search gates without replacing fallback gates or changing `PERF_BUDGET_MULTIPLIER`. Test cold startup and missing/corrupt snapshots explicitly. Prototype timings support the direction; they are not implementation acceptance evidence.
