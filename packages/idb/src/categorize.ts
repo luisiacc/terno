@@ -580,8 +580,8 @@ export interface ClassifyRequest {
 
 function valveStats(c: Ctx): Map<number, { kept: number; reverted: number }> {
   const out = new Map<number, { kept: number; reverted: number }>();
-  for (const d of T(c, "cls_decisions").all()) {
-    if (d.kind !== "auto" || d.outcome === null) continue;
+  const decisions = T(c, "cls_decisions");
+  for (const d of [...decisions.by("outcome", "auto", "kept"), ...decisions.by("outcome", "auto", "reverted")]) {
     const v = out.get(d.category_id) ?? { kept: 0, reverted: 0 };
     if (d.outcome === "kept") v.kept++;
     if (d.outcome === "reverted") v.reverted++;
@@ -597,8 +597,8 @@ function policyContext(c: Ctx): Map<number, CategoryPolicy & { name: string }> {
 
 function recentRemovals(c: Ctx, now: number): Map<string, number> {
   const out = new Map<string, number>();
-  for (const e of T(c, "cls_examples").all()) {
-    if (e.label < 0 && e.at >= now - POLICY.senderVetoDays * DAY && e.source === "removal") {
+  for (const e of T(c, "cls_examples").by("source", "removal")) {
+    if (e.label < 0 && e.at >= now - POLICY.senderVetoDays * DAY) {
       const k = `${e.category_id}:${e.sender}`;
       out.set(k, (out.get(k) ?? 0) + 1);
     }

@@ -20,6 +20,8 @@ export interface TableSpec {
   autoId?: boolean;
   /** not loaded on open: rows enter memory when read for a command or written by one (message bodies) */
   lazy?: boolean;
+  /** columns whose highest value is kept (sequence numbers) */
+  track?: readonly string[];
 }
 
 export interface ForeignKey {
@@ -45,6 +47,10 @@ export class Table<R extends Row = Row> {
   private nextId = 1;
   /** lazy tables: keys known to have no row in IndexedDB */
   readonly absent = new Set<Key>();
+  /** the highest integer key ever held (high-water marks without scanning the keys) */
+  private highest = 0;
+  /** the highest value seen per tracked column (spec.track) */
+  private readonly peaks = new Map<string, number>();
 
   constructor(
     readonly spec: TableSpec,
@@ -90,6 +96,16 @@ export class Table<R extends Row = Row> {
 
   get size(): number {
     return this.rows.size;
+  }
+
+  /** the highest integer key this table ever held (never lower after deletes) */
+  highestKey(): number {
+    return this.highest;
+  }
+
+  /** the highest value a tracked column (spec.track) ever held */
+  peak(column: string): number {
+    return this.peaks.get(column) ?? 0;
   }
 
   /** the next integer key (autoId tables) */
@@ -178,6 +194,11 @@ export class Table<R extends Row = Row> {
     if (row) {
       this.rows.set(k, row);
       this.index(k, row);
+      if (typeof k === "number" && k > this.highest) this.highest = k;
+      for (const c of this.spec.track ?? []) {
+        const v = row[c];
+        if (typeof v === "number" && v > (this.peaks.get(c) ?? 0)) this.peaks.set(c, v);
+      }
       this.absent.delete(k);
       if (this.spec.autoId) this.nextId = Math.max(this.nextId, Number(k) + 1);
     } else this.rows.delete(k);

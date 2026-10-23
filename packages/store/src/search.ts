@@ -144,6 +144,14 @@ export class StaleCursorError extends Error {
   }
 }
 
+/** A newer search from the same client superseded this one before it finished (slow paths stop early). */
+export class SearchCancelledError extends Error {
+  constructor() {
+    super("Superseded by a newer search");
+    this.name = "SearchCancelledError";
+  }
+}
+
 /** The feed can't serve that range: another database (epoch), a pruned log (gap) or a revision not committed yet (ahead). An engine rebuilds. */
 export class RevisionError extends Error {
   constructor(

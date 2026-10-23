@@ -123,7 +123,7 @@ import {
 import type { Key, MemDb } from "./mem";
 import { IdbProviderStore } from "./provider-store";
 import { createMemDb, EARLY_TABLES, idbExists, LATE_TABLES, LOGICAL_SCHEMA, loadAll, openIdb, persist, readAll, readLazy, writeMeta } from "./schema";
-import { sameRevision } from "@unica/store";
+import { sameRevision, SearchCancelledError } from "@unica/store";
 import { appendOutbox, checkCursor, columnsOf, materializeChanges, pageOf, planScan, scanPage, searchChangeIds, searchHead } from "./search";
 
 const PENDING_BODIES_CAP = 1000;
@@ -134,7 +134,7 @@ const BODY_CACHE_BYTES = 8 * 1024 * 1024;
 const SLICE = 500;
 /** a scan's slice: this long at most, in chunks of this many messages, before yielding */
 const SCAN_SLICE_MS = 8;
-const SCAN_CHUNK = 64;
+const SCAN_CHUNK = 256;
 
 const FLAG_COLUMNS: Record<string, string> = { isRead: "is_read", isStarred: "is_starred", inInbox: "in_inbox", isTrash: "is_trash", isSpam: "is_spam", isSent: "is_sent", isDraft: "is_draft" };
 const NO_CLASSIFICATION: ClassifyResult = { deltas: [], auto: new Map(), touched: new Set(), suggested: 0, uncertain: [], backfill: 0 };
@@ -453,10 +453,10 @@ export class IdbMailStore implements MailStore {
    * revision it answers at and its result. Bodies are read in slices only
    * when a term needs them.
    */
-  private async scan<X>(req: SearchRequest, finish: (ids: number[], revision: Revision) => X, extra?: (t: R) => boolean, limit = req.limit + 1): Promise<X> {
+  private async scan<X>(req: SearchRequest, finish: (ids: number[], revision: Revision) => X, extra?: (t: R) => boolean, limit = req.limit + 1, signal?: { readonly aborted: boolean }): Promise<X> {
     for (let attempt = 0; ; attempt++) {
       // writes kept landing under two passes: the third holds the queue (still yielding to the event loop between slices)
-      const out = await this.scanPass(req, finish, extra, limit, attempt >= 2);
+      const out = await this.scanPass(req, finish, extra, limit, attempt >= 2, signal);
       if (out.done) return out.value;
     }
   }
@@ -467,7 +467,7 @@ export class IdbMailStore implements MailStore {
    * still holds; the result is read in a final unit at that revision, or the
    * pass reports it must start over.
    */
-  private async scanPass<X>(req: SearchRequest, finish: (ids: number[], revision: Revision) => X, extra: ((t: R) => boolean) | undefined, limit: number, hold: boolean): Promise<{ done: true; value: X } | { done: false }> {
+  private async scanPass<X>(req: SearchRequest, finish: (ids: number[], revision: Revision) => X, extra: ((t: R) => boolean) | undefined, limit: number, hold: boolean, signal?: { readonly aborted: boolean }): Promise<{ done: true; value: X } | { done: false }> {
     const pass = async (unit: <V>(f: () => Promise<V>) => Promise<V>): Promise<{ done: true; value: X } | { done: false }> => {
       const messages = this.db.table<R>("messages");
       const start = await unit(async () => {
@@ -479,6 +479,7 @@ export class IdbMailStore implements MailStore {
       const matched = plan.messageLevel ? new Set<number>() : null;
       const excluded = new Set<number>();
       for (let i = 0; i < ids.length && !plan.impossible; ) {
+        if (signal?.aborted) throw new SearchCancelledError();
         const current = await unit(async () => {
           if (!sameRevision(this.revision(), revision)) return false;
           const sliceStarted = performance.now();
@@ -510,7 +511,7 @@ export class IdbMailStore implements MailStore {
     return hold ? this.exclusive(() => pass((f) => f())) : pass((f) => this.exclusive(f));
   }
 
-  private async searchPage(req: SearchRequest): Promise<StoreSearchPage> {
+  private async searchPage(req: SearchRequest, signal?: { readonly aborted: boolean }): Promise<StoreSearchPage> {
     // the index answers from early tables (threads, memberships); a scan or the pending-body count waits for messages
     await this.settled();
     let revision = this.revision();
@@ -525,13 +526,13 @@ export class IdbMailStore implements MailStore {
       const scanned = await this.scan(req, (ids, at) => {
         const p = pageOf(ids, req, at, (id) => threads.get(id)!);
         return { at, items: summariesInOrder(this.c, p.threadIds), nextCursor: p.nextCursor };
-      });
+      }, undefined, req.limit + 1, signal);
       revision = scanned.at;
       page = { items: scanned.items, nextCursor: scanned.nextCursor, strategy: "scan" };
     }
-    let pendingBodies = 0;
     await this.loaded;
-    for (const m of T(this.c, "messages").all()) if (m.body_state !== "full" && ++pendingBodies >= PENDING_BODIES_CAP) break;
+    const messages = T(this.c, "messages");
+    const pendingBodies = Math.min(PENDING_BODIES_CAP, messages.count("body_state", "none") + messages.count("body_state", "partial"));
     return { items: page.items, nextCursor: page.nextCursor, revision, strategy: page.strategy, complete: true, pendingBodies };
   }
 
@@ -565,7 +566,7 @@ export class IdbMailStore implements MailStore {
       // resolving account:/category: reads early tables only
       const search = this.resolve(p);
       const cursor = p.cursor ? { lastDate: p.cursor.lastDate, id: p.cursor.id, queryKey: p.cursor.queryKey ?? search.key, revision: p.cursor.revision ?? this.revision() } : undefined;
-      return this.searchPage({ search, cursor, limit: p.limit });
+      return this.searchPage({ search, cursor, limit: p.limit }, p.signal);
     },
     act: ({ threadIds, action, signal, now }) =>
       this.command(() => {
@@ -718,7 +719,7 @@ export class IdbMailStore implements MailStore {
     nextAttemptAt: () =>
       this.read(() => {
         let t: number | null = null;
-        for (const o of T(this.c, "ops").all()) if (o.state === "queued" && o.next_attempt_at < AWAITING_AUTH) t = t === null ? o.next_attempt_at : Math.min(t, o.next_attempt_at);
+        for (const o of T(this.c, "ops").by("state", "queued")) if (o.next_attempt_at < AWAITING_AUTH) t = t === null ? o.next_attempt_at : Math.min(t, o.next_attempt_at);
         return t;
       }),
     recent: (limit) => this.early(() => listRecentOps(this.c, limit)),

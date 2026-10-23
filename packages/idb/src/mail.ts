@@ -296,15 +296,10 @@ export function mergeThreads(c: Ctx, into: number, from: number, result: IngestR
 
 /** Message ids are never reused (a high-water mark, like SQL's message_id_hwm). */
 function messageIdAllocator(c: Ctx): { next(): number; persist(): void } {
-  let hwm = Math.max(getSetting(c, "message_id_hwm", 0), maxKey(T(c, "messages")));
+  let hwm = Math.max(getSetting(c, "message_id_hwm", 0), T(c, "messages").highestKey());
   return { next: () => ++hwm, persist: () => setSetting(c, "message_id_hwm", hwm) };
 }
 
-export function maxKey(t: Table<R>): number {
-  let m = 0;
-  for (const k of t.rows.keys()) if ((k as number) > m) m = k as number;
-  return m;
-}
 
 export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: number): IngestResult {
   const result: IngestResult = { inserted: [], updated: [], touchedThreads: new Set(), mergedThreads: new Map(), bodyCompleted: [], deltas: [] };
@@ -669,8 +664,8 @@ export function pendingSuggestionCounts(c: Ctx): Record<number, number> {
   const out: Record<number, number> = {};
   const threads = T(c, "threads");
   const memberships = T(c, "thread_categories");
-  for (const d of T(c, "cls_decisions").all()) {
-    if (d.kind !== "suggest" || d.outcome !== null) continue;
+  for (const d of T(c, "cls_decisions").by("kind", "suggest")) {
+    if (d.outcome !== null) continue;
     const t = threads.get(d.thread_id);
     if (!t || t.in_trash || t.in_spam || memberships.has(d.thread_id, d.category_id)) continue;
     out[d.category_id] = (out[d.category_id] ?? 0) + 1;
@@ -724,7 +719,7 @@ export function getAccountConfig<V>(c: Ctx, id: number): { config: V; secretRef:
 export function createAccount(c: Ctx, a: { kind: AccountKind; email: string; displayName: string; color: string; providerConfig?: unknown; secretRef?: string | null }, now: number): Account {
   return c.db.tx(() => {
     const accounts = T(c, "accounts");
-    const id = Math.max(getSetting(c, "account_id_hwm", 0), maxKey(accounts)) + 1;
+    const id = Math.max(getSetting(c, "account_id_hwm", 0), accounts.highestKey()) + 1;
     setSetting(c, "account_id_hwm", id);
     let position = -1;
     for (const r of accounts.all()) position = Math.max(position, r.position);
@@ -877,9 +872,7 @@ export function enqueueOp(c: Ctx, op: { accountId: number; kind: string; target:
       }
     }
     const id = c.uuid();
-    let seq = 0;
-    for (const o of ops.all()) seq = Math.max(seq, o.seq);
-    ops.insert({ id, seq: seq + 1, account_id: op.accountId, kind: op.kind, target_json: targetJson, payload_json: JSON.stringify(op.payload ?? {}), state: "queued", attempts: 0, next_attempt_at: 0, last_error: null, created_at: now, updated_at: now });
+    ops.insert({ id, seq: ops.peak("seq") + 1, account_id: op.accountId, kind: op.kind, target_json: targetJson, payload_json: JSON.stringify(op.payload ?? {}), state: "queued", attempts: 0, next_attempt_at: 0, last_error: null, created_at: now, updated_at: now });
     for (const messageId of new Set(op.target.messageIds ?? [])) T(c, "op_targets").insert({ op_id: id, message_id: messageId, grp: group ?? op.kind });
     return id;
   });
@@ -891,7 +884,7 @@ export function claimReadyOps(c: Ctx, now: number, limit: number): OpRow[] {
   const ops = T(c, "ops");
   const targets = T(c, "op_targets");
   return c.db.tx(() => {
-    const ready = [...ops.all()].filter((o) => o.state === "queued" && o.next_attempt_at <= now).sort((x, y) => x.seq - y.seq);
+    const ready = ops.by("state", "queued").filter((o) => o.next_attempt_at <= now).sort((x, y) => x.seq - y.seq);
     const out: OpRow[] = [];
     for (const o of ready) {
       if (out.length >= limit) break;

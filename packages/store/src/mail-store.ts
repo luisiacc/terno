@@ -206,7 +206,8 @@ export interface MailStore {
     counts(): Promise<Counts>;
     /** resolves account:/category: and searches within one unit of work */
     /** an RPC cursor without revision/key (older renderers) continues this query */
-    searchText(p: { query: string; accountId?: number; categoryId?: number; cursor?: Cursor & Partial<Pick<SearchCursor, "revision" | "queryKey">>; limit: number; now: number }): Promise<StoreSearchPage>;
+    /** `signal`: the caller no longer wants the answer (a newer search); a slow path may stop and reject with SearchCancelledError */
+    searchText(p: { query: string; accountId?: number; categoryId?: number; cursor?: Cursor & Partial<Pick<SearchCursor, "revision" | "queryKey">>; limit: number; now: number; signal?: { readonly aborted: boolean } }): Promise<StoreSearchPage>;
     /** local optimistic change + learning signal + provider ops, atomically */
     act(c: { threadIds: readonly number[]; action: ThreadAction; signal: UserActionKind | null; now: number }): Promise<{ threadIds: number[]; opIds: string[] }>;
   };

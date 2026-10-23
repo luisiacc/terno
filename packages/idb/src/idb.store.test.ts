@@ -66,6 +66,19 @@ describe("the body cache", () => {
   });
 });
 
+describe("the exact scan", () => {
+  it("stops when the caller no longer wants the answer (a newer search)", async () => {
+    const store = await open();
+    await store.dev.seed(generateDataset({ threads: 2000, accounts: 2, seed: 5, now: NOW }), { now: NOW });
+    const abort = new AbortController();
+    const search = store.threads.searchText({ query: "presupuesto zzqxjv", limit: 50, now: NOW, signal: abort.signal });
+    setTimeout(() => abort.abort(), 1);
+    await expect(search).rejects.toMatchObject({ name: "SearchCancelledError" });
+    // the next search answers
+    expect((await store.threads.searchText({ query: "zzqxjv", limit: 50, now: NOW })).items).toEqual([]);
+  });
+});
+
 describe("right after a reopen", () => {
   it("sender, domain and list scopes wait for the late tables instead of answering empty", async () => {
     const name = `scopes-${Date.now()}`;

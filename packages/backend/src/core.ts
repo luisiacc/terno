@@ -97,6 +97,8 @@ export class BackendCore {
   private lastCountsAt = -Infinity;
   private countsTimer: ReturnType<typeof setTimeout> | null = null;
   readonly searchSeq = new Map<string, number>();
+  /** each client's search in flight: a newer one aborts it (slow paths stop early) */
+  readonly searchAborts = new Map<string, AbortController>();
   readonly abort = new AbortController();
   readonly platform: Platform;
   /** the only way out of the backend: every outbound request asks it first */

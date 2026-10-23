@@ -1,6 +1,6 @@
 import { RpcError, type Handlers } from "@unica/core/rpc";
 import { COUNT_CAP, proposeLearnedFilters, type Address } from "@unica/core";
-import { StaleCursorError, type AddedBy, type DraftRow } from "@unica/store";
+import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow } from "@unica/store";
 import type { GmailAccountConfig, ImapAccountConfig } from "@unica/mail";
 import { BackendCore as Backend } from "./core";
 import { changeOwnerTo, gmailClaim, imapClaim } from "./identity";
@@ -97,8 +97,11 @@ export function createHandlers(b: Backend): Handlers {
       await b.platform.yield();
       if (b.searchSeq.get(ctx.clientId) !== seq) throw new RpcError("CANCELLED", "Superseded by a newer search");
       const started = performance.now();
+      b.searchAborts.get(ctx.clientId)?.abort();
+      const abort = new AbortController();
+      b.searchAborts.set(ctx.clientId, abort);
       try {
-        const page = await store.threads.searchText({ ...p, now: b.now() });
+        const page = await store.threads.searchText({ ...p, now: b.now(), signal: abort.signal });
         return {
           items: page.items,
           nextCursor: page.nextCursor,
@@ -110,7 +113,10 @@ export function createHandlers(b: Backend): Handlers {
       } catch (error) {
         // the renderer refetches from the top and reconciles its window (live-list policy)
         if (error instanceof StaleCursorError) throw new RpcError("STALE", error.message, { reason: error.reason });
+        if (error instanceof SearchCancelledError) throw new RpcError("CANCELLED", error.message);
         throw error;
+      } finally {
+        if (b.searchAborts.get(ctx.clientId) === abort) b.searchAborts.delete(ctx.clientId);
       }
     },
 
