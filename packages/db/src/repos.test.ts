@@ -141,6 +141,43 @@ describe("ops state machine", () => {
     expect(db.all("SELECT kind FROM ops ORDER BY seq")).toEqual([{ kind: "unstar" }]); // star superseded, unstar kept
   });
 
+  it("a running op that fails gives up messages a newer op already covers", () => {
+    const db = testDb();
+    const [a] = withAccounts(db);
+    const older = enqueueOp(db, { accountId: a!, kind: "markRead", target: { messageIds: [1] } }, 0)!;
+    claimReadyOps(db, 0); // in flight
+    enqueueOp(db, { accountId: a!, kind: "markUnread", target: { messageIds: [1] } }, 1);
+    failOp(db, older, "ETIMEDOUT", true, 2);
+    expect(getOp(db, older)).toBeNull(); // its retry would have undone the newer markUnread
+  });
+
+  it("location ops are never superseded and run in order per message", () => {
+    const db = testDb();
+    const [a] = withAccounts(db);
+    const notSpam = enqueueOp(db, { accountId: a!, kind: "notSpam", target: { messageIds: [1] } }, 0)!;
+    claimReadyOps(db, 0);
+    failOp(db, notSpam, "ETIMEDOUT", true, 0); // backoff
+    const archive = enqueueOp(db, { accountId: a!, kind: "archive", target: { messageIds: [1, 2] } }, 1)!;
+    expect(getOp(db, notSpam)).not.toBeNull(); // Gmail archive wouldn't clear SPAM: keep both
+    expect(claimReadyOps(db, 1).map((o) => o.id)).toEqual([]); // archive waits behind notSpam
+    const ready = claimReadyOps(db, getOp(db, notSpam)!.next_attempt_at);
+    expect(ready.map((o) => o.id)).toEqual([notSpam]);
+    completeOp(db, notSpam);
+    expect(claimReadyOps(db, 10 ** 13).map((o) => o.id)).toEqual([archive]);
+  });
+
+  it("deleting messages removes them from unsettled ops (rowids can be reused)", async () => {
+    const { deleteMessages } = await import("./ingest");
+    const db = testDb();
+    const [a] = withAccounts(db);
+    const r = ingestMessages(db, [msg({ accountId: a! }), msg({ accountId: a! })]);
+    const op = enqueueOp(db, { accountId: a!, kind: "trash", target: { messageIds: r.inserted } })!;
+    deleteMessages(db, [r.inserted[1]!]);
+    expect(JSON.parse(getOp(db, op)!.target_json)).toEqual({ messageIds: [r.inserted[0]] });
+    deleteMessages(db, [r.inserted[0]!]);
+    expect(getOp(db, op)).toBeNull();
+  });
+
   it("does not cancel an op that is already running", () => {
     const db = testDb();
     const [a] = withAccounts(db);

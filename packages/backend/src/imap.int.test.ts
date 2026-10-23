@@ -342,6 +342,28 @@ describe("IMAP identity and safety (review fixes)", () => {
     expect(backend.db.all("SELECT subject FROM messages ORDER BY subject")).toEqual([{ subject: "Nuevo" }, { subject: "Viejo" }]);
   });
 
+  it("re-identifies mail without a Message-ID after a UIDVALIDITY reset", async () => {
+    const { imap, backend, addAccount } = await setup();
+    const noId = (subject: string) => `From: x@y.z\r\nSubject: ${subject}\r\nDate: ${new Date().toUTCString()}\r\n\r\nhola\r\n`;
+    imap.server.control.addMessage("INBOX", { raw: noId("sin id 1") });
+    imap.server.control.addMessage("INBOX", { raw: noId("sin id 2") });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const before = backend.db.all("SELECT id FROM messages ORDER BY id");
+    imap.server.control.resetUidValidity("INBOX", { uids: "renumber" });
+    await backend.syncAccount(account.id);
+    expect(backend.db.all("SELECT id FROM messages ORDER BY id")).toEqual(before); // same rows, not re-imported
+  });
+
+  it("doesn't merge unrelated messages that reuse a Message-ID across folders", async () => {
+    const { imap, backend, addAccount } = await setup();
+    imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Factura", id: "same@x", from: "a@uno.com" }) });
+    imap.server.control.addMessage("Archive", { raw: raw({ subject: "Otra cosa", id: "same@x", from: "b@dos.com" }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    expect(backend.db.all("SELECT subject FROM messages ORDER BY subject")).toEqual([{ subject: "Factura" }, { subject: "Otra cosa" }]);
+  });
+
   it("an op queued before a UIDVALIDITY reset never touches the wrong message", async () => {
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;

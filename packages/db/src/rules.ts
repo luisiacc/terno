@@ -20,7 +20,7 @@ function textSql(op: TextOp, column: string, value: string, params: Param[]): st
   }
 }
 
-function conditionSql(c: Condition, now: number, params: Param[]): string {
+function conditionSql(c: Condition, now: number, params: Param[], range?: { from: number; to: number }): string {
   switch (c.field) {
     case "hasAttachment":
       params.push(c.value ? 1 : 0);
@@ -45,7 +45,10 @@ function conditionSql(c: Condition, now: number, params: Param[]): string {
       return textSql(c.op, "coalesce(m.list_id, '')", normalizeText(c.value), params);
     case "body": {
       const phrase = c.value.replaceAll('"', '""');
-      const fts = "m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)";
+      // a windowed scan constrains the FTS rowids too, so it never materializes global hits
+      const fts = range
+        ? `m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ? AND rowid BETWEEN ${Math.trunc(range.from)} AND ${Math.trunc(range.to)})`
+        : "m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)";
       switch (c.op) {
         case "contains":
           params.push(`body : "${phrase}"`);
@@ -79,10 +82,10 @@ export interface CompiledRule {
 }
 
 /** Compiles a rule to a predicate over `messages m`. Must agree with core's evaluateRule. */
-export function compileRuleToSql(rule: FilterRule, now: number): CompiledRule {
+export function compileRuleToSql(rule: FilterRule, now: number, range?: { from: number; to: number }): CompiledRule {
   const params: Param[] = [];
   const parts = rule.conditions.map((c) => {
-    const sql = conditionSql(c, now, params);
+    const sql = conditionSql(c, now, params, range);
     return c.negate ? `NOT (${sql})` : `(${sql})`;
   });
   return { where: parts.join(rule.match === "all" ? " AND " : " OR "), params };
@@ -108,7 +111,7 @@ export function findRuleMatches(
   onlyMessageIds?: readonly number[],
   idRange?: { from: number; to: number },
 ): RuleMatches {
-  const { where, params } = compileRuleToSql(rule, now);
+  const { where, params } = compileRuleToSql(rule, now, idRange);
   let scope = "";
   const scopeParams: Param[] = [];
   if (onlyMessageIds) {

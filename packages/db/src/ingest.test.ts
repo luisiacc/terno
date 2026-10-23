@@ -211,6 +211,9 @@ describe("full-text index maintenance", () => {
     const rule = (value: string) => ({ match: "all" as const, conditions: [{ field: "body" as const, op: "contains" as const, value }], actions: [{ type: "star" as const }] });
     expect(findRuleMatches(db, rule("finance"), 0).messageIds).toHaveLength(0);
     expect(findRuleMatches(db, rule("ﬁnance"), 0).messageIds).toHaveLength(1);
+    ingestMessages(db, [msg({ accountId: a!, bodyText: "Νέα άδεια για το έργο" })]);
+    expect(findRuleMatches(db, rule("αδεια"), 0).messageIds).toHaveLength(0); // unicode61 keeps Greek tonos
+    expect(findRuleMatches(db, rule("άδεια"), 0).messageIds).toHaveLength(1);
   });
 
   it("reports bodies completed through an upsert", () => {

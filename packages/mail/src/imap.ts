@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { ImapFlow, type FetchMessageObject, type MessageStructureObject } from "imapflow";
 import { placeholders, type IncomingMessage } from "@unica/db";
 import { parseListId, parseRaw, splitIds } from "./mime";
@@ -243,8 +244,20 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             touched.add(atLocation.message_id);
             continue;
           }
-          let key = messageKey(env?.messageId) ?? `${path}:${uidvalidity}:${m.uid}`;
-          const existing = db.get<{ id: number }>("SELECT id FROM messages WHERE account_id = ? AND provider_msg_id = ?", accountId, key);
+          // Without a Message-ID, identify by content (date, sender, subject, size): stable across
+          // moves and UIDVALIDITY resets, unlike a mailbox/UID-based key.
+          const fingerprint = () =>
+            `nomid:${createHash("sha1").update(`${new Date(env?.date ?? m.internalDate ?? 0).getTime()}|${env?.from?.[0]?.address ?? ""}|${env?.subject ?? ""}|${m.size ?? 0}`).digest("hex")}`;
+          let key = messageKey(env?.messageId) ?? fingerprint();
+          let existing = db.get<{ id: number; subject: string; from_email: string }>("SELECT id, subject, from_email FROM messages WHERE account_id = ? AND provider_msg_id = ?", accountId, key);
+          if (existing && messageKey(env?.messageId)) {
+            // Same Message-ID but clearly different content (sender/subject): a collision, not a copy.
+            const sameContent = existing.subject === (env?.subject ?? "") && existing.from_email === (env?.from?.[0]?.address ?? "").toLowerCase();
+            if (!sameContent) {
+              key = `${key}#${fingerprint()}`;
+              existing = db.get<{ id: number; subject: string; from_email: string }>("SELECT id, subject, from_email FROM messages WHERE account_id = ? AND provider_msg_id = ?", accountId, key);
+            }
+          }
           if (existing) {
             // 2) same Message-ID: the same message in another folder (moved/copied, our sent mail)…
             const sameMailbox = db.get<{ uid: number; uidvalidity: number }>(

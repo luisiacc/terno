@@ -20,17 +20,22 @@ export interface RuleMessage {
 const DAY_MS = 86_400_000;
 /** The DB keeps this many trailing body tokens (body_tail_norm) so body endsWith is index-free SQL. */
 export const BODY_TAIL_TOKENS = 32;
-const WORD = /[\p{L}\p{N}]+/gu;
+// letters/numbers plus combining marks that survived (non-Latin scripts keep theirs)
+const WORD_WITH_MARKS = /[\p{L}\p{N}][\p{L}\p{N}\p{M}]*/gu;
 
-const COMBINING = /[\u0300-\u036f]/g;
+/** Combining marks that follow a Latin letter (unicode61 folds diacritics for Latin script only). */
+const LATIN_MARKS = /(\p{Script=Latin})[\u0300-\u036f]+/gu;
 
 /**
- * Tokenize exactly like SQLite's unicode61 tokenizer with remove_diacritics:
- * canonical decomposition only (NFD). Compatibility forms such as the "ﬁ"
- * ligature are NOT expanded, because unicode61 doesn't expand them either.
+ * Tokenize like SQLite's unicode61 tokenizer with remove_diacritics:
+ *  - canonical decomposition only: compatibility forms (the "ﬁ" ligature) are not expanded
+ *  - diacritics are removed from Latin letters only: Greek tonos or Cyrillic й are kept
+ * Tokens are recomposed (NFC) so precomposed and decomposed input compare equal.
  */
 export function tokenize(text: string): string[] {
-  return text ? (text.normalize("NFD").replace(COMBINING, "").toLowerCase().match(WORD) ?? []) : [];
+  if (!text) return [];
+  const folded = text.normalize("NFD").replace(LATIN_MARKS, "$1").normalize("NFC").toLowerCase();
+  return folded.match(WORD_WITH_MARKS) ?? [];
 }
 
 function textOp(op: TextOp, haystack: string, needle: string): boolean {

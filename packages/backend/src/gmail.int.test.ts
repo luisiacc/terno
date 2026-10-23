@@ -44,6 +44,7 @@ class FakeGoogle {
   validTokens = new Set<string>();
   calls: { method: string; path: string; body: unknown }[] = [];
   rateLimitNext = 0;
+  failMinimalOnce = false;
   historyExpired = false;
   sent: { raw: string; threadId?: string }[] = [];
   truncateSendResponse = false;
@@ -131,6 +132,10 @@ class FakeGoogle {
     if (m && req.method === "GET") {
       const msg = this.messages.get(m[1]!);
       if (!msg) return json(404, { error: { code: 404 } });
+      if (url.searchParams.get("format") === "minimal" && this.failMinimalOnce) {
+        this.failMinimalOnce = false;
+        return json(503, { error: { code: 503 } });
+      }
       const base = { id: msg.id, threadId: msg.threadId, labelIds: msg.labelIds, internalDate: String(msg.internalDate) };
       return json(200, url.searchParams.get("format") === "raw" ? { ...base, raw: msg.raw } : base);
     }
@@ -298,6 +303,18 @@ describe("Gmail sync", () => {
     expect(backend.db.get("SELECT is_read FROM messages WHERE provider_msg_id = 'g1'")).toEqual({ is_read: 1 });
     expect(backend.db.get("SELECT count(*) c FROM messages WHERE provider_msg_id = 'g2'")).toEqual({ c: 0 });
     expect((await client.call("threads.list", { view: "archive" })).items.map((t) => t.subject)).toContain("Factura octubre");
+  });
+
+  it("expiry recovery also checks cached mail older than the window, and retries on transient errors", async () => {
+    const { google, backend, account } = await connected();
+    backend.db.run("UPDATE messages SET date = ? WHERE provider_msg_id = 'g5'", Date.now() - 2000 * 86_400_000); // ancient cached mail
+    google.historyExpired = true;
+    google.messages.delete("g5");
+    google.failMinimalOnce = true;
+    await backend.syncAccount(account.id); // a transient 503 must not advance the cursor
+    expect(backend.db.get<{ s: string }>("SELECT json_extract(sync_state, '$.status') s FROM accounts")!.s).toBe("offline");
+    await backend.syncAccount(account.id);
+    expect(backend.db.get("SELECT count(*) c FROM messages WHERE provider_msg_id = 'g5'")).toEqual({ c: 0 });
   });
 
   it("falls back to a full resync when history has expired, without duplicates", async () => {

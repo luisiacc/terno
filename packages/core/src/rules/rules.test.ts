@@ -85,6 +85,13 @@ describe("bodyMatches (word/phrase semantics, mirrors FTS)", () => {
     expect(bodyMatches("contains", "Canción NUEVA", "cancion nueva")).toBe(true);
   });
 
+  it("folds diacritics on Latin letters only, like unicode61 (Greek and Cyrillic keep theirs)", () => {
+    expect(bodyMatches("contains", "Νέα άδεια", "αδεια")).toBe(false);
+    expect(bodyMatches("contains", "Νέα άδεια", "ΆΔΕΙΑ")).toBe(true);
+    expect(bodyMatches("contains", "новый й", "и")).toBe(false);
+    expect(bodyMatches("contains", "Ελληνικά", "ελληνικά")).toBe(true);
+  });
+
   it("never matches a needle with no word characters", () => {
     expect(bodyMatches("contains", body, "!!!")).toBe(false);
   });

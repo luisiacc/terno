@@ -35,7 +35,10 @@ export async function boot(): Promise<void> {
     client.on("accounts", (accounts) => setApp({ accounts }));
     client.on("categories", (categories) => setApp({ categories }));
     client.on("op", (op) => {
-      if (op.kind === "send" && op.state === "succeeded") toast.success("Correo enviado");
+      if (op.kind === "send" && op.state === "succeeded") {
+        if (op.lastError) toast.warning("Enviado, pero no a todos", { description: op.lastError, duration: 12_000 });
+        else toast.success("Correo enviado");
+      }
       if (op.state === "unknown") toast.warning(`No sabemos si se envió: ${op.summary}`, { description: "Revisa Enviados antes de reintentar.", duration: 10_000 });
       if (op.state === "failed") toast.error(`Falló: ${op.summary}`, { description: op.lastError ?? undefined });
     });

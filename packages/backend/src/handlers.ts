@@ -174,8 +174,12 @@ export function createHandlers(b: Backend): Handlers {
       const touched = new Set<number>();
       let applied = 0;
       // time-sliced so a huge bulk apply doesn't freeze list/search
+      const capturedRule = JSON.stringify(filter.rule);
       await b.runSliced(matches.messageIds, 20, (chunk) => {
         db().tx(() => {
+          // edited (or deleted) while we were applying it: stop, don't recreate stale claims
+          const current = db().get<{ rule_json: string }>("SELECT rule_json FROM filters WHERE id = ?", id);
+          if (!current || current.rule_json !== capturedRule) throw new RpcError("CANCELLED", "The filter changed while it was being applied");
           const ids = claimFilterApplications(db(), id, chunk, b.now());
           for (const t of b.runFilterActions(filter.rule.actions, ids)) touched.add(t);
           applied += ids.length;

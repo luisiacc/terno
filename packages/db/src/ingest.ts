@@ -1,5 +1,6 @@
 import { BODY_TAIL_TOKENS, baseSubject, emailDomain, normalizeText, trailingTokens, type Address } from "@unica/core";
 import { placeholders, type Db } from "./sqlite";
+import { pruneOpTargets } from "./repos";
 
 export interface IncomingAttachment {
   filename: string;
@@ -441,6 +442,7 @@ export function deleteMessages(db: Db, messageIds: readonly number[]): Set<numbe
         touched.add(r.thread_id);
       }
       db.run(`DELETE FROM messages WHERE id IN (${placeholders(chunk.length)})`, ...chunk);
+      pruneOpTargets(db, chunk);
     }
     recomputeThreads(db, touched);
   });

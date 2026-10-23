@@ -252,18 +252,19 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
   async function fullSync(sink: SyncSink) {
     const profile = await api<{ historyId: string }>("/profile");
     const after = Math.floor(sink.windowStart / 1000);
-    const listed = new Set<string>();
+    const freshlyIngested = new Set<string>();
     let pageToken: string | undefined;
     do {
       const q = new URLSearchParams({ q: `after:${after}`, maxResults: "500", includeSpamTrash: "true" });
       if (pageToken) q.set("pageToken", pageToken);
       const page = await api<{ messages?: { id: string }[]; nextPageToken?: string }>(`/messages?${q}`);
       const pageIds = (page.messages ?? []).map((m) => m.id);
-      for (const id of pageIds) listed.add(id);
       const ids = pageIds.filter((id) => !db.get("SELECT 1 FROM messages WHERE account_id = ? AND provider_msg_id = ?", accountId, id));
       for (let i = 0; i < ids.length; i += 50) {
         if (sink.signal.aborted) return;
-        await sink.ingest(await fetchFull(ids.slice(i, i + 50)));
+        const batch = ids.slice(i, i + 50);
+        await sink.ingest(await fetchFull(batch));
+        for (const id of batch) freshlyIngested.add(id);
       }
       pageToken = page.nextPageToken;
     } while (pageToken);
@@ -273,20 +274,25 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
       "SELECT id, provider_msg_id, date FROM messages WHERE account_id = ? AND provider_msg_id NOT LIKE 'local:%'",
       accountId,
     );
-    const known = cached.filter((m) => listed.has(m.provider_msg_id));
+    // Every cached message is checked (also ones older than the window): explicit 404s are
+    // deletions; any other failure aborts before the cursor advances, so nothing is skipped.
     const updates: FlagUpdate[] = [];
-    const queue = [...known];
+    const gone: number[] = [];
+    const queue = cached.filter((m) => !freshlyIngested.has(m.provider_msg_id));
     await Promise.all(
       Array.from({ length: 6 }, async () => {
         for (let m = queue.shift(); m; m = queue.shift()) {
-          const full = await api<GmailMessage>(`/messages/${m.provider_msg_id}?format=minimal`).catch(() => null);
-          if (full) updates.push({ messageId: m.id, flags: labelState(full.labelIds ?? []) });
+          try {
+            const full = await api<GmailMessage>(`/messages/${m.provider_msg_id}?format=minimal`);
+            updates.push({ messageId: m.id, flags: labelState(full.labelIds ?? []) });
+          } catch (e) {
+            if ((e as { status?: number }).status === 404) gone.push(m.id);
+            else throw e;
+          }
         }
       }),
     );
     if (updates.length) await sink.updateFlags(updates);
-    // within the window, anything Gmail no longer lists was deleted
-    const gone = cached.filter((m) => !listed.has(m.provider_msg_id) && m.date >= sink.windowStart).map((m) => m.id);
     if (gone.length) await sink.removeMessages(gone);
     ctx.saveCursor({ historyId: profile.historyId } satisfies Cursor);
   }

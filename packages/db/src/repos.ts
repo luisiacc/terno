@@ -333,7 +333,14 @@ export interface OpRow {
 }
 
 const OPPOSITE: Record<string, string> = { markRead: "markUnread", markUnread: "markRead", star: "unstar", unstar: "star" };
-/** Ops in the same group write the same piece of provider state; the newest intent wins. */
+/**
+ * Ops in the same group touch the same provider state. "read" and "star" set an
+ * absolute value, so the newest intent supersedes older ones. "location" ops have
+ * provider-specific side effects that don't fully overwrite each other (Gmail
+ * archive doesn't clear SPAM), so they are never superseded: instead they run
+ * strictly in order per message (see claimReadyOps).
+ */
+const SUPERSEDABLE = new Set(["read", "star"]);
 const GROUP: Record<string, string> = {
   markRead: "read",
   markUnread: "read",
@@ -371,7 +378,7 @@ export function enqueueOp(
       );
       if (cancelled.changes > 0) return null;
     }
-    if (group && op.target.messageIds?.length) {
+    if (group && SUPERSEDABLE.has(group) && op.target.messageIds?.length) {
       const mine = new Set(op.target.messageIds);
       const overlapping = db.all<{ id: string; target_json: string }>(
         `SELECT DISTINCT o.id, o.target_json FROM op_targets t JOIN ops o ON o.id = t.op_id
@@ -410,11 +417,22 @@ export function enqueueOp(
   });
 }
 
-/** Claims ready ops (in seq order per account) and marks them running. */
+/**
+ * Claims ready ops (in seq order) and marks them running. A location op waits
+ * while an older unsettled location op targets any of the same messages, so
+ * archive/trash/spam effects always reach the provider in the order the user
+ * made them, even across retries.
+ */
 export function claimReadyOps(db: Db, now = Date.now(), limit = 20, accountId?: number): OpRow[] {
   return db.tx(() => {
     const rows = db.all<OpRow>(
       `SELECT * FROM ops WHERE state = 'queued' AND next_attempt_at <= ?${accountId ? " AND account_id = ?" : ""}
+         AND NOT EXISTS (
+           SELECT 1 FROM op_targets mine
+           JOIN op_targets other ON other.message_id = mine.message_id AND other.grp = mine.grp
+           JOIN ops o2 ON o2.id = other.op_id
+           WHERE mine.op_id = ops.id AND mine.grp = 'location'
+             AND o2.seq < ops.seq AND o2.state IN ('queued', 'running'))
        ORDER BY seq LIMIT ?`,
       now,
       ...(accountId ? [accountId] : []),
@@ -434,6 +452,61 @@ export function completeOp(db: Db, id: string, now = Date.now()): void {
   db.run("DELETE FROM op_targets WHERE op_id = ?", id); // settled: no longer protects anything
 }
 
+/**
+ * An op going back to the queue (retry, crash recovery) gives up the messages a
+ * NEWER read/star op already covers; otherwise its retry would undo newer intent.
+ * Returns false if nothing is left and the op was removed.
+ */
+function yieldToNewerOps(db: Db, id: string): boolean {
+  const op = db.get<{ seq: number; account_id: number; kind: string; target_json: string }>("SELECT seq, account_id, kind, target_json FROM ops WHERE id = ?", id);
+  const group = op ? GROUP[op.kind] : undefined;
+  if (!op || !group || !SUPERSEDABLE.has(group)) return true;
+  const covered = new Set(
+    db
+      .all<{ message_id: number }>(
+        `SELECT DISTINCT t2.message_id FROM op_targets t1
+         JOIN op_targets t2 ON t2.message_id = t1.message_id AND t2.grp = t1.grp
+         JOIN ops o2 ON o2.id = t2.op_id
+         WHERE t1.op_id = ? AND o2.seq > ? AND o2.account_id = ? AND o2.state != 'failed'`,
+        id,
+        op.seq,
+        op.account_id,
+      )
+      .map((r) => r.message_id),
+  );
+  if (covered.size === 0) return true;
+  const target = JSON.parse(op.target_json) as { messageIds?: number[] };
+  const remaining = (target.messageIds ?? []).filter((m) => !covered.has(m));
+  if (remaining.length === 0) {
+    db.run("DELETE FROM ops WHERE id = ?", id);
+    return false;
+  }
+  db.run("UPDATE ops SET target_json = ? WHERE id = ?", JSON.stringify({ ...target, messageIds: remaining }), id);
+  db.run(`DELETE FROM op_targets WHERE op_id = ? AND message_id IN (SELECT value FROM json_each(?))`, id, JSON.stringify([...covered]));
+  return true;
+}
+
+/**
+ * Removes deleted messages from every unsettled op. Message rowids can be reused
+ * by SQLite, so a stale target must never resolve to an unrelated new message.
+ */
+export function pruneOpTargets(db: Db, messageIds: readonly number[]): void {
+  if (messageIds.length === 0) return;
+  const json = JSON.stringify(messageIds);
+  for (const op of db.all<{ id: string; kind: string; target_json: string }>(
+    `SELECT DISTINCT o.id, o.kind, o.target_json FROM op_targets t JOIN ops o ON o.id = t.op_id
+     WHERE t.message_id IN (SELECT value FROM json_each(?)) AND o.state IN ('queued', 'running', 'unknown')`,
+    json,
+  )) {
+    const gone = new Set(messageIds);
+    const target = JSON.parse(op.target_json) as { messageIds?: number[] };
+    const remaining = (target.messageIds ?? []).filter((m) => !gone.has(m));
+    if (remaining.length === 0 && op.kind !== "send") db.run("DELETE FROM ops WHERE id = ?", op.id);
+    else db.run("UPDATE ops SET target_json = ? WHERE id = ?", JSON.stringify({ ...target, messageIds: remaining }), op.id);
+  }
+  db.run("DELETE FROM op_targets WHERE message_id IN (SELECT value FROM json_each(?))", json);
+}
+
 /** Retryable failure: exponential backoff (1s, 2s, 4s … capped at 5 min), then `failed`. */
 export function failOp(db: Db, id: string, error: string, retryable: boolean, now = Date.now()): OpState {
   const op = db.get<{ attempts: number }>("SELECT attempts FROM ops WHERE id = ?", id);
@@ -449,6 +522,7 @@ export function failOp(db: Db, id: string, error: string, retryable: boolean, no
     id,
   );
   if (state === "failed") db.run("DELETE FROM op_targets WHERE op_id = ?", id);
+  else if (!yieldToNewerOps(db, id)) return "succeeded"; // fully superseded: nothing left to do
   return state;
 }
 
@@ -468,7 +542,9 @@ export function recoverOps(db: Db, now = Date.now()): { requeued: number; unknow
       "UPDATE ops SET state = 'unknown', last_error = 'Interrupted while sending', updated_at = ? WHERE state = 'running' AND kind = 'send'",
       now,
     ).changes;
+    const running = db.all<{ id: string }>("SELECT id FROM ops WHERE state = 'running'");
     const requeued = db.run("UPDATE ops SET state = 'queued', updated_at = ? WHERE state = 'running'", now).changes;
+    for (const r of running) yieldToNewerOps(db, r.id);
     return { requeued, unknown };
   });
 }

@@ -280,6 +280,18 @@ describe("filters on incoming mail", () => {
     expect(backend.db.get("SELECT count(*) c FROM filter_applications")).toEqual({ c: 0 }); // claim rolled back with the failed action
   });
 
+  it("editing a filter while it's being bulk-applied leaves no stale claims", async () => {
+    const { backend, client, accountId } = setup();
+    await backend.ingestSliced(Array.from({ length: 1500 }, () => incoming(accountId)));
+    const rule = { match: "all" as const, conditions: [{ field: "fromDomain" as const, op: "equals" as const, value: "morningbrew.com" }], actions: [{ type: "markRead" as const }] };
+    const f = await client.call("filters.save", { name: "r", enabled: true, source: "manual", rule });
+    const applying = client.call("filters.apply", { id: f.id }).catch((e) => e);
+    await new Promise((r) => setTimeout(r, 5));
+    await client.call("filters.save", { id: f.id, name: "r", enabled: true, source: "manual", rule: { ...rule, actions: [{ type: "star" as const }] } });
+    await applying;
+    expect(backend.db.get("SELECT count(*) c FROM filter_applications")).toEqual({ c: 0 });
+  });
+
   it("previews and bulk-applies a filter to existing mail", async () => {
     const { backend, client, accountId } = setup();
     await backend.ingestSliced(Array.from({ length: 30 }, () => incoming(accountId)));
