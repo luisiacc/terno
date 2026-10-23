@@ -52,8 +52,10 @@ export interface BackendOptions {
   sliceBudgetMs?: number;
   /** DNS for the network policy (tests resolve names without real DNS) */
   lookup?: LookupAll;
-  /** ids and event-loop yields (defaults to Node's) */
+  /** ids, event-loop yields and files (defaults to Node's) */
   platform?: Platform;
+  /** searches answer from the in-memory instant index when it is current (FTS5 otherwise); with dbPath */
+  instantSearch?: boolean;
 }
 
 const COUNTS_EVERY_MS = 200;
@@ -111,7 +113,12 @@ export class Backend {
     if (options.store) this.store = options.store;
     else if (options.dbPath) {
       const db = openDatabase(options.dbPath, { uuid: () => this.platform.uuid() });
-      this.store = new SqlMailStore(db, { checkpointWorker: true, log: (level, message, extra) => this.log(level, message, extra) });
+      this.store = new SqlMailStore(db, {
+        checkpointWorker: true,
+        instantSearch: this.options.instantSearch ?? false,
+        platform: this.platform,
+        log: (level, message, extra) => this.log(level, message, extra),
+      });
     } else throw new Error("Backend needs a store or a dbPath");
     this.net = createNetworkPolicy({ localMode: () => readLocalMode(this.store), lookup: options.lookup });
     this.aiService = new AiService(this, options.aiFactory ?? defaultAiFactory);

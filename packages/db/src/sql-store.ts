@@ -1,4 +1,4 @@
-import { senderVetoed, type Address, type FilterAction, type ThreadAction } from "@unica/core";
+import { senderVetoed, type Address, type FilterAction, type ThreadAction, type ThreadSummary } from "@unica/core";
 import { RpcError } from "@unica/core/rpc";
 import type { MockDataset } from "@unica/mock-data";
 import {
@@ -8,6 +8,7 @@ import {
   type IncomingMessage,
   type MailStore,
   type ModelDelta,
+  type Platform,
   type ProviderStore,
   type Revision,
   type SearchCursor,
@@ -17,6 +18,7 @@ import {
   type StoreSnapshot,
   type StoreSearchPage,
 } from "@unica/store";
+import { InstantSearch, type InstantSearchOptions } from "@unica/store/instant";
 import { applyMessageAction, applyThreadAction, type ActionResult } from "./actions";
 import {
   addToCategory,
@@ -54,7 +56,7 @@ import { autoReasons, categoryStats, countScope, pendingSuggestions, predictThre
 import { startCheckpointWorker, type CheckpointWorker } from "./checkpoint";
 import { adoptProviderThread, deleteMessages, ingestMessages, recomputeThreads, setMessageBody } from "./ingest";
 import { changeOwner, claimOwner, getOwner } from "./owner";
-import { getCounts, getSummaries, getThread, listThreads } from "./queries";
+import { getCounts, getSummaries, getThread, listThreads, SUMMARY_COLUMNS, toSummary, type SummaryRow } from "./queries";
 import {
   accountStamp,
   addThreadsToCategory,
@@ -99,8 +101,9 @@ import {
   updateCategory,
 } from "./repos";
 import { beginSearchBuild, searchChanges, searchHead } from "./outbox";
+import { SCHEMA_VERSION } from "./migrations";
 import { findRuleMatches } from "./rules";
-import { resolveQuery } from "./search";
+import { ftsTermMessages, resolveQuery } from "./search";
 import { Fts5SearchEngine } from "./search-engine";
 import { messageDocs, threadDocs } from "./search-docs";
 import { seedDataset } from "./seed";
@@ -126,6 +129,14 @@ export interface SqlMailStoreOptions {
   /** run WAL checkpoints on the driver's worker (desktop) */
   checkpointWorker?: boolean;
   log?: (level: "info" | "warn" | "error", message: string, extra?: unknown) => void;
+  /**
+   * Answer searches from the in-memory instant index whenever it is exactly
+   * at the store's revision (FTS5 otherwise). Its snapshot lives beside the
+   * database when the platform has files.
+   */
+  instantSearch?: boolean | Omit<InstantSearchOptions, "feed" | "platform" | "snapshotPath" | "identity" | "phrases" | "log">;
+  /** yields for background slices and files for the search snapshot */
+  platform?: Pick<Platform, "yield" | "files">;
 }
 
 /**
@@ -142,6 +153,9 @@ export class SqlMailStore implements MailStore {
   private readonly providerStores = new Map<number, ProviderStore>();
   private readonly log: NonNullable<SqlMailStoreOptions["log"]>;
 
+  /** the in-memory index searches use when it is current (instantSearch option) */
+  readonly instant: InstantSearch | null;
+
   constructor(
     readonly db: Db,
     options: SqlMailStoreOptions = {},
@@ -149,9 +163,24 @@ export class SqlMailStore implements MailStore {
     this.fts = new Fts5SearchEngine(db);
     this.log = options.log ?? (() => {});
     this.checkpointer = options.checkpointWorker ? startCheckpointWorker(db) : null;
+    if (options.instantSearch) {
+      const platform = options.platform ?? { yield: () => new Promise<void>((r) => setTimeout(r, 0)) };
+      this.instant = new InstantSearch({
+        ...(options.instantSearch === true ? {} : options.instantSearch),
+        feed: this.feed,
+        platform,
+        snapshotPath: db.path === ":memory:" ? null : `${db.path}.search`,
+        identity: `sqlite-schema-${SCHEMA_VERSION}`,
+        // inside the store's unit of work, like the engine's own answer
+        phrases: (term) => ftsTermMessages(db, term),
+        log: this.log,
+      });
+      db.onCommit(() => this.instant?.notify());
+      this.instant.start();
+    } else this.instant = null;
     this.capabilities = {
       engine: `sqlite-${db.driver.id}`,
-      search: this.fts.id,
+      search: this.instant ? `instant+${this.fts.id}` : this.fts.id,
       bulkRuleScan: "indexed",
       imapLocations: true,
       externalReaders: db.driver.features.externalReaders,
@@ -164,6 +193,8 @@ export class SqlMailStore implements MailStore {
   }
 
   async close(): Promise<void> {
+    // writes the snapshot of what changed since the last one
+    await this.instant?.close();
     await this.checkpointer?.stop();
     this.db.close();
   }
@@ -179,9 +210,20 @@ export class SqlMailStore implements MailStore {
     beginBuild: async () => beginSearchBuild(this.db),
   };
 
+  /**
+   * One synchronous unit: the revision, the engine's answer and the
+   * hydration see the same committed state. RAM answers only when it is
+   * exactly at that revision; FTS5 answers otherwise (building, catching up,
+   * disabled), with the same results.
+   */
   private searchPage(req: SearchRequest): StoreSearchPage {
     const revision = this.revision();
-    const page = this.fts.page(req, revision);
+    const ram = this.instant?.at(revision);
+    let page: { items: ThreadSummary[]; nextCursor: SearchCursor | null; strategy: string };
+    if (ram) {
+      const ids = ram.search(req, revision);
+      page = { items: summariesInOrder(this.db, ids.threadIds), nextCursor: ids.nextCursor, strategy: ids.strategy };
+    } else page = this.fts.page(req, revision);
     const pendingBodies = this.db.get<{ c: number }>(
       "SELECT count(*) AS c FROM (SELECT 1 FROM messages WHERE body_state != 'full' LIMIT ?)",
       PENDING_BODIES_CAP,
@@ -653,6 +695,14 @@ export class SqlMailStore implements MailStore {
   readonly dev: MailStore["dev"] = {
     seed: async (data, options) => seedDataset(this.db, data as MockDataset, options),
   };
+}
+
+/** Summaries of threads already in (last_date DESC, id DESC) order, in one prepared statement whatever their number. */
+function summariesInOrder(db: Db, ids: readonly number[]): ThreadSummary[] {
+  if (ids.length === 0) return [];
+  return db
+    .all<SummaryRow>(`SELECT ${SUMMARY_COLUMNS} FROM threads t WHERE t.id IN (SELECT value FROM json_each(?)) ORDER BY t.last_date DESC, t.id DESC`, JSON.stringify(ids))
+    .map(toSummary);
 }
 
 /** Keyset-only cursors (older renderers) continue at the current revision; full cursors are checked by the engine. */

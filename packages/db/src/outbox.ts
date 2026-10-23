@@ -103,8 +103,8 @@ export function searchChanges(db: Db, after: Revision, through: Revision, maxCom
     });
 }
 
-/** Holds the log from the current head while a rebuild scans in bounded chunks. */
-export function beginSearchBuild(db: Db, chunk = 2000): SearchBuild {
+/** Holds the log from the current head while a rebuild scans in bounded chunks (a page of 500 reads in ~2 ms). */
+export function beginSearchBuild(db: Db, chunk = 500): SearchBuild {
   const { from, lease } = db.tx(() => {
     const from = searchHead(db);
     return { from, lease: db.run("INSERT INTO search_leases (from_seq, created_at) VALUES (?, ?)", from.seq, Date.now()).lastInsertRowid };

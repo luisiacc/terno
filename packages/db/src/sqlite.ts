@@ -27,6 +27,7 @@ export class Db {
   private readonly cacheSize: number;
   private txDepth = 0;
   private readonly beforeCommit: (() => void)[] = [];
+  private readonly afterCommit: (() => void)[] = [];
 
   constructor(driver: SqliteDriver, path: string, options: OpenOptions = {}) {
     this.path = path;
@@ -82,24 +83,31 @@ export class Db {
     this.beforeCommit.push(fn);
   }
 
+  /** Runs after every top-level COMMIT (never after a rollback); must not throw or write. */
+  onCommit(fn: () => void): void {
+    this.afterCommit.push(fn);
+  }
+
   /** Runs fn in a transaction (IMMEDIATE at top level, savepoint when nested). */
   tx<T>(fn: () => T): T {
     const depth = this.txDepth;
     const savepoint = `sp${depth}`;
     this.conn.exec(depth === 0 ? "BEGIN IMMEDIATE" : `SAVEPOINT ${savepoint}`);
     this.txDepth++;
+    let result: T;
     try {
-      const result = fn();
+      result = fn();
       if (result instanceof Promise) throw new Error("Db.tx callbacks must be synchronous");
       if (depth === 0) for (const hook of this.beforeCommit) hook();
       this.conn.exec(depth === 0 ? "COMMIT" : `RELEASE ${savepoint}`);
-      return result;
     } catch (error) {
       this.conn.exec(depth === 0 ? "ROLLBACK" : `ROLLBACK TO ${savepoint}; RELEASE ${savepoint}`);
       throw error;
     } finally {
       this.txDepth--;
     }
+    if (depth === 0) for (const hook of this.afterCommit) hook();
+    return result;
   }
 
   get inTransaction(): boolean {

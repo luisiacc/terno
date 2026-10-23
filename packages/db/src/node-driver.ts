@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { setImmediate as yieldToLoop } from "node:timers/promises";
 import { Worker } from "node:worker_threads";
+import type { Platform, PlatformFiles } from "@unica/store";
 import type { CheckpointWorker, Row, SqlValue, SqliteConnection, SqliteDriver, SqliteStatement } from "./connection";
 
 class NodeStatement implements SqliteStatement {
@@ -124,8 +126,40 @@ export const nodeSqliteDriver: SqliteDriver = {
   startCheckpointWorker: startNodeCheckpointWorker,
 };
 
-/** What the backend can't get portably on Node: node:crypto ids and the macrotask yield. */
-export const nodePlatform = {
+/**
+ * Whole-file replace through a temp file and rename (atomic within the
+ * directory). Not fsynced: these files are caches whose readers verify a
+ * checksum, so a crash that loses the bytes behind a rename costs a rebuild,
+ * never a wrong answer, and quitting doesn't wait for the disk.
+ */
+const nodeFiles: PlatformFiles = {
+  async read(path) {
+    try {
+      const b = await readFile(path);
+      return new Uint8Array(b.buffer, b.byteOffset, b.byteLength);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
+  },
+  async replace(path, bytes) {
+    const tmp = `${path}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`;
+    try {
+      await writeFile(tmp, bytes);
+      await rename(tmp, path);
+    } catch (error) {
+      await rm(tmp, { force: true });
+      throw error;
+    }
+  },
+  async remove(path) {
+    await rm(path, { force: true });
+  },
+};
+
+/** What the backend can't get portably on Node: node:crypto ids, the macrotask yield and files. */
+export const nodePlatform: Platform = {
   uuid: randomUUID,
   yield: () => yieldToLoop(),
+  files: nodeFiles,
 };
