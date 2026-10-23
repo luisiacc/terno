@@ -10,7 +10,8 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@unica/core": "workspace:*"
+    "@unica/core": "workspace:*",
+    "@unica/store": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

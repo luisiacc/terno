@@ -1,4 +1,4 @@
-import { isFullEmail, normalizeText, parseSearch, tokenize, type MessageTerm, type SearchQuery, type View } from "@unica/core";
+import { isFullEmail, normalizeText, parseSearch, resolveSearch, tokenize, type MessageTerm, type ResolvedSearch, type ScopeLookup, type View } from "@unica/core";
 import { pageFrom, SUMMARY_COLUMNS, VIEW_WHERE, type Cursor, type Page, type SummaryRow } from "./queries";
 import { placeholders, type Db, type Param } from "./sqlite";
 
@@ -55,19 +55,15 @@ interface Compiled {
   impossible: boolean;
 }
 
-interface ScopeLookup {
-  accounts: { id: number; email: string; display_name: string }[];
-  categories: { id: number; name: string }[];
-}
-
-function loadScope(db: Db): ScopeLookup {
+export function loadScope(db: Db): ScopeLookup {
   return {
     accounts: db.all("SELECT id, email, display_name FROM accounts"),
     categories: db.all("SELECT id, name FROM categories"),
   };
 }
 
-export function compileSearch(q: SearchQuery, params: SearchParams, scope: ScopeLookup): Compiled {
+export function compileSearch(r: ResolvedSearch): Compiled {
+  const q = r.query;
   const c: Compiled = {
     match: null,
     excludeMatch: null,
@@ -76,8 +72,8 @@ export function compileSearch(q: SearchQuery, params: SearchParams, scope: Scope
     senderEquals: null,
     threadWhere: [],
     threadParams: [],
-    view: q.view ?? "all",
-    impossible: false,
+    view: r.view,
+    impossible: r.impossible,
   };
 
   const positive: string[] = [];
@@ -118,52 +114,21 @@ export function compileSearch(q: SearchQuery, params: SearchParams, scope: Scope
     c.messageParams.push(q.after);
   }
 
-  // Thread-level scope
-  const accountIds = new Set<number>();
-  if (params.accountId !== undefined) accountIds.add(params.accountId);
-  for (const token of q.accounts) {
-    const matches = scope.accounts.filter(
-      (a) => normalizeText(a.email).includes(token) || normalizeText(a.display_name).includes(token),
-    );
-    if (matches.length === 0) c.impossible = true;
-    // account:x narrows to the accounts matching x
-    if (params.accountId !== undefined) {
-      if (!matches.some((m) => m.id === params.accountId)) c.impossible = true;
-    } else {
-      for (const m of matches) accountIds.add(m.id);
-    }
+  // thread-level scope (account:/category: already resolved to ids)
+  if (r.accountIds) {
+    c.threadWhere.push(`t.account_id IN (${placeholders(r.accountIds.length)})`);
+    c.threadParams.push(...r.accountIds);
   }
-  if (accountIds.size > 0) {
-    c.threadWhere.push(`t.account_id IN (${placeholders(accountIds.size)})`);
-    c.threadParams.push(...accountIds);
+  if (r.excludeAccountIds.length > 0) {
+    c.threadWhere.push(`t.account_id NOT IN (${placeholders(r.excludeAccountIds.length)})`);
+    c.threadParams.push(...r.excludeAccountIds);
   }
-  const categoryIds: number[] = [];
-  if (params.categoryId !== undefined) categoryIds.push(params.categoryId);
-  for (const token of q.categories) {
-    const match = scope.categories.find((cat) => normalizeText(cat.name) === token) ??
-      scope.categories.find((cat) => normalizeText(cat.name).startsWith(token));
-    if (!match) c.impossible = true;
-    else categoryIds.push(match.id);
-  }
-  const excludedAccounts = new Set<number>();
-  for (const token of q.excludeAccounts) {
-    for (const a of scope.accounts) {
-      if (normalizeText(a.email).includes(token) || normalizeText(a.display_name).includes(token)) excludedAccounts.add(a.id);
-    }
-  }
-  if (excludedAccounts.size > 0) {
-    c.threadWhere.push(`t.account_id NOT IN (${placeholders(excludedAccounts.size)})`);
-    c.threadParams.push(...excludedAccounts);
-  }
-  for (const token of q.excludeCategories) {
-    const match = scope.categories.find((cat) => normalizeText(cat.name) === token) ??
-      scope.categories.find((cat) => normalizeText(cat.name).startsWith(token));
-    if (!match) continue; // excluding a category that doesn't exist excludes nothing
+  for (const id of r.excludeCategoryIds) {
     c.threadWhere.push("NOT EXISTS (SELECT 1 FROM thread_categories tc WHERE tc.thread_id = t.id AND tc.category_id = ?)");
-    c.threadParams.push(match.id);
+    c.threadParams.push(id);
   }
   // every requested category must contain the thread
-  for (const id of new Set(categoryIds)) {
+  for (const id of r.categoryIds) {
     c.threadWhere.push("EXISTS (SELECT 1 FROM thread_categories tc WHERE tc.thread_id = t.id AND tc.category_id = ?)");
     c.threadParams.push(id);
   }
@@ -178,6 +143,11 @@ export function compileSearch(q: SearchQuery, params: SearchParams, scope: Scope
     c.excludeMatch = null;
   }
   return c;
+}
+
+/** Parses and scopes a query the way every engine sees it. */
+export function resolveQuery(db: Db, params: { query: string; accountId?: number; categoryId?: number; now?: number }): ResolvedSearch {
+  return resolveSearch(parseSearch(params.query, params.now), params.query, params, loadScope(db));
 }
 
 function threadClause(c: Compiled, cursor: Cursor | undefined): { where: string; params: Param[] } {
@@ -200,7 +170,7 @@ function threadClause(c: Compiled, cursor: Cursor | undefined): { where: string;
  * and hits are never LIMITed before thread filtering.
  */
 export function searchThreads(db: Db, params: SearchParams): SearchResult {
-  const { rows, strategy } = runSearch<SummaryRow>(db, params, SUMMARY_COLUMNS, params.limit + 1);
+  const { rows, strategy } = runSearch<SummaryRow>(db, resolveQuery(db, params), params.cursor, SUMMARY_COLUMNS, params.limit + 1);
   return { ...pageFrom(rows, params.limit), strategy };
 }
 
@@ -213,27 +183,29 @@ export function searchThreadIds(
   db: Db,
   params: { query: string; now?: number; limit?: number; where?: string[]; whereParams?: Param[] },
 ): { ids: number[]; strategy: SearchStrategy } {
-  const { rows, strategy } = runSearch<{ id: number }>(db, { query: params.query, now: params.now, limit: 0 }, "t.id", params.limit ?? -1, {
+  const { rows, strategy } = runSearch<{ id: number }>(db, resolveQuery(db, params), undefined, "t.id", params.limit ?? -1, {
     where: params.where ?? [],
     params: params.whereParams ?? [],
   });
   return { ids: rows.map((r) => r.id), strategy };
 }
 
-function runSearch<R>(
+/** The planner over a resolved query; `columns` selects from threads t, ordered (last_date DESC, id DESC). */
+export function runSearch<R>(
   db: Db,
-  params: SearchParams,
+  resolved: ResolvedSearch,
+  cursor: Cursor | undefined,
   columns: string,
   /** -1: no limit */
   limit: number,
   extra: { where: string[]; params: Param[] } = { where: [], params: [] },
 ): { rows: R[]; strategy: SearchStrategy } {
-  const q = parseSearch(params.query, params.now);
-  const c = compileSearch(q, params, loadScope(db));
+  const q = resolved.query;
+  const c = compileSearch(resolved);
   if (c.impossible) return { rows: [], strategy: "empty" };
   c.threadWhere.push(...extra.where);
   c.threadParams.push(...extra.params);
-  const { where, params: tParams } = threadClause(c, params.cursor);
+  const { where, params: tParams } = threadClause(c, cursor);
   const mWhere = c.messageWhere.length ? ` AND ${c.messageWhere.join(" AND ")}` : "";
   const SUMMARY_COLUMNS = columns;
 

@@ -7,6 +7,8 @@ export * from "./migrations";
 export * from "./ingest";
 export * from "./queries";
 export * from "./search";
+export * from "./search-engine";
+export * from "./search-docs";
 export * from "./rules";
 export * from "./actions";
 export * from "./repos";
