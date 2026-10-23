@@ -19,6 +19,9 @@ export interface SearchQuery {
   view?: View;
   accounts: string[];
   categories: string[];
+  /** -account:x / -category:x */
+  excludeAccounts: string[];
+  excludeCategories: string[];
   /** ms epoch, exclusive bound */
   before?: number;
   /** ms epoch, inclusive bound */
@@ -132,7 +135,7 @@ export function parseDate(value: string, now: number): number | undefined {
 }
 
 export function parseSearch(input: string, now: number = Date.now()): SearchQuery {
-  const query: SearchQuery = { terms: [], accounts: [], categories: [] };
+  const query: SearchQuery = { terms: [], accounts: [], categories: [], excludeAccounts: [], excludeCategories: [] };
   for (const tok of lex(input)) {
     const value = tok.value.trim();
     if (!value) continue;
@@ -169,16 +172,18 @@ export function parseSearch(input: string, now: number = Date.now()): SearchQuer
         break;
       }
       case "account":
-        query.accounts.push(v);
+        (tok.negate ? query.excludeAccounts : query.accounts).push(v);
         break;
       case "category":
-        query.categories.push(v);
+        (tok.negate ? query.excludeCategories : query.categories).push(v);
         break;
       case "before":
       case "after": {
         const date = parseDate(value, now);
+        // -before:X means "on/after X" and -after:X means "before X"
+        const asBefore = (tok.key === "before") !== tok.negate;
         if (date === undefined) pushTerm("text", `${tok.key}:${value}`);
-        else if (tok.key === "before") query.before = date;
+        else if (asBefore) query.before = date;
         else query.after = date;
         break;
       }
@@ -198,6 +203,8 @@ export function isEmptyQuery(q: SearchQuery): boolean {
     q.view === undefined &&
     q.accounts.length === 0 &&
     q.categories.length === 0 &&
+    q.excludeAccounts.length === 0 &&
+    q.excludeCategories.length === 0 &&
     q.before === undefined &&
     q.after === undefined
   );

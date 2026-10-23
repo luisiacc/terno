@@ -180,6 +180,17 @@ describe("sending", () => {
     expect(backend.db.get("SELECT provider_msg_id FROM messages WHERE is_sent = 1")).toEqual({ provider_msg_id: `srv-${sent.opId}` });
   });
 
+  it("discarding an unknown send leaves no empty thread behind", async () => {
+    const { backend, client, providers, accountId } = setup();
+    backend.provider(accountId);
+    providers.get(accountId)!.failNext = new ProviderError("connection closed after DATA", false, true);
+    const sent = await client.call("compose.send", { accountId, to: [{ name: "", email: "x@y.com" }], subject: "Solo", bodyText: "." });
+    await backend.runWorker();
+    await client.call("ops.resolveUnknown", { opId: sent.opId, resolution: "discard" });
+    expect(backend.db.get("SELECT count(*) c FROM threads")).toEqual({ c: 0 });
+    expect((await client.call("threads.list", { view: "sent" })).items).toEqual([]);
+  });
+
   it("an ambiguous send failure becomes unknown; discarding removes the optimistic copy", async () => {
     const { backend, client, providers, accountId } = setup();
     backend.provider(accountId);
@@ -243,6 +254,32 @@ describe("filters on incoming mail", () => {
     expect(backend.db.get("SELECT count(*) c FROM ops WHERE kind = 'trash'")).toEqual({ c: 1 }); // applied once
   });
 
+  it("re-evaluates body filters when the body arrives through an upsert of the same message", async () => {
+    const { backend, client, accountId } = setup();
+    await client.call("filters.save", {
+      name: "Baja",
+      enabled: true,
+      source: "manual",
+      rule: { match: "all", conditions: [{ field: "body", op: "contains", value: "darse de baja" }], actions: [{ type: "trash" }] },
+    });
+    const first = incoming(accountId, { bodyText: null, bodyState: "none", listId: null });
+    await backend.ingestSliced([first]);
+    await backend.ingestSliced([{ ...first, bodyText: "Para darse de baja", bodyState: "full" }]);
+    expect((await client.call("threads.list", { view: "trash" })).items).toHaveLength(1);
+  });
+
+  it("a filter pointing at a deleted category doesn't block ingestion", async () => {
+    const { backend, client, accountId } = setup();
+    const cat = await client.call("categories.create", { name: "Temp", color: "rose" });
+    await client.call("filters.save", { name: "c", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "subject", op: "contains", value: "brief" }], actions: [{ type: "addCategory", categoryId: cat.id }] } });
+    backend.db.run("PRAGMA foreign_keys = OFF");
+    backend.db.run("DELETE FROM categories WHERE id = ?", cat.id);
+    backend.db.run("PRAGMA foreign_keys = ON");
+    await backend.ingestSliced([incoming(accountId)]);
+    expect((await client.call("threads.list", { view: "inbox" })).items).toHaveLength(1);
+    expect(backend.db.get("SELECT count(*) c FROM filter_applications")).toEqual({ c: 0 }); // claim rolled back with the failed action
+  });
+
   it("previews and bulk-applies a filter to existing mail", async () => {
     const { backend, client, accountId } = setup();
     await backend.ingestSliced(Array.from({ length: 30 }, () => incoming(accountId)));
@@ -268,6 +305,15 @@ describe("learned filters", () => {
     const filter = await client.call("learning.accept", { key: proposal!.key });
     expect(filter).toMatchObject({ source: "learned", enabled: true });
     expect(await client.call("learning.proposals", {})).toEqual([]);
+  });
+
+  it("repeated or no-op actions don't manufacture support", async () => {
+    const { backend, client, accountId } = setup();
+    await backend.ingestSliced([incoming(accountId)]);
+    const [t] = (await client.call("threads.list", { view: "inbox" })).items;
+    await client.call("threads.act", { threadIds: [t!.id, t!.id, t!.id, t!.id, t!.id], action: "archive" });
+    await client.call("threads.act", { threadIds: [t!.id], action: "archive" }); // already archived
+    expect(backend.db.get("SELECT count(*) c FROM user_actions")).toEqual({ c: 1 });
   });
 
   it("ignores actions taken by agents (MCP)", async () => {

@@ -266,6 +266,9 @@ export function saveFilter(
   now = Date.now(),
 ): Filter {
   if (f.id !== undefined) {
+    const previous = db.get<{ rule_json: string }>("SELECT rule_json FROM filters WHERE id = ?", f.id);
+    // A changed rule is a different filter: forget what the old definition was applied to.
+    if (previous && previous.rule_json !== JSON.stringify(f.rule)) db.run("DELETE FROM filter_applications WHERE filter_id = ?", f.id);
     db.run(
       "UPDATE filters SET name = ?, enabled = ?, source = ?, rule_json = ? WHERE id = ?",
       f.name,
@@ -330,12 +333,25 @@ export interface OpRow {
 }
 
 const OPPOSITE: Record<string, string> = { markRead: "markUnread", markUnread: "markRead", star: "unstar", unstar: "star" };
+/** Ops in the same group write the same piece of provider state; the newest intent wins. */
+const GROUP: Record<string, string> = {
+  markRead: "read",
+  markUnread: "read",
+  star: "star",
+  unstar: "star",
+  archive: "location",
+  trash: "location",
+  spam: "location",
+  notSpam: "location",
+  moveToInbox: "location",
+};
 export const MAX_OP_ATTEMPTS = 8;
 
 /**
- * Persists a provider operation. A queued flag op exactly undone by a new one
- * (read then unread on the same messages before sync ran) cancels out: both
- * are dropped and the provider is never touched.
+ * Persists a provider operation. Older *queued* ops of the same group lose the
+ * overlapping messages (superseded), so a retry in backoff can never overwrite a
+ * newer intent. An exactly-opposite op that was never attempted cancels out with
+ * the new one: the provider was never touched and still holds the original state.
  */
 export function enqueueOp(
   db: Db,
@@ -343,29 +359,47 @@ export function enqueueOp(
   now = Date.now(),
 ): string | null {
   const targetJson = JSON.stringify(op.target);
-  const opposite = OPPOSITE[op.kind];
-  if (opposite) {
-    const cancelled = db.run(
-      "DELETE FROM ops WHERE account_id = ? AND kind = ? AND state = 'queued' AND target_json = ?",
+  const group = GROUP[op.kind];
+  return db.tx(() => {
+    const opposite = OPPOSITE[op.kind];
+    if (opposite) {
+      const cancelled = db.run(
+        "DELETE FROM ops WHERE account_id = ? AND kind = ? AND state = 'queued' AND attempts = 0 AND target_json = ?",
+        op.accountId,
+        opposite,
+        targetJson,
+      );
+      if (cancelled.changes > 0) return null;
+    }
+    if (group && op.target.messageIds?.length) {
+      const mine = new Set(op.target.messageIds);
+      const kinds = Object.keys(GROUP).filter((k) => GROUP[k] === group);
+      for (const older of db.all<{ id: string; target_json: string }>(
+        `SELECT id, target_json FROM ops WHERE account_id = ? AND state = 'queued' AND kind IN (${placeholders(kinds.length)})`,
+        op.accountId,
+        ...kinds,
+      )) {
+        const target = JSON.parse(older.target_json) as { messageIds?: number[] };
+        const remaining = (target.messageIds ?? []).filter((m) => !mine.has(m));
+        if (remaining.length === (target.messageIds ?? []).length) continue;
+        if (remaining.length === 0) db.run("DELETE FROM ops WHERE id = ?", older.id);
+        else db.run("UPDATE ops SET target_json = ? WHERE id = ?", JSON.stringify({ ...target, messageIds: remaining }), older.id);
+      }
+    }
+    const id = randomUUID();
+    db.run(
+      `INSERT INTO ops (id, seq, account_id, kind, target_json, payload_json, state, created_at, updated_at, next_attempt_at)
+       VALUES (?, (SELECT coalesce(max(seq), 0) + 1 FROM ops), ?, ?, ?, ?, 'queued', ?, ?, 0)`,
+      id,
       op.accountId,
-      opposite,
+      op.kind,
       targetJson,
+      JSON.stringify(op.payload ?? {}),
+      now,
+      now,
     );
-    if (cancelled.changes > 0) return null;
-  }
-  const id = randomUUID();
-  db.run(
-    `INSERT INTO ops (id, seq, account_id, kind, target_json, payload_json, state, created_at, updated_at, next_attempt_at)
-     VALUES (?, (SELECT coalesce(max(seq), 0) + 1 FROM ops), ?, ?, ?, ?, 'queued', ?, ?, 0)`,
-    id,
-    op.accountId,
-    op.kind,
-    targetJson,
-    JSON.stringify(op.payload ?? {}),
-    now,
-    now,
-  );
-  return id;
+    return id;
+  });
 }
 
 /** Claims ready ops (in seq order per account) and marks them running. */

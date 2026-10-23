@@ -117,6 +117,30 @@ describe("ops state machine", () => {
     expect(enqueueOp(db, { accountId: a!, kind: "markUnread", target: { messageIds: [5, 6] } })).toBeTruthy();
   });
 
+  it("a newer op supersedes the overlapping part of an older op waiting in backoff", () => {
+    const db = testDb();
+    const [a] = withAccounts(db);
+    const older = enqueueOp(db, { accountId: a!, kind: "markRead", target: { messageIds: [5, 6] } }, 0)!;
+    claimReadyOps(db, 0);
+    failOp(db, older, "ETIMEDOUT", true, 0); // queued again, attempts = 1
+    enqueueOp(db, { accountId: a!, kind: "markUnread", target: { messageIds: [6] } }, 1);
+    // the retry must not touch message 6 any more
+    expect(JSON.parse(getOp(db, older)!.target_json)).toEqual({ messageIds: [5] });
+    // fully covered older ops disappear
+    enqueueOp(db, { accountId: a!, kind: "markUnread", target: { messageIds: [5] } }, 2);
+    expect(getOp(db, older)).toBeNull();
+  });
+
+  it("only cancels an opposite op that was never attempted", () => {
+    const db = testDb();
+    const [a] = withAccounts(db);
+    const star = enqueueOp(db, { accountId: a!, kind: "star", target: { messageIds: [1] } }, 0)!;
+    claimReadyOps(db, 0);
+    failOp(db, star, "response lost", true, 0); // the server may already be starred
+    expect(enqueueOp(db, { accountId: a!, kind: "unstar", target: { messageIds: [1] } }, 1)).toBeTruthy();
+    expect(db.all("SELECT kind FROM ops ORDER BY seq")).toEqual([{ kind: "unstar" }]); // star superseded, unstar kept
+  });
+
   it("does not cancel an op that is already running", () => {
     const db = testDb();
     const [a] = withAccounts(db);
@@ -199,6 +223,19 @@ describe("category suggestions", () => {
 });
 
 describe("filter applications", () => {
+  it("editing a filter's rule forgets the old applications", () => {
+    const db = testDb();
+    const [a] = withAccounts(db);
+    const r = ingestMessages(db, [msg({ accountId: a! })]);
+    const rule = { match: "all" as const, conditions: [{ field: "subject" as const, op: "contains" as const, value: "s" }], actions: [{ type: "archive" as const }] };
+    const f = saveFilter(db, { name: "x", enabled: true, source: "manual", rule });
+    claimFilterApplications(db, f.id, r.inserted);
+    saveFilter(db, { id: f.id, name: "renamed", enabled: true, source: "manual", rule }); // same rule: keep
+    expect(claimFilterApplications(db, f.id, r.inserted)).toEqual([]);
+    saveFilter(db, { id: f.id, name: "x", enabled: true, source: "manual", rule: { ...rule, actions: [{ type: "star" }] } });
+    expect(claimFilterApplications(db, f.id, r.inserted)).toEqual(r.inserted);
+  });
+
   it("applies a filter to a message at most once (e.g. re-evaluation when bodies arrive)", () => {
     const db = testDb();
     const [a] = withAccounts(db);

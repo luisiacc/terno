@@ -22,9 +22,15 @@ const DAY_MS = 86_400_000;
 export const BODY_TAIL_TOKENS = 32;
 const WORD = /[\p{L}\p{N}]+/gu;
 
-/** Tokenize like SQLite's unicode61 tokenizer with remove_diacritics. */
+const COMBINING = /[\u0300-\u036f]/g;
+
+/**
+ * Tokenize exactly like SQLite's unicode61 tokenizer with remove_diacritics:
+ * canonical decomposition only (NFD). Compatibility forms such as the "ﬁ"
+ * ligature are NOT expanded, because unicode61 doesn't expand them either.
+ */
 export function tokenize(text: string): string[] {
-  return normalizeText(text).match(WORD) ?? [];
+  return text ? (text.normalize("NFD").replace(COMBINING, "").toLowerCase().match(WORD) ?? []) : [];
 }
 
 function textOp(op: TextOp, haystack: string, needle: string): boolean {

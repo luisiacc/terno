@@ -55,6 +55,8 @@ export interface IngestResult {
   touchedThreads: Set<number>;
   /** thread ids that were merged away (deleted) into another thread */
   mergedThreads: Map<number, number>;
+  /** existing messages whose body became complete in this batch (body filters must re-run) */
+  bodyCompleted: number[];
 }
 
 export function recipientsText(to: Address[], cc: Address[], bcc: Address[]): string {
@@ -126,6 +128,29 @@ function resolveThread(db: Db, msg: IncomingMessage, rfcId: string | null, refs:
   return keep;
 }
 
+/**
+ * Gives a local thread its provider thread id (e.g. the Gmail threadId of a
+ * conversation we started). If another local thread already has that id, the
+ * two are merged so replies don't split the conversation. Returns the surviving id.
+ */
+export function adoptProviderThread(db: Db, threadId: number, accountId: number, providerThreadId: string, result?: IngestResult): number {
+  const current = db.get<{ provider_thread_id: string | null }>("SELECT provider_thread_id FROM threads WHERE id = ?", threadId);
+  if (!current || current.provider_thread_id === providerThreadId) return threadId;
+  if (current.provider_thread_id) return threadId; // never re-home a thread that already has an identity
+  const other = db.get<{ id: number }>("SELECT id FROM threads WHERE account_id = ? AND provider_thread_id = ?", accountId, providerThreadId);
+  const res = result ?? { inserted: [], updated: [], touchedThreads: new Set<number>(), mergedThreads: new Map(), bodyCompleted: [] };
+  if (other) {
+    const [keep, drop] = other.id < threadId ? [other.id, threadId] : [threadId, other.id];
+    db.run("UPDATE threads SET provider_thread_id = NULL WHERE id = ?", drop);
+    mergeThreads(db, keep, drop, res);
+    db.run("UPDATE threads SET provider_thread_id = ? WHERE id = ?", providerThreadId, keep);
+    if (!result) recomputeThreads(db, [keep]);
+    return keep;
+  }
+  db.run("UPDATE threads SET provider_thread_id = ? WHERE id = ?", providerThreadId, threadId);
+  return threadId;
+}
+
 /** Moves every message and category of `from` into `into` and deletes `from`. */
 export function mergeThreads(db: Db, into: number, from: number, result: IngestResult): void {
   db.run("UPDATE messages SET thread_id = ? WHERE thread_id = ?", into, from);
@@ -157,7 +182,7 @@ INSERT INTO messages (
  * end, never per message, so long threads don't make imports quadratic.
  */
 export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now = Date.now()): IngestResult {
-  const result: IngestResult = { inserted: [], updated: [], touchedThreads: new Set(), mergedThreads: new Map() };
+  const result: IngestResult = { inserted: [], updated: [], touchedThreads: new Set(), mergedThreads: new Map(), bodyCompleted: [] };
   db.tx(() => {
     for (const msg of messages) {
       let existing = msg.providerMsgId
@@ -178,9 +203,13 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
         if (existing) db.run("UPDATE messages SET provider_msg_id = ? WHERE id = ?", msg.providerMsgId, existing.id);
       }
       if (existing) {
+        const before = db.get<{ body_state: string }>("SELECT body_state FROM messages WHERE id = ?", existing.id)!;
         updateExisting(db, existing.id, msg);
+        if (before.body_state !== "full" && msg.bodyState === "full") result.bodyCompleted.push(existing.id);
+        let threadId = existing.thread_id;
+        if (msg.providerThreadId) threadId = adoptProviderThread(db, threadId, msg.accountId, msg.providerThreadId, result);
         result.updated.push(existing.id);
-        result.touchedThreads.add(existing.thread_id);
+        result.touchedThreads.add(threadId);
         continue;
       }
       const rfcId = normalizeMessageId(msg.rfcMessageId);

@@ -75,15 +75,16 @@ it("under load: interactive RPCs stay responsive during a 15k-message import + b
     source: "manual",
     rule: { match: "any", conditions: [{ field: "subject", op: "contains", value: "factura" }, { field: "fromDomain", op: "endsWith", value: ".com" }], actions: [{ type: "markRead" }] },
   });
+  const ids = (await client.call("threads.list", { view: "all" })).items.map((t) => t.id);
   let done = false;
+  const list: number[] = [];
+  const search: number[] = [];
+  const open: number[] = [];
+  // sampling starts right after submission: a stall while jobs start up is measured too
   const started = performance.now();
   const background = Promise.all([backend.ingestSliced(extra), client.call("filters.apply", { id: filter.id })]).then(() => {
     done = true;
   });
-  const list: number[] = [];
-  const search: number[] = [];
-  const open: number[] = [];
-  const ids = (await client.call("threads.list", { view: "all" })).items.map((t) => t.id);
   let k = 0;
   while (!done) {
     let t = performance.now();

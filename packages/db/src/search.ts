@@ -145,6 +145,23 @@ export function compileSearch(q: SearchQuery, params: SearchParams, scope: Scope
     if (!match) c.impossible = true;
     else categoryIds.push(match.id);
   }
+  const excludedAccounts = new Set<number>();
+  for (const token of q.excludeAccounts) {
+    for (const a of scope.accounts) {
+      if (normalizeText(a.email).includes(token) || normalizeText(a.display_name).includes(token)) excludedAccounts.add(a.id);
+    }
+  }
+  if (excludedAccounts.size > 0) {
+    c.threadWhere.push(`t.account_id NOT IN (${placeholders(excludedAccounts.size)})`);
+    c.threadParams.push(...excludedAccounts);
+  }
+  for (const token of q.excludeCategories) {
+    const match = scope.categories.find((cat) => normalizeText(cat.name) === token) ??
+      scope.categories.find((cat) => normalizeText(cat.name).startsWith(token));
+    if (!match) continue; // excluding a category that doesn't exist excludes nothing
+    c.threadWhere.push("NOT EXISTS (SELECT 1 FROM thread_categories tc WHERE tc.thread_id = t.id AND tc.category_id = ?)");
+    c.threadParams.push(match.id);
+  }
   // every requested category must contain the thread
   for (const id of new Set(categoryIds)) {
     c.threadWhere.push("EXISTS (SELECT 1 FROM thread_categories tc WHERE tc.thread_id = t.id AND tc.category_id = ?)");
@@ -152,6 +169,14 @@ export function compileSearch(q: SearchQuery, params: SearchParams, scope: Scope
   }
   if (q.unread !== undefined) c.threadWhere.push(q.unread ? "t.unread_count > 0" : "t.unread_count = 0");
   if (q.starred !== undefined) c.threadWhere.push(`t.is_starred = ${q.starred ? 1 : 0}`);
+  // Negative words alongside other message predicates apply to the SAME message
+  // (from:ana -factura = a message from Ana that doesn't mention factura).
+  // Only a purely negative query falls back to excluding whole threads.
+  if (c.excludeMatch && c.messageWhere.length > 0) {
+    c.messageWhere.push("m.id NOT IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)");
+    c.messageParams.push(c.excludeMatch);
+    c.excludeMatch = null;
+  }
   return c;
 }
 

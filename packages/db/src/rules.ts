@@ -101,7 +101,13 @@ export interface RuleMatches {
 }
 
 /** Messages (not in trash) matching a rule; optionally restricted to a set of message ids. */
-export function findRuleMatches(db: Db, rule: FilterRule, now: number, onlyMessageIds?: readonly number[]): RuleMatches {
+export function findRuleMatches(
+  db: Db,
+  rule: FilterRule,
+  now: number,
+  onlyMessageIds?: readonly number[],
+  idRange?: { from: number; to: number },
+): RuleMatches {
   const { where, params } = compileRuleToSql(rule, now);
   let scope = "";
   const scopeParams: Param[] = [];
@@ -109,6 +115,10 @@ export function findRuleMatches(db: Db, rule: FilterRule, now: number, onlyMessa
     if (onlyMessageIds.length === 0) return { messageIds: [], threadIds: [] };
     scope = ` AND m.id IN (SELECT value FROM json_each(?))`;
     scopeParams.push(JSON.stringify(onlyMessageIds));
+  }
+  if (idRange) {
+    scope += " AND m.id BETWEEN ? AND ?";
+    scopeParams.push(idRange.from, idRange.to);
   }
   const rows = db.all<{ id: number; thread_id: number }>(
     `SELECT m.id, m.thread_id FROM messages m WHERE m.is_trash = 0 AND (${where})${scope}`,

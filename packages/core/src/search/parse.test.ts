@@ -29,7 +29,7 @@ describe("parseSearch", () => {
   it("understands Spanish aliases for keys and values", () => {
     const q = parseSearch("de:lucia tiene:adjunto es:noleido en:papelera categoría:viajes cuenta:trabajo", NOW);
     expect(q.terms).toEqual([{ field: "from", value: "lucia", phrase: false, negate: false, prefix: false }]);
-    expect(q).toMatchObject({ hasAttachment: true, unread: true, view: "trash", categories: ["viajes"], accounts: ["trabajo"] });
+    expect(q).toMatchObject({ hasAttachment: true, unread: true, view: "trash", categories: ["viajes"], accounts: ["trabajo"], excludeAccounts: [], excludeCategories: [] });
   });
 
   it("maps is:read and negated flags onto booleans", () => {
@@ -43,6 +43,13 @@ describe("parseSearch", () => {
     const q = parseSearch("foo:bar is:weird before:someday", NOW);
     expect(q.terms.map((t) => t.value)).toEqual(["foo:bar", "is:weird", "before:someday"]);
     expect(q.before).toBeUndefined();
+  });
+
+  it("negation of scope and date operators is honoured, not dropped", () => {
+    const q = parseSearch("-account:trabajo -category:facturas -before:2026-01-01 -after:7d", NOW);
+    expect(q).toMatchObject({ accounts: [], categories: [], excludeAccounts: ["trabajo"], excludeCategories: ["facturas"] });
+    expect(q.after).toBe(new Date(2026, 0, 1).getTime()); // -before:X → on/after X
+    expect(q.before).toBe(NOW - 7 * 86_400_000); // -after:X → before X
   });
 
   it("parses absolute and relative dates", () => {

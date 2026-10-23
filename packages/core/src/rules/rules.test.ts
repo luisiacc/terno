@@ -79,6 +79,12 @@ describe("bodyMatches (word/phrase semantics, mirrors FTS)", () => {
     expect(bodyMatches("equals", "  Hola, LUIS! ", "hola luis")).toBe(true);
     expect(bodyMatches("equals", body, "hola luis")).toBe(false);
   });
+  it("treats compatibility characters like SQLite unicode61 (no NFKD expansion of ligatures)", () => {
+    expect(bodyMatches("contains", "Revisa la ﬁnance del mes", "finance")).toBe(false);
+    expect(bodyMatches("contains", "Revisa la ﬁnance del mes", "ﬁnance")).toBe(true);
+    expect(bodyMatches("contains", "Canción NUEVA", "cancion nueva")).toBe(true);
+  });
+
   it("never matches a needle with no word characters", () => {
     expect(bodyMatches("contains", body, "!!!")).toBe(false);
   });

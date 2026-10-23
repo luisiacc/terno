@@ -188,7 +188,39 @@ describe("derived thread state", () => {
   });
 });
 
+describe("message-level actions (filters)", () => {
+  it("star acts on every matched message, not only the latest of the thread", async () => {
+    const { applyMessageAction } = await import("./actions");
+    const db = testDb();
+    const [a] = withAccounts(db);
+    const r = ingestMessages(db, [
+      msg({ accountId: a!, rfcMessageId: "s1@x", date: 1 }),
+      msg({ accountId: a!, inReplyTo: "s1@x", date: 2 }),
+    ]);
+    applyMessageAction(db, r.inserted, "star");
+    expect(db.get("SELECT sum(is_starred) s FROM messages")).toEqual({ s: 2 });
+  });
+});
+
 describe("full-text index maintenance", () => {
+  it("keeps JS and SQL body semantics aligned for compatibility characters", async () => {
+    const { findRuleMatches } = await import("./rules");
+    const db = testDb();
+    const [a] = withAccounts(db);
+    ingestMessages(db, [msg({ accountId: a!, bodyText: "Revisa la ﬁnance del mes" })]);
+    const rule = (value: string) => ({ match: "all" as const, conditions: [{ field: "body" as const, op: "contains" as const, value }], actions: [{ type: "star" as const }] });
+    expect(findRuleMatches(db, rule("finance"), 0).messageIds).toHaveLength(0);
+    expect(findRuleMatches(db, rule("ﬁnance"), 0).messageIds).toHaveLength(1);
+  });
+
+  it("reports bodies completed through an upsert", () => {
+    const db = testDb();
+    const [a] = withAccounts(db);
+    ingestMessages(db, [msg({ accountId: a!, providerMsgId: "late", bodyText: null, bodyState: "none" })]);
+    const r = ingestMessages(db, [msg({ accountId: a!, providerMsgId: "late", bodyText: "ahora sí", bodyState: "full" })]);
+    expect(r.bodyCompleted).toHaveLength(1);
+  });
+
   it("reindexes when a body arrives or changes and forgets old words", () => {
     const db = testDb();
     const [a] = withAccounts(db);
@@ -205,6 +237,27 @@ describe("full-text index maintenance", () => {
 });
 
 describe("sent message reconciliation", () => {
+  it("a conversation we started adopts the provider thread id and later replies join it", async () => {
+    const { adoptProviderThread } = await import("./ingest");
+    const db = testDb();
+    const [a] = withAccounts(db);
+    ingestMessages(db, [msg({ accountId: a!, providerMsgId: "local:1", providerThreadId: null, isSent: true })]);
+    const local = threadOf(db, "local:1");
+    adoptProviderThread(db, local, a!, "T-NEW");
+    ingestMessages(db, [msg({ accountId: a!, providerMsgId: "g-reply", providerThreadId: "T-NEW" })]);
+    expect(threadOf(db, "g-reply")).toBe(local);
+  });
+
+  it("merges when the server copy arrives with a thread id another local thread already owns", () => {
+    const db = testDb();
+    const [a] = withAccounts(db);
+    ingestMessages(db, [msg({ accountId: a!, providerMsgId: "local:x", rfcMessageId: "<sent@me>", isSent: true })]);
+    ingestMessages(db, [msg({ accountId: a!, providerMsgId: "g-other", providerThreadId: "T1" })]);
+    ingestMessages(db, [msg({ accountId: a!, providerMsgId: "g-sent", rfcMessageId: "sent@me", providerThreadId: "T1", isSent: true })]);
+    expect(threadOf(db, "g-sent")).toBe(threadOf(db, "g-other"));
+    expect(db.get<{ c: number }>("SELECT count(*) c FROM threads")!.c).toBe(1);
+  });
+
   it("adopts the optimistic local copy when the server copy of a sent message syncs", () => {
     const db = testDb();
     const [a] = withAccounts(db);

@@ -27,13 +27,14 @@ interface Msg {
 }
 
 /** Which messages an action changes, and the column updates applied to them. */
-function plan(action: ThreadAction, msgs: Msg[]): { ids: number[]; set: string } {
+function plan(action: ThreadAction, msgs: Msg[], explicit = false): { ids: number[]; set: string } {
   const latestPerThread = new Map<number, Msg>();
   for (const m of msgs) {
     const cur = latestPerThread.get(m.thread_id);
     if (!cur || m.date > cur.date || (m.date === cur.date && m.id > cur.id)) latestPerThread.set(m.thread_id, m);
   }
-  const latest = [...latestPerThread.values()];
+  // Thread actions star / mark-unread the latest message; explicit message actions (filters) act on every message given.
+  const latest = explicit ? msgs : [...latestPerThread.values()];
   const ids = (list: Msg[]) => list.map((m) => m.id);
   switch (action) {
     case "archive":
@@ -83,7 +84,7 @@ export function applyThreadAction(db: Db, threadIds: readonly number[], action: 
         ),
       );
     }
-    return applyToMessages(db, msgs, action);
+    return applyToMessages(db, msgs, action, false);
   });
 }
 
@@ -101,12 +102,12 @@ export function applyMessageAction(db: Db, messageIds: readonly number[], action
         ),
       );
     }
-    return applyToMessages(db, msgs, action);
+    return applyToMessages(db, msgs, action, true);
   });
 }
 
-function applyToMessages(db: Db, msgs: Msg[], action: ThreadAction): ActionResult {
-  const { ids, set } = plan(action, msgs);
+function applyToMessages(db: Db, msgs: Msg[], action: ThreadAction, explicit: boolean): ActionResult {
+  const { ids, set } = plan(action, msgs, explicit);
   const byId = new Map(msgs.map((m) => [m.id, m]));
   const touched = new Set<number>();
   const byAccount = new Map<number, number[]>();

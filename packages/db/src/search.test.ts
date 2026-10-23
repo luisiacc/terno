@@ -122,7 +122,8 @@ function oracle(query: string, scope: { accountId?: number; categoryId?: number 
 
   const messageOk = (m: OracleMessage) =>
     positive.every((t) => termMatches(m, t)) &&
-    (positive.length === 0 || negative.every((t) => !termMatches(m, t))) &&
+    // negatives are message-level whenever any message predicate exists
+    (!hasMessagePredicate || negative.every((t) => !termMatches(m, t))) &&
     emailTerms.every((t) => (normalizeText(t.value) === m.from_email) !== t.negate) &&
     (q.hasAttachment === undefined || (m.has_attachments === 1) === q.hasAttachment) &&
     (q.before === undefined || m.date < q.before) &&
@@ -134,7 +135,7 @@ function oracle(query: string, scope: { accountId?: number; categoryId?: number 
   } else {
     for (const id of threads.keys()) candidate.add(id);
   }
-  if (positive.length === 0 && negative.length > 0) {
+  if (!hasMessagePredicate && negative.length > 0) {
     // negative-only: threads with no message matching any negated term
     for (const m of messages) if (negative.some((t) => termMatches(m, t))) candidate.delete(m.thread_id);
   }
@@ -146,6 +147,12 @@ function oracle(query: string, scope: { accountId?: number; categoryId?: number 
     if (!matches.length) impossible = true;
     for (const a of matches) accountIds.add(a.id);
   }
+  const excludedAccounts = new Set(
+    q.excludeAccounts.flatMap((token) => accounts.filter((a) => normalizeText(a.email).includes(token) || normalizeText(a.display_name).includes(token)).map((a) => a.id)),
+  );
+  const excludedCategories = q.excludeCategories
+    .map((token) => (categories.find((x) => normalizeText(x.name) === token) ?? categories.find((x) => normalizeText(x.name).startsWith(token)))?.id)
+    .filter((x): x is number => x !== undefined);
   const categoryIds = [...(scope.categoryId ? [scope.categoryId] : [])];
   for (const token of q.categories) {
     const c = categories.find((x) => normalizeText(x.name) === token) ?? categories.find((x) => normalizeText(x.name).startsWith(token));
@@ -160,6 +167,8 @@ function oracle(query: string, scope: { accountId?: number; categoryId?: number 
       (t) =>
         VIEW_TEST[view](t) &&
         (accountIds.size === 0 || accountIds.has(t.account_id)) &&
+        !excludedAccounts.has(t.account_id) &&
+        excludedCategories.every((c) => !threadCategories.get(t.id)?.has(c)) &&
         categoryIds.every((c) => threadCategories.get(t.id)?.has(c)) &&
         (q.unread === undefined || t.unread_count > 0 === q.unread) &&
         (q.starred === undefined || (t.is_starred === 1) === q.starred),
@@ -220,6 +229,12 @@ describe("search matches the oracle (all pages)", () => {
     ["after:90d has:attachment", "walk"],
     ["-factura", "fts-exclude"],
     ["-from:crew@morningbrew.com", "walk"],
+    ["from:crew@morningbrew.com -markets", "sender-index"],
+    ["has:attachment -factura", "walk"],
+    ["before:2025-06-01 -factura", "date-index"],
+    ["-account:acme", "walk"],
+    ["factura -category:facturas", "fts"],
+    ["-before:2025-06-01 has:attachment", "walk"],
     ["zzzqqqxx", "fts"],
     ["!!!", "walk"],
   ];

@@ -74,7 +74,7 @@ export interface MailProvider {
   verify(): Promise<void>;
   sync(sink: SyncSink): Promise<void>;
   /** Executes a queued op. For `send`, returns the provider's id of the sent message when known. */
-  execute(op: ProviderOp): Promise<{ providerMsgId?: string } | void>;
+  execute(op: ProviderOp): Promise<{ providerMsgId?: string; providerThreadId?: string; warning?: string } | void>;
   /** Push notifications (IMAP IDLE, Gmail push). Calls onChange when a sync is worthwhile. */
   watch?(onChange: () => void): () => void;
   close(): Promise<void>;

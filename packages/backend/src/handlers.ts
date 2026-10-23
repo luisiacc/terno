@@ -8,6 +8,7 @@ import {
   createAccount,
   createCategory,
   deleteCategory,
+  deleteMessages,
   deleteDraft,
   deleteFilter,
   dismissedKeys,
@@ -95,10 +96,11 @@ export function createHandlers(b: Backend): Handlers {
 
     "threads.act": ({ threadIds, action }, ctx) => {
       const result = db().tx(() => {
-        const r = applyThreadAction(db(), threadIds, action);
+        const r = applyThreadAction(db(), [...new Set(threadIds)], action);
         const signal = Backend.learningSignal(action);
-        // only explicit actions from the user (renderer) feed learned filters
-        if (signal && ctx.origin === "renderer") recordUserActions(db(), threadIds, signal, b.now());
+        // only explicit renderer actions that actually changed something feed learned filters
+        // (re-archiving an archived thread or repeating ids must not manufacture support)
+        if (signal && ctx.origin === "renderer" && r.threadIds.length) recordUserActions(db(), r.threadIds, signal, b.now());
         b.queueActionOps(r, action);
         return r;
       });
@@ -161,7 +163,14 @@ export function createHandlers(b: Backend): Handlers {
     "filters.apply": async ({ id }) => {
       const filter = getFilter(db(), id);
       if (!filter) throw new RpcError("NOT_FOUND", `Filter ${id} not found`);
-      const matches = findRuleMatches(db(), filter.rule, b.now());
+      // match in id windows, yielding between them: no single long synchronous scan
+      const bounds = db().get<{ lo: number | null; hi: number | null }>("SELECT min(id) AS lo, max(id) AS hi FROM messages")!;
+      const matched: number[] = [];
+      for (let from = bounds.lo ?? 1; bounds.hi !== null && from <= bounds.hi; from += 4000) {
+        matched.push(...findRuleMatches(db(), filter.rule, b.now(), undefined, { from, to: from + 3999 }).messageIds);
+        await new Promise((r) => setImmediate(r));
+      }
+      const matches = { messageIds: matched };
       const touched = new Set<number>();
       let applied = 0;
       // time-sliced so a huge bulk apply doesn't freeze list/search
@@ -386,9 +395,9 @@ export function createHandlers(b: Backend): Handlers {
           db().run("UPDATE ops SET state = 'failed', last_error = 'Discarded by user' WHERE id = ?", opId);
           const target = JSON.parse(op.target_json) as { messageIds?: number[] };
           if (op.kind === "send" && target.messageIds?.length) {
-            const thread = db().get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", target.messageIds[0]!);
-            db().run("DELETE FROM messages WHERE id = ? AND provider_msg_id LIKE 'local:%'", target.messageIds[0]!);
-            if (thread) b.notifyChanged([thread.thread_id]);
+            const local = db().get<{ id: number }>("SELECT id FROM messages WHERE id = ? AND provider_msg_id LIKE 'local:%'", target.messageIds[0]!);
+            // deleteMessages recomputes (or deletes) the thread so no empty Sent entry remains
+            if (local) b.notifyChanged(deleteMessages(db(), [local.id]));
           }
         });
       }

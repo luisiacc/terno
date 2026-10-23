@@ -26,6 +26,7 @@ import {
   messagesWithPendingOps,
   openDatabase,
   recomputeThreads,
+  adoptProviderThread,
   putSecret,
   recoverOps,
   setAccountProviderConfig,
@@ -155,6 +156,8 @@ export class Backend {
     if (this.workerTimer) clearTimeout(this.workerTimer);
     for (const off of this.unwatch.values()) off();
     await Promise.allSettled([...this.syncing.values()]);
+    // let an in-flight ops batch finish writing before the database closes
+    for (let i = 0; this.workerRunning && i < 200; i++) await new Promise((r) => setTimeout(r, 10));
     await Promise.allSettled([...this.providers.values()].map((p) => p.close()));
     await this.checkpointer?.stop();
     this.db.close();
@@ -250,8 +253,14 @@ export class Backend {
       if (onlyBodyFilters && !filter.rule.conditions.some((c) => c.field === "body")) continue;
       const matches = findRuleMatches(this.db, filter.rule, this.now(), messageIds);
       if (matches.messageIds.length === 0) continue;
-      const fresh = this.db.tx(() => claimFilterApplications(this.db, filter.id, matches.messageIds, this.now()));
-      for (const id of this.runFilterActions(filter.rule.actions, fresh)) touched.add(id);
+      try {
+        // claims + actions + ops atomically (savepoint when nested in an ingest slice)
+        const changed = this.db.tx(() => this.runFilterActions(filter.rule.actions, claimFilterApplications(this.db, filter.id, matches.messageIds, this.now())));
+        for (const id of changed) touched.add(id);
+      } catch (error) {
+        // e.g. the filter points at a deleted category: skip it, keep ingesting
+        this.log("warn", `filter ${filter.id} (${filter.name}) failed`, error instanceof Error ? error.message : error);
+      }
     }
     return touched;
   }
@@ -287,10 +296,19 @@ export class Backend {
   async ingestSliced(messages: IncomingMessage[], applyFilters = true): Promise<{ inserted: number[] }> {
     const inserted: number[] = [];
     await this.runSliced(messages, 50, (chunk) => {
-      const result = ingestMessages(this.db, chunk, this.now());
-      inserted.push(...result.inserted);
-      const touched = new Set(result.touchedThreads);
-      if (applyFilters) for (const t of this.applyFiltersTo(result.inserted)) touched.add(t);
+      // One transaction per slice: messages, filter claims, filter actions and their ops
+      // commit together, so a crash can't record a filter as applied without its effects.
+      const touched = this.db.tx(() => {
+        const result = ingestMessages(this.db, chunk, this.now());
+        inserted.push(...result.inserted);
+        const t = new Set(result.touchedThreads);
+        if (applyFilters) {
+          for (const x of this.applyFiltersTo(result.inserted)) t.add(x);
+          // bodies that arrived through an upsert may now satisfy body filters
+          for (const x of this.applyFiltersTo(result.bodyCompleted, true)) t.add(x);
+        }
+        return t;
+      });
       this.notifyChanged(touched);
     });
     return { inserted };
@@ -379,11 +397,12 @@ export class Backend {
       },
       windowStart: this.now() - readSettings(this.db).syncWindowDays * 86_400_000,
       updateFlags: async (updates) => {
-        const pending = messagesWithPendingOps(this.db, accountId);
         const touched = new Set<number>();
         const columns: Record<string, string> = { isRead: "is_read", isStarred: "is_starred", inInbox: "in_inbox", isTrash: "is_trash", isSpam: "is_spam", isSent: "is_sent", isDraft: "is_draft" };
         await this.runSliced(updates, 200, (chunk) => {
           this.db.tx(() => {
+            // read inside this slice's transaction: a user action between slices is honoured
+            const pending = messagesWithPendingOps(this.db, accountId);
             const threads = new Set<number>();
             for (const u of chunk) {
               // optimistic local state wins until its op settles
@@ -489,14 +508,22 @@ export class Backend {
     try {
       if (!provider) throw new ProviderError("Account no longer exists", false);
       const result = await provider.execute({ id: op.id, kind: op.kind, target, payload: JSON.parse(op.payload_json) });
-      completeOp(this.db, op.id, this.now());
-      if (op.kind === "send" && result && result.providerMsgId && target.messageIds?.[0]) {
-        this.db.run(
-          "UPDATE messages SET provider_msg_id = ? WHERE id = ? AND provider_msg_id LIKE 'local:%'",
-          result.providerMsgId,
-          target.messageIds[0],
-        );
-      }
+      if (this.stopped && !this.db.raw.isOpen) return;
+      this.db.tx(() => {
+        completeOp(this.db, op.id, this.now());
+        if (result?.warning) this.db.run("UPDATE ops SET last_error = ? WHERE id = ?", result.warning, op.id);
+        const localId = target.messageIds?.[0];
+        if (op.kind === "send" && result && localId) {
+          if (result.providerMsgId) {
+            this.db.run("UPDATE messages SET provider_msg_id = ? WHERE id = ? AND provider_msg_id LIKE 'local:%'", result.providerMsgId, localId);
+          }
+          if (result.providerThreadId) {
+            // a conversation we started gets its Gmail thread id, so replies land in it
+            const row = this.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", localId);
+            if (row) this.notifyChanged([adoptProviderThread(this.db, row.thread_id, op.account_id, result.providerThreadId)]);
+          }
+        }
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (error instanceof ProviderError && error.ambiguous) markOpUnknown(this.db, op.id, message, this.now());
