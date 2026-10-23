@@ -9,9 +9,9 @@ export interface Revision {
 }
 
 /**
- * Keyset position in one query's results, (lastDate DESC, id DESC). A cursor
- * minted at another revision or for another query is not a snapshot: durable
- * engines keep paging at the current revision, like live lists do.
+ * Keyset position in one query's results, (lastDate DESC, id DESC), valid only
+ * at the revision it was minted at: after any commit a thread may have moved
+ * above it, so continuing would skip it. Engines refuse it (StaleCursorError).
  */
 export interface SearchCursor {
   revision: Revision;
@@ -132,9 +132,14 @@ export interface MailStoreSearch {
   search(req: SearchRequest): Promise<StoreSearchPage>;
 }
 
+/**
+ * The cursor can't continue this answer: another query, another database, or
+ * the store moved on since it was minted (results above it may have changed).
+ * Callers restart from the top and reconcile what they show.
+ */
 export class StaleCursorError extends Error {
-  constructor() {
-    super("The search cursor belongs to another query");
+  constructor(readonly reason: "query" | "epoch" | "revision") {
+    super(reason === "query" ? "The search cursor belongs to another query" : reason === "epoch" ? "The search cursor belongs to another database" : "The mailbox changed since this page");
     this.name = "StaleCursorError";
   }
 }

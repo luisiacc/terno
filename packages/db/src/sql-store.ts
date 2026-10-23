@@ -655,7 +655,7 @@ export class SqlMailStore implements MailStore {
   };
 }
 
-/** RPC cursors from before revisions (or from this query) get the query's key; another query's key stays and is refused. */
+/** Keyset-only cursors (older renderers) continue at the current revision; full cursors are checked by the engine. */
 function withKey(cursor: Cursor & Partial<Pick<SearchCursor, "revision" | "queryKey">>, key: string, revision: Revision): SearchCursor {
   return { lastDate: cursor.lastDate, id: cursor.id, queryKey: cursor.queryKey ?? key, revision: cursor.revision ?? revision };
 }

@@ -12,8 +12,7 @@ export interface FusedSearchPage {
 
 /**
  * The FTS5 planner (search.ts) behind the SearchEngine seam. Always exact and
- * current: it reads the same transaction-consistent tables it is asked about,
- * so any revision is served.
+ * current: it reads the same transaction-consistent tables it is asked about.
  */
 export class Fts5SearchEngine implements SearchEngine {
   readonly id = "fts5";
@@ -21,21 +20,26 @@ export class Fts5SearchEngine implements SearchEngine {
   constructor(private readonly db: Db) {}
 
   async query(req: SearchRequest, at: Revision): Promise<SearchIdsPage> {
-    const { rows, strategy } = this.run<{ id: number; last_date: number }>(req, "t.id, t.last_date");
+    const { rows, strategy } = this.run<{ id: number; last_date: number }>(req, at, "t.id, t.last_date");
     const { kept, nextCursor } = paged(rows, req, at, (r) => ({ lastDate: r.last_date, id: r.id }));
     return { threadIds: kept.map((r) => r.id), nextCursor, revision: at, strategy };
   }
 
   /** The same plan with the summary columns in the same statement: the store's search path. */
   page(req: SearchRequest, at: Revision): FusedSearchPage {
-    const { rows, strategy } = this.run<SummaryRow>(req, SUMMARY_COLUMNS);
+    const { rows, strategy } = this.run<SummaryRow>(req, at, SUMMARY_COLUMNS);
     const { kept, nextCursor } = paged(rows, req, at, (r) => ({ lastDate: r.last_date, id: r.id }));
     return { items: kept.map(toSummary), nextCursor, strategy };
   }
 
-  private run<R>(req: SearchRequest, columns: string) {
-    if (req.cursor && req.cursor.queryKey !== req.search.key) throw new StaleCursorError();
-    return runSearch<R>(this.db, req.search, req.cursor, columns, req.limit + 1);
+  private run<R>(req: SearchRequest, at: Revision, columns: string) {
+    const c = req.cursor;
+    if (c) {
+      if (c.queryKey !== req.search.key) throw new StaleCursorError("query");
+      if (c.revision.epoch !== at.epoch) throw new StaleCursorError("epoch");
+      if (c.revision.seq !== at.seq) throw new StaleCursorError("revision");
+    }
+    return runSearch<R>(this.db, req.search, c, columns, req.limit + 1);
   }
 }
 

@@ -63,14 +63,14 @@ async function fetchPage(cursor?: { lastDate: number; id: number }, limit = PAGE
 }
 
 /** (Re)loads the first page for the current view/search. Latest call wins. */
-export async function reloadList(options: { keepSelection?: boolean } = {}): Promise<void> {
+export async function reloadList(options: { keepSelection?: boolean; grow?: boolean } = {}): Promise<void> {
   const key = listKey();
   const mine = ++seq;
   const current = useList.getState();
   const sameView = current.key === key;
   if (!sameView) useList.setState({ key, loading: true, error: null });
   // keep as many rows as are loaded so a background refresh doesn't shrink the list
-  const limit = sameView ? Math.min(Math.max(PAGE, current.items.length), 500) : PAGE;
+  const limit = sameView ? Math.min(Math.max(PAGE, current.items.length + (options.grow ? PAGE : 0)), 500) : PAGE;
   try {
     const page = await fetchPage(undefined, limit);
     if (mine !== seq) return;
@@ -108,8 +108,11 @@ export async function loadMore(): Promise<void> {
     const seen = new Set(useList.getState().items.map((t) => t.id));
     const items = [...useList.getState().items, ...page.items.filter((t) => !seen.has(t.id))];
     useList.setState({ items, index: indexOf(items), nextCursor: page.nextCursor, loadingMore: false });
-  } catch {
+  } catch (error) {
     useList.setState({ loadingMore: false });
+    // the mailbox changed since that page (a thread may have moved above it): refetch the loaded window and
+    // the next page from the top instead of continuing a stale cursor
+    if (error instanceof RpcError && error.code === "STALE" && useList.getState().key === key) await reloadList({ keepSelection: true, grow: true });
   }
 }
 

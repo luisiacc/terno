@@ -152,5 +152,11 @@ export function defineSearchConformance(name: string, setup: () => Promise<Searc
       expect(next.threadIds).toEqual(oracle("factura").slice(5, 10));
       await expect(h.search("reunión", {}, cursor, 5)).rejects.toBeInstanceOf(StaleCursorError);
     });
+
+    it("a cursor minted by another database (epoch) or at another revision is refused", async () => {
+      const cursor = (await h.search("factura", {}, undefined, 5)).nextCursor!;
+      await expect(h.search("factura", {}, { ...cursor, revision: { epoch: "another-database", seq: cursor.revision.seq } }, 5)).rejects.toBeInstanceOf(StaleCursorError);
+      await expect(h.search("factura", {}, { ...cursor, revision: { ...cursor.revision, seq: cursor.revision.seq + 1 } }, 5)).rejects.toBeInstanceOf(StaleCursorError);
+    });
   });
 }

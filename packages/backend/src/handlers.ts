@@ -88,7 +88,8 @@ export function createHandlers(b: Backend): Handlers {
           complete: page.complete && page.pendingBodies === 0,
         };
       } catch (error) {
-        if (error instanceof StaleCursorError) throw new RpcError("BAD_REQUEST", error.message);
+        // the renderer refetches from the top and reconciles its window (live-list policy)
+        if (error instanceof StaleCursorError) throw new RpcError("STALE", error.message, { reason: error.reason });
         throw error;
       }
     },

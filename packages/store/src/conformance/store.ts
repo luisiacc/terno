@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { MailStore, SnapshotMessage, StoreSnapshot } from "../mail-store";
 import type { Revision, SearchMessageDoc } from "../search";
 import type { Cursor } from "../types";
+import { StaleCursorError } from "../search";
 import { ingest, msg, seedThroughCommands, threadOf, withAccounts } from "./fixtures";
 import { byRecency, VIEW_TEST, type SearchCorpus } from "./oracle";
 import { SearchReplica } from "./replica";
@@ -877,6 +878,21 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect(await store.feed.head()).toEqual({ ...head, seq: head.seq + 1 });
         await box.replica.catchUp(store.feed);
         expect(box.replica.docs()).toEqual((await store.debug.snapshot()).search);
+      });
+
+      it("a write between pages makes the cursor stale: a thread bumped above it can't be skipped silently", async () => {
+        const { store, a } = await mailbox();
+        for (let i = 0; i < 4; i++) await ingest(store, [msg({ accountId: a, providerMsgId: `fp${i}`, rfcMessageId: `fp${i}@x`, subject: `Factura ${i}`, date: 1_000_000 + i * 1000 })]);
+        const first = await store.threads.searchText({ query: "factura", limit: 2, now: NOW });
+        expect(first.items.map((t) => t.subject)).toEqual(["Factura 3", "Factura 2"]);
+        // a reply bumps the oldest match above the cursor: page 2 at the old revision would omit it
+        await ingest(store, [msg({ accountId: a, providerMsgId: "bump", inReplyTo: "fp0@x", subject: "Re: Factura 0", date: 2_000_000 })]);
+        await expect(store.threads.searchText({ query: "factura", limit: 2, cursor: first.nextCursor!, now: NOW })).rejects.toBeInstanceOf(StaleCursorError);
+        const again = await store.threads.searchText({ query: "factura", limit: 10, now: NOW });
+        expect(again.items.map((t) => t.subject)).toEqual(["Factura 0", "Factura 3", "Factura 2", "Factura 1"]);
+        // a keyset-only cursor (an older renderer) still pages at the current revision
+        const legacy = await store.threads.searchText({ query: "factura", limit: 2, cursor: { lastDate: again.items[1]!.lastDate, id: again.items[1]!.id }, now: NOW });
+        expect(legacy.items.map((t) => t.subject)).toEqual(["Factura 2", "Factura 1"]);
       });
 
       it("searches report the revision they answered at", async () => {

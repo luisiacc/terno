@@ -386,7 +386,7 @@ describe("search", () => {
     await expect(second).resolves.toMatchObject({ items: [expect.any(Object)], complete: true });
   });
 
-  it("pages with the cursor it returns; a keyset-only cursor still pages; another query's cursor is refused", async () => {
+  it("pages with the cursor it returns; a keyset-only cursor still pages; another query's or an outdated cursor is STALE", async () => {
     const { backend, client, accountId } = setup();
     await backend.ingestSliced(Array.from({ length: 5 }, (_, i) => incoming(accountId, { subject: `Factura ${i}`, date: NOW - i * 1000 })));
     const first = await client.call("threads.search", { query: "factura", limit: 2 });
@@ -395,7 +395,10 @@ describe("search", () => {
     const legacy = await client.call("threads.search", { query: "factura", limit: 2, cursor: { lastDate: first.nextCursor!.lastDate, id: first.nextCursor!.id } });
     expect(legacy.items.map((t) => t.id)).toEqual(second.items.map((t) => t.id));
     expect(second.items.map((t) => t.subject)).toEqual(["Factura 2", "Factura 3"]);
-    await expect(client.call("threads.search", { query: "otra", limit: 2, cursor: first.nextCursor! })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(client.call("threads.search", { query: "otra", limit: 2, cursor: first.nextCursor! })).rejects.toMatchObject({ code: "STALE" });
+    // any commit between pages: the renderer must restart from the top
+    await backend.ingestSliced([incoming(accountId, { subject: "Factura nueva", date: NOW })]);
+    await expect(client.call("threads.search", { query: "factura", limit: 2, cursor: first.nextCursor! })).rejects.toMatchObject({ code: "STALE", details: { reason: "revision" } });
   });
 
   it("reports bodies still to download as an incomplete search", async () => {
