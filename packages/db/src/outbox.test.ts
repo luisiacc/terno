@@ -80,6 +80,19 @@ describe("search outbox (SQL)", () => {
     db.close();
   });
 
+  it("counts retention in bytes, not characters, so multibyte mail can't overrun the cap", () => {
+    const dir = mkdtempSync(join(tmpdir(), "unica-outbox-"));
+    const db = openDatabase(join(dir, "mb.db"), { searchLogBytes: 30_000 });
+    const [a] = withAccounts(db);
+    for (let i = 0; i < 40; i++) ingestMessages(db, [msg({ accountId: a!, subject: `Reunión 会议 ${i} 😀`, bodyText: "😀漢字のメール ".repeat(150) })]);
+    const octets = db.get<{ b: number; newest: number }>(
+      "SELECT total(length(CAST(changes AS BLOB))) AS b, (SELECT length(CAST(changes AS BLOB)) FROM search_outbox ORDER BY seq DESC LIMIT 1) AS newest FROM search_outbox",
+    )!;
+    expect(db.get<{ bytes: number }>("SELECT bytes FROM search_state")!.bytes).toBe(octets.b);
+    expect(octets.b).toBeLessThanOrEqual(30_000 + octets.newest);
+    db.close();
+  });
+
   it("leases don't survive a restart", () => {
     const dir = mkdtempSync(join(tmpdir(), "unica-outbox-"));
     let db = openDatabase(join(dir, "l.db"));

@@ -61,7 +61,7 @@ export function flushSearchOutbox(db: Db, maxBytes = SEARCH_LOG_BYTES): void {
   const state = db.get<{ seq: number; bytes: number }>("SELECT seq, bytes FROM search_state WHERE id = 1")!;
   const seq = state.seq + 1;
   const added = db.get<{ bytes: number }>(
-    `INSERT INTO search_outbox (seq, at, bytes, changes) SELECT ?, ?, length(changes), changes FROM (${BATCH_JSON}) RETURNING bytes`,
+    `INSERT INTO search_outbox (seq, at, bytes, changes) SELECT ?, ?, length(CAST(changes AS BLOB)), changes FROM (${BATCH_JSON}) RETURNING bytes`,
     seq,
     Date.now(),
   )!.bytes;
