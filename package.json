@@ -1,0 +1,27 @@
+{
+  "name": "unica-monorepo",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.2.1",
+  "engines": { "node": ">=24.0.0" },
+  "scripts": {
+    "postinstall": "node apps/desktop/scripts/ensure-electron.mjs",
+    "dev": "pnpm --filter @unica/backend-dev dev & pnpm --filter @unica/web dev",
+    "dev:desktop": "pnpm --filter @unica/desktop dev",
+    "build": "pnpm --filter @unica/web build && pnpm --filter @unica/desktop build",
+    "dist:mac": "pnpm build && pnpm --filter @unica/desktop dist:mac",
+    "typecheck": "pnpm -r --parallel typecheck",
+    "lint": "oxlint --deny-warnings apps packages",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:perf": "vitest run --project perf",
+    "test:e2e": "pnpm --filter @unica/web test:e2e",
+    "test:smoke": "pnpm --filter @unica/desktop test:smoke"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "oxlint": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
