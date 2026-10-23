@@ -17,6 +17,7 @@ import {
   getAccountConfig,
   getCounts,
   getOp,
+  getOwner,
   getSecret,
   ingestMessages,
   listAccounts,
@@ -67,6 +68,10 @@ export interface BackendOptions {
   aiFactory?: AiFactory;
   /** offer the offline demo model in Settings (dev, demo and test hosts) */
   demoAi?: boolean;
+  /** demo build: no owner identity (defaults to true with the demo provider registry) */
+  demo?: boolean;
+  /** backend-dev E2E only: let the demo registry's no-op verification establish an owner */
+  allowDemoOwnerClaims?: boolean;
   openExternal?: (url: string) => Promise<void>;
   now?: () => number;
   log?: (level: "info" | "warn" | "error", message: string, extra?: unknown) => void;
@@ -226,6 +231,22 @@ export class Backend {
 
   emitAccounts(): void {
     this.server.emit("accounts", listAccounts(this.db));
+  }
+
+  emitOwner(): void {
+    this.server.emit("owner", getOwner(this.db));
+  }
+
+  // ───────────────────────────── owner identity ─────────────────────────────
+
+  get demo(): boolean {
+    return this.options.demo ?? (this.options.providers.kind === "demo" && !this.options.allowDemoOwnerClaims);
+  }
+
+  /** Only a real verification establishes an owner: never demo builds or the demo registry's no-op checks. */
+  canClaimOwner(): boolean {
+    if (this.demo) return false;
+    return this.options.providers.kind !== "demo" || this.options.allowDemoOwnerClaims === true;
   }
 
   // ───────────────────────────── actions → ops ─────────────────────────────

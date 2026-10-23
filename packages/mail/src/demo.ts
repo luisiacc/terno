@@ -20,6 +20,7 @@ export function createDemoProvider(_ctx: ProviderContext, latencyMs = 40): MailP
 }
 
 export const demoRegistry: ProviderRegistry = {
+  kind: "demo",
   create: (ctx) => createDemoProvider(ctx),
   async verifyImap() {},
   async connectGmail() {

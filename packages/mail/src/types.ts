@@ -98,10 +98,15 @@ export interface GmailConnectResult {
   email: string;
   name: string;
   refreshToken: string;
+  /** OpenID subject: Google's stable id for the person (evidence for owner identity) */
+  sub: string | null;
+  emailVerified: boolean;
 }
 
 export interface ProviderRegistry {
+  /** demo registries never verify anything, so they never establish an owner */
+  readonly kind?: "demo";
   create(ctx: ProviderContext): MailProvider;
   verifyImap(config: ImapAccountConfig, password: string): Promise<void>;
-  connectGmail(options: { clientId: string; clientSecret: string | null; openExternal: (url: string) => Promise<void>; signal?: AbortSignal; fetch: typeof fetch }): Promise<GmailConnectResult>;
+  connectGmail(options: { clientId: string; clientSecret: string | null; openExternal: (url: string) => Promise<void>; signal?: AbortSignal; fetch: typeof fetch; loginHint?: string }): Promise<GmailConnectResult>;
 }

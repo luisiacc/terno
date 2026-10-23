@@ -18,6 +18,8 @@ export interface DevServerOptions {
   aiFactory?: AiFactory;
   autoSync?: boolean;
   lookup?: LookupAll;
+  /** E2E: let accounts added through the demo registry become the owner */
+  ownerClaims?: boolean;
 }
 
 export interface DevServer {
@@ -43,6 +45,7 @@ export async function startDevServer(o: DevServerOptions): Promise<DevServer> {
     aiFactory: o.aiFactory,
     demoAi: true,
     lookup: o.lookup,
+    allowDemoOwnerClaims: o.ownerClaims,
     now: o.now,
     autoSync: o.autoSync ?? true,
     log: (level, message, extra) => (level === "error" ? console.error : console.log)(`[backend] ${message}`, extra ?? ""),

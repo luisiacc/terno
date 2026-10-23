@@ -34,6 +34,8 @@ export interface ConnectOptions {
   timeoutMs?: number;
   /** the backend's network-policy fetch (purpose "mail") */
   fetch: typeof fetch;
+  /** pre-selects the account on Google's consent screen (re-verifying an owner) */
+  loginHint?: string;
 }
 
 /**
@@ -86,6 +88,7 @@ export async function connectGmail(options: ConnectOptions): Promise<GmailConnec
           access_type: "offline",
           prompt: "consent",
         });
+        if (options.loginHint) params.set("login_hint", options.loginHint);
         void options.openExternal(`${ep.auth}?${params}`).catch(reject);
       });
     });
@@ -95,8 +98,8 @@ export async function connectGmail(options: ConnectOptions): Promise<GmailConnec
     const tokens = (await tokenRes.json()) as { access_token?: string; refresh_token?: string; error?: string };
     if (!tokenRes.ok || !tokens.access_token || !tokens.refresh_token) throw new ProviderError(`Token exchange failed: ${tokens.error ?? tokenRes.status}`, false);
     const profile = (await (await netFetch(`${ep.api}/profile`, { headers: { authorization: `Bearer ${tokens.access_token}` } })).json()) as { emailAddress: string };
-    const info = (await netFetch(ep.userinfo, { headers: { authorization: `Bearer ${tokens.access_token}` } }).then((r) => (r.ok ? r.json() : {})).catch(() => ({}))) as { name?: string };
-    return { email: profile.emailAddress, name: info.name ?? "", refreshToken: tokens.refresh_token };
+    const info = (await netFetch(ep.userinfo, { headers: { authorization: `Bearer ${tokens.access_token}` } }).then((r) => (r.ok ? r.json() : {})).catch(() => ({}))) as { name?: string; sub?: string; email_verified?: boolean };
+    return { email: profile.emailAddress, name: info.name ?? "", refreshToken: tokens.refresh_token, sub: info.sub ?? null, emailVerified: info.email_verified === true };
   } finally {
     (server as Server | null)?.close();
   }

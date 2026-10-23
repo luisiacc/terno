@@ -48,6 +48,9 @@ class FakeGoogle {
   historyExpired = false;
   sent: { raw: string; threadId?: string }[] = [];
   truncateSendResponse = false;
+  /** the Google account the consent screen signs in with */
+  email = "luis@gmail.com";
+  loginHints: (string | null)[] = [];
   private tokenSeq = 0;
   url = "";
   private server = createServer((req, res) => void this.handle(req, res));
@@ -114,14 +117,14 @@ class FakeGoogle {
     }
     const token = (req.headers.authorization ?? "").replace("Bearer ", "");
     if (!this.validTokens.has(token)) return json(401, { error: { code: 401 } });
-    if (url.pathname === "/userinfo") return json(200, { name: "Luis Cordero" });
+    if (url.pathname === "/userinfo") return json(200, { name: "Luis Cordero", sub: `sub-${this.email}`, email: this.email, email_verified: true });
     this.calls.push({ method: req.method!, path: url.pathname, body: body ? JSON.parse(body) : null });
     if (this.rateLimitNext > 0) {
       this.rateLimitNext--;
       return json(429, { error: { code: 429, message: "rate limited" } });
     }
     const path = url.pathname.replace(/^\/gmail/, "");
-    if (path === "/profile") return json(200, { emailAddress: "luis@gmail.com", historyId: String(this.historyId) });
+    if (path === "/profile") return json(200, { emailAddress: this.email, historyId: String(this.historyId) });
     if (path === "/messages" && req.method === "GET") {
       const all = [...this.messages.keys()];
       const start = Number(url.searchParams.get("pageToken") ?? 0);
@@ -196,6 +199,7 @@ function browser(google: FakeGoogle, behaviour: "approve" | "deny" | "forge-then
     expect(u.searchParams.get("code_challenge_method")).toBe("S256");
     expect(u.searchParams.get("access_type")).toBe("offline");
     google.challenges.set("auth-code", u.searchParams.get("code_challenge")!);
+    google.loginHints.push(u.searchParams.get("login_hint"));
     setTimeout(async () => {
       if (behaviour === "forge-then-approve") {
         const forged = await fetch(`${redirect}?code=evil&state=wrong`);
@@ -254,6 +258,34 @@ describe("Gmail OAuth (installed app)", () => {
     const { client } = await setup();
     await client.call("settings.update", { gmailClientId: "" });
     await expect(client.call("accounts.connectGmail", {})).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+});
+
+describe("Gmail and the owner identity", () => {
+  it("connecting the first Gmail account makes it the owner, with Google's subject as evidence", async () => {
+    const { client, backend } = await setup();
+    const account = await client.call("accounts.connectGmail", {});
+    expect(await client.call("identity.get", {})).toMatchObject({ email: "luis@gmail.com", displayName: "Luis Cordero", provider: "gmail", verifiedBy: "google_oauth", accountId: account.id });
+    expect(JSON.parse(backend.db.get<{ e: string }>("SELECT evidence_json AS e FROM owner")!.e)).toEqual({ googleSub: "sub-luis@gmail.com", emailVerified: true });
+  });
+
+  it("changing the owner re-runs OAuth for that address; a different Google account leaves the owner unchanged", async () => {
+    const { client, google } = await setup();
+    await client.call("accounts.addImap", { email: "a@b.dev", displayName: "A", imap: { host: "127.0.0.1", port: 1, secure: true, user: "a" }, smtp: { host: "127.0.0.1", port: 1, secure: true, user: "a" }, password: "x", verify: false });
+    const gmail = await client.call("accounts.connectGmail", {});
+    const owner = await client.call("identity.get", {});
+    expect(owner).toMatchObject({ email: "luis@gmail.com" }); // the unverified IMAP add did not claim
+    await expect(client.call("identity.changeOwner", { accountId: gmail.id })).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringMatching(/ya es tu cuenta/) });
+
+    google.email = "other@gmail.com";
+    const second = await client.call("accounts.connectGmail", {});
+    google.email = "someone-else@gmail.com"; // the user picks the wrong account on the consent screen
+    await expect(client.call("identity.changeOwner", { accountId: second.id })).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringMatching(/no other@gmail.com/) });
+    expect(google.loginHints.at(-1)).toBe("other@gmail.com");
+    expect(await client.call("identity.get", {})).toEqual(owner);
+
+    google.email = "other@gmail.com";
+    await expect(client.call("identity.changeOwner", { accountId: second.id })).resolves.toMatchObject({ userId: owner!.userId, email: "other@gmail.com", accountId: second.id });
   });
 });
 

@@ -4,6 +4,7 @@ import {
   addThreadsToCategory,
   applyThreadAction,
   claimFilterApplications,
+  claimOwner,
   completeOp,
   createAccount,
   createCategory,
@@ -20,6 +21,7 @@ import {
   getCounts,
   getFilter,
   getOp,
+  getOwner,
   getSummaries,
   getThread,
   ingestMessages,
@@ -45,6 +47,7 @@ import {
 } from "@unica/db";
 import type { GmailAccountConfig, ImapAccountConfig, SendPayload } from "@unica/mail";
 import { Backend } from "./backend";
+import { changeOwnerTo, gmailClaim, imapClaim } from "./identity";
 import { readSettings, SettingsError, updateSettings } from "./settings";
 
 const ACCOUNT_COLORS = ["indigo", "emerald", "amber", "cyan", "violet", "rose", "lime", "slate"];
@@ -67,11 +70,14 @@ export function createHandlers(b: Backend): Handlers {
   const nextAccountColor = () => ACCOUNT_COLORS[listAccounts(db()).length % ACCOUNT_COLORS.length]!;
 
   return {
-    "app.bootstrap": () => ({
+    "app.bootstrap": (_p, ctx) => ({
       accounts: listAccounts(db()),
       categories: listCategories(db()),
       counts: getCounts(db()),
       settings: readSettings(db()),
+      // agents get the mailboxes, not the person's identity
+      owner: ctx.origin === "mcp" ? null : getOwner(db()),
+      demo: b.demo,
       version: b.options.version,
     }),
 
@@ -314,13 +320,19 @@ export function createHandlers(b: Backend): Handlers {
           throw new RpcError("BAD_REQUEST", `Could not connect: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
-      const account = createAccount(
-        db(),
-        { kind: "imap", email: p.email, displayName: p.displayName || p.email, color: nextAccountColor(), providerConfig: config },
-        b.now(),
-      );
+      // only a live login establishes the owner; it is claimed in the same transaction as the account
+      const claim = p.verify && b.canClaimOwner();
+      const { account, claimed } = db().tx(() => {
+        const account = createAccount(
+          db(),
+          { kind: "imap", email: p.email, displayName: p.displayName || p.email, color: nextAccountColor(), providerConfig: config },
+          b.now(),
+        );
+        return { account, claimed: claim && claimOwner(db(), imapClaim(account, config, p.displayName || p.email), b.now()) };
+      });
       await b.setSecret(`account:${account.id}:password`, p.password);
       b.emitAccounts();
+      if (claimed) b.emitOwner();
       b.startAccount(account);
       return account;
     },
@@ -341,13 +353,17 @@ export function createHandlers(b: Backend): Handlers {
       const existing = listAccounts(db()).find((a) => a.email === result.email.toLowerCase());
       if (existing) throw new RpcError("BAD_REQUEST", `${result.email} is already connected.`);
       const config: GmailAccountConfig = { senderName: result.name || result.email };
-      const account = createAccount(
-        db(),
-        { kind: "gmail", email: result.email, displayName: result.email.split("@")[0]!, color: nextAccountColor(), providerConfig: config },
-        b.now(),
-      );
+      const { account, claimed } = db().tx(() => {
+        const account = createAccount(
+          db(),
+          { kind: "gmail", email: result.email, displayName: result.email.split("@")[0]!, color: nextAccountColor(), providerConfig: config },
+          b.now(),
+        );
+        return { account, claimed: b.canClaimOwner() && claimOwner(db(), gmailClaim(account, { ...result, name: result.name || result.email }), b.now()) };
+      });
       await b.setSecret(`account:${account.id}:refreshToken`, result.refreshToken);
       b.emitAccounts();
+      if (claimed) b.emitOwner();
       b.startAccount(account);
       return account;
     },
@@ -360,10 +376,13 @@ export function createHandlers(b: Backend): Handlers {
     },
 
     "accounts.remove": async ({ id }) => {
+      const wasOwner = getOwner(db())?.accountId === id;
       await b.dropAccount(id);
+      // the owner row survives: its account_id is cleared (ON DELETE SET NULL)
       removeAccount(db(), id);
       db().run("DELETE FROM secrets WHERE name LIKE ?", `account:${id}:%`);
       b.emitAccounts();
+      if (wasOwner) b.emitOwner();
       b.notifyChanged([]);
       return { ok: true as const };
     },
@@ -388,6 +407,9 @@ export function createHandlers(b: Backend): Handlers {
     "ai.listModels": ({ provider, baseURL, preset }) => b.aiService.listModels({ provider, baseURL, preset }),
     "ai.test": ({ provider, model, baseURL, preset }) => b.aiService.test({ provider, model, baseURL, preset }),
     "ai.setKey": ({ provider, preset, value }) => b.aiService.setKey(provider, preset, value),
+
+    "identity.get": () => getOwner(db()),
+    "identity.changeOwner": ({ accountId, password }) => changeOwnerTo(b, accountId, password),
 
     "ops.list": () => listRecentOps(db()).map((op) => b.opInfo(op)),
     "ops.resolveUnknown": ({ opId, resolution }) => {

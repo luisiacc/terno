@@ -73,11 +73,30 @@ export interface AppSettings {
   syncWindowDays: number;
 }
 
+/** The person this install belongs to (the future Única account). Verification evidence stays in the backend. */
+export interface OwnerIdentity {
+  userId: string;
+  email: string;
+  displayName: string;
+  provider: "gmail" | "imap";
+  verifiedBy: "google_oauth" | "imap_login";
+  verifiedAt: number | null;
+  /** adopted from an existing install's first account, not verified by a fresh login */
+  migrated: boolean;
+  /** the connected mailbox it was verified with; null once that mailbox is removed */
+  accountId: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface Bootstrap {
   accounts: Account[];
   categories: Category[];
   counts: Counts;
   settings: AppSettings;
+  owner: OwnerIdentity | null;
+  /** demo builds have no owner (and say so) */
+  demo: boolean;
   version: string;
 }
 
@@ -302,6 +321,9 @@ export const contract = {
     z.object({ provider: z.enum(AI_PROVIDER_IDS), preset: z.enum(COMPATIBLE_PRESETS).optional(), value: z.string().trim().max(1000) }),
   ),
 
+  "identity.get": m<OwnerIdentity | null>()(empty),
+  "identity.changeOwner": m<OwnerIdentity>()(z.object({ accountId: id, password: z.string().min(1).max(1000).optional() }), { timeoutMs: 300_000 }),
+
   "ops.list": m<OpInfo[]>()(empty),
   "ops.resolveUnknown": m<{ ok: true }>()(
     z.object({ opId: z.string().uuid(), resolution: z.enum(["markSent", "retry", "discard"]) }),
@@ -322,5 +344,6 @@ export interface Events {
   accounts: Account[];
   categories: Category[];
   op: OpInfo;
+  owner: OwnerIdentity | null;
 }
 export type EventName = keyof Events;

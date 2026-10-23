@@ -81,6 +81,7 @@ parentPort.on("message", async (event) => {
         providers: createRegistry(),
         openExternal: async (url) => send({ type: "open-external", url }),
         demoAi: msg.demo || msg.dev,
+        demo: msg.demo,
         log: (level, message, extra) => send({ type: "log", level, message: extra ? `${message} ${typeof extra === "string" ? extra : JSON.stringify(extra)}` : message }),
       });
       if (msg.demo && seedDemo(backend.db, { threads: 3000, accounts: 4 })) {
