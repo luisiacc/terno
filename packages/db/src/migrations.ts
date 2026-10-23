@@ -501,7 +501,8 @@ CREATE VIEW messages_fts_src AS
 /**
  * The FTS triggers over messages + message_bodies. With `mark` (v7) they also
  * mark the message dirty for the search outbox: one trigger program per row
- * instead of two, which ingestion pays for every message.
+ * instead of two. Inserts are the exception: ingestMessages, their only
+ * writer, marks a whole slice in one statement.
  */
 function ftsTriggers(mark: boolean): string {
   const dirty = (id: string) => (mark ? `\n  INSERT OR IGNORE INTO search_dirty (kind, id) VALUES (0, ${id});` : "");
@@ -511,7 +512,7 @@ function ftsTriggers(mark: boolean): string {
 CREATE TRIGGER messages_fts_ai AFTER INSERT ON messages BEGIN
   INSERT INTO messages_fts(rowid, subject, from_text, recipients, body)
   VALUES (new.id, new.subject, new.from_name || ' ' || new.from_email, new.recipients_text,
-          coalesce((SELECT body_text FROM message_bodies WHERE message_id = new.id), ''));${dirty("new.id")}
+          coalesce((SELECT body_text FROM message_bodies WHERE message_id = new.id), ''));
 END;
 
 CREATE TRIGGER messages_fts_ad AFTER DELETE ON messages BEGIN
@@ -587,8 +588,9 @@ ${FTS_SRC_VIEW}${ftsTriggers(false)}`;
  * cascades included; the before-commit finalizer (outbox.ts) turns them into
  * one revisioned batch of absolute projections or tombstones in the same
  * transaction. The epoch identifies this database's log.
- * Any future rebuild of these tables must recreate their triggers, and any
- * new writer of thread aggregates must go through recomputeThreads.
+ * Any future rebuild of these tables must recreate their triggers, and new
+ * messages and thread aggregates must keep being written by ingestMessages
+ * and recomputeThreads.
  */
 const OUTBOX_V7 = /* sql */ `
 CREATE TABLE search_state (
@@ -622,7 +624,8 @@ CREATE TABLE search_leases (
   created_at INTEGER NOT NULL
 );
 
--- messages and bodies are marked by their FTS triggers (recreated below); these columns don't reach FTS
+-- messages and bodies are marked by their FTS triggers (recreated below) and message inserts by
+-- ingestMessages; these columns don't reach FTS
 CREATE TRIGGER search_dirty_messages_au AFTER UPDATE OF thread_id, account_id, date, has_attachments, body_state ON messages BEGIN
   INSERT OR IGNORE INTO search_dirty (kind, id) VALUES (0, new.id);
 END;

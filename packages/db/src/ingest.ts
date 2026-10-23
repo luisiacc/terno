@@ -216,23 +216,18 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
   db.tx(() => {
     const ids = nextMessageIdAllocator(db);
     for (const msg of messages) {
-      let existing = msg.providerMsgId
-        ? db.get<{ id: number; thread_id: number }>(
-            "SELECT id, thread_id FROM messages WHERE account_id = ? AND provider_msg_id = ?",
-            msg.accountId,
-            msg.providerMsgId,
-          )
-        : undefined;
-      // The server copy of a message we sent: adopt the optimistic local row instead of duplicating it.
+      // the same provider message, else the server copy of a message we sent (adopt the optimistic local row
+      // instead of duplicating it): one lookup for both
       const rfcLookup = normalizeMessageId(msg.rfcMessageId);
-      if (!existing && rfcLookup) {
-        existing = db.get<{ id: number; thread_id: number }>(
-          "SELECT id, thread_id FROM messages WHERE account_id = ? AND rfc_message_id = ? AND provider_msg_id LIKE 'local:%'",
-          msg.accountId,
-          rfcLookup,
-        );
-        if (existing) db.run("UPDATE messages SET provider_msg_id = ? WHERE id = ?", msg.providerMsgId, existing.id);
-      }
+      const existing = db.get<{ id: number; thread_id: number; by_provider: number }>(
+        `SELECT id, thread_id, provider_msg_id IS ?2 AS by_provider FROM messages
+         WHERE account_id = ?1 AND (provider_msg_id = ?2 OR (rfc_message_id = ?3 AND provider_msg_id LIKE 'local:%'))
+         ORDER BY by_provider DESC LIMIT 1`,
+        msg.accountId,
+        msg.providerMsgId,
+        rfcLookup,
+      );
+      if (existing && !existing.by_provider) db.run("UPDATE messages SET provider_msg_id = ? WHERE id = ?", msg.providerMsgId, existing.id);
       if (existing) {
         const before = db.get<{ body_state: string }>("SELECT body_state FROM messages WHERE id = ?", existing.id)!;
         updateExisting(db, existing.id, msg);
@@ -290,9 +285,8 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
         msg.size,
         now,
       ).lastInsertRowid;
-      for (const ref of refs) {
-        db.run("INSERT OR IGNORE INTO message_refs (account_id, ref, message_id) VALUES (?, ?, ?)", msg.accountId, ref, id);
-      }
+      if (refs.length === 1) db.run("INSERT OR IGNORE INTO message_refs (account_id, ref, message_id) VALUES (?, ?, ?)", msg.accountId, refs[0]!, id);
+      else if (refs.length > 1) db.run("INSERT OR IGNORE INTO message_refs (account_id, ref, message_id) SELECT ?, value, ? FROM json_each(?)", msg.accountId, id, JSON.stringify(refs));
       for (const a of msg.attachments ?? []) {
         db.run(
           "INSERT INTO attachments (message_id, filename, mime, size, content_id, provider_ref) VALUES (?,?,?,?,?,?)",
@@ -308,6 +302,8 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
       result.inserted.push(id);
       result.touchedThreads.add(threadId);
     }
+    // the search outbox (other message writes are marked by triggers)
+    if (result.inserted.length) db.run("INSERT OR IGNORE INTO search_dirty (kind, id) SELECT 0, value FROM json_each(?)", JSON.stringify(result.inserted));
     recomputeThreads(db, result.touchedThreads);
     ids.persist();
   });
