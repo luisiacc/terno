@@ -1,9 +1,10 @@
-import { contentTokens, featuresFromBlob, termsQuery } from "@unica/core";
+import { CategorizerModel, contentTokens, encodeFeatures, extractFeatures, featuresFromBlob, termsQuery } from "@unica/core";
 import { describe, expect, it } from "vitest";
 import {
   addToCategory,
   backfillExamples,
   backgroundCandidates,
+  classifyNewThreads,
   createBatch,
   finishBatch,
   loadExamples,
@@ -382,5 +383,65 @@ describe("bulk scopes, counts and quick actions", () => {
     // consumer domains are not a group
     const friend = add({ from: { name: "Ana", email: "ana@gmail.com" }, subject: "Hola" });
     expect(quickActions(db, cat, [friend], null).domain).toBeNull();
+  });
+});
+
+describe("classification when a body arrives", () => {
+  /** Two content-learned categories (receipts in subjects, trips in bodies) and personal background mail. */
+  function setupModel() {
+    const db = testDb();
+    const [acct] = withAccounts(db, 1);
+    const recibos = createCategory(db, "Recibos", "amber").id;
+    const viajes = createCategory(db, "Viajes", "cyan").id;
+    const model = new CategorizerModel({ decayRef: NOW });
+    const enc = (from: string, subject: string, bodyText: string) =>
+      encodeFeatures(extractFeatures({ fromEmail: from, fromName: from, listId: null, subject, bodyText, replied: false, attachmentNames: [] }, { ownDomains: new Set(["example.com"]) }));
+    for (let i = 0; i < 40; i++) {
+      model.train({ categoryId: recibos, label: 1, weight: 1, at: NOW, content: true, features: enc(`r${i % 6}@shop${i % 6}.com`, "Tu recibo total pago", "") });
+      model.train({ categoryId: viajes, label: 1, weight: 1, at: NOW, content: true, features: enc(`v${i % 6}@air${i % 6}.com`, "", "Tu vuelo reservacion aeropuerto hospedaje") });
+    }
+    for (let i = 0; i < 200; i++) model.addBackground(10_000 + i, enc(`amigo${i % 20}@gmail.com`, "Comida el sabado", "Hola amigo, un abrazo"));
+    const classify = (r: { inserted?: number[]; bodyCompleted?: number[] }) =>
+      db.tx(() => classifyNewThreads(db, { inserted: r.inserted ?? [], bodyCompleted: r.bodyCompleted ?? [], now: NOW, mode: "auto", model }));
+    return { db, acct: acct!, recibos, viajes, classify };
+  }
+
+  it("an early auto add doesn't stop the body from deciding the remaining categories", () => {
+    const { db, acct, recibos, viajes, classify } = setupModel();
+    const m = msg({ accountId: acct, from: { name: "Nuevo", email: "hola@nuevo.io" }, subject: "Tu recibo total pago", bodyText: null, bodyState: "partial", date: NOW - 3_600_000 });
+    const first = ingestMessages(db, [m], NOW);
+    classify({ inserted: first.inserted });
+    const t = threadOf(db, m.providerMsgId!);
+    expect(db.all("SELECT category_id, added_by FROM thread_categories WHERE thread_id = ?", t)).toEqual([{ category_id: recibos, added_by: "auto" }]);
+    const second = ingestMessages(db, [{ ...m, bodyState: "full", bodyText: "Tu vuelo reservacion aeropuerto hospedaje" }], NOW);
+    expect(second.bodyCompleted).toHaveLength(1);
+    classify({ bodyCompleted: second.bodyCompleted });
+    expect(db.all("SELECT category_id FROM thread_categories WHERE thread_id = ? ORDER BY category_id", t)).toEqual([{ category_id: recibos }, { category_id: viajes }]);
+    // the first auto decision keeps its date (maturing isn't reset)
+    expect(db.all("SELECT category_id, kind FROM cls_decisions WHERE thread_id = ? ORDER BY category_id", t)).toEqual([
+      { category_id: recibos, kind: "auto" },
+      { category_id: viajes, kind: "auto" },
+    ]);
+  });
+
+  it("rescoring replaces the pending suggestions: one the new evidence no longer supports is withdrawn", () => {
+    const { db, acct, viajes, classify } = setupModel();
+    const m = msg({ accountId: acct, from: { name: "Ana", email: "ana@gmail.com" }, subject: "Hola", bodyText: null, bodyState: "partial", date: NOW - 3_600_000 });
+    ingestMessages(db, [m], NOW);
+    const t = threadOf(db, m.providerMsgId!);
+    db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'suggest', 0.85, '[]', ?)", t, viajes, NOW);
+    const second = ingestMessages(db, [{ ...m, bodyState: "full", bodyText: "Hola amigo, un abrazo" }], NOW);
+    classify({ bodyCompleted: second.bodyCompleted });
+    expect(db.get("SELECT 1 FROM cls_decisions WHERE thread_id = ?", t)).toBeUndefined();
+  });
+
+  it("explicit user decisions still close the thread to the engine", () => {
+    const { db, acct, recibos, classify } = setupModel();
+    const m = msg({ accountId: acct, from: { name: "Nuevo", email: "hola@nuevo.io" }, subject: "Tu recibo total pago", bodyText: null, bodyState: "partial", date: NOW - 3_600_000 });
+    ingestMessages(db, [m], NOW);
+    const t = threadOf(db, m.providerMsgId!);
+    addToCategory(db, { categoryId: recibos, threadIds: [t], addedBy: "user", now: NOW });
+    const second = ingestMessages(db, [{ ...m, bodyState: "full", bodyText: "Tu vuelo reservacion aeropuerto hospedaje" }], NOW);
+    expect(classify({ bodyCompleted: second.bodyCompleted }).touched.size).toBe(0);
   });
 });

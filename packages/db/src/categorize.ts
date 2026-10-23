@@ -619,10 +619,16 @@ export function vetoesFor(
  * first), no example, no decision beyond a pending suggestion. Auto adds never
  * train. Background (weak negative) updates come back as deltas for after commit.
  */
+/**
+ * Threads no explicit decision closed to the engine: no training example, no
+ * category the user (or a filter, agent, bulk add) set, no answered or
+ * reverted decision. The engine's own auto adds don't close a thread: the
+ * body arriving may still decide the other categories.
+ */
 const UNDECIDED = `SELECT value AS t FROM json_each(?) j
-  WHERE NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = j.value)
+  WHERE NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = j.value AND added_by != 'auto')
     AND NOT EXISTS (SELECT 1 FROM cls_examples WHERE thread_id = j.value)
-    AND NOT EXISTS (SELECT 1 FROM cls_decisions WHERE thread_id = j.value AND (kind = 'auto' OR outcome IS NOT NULL))`;
+    AND NOT EXISTS (SELECT 1 FROM cls_decisions WHERE thread_id = j.value AND outcome IS NOT NULL)`;
 
 /**
  * Classifies new inbound mail inside the ingestion transaction, so messages,
@@ -679,6 +685,14 @@ export function suggestBackfill(db: Db, req: { threadIds: readonly number[]; now
   return out;
 }
 
+function withdrawSuggestions(db: Db, threadId: number, keep: readonly number[]): void {
+  db.run(
+    "DELETE FROM cls_decisions WHERE thread_id = ? AND kind = 'suggest' AND outcome IS NULL AND category_id NOT IN (SELECT value FROM json_each(?))",
+    threadId,
+    JSON.stringify(keep),
+  );
+}
+
 /** Inbox threads that arrived as backfill and nobody decided on yet (most recent first). */
 export function backfillCandidates(db: Db, now: number, limit = 5000): number[] {
   return db
@@ -711,9 +725,12 @@ function decideThreads(
   for (const [threadId, root] of roots) {
     const features = extractFeatures(root.source, { ownDomains: own.domains });
     const set: ThreadFeatureSet = { root, features, encoded: encodeFeatures(features) };
-    const scores = req.model.score(set.encoded);
+    // categories the engine already filed this thread in stay as they are (their decision keeps its date)
+    const filed = new Set(db.all<{ category_id: number }>("SELECT category_id FROM thread_categories WHERE thread_id = ?", threadId).map((r) => r.category_id));
+    const scores = req.model.score(set.encoded).filter((s) => !filed.has(s.categoryId));
     const likely = candidateCategories(scores);
     if (likely.length === 0) {
+      withdrawSuggestions(db, threadId, []);
       if (scores.some((s) => s.p >= 0.5)) out.uncertain.push(threadId);
       continue;
     }
@@ -734,6 +751,8 @@ function decideThreads(
       lookAlike: req.model.lookAlike(set.encoded),
       senderSupport: req.model.senderSupport(set.encoded),
     });
+    // the pending suggestions are replaced as a set: what the new evidence doesn't support goes
+    withdrawSuggestions(db, threadId, decisions.filter((d) => d.decision !== "none").map((d) => d.categoryId));
     for (const d of decisions) {
       if (d.decision === "none") continue;
       const reasons = explain(req.model, set.features, d.categoryId, policies.get(d.categoryId)?.name ?? "", root.source.fromName || set.features.sender);
