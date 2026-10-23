@@ -34,6 +34,8 @@ export interface WebDebug {
   cacheStatus(): Promise<Extract<WorkerToPage, { type: "cache-status" }>["status"]>;
   /** the RPC client the app uses, for measuring round trips */
   client: RpcClient;
+  /** ingests that many generated threads as a sync would (resolves when done) */
+  importMail(threads: number, seed: number): Promise<{ messages: number; ms: number }>;
 }
 
 declare global {
@@ -297,6 +299,11 @@ export async function connectWorker(client: RpcClient): Promise<void> {
       storage: first.storage,
       timings: { ...first.timings, workerReady: Math.round(performance.now() - started) },
       client,
+      async importMail(threads, seed) {
+        worker.postMessage({ type: "dev-import", threads, seed } satisfies PageToWorker);
+        const m = await next(worker, ["dev-imported"]);
+        return m?.type === "dev-imported" ? { messages: m.messages, ms: m.ms } : { messages: 0, ms: 0 };
+      },
       async cacheStatus() {
         worker.postMessage({ type: "cache-status" } satisfies PageToWorker);
         const m = await next(worker, ["cache-status"], 5000);

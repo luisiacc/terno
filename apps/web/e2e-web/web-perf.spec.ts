@@ -27,14 +27,23 @@ interface Stat {
 }
 
 /** plan 04 §8, per adapter (IndexedDB loads its tables into memory on open and scans rules over all mail) */
+/**
+ * Beyond §8: `durable` is a search on the durable path alone (FTS5's one-character prefix on SQLite, the
+ * exact scan on IndexedDB), `durableKeystroke` the last keystroke → its results while that path answers,
+ * `afterOpen` the first interactions right after a reload (no settling), `concurrent` an interaction while
+ * a durable search or an import runs (`importSearch` a search during an import, which on IndexedDB may be
+ * the scan), `ingest` the import's minimum throughput (messages/s), `jKey` keydown → selection committed.
+ */
+const SHARED = { rpc: 3, keystroke: 100, afterOpen: 100, concurrent: 100, ingest: 1000, jKey: 16, action: 16 };
 const BUDGETS = {
   opfs: {
-    "10k": { repeatVisit: 600, list: 2, view: 4, search: 10, action: 16, preview: 50, rpc: 3, keystroke: 100 },
-    "50k": { repeatVisit: 700, list: 2, view: 6, search: 25, action: 16, preview: 50, rpc: 3, keystroke: 100 },
+    "10k": { ...SHARED, repeatVisit: 600, list: 2, view: 4, search: 10, preview: 50, durable: 60, durableKeystroke: 100, importSearch: 100, firstSearch: 150 },
+    "50k": { ...SHARED, repeatVisit: 700, list: 2, view: 6, search: 25, preview: 50, durable: 60, durableKeystroke: 150, importSearch: 100, firstSearch: 150 },
   },
+  // IndexedDB has no FTS: whenever the index isn't current (right after open, during an import, while it builds) the exact scan answers
   idb: {
-    "10k": { repeatVisit: 600, list: 2, view: 4, search: 10, action: 16, preview: 150, rpc: 3, keystroke: 100 },
-    "50k": { repeatVisit: 900, list: 2, view: 4, search: 25, action: 16, preview: 600, rpc: 3, keystroke: 100 },
+    "10k": { ...SHARED, repeatVisit: 600, list: 2, view: 4, search: 10, preview: 150, durable: 400, durableKeystroke: 1500, importSearch: 600, firstSearch: 600 },
+    "50k": { ...SHARED, repeatVisit: 900, list: 2, view: 4, search: 25, preview: 600, durable: 1500, durableKeystroke: 3000, importSearch: 2500, firstSearch: 2500 },
   },
 } as const;
 const ADAPTER = STORAGE === "idb" ? "idb" : "opfs";
@@ -70,6 +79,90 @@ async function rpc(page: Page, method: string, params: unknown, n = ITERATIONS):
     { method, params, n },
   );
 }
+
+type Call = [method: string, params: unknown];
+
+/** a few different RPCs, each timed */
+async function rpcBatch(page: Page, calls: Call[]): Promise<number[]> {
+  return page.evaluate(async (calls) => {
+    const c = window.__unicaWeb!.client as unknown as { call(m: string, p: unknown): Promise<unknown> };
+    const out: number[] = [];
+    for (const [m, p] of calls) {
+      const t = performance.now();
+      await c.call(m, p);
+      out.push(performance.now() - t);
+    }
+    return out;
+  }, calls);
+}
+
+/** times `probe` repeatedly while `method` runs (at least 5 samples) */
+async function whileRunning(page: Page, method: string, params: unknown, probe: Call): Promise<number[]> {
+  return page.evaluate(
+    async ({ method, params, probe }) => {
+      const c = window.__unicaWeb!.client as unknown as { call(m: string, p: unknown): Promise<unknown> };
+      let running = true;
+      const slow = c.call(method, params).finally(() => (running = false));
+      const out: number[] = [];
+      while (running || out.length < 5) {
+        const t = performance.now();
+        await c.call(probe[0], probe[1]);
+        out.push(performance.now() - t);
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      await slow;
+      return out;
+    },
+    { method, params, probe },
+  );
+}
+
+async function whileImporting(page: Page, threads: number) {
+  return page.evaluate(async (threads) => {
+    const w = window.__unicaWeb!;
+    const c = w.client as unknown as { call(m: string, p: unknown): Promise<{ items?: { id: number }[]; strategy?: string }> };
+    const thread = (await c.call("threads.list", { view: "inbox", limit: 5 })).items![2]!.id;
+    let running = true;
+    const job = w.importMail(threads, Date.now() % 1_000_000).finally(() => (running = false));
+    const out = { list: [] as number[], open: [] as number[], search: [] as number[], strategies: new Set<string>() };
+    const time = async (into: number[], m: string, p: unknown) => {
+      const t = performance.now();
+      const r = await c.call(m, p);
+      into.push(performance.now() - t);
+      return r;
+    };
+    while (running || out.list.length < 5) {
+      await time(out.list, "threads.list", { view: "inbox", limit: 100 });
+      await time(out.open, "threads.get", { threadId: thread });
+      const r = await time(out.search, "threads.search", { query: "factura", limit: 100 });
+      out.strategies.add(String(r.strategy).split(":")[0]);
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    const done = await job;
+    return { ...out, strategies: [...out.strategies], messages: done.messages, ms: done.ms };
+  }, threads);
+}
+
+/** holds j over the list: keydown → the row's selection committed, per press */
+async function holdJ(page: Page, presses: number): Promise<number[]> {
+  await page.getByTestId("search-input").fill("");
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.evaluate(() => {
+    const w = window as unknown as { __j: { t0: number; commit: number[] } };
+    w.__j = { t0: 0, commit: [] };
+    document.addEventListener("keydown", (e) => e.key === "j" && (w.__j.t0 = performance.now()), { capture: true });
+    new MutationObserver((records) => {
+      if (records.some((r) => r.attributeName === "aria-selected" && (r.target as Element).getAttribute("aria-selected") === "true")) w.__j.commit.push(performance.now() - w.__j.t0);
+    }).observe(document.querySelector("[role=listbox]")!, { attributes: true, subtree: true, attributeFilter: ["aria-selected"] });
+  });
+  for (let i = 0; i < presses; i++) {
+    await page.keyboard.press("j");
+    await page.waitForFunction((n) => (window as unknown as { __j: { commit: number[] } }).__j.commit.length >= n, i + 1, { polling: "raf" });
+  }
+  return page.evaluate(() => (window as unknown as { __j: { commit: number[] } }).__j.commit);
+}
+
+let importRate = "";
 
 const mailboxUrl = (size: (typeof SIZES)[number]) => `/?mailbox=perf-${size.label}&demo=${size.threads}&accounts=8${STORAGE ? `&storage=${STORAGE}` : ""}${DURABLE ? "&instant=0" : ""}`;
 
@@ -152,11 +245,19 @@ for (const size of SIZES) {
       await page.waitForTimeout(1500);
       const stats: Stat[] = [];
       const visits: number[] = [];
+      const afterOpen: number[] = [];
+      const firstSearch: number[] = [];
       for (let i = 0; i < 5; i++) {
         await page.reload();
         visits.push(await firstRowMs(page));
+        // what a user does first, while the backend is still starting its background work
+        const [list, counts, search, inbox] = await rpcBatch(page, [["threads.list", { view: "all", limit: 100 }], ["counts.get", {}], ["threads.search", { query: "factura", limit: 100 }], ["threads.list", { view: "inbox", limit: 100 }]]);
+        afterOpen.push(list!, counts!, inbox!);
+        firstSearch.push(search!);
       }
       stats.push(stat("repeat visit → first mail painted", size.budgets.repeatVisit, visits, `seeded in ${Math.round((Date.now() - seedStarted) / 1000)} s`));
+      stats.push(stat("first lists and counts after open (RPC)", size.budgets.afterOpen, afterOpen));
+      stats.push(stat("first search after open (RPC)", size.budgets.firstSearch, firstSearch));
       await waitForInstant(page);
 
       const counts = (await page.evaluate(async () => (window.__unicaWeb!.client as unknown as { call(m: string, p: unknown): Promise<unknown> }).call("app.bootstrap", {}))) as { categories: { id: number }[]; accounts: { id: number }[] };
@@ -181,12 +282,15 @@ for (const size of SIZES) {
         const samples = await rpc(page, "threads.search", { query, limit: 100 }, 25);
         const r = (await page.evaluate(async (q) => (window.__unicaWeb!.client as unknown as { call(m: string, p: unknown): Promise<{ strategy: string }> }).call("threads.search", { query: q, limit: 100 }), query)) as { strategy: string };
         strategies.add(r.strategy.split(":")[0]!);
-        // like desktop's FTS5 gate, the durable path is gated from two characters on; one is reported (the instant index answers it).
-        // IndexedDB's durable path is an exact scan that answers only while the index builds: reported, not gated
-        const reported = DURABLE && (query.length === 1 || STORAGE === "idb");
-        stats.push(stat(`search ${query} (RPC)`, reported ? Infinity : size.budgets.search, samples, reported ? `${r.strategy}, reported` : r.strategy));
+        // the durable path alone: FTS5's one-character prefix and IndexedDB's exact scan have their own (finite) budgets
+        const durable = DURABLE && (query.length === 1 || STORAGE === "idb");
+        stats.push(stat(`search ${query} (RPC)`, durable ? size.budgets.durable : size.budgets.search, samples, r.strategy));
       }
       const after = await page.evaluate(() => window.__unicaWeb!.cacheStatus());
+      if (DURABLE) {
+        // the index is unavailable: lists keep answering while a search that reads every message runs
+        stats.push(stat("list while a durable search runs (RPC)", size.budgets.concurrent, await whileRunning(page, "threads.search", { query: "presupuesto zzqxjv", limit: 100 }, ["threads.list", { view: "inbox", limit: 100 }])));
+      }
 
       // a user action: archive and restore, each one store command with its op (a durable commit each)
       const target = firstPage.items[0]!.id;
@@ -234,19 +338,35 @@ for (const size of SIZES) {
         await page.getByTestId("search-input").fill("");
         await page.waitForTimeout(150);
       }
-      const keystrokes = (await page.evaluate(() => [...(window as unknown as { __search: { done: Map<string, number> } }).__search.done.entries()])).filter(([q]) => q.length > 0).map(([, ms]) => ms);
-      // the exact scan (IndexedDB's durable path) is slower than typing: superseded keystrokes never render
+      const typed = ["presupuest", "reunion eq", "factura ub", "propuesta "];
+      const done = new Map(await page.evaluate(() => [...(window as unknown as { __search: { done: Map<string, number> } }).__search.done.entries()]));
+      // the exact scan (IndexedDB's durable path) is slower than typing: superseded keystrokes never render, so the gate is the
+      // last keystroke of each query → its results
       const scanOnly = DURABLE && STORAGE === "idb";
-      expect(keystrokes.length).toBeGreaterThanOrEqual(scanOnly ? 1 : 30);
-      stats.push(stat("keystroke → results rendered", scanOnly ? Infinity : size.budgets.keystroke, keystrokes, scanOnly ? `${keystrokes.length} rendered, reported` : undefined));
+      const keystrokes = scanOnly ? typed.map((q) => done.get(q.trim()) ?? Infinity) : [...done].filter(([q]) => q.length > 0).map(([, ms]) => ms);
+      expect(keystrokes.length).toBeGreaterThanOrEqual(scanOnly ? typed.length : 30);
+      stats.push(stat(scanOnly ? "last keystroke → its results rendered (exact scan)" : "keystroke → results rendered", scanOnly ? size.budgets.durableKeystroke : size.budgets.keystroke, keystrokes));
+
+      // holding j in the list: keydown → selection committed
+      stats.push(stat("j: keydown → selection committed", size.budgets.jKey, await holdJ(page, 100)));
+
+      // an import (a sync): its pace on its own, then interactions while another one runs
+      const alone = await page.evaluate(async () => window.__unicaWeb!.importMail(1500, 7));
+      const rate = alone.messages / (alone.ms / 1000);
+      const imported = await whileImporting(page, 1500);
+      stats.push(stat("list during an import (RPC)", size.budgets.concurrent, imported.list));
+      stats.push(stat("open thread during an import (RPC)", size.budgets.concurrent, imported.open));
+      stats.push(stat("search during an import (RPC)", size.budgets.importSearch, imported.search, imported.strategies.join(" ")));
+      importRate = `${alone.messages} messages at ${Math.round(rate)} msgs/s alone, ${Math.round(imported.messages / (imported.ms / 1000))} msgs/s while interacting`;
+      const importTooSlow = rate * MULTIPLIER < size.budgets.ingest ? [`import throughput: ${Math.round(rate)} < ${size.budgets.ingest} messages/s`] : [];
 
       const cache =
         before && after
           ? { hotMiB: +(after.hotBytes / 2 ** 20).toFixed(1), cacheMiB: +(after.cacheBytes / 2 ** 20).toFixed(1), usedMiB: +(after.usedBytes / 2 ** 20).toFixed(1), searchMissRatio: +((after.miss - before.miss) / Math.max(1, after.hit - before.hit + after.miss - before.miss)).toFixed(4) }
           : null;
-      results.push({ size: size.label, storage: info.storage ?? "?", load: loadavg(), seedMs, threads: size.threads, stats, cache: { ...cache, strategy, searchStrategies: [...strategies] } });
+      results.push({ size: size.label, storage: info.storage ?? "?", load: loadavg(), seedMs, threads: size.threads, stats, cache: { ...cache, strategy, searchStrategies: [...strategies], import: importRate } });
       if (cache) expect(cache.searchMissRatio, "page cache misses while searching").toBeLessThan(0.05);
-      const over = stats.filter((s) => s.p95 > s.budgetMs * MULTIPLIER).map((s) => `${s.name}: p95 ${s.p95.toFixed(2)} > ${s.budgetMs}`);
+      const over = [...stats.filter((s) => s.p95 > s.budgetMs * MULTIPLIER).map((s) => `${s.name}: p95 ${s.p95.toFixed(2)} > ${s.budgetMs}`), ...importTooSlow];
       expect(over).toEqual([]);
     } finally {
       await context.close();

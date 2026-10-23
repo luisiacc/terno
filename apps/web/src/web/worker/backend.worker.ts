@@ -117,6 +117,8 @@ async function start(init: WorkerInit): Promise<void> {
     cipher,
     providers: webRegistry(),
     host: WEB_HOST,
+    // a web commit costs 3–7 ms (OPFS, IndexedDB): 20 ms slices keep imports moving, interactions still interleave
+    sliceBudgetMs: 20,
     demoAi: init.demo !== null,
     log,
   });
@@ -143,6 +145,26 @@ async function start(init: WorkerInit): Promise<void> {
   retuneTimer = setInterval(() => void tune(store, platform, init.name), 5 * 60_000);
 }
 
+/** Demo builds: new mail for the existing accounts, ingested through the same sliced path as a sync. */
+async function devImport(b: BackendCore, threads: number, seed: number): Promise<void> {
+  const { generateDataset } = await import("@unica/mock-data");
+  const accounts = await b.store.accounts.list();
+  const data = generateDataset({ threads, accounts: accounts.length, seed, now: Date.now(), bodyScale: 2 });
+  const tag = (id: string | null) => (id ? `import-${seed}-${id}` : null);
+  const messages = data.messages.map((m) => ({
+    ...m,
+    accountId: accounts[m.accountIndex]!.id,
+    providerMsgId: tag(m.providerMsgId),
+    providerThreadId: tag(m.providerThreadId),
+    rfcMessageId: tag(m.rfcMessageId),
+    inReplyTo: tag(m.inReplyTo),
+    references: m.references.map((r) => tag(r)!),
+  }));
+  const started = performance.now();
+  await b.ingestSliced(messages);
+  post({ type: "dev-imported", messages: messages.length, ms: performance.now() - started });
+}
+
 /** Closes every storage handle, then says so: only then may another tab take over. */
 async function close(): Promise<void> {
   if (retuneTimer) clearInterval(retuneTimer);
@@ -158,6 +180,8 @@ self.onmessage = (event: MessageEvent<PageToWorker>) => {
     void start(m).catch((error) => post({ type: "fatal", code: "OPEN_FAILED", message: error instanceof Error ? error.message : String(error) }));
   } else if (m.type === "close") {
     void close();
+  } else if (m.type === "dev-import") {
+    if (import.meta.env.VITE_WEB_DEMO === "1" && backend) void devImport(backend, m.threads, m.seed);
   } else if (m.type === "cache-status") {
     const db = backend && backend.store instanceof SqlMailStore ? sqlDb(backend.store) : null;
     const status = db?.cacheStatus();
