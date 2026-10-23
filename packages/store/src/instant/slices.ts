@@ -66,7 +66,7 @@ export async function sortSliced(items: Int32Array<ArrayBuffer>, before: (a: num
       }
       src[j + 1] = x;
     }
-    if ((lo & 4095) === 0) await clock.tick();
+    if ((lo & 1023) === 0) await clock.tick();
   }
   for (let width = RUN; width < n; width *= 2) {
     for (let lo = 0; lo < n; lo += 2 * width) {
@@ -75,9 +75,19 @@ export async function sortSliced(items: Int32Array<ArrayBuffer>, before: (a: num
       let i = lo;
       let j = mid;
       let k = lo;
-      while (i < mid && j < hi) dst[k++] = before(src[j]!, src[i]!) ? src[j++]! : src[i++]!;
-      while (i < mid) dst[k++] = src[i++]!;
-      while (j < hi) dst[k++] = src[j++]!;
+      // a merge of two long runs is a long stretch on its own: look at the clock every 4,096 items
+      while (i < mid && j < hi) {
+        dst[k++] = before(src[j]!, src[i]!) ? src[j++]! : src[i++]!;
+        if ((k & 4095) === 0 && clock.due) await clock.pause();
+      }
+      while (i < mid) {
+        dst[k++] = src[i++]!;
+        if ((k & 65535) === 0 && clock.due) await clock.pause();
+      }
+      while (j < hi) {
+        dst[k++] = src[j++]!;
+        if ((k & 65535) === 0 && clock.due) await clock.pause();
+      }
       if (clock.due) await clock.pause();
     }
     const t = src;

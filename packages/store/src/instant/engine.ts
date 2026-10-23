@@ -386,9 +386,17 @@ export class InstantSearchEngine implements CachedSearchEngine {
       const terms = this.terms;
       // the sort's two id buffers, the sorted dictionary and the thread order's
       this.reserve(terms.length * 16 + this.tCount * 12, "dictionary and thread order");
-      const ids = await sortSliced(Int32Array.from(terms.keys()), (a, b) => terms[a]! < terms[b]!, clock);
+      // plain loops with ticks: Int32Array.from/Array.from over 500k terms are long stretches of their own
+      const unsorted = new Int32Array(terms.length);
+      for (let i = 0; i < unsorted.length; i++) unsorted[i] = i;
+      const ids = await sortSliced(unsorted, (a, b) => terms[a]! < terms[b]!, clock);
       this.baseSortedIds = ids;
-      this.baseSorted = Array.from(ids, (i) => terms[i]!);
+      const dictionary: string[] = [];
+      for (let i = 0; i < ids.length; i++) {
+        dictionary.push(terms[ids[i]!]!);
+        if ((i & 65535) === 0) await clock.tick();
+      }
+      this.baseSorted = dictionary;
       await this.buildPostings(clock);
       // the forward index grew by half each time: give back the slack (the copy coexists with it for a moment)
       if (this.fwd.length > this.fwdLen * 1.1) this.reserve(Math.ceil(this.fwdLen * 1.05), "forward index copy");
