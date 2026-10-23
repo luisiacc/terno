@@ -107,7 +107,7 @@ export class InstantSearch {
       if (this.at(head)) return true;
       if (this.now() > deadline) throw new Error(`instant search didn't settle (${this.report.state})`);
       // a sleeping loop looks at the head again (one waiting for writes to settle keeps waiting)
-      if (!this.pending) this.wake();
+      if (!this.settling) this.wake();
       await new Promise((r) => setTimeout(r, 5));
     }
   }
@@ -206,7 +206,10 @@ export class InstantSearch {
           }
           continue;
         }
-        const until = this.unsaved > 0 && this.o.snapshotPath ? Math.max(this.unsavedSince + this.snapshotEvery().ms, this.retrySnapshotAt) - this.now() : null;
+        // a commit that arrived while this pass awaited (after it read the head) must not wait for the next one
+        if (this.pending) continue;
+        // a deadline only where a snapshot can be written: otherwise an overdue one would poll forever
+        const until = this.unsaved > 0 && this.canSnapshot() ? Math.max(this.unsavedSince + this.snapshotEvery().ms, this.retrySnapshotAt) - this.now() : null;
         this.resting = true;
         await this.sleep(until);
         this.resting = false;
@@ -357,8 +360,12 @@ export class InstantSearch {
     return this.o.snapshotEvery ?? { changes: 5000, ms: 5 * 60_000 };
   }
 
+  private canSnapshot(): boolean {
+    return !!this.o.snapshotPath && !!this.o.platform.files;
+  }
+
   private snapshotDue(): boolean {
-    if (!this.o.snapshotPath || !this.o.platform.files || this.unsaved === 0 || this.now() < this.retrySnapshotAt) return false;
+    if (!this.canSnapshot() || this.unsaved === 0 || this.now() < this.retrySnapshotAt) return false;
     const every = this.snapshotEvery();
     return this.unsaved >= every.changes || this.now() - this.unsavedSince >= every.ms;
   }
