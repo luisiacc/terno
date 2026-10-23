@@ -488,22 +488,34 @@ export function beginMove(db: Db, m: { from: number; to: number; threadIds: read
       m.to,
       batchId,
     );
-    const added = db
-      .all<{ thread_id: number }>(
-        `INSERT INTO thread_categories (thread_id, category_id, added_by, added_at, batch_id)
-         SELECT thread_id, ?, ?, ?, ? FROM cat_move_threads WHERE batch_id = ? AND added = 1 RETURNING thread_id`,
-        m.to,
-        m.addedBy,
-        m.now,
-        batchId,
-        batchId,
-      )
-      .map((r) => r.thread_id);
-    const removed = db.all<{ thread_id: number; added_by: AddedBy }>(
-      `DELETE FROM thread_categories WHERE category_id = ? AND thread_id IN (${mine}) RETURNING thread_id, added_by`,
+    // a thread leaving `from` for `to` keeps its row, re-pointed (one write instead of a delete and an insert)
+    db.run(
+      `UPDATE thread_categories SET category_id = ?, added_by = ?, added_at = ?, batch_id = ?
+       WHERE category_id = ? AND thread_id IN (SELECT thread_id FROM cat_move_threads WHERE batch_id = ? AND added = 1 AND moved = 1)`,
+      m.to,
+      m.addedBy,
+      m.now,
+      batchId,
       m.from,
       batchId,
     );
+    db.run(
+      `INSERT INTO thread_categories (thread_id, category_id, added_by, added_at, batch_id)
+       SELECT thread_id, ?, ?, ?, ? FROM cat_move_threads WHERE batch_id = ? AND added = 1 AND moved = 0`,
+      m.to,
+      m.addedBy,
+      m.now,
+      batchId,
+      batchId,
+    );
+    db.run(
+      `DELETE FROM thread_categories WHERE category_id = ? AND thread_id IN (SELECT thread_id FROM cat_move_threads WHERE batch_id = ? AND added = 0 AND moved = 1)`,
+      m.from,
+      batchId,
+    );
+    const added = db.all<{ thread_id: number }>("SELECT thread_id FROM cat_move_threads WHERE batch_id = ? AND added = 1 ORDER BY thread_id", batchId).map((r) => r.thread_id);
+    // the source rows as they were (journaled above)
+    const removed = db.all<{ thread_id: number; added_by: AddedBy }>("SELECT thread_id, added_by FROM cat_move_rows WHERE batch_id = ? ORDER BY thread_id", batchId);
     // what addToCategory / removeFromCategory record about decisions
     db.run(
       `UPDATE cls_decisions SET outcome = 'accepted' WHERE category_id = ? AND kind = 'suggest' AND outcome IS NULL

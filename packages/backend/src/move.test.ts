@@ -97,8 +97,8 @@ describe("moving threads between categories", () => {
     const { backend, client, a, b, threads } = setup();
     const [t1] = threads as [number];
     await client.call("categories.addThreads", { categoryId: a, threadIds: [t1], source: "picker" });
-    // make the removal step fail inside the move's transaction
-    sqlDb(backend.store).exec("CREATE TRIGGER fail_removal BEFORE DELETE ON thread_categories BEGIN SELECT RAISE(ABORT, 'boom'); END");
+    // make the step that takes the thread out of `a` fail inside the move's transaction
+    sqlDb(backend.store).exec("CREATE TRIGGER fail_removal BEFORE UPDATE ON thread_categories BEGIN SELECT RAISE(ABORT, 'boom'); END");
     await expect(client.call("categories.moveThreads", { from: a, to: b, threadIds: [t1] })).rejects.toThrow();
     expect(membership(backend, t1, a)).toMatchObject({ added_by: "user" });
     expect(membership(backend, t1, b)).toBeUndefined();
