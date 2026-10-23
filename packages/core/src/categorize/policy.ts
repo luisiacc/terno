@@ -1,4 +1,4 @@
-import type { CategoryScore } from "./model";
+import { DOMAIN_MIN_SENDERS, type CategoryScore } from "./model";
 
 export type AutoCategorize = "off" | "suggest" | "auto";
 export type DecisionKind = "auto" | "suggest" | "none";
@@ -9,13 +9,16 @@ export const POLICY = {
   /** with 5–10 examples the eval makes no false positives and auto recall stays low: conservative by design */
   autoMinPositives: 5,
   suggestMinPositives: 3,
-  identityMinI: 2,
+  /** identity path: calibrated share of the key's mail the user files there (upper bound) */
+  identityMinFit: 0.9,
   identityMinSupport: 3,
   /** a domain speaks for a category only once several of its senders are in it (clients: yes; uber.com receipts vs promos: no) */
-  domainMinSenders: 3,
-  /** the sender must not be counter-evidence */
-  minI: -1,
+  domainMinSenders: DOMAIN_MIN_SENDERS,
+  /** below this calibrated share the identity is counter-evidence */
+  counterIdentityShare: 0.3,
   contentMinEvidence: 4,
+  /** to suggest against the sender's own history, content and intents must both nearly max out */
+  counterContentEvidence: 5,
   contentMinPositives: 30,
   contentMinSenders: 5,
   /** below this many examples/background threads a sender is unknown */
@@ -116,9 +119,9 @@ function autoGate(s: CategoryScore, input: PolicyInput, policy: CategoryPolicy):
   if (valvePaused(policy.kept, policy.reverted)) return "paused";
   if (s.positives < POLICY.autoMinPositives) return "few-examples";
   if (s.p < POLICY.autoP) return "low";
-  if (s.I <= POLICY.minI) return "counter-identity";
+  if (s.identity && s.identityShare <= POLICY.counterIdentityShare) return "counter-identity";
   const identity =
-    s.I >= POLICY.identityMinI &&
+    s.identityFit >= POLICY.identityMinFit &&
     s.identitySupport >= POLICY.identityMinSupport &&
     (s.identity !== "domain" || s.domainSenders >= POLICY.domainMinSenders);
   if (identity) return "auto:identity";
@@ -159,6 +162,11 @@ export function decide(input: PolicyInput): Decision[] {
     }
     if (input.lookAlike) {
       out.push(d("none", "veto:look-alike"));
+      continue;
+    }
+    // against the sender's own history only content this strong is worth a question (Amazon's invoices among its shipping notices)
+    if (s.identity && s.identityShare <= POLICY.counterIdentityShare && s.C + s.Nint < POLICY.counterContentEvidence) {
+      out.push(d("none", "counter-identity"));
       continue;
     }
     const gate = autoGate(s, input, policy);

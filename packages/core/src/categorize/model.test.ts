@@ -75,6 +75,40 @@ describe("categorizer model", () => {
     expect(scoreOf(m, enc(NEWSLETTER), LECTURAS).p).toBeGreaterThan(0.97);
   });
 
+  it("calibrates identity by the category's filing rate (positive-unlabeled)", () => {
+    // the user files ~30% of everything: a newsletter filed 30% of the time is entirely theirs
+    const m = new CategorizerModel({ decayRef: NOW });
+    const senders = ["a@news.io", "b@news.io", "c@digest.dev", "d@weekly.mx"];
+    let bg = 0;
+    for (const email of senders) {
+      for (let i = 0; i < 30; i++) m.train(ex(LECTURAS, enc({ ...NEWSLETTER, fromEmail: email })));
+      for (let i = 0; i < 70; i++) m.addBackground(bg++, enc({ ...NEWSLETTER, fromEmail: email }));
+    }
+    for (let i = 0; i < 300; i++) m.addBackground(bg++, enc({ ...FRIEND, fromEmail: `f${i % 30}@gmail.com` }));
+    expect(m.labelRate(LECTURAS)).toBeCloseTo(0.3, 5);
+    const s = scoreOf(m, enc({ ...NEWSLETTER, fromEmail: "a@news.io" }), LECTURAS);
+    expect(s.identityShare).toBeCloseTo(1, 5);
+    expect(s.identityFit).toBe(1);
+    // a sender the user files a tenth as often as the category's norm is counter-evidence
+    for (let i = 0; i < 3; i++) m.train(ex(LECTURAS, enc({ ...NEWSLETTER, fromEmail: "rare@x.io" })));
+    for (let i = 0; i < 97; i++) m.addBackground(bg++, enc({ ...NEWSLETTER, fromEmail: "rare@x.io" }));
+    const rare = scoreOf(m, enc({ ...NEWSLETTER, fromEmail: "rare@x.io" }), LECTURAS);
+    expect(rare.identityShare).toBeLessThan(0.15);
+    expect(rare.identityFit).toBeLessThan(0.3);
+  });
+
+  it("a domain vouches for a new sender only once several of its senders are filed", () => {
+    const m = trained();
+    // uber.com: one filed sender (receipts) — a new uber.com address gets no positive identity
+    const promo = scoreOf(m, enc({ fromEmail: "promociones@uber.com", fromName: "Uber", subject: "Descuento", bodyText: "Promoción" }), FACTURAS);
+    expect(promo.identity).toBeNull();
+    // a client company: many people, all filed
+    for (let i = 0; i < 6; i++) m.train(ex(LECTURAS + 1, enc({ fromEmail: `p${i}@cafealtura.mx`, fromName: `Persona ${i}`, subject: "Propuesta", bodyText: "Te comparto la propuesta" })));
+    const client = scoreOf(m, enc({ fromEmail: "nueva@cafealtura.mx", fromName: "Nueva", subject: "Propuesta", bodyText: "Te comparto la propuesta" }), LECTURAS + 1);
+    expect(client).toMatchObject({ identity: "domain", domainSenders: 6 });
+    expect(client.I).toBeGreaterThan(0);
+  });
+
   it("clips each evidence group (identity ±6, content ±4, intents ±3)", () => {
     const m = trained();
     for (let i = 0; i < 500; i++) m.train(ex(FACTURAS, enc()));

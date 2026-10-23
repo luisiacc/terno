@@ -7,6 +7,8 @@ const score = (over: Partial<CategoryScore> = {}): CategoryScore => ({
   p: 0.99,
   prior: 0,
   I: 4,
+  identityShare: 1,
+  identityFit: 1,
   C: 1,
   Nint: 1,
   identity: "sender",
@@ -46,8 +48,10 @@ describe("categorization policy", () => {
     expect(one({ scores: [score({ positives: 2 })] })).toMatchObject({ decision: "none", gate: "few-examples" });
   });
 
-  it("identity path: I ≥ 2 with support ≥ 3; a domain only once several of its senders are in the category", () => {
-    expect(one({ scores: [score({ I: 1.9 })] })).toMatchObject({ decision: "suggest" });
+  it("identity path: calibrated identity ≥ 0.9 with support ≥ 3; a domain only once several of its senders are in the category", () => {
+    expect(one({ scores: [score({ identityFit: 0.89 })] })).toMatchObject({ decision: "suggest" });
+    // a big category's llr is smaller than a small one's for the same filing rate: the gate doesn't care
+    expect(one({ scores: [score({ I: 1.5, identityFit: 0.95 })] })).toMatchObject({ decision: "auto" });
     expect(one({ scores: [score({ identitySupport: 2 })] })).toMatchObject({ decision: "suggest" });
     expect(one({ scores: [score({ identity: "domain", domainSenders: 2 })] })).toMatchObject({ decision: "suggest" });
     expect(one({ scores: [score({ identity: "domain", domainSenders: 3 })] })).toMatchObject({ decision: "auto" });
@@ -55,7 +59,7 @@ describe("categorization policy", () => {
   });
 
   it("content path: only for unknown senders, with strong content and a broad category", () => {
-    const content = score({ I: 0, identity: null, identitySupport: 0, C: 3, Nint: 1.5 });
+    const content = score({ I: 0, identityShare: 0, identityFit: 0, identity: null, identitySupport: 0, C: 3, Nint: 1.5 });
     expect(one({ scores: [content], senderSupport: 0 })).toMatchObject({ decision: "auto", gate: "auto:content" });
     expect(one({ scores: [content], senderSupport: 3 })).toMatchObject({ decision: "suggest" });
     expect(one({ scores: [{ ...content, C: 2 }], senderSupport: 0 })).toMatchObject({ decision: "suggest" });
@@ -63,8 +67,17 @@ describe("categorization policy", () => {
     expect(one({ scores: [{ ...content, positiveSenders: 4 }], senderSupport: 0 })).toMatchObject({ decision: "suggest" });
   });
 
-  it("never auto-applies against the sender (I ≤ −1)", () => {
-    expect(one({ scores: [score({ I: -1, C: 4, Nint: 3, identity: "sender" })], senderSupport: 0 })).toMatchObject({ decision: "suggest", gate: "suggest" });
+  it("never auto-applies against the sender (calibrated identity ≤ 0.3)", () => {
+    expect(one({ scores: [score({ I: -1, identityShare: 0.3, identityFit: 0.6, C: 4, Nint: 3, identity: "sender" })], senderSupport: 0 })).toMatchObject({ decision: "suggest", gate: "suggest" });
+    expect(decide(input({ scores: [score({ identityShare: 0.1, identityFit: 0.95 })] }))[0]!.decision).toBe("none");
+  });
+
+  it("suggests against the sender's history only on strong content", () => {
+    expect(one({ scores: [score({ identityShare: 0.1, C: 2, Nint: 1 })] })).toMatchObject({ decision: "none", gate: "counter-identity" });
+    expect(one({ scores: [score({ identityShare: 0.1, C: 4, Nint: 0.9 })] })).toMatchObject({ decision: "none" });
+    expect(one({ scores: [score({ identityShare: 0.1, C: 4, Nint: 2 })] })).toMatchObject({ decision: "suggest" });
+    // no identity at all is not counter-evidence
+    expect(one({ scores: [score({ identity: null, identitySupport: 0, identityShare: 0, identityFit: 0, I: 0, C: 1, Nint: 0 })], senderSupport: 0 })).toMatchObject({ decision: "suggest" });
   });
 
   it("vetoes block suggestions too: hard, sender back-off, look-alike", () => {
