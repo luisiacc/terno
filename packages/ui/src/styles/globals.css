@@ -185,6 +185,22 @@
     transition: none !important;
   }
 }
+/*
+ * sonner injects its own stylesheet (400–500 ms transitions, 200 ms exits)
+ * after ours, with selectors up to (0,5,0): toasts run at slow regardless.
+ */
+[data-sonner-toaster],
+[data-sonner-toaster] [data-sonner-toast],
+[data-sonner-toaster] [data-sonner-toast] *,
+[data-sonner-toaster] .sonner-loader {
+  transition-duration: var(--motion-slow) !important;
+}
+[data-sonner-toaster] [data-sonner-toast][data-swipe-out="true"],
+[data-sonner-toaster] .sonner-loading-wrapper[data-visible="false"],
+[data-sonner-toaster] [data-sonner-toast][data-promise="true"] [data-icon] > svg {
+  animation-duration: var(--motion-slow) !important;
+}
+
 /* switching theme or motion repaints in one frame: no color transitions */
 :root[data-theme-switching] *,
 :root[data-theme-switching] *::before,

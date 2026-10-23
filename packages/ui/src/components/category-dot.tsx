@@ -13,14 +13,14 @@ const DOT: Record<CategoryColor, string> = {
 }
 
 const SOFT: Record<CategoryColor, string> = {
-  rose: "bg-cat-rose/15 text-cat-rose",
-  amber: "bg-cat-amber/15 text-cat-amber",
-  lime: "bg-cat-lime/15 text-cat-lime",
-  emerald: "bg-cat-emerald/15 text-cat-emerald",
-  cyan: "bg-cat-cyan/15 text-cat-cyan",
-  indigo: "bg-cat-indigo/15 text-cat-indigo",
-  violet: "bg-cat-violet/15 text-cat-violet",
-  slate: "bg-cat-slate/15 text-cat-slate",
+  rose: "bg-cat-rose/15 text-cat-rose-ink",
+  amber: "bg-cat-amber/15 text-cat-amber-ink",
+  lime: "bg-cat-lime/15 text-cat-lime-ink",
+  emerald: "bg-cat-emerald/15 text-cat-emerald-ink",
+  cyan: "bg-cat-cyan/15 text-cat-cyan-ink",
+  indigo: "bg-cat-indigo/15 text-cat-indigo-ink",
+  violet: "bg-cat-violet/15 text-cat-violet-ink",
+  slate: "bg-cat-slate/15 text-cat-slate-ink",
 }
 
 /** Small colored dot used for categories and accounts. */
