@@ -4,14 +4,14 @@ import { getApp, navigate, setApp } from "~/state/app";
 import { reloadList } from "~/state/list";
 import { invalidateThreads, loadThread } from "~/state/threads";
 import { toast } from "sonner";
-import { applyAppearance, installAppearanceListeners, updateAppearance } from "~/lib/appearance";
+import { applyAppearance, installAppearanceListeners, reconcileSettings, updateAppearance } from "~/lib/appearance";
 import { exposeForTests } from "~/lib/render-probe";
 
 export async function boot(): Promise<void> {
   try {
     await connectBackend();
     const b = await client.call("app.bootstrap", {});
-    applyAppearance(b.settings);
+    applyAppearance(reconcileSettings(b.settings));
     setApp({ ready: true, accounts: b.accounts, categories: b.categories, counts: b.counts, settings: b.settings, owner: b.owner, demo: b.demo, version: b.version });
     installAppearanceListeners();
     exposeForTests({ updateAppearance, getApp });

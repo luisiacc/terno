@@ -28,6 +28,7 @@ import {
 import { formatBytes } from "~/lib/format";
 import { client } from "~/rpc/connection";
 import { setApp } from "~/state/app";
+import { reconcileSettings } from "~/lib/appearance";
 
 const targetKey = (ai: AppSettings["ai"]) => [ai.provider, ai.preset ?? "", ai.baseURL ?? "", ai.model].join("|");
 
@@ -138,7 +139,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: (pa
   const [key, setKey] = useState("");
   const saveKey = async (value: string) => {
     const next = await client.call("ai.setKey", { provider: ai.provider, preset: ai.preset ?? undefined, value });
-    setApp({ settings: next });
+    setApp({ settings: reconcileSettings(next) });
     setKey("");
     toast.success(value ? "API key guardada en el llavero" : "API key eliminada");
   };

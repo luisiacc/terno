@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { client } from "~/rpc/connection";
 import { setApp } from "~/state/app";
+import { reconcileSettings } from "~/lib/appearance";
 
 const STEP_KEY = "unica:first-run";
 
@@ -44,7 +45,7 @@ export function FirstRun() {
   const confirmMode = async () => {
     try {
       const settings = await client.call("settings.update", choice === "local" ? { localMode: true, ...(found ? { ai: { provider: found.provider, model: found.model } } : {}) } : { localMode: false });
-      setApp({ settings });
+      setApp({ settings: reconcileSettings(settings) });
       go("account");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));

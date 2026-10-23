@@ -18,6 +18,7 @@ import { AiTab } from "./settings/ai-tab";
 import { AppearanceTab } from "./settings/appearance-tab";
 import { CategoriesTab } from "./settings/categories-tab";
 import { OwnerCard } from "./settings/owner-card";
+import { reconcileSettings } from "~/lib/appearance";
 
 function Row({ label, hint, children, testId, labelId, hintId }: { label: string; hint?: string; children: React.ReactNode; testId?: string; labelId?: string; hintId?: string }) {
   return (
@@ -74,7 +75,7 @@ export function SettingsDialog() {
 
   const update = useCallback(async (patch: SettingsPatch) => {
     const next = await client.call("settings.update", patch);
-    setApp({ settings: next });
+    setApp({ settings: reconcileSettings(next) });
   }, []);
   if (!settings) return null;
   const mcp = agent?.mcpCommand ?? "/Applications/Unica.app/Contents/Resources/bin/unica-mcp";

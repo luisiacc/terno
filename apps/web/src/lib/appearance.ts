@@ -135,24 +135,57 @@ export function installAppearanceListeners(): () => void {
   };
 }
 
-/** Optimistic: the app repaints before the backend answers; a refusal puts the previous look back. */
-export async function updateAppearance(patch: Pick<SettingsPatch, "theme" | "lightTheme" | "darkTheme" | "motionMs" | "customThemes" | "htmlMailAppearance">): Promise<AppSettings | null> {
-  const before = getApp().settings;
-  if (!before) return null;
-  const optimistic = { ...before, ...patch } as AppSettings;
-  applyAppearance(optimistic);
-  setApp({ settings: optimistic });
-  try {
-    const next = await client.call("settings.update", patch);
-    setApp({ settings: next });
-    applyAppearance(next);
-    return next;
-  } catch (error) {
-    applyAppearance(before);
-    setApp({ settings: before });
-    toast.error(`No se pudo cambiar la apariencia: ${error instanceof Error ? error.message : error}`);
-    return null;
-  }
+type AppearancePatch = Pick<SettingsPatch, "theme" | "lightTheme" | "darkTheme" | "motionMs" | "customThemes" | "htmlMailAppearance">;
+const APPEARANCE_FIELDS = ["theme", "lightTheme", "darkTheme", "motionMs", "customThemes", "htmlMailAppearance"] as const;
+
+/** Appearance changes not yet acknowledged, oldest first (each one is sent after the previous answered). */
+const pending: { patch: AppearancePatch }[] = [];
+let queue: Promise<unknown> = Promise.resolve();
+/** The appearance the backend last confirmed (bootstrap, or an answer to settings.update). */
+let confirmed: Pick<AppSettings, (typeof APPEARANCE_FIELDS)[number]> | null = null;
+
+/**
+ * Records a settings snapshot from the backend and returns it with the
+ * appearance changes still on their way laid over it. Every settings answer
+ * goes through here, so an older snapshot never paints over a newer choice.
+ */
+export function reconcileSettings(settings: AppSettings): AppSettings {
+  confirmed = Object.fromEntries(APPEARANCE_FIELDS.map((k) => [k, settings[k]])) as typeof confirmed;
+  return pending.reduce<AppSettings>((s, p) => ({ ...s, ...p.patch }) as AppSettings, settings);
+}
+
+function show(settings: AppSettings): void {
+  setApp({ settings });
+  applyAppearance(settings);
+}
+
+/**
+ * Optimistic and serialized: the app repaints at once, changes are persisted
+ * one at a time in order, and each answer (or refusal) is reconciled against
+ * the changes still pending. A refusal drops only its own change.
+ */
+export function updateAppearance(patch: AppearancePatch): Promise<AppSettings | null> {
+  const current = getApp().settings;
+  if (!current) return Promise.resolve(null);
+  const entry = { patch };
+  pending.push(entry);
+  show({ ...current, ...patch } as AppSettings);
+  const done = queue.then(async () => {
+    try {
+      const next = await client.call("settings.update", patch);
+      pending.splice(pending.indexOf(entry), 1);
+      show(reconcileSettings(next));
+      return next;
+    } catch (error) {
+      pending.splice(pending.indexOf(entry), 1);
+      const base = { ...getApp().settings!, ...confirmed } as AppSettings;
+      show(pending.reduce<AppSettings>((s, p) => ({ ...s, ...p.patch }) as AppSettings, base));
+      toast.error(`No se pudo cambiar la apariencia: ${error instanceof Error ? error.message : error}`);
+      return null;
+    }
+  });
+  queue = done;
+  return done;
 }
 
 export interface MailColors {

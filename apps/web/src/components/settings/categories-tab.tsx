@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
+import { reconcileSettings } from "~/lib/appearance";
 
 const MODES = [
   { value: "off", label: "Desactivada" },
@@ -23,7 +24,7 @@ export function CategoriesTab({ settings }: { settings: AppSettings }) {
 
   const setMode = async (mode: AppSettings["autoCategorize"]) => {
     try {
-      setApp({ settings: await client.call("settings.update", { autoCategorize: mode }) });
+      setApp({ settings: reconcileSettings(await client.call("settings.update", { autoCategorize: mode })) });
     } catch (e) {
       toast.error(String(e));
     }
@@ -69,7 +70,7 @@ export function CategoriesTab({ settings }: { settings: AppSettings }) {
           aria-describedby="ai-categorize-hint"
           checked={settings.aiCategorize}
           disabled={settings.ai.provider === "none" && !settings.aiCategorize}
-          onCheckedChange={(on) => void client.call("settings.update", { aiCategorize: on }).then((next) => setApp({ settings: next }))}
+          onCheckedChange={(on) => void client.call("settings.update", { aiCategorize: on }).then((next) => setApp({ settings: reconcileSettings(next) }))}
         />
       </div>
       <ul className="divide-y divide-border">
