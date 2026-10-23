@@ -1,20 +1,13 @@
-import {
-  evaluateRule,
-  isFullEmail,
-  normalizeText,
-  parseSearch,
-  tokenize,
-  VIEWS,
-  type FilterRule,
-  type MessageTerm,
-  type RuleMessage,
-  type View,
-} from "@unica/core";
+import { evaluateRule, tokenize, VIEWS, type FilterRule, type RuleMessage, type View } from "@unica/core";
 import { generateDataset } from "@unica/mock-data";
+import { UNVERSIONED } from "@unica/store";
+import { byRecency, defineSearchConformance, VIEW_TEST, type SearchCorpus, type SearchHarness } from "@unica/store/conformance";
 import { beforeAll, describe, expect, it } from "vitest";
 import { listThreads, getCounts, VIEW_WHERE, type Cursor } from "./queries";
 import { findRuleMatches } from "./rules";
-import { searchThreads, type SearchStrategy } from "./search";
+import { resolveQuery } from "./search";
+import { messageDocs, threadDocs } from "./search-docs";
+import { Fts5SearchEngine } from "./search-engine";
 import { seedDataset } from "./seed";
 import type { Db } from "./sqlite";
 import { openDatabase } from "./index";
@@ -24,9 +17,8 @@ import { join } from "node:path";
 
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
 
-interface OracleMessage {
+interface RuleRow {
   id: number;
-  thread_id: number;
   account_id: number;
   from_name: string;
   from_email: string;
@@ -38,241 +30,56 @@ interface OracleMessage {
   date: number;
   is_trash: number;
 }
-interface OracleThread {
-  id: number;
-  account_id: number;
-  last_date: number;
-  unread_count: number;
-  is_starred: number;
-  in_inbox: number;
-  has_sent: number;
-  in_trash: number;
-  in_spam: number;
-}
 
 let db: Db;
-let messages: OracleMessage[];
-let threads: Map<number, OracleThread>;
-let threadCategories: Map<number, Set<number>>;
+let corpus: SearchCorpus;
+let messages: RuleRow[];
+
+function open(): Db {
+  db ??= (() => {
+    const d = openDatabase(join(mkdtempSync(join(tmpdir(), "unica-search-")), "s.db"));
+    seedDataset(d, generateDataset({ threads: 2500, accounts: 4, seed: 11, now: NOW }), { now: NOW });
+    return d;
+  })();
+  return db;
+}
+
+function snapshot(d: Db): SearchCorpus {
+  return {
+    messages: messageDocs(d),
+    threads: threadDocs(d),
+    accounts: d.all("SELECT id, email, display_name FROM accounts"),
+    categories: d.all("SELECT id, name FROM categories"),
+  };
+}
 
 beforeAll(() => {
-  db = openDatabase(join(mkdtempSync(join(tmpdir(), "unica-search-")), "s.db"));
-  seedDataset(db, generateDataset({ threads: 2500, accounts: 4, seed: 11, now: NOW }), { now: NOW });
-  messages = db.all<OracleMessage>(
-    "SELECT id, thread_id, account_id, from_name, from_email, recipients_text, subject, body_text, list_id, has_attachments, date, is_trash FROM messages",
+  open();
+  corpus = snapshot(db);
+  messages = db.all<RuleRow>(
+    "SELECT id, account_id, from_name, from_email, recipients_text, subject, body_text, list_id, has_attachments, date, is_trash FROM messages",
   );
-  threads = new Map(db.all<OracleThread>("SELECT * FROM threads").map((t) => [t.id, t]));
-  threadCategories = new Map();
-  for (const r of db.all<{ thread_id: number; category_id: number }>("SELECT * FROM thread_categories")) {
-    const set = threadCategories.get(r.thread_id) ?? new Set();
-    set.add(r.category_id);
-    threadCategories.set(r.thread_id, set);
-  }
 });
 
-// ───────────── oracle: an independent implementation of search semantics ─────────────
-
-function phraseIn(columnText: string, term: MessageTerm): boolean {
-  const tokens = tokenize(columnText);
-  const needle = tokenize(term.value);
-  if (needle.length === 0) return false;
-  for (let i = 0; i + needle.length <= tokens.length; i++) {
-    if (
-      needle.every((t, j) =>
-        term.prefix && j === needle.length - 1 ? tokens[i + j]!.startsWith(t) : tokens[i + j] === t,
-      )
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function termMatches(m: OracleMessage, term: MessageTerm): boolean {
-  const columns = {
-    subject: m.subject,
-    from: `${m.from_name} ${m.from_email}`,
-    to: m.recipients_text,
-    body: m.body_text ?? "",
+function harness(mode: "ids" | "fused"): () => Promise<SearchHarness> {
+  return async () => {
+    const d = open();
+    const engine = new Fts5SearchEngine(d);
+    return {
+      now: NOW,
+      corpus: async () => snapshot(d),
+      search: async (query, scope, cursor, limit) => {
+        const req = { search: resolveQuery(d, { query, ...scope, now: NOW }), cursor, limit };
+        if (mode === "ids") return engine.query(req, UNVERSIONED);
+        const page = engine.page(req, UNVERSIONED);
+        return { threadIds: page.items.map((t) => t.id), nextCursor: page.nextCursor, strategy: page.strategy };
+      },
+    };
   };
-  if (term.field === "text") return Object.values(columns).some((c) => phraseIn(c, term));
-  return phraseIn(columns[term.field], term);
 }
 
-const VIEW_TEST: Record<View, (t: OracleThread) => boolean> = {
-  inbox: (t) => t.in_inbox === 1,
-  starred: (t) => t.is_starred === 1 && !t.in_trash && !t.in_spam,
-  sent: (t) => t.has_sent === 1 && !t.in_trash && !t.in_spam,
-  archive: (t) => !t.in_inbox && !t.in_trash && !t.in_spam,
-  spam: (t) => t.in_spam === 1 && !t.in_trash,
-  trash: (t) => t.in_trash === 1,
-  all: (t) => !t.in_trash && !t.in_spam,
-};
-
-function oracle(query: string, scope: { accountId?: number; categoryId?: number } = {}): number[] {
-  const q = parseSearch(query, NOW);
-  const accounts = db.all<{ id: number; email: string; display_name: string }>("SELECT id, email, display_name FROM accounts");
-  const categories = db.all<{ id: number; name: string }>("SELECT id, name FROM categories");
-  const emailTerms = q.terms.filter((t) => t.field === "from" && isFullEmail(t.value));
-  const ftsTerms = q.terms.filter((t) => !(t.field === "from" && isFullEmail(t.value)) && tokenize(t.value).length > 0);
-  const positive = ftsTerms.filter((t) => !t.negate);
-  const negative = ftsTerms.filter((t) => t.negate);
-  const hasMessagePredicate =
-    positive.length > 0 || emailTerms.length > 0 || q.hasAttachment !== undefined || q.before !== undefined || q.after !== undefined;
-
-  const messageOk = (m: OracleMessage) =>
-    positive.every((t) => termMatches(m, t)) &&
-    // negatives are message-level whenever any message predicate exists
-    (!hasMessagePredicate || negative.every((t) => !termMatches(m, t))) &&
-    emailTerms.every((t) => (normalizeText(t.value) === m.from_email) !== t.negate) &&
-    (q.hasAttachment === undefined || (m.has_attachments === 1) === q.hasAttachment) &&
-    (q.before === undefined || m.date < q.before) &&
-    (q.after === undefined || m.date >= q.after);
-
-  const candidate = new Set<number>();
-  if (hasMessagePredicate) {
-    for (const m of messages) if (messageOk(m)) candidate.add(m.thread_id);
-  } else {
-    for (const id of threads.keys()) candidate.add(id);
-  }
-  if (!hasMessagePredicate && negative.length > 0) {
-    // negative-only: threads with no message matching any negated term
-    for (const m of messages) if (negative.some((t) => termMatches(m, t))) candidate.delete(m.thread_id);
-  }
-
-  const accountIds = new Set<number>(scope.accountId ? [scope.accountId] : []);
-  let impossible = false;
-  for (const token of q.accounts) {
-    const matches = accounts.filter((a) => normalizeText(a.email).includes(token) || normalizeText(a.display_name).includes(token));
-    if (!matches.length) impossible = true;
-    for (const a of matches) accountIds.add(a.id);
-  }
-  const excludedAccounts = new Set(
-    q.excludeAccounts.flatMap((token) => accounts.filter((a) => normalizeText(a.email).includes(token) || normalizeText(a.display_name).includes(token)).map((a) => a.id)),
-  );
-  const excludedCategories = q.excludeCategories
-    .map((token) => (categories.find((x) => normalizeText(x.name) === token) ?? categories.find((x) => normalizeText(x.name).startsWith(token)))?.id)
-    .filter((x): x is number => x !== undefined);
-  const categoryIds = scope.categoryId ? [scope.categoryId] : [];
-  for (const token of q.categories) {
-    const c = categories.find((x) => normalizeText(x.name) === token) ?? categories.find((x) => normalizeText(x.name).startsWith(token));
-    if (!c) impossible = true;
-    else categoryIds.push(c.id);
-  }
-  if (impossible) return [];
-  const view = q.view ?? "all";
-  return [...candidate]
-    .map((id) => threads.get(id)!)
-    .filter(
-      (t) =>
-        VIEW_TEST[view](t) &&
-        (accountIds.size === 0 || accountIds.has(t.account_id)) &&
-        !excludedAccounts.has(t.account_id) &&
-        excludedCategories.every((c) => !threadCategories.get(t.id)?.has(c)) &&
-        categoryIds.every((c) => threadCategories.get(t.id)?.has(c)) &&
-        (q.unread === undefined || t.unread_count > 0 === q.unread) &&
-        (q.starred === undefined || (t.is_starred === 1) === q.starred),
-    )
-    .sort((a, b) => b.last_date - a.last_date || b.id - a.id)
-    .map((t) => t.id);
-}
-
-function searchAll(query: string, scope: { accountId?: number; categoryId?: number } = {}, pageSize = 37) {
-  const ids: number[] = [];
-  const strategies = new Set<SearchStrategy>();
-  let cursor: Cursor | undefined;
-  for (let guard = 0; guard < 1000; guard++) {
-    const page = searchThreads(db, { query, limit: pageSize, cursor, now: NOW, ...scope });
-    strategies.add(page.strategy);
-    ids.push(...page.items.map((t) => t.id));
-    if (!page.nextCursor) break;
-    cursor = page.nextCursor;
-  }
-  return { ids, strategies };
-}
-
-// ───────────────────────────── tests ─────────────────────────────
-
-describe("search matches the oracle (all pages)", () => {
-  const cases: [string, SearchStrategy][] = [
-    ["factura", "fts"],
-    ["reunión", "fts"],
-    ["reunion", "fts"], // accent-insensitive
-    ["REUNIÓN", "fts"],
-    ["propu", "fts"], // prefix while typing
-    ['"darse de baja"', "fts"],
-    ['"baja darse"', "fts"],
-    ["from:lucia", "fts"],
-    ["de:garcía", "fts"],
-    ["to:luis", "fts"],
-    ["subject:propuesta", "fts"],
-    ["subject:propuesta from:lucia", "fts"],
-    ["factura -uber", "fts"],
-    ["in:inbox factura", "fts"],
-    ["factura has:attachment", "fts"],
-    ["checkout from:notifications@github.com", "fts"],
-    ["from:crew@morningbrew.com", "sender-index"],
-    ["from:crew@morningbrew.com is:unread", "sender-index"],
-    ["from:crew@morningbrew.com from:hola@platzi.com", "empty"],
-    ["has:attachment", "walk"],
-    ["is:unread", "walk"],
-    ["is:starred", "walk"],
-    ["in:spam", "walk"],
-    ["in:trash", "walk"],
-    ["in:sent", "walk"],
-    ["category:facturas", "walk"],
-    ["account:acme", "walk"],
-    ["account:nonexistent", "empty"],
-    ["category:nonexistent factura", "empty"],
-    ["before:2025-06-01", "date-index"],
-    ["after:30d", "walk"],
-    ["after:90d has:attachment", "walk"],
-    ["-factura", "fts-exclude"],
-    ["-from:crew@morningbrew.com", "walk"],
-    ["from:crew@morningbrew.com -markets", "sender-index"],
-    ["has:attachment -factura", "walk"],
-    ["before:2025-06-01 -factura", "date-index"],
-    ["-account:acme", "walk"],
-    ["factura -category:facturas", "fts"],
-    ["-before:2025-06-01 has:attachment", "walk"],
-    ["zzzqqqxx", "fts"],
-    ["!!!", "walk"],
-  ];
-
-  it.each(cases)("%s", (query, strategy) => {
-    const expected = oracle(query);
-    const { ids, strategies } = searchAll(query);
-    expect([...strategies]).toEqual([strategy]);
-    expect(ids).toEqual(expected);
-  });
-
-  it("finds a meaningful number of results for common queries (fixture sanity)", () => {
-    expect(oracle("factura").length).toBeGreaterThan(50);
-    expect(oracle("from:crew@morningbrew.com").length).toBeGreaterThan(10);
-    expect(oracle("factura -uber").length).toBeLessThan(oracle("factura").length);
-  });
-
-  it("respects account and category scope from the UI", () => {
-    const account = db.get<{ id: number }>("SELECT id FROM accounts ORDER BY id LIMIT 1 OFFSET 1")!.id;
-    expect(searchAll("factura", { accountId: account }).ids).toEqual(oracle("factura", { accountId: account }));
-    expect(searchAll("factura", { categoryId: 1 }).ids).toEqual(oracle("factura", { categoryId: 1 }));
-  });
-
-  it("requires message predicates to match the same message", () => {
-    // thread where X sent a message, and a *different* message (not from X) mentions "presupuesto"
-    const row = db.get<{ thread_id: number; from_email: string }>(
-      `SELECT a.thread_id, a.from_email FROM messages a JOIN messages b ON a.thread_id = b.thread_id AND a.from_email != b.from_email
-       WHERE b.body_text LIKE '%presupuesto%' AND a.from_email LIKE '%@%.%'
-         AND NOT EXISTS (SELECT 1 FROM messages c WHERE c.thread_id = a.thread_id AND c.from_email = a.from_email
-                         AND (c.body_text LIKE '%presupuesto%' OR c.subject LIKE '%presupuesto%'))
-       LIMIT 1`,
-    );
-    expect(row).toBeTruthy();
-    expect(searchAll("presupuesto").ids).toContain(row!.thread_id); // positive control
-    expect(searchAll(`from:${row!.from_email}`).ids).toContain(row!.thread_id); // positive control
-    expect(searchAll(`from:${row!.from_email} presupuesto`).ids).not.toContain(row!.thread_id);
-  });
-});
+defineSearchConformance("FTS5 engine (thread ids)", harness("ids"), { strategies: true });
+defineSearchConformance("FTS5 engine (fused summaries)", harness("fused"), { strategies: true });
 
 describe("thread lists", () => {
   it("keyset pagination returns every thread exactly once, in order, despite shared timestamps", () => {
@@ -286,10 +93,7 @@ describe("thread lists", () => {
         ids.push(...page.items.map((t) => t.id));
         cursor = page.nextCursor ?? undefined;
       } while (cursor);
-      const expected = [...threads.values()]
-        .filter(VIEW_TEST[view])
-        .sort((a, b) => b.last_date - a.last_date || b.id - a.id)
-        .map((t) => t.id);
+      const expected = corpus.threads.filter(VIEW_TEST[view]).sort(byRecency).map((t) => t.threadId);
       expect(ids, view).toEqual(expected);
     }
   });
@@ -325,21 +129,21 @@ describe("thread lists", () => {
 
   it("sidebar counts equal a brute-force count of unread threads", () => {
     const counts = getCounts(db);
-    const inbox = [...threads.values()].filter((t) => t.in_inbox && t.unread_count > 0);
+    const inbox = corpus.threads.filter((t) => t.inInbox && t.unreadCount > 0);
     expect(counts.inboxUnread).toBe(inbox.length);
     for (const [accountId, n] of Object.entries(counts.inboxUnreadByAccount)) {
-      expect(n).toBe(inbox.filter((t) => t.account_id === Number(accountId)).length);
+      expect(n).toBe(inbox.filter((t) => t.accountId === Number(accountId)).length);
     }
     for (const [categoryId, total] of Object.entries(counts.categoryTotal)) {
-      const members = [...threads.values()].filter((t) => threadCategories.get(t.id)?.has(Number(categoryId)) && !t.in_trash && !t.in_spam);
+      const members = corpus.threads.filter((t) => t.categoryIds.includes(Number(categoryId)) && !t.inTrash && !t.inSpam);
       expect(total).toBe(members.length);
-      expect(counts.categoryUnread[Number(categoryId)]).toBe(members.filter((t) => t.unread_count > 0).length);
+      expect(counts.categoryUnread[Number(categoryId)]).toBe(members.filter((t) => t.unreadCount > 0).length);
     }
   });
 });
 
 describe("filter rules: JS evaluator and SQL compiler agree", () => {
-  function toRuleMessage(m: OracleMessage): RuleMessage {
+  function toRuleMessage(m: RuleRow): RuleMessage {
     return {
       accountId: m.account_id,
       fromName: m.from_name,
