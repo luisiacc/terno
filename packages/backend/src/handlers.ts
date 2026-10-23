@@ -140,7 +140,7 @@ export function createHandlers(b: Backend): Handlers {
       // Latest-wins per client: a query superseded while queued is not executed.
       const seq = (b.searchSeq.get(ctx.clientId) ?? 0) + 1;
       b.searchSeq.set(ctx.clientId, seq);
-      await new Promise((r) => setImmediate(r));
+      await b.platform.yield();
       if (b.searchSeq.get(ctx.clientId) !== seq) throw new RpcError("CANCELLED", "Superseded by a newer search");
       const started = performance.now();
       const result = searchThreads(db(), { ...p, now: b.now() });
@@ -308,7 +308,7 @@ export function createHandlers(b: Backend): Handlers {
       const matched: number[] = [];
       for (let from = bounds.lo ?? 1; bounds.hi !== null && from <= bounds.hi; from += 4000) {
         matched.push(...findRuleMatches(db(), filter.rule, b.now(), undefined, { from, to: from + 3999 }).messageIds);
-        await new Promise((r) => setImmediate(r));
+        await b.platform.yield();
       }
       const matches = { messageIds: matched };
       const touched = new Set<number>();

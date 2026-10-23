@@ -108,7 +108,7 @@ export class AiAssist {
   private async consider(threadId: number): Promise<"done" | "wait" | "stop"> {
     const { db } = this.host;
     const model = this.host.categorizer.model;
-    if (!model || !db.raw.isOpen || !this.allowed(threadId)) return "done";
+    if (!model || !db.isOpen || !this.allowed(threadId)) return "done";
     const set = threadFeatures(db, [threadId]).get(threadId);
     if (!set || model.lookAlike(set.encoded)) return "done";
     const scores = model.score(set.encoded);
@@ -143,7 +143,7 @@ export class AiAssist {
       });
       if (!r?.label || r.confidence < AI_MIN_CONFIDENCE) return "done";
       const score = band.find((s) => names.get(s.categoryId) === r.label);
-      if (!score || !db.raw.isOpen) return "done";
+      if (!score || !db.isOpen) return "done";
       const wrote = db.tx(() => {
         // the provider took a while: the user, the settings or the model may have spoken since
         if (!this.allowed(threadId) || !this.host.categorizer.model) return false;

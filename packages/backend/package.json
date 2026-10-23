@@ -15,6 +15,7 @@
     "@unica/db": "workspace:*",
     "@unica/mail": "workspace:*",
     "@unica/mock-data": "workspace:*",
+    "@unica/store": "workspace:*",
     "ws": "^8.22.0"
   },
   "devDependencies": {

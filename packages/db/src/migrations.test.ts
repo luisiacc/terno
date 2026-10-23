@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { generateDataset } from "@unica/mock-data";
 import { ingestMessages } from "./ingest";
 import { MIGRATIONS, migrate, SCHEMA_VERSION } from "./migrations";
+import { nodeSqliteDriver } from "./node-driver";
 import { Db } from "./sqlite";
 
 const dirs: string[] = [];
@@ -18,7 +19,7 @@ afterEach(() => {
 function v2(): Db {
   const dir = mkdtempSync(join(tmpdir(), "unica-mig3-"));
   dirs.push(dir);
-  const db = new Db(join(dir, "v2.db"));
+  const db = new Db(nodeSqliteDriver, join(dir, "v2.db"));
   dbs.push(db);
   for (const m of MIGRATIONS.filter((m) => m.version <= 2)) db.exec(m.sql);
   db.exec("PRAGMA user_version = 2");
@@ -111,7 +112,7 @@ describe("migration v3: owner identity, AI secret, local mode", () => {
   it("writes nothing for a fresh install, so local mode stays the default", () => {
     const dir = mkdtempSync(join(tmpdir(), "unica-mig3-"));
     dirs.push(dir);
-    const db = new Db(join(dir, "fresh.db"));
+    const db = new Db(nodeSqliteDriver, join(dir, "fresh.db"));
     dbs.push(db);
     migrate(db);
     expect(appSettings(db)).toBeNull();
@@ -141,7 +142,7 @@ describe("migration v4: smart categorization", () => {
   function seededV3(): { db: Db; threads: number[] } {
     const dir = mkdtempSync(join(tmpdir(), "unica-mig4-"));
     dirs.push(dir);
-    const db = new Db(join(dir, "v3.db"));
+    const db = new Db(nodeSqliteDriver, join(dir, "v3.db"));
     dbs.push(db);
     for (const m of MIGRATIONS.filter((m) => m.version <= 3)) db.exec(m.sql);
     db.exec("PRAGMA user_version = 3");

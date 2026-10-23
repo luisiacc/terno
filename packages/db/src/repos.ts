@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type {
   Account,
   AccountKind,
@@ -340,7 +339,7 @@ export function enqueueOp(
         }
       }
     }
-    const id = randomUUID();
+    const id = db.uuid();
     db.run(
       `INSERT INTO ops (id, seq, account_id, kind, target_json, payload_json, state, created_at, updated_at, next_attempt_at)
        VALUES (?, (SELECT coalesce(max(seq), 0) + 1 FROM ops), ?, ?, ?, ?, 'queued', ?, ?, 0)`,

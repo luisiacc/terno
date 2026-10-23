@@ -16,10 +16,12 @@ import {
   type Db,
   type ModelDelta,
 } from "@unica/db";
+import type { Platform } from "@unica/store";
 import { readAutoCategorize } from "./settings";
 
 export interface CategorizerHost {
   readonly db: Db;
+  readonly platform: Platform;
   now(): number;
   runSliced<T>(items: readonly T[], initialSize: number, work: (chunk: T[]) => void): Promise<void>;
   log(level: "info" | "warn" | "error", message: string, extra?: unknown): void;
@@ -120,7 +122,7 @@ export class Categorizer {
     if (this.backfillTimer) clearTimeout(this.backfillTimer);
     this.backfillTimer = setTimeout(() => {
       this.backfillTimer = null;
-      if (!this.host.db.raw.isOpen) return;
+      if (!this.host.db.isOpen) return;
       this.backfilled = 0;
       void this.rebuild();
     }, BACKFILL_SETTLE_MS);
@@ -163,7 +165,7 @@ export class Categorizer {
         for (;;) {
           const n = backfillExamples(db, 500);
           if (n === 0) break;
-          await new Promise((r) => setImmediate(r));
+          await this.host.platform.yield();
         }
         this.pending = [];
         this.readTo = null;
@@ -180,7 +182,7 @@ export class Categorizer {
             if (page.length) this.readTo = cursor = page[page.length - 1]!.key;
           } while (page.length === 250 && performance.now() - started < SLICE_MS);
           if (page.length < 250) break;
-          await new Promise((r) => setImmediate(r));
+          await this.host.platform.yield();
         }
         this.readTo = "all";
         const own = ownAddresses(db);
@@ -194,7 +196,7 @@ export class Categorizer {
         this.pending = null;
         await this.suggestBackfill(m);
       } catch (error) {
-        if (db.raw.isOpen) this.host.log("warn", "categorizer rebuild failed", error instanceof Error ? error.message : error);
+        if (db.isOpen) this.host.log("warn", "categorizer rebuild failed", error instanceof Error ? error.message : error);
       } finally {
         this.pending = null;
         this.readTo = null;
@@ -210,7 +212,7 @@ export class Categorizer {
     const db = this.host.db;
     const ids = backfillCandidates(db, this.host.now());
     await this.host.runSliced(ids, 50, (chunk) => {
-      if (this.current !== m || !db.raw.isOpen) return;
+      if (this.current !== m || !db.isOpen) return;
       const r = suggestBackfill(db, { threadIds: chunk, now: this.host.now(), mode: readAutoCategorize(db), model: m });
       if (r.touched.size) this.host.notifyChanged(r.touched, false);
     });

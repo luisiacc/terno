@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-import { setImmediate as yieldToLoop } from "node:timers/promises";
 import type { AiTasks } from "@unica/ai";
 import type { Account, AccountSyncState, FilterAction, ThreadAction } from "@unica/core";
 import { RpcServer, type CallContext, type MethodName, type OpInfo, type Transport } from "@unica/core/rpc";
@@ -25,6 +23,7 @@ import {
   listFilters,
   markOpUnknown,
   messagesWithPendingOps,
+  nodePlatform,
   openDatabase,
   recomputeThreads,
   adoptProviderThread,
@@ -48,6 +47,7 @@ import {
   trainMoveSlice,
   unfinishedMoves,
 } from "@unica/db";
+import type { Platform } from "@unica/store";
 import { ProviderError, type MailProvider, type ProviderRegistry, type SyncSink } from "@unica/mail";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { AiAssist } from "./ai-assist";
@@ -95,6 +95,8 @@ export interface BackendOptions {
   sliceBudgetMs?: number;
   /** DNS for the network policy (tests resolve names without real DNS) */
   lookup?: LookupAll;
+  /** ids and event-loop yields (defaults to Node's) */
+  platform?: Platform;
 }
 
 const COUNTS_EVERY_MS = 200;
@@ -135,6 +137,7 @@ export class Backend {
   readonly searchSeq = new Map<string, number>();
   private readonly checkpointer: CheckpointWorker | null;
   readonly abort = new AbortController();
+  readonly platform: Platform;
   /** the only way out of the backend: every outbound request asks it first */
   readonly net: NetworkPolicy;
   readonly aiService: AiService;
@@ -148,7 +151,8 @@ export class Backend {
     // explicit `undefined` must not clobber defaults
     const defined = Object.fromEntries(Object.entries(options).filter(([, v]) => v !== undefined)) as BackendOptions;
     this.options = { now: Date.now, sliceBudgetMs: 8, syncIntervalMs: 120_000, ...defined };
-    this.db = openDatabase(options.dbPath);
+    this.platform = options.platform ?? nodePlatform;
+    this.db = openDatabase(options.dbPath, { uuid: () => this.platform.uuid() });
     this.net = createNetworkPolicy({ localMode: () => readLocalMode(this.db), lookup: options.lookup });
     this.aiService = new AiService(this, options.aiFactory ?? defaultAiFactory);
     this.checkpointer = startCheckpointWorker(this.db);
@@ -264,7 +268,7 @@ export class Backend {
     this.pendingViews ||= views;
     if (this.flushScheduled) return;
     this.flushScheduled = true;
-    setImmediate(() => {
+    void this.platform.yield().then(() => {
       this.flushScheduled = false;
       if (this.stopped) return;
       const threadIds = [...this.pendingThreadIds];
@@ -493,7 +497,7 @@ export class Backend {
       // shrink immediately when over budget, grow cautiously (≤1.25× per slice) to avoid overshoot
       const ideal = (size * this.options.sliceBudgetMs) / Math.max(took, 0.25);
       size = Math.max(1, Math.min(1000, Math.round(Math.min(ideal, size * 1.25))));
-      await yieldToLoop();
+      await this.platform.yield();
     }
   }
 
@@ -657,7 +661,7 @@ export class Backend {
                 } catch (error) {
                   // never strand the rest of the batch in "running"
                   this.log("error", `op ${op.id} crashed`, error instanceof Error ? error.stack : error);
-                  if (this.db.raw.isOpen && getOp(this.db, op.id)?.state === "running") failOp(this.db, op.id, String(error), true, this.now());
+                  if (this.db.isOpen && getOp(this.db, op.id)?.state === "running") failOp(this.db, op.id, String(error), true, this.now());
                 }
               }
             }),
@@ -690,7 +694,7 @@ export class Backend {
     try {
       if (!provider) throw new ProviderError("Account no longer exists", false);
       const result = await provider.execute({ id: op.id, kind: op.kind, target, payload: JSON.parse(op.payload_json) });
-      if (this.stopped && !this.db.raw.isOpen) return;
+      if (this.stopped && !this.db.isOpen) return;
       const deltas: ModelDelta[] = [];
       this.db.tx(() => {
         completeOp(this.db, op.id, this.now());
@@ -741,6 +745,6 @@ export class Backend {
 
   newMessageId(email: string): string {
     const domain = email.split("@")[1] || "unica.local";
-    return `${randomUUID()}@${domain}`;
+    return `${this.platform.uuid()}@${domain}`;
   }
 }

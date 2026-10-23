@@ -93,7 +93,7 @@ export function compileRuleToSql(rule: FilterRule, now: number, range?: { from: 
 
 /** Registers SQL functions the rule compiler relies on. Called once per connection. */
 export function registerFunctions(db: Db): void {
-  db.raw.function("unica_body_match", { deterministic: true }, (op, body, value) =>
+  db.function("unica_body_match", { deterministic: true }, (op, body, value) =>
     bodyMatches(op as TextOp, (body as string | null) ?? null, String(value)) ? 1 : 0,
   );
 }

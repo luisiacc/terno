@@ -335,6 +335,9 @@ importers:
       '@unica/mock-data':
         specifier: workspace:*
         version: link:../mock-data
+      '@unica/store':
+        specifier: workspace:*
+        version: link:../store
       ws:
         specifier: ^8.22.0
         version: 8.22.0

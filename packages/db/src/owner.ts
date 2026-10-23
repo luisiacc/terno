@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { OwnerIdentity } from "@unica/core/rpc";
 import type { Db } from "./sqlite";
 
@@ -52,7 +51,7 @@ export function claimOwner(db: Db, claim: OwnerClaim, now = Date.now()): boolean
     db.run(
       `INSERT OR IGNORE INTO owner (id, user_id, email, display_name, provider, verified_by, evidence_json, verified_at, account_id, created_at, updated_at)
        VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      randomUUID(),
+      db.uuid(),
       claim.email.toLowerCase(),
       claim.displayName,
       claim.provider,

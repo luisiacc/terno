@@ -1,27 +1,11 @@
-import { migrate } from "./migrations";
-import { registerFunctions } from "./rules";
-import { Db, type OpenOptions } from "./sqlite";
+import { nodePlatform, nodeSqliteDriver } from "./node-driver";
+import { openDatabaseWith } from "./portable";
+import type { Db, OpenOptions } from "./sqlite";
 
-export * from "./sqlite";
-export * from "./migrations";
-export * from "./ingest";
-export * from "./queries";
-export * from "./search";
-export * from "./search-engine";
-export * from "./search-docs";
-export * from "./rules";
-export * from "./actions";
-export * from "./repos";
+export * from "./portable";
+export { nodePlatform, nodeSqliteDriver } from "./node-driver";
 
-/** Opens (and migrates, unless read-only) the Única database. */
+/** Opens (and migrates, unless read-only) the Única database with node:sqlite. */
 export function openDatabase(path: string, options: OpenOptions = {}): Db {
-  const db = new Db(path, options);
-  registerFunctions(db);
-  if (!options.readonly) migrate(db);
-  return db;
+  return openDatabaseWith(nodeSqliteDriver, path, { uuid: nodePlatform.uuid, ...options });
 }
-export * from "./seed";
-export * from "./checkpoint";
-export * from "./owner";
-export * from "./categorize";
-export * from "./categorize-bulk";
