@@ -1,4 +1,5 @@
 import type { Address, CategoryColor } from "@unica/core";
+import { FAMILIES, FAMILY_SHARE, FAMILY_TAGS, familyThread, type AdversarialFamily, type FamilyMessage } from "./adversarial";
 import * as B from "./banks";
 
 /** Structurally compatible with @unica/db IncomingMessage, minus accountId. */
@@ -30,11 +31,15 @@ export interface MockMessage {
   hasAttachments: boolean;
   size: number;
   attachments: { filename: string; mime: string; size: number }[];
-  /** semantic tag used to assign seeded categories */
+  /** semantic tag of the message */
   tag: ThreadTag;
+  /** gold labels of the thread (multi-label): seeded categories and the categorization eval use them */
+  tags: ThreadTag[];
+  /** set on adversarial threads */
+  family?: AdversarialFamily;
 }
 
-export type ThreadTag = "newsletter" | "receipt" | "shipping" | "bank" | "dev" | "travel" | "calendar" | "work" | "client" | "personal" | "spam";
+export type ThreadTag = "newsletter" | "receipt" | "shipping" | "bank" | "dev" | "travel" | "calendar" | "work" | "client" | "personal" | "spam" | "promo" | "phish";
 
 export interface MockAccount {
   kind: "imap" | "gmail";
@@ -63,6 +68,13 @@ export interface GenerateOptions {
   spanDays?: number;
   /** multiplies body length (perf fixtures use realistic ~1-2 KB bodies) */
   bodyScale?: number;
+  /**
+   * Adds the adversarial families of the categorization eval, generated from
+   * their own PRNG after the regular threads, so output without it is
+   * unchanged. `newAfter`: new-receipt senders only appear after this date;
+   * `coldAfter`: every family only appears after it (cold-adversarial).
+   */
+  adversarial?: boolean | { newAfter?: number; coldAfter?: number };
 }
 
 export interface MockDataset {
@@ -153,6 +165,34 @@ export function generateDataset(options: GenerateOptions): MockDataset {
   const sentences = (lang: "es" | "en", n: number) =>
     Array.from({ length: n * bodyScale }, () => pick(lang === "es" ? B.SENTENCES_ES : B.SENTENCES_EN)).join(" ");
 
+  type Draft = Omit<MockMessage, "accountIndex" | "providerMsgId" | "providerThreadId" | "rfcMessageId" | "inReplyTo" | "references" | "snippet" | "bodyState" | "size" | "isDraft" | "tags" | "family">;
+  const emit = (drafts: readonly Draft[], accountIndex: number, threadKey: string, providerThreadId: string | null, family?: AdversarialFamily) => {
+    const tags: ThreadTag[] = family ? [...FAMILY_TAGS[family]] : [...new Set(drafts.map((d) => d.tag))];
+    let prevId: string | null = null;
+    const refs: string[] = [];
+    for (const d of drafts) {
+      const id = ++msgCounter;
+      const rfcMessageId = `${threadKey}.${id}@mock.unica`;
+      messages.push({
+        ...d,
+        tags,
+        ...(family ? { family } : {}),
+        accountIndex,
+        providerMsgId: `m${id}`,
+        providerThreadId,
+        rfcMessageId,
+        inReplyTo: prevId,
+        references: [...refs],
+        snippet: "",
+        bodyState: "full",
+        isDraft: false,
+        size: d.bodyText.length + (d.bodyHtml?.length ?? 0) + d.attachments.reduce((s, a) => s + a.size, 0),
+      });
+      refs.push(rfcMessageId);
+      prevId = rfcMessageId;
+    }
+  };
+
   for (let t = 0; t < options.threads; t++) {
     const accountIndex = pickAccount();
     const account = accounts[accountIndex]!;
@@ -165,7 +205,6 @@ export function generateDataset(options: GenerateOptions): MockDataset {
     // newer mail is more likely unread and in the inbox
     const inInboxBase = ageDays < 21 ? chance(0.75) : ageDays < 120 ? chance(0.25) : chance(0.05);
 
-    type Draft = Omit<MockMessage, "accountIndex" | "providerMsgId" | "providerThreadId" | "rfcMessageId" | "inReplyTo" | "references" | "snippet" | "bodyState" | "size" | "isDraft">;
     const drafts: Draft[] = [];
     const base = {
       cc: [] as Address[],
@@ -339,29 +378,71 @@ export function generateDataset(options: GenerateOptions): MockDataset {
       });
     }
 
-    let prevId: string | null = null;
-    const refs: string[] = [];
-    for (const d of drafts) {
-      const id = ++msgCounter;
-      const rfcMessageId = `${threadKey}.${id}@mock.unica`;
-      messages.push({
-        ...d,
-        accountIndex,
-        providerMsgId: `m${id}`,
-        providerThreadId,
-        rfcMessageId,
-        inReplyTo: prevId,
-        references: [...refs],
-        snippet: "",
-        bodyState: "full",
-        isDraft: false,
-        size: d.bodyText.length + (d.bodyHtml?.length ?? 0) + d.attachments.reduce((s, a) => s + a.size, 0),
-      });
-      refs.push(rfcMessageId);
-      prevId = rfcMessageId;
+    emit(drafts, accountIndex, threadKey, providerThreadId);
+  }
+
+  if (options.adversarial) {
+    const o = options.adversarial === true ? {} : options.adversarial;
+    const r = prng((options.seed ?? 42) ^ 0x5bd1e995);
+    const ctx = {
+      pick: <T,>(list: readonly T[]): T => list[Math.floor(r() * list.length)]!,
+      int: (min: number, max: number) => min + Math.floor(r() * (max - min + 1)),
+      chance: (p: number) => r() < p,
+      friends,
+      clients: B.CLIENT_COMPANIES,
+      projects: B.PROJECT_WORDS,
+      person: () => {
+        const first = ctx.pick(B.FIRST_NAMES);
+        const last = ctx.pick(B.LAST_NAMES);
+        const local = `${first}.${last}`.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z.]/g, "");
+        return { name: `${first} ${last}`, email: `${local || "user"}@${ctx.pick(B.PERSONAL_DOMAINS)}` };
+      },
+    };
+    for (const family of FAMILIES) {
+      const n = Math.max(3, Math.round(options.threads * FAMILY_SHARE[family]));
+      for (let i = 0; i < n; i++) {
+        const accountIndex = Math.floor(r() * accounts.length);
+        const account = accounts[accountIndex]!;
+        const me: Address = { name: account.ownerName, email: account.email };
+        const threadKey = `t${++threadCounter}`;
+        const after = family === "new-receipt" ? Math.max(o.newAfter ?? now - 18 * DAY, o.coldAfter ?? 0) : o.coldAfter;
+        let date = after !== undefined ? after + Math.floor(r() * (now - after)) : now - Math.floor(Math.pow(r(), 2.2) * spanDays * DAY) - ctx.int(0, 3_600_000);
+        const ageDays = (now - date) / DAY;
+        const inInbox = ageDays < 21 ? ctx.chance(0.75) : ageDays < 120 ? ctx.chance(0.25) : ctx.chance(0.05);
+        const drafts: Draft[] = [];
+        for (const m of familyThread(family, ctx)) {
+          drafts.push(familyDraft(m, me, date, inInbox, ageDays, FAMILY_TAGS[family][0]));
+          date += ctx.int(30, 600) * 60_000;
+          if (date > now) break;
+        }
+        emit(drafts, accountIndex, threadKey, account.kind === "gmail" ? `gth-${threadKey}` : null, family);
+      }
     }
   }
   return { accounts, categories: MOCK_CATEGORIES, messages };
+}
+
+function familyDraft(m: FamilyMessage, me: Address, date: number, inInbox: boolean, ageDays: number, tag: ThreadTag) {
+  return {
+    tag,
+    from: m.fromMe ? me : m.from,
+    to: m.fromMe ? [m.from] : [me],
+    cc: [] as Address[],
+    bcc: [] as Address[],
+    subject: m.subject,
+    date,
+    bodyText: m.bodyText,
+    bodyHtml: null,
+    listId: m.listId,
+    isRead: m.fromMe || ageDays > 7,
+    isStarred: false,
+    inInbox: !m.fromMe && !m.isSpam && inInbox,
+    isSent: m.fromMe,
+    isTrash: false,
+    isSpam: m.isSpam,
+    hasAttachments: m.attachments.length > 0,
+    attachments: m.attachments,
+  };
 }
 
 function escapeHtml(s: string): string {

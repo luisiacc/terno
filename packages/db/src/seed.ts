@@ -45,7 +45,7 @@ export function seedDataset(db: Db, data: MockDataset, options: SeedOptions = {}
     result.inserted.forEach((messageId, j) => {
       const threadId = threadOf.get(messageId)!;
       const tags = threadTags.get(threadId) ?? new Set();
-      tags.add(chunk[j]!.tag);
+      for (const t of chunk[j]!.tags) tags.add(t);
       threadTags.set(threadId, tags);
     });
   }
