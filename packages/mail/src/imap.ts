@@ -272,17 +272,22 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
               existing = db.get<{ id: number; subject: string; from_email: string }>("SELECT id, subject, from_email FROM messages WHERE account_id = ? AND provider_msg_id = ?", accountId, key);
             }
           }
-          if (!existing && resetOrphans.size) {
-            // After a reset, recognise previously-located mail by envelope even if its stored key is
-            // from an older scheme, before anything is treated as an orphan.
+          if (!existing && resetOrphans.size && !messageKey(env?.messageId)) {
+            // After a reset, recognise previously-located ID-less mail stored under an older key
+            // scheme. Only ID-less rows qualify (a row with a Message-ID is found by key), the size
+            // must match, and a row already re-attached in this mailbox can't be claimed twice.
             const candidate = db.get<{ id: number; subject: string; from_email: string }>(
               `SELECT id, subject, from_email FROM messages WHERE account_id = ? AND id IN (SELECT value FROM json_each(?))
-                 AND subject = ? AND from_email = ? AND date = ? LIMIT 1`,
+                 AND rfc_message_id IS NULL AND subject = ? AND from_email = ? AND date = ? AND size = ?
+                 AND NOT EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = messages.id AND l.mailbox = ?)
+               ORDER BY id LIMIT 1`,
               accountId,
               JSON.stringify([...resetOrphans]),
               env?.subject ?? "",
               (env?.from?.[0]?.address ?? "").toLowerCase(),
               new Date(env?.date ?? m.internalDate ?? 0).getTime(),
+              m.size ?? 0,
+              path,
             );
             if (candidate) {
               resetOrphans.delete(candidate.id);
@@ -301,6 +306,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             if (!sameMailbox || sameMailbox.uidvalidity !== uidvalidity || sameMailbox.uid === m.uid) {
               upsertLocation(existing.id, path, uidvalidity, m.uid, flags);
               touched.add(existing.id);
+              resetOrphans.delete(existing.id);
               continue;
             }
             // …unless a different UID in the same mailbox already holds it: a distinct message

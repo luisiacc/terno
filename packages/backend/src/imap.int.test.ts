@@ -381,6 +381,40 @@ describe("IMAP identity and safety (review fixes)", () => {
     expect(backend.db.all("SELECT subject, body_state FROM messages")).toEqual([{ subject: "Antiguo", body_state: "full" }]);
   });
 
+  it("ID-less twins in one mailbox stay bound to their own server copies across a reset", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const date = new Date().toUTCString();
+    const twin = (body: string) => `From: x@y.z\r\nSubject: Gemelo\r\nDate: ${date}\r\n\r\n${body}\r\n`;
+    imap.server.control.addMessage("INBOX", { raw: twin("AAAA") });
+    imap.server.control.addMessage("INBOX", { raw: twin("BBBB") });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(2);
+    imap.server.control.resetUidValidity("INBOX", { uids: "renumber" });
+    await backend.syncAccount(account.id);
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(2);
+    expect(count(backend, "SELECT DISTINCT uid FROM message_locations")).toBe(2);
+    // trashing the row whose cached body is AAAA must move the server message AAAA
+    const a = backend.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE body_text LIKE 'AAAA%'")!.thread_id;
+    await client.call("threads.act", { threadIds: [a], action: "trash" });
+    await backend.runWorker();
+    const trashed = imap.server.control.listMessages("Trash", { raw: true }) as { raw: Buffer }[];
+    expect(trashed.map((m) => m.raw.toString())).toEqual([expect.stringContaining("AAAA")]);
+  });
+
+  it("never binds a different message to a cached row that had another Message-ID", async () => {
+    const { imap, backend, addAccount } = await setup();
+    const date = new Date();
+    const a = imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Igual", id: "a@x", from: "x@y.z", date, body: "AAAA" }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    imap.server.control.expungeMessages("INBOX", [a.uid]);
+    imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Igual", id: "b@x", from: "x@y.z", date, body: "BBBB" }) });
+    imap.server.control.resetUidValidity("INBOX", { uids: "renumber" });
+    await backend.syncAccount(account.id);
+    expect(backend.db.all("SELECT rfc_message_id, substr(body_text, 1, 4) AS b FROM messages")).toEqual([{ rfc_message_id: "b@x", b: "BBBB" }]);
+  });
+
   it("doesn't merge unrelated messages that reuse a Message-ID across folders", async () => {
     const { imap, backend, addAccount } = await setup();
     imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Factura", id: "same@x", from: "a@uno.com" }) });
