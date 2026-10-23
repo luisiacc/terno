@@ -68,6 +68,8 @@ export interface ProviderContext {
   /** persistent provider sync cursor (stored on the account) */
   loadCursor<T>(): T | null;
   saveCursor(cursor: unknown): void;
+  /** every HTTP request a provider makes goes through this (the backend's network policy, purpose "mail") */
+  fetch: typeof fetch;
 }
 
 export interface MailProvider {
@@ -101,5 +103,5 @@ export interface GmailConnectResult {
 export interface ProviderRegistry {
   create(ctx: ProviderContext): MailProvider;
   verifyImap(config: ImapAccountConfig, password: string): Promise<void>;
-  connectGmail(options: { clientId: string; clientSecret: string | null; openExternal: (url: string) => Promise<void>; signal?: AbortSignal }): Promise<GmailConnectResult>;
+  connectGmail(options: { clientId: string; clientSecret: string | null; openExternal: (url: string) => Promise<void>; signal?: AbortSignal; fetch: typeof fetch }): Promise<GmailConnectResult>;
 }

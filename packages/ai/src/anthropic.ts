@@ -6,9 +6,9 @@ import { systemPrompt, wireFilterSchema } from "./wire";
 
 export const DEFAULT_ANTHROPIC_MODEL = "claude-opus-5-5";
 
-export function createAnthropicProvider(options: { apiKey: string; model?: string; baseURL?: string }): AiProvider {
+export function createAnthropicProvider(options: { apiKey: string; model?: string; baseURL?: string; fetch?: typeof fetch }): AiProvider {
   // authToken: null so an ambient ANTHROPIC_AUTH_TOKEN never overrides the key the user saved in Settings
-  const client = new Anthropic({ apiKey: options.apiKey, authToken: null, baseURL: options.baseURL, maxRetries: 2, timeout: 60_000 });
+  const client = new Anthropic({ apiKey: options.apiKey, authToken: null, baseURL: options.baseURL, maxRetries: 2, timeout: 60_000, fetch: options.fetch });
   const model = options.model || DEFAULT_ANTHROPIC_MODEL;
 
   const call: WireCall = async ({ prompt, ctx, repair, signal }) => {

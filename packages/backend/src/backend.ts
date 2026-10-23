@@ -41,6 +41,7 @@ import {
 } from "@unica/db";
 import { ProviderError, type MailProvider, type ProviderRegistry, type SyncSink } from "@unica/mail";
 import { createHandlers } from "./handlers";
+import { createNetworkPolicy, type LookupAll, type NetworkPolicy } from "./net-policy";
 import { readSettings } from "./settings";
 
 export interface SecretCipher {
@@ -58,11 +59,11 @@ export const plaintextCipher: SecretCipher = {
   },
 };
 
-export type AiFactory = (kind: "anthropic" | "fake", options: { apiKey: string | null; model: string }) => AiProvider | null;
+export type AiFactory = (kind: "anthropic" | "fake", options: { apiKey: string | null; model: string; fetch: typeof fetch }) => AiProvider | null;
 
-export const defaultAiFactory: AiFactory = (kind, { apiKey, model }) => {
+export const defaultAiFactory: AiFactory = (kind, { apiKey, model, fetch }) => {
   if (kind === "fake") return createFakeProvider();
-  return apiKey ? createAnthropicProvider({ apiKey, model }) : null;
+  return apiKey ? createAnthropicProvider({ apiKey, model, fetch }) : null;
 };
 
 export interface BackendOptions {
@@ -79,6 +80,8 @@ export interface BackendOptions {
   syncIntervalMs?: number;
   /** target duration of one ingestion/filter slice before yielding to interactive RPCs */
   sliceBudgetMs?: number;
+  /** DNS for the network policy (tests resolve names without real DNS) */
+  lookup?: LookupAll;
 }
 
 const DESTRUCTIVE_OR_SIGNAL: Partial<Record<ThreadAction, "archive" | "trash" | "spam" | "star">> = {
@@ -113,12 +116,15 @@ export class Backend {
   readonly searchSeq = new Map<string, number>();
   private readonly checkpointer: CheckpointWorker | null;
   readonly abort = new AbortController();
+  /** the only way out of the backend: every outbound request asks it first */
+  readonly net: NetworkPolicy;
 
   constructor(options: BackendOptions) {
     // explicit `undefined` must not clobber defaults
     const defined = Object.fromEntries(Object.entries(options).filter(([, v]) => v !== undefined)) as BackendOptions;
     this.options = { now: Date.now, sliceBudgetMs: 8, syncIntervalMs: 120_000, ...defined };
     this.db = openDatabase(options.dbPath);
+    this.net = createNetworkPolicy({ localMode: () => readSettings(this.db).localMode, lookup: options.lookup });
     this.checkpointer = startCheckpointWorker(this.db);
     const recovered = recoverOps(this.db, this.now());
     if (recovered.requeued || recovered.unknown) this.log("info", "recovered ops after restart", recovered);
@@ -355,6 +361,7 @@ export class Backend {
         const current = getAccountConfig<Record<string, unknown>>(this.db, accountId);
         if (current) setAccountProviderConfig(this.db, accountId, { ...current.config, cursor });
       },
+      fetch: this.net.fetchFor("mail"),
     });
     this.providers.set(accountId, provider);
     return provider;
@@ -566,7 +573,11 @@ export class Backend {
     const settings = readSettings(this.db);
     if (settings.aiProvider === "none") return null;
     const factory = this.options.aiFactory ?? defaultAiFactory;
-    return factory(settings.aiProvider, { apiKey: await this.getSecret("ai:anthropic:apiKey"), model: settings.aiModel });
+    return factory(settings.aiProvider, {
+      apiKey: await this.getSecret("ai:anthropic:apiKey"),
+      model: settings.aiModel,
+      fetch: this.net.fetchFor("ai", { providerLocality: settings.aiProvider === "fake" ? "local" : "cloud" }),
+    });
   }
 
   newMessageId(email: string): string {

@@ -30,6 +30,8 @@ export interface SearchPage extends ThreadPage {
 }
 
 export interface AppSettings {
+  /** nothing leaves this Mac except mail with the user's own servers (and loopback AI) */
+  localMode: boolean;
   theme: "system" | "light" | "dark";
   density: "comfortable" | "compact";
   remoteImages: "ask" | "always";
@@ -221,6 +223,7 @@ export const contract = {
 
   "settings.update": m<AppSettings>()(
     z.object({
+      localMode: z.boolean().optional(),
       theme: z.enum(["system", "light", "dark"]).optional(),
       density: z.enum(["comfortable", "compact"]).optional(),
       remoteImages: z.enum(["ask", "always"]).optional(),

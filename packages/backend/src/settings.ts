@@ -5,6 +5,8 @@ import { DEFAULT_ANTHROPIC_MODEL } from "@unica/ai";
 type StoredSettings = Omit<AppSettings, "hasAiKey">;
 
 export const DEFAULT_SETTINGS: StoredSettings = {
+  // new installs start local; migration v3 writes false for installs that predate it
+  localMode: true,
   theme: "system",
   density: "comfortable",
   remoteImages: "ask",

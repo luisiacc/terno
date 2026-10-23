@@ -348,6 +348,7 @@ export function createHandlers(b: Backend): Handlers {
         clientSecret: await b.getSecret("gmailClientSecret"),
         openExternal: b.options.openExternal,
         signal: b.abort.signal,
+        fetch: b.net.fetchFor("mail"),
       });
       const existing = listAccounts(db()).find((a) => a.email === result.email.toLowerCase());
       if (existing) throw new RpcError("BAD_REQUEST", `${result.email} is already connected.`);

@@ -32,6 +32,8 @@ export interface ConnectOptions {
   signal?: AbortSignal;
   endpoints?: Partial<GmailEndpoints>;
   timeoutMs?: number;
+  /** the backend's network-policy fetch (purpose "mail") */
+  fetch: typeof fetch;
 }
 
 /**
@@ -40,6 +42,7 @@ export interface ConnectOptions {
  */
 export async function connectGmail(options: ConnectOptions): Promise<GmailConnectResult> {
   const ep = { ...GOOGLE_ENDPOINTS, ...options.endpoints };
+  const netFetch = options.fetch;
   const verifier = b64url(randomBytes(48));
   const challenge = b64url(createHash("sha256").update(verifier).digest());
   const state = b64url(randomBytes(24));
@@ -88,11 +91,11 @@ export async function connectGmail(options: ConnectOptions): Promise<GmailConnec
     });
     const body = new URLSearchParams({ client_id: options.clientId, code: code.code, code_verifier: verifier, grant_type: "authorization_code", redirect_uri: code.redirectUri });
     if (options.clientSecret) body.set("client_secret", options.clientSecret);
-    const tokenRes = await fetch(ep.token, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body });
+    const tokenRes = await netFetch(ep.token, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body });
     const tokens = (await tokenRes.json()) as { access_token?: string; refresh_token?: string; error?: string };
     if (!tokenRes.ok || !tokens.access_token || !tokens.refresh_token) throw new ProviderError(`Token exchange failed: ${tokens.error ?? tokenRes.status}`, false);
-    const profile = (await (await fetch(`${ep.api}/profile`, { headers: { authorization: `Bearer ${tokens.access_token}` } })).json()) as { emailAddress: string };
-    const info = (await fetch(ep.userinfo, { headers: { authorization: `Bearer ${tokens.access_token}` } }).then((r) => (r.ok ? r.json() : {})).catch(() => ({}))) as { name?: string };
+    const profile = (await (await netFetch(`${ep.api}/profile`, { headers: { authorization: `Bearer ${tokens.access_token}` } })).json()) as { emailAddress: string };
+    const info = (await netFetch(ep.userinfo, { headers: { authorization: `Bearer ${tokens.access_token}` } }).then((r) => (r.ok ? r.json() : {})).catch(() => ({}))) as { name?: string };
     return { email: profile.emailAddress, name: info.name ?? "", refreshToken: tokens.refresh_token };
   } finally {
     (server as Server | null)?.close();
@@ -140,6 +143,7 @@ const LABEL_OPS: Record<string, { add?: string[]; remove?: string[] }> = {
 
 export function createGmailProvider(ctx: ProviderContext, options: { endpoints?: Partial<GmailEndpoints> } = {}): MailProvider {
   const ep = { ...GOOGLE_ENDPOINTS, ...options.endpoints };
+  const netFetch = ctx.fetch;
   const db = ctx.db;
   const accountId = ctx.account.id;
   let access: { token: string; expiresAt: number } | null = null;
@@ -158,7 +162,7 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
         if (secret) body.set("client_secret", secret);
         let res: Response;
         try {
-          res = await fetch(ep.token, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body });
+          res = await netFetch(ep.token, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body });
         } catch (e) {
           throw new ProviderError(`Network error refreshing Gmail token: ${e instanceof Error ? e.message : e}`, true);
         }
@@ -179,7 +183,7 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
     const token = access && access.expiresAt > Date.now() ? access.token : await refresh();
     let res: Response;
     try {
-      res = await fetch(`${ep.api}${path}`, { ...init, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...init.headers } });
+      res = await netFetch(`${ep.api}${path}`, { ...init, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...init.headers } });
     } catch (e) {
       throw new ProviderError(`Network error: ${e instanceof Error ? e.message : e}`, !init.ambiguousOnFailure, init.ambiguousOnFailure);
     }
