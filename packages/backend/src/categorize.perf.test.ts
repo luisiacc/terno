@@ -286,6 +286,8 @@ it("large UI adds, removals and undo are sliced: no long stall, interactive RPCs
     expect(stall, name).toBeLessThanOrEqual(50 * BUDGET_MULTIPLIER);
     expect(p95(rpc), name).toBeLessThanOrEqual(25 * BUDGET_MULTIPLIER);
   }
+  // leave the shared mailbox as the other budgets expect it
+  await client.call("categories.delete", { id: cat });
 }, 600_000);
 
 /** The backend load test's 14k-message import, ingested into copies of the perf mailbox with the engine off and on. */
@@ -311,9 +313,12 @@ async function importAB(label: string, shape: (m: IncomingMessage) => IncomingMe
     try {
       expect(b.categorizer.ready).toBe(true);
       b.db.run("INSERT OR REPLACE INTO settings (key, value_json) VALUES ('app', ?)", JSON.stringify({ autoCategorize: mode }));
-      const t = performance.now();
+      // CPU time, not wall time: other processes (pnpm test runs the unit project alongside) don't skew it
+      const before = b.db.get<{ c: number }>("SELECT count(*) AS c FROM cls_decisions")!.c;
+      const cpu = process.cpuUsage();
       await b.ingestSliced(extra);
-      return { took: performance.now() - t, decided: b.db.get<{ c: number }>("SELECT count(*) AS c FROM cls_decisions")!.c };
+      const used = process.cpuUsage(cpu);
+      return { took: (used.user + used.system) / 1000, decided: b.db.get<{ c: number }>("SELECT count(*) AS c FROM cls_decisions")!.c - before };
     } finally {
       await b.stop();
       for (const s of ["", "-wal", "-shm"]) rmSync(path + s, { force: true });
@@ -330,7 +335,7 @@ async function importAB(label: string, shape: (m: IncomingMessage) => IncomingMe
   }
   const ratio = Math.min(...on) / Math.min(...off);
   stats.push({
-    name: `${label}: ${extra.length} msgs, off ${(Math.min(...off) / 1000).toFixed(2)} s, auto ${(Math.min(...on) / 1000).toFixed(2)} s (+${((ratio - 1) * 100).toFixed(1)}%), ${decided} decisions`,
+    name: `${label}: ${extra.length} msgs, CPU off ${(Math.min(...off) / 1000).toFixed(2)} s, auto ${(Math.min(...on) / 1000).toFixed(2)} s (+${((ratio - 1) * 100).toFixed(1)}%), ${decided} decisions`,
     budgetMs: 0,
     p50: ratio,
     p95: ratio,
