@@ -43,6 +43,7 @@ import {
 } from "@unica/db";
 import { ProviderError, type MailProvider, type ProviderRegistry, type SyncSink } from "@unica/mail";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
+import { AiAssist } from "./ai-assist";
 import { Categorizer } from "./categorizer";
 import { createHandlers } from "./handlers";
 import { createNetworkPolicy, type LookupAll, type NetworkPolicy } from "./net-policy";
@@ -131,6 +132,7 @@ export class Backend {
   readonly net: NetworkPolicy;
   readonly aiService: AiService;
   readonly categorizer: Categorizer;
+  readonly aiAssist: AiAssist;
   private idleTimer: ReturnType<typeof setInterval> | null = null;
   /** auto-filed threads waiting to be announced, per category */
   private readonly autoNotices = new Map<number, { threadIds: Set<number>; timer: ReturnType<typeof setTimeout> | null; lastAt: number }>();
@@ -145,6 +147,7 @@ export class Backend {
     this.checkpointer = startCheckpointWorker(this.db);
     this.categorizer = new Categorizer(this);
     this.categorizer.load();
+    this.aiAssist = new AiAssist(this);
     const recovered = recoverOps(this.db, this.now());
     if (recovered.requeued || recovered.unknown) this.log("info", "recovered ops after restart", recovered);
     this.server = new RpcServer(createHandlers(this), {
@@ -185,6 +188,7 @@ export class Backend {
     if (this.countsTimer) clearTimeout(this.countsTimer);
     for (const n of this.autoNotices.values()) if (n.timer) clearTimeout(n.timer);
     this.categorizer.stop();
+    this.aiAssist.stop();
     if (this.workerTimer) clearTimeout(this.workerTimer);
     for (const off of this.unwatch.values()) off();
     await Promise.allSettled(this.syncing.values());
@@ -385,7 +389,7 @@ export class Backend {
       // One transaction per slice: messages, filter claims, filter actions and their ops,
       // and the categorizer's decisions commit together, so a crash can't record a filter
       // as applied without its effects, nor an auto-categorization without its message.
-      const { touched, deltas, auto, backfill } = this.db.tx(() => {
+      const { touched, deltas, auto, backfill, uncertain } = this.db.tx(() => {
         const result = ingestMessages(this.db, chunk, this.now());
         inserted.push(...result.inserted);
         const t = new Set(result.touchedThreads);
@@ -396,11 +400,13 @@ export class Backend {
         }
         const c = this.classify(result.inserted, result.bodyCompleted);
         for (const x of c.touched) t.add(x);
-        return { touched: t, deltas: c.deltas, auto: c.auto, backfill: c.backfill };
+        return { touched: t, deltas: c.deltas, auto: c.auto, backfill: c.backfill, uncertain: c.uncertain };
       });
       // RAM follows the database, never the other way round
       this.categorizer.apply(deltas);
       this.categorizer.noteBackfill(backfill);
+      // the optional AI looks at what the engine was unsure about, after commit, outside the slice
+      this.aiAssist.enqueue(uncertain);
       this.announceAuto(auto);
       this.notifyChanged(touched);
     });

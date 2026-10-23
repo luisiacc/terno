@@ -75,6 +75,8 @@ export interface AppSettings {
   syncWindowDays: number;
   /** what the categorization engine may do with new mail */
   autoCategorize: AutoCategorize;
+  /** let the configured AI suggest categories for mail the engine is unsure about (never auto-applies) */
+  aiCategorize: boolean;
 }
 
 /** The person this install belongs to (the future Única account). Verification evidence stays in the backend. */
@@ -176,6 +178,7 @@ const settingsPatch = z.object({
   gmailClientId: z.string().max(300).optional(),
   syncWindowDays: z.number().int().min(7).max(3650).optional(),
   autoCategorize: z.enum(["off", "suggest", "auto"]).optional(),
+  aiCategorize: z.boolean().optional(),
 });
 export type SettingsPatch = z.output<typeof settingsPatch>;
 

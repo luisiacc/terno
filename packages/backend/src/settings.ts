@@ -35,6 +35,7 @@ export const DEFAULT_SETTINGS: General = {
   gmailClientId: "",
   syncWindowDays: 90,
   autoCategorize: "auto",
+  aiCategorize: false,
 };
 
 const DEFAULT_PROVIDER: AiProviderId = "none";

@@ -54,6 +54,24 @@ export function CategoriesTab({ settings }: { settings: AppSettings }) {
           </SelectContent>
         </Select>
       </div>
+      <div className="flex items-center justify-between gap-6 border-b border-border py-3">
+        <div>
+          <p className="text-sm font-medium" id="ai-categorize-label">Pedir ayuda a la IA</p>
+          <p className="mt-0.5 text-xs text-muted-foreground" id="ai-categorize-hint">
+            {settings.ai.provider === "none"
+              ? "Conecta una IA en Ajustes → IA para usarla aquí."
+              : "Para los correos dudosos: solo sugiere, nunca añade sola. Usa la IA de Ajustes → IA (en modo local, solo modelos de este Mac)."}
+          </p>
+        </div>
+        <Switch
+          data-testid="ai-categorize-switch"
+          aria-labelledby="ai-categorize-label"
+          aria-describedby="ai-categorize-hint"
+          checked={settings.aiCategorize}
+          disabled={settings.ai.provider === "none" && !settings.aiCategorize}
+          onCheckedChange={(on) => void client.call("settings.update", { aiCategorize: on }).then((next) => setApp({ settings: next }))}
+        />
+      </div>
       <ul className="divide-y divide-border">
         {categories.map((c) => {
           const s = stats.find((x) => x.categoryId === c.id);

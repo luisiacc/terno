@@ -2,7 +2,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@unica/core/rpc";
-import { addToCategory, createAccount, createCategory, ingestMessages, seedDataset, type IncomingMessage } from "@unica/db";
+import dc from "node:diagnostics_channel";
+import { encodeFeatures, extractFeatures } from "@unica/core";
+import { addToCategory, createAccount, createCategory, ingestMessages, putSecret, seedDataset, setSetting, type IncomingMessage } from "@unica/db";
 import { demoRegistry } from "@unica/mail";
 import { generateDataset } from "@unica/mock-data";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -342,6 +344,85 @@ describe("categorizer: auto-apply at ingestion", () => {
     await backend.ingestSliced([{ ...message, bodyState: "full", bodyText: "Tu recibo de Netflix. Gracias por tu pago. Total: $199.00 MXN. Factura 77 disponible." }]);
     expect(inCategory(thread)).toBe("auto");
     expect(JSON.parse(decision(thread)!.explain_json)[0]).toBe("remitente nuevo");
+  });
+
+  /**
+   * A sender the user filed only sometimes: unfiled history is added until a
+   * neutral new message from it lands in the uncertain band (0.5 ≤ p < 0.8).
+   */
+  function uncertainMail(backend: Backend, acct: number, cat: number): Partial<IncomingMessage> {
+    // the offline fake AI picks a label it finds in the text: the display name carries it
+    const from = { name: "Facturas Servicio", email: "avisos@nuevo-servicio.mx" };
+    const filed = [...ingestMessages(backend.db, Array.from({ length: 4 }, (_, i) => incoming(acct, { from, subject: `Aviso ${i}`, bodyText: "Aviso de servicio.", date: NOW - (50 + i) * DAY, inInbox: false })), NOW).touchedThreads];
+    addToCategory(backend.db, { categoryId: cat, threadIds: filed, addedBy: "user", now: NOW - 40 * DAY });
+    const draft = { from, subject: "Aviso", bodyText: "Aviso de servicio." };
+    const features = encodeFeatures(extractFeatures({ fromEmail: from.email, fromName: from.name, listId: null, subject: "Aviso", bodyText: draft.bodyText, replied: false, attachmentNames: [] }, { ownDomains: new Set(["example.com"]) }));
+    const seen: string[] = [];
+    for (let unfiled = 0; unfiled < 80; unfiled++) {
+      backend.categorizer.rebuildSync();
+      const s = backend.categorizer.model!.score(features).find((x) => x.categoryId === cat)!;
+      seen.push(s.p.toFixed(2));
+      if (s.p >= 0.5 && s.p < 0.8) return draft;
+      ingestMessages(backend.db, [incoming(acct, { from, subject: `Aviso viejo ${unfiled}`, bodyText: "Aviso de servicio.", date: NOW - (20 + unfiled) * DAY, inInbox: false })], NOW);
+    }
+    throw new Error(`no uncertain draft: ${seen.join(" ")}`);
+  }
+
+  it("the AI assist is off by default: uncertain mail stays undecided and no AI is asked", async () => {
+    const { backend, acct, cat, arrive, decision } = await trained();
+    let asked = 0;
+    const real = backend.ai.bind(backend);
+    backend.ai = async () => (asked++, real());
+    const { thread } = await arrive(uncertainMail(backend, acct, cat));
+    await backend.aiAssist.drain();
+    expect(asked).toBe(0);
+    expect(decision(thread)).toBeUndefined();
+  });
+
+  it("with the assist on, the AI can turn 'nothing' into a suggestion, never an auto add", async () => {
+    const { backend, acct, cat, arrive, decision, inCategory } = await trained();
+    setSetting(backend.db, "app", { ai: { provider: "fake" }, aiCategorize: true });
+    const { thread } = await arrive(uncertainMail(backend, acct, cat));
+    await backend.aiAssist.drain();
+    expect(decision(thread)?.kind).toBe("suggest");
+    expect(JSON.parse(decision(thread)!.explain_json)[0]).toMatch(/^la IA .* cree que es de Facturas$/);
+    expect(inCategory(thread)).toBeNull();
+  });
+
+  it("in local mode a cloud provider is paused: the assist makes no connection and no decision", async () => {
+    const { backend, acct, cat, arrive, decision } = await trained();
+    const connects: string[] = [];
+    const onSocket = () => connects.push("net:socket");
+    const onUndici = () => connects.push("undici");
+    dc.subscribe("net.client.socket", onSocket);
+    dc.subscribe("undici:client:beforeConnect", onUndici);
+    try {
+      putSecret(backend.db, "ai:anthropic:apiKey", await plaintextCipher.encrypt("sk-test-key-123456"));
+      setSetting(backend.db, "app", { localMode: true, ai: { provider: "anthropic" }, aiCategorize: true });
+      const { thread } = await arrive(uncertainMail(backend, acct, cat));
+      await backend.aiAssist.drain();
+      expect(decision(thread)).toBeUndefined();
+      expect(connects).toEqual([]);
+    } finally {
+      dc.unsubscribe("net.client.socket", onSocket);
+      dc.unsubscribe("undici:client:beforeConnect", onUndici);
+    }
+  });
+
+  it("asks the AI at most 20 times a minute, once per thread", async () => {
+    const { backend, acct, cat, arrive } = await trained();
+    const draft = uncertainMail(backend, acct, cat);
+    setSetting(backend.db, "app", { ai: { provider: "fake" }, aiCategorize: true });
+    let asked = 0;
+    const real = backend.ai.bind(backend);
+    backend.ai = async () => (asked++, real());
+    const threads: number[] = [];
+    for (let i = 0; i < 25; i++) threads.push((await arrive(draft)).thread);
+    backend.aiAssist.enqueue(threads); // again: once per thread
+    await backend.aiAssist.drain();
+    expect(asked).toBe(20);
+    expect(backend.aiAssist.pending).toBe(5);
+    backend.aiAssist.stop();
   });
 
   it("announces auto-filed mail once per category, coalesced", async () => {
