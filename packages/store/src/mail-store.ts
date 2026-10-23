@@ -23,7 +23,7 @@ import type {
   Vetoes,
 } from "@unica/core";
 import type { OwnerIdentity } from "@unica/core/rpc";
-import type { MailStoreSearch, SearchCursor, SearchMessageDoc, SearchThreadDoc, StoreSearchPage } from "./search";
+import type { MailStoreSearch, SearchCursor, SearchFeed, SearchMessageDoc, SearchThreadDoc, StoreSearchPage } from "./search";
 import type {
   AddedBy,
   ClassifyResult,
@@ -195,6 +195,9 @@ export interface MailStore {
   readonly capabilities: StoreCapabilities;
   readonly isOpen: boolean;
   close(): Promise<void>;
+
+  /** every committed change to what search indexes, as revisioned batches (the transactional outbox) */
+  readonly feed: SearchFeed;
 
   threads: MailStoreSearch & {
     list(p: ListParams): Promise<Page>;

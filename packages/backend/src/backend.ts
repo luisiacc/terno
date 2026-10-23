@@ -379,6 +379,8 @@ export class Backend {
     const running = this.moves.get(batchId);
     if (running) return running;
     const job = (async () => {
+      // the membership commit that started this was a long transaction: let interactive work in before training
+      await this.platform.yield();
       for (;;) {
         const phase = await this.store.categories.movePhase(batchId);
         if (phase !== "training" && phase !== "restoring") return;

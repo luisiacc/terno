@@ -106,7 +106,7 @@ describe("migration v6: message bodies", () => {
 
     const db = openDatabase(join(dir, "v5.db"));
     try {
-      expect(db.get("PRAGMA user_version")).toEqual({ user_version: 6 });
+      expect(db.get<{ user_version: number }>("PRAGMA user_version")!.user_version).toBeGreaterThanOrEqual(6);
       expect(db.all("SELECT name FROM pragma_table_info('messages') WHERE name LIKE 'body%' ORDER BY name")).toEqual([{ name: "body_state" }, { name: "body_tail_norm" }]);
       expect(db.all("SELECT message_id, body_text, body_html FROM message_bodies ORDER BY message_id")).toEqual(bodies);
       ftsIntegrity(db);

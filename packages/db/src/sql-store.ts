@@ -2,7 +2,6 @@ import { senderVetoed, type Address, type FilterAction, type ThreadAction } from
 import { RpcError } from "@unica/core/rpc";
 import type { MockDataset } from "@unica/mock-data";
 import {
-  UNVERSIONED,
   type AddedBy,
   type ClassifierInput,
   type Cursor,
@@ -12,6 +11,7 @@ import {
   type ProviderStore,
   type Revision,
   type SearchCursor,
+  type SearchFeed,
   type SearchRequest,
   type StoreCapabilities,
   type StoreSnapshot,
@@ -98,6 +98,7 @@ import {
   updateAccount,
   updateCategory,
 } from "./repos";
+import { beginSearchBuild, searchChanges, searchHead } from "./outbox";
 import { findRuleMatches } from "./rules";
 import { resolveQuery } from "./search";
 import { Fts5SearchEngine } from "./search-engine";
@@ -167,10 +168,16 @@ export class SqlMailStore implements MailStore {
     this.db.close();
   }
 
-  /** The revision searches answer at (the outbox makes it real). */
+  /** The revision searches answer at: the head of the search log, read in the same unit as the answer. */
   private revision(): Revision {
-    return UNVERSIONED;
+    return searchHead(this.db);
   }
+
+  readonly feed: SearchFeed = {
+    head: async () => searchHead(this.db),
+    changes: async (after, through, maxCommits) => searchChanges(this.db, after, through, maxCommits),
+    beginBuild: async () => beginSearchBuild(this.db),
+  };
 
   private searchPage(req: SearchRequest): StoreSearchPage {
     const revision = this.revision();
@@ -491,7 +498,7 @@ export class SqlMailStore implements MailStore {
     exists: async (id) => this.db.get("SELECT 1 FROM categories WHERE id = ?", id) !== undefined,
     create: async (name, color) => createCategory(this.db, name, color),
     update: async (id, patch) => updateCategory(this.db, id, patch),
-    delete: async (id) => deleteCategory(this.db, id),
+    delete: async (id) => this.db.tx(() => deleteCategory(this.db, id)),
     createBatch: async (categoryId, source, scope, now) => createBatch(this.db, categoryId, source, scope, now),
     add: async (a) =>
       this.db.tx(() => {

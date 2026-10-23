@@ -78,6 +78,8 @@ describe("writes", () => {
     await gate("act: archive / restore one thread (+ op)", 5, (i) =>
       store.threads.act({ threadIds: [ids[i % ids.length]!], action: i % 2 ? "moveToInbox" : "archive", signal: null, now: NOW }),
     );
+    const last = store.db.get<{ bytes: number }>("SELECT bytes FROM search_outbox ORDER BY seq DESC LIMIT 1")!.bytes;
+    stats.push({ name: `outbox: one triage action appends a ${last}-byte batch`, budgetMs: 0, p50: last, p95: last, max: last, iterations: 1 });
     const category = store.db.get<{ id: number }>("SELECT id FROM categories LIMIT 1")!.id;
     await gate("categories.add one thread (+ example)", 5, (i) => store.categories.add({ categoryId: category, threadIds: [ids[(i * 7) % ids.length]!], addedBy: "user", now: NOW }));
     const pending = store.db.all<{ id: number }>("SELECT id FROM messages ORDER BY random() LIMIT 80").map((r) => r.id);
@@ -94,6 +96,7 @@ describe("writes", () => {
       accountId: accountIds[m.accountIndex]!,
     }));
     const slices: number[] = [];
+    const logBefore = store.db.get<{ b: number; s: number }>("SELECT total(bytes) AS b, max(seq) AS s FROM search_outbox")!;
     const started = performance.now();
     for (let i = 0; i < extra.length; i += 200) {
       const t = performance.now();
@@ -105,5 +108,9 @@ describe("writes", () => {
     slices.sort((a, b) => a - b);
     stats.push({ name: `ingest ${extra.length} msgs in 200-msg slices: ${Math.round(rate)} msgs/s`, budgetMs: 0, p50: slices[Math.floor(slices.length / 2)]!, p95: slices[Math.ceil(slices.length * 0.95) - 1]!, max: slices.at(-1)!, iterations: slices.length });
     expect(rate).toBeGreaterThanOrEqual(1000 / BUDGET_MULTIPLIER);
+    // write amplification of the search outbox: what one import writes into the log vs the mail itself
+    const log = store.db.get<{ b: number; n: number }>("SELECT total(bytes) AS b, count(*) AS n FROM search_outbox WHERE seq > ?", logBefore.s ?? 0)!;
+    const mail = extra.reduce((n, m) => n + (m.bodyText?.length ?? 0) + (m.bodyHtml?.length ?? 0) + m.subject.length + m.from.email.length + m.from.name.length, 0);
+    stats.push({ name: `outbox: ${log.n} batches, ${(log.b / 1e6).toFixed(1)} MB for ${(mail / 1e6).toFixed(1)} MB of mail (${(log.b / mail).toFixed(2)}×)`, budgetMs: 0, p50: log.b / mail, p95: log.b / mail, max: log.b / mail, iterations: log.n });
   });
 });

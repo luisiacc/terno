@@ -2,9 +2,11 @@ import { evaluateRule, termsQuery, tokenize, VIEWS, type FilterRule, type RuleMe
 import { generateDataset } from "@unica/mock-data";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { MailStore, SnapshotMessage, StoreSnapshot } from "../mail-store";
+import type { Revision, SearchMessageDoc } from "../search";
 import type { Cursor } from "../types";
 import { ingest, msg, seedThroughCommands, threadOf, withAccounts } from "./fixtures";
 import { byRecency, VIEW_TEST, type SearchCorpus } from "./oracle";
+import { SearchReplica } from "./replica";
 import { defineSearchConformance } from "./search";
 
 export interface StoreHarness {
@@ -694,6 +696,195 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         await ingest(store, many);
         expect(await store.categorize.countScope(cat, { kind: "list", listId: "daily.morningbrew.com" }, NOW)).toEqual({ count: 1000, capped: true });
         expect(await store.categorize.resolveScope(cat, { kind: "list", listId: "Daily.Morningbrew.com" }, NOW)).toHaveLength(1003);
+      });
+    });
+
+    describe("search outbox", () => {
+      async function mailbox() {
+        const store = await fresh();
+        const [a, b] = await withAccounts(store);
+        const replica = await SearchReplica.build(store.feed);
+        const inSync = async () => {
+          await replica.catchUp(store.feed);
+          expect(replica.docs()).toEqual((await store.debug.snapshot()).search);
+        };
+        return { store, a: a!, b: b!, replica, inSync };
+      }
+      const batchesSince = async (store: MailStore, from: Revision) => store.feed.changes(from, await store.feed.head(), 1_000);
+
+      it("every command that changes searchable state commits exactly one batch; others commit none", async () => {
+        const { store, a, inSync } = await mailbox();
+        let head = await store.feed.head();
+        const step = async (expected: number, fn: () => Promise<unknown>) => {
+          await fn();
+          const next = await store.feed.head();
+          expect(next.seq - head.seq, String(fn)).toBe(expected);
+          head = next;
+        };
+        await step(1, () => ingest(store, [msg({ accountId: a, providerMsgId: "o1" }), msg({ accountId: a, providerMsgId: "o2" })]));
+        const t = await threadOf(store, "o1");
+        await step(1, () => store.threads.act({ threadIds: [t], action: "archive", signal: null, now: NOW }));
+        await step(0, () => store.threads.act({ threadIds: [t], action: "archive", signal: null, now: NOW }));
+        await step(0, () => store.settings.set("app", { theme: "dark" }));
+        await step(0, () => store.threads.list({ view: "all", limit: 10 }));
+        const cat = await store.categories.create("Viajes", "cyan");
+        await step(0, async () => cat);
+        await step(1, () => store.categories.add({ categoryId: cat.id, threadIds: [t], addedBy: "user", now: NOW }));
+        await inSync();
+      });
+
+      it("a command that fails leaves no batch behind (the outbox rolls back with it)", async () => {
+        const { store, a, inSync } = await mailbox();
+        await ingest(store, [msg({ accountId: a, providerMsgId: "f1" })]);
+        const t = await threadOf(store, "f1");
+        const head = await store.feed.head();
+        await expect(store.categories.add({ categoryId: 987_654, threadIds: [t], addedBy: "user", now: NOW })).rejects.toThrow();
+        await expect(store.compose.queueSend({ accountId: 987_654, to: [{ name: "", email: "x@y.com" }], cc: [], bcc: [], subject: "x", bodyText: ".", recordReply: false, now: 0 })).rejects.toThrow();
+        expect(await store.feed.head()).toEqual(head);
+        await inSync();
+      });
+
+      it("bodies, flags, categories and moves reach the feed as absolute projections", async () => {
+        const { store, a, replica, inSync } = await mailbox();
+        const r = await ingest(store, [msg({ accountId: a, providerMsgId: "b1", bodyText: null, bodyState: "none" })]);
+        const t = await threadOf(store, "b1");
+        await inSync();
+        const from = replica.revision;
+        await store.sync.setBody(r.inserted[0]!, "el presupuesto final", null, { now: NOW, classifier: null });
+        const [batch] = await batchesSince(store, from);
+        expect(batch!.changes).toContainEqual({ kind: "upsertMessage", doc: expect.objectContaining({ messageId: r.inserted[0], body: "el presupuesto final", bodyState: "full" }) });
+        await store.sync.updateFlags(a, [{ messageId: r.inserted[0]!, flags: { isRead: true, isStarred: true } }]);
+        const [x, y] = [(await store.categories.create("X", "rose")).id, (await store.categories.create("Y", "lime")).id];
+        await store.categories.add({ categoryId: x, threadIds: [t], addedBy: "user", now: NOW });
+        const m = await store.categories.beginMove({ from: x, to: y, threadIds: [t], addedBy: "user", now: NOW, source: "dnd" });
+        await store.categories.trainMoveSlice(m.batchId, [t], NOW);
+        await inSync();
+        expect(replica.threads.get(t)).toMatchObject({ unreadCount: 0, isStarred: true, categoryIds: [y] });
+        await store.categories.undoMoveCommit(m.batchId, NOW);
+        await store.categories.delete(x);
+        await inSync();
+        expect(replica.threads.get(t)!.categoryIds).toEqual([]);
+      });
+
+      it("a thread merge carries both sides: the dropped thread's tombstone, the survivor and every moved message", async () => {
+        const { store, a, replica, inSync } = await mailbox();
+        await ingest(store, [msg({ accountId: a, providerMsgId: "mx", rfcMessageId: "mx@x" }), msg({ accountId: a, providerMsgId: "my", rfcMessageId: "my@x" })]);
+        const [tx, ty] = [await threadOf(store, "mx"), await threadOf(store, "my")];
+        await inSync();
+        const from = replica.revision;
+        await ingest(store, [msg({ accountId: a, providerMsgId: "bridge", references: ["mx@x", "my@x"] })]);
+        const [keep, drop] = [Math.min(tx, ty), Math.max(tx, ty)];
+        const changes = (await batchesSince(store, from)).flatMap((b) => b.changes);
+        expect(changes).toContainEqual({ kind: "removeThread", threadId: drop });
+        expect(changes).toContainEqual({ kind: "upsertThread", doc: expect.objectContaining({ threadId: keep }) });
+        const moved = (await store.debug.snapshot()).messages.find((m) => m.providerMsgId === (drop === tx ? "mx" : "my"))!.id;
+        expect(changes).toContainEqual({ kind: "upsertMessage", doc: expect.objectContaining({ messageId: moved, threadId: keep }) });
+        await inSync();
+      });
+
+      it("cascades: removing an account tombstones all its messages and threads", async () => {
+        const { store, a, b, replica, inSync } = await mailbox();
+        await ingest(store, [msg({ accountId: a, providerMsgId: "ca1", rfcMessageId: "ca@x" }), msg({ accountId: a, providerMsgId: "ca2", inReplyTo: "ca@x" }), msg({ accountId: b, providerMsgId: "cb" })]);
+        await inSync();
+        const doomed = (await store.debug.snapshot()).messages.filter((m) => m.accountId === a);
+        const from = replica.revision;
+        await store.accounts.remove(a);
+        const changes = (await batchesSince(store, from)).flatMap((x) => x.changes);
+        for (const m of doomed) expect(changes).toContainEqual({ kind: "removeMessage", messageId: m.id });
+        expect(changes).toContainEqual({ kind: "removeThread", threadId: doomed[0]!.threadId });
+        await inSync();
+        expect([...replica.messages.values()].map((m) => m.accountId)).toEqual([b]);
+      });
+
+      it("a replica fed under random operations always equals the store's projection", async () => {
+        const { store, a, b, inSync } = await mailbox();
+        const cats = [(await store.categories.create("A", "rose")).id, (await store.categories.create("B", "lime")).id];
+        let seed = 11;
+        const rand = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+        const pick = <T,>(xs: readonly T[]) => xs[Math.floor(rand() * xs.length)]!;
+        const rfc: string[] = [];
+        for (let step = 0; step < 150; step++) {
+          const snap = await store.debug.snapshot();
+          const threads = snap.threads.map((t) => t.id);
+          const r = rand();
+          if (r < 0.4 || threads.length === 0) {
+            const id = `ro${step}@x`;
+            await ingest(store, [msg({ accountId: pick([a, b]), rfcMessageId: id, inReplyTo: rfc.length && rand() < 0.5 ? pick(rfc) : null, bodyText: rand() < 0.3 ? null : `cuerpo ${step}`, bodyState: "full" })]);
+            rfc.push(id);
+          } else if (r < 0.6) {
+            await store.threads.act({ threadIds: [pick(threads)], action: pick(["archive", "trash", "markRead", "star", "moveToInbox"] as const), signal: null, now: NOW });
+          } else if (r < 0.75) {
+            await store.categories.add({ categoryId: pick(cats), threadIds: [pick(threads)], addedBy: pick(["user", "filter", "bulk"] as const), now: NOW });
+          } else if (r < 0.85) {
+            await store.categories.remove({ categoryId: pick(cats), threadIds: [pick(threads)], reason: "user", now: NOW });
+          } else if (r < 0.93) {
+            await store.sync.setBody(pick(snap.messages).id, rand() < 0.2 ? null : `nuevo ${step}`, null, { now: NOW, classifier: null });
+          } else {
+            await store.sync.remove([pick(snap.messages).id]);
+          }
+          if (step % 10 === 0) await inSync();
+        }
+        await inSync();
+      });
+
+      it("a build retains the log from its start, so rows written during the scan are repaired", async () => {
+        const { store, a } = await mailbox();
+        for (let i = 0; i < 5; i++) await ingest(store, [msg({ accountId: a, providerMsgId: `s${i}` })]);
+        const build = await store.feed.beginBuild();
+        const scanned = new Map<number, SearchMessageDoc>();
+        let first = true;
+        for await (const page of build.messages()) {
+          if (first) {
+            // the scan is under way: another write lands
+            await ingest(store, [msg({ accountId: a, providerMsgId: "late", subject: "llegó tarde" })]);
+            first = false;
+          }
+          for (const d of page) scanned.set(d.messageId, d);
+        }
+        const replay = await store.feed.changes(build.from, await store.feed.head(), 100);
+        await build.release();
+        expect(replay.length).toBeGreaterThan(0);
+        for (const b of replay) for (const c of b.changes) if (c.kind === "upsertMessage") scanned.set(c.doc.messageId, c.doc);
+        expect([...scanned.values()].sort((x, y) => x.messageId - y.messageId)).toEqual((await store.debug.snapshot()).search.messages);
+      });
+
+      it("refuses another epoch, a revision ahead of the head, and batches out of order", async () => {
+        const { store, a, replica } = await mailbox();
+        await ingest(store, [msg({ accountId: a })]);
+        await ingest(store, [msg({ accountId: a })]);
+        const head = await store.feed.head();
+        await expect(store.feed.changes({ epoch: "someone-else", seq: 0 }, head, 10)).rejects.toMatchObject({ name: "RevisionError", reason: "epoch" });
+        await expect(store.feed.changes(head, { ...head, seq: head.seq + 5 }, 10)).rejects.toMatchObject({ name: "RevisionError", reason: "ahead" });
+        expect(await store.feed.changes(head, head, 10)).toEqual([]);
+        const [first, second] = await store.feed.changes(replica.revision, head, 10);
+        expect(() => replica.apply(second!)).toThrow(/gap/);
+        expect(replica.apply(first!)).toBe("applied");
+        expect(replica.apply(first!)).toBe("duplicate");
+        expect(replica.apply(second!)).toBe("applied");
+      });
+
+      it("crash recovery: the log and its head survive a reopen and keep growing from there", async () => {
+        const box = await mailbox();
+        let store = box.store;
+        await ingest(store, [msg({ accountId: box.a, providerMsgId: "cr" })]);
+        const head = await store.feed.head();
+        const log = await store.feed.changes(box.replica.revision, head, 100);
+        store = await harness.reopen(store);
+        open.push(store);
+        expect(await store.feed.head()).toEqual(head);
+        expect(await store.feed.changes(box.replica.revision, head, 100)).toEqual(log);
+        await ingest(store, [msg({ accountId: box.a, providerMsgId: "cr2" })]);
+        expect(await store.feed.head()).toEqual({ ...head, seq: head.seq + 1 });
+        await box.replica.catchUp(store.feed);
+        expect(box.replica.docs()).toEqual((await store.debug.snapshot()).search);
+      });
+
+      it("searches report the revision they answered at", async () => {
+        const { store, a } = await mailbox();
+        await ingest(store, [msg({ accountId: a, subject: "Revisión" })]);
+        const page = await store.threads.searchText({ query: "revision", limit: 10, now: NOW });
+        expect(page.revision).toEqual(await store.feed.head());
+        expect(page.complete).toBe(true);
       });
     });
 

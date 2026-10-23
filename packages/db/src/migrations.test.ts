@@ -175,7 +175,7 @@ describe("migration v4: smart categorization", () => {
     // external-content FTS: triggers survive and the index still matches its content
     db.exec("INSERT INTO messages_fts(messages_fts, rank) VALUES('integrity-check', 1)");
     expect(db.get<{ c: number }>("SELECT count(*) AS c FROM messages_fts WHERE messages_fts MATCH 'factura'")!.c).toBe(ftsBefore);
-    const triggers = db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'trigger' ORDER BY name").map((r) => r.name);
+    const triggers = db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE '%fts%' ORDER BY name").map((r) => r.name);
     expect(triggers).toEqual(["message_bodies_fts_ad", "message_bodies_fts_ai", "message_bodies_fts_au", "messages_fts_ad", "messages_fts_ai", "messages_fts_au"]);
     db.run("UPDATE messages SET subject = 'zzqqmigrated' WHERE id = (SELECT min(id) FROM messages)");
     db.run("DELETE FROM messages WHERE id = (SELECT max(id) FROM messages)");

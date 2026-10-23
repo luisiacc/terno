@@ -134,9 +134,20 @@ export class StaleCursorError extends Error {
   }
 }
 
+/** The feed can't serve that range: another database (epoch), a pruned log (gap) or a revision not committed yet (ahead). An engine rebuilds. */
+export class RevisionError extends Error {
+  constructor(
+    readonly reason: "epoch" | "gap" | "ahead",
+    message: string,
+  ) {
+    super(message);
+    this.name = "RevisionError";
+  }
+}
+
 export function sameRevision(a: Revision | null | undefined, b: Revision | null | undefined): boolean {
   return !!a && !!b && a.epoch === b.epoch && a.seq === b.seq;
 }
 
-/** Until the outbox exists every store answers at this revision. */
+/** Cursors minted before revisions existed (older renderers) carry this one. */
 export const UNVERSIONED: Revision = { epoch: "unversioned", seq: 0 };

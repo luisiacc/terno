@@ -9,6 +9,8 @@ export interface OpenOptions {
   statementCacheSize?: number;
   /** ids that must be globally unique (ops, the owner's user id) */
   uuid?: () => string;
+  /** how much search log engines may catch up on before it is pruned */
+  searchLogBytes?: number;
 }
 
 /**
@@ -24,6 +26,7 @@ export class Db {
   private readonly cache = new Map<string, SqliteStatement>();
   private readonly cacheSize: number;
   private txDepth = 0;
+  private readonly beforeCommit: (() => void)[] = [];
 
   constructor(driver: SqliteDriver, path: string, options: OpenOptions = {}) {
     this.path = path;
@@ -74,6 +77,11 @@ export class Db {
     this.conn.function(name, options, fn);
   }
 
+  /** Runs inside every top-level transaction right before COMMIT; throwing rolls the transaction back. */
+  onBeforeCommit(fn: () => void): void {
+    this.beforeCommit.push(fn);
+  }
+
   /** Runs fn in a transaction (IMMEDIATE at top level, savepoint when nested). */
   tx<T>(fn: () => T): T {
     const depth = this.txDepth;
@@ -83,6 +91,7 @@ export class Db {
     try {
       const result = fn();
       if (result instanceof Promise) throw new Error("Db.tx callbacks must be synchronous");
+      if (depth === 0) for (const hook of this.beforeCommit) hook();
       this.conn.exec(depth === 0 ? "COMMIT" : `RELEASE ${savepoint}`);
       return result;
     } catch (error) {

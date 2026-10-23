@@ -568,6 +568,87 @@ ALTER TABLE messages DROP COLUMN body_text;
 ALTER TABLE messages DROP COLUMN body_html;
 ${FTS_OVER_BODIES}`;
 
+/**
+ * v7: the search outbox (plans 03/04 reconciliation). Triggers mark the
+ * messages and threads whose search projection may have changed, on every
+ * table that feeds it (messages, bodies, threads, category membership),
+ * cascades included; the before-commit finalizer (outbox.ts) turns them into
+ * one revisioned batch of absolute projections or tombstones in the same
+ * transaction. The epoch identifies this database's log.
+ * Any future rebuild of these tables must recreate their triggers.
+ */
+const OUTBOX_V7 = /* sql */ `
+CREATE TABLE search_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  epoch TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  -- size of the retained log
+  bytes INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO search_state (id, epoch, seq) VALUES (1, lower(hex(randomblob(16))), 0);
+
+CREATE TABLE search_outbox (
+  seq INTEGER PRIMARY KEY,
+  at INTEGER NOT NULL,
+  bytes INTEGER NOT NULL,
+  -- JSON IndexChange[]
+  changes TEXT NOT NULL
+);
+
+-- 0: message, 1: thread. Empty outside a transaction. The body triggers insert with NOT EXISTS, not
+-- OR IGNORE: the outer statement's conflict clause (setMessageBody's upsert) overrides a trigger's.
+CREATE TABLE search_dirty (
+  kind INTEGER NOT NULL,
+  id INTEGER NOT NULL,
+  PRIMARY KEY (kind, id)
+) WITHOUT ROWID;
+
+-- a rebuild in progress keeps the log from its start revision
+CREATE TABLE search_leases (
+  id INTEGER PRIMARY KEY,
+  from_seq INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TRIGGER search_dirty_messages_ai AFTER INSERT ON messages BEGIN
+  INSERT OR IGNORE INTO search_dirty (kind, id) VALUES (0, new.id);
+END;
+CREATE TRIGGER search_dirty_messages_ad AFTER DELETE ON messages BEGIN
+  INSERT OR IGNORE INTO search_dirty (kind, id) VALUES (0, old.id);
+END;
+CREATE TRIGGER search_dirty_messages_au AFTER UPDATE OF thread_id, account_id, date, subject, from_name, from_email, recipients_text, has_attachments, body_state ON messages BEGIN
+  INSERT OR IGNORE INTO search_dirty (kind, id) VALUES (0, new.id);
+END;
+CREATE TRIGGER search_dirty_bodies_ai AFTER INSERT ON message_bodies BEGIN
+  INSERT INTO search_dirty (kind, id) SELECT 0, new.message_id WHERE NOT EXISTS (SELECT 1 FROM search_dirty WHERE kind = 0 AND id = new.message_id);
+END;
+CREATE TRIGGER search_dirty_bodies_au AFTER UPDATE OF body_text ON message_bodies BEGIN
+  INSERT INTO search_dirty (kind, id) SELECT 0, new.message_id WHERE NOT EXISTS (SELECT 1 FROM search_dirty WHERE kind = 0 AND id = new.message_id);
+END;
+CREATE TRIGGER search_dirty_bodies_ad AFTER DELETE ON message_bodies BEGIN
+  INSERT INTO search_dirty (kind, id) SELECT 0, old.message_id WHERE NOT EXISTS (SELECT 1 FROM search_dirty WHERE kind = 0 AND id = old.message_id);
+END;
+CREATE TRIGGER search_dirty_threads_ai AFTER INSERT ON threads BEGIN
+  INSERT OR IGNORE INTO search_dirty (kind, id) VALUES (1, new.id);
+END;
+CREATE TRIGGER search_dirty_threads_ad AFTER DELETE ON threads BEGIN
+  INSERT OR IGNORE INTO search_dirty (kind, id) VALUES (1, old.id);
+END;
+CREATE TRIGGER search_dirty_threads_au AFTER UPDATE OF account_id, last_date, in_inbox, has_sent, in_trash, in_spam, is_starred, unread_count ON threads BEGIN
+  INSERT OR IGNORE INTO search_dirty (kind, id) VALUES (1, new.id);
+END;
+CREATE TRIGGER search_dirty_categories_ai AFTER INSERT ON thread_categories BEGIN
+  INSERT OR IGNORE INTO search_dirty (kind, id) VALUES (1, new.thread_id);
+END;
+CREATE TRIGGER search_dirty_categories_ad AFTER DELETE ON thread_categories BEGIN
+  INSERT OR IGNORE INTO search_dirty (kind, id) VALUES (1, old.thread_id);
+END;
+CREATE TRIGGER search_dirty_categories_au AFTER UPDATE OF thread_id, category_id ON thread_categories BEGIN
+  INSERT OR IGNORE INTO search_dirty (kind, id) VALUES (1, old.thread_id);
+  INSERT OR IGNORE INTO search_dirty (kind, id) VALUES (1, new.thread_id);
+END;
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "initial schema", sql: SCHEMA_V1 },
   { version: 2, name: "op target index", sql: OP_TARGETS_V2 },
@@ -575,6 +656,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 4, name: "smart categorization", sql: CATEGORIZATION_V4 },
   { version: 5, name: "move journal", sql: MOVES_V5 },
   { version: 6, name: "message bodies", sql: BODIES_V6 },
+  { version: 7, name: "search outbox", sql: OUTBOX_V7 },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;
