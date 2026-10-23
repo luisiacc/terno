@@ -14,7 +14,7 @@
     "dist:mac": "pnpm build && pnpm --filter @unica/desktop dist:mac",
     "typecheck": "pnpm -r --parallel typecheck",
     "lint": "oxlint --deny-warnings apps packages",
-    "test": "vitest run",
+    "test": "vitest run --project unit --project db-wasm",
     "test:watch": "vitest",
     "test:perf": "vitest run --project perf",
     "test:e2e": "pnpm --filter @unica/web test:e2e",
@@ -24,7 +24,8 @@
     "dev:web": "pnpm --filter @unica/web dev:web",
     "build:web": "pnpm --filter @unica/web build:web",
     "test:web": "pnpm --filter @unica/web test:web",
-    "test:web-perf": "pnpm --filter @unica/web test:web-perf"
+    "test:web-perf": "pnpm --filter @unica/web test:web-perf",
+    "test:ui-perf": "pnpm --filter @unica/web test:ui-perf"
   },
   "devDependencies": {
     "@types/node": "catalog:",

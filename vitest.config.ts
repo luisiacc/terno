@@ -31,6 +31,7 @@ export default defineConfig({
         },
       },
       {
+        // timing gates: `pnpm test:perf` runs this project alone (`pnpm test` leaves it out so nothing competes for CPU)
         test: {
           name: "perf",
           include: ["packages/*/src/**/*.perf.test.ts"],

@@ -128,9 +128,10 @@ Cold first visit to an interactive shell: ~0.3–0.5 s. Seeding the 50k demo mai
 ## Tests
 
 ```bash
-pnpm test               # unit + integration
-pnpm test:perf          # performance gate
-pnpm test:e2e           # Playwright flows + visual regression + UI perf (apps/web)
+pnpm test               # correctness: unit + integration (project unit) and the db suite on SQLite-WASM (db-wasm)
+pnpm test:perf          # performance gates alone (project perf, one file at a time): never run them beside other suites
+pnpm test:e2e           # Playwright flows + visual regression (apps/web, against backend-dev)
+pnpm test:ui-perf       # renderer perf in Chromium (j-key, keystroke → results, scroll, theme, drag)
 pnpm test:smoke         # Playwright against the PACKAGED arm64 app (run dist:mac first)
 pnpm test:web           # the web build in Chromium: worker on OPFS, takeover, open errors, offline, gating,
                         # Gmail via Google's flow (stubbed), and the store/engine conformance suites inside a worker
