@@ -391,7 +391,10 @@ export function createHandlers(b: Backend): Handlers {
       const endpoint = patch.ai?.baseURL ?? readSettings(db()).ai.profiles.compatible?.baseURL;
       const endpointIsLocal = endpoint ? await b.net.isLoopbackEndpoint(endpoint) : false;
       try {
-        return updateSettings(db(), patch, { endpointIsLocal });
+        const wasLocal = readSettings(db()).localMode;
+        const next = updateSettings(db(), patch, { endpointIsLocal });
+        if (next.localMode !== wasLocal) b.publishPolicy();
+        return next;
       } catch (error) {
         if (error instanceof SettingsError) throw new RpcError("BAD_REQUEST", error.message);
         throw error;

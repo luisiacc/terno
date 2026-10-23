@@ -10,4 +10,5 @@ export type BackendToMain =
   | { type: "secret"; id: number; op: "encrypt"; plain: string }
   | { type: "secret"; id: number; op: "decrypt"; blob: number[] }
   | { type: "open-external"; url: string }
+  | { type: "policy"; localMode: boolean }
   | { type: "log"; level: "info" | "warn" | "error"; message: string };

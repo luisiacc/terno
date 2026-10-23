@@ -72,6 +72,8 @@ export interface BackendOptions {
   demo?: boolean;
   /** backend-dev E2E only: let the demo registry's no-op verification establish an owner */
   allowDemoOwnerClaims?: boolean;
+  /** the host enforces the policy outside the backend too (Electron main fences the renderer) */
+  onPolicy?: (policy: { localMode: boolean }) => void;
   openExternal?: (url: string) => Promise<void>;
   now?: () => number;
   log?: (level: "info" | "warn" | "error", message: string, extra?: unknown) => void;
@@ -231,6 +233,11 @@ export class Backend {
 
   emitAccounts(): void {
     this.server.emit("accounts", listAccounts(this.db));
+  }
+
+  /** Tells the host the current policy (at startup and whenever local mode changes). */
+  publishPolicy(): void {
+    this.options.onPolicy?.({ localMode: readLocalMode(this.db) });
   }
 
   emitOwner(): void {

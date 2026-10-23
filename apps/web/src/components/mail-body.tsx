@@ -23,9 +23,11 @@ function openLink(href: string) {
  * scripts (sandbox without allow-scripts), strict CSP, links opened externally.
  * allow-same-origin (without scripts) only lets the parent measure the height.
  */
-export function HtmlBody({ html, remoteImages }: { html: string; remoteImages: "ask" | "always" }) {
+export function HtmlBody({ html, remoteImages, localMode }: { html: string; remoteImages: "ask" | "always"; localMode: boolean }) {
   const ref = useRef<HTMLIFrameElement>(null);
-  const [allowRemote, setAllowRemote] = useState(remoteImages === "always");
+  const [userAllowed, setAllowRemote] = useState(remoteImages === "always");
+  // local mode: remote content is never loaded, whatever the setting or a click says
+  const allowRemote = userAllowed && !localMode;
   const [height, setHeight] = useState(120);
   const blocked = !allowRemote && hasRemoteContent(html);
   const doc = useMemo(() => {
@@ -59,10 +61,12 @@ export function HtmlBody({ html, remoteImages }: { html: string; remoteImages: "
       {blocked && (
         <div className="flex items-center gap-2 border-b border-border bg-muted/60 px-3 py-1.5 text-xs text-muted-foreground" data-testid="remote-blocked">
           <ImageOff className="size-3.5" />
-          Contenido remoto bloqueado para proteger tu privacidad.
-          <button type="button" className="ml-auto font-medium text-primary hover:underline" onClick={() => setAllowRemote(true)}>
-            Cargar imágenes
-          </button>
+          {localMode ? "Contenido remoto bloqueado por el modo local." : "Contenido remoto bloqueado para proteger tu privacidad."}
+          {!localMode && (
+            <button type="button" className="ml-auto font-medium text-primary hover:underline" onClick={() => setAllowRemote(true)}>
+              Cargar imágenes
+            </button>
+          )}
         </div>
       )}
       <iframe

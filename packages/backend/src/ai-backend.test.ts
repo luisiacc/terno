@@ -76,14 +76,14 @@ afterEach(async () => {
   for (const c of cleanups.splice(0).reverse()) await c();
 });
 
-function setup(options: { dns?: Record<string, string[]>; localMode?: boolean } = {}) {
+function setup(options: { dns?: Record<string, string[]>; localMode?: boolean; onPolicy?: (p: { localMode: boolean }) => void } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "unica-ai-"));
   const lookup: LookupAll = async (host) => {
     const addrs = options.dns?.[host] ?? (host === "localhost" ? ["127.0.0.1"] : undefined);
     if (!addrs) throw Object.assign(new Error(`ENOTFOUND ${host}`), { code: "ENOTFOUND" });
     return addrs.map((address) => ({ address, family: address.includes(":") ? 6 : 4 }));
   };
-  const backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, lookup, demoAi: true });
+  const backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, lookup, demoAi: true, onPolicy: options.onPolicy });
   if (options.localMode === false) setSetting(backend.db, "app", { localMode: false });
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "renderer", origin: "renderer" });
@@ -135,6 +135,17 @@ describe("settings: providers and profiles", () => {
     expect(await errorOf(generate(client))).toMatchObject({ code: "UNAVAILABLE", details: { aiErrorKind: "blocked" }, message: expect.stringMatching(/en pausa por el modo local/) });
     await client.call("settings.update", { localMode: false });
     await expect(generate(client)).resolves.toMatchObject({ name: "Uber" });
+  });
+
+  it("tells the host (Electron main's renderer fence) when local mode changes, and only then", async () => {
+    const seen: boolean[] = [];
+    const { backend, client } = setup({ onPolicy: (p) => seen.push(p.localMode) });
+    backend.publishPolicy();
+    await client.call("settings.update", { theme: "dark" });
+    await client.call("settings.update", { localMode: false });
+    await client.call("settings.update", { localMode: false });
+    await client.call("settings.update", { localMode: true });
+    expect(seen).toEqual([true, false, true]);
   });
 
   it("maps pre-v3 settings into the new shape", async () => {

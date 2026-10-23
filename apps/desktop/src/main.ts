@@ -11,6 +11,7 @@ import {
   net,
   protocol,
   safeStorage,
+  session,
   shell,
   utilityProcess,
   type UtilityProcess,
@@ -75,6 +76,33 @@ function registerAppProtocol() {
   });
 }
 
+// ───────────────────────────── local mode backstop ─────────────────────────────
+
+/** Fail closed: until the backend reports the policy, the renderer is treated as in local mode. */
+let localMode = true;
+
+function isLoopbackHost(hostname: string): boolean {
+  const h = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  return h === "localhost" || h === "::1" || /^127\.\d+\.\d+\.\d+$/.test(h);
+}
+
+/**
+ * The backend polices its own connections; this fences the renderer (remote
+ * images, fonts, anything a mail or a bug could load). In local mode only
+ * loopback is reachable over http(s)/ws(s); app:// and data: never hit the network.
+ */
+function installNetworkBackstop() {
+  session.defaultSession.webRequest.onBeforeRequest({ urls: ["http://*/*", "https://*/*", "ws://*/*", "wss://*/*"] }, (details, callback) => {
+    let host = "";
+    try {
+      host = new URL(details.url).hostname;
+    } catch {
+      return callback({ cancel: true });
+    }
+    callback({ cancel: localMode && !isLoopbackHost(host) });
+  });
+}
+
 // ───────────────────────────── backend utility process ─────────────────────────────
 
 let backend: UtilityProcess | null = null;
@@ -114,6 +142,9 @@ function startBackend() {
         break;
       case "log":
         log(msg.level, msg.message);
+        break;
+      case "policy":
+        localMode = msg.localMode;
         break;
       case "open-external":
         if (/^https:\/\//i.test(msg.url)) void shell.openExternal(msg.url);
@@ -244,6 +275,7 @@ if (!app.requestSingleInstanceLock()) {
   });
   app.whenReady().then(() => {
     registerAppProtocol();
+    installNetworkBackstop();
     buildMenu();
     startBackend();
     createWindow();
