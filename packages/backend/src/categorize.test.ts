@@ -133,6 +133,25 @@ describe("categorizer: training hooks", () => {
     await expect(client.call("categories.addThreads", { categoryId: 999, threadIds: [t!] })).rejects.toThrow(/not found/);
   });
 
+  it("a thread merge reconciles the model after commit (the losing example is untrained)", async () => {
+    const { backend, client } = setup();
+    const acct = createAccount(backend.db, { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const cat = createCategory(backend.db, "Clientes", "emerald").id;
+    const a = incoming(acct, { rfcMessageId: "ra@x" });
+    const c = incoming(acct, { rfcMessageId: "rc@x", references: ["rb@x"] });
+    ingestMessages(backend.db, [a, c], NOW);
+    const t = (m: IncomingMessage) => backend.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = ?", m.providerMsgId)!.thread_id;
+    const [ta, tc] = [t(a), t(c)];
+    backend.categorizer.rebuildSync();
+    await client.call("categories.addThreads", { categoryId: cat, threadIds: [tc] });
+    await client.call("categories.addThreads", { categoryId: cat, threadIds: [ta] });
+    await client.call("categories.removeThreads", { categoryId: cat, threadIds: [ta] });
+    expect(backend.categorizer.model!.positives(cat)).toBe(1);
+    await backend.ingestSliced([incoming(acct, { rfcMessageId: "rb@x", references: ["ra@x"] })]);
+    expect(backend.categorizer.model!.positives(cat)).toBe(0);
+    expect(backend.db.get("SELECT 1 FROM thread_categories")).toBeUndefined();
+  });
+
   it("a seeded mailbox starts warm: the rebuild trains every user-filed thread", async () => {
     const { backend } = setup({ seed: true });
     expect(backend.categorizer.ready).toBe(false);

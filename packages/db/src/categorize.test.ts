@@ -211,6 +211,42 @@ describe("categorization training signals", () => {
     expect(db.all<{ thread_id: number }>("SELECT thread_id FROM cls_decisions").map((r) => r.thread_id)).toEqual([survivor]);
   });
 
+  it("a merge honors the newest explicit decision per category: a removal is not undone by the other half", () => {
+    const { db, acct, cat } = setup();
+    const ana = { name: "Ana", email: "ana@cafealtura.mx" };
+    const a = msg({ accountId: acct, rfcMessageId: "ma@x", from: ana });
+    const c = msg({ accountId: acct, rfcMessageId: "mc@x", references: ["mb@x"], from: ana });
+    ingestMessages(db, [a, c]);
+    const [ta, tc] = [threadOf(db, a.providerMsgId!), threadOf(db, c.providerMsgId!)];
+    // the merged-away half is filed (older); the survivor was filed and then removed (newer)
+    addToCategory(db, { categoryId: cat, threadIds: [tc], addedBy: "user", now: NOW - 10 * DAY });
+    addToCategory(db, { categoryId: cat, threadIds: [ta], addedBy: "user", now: NOW - 5 * DAY });
+    removeFromCategory(db, { categoryId: cat, threadIds: [ta], reason: "user", now: NOW - DAY });
+    const r = ingestMessages(db, [msg({ accountId: acct, rfcMessageId: "mb@x", references: ["ma@x"], from: ana })]);
+    const survivor = Math.min(ta, tc);
+    expect(survivor).toBe(ta);
+    expect(db.get("SELECT 1 FROM thread_categories WHERE thread_id = ?", survivor)).toBeUndefined();
+    expect(db.all("SELECT thread_id, label FROM cls_examples")).toEqual([{ thread_id: survivor, label: -1 }]);
+    // the merged half's positive left the training set: RAM untrains it after commit
+    expect(r.deltas.map((d) => [d.op, "example" in d ? d.example.label : null])).toEqual([["untrain", 1]]);
+  });
+
+  it("a merge keeps the category when the newest decision is a filing", () => {
+    const { db, acct, cat } = setup();
+    const ana = { name: "Ana", email: "ana@cafealtura.mx" };
+    const a = msg({ accountId: acct, rfcMessageId: "na@x", from: ana });
+    const c = msg({ accountId: acct, rfcMessageId: "nc@x", references: ["nb@x"], from: ana });
+    ingestMessages(db, [a, c]);
+    const [ta, tc] = [threadOf(db, a.providerMsgId!), threadOf(db, c.providerMsgId!)];
+    addToCategory(db, { categoryId: cat, threadIds: [ta], addedBy: "user", now: NOW - 10 * DAY });
+    removeFromCategory(db, { categoryId: cat, threadIds: [ta], reason: "user", now: NOW - 9 * DAY });
+    addToCategory(db, { categoryId: cat, threadIds: [tc], addedBy: "user", now: NOW - DAY });
+    const r = ingestMessages(db, [msg({ accountId: acct, rfcMessageId: "nb@x", references: ["na@x"], from: ana })]);
+    expect(db.get("SELECT added_by FROM thread_categories WHERE thread_id = ?", ta)).toEqual({ added_by: "user" });
+    expect(db.all("SELECT thread_id, label FROM cls_examples")).toEqual([{ thread_id: ta, label: 1 }]);
+    expect(r.deltas.map((d) => [d.op, "example" in d ? d.example.label : null])).toEqual([["untrain", -1]]);
+  });
+
   it("records nothing when the transaction rolls back", () => {
     const { db, cat, thread, examples } = setup();
     const a = thread();

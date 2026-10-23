@@ -39,6 +39,7 @@ import {
   type Db,
   type ClassifyResult,
   type IncomingMessage,
+  type ModelDelta,
   type OpRow,
 } from "@unica/db";
 import { ProviderError, type MailProvider, type ProviderRegistry, type SyncSink } from "@unica/mail";
@@ -400,7 +401,7 @@ export class Backend {
         }
         const c = this.classify(result.inserted, result.bodyCompleted);
         for (const x of c.touched) t.add(x);
-        return { touched: t, deltas: c.deltas, auto: c.auto, backfill: c.backfill, uncertain: c.uncertain };
+        return { touched: t, deltas: [...result.deltas, ...c.deltas], auto: c.auto, backfill: c.backfill, uncertain: c.uncertain };
       });
       // RAM follows the database, never the other way round
       this.categorizer.apply(deltas);
@@ -655,6 +656,7 @@ export class Backend {
       if (!provider) throw new ProviderError("Account no longer exists", false);
       const result = await provider.execute({ id: op.id, kind: op.kind, target, payload: JSON.parse(op.payload_json) });
       if (this.stopped && !this.db.raw.isOpen) return;
+      const deltas: ModelDelta[] = [];
       this.db.tx(() => {
         completeOp(this.db, op.id, this.now());
         if (result?.warning) this.db.run("UPDATE ops SET last_error = ? WHERE id = ?", result.warning, op.id);
@@ -666,10 +668,11 @@ export class Backend {
           if (result.providerThreadId) {
             // a conversation we started gets its Gmail thread id, so replies land in it
             const row = this.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", localId);
-            if (row) this.notifyChanged([adoptProviderThread(this.db, row.thread_id, op.account_id, result.providerThreadId)]);
+            if (row) this.notifyChanged([adoptProviderThread(this.db, row.thread_id, op.account_id, result.providerThreadId, undefined, deltas)]);
           }
         }
       });
+      this.categorizer.apply(deltas);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (error instanceof ProviderError && error.ambiguous) markOpUnknown(this.db, op.id, message, this.now());

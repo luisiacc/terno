@@ -336,7 +336,7 @@ export function createHandlers(b: Backend): Handlers {
         providerThreadId,
       };
       // Optimistic local copy + durable send op, atomically: a crash can't lose or duplicate the send.
-      const { opId, threadId } = db().tx(() => {
+      const { opId, threadId, deltas } = db().tx(() => {
         const localKey = `local:${messageId}`;
         const ingest = ingestMessages(
           db(),
@@ -377,8 +377,9 @@ export function createHandlers(b: Backend): Handlers {
         if (p.draftId) deleteDraft(db(), p.draftId);
         if (replyThreadId && ctx.origin === "renderer") recordUserActions(db(), [replyThreadId], "reply", b.now());
         const threadId = db().get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", localId)!.thread_id;
-        return { opId, threadId };
+        return { opId, threadId, deltas: ingest.deltas };
       });
+      b.categorizer.apply(deltas);
       b.notifyChanged([threadId]);
       b.kickWorker();
       return { opId, threadId };

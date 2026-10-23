@@ -1,4 +1,5 @@
-import { BODY_TAIL_TOKENS, baseSubject, emailDomain, normalizeText, trailingTokens, type Address } from "@unica/core";
+import { BODY_TAIL_TOKENS, baseSubject, emailDomain, featuresFromBlob, normalizeText, trailingTokens, type Address } from "@unica/core";
+import type { ModelDelta } from "./categorize";
 import { placeholders, type Db } from "./sqlite";
 import { pruneOpTargets } from "./repos";
 
@@ -58,6 +59,8 @@ export interface IngestResult {
   mergedThreads: Map<number, number>;
   /** existing messages whose body became complete in this batch (body filters must re-run) */
   bodyCompleted: number[];
+  /** in-memory model changes (thread merges reconcile training examples): apply after commit */
+  deltas: ModelDelta[];
 }
 
 export function recipientsText(to: Address[], cc: Address[], bcc: Address[]): string {
@@ -134,35 +137,63 @@ function resolveThread(db: Db, msg: IncomingMessage, rfcId: string | null, refs:
  * conversation we started). If another local thread already has that id, the
  * two are merged so replies don't split the conversation. Returns the surviving id.
  */
-export function adoptProviderThread(db: Db, threadId: number, accountId: number, providerThreadId: string, result?: IngestResult): number {
+export function adoptProviderThread(db: Db, threadId: number, accountId: number, providerThreadId: string, result?: IngestResult, deltas?: ModelDelta[]): number {
   const current = db.get<{ provider_thread_id: string | null }>("SELECT provider_thread_id FROM threads WHERE id = ?", threadId);
   if (!current || current.provider_thread_id === providerThreadId) return threadId;
   if (current.provider_thread_id) return threadId; // never re-home a thread that already has an identity
   const other = db.get<{ id: number }>("SELECT id FROM threads WHERE account_id = ? AND provider_thread_id = ?", accountId, providerThreadId);
-  const res = result ?? { inserted: [], updated: [], touchedThreads: new Set<number>(), mergedThreads: new Map(), bodyCompleted: [] };
+  const res = result ?? { inserted: [], updated: [], touchedThreads: new Set<number>(), mergedThreads: new Map(), bodyCompleted: [], deltas: [] };
   if (other) {
     const [keep, drop] = other.id < threadId ? [other.id, threadId] : [threadId, other.id];
     db.run("UPDATE threads SET provider_thread_id = NULL WHERE id = ?", drop);
     mergeThreads(db, keep, drop, res);
     db.run("UPDATE threads SET provider_thread_id = ? WHERE id = ?", providerThreadId, keep);
-    if (!result) recomputeThreads(db, [keep]);
+    if (!result) {
+      recomputeThreads(db, [keep]);
+      deltas?.push(...res.deltas);
+    }
     return keep;
   }
   db.run("UPDATE threads SET provider_thread_id = ? WHERE id = ?", providerThreadId, threadId);
   return threadId;
 }
 
-/** Moves every message and category of `from` into `into` and deletes `from`. */
+/**
+ * Moves every message and category of `from` into `into` and deletes `from`.
+ * Per category the newest explicit decision (training example) of either
+ * half wins: a removal is never undone by the other half's membership, and
+ * the losing example leaves the training set (an untrain delta).
+ */
 export function mergeThreads(db: Db, into: number, from: number, result: IngestResult): void {
   db.run("UPDATE messages SET thread_id = ? WHERE thread_id = ?", into, from);
+  const examples = db.all<{ thread_id: number; category_id: number; label: number; weight: number; at: number; content: number; features: Uint8Array }>(
+    "SELECT thread_id, category_id, label, weight, at, content, features FROM cls_examples WHERE thread_id IN (?, ?)",
+    into,
+    from,
+  );
+  const winners = new Map<number, (typeof examples)[number]>();
+  for (const e of examples) {
+    const other = winners.get(e.category_id);
+    const newer = !other || e.at > other.at || (e.at === other.at && e.thread_id === into);
+    const loser = newer ? other : e;
+    if (newer) winners.set(e.category_id, e);
+    if (!loser) continue;
+    db.run("DELETE FROM cls_examples WHERE thread_id = ? AND category_id = ?", loser.thread_id, loser.category_id);
+    result.deltas.push({
+      op: "untrain",
+      example: { categoryId: loser.category_id, label: loser.label > 0 ? 1 : -1, weight: loser.weight, at: loser.at, content: loser.content === 1, features: featuresFromBlob(loser.features) },
+    });
+  }
+  db.run("UPDATE OR IGNORE cls_examples SET thread_id = ? WHERE thread_id = ?", into, from);
   db.run(
     `INSERT OR IGNORE INTO thread_categories (thread_id, category_id, added_by, added_at, batch_id)
      SELECT ?, category_id, added_by, added_at, batch_id FROM thread_categories WHERE thread_id = ?`,
     into,
     from,
   );
-  // the user's labels and the engine's decisions follow the conversation (the survivor's own win)
-  db.run("UPDATE OR IGNORE cls_examples SET thread_id = ? WHERE thread_id = ?", into, from);
+  for (const [categoryId, e] of winners) {
+    if (e.label < 0) db.run("DELETE FROM thread_categories WHERE thread_id = ? AND category_id = ?", into, categoryId);
+  }
   db.run("UPDATE OR IGNORE cls_decisions SET thread_id = ? WHERE thread_id = ?", into, from);
   db.run("DELETE FROM threads WHERE id = ?", from);
   result.touchedThreads.delete(from);
@@ -200,7 +231,7 @@ function nextMessageIdAllocator(db: Db): { next(): number; persist(): void } {
  * end, never per message, so long threads don't make imports quadratic.
  */
 export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now = Date.now()): IngestResult {
-  const result: IngestResult = { inserted: [], updated: [], touchedThreads: new Set(), mergedThreads: new Map(), bodyCompleted: [] };
+  const result: IngestResult = { inserted: [], updated: [], touchedThreads: new Set(), mergedThreads: new Map(), bodyCompleted: [], deltas: [] };
   db.tx(() => {
     const ids = nextMessageIdAllocator(db);
     for (const msg of messages) {
