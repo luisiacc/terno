@@ -221,7 +221,18 @@ export function Reader() {
                       {c.name}
                       {auto && (
                         <Tooltip>
-                          <TooltipTrigger render={<span data-testid="auto-mark" className="rounded-sm bg-foreground/10 px-1 text-[10px] font-medium uppercase">auto</span>} />
+                          <TooltipTrigger
+                            render={
+                              <button
+                                type="button"
+                                data-testid="auto-mark"
+                                aria-label={`Única la añadió a ${c.name}: ${auto.reasons.join("; ")}`}
+                                className="rounded-sm bg-foreground/10 px-1 text-[10px] font-medium uppercase focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                              >
+                                auto
+                              </button>
+                            }
+                          />
                           <Reasons title={`Única la añadió a ${c.name}`} reasons={auto.reasons} hint={`¿No es de ${c.name}? Quítala y aprenderá.`} />
                         </Tooltip>
                       )}
