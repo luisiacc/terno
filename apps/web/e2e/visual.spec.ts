@@ -3,7 +3,22 @@
  * e2e/__screenshots__; regenerate with `pnpm test:e2e --update-snapshots`.
  */
 import { expect, focusList, openRow, search, stabilize, test } from "./fixtures";
+import { startOllamaStub } from "./ollama-stub";
 import type { Page } from "@playwright/test";
+
+/** AI tab on a local Ollama (stub) with its models listed and a successful connection test. */
+async function aiTabWithOllama(page: Page, ollamaUrl: string) {
+  await page.getByTestId("open-settings").click();
+  await page.getByTestId("tab-ai").click();
+  await page.getByTestId("ai-provider").click();
+  await page.getByTestId("ai-choice-ollama").click();
+  await page.getByTestId("ai-endpoint").fill(`${ollamaUrl}/v1`);
+  await page.getByTestId("ai-model-option").first().click();
+  await expect(page.getByTestId("ai-model-option").first()).toContainText("40k ctx");
+  await page.getByTestId("ai-test").click();
+  await expect(page.getByTestId("ai-test-result")).toBeVisible();
+  await stabilize(page);
+}
 
 async function ready(page: Page, { banner = true } = {}) {
   await page.evaluate(() => document.fonts.ready);
@@ -59,6 +74,25 @@ test.describe("light", () => {
     await expect(page).toHaveScreenshot("settings-agents.png");
   });
 
+  test("settings: AI on a local model", async ({ app: page }) => {
+    await ready(page);
+    const ollama = await startOllamaStub();
+    try {
+      await aiTabWithOllama(page, ollama.url);
+      await expect(page).toHaveScreenshot("settings-ai-local.png", { mask: [page.getByTestId("ai-endpoint"), page.getByTestId("ai-test-latency")] });
+    } finally {
+      await ollama.close();
+    }
+  });
+
+  test("settings: general with local mode first", async ({ app: page }) => {
+    await ready(page);
+    await page.getByTestId("local-pill").click();
+    await expect(page.getByTestId("local-mode-switch")).toBeChecked();
+    await stabilize(page);
+    await expect(page).toHaveScreenshot("settings-general.png");
+  });
+
   test("add account", async ({ app: page }) => {
     await ready(page);
     await page.getByTestId("sidebar").getByText("Añadir cuenta").click();
@@ -87,8 +121,47 @@ test.describe("light", () => {
   });
 });
 
+test.describe("owner identity", () => {
+  test.use({ backendOptions: { ownerClaims: true } });
+
+  test("settings: accounts with the owner card", async ({ app: page }) => {
+    await ready(page);
+    await page.getByTestId("sidebar").getByText("Añadir cuenta").click();
+    await page.getByTestId("imap-email").fill("luis@fastmail.com");
+    await page.getByTestId("imap-password").fill("app-password");
+    await page.getByTestId("imap-submit").click();
+    await page.getByTestId("open-settings").click();
+    await page.getByTestId("tab-accounts").click();
+    await expect(page.getByTestId("owner-email")).toHaveText("luis@fastmail.com");
+    await stabilize(page);
+    await expect(page.getByTestId("settings-dialog")).toHaveScreenshot("settings-accounts-owner.png");
+  });
+});
+
+test.describe("first run", () => {
+  test.use({ backendOptions: { empty: true, ownerClaims: true } });
+
+  test("step 1: local or connected", async ({ app: page }) => {
+    await expect(page.getByTestId("first-run")).toContainText("Paso 1 de 2");
+    await page.evaluate(() => document.fonts.ready);
+    await stabilize(page);
+    await expect(page).toHaveScreenshot("first-run.png");
+  });
+});
+
 test.describe("dark", () => {
   test.use({ colorScheme: "dark" });
+
+  test("settings: AI on a local model", async ({ app: page }) => {
+    await ready(page);
+    const ollama = await startOllamaStub();
+    try {
+      await aiTabWithOllama(page, ollama.url);
+      await expect(page).toHaveScreenshot("settings-ai-local-dark.png", { mask: [page.getByTestId("ai-endpoint"), page.getByTestId("ai-test-latency")] });
+    } finally {
+      await ollama.close();
+    }
+  });
 
   test("inbox with the reader", async ({ app: page }) => {
     await ready(page);

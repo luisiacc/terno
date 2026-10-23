@@ -10,6 +10,8 @@ export { expect };
 interface Fixtures {
   /** freeze Date for deterministic list dates (off for perf: the fake clock coarsens performance.now) */
   fixedClock: boolean;
+  /** backend-dev knobs: a fresh install with no mailbox, and owner claims through the demo registry */
+  backendOptions: { empty?: boolean; ownerClaims?: boolean };
   server: DevServer;
   /** the app, loaded, connected and showing the inbox */
   app: Page;
@@ -17,14 +19,13 @@ interface Fixtures {
 
 export const test = base.extend<Fixtures>({
   fixedClock: [true, { option: true }],
-  // Playwright requires the destructuring pattern even when no fixtures are used
-  // oxlint-disable-next-line no-empty-pattern
-  server: async ({}, use) => {
+  backendOptions: [{}, { option: true }],
+  server: async ({ backendOptions }, use) => {
     const template = process.env[TEMPLATE_ENV];
     if (!template) throw new Error("global setup did not seed a template database");
     const dir = mkdtempSync(join(tmpdir(), "unica-e2e-"));
-    copyFileSync(template, join(dir, "unica.db"));
-    const server = await startDevServer({ port: 0, dataDir: dir, token: "e2e", now: () => E2E_NOW, autoSync: true });
+    if (!backendOptions.empty) copyFileSync(template, join(dir, "unica.db"));
+    const server = await startDevServer({ port: 0, dataDir: dir, token: "e2e", now: () => E2E_NOW, autoSync: true, seed: !backendOptions.empty, ownerClaims: backendOptions.ownerClaims });
     await use(server);
     // Backend.stop() doesn't wait for an in-flight ops batch; let it settle first.
     const b = server.backend as unknown as { workerRunning: boolean };
@@ -32,11 +33,11 @@ export const test = base.extend<Fixtures>({
     await server.close();
     rmSync(dir, { recursive: true, force: true });
   },
-  app: async ({ page, server, fixedClock }, use) => {
+  app: async ({ page, server, fixedClock, backendOptions }, use) => {
     if (fixedClock) await page.clock.setFixedTime(new Date(E2E_NOW));
     await page.goto(`/?backend=${encodeURIComponent(server.url)}&token=e2e`);
     await page.locator("[data-ready]").waitFor();
-    await rows(page).first().waitFor();
+    if (!backendOptions.empty) await rows(page).first().waitFor();
     await use(page);
   },
 });

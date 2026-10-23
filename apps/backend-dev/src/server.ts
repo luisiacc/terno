@@ -20,6 +20,8 @@ export interface DevServerOptions {
   lookup?: LookupAll;
   /** E2E: let accounts added through the demo registry become the owner */
   ownerClaims?: boolean;
+  /** seed the demo mailbox into an empty database (default true); false starts like a fresh install */
+  seed?: boolean;
 }
 
 export interface DevServer {
@@ -50,7 +52,7 @@ export async function startDevServer(o: DevServerOptions): Promise<DevServer> {
     autoSync: o.autoSync ?? true,
     log: (level, message, extra) => (level === "error" ? console.error : console.log)(`[backend] ${message}`, extra ?? ""),
   });
-  if (seedDemo(backend.db, { threads: o.threads, accounts: o.accounts })) {
+  if (o.seed !== false && seedDemo(backend.db, { threads: o.threads, accounts: o.accounts })) {
     backend.db.run("INSERT OR REPLACE INTO settings (key, value_json) VALUES ('app', ?)", JSON.stringify({ ai: { provider: "fake" } }));
   }
   backend.start();

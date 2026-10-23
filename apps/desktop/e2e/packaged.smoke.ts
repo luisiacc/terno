@@ -67,6 +67,29 @@ test("searches, opens and archives with the keyboard", async () => {
   await page.screenshot({ path: join(here, "../../../test-results/desktop-smoke/packaged-app.png") });
 });
 
+test("local mode (the default for a new profile): main cancels the renderer's remote requests", async () => {
+  await expect(page.getByTestId("local-pill")).toHaveText("Local");
+  // observe cancellations in main itself, so a failure for any other reason (offline, CSP) doesn't count
+  await app.evaluate(({ session }) => {
+    const g = globalThis as unknown as { blocked: string[] };
+    g.blocked = [];
+    session.defaultSession.webRequest.onErrorOccurred((d) => {
+      if (d.error === "net::ERR_BLOCKED_BY_CLIENT") g.blocked.push(d.url);
+    });
+  });
+  const result = await page.evaluate(
+    () =>
+      new Promise<string>((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve("loaded");
+        img.onerror = () => resolve("error");
+        img.src = `https://example.com/pixel.png?smoke=${Date.now()}`;
+      }),
+  );
+  expect(result).toBe("error");
+  await expect.poll(() => app.evaluate(() => (globalThis as unknown as { blocked: string[] }).blocked)).toContainEqual(expect.stringContaining("https://example.com/pixel.png"));
+});
+
 test("the bundled unica-mcp wrapper answers MCP requests against the running app", async () => {
   const wrapper = join(appPath, "Contents/Resources/bin/unica-mcp");
   const env = { ...process.env, UNICA_USER_DATA: userData };
