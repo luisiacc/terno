@@ -196,10 +196,13 @@ function putExample(
   let content = 1;
   if (e.source === "bulk") {
     const used = db.get<{ c: number }>(
-      "SELECT count(*) AS c FROM cls_examples WHERE category_id = ? AND sender = ? AND source = 'bulk' AND content = 1 AND thread_id != ?",
+      `SELECT count(*) AS c FROM (
+         SELECT 1 FROM cls_examples INDEXED BY cls_examples_bulk_content
+         WHERE category_id = ? AND sender = ? AND source = 'bulk' AND content = 1 AND thread_id != ? LIMIT ?)`,
       e.categoryId,
       e.set.features.sender,
       e.threadId,
+      BULK_CONTENT_CAP,
     )!.c;
     content = used < BULK_CONTENT_CAP ? 1 : 0;
   }

@@ -388,6 +388,8 @@ CREATE TABLE cls_examples (
 ) WITHOUT ROWID;
 CREATE INDEX cls_examples_cat ON cls_examples(category_id, label);
 CREATE INDEX cls_examples_sender ON cls_examples(category_id, sender, at);
+-- bulk adds that teach content: at most BULK_CONTENT_CAP per (category, sender), so the cap check is bounded
+CREATE INDEX cls_examples_bulk_content ON cls_examples(category_id, sender) WHERE source = 'bulk' AND content = 1;
 -- removals are few: the sender back-off reads them once per ingestion slice
 CREATE INDEX cls_examples_removals ON cls_examples(at) WHERE label < 0;
 

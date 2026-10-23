@@ -9,7 +9,7 @@ import { join } from "node:path";
 import v8 from "node:v8";
 import vm from "node:vm";
 import { CategorizerModel, encodeFeatures, extractFeatures, FEATURES_V, type TrainExample } from "@unica/core";
-import { addToCategory, countScope, createCategory, ownAddresses, quickActions, rootMessages, seedDataset, type IncomingMessage } from "@unica/db";
+import { addToCategory, countScope, createAccount, createCategory, ingestMessages, openDatabase, ownAddresses, quickActions, rootMessages, seedDataset, type IncomingMessage } from "@unica/db";
 import { demoRegistry } from "@unica/mail";
 import { generateDataset } from "@unica/mock-data";
 import { afterAll, beforeAll, expect, it } from "vitest";
@@ -195,6 +195,36 @@ it("snackbar counts: sender/domain/list ≤ 5 ms, topic ≤ 25 ms (capped at 1 0
   let i = 0;
   run("quickActions for one filed thread", 2, () => quickActions(db, facturas, [threads[i++ % threads.length]!], model));
 });
+
+it("bulk-filing 12,000 threads of one sender stays linear (the content cap is a bounded lookup)", () => {
+  const db = openDatabase(join(dir, "bulk.db"));
+  try {
+    const acct = createAccount(db, { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const cat = createCategory(db, "Lecturas", "violet").id;
+    const msgs = generateDataset({ threads: 12_000, accounts: 1, seed: 3, now: NOW }).messages.filter((m) => !m.isSent).slice(0, 12_000);
+    for (let i = 0; i < msgs.length; i += 1000) {
+      ingestMessages(db, msgs.slice(i, i + 1000).map((m, j) => ({ ...m, accountId: acct, from: { name: "Xataka", email: "boletin@xataka.com" }, references: [], inReplyTo: null, providerThreadId: null, rfcMessageId: `bulk-${i + j}@x`, providerMsgId: `bulk-${i + j}` })), NOW);
+    }
+    const threads = db.all<{ id: number }>("SELECT id FROM threads ORDER BY id").map((r) => r.id);
+    expect(threads.length).toBeGreaterThan(10_000);
+    const chunkMs: number[] = [];
+    for (let i = 0; i < threads.length; i += 100) {
+      const t = performance.now();
+      addToCategory(db, { categoryId: cat, threadIds: threads.slice(i, i + 100), addedBy: "bulk", now: NOW, batchId: 1 });
+      chunkMs.push(performance.now() - t);
+    }
+    const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+    const first = mean(chunkMs.slice(1, 11));
+    const last = mean(chunkMs.slice(-10));
+    const total = chunkMs.reduce((a, b) => a + b, 0);
+    stats.push({ name: `bulk filing ${threads.length} same-sender threads: first chunks ${first.toFixed(1)} ms, last ${last.toFixed(1)} ms, total ${(total / 1000).toFixed(2)} s`, budgetMs: 0, p50: last / first, p95: last / first, max: total, iterations: chunkMs.length });
+    expect(last).toBeLessThanOrEqual(first * 2 + 2);
+    expect(total).toBeLessThanOrEqual(4000 * BUDGET_MULTIPLIER);
+    expect(db.get<{ n: number }>("SELECT count(*) AS n FROM cls_examples WHERE content = 1")!.n).toBe(50);
+  } finally {
+    db.close();
+  }
+}, 600_000);
 
 /** The backend load test's 14k-message import, ingested into copies of the perf mailbox with the engine off and on. */
 async function importAB(label: string, shape: (m: IncomingMessage) => IncomingMessage, rounds: number) {
