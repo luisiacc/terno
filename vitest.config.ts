@@ -21,6 +21,8 @@ export default defineConfig({
         test: {
           name: "perf",
           include: ["packages/*/src/**/*.perf.test.ts"],
+          // memory gates measure the heap after a full collection
+          execArgv: ["--expose-gc"],
           environment: "node",
           testTimeout: 600_000,
           hookTimeout: 600_000,

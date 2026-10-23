@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@unica/core/rpc";
-import { seedDataset, type IncomingMessage, sqlDb } from "@unica/db";
+import { seedDataset, type IncomingMessage, sqlDb, type SqlMailStore } from "@unica/db";
 import { demoRegistry } from "@unica/mail";
 import { generateDataset } from "@unica/mock-data";
 import { afterAll, beforeAll, expect, it } from "vitest";
@@ -20,14 +20,16 @@ let dir: string;
 let accountIds: number[];
 const stats: Stat[] = [];
 
-beforeAll(() => {
+beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "unica-bperf-"));
-  backend = new Backend({ dbPath: join(dir, "sqlDb(b.store)"), version: "perf", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false });
+  backend = new Backend({ dbPath: join(dir, "sqlDb(b.store)"), version: "perf", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, instantSearch: true });
   accountIds = seedDataset(sqlDb(backend.store), generateDataset({ threads: 20_000, accounts: 8, seed: 5, now: NOW, bodyScale: 3 }), { now: NOW }).accountIds;
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "r", origin: "renderer" });
   client = new RpcClient(c);
-});
+  // the instant index builds in the background after startup; idle numbers are taken once it is current
+  expect(await (backend.store as SqlMailStore).instant!.settled()).toBe(true);
+}, 120_000);
 
 afterAll(async () => {
   report("backend.json", "Backend RPC latency", { threads: 20_000, accounts: 8 }, stats);
@@ -58,6 +60,12 @@ it("idle: RPC round trip adds little over the query itself", async () => {
   let i = 0;
   await run("rpc: open thread", 2, () => client.call("threads.get", { threadId: ids[i++ % ids.length]! }));
   await run("rpc: search 'factura'", 25, () => client.call("threads.search", { query: "factura" }));
+  // type-ahead end to end (handler yield, parse, resolve, instant engine, hydrate 100 rows, envelope)
+  const typed = "presupuesto";
+  for (let i = 1; i <= typed.length; i++) {
+    await run(`rpc: type-ahead search "${typed.slice(0, i)}"`, 5, () => client.call("threads.search", { query: typed.slice(0, i) }));
+    expect((await client.call("threads.search", { query: typed.slice(0, i) })).strategy).toMatch(/^instant/);
+  }
   await run("rpc: sidebar counts", 5, () => client.call("counts.get", {}));
   // boot path: settings now carry AI profiles and owner identity, which must not slow the first paint
   await run("rpc: app.bootstrap", 8, () => client.call("app.bootstrap", {}));
