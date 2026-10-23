@@ -5,7 +5,7 @@ import { CategoryDot } from "@unica/ui/components/category-dot";
 import { Shortcut } from "@unica/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@unica/ui/components/tooltip";
 import { cn } from "@unica/ui/lib/utils";
-import { Archive, Inbox, Layers, OctagonAlert, PenLine, Plus, Send, Settings2, Sparkles, Star, Trash2 } from "lucide-react";
+import { Archive, Check, Inbox, Layers, OctagonAlert, PenLine, Plus, Send, Settings2, Sparkles, Star, Trash2 } from "lucide-react";
 import { openCompose } from "~/lib/actions";
 import { VIEW_LABEL } from "~/lib/format";
 import { navigate, setApp, useApp } from "~/state/app";
@@ -13,6 +13,7 @@ import { client } from "~/rpc/connection";
 import { CATEGORY_COLORS } from "@unica/core";
 import { toast } from "sonner";
 import { renderProbe } from "~/lib/render-probe";
+import { useDropState } from "~/state/drag";
 import { LocalPill } from "./local-pill";
 
 const VIEWS: { view: View; icon: typeof Inbox; keys?: string }[] = [
@@ -32,6 +33,7 @@ function NavItem({
   label,
   count,
   testId,
+  dropTarget,
 }: {
   active: boolean;
   onClick: () => void;
@@ -39,24 +41,33 @@ function NavItem({
   label: string;
   count?: number;
   testId?: string;
+  /** a category: rows can be dropped on it */
+  dropTarget?: number;
 }) {
   renderProbe("NavItem");
+  // only the item under the pointer (and the one it left) re-renders during a drag
+  const drop = useDropState(dropTarget);
   return (
     <button
       type="button"
       data-testid={testId}
       data-active={active || undefined}
+      data-drop-target={dropTarget}
+      data-drop-state={drop ?? undefined}
       onClick={onClick}
       className={cn(
         "group flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-left text-sm text-sidebar-foreground transition-colors",
         "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
         "data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground",
+        "data-[drop-state=over]:bg-drop-target data-[drop-state=over]:text-sidebar-accent-foreground data-[drop-state=over]:ring-1 data-[drop-state=over]:ring-primary data-[drop-state=over]:ring-inset",
+        "data-[drop-state=already]:bg-sidebar-accent data-[drop-state=already]:text-muted-foreground",
       )}
     >
-      <span className="flex size-4 items-center justify-center text-muted-foreground group-data-active:text-sidebar-primary">{icon}</span>
+      <span className="flex size-4 items-center justify-center text-muted-foreground transition-transform group-data-active:text-sidebar-primary group-data-[drop-state=over]:scale-125">{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
+      {drop === "already" && <Check aria-label="Ya está aquí" className="size-3.5 text-muted-foreground" />}
       {count ? (
-        <span data-slot="nav-count" className="font-mono text-2xs tabular text-muted-foreground">
+        <span data-slot="nav-count" className="inline-block font-mono text-2xs tabular text-muted-foreground">
           {count}
         </span>
       ) : null}
@@ -105,7 +116,7 @@ export function Sidebar() {
           <Shortcut keys="c" className="opacity-70 [&_kbd]:bg-primary-foreground/15 [&_kbd]:text-primary-foreground" />
         </Button>
       </div>
-      <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+      <nav data-drop-scroll className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {VIEWS.map(({ view: v, icon: Icon, keys }) => (
           <Tooltip key={v}>
             <TooltipTrigger
@@ -141,6 +152,7 @@ export function Sidebar() {
           <div key={c.id}>
             <NavItem
               testId={`nav-category-${c.id}`}
+              dropTarget={c.id}
               active={categoryId === c.id && reviewCategoryId === null}
               onClick={() => navigate({ categoryId: c.id })}
               icon={<CategoryDot color={c.color as CategoryColor} />}

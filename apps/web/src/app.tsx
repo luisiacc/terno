@@ -8,6 +8,7 @@ import { useApp } from "~/state/app";
 import { CategoryPicker } from "./components/category-picker";
 import { CategorySnackbarHost, showCategorySnackbar } from "./components/category-snackbar";
 import { CommandPalette } from "./components/command-palette";
+import { DragGhost } from "./components/drag-ghost";
 import { Composer } from "./components/composer";
 import { Reader } from "./components/reader";
 import { Sidebar } from "./components/sidebar";
@@ -69,6 +70,7 @@ export function App() {
         {fresh && dialog === null && needsFirstRun() && <FirstRun />}
       </Suspense>
       <CategorySnackbarHost />
+      <DragGhost />
       <Toaster position="bottom-left" theme={mode} />
     </TooltipProvider>
   );

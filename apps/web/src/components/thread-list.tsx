@@ -6,6 +6,7 @@ import { Search, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { VIEW_LABEL } from "~/lib/format";
 import { getApp, setApp, useApp } from "~/state/app";
+import { installDragController } from "~/lib/drag-install";
 import { loadMore, useList } from "~/state/list";
 import { ROW_HEIGHT, ThreadRow } from "./thread-row";
 import { LearnedBanner } from "./learned-banner";
@@ -107,6 +108,9 @@ export function ThreadList() {
     overscan: 10,
     getItemKey: (i) => items[i]!.id,
   });
+
+  // drag rows onto sidebar categories: one delegated listener on the listbox
+  useEffect(() => (parentRef.current ? installDragController(parentRef.current) : undefined), []);
 
   useEffect(() => {
     listScroller.scrollToIndex = (i) => virtualizer.scrollToIndex(i, { align: "auto" });

@@ -201,6 +201,34 @@
   animation-duration: var(--motion-slow) !important;
 }
 
+/* dragging rows onto categories: no hover in the list, a grabbing cursor everywhere */
+:root[data-dragging],
+:root[data-dragging] * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+:root[data-dragging] [role="listbox"] [data-thread-id]:not([aria-selected="true"], [data-checked]):hover {
+  background-color: transparent;
+}
+@keyframes drop-flash {
+  from {
+    background-color: var(--color-drop-target);
+  }
+}
+@keyframes dot-pop {
+  from {
+    transform: scale(0);
+  }
+  60% {
+    transform: scale(1.4);
+  }
+}
+@keyframes count-bump {
+  45% {
+    transform: translateY(-2px) scale(1.2);
+  }
+}
+
 /* switching theme or motion repaints in one frame: no color transitions */
 :root[data-theme-switching] *,
 :root[data-theme-switching] *::before,

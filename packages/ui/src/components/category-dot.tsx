@@ -24,8 +24,8 @@ const SOFT: Record<CategoryColor, string> = {
 }
 
 /** Small colored dot used for categories and accounts. */
-function CategoryDot({ color, className }: { color: CategoryColor; className?: string }) {
-  return <span data-slot="category-dot" aria-hidden className={cn("inline-block size-2 shrink-0 rounded-full", DOT[color] ?? DOT.slate, className)} />
+function CategoryDot({ color, className, ...props }: { color: CategoryColor } & React.ComponentProps<"span">) {
+  return <span data-slot="category-dot" aria-hidden {...props} className={cn("inline-block size-2 shrink-0 rounded-full", DOT[color] ?? DOT.slate, className)} />
 }
 
 /** Soft pill with a category name. */

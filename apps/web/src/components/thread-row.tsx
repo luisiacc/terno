@@ -48,6 +48,7 @@ export const ThreadRow = memo(function ThreadRow({ thread: t, top, height, compa
       data-testid="thread-row"
       data-thread-id={t.id}
       data-unread={t.unread || undefined}
+      data-checked={checked || undefined}
       onMouseDown={() => setApp({ selectedId: t.id, readerOpen: true })}
       className={cn(
         "absolute left-0 w-full cursor-default border-b border-border/60 px-4 select-none",
@@ -68,7 +69,7 @@ export const ThreadRow = memo(function ThreadRow({ thread: t, top, height, compa
         )}
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
           {cats.map((c) => (
-            <CategoryDot key={c.id} color={c.color as CategoryColor} />
+            <CategoryDot key={c.id} data-cat-dot={c.id} color={c.color as CategoryColor} />
           ))}
           {t.hasAttachments && <Paperclip className="size-3 text-muted-foreground" />}
           {t.starred && <Star className="size-3 fill-star text-star" />}
