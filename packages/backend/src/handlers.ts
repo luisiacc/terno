@@ -380,7 +380,8 @@ export function createHandlers(b: Backend): Handlers {
     },
 
     "settings.update": (patch) => updateSettings(db(), patch),
-    "settings.setSecret": async ({ name, value }) => {
+    "settings.setSecret": async ({ name: requested, value }) => {
+      const name = requested === "anthropicApiKey" ? "ai:anthropic:apiKey" : requested;
       if (value) await b.setSecret(name, value);
       else db().run("DELETE FROM secrets WHERE name = ?", name);
       return { ok: true as const };

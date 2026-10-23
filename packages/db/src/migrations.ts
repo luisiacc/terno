@@ -293,9 +293,62 @@ INSERT OR IGNORE INTO op_targets (op_id, message_id, grp)
   WHERE o.state IN ('queued', 'running');
 `;
 
+/**
+ * v3: owner identity, AI secret rename, and local mode for existing installs.
+ * - The owner (the "Única account") is separate from mailboxes: removing its
+ *   mailbox only clears account_id. Existing installs adopt their earliest
+ *   non-demo account, flagged {"migrated":true} so a future cloud can confirm it.
+ * - New installs default to local mode; an install that already has accounts or
+ *   settings keeps today's behaviour (localMode:false) until the user opts in.
+ */
+const OWNER_V3 = /* sql */ `
+CREATE TABLE owner (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  user_id TEXT NOT NULL,
+  email TEXT NOT NULL,
+  display_name TEXT NOT NULL DEFAULT '',
+  provider TEXT NOT NULL CHECK (provider IN ('gmail', 'imap')),
+  verified_by TEXT NOT NULL CHECK (verified_by IN ('google_oauth', 'imap_login')),
+  evidence_json TEXT NOT NULL DEFAULT '{}',
+  verified_at INTEGER,
+  account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
+  cloud_json TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE owner_history (
+  id INTEGER PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  email TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  verified_by TEXT NOT NULL,
+  evidence_json TEXT NOT NULL,
+  verified_at INTEGER,
+  replaced_at INTEGER NOT NULL,
+  reason TEXT NOT NULL
+);
+INSERT INTO owner (id, user_id, email, display_name, provider, verified_by, evidence_json, verified_at, account_id, created_at, updated_at)
+  SELECT 1,
+         lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(2)) || '-' || hex(randomblob(6))),
+         email, display_name, kind,
+         CASE kind WHEN 'gmail' THEN 'google_oauth' ELSE 'imap_login' END,
+         '{"migrated":true}', created_at, id, created_at, created_at
+  FROM accounts
+  WHERE coalesce(json_extract(provider_config, '$.demo'), 0) = 0
+  ORDER BY created_at, id
+  LIMIT 1;
+
+UPDATE secrets SET name = 'ai:anthropic:apiKey' WHERE name = 'anthropicApiKey';
+
+INSERT INTO settings (key, value_json)
+  SELECT 'app', '{}' WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'app') AND EXISTS (SELECT 1 FROM accounts);
+UPDATE settings SET value_json = json_set(value_json, '$.localMode', json('false')) WHERE key = 'app';
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "initial schema", sql: SCHEMA_V1 },
   { version: 2, name: "op target index", sql: OP_TARGETS_V2 },
+  { version: 3, name: "owner identity, ai secrets, local mode", sql: OWNER_V3 },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

@@ -566,7 +566,7 @@ export class Backend {
     const settings = readSettings(this.db);
     if (settings.aiProvider === "none") return null;
     const factory = this.options.aiFactory ?? defaultAiFactory;
-    return factory(settings.aiProvider, { apiKey: await this.getSecret("anthropicApiKey"), model: settings.aiModel });
+    return factory(settings.aiProvider, { apiKey: await this.getSecret("ai:anthropic:apiKey"), model: settings.aiModel });
   }
 
   newMessageId(email: string): string {

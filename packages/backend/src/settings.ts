@@ -17,7 +17,7 @@ export const DEFAULT_SETTINGS: StoredSettings = {
 
 export function readSettings(db: Db): AppSettings {
   const stored = getSetting<Partial<StoredSettings>>(db, "app", {});
-  return { ...DEFAULT_SETTINGS, ...stored, hasAiKey: getSecret(db, "anthropicApiKey") !== null };
+  return { ...DEFAULT_SETTINGS, ...stored, hasAiKey: getSecret(db, "ai:anthropic:apiKey") !== null };
 }
 
 export function updateSettings(db: Db, patch: Partial<StoredSettings>): AppSettings {

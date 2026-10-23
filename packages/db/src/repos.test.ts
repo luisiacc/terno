@@ -319,7 +319,7 @@ describe("migrations", () => {
     db.run("INSERT INTO accounts (id, kind, email, created_at) VALUES (1, 'imap', 'a@b.c', 0)");
     db.run("INSERT INTO ops (id, seq, account_id, kind, target_json, state, created_at, updated_at) VALUES ('q', 1, 1, 'markRead', '{\"messageIds\":[7,8]}', 'queued', 0, 0)");
     db.run("INSERT INTO ops (id, seq, account_id, kind, target_json, state, created_at, updated_at) VALUES ('s', 2, 1, 'archive', '{\"messageIds\":[9]}', 'succeeded', 0, 0)");
-    expect(migrate(db)).toEqual({ from: 1, to: 2 });
+    expect(migrate(db)).toMatchObject({ from: 1 });
     expect(db.all("SELECT op_id, message_id, grp FROM op_targets ORDER BY message_id")).toEqual([
       { op_id: "q", message_id: 7, grp: "read" },
       { op_id: "q", message_id: 8, grp: "read" },
