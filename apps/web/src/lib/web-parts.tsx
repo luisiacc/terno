@@ -11,4 +11,5 @@ export const DesktopBanner = WEB ? lazy(() => nudge().then((m) => ({ default: m.
 export const OnboardingNudge = WEB ? lazy(() => nudge().then((m) => ({ default: m.OnboardingNudge }))) : null;
 export const MacSection = WEB ? lazy(() => nudge().then((m) => ({ default: m.MacSection }))) : null;
 export const DesktopOnly = WEB ? lazy(() => nudge().then((m) => ({ default: m.DesktopOnly }))) : null;
+export const StorageSection = WEB ? lazy(() => import("~/web/storage-section").then((m) => ({ default: m.StorageSection }))) : null;
 export const GmailReconnect = WEB ? lazy(() => import("~/web/gmail-reconnect").then((m) => ({ default: m.GmailReconnect }))) : null;

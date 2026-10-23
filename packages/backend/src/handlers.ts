@@ -69,6 +69,25 @@ export function createHandlers(b: Backend): Handlers {
       version: b.options.version,
     }),
 
+    "app.export": async () => {
+      const accounts = await store.accounts.list();
+      const emailOf = (id: number) => accounts.find((a) => a.id === id)?.email ?? null;
+      return {
+        format: "unica-export" as const,
+        version: 1 as const,
+        exportedAt: b.now(),
+        app: b.options.version,
+        accounts: accounts.map((a) => ({ email: a.email, kind: a.kind, displayName: a.displayName })),
+        categories: await store.categories.list(),
+        filters: await store.filters.list(),
+        settings: await readSettings(store),
+        drafts: (await store.drafts.list()).map((d) => ({ accountEmail: emailOf(d.account_id), to: JSON.parse(d.to_json), cc: JSON.parse(d.cc_json), subject: d.subject, bodyText: d.body_text, updatedAt: d.updated_at })),
+        ops: (await store.ops.recent(100_000))
+          .filter((o) => o.state !== "succeeded")
+          .map((o) => ({ accountEmail: emailOf(o.account_id), kind: o.kind, state: o.state, createdAt: o.created_at, lastError: o.last_error, target: JSON.parse(o.target_json), payload: JSON.parse(o.payload_json) })),
+      };
+    },
+
     "threads.list": (p) => store.threads.list(p),
 
     "threads.search": async (p, ctx) => {

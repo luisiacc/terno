@@ -18,7 +18,9 @@ export interface WebLifecycle {
   update: null | { apply: () => void };
   /** the adapter the mailbox lives in */
   storage: string | null;
+  /** whether the browser keeps this site's storage under pressure (navigator.storage.persist) */
+  persistence: null | { state: "granted" | "denied" | "unsupported"; usage: number | null; quota: number | null };
 }
 
-export const useWeb = create<WebLifecycle>(() => ({ phase: "starting", progress: null, code: null, message: null, update: null, storage: null }));
+export const useWeb = create<WebLifecycle>(() => ({ phase: "starting", progress: null, code: null, message: null, update: null, storage: null, persistence: null }));
 export const setWeb = useWeb.setState;

@@ -142,6 +142,21 @@ export interface Bootstrap {
   version: string;
 }
 
+/** What a browser mailbox can't afford to lose to storage eviction (re-syncable mail excluded), never a secret. */
+export interface MailboxExport {
+  format: "unica-export";
+  version: 1;
+  exportedAt: number;
+  app: string;
+  accounts: { email: string; kind: Account["kind"]; displayName: string }[];
+  categories: Category[];
+  filters: Filter[];
+  settings: AppSettings;
+  drafts: { accountEmail: string | null; to: unknown; cc: unknown; subject: string; bodyText: string; updatedAt: number }[];
+  /** provider operations not yet done (sends included, with their message) */
+  ops: { accountEmail: string | null; kind: string; state: string; createdAt: number; lastError: string | null; target: unknown; payload: unknown }[];
+}
+
 export const CATEGORIZE_SOURCES = ["picker", "dnd", "snackbar", "suggestion"] as const;
 export type CategorizeSource = (typeof CATEGORIZE_SOURCES)[number];
 
@@ -249,6 +264,7 @@ const empty = z.object({}).strict();
 
 export const contract = {
   "app.bootstrap": m<Bootstrap>()(empty),
+  "app.export": m<MailboxExport>()(empty),
 
   "threads.list": m<ThreadPage>()(
     z.object({

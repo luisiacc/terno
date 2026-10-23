@@ -235,3 +235,21 @@ test("blocking screens take focus, make the app behind them inert and suspend it
   await expect(page.getByRole("dialog", { name: "Única se abrió en otra pestaña" })).toBeVisible();
   await expect(page.getByTestId("web-take-back")).toBeFocused();
 });
+
+test("storage: persistence is requested and shown in settings, and the mailbox's own data exports as JSON", async ({ page }) => {
+  await boot(page);
+  await page.getByTestId("open-settings").click();
+  const section = page.getByTestId("storage-section");
+  await expect(section).toBeVisible();
+  await expect(section).toHaveAttribute("data-persisted", /^(granted|denied)$/);
+  await expect(section).toContainText(/Persistente|puede borrar/);
+  const download = page.waitForEvent("download");
+  await section.getByRole("button", { name: "Exportar" }).click();
+  const file = await download;
+  expect(file.suggestedFilename()).toMatch(/^unica-export-\d{4}-\d{2}-\d{2}\.json$/);
+  const dump = JSON.parse(await (await import("node:fs/promises")).readFile((await file.path())!, "utf8")) as { format: string; categories: unknown[]; filters: unknown[]; settings: object; ops: unknown[] };
+  expect(dump.format).toBe("unica-export");
+  expect(dump.categories.length).toBeGreaterThan(0);
+  expect(dump.filters.length).toBeGreaterThan(0);
+  expect(dump.settings).toBeTruthy();
+});

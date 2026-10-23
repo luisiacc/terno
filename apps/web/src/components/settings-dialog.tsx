@@ -19,7 +19,7 @@ import { AppearanceTab } from "./settings/appearance-tab";
 import { CategoriesTab } from "./settings/categories-tab";
 import { OwnerCard } from "./settings/owner-card";
 import { reconcileSettings } from "~/lib/appearance";
-import { DesktopOnly, MacSection } from "~/lib/web-parts";
+import { DesktopOnly, MacSection, StorageSection } from "~/lib/web-parts";
 
 const WEB = import.meta.env.VITE_TARGET === "web";
 
@@ -133,6 +133,11 @@ export function SettingsDialog() {
               <Row label="Ventana de sincronización" hint="Días de correo a descargar al conectar una cuenta.">
                 <Input type="number" className="h-8 w-24" defaultValue={settings.syncWindowDays} onBlur={(e) => update({ syncWindowDays: Math.max(7, Number(e.target.value) || 90) })} />
               </Row>
+              {StorageSection && (
+                <Suspense>
+                  <StorageSection />
+                </Suspense>
+              )}
               {MacSection && (
                 <Suspense>
                   <MacSection />

@@ -154,6 +154,19 @@ export function requestTakeover(): void {
   leadership?.requestTakeover();
 }
 
+/**
+ * Asks the browser not to evict this site's storage under pressure (Safari's
+ * 7-day rule, low disk): the mailbox has local-only state (categories,
+ * filters, unsent work). persist() exists on the page, not in workers.
+ */
+async function requestPersistence(): Promise<void> {
+  const storage = navigator.storage;
+  if (!storage?.persist) return void setWeb({ persistence: { state: "unsupported", usage: null, quota: null } });
+  const granted = (await storage.persisted()) || (await storage.persist().catch(() => false));
+  const estimate = await storage.estimate().catch(() => ({}) as StorageEstimate);
+  setWeb({ persistence: { state: granted ? "granted" : "denied", usage: estimate.usage ?? null, quota: estimate.quota ?? null } });
+}
+
 /** From a tab whose mailbox was taken: start over and take it back. */
 export function takeBack(): void {
   sessionStorage.setItem(TAKEOVER, "1");
@@ -269,6 +282,7 @@ export async function connectWorker(client: RpcClient): Promise<void> {
   // the mailbox now lives in this adapter: later opens must find it there or fail, never start empty elsewhere
   localStorage.setItem(pinKey(name), first.storage);
   setWeb({ phase: "ready", storage: first.storage, progress: null });
+  void requestPersistence().catch((error) => console.warn("[web] storage persistence unavailable", error));
   tabs.onTakeover = handOver;
   const asked = tabs.takePending();
   if (asked) {
