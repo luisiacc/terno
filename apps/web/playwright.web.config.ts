@@ -6,9 +6,11 @@ import { defineConfig, devices } from "@playwright/test";
  * playwright.config.ts so the desktop e2e run never builds it.
  *
  * - web: lifecycle (Web Locks, takeover, open errors), offline, gating, flows
+ * - web-conformance: the MailStore and engine suites inside a Chromium worker
  * - web-perf: budgets at 10k and 50k messages (persistent profile, real OPFS)
  */
 const WEB = 5181;
+const CONFORMANCE = 5182;
 
 export default defineConfig({
   testDir: "e2e-web",
@@ -31,6 +33,7 @@ export default defineConfig({
   },
   projects: [
     { name: "web", testMatch: /web\.spec\.ts/ },
+    { name: "web-conformance", testMatch: /conformance\.spec\.ts/, use: { baseURL: `http://127.0.0.1:${CONFORMANCE}` } },
     // alone: timings must not compete with parallel workers
     { name: "web-perf", testMatch: /web-perf\.spec\.ts/, fullyParallel: false, workers: 1, timeout: 1_800_000 },
   ],
@@ -39,6 +42,12 @@ export default defineConfig({
       // a demo build (seeds an empty mailbox from the mock generator; ?demo=<threads>, ?mailbox=<name>)
       command: `VITE_TARGET=web VITE_WEB_DEMO=1 pnpm vite build --outDir dist-web-e2e && pnpm vite preview --outDir dist-web-e2e --port ${WEB} --strictPort --host 127.0.0.1`,
       url: `http://127.0.0.1:${WEB}`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+    {
+      command: `pnpm vite build -c e2e-web/conformance/vite.config.ts && pnpm vite preview -c e2e-web/conformance/vite.config.ts --port ${CONFORMANCE} --strictPort --host 127.0.0.1`,
+      url: `http://127.0.0.1:${CONFORMANCE}`,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },
