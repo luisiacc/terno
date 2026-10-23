@@ -407,6 +407,22 @@ importers:
         specifier: workspace:*
         version: link:../mock-data
 
+  packages/idb:
+    dependencies:
+      '@unica/core':
+        specifier: workspace:*
+        version: link:../core
+      '@unica/store':
+        specifier: workspace:*
+        version: link:../store
+    devDependencies:
+      '@unica/mock-data':
+        specifier: workspace:*
+        version: link:../mock-data
+      fake-indexeddb:
+        specifier: 6.2.6
+        version: 6.2.6
+
   packages/mail:
     dependencies:
       '@unica/core':

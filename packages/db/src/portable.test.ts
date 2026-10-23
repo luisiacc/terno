@@ -40,6 +40,7 @@ it("the portable layers (core, store contracts, db without the node driver, the 
   expect(nodeImports(join(packages, "store/src/instant/index.ts"))).toEqual([]);
   expect(nodeImports(join(packages, "backend/src/portable.ts"))).toEqual([]);
   expect(nodeImports(join(packages, "mail/src/portable.ts"))).toEqual([]);
+  expect(nodeImports(join(packages, "idb/src/index.ts"))).toEqual([]);
 });
 
 it("the scan sees through to the node driver", () => {

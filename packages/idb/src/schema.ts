@@ -1,0 +1,220 @@
+import { MemDb, type Committed, type ForeignKey, type Key, type Row, type Table, type TableSpec } from "./mem";
+
+/**
+ * The IndexedDB schema: one object store per table of the SQL schema (same
+ * columns, so the store commands read like their SQL counterparts), plus
+ * `meta`. Logical migration ids follow the SQL ones; this adapter starts at
+ * the v7 shape (bodies split, search outbox) as IndexedDB version 1.
+ */
+export const IDB_VERSION = 1;
+/** the SQL schema this one mirrors (migration ids are shared across adapters) */
+export const LOGICAL_SCHEMA = 7;
+
+const fk = (column: string) => ({ [`fk_${column}`]: [column] as const });
+
+export const TABLES: readonly (TableSpec & { memoryOnly?: boolean })[] = [
+  { name: "accounts", key: ["id"] },
+  { name: "threads", key: ["id"], autoId: true, indexes: { ...fk("account_id"), provider: ["account_id", "provider_thread_id"] } },
+  {
+    name: "messages",
+    key: ["id"],
+    indexes: { ...fk("thread_id"), ...fk("account_id"), provider: ["account_id", "provider_msg_id"], rfc: ["account_id", "rfc_message_id"], from: ["from_email"], domain: ["from_domain"], list: ["list_id"] },
+  },
+  { name: "message_bodies", key: ["message_id"], lazy: true },
+  { name: "message_refs", key: ["account_id", "ref", "message_id"], indexes: { ...fk("message_id"), ref: ["account_id", "ref"] } },
+  { name: "message_locations", key: ["message_id", "mailbox"], indexes: { ...fk("message_id"), uid: ["account_id", "mailbox", "uidvalidity", "uid"], mailbox: ["account_id", "mailbox"] } },
+  { name: "attachments", key: ["id"], autoId: true, indexes: fk("message_id") },
+  { name: "categories", key: ["id"], autoId: true },
+  { name: "thread_categories", key: ["thread_id", "category_id"], indexes: { ...fk("thread_id"), ...fk("category_id"), batch: ["batch_id"] } },
+  { name: "filters", key: ["id"], autoId: true },
+  { name: "filter_applications", key: ["filter_id", "message_id"], indexes: { ...fk("filter_id"), ...fk("message_id") } },
+  { name: "ops", key: ["id"], indexes: fk("account_id") },
+  { name: "op_targets", key: ["op_id", "message_id"], indexes: { ...fk("op_id"), message: ["message_id"] } },
+  { name: "user_actions", key: ["id"], autoId: true },
+  { name: "dismissed_suggestions", key: ["key"] },
+  { name: "drafts", key: ["id"], autoId: true, indexes: fk("account_id") },
+  { name: "settings", key: ["key"] },
+  { name: "secrets", key: ["name"] },
+  { name: "owner", key: ["id"], indexes: fk("account_id") },
+  { name: "owner_history", key: ["id"], autoId: true },
+  { name: "cls_examples", key: ["thread_id", "category_id"], indexes: { ...fk("thread_id"), ...fk("category_id"), sender: ["category_id", "sender"], batch: ["batch_id"] } },
+  { name: "cls_decisions", key: ["thread_id", "category_id"], indexes: { ...fk("thread_id"), ...fk("category_id") } },
+  { name: "cat_batches", key: ["id"], autoId: true, indexes: fk("category_id") },
+  { name: "cls_snapshot", key: ["id"] },
+  { name: "cat_move_threads", key: ["batch_id", "thread_id"], indexes: fk("batch_id") },
+  { name: "cat_move_rows", key: ["batch_id", "thread_id"], indexes: fk("batch_id") },
+  { name: "cat_move_examples", key: ["batch_id", "thread_id", "category_id"], indexes: fk("batch_id") },
+  { name: "cat_move_decisions", key: ["batch_id", "thread_id", "category_id"], indexes: fk("batch_id") },
+  { name: "search_outbox", key: ["seq"] },
+  { name: "search_state", key: ["id"] },
+  // a rebuild's hold on the log: no build survives a restart (SQL clears them on open)
+  { name: "search_leases", key: ["id"], autoId: true, memoryOnly: true },
+];
+
+const c = (table: string, column: string, parent: string): ForeignKey => ({ table, column, parent, onDelete: "cascade" });
+
+export const FOREIGN_KEYS: readonly ForeignKey[] = [
+  c("threads", "account_id", "accounts"),
+  c("messages", "account_id", "accounts"),
+  c("messages", "thread_id", "threads"),
+  c("message_bodies", "message_id", "messages"),
+  c("message_refs", "message_id", "messages"),
+  c("message_locations", "message_id", "messages"),
+  c("attachments", "message_id", "messages"),
+  c("thread_categories", "thread_id", "threads"),
+  c("thread_categories", "category_id", "categories"),
+  c("filter_applications", "filter_id", "filters"),
+  c("filter_applications", "message_id", "messages"),
+  c("ops", "account_id", "accounts"),
+  c("op_targets", "op_id", "ops"),
+  c("drafts", "account_id", "accounts"),
+  { table: "owner", column: "account_id", parent: "accounts", onDelete: "setNull" },
+  c("cls_examples", "thread_id", "threads"),
+  c("cls_examples", "category_id", "categories"),
+  c("cls_decisions", "thread_id", "threads"),
+  c("cls_decisions", "category_id", "categories"),
+  c("cat_batches", "category_id", "categories"),
+  c("cat_move_threads", "batch_id", "cat_batches"),
+  c("cat_move_rows", "batch_id", "cat_batches"),
+  c("cat_move_examples", "batch_id", "cat_batches"),
+  c("cat_move_decisions", "batch_id", "cat_batches"),
+];
+
+const PERSISTED = TABLES.filter((t) => !t.memoryOnly);
+
+export function createMemDb(): MemDb {
+  return new MemDb(TABLES, FOREIGN_KEYS);
+}
+
+function request<T>(r: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+  });
+}
+
+function done(tx: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error("IndexedDB transaction failed"));
+    tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
+  });
+}
+
+export const databaseName = (name: string) => `unica-${name}`;
+
+/**
+ * Opens (creating) the mailbox's database. A database written by a newer
+ * version of this adapter is refused with the same message as SQL's
+ * migrations, so hosts treat both alike (reload to update, change nothing).
+ */
+export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDatabase> {
+  const open = factory.open(databaseName(name), IDB_VERSION);
+  open.onupgradeneeded = (event) => {
+    const db = open.result;
+    if (event.oldVersion < 1) {
+      for (const t of PERSISTED) db.createObjectStore(t.name);
+      db.createObjectStore("meta");
+    }
+  };
+  open.onblocked = () => {};
+  try {
+    const db = await request(open);
+    // another tab upgrading: let it (leadership makes this rare); this connection closes
+    db.onversionchange = () => db.close();
+    return db;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "VersionError") {
+      throw new Error(`Database schema is newer than this app (IndexedDB v${IDB_VERSION}). Update Única.`);
+    }
+    throw error;
+  }
+}
+
+export async function idbExists(factory: IDBFactory, name: string): Promise<boolean> {
+  if (typeof factory.databases === "function") return (await factory.databases()).some((d) => d.name === databaseName(name));
+  return false;
+}
+
+const idbKey = (t: Table, key: Key): IDBValidKey => (t.spec.key.length === 1 ? (key as IDBValidKey) : (JSON.parse(key as string) as IDBValidKey));
+
+/** Reads every eager table into memory (bodies stay in IndexedDB). */
+export async function loadAll(idb: IDBDatabase, mem: MemDb): Promise<Record<string, unknown>> {
+  const eager = PERSISTED.filter((t) => !t.lazy).map((t) => t.name);
+  const tx = idb.transaction([...eager, "meta"], "readonly");
+  const finished = done(tx);
+  const [tables, metaKeys, metaValues] = await Promise.all([
+    Promise.all(eager.map((name) => request(tx.objectStore(name).getAll() as IDBRequest<Row[]>))),
+    request(tx.objectStore("meta").getAllKeys()),
+    request(tx.objectStore("meta").getAll()),
+  ]);
+  await finished;
+  eager.forEach((name, i) => {
+    const t = mem.table(name);
+    for (const row of tables[i]!) t.load(row);
+  });
+  return Object.fromEntries(metaKeys.map((k, i) => [String(k), metaValues[i]]));
+}
+
+export async function writeMeta(idb: IDBDatabase, values: Record<string, unknown>): Promise<void> {
+  const tx = idb.transaction("meta", "readwrite");
+  for (const [k, v] of Object.entries(values)) tx.objectStore("meta").put(v, k);
+  await done(tx);
+}
+
+/** One readwrite transaction with every row a store command touched. Resolves once IndexedDB committed it. */
+export async function persist(idb: IDBDatabase, commit: Committed, durability: "strict" | "relaxed"): Promise<void> {
+  const stores = [...commit.writes.keys()].filter((t) => !TABLES.find((s) => s.name === t.spec.name)?.memoryOnly);
+  if (stores.length === 0) return;
+  const tx = idb.transaction(
+    stores.map((t) => t.spec.name),
+    "readwrite",
+    { durability },
+  );
+  const finished = done(tx);
+  for (const t of stores) {
+    const store = tx.objectStore(t.spec.name);
+    for (const [key, row] of commit.writes.get(t)!) {
+      if (row) store.put(row, idbKey(t, key));
+      else store.delete(idbKey(t, key));
+    }
+  }
+  await finished;
+}
+
+/** Lazy rows (bodies) by key, into memory: absent ones are remembered as absent. */
+export async function readLazy(idb: IDBDatabase, t: Table, keys: readonly Key[]): Promise<void> {
+  const missing = keys.filter((k) => !t.rows.has(k) && !t.absent.has(k));
+  if (missing.length === 0) return;
+  const tx = idb.transaction(t.spec.name, "readonly");
+  const store = tx.objectStore(t.spec.name);
+  const rows = await Promise.all(missing.map((k) => request(store.get(idbKey(t, k)) as IDBRequest<Row | undefined>)));
+  missing.forEach((k, i) => {
+    const row = rows[i];
+    // a write may have landed meanwhile (commands are serialized, but be exact): memory wins
+    if (t.rows.has(k)) return;
+    if (row) t.load(row);
+    else t.absent.add(k);
+  });
+}
+
+/** Every key of a lazy table (body scans). */
+export async function lazyKeys(idb: IDBDatabase, table: string): Promise<IDBValidKey[]> {
+  const tx = idb.transaction(table, "readonly");
+  return request(tx.objectStore(table).getAllKeys());
+}
+
+/** A range of a lazy table's rows in key order (sliced scans). */
+export async function readLazyRange(idb: IDBDatabase, table: string, after: number | null, count: number): Promise<Row[]> {
+  const tx = idb.transaction(table, "readonly");
+  const range = after === null ? undefined : IDBKeyRange.lowerBound(after, true);
+  return request(tx.objectStore(table).getAll(range, count) as IDBRequest<Row[]>);
+}
+
+/** Every persisted row, straight from IndexedDB (debug.verify compares it with memory). */
+export async function readAll(idb: IDBDatabase): Promise<Map<string, Row[]>> {
+  const names = PERSISTED.filter((t) => !t.lazy).map((t) => t.name);
+  const tx = idb.transaction(names, "readonly");
+  const all = await Promise.all(names.map((n) => request(tx.objectStore(n).getAll() as IDBRequest<Row[]>)));
+  return new Map(names.map((n, i) => [n, all[i]!]));
+}
