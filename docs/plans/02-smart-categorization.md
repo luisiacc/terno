@@ -1,6 +1,6 @@
 # Plan 02: Smart categorization, quick actions, "everything about X and Y"
 
-Status: proposal · Builds on PLAN.md §4–§6, §11 · Prototypes: `/tmp/unica-cat/{exp,perf}.ts` (outside the repo)
+Status: implemented (migration **v4**, per the 03/04 reconciliation; see "Implementation notes" at the end) · Builds on PLAN.md §4–§6, §11
 
 ## 1. Goals
 
@@ -317,3 +317,16 @@ Query-plan tests assert that counts use `messages_from`, `messages_list`, `messa
 10. "Sobre…" chips, free-text field, search-view preview + e2e.
 11. Reader suggestion chip, auto badge, "Revisar (N)", Settings → Categorías + e2e.
 12. Optional AI (`classifyThread`, text-to-query) for Fake/Anthropic/local providers, gated per §3.6.
+
+## Implementation notes
+
+Where the implementation departs from the proposal above, and why:
+
+- **No cross-category negatives.** Categories are additive, so negatives are user removals (3.0), rejected suggestions (1.0) and background mail (α = 0.1). Without them the llr of an identity depends on the category's size, so the model estimates the user's **filing rate** (max of the category's and the global rate, floor 0.2) and applies a positive-unlabeled correction to class totals and per-feature background counts. The identity gate uses this calibrated share (95% Wilson upper bound ≥ 0.9; a point share ≤ 0.3 is counter-evidence) instead of `I ≥ 2` / `I > −1`.
+- **A domain vouches for a new sender** only once ≥ 3 of its senders are in the category (client companies yes; uber.com receipts don't make promotions invoices).
+- **Suggestions against a counter-identity** need near-maximal content (C + Nint ≥ 5): Amazon's invoices are suggested, mislabeled examples don't spawn suggestions.
+- **Safety valve** pauses only with ≥ 10 matured outcomes and at least one revert (without reverts the Beta quantile only measures sample size).
+- **Backfill** (mail older than the 14-day window) is not classified inside import slices: its background counts and suggestions come from one sliced pass after the import settles (throughput).
+- **The `classify` budget** (≤ 50 µs p95, 20 categories) is the model's scoring; featurizing a 2 KB body adds ~60 µs and is bounded at 150 µs end to end. The import budget (≤ 10%) is measured on the load test's 14k-message import; an all-new-inbox import is reported (~+20%).
+- **Snackbar** renders in its own fixed layer (it grows as counts arrive; a toast stack measures height once). The reader's "add similar" card is retired; its accept searched list/domain values as free text and stopped at 500.
+- **AI assist** uses `AiTasks.classify` through `Backend.ai()`; text-to-query for "Sobre…" is not implemented (the field takes the search language).

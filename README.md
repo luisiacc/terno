@@ -5,7 +5,7 @@
 Única is a minimalist, keyboard-first, extremely fast desktop email client for macOS (Apple Silicon first). Features:
 
 - Unlimited accounts: Gmail via OAuth, plus any IMAP/SMTP server.
-- Categories that span accounts, with "add similar emails?" suggestions.
+- Categories that span accounts, with smart categorization: Única learns from how you file (sender, list, domain and content, all on this Mac, no AI needed), files new mail on its own only when it is sure and says why, suggests the rest, and after every filing offers "todo de este remitente / sobre estos temas" in one keystroke, all undoable.
 - Filters built with AI from a plain-language description, then refined in a visual editor. The AI can run on this Mac (Ollama, LM Studio, any local OpenAI-compatible server) or in the cloud with your own key (Claude, OpenAI, OpenRouter, Groq, Together, Azure).
 - **Local mode** (on for new installs): nothing leaves the Mac except mail with your own servers.
 - Filters learned from what you archive.
@@ -64,6 +64,9 @@ Main process: windows, app:// protocol, Keychain (safeStorage)
 | Filter preview over all mail | ≤ 50 ms | ≤ 30 ms |
 | RPC round trip (list) | ≤ 3 ms | ~0.4 ms |
 | Search **during** a 14k-message import + bulk filter | ≤ 45 ms | ~35 ms |
+| Categorize a thread (20 categories) | ≤ 50 µs | ~30 µs |
+| Snackbar counts: sender / domain / list · topic | ≤ 5 ms · ≤ 25 ms | ~1 ms · ~9 ms |
+| 14k-message import with the categorizer on | ≤ 10% slower | ~6% |
 
 **In the real renderer** (`apps/web/e2e/perf.spec.ts`, Chromium, production build, real backend):
 
@@ -88,6 +91,7 @@ pnpm test:smoke         # Playwright against the PACKAGED arm64 app (run dist:ma
 What the tests cover:
 
 - Search results checked against a brute-force oracle over a seeded mailbox.
+- An offline categorization accuracy eval (AI off, network guarded) over an adversarial mailbox: auto-apply precision ≥ 0.97, recall ≥ 0.80; reports in `test-results/categorize/`.
 - JS ↔ SQL filter-rule parity across hundreds of generated rules.
 - Randomized consistency checks of thread aggregates.
 - Query-plan assertions.
