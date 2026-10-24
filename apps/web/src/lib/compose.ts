@@ -7,7 +7,7 @@ import { invalidateThreads, loadThread } from "~/state/threads";
 import { setLastUndo } from "./actions";
 import { convertFields, newFields, replyFields } from "./compose-fields";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
-import { authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, recipients, sendBody, setDraftUi, threadDraftKey, useDrafts, type LocalDraft } from "./drafts";
+import { authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markSending, recipients, sendBody, setDraftUi, threadDraftKey, useDrafts, type LocalDraft } from "./drafts";
 
 /**
  * Writing mail: which draft a reply, reply-all, forward or new message opens,
@@ -103,8 +103,25 @@ export function installComposeFollowsSelection(): () => void {
   });
 }
 
-/** Sends a draft: waits for its save in flight, checks the recipients, queues the send (which deletes the stored draft). */
-export async function sendDraft(key: string): Promise<boolean> {
+/** Sends in flight, per draft: a second send of the same draft (a remounted pane, a double ⌘↩) gets the first one's outcome. */
+const pendingSends = new Map<string, Promise<boolean>>();
+
+/**
+ * Sends a draft: waits for its save in flight, checks the recipients, queues
+ * the send (which deletes the stored draft). One send per draft at a time;
+ * while it runs the draft can't be edited or discarded.
+ */
+export function sendDraft(key: string): Promise<boolean> {
+  const pending = pendingSends.get(key);
+  if (pending) return pending;
+  const run = send(key).finally(() => pendingSends.delete(key));
+  pendingSends.set(key, run);
+  return run;
+}
+
+export const isSending = (key: string): boolean => pendingSends.has(key);
+
+async function send(key: string): Promise<boolean> {
   const d = await draftForSend(key);
   if (!d) return false;
   const strip = (list: ReturnType<typeof recipients>) => list.map(({ name, email }) => ({ name, email }));
@@ -117,6 +134,7 @@ export async function sendDraft(key: string): Promise<boolean> {
     toast.error("Revisa los destinatarios");
     return false;
   }
+  markSending(key, true);
   try {
     const res = await client.call("compose.send", {
       accountId: d.accountId,
@@ -135,6 +153,7 @@ export async function sendDraft(key: string): Promise<boolean> {
     toast.success("Enviando…");
     return true;
   } catch (error) {
+    markSending(key, false);
     toast.error(`No se pudo enviar: ${error instanceof Error ? error.message : error}`);
     return false;
   }

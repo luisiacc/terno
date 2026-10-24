@@ -243,6 +243,38 @@ test.describe("new message, in the reader pane", () => {
     await expect(page.getByTestId("compose-body")).toHaveValue("Sigo aquí");
   });
 
+  test("a send in flight can't be sent again: Esc out, reopen from the strip, send again → one send", async ({ app: page, server }) => {
+    // hold compose.send so the first send is still in flight
+    const handlers = (server.backend.server as unknown as { handlers: Record<string, (...a: unknown[]) => unknown> }).handlers;
+    const original = handlers["compose.send"]!;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    handlers["compose.send"] = async (...args: unknown[]) => {
+      await gate;
+      return original(...args);
+    };
+    const sends = () => sqlDb(server.backend.store).get<{ c: number }>("SELECT count(*) AS c FROM ops WHERE kind = 'send'")!.c;
+    const before = sends();
+    await page.keyboard.press("c");
+    await page.getByTestId("compose-to").fill("ana@example.com");
+    await page.getByTestId("compose-subject").fill("Una sola vez");
+    await page.getByTestId("compose-body").fill("Texto");
+    await page.keyboard.press("Meta+Enter");
+    await expect(page.getByTestId("compose-send")).toBeDisabled();
+    await page.keyboard.press("Escape");
+    await page.getByTestId("strip-item").filter({ hasText: "Una sola vez" }).click();
+    await page.getByTestId("compose-body").focus();
+    await page.keyboard.press("Meta+Enter");
+    await expect(page.getByTestId("compose-send")).toBeDisabled();
+    await expect(page.getByTestId("compose-discard")).toBeDisabled();
+    release();
+    handlers["compose.send"] = original;
+    await expect.poll(sends).toBe(before + 1);
+    await page.waitForTimeout(300);
+    expect(sends()).toBe(before + 1);
+    await expect(page.getByTestId("drafts-strip")).toHaveCount(0);
+  });
+
   test("Bcc is sent, and kept out of To and Cc", async ({ app: page, server }) => {
     await page.keyboard.press("c");
     await page.getByTestId("compose-to").fill("ana@example.com");

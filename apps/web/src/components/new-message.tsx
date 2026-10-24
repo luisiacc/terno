@@ -3,7 +3,7 @@ import { Shortcut } from "@unica/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@unica/ui/components/tooltip";
 import { cn } from "@unica/ui/lib/utils";
 import { Send, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { setLastUndo } from "~/lib/actions";
 import { leaveNewDraft, sendDraft, showNewDraft } from "~/lib/compose";
@@ -28,7 +28,6 @@ export function NewMessage() {
   const compose = useApp((s) => s.compose);
   const d = useDrafts((s) => (compose ? s.drafts[compose.key] : undefined));
   const accounts = useApp((s) => s.accounts);
-  const [sending, setSending] = useState(false);
   const rootRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
@@ -38,10 +37,7 @@ export function NewMessage() {
   if (!compose || !d) return null;
   const key = compose.key;
   const send = async () => {
-    if (sending) return;
-    setSending(true);
     const ok = await sendDraft(key);
-    setSending(false);
     if (ok) leave(key, false);
   };
   const discard = async () => {
@@ -79,7 +75,7 @@ export function NewMessage() {
         <Tooltip>
           <TooltipTrigger
             render={
-              <Button type="button" variant="ghost" size="icon-sm" aria-label="Descartar borrador" onClick={() => void discard()} className="no-drag text-muted-foreground hover:text-foreground" data-testid="compose-discard">
+              <Button type="button" variant="ghost" size="icon-sm" aria-label="Descartar borrador" disabled={d.sending} onClick={() => void discard()} className="no-drag text-muted-foreground hover:text-foreground" data-testid="compose-discard">
                 <Trash2 />
               </Button>
             }
@@ -87,7 +83,7 @@ export function NewMessage() {
           <TooltipContent>Descartar borrador</TooltipContent>
         </Tooltip>
         <span className="text-sm text-muted-foreground">Mensaje nuevo</span>
-        <Button type="submit" size="sm" className="no-drag ml-auto gap-2" data-testid="compose-send" aria-busy={sending}>
+        <Button type="submit" size="sm" className="no-drag ml-auto gap-2" data-testid="compose-send" aria-busy={d.sending} disabled={d.sending}>
           <Send /> Enviar <Shortcut keys="mod+enter" className="[&_kbd]:bg-primary-foreground/15 [&_kbd]:text-primary-foreground [&_kbd]:shadow-none" />
         </Button>
       </div>

@@ -1197,6 +1197,17 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect(await store.drafts.list()).toEqual([]);
       });
 
+      it("a draft is sent once: a second send of the same draft is refused and queues nothing", async () => {
+        const store = await fresh();
+        const [a] = await withAccounts(store);
+        const d = (await store.drafts.save({ accountId: a!, to, cc: [], subject: "Una vez", bodyText: "texto" }, NOW))!;
+        const send = { accountId: a!, to: [{ name: "Yuki", email: "yuki@example.com" }], cc: [], bcc: [], subject: "Una vez", bodyText: "texto", draftId: d.id, recordReply: false, now: NOW };
+        await store.compose.queueSend(send);
+        await expect(store.compose.queueSend(send)).rejects.toThrow(/ya se envió/);
+        const sends = (await store.ops.recent(10)).filter((o) => o.kind === "send");
+        expect(sends).toHaveLength(1);
+      });
+
       it("a draft whose conversation disappears stays, as an orphan (thread null)", async () => {
         const store = await fresh();
         const [a] = await withAccounts(store);

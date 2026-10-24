@@ -172,12 +172,12 @@ function Quote({ d }: { d: LocalDraft }) {
   );
 }
 
-function ToolIcon({ label, keys, onClick, children, testId }: { label: string; keys?: string; onClick: () => void; children: React.ReactNode; testId?: string }) {
+function ToolIcon({ label, keys, onClick, children, testId, disabled }: { label: string; keys?: string; onClick: () => void; children: React.ReactNode; testId?: string; disabled?: boolean }) {
   return (
     <Tooltip>
       <TooltipTrigger
         render={
-          <Button type="button" variant="ghost" size="icon-sm" aria-label={label} onClick={onClick} data-testid={testId} className="text-muted-foreground hover:text-foreground">
+          <Button type="button" variant="ghost" size="icon-sm" aria-label={label} onClick={onClick} data-testid={testId} disabled={disabled} className="text-muted-foreground hover:text-foreground">
             {children}
           </Button>
         }
@@ -201,7 +201,6 @@ export function DraftSlot({ threadId, draftKey, replyTo, account }: { threadId: 
   const accounts = useApp((s) => s.accounts);
   const focus = useApp((s) => (draftKey && s.draftFocus?.key === draftKey ? s.draftFocus : null));
   const rootRef = useRef<HTMLDivElement>(null);
-  const [sending, setSending] = useState(false);
   const state: "bar" | "open" | "collapsed" = !d ? "bar" : d.uiState;
 
   // an explicit open (r/a/f, the bar, the menu) asks for focus: honor it once
@@ -223,10 +222,8 @@ export function DraftSlot({ threadId, draftKey, replyTo, account }: { threadId: 
     focusSoon("[data-testid=compose-body]", rootRef.current);
   };
   const send = async () => {
-    if (!d || sending) return;
-    setSending(true);
+    if (!d) return;
     const ok = await sendDraft(d.key);
-    setSending(false);
     if (ok) focusSoon("[data-testid=quick-reply]", rootRef.current);
   };
   const discard = async () => {
@@ -303,12 +300,12 @@ export function DraftSlot({ threadId, draftKey, replyTo, account }: { threadId: 
             />
             <Quote d={d} />
             <div className="flex items-center gap-2.5 px-2.5 pt-2 pb-2.5">
-              <Button type="submit" size="sm" data-testid="compose-send" aria-busy={sending} className="gap-2">
+              <Button type="submit" size="sm" data-testid="compose-send" aria-busy={d.sending} disabled={d.sending} className="gap-2">
                 <Send /> Enviar <Shortcut keys="mod+enter" className="[&_kbd]:bg-primary-foreground/15 [&_kbd]:text-primary-foreground [&_kbd]:shadow-none" />
               </Button>
               <SaveState d={d} />
               <span className="ml-auto flex gap-0.5">
-                <ToolIcon label="Descartar borrador" onClick={() => void discard()} testId="compose-discard">
+                <ToolIcon label="Descartar borrador" onClick={() => void discard()} testId="compose-discard" disabled={d.sending}>
                   <Trash2 />
                 </ToolIcon>
                 <ToolIcon label="Contraer" keys="escape" onClick={collapse} testId="compose-collapse">

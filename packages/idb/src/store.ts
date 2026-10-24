@@ -771,6 +771,8 @@ export class IdbMailStore implements MailStore {
         if (!account) throw new RpcError("NOT_FOUND", "Account not found");
         const cfg = getAccountConfig<{ senderName?: string }>(this.c, p.accountId)!;
         const from: Address = { name: cfg.config.senderName || account.displayName, email: account.email };
+        // a draft is sent once: sending deletes it, so a second send of the same draft finds nothing
+        if (p.draftId !== undefined && !T(this.c, "drafts").get(p.draftId)) throw new RpcError("STALE", "Este borrador ya se envió o se descartó");
         let inReplyTo: string | null = null;
         let references: string[] = [];
         let providerThreadId: string | null = null;

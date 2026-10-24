@@ -52,6 +52,8 @@ export interface LocalDraft {
   forwardOfMessageId: number | null;
   uiState: "open" | "collapsed";
   updatedAt: number;
+  /** a send is in flight: the draft can't be edited or discarded until it settles */
+  sending: boolean;
 }
 
 export type DraftFields = Pick<
@@ -115,6 +117,7 @@ export function fromServer(d: Draft): LocalDraft {
     forwardOfMessageId: d.forwardOfMessageId,
     uiState: d.uiState,
     updatedAt: d.updatedAt,
+    sending: false,
   };
 }
 
@@ -163,14 +166,15 @@ const newKey = () => `local-${Date.now().toString(36)}-${(++seq).toString(36)}`;
 /** A new draft (not saved until the user writes something). Returns its key. */
 export function createDraft(fields: DraftFields): string {
   const key = newKey();
-  put({ key, id: null, revision: 0, status: "clean", localRev: 0, savedRev: 0, updatedAt: now(), ...fields });
+  put({ key, id: null, revision: 0, status: "clean", localRev: 0, savedRev: 0, updatedAt: now(), sending: false, ...fields });
   return key;
 }
 
 /** An edit: the content changes now, the save follows (800 ms after the last edit, ≤ 5 s while typing). */
 export function editDraft(key: string, patch: Partial<DraftFields>): void {
   const d = get(key);
-  if (!d) return;
+  // nothing changes under a send in flight (it is sending what is there now)
+  if (!d || d.sending) return;
   put({ ...d, ...patch, localRev: d.localRev + 1, status: d.status === "saving" ? "saving" : "dirty", updatedAt: now() });
   schedule(key);
 }
@@ -300,6 +304,12 @@ export async function draftForSend(key: string): Promise<LocalDraft | undefined>
   return settle(key);
 }
 
+/** A send started or settled: while it runs the draft can't be edited or discarded. */
+export function markSending(key: string, sending: boolean): void {
+  const d = get(key);
+  if (d && d.sending !== sending) put({ ...d, sending });
+}
+
 /** After a successful send (the backend deleted the stored draft with it). */
 export function forgetDraft(key: string): void {
   const w = writers.get(key);
@@ -310,8 +320,10 @@ export function forgetDraft(key: string): void {
 
 /** Deletes a draft; returns what it was, for "Deshacer". */
 export async function discardDraft(key: string): Promise<LocalDraft | undefined> {
+  // a send in flight decides: sent, it is gone; failed, it stays for another try
+  if (get(key)?.sending) return undefined;
   const d = await settle(key);
-  if (!d) return undefined;
+  if (!d || d.sending) return undefined;
   forgetDraft(key);
   if (d.id !== null) await call("drafts.delete", { id: d.id }).catch(() => {});
   return d;
