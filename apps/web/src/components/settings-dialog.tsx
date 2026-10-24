@@ -1,10 +1,8 @@
 import { Button } from "@unica/ui/components/button";
 import { Dialog, DialogContent, DialogTitle } from "@unica/ui/components/dialog";
-import { Switch } from "@unica/ui/components/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@unica/ui/components/tabs";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@unica/ui/components/alert-dialog";
-import { Check, Copy } from "lucide-react";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { client } from "~/rpc/connection";
 import { setApp, useApp, type SettingsTab } from "~/state/app";
@@ -12,45 +10,18 @@ import { AiTab } from "./settings/ai-tab";
 import { AppearanceTab } from "./settings/appearance-tab";
 import { CategoriesTab } from "./settings/categories-tab";
 import { AccountsTab } from "./settings/accounts-tab";
+import { AgentsTab } from "./settings/agents-tab";
 import { FiltersTab } from "./settings/filters-tab";
 import { GeneralTab } from "./settings/general-tab";
 import { SETTINGS_TABS } from "./settings/tabs";
 import { reconcileSettings } from "~/lib/appearance";
-import { DesktopOnly } from "~/lib/web-parts";
-import { SettingsGroup, SettingsRow, type SettingsUpdate } from "./settings/parts";
-
-function CopyBlock({ text, testId }: { text: string; testId?: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <div className="group relative" data-testid={testId}>
-      <pre className="overflow-x-auto rounded-lg bg-tint p-3 pr-10 font-mono text-xs leading-relaxed whitespace-pre-wrap">{text}</pre>
-      <button
-        type="button"
-        aria-label="Copiar"
-        className="absolute top-2 right-2 rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground"
-        onClick={() => {
-          void navigator.clipboard.writeText(text);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1200);
-        }}
-      >
-        {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-      </button>
-    </div>
-  );
-}
+import type { SettingsUpdate } from "./settings/parts";
 
 export function SettingsDialog() {
   const open = useApp((s) => s.dialog === "settings");
   const tab = useApp((s) => s.settingsTab);
   const settings = useApp((s) => s.settings);
-  const agentsHere = useApp((s) => s.host?.capabilities.agents ?? true);
   const [confirmLocalOff, setConfirmLocalOff] = useState(false);
-  const [agent, setAgent] = useState<{ mcpCommand: string; socketPath: string; skillPath: string } | null>(null);
-
-  useEffect(() => {
-    if (open && window.unicaDesktop) void window.unicaDesktop.agentInfo().then(setAgent).catch(() => {});
-  }, [open]);
 
   const update = useCallback<SettingsUpdate>(async (patch, options) => {
     try {
@@ -62,7 +33,6 @@ export function SettingsDialog() {
     }
   }, []);
   if (!settings) return null;
-  const mcp = agent?.mcpCommand ?? "/Applications/Unica.app/Contents/Resources/bin/unica-mcp";
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && setApp({ dialog: null })}>
@@ -112,37 +82,8 @@ export function SettingsDialog() {
               <AiTab settings={settings} update={update} />
             </TabsContent>
 
-            <TabsContent value="agents" className="space-y-4 py-3">
-              {!agentsHere && DesktopOnly ? (
-                <Suspense>
-                  <DesktopOnly feature="agents" />
-                </Suspense>
-              ) : (
-                <>
-                  <p className="text-sm text-muted-foreground">
-                    Conecta <span className="font-medium text-foreground">Claude Code</span> o <span className="font-medium text-foreground">Codex</span> a todas tus cuentas mediante MCP. Única debe estar abierta.
-                  </p>
-                  <div className="space-y-1.5">
-                    <p className="text-xs font-medium">Claude Code</p>
-                    <CopyBlock testId="mcp-claude" text={`claude mcp add unica -- "${mcp}"`} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <p className="text-xs font-medium">Codex (~/.codex/config.toml)</p>
-                    <CopyBlock text={`[mcp_servers.unica]\ncommand = "${mcp}"`} />
-                  </div>
-                  {agent && (
-                    <div className="space-y-1.5">
-                      <p className="text-xs font-medium">Skill para Claude Code</p>
-                      <CopyBlock text={`mkdir -p ~/.claude/skills/unica && cp "${agent.skillPath}" ~/.claude/skills/unica/SKILL.md`} />
-                    </div>
-                  )}
-                  <SettingsGroup>
-                    <SettingsRow label="Permitir que los agentes envíen correos" hint="Si está desactivado, los agentes solo pueden leer, organizar y crear borradores.">
-                      {(a) => <Switch {...a} data-testid="allow-agent-send" checked={settings.allowAgentSend} onCheckedChange={(on) => void update({ allowAgentSend: on })} />}
-                    </SettingsRow>
-                  </SettingsGroup>
-                </>
-              )}
+            <TabsContent value="agents">
+              <AgentsTab settings={settings} update={update} />
             </TabsContent>
           </div>
         </Tabs>

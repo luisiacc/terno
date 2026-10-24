@@ -133,6 +133,9 @@ export class BackendCore {
   /** Startup reads: the persisted model and crash recovery of ops, before any RPC or worker runs. */
   readonly ready: Promise<void>;
 
+  /** the MCP socket (desktop, the Node dev host), set by startAgentSocket */
+  agents: { connected(): number; tokenSince(): number; rotate(): { disconnected: number; tokenSince: number } } | null = null;
+
   get host(): HostInfo {
     return this.options.host ?? FULL_HOST;
   }

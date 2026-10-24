@@ -1,7 +1,7 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
-import { Backend, plaintextCipher, seedDemo, webSocketTransport, type AiFactory, type LookupAll } from "@unica/backend";
+import { Backend, plaintextCipher, seedDemo, startAgentSocket, webSocketTransport, type AiFactory, type LookupAll } from "@unica/backend";
 import { demoRegistry, type ProviderRegistry } from "@unica/mail";
 export { sqlDb } from "@unica/db";
 import { WebSocketServer } from "ws";
@@ -23,11 +23,15 @@ export interface DevServerOptions {
   ownerClaims?: boolean;
   /** seed the demo mailbox into an empty database (default true); false starts like a fresh install */
   seed?: boolean;
+  /** also open the MCP socket in dataDir (agent.sock + agent.token), as the desktop app does */
+  agentSocket?: boolean;
 }
 
 export interface DevServer {
   backend: Backend;
   url: string;
+  /** with agentSocket: the MCP socket and its token file */
+  agents: { socketPath: string; tokenPath: string } | null;
   close(): Promise<void>;
 }
 
@@ -59,6 +63,7 @@ export async function startDevServer(o: DevServerOptions): Promise<DevServer> {
     await backend.categorizer.rebuildNow();
   }
   await backend.start();
+  const agents = o.agentSocket ? await startAgentSocket(backend, join(o.dataDir, "agent.sock"), join(o.dataDir, "agent.token")) : null;
 
   const http: Server = createServer((_req, res) => {
     res.writeHead(404).end();
@@ -84,9 +89,11 @@ export async function startDevServer(o: DevServerOptions): Promise<DevServer> {
   return {
     backend,
     url: `ws://127.0.0.1:${port}`,
+    agents: agents ? { socketPath: agents.socketPath, tokenPath: agents.tokenPath } : null,
     close: async () => {
       for (const c of wss.clients) c.terminate();
       await new Promise<void>((r) => http.close(() => r()));
+      await agents?.close();
       await backend.stop();
     },
   };

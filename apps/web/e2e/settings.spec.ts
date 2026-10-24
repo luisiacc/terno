@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { connect } from "node:net";
 import { expect, test } from "./fixtures";
 
 test.describe("accounts, settings and command palette", () => {
@@ -102,5 +104,31 @@ test.describe("accounts, settings and command palette", () => {
     await expect(page.getByTestId("list-title")).toHaveText("Entrada");
     await page.keyboard.press("?");
     await expect(page.getByRole("dialog", { name: "Atajos de teclado" })).toBeVisible();
+  });
+});
+
+test.describe("agents", () => {
+  test.use({ backendOptions: { agentSocket: true } });
+
+  test("Ajustes → Agentes: changing the token cuts connected agents off and writes a new one", async ({ app: page, server }) => {
+    const { socketPath, tokenPath } = server.agents!;
+    const old = readFileSync(tokenPath, "utf8");
+    const agent = connect(socketPath);
+    await new Promise<void>((r) => agent.once("data", () => r()).write(`${old}\n`));
+    const closed = new Promise<void>((r) => agent.once("close", () => r()));
+    await page.getByTestId("open-settings").click();
+    await page.getByTestId("tab-agents").click();
+    await expect(page.getByTestId("agents-token-row")).toContainText("1 agente conectado");
+    await page.getByRole("button", { name: "Cambiar token" }).click();
+    await closed;
+    await expect(page.getByTestId("agents-token-row")).toContainText("0 agentes conectados");
+    expect(readFileSync(tokenPath, "utf8")).not.toBe(old);
+    // and the send permission round-trips
+    await page.getByRole("switch", { name: "Permitir que los agentes envíen correos" }).click();
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await page.keyboard.press("Meta+Comma");
+    await page.getByTestId("tab-agents").click();
+    await expect(page.getByRole("switch", { name: "Permitir que los agentes envíen correos" })).toBeChecked();
   });
 });

@@ -561,6 +561,12 @@ export function createHandlers(b: Backend): Handlers {
     "identity.get": () => store.owner.get(),
     "identity.changeOwner": ({ accountId, password }) => changeOwnerTo(b, accountId, password),
 
+    "agents.status": () => ({ available: b.agents !== null, connected: b.agents?.connected() ?? 0, tokenSince: b.agents?.tokenSince() ?? null }),
+    "agents.rotateToken": () => {
+      if (!b.agents) throw new RpcError("UNAVAILABLE", "Los agentes necesitan la app de escritorio.");
+      return b.agents.rotate();
+    },
+
     "ops.list": async () => (await store.ops.recent(100)).map((op) => b.opInfo(op)),
     "ops.resolveUnknown": async ({ opId, resolution }) => {
       const r = await store.ops.resolveUnknown(opId, resolution, b.now());

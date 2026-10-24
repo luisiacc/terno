@@ -510,6 +510,11 @@ export const contract = {
   "identity.get": m<OwnerIdentity | null>()(empty),
   "identity.changeOwner": m<OwnerIdentity>()(z.object({ accountId: id, password: z.string().min(1).max(1000).optional() }), { timeoutMs: 300_000 }),
 
+  /** The MCP endpoint: whether this host runs it, how many agents are connected, since when the token is valid. */
+  "agents.status": m<{ available: boolean; connected: number; tokenSince: number | null }>()(empty),
+  /** A new token in the token file; agents connected now are cut off and must read it again. */
+  "agents.rotateToken": m<{ disconnected: number; tokenSince: number }>()(empty),
+
   "ops.list": m<OpInfo[]>()(empty),
   "ops.resolveUnknown": m<{ ok: true }>()(
     z.object({ opId: z.string().uuid(), resolution: z.enum(["markSent", "retry", "discard"]) }),

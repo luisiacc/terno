@@ -455,4 +455,41 @@ describe("agent socket", () => {
     expect(await client.call("app.bootstrap", {})).toMatchObject({ version: "test" });
     client.close();
   });
+
+  it("rotating the token cuts connected agents off, refuses the old token and accepts the new one; renderers only", async () => {
+    const { backend } = setup();
+    const dir = mkdtempSync(join(tmpdir(), "unica-sock-"));
+    const endpoint = await startAgentSocket(backend, join(dir, "s.sock"), join(dir, "token"));
+    cleanups.push(async () => {
+      await endpoint.close();
+      rmSync(dir, { recursive: true, force: true });
+    });
+    const { readFileSync } = await import("node:fs");
+    const handshake = (token: string) =>
+      new Promise<{ sock: ReturnType<typeof connect>; reply: string }>((r) => {
+        const sock = connect(endpoint.socketPath);
+        sock.once("data", (d) => r({ sock, reply: String(d) })).write(`${token}\n`);
+      });
+    const [rc, rs] = createMemoryTransportPair();
+    backend.connect(rs, { clientId: "renderer", origin: "renderer" });
+    const renderer = new RpcClient(rc);
+
+    const old = readFileSync(endpoint.tokenPath, "utf8");
+    const agent = await handshake(old);
+    expect(agent.reply).toContain('"ok":true');
+    const mcp = new RpcClient(socketTransport(agent.sock));
+    expect(await renderer.call("agents.status", {})).toEqual({ available: true, connected: 1, tokenSince: NOW });
+    await expect(mcp.call("agents.rotateToken", {})).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    const closed = new Promise<void>((r) => agent.sock.once("close", () => r()));
+    expect(await renderer.call("agents.rotateToken", {})).toEqual({ disconnected: 1, tokenSince: NOW });
+    await closed;
+    const fresh = readFileSync(endpoint.tokenPath, "utf8");
+    expect(fresh).not.toBe(old);
+    expect((await handshake(old)).reply).toContain("unauthorized");
+    const again = await handshake(fresh);
+    expect(again.reply).toContain('"ok":true');
+    again.sock.destroy();
+    renderer.close();
+  });
 });

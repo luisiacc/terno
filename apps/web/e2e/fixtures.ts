@@ -12,7 +12,7 @@ interface Fixtures {
   /** freeze Date for deterministic list dates (off for perf: the fake clock coarsens performance.now) */
   fixedClock: boolean;
   /** backend-dev knobs: a fresh install with no mailbox, and owner claims through the demo registry */
-  backendOptions: { empty?: boolean; ownerClaims?: boolean };
+  backendOptions: { empty?: boolean; ownerClaims?: boolean; agentSocket?: boolean };
   server: DevServer;
   /** the app, loaded, connected and showing the inbox */
   app: Page;
@@ -30,7 +30,7 @@ export const test = base.extend<Fixtures>({
       // the template's search snapshot too (written on close), so each backend restores instead of building
       if (existsSync(`${template}.search`)) copyFileSync(`${template}.search`, join(dir, "unica.db.search"));
     }
-    const server = await startDevServer({ port: 0, dataDir: dir, token: "e2e", now: () => E2E_NOW, autoSync: true, seed: !backendOptions.empty, ownerClaims: backendOptions.ownerClaims });
+    const server = await startDevServer({ port: 0, dataDir: dir, token: "e2e", now: () => E2E_NOW, autoSync: true, seed: !backendOptions.empty, ownerClaims: backendOptions.ownerClaims, agentSocket: backendOptions.agentSocket });
     await use(server);
     // Backend.stop() doesn't wait for an in-flight ops batch; let it settle first.
     const b = server.backend as unknown as { workerRunning: boolean };
