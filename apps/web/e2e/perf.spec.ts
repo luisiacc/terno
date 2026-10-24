@@ -314,6 +314,47 @@ test("inline reply: keypress → first frame showing the draft ≤ 50 ms; from t
   expect(expand.p95).toBeLessThanOrEqual(133 * MULT);
 });
 
+test("typing in a draft with 2,000 drafts around: each keystroke is handled and rendered within a frame", async ({ app: page, server }) => {
+  // 2,000 reply drafts, one per conversation (most of them outside the loaded list, so all in the strip's reach)
+  const db = sqlDb(server.backend.store);
+  const targets = db.all<{ id: number; thread_id: number; account_id: number }>("SELECT max(id) AS id, thread_id, account_id FROM messages GROUP BY thread_id ORDER BY thread_id DESC LIMIT 2000");
+  expect(targets.length).toBe(2000);
+  const now = Date.now();
+  for (const [i, t] of targets.entries()) {
+    await server.backend.store.drafts.save({ accountId: t.account_id, threadId: t.thread_id, to: [{ name: "", email: "ana@example.com" }], cc: [], subject: `Re: borrador ${i}`, bodyText: `Borrador ${i}`, inReplyToMessageId: t.id }, now - i);
+  }
+  await page.reload();
+  await page.locator("[data-ready]").waitFor();
+  await rows(page).first().waitFor();
+  await expect(page.getByTestId("strip-more")).toBeVisible();
+  await rows(page).nth(5).dispatchEvent("mousedown");
+  await expect(page.getByTestId("reader-subject")).toBeVisible();
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("r");
+  const body = page.getByTestId("compose-body");
+  await expect(body).toBeFocused();
+  await page.evaluate(() => {
+    const w = window as unknown as { __typing: { t0: number; handled: number[]; frame: number[] } };
+    w.__typing = { t0: 0, handled: [], frame: [] };
+    document.addEventListener("keydown", () => (w.__typing.t0 = performance.now()), { capture: true });
+    // bubbling to the document runs after React handled the input (and rendered what it changed)
+    document.addEventListener("input", () => {
+      const t0 = w.__typing.t0;
+      w.__typing.handled.push(performance.now() - t0);
+      requestAnimationFrame(() => w.__typing.frame.push(performance.now() - t0));
+    });
+  });
+  const text = "Hola, lo reviso esta tarde y te confirmo mañana temprano.";
+  for (const ch of text) await page.keyboard.type(ch, { delay: 30 });
+  await page.waitForTimeout(1200); // an autosave answers too: its state update is part of the work
+  await page.keyboard.type(" Gracias.", { delay: 30 });
+  const r = await page.evaluate(() => (window as any).__typing as { handled: number[]; frame: number[] });
+  expect(r.handled.length).toBeGreaterThanOrEqual(text.length);
+  const handled = stat("draft typing (2,000 drafts): keystroke → handled and rendered", 16, r.handled);
+  stat("draft typing (2,000 drafts): keystroke → next frame", 0, r.frame);
+  expect(handled.p95).toBeLessThanOrEqual(16 * MULT);
+});
+
 test("typing a search: each keystroke renders its results fast", async ({ app: page }) => {
   await page.evaluate(() => {
     const w = window as unknown as { __search: { started: Map<string, number>; done: Map<string, number> } };

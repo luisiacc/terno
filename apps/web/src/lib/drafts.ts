@@ -369,11 +369,31 @@ export async function loadDrafts(list: () => Promise<Draft[]> = () => client.cal
   });
 }
 
+interface DraftIndex {
+  /** each conversation's most recently edited draft */
+  newest: Map<number, LocalDraft>;
+  /** conversations with a draft that has something written in it */
+  written: Set<number>;
+}
+/** One pass per drafts update (the map is replaced on every change), shared by every row, the reader and the strip. */
+const indexes = new WeakMap<Record<string, LocalDraft>, DraftIndex>();
+export function draftIndex(drafts: Record<string, LocalDraft>): DraftIndex {
+  let index = indexes.get(drafts);
+  if (index) return index;
+  index = { newest: new Map(), written: new Set() };
+  for (const d of Object.values(drafts)) {
+    if (d.threadId === null || d.mode === "new") continue;
+    const best = index.newest.get(d.threadId);
+    if (!best || d.updatedAt > best.updatedAt) index.newest.set(d.threadId, d);
+    if (authored(d) && (d.bodyText.trim() || d.id !== null)) index.written.add(d.threadId);
+  }
+  indexes.set(drafts, index);
+  return index;
+}
+
 /** The draft shown inline in a conversation: the most recently edited one there. */
 export function threadDraftKey(drafts: Record<string, LocalDraft>, threadId: number): string | null {
-  let best: LocalDraft | null = null;
-  for (const d of Object.values(drafts)) if (d.threadId === threadId && d.mode !== "new" && (!best || d.updatedAt > best.updatedAt)) best = d;
-  return best?.key ?? null;
+  return draftIndex(drafts).newest.get(threadId)?.key ?? null;
 }
 
 /** The draft a conversation shows inline: the one opened explicitly for it, else its most recent. */
@@ -384,10 +404,7 @@ export function shownDraftKey(drafts: Record<string, LocalDraft>, threadId: numb
 
 /** For list rows: does this conversation have a draft with something written in it? (one boolean per row) */
 export function useHasDraft(threadId: number): boolean {
-  return useDrafts((s) => {
-    for (const d of Object.values(s.drafts)) if (d.threadId === threadId && authored(d) && (d.bodyText.trim() || d.id !== null)) return true;
-    return false;
-  });
+  return useDrafts((s) => draftIndex(s.drafts).written.has(threadId));
 }
 
 export function toAddressList(text: string): Address[] {
