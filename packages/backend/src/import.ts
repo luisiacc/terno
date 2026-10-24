@@ -1,5 +1,5 @@
 import type { Condition, FilterAction, FilterRule } from "@unica/core";
-import { draftAddressSchema, settingsPatchSchema, type DraftAddress, type ExportedDraft, type ExportFile, type ImportResult, type MailboxExport, type SettingsPatch } from "@unica/core/rpc";
+import { draftAddressSchema, exportCategorySchema, exportDraftSchema, exportFilterSchema, settingsPatchSchema, type ExportCategory, type ExportDraftItem, type ExportFilter, type DraftAddress, type ExportedDraft, type ExportFile, type ImportResult, type MailboxExport, type SettingsPatch } from "@unica/core/rpc";
 import type { DraftInput, DraftRow } from "@unica/store";
 import type { BackendCore as Backend } from "./core";
 import { pinKeyOrigins, readSettings, SettingsError, updateSettings } from "./settings";
@@ -78,7 +78,7 @@ export async function exportMailbox(b: Backend): Promise<MailboxExport> {
   };
 }
 
-type ExportDraft = ExportFile["drafts"][number];
+type ExportDraft = ExportDraftItem;
 /** A filter whose account conditions wait for their mailboxes: the old ids and the addresses they meant. */
 interface PendingFilter {
   name: string;
@@ -117,44 +117,49 @@ async function restoreInto(b: Backend, items: Pending, options: { final: boolean
   const same = new Set((await store.filters.list()).map((f) => `${f.name}\n${JSON.stringify(f.rule)}`));
   let filters = 0;
   let existingFilters = 0;
-  for (const f of items.filters) {
-    const ids = Object.fromEntries(Object.entries(f.accountEmails).map(([old, email]) => [old, idOf(email)]));
-    if (Object.values(ids).some((id) => id === undefined)) {
-      left.filters.push(f);
-      continue;
+  // in time slices: thousands of filters or drafts must not hold the event loop (interactive RPCs keep flowing)
+  await b.runSliced(items.filters, 50, async (chunk) => {
+    for (const f of chunk) {
+      const ids = Object.fromEntries(Object.entries(f.accountEmails).map(([old, email]) => [old, idOf(email)]));
+      if (Object.values(ids).some((id) => id === undefined)) {
+        left.filters.push(f);
+        continue;
+      }
+      const conditions = f.rule.conditions.map((c): Condition => (c.field === "account" ? { ...c, value: ids[String(c.value)]! } : c));
+      const rule: FilterRule = { ...f.rule, conditions };
+      const key = `${f.name}\n${JSON.stringify(rule)}`;
+      if (same.has(key)) {
+        existingFilters++;
+        continue;
+      }
+      same.add(key);
+      await store.filters.save({ name: f.name, enabled: f.enabled, source: f.source, rule }, now);
+      filters++;
     }
-    const conditions = f.rule.conditions.map((c): Condition => (c.field === "account" ? { ...c, value: ids[String(c.value)]! } : c));
-    const rule: FilterRule = { ...f.rule, conditions };
-    const key = `${f.name}\n${JSON.stringify(rule)}`;
-    if (same.has(key)) {
-      existingFilters++;
-      continue;
-    }
-    same.add(key);
-    await store.filters.save({ name: f.name, enabled: f.enabled, source: f.source, rule }, now);
-    filters++;
-  }
+  });
   let drafts = 0;
   const present = new Set((await store.drafts.list()).map(draftKey));
-  for (const d of items.drafts) {
-    const accountId = d.accountEmail ? idOf(d.accountEmail) : undefined;
-    if (accountId === undefined) {
-      left.drafts.push(d);
-      continue;
+  await b.runSliced(items.drafts, 50, async (chunk) => {
+    for (const d of chunk) {
+      const accountId = d.accountEmail ? idOf(d.accountEmail) : undefined;
+      if (accountId === undefined) {
+        left.drafts.push(d);
+        continue;
+      }
+      const draft = await draftFrom(b, accountId, d);
+      if (!draft) continue;
+      const final = options.final === true || options.final === accountId;
+      if (draft.mode === "new" && d.mode !== "new" && !final) {
+        left.drafts.push(d);
+        continue;
+      }
+      const key = draftKey(draft);
+      if (present.has(key)) continue;
+      present.add(key);
+      await store.drafts.save(draft, now);
+      drafts++;
     }
-    const draft = await draftFrom(b, accountId, d);
-    if (!draft) continue;
-    const final = options.final === true || options.final === accountId;
-    if (draft.mode === "new" && d.mode !== "new" && !final) {
-      left.drafts.push(d);
-      continue;
-    }
-    const key = draftKey(draft);
-    if (present.has(key)) continue;
-    present.add(key);
-    await store.drafts.save(draft, now);
-    drafts++;
-  }
+  });
   return { filters, existingFilters, drafts, left };
 }
 
@@ -209,31 +214,55 @@ async function draftFrom(b: Backend, accountId: number, d: ExportDraft): Promise
   return { ...base, mode: "new", threadId: null, bodyText: body, quotedText: "", includeQuote: false, inReplyToMessageId: null, forwardOfMessageId: null };
 }
 
-export async function importMailbox(b: Backend, data: ExportFile): Promise<ImportResult> {
-  const store = b.store;
+/** The items of a list that are valid, read in time slices (a large file must not hold the event loop); `bad` gets what isn't. */
+async function valid<T>(b: Backend, items: readonly unknown[], schema: { safeParse(x: unknown): { success: true; data: T } | { success: false } }, bad?: (item: unknown) => void): Promise<T[]> {
+  const out: T[] = [];
+  await b.runSliced(items, 200, (chunk) => {
+    for (const item of chunk) {
+      const r = schema.safeParse(item);
+      if (r.success) out.push(r.data);
+      else bad?.(item);
+    }
+  });
+  return out;
+}
 
-  // categories: the same name (any case) is the same category
+export async function importMailbox(b: Backend, file: ExportFile): Promise<ImportResult> {
+  const store = b.store;
+  const skipped: string[] = [];
+  const named = (item: unknown) => skipped.push(String((item as { name?: unknown } | null)?.name ?? "?"));
+  const data = {
+    accounts: file.accounts,
+    settings: file.settings,
+    categories: await valid<ExportCategory>(b, file.categories, exportCategorySchema),
+    filters: await valid<ExportFilter>(b, file.filters, exportFilterSchema, named),
+    drafts: await valid<ExportDraftItem>(b, file.drafts, exportDraftSchema),
+  };
+
+  // categories: the same name (any case) is the same category; new ones are created in time slices
   const existing = await store.categories.list();
   const byName = new Map(existing.map((c) => [c.name.toLocaleLowerCase(), c.id]));
   const categoryIds = new Map<number, number>();
-  let added = 0;
+  const toCreate: ExportCategory[] = [];
   for (const c of [...data.categories].sort((x, y) => (x.position ?? 0) - (y.position ?? 0))) {
     const known = byName.get(c.name.toLocaleLowerCase());
-    if (known !== undefined) {
-      categoryIds.set(c.id, known);
-      continue;
-    }
-    const made = await store.categories.create(c.name, c.color);
-    if (c.autoApply === false) await store.categories.update(made.id, { autoApply: false });
-    byName.set(c.name.toLocaleLowerCase(), made.id);
-    categoryIds.set(c.id, made.id);
-    added++;
+    if (known !== undefined) categoryIds.set(c.id, known);
+    else if (!toCreate.some((x) => x.name.toLocaleLowerCase() === c.name.toLocaleLowerCase())) toCreate.push(c);
   }
+  let added = 0;
+  await b.runSliced(toCreate, 50, async (chunk) => {
+    for (const c of chunk) {
+      const made = await store.categories.create(c.name, c.color);
+      if (c.autoApply === false) await store.categories.update(made.id, { autoApply: false });
+      byName.set(c.name.toLocaleLowerCase(), made.id);
+      added++;
+    }
+  });
+  for (const c of data.categories) categoryIds.set(c.id, byName.get(c.name.toLocaleLowerCase())!);
   if (added) b.server.emit("categories", await store.categories.list());
 
   // filters: categories remapped; mailboxes by address. One naming a mailbox not connected yet waits for it (pending).
   const emailOfOld = new Map(data.accounts.flatMap((a) => (a.id === undefined ? [] : [[a.id, a.email.toLowerCase()] as const])));
-  const skipped: string[] = [];
   const waitingFilters: PendingFilter[] = [];
   for (const f of data.filters) {
     let ok = true;

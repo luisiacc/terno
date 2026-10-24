@@ -416,3 +416,13 @@ describe("an import into a mailbox whose accounts aren't connected yet (a fresh 
     expect(await backend.store.settings.get("import:pending", null)).toEqual({ drafts: [], filters: [] });
   });
 });
+
+describe("a large or partly broken import", () => {
+  it("reads items one by one: a bad filter is skipped by name, the rest goes in", async () => {
+    const { client } = setup();
+    const ok = { name: "Bueno", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "fromDomain", op: "equals", value: "a.dev" }], actions: [{ type: "star" }] } };
+    const bad = { name: "Roto", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "nope", op: "x", value: 1 }], actions: [] } };
+    const r = await client.call("app.import", { data: { format: "unica-export", version: 2, categories: [{ id: 1, name: "Bien", color: "rose" }, { id: 2, name: "", color: "nope" }], filters: [ok, bad] } as never });
+    expect(r).toMatchObject({ categories: { added: 1 }, filters: { added: 1, skipped: ["Roto"] } });
+  });
+});
