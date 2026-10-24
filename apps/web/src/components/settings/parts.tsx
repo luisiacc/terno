@@ -48,6 +48,7 @@ export function SettingsRow({
   testId,
   stacked,
   labelFor,
+  errorTestId,
 }: {
   label: React.ReactNode;
   hint?: React.ReactNode;
@@ -59,6 +60,7 @@ export function SettingsRow({
   stacked?: boolean;
   /** a native control: the label is a <label for> (clicking it focuses the control) */
   labelFor?: boolean;
+  errorTestId?: string;
 }) {
   const base = useId();
   const ids = { control: `${base}-control`, label: `${base}-label`, hint: `${base}-hint`, error: `${base}-error` };
@@ -76,7 +78,7 @@ export function SettingsRow({
         </p>
       )}
       {error && (
-        <p id={ids.error} role="alert" className="mt-0.5 text-xs text-destructive" data-testid={testId ? `${testId}-error` : undefined}>
+        <p id={ids.error} role="alert" className="mt-0.5 text-xs text-destructive" data-testid={errorTestId ?? (testId ? `${testId}-error` : undefined)}>
           {error}
         </p>
       )}

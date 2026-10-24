@@ -207,7 +207,7 @@ export function CategoriesTab({ settings, update }: { settings: AppSettings; upd
   return (
     <div data-testid="categories-tab">
       <SettingsGroup>
-        <SettingsRow label="Categorización inteligente" hint="Aprende de cómo archivas. Sin IA ni red: todo ocurre en este equipo.">
+        <SettingsRow label="Categorización inteligente" hint="Aprende de cómo archivas. Sin IA ni red: todo ocurre en este Mac.">
           {({ id: _id, ...a }) => (
             <Select value={settings.autoCategorize} onValueChange={(v) => void update({ autoCategorize: v as AppSettings["autoCategorize"] })} items={MODES.map((m) => ({ ...m }))}>
               <SelectTrigger {...a} size="sm" className="w-36" data-testid="auto-categorize-select">
@@ -225,7 +225,7 @@ export function CategoriesTab({ settings, update }: { settings: AppSettings; upd
         </SettingsRow>
         <SettingsRow
           label="Pedir ayuda a la IA"
-          hint={noAi ? "Conecta una IA en Ajustes → IA para usarla aquí." : "Para los correos dudosos: solo sugiere, nunca añade sola. Usa la IA de Ajustes → IA (en modo local, solo modelos de este equipo)."}
+          hint={noAi ? "Conecta una IA en Ajustes → IA para usarla aquí." : "Para los correos dudosos: solo sugiere, nunca añade sola. Usa la IA de Ajustes → IA (en modo local, solo modelos de este Mac)."}
         >
           {(a) => <Switch {...a} data-testid="ai-categorize-switch" checked={settings.aiCategorize} disabled={noAi && !settings.aiCategorize} onCheckedChange={(on) => void update({ aiCategorize: on })} />}
         </SettingsRow>
