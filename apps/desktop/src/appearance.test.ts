@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { parseAppearance } from "./appearance";
+import { parseAppearance, windowVibrancy } from "./appearance";
+
+describe("main: native vibrancy", () => {
+  it("follows the renderer's theme on macOS, defaulting to on", () => {
+    expect(windowVibrancy(true, null, false)).toBe(true);
+    expect(windowVibrancy(true, { vibrancy: false }, false)).toBe(false);
+    expect(windowVibrancy(false, { vibrancy: true }, false)).toBe(false);
+  });
+
+  it("is off whenever the OS asks for reduced transparency, whatever the renderer sent", () => {
+    expect(windowVibrancy(true, { vibrancy: true }, true)).toBe(false);
+    expect(windowVibrancy(true, null, true)).toBe(false);
+  });
+});
 
 describe("main: appearance messages", () => {
   it("accepts an opaque background and normalizes case", () => {

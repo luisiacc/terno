@@ -7,6 +7,15 @@ export interface Appearance {
 }
 
 /**
+ * Whether the window shows the native sidebar vibrancy: macOS only, when the
+ * renderer's theme allows it (none saved yet: yes), and never when the OS asks
+ * for reduced transparency, whatever the renderer last sent.
+ */
+export function windowVibrancy(isMac: boolean, a: Pick<Appearance, "vibrancy"> | null, reduceTransparency: boolean): boolean {
+  return isMac && !reduceTransparency && (a?.vibrancy ?? true);
+}
+
+/**
  * Validates an appearance message from the renderer (or appearance.json).
  * The window background must be opaque: `#rrggbbaa` (or `#rgb[a]`) is
  * accepted and its alpha dropped, so one translucent token can't make main

@@ -171,9 +171,12 @@
  * Electron on macOS with a theme that allows it: the sidebar sits on the
  * window's native vibrancy (the window background is transparent). (0,2,0)
  * beats the theme blocks; a nested [data-theme] preview defines its own.
+ * Reduced transparency keeps it opaque (main turns the native vibrancy off too).
  */
-:root[data-vibrancy] {
-  --sidebar: var(--sidebar-translucent);
+@media (prefers-reduced-transparency: no-preference) {
+  :root[data-vibrancy] {
+    --sidebar: var(--sidebar-translucent);
+  }
 }
 
 @layer base {
@@ -189,8 +192,10 @@
     @apply bg-background text-foreground;
     overscroll-behavior: none;
   }
-  :root[data-vibrancy] body {
-    background: transparent;
+  @media (prefers-reduced-transparency: no-preference) {
+    :root[data-vibrancy] body {
+      background: transparent;
+    }
   }
   /* keyboard focus only: a 2 px ring outside controls, inside rows and list items */
   :focus-visible {

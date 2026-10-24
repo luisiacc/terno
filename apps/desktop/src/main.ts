@@ -16,7 +16,7 @@ import {
   utilityProcess,
   type UtilityProcess,
 } from "electron";
-import { parseAppearance, type Appearance } from "./appearance";
+import { parseAppearance, windowVibrancy, type Appearance } from "./appearance";
 import type { BackendToMain, MainToBackend } from "./ipc";
 
 // V8 compile cache for the main bundle (t3code trick): faster subsequent boots.
@@ -210,9 +210,16 @@ function applyAppearanceTo(win: BrowserWindow, a: Appearance) {
     win.setBackgroundColor(a.background);
     return;
   }
-  win.setVibrancy(a.vibrancy ? "sidebar" : null);
-  win.setBackgroundColor(a.vibrancy ? "#00000000" : a.background);
+  const vibrancy = windowVibrancy(true, a, nativeTheme.prefersReducedTransparency);
+  win.setVibrancy(vibrancy ? "sidebar" : null);
+  win.setBackgroundColor(vibrancy ? "#00000000" : a.background);
 }
+
+// the OS toggled reduced transparency (or the theme): every window follows at once
+nativeTheme.on("updated", () => {
+  if (!appearance) return;
+  for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) applyAppearanceTo(win, appearance);
+});
 
 ipcMain.on("unica:appearance", (event, value: unknown) => {
   const next = parseAppearance(value);
@@ -243,7 +250,7 @@ function createWindow() {
     nativeTheme.themeSource = saved.themeSource;
   }
   // named palettes render exactly: no vibrancy, the theme's own background from the first frame
-  const vibrancy = isMac && (saved?.vibrancy ?? true);
+  const vibrancy = windowVibrancy(isMac, saved, nativeTheme.prefersReducedTransparency);
   const win = new BrowserWindow({
     width: 1400,
     height: 880,

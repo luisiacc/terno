@@ -35,7 +35,7 @@ vi.mock("~/rpc/connection", () => ({
 }));
 vi.mock("sonner", () => ({ toast: Object.assign(() => {}, { error: vi.fn(), success: () => {} }) }));
 
-const { reconcileSettings, updateAppearance } = await import("./appearance");
+const { reconcileSettings, sidebarVibrancy, updateAppearance } = await import("./appearance");
 const { getApp, setApp } = await import("~/state/app");
 const { toast } = await import("sonner");
 
@@ -77,6 +77,15 @@ async function answer(ok = true) {
   } else c.reject(new Error("refused"));
   await tick();
 }
+
+describe("sidebar vibrancy", () => {
+  it("needs macOS desktop and a theme that allows it, and goes when the OS asks for reduced transparency", () => {
+    expect(sidebarVibrancy(true, true, false)).toBe(true);
+    expect(sidebarVibrancy(true, true, true)).toBe(false);
+    expect(sidebarVibrancy(true, false, false)).toBe(false);
+    expect(sidebarVibrancy(false, true, false)).toBe(false);
+  });
+});
 
 describe("concurrent appearance changes", () => {
   it("persists one change at a time, in order", async () => {

@@ -21,6 +21,24 @@ async function openAppearance(page: Page) {
 
 const cssVar = (page: Page, name: string) => page.evaluate((n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim(), name);
 
+test.describe("reduced transparency", () => {
+  test("the vibrancy sidebar turns opaque when the OS asks for reduced transparency", async ({ app: page }) => {
+    const cdp = await page.context().newCDPSession(page);
+    const sidebarAlpha = () =>
+      page.getByTestId("sidebar").evaluate((el) => {
+        const m = getComputedStyle(el).backgroundColor.match(/\/\s*([\d.]+)\)|rgba\([^)]*,\s*([\d.]+)\)/);
+        return m ? Number(m[1] ?? m[2]) : 1;
+      });
+    // what theme.js / applyAppearance set on macOS desktop
+    await page.evaluate(() => document.documentElement.setAttribute("data-vibrancy", ""));
+    await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-transparency", value: "no-preference" }] });
+    expect(await sidebarAlpha()).toBeLessThan(1);
+    await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-transparency", value: "reduce" }] });
+    expect(await sidebarAlpha()).toBe(1);
+    expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).not.toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
+  });
+});
+
 test.describe("themes", () => {
   test("every built-in theme applies from its card and paints its registry values", async ({ app: page }) => {
     await openAppearance(page);

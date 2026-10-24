@@ -63,6 +63,12 @@ function baseId(theme: Theme, a: Pick<Appearance, "customThemes">): string {
 }
 
 const isMacDesktop = () => window.unicaDesktop?.platform === "darwin";
+const REDUCED_TRANSPARENCY = "(prefers-reduced-transparency: reduce)";
+
+/** The sidebar shows the window's vibrancy only on macOS, with a theme that allows it, and when the OS doesn't ask for less transparency. */
+export function sidebarVibrancy(macDesktop: boolean, themeVibrancy: boolean, reducedTransparency: boolean): boolean {
+  return macDesktop && themeVibrancy && !reducedTransparency;
+}
 let applied = "";
 let unswitch = 0;
 
@@ -80,7 +86,7 @@ export function applyAppearance(a: Appearance): void {
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const ms = clampMotion(a.motionMs);
   const custom = theme.id.startsWith(CUSTOM_PREFIX);
-  const vibrancy = isMacDesktop() && theme.vibrancy;
+  const vibrancy = sidebarVibrancy(isMacDesktop(), theme.vibrancy, matchMedia(REDUCED_TRANSPARENCY).matches);
   const key = JSON.stringify([mode, theme.id, custom ? theme.tokens : null, ms, reduced, vibrancy]);
   if (key !== applied) {
     applied = key;
@@ -125,11 +131,14 @@ export function installAppearanceListeners(): () => void {
   };
   const scheme = matchMedia("(prefers-color-scheme: dark)");
   const motion = matchMedia("(prefers-reduced-motion: reduce)");
+  const transparency = matchMedia(REDUCED_TRANSPARENCY);
   // nativeTheme.themeSource drives prefers-color-scheme too: only follow it in system mode
   const onScheme = () => getApp().settings?.theme === "system" && reapply();
   scheme.addEventListener("change", onScheme);
   motion.addEventListener("change", reapply);
+  transparency.addEventListener("change", reapply);
   return () => {
+    transparency.removeEventListener("change", reapply);
     scheme.removeEventListener("change", onScheme);
     motion.removeEventListener("change", reapply);
   };

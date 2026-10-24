@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 
 const SOURCE = readFileSync(join(import.meta.dirname, "../../public/theme.js"), "utf8");
 
-function run(options: { storage?: Record<string, string>; dark?: boolean; reduced?: boolean; desktop?: string } = {}) {
+function run(options: { storage?: Record<string, string>; dark?: boolean; reduced?: boolean; opaque?: boolean; desktop?: string } = {}) {
   const store = new Map(Object.entries(options.storage ?? {}));
   const classes = new Set<string>();
   const attrs = new Map<string, string>();
@@ -24,7 +24,7 @@ function run(options: { storage?: Record<string, string>; dark?: boolean; reduce
   };
   const sandbox = {
     localStorage: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) },
-    matchMedia: (q: string) => ({ matches: q.includes("dark") ? !!options.dark : q.includes("reduced-motion") ? !!options.reduced : false }),
+    matchMedia: (q: string) => ({ matches: q.includes("dark") ? !!options.dark : q.includes("reduced-motion") ? !!options.reduced : q.includes("reduced-transparency") ? !!options.opaque : false }),
     document: { documentElement: html },
     window: options.desktop ? { unicaDesktop: { platform: options.desktop } } : {},
   };
@@ -33,6 +33,12 @@ function run(options: { storage?: Record<string, string>; dark?: boolean; reduce
 }
 
 describe("theme.js", () => {
+  it("shows the vibrancy on macOS desktop unless the OS asks for reduced transparency", () => {
+    expect(run({ desktop: "darwin" }).attrs.has("data-vibrancy")).toBe(true);
+    expect(run({ desktop: "darwin", opaque: true }).attrs.has("data-vibrancy")).toBe(false);
+    expect(run({ desktop: "linux" }).attrs.has("data-vibrancy")).toBe(false);
+  });
+
   it("defaults: system mode on a light OS, Única claro, motion 75", () => {
     const r = run();
     expect(r.classes.has("dark")).toBe(false);

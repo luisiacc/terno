@@ -51,7 +51,9 @@
       c.add("is-desktop");
       if (window.unicaDesktop.platform === "darwin") {
         c.add("is-mac");
-        if (!a.vibrancy || a.vibrancy[m] !== false) html.setAttribute("data-vibrancy", "");
+        // reduced transparency (System Settings → Accessibility) turns the native vibrancy off too
+        var opaque = matchMedia("(prefers-reduced-transparency: reduce)").matches;
+        if (!opaque && (!a.vibrancy || a.vibrancy[m] !== false)) html.setAttribute("data-vibrancy", "");
       }
     }
   } catch {}
