@@ -111,8 +111,9 @@ export function SettingsNote({ children, testId }: { children: React.ReactNode; 
 
 /**
  * A text field that saves when it is left or on Enter (Esc puts the stored
- * value back). Keyed by the stored value by its parent, so a change made
- * elsewhere shows. A save that fails keeps what was typed, with the reason.
+ * value back). A change of the stored value shows as it happens, in the same
+ * element (keyboard focus stays). A save that fails keeps what was typed,
+ * with the reason.
  */
 export function CommitInput({
   value,
@@ -132,6 +133,13 @@ export function CommitInput({
 } & Omit<React.InputHTMLAttributes<HTMLInputElement & HTMLTextAreaElement>, "value" | "onChange" | "className">) {
   const [text, setText] = useState(value);
   const [error, setError] = useState<string | null>(null);
+  // the stored value changed (a save, another window): show it, without remounting (focus stays)
+  const [shown, setShown] = useState(value);
+  if (value !== shown) {
+    setShown(value);
+    setText(value);
+    setError(null);
+  }
   const errorId = `${useId()}-error`;
   const commit = async () => {
     const problem = validate?.(text) ?? null;
@@ -198,10 +206,16 @@ export const COLOR_LABEL: Record<CategoryColor, string> = {
 /**
  * The palette as native radio buttons (arrow keys, one tab stop), each named
  * by its color. The pick shows at once; a save that fails puts the stored
- * color back. Keyed by the stored color by its parent.
+ * color back.
  */
 export function ColorPicker({ value, onChange, a11y, name, testId }: { value: string; onChange: (color: CategoryColor) => Promise<void>; a11y: RowA11y; name: string; testId?: string }) {
   const [picked, setPicked] = useState(value);
+  // the stored color changed (this pick saved, or another window): follow it in place, so the focused radio stays
+  const [stored, setStored] = useState(value);
+  if (value !== stored) {
+    setStored(value);
+    setPicked(value);
+  }
   return (
     <div role="radiogroup" aria-labelledby={a11y["aria-labelledby"]} aria-describedby={a11y["aria-describedby"]} className="flex items-center gap-1" data-testid={testId}>
       {CATEGORY_COLORS.map((c) => (

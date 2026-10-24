@@ -11,6 +11,7 @@ import { sqlDb, type DevServer } from "../../backend-dev/src/server";
 import { expect, rows, test } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
+const COLOR_NAMES = { rose: "Rosa", amber: "Ámbar", lime: "Lima", emerald: "Esmeralda", cyan: "Cian", indigo: "Índigo", violet: "Violeta", slate: "Pizarra" } as const;
 const TABS = [
   ["general", "General"],
   ["appearance", "Apariencia"],
@@ -210,6 +211,58 @@ test.describe("editable, persisted and in effect", () => {
     await page.getByTestId("account-remove-dialog-confirm").click();
     await expect(item).toHaveCount(0);
     await expect(page.getByTestId(`nav-account-${imap.id}`)).toHaveCount(0);
+  });
+
+  test("keyboard edits keep focus: arrows walk the color palette (saving each), Enter saves and the field stays focused", async ({ app: page, server }) => {
+    await openVia(page, "gear", "accounts");
+    const item = page.locator("[data-testid=settings-account]").first();
+    const id = Number(await item.getAttribute("data-account-id"));
+    await item.getByTestId("account-toggle").click();
+    const colorOf = async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === id)!.color;
+    const start = await colorOf();
+    await item.getByRole("radio", { name: COLOR_NAMES[start as keyof typeof COLOR_NAMES] }).focus();
+    for (let i = 0; i < 2; i++) {
+      const before = await colorOf();
+      await page.keyboard.press("ArrowRight");
+      await expect.poll(colorOf).not.toBe(before);
+      // the radio that took the pick still has focus after the save
+      await expect(item.getByRole("radio", { name: COLOR_NAMES[(await colorOf()) as keyof typeof COLOR_NAMES] })).toBeFocused();
+    }
+    const name = item.getByRole("textbox", { name: "Nombre", exact: true });
+    await name.fill("Uno");
+    await name.press("Enter");
+    await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === id)!.displayName).toBe("Uno");
+    await expect(name).toBeFocused();
+    await page.keyboard.type(" y dos");
+    await page.keyboard.press("Enter");
+    await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === id)!.displayName).toBe("Uno y dos");
+    await expect(name).toBeFocused();
+    const days = item.getByRole("spinbutton", { name: "Ventana de sincronización" });
+    await days.fill("20");
+    await days.press("Enter");
+    await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === id)!.syncWindowDays).toBe(20);
+    await expect(days).toBeFocused();
+
+    // a category: rename with Enter twice, colors with arrows
+    await show(page, "categories");
+    const cat = panel(page).locator("[data-category-id]").first();
+    const catId = Number(await cat.getAttribute("data-category-id"));
+    const rename = cat.getByRole("textbox", { name: "Nombre" });
+    await rename.fill("Primera");
+    await rename.press("Enter");
+    await expect(rename).toBeFocused();
+    await page.keyboard.type(" vez");
+    await page.keyboard.press("Enter");
+    await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).categories.find((c) => c.id === catId)!.name).toBe("Primera vez");
+    await expect(rename).toBeFocused();
+    const catColor = async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).categories.find((c) => c.id === catId)!.color;
+    await cat.getByRole("radio", { name: COLOR_NAMES[(await catColor()) as keyof typeof COLOR_NAMES] }).focus();
+    for (let i = 0; i < 2; i++) {
+      const before = await catColor();
+      await page.keyboard.press("ArrowLeft");
+      await expect.poll(catColor).not.toBe(before);
+      await expect(cat.getByRole("radio", { name: COLOR_NAMES[(await catColor()) as keyof typeof COLOR_NAMES] })).toBeFocused();
+    }
   });
 
   test("Categorías: engine mode, AI help, rename, color, order (sidebar), auto-filing, create, delete", async ({ app: page, server }) => {

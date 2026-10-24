@@ -14,8 +14,8 @@ const WEB = import.meta.env.VITE_TARGET === "web";
 
 /**
  * A number of days, saved when it is valid (Enter or leaving the field);
- * anything else stays as typed with the reason, announced. Keyed by the
- * stored value by its parent, so a change made elsewhere shows here.
+ * anything else stays as typed with the reason, announced. A change of the
+ * stored value shows in place (the same element: keyboard focus stays).
  */
 export function DaysField({
   value,
@@ -36,6 +36,13 @@ export function DaysField({
   const errorId = `${a11y.id}-days-error`;
   const [text, setText] = useState(value === null ? "" : String(value));
   const [error, setError] = useState<string | null>(null);
+  // the stored value changed: show it in the same element (keyboard focus stays)
+  const [shown, setShown] = useState(value);
+  if (value !== shown) {
+    setShown(value);
+    setText(value === null ? "" : String(value));
+    setError(null);
+  }
   const commit = async () => {
     if (allowEmpty && text.trim() === "") {
       setError(null);
@@ -140,7 +147,7 @@ export function GeneralTab({ settings, update, onLocalOff }: { settings: AppSett
 
       <SettingsGroup title="Sincronización">
         <SettingsRow labelFor label="Ventana de sincronización" hint="Días de correo a descargar al conectar una cuenta. Cada cuenta puede tener la suya en Cuentas.">
-          {(a) => <DaysField key={settings.syncWindowDays} a11y={a} testId="sync-window" value={settings.syncWindowDays} onSave={(days) => update({ syncWindowDays: days ?? settings.syncWindowDays }, { quiet: true })} />}
+          {(a) => <DaysField a11y={a} testId="sync-window" value={settings.syncWindowDays} onSave={(days) => update({ syncWindowDays: days ?? settings.syncWindowDays }, { quiet: true })} />}
         </SettingsRow>
       </SettingsGroup>
 

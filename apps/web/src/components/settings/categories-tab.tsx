@@ -101,7 +101,6 @@ function CategoryItem({ category, stats, index, count, autoMode }: { category: C
             <SettingsRow labelFor label="Nombre">
               {(a) => (
                 <CommitInput
-                  key={category.name}
                   a11y={a}
                   className="w-56"
                   maxLength={60}
@@ -125,7 +124,7 @@ function CategoryItem({ category, stats, index, count, autoMode }: { category: C
               )}
             </SettingsRow>
             <SettingsRow label="Color">
-              {(a) => <ColorPicker key={category.color} a11y={a} name={`category-color-${category.id}`} testId="category-color" value={category.color} onChange={(color) => updateCategory(category.id, { color }).catch((e: unknown) => { toast.error(errorText(e)); throw e; })} />}
+              {(a) => <ColorPicker a11y={a} name={`category-color-${category.id}`} testId="category-color" value={category.color} onChange={(color) => updateCategory(category.id, { color }).catch((e: unknown) => { toast.error(errorText(e)); throw e; })} />}
             </SettingsRow>
             <SettingsRow label="Borrar la categoría" hint="Sus conversaciones no se borran: solo dejan de estar en ella. Lo aprendido para ella se pierde.">
               {({ id: _id, "aria-labelledby": _l, ...a }) => (

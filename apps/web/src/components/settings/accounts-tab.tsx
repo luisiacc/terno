@@ -89,21 +89,20 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
   return (
     <div className="hairline-divide pb-1 pl-5" data-testid="account-editor">
       <SettingsRow labelFor label="Nombre" hint="Cómo aparece en la barra lateral y en las listas.">
-        {(a) => <CommitInput key={account.displayName} a11y={a} className="w-56" data-testid="account-name" value={account.displayName} validate={(v) => (v.trim() ? null : "Escribe un nombre.")} onCommit={(v) => save({ displayName: v.trim() })} />}
+        {(a) => <CommitInput a11y={a} className="w-56" data-testid="account-name" value={account.displayName} validate={(v) => (v.trim() ? null : "Escribe un nombre.")} onCommit={(v) => save({ displayName: v.trim() })} />}
       </SettingsRow>
       <SettingsRow labelFor label="Nombre del remitente" hint="El nombre que ven quienes reciben tus correos.">
-        {(a) => <CommitInput key={account.senderName} a11y={a} className="w-56" data-testid="account-sender" value={account.senderName} onCommit={(v) => save({ senderName: v.trim() })} />}
+        {(a) => <CommitInput a11y={a} className="w-56" data-testid="account-sender" value={account.senderName} onCommit={(v) => save({ senderName: v.trim() })} />}
       </SettingsRow>
       <SettingsRow label="Color">
-        {(a) => <ColorPicker key={account.color} a11y={a} name={`account-color-${account.id}`} testId="account-color" value={account.color} onChange={(color) => save({ color }).catch((e: unknown) => { toast.error(errorText(e)); throw e; })} />}
+        {(a) => <ColorPicker a11y={a} name={`account-color-${account.id}`} testId="account-color" value={account.color} onChange={(color) => save({ color }).catch((e: unknown) => { toast.error(errorText(e)); throw e; })} />}
       </SettingsRow>
       <SettingsRow stacked labelFor label="Firma" hint="Se añade debajo de lo que escribes al enviar desde esta cuenta, tras una línea «-- ».">
-        {(a) => <CommitInput key={account.signature} multiline a11y={a} data-testid="account-signature" value={account.signature} placeholder="Luis Cordero · Acme Studio" maxLength={10_000} onCommit={(v) => save({ signature: v })} />}
+        {(a) => <CommitInput multiline a11y={a} data-testid="account-signature" value={account.signature} placeholder="Luis Cordero · Acme Studio" maxLength={10_000} onCommit={(v) => save({ signature: v })} />}
       </SettingsRow>
       <SettingsRow labelFor label="Ventana de sincronización" hint={`Días de correo que descarga la primera vez. Vacío: los de General (${generalWindow}).`}>
         {(a) => (
           <DaysField
-            key={account.syncWindowDays ?? "general"}
             a11y={a}
             testId="account-window"
             value={account.syncWindowDays}
@@ -197,7 +196,7 @@ function GoogleClient({ settings, update }: { settings: AppSettings; update: Set
       }
     >
       <SettingsRow stacked labelFor label="Google OAuth Client ID">
-        {(a) => <CommitInput key={settings.gmailClientId} a11y={a} data-testid="gmail-client-id" value={settings.gmailClientId} placeholder="xxxxx.apps.googleusercontent.com" onCommit={(v) => update({ gmailClientId: v.trim() }, { quiet: true })} />}
+        {(a) => <CommitInput a11y={a} data-testid="gmail-client-id" value={settings.gmailClientId} placeholder="xxxxx.apps.googleusercontent.com" onCommit={(v) => update({ gmailClientId: v.trim() }, { quiet: true })} />}
       </SettingsRow>
       {!WEB && (
         <SettingsRow stacked labelFor label="Client secret (opcional)" hint="Se cifra con el llavero de macOS; nunca se muestra.">
