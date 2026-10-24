@@ -190,10 +190,13 @@ function stripResources(root: DocumentFragment, allowRemote: boolean) {
     for (const { name, value } of Array.from(el.attributes)) {
       const n = name.toLowerCase();
       if (link && (n === "href" || n === "xlink:href")) continue;
-      if (n === "style" || value.toLowerCase().includes("url(")) {
+      // a URL attribute loads or goes as a whole (a data: URI is self-contained: what it holds is never rewritten)
+      if (URL_ATTRS.has(n)) {
+        if (!loads(value, allowRemote)) el.removeAttribute(name);
+      } else if (n === "style" || value.toLowerCase().includes("url(")) {
         if (value.includes("\\")) el.removeAttribute(name);
         else el.setAttribute(name, cleanCss(value, allowRemote));
-      } else if (URL_ATTRS.has(n) && !loads(value, allowRemote)) el.removeAttribute(name);
+      }
     }
   }
 }

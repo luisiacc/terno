@@ -103,6 +103,12 @@ describe("the print document", () => {
     expect(remoteUrls(doc)).toEqual([]);
   });
 
+  it("a data: image is left exactly as it is, even when what it holds says url()", () => {
+    const svg = `data:image/svg+xml;charset=utf-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g"/></defs><rect fill="url(#g)"/></svg>')}`;
+    const doc = parse(build([msg({ bodyHtml: `<img src="${svg}" alt="hero">` })]));
+    expect(doc.querySelector(".body-html img")!.getAttribute("src")).toBe(svg);
+  });
+
   it("an allowed message keeps its web resources (absolute http(s) only), and only they are listed for main", () => {
     const body = `<svg><image href="https://img.test/svg.png"/></svg><td></td><div style="background:url('https://img.test/bg.png')">x</div><img src="/relative.png" alt="rel">`;
     const doc = parse(build([msg({ bodyHtml: body, allowRemote: true }), msg({ id: 2, bodyHtml: `<svg><image href="https://tracker.test/blocked.png"/></svg>` })]));
