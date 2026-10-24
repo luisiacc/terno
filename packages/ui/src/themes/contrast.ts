@@ -42,6 +42,14 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   ...text("muted-foreground", ["tint"]),
   ...text("draft-foreground", ["background", "row-hover", "row-selected", "accent"]),
   ...ui("sidebar-glyph", ["sidebar", "sidebar-accent"]),
+  // plan 08: settings draw on tint groups and in a sidebar
+  ...text("destructive", ["tint"]),
+  ...text("success", ["tint"]),
+  ...text("primary", ["tint"]),
+  ...ui("ring", ["tint", "sidebar"]),
+  ...ui("primary", ["tint"]),
+  ...text("sidebar-foreground", ["sidebar", "sidebar-accent"]),
+  ...text("sidebar-accent-foreground", ["sidebar-accent"]),
   // translucent menus: their text over anything (black or white) behind them
   ...GLASS_TEXT.flatMap((fg) => GLASS_BACKDROPS.map((over): ContrastPair => ({ fg, bg: "popover-glass", min: 4.5, over: `oklch(${over})` }))),
 ];

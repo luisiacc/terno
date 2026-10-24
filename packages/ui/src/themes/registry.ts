@@ -73,6 +73,14 @@ function alphaFor(color: Oklch, bg: string, ratio: number, min: number): number 
   return 1;
 }
 
+/** alphaFor, on a surface that may itself be translucent (composited over `base`). */
+function alphaOver(color: Oklch, surface: string, base: string, ratio: number, min: number): number {
+  for (let a = min; a < 1; a = Math.round((a + 0.05) * 100) / 100) {
+    if (contrast(withAlpha(color, a), surface, base) >= ratio) return a;
+  }
+  return 1;
+}
+
 /**
  * Badge and avatar text: the category color pulled toward the theme's ink
  * anchor (60/40 in OKLab), further only if 4.5:1 on its 15% tint needs it.
@@ -138,7 +146,11 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   def("sidebar-border", () => o("border"));
   def("row-rail", () => o("primary"));
   const bg = formatOklch(o("background"));
-  def("ring", () => withAlpha(o("primary"), alphaFor(o("primary"), bg, 3, 0.55)));
+  // the focus ring reads (3:1) on the background and on the sidebar (settings' tab list, the app's)
+  def("ring", () => {
+    const a = Math.max(alphaFor(o("primary"), bg, 3, 0.55), alphaOver(o("primary"), formatOklch(o("sidebar")), bg, 3, 0.55));
+    return withAlpha(o("primary"), a);
+  });
   def("sidebar-ring", () => o("ring"));
   def("chart-1", () => o("primary"));
   def("chart-2", () => o("cat-emerald"));
@@ -159,7 +171,9 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
     // a faint shift toward the ink, smaller until text on it still reads
     for (let t = light ? 0.035 : 0.05; t > 0; t = Math.round((t - 0.005) * 1000) / 1000) {
       const c = mixOklab(o("background"), o("foreground"), t);
-      if (contrast(o("muted-foreground"), c, bg) >= 4.5 && contrast(o("foreground"), c, bg) >= 4.5) return c;
+      // what settings draw on it too: errors, "saved", links, a switch that is on, the focus ring
+      const text = (["foreground", "muted-foreground", "destructive", "success", "primary"] as const).every((k) => contrast(o(k), c, bg) >= 4.5);
+      if (text && contrast(o("ring"), c, bg) >= 3 && contrast(o("primary"), c, bg) >= 3) return c;
     }
     return o("background");
   });
