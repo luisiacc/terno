@@ -5,6 +5,7 @@ import { Paperclip, Star } from "lucide-react";
 import { memo } from "react";
 import { listDate } from "~/lib/format";
 import { renderProbe } from "~/lib/render-probe";
+import { useHasDraft } from "~/lib/drafts";
 import { pressRow, releaseRow } from "~/lib/select";
 import { useApp } from "~/state/app";
 
@@ -45,6 +46,8 @@ export const ThreadRow = memo(function ThreadRow({ thread: t, top, height, compa
   const inSelection = useApp((s) => s.scope !== null || s.checked.has(t.id) || (s.selectedId === t.id && s.checked.size === 0));
   const accountColor = useApp((s) => (showAccount ? s.accounts.find((a) => a.id === t.accountId)?.color : undefined)) as CategoryColor | undefined;
   const categories = useApp((s) => s.categories);
+  /** a draft with something written in it (one boolean: only this row renders when it changes) */
+  const hasDraft = useHasDraft(t.id);
   const cats = t.categoryIds.length ? categories.filter((c) => t.categoryIds.includes(c.id)) : [];
 
   return (
@@ -56,6 +59,7 @@ export const ThreadRow = memo(function ThreadRow({ thread: t, top, height, compa
       data-testid="thread-row"
       data-thread-id={t.id}
       data-unread={t.unread || undefined}
+      data-messages={t.messageCount > 1 ? t.messageCount : undefined}
       data-checked={checked || undefined}
       onMouseDown={(e) => e.button === 0 && pressRow(t.id, { meta: e.metaKey, ctrl: e.ctrlKey, shift: e.shiftKey })}
       onClick={(e) => !e.metaKey && !e.ctrlKey && !e.shiftKey && releaseRow(t.id)}
@@ -77,7 +81,7 @@ export const ThreadRow = memo(function ThreadRow({ thread: t, top, height, compa
         {t.messageCount > 1 && <span className="text-xs text-muted-foreground tabular">{t.messageCount}</span>}
         {compact && (
           <span className={cn("min-w-0 flex-1 truncate text-sm", t.unread ? "text-foreground" : "text-muted-foreground")}>
-            {t.subject} <span className="text-muted-foreground">— {t.snippet}</span>
+            {t.subject} {hasDraft && <span className="font-medium text-draft-foreground">Borrador</span>} <span className="text-muted-foreground">— {t.snippet}</span>
           </span>
         )}
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
@@ -95,6 +99,7 @@ export const ThreadRow = memo(function ThreadRow({ thread: t, top, height, compa
           <span data-testid="row-subject" className={cn("shrink-0 truncate", t.unread ? "font-medium text-foreground" : "text-foreground")} style={{ maxWidth: "60%" }}>
             {t.subject || "(sin asunto)"}
           </span>
+          {hasDraft && <span className="shrink-0 font-medium text-draft-foreground">Borrador</span>}
           <span className="min-w-0 truncate text-muted-foreground">{t.snippet}</span>
         </div>
       )}

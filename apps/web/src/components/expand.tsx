@@ -10,7 +10,8 @@ const motionOff = () => {
 /**
  * Content that opens and closes in place: mounted only while open (and while
  * closing), never kept hidden. Opening animates a 0fr → 1fr grid row plus
- * opacity (slow, drawer curve); closing runs fast, then unmounts. Something
+ * opacity (slow, drawer curve) from @starting-style, so it starts in the frame
+ * the content first paints; closing runs fast, then unmounts. Something
  * already open on first render doesn't animate (a reader swap never does);
  * with motion off it opens and closes at once. The closing part is inert.
  */
@@ -28,10 +29,8 @@ export function Expand({ open, id, className, children, onOpening }: { open: boo
     if (open) {
       toggled.current = true;
       setMounted(true);
-      if (motionOff()) return void setShown(true);
-      // one frame at 0fr, then the transition to 1fr
-      const f = requestAnimationFrame(() => setShown(true));
-      return () => cancelAnimationFrame(f);
+      setShown(true);
+      return;
     }
     setShown(false);
     if (motionOff()) setMounted(false);
@@ -65,10 +64,12 @@ export function Expand({ open, id, className, children, onOpening }: { open: boo
       className={cn(
         "grid transition-[grid-template-rows]",
         shown ? "grid-rows-[1fr] duration-slow ease-drawer" : "grid-rows-[0fr] duration-fast ease-exit",
+        // opened by a toggle: from 0fr in its first frame (already open on first render: no animation)
+        shown && toggled.current && "starting:grid-rows-[0fr]",
         className,
       )}
     >
-      <div className={cn("min-h-0 overflow-hidden transition-opacity", shown ? "opacity-100 duration-slow" : "opacity-0 duration-fast")}>{children}</div>
+      <div className={cn("min-h-0 overflow-hidden transition-opacity", shown ? "opacity-100 duration-slow" : "opacity-0 duration-fast", shown && toggled.current && "starting:opacity-0")}>{children}</div>
     </div>
   );
 }

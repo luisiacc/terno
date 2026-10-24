@@ -9,6 +9,8 @@ import { useEffect, useRef, useState } from "react";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { cancelReaderScroll, keepInView } from "~/lib/reader-scroll";
 import { Expand } from "./expand";
+import { DraftSlot } from "./inline-draft";
+import { threadDraftKey, useDrafts } from "~/lib/drafts";
 import { act, cancelMarkRead, openCompose, scheduleMarkRead, toggleStar } from "~/lib/actions";
 import { acceptSuggestion, rejectSuggestion, removeFromCategory } from "~/lib/categorize";
 import { avatarColor, formatBytes, fullDate, initials, listDate } from "~/lib/format";
@@ -57,6 +59,12 @@ function Reasons({ title, reasons, hint }: { title: string; reasons: string[]; h
 }
 
 /** The extension a tile shows on its document glyph ("PDF", "XLSX"), or nothing. */
+/** Who a reply goes to, by first name: the last person who wrote. */
+function replyTo(messages: MessageDetail[]): string {
+  const last = [...messages].reverse().find((m) => !m.isSent) ?? messages[messages.length - 1];
+  return last ? (last.from.name || last.from.email).split(/\s+/)[0]! : "";
+}
+
 function fileType(name: string): string {
   const ext = /\.([a-z0-9]{1,5})$/i.exec(name)?.[1];
   return ext ? ext.toUpperCase() : "";
@@ -210,30 +218,6 @@ function Conversation({ messages, threadId }: { messages: MessageDetail[]; threa
   );
 }
 
-/**
- * After the last message: a quiet field that starts a reply to the last
- * person who wrote, with reply-all and forward beside it.
- */
-function ReplyBar({ messages, accountEmail, accountName }: { messages: MessageDetail[]; accountEmail?: string; accountName?: string }) {
-  const last = [...messages].reverse().find((m) => !m.isSent) ?? messages[messages.length - 1];
-  const who = last ? (last.from.name || last.from.email).split(/\s+/)[0] : "";
-  const me = accountName || accountEmail || "";
-  return (
-    <div className="mt-5 flex h-10 items-center gap-0.5 rounded-[10px] bg-tint pr-1.5 pl-2.5" data-testid="reply-bar">
-      <button type="button" onClick={() => openCompose("reply")} data-testid="quick-reply" className="flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-lg text-left text-sm text-muted-foreground">
-        <span className={cn("flex size-[22px] shrink-0 items-center justify-center rounded-full text-[9.5px] font-semibold", AVATAR_BG[avatarColor(accountEmail ?? me)])}>{initials(me)}</span>
-        <span className="truncate">Responder a {who}…</span>
-      </button>
-      <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" onClick={() => openCompose("replyAll")} data-testid="quick-reply-all">
-        <ReplyAll /> Responder a todos
-      </Button>
-      <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" onClick={() => openCompose("forward")} data-testid="quick-forward">
-        <Forward /> Reenviar
-      </Button>
-    </div>
-  );
-}
-
 function Welcome() {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-6 p-10 text-center" data-testid="reader-empty">
@@ -277,8 +261,15 @@ export function Reader() {
   // a dwell only counts while the reader shows the thread
   useEffect(() => cancelMarkRead, []);
 
-  // a scroll in flight belongs to the thread it started in
-  useEffect(() => cancelReaderScroll, [selectedId]);
+  // a scroll in flight belongs to the thread it started in; focus left in a draft goes back to the list
+  useEffect(
+    () => () => {
+      cancelReaderScroll();
+      if (document.activeElement?.closest("[data-testid=draft-slot]")) (document.activeElement as HTMLElement).blur();
+    },
+    [selectedId],
+  );
+  const draftKey = useDrafts((s) => (selectedId === null ? null : threadDraftKey(s.drafts, selectedId)));
 
   const toolbarRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -404,7 +395,7 @@ export function Reader() {
                 })}
               </div>
               <Conversation messages={detail.messages} threadId={detail.thread.id} />
-              <ReplyBar messages={detail.messages} accountEmail={account?.email} accountName={account?.displayName} />
+              <DraftSlot key={detail.thread.id} threadId={detail.thread.id} draftKey={draftKey} replyTo={replyTo(detail.messages)} account={account} />
             </>
           )}
         </div>

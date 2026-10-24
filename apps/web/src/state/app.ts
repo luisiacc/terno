@@ -57,6 +57,8 @@ export interface AppState {
   readerOpen: boolean;
 
   compose: ComposeState | null;
+  /** an inline draft to focus (set when one is opened explicitly; seq makes each request distinct) */
+  draftFocus: { key: string; target: "body" | "to"; seq: number } | null;
   dialog: DialogName;
   /** the category picker toggles categories (l) or moves exclusively (v, "Mover a…") */
   pickerMode: "toggle" | "move";
@@ -93,6 +95,7 @@ export const useApp = create<AppState>(() => ({
   filterPrefill: null,
   readerOpen: true,
   compose: null,
+  draftFocus: null,
   dialog: null,
   pickerMode: "toggle",
   settingsTab: "general",

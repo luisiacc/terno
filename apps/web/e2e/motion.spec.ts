@@ -61,7 +61,10 @@ function hold(server: DevServer, method: string) {
   };
 }
 
-/** Opens and closes a dialog, a select popup and a menu-like popover, and shows a toast. */
+/**
+ * Opens and closes a dialog, a select popup and a menu-like popover, expands a
+ * collapsed message, opens an inline reply and collapses it, and shows a toast.
+ */
 async function exercise(page: Page) {
   await page.getByTestId("open-settings").click();
   await expect(page.getByTestId("settings-dialog")).toBeVisible();
@@ -71,6 +74,23 @@ async function exercise(page: Page) {
   await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("settings-dialog")).toHaveCount(0);
+  // a conversation with earlier (collapsed) messages: one expands, then collapses
+  await page.locator("[data-testid=thread-row][data-messages]").first().dispatchEvent("mousedown");
+  const collapsed = page.locator("[data-testid=message-toggle][aria-expanded=false]").first();
+  if (await collapsed.count()) {
+    await collapsed.click();
+    await page.waitForTimeout(150);
+    await page.locator("[data-testid=message-toggle][aria-expanded=true]").first().click();
+    await page.waitForTimeout(150);
+  }
+  // the inline reply opens and collapses
+  await focusList(page);
+  await page.keyboard.press("r");
+  await expect(page.getByTestId("compose-body")).toBeFocused();
+  await page.waitForTimeout(150);
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("draft-collapsed")).toBeVisible();
+  await page.waitForTimeout(150);
   await focusList(page);
   await rows(page).first().dispatchEvent("mousedown");
   await page.keyboard.press("e");

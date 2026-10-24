@@ -74,12 +74,14 @@ test.describe("light", () => {
     await expect(page).toHaveScreenshot("search.png", { mask: [page.getByTestId("search-stats")] });
   });
 
-  test("reply composer", async ({ app: page }) => {
+  test("inline reply", async ({ app: page }) => {
     await ready(page);
     await focusList(page);
     await page.keyboard.press("r");
     await expect(page.getByTestId("compose-body")).toBeFocused();
-    await expect(page).toHaveScreenshot("composer-reply.png");
+    await page.keyboard.type("Hola Isabella, sí lo reviso hoy.");
+    await expect(page.getByTestId("draft-status")).toHaveText("Borrador guardado");
+    await expect(page).toHaveScreenshot("reply-inline.png");
   });
 
   test("AI filter builder with live preview", async ({ app: page }) => {

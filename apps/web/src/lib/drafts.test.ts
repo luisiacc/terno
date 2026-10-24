@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("~/rpc/connection", () => ({ client: { call: () => Promise.reject(new Error("not in tests")) } }));
 
 const { createDraft, discardDraft, draftForSend, editDraft, flushDraft, fromServer, loadDrafts, recipients, sendBody, setDraftTransport, threadDraftKey, useDrafts } = await import("./drafts");
-const { newFields } = await import("./compose");
+const { convertFields, newFields, replyFields } = await import("./compose-fields");
 
 interface Pending {
   method: string;
@@ -198,5 +198,39 @@ describe("drafts: helpers and restore", () => {
     expect(Object.keys(drafts)).toHaveLength(3);
     expect(drafts[threadDraftKey(drafts, 7)!]!.bodyText).toBe("nuevo");
     expect(fromServer({ ...base, id: 9, threadId: 7, bodyText: "", updatedAt: 0 })).toMatchObject({ toText: "Ana <ana@example.com>", auto: ["ana@example.com"], uiState: "collapsed", status: "saved" });
+  });
+});
+
+describe("converting a draft to another mode keeps what the user wrote", () => {
+  const me = { id: 1, email: "luis@acme.studio" } as import("@unica/core").Account;
+  const yuki = { name: "Yuki", email: "yuki@acme.studio" };
+  const lucas = { name: "Lucas", email: "lucas@acme.studio" };
+  const detail = {
+    thread: { id: 7, subject: "Propuesta" },
+    messages: [{ id: 3, isSent: false, from: yuki, to: [{ name: "Luis", email: "luis@acme.studio" }, lucas], cc: [], subject: "Propuesta", date: 0, bodyText: "Hola", snippet: "Hola" }],
+  } as unknown as import("@unica/core").ThreadDetail;
+
+  it("reply → reply-all adds the others to Cc; the body and a typed recipient stay; the subject regenerates unless edited", () => {
+    const reply = { ...replyFields("reply", detail, me), bodyText: "Mi texto", toText: "Yuki <yuki@acme.studio>, Extra <extra@example.com>" };
+    const all = convertFields(reply, "replyAll", detail, me);
+    expect(all.bodyText).toBe("Mi texto");
+    expect(all.toText).toContain("extra@example.com");
+    expect(all.ccText).toContain("lucas@acme.studio");
+    expect(all.subject).toBe("Re: Propuesta");
+    expect(convertFields({ ...reply, subject: "Mío", subjectEdited: true }, "forward", detail, me).subject).toBe("Mío");
+  });
+
+  it("→ forward clears what Única filled in, swaps the threading and the quote", () => {
+    const all = convertFields({ ...replyFields("replyAll", detail, me), bodyText: "x" }, "forward", detail, me);
+    expect(all.toText).toBe("");
+    expect(all.ccText).toBe("");
+    expect(all).toMatchObject({ mode: "forward", inReplyToMessageId: null, forwardOfMessageId: 3 });
+    expect(all.quotedText).toContain("Mensaje reenviado");
+  });
+
+  it("reply-all → reply drops only the untouched auto recipients", () => {
+    const all = { ...replyFields("replyAll", detail, me), ccText: "Lucas <lucas@acme.studio>, Mía <mia@example.com>" };
+    const back = convertFields(all, "reply", detail, me);
+    expect(back.ccText).toBe("Mía <mia@example.com>");
   });
 });

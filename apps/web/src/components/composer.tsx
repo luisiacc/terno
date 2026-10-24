@@ -46,7 +46,8 @@ export function Composer() {
     });
   }, [compose?.seq]);
 
-  if (!compose || !d) return null;
+  // replies are written inline in their conversation; this floating composer only writes new messages
+  if (!compose || !d || d.mode !== "new") return null;
   const key = compose.key;
   const update = (patch: Partial<DraftFields>) => editDraft(key, patch);
   const send = async () => {

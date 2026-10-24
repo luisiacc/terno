@@ -83,7 +83,11 @@ test.describe("context menu on one thread", () => {
     const subject = (await target.getByTestId("row-subject").textContent())!.trim();
     await rightClick(page, target);
     await item(page, "menu-reply").click();
-    await expect(page.getByTestId("composer")).toBeVisible();
+    // inline, in that thread's conversation, focused
+    await expect(page.getByTestId("reader").getByTestId("composer")).toBeVisible();
+    await expect(page.getByTestId("reader-subject")).toHaveText(subject.replace(/^Re:\s*/, ""));
+    await expect(page.getByTestId("compose-body")).toBeFocused();
+    await page.getByTestId("compose-show-subject").click();
     await expect(page.getByTestId("compose-subject")).toHaveValue(subject.startsWith("Re:") ? subject : `Re: ${subject}`);
   });
 

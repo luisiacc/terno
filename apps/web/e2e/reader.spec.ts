@@ -72,6 +72,8 @@ test.describe("reader conversation", () => {
     const subject = (await page.getByTestId("reader-subject").textContent())!;
     await expect(page.getByTestId("quick-reply")).toContainText(/Responder a \S+…$/);
     await page.getByTestId("quick-reply").click();
+    await expect(page.getByTestId("reader").getByTestId("composer")).toBeVisible();
+    await page.getByTestId("compose-show-subject").click();
     await expect(page.getByTestId("compose-subject")).toHaveValue(`Re: ${subject}`);
   });
 });

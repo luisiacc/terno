@@ -247,6 +247,60 @@ test("a long conversation: expanding 19 messages (5 HTML) keeps every frame ≤ 
   expect(await page.evaluate(() => (window as unknown as { __frameObservers: Set<ResizeObserver> }).__frameObservers.size)).toBe(0);
 });
 
+test("inline reply: keypress → first frame showing the draft ≤ 50 ms; from that frame its expansion ends within slow + 2 frames", async ({ app: page }) => {
+  await rows(page).first().dispatchEvent("mousedown");
+  await expect(page.getByTestId("reader-subject")).toBeVisible();
+  await page.evaluate(() => {
+    const w = window as unknown as { __reply: { t0: number; waiting: boolean; first: number[]; end: number[]; expand: number[] } };
+    w.__reply = { t0: 0, waiting: false, first: [], end: [], expand: [] };
+    document.addEventListener(
+      "keydown",
+      (e) => {
+        if (e.key !== "r" || (document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName))) return;
+        w.__reply.t0 = performance.now();
+        w.__reply.waiting = true;
+      },
+      { capture: true },
+    );
+    new MutationObserver(() => {
+      if (!w.__reply.waiting) return;
+      const wrap = document.querySelector("[data-testid=composer]")?.closest<HTMLElement>("[data-state]");
+      if (wrap?.dataset.state !== "open") return;
+      w.__reply.waiting = false;
+      const t0 = w.__reply.t0;
+      let shown = 0;
+      requestAnimationFrame(() => {
+        shown = performance.now();
+        w.__reply.first.push(shown - t0);
+      });
+      const onEnd = (ev: TransitionEvent) => {
+        if (ev.target !== wrap || ev.propertyName !== "grid-template-rows") return;
+        wrap.removeEventListener("transitionend", onEnd);
+        w.__reply.end.push(performance.now() - t0);
+        w.__reply.expand.push(performance.now() - shown);
+      };
+      wrap.addEventListener("transitionend", onEnd);
+    }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-state"] });
+  });
+  const N = 20;
+  for (let i = 0; i < N; i++) {
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.keyboard.press("r");
+    await page.waitForFunction((n) => (window as any).__reply.end.length >= n, i + 1, { polling: "raf" });
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("draft-collapsed")).toBeVisible();
+    await page.waitForTimeout(150);
+  }
+  const r = await page.evaluate(() => (window as any).__reply as { first: number[]; end: number[]; expand: number[] });
+  const first = stat("inline reply: keypress → first frame showing it", 50, r.first);
+  // the expansion itself, from the frame it first shows: slow (100 ms at the default 75) + 2 frames
+  const expand = stat("inline reply: first frame → expansion done", 133, r.expand);
+  // reported: the sum of the two gated parts (≈ slow + 2 frames at p95, too close to a 133 ms line under load)
+  stat("inline reply: keypress → expansion done", 0, r.end);
+  expect(first.p95).toBeLessThanOrEqual(50 * MULT);
+  expect(expand.p95).toBeLessThanOrEqual(133 * MULT);
+});
+
 test("typing a search: each keystroke renders its results fast", async ({ app: page }) => {
   await page.evaluate(() => {
     const w = window as unknown as { __search: { started: Map<string, number>; done: Map<string, number> } };
