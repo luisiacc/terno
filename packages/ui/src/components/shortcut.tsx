@@ -9,6 +9,8 @@ const SYMBOLS: Record<string, string> = {
   enter: "↵",
   escape: "esc",
   backspace: "⌫",
+  delete: "⌦",
+  contextmenu: "☰",
   arrowup: "↑",
   arrowdown: "↓",
 }

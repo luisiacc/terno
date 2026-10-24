@@ -3,12 +3,24 @@ export type Command =
   | "list.prev"
   | "list.open"
   | "list.toggleSelect"
+  | "list.selectAll"
+  | "list.selectNone"
+  | "list.selectRead"
+  | "list.selectUnread"
+  | "list.selectStarred"
+  | "list.extendNext"
+  | "list.extendPrev"
+  | "list.menu"
   | "reader.close"
   | "thread.archive"
   | "thread.trash"
   | "thread.spam"
   | "thread.star"
+  | "thread.markRead"
   | "thread.markUnread"
+  | "thread.toggleRead"
+  | "thread.move"
+  | "action.undo"
   | "thread.category"
   | "compose.new"
   | "compose.reply"
@@ -70,14 +82,39 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "enter", command: "list.open" },
   { keys: "o", command: "list.open" },
   { keys: "x", command: "list.toggleSelect" },
+  // selection: ⌘A (Ctrl+A off Mac) and Gmail's "*" sequences act on the loaded rows
+  { keys: "mod+a", command: "list.selectAll" },
+  { keys: "* a", command: "list.selectAll" },
+  { keys: "* n", command: "list.selectNone" },
+  { keys: "* r", command: "list.selectRead" },
+  { keys: "* u", command: "list.selectUnread" },
+  { keys: "* s", command: "list.selectStarred" },
+  { keys: "shift+j", command: "list.extendNext" },
+  { keys: "shift+arrowdown", command: "list.extendNext" },
+  { keys: "shift+k", command: "list.extendPrev" },
+  { keys: "shift+arrowup", command: "list.extendPrev" },
+  { keys: "shift+f10", command: "list.menu" },
+  { keys: "contextmenu", command: "list.menu" },
   { keys: "escape", command: "reader.close" },
   { keys: "e", command: "thread.archive" },
-  { keys: "#", command: "thread.trash" },
+  // Apple Mail's archive
+  { keys: "mod+ctrl+a", command: "thread.archive" },
   { keys: "backspace", command: "thread.trash" },
+  { keys: "#", command: "thread.trash" },
+  { keys: "delete", command: "thread.trash" },
+  { keys: "mod+backspace", command: "thread.trash" },
   { keys: "!", command: "thread.spam" },
+  { keys: "mod+shift+j", command: "thread.spam" },
   { keys: "s", command: "thread.star" },
+  { keys: "mod+shift+l", command: "thread.star" },
+  { keys: "shift+i", command: "thread.markRead" },
   { keys: "u", command: "thread.markUnread" },
+  { keys: "shift+u", command: "thread.markUnread" },
+  { keys: "mod+shift+u", command: "thread.toggleRead" },
   { keys: "l", command: "thread.category" },
+  { keys: "v", command: "thread.move" },
+  { keys: "z", command: "action.undo" },
+  { keys: "mod+z", command: "action.undo" },
   { keys: "c", command: "compose.new" },
   { keys: "r", command: "compose.reply" },
   { keys: "a", command: "compose.replyAll" },
@@ -147,4 +184,10 @@ export function resolveKey(
 
 export function shortcutFor(command: Command, bindings: readonly Binding[] = DEFAULT_BINDINGS): string | null {
   return bindings.find((b) => b.command === command)?.keys ?? null;
+}
+
+/** Every binding of a command, in table order ("#", "backspace", …): the help dialog lists them all. */
+export function shortcutsFor(command: Command, bindings: readonly Binding[] = DEFAULT_BINDINGS, isMac = true): string[] {
+  // Apple-only chords (⌃⌘) don't exist elsewhere: off Mac "mod" is Ctrl, so "mod+ctrl" can't be typed
+  return bindings.filter((b) => b.command === command && b.context === undefined && (isMac || !b.keys.includes("mod+ctrl"))).map((b) => b.keys);
 }
