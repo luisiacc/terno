@@ -166,7 +166,8 @@ describe("keys never leave the backend", () => {
   it("stores the key through the cipher and exposes only hasKey and its last 4 characters", async () => {
     const { backend, client } = setup({ localMode: false });
     const KEY = "sk-proj-SECRET-abcdef-1234-zzzz-a1b2";
-    await client.call("settings.update", { ai: { provider: "openai", model: "gpt-x" } });
+    // the key is saved for the endpoint in use (the stub), and only goes there
+    await client.call("settings.update", { ai: { provider: "openai", model: "gpt-x", baseURL: `${url()}/v1` } });
     const results: unknown[] = [];
     results.push(await client.call("ai.setKey", { provider: "openai", value: KEY }));
     // encrypted at rest (plaintextCipher marks what it wrapped); decrypts back for the backend only

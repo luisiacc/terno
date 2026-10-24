@@ -66,6 +66,10 @@ export interface AiSettings {
   /** keys never cross to the renderer: only whether one is saved and its last 4 characters */
   hasKey: boolean;
   keyHint: string | null;
+  /** the endpoint origin the saved key belongs to; it is only sent there */
+  keyOrigin: string | null;
+  /** the key may be used with the current endpoint (false: the endpoint changed since; confirm it or save a new key) */
+  keyConfirmed: boolean;
   /** the model runs on this Mac */
   local: boolean;
   capabilities: Capabilities | null;
@@ -534,6 +538,8 @@ export const contract = {
   "ai.providers": m<{ providers: ProviderDescriptor[]; presets: PresetDescriptor[] }>()(empty),
   "ai.listModels": m<{ models: ModelInfo[]; tookMs: number }>()(aiTarget, { timeoutMs: 15_000 }),
   "ai.test": m<AiTestResult>()(aiTarget.extend({ model: z.string().trim().min(1).max(200) }), { timeoutMs: 120_000 }),
+  /** Lets the saved key be sent to the provider's current endpoint (after the endpoint changed). */
+  "ai.confirmKey": m<AppSettings>()(z.object({ provider: z.enum(AI_PROVIDER_IDS), preset: z.enum(COMPATIBLE_PRESETS).optional() })),
   "ai.setKey": m<AppSettings>()(
     z.object({ provider: z.enum(AI_PROVIDER_IDS), preset: z.enum(COMPATIBLE_PRESETS).optional(), value: z.string().trim().max(1000) }),
   ),

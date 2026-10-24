@@ -560,6 +560,7 @@ export function createHandlers(b: Backend): Handlers {
     "ai.listModels": ({ provider, baseURL, preset }) => b.aiService.listModels({ provider, baseURL, preset }),
     "ai.test": ({ provider, model, baseURL, preset }) => b.aiService.test({ provider, model, baseURL, preset }),
     "ai.setKey": ({ provider, preset, value }) => b.aiService.setKey(provider, preset, value),
+    "ai.confirmKey": ({ provider, preset }) => b.aiService.confirmKey(provider, preset),
 
     "identity.get": () => store.owner.get(),
     "identity.changeOwner": ({ accountId, password }) => changeOwnerTo(b, accountId, password),

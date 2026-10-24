@@ -1,7 +1,7 @@
 import type { Condition, FilterAction, FilterRule } from "@unica/core";
 import { draftAddressSchema, settingsPatchSchema, type ExportFile, type ImportResult, type SettingsPatch } from "@unica/core/rpc";
 import type { BackendCore as Backend } from "./core";
-import { readSettings, SettingsError, updateSettings } from "./settings";
+import { pinKeyOrigins, readSettings, SettingsError, updateSettings } from "./settings";
 
 const GENERAL_KEYS = [
   "theme",
@@ -112,6 +112,8 @@ export async function importMailbox(b: Backend, data: ExportFile): Promise<Impor
   // settings: never secrets; a cloud AI refused by local mode is left out, the rest applies
   let settings = false;
   if (data.settings && typeof data.settings === "object") {
+    // saved keys stay bound to the endpoints they serve now: an imported endpoint has to be confirmed before one is sent there
+    await pinKeyOrigins(store);
     const before = await readSettings(store);
     const { general, ai } = settingsFrom(data.settings as Record<string, unknown>, before);
     try {

@@ -275,6 +275,19 @@ test.describe("editable, persisted and in effect", () => {
     await expect(page.getByRole("textbox", { name: "Modelo" })).toHaveValue("qwen3:8b");
   });
 
+  test("IA: a saved key isn't sent to an endpoint it wasn't saved for (an import, say) until confirmed", async ({ app: page, server }) => {
+    await server.backend.server.invoke("settings.update", { localMode: false, ai: { provider: "openai", model: "gpt-x" } }, ctx);
+    await server.backend.server.invoke("ai.setKey", { provider: "openai", value: "sk-e2e-0123456789" }, ctx);
+    await server.backend.server.invoke("app.import", { data: { format: "unica-export", version: 1, settings: { ai: { provider: "openai", model: "gpt-x", baseURL: "https://evil.example/v1" } } } as never }, ctx);
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await openVia(page, "gear", "ai");
+    await expect(page.getByRole("textbox", { name: "Endpoint" })).toHaveValue("https://evil.example/v1");
+    await expect(page.getByTestId("ai-key-unconfirmed")).toContainText("https://api.openai.com");
+    await page.getByTestId("ai-key-confirm").click();
+    await expect(page.getByTestId("ai-key-saved")).toBeVisible();
+  });
+
   test("Agentes and Datos: agent sending persists; export downloads and imports back", async ({ app: page, server }) => {
     await openVia(page, "gear", "agents");
     await page.getByRole("switch", { name: "Permitir que los agentes envíen correos" }).click();

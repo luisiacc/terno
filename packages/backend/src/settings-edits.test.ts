@@ -199,3 +199,38 @@ describe("app.import", () => {
     await expect(to.mcp.call("app.import", { data: dump })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });
+
+describe("AI keys are bound to the endpoint they were saved for", () => {
+  const exportWith = (ai: object) => ({ format: "unica-export" as const, version: 1 as const, exportedAt: NOW, app: "t", accounts: [], categories: [], filters: [], drafts: [], ops: [], settings: { ai } });
+
+  it("an imported endpoint never gets the saved key: it asks to confirm or re-enter it", async () => {
+    const { backend, client } = setup();
+    await client.call("settings.update", { localMode: false, ai: { provider: "openai", model: "gpt-x" } });
+    await client.call("ai.setKey", { provider: "openai", value: "sk-secret-0123456789" });
+    expect((await backend.aiService.config({ provider: "openai", model: "gpt-x" })).apiKey).toBe("sk-secret-0123456789");
+
+    await client.call("app.import", { data: exportWith({ provider: "openai", model: "gpt-x", baseURL: "https://evil.example/v1" }) as never });
+    const ai = (await client.call("app.bootstrap", {})).settings.ai;
+    expect(ai).toMatchObject({ baseURL: "https://evil.example/v1", hasKey: true, keyOrigin: "https://api.openai.com", keyConfirmed: false });
+    await expect(backend.aiService.config({ provider: "openai", model: "gpt-x", baseURL: "https://evil.example/v1" })).rejects.toMatchObject({ kind: "not_configured" });
+    await expect(client.call("ai.test", { provider: "openai", model: "gpt-x", baseURL: "https://evil.example/v1" })).resolves.toMatchObject({ ok: false, error: { kind: "not_configured" } });
+
+    // the user confirms it for this endpoint (or saves a new key): then it's used there, and only there
+    expect((await client.call("ai.confirmKey", { provider: "openai" })).ai).toMatchObject({ keyOrigin: "https://evil.example", keyConfirmed: true });
+    expect((await backend.aiService.config({ provider: "openai", model: "gpt-x", baseURL: "https://evil.example/v1" })).apiKey).toBe("sk-secret-0123456789");
+    await expect(backend.aiService.config({ provider: "openai", model: "gpt-x", baseURL: "https://other.example/v1" })).rejects.toMatchObject({ kind: "not_configured" });
+  });
+
+  it("changing the endpoint by hand asks too; a key saved before origins existed is bound before anything changes", async () => {
+    const { backend, client } = setup();
+    await client.call("settings.update", { localMode: false, ai: { provider: "compatible", preset: "azure", baseURL: "https://mine.openai.azure.com", model: "dep" } });
+    // a key from before this release: no origin recorded
+    await backend.setSecret("ai:compatible:azure:apiKey", "legacy-key-0123456789");
+    await client.call("settings.update", { ai: { baseURL: "https://elsewhere.openai.azure.com" } });
+    expect((await client.call("app.bootstrap", {})).settings.ai).toMatchObject({ keyOrigin: "https://mine.openai.azure.com", keyConfirmed: false });
+    await client.call("settings.update", { ai: { baseURL: "https://mine.openai.azure.com/openai" } });
+    expect((await client.call("app.bootstrap", {})).settings.ai).toMatchObject({ keyConfirmed: true });
+    expect((await backend.aiService.config({ provider: "compatible", preset: "azure", model: "dep", baseURL: "https://mine.openai.azure.com/openai" })).apiKey).toBe("legacy-key-0123456789");
+    await expect(client.call("ai.confirmKey", { provider: "openai" }).then(() => null, (e) => e)).resolves.toBeNull();
+  });
+});

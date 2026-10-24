@@ -3,11 +3,12 @@ import {
   describeProvider,
   isLocalProvider,
   keySecretName,
+  resolveBaseURL,
   type AiProviderId,
   type Capabilities,
   type CompatiblePreset,
 } from "@unica/ai";
-import { builtinMode, CUSTOM_PREFIX, DEFAULT_THEME, type CustomTheme, type ThemeMode } from "@unica/core";
+import { AI_PROVIDER_IDS, builtinMode, COMPATIBLE_PRESETS, CUSTOM_PREFIX, DEFAULT_THEME, type CustomTheme, type ThemeMode } from "@unica/core";
 import type { AiProfile, AiSettings, AppSettings, SettingsPatch } from "@unica/core/rpc";
 import type { MailStore } from "@unica/store";
 
@@ -59,6 +60,57 @@ const DEFAULT_PROFILES: Partial<Record<AiProviderId, AiProfile>> = {
 
 /** The last 4 characters of each saved key, so the UI can say which key is stored without ever seeing it. */
 const KEY_HINTS = "ai:keyHints";
+/** The endpoint origin each saved key was saved (or confirmed) for: a key never goes anywhere else. */
+const KEY_ORIGINS = "ai:keyOrigins";
+
+/** Where a provider profile sends its requests (and so its key), as an origin. */
+export function endpointOrigin(provider: AiProviderId, profile: Pick<AiProfile, "baseURL" | "preset"> | undefined): string | null {
+  const url = resolveBaseURL({ id: provider, baseURL: profile?.baseURL, preset: profile?.preset });
+  if (!url) return null;
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
+export function keyOrigins(store: SettingsStore): Promise<Record<string, string>> {
+  return store.settings.get<Record<string, string>>(KEY_ORIGINS, {});
+}
+
+export async function bindKeyOrigin(store: SettingsStore, secretName: string, origin: string | null): Promise<void> {
+  await store.settings.update<Record<string, string>, void>(KEY_ORIGINS, {}, (origins) => {
+    const next = { ...origins };
+    if (origin) next[secretName] = origin;
+    else delete next[secretName];
+    return { value: next, result: undefined };
+  });
+}
+
+/**
+ * Keys saved before origins were recorded are bound to the endpoint they
+ * serve now. Runs before anything can change an endpoint (a settings
+ * change, an import), so an unbound key at use time still points where the
+ * user saved it.
+ */
+export async function pinKeyOrigins(store: SettingsStore): Promise<void> {
+  const s = await stored(store);
+  const { profiles } = aiState(s, false);
+  const origins = await keyOrigins(store);
+  const missing: [string, string][] = [];
+  for (const provider of AI_PROVIDER_IDS) {
+    const presets = provider === "compatible" ? COMPATIBLE_PRESETS : [undefined];
+    for (const preset of presets) {
+      const name = keySecretName(provider, preset);
+      if (origins[name] || !(await store.secrets.has(name))) continue;
+      const profile = profiles[provider];
+      const own = provider !== "compatible" || (profile?.preset ?? "custom") === preset ? profile : { preset };
+      const origin = endpointOrigin(provider, own);
+      if (origin) missing.push([name, origin]);
+    }
+  }
+  for (const [name, origin] of missing) await bindKeyOrigin(store, name, origin);
+}
 
 function stored(store: SettingsStore): Promise<StoredSettings> {
   return store.settings.get<StoredSettings>("app", {});
@@ -105,6 +157,7 @@ export async function readSettings(store: SettingsStore): Promise<AppSettings> {
   const { provider, profiles, capabilities } = aiState(s, s.aiProvider === undefined && !s.ai?.provider && (await store.secrets.has(keySecretName("anthropic"))));
   const profile = profiles[provider] ?? { model: "" };
   const secret = keySecretName(provider, profile.preset);
+  const bound = (await keyOrigins(store))[secret] ?? null;
   const ai: AiSettings = {
     provider,
     model: profile.model,
@@ -112,6 +165,9 @@ export async function readSettings(store: SettingsStore): Promise<AppSettings> {
     preset: profile.preset ?? null,
     hasKey: await store.secrets.has(secret),
     keyHint: (await store.settings.get<Record<string, string>>(KEY_HINTS, {}))[secret] ?? null,
+    keyOrigin: bound,
+    // unbound: saved before origins were recorded and its endpoint never changed since (pinKeyOrigins)
+    keyConfirmed: bound === null || bound === endpointOrigin(provider, profile),
     local: isLocalProvider({ id: provider, baseURL: profile.baseURL, preset: profile.preset }),
     capabilities: capabilities[capabilityKey(provider, profile)] ?? null,
     profiles,
@@ -126,6 +182,7 @@ export class SettingsError extends Error {}
  * is refused; turning local mode on with a cloud provider keeps it dormant.
  */
 export async function updateSettings(store: SettingsStore, patch: SettingsPatch, options: { endpointIsLocal?: boolean } = {}): Promise<AppSettings> {
+  if (patch.ai) await pinKeyOrigins(store);
   const hasLegacyKey = await store.secrets.has(keySecretName("anthropic"));
   await store.settings.update<StoredSettings, void>("app", {}, (s) => ({ value: patchedSettings(s, patch, options, hasLegacyKey), result: undefined }));
   return readSettings(store);

@@ -21,7 +21,7 @@ import {
 import { RpcError, type AiTestResult, type AppSettings } from "@unica/core/rpc";
 import type { BackendCore as Backend } from "./core";
 import { NetworkPolicyError } from "./net-policy";
-import { readSettings, saveCapabilities, setKeyHint } from "./settings";
+import { bindKeyOrigin, endpointOrigin, keyOrigins, readSettings, saveCapabilities, setKeyHint } from "./settings";
 
 export type AiFactory = (config: ProviderConfig, options: AiOptions) => AiTasks;
 export const defaultAiFactory: AiFactory = (config, options) => createAi(config, options);
@@ -78,7 +78,20 @@ export class AiService {
     }
     const baseURL = resolveBaseURL({ id: provider, baseURL: target.baseURL, preset });
     if (provider !== "fake" && !baseURL) throw new AiError("Indica la URL del servidor en Ajustes → IA.", "not_configured");
-    const apiKey = await this.b.getSecret(keySecretName(provider, preset));
+    const secretName = keySecretName(provider, preset);
+    let apiKey = await this.b.getSecret(secretName);
+    if (apiKey) {
+      // a key goes only to the origin it was saved (or confirmed) for
+      const origin = new URL(baseURL!).origin;
+      const bound = (await keyOrigins(this.b.store))[secretName];
+      if (!bound) await bindKeyOrigin(this.b.store, secretName, origin);
+      else if (bound !== origin) {
+        if (needsKey({ id: provider, preset })) {
+          throw new AiError(`Tu API key se guardó para ${bound}. Para usarla con ${origin}, confírmala o guarda otra en Ajustes → IA.`, "not_configured");
+        }
+        apiKey = null;
+      }
+    }
     if (!apiKey && needsKey({ id: provider, preset })) {
       throw new AiError(`Guarda tu API key de ${provider === "compatible" ? PRESETS[preset ?? "custom"].label : describeProvider(provider).label} en Ajustes → IA.`, "not_configured");
     }
@@ -186,15 +199,32 @@ export class AiService {
     }
   }
 
+  /** The provider's saved endpoint origin (the one its key is for). */
+  private async profileOrigin(provider: AiProviderId, preset: CompatiblePreset | undefined): Promise<string | null> {
+    const profile = (await readSettings(this.b.store)).ai.profiles[provider];
+    const own = provider !== "compatible" || (profile?.preset ?? "custom") === (preset ?? "custom") ? profile : { model: "", preset };
+    return endpointOrigin(provider, own);
+  }
+
+  async confirmKey(provider: AiProviderId, preset: CompatiblePreset | undefined): Promise<AppSettings> {
+    const name = keySecretName(provider, preset);
+    if (await this.b.store.secrets.has(name)) await bindKeyOrigin(this.b.store, name, await this.profileOrigin(provider, preset));
+    this.clients.clear();
+    this.models.clear();
+    return readSettings(this.b.store);
+  }
+
   async setKey(provider: AiProviderId, preset: CompatiblePreset | undefined, value: string): Promise<AppSettings> {
     const name = keySecretName(provider, preset);
     if (value) {
       await this.b.setSecret(name, value);
+      await bindKeyOrigin(this.b.store, name, await this.profileOrigin(provider, preset));
       // short keys would give too much away
       await setKeyHint(this.b.store, provider, preset, value.length >= 12 ? value.slice(-4) : null);
     } else {
       await this.b.store.secrets.delete(name);
       await setKeyHint(this.b.store, provider, preset, null);
+      await bindKeyOrigin(this.b.store, name, null);
     }
     this.clients.clear();
     this.models.clear();

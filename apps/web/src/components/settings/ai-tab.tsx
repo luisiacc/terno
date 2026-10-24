@@ -43,7 +43,8 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
   const descriptor = catalog?.providers.find((p) => p.id === ai.provider);
   const needsKey = ai.provider === "compatible" ? presetNeedsKey : (descriptor?.needsKey ?? false);
   const showsKey = needsKey || (ai.provider === "compatible" && choice === "compatible");
-  const showsEndpoint = LOCAL_CHOICES.includes(choice) || (ai.provider === "compatible" && (ai.preset === "custom" || ai.preset === "azure"));
+  // any endpoint set is shown (an imported one included), so it can be seen and changed
+  const showsEndpoint = LOCAL_CHOICES.includes(choice) || (ai.provider === "compatible" && (ai.preset === "custom" || ai.preset === "azure")) || Boolean(ai.baseURL);
   // a custom endpoint may still resolve to this Mac: the backend decides when it connects
   const paused = localMode && !ai.local && ai.provider !== "none" && !(ai.provider === "compatible" && ai.preset === "custom");
 
@@ -73,7 +74,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
   // ── model discovery: when the tab opens and whenever provider or endpoint change (debounced)
   const [discovery, setDiscovery] = useState<Discovery>({ state: "idle" });
   const discoverySeq = useRef(0);
-  const canDiscover = ai.provider !== "none" && !paused && (!needsKey || ai.hasKey);
+  const canDiscover = ai.provider !== "none" && !paused && (!needsKey || (ai.hasKey && ai.keyConfirmed));
   const discover = async () => {
     const seq = ++discoverySeq.current;
     setDiscovery({ state: "loading" });
@@ -262,7 +263,21 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
         {showsKey && (
           <SettingsRow stacked labelFor label={`API key de ${providerName(ai)}${needsKey ? "" : " (opcional)"}`} hint="Se cifra con el llavero de macOS y solo se envía a este proveedor.">
             {(a) =>
-              ai.hasKey ? (
+              ai.hasKey && !ai.keyConfirmed ? (
+                <div className="space-y-1.5 text-sm" data-testid="ai-key-unconfirmed">
+                  <p role="alert" className="text-xs text-destructive-ink">
+                    Tu API key se guardó para {ai.keyOrigin}; el endpoint ahora es {hostOf(ai) ?? "otro"}. No se enviará ahí hasta que lo confirmes o guardes otra.
+                  </p>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="xs" data-testid="ai-key-confirm" onClick={() => void client.call("ai.confirmKey", { provider: ai.provider, preset: ai.preset ?? undefined }).then((next) => setApp({ settings: reconcileSettings(next) }), (e: unknown) => toast.error(String(e)))}>
+                      Usarla con este endpoint
+                    </Button>
+                    <Button variant="ghost" size="xs" aria-label={`Quitar la API key de ${providerName(ai)}`} onClick={() => void saveKey("")}>
+                      Quitar
+                    </Button>
+                  </div>
+                </div>
+              ) : ai.hasKey ? (
                 <div className="flex items-center gap-2 text-sm" data-testid="ai-key-saved">
                   <span className="text-success-ink">Guardada{ai.keyHint ? ` · …${ai.keyHint}` : ""}</span>
                   <Button variant="ghost" size="xs" aria-label={`Quitar la API key de ${providerName(ai)}`} onClick={() => void saveKey("")}>
