@@ -191,11 +191,14 @@ async function underLoad(name: string, fn: () => Promise<unknown>) {
   const excusedSpans = excused.filter((e) => e.by).map((e) => e.gap);
   const listsHeld = m.lists.filter((l) => !excusedSpans.some((g) => l.start < g.end && l.end > g.start));
   const listMax = Math.max(0, ...listsHeld.map((l) => l.ms));
+  // what ran during the worst gap (diagnostics)
+  const during = m.commands.filter((r) => r.start < m.maxGap.end && r.end > m.maxGap.start).map(runName);
   stats.push({
     name:
       `${name}: ${m.took.toFixed(0)} ms, longest stall ${m.maxGap.ms.toFixed(1)} ms (cpu ${m.maxGap.cpu.toFixed(1)} ms), ` +
       `${excused.filter((e) => e.by).length} excused [${excused.flatMap((e) => (e.by ? [`${e.gap.ms.toFixed(0)} ms: ${runName(e.by)}`] : [])).join("; ")}], ` +
-      `list p95 ${p95(m.lists.map((l) => l.ms)).toFixed(1)} ms, max ${listMax.toFixed(1)} ms (${m.lists.length}); longest command ${longest ? runName(longest) : "-"}; longest GC ${longestGc.toFixed(0)} ms`,
+      `list p95 ${p95(m.lists.map((l) => l.ms)).toFixed(1)} ms, max ${listMax.toFixed(1)} ms (${m.lists.length}); longest command ${longest ? runName(longest) : "-"}; longest GC ${longestGc.toFixed(0)} ms; ` +
+      `during the longest stall: ${during.join(", ") || "no store command"}`,
     budgetMs: 50,
     p50: m.maxGap.ms,
     p95: m.maxGap.ms,
