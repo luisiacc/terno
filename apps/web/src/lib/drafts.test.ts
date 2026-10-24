@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/rpc/connection", () => ({ client: { call: () => Promise.reject(new Error("not in tests")) } }));
 
-const { createDraft, discardDraft, draftForSend, editDraft, flushDraft, fromServer, loadDrafts, recipients, sendBody, setDraftTransport, threadDraftKey, useDrafts } = await import("./drafts");
+const { createDraft, discardDraft, draftForSend, editDraft, flushDraft, fromServer, loadDrafts, recipients, sendBody, setDraftTransport, threadDraftKey, useDrafts, validRecipients } = await import("./drafts");
 const { convertFields, newFields, replyFields } = await import("./compose-fields");
 
 interface Pending {
@@ -175,11 +175,25 @@ describe("the draft writer", () => {
 });
 
 describe("drafts: helpers and restore", () => {
-  it("recipients keep only valid addresses and mark the ones Única filled in", () => {
-    expect(recipients('Ana <ana@example.com>, "Pérez, Luis" <luis@example.com>, nada', ["ANA@example.com"])).toEqual([
+  it("saved recipients are what was typed, unfinished ones included; Única's are marked; sending takes valid ones only", () => {
+    expect(recipients('Ana <ana@example.com>, "Pérez, Luis" <luis@example.com>, bob@', ["ANA@example.com"])).toEqual([
       { name: "Ana", email: "ana@example.com", auto: true },
       { name: "Pérez, Luis", email: "luis@example.com" },
+      { name: "", email: "bob@" },
     ]);
+    expect(validRecipients("ana@example.com, bob@")).toEqual([{ name: "", email: "ana@example.com" }]);
+  });
+
+  it("an unfinished recipient is saved as typed, so it comes back", async () => {
+    const k = draft();
+    editDraft(k, { toText: "alice@example.com, bob@" });
+    await vi.advanceTimersByTimeAsync(800);
+    expect(calls[0]!.params.to).toEqual([
+      { name: "", email: "alice@example.com" },
+      { name: "", email: "bob@" },
+    ]);
+    await answer();
+    expect(fromServer(stored.get(10)!).toText).toBe("alice@example.com, bob@");
   });
 
   it("what is sent is what the user wrote, then the kept quote, once", () => {

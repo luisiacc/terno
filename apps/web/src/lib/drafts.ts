@@ -77,12 +77,18 @@ const drop = (key: string) =>
 
 // ───────────────────────────── pure helpers ─────────────────────────────
 
-/** Recipients from what was typed: valid addresses only, `auto` kept on the ones Única filled in. */
+/**
+ * Recipients as typed, for saving: everything, unfinished addresses too
+ * ("bob@" must survive a reload), `auto` on the ones Única filled in.
+ */
 export function recipients(text: string, auto: readonly string[]): DraftAddress[] {
   const autoSet = new Set(auto.map((e) => e.toLowerCase()));
-  return parseAddressList(text)
-    .filter((a) => isValidEmail(a.email))
-    .map((a) => (autoSet.has(a.email.toLowerCase()) ? { ...a, auto: true as const } : a));
+  return parseAddressList(text).map((a) => (autoSet.has(a.email.toLowerCase()) ? { ...a, auto: true as const } : a));
+}
+
+/** Recipients for sending: valid addresses only (sendDraft refuses to send when anything typed isn't one). */
+export function validRecipients(text: string): Address[] {
+  return parseAddressList(text).filter((a) => isValidEmail(a.email));
 }
 
 /** What is sent: what the user wrote, then the quoted original when it is kept. */

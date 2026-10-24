@@ -7,7 +7,7 @@ import { invalidateThreads, loadThread } from "~/state/threads";
 import { setLastUndo } from "./actions";
 import { convertFields, newFields, replyFields } from "./compose-fields";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
-import { authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markSending, recipients, sendBody, setDraftUi, threadDraftKey, useDrafts, type LocalDraft } from "./drafts";
+import { authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markSending, validRecipients, sendBody, setDraftUi, threadDraftKey, useDrafts, type LocalDraft } from "./drafts";
 
 /**
  * Writing mail: which draft a reply, reply-all, forward or new message opens,
@@ -124,10 +124,9 @@ export const isSending = (key: string): boolean => pendingSends.has(key);
 async function send(key: string): Promise<boolean> {
   const d = await draftForSend(key);
   if (!d) return false;
-  const strip = (list: ReturnType<typeof recipients>) => list.map(({ name, email }) => ({ name, email }));
-  const to = strip(recipients(d.toText, d.auto));
-  const cc = strip(recipients(d.ccText, d.auto));
-  const bcc = strip(recipients(d.bccText, d.auto));
+  const to = validRecipients(d.toText);
+  const cc = validRecipients(d.ccText);
+  const bcc = validRecipients(d.bccText);
   // something typed that isn't an address (or nobody at all): stay, and say so
   const invalid = [d.toText, d.ccText, d.bccText].some((t) => parseAddressList(t).some((a) => !isValidEmail(a.email)));
   if (to.length === 0 || invalid) {

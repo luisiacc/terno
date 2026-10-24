@@ -35,7 +35,8 @@ const searchCursor = cursor.extend({
   queryKey: z.string().max(5000).optional(),
 });
 const address = z.object({ name: z.string().max(300), email: z.string().email().max(320) });
-const draftAddress = address.extend({ auto: z.literal(true).optional() });
+/** a draft keeps recipients as typed, unfinished ones too ("bob@"); addresses are validated when it is sent */
+const draftAddress = z.object({ name: z.string().max(300), email: z.string().max(320), auto: z.literal(true).optional() });
 
 export interface ThreadPage {
   items: ThreadSummary[];

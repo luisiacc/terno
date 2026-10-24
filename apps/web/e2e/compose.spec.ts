@@ -138,6 +138,24 @@ test.describe("drafts are kept", () => {
     await expect(page.getByTestId("compose-body")).toHaveValue("No lo pierdas.");
   });
 
+  test("an unfinished recipient is kept as typed: «bob@» survives a reload", async ({ app: page }) => {
+    const id = await openRow(page, 0);
+    await focusList(page);
+    await page.keyboard.press("f");
+    await page.getByTestId("compose-to").fill("alice@example.com, bob@");
+    await expect(page.getByTestId("draft-status")).toHaveText("Borrador guardado");
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`).dispatchEvent("mousedown");
+    await expect(page.getByTestId("reader-subject")).toBeVisible();
+    await focusList(page);
+    await page.keyboard.press("f");
+    await expect(page.getByTestId("compose-to")).toHaveValue("alice@example.com, bob@");
+    // and it isn't sent like that
+    await page.getByTestId("compose-send").click();
+    await expect(toast(page, "Revisa los destinatarios")).toBeVisible();
+  });
+
   test("r, then a, then f, then r: what was written and typed recipients survive every conversion, even with a save pending; Deshacer goes back", async ({ app: page }) => {
     await openRow(page, 0);
     await focusList(page);
