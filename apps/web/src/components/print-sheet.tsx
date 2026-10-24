@@ -43,6 +43,23 @@ function readPrefs(): Prefs {
   }
 }
 
+/** The messages a print takes: the whole conversation, or "this message" (the one it opened on, else the last), each with its remote-content answer. */
+function printMessages(detail: ThreadDetail | undefined, scope: Scope, messageId: number | null, policy: { remoteImages: "ask" | "always"; localMode: boolean }, allowed: ReadonlySet<number>): PrintMessage[] {
+  const all = detail?.messages ?? [];
+  const single = all.find((m) => m.id === messageId) ?? all[all.length - 1];
+  return (scope === "message" && single ? [single] : all).map((m) => ({
+    id: m.id,
+    from: m.from,
+    to: m.to,
+    cc: m.cc,
+    date: m.date,
+    bodyHtml: m.bodyHtml,
+    bodyText: m.bodyText,
+    attachments: m.attachments,
+    allowRemote: remoteAllowed(m.id, policy, allowed),
+  }));
+}
+
 const MM_PX = 96 / 25.4;
 /** How long the preview waits for fonts and images before it is printable anyway. */
 const READY_DEADLINE_MS = 4000;
@@ -76,54 +93,50 @@ function Sheet({ target, onClose }: { target: PrintTarget; onClose: () => void }
   }, [target.threadId]);
 
   const [prefs, setPrefs] = useState(readPrefs);
-  const update = (patch: Partial<Prefs>) => {
-    const next = { ...prefs, ...patch };
-    setPrefs(next);
+  // merged into the latest choices, not the ones this render saw: quick changes never undo each other
+  const update = (patch: Partial<Prefs>) => setPrefs((p) => ({ ...p, ...patch }));
+  const [stored] = useState(prefs);
+  useEffect(() => {
+    if (prefs === stored) return;
     try {
-      localStorage.setItem(PREFS_KEY, JSON.stringify(next));
+      localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
     } catch {
       /* private mode: remembered for this sheet only */
     }
-  };
+  }, [prefs]);
   const [scope, setScope] = useState<Scope>(target.messageId !== null ? "message" : "thread");
   const quoted = prefs.quoted[scope];
 
   const settings = useApp((s) => s.settings);
   const allowed = useRemoteConsent((s) => s.allowed);
-  const all = detail?.messages ?? [];
-  // "this message": the one the sheet was opened on, else the last one
-  const single = all.find((m) => m.id === target.messageId) ?? all[all.length - 1];
-  const chosen = scope === "message" && single ? [single] : all;
   const policy = { remoteImages: settings?.remoteImages ?? "ask", localMode: settings?.localMode ?? true };
-  const messages: PrintMessage[] = chosen.map((m) => ({
-    id: m.id,
-    from: m.from,
-    to: m.to,
-    cc: m.cc,
-    date: m.date,
-    bodyHtml: m.bodyHtml,
-    bodyText: m.bodyText,
-    attachments: m.attachments,
-    allowRemote: remoteAllowed(m.id, policy, allowed),
-  }));
+  const all = detail?.messages ?? [];
+  const messages = printMessages(detail, scope, target.messageId, policy, allowed);
   const subject = detail?.thread.subject ?? "";
   const missing = messages.filter((m) => m.bodyHtml === null && m.bodyText === null).length;
   const blocked = messages.filter((m) => !m.allowRemote && m.bodyHtml && hasRemoteContent(m.bodyHtml)).length;
-  const options: PrintOptions = { content: prefs.content, quoted, paper: prefs.paper };
 
-  // option changes rebuild after a short pause; the first build is immediate
-  const built = useMemo(() => (detail ? { html: buildPrintDocument({ subject, messages }, options), paper: options.paper } : null), [detail, scope, prefs, allowed, policy.remoteImages, policy.localMode]);
-  const [shown, setShown] = useState(built);
+  // what the document is built from; a change settles for 120 ms first, so toggling through options builds once
+  const inputs = useMemo(() => ({ detail, scope, prefs, allowed, policy }), [detail, scope, prefs, allowed, policy.remoteImages, policy.localMode]);
+  const [settled, setSettled] = useState(inputs);
   useEffect(() => {
-    if (shown === null) return setShown(built);
-    const t = setTimeout(() => setShown(built), 120);
+    if (settled === inputs) return;
+    // the first document (the thread just arrived) builds at once
+    if (!settled.detail) return setSettled(inputs);
+    const t = setTimeout(() => setSettled(inputs), 120);
     return () => clearTimeout(t);
-  }, [built]);
+  }, [inputs]);
+  const shown = useMemo(() => {
+    const { detail: d, scope: sc, prefs: p, allowed: al, policy: po } = settled;
+    if (!d) return null;
+    const options: PrintOptions = { content: p.content, quoted: p.quoted[sc], paper: p.paper };
+    return { html: buildPrintDocument({ subject: d.thread.subject, messages: printMessages(d, sc, target.messageId, po, al) }, options), paper: p.paper };
+  }, [settled]);
 
   const [fitted, setFitted] = useState<{ html: string; remote: string[]; frame: HTMLIFrameElement } | null>(null);
   const [busy, setBusy] = useState<PrintIntent | null>(null);
   // a rebuild on its way: what's on screen isn't what would print
-  const current = shown !== null && shown === built;
+  const current = shown !== null && settled === inputs;
   const ready = fitted !== null && current && busy === null;
   const restoreTitle = useRef<(() => void) | null>(null);
   useEffect(() => () => restoreTitle.current?.(), []);
@@ -212,7 +225,7 @@ function Sheet({ target, onClose }: { target: PrintTarget; onClose: () => void }
               {(a) => <Segmented a={a} full value={prefs.content} onChange={(v) => update({ content: v as Prefs["content"] })} testId="print-content" items={[["headers", "Con encabezados"], ["body", "Solo el contenido"]]} />}
             </SettingsRow>
             <SettingsRow label="Texto citado">
-              {(a) => <Segmented a={a} value={quoted} onChange={(v) => update({ quoted: { ...prefs.quoted, [scope]: v as Quoted } })} testId="print-quoted" items={[["hide", "Ocultar"], ["show", "Incluir"]]} />}
+              {(a) => <Segmented a={a} value={quoted} onChange={(v) => setPrefs((p) => ({ ...p, quoted: { ...p.quoted, [scope]: v as Quoted } }))} testId="print-quoted" items={[["hide", "Ocultar"], ["show", "Incluir"]]} />}
             </SettingsRow>
             <SettingsRow label="Papel">
               {(a) => <Segmented a={a} value={prefs.paper} onChange={(v) => update({ paper: v as Paper })} testId="print-paper" items={[["letter", "Carta"], ["a4", "A4"]]} />}

@@ -170,6 +170,27 @@ test.describe("print sheet", () => {
     await pressed(page, "print-paper-a4");
   });
 
+  test("toggling quickly through options builds the document once, after the changes settle", async ({ app: page, server }) => {
+    await open(page, server, "long-plain", 'subject:"Notas de la junta de planeación"');
+    await page.keyboard.press("ControlOrMeta+p");
+    await ready(page);
+    const builds = () => page.evaluate(() => (window as unknown as { __renders?: Record<string, number> }).__renders?.buildPrintDocument ?? 0);
+    const before = await builds();
+    // fourteen changes 30 ms apart (each one rendered), quicker than the settle time
+    await page.evaluate(async () => {
+      const ids = [...Array.from({ length: 3 }, () => ["print-content-body", "print-paper-a4", "print-content-headers", "print-paper-letter"]).flat(), "print-content-body", "print-quoted-show"];
+      for (const id of ids) {
+        document.querySelector<HTMLElement>(`[data-testid=${id}]`)!.click();
+        await new Promise((r) => setTimeout(r, 30));
+      }
+    });
+    await ready(page);
+    expect(await builds()).toBe(before + 1);
+    // and that one build is the final state
+    await expect(preview(page).locator(".head")).toHaveCount(0);
+    await expect(preview(page).locator(".quote").first()).toContainText("escribió:");
+  });
+
   test("Imprimir prints the preview's own document under the subject, and puts the page's title back", async ({ app: page, server }) => {
     await open(page, server, "long-plain", 'subject:"Notas de la junta de planeación"');
     const title = await page.title();

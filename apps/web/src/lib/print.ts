@@ -11,7 +11,7 @@ import DOMPurify from "dompurify";
 import { formatBytes, fullDate } from "~/lib/format";
 import { csp } from "~/lib/mail";
 import { splitTextQuote } from "~/lib/quote";
-import { exposeForTests } from "~/lib/render-probe";
+import { exposeForTests, renderProbe } from "~/lib/render-probe";
 
 export type Paper = "letter" | "a4";
 
@@ -275,6 +275,8 @@ function css(paper: Paper): string {
  * (the CSP allows them only if one message may), and nothing scripts.
  */
 export function buildPrintDocument(input: { subject: string; messages: PrintMessage[] }, options: PrintOptions): string {
+  // test builds count builds (the sheet must not build per keystroke or click)
+  renderProbe("buildPrintDocument");
   const subject = input.subject.trim() || "(sin asunto)";
   const headers = options.content === "headers";
   const remote = input.messages.some((m) => m.allowRemote && m.bodyHtml);
