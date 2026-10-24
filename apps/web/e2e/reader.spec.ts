@@ -27,8 +27,10 @@ test.describe("reader conversation", () => {
     const header = messages.nth(0).getByTestId("message-toggle");
     await expect(header).toHaveAttribute("aria-expanded", "true");
     await expect(page.locator(`#${region}`)).toContainText("Mensaje 1");
-    await header.focus();
+    // focus stays on the same control through both transitions: no refocusing
+    await expect(header).toBeFocused();
     await page.keyboard.press(" ");
+    await expect(header).toBeFocused();
     await expect(messages.nth(0).getByTestId("message-toggle")).toHaveAttribute("aria-expanded", "false");
     await expect(page.locator(`#${region}`)).toBeEmpty();
   });
@@ -44,6 +46,8 @@ test.describe("reader conversation", () => {
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("message")).toHaveCount(7);
     await expect(more).toHaveCount(0);
+    // focus goes to the first message it revealed, not to the document
+    await expect(page.getByTestId("message").first().getByTestId("message-toggle")).toBeFocused();
     await focusList(page);
   });
 

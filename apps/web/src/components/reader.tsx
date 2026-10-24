@@ -80,52 +80,50 @@ function Message({ m, expanded, onToggle }: { m: MessageDetail; expanded: boolea
   const people = (list: typeof m.to) => list.map((a) => a.name || a.email).join(", ");
   return (
     <article data-testid="message" data-expanded={expanded || undefined} className="hairline-b">
-      {expanded ? (
-        <h3>
-          <button
-            type="button"
-            aria-expanded="true"
-            aria-controls={bodyId}
-            title={fullDate(m.date)}
-            onClick={onToggle}
-            data-testid="message-toggle"
-            className="group/mh flex w-full items-start gap-3 rounded-md pt-[18px] pb-3 text-left"
-          >
-            <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold", AVATAR_BG[color])}>{initials(name)}</span>
-            <span className="min-w-0 flex-1">
-              <span className="flex items-baseline gap-2">
-                <span className="truncate text-base font-semibold">{name}</span>
-                {m.from.name && <span className="truncate text-xs text-muted-foreground opacity-0 group-hover/mh:opacity-100 group-focus-visible/mh:opacity-100">{m.from.email}</span>}
-                <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular">{listDate(m.date)}</span>
-              </span>
-              <span className="mt-px block truncate text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">Para:</span> {people(m.to)}
-                {m.cc.length > 0 && (
-                  <>
-                    {" · "}
-                    <span className="font-medium text-foreground">Cc:</span> {people(m.cc)}
-                  </>
-                )}
-              </span>
-            </span>
-          </button>
-        </h3>
-      ) : (
+      {/* one heading and one button in both states, so the focused control survives expanding and collapsing */}
+      <h3>
         <button
           type="button"
-          aria-expanded="false"
+          aria-expanded={expanded}
           aria-controls={bodyId}
           title={fullDate(m.date)}
           onClick={onToggle}
           data-testid="message-toggle"
-          className="-mx-2 my-0.5 flex h-11 w-[calc(100%+1rem)] items-center gap-2.5 rounded-lg px-2 text-left text-sm transition-colors hover:bg-tint"
+          className={cn(
+            "group/mh flex w-full text-left",
+            expanded ? "items-start gap-3 rounded-md pt-[18px] pb-3" : "-mx-2 my-0.5 h-11 w-[calc(100%+1rem)] items-center gap-2.5 rounded-lg px-2 text-sm transition-colors hover:bg-tint",
+          )}
         >
-          <span className={cn("flex size-6 shrink-0 items-center justify-center rounded-full text-2xs font-semibold", AVATAR_BG[color])}>{initials(name)}</span>
-          <span className="shrink-0 font-medium">{name}</span>
-          <span className="min-w-0 flex-1 truncate text-muted-foreground">{m.snippet}</span>
-          <span className="shrink-0 text-xs text-muted-foreground tabular">{listDate(m.date)}</span>
+          {expanded ? (
+            <>
+              <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold", AVATAR_BG[color])}>{initials(name)}</span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-baseline gap-2">
+                  <span className="truncate text-base font-semibold">{name}</span>
+                  {m.from.name && <span className="truncate text-xs text-muted-foreground opacity-0 group-hover/mh:opacity-100 group-focus-visible/mh:opacity-100">{m.from.email}</span>}
+                  <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular">{listDate(m.date)}</span>
+                </span>
+                <span className="mt-px block truncate text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">Para:</span> {people(m.to)}
+                  {m.cc.length > 0 && (
+                    <>
+                      {" · "}
+                      <span className="font-medium text-foreground">Cc:</span> {people(m.cc)}
+                    </>
+                  )}
+                </span>
+              </span>
+            </>
+          ) : (
+            <>
+              <span className={cn("flex size-6 shrink-0 items-center justify-center rounded-full text-2xs font-semibold", AVATAR_BG[color])}>{initials(name)}</span>
+              <span className="shrink-0 font-medium">{name}</span>
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">{m.snippet}</span>
+              <span className="shrink-0 text-xs text-muted-foreground tabular">{listDate(m.date)}</span>
+            </>
+          )}
         </button>
-      )}
+      </h3>
       {/* the region is always there (aria-controls); its content is mounted only while open */}
       <div id={bodyId}>
         <Expand open={expanded} onOpening={(el) => keepInView(el.closest("article") ?? el)}>
@@ -174,7 +172,11 @@ function Conversation({ messages, threadId }: { messages: MessageDetail[]; threa
   const isOpen = (m: MessageDetail) => own.toggled.get(m.id) ?? (!m.isRead || m.id === last?.id);
   const toggle = (id: number, now: boolean) => setState({ ...own, toggled: new Map(own.toggled).set(id, !now) });
   // every message of a revealed run stays unfolded, whatever opens or closes around it later
-  const reveal = (ids: number[]) => setState({ ...own, revealed: new Set([...own.revealed, ...ids]) });
+  const reveal = (ids: number[]) => {
+    setState({ ...own, revealed: new Set([...own.revealed, ...ids]) });
+    // the button goes away: focus moves to the first message it revealed
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(`[aria-controls="msg-body-${ids[0]}"]`)?.focus());
+  };
 
   const items: ({ kind: "message"; m: MessageDetail } | { kind: "more"; ids: number[] })[] = [];
   for (let i = 0; i < messages.length; ) {
