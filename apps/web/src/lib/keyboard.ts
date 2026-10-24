@@ -92,12 +92,20 @@ function isEditable(el: Element | null): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (el as HTMLElement).isContentEditable;
 }
 
+/** A focused control that Enter and Space activate natively (disclosures, buttons, links). */
+function activates(el: Element | null, e: KeyboardEvent): boolean {
+  if (!el || e.metaKey || e.ctrlKey || e.altKey || (e.key !== "Enter" && e.key !== " ")) return false;
+  return el.tagName === "BUTTON" || el.tagName === "A" || el.tagName === "SUMMARY" || el.getAttribute("role") === "button";
+}
+
 /** One document-level handler; commands are resolved by the pure resolver in @unica/core. */
 export function installKeyboard(): () => void {
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.defaultPrevented || e.isComposing) return;
     // a blocking screen (the web's lifecycle) makes the app inert: its shortcuts wait with it
     if (document.getElementById("root")?.inert) return;
+    // Enter / Space on a focused button or link is that control's own (native activation)
+    if (activates(document.activeElement, e)) return;
     const s = getApp();
     const result = resolveKey(
       { key: e.key, meta: e.metaKey, ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey },

@@ -12,17 +12,27 @@ function openLink(href: string) {
 
 const MAX_HEIGHT = 20000;
 
+/** The last measured height of each message's frame: an expanding message opens to it, not to a guess. */
+const heights = new Map<number, number>();
+const HEIGHTS_MAX = 500;
+function rememberHeight(key: number | undefined, h: number) {
+  if (key === undefined) return;
+  heights.delete(key);
+  heights.set(key, h);
+  if (heights.size > HEIGHTS_MAX) heights.delete(heights.keys().next().value!);
+}
+
 /**
  * Renders an HTML email in a sandboxed iframe: sanitized with DOMPurify, no
  * scripts (sandbox without allow-scripts), strict CSP, links opened externally.
  * allow-same-origin (without scripts) only lets the parent measure the height.
  */
-export function HtmlBody({ html, remoteImages, localMode, appearance }: { html: string; remoteImages: "ask" | "always"; localMode: boolean; appearance: "auto" | "paper" }) {
+export function HtmlBody({ html, cacheKey, remoteImages, localMode, appearance }: { html: string; cacheKey?: number; remoteImages: "ask" | "always"; localMode: boolean; appearance: "auto" | "paper" }) {
   const ref = useRef<HTMLIFrameElement>(null);
   const [userAllowed, setAllowRemote] = useState(remoteImages === "always");
   // local mode: remote content is never loaded, whatever the setting or a click says
   const allowRemote = userAllowed && !localMode;
-  const [height, setHeight] = useState(120);
+  const [height, setHeight] = useState(() => (cacheKey !== undefined ? heights.get(cacheKey) : undefined) ?? 120);
   const blocked = !allowRemote && hasRemoteContent(html);
   // re-rendered when the painted theme changes (the colors are literals inside the document)
   const themeKey = useAppearance((s) => s.themeKey);
@@ -38,7 +48,12 @@ export function HtmlBody({ html, remoteImages, localMode, appearance }: { html: 
   useEffect(() => {
     const frame = ref.current;
     if (!frame) return;
+    // everything attached to the loaded document goes when the document or the frame does
+    let observer: ResizeObserver | null = null;
+    let detach: (() => void) | null = null;
     const onLoad = () => {
+      observer?.disconnect();
+      detach?.();
       const d = frame.contentDocument;
       if (!d) return;
       // the frame is sized to its content, so it never scrolls inside. The box (not scrollHeight, which
@@ -47,20 +62,29 @@ export function HtmlBody({ html, remoteImages, localMode, appearance }: { html: 
         const content = Math.ceil(d.documentElement.getBoundingClientRect().height);
         // past the cap the document scrolls: hidden content would be unreachable
         d.documentElement.style.overflowY = content > MAX_HEIGHT ? "auto" : "";
-        setHeight(Math.min(MAX_HEIGHT, content));
+        const h = Math.min(MAX_HEIGHT, content);
+        rememberHeight(cacheKey, h);
+        setHeight(h);
       };
       measure();
-      new ResizeObserver(measure).observe(d.documentElement);
-      d.addEventListener("click", (e) => {
+      observer = new ResizeObserver(measure);
+      observer.observe(d.documentElement);
+      const onClick = (e: MouseEvent) => {
         const a = (e.target as Element).closest("a");
         if (a?.href) {
           e.preventDefault();
           openLink(a.href);
         }
-      });
+      };
+      d.addEventListener("click", onClick);
+      detach = () => d.removeEventListener("click", onClick);
     };
     frame.addEventListener("load", onLoad);
-    return () => frame.removeEventListener("load", onLoad);
+    return () => {
+      frame.removeEventListener("load", onLoad);
+      observer?.disconnect();
+      detach?.();
+    };
   }, [doc]);
 
   return (
@@ -113,7 +137,7 @@ export function TextBody({ text }: { text: string }) {
       {render(main)}
       {quoted && (
         <>
-          <button type="button" onClick={() => setShowQuoted((v) => !v)} className="mt-2 block rounded bg-muted px-1.5 text-xs leading-5 text-muted-foreground hover:text-foreground" aria-label="Mostrar texto citado">
+          <button type="button" onClick={() => setShowQuoted((v) => !v)} className="mt-2 block rounded bg-muted px-1.5 text-xs leading-5 text-muted-foreground hover:text-foreground" aria-label={showQuoted ? "Ocultar texto citado" : "Mostrar texto citado"} aria-expanded={showQuoted}>
             •••
           </button>
           {showQuoted && <div className="mt-2 border-l-2 border-border pl-3 text-muted-foreground">{render(quoted)}</div>}

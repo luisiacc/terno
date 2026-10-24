@@ -7,7 +7,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, rows, test } from "./fixtures";
+import { expect, ingestConversation, rows, selectThread, test } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
 const MULT = Number(process.env.PERF_BUDGET_MULTIPLIER ?? "1");
@@ -209,6 +209,43 @@ for (const density of ["comfortable", "compact"] as const) {
     frameGate(`continuous scroll (${density})`, f);
   });
 }
+
+test("a long conversation: expanding 19 messages (5 HTML) keeps every frame ≤ 50 ms and collapsing leaves no frame or observer behind", async ({ app: page, server }) => {
+  const id = await ingestConversation(server, { subject: "Conversación larga del presupuesto", count: 20, html: 5, now: Date.now() });
+  await selectThread(page, id, 'subject:"Conversación larga del presupuesto"');
+  // observers watching a mail frame's document, alive right now
+  await page.evaluate(() => {
+    const w = window as unknown as { __frameObservers: Set<ResizeObserver> };
+    w.__frameObservers = new Set();
+    const Native = window.ResizeObserver;
+    window.ResizeObserver = class extends Native {
+      override observe(target: Element, options?: ResizeObserverOptions) {
+        if (target.ownerDocument !== document) w.__frameObservers.add(this);
+        super.observe(target, options);
+      }
+      override disconnect() {
+        w.__frameObservers.delete(this);
+        super.disconnect();
+      }
+    };
+  });
+  const reader = page.getByTestId("reader");
+  await startFrames(page);
+  await reader.getByTestId("more-messages").click();
+  for (let i = 0; i < 19; i++) {
+    const toggle = reader.getByTestId("message").nth(i).getByTestId("message-toggle");
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await page.waitForTimeout(120);
+  }
+  const f = await stopFrames(page);
+  await expect(reader.locator("iframe")).toHaveCount(5);
+  frameGate("long conversation: expanding", { deltas: f.deltas, loaf: f.loaf });
+  for (let i = 0; i < 19; i++) await reader.getByTestId("message").nth(i).getByTestId("message-toggle").click();
+  await expect(reader.locator("[data-testid=message-toggle][aria-expanded=true]")).toHaveCount(1);
+  await expect(reader.locator("iframe")).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as { __frameObservers: Set<ResizeObserver> }).__frameObservers.size)).toBe(0);
+});
 
 test("typing a search: each keystroke renders its results fast", async ({ app: page }) => {
   await page.evaluate(() => {

@@ -4,9 +4,11 @@ import { CategoryBadge, CategoryDot } from "@unica/ui/components/category-dot";
 import { Shortcut } from "@unica/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@unica/ui/components/tooltip";
 import { cn } from "@unica/ui/lib/utils";
-import { Archive, Forward, Inbox, MailOpen, OctagonAlert, Paperclip, Reply, ReplyAll, Star, Tag, Trash2, X } from "lucide-react";
+import { Archive, Forward, Inbox, Layers, MailOpen, OctagonAlert, Paperclip, Reply, ReplyAll, Star, Tag, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { installScrollHairline } from "~/lib/scroll-hairline";
+import { cancelReaderScroll, keepInView } from "~/lib/reader-scroll";
+import { Expand } from "./expand";
 import { act, cancelMarkRead, openCompose, scheduleMarkRead, toggleStar } from "~/lib/actions";
 import { acceptSuggestion, rejectSuggestion, removeFromCategory } from "~/lib/categorize";
 import { avatarColor, formatBytes, fullDate, initials, listDate } from "~/lib/format";
@@ -59,51 +61,141 @@ function Message({ m, expanded, onToggle }: { m: MessageDetail; expanded: boolea
   const localMode = useApp((s) => s.settings?.localMode ?? true);
   const mailAppearance = useApp((s) => s.settings?.htmlMailAppearance ?? "auto");
   const color = avatarColor(m.from.email);
+  const name = m.from.name || m.from.email;
+  const bodyId = `msg-body-${m.id}`;
+  const people = (list: typeof m.to) => list.map((a) => a.name || a.email).join(", ");
   return (
-    <article data-testid="message" className={cn("rounded-xl border border-border bg-card", !expanded && "cursor-pointer hover:bg-row-hover")} onClick={!expanded ? onToggle : undefined}>
-      <header className={cn("flex items-start gap-3 px-4 pt-3.5", expanded ? "pb-2" : "pb-3.5")} onClick={expanded ? onToggle : undefined}>
-        <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold", AVATAR_BG[color])}>{initials(m.from.name || m.from.email)}</span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-2">
-            <span className="truncate text-sm font-medium">{m.from.name || m.from.email}</span>
-            {expanded && <span className="truncate text-xs text-muted-foreground">{m.from.email}</span>}
-            <span className="ml-auto shrink-0 font-mono text-2xs text-muted-foreground tabular" title={fullDate(m.date)}>
-              {listDate(m.date)}
+    <article data-testid="message" data-expanded={expanded || undefined} className="hairline-b">
+      {expanded ? (
+        <h3>
+          <button
+            type="button"
+            aria-expanded="true"
+            aria-controls={bodyId}
+            title={fullDate(m.date)}
+            onClick={onToggle}
+            data-testid="message-toggle"
+            className="group/mh flex w-full items-start gap-3 rounded-md pt-[18px] pb-3 text-left"
+          >
+            <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold", AVATAR_BG[color])}>{initials(name)}</span>
+            <span className="min-w-0 flex-1">
+              <span className="flex items-baseline gap-2">
+                <span className="truncate text-base font-semibold">{name}</span>
+                {m.from.name && <span className="truncate text-xs text-muted-foreground opacity-0 group-hover/mh:opacity-100 group-focus-visible/mh:opacity-100">{m.from.email}</span>}
+                <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular">{listDate(m.date)}</span>
+              </span>
+              <span className="mt-px block truncate text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">Para:</span> {people(m.to)}
+                {m.cc.length > 0 && (
+                  <>
+                    {" · "}
+                    <span className="font-medium text-foreground">Cc:</span> {people(m.cc)}
+                  </>
+                )}
+              </span>
             </span>
-          </div>
-          {expanded ? (
-            <p className="truncate text-xs text-muted-foreground">
-              para {m.to.map((a) => a.name || a.email).join(", ")}
-              {m.cc.length > 0 && ` · cc ${m.cc.map((a) => a.name || a.email).join(", ")}`}
-            </p>
-          ) : (
-            <p className="truncate text-sm text-muted-foreground">{m.snippet}</p>
-          )}
-        </div>
-      </header>
-      {expanded && (
-        <div className="px-4 pb-4 pl-15">
-          {m.bodyHtml ? (
-            <HtmlBody html={m.bodyHtml} remoteImages={remoteImages} localMode={localMode} appearance={mailAppearance} />
-          ) : m.bodyText !== null ? (
-            <TextBody text={m.bodyText} />
-          ) : (
-            <p className="text-sm text-muted-foreground italic">Descargando el contenido…</p>
-          )}
-          {m.attachments.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {m.attachments.map((a) => (
-                <span key={a.id} className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/50 px-2 py-1 text-xs">
-                  <Paperclip className="size-3 text-muted-foreground" />
-                  {a.filename}
-                  <span className="text-muted-foreground">{formatBytes(a.size)}</span>
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
+          </button>
+        </h3>
+      ) : (
+        <button
+          type="button"
+          aria-expanded="false"
+          aria-controls={bodyId}
+          title={fullDate(m.date)}
+          onClick={onToggle}
+          data-testid="message-toggle"
+          className="-mx-2 my-0.5 flex h-11 w-[calc(100%+1rem)] items-center gap-2.5 rounded-lg px-2 text-left text-sm transition-colors hover:bg-tint"
+        >
+          <span className={cn("flex size-6 shrink-0 items-center justify-center rounded-full text-2xs font-semibold", AVATAR_BG[color])}>{initials(name)}</span>
+          <span className="shrink-0 font-medium">{name}</span>
+          <span className="min-w-0 flex-1 truncate text-muted-foreground">{m.snippet}</span>
+          <span className="shrink-0 text-xs text-muted-foreground tabular">{listDate(m.date)}</span>
+        </button>
       )}
+      {/* the region is always there (aria-controls); its content is mounted only while open */}
+      <div id={bodyId}>
+        <Expand open={expanded} onOpening={(el) => keepInView(el.closest("article") ?? el)}>
+          <div className="hairline-t ml-12" />
+          <div className="pt-3.5 pb-5">
+            {m.bodyHtml ? (
+              <HtmlBody html={m.bodyHtml} cacheKey={m.id} remoteImages={remoteImages} localMode={localMode} appearance={mailAppearance} />
+            ) : m.bodyText !== null ? (
+              <TextBody text={m.bodyText} />
+            ) : (
+              <p className="text-sm text-muted-foreground italic">Descargando el contenido…</p>
+            )}
+            {m.attachments.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {m.attachments.map((a) => (
+                  <span key={a.id} className="inline-flex items-center gap-1.5 rounded-md bg-tint px-2 py-1 text-xs">
+                    <Paperclip className="size-3 text-muted-foreground" />
+                    {a.filename}
+                    <span className="text-muted-foreground">{formatBytes(a.size)}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </Expand>
+      </div>
     </article>
+  );
+}
+
+/**
+ * The conversation: every message, with runs of 4+ collapsed ones folded into
+ * one "N mensajes más" disclosure. Expansion state belongs to the thread
+ * shown; a different thread starts from its defaults (unread messages and the
+ * last one open), computed during render so a swap never animates.
+ */
+function Conversation({ messages, threadId }: { messages: MessageDetail[]; threadId: number }) {
+  const [state, setState] = useState<{ thread: number; toggled: Map<number, boolean>; revealed: Set<number> }>({ thread: threadId, toggled: new Map(), revealed: new Set() });
+  const own = state.thread === threadId ? state : { thread: threadId, toggled: new Map<number, boolean>(), revealed: new Set<number>() };
+  const last = messages[messages.length - 1];
+  const isOpen = (m: MessageDetail) => own.toggled.get(m.id) ?? (!m.isRead || m.id === last?.id);
+  const toggle = (id: number, now: boolean) => setState({ ...own, toggled: new Map(own.toggled).set(id, !now) });
+  // every message of a revealed run stays unfolded, whatever opens or closes around it later
+  const reveal = (ids: number[]) => setState({ ...own, revealed: new Set([...own.revealed, ...ids]) });
+
+  const items: ({ kind: "message"; m: MessageDetail } | { kind: "more"; ids: number[] })[] = [];
+  for (let i = 0; i < messages.length; ) {
+    let j = i;
+    while (j < messages.length && !isOpen(messages[j]!)) j++;
+    const run = j - i;
+    const ids = messages.slice(i, j).map((m) => m.id);
+    if (run >= 4 && !ids.some((id) => own.revealed.has(id))) {
+      items.push({ kind: "more", ids });
+      i = j;
+    } else if (run > 0) {
+      for (; i < j; i++) items.push({ kind: "message", m: messages[i]! });
+    } else {
+      items.push({ kind: "message", m: messages[i]! });
+      i++;
+    }
+  }
+  return (
+    <div className="hairline-t">
+      {items.map((it) =>
+        it.kind === "message" ? (
+          <Message key={it.m.id} m={it.m} expanded={isOpen(it.m)} onToggle={() => toggle(it.m.id, isOpen(it.m))} />
+        ) : (
+          <div key={`more-${it.ids[0]}`} className="hairline-b">
+            <button
+              type="button"
+              aria-expanded="false"
+              aria-controls={`more-${it.ids[0]}`}
+              onClick={() => reveal(it.ids)}
+              data-testid="more-messages"
+              className="-mx-2 my-0.5 flex h-9 w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-tint hover:text-foreground"
+            >
+              <Layers className="size-3.5" />
+              {it.ids.length} mensajes más
+            </button>
+            <div id={`more-${it.ids[0]}`} />
+          </div>
+        ),
+      )}
+    </div>
   );
 }
 
@@ -139,7 +231,6 @@ export function Reader() {
   const detail = useThread(selectedId);
   const categories = useApp((s) => s.categories);
   const accounts = useApp((s) => s.accounts);
-  const [expanded, setExpanded] = useState<Set<number>>(new Set());
   useEffect(() => {
     if (selectedId === null) return;
     // the header renders from the cached row immediately; the body follows (debounced while holding j)
@@ -151,14 +242,8 @@ export function Reader() {
   // a dwell only counts while the reader shows the thread
   useEffect(() => cancelMarkRead, []);
 
-  useEffect(() => {
-    if (!detail) return;
-    // expand unread messages and the last one
-    const open = new Set(detail.messages.filter((m) => !m.isRead).map((m) => m.id));
-    const last = detail.messages[detail.messages.length - 1];
-    if (last) open.add(last.id);
-    setExpanded(open);
-  }, [detail?.thread.id, detail?.messages.length]);
+  // a scroll in flight belongs to the thread it started in
+  useEffect(() => cancelReaderScroll, [selectedId]);
 
   const toolbarRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -215,9 +300,9 @@ export function Reader() {
           </ToolButton>
         </div>
       </div>
-      <div ref={scrollerRef} className="relative min-h-0 flex-1 overflow-y-auto">
+      <div ref={scrollerRef} data-reader-scroller className="relative min-h-0 flex-1 overflow-y-auto">
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
-        <div className="mx-auto max-w-[760px] px-8 pt-6 pb-16">
+        <div className="mx-auto max-w-[860px] px-7 pt-5 pb-16">
           {!detail ? (
             <div className="space-y-3">
               <div className="h-6 w-2/3 animate-pulse rounded bg-muted" />
@@ -225,7 +310,7 @@ export function Reader() {
             </div>
           ) : (
             <>
-              <h2 data-testid="reader-subject" className="text-xl leading-tight font-semibold tracking-tight text-balance">
+              <h2 data-testid="reader-subject" className="text-xl font-semibold tracking-display text-balance">
                 {t!.subject || "(sin asunto)"}
               </h2>
               <div className="mt-2 mb-5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
@@ -280,23 +365,7 @@ export function Reader() {
                   );
                 })}
               </div>
-              <div className="space-y-2.5">
-                {detail.messages.map((m) => (
-                  <Message
-                    key={m.id}
-                    m={m}
-                    expanded={expanded.has(m.id)}
-                    onToggle={() =>
-                      setExpanded((s) => {
-                        const n = new Set(s);
-                        if (n.has(m.id)) n.delete(m.id);
-                        else n.add(m.id);
-                        return n;
-                      })
-                    }
-                  />
-                ))}
-              </div>
+              <Conversation messages={detail.messages} threadId={detail.thread.id} />
               <div className="mt-5 flex gap-2">
                 <Button variant="outline" size="sm" onClick={() => openCompose("reply")} data-testid="quick-reply">
                   <Reply /> Responder

@@ -2,7 +2,8 @@ import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test as base, expect, type Locator, type Page } from "@playwright/test";
-import { startDevServer, type DevServer } from "../../backend-dev/src/server";
+import { sqlDb, startDevServer, type DevServer } from "../../backend-dev/src/server";
+import type { IncomingMessage } from "@unica/store";
 import { E2E_NOW, TEMPLATE_ENV } from "./constants";
 
 export { expect };
@@ -122,4 +123,52 @@ export async function isolateLocalDiscovery(server: DevServer, ollamaUrl?: strin
   await server.backend.server.invoke("settings.update", { ai: { provider: "lmstudio", baseURL: "http://127.0.0.1:9/v1" } }, ctx);
   await server.backend.server.invoke("settings.update", { ai: { provider: "ollama", baseURL: ollamaUrl ? `${ollamaUrl}/v1` : "http://127.0.0.1:9/v1" } }, ctx);
   await server.backend.server.invoke("settings.update", { ai: { provider: "none" } }, ctx);
+}
+
+/**
+ * A conversation built straight into the store (no sync): `count` messages,
+ * alternating between Yuki and the account's owner, the first `html` of them
+ * with an HTML body. Every message is read, so all but the last start
+ * collapsed. Returns the thread id.
+ */
+export async function ingestConversation(server: DevServer, o: { subject: string; count: number; html?: number; now: number }): Promise<number> {
+  const db = sqlDb(server.backend.store);
+  const acct = db.get<{ id: number; email: string }>("SELECT id, email FROM accounts ORDER BY id LIMIT 1")!;
+  const key = o.subject.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const yuki = { name: "Yuki Gutiérrez", email: "yuki.gutierrez@acme.studio" };
+  const me = { name: "Luis Cordero", email: acct.email };
+  const para = (i: number) => `Mensaje ${i + 1}: revisamos la propuesta, los tiempos y el presupuesto de la campaña. ¿Te parece si lo cerramos esta semana?`;
+  const messages: IncomingMessage[] = Array.from({ length: o.count }, (_, i) => {
+    const mine = i % 2 === 1;
+    return {
+      accountId: acct.id,
+      providerMsgId: `${key}-${i}`,
+      providerThreadId: `thread-${key}`,
+      rfcMessageId: `<${key}-${i}@e2e.test>`,
+      inReplyTo: i ? `<${key}-${i - 1}@e2e.test>` : null,
+      references: Array.from({ length: i }, (_, j) => `<${key}-${j}@e2e.test>`),
+      from: mine ? me : yuki,
+      to: [mine ? yuki : me],
+      cc: [],
+      bcc: [],
+      subject: i ? `Re: ${o.subject}` : o.subject,
+      date: o.now - (o.count - i) * 3_600_000,
+      snippet: para(i),
+      bodyText: `${para(i)}\n\nSaludos.`,
+      bodyHtml: i < (o.html ?? 0) ? `<div>${Array.from({ length: 12 }, () => `<p>${para(i)}</p>`).join("")}<table><tr><td>Concepto</td><td>Monto</td></tr></table></div>` : null,
+      bodyState: "full",
+      listId: null,
+      isRead: true,
+      isStarred: false,
+      inInbox: true,
+      isSent: mine,
+      isDraft: false,
+      isTrash: false,
+      isSpam: false,
+      hasAttachments: false,
+      size: 2000,
+    };
+  });
+  await server.backend.store.sync.ingest(messages, { applyFilters: false, now: o.now, classifier: null });
+  return db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = ?", `${key}-0`)!.thread_id;
 }
