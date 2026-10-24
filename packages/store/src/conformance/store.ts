@@ -766,7 +766,6 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         const [t1, t2] = [await thread(), await thread()];
         await store.categories.add({ categoryId: cat, threadIds: [t1, t2], addedBy: "user", now: NOW });
         const m = await store.categories.beginMove({ to: other, threadIds: [t1, t2], addedBy: "user", now: NOW, source: "dnd" });
-        expect([m.added.sort(), m.moved.sort()]).toEqual([[t1, t2].sort(), [t1, t2].sort()]);
         expect(await store.categories.movePhase(m.batchId)).toBe("moving");
         // nothing moved yet; one slice moves exactly its threads
         expect((await store.debug.snapshot()).memberships.map((x) => x.categoryId)).toEqual([cat, cat]);
@@ -775,6 +774,8 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect((await store.debug.snapshot()).memberships.map((x) => [x.threadId, x.categoryId]).sort()).toEqual([[t1, other], [t2, cat]].sort());
         await applyAll(store, m.batchId);
         expect((await store.debug.snapshot()).memberships.map((x) => x.categoryId)).toEqual([other, other]);
+        const outcome = await store.categories.moveOutcome(m.batchId);
+        expect([outcome.added, outcome.moved]).toEqual([[t1, t2].sort((a, b) => a - b), [t1, t2].sort((a, b) => a - b)]);
         expect(await store.categories.movePhase(m.batchId)).toBe("training");
         await store.categories.trainMoveSlice(m.batchId, await store.categories.movePending(m.batchId), NOW);
         expect(await store.categories.movePhase(m.batchId)).toBe("done");
@@ -798,9 +799,8 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         await store.categories.add({ categoryId: third, threadIds: [t2, t3], addedBy: "user", now: NOW - 3 * DAY });
         const before = await store.debug.snapshot();
         const m = await store.categories.beginMove({ to: third, threadIds: [t1, t2, t3], addedBy: "user", now: NOW, source: "dnd" });
-        expect(m.added).toEqual([t1]);
-        expect(m.moved).toEqual([t1, t3].sort((a, b) => a - b));
         await applyAll(store, m.batchId);
+        expect(await store.categories.moveOutcome(m.batchId)).toEqual({ added: [t1], moved: [t1, t3].sort((a, b) => a - b) });
         const after = (await store.debug.snapshot()).memberships.map((x) => [x.threadId, x.categoryId]).sort((a, b) => a[0]! - b[0]!);
         expect(after).toEqual([[t1, third], [t2, third], [t3, third]].sort((a, b) => a[0]! - b[0]!));
         await store.categories.trainMoveSlice(m.batchId, await store.categories.movePending(m.batchId), NOW);
@@ -848,8 +848,8 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         await store.categories.add({ categoryId: cat, threadIds: [only, multi], addedBy: "user", now: NOW });
         await store.categories.add({ categoryId: other, threadIds: [multi], addedBy: "user", now: NOW });
         const m = await store.categories.beginMove({ to: cat, threadIds: [only, multi], addedBy: "user", now: NOW, source: "dnd" });
-        expect([m.added, m.moved]).toEqual([[], [multi]]);
         await applyAll(store, m.batchId);
+        expect(await store.categories.moveOutcome(m.batchId)).toEqual({ added: [], moved: [multi] });
         expect((await store.debug.snapshot()).memberships.map((x) => [x.threadId, x.categoryId]).sort()).toEqual([[only, cat], [multi, cat]].sort());
       });
 

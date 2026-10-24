@@ -288,7 +288,9 @@ export interface MailStore {
     undoBatchPart(batchId: number, threadIds: readonly number[], now: number): Promise<{ removed: number[]; deltas: ModelDelta[] }>;
     finishUndo(batchId: number, now: number): Promise<void>;
     /** an exclusive move, recorded: afterwards every thread will be in `to` and no other category; applyMoveSlice moves them */
-    beginMove(m: { to: number; threadIds: readonly number[]; addedBy: AddedBy; now: number; source: string }): Promise<{ batchId: number; added: number[]; moved: number[]; deltas: ModelDelta[] }>;
+    beginMove(m: { to: number; threadIds: readonly number[]; addedBy: AddedBy; now: number; source: string }): Promise<{ batchId: number }>;
+    /** what an applied move did: the threads it added to `to`, and those it took out of another category */
+    moveOutcome(batchId: number): Promise<{ added: number[]; moved: number[] }>;
     movePhase(batchId: number): Promise<MovePhase | null>;
     /** the threads the current phase (moving, training, unmoving, restoring) hasn't reached yet */
     movePending(batchId: number): Promise<number[]>;

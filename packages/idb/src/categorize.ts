@@ -367,28 +367,23 @@ const touchedCategories = (to: number, left: readonly R[] | undefined, legacyFro
   ...new Set([to, ...(legacyFrom === undefined ? [] : [legacyFrom]), ...(left ?? []).map((r) => r.category_id as number)]),
 ];
 
-/** Records an exclusive move (its threads, as things stand); applyMoveSlice moves them in slices. */
-export function beginMove(c: Ctx, m: { to: number; threadIds: readonly number[]; addedBy: AddedBy; now: number; source: string }): { batchId: number; added: number[]; moved: number[]; deltas: ModelDelta[] } {
+/** Records an exclusive move (its threads, nothing more); applyMoveSlice moves them in slices. */
+export function beginMove(c: Ctx, m: { to: number; threadIds: readonly number[]; addedBy: AddedBy; now: number; source: string }): { batchId: number } {
   return c.db.tx(() => {
     pruneMoveJournals(c, m.now);
     const batchId = createBatch(c, m.to, m.source, { kind: "move", exclusive: true, addedBy: m.addedBy, phase: "moving" satisfies MovePhase }, m.now);
     const threads = T(c, "threads");
-    const memberships = T(c, "thread_categories");
     const journal = T(c, "cat_move_threads");
-    const added: number[] = [];
-    const moved: number[] = [];
-    for (const t of [...new Set(m.threadIds)].sort((x, y) => x - y)) {
-      if (!threads.has(t)) continue;
-      const rows = memberships.by("fk_thread_id", t);
-      const row: R = { batch_id: batchId, thread_id: t, added: rows.some((r) => r.category_id === m.to) ? 0 : 1, moved: rows.some((r) => r.category_id !== m.to) ? 1 : 0, done: 0 };
-      journal.insert(row);
-      if (row.added) added.push(t);
-      if (row.moved) moved.push(t);
-    }
-    finishBatch(c, batchId, added.length);
+    for (const t of [...new Set(m.threadIds)].sort((x, y) => x - y)) if (threads.has(t)) journal.insert({ batch_id: batchId, thread_id: t, added: 0, moved: 0, done: 0 });
     if (journal.by("fk_batch_id", batchId).length === 0) setPhase(c, batchId, "done");
-    return { batchId, added, moved, deltas: [] };
+    return { batchId };
   });
+}
+
+/** What an applied move did: the threads it added to `to`, and those it took out of another category. */
+export function moveOutcome(c: Ctx, batchId: number): { added: number[]; moved: number[] } {
+  const rows = T(c, "cat_move_threads").by("fk_batch_id", batchId).sort((x, y) => x.thread_id - y.thread_id);
+  return { added: rows.filter((r) => r.added === 1).map((r) => r.thread_id as number), moved: rows.filter((r) => r.moved === 1).map((r) => r.thread_id as number) };
 }
 
 /** One slice of a move, one unit: these threads leave every other category (each row journaled) and join `to`. */
@@ -427,6 +422,7 @@ export function applyMoveSlice(c: Ctx, batchId: number, threadIds: readonly numb
       journal.update(r, { added: isAdded ? 1 : 0, moved: others.length ? 1 : 0, done: 1 });
     }
     settleSuggestions(c, to, added, "accepted");
+    if (!journal.by("fk_batch_id", batchId).some((r) => r.done === 0)) finishBatch(c, batchId, journal.by("fk_batch_id", batchId).filter((r) => r.added === 1).length);
     nextPhaseWhenDone(c, batchId, "training");
     return { deltas: added.map((threadId): ModelDelta => ({ op: "unbackground", threadId })), touched: mine.map((r) => r.thread_id as number) };
   });

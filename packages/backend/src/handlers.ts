@@ -218,12 +218,13 @@ export function createHandlers(b: Backend): Handlers {
     "categories.addThreads": ({ categoryId, threadIds, source }, ctx) => fileThreads(categoryId, threadIds, ctx.origin === "mcp" ? "agent" : ADDED_BY[source], source),
     "categories.moveThreads": async ({ to, threadIds, source }, ctx) => {
       await requireCategory(to);
-      // don't add the move to the turn that parsed 5,000 ids
-      await b.platform.yield();
+      // don't add the move to the turn that parsed 5,000 ids, nor to what that turn scheduled
+      await b.yieldTurn();
       // recorded at once; memberships move in slices (every other category left, each row journaled), then the training
-      const r = await store.categories.beginMove({ to, threadIds, addedBy: ctx.origin === "mcp" ? "agent" : ADDED_BY[source], now: b.now(), source });
-      await b.finishMove(r.batchId);
-      return { added: r.added.length, addedIds: r.added, batchId: r.batchId, moved: r.moved };
+      const { batchId } = await store.categories.beginMove({ to, threadIds, addedBy: ctx.origin === "mcp" ? "agent" : ADDED_BY[source], now: b.now(), source });
+      await b.finishMove(batchId);
+      const r = await store.categories.moveOutcome(batchId);
+      return { added: r.added.length, addedIds: r.added, batchId, moved: r.moved };
     },
     "categories.addScope": async ({ categoryId, scope, jobId }) => {
       await requireCategory(categoryId);

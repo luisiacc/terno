@@ -433,15 +433,6 @@ function pruneMoveJournals(db: Db, now: number): void {
   for (const r of left) for (const t of JOURNAL_TABLES) db.run(`DELETE FROM ${t} WHERE batch_id = ? AND thread_id = ?`, r.batch_id, r.thread_id);
 }
 
-export interface MoveBegin {
-  batchId: number;
-  /** threads not in the destination before */
-  added: number[];
-  /** threads that left at least one other category */
-  moved: number[];
-  deltas: ModelDelta[];
-}
-
 function setPhase(db: Db, batchId: number, phase: MovePhase): void {
   db.run("UPDATE cat_batches SET scope_json = json_set(scope_json, '$.phase', ?) WHERE id = ?", phase, batchId);
 }
@@ -496,32 +487,31 @@ function touched(table: string, batchId: number, to: number, ids: string | null,
 }
 
 /**
- * Records a move: its threads (those that exist), whether each is new to
- * `to` and leaves other categories as things stand now. Nothing moves yet:
- * applyMoveSlice does, in slices.
+ * Records a move: its threads (those that exist), nothing more, so 5,000 of
+ * them cost a few ms. Nothing moves yet: applyMoveSlice does, in slices, and
+ * finds out then what each thread leaves and joins.
  */
-export function beginMove(db: Db, m: { to: number; threadIds: readonly number[]; addedBy: AddedBy; now: number; source: string }): MoveBegin {
+export function beginMove(db: Db, m: { to: number; threadIds: readonly number[]; addedBy: AddedBy; now: number; source: string }): { batchId: number } {
   return db.tx(() => {
     pruneMoveJournals(db, m.now);
     const batchId = createBatch(db, m.to, m.source, { kind: "move", exclusive: true, addedBy: m.addedBy, phase: "moving" satisfies MovePhase }, m.now);
     db.run(
       `INSERT INTO cat_move_threads (batch_id, thread_id, added, moved)
-       SELECT ?, j.value,
-              NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = j.value AND category_id = ?),
-              EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = j.value AND category_id != ?)
-       FROM (SELECT DISTINCT value FROM json_each(?)) j WHERE EXISTS (SELECT 1 FROM threads WHERE id = j.value)`,
+       SELECT ?, j.value, 0, 0 FROM (SELECT DISTINCT value FROM json_each(?)) j WHERE EXISTS (SELECT 1 FROM threads WHERE id = j.value)`,
       batchId,
-      m.to,
-      m.to,
       JSON.stringify(m.threadIds),
     );
-    const added = db.all<{ thread_id: number }>("SELECT thread_id FROM cat_move_threads WHERE batch_id = ? AND added = 1 ORDER BY thread_id", batchId).map((r) => r.thread_id);
-    const moved = db.all<{ thread_id: number }>("SELECT thread_id FROM cat_move_threads WHERE batch_id = ? AND moved = 1 ORDER BY thread_id", batchId).map((r) => r.thread_id);
-    finishBatch(db, batchId, added.length);
     // nothing to move (every thread gone): nothing to train or undo either
     if (!db.get("SELECT 1 FROM cat_move_threads WHERE batch_id = ? LIMIT 1", batchId)) setPhase(db, batchId, "done");
-    return { batchId, added, moved, deltas: [] };
+    return { batchId };
   });
+}
+
+/** What an applied move did: the threads it added to `to`, and those it took out of another category. */
+export function moveOutcome(db: Db, batchId: number): { added: number[]; moved: number[] } {
+  const of = (column: "added" | "moved") =>
+    db.all<{ thread_id: number }>(`SELECT thread_id FROM cat_move_threads WHERE batch_id = ? AND ${column} = 1 ORDER BY thread_id`, batchId).map((r) => r.thread_id);
+  return { added: of("added"), moved: of("moved") };
 }
 
 /**
@@ -600,7 +590,9 @@ export function applyMoveSlice(db: Db, batchId: number, threadIds: readonly numb
       batchId,
     );
     db.run(`UPDATE cat_move_threads SET done = 1 WHERE batch_id = ? AND thread_id IN (${slice})`, batchId, ids);
-    nextPhaseWhenDone(db, batchId, "training");
+    if (nextPhaseWhenDone(db, batchId, "training")) {
+      finishBatch(db, batchId, db.get<{ c: number }>("SELECT count(*) AS c FROM cat_move_threads WHERE batch_id = ? AND added = 1", batchId)!.c);
+    }
     return { deltas: added.map((threadId): ModelDelta => ({ op: "unbackground", threadId })), touched: JSON.parse(ids) as number[] };
   });
 }

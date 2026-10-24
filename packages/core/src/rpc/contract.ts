@@ -448,6 +448,8 @@ export const contract = {
    */
   "categories.moveThreads": m<AddThreadsResult & { batchId: number; moved: number[] }>()(
     z.object({ to: id, threadIds: ids, source: z.enum(CATEGORIZE_SOURCES).default("dnd") }),
+    // 5,000 threads in 20 categories each, in slices a busy machine keeps small
+    { timeoutMs: 300_000 },
   ),
   /** Files every thread of a scope ("select all N" → Categorías), sliced like the picker's large adds; undo with categorize.undo. */
   "categories.addScope": m<{ added: number; batchId: number | null }>()(
@@ -468,7 +470,7 @@ export const contract = {
   /** Files every thread in the scope (resolved once, then added in slices); undo with categorize.undo. */
   "categorize.apply": m<{ batchId: number | null; added: number }>()(z.object({ categoryId: id, scope: categorizeScope }), { timeoutMs: 120_000 }),
   /** Takes back one batch; for a move, atomically restores the source too (`restored`). Idempotent. */
-  "categorize.undo": m<{ removed: number; restored?: number }>()(z.object({ batchId: id })),
+  "categorize.undo": m<{ removed: number; restored?: number }>()(z.object({ batchId: id }), { timeoutMs: 300_000 }),
   "categorize.predict": m<Prediction[]>()(z.object({ threadId: id })),
   "categorize.suggestions": m<{ items: (ThreadSummary & { prediction: Prediction })[] }>()(
     z.object({ categoryId: id.optional(), limit: z.number().int().min(1).max(200).default(100) }),
