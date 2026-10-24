@@ -1,30 +1,59 @@
 # Plan 07: design refresh, Apple-Mail reader, inline compose
 
-Status: proposed · on top of plans 01 (themes, motion) and 06 (context menu) · mockup: `/tmp/unica-scratch/design-07/mockup.html`
+- **Status:** proposed, revision 2.
+- **Builds on:** plans 01 (themes, motion) and 06 as shipped (`53d6413..50a7e0a`).
+- **Revision 2 adds:** the Codex plan review and the user's decisions.
+- **Mockup:** `/tmp/unica-scratch/design-07/mockup.html`.
+
+## 0. Decisions and what plan 06 changed
+
+**Decided by the user:**
+- the 100 ms motion ceiling stays everywhere
+- SF (the system font) on macOS, Geist elsewhere
+- a quiet compose icon in the list header replaces the big sidebar button; `c` still composes
+
+**Plan 06 shipped:**
+- `thread-menu.tsx`: one Base UI `ContextMenu` around the listbox.
+- `selection-bar.tsx`: the bulk bar. It *replaces* `<Reader/>` while `checked.size ≥ 2` or a scope is active (`app.tsx`).
+- `SelectAllBanner` above the list.
+- Exclusive drag-to-move.
+- New keys: ⌫, Delete and ⌘⌫ trash; z and ⌘Z undo through `setLastUndo`; ⇧F10 opens the menu.
+- SQL migration **v8** and IndexedDB **v2**. This plan's storage change is therefore **v9** and **IDB 3**.
+
+The menu's "Responder" sets `selectedId` and then calls `openCompose()`, which re-reads `selectedId` asynchronously. §3.6 replaces that.
 
 ## 1. Principles
 
-1. **Content is the surface.** No cards around mail; structure comes from 0.5 px hairlines, faint surface shifts and whitespace.
-2. **Quiet chrome.** Grouped muted icons, one accent; the unread dot is the loudest pixel.
-3. **Edit in place.** Replies and new mail are written where you read.
-4. **Fast, not slow.** Everything stays on `--motion` (≤ 100 ms). The premium feel comes from the curves, short distances and transform/opacity.
-5. **Every theme.** Only values and derived tokens change; all 13 themes and custom JSON keep passing AA.
+1. **Content is the surface.** No cards around mail: hairlines, faint surface shifts, whitespace.
+2. **Quiet chrome.** Grouped muted icons, one accent color.
+3. **Edit in place, and never lose a word.** Drafting happens in the reader, and every keystroke reaches durable storage on a defined schedule.
+4. **Fast motion.** Everything stays on `--motion` (≤ 100 ms), with curves, short distances and transform/opacity.
+5. **Every theme.** Values and derived tokens only. All 13 themes and resolved custom themes pass the contrast checks for the pairs actually drawn.
 
-Borrowed:
-- **t3code:** ink-alpha borders, press `scale(.97)`, inset highlight on primary buttons, glass menus with a deep soft shadow, the drawer curve `cubic-bezier(.32,.72,0,1)`, tabular numbers.
-- **Apple:** vibrancy sidebar with accent glyphs, 52 px toolbar, SF display tracking, device-pixel separators, inset rounded selection.
+**Borrowed from t3code:** ink-alpha borders, a pressed scale of .97, an inset highlight on primary buttons, translucent menus with a soft deep shadow, the drawer curve `cubic-bezier(.32,.72,0,1)`, tabular numbers.
+
+**Borrowed from Apple:** a vibrancy sidebar with accent glyphs, a 52 px toolbar, SF display tracking, device-pixel separators, inset rounded selection, honoring reduced transparency.
 
 ## 2. Tokens and foundations
 
-**New derived tokens** go in core `THEME_TOKENS` and in `derive()`. Custom themes get them through `resolveCustomTheme()` and may override them.
+### New derived tokens
 
-| Token | How it's derived |
+They go in core `THEME_TOKENS` and in `derive()`. Custom themes get them through `resolveCustomTheme()` and may override them.
+
+| Token | Derivation |
 |---|---|
-| `hairline` | `foreground` at 9 % (light) / 8 % (dark) |
-| `tint` | `background` mixed in OKLab toward `foreground`, 3.5 % (light) / 5 % (dark); stepped down by .005 until `muted-foreground` on it passes 4.5:1 |
-| `highlight` | `1 0 0 / 16%` (light) / `1 0 0 / 6%` (dark) |
+| `hairline` | `foreground` at 9 % (light) or 8 % (dark) |
+| `tint` | `background` mixed in OKLab toward `foreground`: 3.5 % light, 5 % dark; stepped down until `muted-foreground` on it passes 4.5:1 |
+| `highlight` | `1 0 0 / 16%` light, `1 0 0 / 6%` dark |
+| `draft-foreground` | the "Borrador" label: `destructive`, stepped in lightness until it passes 4.5:1 on `background`, `row-hover`, `row-selected` and `accent` (checked rows). Dracula's `destructive` on `row-selected` is 3.52, so it steps |
+| `sidebar-glyph` | `sidebar-primary`, stepped until 3:1 on `sidebar` and `sidebar-accent`; falls back to `muted-foreground` |
+| `--glass-alpha` (not a color) | the lowest popover alpha in [.88, 1], in .02 steps, at which every glass text pair passes over pure black *and* pure white. 1 means solid |
 
-**Value changes** apply only to our own themes; the named palettes stay exact. If a value fails AA, adjust its lightness only.
+The generator writes `--glass-alpha` into each theme block. `applyCustomTheme()` sets it for custom themes, computed from their resolved `popover` and `popover-foreground`.
+
+### Value changes
+
+Only our own themes change; named palettes stay exact. If a value fails, adjust its lightness only.
 
 | Token | unica-light | unica-dark | apple-light |
 |---|---|---|---|
@@ -33,168 +62,354 @@ Borrowed:
 | sidebar-accent | `.22 .01 265 / 7%` | `1 0 0 / 8%` | `0 0 0 / 7%` |
 | row-selected | `.93 .04 268` | `.29 .05 268` | `.93 .035 257` |
 
-unica-dark also moves bg/pane to `.165 .005 265`, card to `.195 .006 265` and popover to `.215 .007 265`.
+unica-dark also changes:
+- background and pane: `.165 .005 265`
+- card: `.195 .006 265`
+- popover: `.215 .007 265`
 
-**Contrast test changes:**
-- `foreground` and `muted-foreground` on `tint` (51 pairs per theme).
-- A glass check: `foreground` on `popover` at 88 % alpha, composited over pure black and pure white, must reach 4.5:1. A theme that fails renders its menus solid.
-- The generated CSS stays ≤ 8 KB gzip (5.2 KB today, about +0.3 KB).
+### Contrast checks, for the pairs actually drawn
 
-**Foundations (globals.css):**
-- **Font:** `--font-sans: var(--theme-font, -apple-system, BlinkMacSystemFont, "Geist Variable", system-ui, sans-serif)`. That's SF on macOS, in Electron and in the web build; Geist elsewhere. Mono only for kbd and code.
-- **Type scale:** 11/14 counts, 12/16 metadata, 13/18 UI and list, 14/22 body, 15/20 titles, 17/22 empty states, 20/26 reader subject.
-  - Weights 400/500/600 only.
+**Text, 4.5:1:**
+- `foreground` and `muted-foreground` on `tint`
+- `draft-foreground` on `background`, `row-hover`, `row-selected` and `accent`
+
+**UI, 3:1:**
+- `sidebar-glyph` on `sidebar` and `sidebar-accent`
+
+**Glass, 4.5:1**, at `--glass-alpha`, composited over black and over white. Nord's muted text on the popover at 88 % over white is 3.74, so Nord's alpha rises or goes solid. The pairs:
+- `popover-foreground`
+- `muted-foreground` (shortcuts, labels)
+- `destructive` (danger items)
+- the highlighted item, i.e. `popover-foreground` and `destructive` over a `muted` highlight composited on the glass
+
+**No opacity-reduced glyphs or text anywhere:** glyphs use `muted-foreground` or `sidebar-glyph` at full opacity. The existing scan gains a rule against `opacity-*` on `svg` and text.
+
+The same pair list runs on every resolved custom theme. Failures show as warnings in Apariencia, as today, and glass goes solid.
+
+The generated CSS stays ≤ 8 KB gzip (today 5.2 KB, about +0.4 KB).
+
+### Foundations (`globals.css`)
+
+- **Font:** `--font-sans: var(--theme-font, -apple-system, BlinkMacSystemFont, "Geist Variable", system-ui, sans-serif)`.
+- **Type scale:** 11/14 counts · 12/16 metadata · 13/18 UI and list · 14/22 body · 15/20 titles · 17/22 empty states · 20/26 reader subject.
+  - Weights 400, 500 and 600 only.
   - Tracking −0.011em at 15–17 px and −0.018em at 20 px.
-  - Dates and counts use sans `tabular-nums` (no more mono).
-- **Radii:** 4 · 6 controls and rows · 8 menus and tiles · 12 popovers, draft and toasts · 16 dialogs and palette.
-- **Spacing:** 4 px grid. Gutters are 16 px in the list and 28 px in the reader.
-- **Hairlines:** `--hairline-w: 1px`, and `.5px` under `@media (min-resolution: 2dppx)`. Chromium paints that as one device pixel.
-  - Utilities: `border-hairline`, `divide-hairline`, and `shadow-hairline` (a ring for floating surfaces).
-- **Elevation** (all in `--shadow-color`; panes, rows and messages are flat):
-  - `shadow-raised` for buttons: hairline ring + `0 1px 1px` + inset highlight.
-  - `shadow-popover` for menus, tooltips and toasts: ring + `0 4px 12px -2px` + `0 12px 32px -12px`.
-  - `shadow-modal` for dialogs and the palette: ring + `0 24px 64px -24px`; dark mode adds the inset highlight.
-- **Glass:** `surface-glass` is the popover at 88 % with `blur(20px) saturate(1.6)`. It goes solid without support and under `prefers-reduced-transparency`.
-- **Focus:** `:focus-visible` only, a 2 px `ring` outline. Offset 1 px on controls; inset −2 px on rows and nav items. Compose fields show focus with the caret and the label turning `foreground`.
+  - Dates and counts use sans `tabular-nums`.
+- **Radii:** 4 · 6 controls and rows · 8 menus and tiles · 12 draft and toasts · 16 dialogs and palette.
+- **Grid:** 4 px; the list gutter is 16 px and the reader gutter 28 px.
+- **Hairlines:** `--hairline-w` is `1px`, and `.5px` at `min-resolution: 2dppx`. Utilities: `border-hairline`, `divide-hairline`, `shadow-hairline`.
+- **Elevation** (static shadows; filters and shadows are never animated):
+
+  | Shadow | Composition |
+  |---|---|
+  | `shadow-raised` | hairline ring, `0 1px 1px`, inset highlight |
+  | `shadow-popover` | ring, `0 4px 12px -2px`, `0 12px 32px -12px` |
+  | `shadow-modal` | ring, `0 24px 64px -24px` |
+
+- **Glass, on these surfaces only:** `DropdownMenu`, `ContextMenu` with its submenus, and `Select` popups. Base UI keeps these modal, so the page behind them doesn't scroll while they're open.
+  - The surface is `popover` at `--glass-alpha` with `blur(20px) saturate(1.6)`.
+  - It falls back to solid without support and under `prefers-reduced-transparency`.
+  - Always solid: tooltips, `Popover`, toasts, the snackbar, dialogs, the palette, the category picker, settings, and anything that can sit over a scrolling list.
+- **Reduced transparency also disables native vibrancy:**
+  - `applyAppearance()` and the pre-paint theme script compute `vibrancy = macDesktop && theme.vibrancy && !matchMedia("(prefers-reduced-transparency: reduce)")` and re-run on the media query's `change`.
+  - Main reads `nativeTheme.prefersReducedTransparency` when the window is created (first paint), and again on `nativeTheme` `updated`, and turns off `setVibrancy` and the transparent background itself, whatever the renderer last sent.
+- **Focus:** `:focus-visible` only.
+  - Controls: a 2 px `ring` outline, offset 1 px.
+  - Rows and nav items: inset −2 px.
+  - Compose fields: the caret, plus the label turning `foreground`.
 
 ## 3. Components
 
-**Window chrome and sidebar.**
-- Every pane's top row is a 52 px drag region (was 44).
-- Toolbar hairlines appear only once content scrolls under them (a sentinel `IntersectionObserver` sets `data-scrolled`; no scroll handler, no blur).
-- The sidebar keeps its vibrancy (`:root[data-vibrancy]`).
-- **Rows:** 28 px, radius 6, inset 8 px, 16 px glyphs in `sidebar-primary`; selected = `sidebar-accent` at 500; counts 12 px tabular muted. Section titles in sentence case, 11/600 muted, "+" on hover or focus.
-- **"Escribir"** becomes a square-pen icon button in the list's title row (keeps `compose-button`, tooltip "Escribir C").
+### 3.1 Chrome, sidebar, list
 
-**Thread list.**
-- **Header:** title 15/600 in the 52 px row; below it a 30 px search field (`tint`, no border, radius 8, `/` kbd).
-- **Rows** keep 68/40 px.
-  - **Selection:** a pseudo-element inset 8×1 px, radius 6, in `row-selected`; the left rail goes (the `row-rail` token stays).
-  - **Hover:** `row-hover`, not animated.
-  - **Separators:** one `::after` hairline per row, inset 16 px, hidden on the selected row. Hiding the one above it via `:has()` ships only if the j-key gate passes.
-  - **Unread:** 6 px dot, sender 600, subject 500, date in `foreground`.
-  - **Drafts:** a thread with a draft shows "Borrador" (`destructive`) before the snippet, from a one-boolean per-row selector.
+**Chrome.**
+- 52 px top rows on every pane.
+- The toolbar hairline appears only once content scrolls under it: a sentinel `IntersectionObserver` sets `data-scrolled`. No scroll handler, no blur.
+
+**Sidebar.**
+- Native vibrancy (subject to §2).
+- 28 px rows: radius 6, inset 8, 16 px glyphs in `sidebar-glyph`; selected uses `sidebar-accent` at weight 500.
+- Counts: 12 px tabular, muted.
+- Section titles in sentence case, 11/600, muted; "+" appears on hover or focus.
+- The big "Escribir" button leaves the sidebar.
+
+**List header.**
+- Title 15/600, plus a square-pen icon button: `data-testid="compose-button"`, `aria-label="Escribir"`, tooltip "Escribir C".
+- Below it, a 30 px search field: `tint`, borderless, radius 8.
+- Plan 06's `SelectAllBanner`: hairline bottom, `tint` background, 12 px text, the link in `primary`.
+
+**Rows** keep their 68/40 px heights.
+- Selection is a pseudo-element inset 8×1, radius 6. The rail goes away.
+- Hover uses `row-hover` and isn't animated.
+- One `::after` hairline per row, hidden on the selected row. The `:has()` rule that hides the hairline above the selection ships only if the frame gates in §5 pass.
+- Unread: a 6 px dot, sender 600, subject 500.
+- A thread with a draft shows "Borrador" in `draft-foreground` before the snippet. It comes from one boolean selector per row (`hasDraft(threadId)`).
 - Plan 06's context-menu ring uses the inset focus shape.
 
-**Reader.**
-- **Header:** subject at 20/600, then the meta line (account, badges, suggestion chips) as today.
-- **Messages are flat** on `background`, up to 860 px wide, separated by full-width hairlines. No border, radius or card.
-- **Expanded message:** 36 px avatar, name 14/600, date right-aligned 12 px muted, a "Para: … · Cc: …" line, an inset hairline, then the body from the avatar edge (no indent).
-- **Collapsed message:** one 44 px line with avatar 24, name 13/500, muted snippet and date. Hover shows `tint` with radius 8.
-- **Expand and collapse** animate a `grid-template-rows: 0fr↔1fr` wrapper plus body opacity, only on click or Enter; the hidden part is `inert`.
-- 4+ consecutive collapsed messages fold into "N mensajes más".
-- **HTML frame:** no border box, padding 0 in themed mode; paper mode keeps a borderless `mail-paper` surface (radius 8, 16 px padding).
-- **Remote content:** a row above the body: `tint`, radius 8, 36 px, an image-off glyph, 12 px text, and a pill button (`accent`/`accent-foreground`).
-  - Local mode: "Contenido remoto bloqueado por el modo local." + "Cargar contenido…". The button opens a popover ("El modo local no permite cargar contenido remoto." + "Abrir Ajustes") and never loads anything.
-  - Otherwise: "…para proteger tu privacidad." + "Cargar contenido".
-- **Attachments:** 260×56 `tint` tiles, radius 10: type glyph, name 13/500, muted size, a round download button (60 % opacity, 100 % on hover or focus).
+### 3.2 Reader
+
+**Layout.**
+- Subject 20/600, then the meta line (account, badges, suggestions).
+- Messages are flat on `background`, up to 860 px wide, separated by full-width hairlines.
+
+**Disclosure.**
+- Every collapsed message is a native `<button aria-expanded="false" aria-controls="msg-body-{id}">`. Enter and Space both work natively. It is one line: 24 px avatar, name 13/500, snippet, date.
+- An expanded message's header is the same kind of button with `aria-expanded="true"`. It holds no interactive children; the full date is its `title`.
+- 4 or more consecutive collapsed messages fold into one "N mensajes más" button (`aria-expanded`, `aria-controls` on the group).
+
+**Expanded message.**
+- 36 px avatar, name 14/600, date right-aligned in 12 px muted.
+- A "Para: … · Cc: …" line, then an inset hairline.
+- The body starts at the avatar edge.
+
+**Mounting and animation.**
+- **Bodies mount only when expanded.** Expanding mounts the body, then animates a `grid-template-rows` 0fr→1fr wrapper plus opacity.
+- **Collapsing** animates out and unmounts on `transitionend`, or after motion-fast plus a frame. With motion off it unmounts at once. Nothing hidden stays mounted, so there are no hidden iframes.
+- **HTML bodies** animate to the frame's last known height (cached per message id, otherwise 120 px). Later resizes from the frame's `ResizeObserver` are instant.
+- **Observer cleanup:** the observer and the load and click listeners are disconnected on unmount. Today's `ResizeObserver` is never disconnected; that gets fixed.
+- **Paper mode** keeps a borderless `mail-paper` surface. In themed mode the frame has no box and padding 0.
+
+**Scroll scheduler.** `lib/reader-scroll.ts` is the single module for scroll-into-view, shared by drafts and expansions.
+- `keepInView(el)` reads geometry and then writes `scrollTop` once per animation frame, for the transition's length.
+- It stops on wheel, touch, pointerdown in the scroller, scroll keys, thread change or unmount.
+- When motion is off it does one `scrollIntoView({block: "nearest"})` after layout instead.
+
+**Remote content.** A row above the body: `tint`, radius 8, 36 px, an image-off glyph, 12 px text, a pill button in `accent`/`accent-foreground`.
+- In local mode: "Contenido remoto bloqueado por el modo local." with "Cargar contenido…", which opens a solid popover: "El modo local no permite cargar contenido remoto." and "Abrir Ajustes". It never loads anything.
+- Otherwise: "…para proteger tu privacidad." with "Cargar contenido".
+
+**Attachments.**
+- **Today they are metadata only:** the `attachments` rows, an `IncomingAttachment.providerRef`, and no RPC that fetches content.
+- So there are **tiles with no actions and no download button**: 260×56, `tint`, radius 10, a type glyph, the name at 13/500, the size in muted.
+- The tile reads as an item of a list. Opening and saving attachments is a separate plan (fetch by `providerRef` over IMAP or Gmail, plus desktop and web save paths, with loading, unavailable, error and retry states).
+
+### 3.3 Toolbar and reply bar
 
 **Toolbar.**
-- 28 px ghost buttons, radius 6, 16 px glyphs at stroke 1.75 in muted (foreground + `muted` fill on hover).
-- **Groups** 12 px apart with no rules: [Archivar Eliminar Spam] · [Categoría No leído Destacar] · on the right [Responder, Responder a todos, Reenviar].
-- **Tooltips:** label + kbd on `popover` with `shadow-popover`. 500 ms the first time, then instant within the group.
+- 28 px ghost buttons with 16 px glyphs at stroke 1.75 in `muted-foreground`.
+- Groups: [Archivar Eliminar Spam] · [Categoría No leído Destacar] · on the right [Responder · Responder a todos · Reenviar].
+- Tooltips are solid `popover` with label plus kbd.
 
-**Reply bar.** Replaces the boxed buttons: a 40 px `tint` field ("Responder a Yuki…") with ghost "Responder a todos" and "Reenviar". Clicking it, or r/a/f, turns it into the inline draft.
+**Reply bar.** It replaces the three boxed buttons after the last message: a 40 px `tint` button, "Responder a {nombre}…", plus ghost "Responder a todos" and "Reenviar".
 
-**Inline compose.** `compose` becomes a drafts store keyed by thread id (or `new:<n>`): `{…ComposeDraft, bcc, quoted, state: open|collapsed}` plus the active key.
+### 3.4 Drafts: model and persistence (ships before inline drafting)
 
-Replies and forwards:
-- **Opening:** the draft takes the reply bar's place at the end of the conversation. It animates open while the scroller stays pinned to it (instant, no smooth scroll). Focus goes to the body for replies and to Para for forwards.
-- **Surface:** `tint`, radius 12, no border.
-- **Fields:** borderless hairline-separated rows with 12 px muted labels: **De** (only with 2+ accounts; a text select defaulting to the thread's account), **Para** (with "Cc"/"Cco" toggles), **Asunto** (forwards; replies open it on click).
-- **Body:** grows with `field-sizing: content`. The quoted original is a "•••" chip outside the textarea, joined on save and send.
-- **Footer:** "Enviar ⌘↩" (primary, raised), then "Borrador guardado" (fades in after each autosave, 800 ms debounce as today), then Descartar and Contraer on the right.
-- **⌘↩** sends: the draft fades out and the sent message appears through the existing invalidation.
-- **Esc** collapses the draft into one line ("Borrador · Para Yuki — …") and flushes the save; Enter or a click reopens it.
-- **Descartar** deletes it and shows the toast "Borrador descartado · Deshacer".
+**Draft v2**, the same shape in RPC, SQL, IndexedDB and the renderer:
 
-New messages:
-- **c** opens the draft **in the reader pane**. A **drafts strip** above the list (outside the virtualizer, where the banners sit) shows it selected ("Nuevo mensaje — Para …"). The toolbar becomes Descartar · "Enviar ⌘↩"; a 20 px title mirrors the subject; De, Para, Cc, Cco, Asunto are hairline rows, then the body; focus goes to Para.
-- **Switching threads:** each draft stays with its thread, open or collapsed; the save is flushed on leave; coming back never steals focus; the strip keeps new drafts one click away (3, then "+N").
-- **At startup**, `drafts.list` restores reply drafts onto their threads (through `in_reply_to_message_id`) and new ones into the strip.
-- **Backend:** drafts gain `bcc_json` and `forward_of_message_id`, in the next SQL migration after plan 06's v8 and the next IndexedDB version, plus the matching `drafts.save` fields. `compose.send` already takes `bcc`.
+```ts
+{ id, revision, format: 2, accountId, threadId: number|null,
+  mode: "new"|"reply"|"replyAll"|"forward",
+  to, cc, bcc: Address & { auto?: true }[],   // auto = filled in by Única, not typed
+  subject, subjectEdited: boolean,
+  bodyText,                                   // only what the user writes
+  quotedText, includeQuote: boolean,          // generated once, never inside bodyText
+  inReplyToMessageId: number|null, forwardOfMessageId: number|null,
+  uiState: "open"|"collapsed", updatedAt }
+```
 
-**Overlays.**
-- **`popover-surface`** (glass, `shadow-popover`, radius 8, p-1) is shared by `DropdownMenu`, `ContextMenu` (plan 06 inherits it), `Select`, `Popover` and the category picker.
-  - Items are 28 px, radius 4, with a `muted` highlight, glyphs at 80 % and shortcuts right-aligned.
-- **Palette:** 640 px glass sheet, radius 16, `shadow-modal`.
-- **Settings:** macOS System Settings style. A 180 px nav with accent glyphs, and inset-grouped `tint` sections (radius 10, hairline-separated rows, controls on the right).
-- **Snackbar and toasts:** popover surface, radius 12, 13 px, bottom-left.
+**SQL v9:**
+- `ALTER TABLE drafts` adds `format` (default 1), `thread_id REFERENCES threads ON DELETE SET NULL`, `mode`, `bcc_json`, `subject_edited`, `quoted_text`, `include_quote`, `forward_of_message_id`, `ui_state` and `revision`, plus an index on `thread_id`.
+- Backfill: `thread_id` from the `in_reply_to` message, and `mode` = `reply` if it has one, else `new`.
 
-**Empty states** (reader welcome, empty list, plan 06's bulk bar): a monochrome 28–40 px glyph, a 17/600 title, a muted line.
+**IndexedDB 3:** the drafts store gains the same fields and the `threadId` index. There is one upgrade path from 1 and from 2.
+
+**RPC:**
+- **`drafts.save`** takes the v2 fields plus `baseRevision` and returns `{id, revision}`. A stale `baseRevision` (another writer: a second window, MCP) never overwrites: the save becomes a new draft.
+- **`drafts.list`** returns v2.
+- **`drafts.delete`** takes `{id}`.
+- **`compose.send`** takes the content from the request, so there are no stale reads. It sends `bodyText + (includeQuote ? "\n\n" + quotedText : "")` and deletes `draftId` in the same transaction that queues the send op.
+- **MCP `create_draft`** keeps its input. It derives `threadId` and `mode` from `inReplyToMessageId`.
+
+**Restore rules (deterministic):**
+- **Format-1 drafts** come back with `bodyText` as stored (it may contain the old inline quote), `quotedText` empty and `includeQuote` false, so a quote is never duplicated.
+- **One thread draft per thread:** the most recent `updatedAt` per `thread_id` becomes it. Older ones appear in the drafts strip (§3.6) as separate items, labelled "Re: {asunto}".
+- **Orphans:**
+  - The thread was deleted (`thread_id` became NULL, or the reply target is gone): the draft restores as a new-message draft that keeps its recipients, subject and text, and is sent without threading headers.
+  - The forward source is gone: sending says "El mensaje original ya no está" and offers "Enviar como mensaje nuevo".
+  - The account was removed: the draft is deleted (the existing cascade).
+
+**Write lifecycle (`lib/drafts.ts`), per stable client key** (a UUID created with the draft; `id` is attached when the first save is acknowledged):
+- **States:** `clean`, `dirty`, `saving`, `saved`, `error`.
+  - Every edit increments a local revision.
+  - At most one save is in flight per key. Saves go out 800 ms after the last edit, and at least every 5 s during continuous typing.
+  - A response applies to the key it was sent for, never to "the current draft".
+- **"Borrador guardado"** shows (`aria-live="polite"`) only when the acknowledged revision equals the local revision.
+- **On error:** "No se pudo guardar · Reintentar", with backoff retries at 1, 2 and 5 s. The text stays in memory.
+- **Send, discard and convert** cancel the debounce and await the in-flight save first. Discard then deletes by id; send passes the id.
+- **Flush points** (each drains every dirty key, capped at 1 s):
+  - leaving a thread, and the reader unmounting (bulk bar, settings)
+  - the web tab handoff in `web/connect.ts`, before the worker closes
+  - the "Recargar" update prompt
+  - `pagehide`
+- **Crash-loss window:** edits since the last acknowledgement, which is ≤ 800 ms after a pause or ≤ 5 s during continuous typing.
+
+### 3.5 Inline replies
+
+**Opening.** `openCompose(mode, threadId)` always takes an explicit target: menu, keyboard, palette and reply bar. The draft takes the reply bar's place, animates open with `keepInView`, and focuses the body (replies) or Para (forwards).
+
+**The draft.**
+- **Surface:** `tint`, radius 12, a `<form aria-label="Responder a Yuki Gutiérrez">` (or "Reenviar…").
+- **Fields:** borderless, hairline-separated rows with real `<label for>`:
+  - **De:** only with 2 or more accounts; a text select.
+  - **Para**, with "Cc" and "Cco" disclosure buttons (`aria-expanded`).
+  - **Asunto:** shown for forwards, behind a button for replies.
+- **Body:** grows with `field-sizing: content`.
+- **Quote:** the original is a "•••" disclosure ("Mostrar mensaje citado") below the body, with a remove button that sets `includeQuote` false.
+- **Footer:** "Enviar ⌘↩", then the save state, then Descartar and Contraer. Descartar has no shortcut, because ⌘⌫ is plan 06's trash and deletes a line inside text.
+
+**r, a and f on a thread that already has a draft:**
+- **Same mode:** resume. Open it and focus it; nothing changes. Repeated presses are idempotent.
+- **Different mode:** convert in place, as a new local revision (it serializes behind a pending save like any edit):
+  - `bodyText` and every recipient without `auto` are kept.
+  - `auto` recipients are recomputed for the new mode. Reply → reply-all adds the others to Cc; reply-all → reply drops only the untouched auto ones; forward clears the auto ones.
+  - The subject is regenerated unless `subjectEdited`.
+  - `quotedText` is regenerated (forward block or reply quote); `inReplyTo` and `forwardOf` are swapped.
+  - A toast says "Convertido en Responder a todos · Deshacer". Undo restores the previous revision's snapshot. z and ⌘Z also undo, through `setLastUndo`, when not typing.
+- **Tests:** r→a→f→r with typed text and edited recipients, including while a save is pending.
+
+**Exits and where focus goes.**
+
+| Exit | Result | Focus goes to |
+|---|---|---|
+| Esc, or Contraer | the draft collapses into the "Borrador · Para … — …" button; the save is flushed | that button |
+| Enter or Space on that button | the draft reopens | the body |
+| ⌘↩ (send) | the draft fades out (fast) and the sent message arrives through invalidation | the reply bar |
+| Descartar | toast "Borrador descartado · Deshacer" | the reply bar |
+| Clicking another row, or j/k from a non-text focus | the draft keeps its `uiState` | the list context (the active element is blurred) |
+
+Coming back to a thread never moves focus into its draft.
+
+**Typing.** Inside fields, j, k, ⌫, Delete, ⌘⌫, ⌘A, ⌘Z, e, # and r keep their text meaning (the existing `editable` gate). A test covers each.
+
+### 3.6 New messages, targets and precedence
+
+**New messages.**
+- **c, the compose button and the palette** create a `new` draft and show it in the reader pane:
+  - The toolbar becomes Descartar and "Enviar ⌘↩".
+  - A 20 px title mirrors the subject.
+  - De, Para, Cc, Cco and Asunto are hairline rows; focus goes to Para.
+- **The drafts strip** sits above the list, outside the virtualizer, with the banners. It holds:
+  - new-message drafts
+  - thread drafts whose thread isn't in the current list (archived, moved, trashed, another view)
+  - superseded drafts (§3.4)
+
+  Each item is a button ("Nuevo mensaje — Para …" or "Re: {asunto}"). It shows 3 items, then "+N".
+- **Clicking a strip item** opens the draft: a new draft in the reader, a thread draft by loading its thread by id.
+- **Exits:**
+  - Esc returns the reader to the previously selected thread (or the welcome screen) and focuses the draft's strip item.
+  - Sending or discarding returns the same way and focuses the list context.
+
+**What the reader pane shows** (first match wins):
+1. Plan 06's bulk bar while `checked ≥ 2` or a scope is active. Drafts stay in the store, flushed on unmount. If focus was inside a draft, it moves to the bulk bar's heading.
+2. The active new draft.
+3. The selected conversation, with its thread draft inline.
+4. The welcome screen.
+
+**Targets and selection.**
+- Pressing c clears the multi-selection.
+- r, a and f need exactly one target and do nothing with a bulk selection (the menu already disables them).
+- Menu "Responder" passes the row's id, then selects it. It never relies on `selectedId` timing.
+- Drafts survive selection clearing and their rows leaving the view:
+  - archive, trash, an exclusive move or drag, or a scope action on the thread keeps its draft
+  - the reader moves on as today
+  - the draft appears in the strip
+
+**Esc precedence** (first match wins):
+1. an open menu, popover or select
+2. a dialog or the palette
+3. focus inside a draft: collapse it, or leave the new draft
+4. the snackbar
+5. the multi-selection
+6. the search field
 
 ## 4. Motion
 
-At M = 75: fast 50 · base 75 · slow 100 ms. The 100 ms ceiling and `data-motion=off` are unchanged.
+At M = 75: fast 50, base 75, slow 100 ms. The ceiling and `data-motion=off` are unchanged.
 
-New curves: `--motion-ease-drawer: cubic-bezier(.32,.72,0,1)`, `--motion-ease-spring: linear(0, .2 8%, .62 20%, .94 34%, 1.03 47%, 1.01 64%, 1)`, `--motion-ease-in: cubic-bezier(.4,0,1,1)` (exits); `--motion-ease` stays for colors.
+New curves:
+- `--motion-ease-drawer: cubic-bezier(.32,.72,0,1)`
+- `--motion-ease-spring: linear(0, .2 8%, .62 20%, .94 34%, 1.03 47%, 1.01 64%, 1)`
+- `--motion-ease-in: cubic-bezier(.4,0,1,1)`
 
 | What | Properties | Duration · curve |
 |---|---|---|
-| Menus, select, popover, context menu | opacity + scale .97→1 from origin | base · spring; exit fast, opacity only |
-| Tooltips | opacity + 2 px | fast |
-| Dialog, palette | opacity + scale .98→1; backdrop opacity | slow · drawer; exit fast |
-| Message expand / collapse | grid rows + body opacity | slow · drawer / fast · in |
+| Menus, select, popover | opacity, scale .97→1 | base · spring; exit fast, opacity |
+| Tooltips | opacity, 2 px | fast |
+| Dialog, palette | opacity, scale .98→1 | slow · drawer; exit fast |
+| Message expand / collapse, "N más" | grid rows, opacity | slow · drawer / fast · in |
 | Draft open / collapse / send | grid rows, opacity, translateY 6 px | slow · drawer / fast |
-| New message in the reader | opacity + translateY 4 px | base |
+| New message in the reader | opacity, translateY 4 px | base |
 | Buttons | background; `:active` scale .97 | fast |
-| Star, dot pop | scale | base · spring |
-| Snackbar, toasts | translateY 8 px + opacity | slow in, fast out |
-| j/k, selection, hover, reader swap, theme, scrolling | — | never |
+| Snackbar, toasts | translateY 8 px, opacity | slow in, fast out |
+| j/k, selection, hover, reader swap, theme, scrolling, shadows, filters | — | never |
 
-Grid-row height runs only in the reader, after an explicit action. `scrollIntoView` is instant. Reduced motion jumps everything, as today.
+Grid-row height animates only in the reader, after an explicit action. Reduced motion jumps everything.
 
-## 5. Performance guardrails
+## 5. Performance gates
 
-- `backdrop-filter` is allowed only on short-lived overlays over static content. It is never on the list, the reader, the sidebar (native vibrancy) or toolbars.
-- **Rows:** no shadows or transitions, at most two pseudo-elements, one new boolean selector; `contain: strict` stays.
-- The iframe height and the virtual rows never animate.
-- The theme switch stays at 0 row renders.
-- **Gates:** all of `pnpm test:ui-perf` and plan 06's gates, plus:
-  - j held with a draft open: p95 ≤ 16 ms, 2 rows per move
-  - inline reply opened and painted: ≤ 50 ms p95
+**Existing:** all of `pnpm test:ui-perf` and plan 06's gates still pass.
 
-## 6. Tests and baselines
+**New, enforced:**
+- **Sustained j/k** (300 moves at key-repeat rate) **and continuous wheel scrolling** across 2,000 threads (3 s):
+  - frame interval p95 ≤ 20 ms, longest frame ≤ 50 ms (rAF deltas plus long-animation-frame entries)
+  - selection actually advances 300 rows; DOM rows stay bounded
+  - run in both densities, with a collapsed draft on a listed thread and a restored draft in the strip
+- **Inline reply:** keypress → first frame showing the draft ≤ 50 ms p95, and keypress → expansion done ≤ motion-slow + 2 frames, measured separately.
+- **Long conversation:** expanding messages in a 20-message conversation with 5 HTML bodies keeps every frame ≤ 50 ms and leaves no iframe or `ResizeObserver` behind for collapsed messages.
+- **Menus:** right-click → glass menu painted ≤ 50 ms p95 (as in plan 06).
 
-- **`compose.spec.ts`**, rewritten.
-  - Kept: r/a/f prefill; ⌘↵ sends and the message appears; reply-all never Cc's me; invalid recipients keep the draft.
-  - New:
-    - the draft is inline in `reader` (no `role=dialog`), focused and in view
-    - Esc collapses it and the text survives a thread switch
-    - Descartar + Deshacer
-    - c opens in the reader with the strip
-    - Bcc sends
-    - drafts are restored after a reload
-- **`motion.spec.ts`:** message expand and draft open ≤ 100 ms; nothing animates at 0; `compose-button` is in the list header.
-- **`e2e-web/web.spec.ts`:** the composer testid.
-- **Unit:** tint derivation, glass contrast, drafts store (keys, restore, flush), quote join.
-- **Visual baselines:**
-  - regenerate visual (17), themes (18) and dnd (2)
-  - `composer-reply.png` becomes `reply-inline.png`
-  - add `compose-new-inline.png`, `reader-conversation(-dark).png` and `context-menu.png`
-  - each commit updates only the baselines it changes, after reviewing the diff images; never wholesale to turn a run green
+Load is high on this machine, so a gate that fails gets one rerun, and failures report the load average.
 
-## 7. Commits (after plan 06)
+## 6. Tests
 
-1. `feat(ui): hairline, tint, highlight tokens; Única/Apple values; glass contrast test`
-2. `feat(ui): system font, type scale, radii, hairline width, elevation, curves, focus rings`
-3. `feat(ui): popover-surface (menus, select, popover, context menu), tooltip, button, dialog, command, sonner`
-4. `feat(web): 52 px chrome, scroll-linked hairlines, compose in the list header, sidebar`
-5. `feat(web): rows with inset selection, hairline separators, tabular dates`
-6. `feat(reader): flat messages, collapsed rows, animated expand, "N mensajes más"`
-7. `feat(reader): borderless HTML frame, remote-content row, attachment tiles`
-8. `feat(reader): grouped toolbar, reply bar`
-9. `feat(db,idb,core): drafts keep Bcc and the forwarded message`
-10. `feat(compose): inline reply/reply-all/forward per thread; Esc collapses; discard with undo`
-11. `feat(compose): new message in the reader, drafts strip, restore at startup`
-12. `feat(web): inset-grouped settings, palette, toasts, empty states`
-13. `test: inline compose, motion and perf cases; remaining baselines`
-14. `docs: PLAN §9 and README`
+Each test lands in the commit that changes the behavior or look it covers. Baselines are regenerated per commit only for the specs it changes, after reviewing the diff images.
 
-Every commit passes typecheck, lint, `pnpm test`, `test:e2e` and `test:ui-perf`. The last also passes `test:web` and the packaged smoke.
+**Unit:**
+- the new derived tokens, including stepping and `--glass-alpha`
+- every contrast pair from §2, for built-in and resolved custom themes
+- the opacity scan
+- the vibrancy decision (renderer and main)
+- the draft writer: ordering, revisions, flush, error and retry
+- conversion rules and restore rules
+
+**Storage:**
+- draft conformance (save, reopen, convert, send, delete, stale revision, orphans) on node:sqlite, SQLite-WASM (Node, and OPFS in `test:web`), fake and real IndexedDB
+- migration v9 from v8 data
+- IDB upgrades from 1 and from 2
+
+**e2e:**
+- **`compose.spec.ts`:**
+  - kept: r/a/f prefill, ⌘↵ sends, reply-all never Cc's me, invalid recipients keep the draft
+  - new: inline in `reader` with an accessible name; Esc collapses (focus on the collapsed button); the text survives thread switches, archive and reload; convert and undo; discard and undo; c in the reader with the strip; Bcc sends; text keys inside fields
+- **`reader.a11y`:** disclosure buttons with Enter and Space, `aria-expanded`/`aria-controls`.
+- **Reduced transparency** (CDP `Emulation.setEmulatedMedia`, `prefers-reduced-transparency: reduce`): no `data-vibrancy`, an opaque sidebar, solid menus.
+- **`motion.spec.ts`:** expand and draft ≤ 100 ms, nothing at 0, `compose-button` in the list header.
+- **`e2e-web/web.spec.ts`:** draft text survives a takeover, and a reload after the update prompt.
+
+**Visual:**
+- `composer-reply.png` becomes `reply-inline.png`
+- add `compose-new-inline.png`, `reader-conversation(-dark).png`, `context-menu.png`, `bulk-bar.png`
+
+## 7. Commits (each passes typecheck, lint, `pnpm test`, `test:e2e`, `test:ui-perf`)
+
+1. `feat(ui): hairline, tint, highlight, draft and sidebar-glyph tokens; glass alpha; contrast pairs as drawn` (+ baselines)
+2. `feat(ui): system font, type scale, radii, hairlines, elevation, curves, focus rings` (+ baselines)
+3. `feat(desktop,web): reduced transparency turns off vibrancy at first paint and live` (+ tests)
+4. `feat(ui): glass menus/select, solid tooltips/toasts/dialogs/palette` (+ `context-menu.png`, menu perf)
+5. `feat(web): 52 px chrome, compose icon in the list header, sidebar, select-all banner` (+ motion.spec, baselines)
+6. `feat(web): rows with inset selection and hairlines; frame-time gates for j/k and scrolling` (+ perf, baselines)
+7. `feat(reader): flat messages, disclosure buttons, lazy bodies, observer cleanup, scroll scheduler` (+ a11y, long-conversation perf, baselines)
+8. `feat(reader): borderless frame, remote-content row, attachment tiles; grouped toolbar, reply bar` (the bar opens today's composer; + baselines)
+9. `feat(core,db,idb,backend): draft v2, migration v9, IDB 3, revisioned saves, send joins the quote` (+ conformance and upgrade tests; `test:web`)
+10. `feat(web): draft writer and restore at startup, used by today's composer` (+ lifecycle, reload and takeover tests)
+11. `feat(compose): inline reply/reply-all/forward with explicit targets, resume/convert, focus exits, Esc precedence` (+ compose.spec, reply perf, `reply-inline.png`)
+12. `feat(compose): new message in the reader, drafts strip, bulk-bar precedence; the floating composer is removed` (+ tests, `compose-new-inline.png`)
+13. `feat(web): inset-grouped settings, palette, toasts, bulk bar, empty states` (+ baselines)
+14. `docs: PLAN §9, README, plan 07 outcome` (+ packaged smoke)
 
 ## 8. Risks
 
-- SF changes every baseline (a Linux CI would render Geist).
-- Glass over busy content can't be proven AA, hence the solid fallback.
-- Per-thread drafts must survive web tab takeovers: they live in the drafts table; the renderer only caches them.
+- SF changes every baseline, and a Linux CI would render Geist.
+- Cross-writer draft conflicts become extra drafts, not merges.
+- Frame gates are noisy under load.
+- Attachments stay view-only until their own plan.
