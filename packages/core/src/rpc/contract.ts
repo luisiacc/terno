@@ -245,6 +245,16 @@ const categorizeScope = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("query"), query: z.string().trim().min(1).max(500) }),
 ]);
 
+/** Every thread of a view (account/category optional) or of a search: "select all N" acts on it on the backend. */
+const threadScope = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("view"), view: z.enum(VIEWS), accountId: id.optional(), categoryId: id.optional() }),
+  z.object({ kind: z.literal("search"), query: z.string().trim().min(1).max(2000), accountId: id.optional(), categoryId: id.optional() }),
+]);
+export type ThreadScope = z.output<typeof threadScope>;
+
+export const THREAD_ACTIONS = ["archive", "trash", "spam", "notSpam", "moveToInbox", "markRead", "markUnread", "star", "unstar"] as const;
+const jobId = z.string().min(1).max(64);
+
 const imapServer = z.object({
   host: z.string().min(1).max(255),
   port: z.number().int().min(1).max(65535),
@@ -288,9 +298,22 @@ export const contract = {
   "threads.act": m<{ affected: number }>()(
     z.object({
       threadIds: ids,
-      action: z.enum(["archive", "trash", "spam", "notSpam", "moveToInbox", "markRead", "markUnread", "star", "unstar"]),
+      action: z.enum(THREAD_ACTIONS),
     }),
   ),
+  /** How many threads a scope holds (the "select all N" banner); capped like the scope actions. */
+  "threads.scopeCount": m<{ count: number; capped: boolean }>()(z.object({ scope: threadScope })),
+  /**
+   * An action on every thread of a scope, resolved once and applied in time
+   * slices (one transaction and one op per account each), with `bulkProgress`
+   * events for `jobId`. Never a learning signal. `undoId` (null when nothing
+   * changed or the action has no inverse) undoes exactly the threads it changed.
+   */
+  "threads.actScope": m<{ undoId: number | null; affected: number; total: number }>()(
+    z.object({ scope: threadScope, action: z.enum(THREAD_ACTIONS), jobId: jobId.optional() }),
+    { timeoutMs: 300_000 },
+  ),
+  "threads.undoScope": m<{ restored: number }>()(z.object({ undoId: id, jobId: jobId.optional() }), { timeoutMs: 300_000 }),
 
   "categories.create": m<Category>()(
     z.object({ name: z.string().trim().min(1).max(60), color: z.enum(CATEGORY_COLORS) }),
@@ -317,6 +340,11 @@ export const contract = {
    */
   "categories.moveThreads": m<AddThreadsResult & { batchId: number; moved: number[] }>()(
     z.object({ to: id, threadIds: ids, source: z.enum(CATEGORIZE_SOURCES).default("dnd") }),
+  ),
+  /** Files every thread of a scope ("select all N" → Categorías), sliced like the picker's large adds; undo with categorize.undo. */
+  "categories.addScope": m<{ added: number; batchId: number | null }>()(
+    z.object({ categoryId: id, scope: threadScope, jobId: jobId.optional() }),
+    { timeoutMs: 300_000 },
   ),
   /** "user" removals teach the model (a strong negative); "undo" takes back the user's own add without learning anything. */
   "categories.removeThreads": m<{ removed: number }>()(
@@ -450,6 +478,8 @@ export interface Events {
   categories: Category[];
   op: OpInfo;
   owner: OwnerIdentity | null;
+  /** progress of a scope action (threads.actScope / undoScope, categories.addScope), at most ~10 per second */
+  bulkProgress: { jobId: string; done: number; total: number };
   /** the engine filed new mail on its own (coalesced per category, at most every 30 s) */
   categorized: { categoryId: number; threadIds: number[]; by: "auto" };
 }

@@ -1,9 +1,10 @@
 import { RpcError, type Handlers } from "@unica/core/rpc";
-import { COUNT_CAP, proposeLearnedFilters, type Address } from "@unica/core";
+import { COUNT_CAP, proposeLearnedFilters, type Address, type ThreadAction } from "@unica/core";
 import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow } from "@unica/store";
 import type { GmailAccountConfig, ImapAccountConfig } from "@unica/mail";
 import { BackendCore as Backend } from "./core";
 import { changeOwnerTo, gmailClaim, imapClaim } from "./identity";
+import { inverseAction, progressReporter, resolveThreadScope, ScopeUndoJournal } from "./scope";
 import { readAutoCategorize, readSettings, SettingsError, updateSettings } from "./settings";
 
 /** How a UI entry point is recorded: bulk (snackbar) adds weigh half and their content is capped per sender. */
@@ -42,18 +43,43 @@ export function createHandlers(b: Backend): Handlers {
    * what changed for undo. Above SLICE_ABOVE ids it runs in time slices (one
    * batch, several transactions) so interactive RPCs keep flowing.
    */
-  const fileThreads = async (categoryId: number, threadIds: readonly number[], addedBy: AddedBy, source: string) => {
+  const fileThreads = async (categoryId: number, threadIds: readonly number[], addedBy: AddedBy, source: string, progress?: (done: number) => void) => {
     await requireCategory(categoryId);
     const batchId = await store.categories.createBatch(categoryId, source, { kind: "threads" }, b.now());
     const added: number[] = [];
+    let done = 0;
     await sliced([...new Set(threadIds)], async (chunk) => {
       const r = await store.categories.add({ categoryId, threadIds: chunk, addedBy, now: b.now(), batchId });
       b.categorizer.apply(r.deltas);
       added.push(...r.added);
       b.notifyChanged(chunk);
+      progress?.((done += chunk.length));
     });
     return { added: added.length, addedIds: added, batchId: added.length ? batchId : null };
   };
+  /**
+   * A thread action over many threads: one store command (transaction, ops
+   * per account) per slice. Explicit renderer picks are a learning signal;
+   * scope sweeps and agents are not.
+   */
+  const actOn = async (threadIds: readonly number[], action: ThreadAction, signal: ReturnType<typeof Backend.learningSignal> | null, progress?: (done: number) => void, alwaysSliced = false) => {
+    const changed = new Set<number>();
+    let done = 0;
+    const run = async (chunk: number[]) => {
+      const r = await store.threads.act({ threadIds: chunk, action, signal: signal ?? null, now: b.now() });
+      for (const t of r.threadIds) changed.add(t);
+      b.opsQueued(r.opIds);
+      b.notifyChanged(r.threadIds);
+      progress?.((done += chunk.length));
+    };
+    // small sets in one go; large ones through the slicer, starting small (an action recomputes every thread it touches)
+    if (threadIds.length <= SLICE_ABOVE && !alwaysSliced) await run([...threadIds]);
+    // half the usual budget: an action's commit writes every message, thread and op it touches, and that write is the
+    // part of a slice whose time the disk decides
+    else await b.runSliced([...threadIds], 50, run, b.options.sliceBudgetMs / 2);
+    return [...changed];
+  };
+  const scopeUndo = new ScopeUndoJournal();
   const nextAccountColor = async () => ACCOUNT_COLORS[(await store.accounts.list()).length % ACCOUNT_COLORS.length]!;
 
   return {
@@ -133,10 +159,31 @@ export function createHandlers(b: Backend): Handlers {
     "threads.act": async ({ threadIds, action }, ctx) => {
       const signal = Backend.learningSignal(action);
       // only explicit renderer actions feed learned filters
-      const result = await store.threads.act({ threadIds, action, signal: signal && ctx.origin === "renderer" ? signal : null, now: b.now() });
-      b.opsQueued(result.opIds);
-      b.notifyChanged(result.threadIds);
-      return { affected: result.threadIds.length };
+      const changed = await actOn([...new Set(threadIds)], action, signal && ctx.origin === "renderer" ? signal : null);
+      return { affected: changed.length };
+    },
+    "threads.scopeCount": async ({ scope }) => {
+      const { ids, capped } = await resolveThreadScope(b, scope);
+      return { count: ids.length, capped };
+    },
+    "threads.actScope": async ({ scope, action, jobId }) => {
+      const { ids, capped } = await resolveThreadScope(b, scope);
+      if (capped) throw new RpcError("BAD_REQUEST", "Demasiadas conversaciones: acota la vista o la búsqueda");
+      const progress = progressReporter(b, jobId, ids.length);
+      progress(0);
+      // a sweep over a whole view says nothing about senders: never a learning signal
+      const changed = await actOn(ids, action, null, progress, true);
+      progress(ids.length);
+      const inverse = inverseAction(action, scope);
+      return { undoId: inverse && changed.length ? scopeUndo.remember(inverse, changed) : null, affected: changed.length, total: ids.length };
+    },
+    "threads.undoScope": async ({ undoId, jobId }) => {
+      const entry = scopeUndo.take(undoId);
+      if (!entry) throw new RpcError("NOT_FOUND", "Esta acción ya no se puede deshacer");
+      const progress = progressReporter(b, jobId, entry.threadIds.length);
+      const changed = await actOn(entry.threadIds, entry.action, null, progress, true);
+      progress(entry.threadIds.length);
+      return { restored: changed.length };
     },
 
     "categories.create": async ({ name, color }) => {
@@ -168,6 +215,17 @@ export function createHandlers(b: Backend): Handlers {
       b.notifyChanged([...new Set([...r.added, ...r.moved])]);
       await b.finishMove(r.batchId);
       return { added: r.added.length, addedIds: r.added, batchId: r.batchId, moved: r.moved };
+    },
+    "categories.addScope": async ({ categoryId, scope, jobId }) => {
+      await requireCategory(categoryId);
+      const { ids, capped } = await resolveThreadScope(b, scope);
+      if (capped) throw new RpcError("BAD_REQUEST", "Demasiadas conversaciones: acota la vista o la búsqueda");
+      const progress = progressReporter(b, jobId, ids.length);
+      progress(0);
+      // a selection of a whole view weighs like the snackbar's bulk adds
+      const r = await fileThreads(categoryId, ids, "bulk", "selection", progress);
+      progress(ids.length);
+      return { added: r.added, batchId: r.batchId };
     },
     "categories.removeThreads": async ({ categoryId, threadIds, reason }) => {
       let removed = 0;

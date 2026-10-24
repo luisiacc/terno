@@ -411,7 +411,7 @@ export class BackendCore {
    * (import, bulk filter) must go through here so it never blocks interactive
    * RPCs for longer than one slice.
    */
-  async runSliced<T>(items: readonly T[], initialSize: number, work: (chunk: T[]) => void | Promise<void>): Promise<void> {
+  async runSliced<T>(items: readonly T[], initialSize: number, work: (chunk: T[]) => void | Promise<void>, budgetMs = this.options.sliceBudgetMs): Promise<void> {
     let size = initialSize;
     for (let i = 0; i < items.length && !this.stopped; ) {
       const started = performance.now();
@@ -420,7 +420,7 @@ export class BackendCore {
       i += chunk.length;
       const took = performance.now() - started;
       // shrink immediately when over budget, grow cautiously (≤1.25× per slice) to avoid overshoot
-      const ideal = (size * this.options.sliceBudgetMs) / Math.max(took, 0.25);
+      const ideal = (size * budgetMs) / Math.max(took, 0.25);
       size = Math.max(1, Math.min(1000, Math.round(Math.min(ideal, size * 1.25))));
       await this.platform.yield();
     }
