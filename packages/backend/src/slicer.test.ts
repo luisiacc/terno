@@ -38,8 +38,8 @@ describe("time-budgeted slices", () => {
     const at = slices.findIndex((x) => x.ms > BULK_SLICE.targetMs);
     expect(at).toBeGreaterThan(0);
     expect(slices[at + 1]!.size).toBeLessThanOrEqual(slices[at]!.size / 2);
-    // one overrun, then every slice fits again
-    for (const x of slices.slice(at + 1)) expect(x.ms).toBeLessThanOrEqual(BULK_SLICE.targetMs);
+    // one overrun, then every slice fits again (within a tenth: the fixed part is an estimate)
+    for (const x of slices.slice(at + 1)) expect(x.ms).toBeLessThanOrEqual(BULK_SLICE.targetMs * 1.1);
   });
 
   it("items of very different cost (a thread can cost 10× another): overruns stay rare instead of oscillating", () => {
@@ -67,6 +67,14 @@ describe("time-budgeted slices", () => {
     s.record(before, before * 0.01); // a lucky one
     expect(s.size).toBeLessThanOrEqual(Math.max(before + 1, Math.floor(before * 1.25)));
     expect(s.size * 0.3).toBeLessThanOrEqual(BULK_SLICE.targetMs * 1.25);
+  });
+
+  it("a fixed cost per slice (a slow commit) doesn't keep slices at one item", () => {
+    const s = new SliceSizer();
+    const slices = simulate(s, 5000, () => ({ perItem: 0.05, overhead: 6 }));
+    // 6 ms of commit plus 0.05 ms an item: about 180 items fit in 15 ms
+    expect(slices.slice(-10, -1).every((x) => x.size > 100)).toBe(true); // (the last one is what was left)
+    expect(Math.max(...slices.map((x) => x.ms))).toBeLessThanOrEqual(BULK_SLICE.targetMs * 1.1);
   });
 
   it("keeps to its floor and ceiling", () => {
