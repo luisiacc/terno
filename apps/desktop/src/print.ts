@@ -9,7 +9,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { open, rename, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, session, shell, type IpcMainInvokeEvent, type Session } from "electron";
-import { footerTemplate, parsePrintJob, PDF_MARGINS, PDF_PAGE, pdfFileName, printCsp, printOutcome, requestAllowed, withHead, type PrintJob, type PrintResult } from "./print-policy";
+import { footerTemplate, parsePrintJob, PDF_MARGINS, PDF_PAGE, pdfFileName, printCsp, printOutcome, requestAllowed, tempSibling, withHead, type PrintJob, type PrintResult } from "./print-policy";
 
 const PARTITION = "terno-print";
 const SCHEME = "terno-print";
@@ -130,7 +130,7 @@ async function renderPdf(job: PrintJob, deps: PrintDeps): Promise<Buffer> {
 
 /** A private, exclusive temp file next to the target, renamed into place; never left behind. */
 async function writeAtomically(path: string, data: Buffer): Promise<void> {
-  const tmp = join(dirname(path), `.${basename(path)}.${randomBytes(8).toString("hex")}.tmp`);
+  const tmp = tempSibling(dirname(path), randomBytes(8).toString("hex"));
   try {
     const file = await open(tmp, "wx", 0o600);
     try {

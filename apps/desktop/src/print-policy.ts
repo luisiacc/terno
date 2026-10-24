@@ -3,6 +3,7 @@
  * Node: what the renderer may ask for, what the print window may load, the
  * page geometry and footer, and the Archivo menu's commands.
  */
+import { join } from "node:path";
 import type { MenuItemConstructorOptions } from "electron";
 
 /** The only commands main sends the renderer; the preload drops anything else. */
@@ -83,6 +84,22 @@ export function withHead(html: string, o: { csp: string; title: string }): strin
   return at ? html.slice(0, at.index + at[0].length) + head + html.slice(at.index + at[0].length) : `<!doctype html><head>${head}</head>${html}`;
 }
 
+/** At most 80 characters and 200 UTF-8 bytes (file systems allow 255 per name, ".pdf" included), cut between graphemes, never inside one. */
+function capName(s: string): string {
+  const enc = new TextEncoder();
+  let out = "";
+  let bytes = 0;
+  let count = 0;
+  for (const { segment } of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(s)) {
+    const b = enc.encode(segment).length;
+    if (count === 80 || bytes + b > 200) break;
+    out += segment;
+    bytes += b;
+    count++;
+  }
+  return out.trim();
+}
+
 /** The same rule as the renderer's: no path or reserved characters, capped, "Correo" when nothing is left. */
 export function pdfFileName(subject: string): string {
   const clean = subject
@@ -90,7 +107,12 @@ export function pdfFileName(subject: string): string {
     .replace(/[\u0000-\u001f\u007f/\\:*?"<>|]+/g, " ")
     .replace(/\s+/g, " ")
     .replace(/^[\s.]+|[\s.]+$/g, "");
-  return [...clean].slice(0, 80).join("").trim() || "Correo";
+  return capName(clean) || "Correo";
+}
+
+/** The export's temp file: beside the target (same volume, so the rename is atomic), short and random whatever the name. */
+export function tempSibling(dir: string, random: string): string {
+  return join(dir, `.terno-export-${random}.tmp`);
 }
 
 /** The renderer's page geometry (mm), in the inches Electron's PDF options take. */

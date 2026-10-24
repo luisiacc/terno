@@ -54,6 +54,22 @@ export function defaultPaper(locale: string): Paper {
   }
 }
 
+/** At most 80 characters and 200 UTF-8 bytes (file systems allow 255 per name, ".pdf" included), cut between graphemes, never inside one. */
+function capName(s: string): string {
+  const enc = new TextEncoder();
+  let out = "";
+  let bytes = 0;
+  let count = 0;
+  for (const { segment } of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(s)) {
+    const b = enc.encode(segment).length;
+    if (count === 80 || bytes + b > 200) break;
+    out += segment;
+    bytes += b;
+    count++;
+  }
+  return out.trim();
+}
+
 /** A file name from the subject: no path or reserved characters, length-capped, "Correo" when nothing is left. */
 export function printFileName(subject: string): string {
   const clean = subject
@@ -61,8 +77,7 @@ export function printFileName(subject: string): string {
     .replace(/[\u0000-\u001f\u007f/\\:*?"<>|]+/g, " ")
     .replace(/\s+/g, " ")
     .replace(/^[\s.]+|[\s.]+$/g, "");
-  const capped = [...clean].slice(0, 80).join("").trim();
-  return capped || "Correo";
+  return capName(clean) || "Correo";
 }
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");

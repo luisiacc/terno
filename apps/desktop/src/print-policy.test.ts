@@ -1,6 +1,6 @@
 import type { MenuItemConstructorOptions } from "electron";
 import { describe, expect, it } from "vitest";
-import { fileMenu, footerTemplate, isTrustedSender, MAX_HTML_BYTES, parsePrintJob, pdfFileName, PRINT_COMMANDS, printCsp, printOutcome, requestAllowed, testPdfDir, withHead } from "./print-policy";
+import { fileMenu, footerTemplate, tempSibling, isTrustedSender, MAX_HTML_BYTES, parsePrintJob, pdfFileName, PRINT_COMMANDS, printCsp, printOutcome, requestAllowed, testPdfDir, withHead } from "./print-policy";
 
 const job = { html: "<!doctype html><html><head></head><body>x</body></html>", action: "pdf", paper: "letter", subject: "Factura", headers: true, remote: [] as unknown[] };
 
@@ -90,6 +90,26 @@ describe("main: the document and the PDF", () => {
     expect(pdfFileName("../../Library/x")).toBe("Library x");
     expect(pdfFileName("Re: Junta 3/11")).toBe("Re Junta 3 11");
     expect(pdfFileName("")).toBe("Correo");
+  });
+
+  it("caps the name by UTF-8 bytes between graphemes, so long CJK or emoji subjects still save", () => {
+    const bytes = (s: string) => Buffer.byteLength(s);
+    const cjk = pdfFileName("報".repeat(80));
+    expect(bytes(`${cjk}.pdf`)).toBeLessThanOrEqual(255);
+    expect(bytes(cjk)).toBeLessThanOrEqual(200);
+    expect(cjk).toBe("報".repeat(66));
+    const emoji = pdfFileName("😀".repeat(80));
+    expect(bytes(emoji)).toBeLessThanOrEqual(200);
+    // whole code points only: no lone surrogate survives the round trip
+    expect(Buffer.from(emoji, "utf8").toString("utf8")).toBe(emoji);
+    const family = "👨‍👩‍👧‍👦";
+    const families = pdfFileName(family.repeat(40));
+    expect(families.length % family.length).toBe(0);
+    expect(families.startsWith(family)).toBe(true);
+    // the temp file's name never grows with the subject
+    const tmp = tempSibling("/Users/x/Downloads", "0123456789abcdef");
+    expect(tmp).toBe("/Users/x/Downloads/.terno-export-0123456789abcdef.tmp");
+    expect(bytes(tmp.split("/").pop()!)).toBeLessThan(40);
   });
 
   it("reports what the user did: submitted, cancelled, or why it failed", () => {

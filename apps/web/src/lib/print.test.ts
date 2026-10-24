@@ -175,6 +175,8 @@ describe("paper and file name", () => {
     expect(printFileName("   ...  ")).toBe("Correo");
     expect(printFileName("")).toBe("Correo");
     expect([...printFileName("é".repeat(200))]).toHaveLength(80);
+    expect(new TextEncoder().encode(printFileName("報".repeat(80))).length).toBeLessThanOrEqual(200);
+    expect(printFileName("😀".repeat(80))).toBe("😀".repeat(50));
     expect(printFileName("Reunión 🎉 東京")).toBe("Reunión 🎉 東京");
   });
 });
