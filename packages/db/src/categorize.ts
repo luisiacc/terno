@@ -465,12 +465,16 @@ export function movePending(db: Db, batchId: number): number[] {
  * its threads in `ids` (a JSON array; null = all of them): the destination
  * and every category left. Driven by thread id, so it uses the table's key.
  */
-function touched(table: string, batchId: number, to: number, ids: string | null): { where: string; params: (number | string)[] } {
+function touched(table: string, batchId: number, to: number, ids: string | null, orJournaled = false): { where: string; params: (number | string)[] } {
   const only = ids === null ? "" : " AND thread_id IN (SELECT value FROM json_each(?))";
+  // restoring: whatever the journal holds goes back in its place, so what is there now goes first (never a key conflict)
+  const journaled = orJournaled ? ` OR EXISTS (SELECT 1 FROM cat_move_examples e WHERE e.batch_id = ? AND e.thread_id = ${table}.thread_id AND e.category_id = ${table}.category_id)` : "";
   return {
+    // a move from before v8 (a single `from`) journaled that category for every thread, in the source or not
     where: `${table}.thread_id IN (SELECT thread_id FROM cat_move_threads WHERE batch_id = ?${only})
-            AND (${table}.category_id = ? OR EXISTS (SELECT 1 FROM cat_move_rows r WHERE r.batch_id = ? AND r.thread_id = ${table}.thread_id AND r.category_id = ${table}.category_id))`,
-    params: ids === null ? [batchId, to, batchId] : [batchId, ids, to, batchId],
+            AND (${table}.category_id = ? OR ${table}.category_id = (SELECT scope_json ->> '$.from' FROM cat_batches WHERE id = ?)
+                 OR EXISTS (SELECT 1 FROM cat_move_rows r WHERE r.batch_id = ? AND r.thread_id = ${table}.thread_id AND r.category_id = ${table}.category_id)${journaled})`,
+    params: [batchId, ...(ids === null ? [] : [ids]), to, batchId, batchId, ...(orJournaled ? [batchId] : [])],
   };
 }
 
@@ -647,7 +651,7 @@ export function restoreMoveSlice(db: Db, batchId: number, threadIds: readonly nu
         .all<{ thread_id: number }>("SELECT thread_id FROM cat_move_threads WHERE batch_id = ? AND done = 0 AND thread_id IN (SELECT value FROM json_each(?))", batchId, JSON.stringify(threadIds))
         .map((r) => r.thread_id),
     );
-    const replaced = touched("cls_examples", batchId, batch.to, ids);
+    const replaced = touched("cls_examples", batchId, batch.to, ids, true);
     const deltas: ModelDelta[] = db
       .all<ExampleRow>(`DELETE FROM cls_examples WHERE ${replaced.where} RETURNING *`, ...replaced.params)
       .map((r) => ({ op: "untrain", example: toExample(r), key: [r.thread_id, r.category_id] }));

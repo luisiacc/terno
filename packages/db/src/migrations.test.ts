@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { generateDataset } from "@unica/mock-data";
-import { movePhase, trainMoveSlice, undoMoveCommit } from "./categorize";
+import { movePending, movePhase, restoreMoveSlice, trainMoveSlice, undoMoveCommit } from "./categorize";
 import { ingestMessages } from "./ingest";
 import { MIGRATIONS, migrate, SCHEMA_VERSION } from "./migrations";
 import { openDatabase } from "./index";
@@ -255,5 +255,53 @@ describe("migration v8: exclusive moves", () => {
       { thread_id: t1, category_id: 1, added_by: "user", batch_id: null },
       { thread_id: t2, category_id: 1, added_by: "bulk", batch_id: 3 },
     ]);
+  });
+});
+
+describe("migration v8: an undo of a v7 move left half-restored", () => {
+  /** A v7 database whose ⌥-move (from 1 to 2) was undone and crashed while restoring examples. */
+  function v7Restoring() {
+    const dir = mkdtempSync(join(tmpdir(), "unica-mig8r-"));
+    dirs.push(dir);
+    const path = join(dir, "v7.db");
+    const db = new Db(nodeSqliteDriver, path);
+    dbs.push(db);
+    for (const m of MIGRATIONS.filter((m) => m.version <= 7)) db.exec(m.sql);
+    db.exec("PRAGMA user_version = 7");
+    const data = generateDataset({ threads: 20, accounts: 1, seed: 3, now: Date.UTC(2026, 9, 22) });
+    db.run("INSERT INTO accounts (id, kind, email, display_name, provider_config, created_at) VALUES (1, 'imap', 'yo@x.mx', '', '{}', 0)");
+    ingestMessages(db, data.messages.map((m) => ({ ...m, accountId: 1 })));
+    const [moved, stale] = db.all<{ id: number }>("SELECT id FROM threads ORDER BY id LIMIT 2").map((r) => r.id) as [number, number];
+    db.run("INSERT INTO categories (id, name, color, position) VALUES (1, 'Origen', 'rose', 0), (2, 'Destino', 'cyan', 1)");
+    const example = (t: number, cat: number, label: number, source: string) =>
+      db.run("INSERT INTO cls_examples (thread_id, category_id, label, weight, source, at, sender, content, batch_id, features) VALUES (?, ?, ?, 1, ?, 1, 's', 1, NULL, x'01')", t, cat, label, source);
+    db.run("INSERT INTO cat_batches (id, category_id, source, scope_json, created_at, added, undone_at) VALUES (5, 2, 'dnd', ?, 0, 2, 9)", JSON.stringify({ kind: "move", from: 1, addedBy: "user", phase: "restoring" }));
+    // `moved` was in the source; `stale` wasn't (a stale drag): v7 still journaled both categories' examples for both
+    db.run("INSERT INTO cat_move_threads (batch_id, thread_id, added, moved, done) VALUES (5, ?, 1, 1, 0), (5, ?, 1, 0, 0)", moved, stale);
+    db.run("INSERT INTO cat_move_rows (batch_id, thread_id, added_by, added_at, prev_batch_id) VALUES (5, ?, 'user', 10, NULL)", moved);
+    const journal = (t: number, cat: number, label: number, source: string) =>
+      db.run("INSERT INTO cat_move_examples (batch_id, thread_id, category_id, label, weight, source, at, sender, content, example_batch_id, features) VALUES (5, ?, ?, ?, 1, ?, 1, 's', 1, NULL, x'01')", t, cat, label, source);
+    journal(moved, 1, 1, "user");
+    journal(stale, 1, 1, "user");
+    // what the undo's membership commit left: memberships back, the move's examples still in place
+    db.run("INSERT INTO thread_categories (thread_id, category_id, added_by, added_at, batch_id) VALUES (?, 1, 'user', 10, NULL), (?, 1, 'user', 10, NULL)", moved, stale);
+    example(moved, 1, -1, "removal");
+    example(moved, 2, 1, "user");
+    example(stale, 1, 1, "user"); // the stale thread's own source example, never replaced
+    example(stale, 2, 1, "user");
+    return { db, path, moved, stale };
+  }
+
+  it("finishes restoring after the upgrade: the legacy source counts as touched, no key conflict", () => {
+    const { db, moved, stale } = v7Restoring();
+    migrate(db);
+    expect(() => restoreMoveSlice(db, 5, movePending(db, 5))).not.toThrow();
+    expect(movePhase(db, 5)).toBe("undone");
+    expect(db.all("SELECT thread_id, category_id, label, source FROM cls_examples ORDER BY thread_id, category_id")).toEqual(
+      [
+        { thread_id: moved, category_id: 1, label: 1, source: "user" },
+        { thread_id: stale, category_id: 1, label: 1, source: "user" },
+      ].sort((a, b) => a.thread_id - b.thread_id),
+    );
   });
 });

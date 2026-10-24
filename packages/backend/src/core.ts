@@ -160,7 +160,10 @@ export class BackendCore {
     await this.ready;
     if (this.stopped) return;
     if (!this.categorizer.ready) void this.categorizer.rebuild();
-    for (const m of await this.store.categories.unfinishedMoves()) void this.finishMove(m.batchId);
+    // a resume that fails waits for the next start (its journal is intact); it must never crash the backend
+    for (const m of await this.store.categories.unfinishedMoves()) {
+      this.finishMove(m.batchId).catch((error: unknown) => this.log("warn", `move ${m.batchId} couldn't be resumed`, error instanceof Error ? error.message : error));
+    }
     if (this.options.autoSync === false) return;
     this.idleTimer = setInterval(() => void this.categorizer.idle(), 10 * 60_000);
     this.idleTimer.unref?.();

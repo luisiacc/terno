@@ -159,3 +159,31 @@ describe("moving threads between categories", () => {
     }
   });
 });
+
+describe("resuming a move at startup", () => {
+  it("a resume that fails is logged and left for the next start, never an unhandled rejection", async () => {
+    const { backend, a, b, threads, dir } = setup();
+    const [t1] = threads as [number];
+    const db = sqlDb(backend.store);
+    db.run("INSERT INTO thread_categories (thread_id, category_id, added_by, added_at) VALUES (?, ?, 'user', 0)", t1, a);
+    const m = beginMove(db, { to: b, threadIds: [t1], addedBy: "user", now: NOW, source: "dnd" });
+    await backend.stop();
+    const rejections: unknown[] = [];
+    const onRejection = (e: unknown) => rejections.push(e);
+    process.on("unhandledRejection", onRejection);
+    const logs: string[] = [];
+    const again = new Backend({ dbPath: join(dir, "unica.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, log: (level, message) => logs.push(`${level} ${message}`) });
+    try {
+      // the training can't write: the resume fails
+      sqlDb(again.store).exec("CREATE TRIGGER fail_training BEFORE INSERT ON cls_examples BEGIN SELECT RAISE(ABORT, 'disco lleno'); END");
+      await again.start();
+      await expect.poll(() => logs.some((l) => l.startsWith("warn") && l.includes(`move ${m.batchId}`))).toBe(true);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(rejections).toEqual([]);
+      expect(movePhase(sqlDb(again.store), m.batchId)).toBe("training");
+    } finally {
+      process.off("unhandledRejection", onRejection);
+      await again.stop();
+    }
+  });
+});

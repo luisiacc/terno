@@ -339,8 +339,14 @@ function leftBy(c: Ctx, batchId: number): Map<number, R[]> {
   return out;
 }
 
-/** The categories a move touches for one thread: the destination and every one it left. */
-const touchedCategories = (to: number, left: readonly R[] | undefined) => [to, ...(left ?? []).map((r) => r.category_id as number)];
+/**
+ * The categories a move touches for one thread: the destination and every
+ * one it left. A move from before IndexedDB version 2 (a single `from`)
+ * journaled that category for every thread, in the source or not.
+ */
+const touchedCategories = (to: number, left: readonly R[] | undefined, legacyFrom?: number) => [
+  ...new Set([to, ...(legacyFrom === undefined ? [] : [legacyFrom]), ...(left ?? []).map((r) => r.category_id as number)]),
+];
 
 /** Exclusive: afterwards each thread is in `to` only. Journals every removed row with its category. */
 export function beginMove(c: Ctx, m: { to: number; threadIds: readonly number[]; addedBy: AddedBy; now: number; source: string }): { batchId: number; added: number[]; moved: number[]; deltas: ModelDelta[] } {
@@ -398,7 +404,7 @@ export function trainMoveSlice(c: Ctx, batchId: number, threadIds: readonly numb
     const left = leftBy(c, batchId);
     const examples = T(c, "cls_examples");
     for (const r of rows) {
-      for (const cat of touchedCategories(to, left.get(r.thread_id))) {
+      for (const cat of touchedCategories(to, left.get(r.thread_id), s.from)) {
         const e = examples.get(r.thread_id, cat);
         if (e) T(c, "cat_move_examples").insert({ batch_id: batchId, thread_id: e.thread_id, category_id: e.category_id, label: e.label, weight: e.weight, source: e.source, at: e.at, sender: e.sender, content: e.content, example_batch_id: e.batch_id, features: e.features });
       }
@@ -451,7 +457,7 @@ export function undoMoveCommit(c: Ctx, batchId: number, now: number): { category
         restored.add(t);
       }
     }
-    for (const t of mine) for (const cat of touchedCategories(to, left.get(t))) {
+    for (const t of mine) for (const cat of touchedCategories(to, left.get(t), s.from)) {
       const d = decisions.get(t, cat);
       if (d) decisions.update(d, { outcome: null });
     }
@@ -478,9 +484,13 @@ export function restoreMoveSlice(c: Ctx, batchId: number, threadIds: readonly nu
     const wanted = new Set(threadIds);
     const ids = journal.by("fk_batch_id", batchId).filter((r) => r.done === 0 && wanted.has(r.thread_id)).map((r) => r.thread_id as number).sort((x, y) => x - y);
     const left = leftBy(c, batchId);
+    const legacyFrom = scopeOf(batch).from;
+    // whatever the journal holds goes back in its place, so what is there now goes first
+    const journaled = new Map<number, number[]>();
+    for (const e of T(c, "cat_move_examples").by("fk_batch_id", batchId)) journaled.set(e.thread_id, [...(journaled.get(e.thread_id) ?? []), e.category_id]);
     const examples = T(c, "cls_examples");
     const deltas: ModelDelta[] = [];
-    for (const t of ids) for (const cat of touchedCategories(to, left.get(t))) {
+    for (const t of ids) for (const cat of new Set([...touchedCategories(to, left.get(t), legacyFrom), ...(journaled.get(t) ?? [])])) {
       const e = examples.delete(t, cat);
       if (e) deltas.push({ op: "untrain", example: toExample(e), key: [e.thread_id, e.category_id] });
     }
