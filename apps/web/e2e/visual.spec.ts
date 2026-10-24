@@ -84,6 +84,17 @@ test.describe("light", () => {
     await expect(page).toHaveScreenshot("reply-inline.png");
   });
 
+  test("new message in the reader pane", async ({ app: page }) => {
+    await ready(page);
+    await focusList(page);
+    await page.keyboard.press("c");
+    await page.getByTestId("compose-to").fill("Ana Torres <ana@example.com>");
+    await page.getByTestId("compose-subject").fill("Propuesta de colaboración");
+    await page.getByTestId("compose-body").fill("Hola Ana,\n\nTe comparto la propuesta que platicamos. Si te parece bien, la revisamos el jueves.\n\nSaludos,\nLuis");
+    await expect(page.getByTestId("draft-status")).toHaveText("Borrador guardado");
+    await expect(page).toHaveScreenshot("compose-new-inline.png");
+  });
+
   test("AI filter builder with live preview", async ({ app: page }) => {
     await ready(page);
     await page.getByTestId("open-filters").click();

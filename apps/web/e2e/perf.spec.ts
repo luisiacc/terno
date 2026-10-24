@@ -145,8 +145,17 @@ async function setDensity(page: import("@playwright/test").Page, server: import(
 }
 
 for (const density of ["comfortable", "compact"] as const) {
-  test(`sustained j at key-repeat rate (${density}): frames stay smooth and the selection keeps up`, async ({ app: page, server }) => {
+  test(`sustained j at key-repeat rate (${density}): frames stay smooth and the selection keeps up, with drafts around`, async ({ app: page, server }) => {
+    // a collapsed reply draft on a listed thread and a new draft in the strip, both restored by the reload below
+    const ctx = { clientId: "setup", origin: "dev" as const };
+    const db = sqlDb(server.backend.store);
+    const target = db.get<{ id: number; thread_id: number; account_id: number }>("SELECT m.id, m.thread_id, m.account_id FROM messages m JOIN threads t ON t.id = m.thread_id WHERE t.in_inbox = 1 ORDER BY t.last_date DESC LIMIT 1 OFFSET 3")!;
+    await server.backend.server.invoke("drafts.save", { accountId: target.account_id, to: [], cc: [], subject: "Re: x", bodyText: "Borrador a medias", inReplyToMessageId: target.id, uiState: "collapsed" }, ctx);
+    await server.backend.server.invoke("drafts.save", { accountId: target.account_id, to: [{ name: "", email: "ana@example.com" }], cc: [], subject: "Nuevo", bodyText: "Para después" }, ctx);
     await setDensity(page, server, density);
+    await expect(page.getByTestId("strip-item")).toHaveCount(1);
+    await expect(page.locator(`[data-testid=thread-row][data-thread-id="${target.thread_id}"]`)).toContainText("Borrador");
+    const rendersBefore = await renders(page, "ThreadRow");
     await expect(page.locator(`[data-testid=thread-row]`).first()).toHaveCSS("height", density === "compact" ? "40px" : "68px");
     await page.evaluate(() => {
       const w = window as unknown as { __moves: number };
@@ -172,8 +181,12 @@ for (const density of ["comfortable", "compact"] as const) {
     );
     const f = await stopFrames(page);
     const moves = await page.evaluate(() => (window as unknown as { __moves: number }).__moves);
-    stats.push({ name: `j at key repeat (${density}): selection moves ${moves}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+    const perMove = ((await renders(page, "ThreadRow")) - rendersBefore) / moves;
+    stats.push({ name: `j at key repeat (${density}): selection moves ${moves}, row renders per move ${perMove.toFixed(2)}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
     expect(moves).toBeGreaterThanOrEqual(300);
+    // the two rows whose selection changed, plus the row the scroll brings into view (and a page load now and then);
+    // drafts add none
+    expect(perMove).toBeLessThanOrEqual(3.5);
     expect(await rows(page).count()).toBeLessThanOrEqual(60);
     frameGate(`j at key repeat (${density})`, f);
   });

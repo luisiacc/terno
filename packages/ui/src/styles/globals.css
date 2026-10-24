@@ -261,6 +261,13 @@
 :root[data-dragging] [role="listbox"] [data-thread-id]:not([aria-selected="true"], [data-checked]):hover {
   background-color: transparent;
 }
+/* a new message in the reader pane is what's selected: the list's open row steps back to a tint */
+[data-composing] [data-thread-id][data-cursor]::before {
+  background-color: var(--row-hover);
+}
+[data-composing] [data-thread-id][data-cursor] {
+  color: var(--foreground);
+}
 /* a removal's window: the remaining rows slide up into place */
 [data-reflow] [data-thread-id] {
   transition: transform var(--motion-slow) var(--motion-ease);

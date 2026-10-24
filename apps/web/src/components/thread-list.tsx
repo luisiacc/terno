@@ -16,6 +16,7 @@ import { currentScope, listKey, loadMore, useList } from "~/state/list";
 import { clearSelection, selectScope } from "~/lib/select";
 import { client } from "~/rpc/connection";
 import { ThreadMenu } from "./thread-menu";
+import { DraftsStrip } from "./drafts-strip";
 import { ROW_HEIGHT, ThreadRow } from "./thread-row";
 import { LearnedBanner } from "./learned-banner";
 import { DesktopBanner, GmailReconnect } from "~/lib/web-parts";
@@ -176,6 +177,7 @@ export function ThreadList() {
   const loading = useList((s) => s.loading);
   const itemsKey = useList((s) => s.itemsKey);
   const compact = useApp((s) => s.settings?.density === "compact");
+  const composing = useApp((s) => s.compose !== null);
   const showAccount = useApp((s) => s.accountId === null && s.accounts.length > 1);
   const height = compact ? ROW_HEIGHT.compact : ROW_HEIGHT.comfortable;
   const parentRef = useRef<HTMLDivElement>(null);
@@ -221,7 +223,7 @@ export function ThreadList() {
   }, [last?.index, items.length]);
 
   return (
-    <section className="flex h-full min-h-0 flex-col bg-pane" data-testid="thread-list" data-results-for={itemsKey}>
+    <section className="flex h-full min-h-0 flex-col bg-pane" data-testid="thread-list" data-results-for={itemsKey} data-composing={composing || undefined}>
       <Header hairlineRef={headerRef} />
       <LearnedBanner />
       {DesktopBanner && GmailReconnect && (
@@ -231,6 +233,7 @@ export function ThreadList() {
         </Suspense>
       )}
       <SelectAllBanner />
+      <DraftsStrip />
       <ThreadMenu>
       <div ref={parentRef} role="listbox" aria-label="Conversaciones" aria-multiselectable className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain [contain:strict]">
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />

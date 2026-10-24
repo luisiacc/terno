@@ -61,6 +61,8 @@ export function pressRow(id: number, m: PressModifiers): void {
   }
   const patch: Partial<AppState> = { selectedId: id, readerOpen: true, anchorId: id };
   if (s.checked.size || s.scope) Object.assign(patch, { checked: EMPTY, scope: null });
+  // a new message in the reader steps aside for the conversation clicked (it stays in the drafts strip)
+  if (s.compose) patch.compose = null;
   setApp(patch);
 }
 

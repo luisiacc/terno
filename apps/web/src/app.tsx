@@ -10,7 +10,8 @@ import { CategoryPicker } from "./components/category-picker";
 import { CategorySnackbarHost, showCategorySnackbar } from "./components/category-snackbar";
 import { CommandPalette } from "./components/command-palette";
 import { DragGhost } from "./components/drag-ghost";
-import { Composer } from "./components/composer";
+import { NewMessage } from "./components/new-message";
+import { installComposeFollowsSelection } from "~/lib/compose";
 import { Reader } from "./components/reader";
 import { SelectionBar } from "./components/selection-bar";
 import { Sidebar } from "./components/sidebar";
@@ -48,7 +49,9 @@ export function App() {
   const mode = useAppearance((s) => s.mode);
   const fresh = useApp((s) => s.ready && s.accounts.length === 0 && !s.owner && !s.demo);
   const many = useApp((s) => s.scope !== null || s.checked.size >= 2);
+  const composing = useApp((s) => s.compose !== null);
   useEffect(() => installKeyboard(), []);
+  useEffect(() => installComposeFollowsSelection(), []);
   // every way of filing threads offers the snackbar, except its own bulk adds
   useEffect(
     () =>
@@ -75,8 +78,8 @@ export function App() {
           <ThreadList />
         </div>
         <main className="relative min-h-0">
-          {many ? <SelectionBar /> : <Reader />}
-          <Composer />
+          {/* the reader pane: a bulk selection, else a new message being written, else the conversation */}
+          {many ? <SelectionBar /> : composing ? <NewMessage /> : <Reader />}
         </main>
       </div>
       <CommandPalette />

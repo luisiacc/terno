@@ -2,12 +2,12 @@ import { isValidEmail, parseAddressList } from "@unica/core";
 import type { DraftMode } from "@unica/core/rpc";
 import { toast } from "sonner";
 import { client } from "~/rpc/connection";
-import { getApp, setApp } from "~/state/app";
+import { getApp, setApp, useApp } from "~/state/app";
 import { invalidateThreads, loadThread } from "~/state/threads";
 import { setLastUndo } from "./actions";
 import { convertFields, newFields, replyFields } from "./compose-fields";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
-import { createDraft, draftForSend, editDraft, fieldsOf, forgetDraft, recipients, sendBody, setDraftUi, threadDraftKey, useDrafts, type LocalDraft } from "./drafts";
+import { authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, recipients, sendBody, setDraftUi, threadDraftKey, useDrafts, type LocalDraft } from "./drafts";
 
 /**
  * Writing mail: which draft a reply, reply-all, forward or new message opens,
@@ -44,7 +44,8 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
     return;
   }
   if (mode === "new" || threadId === null) {
-    setApp({ compose: { key: createDraft(newFields(defaultAccount)), seq: ++seq } });
+    // a new message takes the reader pane; a bulk selection steps aside for it
+    setApp({ compose: { key: createDraft(newFields(defaultAccount)), seq: ++seq }, checked: new Set(), scope: null });
     return;
   }
   if (s.scope !== null || s.checked.size >= 2) return;
@@ -75,6 +76,31 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
   }
   const key = createDraft(replyFields(mode, detail, account));
   focusDraft(key, target);
+}
+
+/** Shows a new-message draft in the reader pane again (from the drafts strip). */
+export function showNewDraft(key: string): void {
+  setApp({ compose: { key, seq: ++seq }, checked: new Set(), scope: null });
+}
+
+/**
+ * The reader pane leaves the new message (Esc, a thread opened, sent, discarded).
+ * What was written is kept (saved first); an untouched new draft just goes.
+ */
+export function leaveNewDraft(): void {
+  const key = getApp().compose?.key;
+  if (!key) return;
+  setApp({ compose: null });
+  const d = useDrafts.getState().drafts[key];
+  if (d && !authored(d)) forgetDraft(key);
+  else void flushDraft(key);
+}
+
+/** Opening a conversation (j/k, a click, the menu) while a new message is shown: the reader follows the conversation. */
+export function installComposeFollowsSelection(): () => void {
+  return useApp.subscribe((s, prev) => {
+    if (s.compose && s.compose === prev.compose && s.selectedId !== prev.selectedId) leaveNewDraft();
+  });
 }
 
 /** Sends a draft: waits for its save in flight, checks the recipients, queues the send (which deletes the stored draft). */

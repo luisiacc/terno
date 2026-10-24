@@ -188,15 +188,104 @@ test.describe("drafts are kept", () => {
   });
 });
 
-test.describe("new message", () => {
-  test("c writes a new email from any account and it lands in Enviados", async ({ app: page }) => {
+test.describe("new message, in the reader pane", () => {
+  test("c writes a new message in the reader (no dialog), with the drafts strip; it lands in Enviados", async ({ app: page }) => {
+    await openRow(page, 0);
+    await focusList(page);
     await page.keyboard.press("c");
+    const form = page.getByRole("form", { name: "Mensaje nuevo" });
+    await expect(form).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByTestId("reader")).toHaveCount(0);
+    await expect(page.getByTestId("compose-to")).toBeFocused();
+    await expect(page.getByTestId("strip-item").first()).toHaveAttribute("aria-current", "true");
     await page.getByTestId("compose-to").fill("Ana Torres <ana@example.com>");
     await page.getByTestId("compose-subject").fill("Propuesta de colaboración");
+    await expect(page.getByTestId("compose-title")).toHaveText("Propuesta de colaboración");
     await page.getByTestId("compose-body").fill("Hola Ana, te comparto la propuesta.");
-    await page.getByTestId("compose-send").click();
+    await page.keyboard.press("Meta+Enter");
     await expect(page.getByTestId("composer")).toHaveCount(0);
+    await expect(page.getByTestId("reader")).toBeVisible();
+    await expect(page.getByTestId("drafts-strip")).toHaveCount(0);
     await page.getByTestId("nav-sent").click();
     await expect(page.getByTestId("row-subject").first()).toHaveText("Propuesta de colaboración");
+  });
+
+  test("Esc leaves the new message (kept, its strip item focused); the conversation shows; the strip brings it back", async ({ app: page }) => {
+    const id = await openRow(page, 0);
+    await focusList(page);
+    await page.keyboard.press("c");
+    await page.getByTestId("compose-to").fill("ana@example.com");
+    await page.getByTestId("compose-body").fill("Borrador nuevo");
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("reader")).toBeVisible();
+    await expect(page.locator("[data-cursor]")).toHaveAttribute("data-thread-id", id);
+    const item = page.getByTestId("strip-item").first();
+    await expect(item).toBeFocused();
+    await expect(item).toContainText("Para ana@example.com");
+    await item.click();
+    await expect(page.getByTestId("compose-body")).toHaveValue("Borrador nuevo");
+    // opening a conversation steps the new message aside, kept
+    await page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`).dispatchEvent("mousedown");
+    await expect(page.getByTestId("reader")).toBeVisible();
+    await expect(page.getByTestId("strip-item")).toHaveCount(1);
+  });
+
+  test("a bulk selection takes the pane over the new message, which comes back when it clears", async ({ app: page }) => {
+    await page.keyboard.press("c");
+    await page.getByTestId("compose-body").fill("Sigo aquí");
+    const meta = process.platform === "darwin" ? "Meta" : "Control";
+    await rows(page).nth(1).click({ modifiers: [meta] });
+    await rows(page).nth(2).click({ modifiers: [meta] });
+    await expect(page.getByTestId("selection-bar")).toBeVisible();
+    await focusList(page);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("compose-body")).toHaveValue("Sigo aquí");
+  });
+
+  test("Bcc is sent, and kept out of To and Cc", async ({ app: page, server }) => {
+    await page.keyboard.press("c");
+    await page.getByTestId("compose-to").fill("ana@example.com");
+    await page.getByTestId("compose-show-bcc").click();
+    await expect(page.getByTestId("compose-bcc")).toBeFocused();
+    await page.keyboard.type("jefa@example.com");
+    await page.getByTestId("compose-subject").fill("Con copia oculta");
+    await page.getByTestId("compose-body").fill("Texto");
+    await page.getByTestId("compose-send").click();
+    await expect(page.getByTestId("composer")).toHaveCount(0);
+    await expect
+      .poll(() => sqlDb(server.backend.store).get<{ payload_json: string }>("SELECT payload_json FROM ops WHERE kind = 'send' ORDER BY created_at DESC LIMIT 1")?.payload_json ?? "")
+      .toContain("jefa@example.com");
+    const payload = JSON.parse(sqlDb(server.backend.store).get<{ payload_json: string }>("SELECT payload_json FROM ops WHERE kind = 'send' ORDER BY created_at DESC LIMIT 1")!.payload_json);
+    expect(payload.bcc).toEqual([{ name: "", email: "jefa@example.com" }]);
+    expect(JSON.stringify(payload.to)).not.toContain("jefa");
+  });
+
+  test("a reply draft whose conversation was archived waits in the strip and opens its conversation", async ({ app: page }) => {
+    await openRow(page, 0);
+    const subject = (await page.getByTestId("reader-subject").textContent())!;
+    await focusList(page);
+    await page.keyboard.press("r");
+    await page.getByTestId("compose-body").focus();
+    await page.keyboard.type("Te contesto luego.");
+    await page.keyboard.press("Escape");
+    await focusList(page);
+    await page.keyboard.press("e");
+    const item = page.getByTestId("strip-item").filter({ hasText: `Re: ${subject}` });
+    await expect(item).toBeVisible();
+    await item.click();
+    await expect(page.getByTestId("reader-subject")).toHaveText(subject);
+    await expect(page.getByTestId("compose-body")).toHaveValue("Te contesto luego.");
+  });
+
+  test("new drafts come back to the strip after a reload", async ({ app: page }) => {
+    await page.keyboard.press("c");
+    await page.getByTestId("compose-to").fill("ana@example.com");
+    await page.getByTestId("compose-body").fill("Para después");
+    await expect(page.getByTestId("draft-status")).toHaveText("Borrador guardado");
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await page.getByTestId("strip-item").first().click();
+    await expect(page.getByTestId("compose-body")).toHaveValue("Para después");
   });
 });
