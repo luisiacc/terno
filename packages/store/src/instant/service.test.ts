@@ -96,6 +96,22 @@ describe("InstantSearch", () => {
     await s.close();
   });
 
+  it("close() that lands while a pass reads the head stops the loop: its wake-up isn't lost to the sleep that follows", async () => {
+    const feed = new MemoryFeed();
+    const s = service(feed);
+    await s.idle();
+    // the pass finds nothing new and goes to rest; close() came while it awaited the head (stores queue that read
+    // behind their commands, so under load the window is wide): it must not sleep through it
+    let closing: Promise<string> | null = null;
+    feed.afterHead = () => {
+      closing = s.close().then(() => "closed");
+    };
+    s.notify();
+    await until(() => closing !== null);
+    expect(await Promise.race([closing!, new Promise((r) => setTimeout(() => r("still open after 1 s"), 1000))])).toBe("closed");
+    expect(s.report.state).toBe("closed");
+  });
+
   it("a build whose postings would exceed the peak cap gives up before allocating them", async () => {
     // what loading the messages holds, and what the finished index holds
     const probe = new InstantSearchEngine();

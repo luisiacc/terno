@@ -156,6 +156,9 @@ export class InstantSearch {
   }
 
   private sleep(ms: number | null): Promise<void> {
+    // close() may have come while this pass awaited (the head, a batch): its wake() found no sleeper to wake, so a
+    // sleep now (with no deadline, forever) would hold close() up
+    if (this.stopped) return Promise.resolve();
     return new Promise((resolve) => {
       this.wakeUp = resolve;
       if (ms !== null) this.timer = setTimeout(() => this.wake(), Math.max(0, ms));
