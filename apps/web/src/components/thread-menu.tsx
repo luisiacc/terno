@@ -81,14 +81,23 @@ function targetFor(row: number): MenuTarget {
   return { ids: menuTargets(row, s.checked, { ids: items.map((t) => t.id), index }), scope: null };
 }
 
+/** Where ⇧F10 opens: on the selection when there is one (the open thread if it is part of it, else its first row), else the open thread. */
+export function menuAnchor(selectedId: number | null, checked: ReadonlySet<number>, index: ReadonlyMap<number, number>): number | null {
+  if (checked.size === 0) return selectedId;
+  if (selectedId !== null && checked.has(selectedId)) return selectedId;
+  let first: number | null = null;
+  for (const id of checked) if (index.has(id) && (first === null || index.get(id)! < index.get(first)!)) first = id;
+  return first;
+}
+
 /**
- * ⇧F10 / the ContextMenu key: the menu opens at the selected row, as a
- * right-click there would (the row is scrolled into view first).
+ * ⇧F10 / the ContextMenu key: the menu opens on the selection (or the open
+ * thread), as a right-click there would (the row is scrolled into view first).
  */
 export function openMenuForSelection(): void {
   const s = getApp();
-  const id = s.selectedId ?? [...s.checked][0];
-  if (id === undefined) return;
+  const id = menuAnchor(s.selectedId, s.checked, useList.getState().index);
+  if (id === null) return;
   const i = useList.getState().index.get(id);
   if (i === undefined) return;
   listScroller.scrollToIndex?.(i);

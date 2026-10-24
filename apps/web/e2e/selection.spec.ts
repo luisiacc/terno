@@ -281,6 +281,18 @@ test.describe("multi-selection", () => {
     expect(flags(server, id).unread_count).toBeGreaterThan(0);
   });
 
+  test("⇧F10 with a selection opens the menu on the selection even when the open thread isn't part of it", async ({ app: page }) => {
+    const ids = await idsOf(rows(page));
+    // the open thread is ids[0]; check 1 and 2, then uncheck 0: the cursor sits on an unchecked row
+    await selectRows(page, ids.slice(0, 3));
+    await row(page, ids[0]!).click({ modifiers: ["ControlOrMeta"] });
+    await expect(checked(page)).toHaveCount(2);
+    await focusList(page);
+    await page.keyboard.press("Shift+F10");
+    await expect(menu(page)).toBeVisible();
+    await expect(item(page, "menu-count")).toHaveText("2 conversaciones");
+  });
+
   test("⌫ trashes the selection", async ({ app: page, server }) => {
     const ids = (await idsOf(rows(page))).slice(2, 5);
     await selectRows(page, ids);
