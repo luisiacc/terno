@@ -711,3 +711,35 @@ test("selection: toggling one row renders one row; ⌘A over 500 loaded rows com
   await page.waitForTimeout(50);
   expect((await renders(page, "ThreadRow")) - before).toBe(0);
 });
+
+test("printing: the print document for a 100-message conversation builds in under 30 ms", async ({ app: page }) => {
+  // the sheet loads the builder (a lazy chunk); then build straight from it, with realistic bodies
+  await page.keyboard.press("ControlOrMeta+p");
+  await expect(page.getByTestId("print-preview")).toHaveAttribute("data-ready", "true");
+  await page.keyboard.press("Escape");
+  const samples = await page.evaluate(() => {
+    const build = (window as unknown as { __terno: { buildPrintDocument(i: unknown, o: unknown): string } }).__terno.buildPrintDocument;
+    const para = "Revisamos la propuesta, los tiempos y el presupuesto de la campaña. ¿Te parece si lo cerramos esta semana? ";
+    const messages = Array.from({ length: 100 }, (_, i) => ({
+      id: i + 1,
+      from: { name: "Yuki Gutiérrez", email: "yuki@acme.studio" },
+      to: [{ name: "Luis Cordero", email: "luis@terno.mx" }],
+      cc: i % 3 ? [] : [{ name: "Ana Ruiz", email: "ana@despacho.mx" }],
+      date: Date.UTC(2026, 9, 1) + i * 3_600_000,
+      // half HTML (sanitized), half plain text with a trailing quote
+      bodyHtml: i % 2 ? `<div><p>${para.repeat(4)}</p><table><tr><td>Concepto</td><td>$1,200</td></tr></table><p>${para}</p><div class="gmail_quote">El lunes escribió:<blockquote>${para.repeat(3)}</blockquote></div></div>` : null,
+      bodyText: `${para.repeat(5)}\n\nSaludos.\n\nEl lunes, Yuki escribió:\n> ${para}\n> ${para}`,
+      attachments: i % 10 ? [] : [{ filename: "propuesta.pdf", size: 240_000 }],
+      allowRemote: false,
+    }));
+    const out: number[] = [];
+    for (let i = 0; i < 25; i++) {
+      const t0 = performance.now();
+      build({ subject: "Propuesta campaña", messages }, { content: "headers", quoted: i % 2 ? "hide" : "show", paper: "letter" });
+      out.push(performance.now() - t0);
+    }
+    return out.slice(5);
+  });
+  const s = stat("print document: 100 messages built", 30, samples);
+  expect(s.p95).toBeLessThanOrEqual(30 * MULT);
+});
