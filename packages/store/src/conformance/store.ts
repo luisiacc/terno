@@ -1271,6 +1271,21 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       });
     });
 
+    describe("portable message references (exports)", () => {
+      it("a message's Message-ID and back: the newest copy in that account, any case, with or without <>", async () => {
+        const store = await fresh();
+        const [a, other] = await withAccounts(store);
+        await ingest(store, [msg({ accountId: a!, providerMsgId: "m1", rfcMessageId: "<Orig@Example.com>", subject: "Propuesta" })]);
+        await ingest(store, [msg({ accountId: other!, providerMsgId: "m2", rfcMessageId: "<orig@example.com>", subject: "Propuesta" })]);
+        const snap = await store.debug.snapshot();
+        const mine = snap.messages.find((m) => m.providerMsgId === "m1")!;
+        expect(await store.drafts.messageRef(mine.id)).toBe("orig@example.com");
+        expect(await store.drafts.findMessage(a!, "<ORIG@example.com>")).toEqual({ id: mine.id, threadId: await threadOf(store, "m1") });
+        expect(await store.drafts.findMessage(a!, "nobody@example.com")).toBeNull();
+        expect(await store.drafts.messageRef(999_999)).toBeNull();
+      });
+    });
+
     describe("categories in settings", () => {
       it("reorder sets every position in one unit, keeps unlisted ones after, and survives a reopen", async () => {
         let store = await fresh();
