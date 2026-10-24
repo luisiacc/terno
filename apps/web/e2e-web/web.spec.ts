@@ -57,6 +57,8 @@ test("one tab at a time: a second tab waits, takes over after the first closed i
 
 test("an open error never swaps the mailbox for an empty one", async ({ page }) => {
   await boot(page);
+  // the rows in the DOM depend on the list's height: count once the banners above it are in
+  await expect(page.getByTestId("mac-banner")).toBeVisible();
   const before = await rows(page).count();
   // the mailbox is pinned to the adapter it was created with; pretend that one is gone
   await page.evaluate(() => localStorage.setItem("unica:storage:unica", "no-such-store"));
@@ -69,6 +71,7 @@ test("an open error never swaps the mailbox for an empty one", async ({ page }) 
   await expect(page.getByTestId("web-fatal")).toBeVisible();
   // the stored mailbox is untouched
   await boot(page, "/?demo=0");
+  await expect(page.getByTestId("mac-banner")).toBeVisible();
   expect(await rows(page).count()).toBe(before);
 });
 
