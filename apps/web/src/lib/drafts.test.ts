@@ -211,7 +211,7 @@ describe("drafts: helpers and restore", () => {
     const drafts = useDrafts.getState().drafts;
     expect(Object.keys(drafts)).toHaveLength(3);
     expect(drafts[threadDraftKey(drafts, 7)!]!.bodyText).toBe("nuevo");
-    expect(fromServer({ ...base, id: 9, threadId: 7, bodyText: "", updatedAt: 0 })).toMatchObject({ toText: "Ana <ana@example.com>", auto: ["ana@example.com"], uiState: "collapsed", status: "saved" });
+    expect(fromServer({ ...base, id: 9, threadId: 7, bodyText: "", updatedAt: 0 })).toMatchObject({ toText: "Ana <ana@example.com>", auto: { to: ["ana@example.com"], cc: [], bcc: [] }, uiState: "collapsed", status: "saved" });
   });
 });
 
@@ -240,6 +240,18 @@ describe("converting a draft to another mode keeps what the user wrote", () => {
     expect(all.ccText).toBe("");
     expect(all).toMatchObject({ mode: "forward", inReplyToMessageId: null, forwardOfMessageId: 3 });
     expect(all.quotedText).toContain("Mensaje reenviado");
+  });
+
+  it("a recipient the user typed is theirs in that field: reply → add Lucas to Para → reply-all → forward keeps Lucas", () => {
+    const reply = replyFields("reply", detail, me);
+    const typed = { ...reply, toText: `${reply.toText}, Lucas <lucas@acme.studio>`, bodyText: "x" };
+    const all = convertFields(typed, "replyAll", detail, me);
+    // Lucas is already in Para (typed): reply-all doesn't add him to Cc again
+    expect(all.toText).toContain("lucas@acme.studio");
+    expect(all.ccText).not.toContain("lucas@acme.studio");
+    const fwd = convertFields(all, "forward", detail, me);
+    expect(fwd.toText).toBe("Lucas <lucas@acme.studio>");
+    expect(fwd.ccText).toBe("");
   });
 
   it("reply-all → reply drops only the untouched auto recipients", () => {

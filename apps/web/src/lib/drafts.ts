@@ -25,6 +25,14 @@ import { client } from "~/rpc/connection";
 
 export type DraftStatus = "clean" | "dirty" | "saving" | "saved" | "error";
 
+/** Per field, the addresses Única put there (anything else in that field the user typed). */
+export interface AutoRecipients {
+  to: string[];
+  cc: string[];
+  bcc: string[];
+}
+export const NO_AUTO: AutoRecipients = { to: [], cc: [], bcc: [] };
+
 export interface LocalDraft {
   key: string;
   /** server id, once a save was acknowledged */
@@ -38,11 +46,11 @@ export interface LocalDraft {
   accountId: number;
   threadId: number | null;
   mode: DraftMode;
-  /** recipients as typed (comma-separated); `auto` remembers which addresses Única filled in */
+  /** recipients as typed (comma-separated); `auto` remembers, per field, which addresses Única filled in there */
   toText: string;
   ccText: string;
   bccText: string;
-  auto: string[];
+  auto: AutoRecipients;
   subject: string;
   subjectEdited: boolean;
   bodyText: string;
@@ -113,7 +121,7 @@ export function fromServer(d: Draft): LocalDraft {
     toText: text(d.to),
     ccText: text(d.cc),
     bccText: text(d.bcc),
-    auto: [...d.to, ...d.cc, ...d.bcc].filter((a) => a.auto).map((a) => a.email),
+    auto: { to: d.to.filter((a) => a.auto).map((a) => a.email), cc: d.cc.filter((a) => a.auto).map((a) => a.email), bcc: d.bcc.filter((a) => a.auto).map((a) => a.email) },
     subject: d.subject,
     subjectEdited: d.subjectEdited,
     bodyText: d.bodyText,
@@ -222,9 +230,9 @@ function save(key: string): Promise<void> {
     accountId: d.accountId,
     threadId: d.threadId,
     mode: d.mode,
-    to: recipients(d.toText, d.auto),
-    cc: recipients(d.ccText, d.auto),
-    bcc: recipients(d.bccText, d.auto),
+    to: recipients(d.toText, d.auto.to),
+    cc: recipients(d.ccText, d.auto.cc),
+    bcc: recipients(d.bccText, d.auto.bcc),
     subject: d.subject,
     subjectEdited: d.subjectEdited,
     bodyText: d.bodyText,

@@ -52,7 +52,7 @@ export function replyFields(mode: Exclude<DraftMode, "new">, detail: ThreadDetai
     toText: formatAddressList(to),
     ccText: formatAddressList(cc),
     bccText: "",
-    auto: [...to, ...cc].map((a) => a.email),
+    auto: { to: to.map((a) => a.email), cc: cc.map((a) => a.email), bcc: [] },
     subject: subjectFor(mode, detail.thread.subject),
     subjectEdited: false,
     // the floating composer shows the quote inside the text; the inline one keeps it apart
@@ -66,7 +66,7 @@ export function replyFields(mode: Exclude<DraftMode, "new">, detail: ThreadDetai
 }
 
 export function newFields(accountId: number): DraftFields {
-  return { accountId, threadId: null, mode: "new", toText: "", ccText: "", bccText: "", auto: [], subject: "", subjectEdited: false, bodyText: "", quotedText: "", includeQuote: false, inReplyToMessageId: null, forwardOfMessageId: null, uiState: "open" };
+  return { accountId, threadId: null, mode: "new", toText: "", ccText: "", bccText: "", auto: { to: [], cc: [], bcc: [] }, subject: "", subjectEdited: false, bodyText: "", quotedText: "", includeQuote: false, inReplyToMessageId: null, forwardOfMessageId: null, uiState: "open" };
 }
 
 
@@ -78,19 +78,27 @@ export function newFields(accountId: number): DraftFields {
  */
 export function convertFields(d: DraftFields, mode: Exclude<DraftMode, "new">, detail: ThreadDetail, account: Account): DraftFields {
   const fresh = replyFields(mode, detail, account);
-  const auto = new Set(d.auto.map((e) => e.toLowerCase()));
-  const typed = (text: string) => parseAddressList(text).filter((a) => !auto.has(a.email.toLowerCase()));
-  const merge = (mine: Address[], theirs: string) => {
-    const out = [...mine];
-    for (const a of parseAddressList(theirs)) if (!out.some((x) => x.email.toLowerCase() === a.email.toLowerCase())) out.push(a);
-    return formatAddressList(out);
+  const lower = (e: string) => e.toLowerCase();
+  // what the user typed, field by field (Única's own entries in that field excluded)
+  const typed = (text: string, auto: readonly string[]) => {
+    const mine = new Set(auto.map(lower));
+    return parseAddressList(text).filter((a) => !mine.has(lower(a.email)));
   };
+  const typedTo = typed(d.toText, d.auto.to);
+  const typedCc = typed(d.ccText, d.auto.cc);
+  const typedBcc = typed(d.bccText, d.auto.bcc);
+  // Única's recipients for the new mode, minus anyone the user already put in any field
+  const taken = new Set([...typedTo, ...typedCc, ...typedBcc].map((a) => lower(a.email)));
+  const autoTo = parseAddressList(fresh.toText).filter((a) => !taken.has(lower(a.email)));
+  for (const a of autoTo) taken.add(lower(a.email));
+  const autoCc = parseAddressList(fresh.ccText).filter((a) => !taken.has(lower(a.email)));
   return {
     ...d,
     mode,
-    toText: merge(typed(d.toText), fresh.toText),
-    ccText: merge(typed(d.ccText), fresh.ccText),
-    auto: fresh.auto,
+    toText: formatAddressList([...typedTo, ...autoTo]),
+    ccText: formatAddressList([...typedCc, ...autoCc]),
+    bccText: formatAddressList(typedBcc),
+    auto: { to: autoTo.map((a) => a.email), cc: autoCc.map((a) => a.email), bcc: [] },
     subject: d.subjectEdited ? d.subject : fresh.subject,
     quotedText: fresh.quotedText,
     includeQuote: fresh.includeQuote,
