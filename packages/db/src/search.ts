@@ -1,4 +1,4 @@
-import { isFullEmail, normalizeText, parseSearch, resolveSearch, tokenize, type MessageTerm, type ResolvedSearch, type ScopeLookup, type View } from "@unica/core";
+import { isFullEmail, normalizeText, parseSearch, resolveSearch, tokenize, type MessageTerm, type ResolvedSearch, type ScopeLookup, type View } from "@terno/core";
 import { pageFrom, SUMMARY_COLUMNS, VIEW_WHERE, type Cursor, type Page, type SummaryRow } from "./queries";
 import { placeholders, type Db, type Param } from "./sqlite";
 

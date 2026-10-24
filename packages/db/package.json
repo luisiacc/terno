@@ -1,5 +1,5 @@
 {
-  "name": "@unica/db",
+  "name": "@terno/db",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,11 +13,11 @@
   },
   "dependencies": {
     "@sqlite.org/sqlite-wasm": "3.54.1-build1",
-    "@unica/core": "workspace:*",
-    "@unica/store": "workspace:*"
+    "@terno/core": "workspace:*",
+    "@terno/store": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "@unica/mock-data": "workspace:*"
+    "@terno/mock-data": "workspace:*"
   }
 }

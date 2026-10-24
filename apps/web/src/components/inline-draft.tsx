@@ -1,9 +1,9 @@
-import type { Account } from "@unica/core";
-import { Button } from "@unica/ui/components/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@unica/ui/components/select";
-import { Shortcut } from "@unica/ui/components/shortcut";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@unica/ui/components/tooltip";
-import { cn } from "@unica/ui/lib/utils";
+import type { Account } from "@terno/core";
+import { Button } from "@terno/ui/components/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
+import { Shortcut } from "@terno/ui/components/shortcut";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
+import { cn } from "@terno/ui/lib/utils";
 import { ChevronDown, Forward, PenLine, ReplyAll, Send, Trash2 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";

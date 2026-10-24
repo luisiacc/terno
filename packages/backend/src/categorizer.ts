@@ -1,5 +1,5 @@
-import { CategorizerModel, FEATURES_V } from "@unica/core";
-import type { ExampleKey, MailStore, ModelDelta, Platform } from "@unica/store";
+import { CategorizerModel, FEATURES_V } from "@terno/core";
+import type { ExampleKey, MailStore, ModelDelta, Platform } from "@terno/store";
 import { readAutoCategorize } from "./settings";
 
 export interface CategorizerHost {

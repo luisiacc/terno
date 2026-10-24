@@ -1,6 +1,6 @@
-import type { Condition, FilterAction, FilterRule } from "@unica/core";
-import { draftAddressSchema, exportCategorySchema, exportDraftSchema, exportFilterSchema, settingsPatchSchema, type ExportCategory, type ExportDraftItem, type ExportFilter, type DraftAddress, type ExportedDraft, type ExportFile, type ImportResult, type MailboxExport, type SettingsPatch } from "@unica/core/rpc";
-import type { DraftInput, DraftRow } from "@unica/store";
+import type { Condition, FilterAction, FilterRule } from "@terno/core";
+import { draftAddressSchema, exportCategorySchema, exportDraftSchema, exportFilterSchema, settingsPatchSchema, type ExportCategory, type ExportDraftItem, type ExportFilter, type DraftAddress, type ExportedDraft, type ExportFile, type ImportResult, type MailboxExport, type SettingsPatch } from "@terno/core/rpc";
+import type { DraftInput, DraftRow } from "@terno/store";
 import type { BackendCore as Backend } from "./core";
 import { pinKeyOrigins, readSettings, SettingsError, updateSettings } from "./settings";
 

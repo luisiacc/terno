@@ -2,8 +2,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createMemoryTransportPair, RpcClient } from "@unica/core/rpc";
-import { demoRegistry } from "@unica/mail";
+import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
+import { demoRegistry } from "@terno/mail";
 import { afterEach, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { seedDemo } from "./demo";

@@ -5,11 +5,11 @@
  * the instant engine's conformance.
  */
 import sqlite3InitModule from "@sqlite.org/sqlite-wasm";
-import { generateDataset } from "@unica/mock-data";
-import { openDatabaseWith, sqlDb, SqlMailStore, wasmSqliteDriver } from "@unica/db/wasm";
-import { corpusFromDataset, defineEngineConformance, defineStoreConformance } from "@unica/store/conformance";
-import { InstantSearchEngine } from "@unica/store/instant";
-import { IdbMailStore } from "@unica/idb";
+import { generateDataset } from "@terno/mock-data";
+import { openDatabaseWith, sqlDb, SqlMailStore, wasmSqliteDriver } from "@terno/db/wasm";
+import { corpusFromDataset, defineEngineConformance, defineStoreConformance } from "@terno/store/conformance";
+import { InstantSearchEngine } from "@terno/store/instant";
+import { IdbMailStore } from "@terno/idb";
 import { describe, expect, it, run, type TestResult } from "./shim";
 
 declare const self: DedicatedWorkerGlobalScope;

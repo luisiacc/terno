@@ -15,11 +15,11 @@ import {
   type ExampleSource,
   type Vetoes,
   type TrainExample,
-} from "@unica/core";
-import type { AddedBy, ClassifyResult, ExampleKey, ModelDelta, MovePhase, RootMessage, ThreadFeatureSet } from "@unica/store";
+} from "@terno/core";
+import type { AddedBy, ClassifyResult, ExampleKey, ModelDelta, MovePhase, RootMessage, ThreadFeatureSet } from "@terno/store";
 import type { Db } from "./sqlite";
 
-export type { AddedBy, ClassifyResult, ExampleKey, ModelDelta, MovePhase, RootMessage, ThreadFeatureSet } from "@unica/store";
+export type { AddedBy, ClassifyResult, ExampleKey, ModelDelta, MovePhase, RootMessage, ThreadFeatureSet } from "@terno/store";
 
 
 /** Origins that are an explicit user (or agent) decision and therefore train the model. */

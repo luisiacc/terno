@@ -1,7 +1,7 @@
-import { shortcutsFor, type Command, type ThreadAction } from "@unica/core";
-import { Button } from "@unica/ui/components/button";
-import { Shortcut } from "@unica/ui/components/shortcut";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@unica/ui/components/tooltip";
+import { shortcutsFor, type Command, type ThreadAction } from "@terno/core";
+import { Button } from "@terno/ui/components/button";
+import { Shortcut } from "@terno/ui/components/shortcut";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { Archive, CheckCheck, FolderInput, Inbox, Mail, MailOpen, OctagonAlert, ShieldCheck, Star, Tag, Trash2, X } from "lucide-react";
 import { act } from "~/lib/actions";
 import { clearSelection, isMac, selectAll } from "~/lib/select";

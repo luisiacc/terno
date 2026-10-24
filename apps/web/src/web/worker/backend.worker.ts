@@ -6,10 +6,10 @@
  * same envelope as desktop.
  */
 import sqlite3InitModule from "@sqlite.org/sqlite-wasm";
-import { BackendCore } from "@unica/backend/portable";
-import { isRpcMessage, type HostInfo, type RpcMessage, type Transport } from "@unica/core/rpc";
-import { adaptPageCache, cacheBytesFor, databaseBytes, setCacheBytes, sqlDb, SqlMailStore } from "@unica/db/wasm";
-import type { MailStore, Platform } from "@unica/store";
+import { BackendCore } from "@terno/backend/portable";
+import { isRpcMessage, type HostInfo, type RpcMessage, type Transport } from "@terno/core/rpc";
+import { adaptPageCache, cacheBytesFor, databaseBytes, setCacheBytes, sqlDb, SqlMailStore } from "@terno/db/wasm";
+import type { MailStore, Platform } from "@terno/store";
 import type { PageToWorker, WorkerInit, WorkerToPage } from "../protocol";
 import { webCipher } from "./cipher";
 import { opfsFiles, webPlatform } from "./platform";
@@ -126,7 +126,7 @@ async function start(init: WorkerInit): Promise<void> {
   if (init.demo) {
     post({ type: "progress", message: "Creando el buzón de demostración…" });
     // the mock generator is its own chunk: release builds never load it
-    const { seedDemo } = await import("@unica/backend/demo");
+    const { seedDemo } = await import("@terno/backend/demo");
     if (await seedDemo(store, init.demo)) {
       seeded = true;
       await store.settings.set("app", { ai: { provider: "fake" } });
@@ -147,7 +147,7 @@ async function start(init: WorkerInit): Promise<void> {
 
 /** Demo builds: new mail for the existing accounts, ingested through the same sliced path as a sync. */
 async function devImport(b: BackendCore, threads: number, seed: number): Promise<void> {
-  const { generateDataset } = await import("@unica/mock-data");
+  const { generateDataset } = await import("@terno/mock-data");
   const accounts = await b.store.accounts.list();
   const data = generateDataset({ threads, accounts: accounts.length, seed, now: Date.now(), bodyScale: 2 });
   const tag = (id: string | null) => (id ? `import-${seed}-${id}` : null);

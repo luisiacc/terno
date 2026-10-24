@@ -2,7 +2,7 @@ import { toast } from "sonner";
 import { adoptSettings } from "~/lib/appearance";
 import { flushAllDrafts } from "~/lib/drafts";
 import { setApp } from "~/state/app";
-import { isRpcMessage, type RpcClient, type RpcMessage, type Transport } from "@unica/core/rpc";
+import { isRpcMessage, type RpcClient, type RpcMessage, type Transport } from "@terno/core/rpc";
 import { setWeb, type WebLifecycle } from "./lifecycle";
 import type { PageToWorker, WorkerToPage } from "./protocol";
 

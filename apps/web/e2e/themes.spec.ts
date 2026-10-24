@@ -4,7 +4,7 @@
  * auto/paper rules, custom themes import (or are refused), and a visual
  * baseline per theme.
  */
-import { BUILTIN_THEMES } from "@unica/core";
+import { BUILTIN_THEMES } from "@terno/core";
 import { formatOklch, parseColor, toHex } from "../../../packages/ui/src/themes/color";
 import { builtinTheme, THEMES } from "../../../packages/ui/src/themes/registry";
 import type { Page } from "@playwright/test";

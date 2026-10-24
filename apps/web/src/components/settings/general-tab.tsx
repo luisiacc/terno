@@ -1,8 +1,8 @@
-import type { AppSettings } from "@unica/core/rpc";
-import { Button } from "@unica/ui/components/button";
-import { Input } from "@unica/ui/components/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@unica/ui/components/select";
-import { Switch } from "@unica/ui/components/switch";
+import type { AppSettings } from "@terno/core/rpc";
+import { Button } from "@terno/ui/components/button";
+import { Input } from "@terno/ui/components/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
+import { Switch } from "@terno/ui/components/switch";
 import { Keyboard } from "lucide-react";
 import { Suspense, useState } from "react";
 import { setApp } from "~/state/app";

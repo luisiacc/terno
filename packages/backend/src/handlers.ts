@@ -1,7 +1,7 @@
-import { RpcError, type Draft, type DraftAddress, type Handlers } from "@unica/core/rpc";
-import { COUNT_CAP, proposeLearnedFilters, type ThreadAction } from "@unica/core";
-import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type MessageState } from "@unica/store";
-import type { GmailAccountConfig, ImapAccountConfig } from "@unica/mail";
+import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
+import { COUNT_CAP, proposeLearnedFilters, type ThreadAction } from "@terno/core";
+import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type MessageState } from "@terno/store";
+import type { GmailAccountConfig, ImapAccountConfig } from "@terno/mail";
 import { BackendCore as Backend } from "./core";
 import { changeOwnerTo, gmailClaim, imapClaim, reconnectAccount } from "./identity";
 import { exportMailbox, importMailbox, restorePending } from "./import";

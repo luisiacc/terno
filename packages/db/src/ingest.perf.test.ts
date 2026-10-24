@@ -7,8 +7,8 @@
  * run right before it, and the median ratio of six rounds is compared with the
  * ratio the old code reached on the reference machine.
  */
-import { generateDataset } from "@unica/mock-data";
-import type { IncomingMessage } from "@unica/store";
+import { generateDataset } from "@terno/mock-data";
+import type { IncomingMessage } from "@terno/store";
 import { mkdtempSync, rmSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";

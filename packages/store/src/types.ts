@@ -1,4 +1,4 @@
-import type { Address, FeatureSource, OpState, ThreadFeatures, ThreadSummary, TrainExample, View } from "@unica/core";
+import type { Address, FeatureSource, OpState, ThreadFeatures, ThreadSummary, TrainExample, View } from "@terno/core";
 
 // ───────────────────────────── ingestion ─────────────────────────────
 

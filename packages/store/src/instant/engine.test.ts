@@ -1,9 +1,9 @@
-import { parseSearch, resolveSearch } from "@unica/core";
-import { generateDataset } from "@unica/mock-data";
+import { parseSearch, resolveSearch } from "@terno/core";
+import { generateDataset } from "@terno/mock-data";
 import { describe, expect, it } from "vitest";
 import { corpusFromDataset, defineEngineConformance, termMatches, type SearchCorpus } from "../conformance";
 import type { SearchMessageDoc, SearchThreadDoc } from "../search";
-import { tokenize } from "@unica/core";
+import { tokenize } from "@terno/core";
 import { InstantSearchEngine, tokenizeSliced, type InstantEngineOptions } from "./engine";
 import { SliceClock } from "./slices";
 

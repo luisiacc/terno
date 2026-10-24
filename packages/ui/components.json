@@ -13,11 +13,11 @@
   "iconLibrary": "lucide",
   "rtl": false,
   "aliases": {
-    "components": "@unica/ui/components",
-    "utils": "@unica/ui/lib/utils",
-    "ui": "@unica/ui/components",
-    "lib": "@unica/ui/lib",
-    "hooks": "@unica/ui/hooks"
+    "components": "@terno/ui/components",
+    "utils": "@terno/ui/lib/utils",
+    "ui": "@terno/ui/components",
+    "lib": "@terno/ui/lib",
+    "hooks": "@terno/ui/hooks"
   },
   "menuColor": "default",
   "menuAccent": "subtle",

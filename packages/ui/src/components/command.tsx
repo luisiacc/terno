@@ -8,11 +8,11 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@unica/ui/components/dialog"
+} from "@terno/ui/components/dialog"
 import {
   InputGroup,
   InputGroupAddon,
-} from "@unica/ui/components/input-group"
+} from "@terno/ui/components/input-group"
 import { SearchIcon, CheckIcon } from "lucide-react"
 
 function Command({

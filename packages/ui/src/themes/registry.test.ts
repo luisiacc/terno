@@ -1,4 +1,4 @@
-import { BUILTIN_THEMES, customThemeSchema, DEFAULT_THEME, THEME_TOKENS } from "@unica/core";
+import { BUILTIN_THEMES, customThemeSchema, DEFAULT_THEME, THEME_TOKENS } from "@terno/core";
 import { describe, expect, it } from "vitest";
 import { contrast, parseColor } from "./color";
 import { builtinTheme, glassAlpha, resolveCustomTheme, THEMES, themesFor } from "./registry";

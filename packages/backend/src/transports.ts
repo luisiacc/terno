@@ -1,5 +1,5 @@
 import type { Socket } from "node:net";
-import { isRpcMessage, type RpcMessage, type Transport } from "@unica/core/rpc";
+import { isRpcMessage, type RpcMessage, type Transport } from "@terno/core/rpc";
 import type { WebSocket } from "ws";
 
 /** Newline-delimited JSON over a stream socket (MCP sidecar ↔ backend). */

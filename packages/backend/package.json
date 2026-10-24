@@ -1,5 +1,5 @@
 {
-  "name": "@unica/backend",
+  "name": "@terno/backend",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,12 +12,12 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@unica/ai": "workspace:*",
-    "@unica/core": "workspace:*",
-    "@unica/db": "workspace:*",
-    "@unica/mail": "workspace:*",
-    "@unica/mock-data": "workspace:*",
-    "@unica/store": "workspace:*",
+    "@terno/ai": "workspace:*",
+    "@terno/core": "workspace:*",
+    "@terno/db": "workspace:*",
+    "@terno/mail": "workspace:*",
+    "@terno/mock-data": "workspace:*",
+    "@terno/store": "workspace:*",
     "ws": "^8.22.0"
   },
   "devDependencies": {

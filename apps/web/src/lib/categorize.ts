@@ -1,4 +1,4 @@
-import type { CategorizeSource } from "@unica/core/rpc";
+import type { CategorizeSource } from "@terno/core/rpc";
 import { toast } from "sonner";
 import { client } from "~/rpc/connection";
 import { exclusivelyIn } from "~/lib/drag";

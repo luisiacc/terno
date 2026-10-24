@@ -1,5 +1,5 @@
 {
-  "name": "@unica/store",
+  "name": "@terno/store",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,9 +12,9 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@unica/core": "workspace:*"
+    "@terno/core": "workspace:*"
   },
   "devDependencies": {
-    "@unica/mock-data": "workspace:*"
+    "@terno/mock-data": "workspace:*"
   }
 }

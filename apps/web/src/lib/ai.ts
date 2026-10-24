@@ -1,5 +1,5 @@
-import type { AiErrorKind, AiProviderId, CompatiblePreset, OutputMode } from "@unica/core";
-import type { AiSettings } from "@unica/core/rpc";
+import type { AiErrorKind, AiProviderId, CompatiblePreset, OutputMode } from "@terno/core";
+import type { AiSettings } from "@terno/core/rpc";
 
 /** What the AI tab's selector shows: compatible appears twice (a server on this Mac, or a cloud API). */
 export type ProviderChoice = Exclude<AiProviderId, "compatible"> | "local-server" | "compatible";

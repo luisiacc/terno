@@ -4,7 +4,7 @@
  * 6 MB message body (building with it, applying it). The gap between two
  * yields is the longest the engine kept the thread; the budget is a frame.
  */
-import { generateDataset } from "@unica/mock-data";
+import { generateDataset } from "@terno/mock-data";
 import { describe, expect, it } from "vitest";
 import { corpusFromDataset } from "../conformance";
 import type { SearchMessageDoc } from "../search";

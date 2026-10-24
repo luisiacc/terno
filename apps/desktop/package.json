@@ -1,5 +1,5 @@
 {
-  "name": "@unica/desktop",
+  "name": "@terno/desktop",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -15,10 +15,10 @@
     "dev:seeded": "node scripts/dev.mjs --seeded"
   },
   "dependencies": {
-    "@unica/backend": "workspace:*",
-    "@unica/mail": "workspace:*",
-    "@unica/mcp": "workspace:*",
-    "@unica/core": "workspace:*"
+    "@terno/backend": "workspace:*",
+    "@terno/mail": "workspace:*",
+    "@terno/mcp": "workspace:*",
+    "@terno/core": "workspace:*"
   },
   "devDependencies": {
     "@playwright/test": "catalog:",

@@ -1,5 +1,5 @@
 {
-  "name": "@unica/backend-dev",
+  "name": "@terno/backend-dev",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,10 +9,10 @@
     "seed": "tsx src/seed.ts"
   },
   "dependencies": {
-    "@unica/backend": "workspace:*",
-    "@unica/mail": "workspace:*",
+    "@terno/backend": "workspace:*",
+    "@terno/mail": "workspace:*",
     "ws": "^8.22.0",
-    "@unica/db": "workspace:*"
+    "@terno/db": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

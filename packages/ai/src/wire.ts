@@ -1,4 +1,4 @@
-import { filterRuleSchema, TEXT_FIELDS, TEXT_OPS, type FilterRule } from "@unica/core";
+import { filterRuleSchema, TEXT_FIELDS, TEXT_OPS, type FilterRule } from "@terno/core";
 import { z } from "zod";
 import type { FilterGenerationContext } from "./types";
 

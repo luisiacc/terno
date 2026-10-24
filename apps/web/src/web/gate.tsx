@@ -1,5 +1,5 @@
 import { flushAllDrafts } from "~/lib/drafts";
-import { Button } from "@unica/ui/components/button";
+import { Button } from "@terno/ui/components/button";
 import { Loader2 } from "lucide-react";
 import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";

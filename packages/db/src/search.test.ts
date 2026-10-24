@@ -1,6 +1,6 @@
-import { generateDataset } from "@unica/mock-data";
-import { UNVERSIONED } from "@unica/store";
-import { defineSearchConformance, type SearchCorpus, type SearchHarness } from "@unica/store/conformance";
+import { generateDataset } from "@terno/mock-data";
+import { UNVERSIONED } from "@terno/store";
+import { defineSearchConformance, type SearchCorpus, type SearchHarness } from "@terno/store/conformance";
 import { describe, expect, it } from "vitest";
 import { VIEW_WHERE } from "./queries";
 import { resolveQuery } from "./search";
@@ -12,7 +12,7 @@ import { openDatabase } from "./index";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { View } from "@unica/core";
+import type { View } from "@terno/core";
 
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
 

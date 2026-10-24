@@ -1,4 +1,4 @@
-import { THEME_TOKENS } from "@unica/core";
+import { THEME_TOKENS } from "@terno/core";
 import { describe, expect, it } from "vitest";
 import { applyCustomTheme, clampMotion, motionOff, motionVars } from "./apply";
 import { builtinTheme } from "./registry";

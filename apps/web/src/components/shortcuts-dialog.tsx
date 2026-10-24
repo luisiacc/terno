@@ -1,6 +1,6 @@
-import { shortcutsFor } from "@unica/core";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@unica/ui/components/dialog";
-import { Shortcut } from "@unica/ui/components/shortcut";
+import { shortcutsFor } from "@terno/core";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@terno/ui/components/dialog";
+import { Shortcut } from "@terno/ui/components/shortcut";
 import { isMac } from "~/lib/select";
 import { SECTIONS } from "~/lib/shortcut-sections";
 import { setApp, useApp } from "~/state/app";

@@ -1,5 +1,5 @@
-import { shortcutsFor, type CategoryColor, type Command, type ThreadAction, type ThreadSummary, type View } from "@unica/core";
-import { CategoryDot } from "@unica/ui/components/category-dot";
+import { shortcutsFor, type CategoryColor, type Command, type ThreadAction, type ThreadSummary, type View } from "@terno/core";
+import { CategoryDot } from "@terno/ui/components/category-dot";
 import {
   ContextMenu,
   ContextMenuCheckboxItem,
@@ -11,7 +11,7 @@ import {
   ContextMenuSubContent,
   ContextMenuSubTrigger,
   ContextMenuTrigger,
-} from "@unica/ui/components/context-menu";
+} from "@terno/ui/components/context-menu";
 import {
   Archive,
   CheckCheck,

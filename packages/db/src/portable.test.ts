@@ -5,7 +5,7 @@ import { expect, it } from "vitest";
 
 const packages = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
-/** Follows value imports (type-only imports are erased) from an entry through relative files and @unica packages. */
+/** Follows value imports (type-only imports are erased) from an entry through relative files and @terno packages. */
 function nodeImports(entry: string): string[] {
   const seen = new Set<string>();
   const found: string[] = [];
@@ -17,7 +17,7 @@ function nodeImports(entry: string): string[] {
       const spec = (m[1] ?? m[2])!;
       if (spec.startsWith("node:")) found.push(`${file.slice(packages.length + 1)} → ${spec}`);
       else if (spec.startsWith(".")) visit(resolveFile(join(dirname(file), spec)));
-      else if (spec.startsWith("@unica/")) {
+      else if (spec.startsWith("@terno/")) {
         const [, pkg, ...sub] = spec.split("/");
         const manifest = JSON.parse(readFileSync(join(packages, pkg!, "package.json"), "utf8")) as { exports: Record<string, string> };
         visit(join(packages, pkg!, manifest.exports[sub.length ? `./${sub.join("/")}` : "."]!));

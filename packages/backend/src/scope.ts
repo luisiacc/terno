@@ -7,8 +7,8 @@
  * then goes through runSliced: one store command per slice, each its own
  * transaction with one provider op per account.
  */
-import type { ThreadScope } from "@unica/core/rpc";
-import { StaleCursorError, type MessageState } from "@unica/store";
+import type { ThreadScope } from "@terno/core/rpc";
+import { StaleCursorError, type MessageState } from "@terno/store";
 import { SliceSizer } from "./slicer";
 import type { BackendCore } from "./core";
 

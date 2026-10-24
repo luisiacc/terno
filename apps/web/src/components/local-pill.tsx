@@ -1,4 +1,4 @@
-import { Tooltip, TooltipContent, TooltipTrigger } from "@unica/ui/components/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { Cloud, LaptopMinimalCheck } from "lucide-react";
 import { providerName } from "~/lib/ai";
 import { setApp, useApp } from "~/state/app";

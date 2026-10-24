@@ -1,8 +1,8 @@
 import "fake-indexeddb/auto";
-import { CategorizerModel } from "@unica/core";
-import { generateDataset } from "@unica/mock-data";
-import type { Platform } from "@unica/store";
-import { ingest, msg, withAccounts } from "@unica/store/conformance";
+import { CategorizerModel } from "@terno/core";
+import { generateDataset } from "@terno/mock-data";
+import type { Platform } from "@terno/store";
+import { ingest, msg, withAccounts } from "@terno/store/conformance";
 import { afterEach, describe, expect, it } from "vitest";
 import { createMemDb, databaseName, IDB_VERSION, openIdb, TABLES } from "./schema";
 import { IdbMailStore } from "./store";

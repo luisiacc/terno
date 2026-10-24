@@ -1,4 +1,4 @@
-import type { Account } from "@unica/core";
+import type { Account } from "@terno/core";
 import { client } from "~/rpc/connection";
 import { getApp } from "~/state/app";
 
@@ -33,7 +33,7 @@ declare global {
 }
 
 const GIS = "https://accounts.google.com/gsi/client";
-/** the same scopes as desktop (@unica/mail's GMAIL_SCOPES) */
+/** the same scopes as desktop (@terno/mail's GMAIL_SCOPES) */
 const GMAIL_SCOPES = ["openid", "email", "profile", "https://www.googleapis.com/auth/gmail.modify"];
 let loading: Promise<void> | null = null;
 

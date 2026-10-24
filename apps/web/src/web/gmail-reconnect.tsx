@@ -1,4 +1,4 @@
-import { Button } from "@unica/ui/components/button";
+import { Button } from "@terno/ui/components/button";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";

@@ -1,4 +1,4 @@
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@unica/ui/components/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog, SettingsGroup, SettingsRow } from "~/components/settings/parts";

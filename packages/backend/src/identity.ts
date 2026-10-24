@@ -1,7 +1,7 @@
-import type { Account } from "@unica/core";
-import { RpcError, type OwnerIdentity } from "@unica/core/rpc";
-import type { OwnerClaim } from "@unica/store";
-import type { GmailAccountConfig, GmailConnectResult, ImapAccountConfig } from "@unica/mail";
+import type { Account } from "@terno/core";
+import { RpcError, type OwnerIdentity } from "@terno/core/rpc";
+import type { OwnerClaim } from "@terno/store";
+import type { GmailAccountConfig, GmailConnectResult, ImapAccountConfig } from "@terno/mail";
 import type { BackendCore as Backend } from "./core";
 import { readSettings } from "./settings";
 

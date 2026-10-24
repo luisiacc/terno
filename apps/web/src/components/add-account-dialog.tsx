@@ -1,7 +1,7 @@
-import { Button } from "@unica/ui/components/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@unica/ui/components/dialog";
-import { Input } from "@unica/ui/components/input";
-import { Label } from "@unica/ui/components/label";
+import { Button } from "@terno/ui/components/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@terno/ui/components/dialog";
+import { Input } from "@terno/ui/components/input";
+import { Label } from "@terno/ui/components/label";
 import { Loader2, Mail } from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
 import { toast } from "sonner";

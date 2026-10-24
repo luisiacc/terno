@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Theme vocabulary shared by the renderer (the registry in @unica/ui is the
+ * Theme vocabulary shared by the renderer (the registry in @terno/ui is the
  * source of truth for values), the RPC contract and the backend (which only
  * validates ids). Token names are the CSS custom properties without `--`.
  */
@@ -89,7 +89,7 @@ export type ThemeToken = (typeof THEME_TOKENS)[number];
 export const THEME_MODES = ["light", "dark"] as const;
 export type ThemeMode = (typeof THEME_MODES)[number];
 
-/** Built-in themes (values live in @unica/ui/themes/registry; a test keeps both in sync). */
+/** Built-in themes (values live in @terno/ui/themes/registry; a test keeps both in sync). */
 export const BUILTIN_THEMES = [
   { id: "unica-light", mode: "light" },
   { id: "apple-light", mode: "light" },

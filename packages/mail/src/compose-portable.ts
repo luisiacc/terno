@@ -1,4 +1,4 @@
-import type { Address } from "@unica/core";
+import type { Address } from "@terno/core";
 import type { SendPayload } from "./types";
 
 const CRLF = "\r\n";

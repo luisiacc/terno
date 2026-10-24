@@ -1,5 +1,5 @@
-import { evaluateRule, termsQuery, tokenize, VIEWS, type FilterRule, type RuleMessage, type ThreadAction } from "@unica/core";
-import { generateDataset } from "@unica/mock-data";
+import { evaluateRule, termsQuery, tokenize, VIEWS, type FilterRule, type RuleMessage, type ThreadAction } from "@terno/core";
+import { generateDataset } from "@terno/mock-data";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { MailStore, SnapshotMessage, StoreSnapshot } from "../mail-store";
 import type { Revision, SearchMessageDoc } from "../search";

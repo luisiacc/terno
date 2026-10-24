@@ -7,10 +7,10 @@ import {
   type AiProviderId,
   type Capabilities,
   type CompatiblePreset,
-} from "@unica/ai";
-import { AI_PROVIDER_IDS, builtinMode, COMPATIBLE_PRESETS, CUSTOM_PREFIX, DEFAULT_THEME, type CustomTheme, type ThemeMode } from "@unica/core";
-import type { AiProfile, AiSettings, AppSettings, SettingsPatch } from "@unica/core/rpc";
-import type { MailStore } from "@unica/store";
+} from "@terno/ai";
+import { AI_PROVIDER_IDS, builtinMode, COMPATIBLE_PRESETS, CUSTOM_PREFIX, DEFAULT_THEME, type CustomTheme, type ThemeMode } from "@terno/core";
+import type { AiProfile, AiSettings, AppSettings, SettingsPatch } from "@terno/core/rpc";
+import type { MailStore } from "@terno/store";
 
 /** The part of the store settings live in. */
 export type SettingsStore = Pick<MailStore, "settings" | "secrets">;

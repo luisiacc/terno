@@ -5,11 +5,11 @@ import type {
   ThreadDetail,
   ThreadSummary,
   View,
-} from "@unica/core";
-import type { ListParams, Page, ScopeParams } from "@unica/store";
+} from "@terno/core";
+import type { ListParams, Page, ScopeParams } from "@terno/store";
 import { placeholders, type Db, type Param } from "./sqlite";
 
-export type { Cursor, ListParams, Page } from "@unica/store";
+export type { Cursor, ListParams, Page } from "@terno/store";
 
 /**
  * WHERE fragments per view. They textually match the partial index predicates

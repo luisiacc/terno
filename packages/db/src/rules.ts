@@ -1,4 +1,4 @@
-import { BODY_TAIL_TOKENS, bodyMatches, normalizeText, tokenize, type Condition, type FilterRule, type TextOp } from "@unica/core";
+import { BODY_TAIL_TOKENS, bodyMatches, normalizeText, tokenize, type Condition, type FilterRule, type TextOp } from "@terno/core";
 import type { Db, Param } from "./sqlite";
 
 const DAY_MS = 86_400_000;

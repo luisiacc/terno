@@ -3,7 +3,7 @@
  * saves go out, what an answer applies to, revisions, errors and retries,
  * and what send/discard/flush wait for.
  */
-import type { Draft } from "@unica/core/rpc";
+import type { Draft } from "@terno/core/rpc";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/rpc/connection", () => ({ client: { call: () => Promise.reject(new Error("not in tests")) } }));
@@ -220,13 +220,13 @@ describe("drafts: helpers and restore", () => {
 });
 
 describe("converting a draft to another mode keeps what the user wrote", () => {
-  const me = { id: 1, email: "luis@acme.studio" } as import("@unica/core").Account;
+  const me = { id: 1, email: "luis@acme.studio" } as import("@terno/core").Account;
   const yuki = { name: "Yuki", email: "yuki@acme.studio" };
   const lucas = { name: "Lucas", email: "lucas@acme.studio" };
   const detail = {
     thread: { id: 7, subject: "Propuesta" },
     messages: [{ id: 3, isSent: false, from: yuki, to: [{ name: "Luis", email: "luis@acme.studio" }, lucas], cc: [], subject: "Propuesta", date: 0, bodyText: "Hola", snippet: "Hola" }],
-  } as unknown as import("@unica/core").ThreadDetail;
+  } as unknown as import("@terno/core").ThreadDetail;
 
   it("reply → reply-all adds the others to Cc; the body and a typed recipient stay; the subject regenerates unless edited", () => {
     const reply = { ...replyFields("reply", detail, me), bodyText: "Mi texto", toText: "Yuki <yuki@acme.studio>, Extra <extra@example.com>" };

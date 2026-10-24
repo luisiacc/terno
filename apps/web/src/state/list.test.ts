@@ -1,5 +1,5 @@
-import type { ThreadSummary } from "@unica/core";
-import { RpcError } from "@unica/core/rpc";
+import type { ThreadSummary } from "@terno/core";
+import { RpcError } from "@terno/core/rpc";
 import { expect, it, vi } from "vitest";
 
 const calls: { method: string; params: { cursor?: unknown; limit?: number } }[] = [];

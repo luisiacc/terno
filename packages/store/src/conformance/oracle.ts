@@ -1,4 +1,4 @@
-import { isFullEmail, normalizeText, parseSearch, tokenize, type MessageTerm, type View } from "@unica/core";
+import { isFullEmail, normalizeText, parseSearch, tokenize, type MessageTerm, type View } from "@terno/core";
 import type { SearchMessageDoc, SearchThreadDoc } from "../search";
 
 /**

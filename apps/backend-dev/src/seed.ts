@@ -5,8 +5,8 @@
  */
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { openDatabase, SqlMailStore } from "@unica/db";
-import { seedDemo } from "@unica/backend";
+import { openDatabase, SqlMailStore } from "@terno/db";
+import { seedDemo } from "@terno/backend";
 
 const arg = (name: string, fallback: string) => {
   const i = process.argv.indexOf(`--${name}`);

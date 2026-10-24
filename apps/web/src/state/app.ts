@@ -1,5 +1,5 @@
-import type { Account, Category, Counts, Filter, FilterRule, View } from "@unica/core";
-import type { AppSettings, HostInfo, OwnerIdentity, ThreadScope } from "@unica/core/rpc";
+import type { Account, Category, Counts, Filter, FilterRule, View } from "@terno/core";
+import type { AppSettings, HostInfo, OwnerIdentity, ThreadScope } from "@terno/core/rpc";
 import { create } from "zustand";
 
 export type DialogName = "settings" | "shortcuts" | "palette" | "categoryPicker" | "filters" | "addAccount" | null;

@@ -1,4 +1,4 @@
-import { RevisionError, type IndexBatch, type IndexChange, type Revision, type SearchBuild } from "@unica/store";
+import { RevisionError, type IndexBatch, type IndexChange, type Revision, type SearchBuild } from "@terno/store";
 import { messageDocs, messageDocsAfter, threadDocs, threadDocsAfter } from "./search-docs";
 import type { Db } from "./sqlite";
 

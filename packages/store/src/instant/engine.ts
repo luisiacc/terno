@@ -1,4 +1,4 @@
-import { isFullEmail, normalizeText, tokenize, type MessageTerm, type ResolvedSearch, type View } from "@unica/core";
+import { isFullEmail, normalizeText, tokenize, type MessageTerm, type ResolvedSearch, type View } from "@terno/core";
 import {
   RevisionError,
   sameRevision,

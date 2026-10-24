@@ -1,8 +1,8 @@
 import DOMPurify from "dompurify";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ImageOff } from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "@unica/ui/components/popover";
-import { Button } from "@unica/ui/components/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
+import { Button } from "@terno/ui/components/button";
 import { setApp } from "~/state/app";
 import { mailColors, useAppearance } from "~/lib/appearance";
 import { csp, hasOwnColors, hasRemoteContent } from "~/lib/mail";

@@ -1,5 +1,5 @@
 {
-  "name": "@unica/mail",
+  "name": "@terno/mail",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,8 +12,8 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@unica/core": "workspace:*",
-    "@unica/store": "workspace:*",
+    "@terno/core": "workspace:*",
+    "@terno/store": "workspace:*",
     "imapflow": "^2.8.0",
     "nodemailer": "^10.2.0",
     "postal-mime": "^4.1.3"

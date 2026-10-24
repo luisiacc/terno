@@ -1,9 +1,9 @@
-import type { Account, AccountPatch, CategoryColor } from "@unica/core";
-import type { AppSettings } from "@unica/core/rpc";
-import { Button } from "@unica/ui/components/button";
-import { CategoryDot } from "@unica/ui/components/category-dot";
-import { Input } from "@unica/ui/components/input";
-import { cn } from "@unica/ui/lib/utils";
+import type { Account, AccountPatch, CategoryColor } from "@terno/core";
+import type { AppSettings } from "@terno/core/rpc";
+import { Button } from "@terno/ui/components/button";
+import { CategoryDot } from "@terno/ui/components/category-dot";
+import { Input } from "@terno/ui/components/input";
+import { cn } from "@terno/ui/lib/utils";
 import { ChevronRight, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useId, useState } from "react";
 import { toast } from "sonner";

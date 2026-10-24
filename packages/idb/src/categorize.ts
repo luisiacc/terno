@@ -24,8 +24,8 @@ import {
   type QuickActions,
   type TrainExample,
   type Vetoes,
-} from "@unica/core";
-import type { AddedBy, ClassifyResult, ExampleKey, ModelDelta, MovePhase, PendingSuggestion, RootMessage, ThreadFeatureSet } from "@unica/store";
+} from "@terno/core";
+import type { AddedBy, ClassifyResult, ExampleKey, ModelDelta, MovePhase, PendingSuggestion, RootMessage, ThreadFeatureSet } from "@terno/store";
 import { pendingSuggestionCounts, T, type Ctx, type R } from "./mail";
 
 /**

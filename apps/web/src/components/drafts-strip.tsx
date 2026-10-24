@@ -1,4 +1,4 @@
-import { cn } from "@unica/ui/lib/utils";
+import { cn } from "@terno/ui/lib/utils";
 import { PenLine } from "lucide-react";
 import { useState } from "react";
 import { useShallow } from "zustand/react/shallow";

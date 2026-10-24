@@ -4,8 +4,8 @@
  * catch-up after commits, snapshots across restarts (missing, damaged,
  * foreign, behind a pruned log), memory caps and compaction.
  */
-import { generateDataset } from "@unica/mock-data";
-import { defineSearchConformance, ingest, msg, type SearchCorpus } from "@unica/store/conformance";
+import { generateDataset } from "@terno/mock-data";
+import { defineSearchConformance, ingest, msg, type SearchCorpus } from "@terno/store/conformance";
 import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

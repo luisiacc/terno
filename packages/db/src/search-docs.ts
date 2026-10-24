@@ -1,4 +1,4 @@
-import type { SearchMessageDoc, SearchThreadDoc } from "@unica/store";
+import type { SearchMessageDoc, SearchThreadDoc } from "@terno/store";
 import type { Db } from "./sqlite";
 
 /**

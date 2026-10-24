@@ -17,8 +17,8 @@ import {
   type GeneratedFilter,
   type ModelInfo,
   type ProviderConfig,
-} from "@unica/ai";
-import { RpcError, type AiTestResult, type AppSettings } from "@unica/core/rpc";
+} from "@terno/ai";
+import { RpcError, type AiTestResult, type AppSettings } from "@terno/core/rpc";
 import type { BackendCore as Backend } from "./core";
 import { NetworkPolicyError } from "./net-policy";
 import { bindKeyOrigin, endpointOrigin, keyOrigins, readSettings, saveCapabilities, setKeyHint } from "./settings";

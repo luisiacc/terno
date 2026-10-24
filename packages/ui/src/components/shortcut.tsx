@@ -1,5 +1,5 @@
 import { cn } from "cn"
-import { Kbd } from "@unica/ui/components/kbd"
+import { Kbd } from "@terno/ui/components/kbd"
 
 const SYMBOLS: Record<string, string> = {
   mod: "⌘",

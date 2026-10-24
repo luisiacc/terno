@@ -1,8 +1,8 @@
-import type { OwnerIdentity } from "@unica/core/rpc";
-import type { OwnerClaim } from "@unica/store";
+import type { OwnerIdentity } from "@terno/core/rpc";
+import type { OwnerClaim } from "@terno/store";
 import type { Db } from "./sqlite";
 
-export type { OwnerClaim } from "@unica/store";
+export type { OwnerClaim } from "@terno/store";
 
 
 interface OwnerRow {

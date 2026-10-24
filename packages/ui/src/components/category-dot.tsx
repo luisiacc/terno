@@ -1,5 +1,5 @@
 import { cn } from "cn"
-import type { CategoryColor } from "@unica/core"
+import type { CategoryColor } from "@terno/core"
 
 const DOT: Record<CategoryColor, string> = {
   rose: "bg-cat-rose",

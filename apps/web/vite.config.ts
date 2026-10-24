@@ -91,7 +91,7 @@ export default defineConfig(() => {
     resolve: {
       alias: {
         "~": resolve(import.meta.dirname, "src"),
-        "@unica/ui": resolve(import.meta.dirname, "../../packages/ui/src"),
+        "@terno/ui": resolve(import.meta.dirname, "../../packages/ui/src"),
       },
     },
     server: { port: 5173, strictPort: true },

@@ -1,4 +1,4 @@
-import type { ThemeToken } from "@unica/core";
+import type { ThemeToken } from "@terno/core";
 import { contrast, parseColor, withAlpha } from "./color";
 import { CAT_NAMES, GLASS_BACKDROPS, GLASS_TEXT, type Theme } from "./registry";
 

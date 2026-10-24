@@ -1,5 +1,5 @@
-import type { ThreadAction } from "@unica/core";
-import { baseSubject } from "@unica/core";
+import type { ThreadAction } from "@terno/core";
+import { baseSubject } from "@terno/core";
 import { expect, it } from "vitest";
 import { applyThreadAction } from "./actions";
 import { deleteMessages, ingestMessages } from "./ingest";

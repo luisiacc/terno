@@ -1,5 +1,5 @@
-import { formatAddressList, parseAddressList, type Account, type Address, type ThreadDetail } from "@unica/core";
-import type { DraftMode } from "@unica/core/rpc";
+import { formatAddressList, parseAddressList, type Account, type Address, type ThreadDetail } from "@terno/core";
+import type { DraftMode } from "@terno/core/rpc";
 import type { DraftFields } from "./drafts";
 
 /**

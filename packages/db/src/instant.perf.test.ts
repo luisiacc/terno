@@ -6,10 +6,10 @@
  * path, incremental apply, snapshots and compaction. Budgets are p95 unless
  * stated, scaled only by PERF_BUDGET_MULTIPLIER.
  */
-import { parseSearch, resolveSearch } from "@unica/core";
-import { generateDataset } from "@unica/mock-data";
-import type { Revision, SearchMessageDoc } from "@unica/store";
-import { InstantSearchEngine } from "@unica/store/instant";
+import { parseSearch, resolveSearch } from "@terno/core";
+import { generateDataset } from "@terno/mock-data";
+import type { Revision, SearchMessageDoc } from "@terno/store";
+import { InstantSearchEngine } from "@terno/store/instant";
 import { copyFileSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { loadavg, tmpdir } from "node:os";
 import { join } from "node:path";

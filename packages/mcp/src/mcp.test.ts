@@ -2,12 +2,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { Backend, plaintextCipher, seedDemo, startAgentSocket, type AgentEndpoint } from "@unica/backend";
-import { demoRegistry } from "@unica/mail";
+import { Backend, plaintextCipher, seedDemo, startAgentSocket, type AgentEndpoint } from "@terno/backend";
+import { demoRegistry } from "@terno/mail";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppConnection } from "./connection";
 import { createMcpServer } from "./server";
-import { sqlDb } from "@unica/db";
+import { sqlDb } from "@terno/db";
 
 let dir: string;
 let backend: Backend;

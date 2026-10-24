@@ -1,4 +1,4 @@
-import type { ThreadDetail } from "@unica/core";
+import type { ThreadDetail } from "@terno/core";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
 

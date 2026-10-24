@@ -1,8 +1,8 @@
-import type { Account } from "@unica/core";
-import type { OwnerIdentity } from "@unica/core/rpc";
-import { Button } from "@unica/ui/components/button";
-import { Input } from "@unica/ui/components/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@unica/ui/components/select";
+import type { Account } from "@terno/core";
+import type { OwnerIdentity } from "@terno/core/rpc";
+import { Button } from "@terno/ui/components/button";
+import { Input } from "@terno/ui/components/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { BadgeCheck, Loader2, UserRound } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";

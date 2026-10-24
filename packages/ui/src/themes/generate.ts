@@ -1,7 +1,7 @@
-import { THEME_TOKENS } from "@unica/core";
+import { THEME_TOKENS } from "@terno/core";
 import { THEMES, type Theme } from "./registry";
 
-export const GENERATED_HEADER = "/* Generated from packages/ui/src/themes/registry.ts by `pnpm --filter @unica/ui gen:themes`. Do not edit. */";
+export const GENERATED_HEADER = "/* Generated from packages/ui/src/themes/registry.ts by `pnpm --filter @terno/ui gen:themes`. Do not edit. */";
 
 function block(theme: Theme, selector: string): string {
   const lines = [`  color-scheme: ${theme.mode};`, `  --theme-font: ${theme.font ?? "initial"};`, ...THEME_TOKENS.map((k) => `  --${k}: ${theme.tokens[k]};`)];

@@ -1,6 +1,6 @@
-import type { Condition, Filter } from "@unica/core";
-import { Button } from "@unica/ui/components/button";
-import { Switch } from "@unica/ui/components/switch";
+import type { Condition, Filter } from "@terno/core";
+import { Button } from "@terno/ui/components/button";
+import { Switch } from "@terno/ui/components/switch";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";

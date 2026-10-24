@@ -1,4 +1,4 @@
-import "@unica/ui/styles/globals.css";
+import "@terno/ui/styles/globals.css";
 import { createRoot } from "react-dom/client";
 import { App } from "./app";
 import { boot } from "./lib/boot";

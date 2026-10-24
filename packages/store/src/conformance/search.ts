@@ -1,4 +1,4 @@
-import { normalizeText, tokenize } from "@unica/core";
+import { normalizeText, tokenize } from "@terno/core";
 import { beforeAll, describe, expect, it } from "vitest";
 import { StaleCursorError, type SearchCursor } from "../search";
 import { oracleSearch, type SearchCorpus, type UiScope } from "./oracle";

@@ -1,4 +1,4 @@
-import type { IncomingMessage } from "@unica/store";
+import type { IncomingMessage } from "@terno/store";
 import { parseRaw } from "./mime";
 import { ProviderError, type FlagUpdate, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
 

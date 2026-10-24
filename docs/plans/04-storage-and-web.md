@@ -231,7 +231,7 @@ Contract:
   - `connection.ts` gets a `VITE_TARGET === "web"` branch that reuses `portTransport`.
 - **Browser-safe packages.** core, store, db (minus the node driver), backend (minus `agent-socket`/`transports`) and `mail/gmail` must bundle for the browser.
   - `node:crypto` → `globalThis.crypto`; `node:timers/promises` → `platform.yield`; `Buffer` → core base64url; the OAuth loopback server becomes a per-platform `connectGmail`.
-  - `@unica/mail/registry-web` exports Gmail and demo only.
+  - `@terno/mail/registry-web` exports Gmail and demo only.
   - A CI esbuild check fails on any `node:` import.
 - **Gmail on web.**
   - Google Identity Services token model with a user-supplied *Web* client ID (bring-your-own, like desktop).

@@ -1,7 +1,7 @@
-import { CATEGORY_COLORS, normalizeText, type CategoryColor } from "@unica/core";
-import { CategoryDot } from "@unica/ui/components/category-dot";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@unica/ui/components/command";
-import { Dialog, DialogContent, DialogTitle } from "@unica/ui/components/dialog";
+import { CATEGORY_COLORS, normalizeText, type CategoryColor } from "@terno/core";
+import { CategoryDot } from "@terno/ui/components/category-dot";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@terno/ui/components/command";
+import { Dialog, DialogContent, DialogTitle } from "@terno/ui/components/dialog";
 import { Check, Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";

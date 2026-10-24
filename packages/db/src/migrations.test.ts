@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { generateDataset } from "@unica/mock-data";
+import { generateDataset } from "@terno/mock-data";
 import { movePending, movePhase, restoreMoveSlice, trainMoveSlice, undoMoveBegin, undoMoveSlice } from "./categorize";
 import { ingestMessages } from "./ingest";
 import { MIGRATIONS, migrate, SCHEMA_VERSION } from "./migrations";

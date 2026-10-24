@@ -1,4 +1,4 @@
-import type { Address } from "@unica/core";
+import type { Address } from "@terno/core";
 
 /**
  * Shapes that break naive categorizers (plan 02 §9). Each family has a gold

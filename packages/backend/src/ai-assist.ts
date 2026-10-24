@@ -1,6 +1,6 @@
-import type { AiTasks } from "@unica/ai";
-import { candidateCategories, POLICY, senderVetoed } from "@unica/core";
-import type { MailStore } from "@unica/store";
+import type { AiTasks } from "@terno/ai";
+import { candidateCategories, POLICY, senderVetoed } from "@terno/core";
+import type { MailStore } from "@terno/store";
 import type { Categorizer } from "./categorizer";
 import { readSettings } from "./settings";
 

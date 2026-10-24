@@ -1,6 +1,6 @@
-import type { AppSettings } from "@unica/core/rpc";
-import { Button } from "@unica/ui/components/button";
-import { Switch } from "@unica/ui/components/switch";
+import type { AppSettings } from "@terno/core/rpc";
+import { Button } from "@terno/ui/components/button";
+import { Switch } from "@terno/ui/components/switch";
 import { Check, Copy, KeyRound } from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
 import { toast } from "sonner";

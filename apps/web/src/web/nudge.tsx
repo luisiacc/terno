@@ -1,5 +1,5 @@
-import { buttonVariants } from "@unica/ui/components/button";
-import { cn } from "@unica/ui/lib/utils";
+import { buttonVariants } from "@terno/ui/components/button";
+import { cn } from "@terno/ui/lib/utils";
 import { Laptop, Lock, X } from "lucide-react";
 import { useState } from "react";
 

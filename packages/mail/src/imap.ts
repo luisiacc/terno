@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { ImapFlow, type FetchMessageObject, type MessageStructureObject } from "imapflow";
-import type { IncomingMessage } from "@unica/store";
+import type { IncomingMessage } from "@terno/store";
 import { parseListId, parseRaw, splitIds } from "./mime";
 import { sendViaSmtp } from "./smtp";
 import { ProviderError, type FlagUpdate, type ImapAccountConfig, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";

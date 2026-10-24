@@ -3,7 +3,7 @@
  * reverted and re-read from the backend when it fails. Node, with the RPC
  * client mocked and a minimal fake <html>.
  */
-import type { ThreadSummary } from "@unica/core";
+import type { ThreadSummary } from "@terno/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const fake = vi.hoisted(() => {

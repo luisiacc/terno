@@ -2,9 +2,9 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createMemoryTransportPair, RpcClient, type RpcError } from "@unica/core/rpc";
-import { getSetting, setSetting, sqlDb } from "@unica/db";
-import { demoRegistry } from "@unica/mail";
+import { createMemoryTransportPair, RpcClient, type RpcError } from "@terno/core/rpc";
+import { getSetting, setSetting, sqlDb } from "@terno/db";
+import { demoRegistry } from "@terno/mail";
 import { afterEach, describe, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 

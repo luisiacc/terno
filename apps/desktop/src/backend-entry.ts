@@ -3,9 +3,9 @@
  * database and sync; the renderer talks to it over a direct MessagePort, so
  * mail data never hops through the main process.
  */
-import { Backend, seedDemo, startAgentSocket, type SecretCipher } from "@unica/backend";
-import { isRpcMessage, type RpcMessage, type Transport } from "@unica/core/rpc";
-import { createRegistry } from "@unica/mail/registry";
+import { Backend, seedDemo, startAgentSocket, type SecretCipher } from "@terno/backend";
+import { isRpcMessage, type RpcMessage, type Transport } from "@terno/core/rpc";
+import { createRegistry } from "@terno/mail/registry";
 import type { BackendToMain, MainToBackend } from "./ipc";
 
 type PortMain = {

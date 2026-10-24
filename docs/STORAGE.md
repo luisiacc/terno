@@ -4,10 +4,10 @@
 
 | Adapter | Package | Where | Search | Notes |
 |---|---|---|---|---|
-| `sqlite-node-sqlite` | `@unica/db` | Desktop (Electron utility process), backend-dev, tests | FTS5 + instant index | WAL, checkpoint worker, MCP readers |
-| `opfs-sqlite` | `@unica/db/wasm` | Web, dedicated worker | FTS5 + instant index | SQLite-WASM on OPFS (sahpool), one tab at a time |
-| `wasm-memory` | `@unica/db/wasm` | Node tests (project `db-wasm`) | FTS5 + instant index | in-memory images, the web's engine under the db suite |
-| `idb` | `@unica/idb` | Web, dedicated worker | instant index, exact scan meanwhile | native IndexedDB, tables mirrored in memory, bodies on demand |
+| `sqlite-node-sqlite` | `@terno/db` | Desktop (Electron utility process), backend-dev, tests | FTS5 + instant index | WAL, checkpoint worker, MCP readers |
+| `opfs-sqlite` | `@terno/db/wasm` | Web, dedicated worker | FTS5 + instant index | SQLite-WASM on OPFS (sahpool), one tab at a time |
+| `wasm-memory` | `@terno/db/wasm` | Node tests (project `db-wasm`) | FTS5 + instant index | in-memory images, the web's engine under the db suite |
+| `idb` | `@terno/idb` | Web, dedicated worker | instant index, exact scan meanwhile | native IndexedDB, tables mirrored in memory, bodies on demand |
 
 ## Choosing one on the web
 
@@ -25,11 +25,11 @@ An open error (corrupt file, newer schema, a handle another tab still holds) is 
 1. **Implement `MailStore`.** Every method is one atomic unit; nothing may interleave inside it. Start from the closest existing adapter: `SqlMailStore` (`packages/db/src/sql-store.ts`) if your backend speaks SQL (a Postgres port reuses the logic with a dialect port of the queries), `IdbMailStore` (`packages/idb/src/store.ts`) if it doesn't.
 2. **Keep the outbox contract.** Each command that changes what search indexes (messages, bodies, threads, category memberships) appends **one** batch `{ seq, messageIds, threadIds }` under the next revision, in the same transaction; a rollback takes it along. `feed.changes()` serves absolute projections read at serving time; `feed.beginBuild()` holds the log while a rebuild scans. Cursors are valid only at their revision (`StaleCursorError` otherwise).
 3. **Ops wait for sign-ins.** `ops.awaitAuth` puts a claimed op back without spending its attempt (next attempt `AWAITING_AUTH`, never scheduled); `ops.resumeAuth(account)` makes the account's waiting ops ready. The suite checks both.
-4. **Search exactly.** Either a durable engine that answers every query exactly (FTS5, Postgres full text with the same semantics), or the instant index (`@unica/store/instant`) in front of an exact fallback. Never return a page that silently misses matches; slow is acceptable while an index builds, as long as it yields (time slices) and stops when `searchText`'s `signal` says the caller moved on.
+4. **Search exactly.** Either a durable engine that answers every query exactly (FTS5, Postgres full text with the same semantics), or the instant index (`@terno/store/instant`) in front of an exact fallback. Never return a page that silently misses matches; slow is acceptable while an index builds, as long as it yields (time slices) and stops when `searchText`'s `signal` says the caller moved on.
 5. **Pass the suite.** Add a harness next to your adapter:
 
    ```ts
-   import { defineStoreConformance } from "@unica/store/conformance";
+   import { defineStoreConformance } from "@terno/store/conformance";
 
    defineStoreConformance("PgMailStore", {
      open: async () => PgMailStore.open(freshDatabase()),

@@ -1,7 +1,7 @@
-import type { Account, AccountSyncState, Address } from "@unica/core";
-import type { FlagUpdate, IncomingMessage, ProviderStore } from "@unica/store";
+import type { Account, AccountSyncState, Address } from "@terno/core";
+import type { FlagUpdate, IncomingMessage, ProviderStore } from "@terno/store";
 
-export type { FlagUpdate } from "@unica/store";
+export type { FlagUpdate } from "@terno/store";
 
 export interface SendPayload {
   from: Address;

@@ -1,4 +1,4 @@
-import type { SecretCipher } from "@unica/backend/portable";
+import type { SecretCipher } from "@terno/backend/portable";
 
 const DB = "unica-keys";
 const STORE = "keys";

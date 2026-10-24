@@ -1,8 +1,8 @@
-import type { AiTasks } from "@unica/ai";
-import type { Account, AccountSyncState, ThreadAction } from "@unica/core";
-import { RpcServer, type CallContext, type HostInfo, type MethodName, type OpInfo, type Transport } from "@unica/core/rpc";
-import type { ClassifierInput, IncomingMessage, MailStore, OpRow, Platform } from "@unica/store";
-import { ProviderAuthError, ProviderError, type MailProvider, type ProviderRegistry, type SyncSink } from "@unica/mail/portable";
+import type { AiTasks } from "@terno/ai";
+import type { Account, AccountSyncState, ThreadAction } from "@terno/core";
+import { RpcServer, type CallContext, type HostInfo, type MethodName, type OpInfo, type Transport } from "@terno/core/rpc";
+import type { ClassifierInput, IncomingMessage, MailStore, OpRow, Platform } from "@terno/store";
+import { ProviderAuthError, ProviderError, type MailProvider, type ProviderRegistry, type SyncSink } from "@terno/mail/portable";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { AiAssist } from "./ai-assist";
 import { Categorizer } from "./categorizer";

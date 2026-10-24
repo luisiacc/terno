@@ -1,4 +1,4 @@
-import { DEFAULT_BINDINGS, type Command } from "@unica/core";
+import { DEFAULT_BINDINGS, type Command } from "@terno/core";
 
 /** Every command the help lists, by section; each row shows all of its keys. */
 export const SECTIONS: { title: string; rows: [Command, string][] }[] = [

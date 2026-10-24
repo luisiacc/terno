@@ -1,4 +1,4 @@
-import { generateDataset } from "@unica/mock-data";
+import { generateDataset } from "@terno/mock-data";
 import { describe, expect, it } from "vitest";
 import { corpusFromDataset } from "../conformance";
 import type { IndexBatch, IndexChange, Revision, SearchFeed, SearchMessageDoc, SearchThreadDoc } from "../search";

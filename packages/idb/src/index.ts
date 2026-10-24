@@ -1,4 +1,4 @@
-import type { StoreAdapter } from "@unica/store";
+import type { StoreAdapter } from "@terno/store";
 import { IdbMailStore } from "./store";
 
 export { IdbMailStore, type IdbMailStoreOptions } from "./store";

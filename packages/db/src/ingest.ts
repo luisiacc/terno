@@ -1,7 +1,7 @@
-import { BODY_TAIL_TOKENS, baseSubject, emailDomain, featuresFromBlob, normalizeText, trailingTokens, type Address } from "@unica/core";
-import type { IncomingMessage, ModelDelta } from "@unica/store";
+import { BODY_TAIL_TOKENS, baseSubject, emailDomain, featuresFromBlob, normalizeText, trailingTokens, type Address } from "@terno/core";
+import type { IncomingMessage, ModelDelta } from "@terno/store";
 
-export type { IncomingAttachment, IncomingLocation, IncomingMessage } from "@unica/store";
+export type { IncomingAttachment, IncomingLocation, IncomingMessage } from "@terno/store";
 import { placeholders, type Db } from "./sqlite";
 import { pruneOpTargets } from "./repos";
 

@@ -3,8 +3,8 @@
  * (SqlMailStore on node:sqlite) at the same budgets as perf.perf.test.ts,
  * plus write latency and ingestion throughput of store commands.
  */
-import { generateDataset } from "@unica/mock-data";
-import type { IncomingMessage } from "@unica/store";
+import { generateDataset } from "@terno/mock-data";
+import type { IncomingMessage } from "@terno/store";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

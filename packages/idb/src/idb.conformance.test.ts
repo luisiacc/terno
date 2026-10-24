@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
-import { generateDataset } from "@unica/mock-data";
-import type { MailStore, Platform } from "@unica/store";
-import { defineSearchConformance, defineStoreConformance, seedThroughCommands } from "@unica/store/conformance";
+import { generateDataset } from "@terno/mock-data";
+import type { MailStore, Platform } from "@terno/store";
+import { defineSearchConformance, defineStoreConformance, seedThroughCommands } from "@terno/store/conformance";
 import { afterAll, expect } from "vitest";
 import { IdbMailStore } from "./store";
 

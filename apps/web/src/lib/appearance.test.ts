@@ -3,7 +3,7 @@
  * refusal reconciled against what is still pending, so an older snapshot never
  * paints over a newer choice. Runs in Node with a minimal fake <html>.
  */
-import type { AppSettings } from "@unica/core/rpc";
+import type { AppSettings } from "@terno/core/rpc";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const fake = vi.hoisted(() => {

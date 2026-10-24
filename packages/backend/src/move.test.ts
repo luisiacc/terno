@@ -7,10 +7,10 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createMemoryTransportPair, RpcClient } from "@unica/core/rpc";
-import { beginMove, createCategory, movePhase, seedDataset, sqlDb } from "@unica/db";
-import { demoRegistry } from "@unica/mail";
-import { generateDataset } from "@unica/mock-data";
+import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
+import { beginMove, createCategory, movePhase, seedDataset, sqlDb } from "@terno/db";
+import { demoRegistry } from "@terno/mail";
+import { generateDataset } from "@terno/mock-data";
 import { afterEach, describe, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 

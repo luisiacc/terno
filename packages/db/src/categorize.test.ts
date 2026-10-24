@@ -1,4 +1,4 @@
-import { CategorizerModel, contentTokens, encodeFeatures, extractFeatures, termsQuery } from "@unica/core";
+import { CategorizerModel, contentTokens, encodeFeatures, extractFeatures, termsQuery } from "@terno/core";
 import { describe, expect, it } from "vitest";
 import {
   addToCategory,

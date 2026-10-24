@@ -1,4 +1,4 @@
-import { generateDataset } from "@unica/mock-data";
+import { generateDataset } from "@terno/mock-data";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

@@ -6,13 +6,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { createServer as createTcpServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createMemoryTransportPair, RpcClient } from "@unica/core/rpc";
-import { createRegistry } from "@unica/mail";
+import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
+import { createRegistry } from "@terno/mail";
 import imapkit from "imapkit";
 import { SMTPServer } from "smtp-server";
 import { afterEach, describe, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
-import { sqlDb } from "@unica/db";
+import { sqlDb } from "@terno/db";
 
 type ImapKitServer = ReturnType<typeof imapkit>;
 
@@ -448,7 +448,7 @@ describe("IMAP identity and safety (review fixes)", () => {
 
   it("refuses to log in over plaintext when the server doesn't offer STARTTLS", async () => {
     const imap = await startImap();
-    const { createRegistry: strictRegistry } = await import("@unica/mail");
+    const { createRegistry: strictRegistry } = await import("@terno/mail");
     const registry = strictRegistry(); // production: allowInsecure off
     await expect(
       registry.verifyImap(

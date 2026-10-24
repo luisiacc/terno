@@ -1,9 +1,9 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
-import { Backend, plaintextCipher, seedDemo, startAgentSocket, webSocketTransport, type AiFactory, type LookupAll } from "@unica/backend";
-import { demoRegistry, type ProviderRegistry } from "@unica/mail";
-export { sqlDb } from "@unica/db";
+import { Backend, plaintextCipher, seedDemo, startAgentSocket, webSocketTransport, type AiFactory, type LookupAll } from "@terno/backend";
+import { demoRegistry, type ProviderRegistry } from "@terno/mail";
+export { sqlDb } from "@terno/db";
 import { WebSocketServer } from "ws";
 
 export interface DevServerOptions {

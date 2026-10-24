@@ -3,7 +3,7 @@ import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { setImmediate as yieldToLoop } from "node:timers/promises";
 import { Worker } from "node:worker_threads";
-import type { Platform, PlatformFiles } from "@unica/store";
+import type { Platform, PlatformFiles } from "@terno/store";
 import type { CheckpointWorker, Row, SqlValue, SqliteConnection, SqliteDriver, SqliteStatement } from "./connection";
 
 class NodeStatement implements SqliteStatement {

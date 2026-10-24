@@ -1,6 +1,6 @@
-import { COUNT_CAP, parseSearch, resolveSearch, senderVetoed, type Address, type FilterAction, type ThreadAction, type ThreadSummary } from "@unica/core";
-import { RpcError } from "@unica/core/rpc";
-import type { MockDataset } from "@unica/mock-data";
+import { COUNT_CAP, parseSearch, resolveSearch, senderVetoed, type Address, type FilterAction, type ThreadAction, type ThreadSummary } from "@terno/core";
+import { RpcError } from "@terno/core/rpc";
+import type { MockDataset } from "@terno/mock-data";
 import {
   AWAITING_AUTH,
   type ClassifierInput,
@@ -22,8 +22,8 @@ import {
   type StoreCapabilities,
   type StoreSearchPage,
   type StoreSnapshot,
-} from "@unica/store";
-import { InstantSearch, WEB_SEARCH_MEMORY, type InstantSearchOptions } from "@unica/store/instant";
+} from "@terno/store";
+import { InstantSearch, WEB_SEARCH_MEMORY, type InstantSearchOptions } from "@terno/store/instant";
 import {
   addToCategory,
   aiCandidate,
@@ -130,7 +130,7 @@ import {
 import type { Key, MemDb } from "./mem";
 import { IdbProviderStore } from "./provider-store";
 import { createMemDb, EARLY_TABLES, idbExists, LATE_TABLES, LOGICAL_SCHEMA, loadAll, SEARCH_SCHEMA, openIdb, persist, readAll, readLazy, writeMeta } from "./schema";
-import { sameRevision, SearchCancelledError } from "@unica/store";
+import { sameRevision, SearchCancelledError } from "@terno/store";
 import { appendOutbox, checkCursor, columnsOf, materializeChanges, pageOf, planScan, scanPage, searchChangeIds, searchHead } from "./search";
 
 const PENDING_BODIES_CAP = 1000;

@@ -1,12 +1,12 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createMemoryTransportPair, RpcClient } from "@unica/core/rpc";
+import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import dc from "node:diagnostics_channel";
-import { encodeFeatures, extractFeatures } from "@unica/core";
-import { addToCategory, createAccount, createCategory, ingestMessages, putSecret, seedDataset, setSetting, type IncomingMessage, sqlDb } from "@unica/db";
-import { demoRegistry } from "@unica/mail";
-import { generateDataset } from "@unica/mock-data";
+import { encodeFeatures, extractFeatures } from "@terno/core";
+import { addToCategory, createAccount, createCategory, ingestMessages, putSecret, seedDataset, setSetting, type IncomingMessage, sqlDb } from "@terno/db";
+import { demoRegistry } from "@terno/mail";
+import { generateDataset } from "@terno/mock-data";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 
@@ -187,7 +187,7 @@ describe("categorizer: training hooks", () => {
     const { backend, dir, stop } = setup({ seed: true });
     await backend.categorizer.rebuildNow();
     const probe = sqlDb(backend.store).all<{ features: Uint8Array }>("SELECT features FROM cls_examples LIMIT 5");
-    const { featuresFromBlob } = await import("@unica/core");
+    const { featuresFromBlob } = await import("@terno/core");
     const scores = probe.map((p) => backend.categorizer.model!.score(featuresFromBlob(p.features)));
     await stop();
 
@@ -217,7 +217,7 @@ describe("categorizer: training hooks", () => {
     await rebuilding;
     const live = backend.categorizer.model!;
     const probe = sqlDb(backend.store).all<{ features: Uint8Array }>("SELECT features FROM cls_examples LIMIT 3");
-    const { featuresFromBlob } = await import("@unica/core");
+    const { featuresFromBlob } = await import("@terno/core");
     const fresh = await backend.categorizer.rebuildNow();
     for (const c of fresh.categoryIds) expect(live.positives(c), `category ${c}`).toBe(fresh.positives(c));
     for (const p of probe) {

@@ -12,12 +12,12 @@ import {
   type FilterRule,
   type OpState,
   type UserActionKind,
-} from "@unica/core";
+} from "@terno/core";
 import { addToCategory, removeFromCategory, type AddedBy } from "./categorize";
-import { AWAITING_AUTH, type DraftInput, type DraftRow, type OpRow } from "@unica/store";
+import { AWAITING_AUTH, type DraftInput, type DraftRow, type OpRow } from "@terno/store";
 import type { Db, Param } from "./sqlite";
 
-export type { DraftRow, OpRow } from "@unica/store";
+export type { DraftRow, OpRow } from "@terno/store";
 
 // ───────────────────────────── accounts ─────────────────────────────
 

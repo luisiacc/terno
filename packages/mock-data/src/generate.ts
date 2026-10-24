@@ -1,8 +1,8 @@
-import type { Address, CategoryColor } from "@unica/core";
+import type { Address, CategoryColor } from "@terno/core";
 import { FAMILIES, FAMILY_SHARE, FAMILY_TAGS, familyThread, type AdversarialFamily, type FamilyMessage } from "./adversarial";
 import * as B from "./banks";
 
-/** Structurally compatible with @unica/db IncomingMessage, minus accountId. */
+/** Structurally compatible with @terno/db IncomingMessage, minus accountId. */
 export interface MockMessage {
   accountIndex: number;
   providerMsgId: string;

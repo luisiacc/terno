@@ -1,6 +1,6 @@
 import { lookup as dnsLookup } from "node:dns/promises";
-import { nodePlatform, openDatabase, SqlMailStore } from "@unica/db";
-import type { MailStore } from "@unica/store";
+import { nodePlatform, openDatabase, SqlMailStore } from "@terno/db";
+import type { MailStore } from "@terno/store";
 import { BackendCore, type BackendCoreOptions } from "./core";
 import type { LookupAll } from "./net-policy";
 

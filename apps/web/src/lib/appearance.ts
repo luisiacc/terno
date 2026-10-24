@@ -1,8 +1,8 @@
-import { CUSTOM_PREFIX, DEFAULT_THEME, type ThemeMode } from "@unica/core";
-import type { AppSettings, SettingsPatch } from "@unica/core/rpc";
-import { applyCustomTheme, clampMotion, motionOff, motionVars, opaqueBackground } from "@unica/ui/themes/apply";
-import { toHex } from "@unica/ui/themes/color";
-import { builtinTheme, resolveCustomTheme, type Theme } from "@unica/ui/themes/registry";
+import { CUSTOM_PREFIX, DEFAULT_THEME, type ThemeMode } from "@terno/core";
+import type { AppSettings, SettingsPatch } from "@terno/core/rpc";
+import { applyCustomTheme, clampMotion, motionOff, motionVars, opaqueBackground } from "@terno/ui/themes/apply";
+import { toHex } from "@terno/ui/themes/color";
+import { builtinTheme, resolveCustomTheme, type Theme } from "@terno/ui/themes/registry";
 import { toast } from "sonner";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";

@@ -1,4 +1,4 @@
-import { cn } from "@unica/ui/lib/utils";
+import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAppearance } from "~/lib/appearance";
 

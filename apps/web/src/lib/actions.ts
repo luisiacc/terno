@@ -1,4 +1,4 @@
-import { parseAddressList, type ThreadAction, type ThreadSummary, type View } from "@unica/core";
+import { parseAddressList, type ThreadAction, type ThreadSummary, type View } from "@terno/core";
 import { toast } from "sonner";
 import { reflowRemoval } from "~/lib/flash";
 import { client } from "~/rpc/connection";

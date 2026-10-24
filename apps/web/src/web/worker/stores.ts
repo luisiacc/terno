@@ -1,8 +1,8 @@
 import type { SAHPoolUtil, Sqlite3Static } from "@sqlite.org/sqlite-wasm";
-import { openDatabaseWith, SqlMailStore, wasmSqliteDriver } from "@unica/db/wasm";
-import { idbAdapter } from "@unica/idb";
-import { StoreRegistry, type StoreAdapter } from "@unica/store";
-import { WEB_SEARCH_MEMORY } from "@unica/store/instant";
+import { openDatabaseWith, SqlMailStore, wasmSqliteDriver } from "@terno/db/wasm";
+import { idbAdapter } from "@terno/idb";
+import { StoreRegistry, type StoreAdapter } from "@terno/store";
+import { WEB_SEARCH_MEMORY } from "@terno/store/instant";
 
 export const DEFAULT_MAILBOX = "unica";
 

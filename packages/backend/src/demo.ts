@@ -1,5 +1,5 @@
-import { generateDataset } from "@unica/mock-data";
-import type { MailStore } from "@unica/store";
+import { generateDataset } from "@terno/mock-data";
+import type { MailStore } from "@terno/store";
 
 export interface DemoOptions {
   threads?: number;

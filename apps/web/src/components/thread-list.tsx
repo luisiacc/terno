@@ -1,11 +1,11 @@
-import { Input } from "@unica/ui/components/input";
-import { Kbd } from "@unica/ui/components/kbd";
-import { Skeleton } from "@unica/ui/components/skeleton";
+import { Input } from "@terno/ui/components/input";
+import { Kbd } from "@terno/ui/components/kbd";
+import { Skeleton } from "@terno/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Inbox, Search, SquarePen, X } from "lucide-react";
-import { Button } from "@unica/ui/components/button";
-import { Shortcut } from "@unica/ui/components/shortcut";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@unica/ui/components/tooltip";
+import { Button } from "@terno/ui/components/button";
+import { Shortcut } from "@terno/ui/components/shortcut";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { openCompose } from "~/lib/actions";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { Suspense, useEffect, useRef, useState } from "react";

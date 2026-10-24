@@ -1,4 +1,4 @@
-import { DEFAULT_THEME, THEME_TOKENS, type BuiltinThemeId, type CustomTheme, type ThemeMode, type ThemeToken } from "@unica/core";
+import { DEFAULT_THEME, THEME_TOKENS, type BuiltinThemeId, type CustomTheme, type ThemeMode, type ThemeToken } from "@terno/core";
 import { contrast, formatOklch, mixOklab, parseColor, withAlpha, type Oklch } from "./color";
 
 /**

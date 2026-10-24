@@ -14,7 +14,7 @@
       "~/*": [
         "./src/*"
       ],
-      "@unica/ui/*": [
+      "@terno/ui/*": [
         "../../packages/ui/src/*"
       ]
     }

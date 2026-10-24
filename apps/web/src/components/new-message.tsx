@@ -1,7 +1,7 @@
-import { Button } from "@unica/ui/components/button";
-import { Shortcut } from "@unica/ui/components/shortcut";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@unica/ui/components/tooltip";
-import { cn } from "@unica/ui/lib/utils";
+import { Button } from "@terno/ui/components/button";
+import { Shortcut } from "@terno/ui/components/shortcut";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
+import { cn } from "@terno/ui/lib/utils";
 import { Send, Trash2 } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";

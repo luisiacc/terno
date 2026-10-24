@@ -22,8 +22,8 @@ import type {
   TrainExample,
   UserActionKind,
   Vetoes,
-} from "@unica/core";
-import type { OwnerIdentity } from "@unica/core/rpc";
+} from "@terno/core";
+import type { OwnerIdentity } from "@terno/core/rpc";
 import type { MailStoreSearch, SearchCursor, SearchFeed, SearchMessageDoc, SearchThreadDoc, StoreSearchPage } from "./search";
 import type {
   AddedBy,

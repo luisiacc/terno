@@ -12,15 +12,15 @@ import {
   type CategoryModelStats,
   type Prediction,
   type QuickActions,
-} from "@unica/core";
+} from "@terno/core";
 import { ownAddresses, threadFeatures, vetoesFor } from "./categorize";
 import { pendingSuggestionCounts } from "./queries";
 import { searchThreadIds } from "./search";
-import type { PendingSuggestion } from "@unica/store";
+import type { PendingSuggestion } from "@terno/store";
 import type { Db, Param } from "./sqlite";
 
-export type { PendingSuggestion } from "@unica/store";
-export { COUNT_CAP } from "@unica/core";
+export type { PendingSuggestion } from "@terno/store";
+export { COUNT_CAP } from "@terno/core";
 
 /**
  * Every scope leaves out threads already in the category, trash and spam,

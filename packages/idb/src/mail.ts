@@ -28,9 +28,9 @@ import {
   type UserActionKind,
   type View,
   withAccountPrefs,
-} from "@unica/core";
-import type { OwnerIdentity } from "@unica/core/rpc";
-import { AWAITING_AUTH, type DraftInput, type DraftRow, type IncomingMessage, type ListParams, type ModelDelta, type OpRow, type OwnerClaim, type MessageState, type Page, type ScopeParams, type SearchMessageDoc, type SearchThreadDoc } from "@unica/store";
+} from "@terno/core";
+import type { OwnerIdentity } from "@terno/core/rpc";
+import { AWAITING_AUTH, type DraftInput, type DraftRow, type IncomingMessage, type ListParams, type ModelDelta, type OpRow, type OwnerClaim, type MessageState, type Page, type ScopeParams, type SearchMessageDoc, type SearchThreadDoc } from "@terno/store";
 import type { MemDb, Row, Table } from "./mem";
 
 /**

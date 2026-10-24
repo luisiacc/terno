@@ -1,11 +1,11 @@
-import { CATEGORY_COLORS, type CategoryColor } from "@unica/core";
-import type { SettingsPatch } from "@unica/core/rpc";
-import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@unica/ui/components/alert-dialog";
-import { Button } from "@unica/ui/components/button";
-import { CategoryDot } from "@unica/ui/components/category-dot";
-import { Input } from "@unica/ui/components/input";
-import { Textarea } from "@unica/ui/components/textarea";
-import { cn } from "@unica/ui/lib/utils";
+import { CATEGORY_COLORS, type CategoryColor } from "@terno/core";
+import type { SettingsPatch } from "@terno/core/rpc";
+import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@terno/ui/components/alert-dialog";
+import { Button } from "@terno/ui/components/button";
+import { CategoryDot } from "@terno/ui/components/category-dot";
+import { Input } from "@terno/ui/components/input";
+import { Textarea } from "@terno/ui/components/textarea";
+import { cn } from "@terno/ui/lib/utils";
 import { useId, useState } from "react";
 
 /**

@@ -26,7 +26,7 @@ if (seeded) {
     console.log(`[dev] seeding ${profile} …`);
     const seed = spawnSync(
       process.platform === "win32" ? "pnpm.cmd" : "pnpm",
-      ["--filter", "@unica/backend-dev", "exec", "tsx", "src/seed.ts", "--out", profile, "--accounts", process.env.UNICA_SEED_ACCOUNTS ?? "8", "--threads", process.env.UNICA_SEED_THREADS ?? "12000"],
+      ["--filter", "@terno/backend-dev", "exec", "tsx", "src/seed.ts", "--out", profile, "--accounts", process.env.UNICA_SEED_ACCOUNTS ?? "8", "--threads", process.env.UNICA_SEED_THREADS ?? "12000"],
       { cwd: repo, stdio: "inherit" },
     );
     if (seed.status !== 0) process.exit(seed.status ?? 1);

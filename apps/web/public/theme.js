@@ -6,7 +6,7 @@
     var KEY = "unica:appearance";
     var MODES = ["system", "light", "dark"];
     var ID = /^[a-z0-9-]{1,60}$/;
-    // the same numbers-only grammar as @unica/core THEME_COLOR_RE
+    // the same numbers-only grammar as @terno/core THEME_COLOR_RE
     var N = "(?:\\d+(?:\\.\\d+)?|\\.\\d+)";
     var COLOR = new RegExp("^(?:#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})|oklch\\(\\s*" + N + "%?\\s+" + N + "\\s+" + N + "(?:deg)?\\s*(?:\\/\\s*" + N + "%?\\s*)?\\))$", "i");
     var a = null;

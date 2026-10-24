@@ -1,5 +1,5 @@
-import { formatAddressList, isValidEmail, parseAddressList, type Address } from "@unica/core";
-import type { Draft, DraftAddress, DraftMode } from "@unica/core/rpc";
+import { formatAddressList, isValidEmail, parseAddressList, type Address } from "@terno/core";
+import type { Draft, DraftAddress, DraftMode } from "@terno/core/rpc";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
 

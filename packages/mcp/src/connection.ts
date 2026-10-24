@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { connect } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { isRpcMessage, RpcClient, type RpcMessage, type Transport } from "@unica/core/rpc";
+import { isRpcMessage, RpcClient, type RpcMessage, type Transport } from "@terno/core/rpc";
 
 export interface Endpoint {
   socketPath: string;

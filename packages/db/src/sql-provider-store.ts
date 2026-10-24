@@ -1,4 +1,4 @@
-import type { ImapLocation, ImapLocationStore, ProviderStore } from "@unica/store";
+import type { ImapLocation, ImapLocationStore, ProviderStore } from "@terno/store";
 import { getSetting } from "./repos";
 import { placeholders, type Db } from "./sqlite";
 

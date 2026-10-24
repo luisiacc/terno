@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { filterRuleSchema, VIEWS, type ThreadDetail, type ThreadSummary } from "@unica/core";
-import { RpcError, type Bootstrap } from "@unica/core/rpc";
+import { filterRuleSchema, VIEWS, type ThreadDetail, type ThreadSummary } from "@terno/core";
+import { RpcError, type Bootstrap } from "@terno/core/rpc";
 import { z } from "zod";
 import type { AppConnection } from "./connection";
 

@@ -1,5 +1,5 @@
-import type { LearnedProposal } from "@unica/core";
-import { Button } from "@unica/ui/components/button";
+import type { LearnedProposal } from "@terno/core";
+import { Button } from "@terno/ui/components/button";
 import { Sparkles, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";

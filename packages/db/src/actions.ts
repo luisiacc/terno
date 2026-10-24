@@ -1,5 +1,5 @@
-import type { ThreadAction } from "@unica/core";
-import type { MessageState } from "@unica/store";
+import type { ThreadAction } from "@terno/core";
+import type { MessageState } from "@terno/store";
 import { recomputeThreads } from "./ingest";
 import { placeholders, type Db } from "./sqlite";
 

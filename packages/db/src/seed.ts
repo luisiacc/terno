@@ -1,4 +1,4 @@
-import type { MockDataset } from "@unica/mock-data";
+import type { MockDataset } from "@terno/mock-data";
 import { ingestMessages } from "./ingest";
 import { addThreadsToCategory, createAccount, createCategory, recordUserActions } from "./repos";
 import { placeholders, type Db } from "./sqlite";

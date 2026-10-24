@@ -1,5 +1,5 @@
-import type { ThreadSummary } from "@unica/core";
-import { StaleCursorError, type Revision, type SearchCursor, type SearchEngine, type SearchIdsPage, type SearchRequest } from "@unica/store";
+import type { ThreadSummary } from "@terno/core";
+import { StaleCursorError, type Revision, type SearchCursor, type SearchEngine, type SearchIdsPage, type SearchRequest } from "@terno/store";
 import { SUMMARY_COLUMNS, toSummary, type SummaryRow } from "./queries";
 import { runSearch, type SearchStrategy } from "./search";
 import type { Db } from "./sqlite";

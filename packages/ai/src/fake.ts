@@ -1,4 +1,4 @@
-import { normalizeText } from "@unica/core";
+import { normalizeText } from "@terno/core";
 import type { ModelTransport } from "./types";
 import type { WireFilter } from "./wire";
 

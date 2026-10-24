@@ -4,11 +4,11 @@
  * FTS5 planner and the brute-force oracle, through random store commands and
  * a snapshot round-trip. FTS5 is its phrase doclist, as in production.
  */
-import { parseSearch, resolveSearch } from "@unica/core";
-import { generateDataset } from "@unica/mock-data";
-import type { MailStore, Revision, SearchCursor, SearchFeed } from "@unica/store";
-import { defineSearchConformance, generateQueries, ingest, msg, oracleSearch, type SearchCorpus, type UiScope } from "@unica/store/conformance";
-import { InstantSearchEngine } from "@unica/store/instant";
+import { parseSearch, resolveSearch } from "@terno/core";
+import { generateDataset } from "@terno/mock-data";
+import type { MailStore, Revision, SearchCursor, SearchFeed } from "@terno/store";
+import { defineSearchConformance, generateQueries, ingest, msg, oracleSearch, type SearchCorpus, type UiScope } from "@terno/store/conformance";
+import { InstantSearchEngine } from "@terno/store/instant";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

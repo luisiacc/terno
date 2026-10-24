@@ -7,11 +7,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage as Req, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createMemoryTransportPair, RpcClient } from "@unica/core/rpc";
-import { createGmailTokenBroker, createRegistry, GMAIL_RECONNECT, type ProviderRegistry } from "@unica/mail";
+import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
+import { createGmailTokenBroker, createRegistry, GMAIL_RECONNECT, type ProviderRegistry } from "@terno/mail";
 import { afterEach, describe, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
-import { sqlDb } from "@unica/db";
+import { sqlDb } from "@terno/db";
 
 interface FakeMsg {
   id: string;
@@ -532,7 +532,7 @@ describe("Gmail on the web (Google's token model, no refresh token)", () => {
     await backend.runWorker();
     const raw = google.sent[0]!.raw;
     expect(raw).toMatch(/^Bcc: oculto@example\.com/m);
-    const { parseRaw } = await import("@unica/mail");
+    const { parseRaw } = await import("@terno/mail");
     const parsed = await parseRaw(raw);
     expect(parsed).toMatchObject({ subject: "Reunión mañana", to: [{ name: "Ana Pérez", email: "ana@example.com" }], text: expect.stringMatching(/^¿Nos vemos\?\r?\nSaludos$/) });
     expect(sqlDb(backend.store).get("SELECT state FROM ops WHERE kind = 'send'")).toEqual({ state: "succeeded" });

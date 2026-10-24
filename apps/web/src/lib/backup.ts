@@ -1,4 +1,4 @@
-import type { ImportResult } from "@unica/core/rpc";
+import type { ImportResult } from "@terno/core/rpc";
 import { client } from "~/rpc/connection";
 import { setApp } from "~/state/app";
 import { adoptSettings } from "./appearance";

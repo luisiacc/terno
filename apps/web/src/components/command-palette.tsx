@@ -1,6 +1,6 @@
-import type { CategoryColor } from "@unica/core";
-import { CategoryDot } from "@unica/ui/components/category-dot";
-import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@unica/ui/components/command";
+import type { CategoryColor } from "@terno/core";
+import { CategoryDot } from "@terno/ui/components/category-dot";
+import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
 import { Archive, CheckCheck, FolderInput, Inbox, Layers, Mail, MailOpen, Moon, OctagonAlert, PenLine, Search, Send, Sparkles, Star, Sun, Trash2, Undo2 } from "lucide-react";
 import { useState } from "react";
 import { act, openCompose, toggleStar, undoLast } from "~/lib/actions";

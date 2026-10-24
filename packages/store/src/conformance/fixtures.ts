@@ -1,4 +1,4 @@
-import type { MockDataset } from "@unica/mock-data";
+import type { MockDataset } from "@terno/mock-data";
 import type { MailStore } from "../mail-store";
 import type { IncomingMessage } from "../types";
 

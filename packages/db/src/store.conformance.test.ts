@@ -1,5 +1,5 @@
-import { generateDataset } from "@unica/mock-data";
-import { defineStoreConformance } from "@unica/store/conformance";
+import { generateDataset } from "@terno/mock-data";
+import { defineStoreConformance } from "@terno/store/conformance";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

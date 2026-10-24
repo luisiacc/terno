@@ -9,7 +9,7 @@ import { THEMES } from "./registry";
 const file = join(import.meta.dirname, "../styles/themes.generated.css");
 
 describe("generated theme CSS", () => {
-  it("is up to date with the registry (run `pnpm --filter @unica/ui gen:themes`)", () => {
+  it("is up to date with the registry (run `pnpm --filter @terno/ui gen:themes`)", () => {
     expect(readFileSync(file, "utf8")).toBe(generateThemesCss());
   });
 

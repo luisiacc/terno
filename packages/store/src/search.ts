@@ -1,6 +1,6 @@
-import type { ResolvedSearch, ThreadSummary } from "@unica/core";
+import type { ResolvedSearch, ThreadSummary } from "@terno/core";
 
-export type { ResolvedSearch } from "@unica/core";
+export type { ResolvedSearch } from "@terno/core";
 
 /** A point in the store's write history: `seq` counts committed batches within one database `epoch`. */
 export interface Revision {

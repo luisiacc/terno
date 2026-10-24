@@ -1,5 +1,5 @@
-import { isValidEmail, parseAddressList } from "@unica/core";
-import type { DraftMode } from "@unica/core/rpc";
+import { isValidEmail, parseAddressList } from "@terno/core";
+import type { DraftMode } from "@terno/core/rpc";
 import { toast } from "sonner";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";

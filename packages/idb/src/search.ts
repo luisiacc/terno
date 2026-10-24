@@ -1,5 +1,5 @@
-import { isFullEmail, normalizeText, tokenize, type MessageTerm } from "@unica/core";
-import { RevisionError, StaleCursorError, type IndexBatch, type IndexChange, type ResolvedSearch, type Revision, type SearchCursor, type SearchRequest } from "@unica/store";
+import { isFullEmail, normalizeText, tokenize, type MessageTerm } from "@terno/core";
+import { RevisionError, StaleCursorError, type IndexBatch, type IndexChange, type ResolvedSearch, type Revision, type SearchCursor, type SearchRequest } from "@terno/store";
 import { messageDoc, T, threadDoc, VIEW_TEST, type Ctx, type R } from "./mail";
 
 /** Batches kept for engines catching up (bytes of their id lists), as on SQL. */

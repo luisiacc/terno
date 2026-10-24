@@ -1,4 +1,4 @@
-import { isRpcMessage, RpcClient, type RpcMessage, type Transport } from "@unica/core/rpc";
+import { isRpcMessage, RpcClient, type RpcMessage, type Transport } from "@terno/core/rpc";
 
 function portTransport(port: MessagePort): Transport {
   const listeners = new Set<(m: RpcMessage) => void>();

@@ -1,6 +1,6 @@
 import PostalMime from "postal-mime";
-import type { Address } from "@unica/core";
-import type { IncomingAttachment } from "@unica/store";
+import type { Address } from "@terno/core";
+import type { IncomingAttachment } from "@terno/store";
 
 export interface ParsedMessage {
   rfcMessageId: string | null;

@@ -23,7 +23,7 @@ const release = join(root, "release");
 const productName = "Unica";
 const displayName = "Única";
 
-if (!existsSync(join(root, "dist/main.cjs"))) throw new Error("run `pnpm --filter @unica/desktop build` first");
+if (!existsSync(join(root, "dist/main.cjs"))) throw new Error("run `pnpm --filter @terno/desktop build` first");
 
 rmSync(stage, { recursive: true, force: true });
 rmSync(release, { recursive: true, force: true });

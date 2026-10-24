@@ -1,7 +1,7 @@
-import { Button } from "@unica/ui/components/button";
-import { Dialog, DialogContent, DialogTitle } from "@unica/ui/components/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@unica/ui/components/tabs";
-import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@unica/ui/components/alert-dialog";
+import { Button } from "@terno/ui/components/button";
+import { Dialog, DialogContent, DialogTitle } from "@terno/ui/components/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@terno/ui/components/tabs";
+import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@terno/ui/components/alert-dialog";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { client } from "~/rpc/connection";

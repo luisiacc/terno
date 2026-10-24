@@ -1,5 +1,5 @@
-import { normalizeText, parseSearch, resolveSearch, tokenize } from "@unica/core";
-import type { MockDataset } from "@unica/mock-data";
+import { normalizeText, parseSearch, resolveSearch, tokenize } from "@terno/core";
+import type { MockDataset } from "@terno/mock-data";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { CachedSearchEngine, IndexBatch, IndexChange, Revision, SearchCursor, SearchMessageDoc, SearchThreadDoc } from "../search";
 import { oracleSearch, type SearchCorpus, type UiScope } from "./oracle";

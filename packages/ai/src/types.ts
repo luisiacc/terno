@@ -1,7 +1,7 @@
-import type { AiErrorKind, AiProviderId, Capabilities, CompatiblePreset, FilterRule, ModelInfo, OutputMode } from "@unica/core";
+import type { AiErrorKind, AiProviderId, Capabilities, CompatiblePreset, FilterRule, ModelInfo, OutputMode } from "@terno/core";
 import type { z } from "zod";
 
-export type { AiErrorKind, AiProviderId, Capabilities, CompatiblePreset, ModelInfo, OutputMode, PresetDescriptor, ProviderDescriptor } from "@unica/core";
+export type { AiErrorKind, AiProviderId, Capabilities, CompatiblePreset, ModelInfo, OutputMode, PresetDescriptor, ProviderDescriptor } from "@terno/core";
 
 export interface ProviderConfig {
   id: AiProviderId;

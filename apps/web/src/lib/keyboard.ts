@@ -1,4 +1,4 @@
-import { resolveKey, type Command } from "@unica/core";
+import { resolveKey, type Command } from "@terno/core";
 import { act, openCompose, toggleRead, toggleStar, undoLast } from "~/lib/actions";
 import { clearSelection, extendSelection, isMac, selectAll, selectWhere, toggleCurrent } from "~/lib/select";
 import { openMenuForSelection } from "~/components/thread-menu";
@@ -99,7 +99,7 @@ function activates(el: Element | null, e: KeyboardEvent): boolean {
   return el.tagName === "BUTTON" || el.tagName === "A" || el.tagName === "SUMMARY" || el.getAttribute("role") === "button";
 }
 
-/** One document-level handler; commands are resolved by the pure resolver in @unica/core. */
+/** One document-level handler; commands are resolved by the pure resolver in @terno/core. */
 export function installKeyboard(): () => void {
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.defaultPrevented || e.isComposing) return;

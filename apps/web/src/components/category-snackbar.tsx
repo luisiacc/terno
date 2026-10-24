@@ -1,7 +1,7 @@
-import { termsQuery, type CategorizeScope, type CategoryColor, type QuickActions } from "@unica/core";
-import { CategoryDot } from "@unica/ui/components/category-dot";
-import { Kbd } from "@unica/ui/components/kbd";
-import { cn } from "@unica/ui/lib/utils";
+import { termsQuery, type CategorizeScope, type CategoryColor, type QuickActions } from "@terno/core";
+import { CategoryDot } from "@terno/ui/components/category-dot";
+import { Kbd } from "@terno/ui/components/kbd";
+import { cn } from "@terno/ui/lib/utils";
 import { Check, Filter, Search, Undo2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";

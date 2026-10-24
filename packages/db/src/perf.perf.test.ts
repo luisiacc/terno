@@ -3,7 +3,7 @@
  * realistic bodies. p95 latencies are asserted against the product targets
  * (docs/PLAN.md §11.6). Run with `pnpm test:perf`.
  */
-import { generateDataset } from "@unica/mock-data";
+import { generateDataset } from "@terno/mock-data";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

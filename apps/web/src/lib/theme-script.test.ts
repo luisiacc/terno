@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
-import { motionVars } from "@unica/ui/themes/apply";
+import { motionVars } from "@terno/ui/themes/apply";
 import { describe, expect, it } from "vitest";
 
 const SOURCE = readFileSync(join(import.meta.dirname, "../../public/theme.js"), "utf8");

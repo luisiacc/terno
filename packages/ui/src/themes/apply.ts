@@ -1,4 +1,4 @@
-import { DEFAULT_THEME, MOTION_STEPS, THEME_TOKENS, type MotionMs } from "@unica/core";
+import { DEFAULT_THEME, MOTION_STEPS, THEME_TOKENS, type MotionMs } from "@terno/core";
 import { composite, oklchToRgb, parseColor, toHex } from "./color";
 import { builtinTheme, type Theme } from "./registry";
 

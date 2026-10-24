@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto";
-import { generateDataset } from "@unica/mock-data";
-import type { Platform } from "@unica/store";
+import { generateDataset } from "@terno/mock-data";
+import type { Platform } from "@terno/store";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { IdbMailStore } from "./store";
 

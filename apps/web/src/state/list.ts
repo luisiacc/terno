@@ -1,5 +1,5 @@
-import type { ThreadSummary, View } from "@unica/core";
-import { RpcError, type ThreadScope } from "@unica/core/rpc";
+import type { ThreadSummary, View } from "@terno/core";
+import { RpcError, type ThreadScope } from "@terno/core/rpc";
 import { prune } from "~/lib/selection";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";

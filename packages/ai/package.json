@@ -1,5 +1,5 @@
 {
-  "name": "@unica/ai",
+  "name": "@terno/ai",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.1.0",
-    "@unica/core": "workspace:*",
+    "@terno/core": "workspace:*",
     "openai": "^7.43.0",
     "zod": "catalog:"
   },

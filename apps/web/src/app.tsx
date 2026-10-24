@@ -1,5 +1,5 @@
-import { Toaster } from "@unica/ui/components/sonner";
-import { TooltipProvider } from "@unica/ui/components/tooltip";
+import { Toaster } from "@terno/ui/components/sonner";
+import { TooltipProvider } from "@terno/ui/components/tooltip";
 import { lazy, Suspense, useEffect } from "react";
 import { useAppearance } from "~/lib/appearance";
 import { setLastUndo } from "~/lib/actions";

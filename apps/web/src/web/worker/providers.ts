@@ -1,4 +1,4 @@
-import { createDemoProvider, createGmailTokenBroker, ProviderError, type ProviderRegistry } from "@unica/mail/portable";
+import { createDemoProvider, createGmailTokenBroker, ProviderError, type ProviderRegistry } from "@terno/mail/portable";
 
 const DESKTOP_ONLY = "IMAP/SMTP necesita la app de escritorio: un navegador no puede abrir conexiones IMAP ni SMTP.";
 

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test as base, expect, type Locator, type Page } from "@playwright/test";
 import { sqlDb, startDevServer, type DevServer } from "../../backend-dev/src/server";
-import type { IncomingMessage } from "@unica/store";
+import type { IncomingMessage } from "@terno/store";
 import { E2E_NOW, TEMPLATE_ENV } from "./constants";
 
 export { expect };

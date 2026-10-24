@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { termsQuery } from "@unica/core";
+import { termsQuery } from "@terno/core";
 import type { DevServer } from "../../backend-dev/src/server";
 import { expect, focusList, selectRows, selectThread, test } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";

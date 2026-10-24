@@ -1,9 +1,9 @@
-import type { CategoryColor, MessageDetail } from "@unica/core";
-import { Button } from "@unica/ui/components/button";
-import { CategoryBadge, CategoryDot } from "@unica/ui/components/category-dot";
-import { Shortcut } from "@unica/ui/components/shortcut";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@unica/ui/components/tooltip";
-import { cn } from "@unica/ui/lib/utils";
+import type { CategoryColor, MessageDetail } from "@terno/core";
+import { Button } from "@terno/ui/components/button";
+import { CategoryBadge, CategoryDot } from "@terno/ui/components/category-dot";
+import { Shortcut } from "@terno/ui/components/shortcut";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
+import { cn } from "@terno/ui/lib/utils";
 import { Archive, Forward, Inbox, Layers, MailOpen, OctagonAlert, Reply, ReplyAll, Star, Tag, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { installScrollHairline } from "~/lib/scroll-hairline";

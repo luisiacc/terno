@@ -1,6 +1,6 @@
-import type { CategoryColor, ThreadSummary } from "@unica/core";
-import { CategoryDot } from "@unica/ui/components/category-dot";
-import { cn } from "@unica/ui/lib/utils";
+import type { CategoryColor, ThreadSummary } from "@terno/core";
+import { CategoryDot } from "@terno/ui/components/category-dot";
+import { cn } from "@terno/ui/lib/utils";
 import { Paperclip, Star } from "lucide-react";
 import { memo } from "react";
 import { listDate } from "~/lib/format";

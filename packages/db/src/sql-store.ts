@@ -1,6 +1,6 @@
-import { senderVetoed, type Address, type FilterAction, type ThreadAction, type ThreadSummary } from "@unica/core";
-import { RpcError } from "@unica/core/rpc";
-import type { MockDataset } from "@unica/mock-data";
+import { senderVetoed, type Address, type FilterAction, type ThreadAction, type ThreadSummary } from "@terno/core";
+import { RpcError } from "@terno/core/rpc";
+import type { MockDataset } from "@terno/mock-data";
 import {
   AWAITING_AUTH,
   type AddedBy,
@@ -19,8 +19,8 @@ import {
   type StoreCapabilities,
   type StoreSnapshot,
   type StoreSearchPage,
-} from "@unica/store";
-import { InstantSearch, type InstantSearchOptions } from "@unica/store/instant";
+} from "@terno/store";
+import { InstantSearch, type InstantSearchOptions } from "@terno/store/instant";
 import { applyMessageAction, applyThreadAction, restoreMessages, type ActionResult } from "./actions";
 import {
   addToCategory,

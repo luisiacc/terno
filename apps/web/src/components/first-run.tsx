@@ -1,7 +1,7 @@
-import type { AiProviderId } from "@unica/core";
-import { Button } from "@unica/ui/components/button";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@unica/ui/components/dialog";
-import { cn } from "@unica/ui/lib/utils";
+import type { AiProviderId } from "@terno/core";
+import { Button } from "@terno/ui/components/button";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@terno/ui/components/dialog";
+import { cn } from "@terno/ui/lib/utils";
 import { Cloud, LaptopMinimalCheck } from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
 import { toast } from "sonner";

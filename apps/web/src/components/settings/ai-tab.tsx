@@ -1,10 +1,10 @@
-import type { CompatiblePreset, ModelInfo, PresetDescriptor, ProviderDescriptor } from "@unica/core";
-import type { AiTestResult, AppSettings } from "@unica/core/rpc";
+import type { CompatiblePreset, ModelInfo, PresetDescriptor, ProviderDescriptor } from "@terno/core";
+import type { AiTestResult, AppSettings } from "@terno/core/rpc";
 import { SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
-import { Button } from "@unica/ui/components/button";
-import { Input } from "@unica/ui/components/input";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@unica/ui/components/select";
-import { cn } from "@unica/ui/lib/utils";
+import { Button } from "@terno/ui/components/button";
+import { Input } from "@terno/ui/components/input";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@terno/ui/components/select";
+import { cn } from "@terno/ui/lib/utils";
 import { CircleAlert, CircleCheck, LaptopMinimalCheck, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";

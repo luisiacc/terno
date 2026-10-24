@@ -1,4 +1,4 @@
-import type { Platform, PlatformFiles } from "@unica/store";
+import type { Platform, PlatformFiles } from "@terno/store";
 
 /**
  * A macrotask yield without setTimeout's 4 ms clamp (nested timers in a

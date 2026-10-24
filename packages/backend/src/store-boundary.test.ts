@@ -26,10 +26,10 @@ it("backend, providers and MCP never touch the database directly", () => {
   for (const file of files) {
     const rel = relative(ROOT, file);
     const code = readFileSync(file, "utf8");
-    for (const m of code.matchAll(/import\s+(type\s+)?\{([^}]*)\}\s+from\s+"@unica\/db"/g)) {
+    for (const m of code.matchAll(/import\s+(type\s+)?\{([^}]*)\}\s+from\s+"@terno\/db"/g)) {
       const names = m[2]!.split(",").map((n) => n.trim()).filter(Boolean);
       const allowed = rel === "packages/backend/src/backend.ts" && names.every((n) => ["nodePlatform", "openDatabase", "SqlMailStore"].includes(n));
-      if (!allowed) offenders.push(`${rel}: imports ${names.join(", ")} from @unica/db`);
+      if (!allowed) offenders.push(`${rel}: imports ${names.join(", ")} from @terno/db`);
     }
     code.split("\n").forEach((line, i) => {
       if (DB_ACCESS.test(line)) offenders.push(`${rel}:${i + 1}: ${line.trim()}`);

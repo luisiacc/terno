@@ -1,4 +1,4 @@
-import type { ImapLocation, ImapLocationStore, ProviderStore } from "@unica/store";
+import type { ImapLocation, ImapLocationStore, ProviderStore } from "@terno/store";
 import { getSetting, T, type Ctx, type R } from "./mail";
 
 type Command = <V>(fn: () => V) => Promise<V>;
