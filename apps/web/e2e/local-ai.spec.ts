@@ -122,4 +122,23 @@ test.describe("local mode and AI providers", () => {
     await expect(page.getByTestId("remote-blocked")).toContainText("bloqueado por el modo local");
     await expect(page.getByRole("button", { name: "Cargar imágenes" })).toHaveCount(0);
   });
+
+  test("an HTML mail fits its frame with no inner scroll, and the frame follows the content when the pane resizes", async ({ app: page }) => {
+    await openRow(page, 2);
+    const frame = page.locator("iframe[title='Contenido del correo']");
+    await expect(page.frameLocator("iframe[title='Contenido del correo']").locator("h1")).toBeVisible();
+    const fits = () =>
+      frame.evaluate((f: HTMLIFrameElement) => {
+        const root = f.contentDocument!.documentElement;
+        return { overflow: root.scrollHeight - root.clientHeight, gap: f.clientHeight - Math.ceil(root.getBoundingClientRect().height), scrolls: getComputedStyle(root).overflowY !== "hidden" };
+      });
+    await expect.poll(fits).toEqual({ overflow: 0, gap: 0, scrolls: false });
+    const wide = await frame.evaluate((f) => f.clientHeight);
+    // narrower: the text wraps into more lines and the frame grows; wider again: it shrinks back
+    await page.setViewportSize({ width: 900, height: 900 });
+    await expect.poll(fits).toEqual({ overflow: 0, gap: 0, scrolls: false });
+    expect(await frame.evaluate((f) => f.clientHeight)).toBeGreaterThan(wide);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect.poll(() => frame.evaluate((f) => f.clientHeight)).toBe(wide);
+  });
 });

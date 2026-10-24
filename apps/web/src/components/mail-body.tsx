@@ -10,6 +10,8 @@ function openLink(href: string) {
   else window.open(href, "_blank", "noopener,noreferrer");
 }
 
+const MAX_HEIGHT = 20000;
+
 /**
  * Renders an HTML email in a sandboxed iframe: sanitized with DOMPurify, no
  * scripts (sandbox without allow-scripts), strict CSP, links opened externally.
@@ -30,7 +32,7 @@ export function HtmlBody({ html, remoteImages, localMode, appearance }: { html: 
   const doc = useMemo(() => {
     const c = mailColors()[paper ? "paper" : "themed"];
     // the CSP is unchanged by theming: local mode keeps the strict policy (allowRemote is false there)
-    return `<!doctype html><html data-mail="${paper ? "paper" : "themed"}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(allowRemote)}"><base target="_blank"><style>html,body{margin:0;padding:0;background:${c.bg};color:${c.fg};font:14px/1.55 -apple-system,BlinkMacSystemFont,"Geist Variable",sans-serif;overflow-wrap:anywhere;color-scheme:${paper ? "light" : mode}}body{padding:16px}img{max-width:100%;height:auto}a{color:${c.link}}table{max-width:100%}</style></head><body>${clean}</body></html>`;
+    return `<!doctype html><html data-mail="${paper ? "paper" : "themed"}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(allowRemote)}"><base target="_blank"><style>html{overflow-y:hidden}html,body{margin:0;padding:0;background:${c.bg};color:${c.fg};font:14px/1.55 -apple-system,BlinkMacSystemFont,"Geist Variable",sans-serif;overflow-wrap:anywhere;color-scheme:${paper ? "light" : mode}}body{padding:16px}img{max-width:100%;height:auto}a{color:${c.link}}table{max-width:100%}</style></head><body>${clean}</body></html>`;
   }, [clean, allowRemote, paper, themeKey, mode]);
 
   useEffect(() => {
@@ -39,9 +41,16 @@ export function HtmlBody({ html, remoteImages, localMode, appearance }: { html: 
     const onLoad = () => {
       const d = frame.contentDocument;
       if (!d) return;
-      const measure = () => setHeight(Math.min(20000, d.documentElement.scrollHeight));
+      // the frame is sized to its content, so it never scrolls inside. The box (not scrollHeight, which
+      // never drops below the frame and rounds down) shrinks back and covers fractional heights.
+      const measure = () => {
+        const content = Math.ceil(d.documentElement.getBoundingClientRect().height);
+        // past the cap the document scrolls: hidden content would be unreachable
+        d.documentElement.style.overflowY = content > MAX_HEIGHT ? "auto" : "";
+        setHeight(Math.min(MAX_HEIGHT, content));
+      };
       measure();
-      new ResizeObserver(measure).observe(d.body);
+      new ResizeObserver(measure).observe(d.documentElement);
       d.addEventListener("click", (e) => {
         const a = (e.target as Element).closest("a");
         if (a?.href) {
