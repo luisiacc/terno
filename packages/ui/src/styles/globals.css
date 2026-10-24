@@ -322,6 +322,25 @@
 @utility hairline-strong {
   --hairline-color: var(--border);
 }
+/*
+ * Translucent menus (DropdownMenu, ContextMenu, Select popups only: modal, so
+ * nothing scrolls behind them). --popover-glass is as translucent as the
+ * theme's menu text allows (often solid). Solid without support and when the
+ * OS asks for reduced transparency.
+ */
+@utility surface-glass {
+  background-color: var(--popover-glass);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  backdrop-filter: blur(20px) saturate(1.6);
+  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    background-color: var(--popover);
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    background-color: var(--popover);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
 @utility tabular {
   font-variant-numeric: tabular-nums;
 }

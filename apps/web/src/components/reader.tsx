@@ -47,8 +47,8 @@ function Reasons({ title, reasons, hint }: { title: string; reasons: string[]; h
   return (
     <TooltipContent className="max-w-72 flex-col items-start gap-1 text-left" data-testid="category-reasons">
       <p className="font-medium">{title}</p>
-      {reasons.length > 0 && <p className="opacity-80">{reasons.join(" · ")}</p>}
-      {hint && <p className="opacity-60">{hint}</p>}
+      {reasons.length > 0 && <p>{reasons.join(" · ")}</p>}
+      {hint && <p className="text-muted-foreground">{hint}</p>}
     </TooltipContent>
   );
 }
@@ -241,7 +241,7 @@ export function Reader() {
                           <Reasons title={`Única la añadió a ${c.name}`} reasons={auto.reasons} hint={`¿No es de ${c.name}? Quítala y aprenderá.`} />
                         </Tooltip>
                       )}
-                      <button type="button" aria-label={auto ? `No es ${c.name}` : `Quitar ${c.name}`} className="opacity-60 hover:opacity-100" onClick={() => void removeFromCategory(c.id, [t!.id])}>
+                      <button type="button" aria-label={auto ? `No es ${c.name}` : `Quitar ${c.name}`} className="text-muted-foreground hover:text-foreground" onClick={() => void removeFromCategory(c.id, [t!.id])}>
                         <X className="size-3" />
                       </button>
                     </CategoryBadge>

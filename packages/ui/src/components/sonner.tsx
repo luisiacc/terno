@@ -29,12 +29,12 @@ const Toaster = ({ theme = "light", ...props }: Omit<ToasterProps, "theme"> & { 
           "--normal-bg": "var(--popover)",
           "--normal-text": "var(--popover-foreground)",
           "--normal-border": "var(--border)",
-          "--border-radius": "var(--radius)",
+          "--border-radius": "var(--radius-xl)",
         } as React.CSSProperties
       }
       toastOptions={{
         classNames: {
-          toast: "cn-toast",
+          toast: "cn-toast !shadow-popover !border-0 !text-sm",
         },
       }}
       {...props}

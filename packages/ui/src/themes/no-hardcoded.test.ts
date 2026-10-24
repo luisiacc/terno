@@ -19,6 +19,8 @@ const CODE_RULES: [string, RegExp][] = [
   ["literal duration utility", /\b(?:duration|delay)-(?:\d|\[)/],
   ["translucent text", /\btext-(?:foreground|sidebar-foreground|popover-foreground|card-foreground|muted-foreground)\/\d/],
   ["WAAPI literal duration", /\.animate\([^)]*duration:\s*\d/],
+  // glyphs and text at reduced opacity can't be contrast-tested: use muted-foreground (state variants like disabled: are fine)
+  ["reduced opacity", /(?<![:\w\-[])opacity-(?:[1-9]\d?)\b/],
 ];
 const CSS_RULES: [string, RegExp][] = [
   ["hex color", /(?<![\w&])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})\b/],
@@ -57,7 +59,7 @@ describe("no hard-coded colors or durations", () => {
   it("catches what it should", () => {
     const rules = CODE_RULES.map(([, re]) => re);
     const caught = (s: string) => rules.some((re) => re.test(s));
-    for (const bad of ['className="bg-white"', "color: #1f2330", "bg-black/10", "duration-150", "delay-75", "text-foreground/80", "text-sidebar-foreground/50", "rgb(0 0 0)", "el.animate(k, { duration: 200 })"]) expect(caught(bad), bad).toBe(true);
-    for (const ok of ['keys: "g #"', "duration-fast", "bg-overlay", "text-muted-foreground", "toast(x, { duration: 8000 })", "border-border/60"]) expect(caught(ok), ok).toBe(false);
+    for (const bad of ['className="bg-white"', "color: #1f2330", "bg-black/10", "duration-150", "delay-75", "text-foreground/80", "text-sidebar-foreground/50", "rgb(0 0 0)", "el.animate(k, { duration: 200 })", 'className="opacity-70"', "<X className=\"size-3 opacity-60\" />"]) expect(caught(bad), bad).toBe(true);
+    for (const ok of ['keys: "g #"', "duration-fast", "bg-overlay", "text-muted-foreground", "toast(x, { duration: 8000 })", "border-border/60", "disabled:opacity-50", "hover:opacity-100", "opacity-0", "data-disabled:opacity-50"]) expect(caught(ok), ok).toBe(false);
   });
 });

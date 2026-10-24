@@ -37,6 +37,23 @@ test.describe("reduced transparency", () => {
     expect(await sidebarAlpha()).toBe(1);
     expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).not.toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
   });
+
+  test("menus are glass (blurred) normally and solid when the OS asks for reduced transparency", async ({ app: page }) => {
+    const cdp = await page.context().newCDPSession(page);
+    const menuFilter = async () => {
+      await page.getByTestId("thread-row").first().click({ button: "right" });
+      const popup = page.locator("[data-slot=context-menu-content]");
+      await expect(popup).toBeVisible();
+      const f = await popup.evaluate((el) => getComputedStyle(el).backdropFilter);
+      await page.keyboard.press("Escape");
+      await expect(popup).toHaveCount(0);
+      return f;
+    };
+    await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-transparency", value: "no-preference" }] });
+    expect(await menuFilter()).toContain("blur");
+    await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-transparency", value: "reduce" }] });
+    expect(await menuFilter()).toBe("none");
+  });
 });
 
 test.describe("themes", () => {

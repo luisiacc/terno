@@ -1,7 +1,6 @@
 import { Button } from "@unica/ui/components/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@unica/ui/components/select";
 import { Shortcut } from "@unica/ui/components/shortcut";
-import { cn } from "@unica/ui/lib/utils";
 import { Send, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { parseAddresses, sendCompose } from "~/lib/actions";
@@ -128,8 +127,8 @@ export function Composer() {
         placeholder="Escribe tu mensaje…"
       />
       <div className="flex shrink-0 items-center gap-2 border-t border-border px-3 py-2">
-        <Button data-testid="compose-send" onClick={send} disabled={sending} className={cn("gap-2", sending && "opacity-70")}>
-          <Send /> Enviar <Shortcut keys="mod+enter" className="opacity-70 [&_kbd]:bg-primary-foreground/15 [&_kbd]:text-primary-foreground" />
+        <Button data-testid="compose-send" onClick={send} disabled={sending} className="gap-2" aria-busy={sending}>
+          <Send /> Enviar <Shortcut keys="mod+enter" className="[&_kbd]:bg-primary-foreground/15 [&_kbd]:text-primary-foreground [&_kbd]:shadow-none" />
         </Button>
         <span className="text-2xs text-muted-foreground">{d.draftId ? "Borrador guardado" : ""}</span>
         <Button variant="ghost" size="icon-sm" className="ml-auto text-muted-foreground" aria-label="Descartar" onClick={discard}>

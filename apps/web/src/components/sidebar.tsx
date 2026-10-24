@@ -113,7 +113,7 @@ export function Sidebar() {
         <Button data-testid="compose-button" className="no-drag w-full justify-start gap-2" onClick={() => openCompose("new")}>
           <PenLine />
           <span className="flex-1 text-left">Escribir</span>
-          <Shortcut keys="c" className="opacity-70 [&_kbd]:bg-primary-foreground/15 [&_kbd]:text-primary-foreground" />
+          <Shortcut keys="c" className="[&_kbd]:bg-primary-foreground/15 [&_kbd]:text-primary-foreground [&_kbd]:shadow-none" />
         </Button>
       </div>
       <nav data-drop-scroll className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
