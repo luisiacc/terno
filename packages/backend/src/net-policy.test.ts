@@ -136,7 +136,7 @@ describe("redirects", () => {
       let data = "";
       req.on("data", (c) => (data += c));
       req.on("end", () => {
-        seenB.push({ method: req.method!, auth: req.headers.authorization ?? req.headers["api-key"] ?? req.headers["x-api-key"], body: data });
+        seenB.push({ method: req.method!, auth: req.headers.authorization ?? req.headers["api-key"]?.toString() ?? req.headers["x-api-key"]?.toString(), body: data });
         res.writeHead(200, { "content-type": "application/json" }).end('{"from":"b"}');
       });
     });
