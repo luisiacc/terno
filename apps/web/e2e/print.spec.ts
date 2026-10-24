@@ -280,6 +280,24 @@ test.describe("print sheet", () => {
     expect(hits).toEqual([]);
   });
 
+  test("an approved image whose server never answers doesn't hold printing: past the deadline it prints as its description", async ({ app: page, server }) => {
+    await server.backend.server.invoke("settings.update", { localMode: false }, { clientId: "setup", origin: "dev" });
+    // the newsletter's remote images: requests that never get an answer
+    const stalled: string[] = [];
+    await page.route(/acme\.test/, (route) => void stalled.push(route.request().url()));
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await open(page, server, "newsletter", 'subject:"Boletín Acme"');
+    await page.getByTestId("remote-load").click();
+    await page.keyboard.press("ControlOrMeta+p");
+    await expect(page.getByTestId("print-preview")).toHaveAttribute("data-ready", "true", { timeout: 12_000 });
+    await expect(page.getByTestId("print-submit")).toBeEnabled();
+    expect(stalled.some((u) => u.includes("images.acme.test"))).toBe(true);
+    // what it couldn't load prints as its description, not as an endless request
+    await expect(preview(page).locator('img[src*="acme.test"]')).toHaveCount(0);
+    await expect(preview(page).locator(".img-alt")).toContainText(["Promoción de temporada"]);
+  });
+
   test("a body not downloaded yet prints as missing, with a warning; a hostile subject stays text", async ({ app: page, server }) => {
     const ids = await open(page, server, "hostile", "from:soporte@banco-falso.test");
     await page.keyboard.press("ControlOrMeta+p");

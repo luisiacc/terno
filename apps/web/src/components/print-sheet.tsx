@@ -8,7 +8,7 @@ import { CircleAlert, FileDown, ImageOff, Info, LoaderCircle, Printer } from "lu
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { hasRemoteContent } from "~/lib/mail";
-import { buildPrintDocument, defaultPaper, fitPrintDocument, PAGE, printFileName, remoteUrls, serializePrintDocument, settlePrintDocument, type Paper, type PrintMessage, type PrintOptions } from "~/lib/print";
+import { buildPrintDocument, defaultPaper, dropPendingImages, fitPrintDocument, PAGE, printFileName, remoteUrls, serializePrintDocument, settlePrintDocument, type Paper, type PrintMessage, type PrintOptions } from "~/lib/print";
 import type { PrintIntent, PrintTarget } from "~/lib/print-open";
 import { remoteAllowed, useRemoteConsent } from "~/lib/remote-consent";
 import { setApp, useApp } from "~/state/app";
@@ -44,6 +44,8 @@ function readPrefs(): Prefs {
 }
 
 const MM_PX = 96 / 25.4;
+/** How long the preview waits for fonts and images before it is printable anyway. */
+const READY_DEADLINE_MS = 4000;
 const desktop = () => (window.ternoDesktop?.print ? window.ternoDesktop : null);
 
 /** The sheet's own state outlives nothing: it mounts per target (keyed), so every opening starts from its entry point. */
@@ -335,22 +337,33 @@ function Preview({ doc, current, onFitted }: { doc: { html: string; paper: Paper
     const f = frame.current;
     if (!f || html === null) return;
     let live = true;
+    let done = false;
     setReady(false);
     onFitted(null);
-    const onLoad = async () => {
+    // the deadline runs from navigation, not from load (which itself waits for every image)
+    const started = performance.now();
+    const previous = f.contentDocument;
+    const finish = async () => {
       const doc = f.contentDocument;
-      if (!doc || !live) return;
-      await settlePrintDocument(doc);
+      // not this build's document yet (the old one, or still parsing): load will come
+      if (done || !live || !doc || doc === previous || !doc.documentElement.hasAttribute("data-print-doc")) return;
+      done = true;
+      await settlePrintDocument(doc, Math.max(0, READY_DEADLINE_MS - (performance.now() - started)));
       if (!live) return;
+      // still loading at the deadline (a stalled server): printed as their description, never waited on again
+      dropPendingImages(doc);
       fitPrintDocument(doc);
       // the body's box, not scrollHeight (which never drops below the frame's own height)
       setHeight(Math.ceil(doc.body.getBoundingClientRect().height));
       setReady(true);
       onFitted({ html: serializePrintDocument(doc), remote: remoteUrls(doc), frame: f });
     };
+    const onLoad = () => void finish();
+    const timer = setTimeout(onLoad, READY_DEADLINE_MS);
     f.addEventListener("load", onLoad);
     return () => {
       live = false;
+      clearTimeout(timer);
       f.removeEventListener("load", onLoad);
     };
   }, [html]);

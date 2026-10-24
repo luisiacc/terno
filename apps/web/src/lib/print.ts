@@ -330,6 +330,12 @@ export async function settlePrintDocument(doc: Document, timeoutMs = 4000): Prom
   await Promise.race([Promise.all([doc.fonts.ready, ...images]), new Promise((r) => setTimeout(r, timeoutMs))]);
 }
 
+/** Images still loading (a stalled server) print as their description: nothing waits on them again. */
+export function dropPendingImages(doc: Document): void {
+  // a copy: doc.images is live, and this removes some
+  for (const img of Array.from(doc.images)) if (!img.complete) replaceWithAlt(img);
+}
+
 /** The fitted page as printed or exported, in standards mode. */
 export function serializePrintDocument(doc: Document): string {
   return `<!doctype html>${doc.documentElement.outerHTML}`;
