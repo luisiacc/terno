@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
-import { LegacyProfileConflictError, LegacyProfileInUseError, legacyProfilePath, migrateLegacyDbFiles, migrateLegacyProfile } from "./legacy-profile";
+import { LegacyProfileConflictError, LegacyProfileInUseError, legacyProfilePath, migrateLegacyDbFiles, migrateLegacyProfile, resolveProfile } from "./legacy-profile";
 
 const dirs: string[] = [];
 const root = () => {
@@ -64,7 +64,7 @@ describe("legacy profile migration", () => {
   it("renames Unica → Terno and unica.db → terno.db with everything its WAL held, and the snapshot beside it", () => {
     const r = root();
     legacyProfile(join(r, "Unica"));
-    const result = migrateLegacyProfile(join(r, "Terno"));
+    const result = migrateLegacyProfile(join(r, "Terno"), { adoptSibling: true });
     expect(result.movedFrom).toBe(join(r, "Unica"));
     expect(result.conflicts).toEqual([]);
     expect(existsSync(join(r, "Unica"))).toBe(false);
@@ -73,7 +73,7 @@ describe("legacy profile migration", () => {
     expect(readFileSync(join(r, "Terno", "terno.db.search"), "utf8")).toBe("snap");
     expect(readFileSync(join(r, "Terno", "agent.token"), "utf8")).toBe("t");
     // the next start finds nothing to do
-    expect(migrateLegacyProfile(join(r, "Terno"))).toEqual({ movedFrom: null, renamed: [], conflicts: [] });
+    expect(migrateLegacyProfile(join(r, "Terno"), { adoptSibling: true })).toEqual({ movedFrom: null, renamed: [], conflicts: [] });
   });
 
   it("never touches a legacy profile when the new one exists", () => {
@@ -81,10 +81,31 @@ describe("legacy profile migration", () => {
     legacyProfile(join(r, "Unica-dev-demo"));
     sqliteFiles(join(r, "Terno-dev-demo"), "terno.db", ["nuevo"]);
     const before = snapshot(join(r, "Unica-dev-demo"));
-    const result = migrateLegacyProfile(join(r, "Terno-dev-demo"));
+    const result = migrateLegacyProfile(join(r, "Terno-dev-demo"), { adoptSibling: true });
     expect(result).toEqual({ movedFrom: null, renamed: [], conflicts: [join(r, "Unica-dev-demo")] });
     expect(snapshot(join(r, "Unica-dev-demo"))).toEqual(before);
     expect(rowsIn(join(r, "Terno-dev-demo", "terno.db"))).toEqual(["nuevo"]);
+  });
+
+  it("an explicit path is the profile itself: a Unica… sibling is never adopted, only the files inside are renamed", () => {
+    const r = root();
+    legacyProfile(join(r, "Unica-test"), ["ajeno"]);
+    sqliteFiles(join(r, "Terno-test"), "unica.db", ["propio"]);
+    const sibling = snapshot(join(r, "Unica-test"));
+    expect(migrateLegacyProfile(join(r, "Terno-test"))).toEqual({ movedFrom: null, renamed: ["unica.db → terno.db"], conflicts: [] });
+    expect(rowsIn(join(r, "Terno-test", "terno.db"))).toEqual(["propio"]);
+    expect(snapshot(join(r, "Unica-test"))).toEqual(sibling);
+    // and a path that doesn't exist yet stays a fresh profile
+    legacyProfile(join(r, "Unica-fresh"));
+    expect(migrateLegacyProfile(join(r, "Terno-fresh"))).toEqual({ movedFrom: null, renamed: [], conflicts: [] });
+    expect(existsSync(join(r, "Unica-fresh", "unica.db"))).toBe(true);
+  });
+
+  it("only the default profile adopts its legacy sibling; TERNO_USER_DATA (or UNICA_USER_DATA) names the profile itself", () => {
+    const defaultPath = "/Users/x/Library/Application Support/Terno";
+    expect(resolveProfile({ defaultPath })).toEqual({ path: defaultPath, adoptSibling: true });
+    expect(resolveProfile({ explicit: "/data/Terno-test", defaultPath })).toEqual({ path: "/data/Terno-test", adoptSibling: false });
+    expect(resolveProfile({ explicit: defaultPath, defaultPath })).toEqual({ path: defaultPath, adoptSibling: false });
   });
 
   it("renames the database inside an explicit path, and leaves both when terno.db exists", () => {
@@ -137,7 +158,7 @@ describe("legacy profile migration", () => {
     legacyProfile(join(r, "Unica"));
     writeFileSync(join(r, "Unica", "terno.db-wal"), "stale");
     const before = snapshot(join(r, "Unica"));
-    expect(() => migrateLegacyProfile(join(r, "Terno"))).toThrow(LegacyProfileConflictError);
+    expect(() => migrateLegacyProfile(join(r, "Terno"), { adoptSibling: true })).toThrow(LegacyProfileConflictError);
     expect(existsSync(join(r, "Terno"))).toBe(false);
     expect(snapshot(join(r, "Unica"))).toEqual(before);
   });
@@ -146,9 +167,9 @@ describe("legacy profile migration", () => {
     const r = root();
     legacyProfile(join(r, "Unica"));
     symlinkSync("my-mac-424242", join(r, "Unica", "SingletonLock"));
-    expect(() => migrateLegacyProfile(join(r, "Terno"), { isAlive: (pid) => pid === 424242 })).toThrow(LegacyProfileInUseError);
+    expect(() => migrateLegacyProfile(join(r, "Terno"), { adoptSibling: true, isAlive: (pid) => pid === 424242 })).toThrow(LegacyProfileInUseError);
     expect(existsSync(join(r, "Unica", "unica.db"))).toBe(true);
     // a stale lock (the process is gone) doesn't hold it back
-    expect(migrateLegacyProfile(join(r, "Terno"), { isAlive: () => false }).movedFrom).toBe(join(r, "Unica"));
+    expect(migrateLegacyProfile(join(r, "Terno"), { adoptSibling: true, isAlive: () => false }).movedFrom).toBe(join(r, "Unica"));
   });
 });

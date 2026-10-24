@@ -1,9 +1,10 @@
 /**
  * Upgrading from Única, on the PACKAGED app with throwaway keychain items
  * (TERNO_TEST_APP_NAME / TERNO_TEST_LEGACY_APP_NAME stand in for "Terno" and
- * "Única", so the real items are never touched). A legacy profile
- * ("Unica-smoke": unica.db, secrets sealed under the old name's item,
- * localStorage on app://unica) is renamed, its secrets are sealed again under
+ * "Única", so the real items are never touched, and TERNO_TEST_APP_DATA
+ * for ~/Library/Application Support). The default legacy profile ("<appData>/
+ * Unica": unica.db, secrets sealed under the old name's item, localStorage on
+ * app://unica) becomes "<appData>/Terno", its secrets are sealed again under
  * the new item and its localStorage moves to app://terno. Without the old item,
  * nothing is lost and Settings asks for the key again.
  */
@@ -26,8 +27,10 @@ let workdir: string;
 let appPath: string;
 const running: ElectronApplication[] = [];
 
-function launch(profile: string, env: Record<string, string>) {
-  const e: Record<string, string | undefined> = { ...process.env, TERNO_DEMO: "1", TERNO_USER_DATA: profile, ...env };
+/** An explicit profile path, or (appData) the default profile under that stand-in for Application Support. */
+function launch(where: { profile: string } | { appData: string }, env: Record<string, string>) {
+  const e: Record<string, string | undefined> = { ...process.env, TERNO_DEMO: "1", ...("profile" in where ? { TERNO_USER_DATA: where.profile } : { TERNO_TEST_APP_DATA: where.appData }), ...env };
+  if ("appData" in where) delete e.TERNO_USER_DATA;
   delete e.ELECTRON_RUN_AS_NODE;
   return electron.launch({ executablePath: join(appPath, "Contents/MacOS/Terno"), env: e as Record<string, string> }).then((a) => (running.push(a), a));
 }
@@ -54,13 +57,14 @@ const threadCount = (file: string) => {
 };
 
 /**
- * What Única left behind: a profile named Unica-<x> with unica.db, the secrets
- * sealed under LEGACY's keychain item by this same executable, and localStorage
- * on the old renderer origin. Returns the profile path Terno will use.
+ * What Única left behind: the default profile <appData>/Unica with unica.db,
+ * the secrets sealed under LEGACY's keychain item by this same executable, and
+ * localStorage on the old renderer origin. Returns the profile path Terno will use.
  */
-async function legacyProfile(name: string): Promise<{ profile: string; threads: number; sealed: Record<string, number[]> }> {
-  const profile = join(workdir, `Terno-${name}`);
-  const app = await launch(profile, { TERNO_TEST_APP_NAME: LEGACY });
+async function legacyProfile(name: string): Promise<{ appData: string; profile: string; threads: number; sealed: Record<string, number[]> }> {
+  const appData = join(workdir, name);
+  const profile = join(appData, "Terno");
+  const app = await launch({ profile }, { TERNO_TEST_APP_NAME: LEGACY });
   const page = await app.firstWindow();
   await page.locator("[data-testid=thread-row]").first().waitFor({ timeout: 60_000 });
   const sealed = await app.evaluate(({ safeStorage }, secrets) => Object.fromEntries(Object.entries(secrets).map(([k, v]) => [k, [...safeStorage.encryptString(v)]])), SECRETS);
@@ -81,8 +85,8 @@ async function legacyProfile(name: string): Promise<{ profile: string; threads: 
   db.close();
   const threads = threadCount(dbFile);
   for (const suffix of ["-wal", "-shm", ".search", ""]) if (existsSync(dbFile + suffix)) renameSync(dbFile + suffix, join(profile, `unica.db${suffix}`));
-  renameSync(profile, join(workdir, `Unica-${name}`));
-  return { profile, threads, sealed };
+  renameSync(profile, join(appData, "Unica"));
+  return { appData, profile, threads, sealed };
 }
 
 test.beforeAll(() => {
@@ -106,12 +110,12 @@ test.afterAll(async () => {
 });
 
 test("a legacy profile is renamed, its secrets sealed again under the new keychain item and its localStorage moved", async () => {
-  const { profile, threads, sealed } = await legacyProfile("smoke");
-  const app = await launch(profile, { TERNO_TEST_APP_NAME: NEW, TERNO_TEST_LEGACY_APP_NAME: LEGACY });
+  const { appData, profile, threads, sealed } = await legacyProfile("smoke");
+  const app = await launch({ appData }, { TERNO_TEST_APP_NAME: NEW, TERNO_TEST_LEGACY_APP_NAME: LEGACY });
   const page = await mainWindow(app);
   await page.locator("[data-testid=thread-row]").first().waitFor({ timeout: 60_000 });
 
-  expect(existsSync(join(workdir, "Unica-smoke"))).toBe(false);
+  expect(existsSync(join(appData, "Unica"))).toBe(false);
   expect(existsSync(join(profile, "unica.db"))).toBe(false);
   expect(threadCount(join(profile, "terno.db"))).toBe(threads);
 
@@ -134,8 +138,8 @@ test("a legacy profile is renamed, its secrets sealed again under the new keycha
 });
 
 test("without the old keychain item nothing is lost: the blobs stay, the app runs, Settings asks for the key again", async () => {
-  const { profile, threads, sealed } = await legacyProfile("fallback");
-  const app = await launch(profile, { TERNO_TEST_APP_NAME: NEW, TERNO_TEST_LEGACY_APP_NAME: MISSING });
+  const { appData, profile, threads, sealed } = await legacyProfile("fallback");
+  const app = await launch({ appData }, { TERNO_TEST_APP_NAME: NEW, TERNO_TEST_LEGACY_APP_NAME: MISSING });
   const page = await mainWindow(app);
   await page.locator("[data-testid=thread-row]").first().waitFor({ timeout: 60_000 });
   expect(threadCount(join(profile, "terno.db"))).toBe(threads);
@@ -152,3 +156,16 @@ test("without the old keychain item nothing is lost: the blobs stay, the app run
   await expect(page.getByTestId("ai-key-unreadable")).toContainText("Terno no pudo abrir la API key que guardó Única");
   await app.close();
 });
+
+test("an explicit TERNO_USER_DATA is the profile itself: a Unica… sibling stays where it is", async () => {
+  const { appData } = await legacyProfile("explicit");
+  const explicit = join(appData, "Terno");
+  const app = await launch({ profile: explicit }, { TERNO_TEST_APP_NAME: NEW, TERNO_TEST_LEGACY_APP_NAME: MISSING });
+  const page = await mainWindow(app);
+  // a fresh demo profile, not the legacy mailbox next to it
+  await page.locator("[data-testid=thread-row]").first().waitFor({ timeout: 60_000 });
+  expect(existsSync(join(appData, "Unica", "unica.db"))).toBe(true);
+  expect(existsSync(join(explicit, "terno.db"))).toBe(true);
+  await app.close();
+});
+

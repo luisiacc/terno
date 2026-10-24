@@ -51,7 +51,17 @@ export class LegacyProfileInUseError extends Error {
   }
 }
 
-/** The legacy sibling of a profile directory named "Terno…", or null for any other name (an explicit path is used as is). */
+/**
+ * Where the profile is, and whether it may take over a legacy sibling: only
+ * the default profile does (and dev.mjs's own defaults). An explicit path
+ * (TERNO_USER_DATA, or the legacy UNICA_USER_DATA read as it) is the profile
+ * itself; only the database files inside it are renamed.
+ */
+export function resolveProfile(o: { explicit?: string; defaultPath: string }): { path: string; adoptSibling: boolean } {
+  return o.explicit ? { path: o.explicit, adoptSibling: false } : { path: o.defaultPath, adoptSibling: true };
+}
+
+/** The legacy sibling of a profile directory named "Terno…", or null for any other name. */
 export function legacyProfilePath(target: string): string | null {
   const name = basename(target);
   return name.startsWith(PROFILE_PREFIX) ? join(dirname(target), LEGACY_PROFILE_PREFIX + name.slice(PROFILE_PREFIX.length)) : null;
@@ -133,15 +143,16 @@ export function migrateLegacyDbFiles(dir: string): Pick<ProfileMigration, "renam
 }
 
 /**
- * Before anything opens the profile: a "Terno…" directory that doesn't exist
- * takes over its "Unica…" sibling (renamed, so a profile is never copied or
- * merged), then the database files inside are renamed. Throws
+ * Before anything opens the profile: with adoptSibling (default profiles
+ * only, see resolveProfile), a "Terno…" directory that doesn't exist takes
+ * over its "Unica…" sibling (renamed, so a profile is never copied or
+ * merged); then the database files inside are renamed. Throws
  * LegacyProfileInUseError while Única still has the legacy profile open.
  */
-export function migrateLegacyProfile(target: string, options: { isAlive?: (pid: number) => boolean } = {}): ProfileMigration {
+export function migrateLegacyProfile(target: string, options: { adoptSibling?: boolean; isAlive?: (pid: number) => boolean } = {}): ProfileMigration {
   let movedFrom: string | null = null;
   const conflicts: string[] = [];
-  const legacy = legacyProfilePath(target);
+  const legacy = options.adoptSibling ? legacyProfilePath(target) : null;
   if (legacy && existsSync(legacy)) {
     if (existsSync(target)) conflicts.push(legacy);
     else {
