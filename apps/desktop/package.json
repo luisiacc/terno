@@ -16,12 +16,13 @@
   },
   "dependencies": {
     "@terno/backend": "workspace:*",
+    "@terno/core": "workspace:*",
     "@terno/mail": "workspace:*",
-    "@terno/mcp": "workspace:*",
-    "@terno/core": "workspace:*"
+    "@terno/mcp": "workspace:*"
   },
   "devDependencies": {
     "@playwright/test": "catalog:",
+    "@terno/mock-data": "workspace:*",
     "@types/node": "catalog:",
     "electron": "catalog:",
     "electron-builder": "catalog:",
