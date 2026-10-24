@@ -216,6 +216,70 @@ test.describe("print sheet", () => {
     await expect(preview(page).locator('img[src="https://images.acme.test/promo/temporada.png"]')).toHaveCount(1);
   });
 
+  test("mixed consent: nothing of a blocked message is requested while another's images load", async ({ app: page, server }) => {
+    // one conversation, two HTML messages, both unread (open): the first allowed in the reader, the second not
+    const db = sqlDb(server.backend.store);
+    const acct = db.get<{ id: number; email: string }>("SELECT id, email FROM accounts ORDER BY id LIMIT 1")!;
+    const blocked = [
+      `<svg><image href="https://tracker.test/svg-image.png" width="10" height="10"/><image xlink:href="https://tracker.test/svg-xlink.png"/><use href="https://tracker.test/sprite.svg#a"/><rect width="5" height="5" fill="url(https://tracker.test/paint.svg#p)"/></svg>`,
+      `<video poster="https://tracker.test/poster.png"></video><picture><source srcset="https://tracker.test/pic.webp"><img src="https://tracker.test/pic.png" alt="foto"></picture>`,
+      `<table background="https://tracker.test/table.png"><tr><td style="background:url(//tracker.test/proto.png)">x</td></tr></table><input type="image" src="https://tracker.test/input.png"><img src="//tracker.test/rel.png" alt="r">`,
+    ].join("");
+    const message = (i: number, html: string) => ({
+      accountId: acct.id,
+      providerMsgId: `consent-${i}`,
+      providerThreadId: "thread-consent",
+      rfcMessageId: `<consent-${i}@e2e.test>`,
+      inReplyTo: i ? "<consent-0@e2e.test>" : null,
+      references: i ? ["<consent-0@e2e.test>"] : [],
+      from: { name: "Boletines", email: "news@consent.test" },
+      to: [{ name: "Luis", email: acct.email }],
+      cc: [],
+      bcc: [],
+      subject: i ? "Re: Consentimiento por mensaje" : "Consentimiento por mensaje",
+      date: Date.UTC(2026, 9, 22, 10 + i),
+      snippet: "x",
+      bodyText: "x",
+      bodyHtml: html,
+      bodyState: "full" as const,
+      listId: null,
+      isRead: false,
+      isStarred: false,
+      inInbox: true,
+      isSent: false,
+      isDraft: false,
+      isTrash: false,
+      isSpam: false,
+      hasAttachments: false,
+      size: 100,
+    });
+    await server.backend.store.sync.ingest([message(0, `<p>Aprobado</p><img src="https://allowed.test/a.png" alt="a" width="20" height="20">`), message(1, `<p>Bloqueado</p>${blocked}`)], { applyFilters: false, now: Date.UTC(2026, 9, 22, 15), classifier: null });
+    await server.backend.server.invoke("settings.update", { localMode: false }, { clientId: "setup", origin: "dev" });
+    const hits: string[] = [];
+    await page.route(/tracker\.test/, (route) => {
+      hits.push(route.request().url());
+      return route.abort();
+    });
+    const allowed: string[] = [];
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+    await page.route(/allowed\.test/, (route) => (allowed.push(route.request().url()), route.fulfill({ contentType: "image/png", body: png })));
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    const id = db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = 'consent-0'")!.thread_id;
+    await selectThread(page, id, 'subject:"Consentimiento por mensaje"');
+    const messages = page.getByTestId("reader").getByTestId("message");
+    await expect(messages).toHaveCount(2);
+    await messages.nth(0).getByTestId("remote-load").click();
+    await expect.poll(() => allowed.length).toBeGreaterThan(0);
+    await focusList(page);
+    await page.keyboard.press("ControlOrMeta+p");
+    await ready(page);
+    await expect(preview(page).locator('img[src="https://allowed.test/a.png"]')).toHaveCount(1);
+    await expect(preview(page).locator("body")).toContainText("Bloqueado");
+    await page.waitForTimeout(300);
+    expect(hits).toEqual([]);
+  });
+
   test("a body not downloaded yet prints as missing, with a warning; a hostile subject stays text", async ({ app: page, server }) => {
     const ids = await open(page, server, "hostile", "from:soporte@banco-falso.test");
     await page.keyboard.press("ControlOrMeta+p");

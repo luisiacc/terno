@@ -91,8 +91,10 @@ function textToHtml(text: string): string {
     .join("");
 }
 
-const REMOTE_URL = /^\s*https?:/i;
-const STYLE_REMOTE_URL = /url\(\s*['"]?\s*https?:[^)]*\)/gi;
+const REMOTE_URL = /^\s*https?:\/\//i;
+/** Attributes whose value the browser may fetch (links, which only navigate, are kept apart). */
+const URL_ATTRS = new Set(["src", "href", "xlink:href", "background", "poster", "srcset", "data", "action", "formaction", "lowsrc", "dynsrc", "ping", "codebase", "archive", "longdesc", "manifest", "icon"]);
+const CSS_URL = /url\(\s*(['"]?)([^'")]*)\1\s*\)/gi;
 const ATTRIBUTION = /(escribió|wrote|a écrit|schrieb):\s*$/i;
 
 /** An image that won't print, as its description (if it has one). */
@@ -149,29 +151,58 @@ function stripTrailingQuote(root: DocumentFragment) {
   for (const q of trailing) q.remove();
 }
 
-/** The reader's sanitizer config: no <style>, no srcset; scripts and handlers never survive DOMPurify. */
-const PURIFY = { FORBID_TAGS: ["style"], FORBID_ATTR: ["srcset"], ADD_ATTR: ["target"] };
+/**
+ * The reader's sanitizer config (no <style>, no srcset; scripts and handlers
+ * never survive DOMPurify), plus everything that fetches by nature and has no
+ * place on paper.
+ */
+const PURIFY = { FORBID_TAGS: ["style", "link", "meta", "base", "video", "audio", "source", "track", "object", "embed", "iframe", "frame", "frameset", "portal"], FORBID_ATTR: ["srcset"], ADD_ATTR: ["target"] };
+
+/** May this URL load in a message? data: always, the web only where the message may load remote content, nothing else (relative, protocol-relative, cid:, other schemes). */
+const loads = (url: string, allowRemote: boolean) => /^\s*data:/i.test(url) || (allowRemote && REMOTE_URL.test(url));
+
+/** CSS with every url() that may not load replaced by none (fragment references stay: they point inside the page); image-set() can name images without url(): it goes. */
+function cleanCss(css: string, allowRemote: boolean): string {
+  return css.replace(CSS_URL, (whole, _q: string, url: string) => (url.trim().startsWith("#") || loads(url, allowRemote) ? whole : "none")).replace(/(?:-webkit-)?image-set\([^)]*\)?/gi, "none");
+}
+
+/**
+ * Per message, an allowlist: every attribute that can fetch keeps only what
+ * may load (links keep their href: they only navigate), and so does every
+ * url() in a style or an SVG attribute. An image that may not load prints as
+ * its description. A CSS escape could spell url() in disguise: such a style
+ * goes whole.
+ */
+function stripResources(root: DocumentFragment, allowRemote: boolean) {
+  // querySelectorAll is static: replacing an image doesn't disturb the loop
+  for (const el of root.querySelectorAll("*")) {
+    const tag = el.tagName.toLowerCase();
+    if (tag === "img") {
+      el.removeAttribute("loading");
+      // cid: (attachment content isn't fetched), relative or unknown sources: a broken-image icon otherwise
+      if (!(/^\s*data:image\//i.test(el.getAttribute("src") ?? "") || (allowRemote && REMOTE_URL.test(el.getAttribute("src") ?? "")))) {
+        replaceWithAlt(el);
+        continue;
+      }
+    }
+    const link = tag === "a" || tag === "area";
+    // a copy: attributes is live, and this removes some
+    for (const { name, value } of Array.from(el.attributes)) {
+      const n = name.toLowerCase();
+      if (link && (n === "href" || n === "xlink:href")) continue;
+      if (n === "style" || value.toLowerCase().includes("url(")) {
+        if (value.includes("\\")) el.removeAttribute(name);
+        else el.setAttribute(name, cleanCss(value, allowRemote));
+      } else if (URL_ATTRS.has(n) && !loads(value, allowRemote)) el.removeAttribute(name);
+    }
+  }
+}
 
 /** One HTML body, safe and print-ready: remote resources only where allowed, cid: images as their alt text, lazy loading off. */
 function htmlBody(html: string, allowRemote: boolean, hideQuoted: boolean): string {
   const frag = DOMPurify.sanitize(html, { ...PURIFY, RETURN_DOM_FRAGMENT: true });
   if (hideQuoted) stripTrailingQuote(frag);
-  // querySelectorAll is static: replacing an image doesn't disturb the loop
-  for (const img of frag.querySelectorAll("img")) {
-    img.removeAttribute("loading");
-    const src = img.getAttribute("src") ?? "";
-    // only data: images (and allowed remote ones) can load here; cid: (attachment content isn't fetched), relative
-    // or unknown sources would print a broken-image icon: they print as their description
-    if (!(/^\s*data:image\//i.test(src) || (REMOTE_URL.test(src) && allowRemote))) replaceWithAlt(img);
-  }
-  if (!allowRemote) {
-    for (const el of frag.querySelectorAll("[background]")) if (REMOTE_URL.test(el.getAttribute("background")!)) el.removeAttribute("background");
-    for (const el of frag.querySelectorAll("[style]")) {
-      const style = el.getAttribute("style")!;
-      if (STYLE_REMOTE_URL.test(style)) el.setAttribute("style", style.replace(STYLE_REMOTE_URL, "none"));
-      STYLE_REMOTE_URL.lastIndex = 0;
-    }
-  }
+  stripResources(frag, allowRemote);
   const box = frag.ownerDocument!.createElement("div");
   box.append(frag);
   return box.innerHTML;
@@ -187,7 +218,7 @@ const person = (a: Address) => (a.name && a.name !== a.email ? `${esc(a.name)} <
 
 function messageHtml(m: PrintMessage, o: PrintOptions): string {
   const hide = o.quoted === "hide";
-  const body = m.bodyHtml ? `<div class="body-html">${htmlBody(m.bodyHtml, m.allowRemote, hide)}</div>` : m.bodyText !== null ? textBody(m.bodyText, hide) : `<p class="missing">Contenido aún no descargado</p>`;
+  const body = m.bodyHtml ? `<div class="body-html"${m.allowRemote ? " data-remote" : ""}>${htmlBody(m.bodyHtml, m.allowRemote, hide)}</div>` : m.bodyText !== null ? textBody(m.bodyText, hide) : `<p class="missing">Contenido aún no descargado</p>`;
   if (o.content === "body") return `<article class="msg">${body}</article>`;
   const line = (label: string, list: Address[]) => (list.length ? `<div class="line"><span class="k">${label}</span> ${list.map(person).join(", ")}</div>` : "");
   const head = `<header class="head"><div class="from"><span class="name">${esc(m.from.name || m.from.email)}</span>${m.from.name && m.from.name !== m.from.email ? `<span class="addr">${esc(m.from.email)}</span>` : ""}<span class="date">${esc(fullDate(m.date))}</span></div>${line("Para", m.to)}${line("Cc", m.cc)}</header>`;
@@ -304,18 +335,27 @@ export function serializePrintDocument(doc: Document): string {
   return `<!doctype html>${doc.documentElement.outerHTML}`;
 }
 
-/** Remote URLs still in the page (only allowed messages keep any): the desktop's print window loads these and nothing else. */
+/**
+ * Remote URLs the desktop's print window may load: those of approved
+ * messages only (data-remote), so a URL the stripping missed in a blocked
+ * message is still refused by main.
+ */
 export function remoteUrls(doc: Document): string[] {
   const urls = new Set<string>();
-  for (const img of doc.images) if (REMOTE_URL.test(img.getAttribute("src") ?? "")) urls.add(img.src);
-  for (const el of doc.querySelectorAll("[background]")) if (REMOTE_URL.test(el.getAttribute("background")!)) urls.add(new URL(el.getAttribute("background")!.trim(), doc.baseURI).href);
-  for (const el of doc.querySelectorAll("[style]")) {
-    for (const m of el.getAttribute("style")!.matchAll(/url\(\s*['"]?\s*(https?:[^'")]+)/gi)) {
-      try {
-        urls.add(new URL(m[1]!.trim()).href);
-      } catch {
-        /* not a URL: it won't load either */
-      }
+  const add = (u: string) => {
+    if (!REMOTE_URL.test(u)) return;
+    try {
+      urls.add(new URL(u.trim()).href);
+    } catch {
+      /* not a URL: it won't load either */
+    }
+  };
+  for (const el of doc.querySelectorAll(".body-html[data-remote] *")) {
+    const link = el.tagName === "A" || el.tagName === "AREA";
+    for (const { name, value } of el.attributes) {
+      const n = name.toLowerCase();
+      if (URL_ATTRS.has(n) && !(link && (n === "href" || n === "xlink:href"))) add(value);
+      for (const m of value.matchAll(CSS_URL)) add(m[2]!);
     }
   }
   return [...urls];

@@ -58,6 +58,8 @@ describe("main: what the print window may load", () => {
     expect(requestAllowed({ url: "https://img.test/other.png", resourceType: "image" }, active, false)).toBe(false);
     expect(requestAllowed({ url: "https://img.test/hero.png", resourceType: "script" }, active, false)).toBe(false);
     expect(requestAllowed({ url: "https://img.test/hero.png", resourceType: "xhr" }, active, false)).toBe(false);
+    // mixed consent: the list holds the approved messages' URLs only; a blocked message's, even an image, is refused
+    expect(requestAllowed({ url: "https://tracker.test/svg-image.png", resourceType: "image" }, active, false)).toBe(false);
     // a redirect arrives as a new URL: not on the list
     expect(requestAllowed({ url: "https://tracker.test/pixel.gif", resourceType: "image" }, active, false)).toBe(false);
   });

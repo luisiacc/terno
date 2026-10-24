@@ -82,6 +82,36 @@ describe("the print document", () => {
     expect([...doc.querySelectorAll(".img-alt")].map((e) => e.textContent)).toEqual(["imagen rota", "ftp"]);
   });
 
+  it("a blocked message loads nothing, whatever carries the URL: SVG, media, forms, styles, presentation attributes", () => {
+    const vectors = [
+      `<svg><image href="https://tracker.test/svg-image.png" width="1" height="1"/></svg>`,
+      `<svg><image xlink:href="https://tracker.test/svg-xlink.png"/></svg>`,
+      `<svg><use href="https://tracker.test/sprite.svg#a"/></svg>`,
+      `<svg><filter id="f"><feImage href="https://tracker.test/fe.png"/></filter><rect fill="url(https://tracker.test/paint.svg#p)" filter="url(#f)"/></svg>`,
+      `<video poster="https://tracker.test/poster.png"><source src="https://tracker.test/v.mp4"></video><audio src="https://tracker.test/a.mp3"></audio>`,
+      `<picture><source srcset="https://tracker.test/pic.webp"><img src="https://tracker.test/pic.png" alt="foto"></picture>`,
+      `<link rel="stylesheet" href="https://tracker.test/x.css"><input type="image" src="https://tracker.test/input.png">`,
+      `<table background="https://tracker.test/table.png"><tr><td style="background:url(//tracker.test/proto-relative.png)">x</td></tr></table>`,
+      `<div style="background-image:image-set('https://tracker.test/set.png' 1x)">y</div><div style="background:\\75 rl(https://tracker.test/escaped.png)">z</div>`,
+      `<img src="//tracker.test/relative.png" alt="rel"><object data="https://tracker.test/obj.swf"></object><embed src="https://tracker.test/e.swf">`,
+    ].join("");
+    const doc = parse(build([msg({ bodyHtml: vectors })]));
+    expect(doc.querySelector(".body-html")!.outerHTML).not.toContain("tracker.test");
+    expect(doc.querySelectorAll("video, audio, source, link, object, embed")).toHaveLength(0);
+    // fragment references inside the page stay
+    expect(doc.querySelector("rect")!.getAttribute("filter")).toBe("url(#f)");
+    expect(remoteUrls(doc)).toEqual([]);
+  });
+
+  it("an allowed message keeps its web resources (absolute http(s) only), and only they are listed for main", () => {
+    const body = `<svg><image href="https://img.test/svg.png"/></svg><td></td><div style="background:url('https://img.test/bg.png')">x</div><img src="/relative.png" alt="rel">`;
+    const doc = parse(build([msg({ bodyHtml: body, allowRemote: true }), msg({ id: 2, bodyHtml: `<svg><image href="https://tracker.test/blocked.png"/></svg>` })]));
+    expect(doc.querySelector("image")!.getAttribute("href")).toBe("https://img.test/svg.png");
+    expect(doc.querySelector(".img-alt")!.textContent).toBe("rel");
+    expect(remoteUrls(doc).sort()).toEqual(["https://img.test/bg.png", "https://img.test/svg.png"]);
+    expect(doc.documentElement.outerHTML).not.toContain("tracker.test");
+  });
+
   it("follows each message's own consent in a mixed conversation", () => {
     const doc = parse(build([msg({ bodyHtml: `<img src="https://a.test/1.png" alt="uno">`, allowRemote: true }), msg({ id: 2, bodyHtml: `<img src="https://b.test/2.png" alt="dos">` })]));
     expect(remoteUrls(doc)).toEqual(["https://a.test/1.png"]);
