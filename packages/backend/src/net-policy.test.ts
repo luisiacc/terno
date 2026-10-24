@@ -136,7 +136,7 @@ describe("redirects", () => {
       let data = "";
       req.on("data", (c) => (data += c));
       req.on("end", () => {
-        seenB.push({ method: req.method!, auth: req.headers.authorization, body: data });
+        seenB.push({ method: req.method!, auth: req.headers.authorization ?? req.headers["api-key"] ?? req.headers["x-api-key"], body: data });
         res.writeHead(200, { "content-type": "application/json" }).end('{"from":"b"}');
       });
     });
@@ -176,11 +176,52 @@ describe("redirects", () => {
     const p = await pair();
     try {
       const { net } = policy(false);
-      const res = await net.fetchFor("ai", { providerLocality: "cloud" })(`${p.aUrl}/v1`, { method: "POST", body: "payload", headers: { authorization: "Bearer sk-secret" } });
+      const res = await net.fetchFor("ai", { providerLocality: "cloud" })(`${p.aUrl}/v1`, { method: "POST", body: "payload" });
       expect(await res.json()).toEqual({ from: "b" });
-      expect(p.seenB).toEqual([{ method: "POST", auth: undefined, body: "payload" }]);
+      const mail = await net.fetchFor("mail")(`${p.aUrl}/v1`, { method: "POST", body: "payload", headers: { authorization: "Bearer gmail-token" } });
+      expect(await mail.json()).toEqual({ from: "b" });
+      expect(p.seenB).toEqual([
+        { method: "POST", auth: undefined, body: "payload" },
+        { method: "POST", auth: undefined, body: "payload" },
+      ]);
       const same = await net.fetchFor("mail")(`${p.aUrl}/same`);
       expect(await same.text()).toBe("final");
+    } finally {
+      p.close();
+    }
+  });
+
+  it("an AI request carrying a key follows no redirect at all, to another origin or its own: the key stays where it was bound", async () => {
+    const p = await pair();
+    try {
+      const { net } = policy(false);
+      const ai = net.fetchFor("ai", { providerLocality: "cloud" });
+      // Bearer (OpenAI-style APIs, Anthropic), Azure's api-key, x-api-key; as a plain object, a Headers or a Request
+      const keyed: [string, RequestInit | Request][] = [
+        ["/v1", { method: "POST", body: "{}", headers: { authorization: "Bearer sk-secret" } }],
+        ["/v1", { method: "POST", body: "{}", headers: new Headers({ "api-key": "azure-secret" }) }],
+        ["/v1", new Request(`${p.aUrl}/v1`, { method: "POST", body: "{}", headers: { "x-api-key": "sk-ant-secret" } })],
+        ["/same", { headers: { authorization: "Bearer sk-secret" } }],
+      ];
+      for (const [path, init] of keyed) {
+        const err = await (init instanceof Request ? ai(init) : ai(`${p.aUrl}${path}`, init)).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(NetworkPolicyError);
+        expect((err as Error).message).toMatch(/no sigue redirecciones de peticiones que llevan tu API key/);
+      }
+      expect(p.seenB).toEqual([]);
+    } finally {
+      p.close();
+    }
+  });
+
+  it("Azure through the SDK: a 307 from its endpoint ends in a clear error, and the key never reaches the redirect's target", async () => {
+    const { createAi } = await import("@terno/ai");
+    const p = await pair();
+    try {
+      const { net } = policy(false);
+      const azure = createAi({ id: "compatible", preset: "azure", model: "dep", apiKey: "azure-secret", baseURL: p.aUrl, fetch: net.fetchFor("ai", { providerLocality: "cloud" }), timeoutMs: 5000, maxRetries: 1 });
+      await expect(azure.generateFilter("archiva lo de uber", { now: 0, categories: [], accounts: [] })).rejects.toMatchObject({ message: expect.stringMatching(/redirección a localhost:\d+: Terno no sigue redirecciones/) });
+      expect(p.seenB).toEqual([]);
     } finally {
       p.close();
     }
@@ -212,6 +253,20 @@ describe("network policy without DNS (the browser)", () => {
       // mail (always allowed) and anything outside local mode follow redirects as the browser does
       expect((await browser(true).fetchFor("mail")(url)).status).toBe(200);
       expect((await browser(false).fetchFor("ai", { providerLocality: "cloud" })(url)).status).toBe(200);
+    } finally {
+      hop.close();
+    }
+  });
+
+  it("an AI request carrying a key is never redirected outside local mode either (a browser would re-send api-key to the target)", async () => {
+    const hop = createServer((_req, res) => void res.writeHead(307, { location: `http://127.0.0.1:${port}/elsewhere` }).end());
+    await new Promise<void>((r) => hop.listen(0, "127.0.0.1", r));
+    try {
+      const url = `http://127.0.0.1:${(hop.address() as AddressInfo).port}/openai/deployments/dep/chat/completions`;
+      for (const headers of [{ "api-key": "azure-secret" }, { authorization: "Bearer sk-secret" }, { "x-api-key": "sk-ant-secret" }]) {
+        await expect(browser(false).fetchFor("ai", { providerLocality: "cloud" })(url, { method: "POST", body: "{}", headers })).rejects.toThrow(/no sigue redirecciones/);
+      }
+      expect(seen).toEqual([]);
     } finally {
       hop.close();
     }

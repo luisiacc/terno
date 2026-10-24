@@ -66,7 +66,26 @@ export function isLoopbackIp(ip: string): boolean {
 
 const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
 const MAX_REDIRECTS = 5;
+/** Every header a credential travels in: Bearer keys (OpenAI-style APIs, Anthropic), Azure's api-key, x-api-key, cookies. */
 const SENSITIVE_HEADERS = ["authorization", "proxy-authorization", "cookie", "x-api-key", "api-key"];
+
+function carriesCredential(headers: RequestInit["headers"]): boolean {
+  const h = new Headers(headers);
+  return SENSITIVE_HEADERS.some((name) => h.has(name));
+}
+
+/**
+ * An AI request that carries a key is never redirected: the key is bound to
+ * the origin it was saved for, and a browser re-sends custom headers
+ * (api-key, x-api-key) to wherever a cross-origin 307/308 points.
+ */
+function redirectRefused(purpose: NetPurpose, from: URL, to: URL | null): NetworkPolicyError {
+  return new NetworkPolicyError(
+    `${from.host} respondió con una redirección${to ? ` a ${to.host}` : ""}: Terno no sigue redirecciones de peticiones que llevan tu API key. Revisa la URL del servidor en Ajustes → IA.`,
+    purpose,
+    from.host,
+  );
+}
 
 function requestUrl(input: Parameters<typeof fetch>[0]): URL {
   if (typeof input === "string" || input instanceof URL) return new URL(String(input));
@@ -122,9 +141,20 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
         // Request objects carry a one-shot body: normalise to url + init so a redirect can be re-sent.
         let url = requestUrl(input);
         let request: RequestInit = input instanceof Request ? { method: input.method, headers: input.headers, body: input.body, signal: input.signal, duplex: "half", ...init } as RequestInit : { ...init };
+        // the SDKs' own redirect mode is never trusted: an AI key doesn't follow any redirect, here or in a browser
+        const keyed = purpose === "ai" && carriesCredential(request.headers);
         for (let hop = 0; ; hop++) {
           const { pinnedHost } = await assert(purpose, url, meta);
           if (browser) {
+            if (keyed) {
+              // a browser hides where a redirect goes (an opaque response): enough to refuse it, with the key not re-sent
+              const res = await baseFetch(url, { ...request, redirect: "manual" });
+              if (res.type === "opaqueredirect" || REDIRECT_STATUS.has(res.status)) {
+                await res.body?.cancel();
+                throw redirectRefused(purpose, url, null);
+              }
+              return res;
+            }
             // no pinning and no manual redirects in a browser (they come back opaque): a vetted request may not be redirected at all
             const vetted = purpose === "ai" && (await options.localMode());
             return baseFetch(url, { ...request, redirect: vetted ? "error" : "follow" });
@@ -137,8 +167,9 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
           const res = await baseFetch(target, { ...request, redirect: "manual" });
           const location = REDIRECT_STATUS.has(res.status) ? res.headers.get("location") : null;
           if (!location) return res;
-          if (hop >= MAX_REDIRECTS) throw new TypeError(`Too many redirects (${url.host})`);
           await res.body?.cancel();
+          if (keyed) throw redirectRefused(purpose, url, new URL(location, url));
+          if (hop >= MAX_REDIRECTS) throw new TypeError(`Too many redirects (${url.host})`);
           const next = new URL(location, url);
           if (next.origin !== url.origin) {
             // as fetch itself does across origins: credentials never follow a redirect to another host

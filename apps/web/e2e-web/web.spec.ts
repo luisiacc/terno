@@ -1,4 +1,4 @@
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
 import { expect, test, type Page } from "@playwright/test";
 
@@ -441,4 +441,39 @@ test("AI with your own key runs from the worker: OpenAI and Anthropic get the re
   }, ollamaURL);
   ollama.close();
   expect(error).toContain(`permite el origen ${origin} en Ollama: OLLAMA_ORIGINS=${origin}`);
+});
+
+test("a key is never carried through a redirect: Azure's endpoint answering 307 to another CORS-enabled origin gets a clear error, and that origin sees no key", async ({ page }) => {
+  // both are real servers (Playwright fulfils CORS for the responses it fakes) on two origins, both allowing this page
+  const cors = (req: IncomingMessage) => ({ "access-control-allow-origin": req.headers.origin ?? "*", "access-control-allow-headers": "*", "access-control-allow-methods": "GET, POST, OPTIONS" });
+  const target: { method: string; keys: string[] }[] = [];
+  const thief = createServer((req, res) => {
+    target.push({ method: req.method!, keys: ["authorization", "api-key", "x-api-key"].filter((h) => req.headers[h] !== undefined) });
+    res.writeHead(200, { ...cors(req), "content-type": "application/json" }).end("{}");
+  });
+  await new Promise<void>((r) => thief.listen(0, "127.0.0.1", r));
+  const thiefPort = (thief.address() as AddressInfo).port;
+  const endpoint = createServer((req, res) => {
+    if (req.method === "OPTIONS") return void res.writeHead(204, cors(req)).end();
+    res.writeHead(307, { ...cors(req), location: `http://127.0.0.1:${thiefPort}${req.url}` }).end();
+  });
+  await new Promise<void>((r) => endpoint.listen(0, "127.0.0.1", r));
+  const baseURL = `http://127.0.0.1:${(endpoint.address() as AddressInfo).port}`;
+  try {
+    await boot(page, "/?demo=40&mailbox=redirect-ai");
+    const error = await page.evaluate(async (baseURL) => {
+      const client = window.__ternoWeb!.client;
+      await client.call("settings.update", { localMode: false, ai: { provider: "compatible", preset: "azure", model: "dep", baseURL } });
+      await client.call("ai.setKey", { provider: "compatible", preset: "azure", value: "azure-web-secret" });
+      return client.call("filters.generate", { prompt: "archiva los recibos de uber" }).then(
+        () => "generated",
+        (e: Error) => e.message,
+      );
+    }, baseURL);
+    expect(target).toEqual([]);
+    expect(error).toContain("Terno no sigue redirecciones de peticiones que llevan tu API key");
+  } finally {
+    endpoint.close();
+    thief.close();
+  }
 });
