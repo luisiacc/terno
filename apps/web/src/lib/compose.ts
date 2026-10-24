@@ -7,7 +7,7 @@ import { invalidateThreads, loadThread } from "~/state/threads";
 import { setLastUndo } from "./actions";
 import { convertFields, newFields, replyFields } from "./compose-fields";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
-import { authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markSending, validRecipients, sendBody, setDraftUi, threadDraftKey, useDrafts, type LocalDraft } from "./drafts";
+import { authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markSending, resumeDraft, validRecipients, sendBody, setDraftUi, threadDraftKey, useDrafts, type LocalDraft } from "./drafts";
 
 /**
  * Writing mail: which draft a reply, reply-all, forward or new message opens,
@@ -130,6 +130,7 @@ async function send(key: string): Promise<boolean> {
   // something typed that isn't an address (or nobody at all): stay, and say so
   const invalid = [d.toText, d.ccText, d.bccText].some((t) => parseAddressList(t).some((a) => !isValidEmail(a.email)));
   if (to.length === 0 || invalid) {
+    resumeDraft(key);
     toast.error("Revisa los destinatarios");
     return false;
   }
@@ -153,6 +154,7 @@ async function send(key: string): Promise<boolean> {
     return true;
   } catch (error) {
     markSending(key, false);
+    resumeDraft(key);
     toast.error(`No se pudo enviar: ${error instanceof Error ? error.message : error}`);
     return false;
   }

@@ -50,4 +50,28 @@ describe("sending a draft", () => {
     editDraft(key, { bodyText: "Hola otra vez" });
     expect(useDrafts.getState().drafts[key]!).toMatchObject({ bodyText: "Hola otra vez", sending: false });
   });
+
+  it("a send that fails (validation or the backend) leaves autosave running: what was written still gets saved", async () => {
+    vi.useFakeTimers();
+    try {
+      // nobody to send to: refused, but the text typed just before must still be saved
+      const key = createDraft({ ...newFields(1), bodyText: "" });
+      editDraft(key, { bodyText: "Texto sin destinatario" });
+      expect(await sendDraft(key)).toBe(false);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(rpc.calls.filter((c) => c.method === "drafts.save")).toHaveLength(1);
+      rpc.calls.length = 0;
+      // the backend refuses: same
+      const k2 = createDraft({ ...newFields(1), toText: "ana@example.com" });
+      editDraft(k2, { bodyText: "Otro" });
+      const p = sendDraft(k2);
+      await vi.advanceTimersByTimeAsync(0);
+      rpc.calls.find((c) => c.method === "compose.send")!.reject(new Error("sin conexión"));
+      expect(await p).toBe(false);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(rpc.calls.filter((c) => c.method === "drafts.save")).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
