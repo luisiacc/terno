@@ -40,8 +40,11 @@ export function DaysField({
   const [shown, setShown] = useState(value);
   if (value !== shown) {
     setShown(value);
-    setText(value === null ? "" : String(value));
-    setError(null);
+    // unless what is in the field is an edit of its own, typed since
+    if (text === (shown === null ? "" : String(shown))) {
+      setText(value === null ? "" : String(value));
+      setError(null);
+    }
   }
   const commit = async () => {
     if (allowEmpty && text.trim() === "") {

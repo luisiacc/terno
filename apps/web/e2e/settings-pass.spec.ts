@@ -237,6 +237,24 @@ test.describe("editable, persisted and in effect", () => {
     await page.keyboard.press("Enter");
     await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === id)!.displayName).toBe("Uno y dos");
     await expect(name).toBeFocused();
+    // a slow save: what is typed after Enter survives the save's late echo
+    const handlers = (server.backend.server as unknown as { handlers: Record<string, (...a: unknown[]) => unknown> }).handlers;
+    const original = handlers["accounts.update"]!;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    handlers["accounts.update"] = async (...args: unknown[]) => {
+      await gate;
+      return original(...args);
+    };
+    await name.fill("Tres");
+    await name.press("Enter");
+    await page.keyboard.type(" y cuatro");
+    release();
+    await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === id)!.displayName).toBe("Tres");
+    await expect(name).toHaveValue("Tres y cuatro");
+    handlers["accounts.update"] = original;
+    await name.press("Enter");
+    await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, ctx)).accounts.find((a) => a.id === id)!.displayName).toBe("Tres y cuatro");
     const days = item.getByRole("spinbutton", { name: "Ventana de sincronización" });
     await days.fill("20");
     await days.press("Enter");

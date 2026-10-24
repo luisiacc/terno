@@ -133,12 +133,15 @@ export function CommitInput({
 } & Omit<React.InputHTMLAttributes<HTMLInputElement & HTMLTextAreaElement>, "value" | "onChange" | "className">) {
   const [text, setText] = useState(value);
   const [error, setError] = useState<string | null>(null);
-  // the stored value changed (a save, another window): show it, without remounting (focus stays)
+  // the stored value changed (a save, another window): show it in the same element (focus stays),
+  // unless the field holds an edit of its own (typed since; a save's echo must not eat what came after)
   const [shown, setShown] = useState(value);
   if (value !== shown) {
     setShown(value);
-    setText(value);
-    setError(null);
+    if (text === shown) {
+      setText(value);
+      setError(null);
+    }
   }
   const errorId = `${useId()}-error`;
   const commit = async () => {
@@ -210,11 +213,12 @@ export const COLOR_LABEL: Record<CategoryColor, string> = {
  */
 export function ColorPicker({ value, onChange, a11y, name, testId }: { value: string; onChange: (color: CategoryColor) => Promise<void>; a11y: RowA11y; name: string; testId?: string }) {
   const [picked, setPicked] = useState(value);
-  // the stored color changed (this pick saved, or another window): follow it in place, so the focused radio stays
+  // the stored color changed: follow it in place (the focused radio stays), unless a pick of ours is
+  // still on its way (arrows faster than saves: an older pick's echo must not undo a newer one)
   const [stored, setStored] = useState(value);
   if (value !== stored) {
     setStored(value);
-    setPicked(value);
+    if (picked === stored) setPicked(value);
   }
   return (
     <div role="radiogroup" aria-labelledby={a11y["aria-labelledby"]} aria-describedby={a11y["aria-describedby"]} className="flex items-center gap-1" data-testid={testId}>
