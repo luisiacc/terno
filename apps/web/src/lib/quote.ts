@@ -22,7 +22,11 @@ export function splitTextQuote(text: string): { main: string; quoted: string } {
   let cut = -1;
   // Outlook: the rule and everything after it (always the end of the message)
   for (let i = 0; i < end - 1; i++) {
-    if (OUTLOOK_RULE.test(lines[i]!.trim()) && OUTLOOK_FROM.test(lines.slice(i + 1).find((l) => !blank(l))?.trim() ?? "")) {
+    if (!OUTLOOK_RULE.test(lines[i]!.trim())) continue;
+    // its next non-blank line, looked up in place (copying the rest per rule would be quadratic)
+    let j = i + 1;
+    while (j < end && blank(lines[j])) j++;
+    if (j < end && OUTLOOK_FROM.test(lines[j]!.trim())) {
       cut = i;
       break;
     }
