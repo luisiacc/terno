@@ -18,6 +18,10 @@ const db = (server: DevServer) => sqlDb(server.backend.store);
 const flags = (server: DevServer, id: number | string) => db(server).get<{ in_inbox: number; in_trash: number; in_spam: number; unread_count: number; is_starred: number }>("SELECT in_inbox, in_trash, in_spam, unread_count, is_starred FROM threads WHERE id = ?", Number(id))!;
 const idsOf = (l: Locator) => l.evaluateAll((els) => els.map((e) => e.getAttribute("data-thread-id")!));
 /** every loaded row's id (the DOM only holds the rows in view) */
+/** the list shows that view's rows (the title changes before they arrive) */
+const viewLoaded = (page: Page, view: string) => expect(page.getByTestId("thread-list")).toHaveAttribute("data-results-for", new RegExp(`^\\["${view}"`));
+/** how many threads are checked (the DOM holds only the rows in view) */
+const checkedCount = (page: Page) => page.evaluate(() => (window as unknown as { __unica: { getApp(): { checked: Set<number> } } }).__unica.getApp().checked.size);
 const loadedIds = (page: Page) => page.evaluate(() => (window as unknown as { __unica: { loadedIds(): number[] } }).__unica.loadedIds());
 /** submenus render in their own popup, outside the menu's element */
 const sub = (page: Page, id: string) => page.getByTestId(id);
@@ -105,6 +109,7 @@ test.describe("context menu on one thread", () => {
   test("Papelera and Spam: what can't apply there is disabled, the way back is offered", async ({ app: page }) => {
     await page.getByTestId("nav-trash").click();
     await expect(page.getByTestId("list-title")).toHaveText("Papelera");
+    await viewLoaded(page, "trash");
     await rightClick(page, rows(page).first());
     await expect(item(page, "menu-trash")).toHaveAttribute("data-disabled", "");
     await expect(item(page, "menu-archive")).toHaveAttribute("data-disabled", "");
@@ -115,6 +120,7 @@ test.describe("context menu on one thread", () => {
 
     await page.getByTestId("nav-spam").click();
     await expect(page.getByTestId("list-title")).toHaveText("Spam");
+    await viewLoaded(page, "spam");
     await rightClick(page, rows(page).first());
     await expect(item(page, "menu-spam")).toHaveAttribute("data-disabled", "");
     await expect(item(page, "menu-not-spam")).toBeVisible();
@@ -275,11 +281,12 @@ test.describe("multi-selection", () => {
     await focusList(page);
     await page.keyboard.press("ControlOrMeta+a");
     await expect(page.getByTestId("selection-bar")).toBeVisible();
-    const n = await checked(page).count();
+    const n = (await loadedIds(page)).length;
+    expect(await checkedCount(page)).toBe(n);
     // past the 450 ms dwell: the selection stands, and the reader that went away didn't mark the thread read
     await page.waitForTimeout(900);
     await expect(page.getByTestId("selection-bar")).toBeVisible();
-    await expect(checked(page)).toHaveCount(n);
+    expect(await checkedCount(page)).toBe(n);
     expect(flags(server, id).unread_count).toBeGreaterThan(0);
   });
 
@@ -357,6 +364,7 @@ test.describe("undo is exact", () => {
     const inbox = count("in_inbox = 1");
     await page.getByTestId("nav-archive").click();
     await expect(page.getByTestId("list-title")).toHaveText("Archivo");
+    await viewLoaded(page, "archive");
     await focusList(page);
     await page.keyboard.press("ControlOrMeta+a");
     await page.getByTestId("select-all-scope-button").click();
@@ -418,7 +426,9 @@ test.describe("accessibility", () => {
     // ⌘A: every option is selected
     await focusList(page);
     await page.keyboard.press("ControlOrMeta+a");
-    await expect(selectedOptions).toHaveCount(await rows(page).count());
+    await expect(page.getByTestId("selection-bar")).toBeVisible();
+    await expect(page.locator("[role=option][aria-selected=false]")).toHaveCount(0);
+    expect(await selectedOptions.count()).toBeGreaterThan(10);
     await page.keyboard.press("Escape");
     await expect(selectedOptions).toHaveCount(1);
     // ⌘-click: exactly the checked rows; the open thread can be outside them and stays the active descendant

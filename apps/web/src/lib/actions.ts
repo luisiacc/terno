@@ -115,23 +115,33 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
   // what the user acted on stops being selected; automatic and undo actions never touch the selection
   const onTargets = !options.quiet && targets.some((id) => s.checked.has(id));
   if (onTargets && (s.checked.size || s.scope)) setApp({ checked: new Set(), scope: null });
+  // z right after the key: this action is the last one already, its undo waits for the backend's answer
+  const undoIds = deferred<number[]>();
+  if (!options.quiet) lastUndo = () => void undoIds.promise.then((ids) => (ids.length ? undoActions(ids, targets.length) : undefined));
   try {
     // the contract takes ≤ 5,000 ids a call (the backend slices each); each call can be undone exactly
-    const undoIds: number[] = [];
+    const ids: number[] = [];
     for (let i = 0; i < targets.length; i += 5000) {
       const r = await client.call("threads.act", { threadIds: targets.slice(i, i + 5000), action });
-      if (r.undoId !== null) undoIds.push(r.undoId);
+      if (r.undoId !== null) ids.push(r.undoId);
     }
+    undoIds.resolve(ids);
     invalidateThreads(targets);
     // the read-after-dwell: nothing to announce or to undo
     if (options.quiet) return;
-    const undo = undoIds.length ? () => void undoActions(undoIds, targets.length) : null;
-    lastUndo = undo;
+    const undo = ids.length ? () => void undoActions(ids, targets.length) : undefined;
     if (TOAST_ALWAYS.has(action) || targets.length > 1) toast(said(action, targets.length), { action: undo ? { label: "Deshacer", onClick: undo } : undefined });
   } catch (error) {
+    undoIds.resolve([]);
     toast.error(`No se pudo completar: ${error instanceof Error ? error.message : error}`);
     void reloadList({ keepSelection: true });
   }
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve(v: T): void } {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((r) => (resolve = r));
+  return { promise, resolve };
 }
 
 let job = 0;
@@ -162,13 +172,16 @@ async function actScope(action: ThreadAction, sel: ScopeSelection): Promise<void
   patchRows(loaded, (t) => (leaving ? null : patched(t, action)));
   setApp({ checked: new Set(), scope: null });
   const progress = trackJob(`${DOING[action]} ${fmt(sel.count)} conversaciones`);
+  const undoId = deferred<{ id: number | null; n: number }>();
+  lastUndo = () => void undoId.promise.then((u) => (u.id === null ? undefined : undoActions([u.id], u.n)));
   try {
     const r = await client.call("threads.actScope", { scope: sel.scope, action, jobId: progress.jobId });
+    undoId.resolve({ id: r.undoId, n: r.affected });
     invalidateThreads(loaded);
     const undo = r.undoId === null ? null : () => void undoActions([r.undoId!], r.affected);
-    lastUndo = undo;
     toast.success(said(action, r.affected), { id: progress.toastId, duration: 8000, action: undo ? { label: "Deshacer", onClick: undo } : undefined });
   } catch (error) {
+    undoId.resolve({ id: null, n: 0 });
     toast.error(`No se pudo completar: ${error instanceof Error ? error.message : error}`, { id: progress.toastId });
   } finally {
     progress.stop();
