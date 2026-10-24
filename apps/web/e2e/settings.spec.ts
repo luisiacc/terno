@@ -27,6 +27,21 @@ test.describe("accounts, settings and command palette", () => {
     await expect(page.locator("html")).toHaveClass(/dark/); // persisted before React mounts
   });
 
+  test("the settings tab list is vertical: ↓/↑ move between tabs, Esc returns focus to the gear", async ({ app: page }) => {
+    await page.getByTestId("open-settings").click();
+    const general = page.getByTestId("tab-general");
+    await expect(page.getByRole("tablist")).toHaveAttribute("aria-orientation", "vertical");
+    await general.focus();
+    await page.keyboard.press("ArrowDown");
+    await expect(page.getByTestId("tab-appearance")).toBeFocused();
+    await expect(page.getByTestId("tab-appearance")).toHaveAttribute("aria-selected", "true");
+    await page.keyboard.press("ArrowUp");
+    await expect(general).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("settings-dialog")).toHaveCount(0);
+    await expect(page.getByTestId("open-settings")).toBeFocused();
+  });
+
   test("⌘K jumps to a category and runs a search", async ({ app: page }) => {
     await page.keyboard.press("Meta+k");
     await page.getByTestId("palette-input").fill("Viajes");

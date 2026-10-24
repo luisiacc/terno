@@ -111,7 +111,7 @@ export function SettingsDialog() {
           {/* macOS System Settings: a sidebar of sections with accent glyphs */}
           <nav className="hairline-r hairline-strong flex w-[180px] shrink-0 flex-col bg-sidebar px-2 pt-5 pb-3">
             <h2 className="mb-3 px-2 text-md font-semibold tracking-tight">Ajustes</h2>
-            <TabsList className="w-full items-stretch bg-transparent p-0">
+            <TabsList activateOnFocus className="w-full items-stretch bg-transparent p-0">
               {TABS.map(({ value, label, icon: Icon }) => (
                 <TabsTrigger
                   key={value}
