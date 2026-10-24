@@ -262,20 +262,29 @@ it("scoring right after a model change stays fast with 50,000 distinct senders (
 });
 
 /** Runs fn while sampling the event loop (max gap between 1 ms ticks) and a concurrent list RPC. */
-async function underLoad(fn: () => Promise<unknown>): Promise<{ stall: number; rpc: number[] }> {
+async function underLoad(fn: () => Promise<unknown>): Promise<{ stall: number; cpu: number; rpc: number[] }> {
   const [c, srv] = createMemoryTransportPair();
   backend.connect(srv, { clientId: `load-${Math.random()}`, origin: "renderer" });
   const client = new RpcClient(c);
   let last = performance.now();
   let lastElu = performance.eventLoopUtilization();
+  let lastCpu = process.threadCpuUsage();
   let stall = 0;
+  // how much of the longest stall the thread spent on a CPU (the rest it was blocked or descheduled): a diagnostic
+  let stallCpu = 0;
   // a stall is time the loop was busy (computing or blocked), not an idle loop whose timer the OS fired late
   const tick = setInterval(() => {
     const now = performance.now();
     const elu = performance.eventLoopUtilization();
-    stall = Math.max(stall, Math.min(now - last, performance.eventLoopUtilization(elu, lastElu).active));
+    const cpu = process.threadCpuUsage();
+    const busy = Math.min(now - last, performance.eventLoopUtilization(elu, lastElu).active);
+    if (busy > stall) {
+      stall = busy;
+      stallCpu = (cpu.user - lastCpu.user + cpu.system - lastCpu.system) / 1000;
+    }
     last = now;
     lastElu = elu;
+    lastCpu = cpu;
   }, 1);
   const rpc: number[] = [];
   let done = false;
@@ -297,7 +306,7 @@ async function underLoad(fn: () => Promise<unknown>): Promise<{ stall: number; r
     await new Promise((r) => setTimeout(r, 5));
     clearInterval(tick);
   }
-  return { stall, rpc };
+  return { stall, cpu: stallCpu, rpc };
 }
 
 it("large UI adds, removals and undo are sliced: no long stall, interactive RPCs keep flowing", async () => {
@@ -318,9 +327,9 @@ it("large UI adds, removals and undo are sliced: no long stall, interactive RPCs
     await client.call("categorize.undo", { batchId: big.batchId! });
   }]);
   for (const [name, fn] of runs) {
-    const { stall, rpc } = await underLoad(fn);
-    stats.push({ name: `${name}: max event-loop stall ${stall.toFixed(1)} ms, list RPC p95 ${p95(rpc).toFixed(1)} ms (${rpc.length})`, budgetMs: 50, p50: stall, p95: stall, max: stall, iterations: rpc.length });
-    expect(stall, name).toBeLessThanOrEqual(50 * BUDGET_MULTIPLIER);
+    const { stall, cpu, rpc } = await underLoad(fn);
+    stats.push({ name: `${name}: max event-loop stall ${stall.toFixed(1)} ms (cpu ${cpu.toFixed(1)}), list RPC p95 ${p95(rpc).toFixed(1)} ms (${rpc.length})`, budgetMs: 50, p50: stall, p95: stall, max: stall, iterations: rpc.length });
+    expect(stall, `${name} (cpu ${cpu.toFixed(1)} ms of it)`).toBeLessThanOrEqual(50 * BUDGET_MULTIPLIER);
     expect(p95(rpc), name).toBeLessThanOrEqual(25 * BUDGET_MULTIPLIER);
   }
   // leave the shared mailbox as the other budgets expect it
@@ -344,18 +353,18 @@ it("a move of the largest selection (5,000 threads) and its undo: atomic, no lon
     ["move 5,000 threads (drag, exclusive)", async () => (batchId = (await client.call("categories.moveThreads", { to, threadIds: ids, source: "dnd" })).batchId)],
     ["undo that move", () => client.call("categorize.undo", { batchId })],
   ];
-  const results: { name: string; stall: number; list: number }[] = [];
+  const results: { name: string; stall: number; cpu: number; list: number }[] = [];
   for (const [name, fn] of runs) {
-    const { stall, rpc } = await underLoad(fn);
-    results.push({ name, stall, list: p95(rpc) });
-    stats.push({ name: `${name}: max event-loop stall ${stall.toFixed(1)} ms, list RPC p95 ${p95(rpc).toFixed(1)} ms (${rpc.length})`, budgetMs: 50, p50: stall, p95: stall, max: stall, iterations: rpc.length });
+    const { stall, cpu, rpc } = await underLoad(fn);
+    results.push({ name, stall, cpu, list: p95(rpc) });
+    stats.push({ name: `${name}: max event-loop stall ${stall.toFixed(1)} ms (cpu ${cpu.toFixed(1)}), list RPC p95 ${p95(rpc).toFixed(1)} ms (${rpc.length})`, budgetMs: 50, p50: stall, p95: stall, max: stall, iterations: rpc.length });
     if (name.startsWith("move")) expect([inCat(from), inCat(to)]).toEqual([0, 5000]);
     else expect([inCat(from), inCat(to)]).toEqual([5000, 0]);
   }
   await client.call("categories.delete", { id: from });
   await client.call("categories.delete", { id: to });
   for (const r of results) {
-    expect(r.stall, r.name).toBeLessThanOrEqual(50 * BUDGET_MULTIPLIER);
+    expect(r.stall, `${r.name} (cpu ${r.cpu.toFixed(1)} ms of it)`).toBeLessThanOrEqual(50 * BUDGET_MULTIPLIER);
     expect(r.list, r.name).toBeLessThanOrEqual(20 * BUDGET_MULTIPLIER);
   }
 }, 600_000);
@@ -380,22 +389,22 @@ it("moving 5,000 threads filed in 20 categories each (100,000 memberships) and u
   expect(before).toHaveLength(100_000);
   const p95 = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.ceil(xs.length * 0.95) - 1] ?? 0;
   let batchId = 0;
-  const results: { name: string; stall: number; list: number }[] = [];
+  const results: { name: string; stall: number; cpu: number; list: number }[] = [];
   for (const [name, fn] of [
     ["move 5,000 threads × 20 categories", async () => (batchId = (await client.call("categories.moveThreads", { to, threadIds: ids, source: "dnd" })).batchId)],
     ["undo that move", () => client.call("categorize.undo", { batchId })],
   ] as [string, () => Promise<unknown>][]) {
     const t = performance.now();
-    const { stall, rpc } = await underLoad(fn);
+    const { stall, cpu, rpc } = await underLoad(fn);
     const took = performance.now() - t;
-    results.push({ name, stall, list: p95(rpc) });
-    stats.push({ name: `${name}: ${took.toFixed(0)} ms, max event-loop stall ${stall.toFixed(1)} ms, list RPC p95 ${p95(rpc).toFixed(1)} ms (${rpc.length})`, budgetMs: 50, p50: stall, p95: stall, max: stall, iterations: rpc.length });
+    results.push({ name, stall, cpu, list: p95(rpc) });
+    stats.push({ name: `${name}: ${took.toFixed(0)} ms, max event-loop stall ${stall.toFixed(1)} ms (cpu ${cpu.toFixed(1)}), list RPC p95 ${p95(rpc).toFixed(1)} ms (${rpc.length})`, budgetMs: 50, p50: stall, p95: stall, max: stall, iterations: rpc.length });
     if (name.startsWith("move")) expect(memberships().map((m) => m.c)).toEqual(ids.map(() => to));
     else expect(memberships()).toEqual(before);
   }
   for (const cat of [...sources, to]) await client.call("categories.delete", { id: cat });
   for (const r of results) {
-    expect(r.stall, r.name).toBeLessThanOrEqual(50 * BUDGET_MULTIPLIER);
+    expect(r.stall, `${r.name} (cpu ${r.cpu.toFixed(1)} ms of it)`).toBeLessThanOrEqual(50 * BUDGET_MULTIPLIER);
     expect(r.list, r.name).toBeLessThanOrEqual(20 * BUDGET_MULTIPLIER);
   }
 }, 600_000);
@@ -410,12 +419,12 @@ it("a rebuild never stalls the event loop for long, even with 40,000 training ex
   for (const cat of cats) await client.call("categorize.apply", { categoryId: cat, scope: { kind: "query", query: "in:all" } });
   const examples = sqlDb(backend.store).get<{ n: number }>("SELECT count(*) AS n FROM cls_examples")!.n;
   expect(examples).toBeGreaterThan(40_000);
-  const { stall, rpc } = await underLoad(() => backend.categorizer.rebuild());
+  const { stall, cpu, rpc } = await underLoad(() => backend.categorizer.rebuild());
   const p95 = [...rpc].sort((a, b) => a - b)[Math.ceil(rpc.length * 0.95) - 1] ?? 0;
-  stats.push({ name: `rebuild with ${examples} examples: max event-loop stall ${stall.toFixed(1)} ms, list RPC p95 ${p95.toFixed(1)} ms`, budgetMs: 50, p50: stall, p95: stall, max: stall, iterations: rpc.length });
+  stats.push({ name: `rebuild with ${examples} examples: max event-loop stall ${stall.toFixed(1)} ms (cpu ${cpu.toFixed(1)}), list RPC p95 ${p95.toFixed(1)} ms`, budgetMs: 50, p50: stall, p95: stall, max: stall, iterations: rpc.length });
   for (const cat of cats) await client.call("categories.delete", { id: cat });
   await backend.categorizer.rebuild();
-  expect(stall).toBeLessThanOrEqual(50 * BUDGET_MULTIPLIER);
+  expect(stall, `cpu ${cpu.toFixed(1)} ms of it`).toBeLessThanOrEqual(50 * BUDGET_MULTIPLIER);
 }, 600_000);
 
 /** The backend load test's 14k-message import, ingested into copies of the perf mailbox with the engine off and on. */

@@ -37,20 +37,29 @@ afterAll(async () => {
 const p95 = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.max(0, Math.ceil(xs.length * 0.95) - 1)] ?? 0;
 
 /** Runs fn while sampling the event loop (max gap between 1 ms ticks) and a renderer listing its view. */
-async function underLoad(fn: () => Promise<unknown>, on: Backend = backend): Promise<{ stall: number; list: number[] }> {
+async function underLoad(fn: () => Promise<unknown>, on: Backend = backend): Promise<{ stall: number; cpu: number; list: number[] }> {
   const [c, srv] = createMemoryTransportPair();
   on.connect(srv, { clientId: `load-${Math.random()}`, origin: "renderer" });
   const client = new RpcClient(c);
   let last = performance.now();
   let lastElu = performance.eventLoopUtilization();
+  let lastCpu = process.threadCpuUsage();
   let stall = 0;
+  // how much of the longest stall the thread spent on a CPU (the rest it was blocked or descheduled): a diagnostic
+  let stallCpu = 0;
   // a stall is time the loop was busy (computing or blocked), not an idle loop whose timer the OS fired late
   const tick = setInterval(() => {
     const now = performance.now();
     const elu = performance.eventLoopUtilization();
-    stall = Math.max(stall, Math.min(now - last, performance.eventLoopUtilization(elu, lastElu).active));
+    const cpu = process.threadCpuUsage();
+    const busy = Math.min(now - last, performance.eventLoopUtilization(elu, lastElu).active);
+    if (busy > stall) {
+      stall = busy;
+      stallCpu = (cpu.user - lastCpu.user + cpu.system - lastCpu.system) / 1000;
+    }
     last = now;
     lastElu = elu;
+    lastCpu = cpu;
   }, 1);
   const list: number[] = [];
   let done = false;
@@ -70,7 +79,7 @@ async function underLoad(fn: () => Promise<unknown>, on: Backend = backend): Pro
     await new Promise((r) => setTimeout(r, 5));
     clearInterval(tick);
   }
-  return { stall, list };
+  return { stall, cpu: stallCpu, list };
 }
 
 it("archiving every thread of a view (≥ 5,000) and undoing it: no stall over 50 ms, threads.list p95 ≤ 20 ms", async () => {
@@ -93,13 +102,13 @@ it("archiving every thread of a view (≥ 5,000) and undoing it: no stall over 5
     ["its undo", () => client.call("threads.undo", { undoId: result.undoId! })],
     ["scope mark read of «Todo el correo»", () => client.call("threads.actScope", { scope: { kind: "view", view: "all" }, action: "markRead" })],
   ];
-  const out: { name: string; stall: number; list: number }[] = [];
+  const out: { name: string; stall: number; cpu: number; list: number }[] = [];
   for (const [name, fn] of runs) {
     const started = performance.now();
-    const { stall, list } = await underLoad(fn);
+    const { stall, cpu, list } = await underLoad(fn);
     const took = performance.now() - started;
-    out.push({ name, stall, list: p95(list) });
-    stats.push({ name: `${name}: ${took.toFixed(0)} ms, max event-loop stall ${stall.toFixed(1)} ms, list RPC p95 ${p95(list).toFixed(1)} ms (${list.length})`, budgetMs: 50, p50: stall, p95: stall, max: stall, iterations: list.length });
+    out.push({ name, stall, cpu, list: p95(list) });
+    stats.push({ name: `${name}: ${took.toFixed(0)} ms, max event-loop stall ${stall.toFixed(1)} ms (cpu ${cpu.toFixed(1)}), list RPC p95 ${p95(list).toFixed(1)} ms (${list.length})`, budgetMs: 50, p50: stall, p95: stall, max: stall, iterations: list.length });
     if (name.startsWith("scope archive")) {
       expect(result.affected).toBeGreaterThanOrEqual(5000);
       expect(result.affected).toBe(inboxBefore);
@@ -109,7 +118,7 @@ it("archiving every thread of a view (≥ 5,000) and undoing it: no stall over 5
   }
   stats.push({ name: `threads archived by one scope action: ${result.affected}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
   for (const r of out) {
-    expect(r.stall, r.name).toBeLessThanOrEqual(50 * BUDGET_MULTIPLIER);
+    expect(r.stall, `${r.name} (cpu ${r.cpu.toFixed(1)} ms of it)`).toBeLessThanOrEqual(50 * BUDGET_MULTIPLIER);
     expect(r.list, r.name).toBeLessThanOrEqual(20 * BUDGET_MULTIPLIER);
   }
 }, 600_000);
@@ -139,11 +148,11 @@ it("a 50,000-thread category: counted in one indexed query, acted on with no sta
     const sc = { name: `count a ${inCat}-thread category (RPC)`, budgetMs: 25, p50: [...counts].sort((a, b) => a - b)[12]!, p95: p95(counts), max: Math.max(...counts), iterations: counts.length };
     stats.push(sc);
     let result = { total: 0 };
-    const { stall, list } = await underLoad(async () => (result = await client.call("threads.actScope", { scope, action: "markRead" })), big);
-    stats.push({ name: `mark read a ${inCat}-thread category: max event-loop stall ${stall.toFixed(1)} ms, list RPC p95 ${p95(list).toFixed(1)} ms (${list.length})`, budgetMs: 50, p50: stall, p95: stall, max: stall, iterations: list.length });
+    const { stall, cpu, list } = await underLoad(async () => (result = await client.call("threads.actScope", { scope, action: "markRead" })), big);
+    stats.push({ name: `mark read a ${inCat}-thread category: max event-loop stall ${stall.toFixed(1)} ms (cpu ${cpu.toFixed(1)}), list RPC p95 ${p95(list).toFixed(1)} ms (${list.length})`, budgetMs: 50, p50: stall, p95: stall, max: stall, iterations: list.length });
     expect(result.total).toBe(inCat);
     expect(sc.p95).toBeLessThanOrEqual(25 * BUDGET_MULTIPLIER);
-    expect(stall).toBeLessThanOrEqual(50 * BUDGET_MULTIPLIER);
+    expect(stall, `cpu ${cpu.toFixed(1)} ms of it`).toBeLessThanOrEqual(50 * BUDGET_MULTIPLIER);
     expect(p95(list)).toBeLessThanOrEqual(20 * BUDGET_MULTIPLIER);
   } finally {
     await big.stop();
