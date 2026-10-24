@@ -6,7 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@unica/ui/components/to
 import { cn } from "@unica/ui/lib/utils";
 import { Archive, Forward, Inbox, MailOpen, OctagonAlert, Paperclip, Reply, ReplyAll, Star, Tag, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { act, openCompose, scheduleMarkRead, toggleStar } from "~/lib/actions";
+import { act, cancelMarkRead, openCompose, scheduleMarkRead, toggleStar } from "~/lib/actions";
 import { acceptSuggestion, rejectSuggestion, removeFromCategory } from "~/lib/categorize";
 import { avatarColor, formatBytes, fullDate, initials, listDate } from "~/lib/format";
 import { setApp, useApp } from "~/state/app";
@@ -146,6 +146,9 @@ export function Reader() {
     scheduleMarkRead(selectedId);
     return () => clearTimeout(t);
   }, [selectedId]);
+
+  // a dwell only counts while the reader shows the thread
+  useEffect(() => cancelMarkRead, []);
 
   useEffect(() => {
     if (!detail) return;

@@ -266,6 +266,21 @@ test.describe("multi-selection", () => {
     await expect(checked(page)).toHaveCount(3);
   });
 
+  test("the read-after-dwell of a thread just opened never clears a selection made right after", async ({ app: page, server }) => {
+    const unread = page.locator("[data-testid=thread-row][data-unread]").first();
+    const id = (await unread.getAttribute("data-thread-id"))!;
+    await unread.dispatchEvent("mousedown", { button: 0 });
+    await focusList(page);
+    await page.keyboard.press("ControlOrMeta+a");
+    await expect(page.getByTestId("selection-bar")).toBeVisible();
+    const n = await checked(page).count();
+    // past the 450 ms dwell: the selection stands, and the reader that went away didn't mark the thread read
+    await page.waitForTimeout(900);
+    await expect(page.getByTestId("selection-bar")).toBeVisible();
+    await expect(checked(page)).toHaveCount(n);
+    expect(flags(server, id).unread_count).toBeGreaterThan(0);
+  });
+
   test("⌫ trashes the selection", async ({ app: page, server }) => {
     const ids = (await idsOf(rows(page))).slice(2, 5);
     await selectRows(page, ids);

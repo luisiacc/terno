@@ -135,7 +135,8 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
   }
   if (leaving) reflowRemoval(targets);
   patchRows(targets, (t): ThreadSummary | null => (leaving ? null : patched(t, action)));
-  const onTargets = targets.some((id) => s.checked.has(id));
+  // what the user acted on stops being selected; automatic and undo actions never touch the selection
+  const onTargets = !options.quiet && targets.some((id) => s.checked.has(id));
   if (onTargets && (s.checked.size || s.scope)) setApp({ checked: new Set(), scope: null });
   try {
     // the contract takes ≤ 5,000 ids a call (the backend slices each)
@@ -231,6 +232,12 @@ export function toggleRead(ids?: number[]): void {
 }
 
 let readTimer: ReturnType<typeof setTimeout> | null = null;
+/** The reader went away (the bulk bar replaced it): nothing was read. */
+export function cancelMarkRead(): void {
+  if (readTimer) clearTimeout(readTimer);
+  readTimer = null;
+}
+
 /** Opening a thread marks it read after a short dwell, so holding j doesn't mark everything read. */
 export function scheduleMarkRead(id: number): void {
   if (readTimer) clearTimeout(readTimer);
