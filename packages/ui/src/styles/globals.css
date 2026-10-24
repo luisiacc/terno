@@ -197,6 +197,14 @@
       background: transparent;
     }
   }
+  /* scrollbars: thin, in the theme's ink, and only while their pane is hovered (no idle grey tracks) */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+  *:hover {
+    scrollbar-color: color-mix(in oklab, var(--foreground) 24%, transparent) transparent;
+  }
   /* keyboard focus only: a 2 px ring outside controls, inside rows and list items */
   :focus-visible {
     outline: 2px solid var(--ring);

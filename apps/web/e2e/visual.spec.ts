@@ -47,6 +47,21 @@ test.describe("chrome", () => {
     await expect(header).not.toHaveAttribute("data-scrolled");
   });
 
+  test("scrollbars are thin and only show while their pane is hovered", async ({ app: page }) => {
+    const list = page.getByRole("listbox");
+    const style = () => list.evaluate((el) => ({ width: getComputedStyle(el).scrollbarWidth, color: getComputedStyle(el).scrollbarColor }));
+    const hidden = /^(transparent|rgba\(0, 0, 0, 0\)) (transparent|rgba\(0, 0, 0, 0\))$/;
+    await page.mouse.move(1200, 600); // over the reader
+    const idle = await style();
+    expect(idle.width).toBe("thin");
+    expect(idle.color).toMatch(hidden);
+    await list.hover();
+    const hovered = await style();
+    expect(hovered.width).toBe("thin");
+    expect(hovered.color).not.toMatch(hidden);
+    expect(hovered.color).not.toBe("auto");
+  });
+
   test("compose is a quiet icon in the list header, named for assistive tech", async ({ app: page }) => {
     const button = page.getByRole("button", { name: "Escribir" });
     await expect(button).toBeVisible();
