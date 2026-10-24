@@ -82,21 +82,21 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
 }
 
 /**
- * Moves the Única account to another connected mailbox, which must be verified
+ * Moves the Terno account to another connected mailbox, which must be verified
  * again right now: Google OAuth with the address pre-selected (and matching),
  * or a live IMAP login with the password typed again. A stored password does
  * not count. The user id stays; the previous owner goes to history.
  */
 export async function changeOwnerTo(b: Backend, accountId: number, password: string | undefined): Promise<OwnerIdentity> {
   const store = b.store;
-  if (!b.canClaimOwner()) throw new RpcError("BAD_REQUEST", "El modo demo no tiene cuenta Única.");
+  if (!b.canClaimOwner()) throw new RpcError("BAD_REQUEST", "El modo demo no tiene cuenta de Terno.");
   const account = await store.accounts.get(accountId);
   const stamp = await store.accounts.stamp(accountId);
   if (!account || !stamp) throw new RpcError("NOT_FOUND", "Esa cuenta ya no está conectada.");
   const config = (await store.accounts.config<Record<string, unknown>>(accountId))!.config;
-  if (config.demo) throw new RpcError("BAD_REQUEST", "Una cuenta de demostración no puede ser tu cuenta Única.");
+  if (config.demo) throw new RpcError("BAD_REQUEST", "Una cuenta de demostración no puede ser tu cuenta de Terno.");
   const current = await store.owner.get();
-  if (current?.accountId === accountId) throw new RpcError("BAD_REQUEST", `${account.email} ya es tu cuenta Única.`);
+  if (current?.accountId === accountId) throw new RpcError("BAD_REQUEST", `${account.email} ya es tu cuenta de Terno.`);
 
   let claim: Omit<OwnerClaim, "accountId" | "email">;
   let secret: { name: string; blob: Uint8Array };

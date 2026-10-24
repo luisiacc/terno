@@ -13,7 +13,7 @@ describe("generated theme CSS", () => {
     expect(readFileSync(file, "utf8")).toBe(generateThemesCss());
   });
 
-  it("has one block per theme and :root falls back to Única claro", () => {
+  it("has one block per theme and :root falls back to Terno claro", () => {
     const css = generateThemesCss();
     for (const t of THEMES) expect(css).toContain(`[data-theme="${t.id}"] {`);
     expect(css).toMatch(/^:root,\n\[data-theme="terno-light"\] \{/m);

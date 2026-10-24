@@ -1,5 +1,5 @@
 /*
- * Única design system: shadcn/ui (base-nova, Base UI) re-themed.
+ * Terno design system: shadcn/ui (base-nova, Base UI) re-themed.
  * Token NAMES are shadcn's; only values change, plus a few email tokens
  * (rows, unread, categories). App code must use tokens, never raw colors.
  */
@@ -73,7 +73,7 @@
   --color-foreground: var(--foreground);
   --color-background: var(--background);
 
-  /* Única email tokens */
+  /* Terno email tokens */
   --color-pane: var(--pane);
   --color-row-hover: var(--row-hover);
   --color-row-selected: var(--row-selected);

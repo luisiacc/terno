@@ -1,6 +1,6 @@
 # Storage adapters
 
-Única's backend talks to storage only through `MailStore` (`packages/store/src/mail-store.ts`): async, one atomic unit of work per method, plus a revisioned search feed. Anything that implements it and passes the conformance suite can hold a mailbox; the backend, providers, categorizer and MCP never know which one they got.
+Terno's backend talks to storage only through `MailStore` (`packages/store/src/mail-store.ts`): async, one atomic unit of work per method, plus a revisioned search feed. Anything that implements it and passes the conformance suite can hold a mailbox; the backend, providers, categorizer and MCP never know which one they got.
 
 | Adapter | Package | Where | Search | Notes |
 |---|---|---|---|---|
@@ -14,7 +14,7 @@
 The worker builds a `StoreRegistry` (`packages/store/src/registry.ts`) in `apps/web/src/web/worker/stores.ts`, in preference order. `pick()` decides:
 
 1. **requested**: `?storage=<id>` (e.g. `?storage=idb`). If unavailable, the app shows an error; it never substitutes another adapter.
-2. **pinned**: the adapter the mailbox was created with (the page remembers it per mailbox, `unica:storage:<name>`). Same rule: unavailable is an error.
+2. **pinned**: the adapter the mailbox was created with (the page remembers it per mailbox, `terno:storage:<name>`). Same rule: unavailable is an error.
 3. **existing**: whichever adapter already holds a mailbox of that name.
 4. **default**: the first available adapter marked `automatic`. OPFS SQLite comes first; IndexedDB is the fallback where OPFS sync access handles are missing (it became automatic once it passed conformance and the browser perf gate).
 

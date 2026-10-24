@@ -52,7 +52,7 @@ export function buildRawPortable(p: SendPayload, options: { now?: Date } = {}): 
     `Message-ID: <${oneLine(p.messageId)}>`,
     ...(p.inReplyTo ? [`In-Reply-To: <${oneLine(p.inReplyTo)}>`] : []),
     ...(p.references.length ? [`References: ${p.references.map((r) => `<${oneLine(r)}>`).join(" ")}`] : []),
-    `X-Mailer: ${encodeWord("Única")}`,
+    "X-Mailer: Terno",
     "MIME-Version: 1.0",
     "Content-Type: text/plain; charset=utf-8",
     "Content-Transfer-Encoding: base64",

@@ -6,10 +6,10 @@ test.describe("categories", () => {
     await rows(page).first().dispatchEvent("mousedown");
     await page.keyboard.press("l");
     await expect(page.getByTestId("category-picker").getByRole("combobox")).toBeFocused();
-    await page.keyboard.type("Proyecto Única");
+    await page.keyboard.type("Proyecto Terno");
     await page.getByTestId("create-category").click();
-    await expect(page.getByTestId("sidebar").getByText("Proyecto Única")).toBeVisible();
-    await expect(page.getByTestId("reader").locator("[data-slot=category-badge]", { hasText: "Proyecto Única" })).toBeVisible();
+    await expect(page.getByTestId("sidebar").getByText("Proyecto Terno")).toBeVisible();
+    await expect(page.getByTestId("reader").locator("[data-slot=category-badge]", { hasText: "Proyecto Terno" })).toBeVisible();
   });
 
   test("a category view gathers mail from several accounts", async ({ app: page }) => {

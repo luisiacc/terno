@@ -97,7 +97,7 @@ export function SettingsDialog() {
             <AlertDialogHeader>
               <AlertDialogTitle>¿Desactivar el modo local?</AlertDialogTitle>
               <AlertDialogDescription render={<div />}>
-                <p>Al desactivarlo, Única podrá:</p>
+                <p>Al desactivarlo, Terno podrá:</p>
                 <ul className="mt-2 list-disc space-y-1 pl-5 text-left">
                   <li>usar IA en la nube (Claude, OpenAI y compatibles) con tu propia API key;</li>
                   <li>cargar imágenes remotas de un correo cuando lo pidas.</li>

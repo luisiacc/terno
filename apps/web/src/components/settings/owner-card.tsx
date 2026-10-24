@@ -18,7 +18,7 @@ function verifiedLine(owner: OwnerIdentity): string {
   return owner.verifiedAt ? `${how} · ${dateFmt.format(owner.verifiedAt).replace(".", "")}` : how;
 }
 
-/** Re-verifies another connected mailbox right now and makes it the Única account. */
+/** Re-verifies another connected mailbox right now and makes it the Terno account. */
 function ChangeOwner({ owner, accounts, onDone }: { owner: OwnerIdentity; accounts: Account[]; onDone: () => void }) {
   const candidates = accounts.filter((a) => a.id !== owner.accountId);
   const [accountId, setAccountId] = useState<number | null>(candidates[0]?.id ?? null);
@@ -33,7 +33,7 @@ function ChangeOwner({ owner, accounts, onDone }: { owner: OwnerIdentity; accoun
     try {
       const next = await client.call("identity.changeOwner", { accountId: target.id, password: target.kind === "imap" ? password : undefined });
       setApp({ owner: next });
-      toast.success(`${next.email} es ahora tu cuenta Única`);
+      toast.success(`${next.email} es ahora tu cuenta de Terno`);
       onDone();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
@@ -93,15 +93,15 @@ export function OwnerCard({ owner, demo, accounts }: { owner: OwnerIdentity | nu
   const [changing, setChanging] = useState(false);
   if (demo || !owner) {
     return (
-      <SettingsGroup title="Tu cuenta Única" testId="owner-card">
+      <SettingsGroup title="Tu cuenta de Terno" testId="owner-card">
         <div className="flex items-center gap-3 py-3 text-sm text-muted-foreground">
-          <UserRound className="size-4 shrink-0" /> {demo ? "Modo demo: sin cuenta Única." : "Tu cuenta Única será el primer correo que conectes."}
+          <UserRound className="size-4 shrink-0" /> {demo ? "Modo demo: sin cuenta de Terno." : "Tu cuenta de Terno será el primer correo que conectes."}
         </div>
       </SettingsGroup>
     );
   }
   return (
-    <SettingsGroup title="Tu cuenta Única" testId="owner-card" footer="Se usa para iniciar sesión y para la facturación.">
+    <SettingsGroup title="Tu cuenta de Terno" testId="owner-card" footer="Se usa para iniciar sesión y para la facturación.">
       <div className="flex items-center gap-3 py-2.5">
         <BadgeCheck className="size-4 shrink-0 text-primary" aria-hidden />
         <div className="min-w-0 flex-1">

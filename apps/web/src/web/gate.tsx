@@ -52,8 +52,8 @@ function Screen({ title, body, children, testId }: { title: string; body?: React
 }
 
 const FATAL_TITLE: Record<string, string> = {
-  SCHEMA_NEWER: "Esta pestaña tiene una versión anterior de Única",
-  BUILD_MISMATCH: "Esta pestaña tiene una versión anterior de Única",
+  SCHEMA_NEWER: "Esta pestaña tiene una versión anterior de Terno",
+  BUILD_MISMATCH: "Esta pestaña tiene una versión anterior de Terno",
   UNAVAILABLE: "Este navegador no puede guardar tu correo",
   OPEN_FAILED: "No se pudo abrir tu buzón",
   CRASHED: "El motor de correo se detuvo",
@@ -75,7 +75,7 @@ export function WebGate() {
   }
   if (phase === "elsewhere" || phase === "taking-over") {
     return (
-      <Screen testId="web-elsewhere" title="Única está abierta en otra pestaña" body="Tu buzón solo puede estar abierto en una pestaña a la vez.">
+      <Screen testId="web-elsewhere" title="Terno está abierto en otra pestaña" body="Tu buzón solo puede estar abierto en una pestaña a la vez.">
         <Button data-testid="web-use-here" disabled={phase === "taking-over"} onClick={() => requestTakeover()}>
           {phase === "taking-over" && <Loader2 className="animate-spin" />} Usar aquí
         </Button>
@@ -84,7 +84,7 @@ export function WebGate() {
   }
   if (phase === "taken") {
     return (
-      <Screen testId="web-taken" title="Única se abrió en otra pestaña" body="Esta pestaña ya no tiene tu buzón abierto.">
+      <Screen testId="web-taken" title="Terno se abrió en otra pestaña" body="Esta pestaña ya no tiene tu buzón abierto.">
         <Button data-testid="web-take-back" onClick={takeBack}>
           Usar aquí
         </Button>
@@ -113,7 +113,7 @@ export function WebGate() {
   if (update) {
     return (
       <div className="fixed right-4 bottom-4 z-50 flex items-center gap-3 rounded-lg border border-border bg-popover px-3 py-2 text-sm shadow-lg" data-testid="web-update">
-        Hay una versión nueva de Única
+        Hay una versión nueva de Terno
         <Button size="sm" onClick={update.apply}>
           Recargar
         </Button>

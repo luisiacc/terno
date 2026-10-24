@@ -504,7 +504,7 @@ describe("Gmail on the web (Google's token model, no refresh token)", () => {
     seed(google);
     const account = await client.call("accounts.connectGmailToken", { accessToken: google.issue(), expiresIn: 3600 });
     await backend.syncAccount(account.id);
-    // the hour is up: Google's token expires and Única's copy with it
+    // the hour is up: Google's token expires and Terno's copy with it
     now += 3_700_000;
     google.expireTokens();
     const thread = sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE subject = 'Viaje a Oaxaca'")!.thread_id;

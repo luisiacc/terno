@@ -57,7 +57,7 @@ export async function connectGmail(options: ConnectOptions): Promise<GmailConnec
           reject(new ProviderError(error === "access_denied" ? "Google access was denied" : `Google error: ${error}`, false));
           return;
         }
-        done(true, "Ya puedes volver a Única.");
+        done(true, "Ya puedes volver a Terno.");
         const port = (server!.address() as AddressInfo).port;
         resolve({ code: url.searchParams.get("code") ?? "", redirectUri: `http://127.0.0.1:${port}/callback` });
       });

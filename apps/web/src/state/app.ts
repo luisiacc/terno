@@ -29,7 +29,7 @@ export interface AppState {
   categories: Category[];
   counts: Counts;
   settings: AppSettings | null;
-  /** the person this install belongs to (the Única account); null until the first verified mailbox */
+  /** the person this install belongs to (the Terno account); null until the first verified mailbox */
   owner: OwnerIdentity | null;
   /** demo build: no owner, no first-run */
   demo: boolean;

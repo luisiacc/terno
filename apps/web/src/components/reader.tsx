@@ -137,7 +137,7 @@ function Message({ m, expanded, onToggle }: { m: MessageDetail; expanded: boolea
               <p className="text-sm text-muted-foreground italic">Descargando el contenido…</p>
             )}
             {m.attachments.length > 0 && (
-              // view-only tiles: opening and saving attachments needs content Única doesn't fetch yet
+              // view-only tiles: opening and saving attachments needs content Terno doesn't fetch yet
               <ul aria-label="Adjuntos" className="mt-4 flex flex-wrap gap-2">
                 {m.attachments.map((a) => (
                   <li key={a.id} data-testid="attachment" className="flex h-14 w-[260px] items-center gap-3 rounded-[10px] bg-tint px-2.5">
@@ -224,9 +224,9 @@ function Welcome() {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-6 p-10 text-center" data-testid="reader-empty">
       <div>
-        <div className="mx-auto mb-4 flex size-10 items-center justify-center rounded-xl bg-tint text-lg font-semibold text-muted-foreground">Ú</div>
-        <p className="text-lg font-semibold tracking-tight">Única</p>
-        <p className="mt-1 text-sm text-muted-foreground">El único cliente de email que necesitas</p>
+        <div className="mx-auto mb-4 flex size-10 items-center justify-center rounded-xl bg-tint text-lg font-semibold text-muted-foreground">T</div>
+        <p className="text-lg font-semibold tracking-tight">Terno</p>
+        <p className="mt-1 text-sm text-muted-foreground">Tu correo, hecho a la medida</p>
       </div>
       <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs text-muted-foreground">
         {[
@@ -359,14 +359,14 @@ export function Reader() {
                               <button
                                 type="button"
                                 data-testid="auto-mark"
-                                aria-label={`Única la añadió a ${c.name}: ${auto.reasons.join("; ")}`}
+                                aria-label={`Terno la añadió a ${c.name}: ${auto.reasons.join("; ")}`}
                                 className="rounded-sm bg-foreground/10 px-1 text-[10px] font-medium uppercase focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                               >
                                 auto
                               </button>
                             }
                           />
-                          <Reasons title={`Única la añadió a ${c.name}`} reasons={auto.reasons} hint={`¿No es de ${c.name}? Quítala y aprenderá.`} />
+                          <Reasons title={`Terno la añadió a ${c.name}`} reasons={auto.reasons} hint={`¿No es de ${c.name}? Quítala y aprenderá.`} />
                         </Tooltip>
                       )}
                       <button type="button" aria-label={auto ? `No es ${c.name}` : `Quitar ${c.name}`} className="text-muted-foreground hover:text-foreground" onClick={() => void removeFromCategory(c.id, [t!.id])}>

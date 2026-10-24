@@ -9,7 +9,7 @@
 - The e2e fixture (backend-dev with the seeded mailbox, production renderer build, 1440×900 @2x) driven by a scratch Playwright script: gear → every tab, axe-core on the dialog in light and dark, the accessible name of every control, an ARIA snapshot, a screenshot per tab, then the tab list with the keyboard, Esc, and the palette.
 - The code behind each control, followed to the RPC and both stores: `settings-dialog.tsx`, `settings/*`, `filters-dialog.tsx`, `web/storage-section.tsx`, `packages/backend/src/{settings,handlers,core,agent-socket}.ts`, `AppSettings`/contract in `packages/core/src/rpc/contract.ts`, `packages/db/src/repos.ts`, `packages/idb/src/mail.ts`.
 
-axe (before): General 3 violations (critical `button-name`, critical `label`, serious `aria-toggle-field-name`), IA 1 critical (`button-name`), Agentes 1 serious; the same in dark. No contrast violations in Única light/dark (the other 11 themes weren't covered by any settings check).
+axe (before): General 3 violations (critical `button-name`, critical `label`, serious `aria-toggle-field-name`), IA 1 critical (`button-name`), Agentes 1 serious; the same in dark. No contrast violations in Terno light/dark (the other 11 themes weren't covered by any settings check).
 
 ## 2. Findings
 
@@ -88,7 +88,7 @@ Every tab but General keeps a pre-plan-07 layout (boxed rows, `border-border` di
 
 Shipped in the order of §3, with these departures:
 
-- **Contrast on tint.** The first attempt (commit 5) made `tint` fainter until errors, "saved", links and the ring all read on it; that left Apple's groups white and Única's barely visible. `tint` is plan 07's again; two derived tokens, `destructive-ink` and `success-ink` (stepped to 4.5:1 on background, tint and menus), carry error, destructive and "saved" text in settings, the ring's alpha also reaches 3:1 on tint and the sidebar, and add buttons on tint are ink rather than primary text. 74 pairs per theme now.
+- **Contrast on tint.** The first attempt (commit 5) made `tint` fainter until errors, "saved", links and the ring all read on it; that left Apple's groups white and Terno's barely visible. `tint` is plan 07's again; two derived tokens, `destructive-ink` and `success-ink` (stepped to 4.5:1 on background, tint and menus), carry error, destructive and "saved" text in settings, the ring's alpha also reaches 3:1 on tint and the sidebar, and add buttons on tint are ink rather than primary text. 74 pairs per theme now.
 - **Settings tabs activate on focus** (System Settings' sidebar): ↑/↓ moves and shows.
 - **⌘, works from anywhere**, a draft included (a chord types nothing).
 - **The signature is not written into the draft**: like the quote, it is kept apart (shown under the draft, "-- " plus the account's signature) and joined only when sending, so a restored draft never carries it twice and changing the From account changes it.
@@ -103,4 +103,4 @@ Tests: `pnpm test` 1,327 + 386 (db-wasm), new: account and category conformance 
 
 - **Keyboard shortcuts** (§4).
 - **The desktop storage engine**: one adapter (SQLite in the app's folder); Datos shows export/import only.
-- **The owner on a demo build**: demo installs have no Única account by design.
+- **The owner on a demo build**: demo installs have no Terno account by design.

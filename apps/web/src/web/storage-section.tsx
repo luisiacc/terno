@@ -31,7 +31,7 @@ export function StorageSection() {
           hint={
             state === "granted"
               ? "El navegador no borrará tu buzón para liberar espacio."
-              : "El navegador puede borrar tu buzón si le falta espacio (o, en Safari, tras 7 días sin abrir Única). El correo se vuelve a descargar; tus categorías, filtros, ajustes y envíos pendientes no: expórtalos de vez en cuando."
+              : "El navegador puede borrar tu buzón si le falta espacio (o, en Safari, tras 7 días sin abrir Terno). El correo se vuelve a descargar; tus categorías, filtros, ajustes y envíos pendientes no: expórtalos de vez en cuando."
           }
         >
           {() => (
@@ -41,7 +41,7 @@ export function StorageSection() {
           )}
         </SettingsRow>
       </div>
-      <SettingsRow label="Motor" hint="Dónde guarda Única tu buzón en este navegador. Al cambiar, tus ajustes, categorías, filtros y borradores van contigo; el correo se descarga de nuevo.">
+      <SettingsRow label="Motor" hint="Dónde guarda Terno tu buzón en este navegador. Al cambiar, tus ajustes, categorías, filtros y borradores van contigo; el correo se descarga de nuevo.">
         {({ id: _id, ...a }) => (
           <Select value={storage ?? undefined} onValueChange={(v) => v !== storage && setTarget(v as string)} items={ENGINES.map((e) => ({ ...e }))}>
             <SelectTrigger {...a} size="sm" className="w-40" data-testid="storage-engine">
@@ -62,7 +62,7 @@ export function StorageSection() {
         onOpenChange={(o) => !o && setTarget(null)}
         testId="storage-switch-dialog"
         title={`¿Pasar a ${engineLabel(target)}?`}
-        description={`Única se recarga y abre tu buzón en ${engineLabel(target)}: la primera vez, vacío; vuelve a conectar Gmail y el correo se descarga. Tus ajustes, categorías y filtros van contigo. El buzón de ${engineLabel(storage)} se queda donde está: puedes volver cuando quieras.`}
+        description={`Terno se recarga y abre tu buzón en ${engineLabel(target)}: la primera vez, vacío; vuelve a conectar Gmail y el correo se descarga. Tus ajustes, categorías y filtros van contigo. El buzón de ${engineLabel(storage)} se queda donde está: puedes volver cuando quieras.`}
         confirm={`Pasar a ${engineLabel(target)}`}
         onConfirm={async () => {
           if (!target) return;

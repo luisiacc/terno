@@ -110,7 +110,7 @@ backend utility process
 
 - **Keep FTS5** for persistence, crash safety, `findRuleMatches`, MCP, phrase doclists, and answers while the instant index builds.
 - **Consistency:** triggers on `messages` and `threads` append to `search_outbox` in the **same transaction** as the write. The engine drains the outbox after each commit, so a query never runs ahead of storage. Search runs on the same thread as writes, so read-your-writes is immediate. The snapshot records the outbox `seq` watermark. Startup is: restore snapshot (≤ 25 ms) → replay outbox since watermark → ready. With no snapshot, or a version mismatch, the tiered engine serves FTS5 while a background rebuild runs in ≤ 8 ms slices or a `worker_thread` (about 3.6 s total).
-- **Snapshot:** a portable binary file next to the DB, `unica-search.v1.bin` (header JSON + aligned typed arrays). Write it on idle and quit, at most every 5 minutes or 5k changes. Write to a temp file then rename. A corrupt snapshot is discarded, never trusted.
+- **Snapshot:** a portable binary file next to the DB, `terno-search.v1.bin` (header JSON + aligned typed arrays). Write it on idle and quit, at most every 5 minutes or 5k changes. Write to a temp file then rename. A corrupt snapshot is discarded, never trusted.
 - **Compaction:** once tombstones plus the delta segment exceed 10% of docs, fold them into a new base on idle (≈ 2 s per 51k, chunked).
 
 ## 6. Web architecture

@@ -48,7 +48,7 @@ function serviceWorker(buildId: string): Plugin {
       this.emitFile({
         type: "asset",
         fileName: "manifest.webmanifest",
-        source: JSON.stringify({ name: "Única", short_name: "Única", start_url: "./", display: "standalone", background_color: "#fcfcfb", theme_color: "#fcfcfb", lang: "es" }),
+        source: JSON.stringify({ name: "Terno", short_name: "Terno", start_url: "./", display: "standalone", background_color: "#fcfcfb", theme_color: "#fcfcfb", lang: "es" }),
       });
     },
   };

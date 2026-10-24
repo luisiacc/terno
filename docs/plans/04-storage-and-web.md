@@ -227,7 +227,7 @@ Contract:
 ## 5. Web client
 
 - **Host.** `apps/web/src/worker/backend.worker.ts` picks the store, builds `Backend({ store, platform: webPlatform, providers: webRegistry })`, serves RPC on a `MessagePort` and calls `navigator.storage.persist()`.
-  - It takes the Web Lock `unica-backend`. A second tab offers "Única está abierta en otra pestaña · Usar aquí" (handover via sahpool `pauseVfs`).
+  - It takes the Web Lock `terno-backend`. A second tab offers "Terno está abierto en otra pestaña · Usar aquí" (handover via sahpool `pauseVfs`).
   - `connection.ts` gets a `VITE_TARGET === "web"` branch that reuses `portTransport`.
 - **Browser-safe packages.** core, store, db (minus the node driver), backend (minus `agent-socket`/`transports`) and `mail/gmail` must bundle for the browser.
   - `node:crypto` → `globalThis.crypto`; `node:timers/promises` → `platform.yield`; `Buffer` → core base64url; the OAuth loopback server becomes a per-platform `connectGmail`.
@@ -240,9 +240,9 @@ Contract:
 - **Capability gating** via `bootstrap.platform = { kind, capabilities }`. Off on web: IMAP/SMTP (no TCP), MCP/agents, sync with the tab closed, OS notifications.
   - Secrets use AES-GCM with a **non-extractable** `CryptoKey` in IDB. That protects data at rest and in exports, not against same-origin script, so CSP, Trusted Types and the sandboxed mail iframe are mandatory.
 - **Desktop nudge.** Honest and quiet, never shown during compose:
-  - **Onboarding:** "Única es mucho más rápida en Mac". Primary **Descargar para Mac**, secondary "Seguir en el navegador".
+  - **Onboarding:** "Terno es mucho más rápido en Mac". Primary **Descargar para Mac**, secondary "Seguir en el navegador".
   - **Banner:** one line above the list, dismissible for 7 days, at most once per session.
-  - **Settings → "Única para Mac":** compares IMAP, agents, background sync and speed, using **live numbers from this device** ("tu última búsqueda: 13 ms aquí · ~1 ms en Mac").
+  - **Settings → "Terno para Mac":** compares IMAP, agents, background sync and speed, using **live numbers from this device** ("tu última búsqueda: 13 ms aquí · ~1 ms en Mac").
   - A sidebar pill "Escritorio", and on each gated feature a lock with "Disponible en la app de escritorio".
   - Off macOS, the CTA becomes "Mac por ahora · avísame".
 - **Build/deploy.** `pnpm build:web` (`VITE_TARGET=web`) → static `apps/web/dist-web/`.

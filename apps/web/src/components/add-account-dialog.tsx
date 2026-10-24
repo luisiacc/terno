@@ -84,7 +84,7 @@ export function AddAccountDialog() {
         </DialogHeader>
         {firstOwner && (
           <p className="rounded-lg border border-primary/25 bg-accent/50 px-3 py-2 text-xs text-accent-foreground" data-testid="owner-first-copy">
-            El primer correo que conectes será tu cuenta Única: con él iniciarás sesión y te facturaremos.
+            El primer correo que conectes será tu cuenta de Terno: con él iniciarás sesión y te facturaremos.
           </p>
         )}
         <Button variant="outline" className="h-10 justify-center gap-2" onClick={connectGmail} disabled={busy !== null} data-testid="connect-gmail">

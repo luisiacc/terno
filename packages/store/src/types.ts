@@ -176,7 +176,7 @@ export interface OpRow {
 }
 
 /**
- * The owner is the person this install belongs to (the future "Única account"),
+ * The owner is the person this install belongs to (the future "Terno account"),
  * separate from mailboxes: removing its mailbox only clears account_id.
  */
 export interface OwnerClaim {

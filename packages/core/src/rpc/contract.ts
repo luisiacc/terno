@@ -107,7 +107,7 @@ export interface AppSettings {
   aiCategorize: boolean;
 }
 
-/** The person this install belongs to (the future Única account). Verification evidence stays in the backend. */
+/** The person this install belongs to (the future Terno account). Verification evidence stays in the backend. */
 export interface OwnerIdentity {
   userId: string;
   email: string;
@@ -131,7 +131,7 @@ export interface HostCapabilities {
   agents: boolean;
   /** sync keeps running with the window closed */
   backgroundSync: boolean;
-  /** how local mode is enforced: "pinned" = names resolved and pinned, the renderer fenced by main; "browser" = only literal loopback hosts, no pinning, nothing outside Única's own requests */
+  /** how local mode is enforced: "pinned" = names resolved and pinned, the renderer fenced by main; "browser" = only literal loopback hosts, no pinning, nothing outside Terno's own requests */
   network: "pinned" | "browser";
 }
 
@@ -224,7 +224,7 @@ export interface OpInfo {
 
 export const DRAFT_MODES = ["new", "reply", "replyAll", "forward"] as const;
 export type DraftMode = (typeof DRAFT_MODES)[number];
-/** a recipient of a draft; `auto` = filled in by Única (reply/reply-all/forward), not typed */
+/** a recipient of a draft; `auto` = filled in by Terno (reply/reply-all/forward), not typed */
 export type DraftAddress = z.infer<typeof address> & { auto?: true };
 
 /**

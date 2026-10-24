@@ -2,7 +2,7 @@ import type { Account } from "@terno/core";
 import { client } from "~/rpc/connection";
 import { getApp } from "~/state/app";
 
-/** Google Identity Services' token model: the subset Única uses. */
+/** Google Identity Services' token model: the subset Terno uses. */
 interface TokenResponse {
   access_token: string;
   expires_in: number | string;

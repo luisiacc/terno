@@ -208,7 +208,7 @@ event "categorized": { categoryId, threadIds, by: "auto" }  // coalesced per cat
 - **Siempre:** saves a filter from `filterDraft` scoped to the strongest active chip, then shows "Filtro creado · Editar".
 - **Keys:** `1`–`5` trigger the actions, `z` undoes, `Esc` closes. This needs a new `snackbar` keybinding context.
 
-**Auto notice:** one toast per category per 30 s: "Única añadió 3 conversaciones a Facturas · Ver · Deshacer".
+**Auto notice:** one toast per category per 30 s: "Terno añadió 3 conversaciones a Facturas · Ver · Deshacer".
 
 **Reader:**
 - The header gets a "¿Facturas?" chip that replaces `SuggestionCard`. `y` accepts it. `n` rejects it, which is recorded as a negative with weight 1.

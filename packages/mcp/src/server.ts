@@ -28,7 +28,7 @@ function text(value: unknown) {
 function failure(error: unknown) {
   const message =
     error instanceof RpcError && error.code === "FORBIDDEN"
-      ? "Not allowed: the user has not enabled sending for agents. Create a draft with create_draft instead and ask the user to review and send it in Única."
+      ? "Not allowed: the user has not enabled sending for agents. Create a draft with create_draft instead and ask the user to review and send it in Terno."
       : error instanceof Error
         ? error.message
         : String(error);
@@ -40,7 +40,7 @@ export function createMcpServer(app: AppConnection, version = "0.1.0"): McpServe
     { name: "terno", version },
     {
       instructions:
-        "Única is the user's email client: one access point to all of their connected accounts (Gmail and IMAP). " +
+        "Terno is the user's email client: one access point to all of their connected accounts (Gmail and IMAP). " +
         "Search with Gmail-like operators (from:, to:, subject:, has:attachment, is:unread, in:inbox, account:, category:, before:, after:). " +
         "Never send email unless the user explicitly asked for it; prefer create_draft.",
     },
@@ -218,12 +218,12 @@ export function createMcpServer(app: AppConnection, version = "0.1.0"): McpServe
 
   server.registerTool(
     "create_draft",
-    { title: "Create a draft", description: "Saves a draft in Única for the user to review and send.", inputSchema: compose },
+    { title: "Create a draft", description: "Saves a draft in Terno for the user to review and send.", inputSchema: compose },
     async (a) => {
       try {
         const d = await (await app.get()).call("drafts.save", { accountId: a.accountId, to: a.to, cc: a.cc, subject: a.subject, bodyText: a.body, inReplyToMessageId: a.inReplyToMessageId });
         // a new draft (no id given) is always saved
-        return text({ draftId: d!.id, note: "Draft saved. The user can review it in Única." });
+        return text({ draftId: d!.id, note: "Draft saved. The user can review it in Terno." });
       } catch (e) {
         return failure(e);
       }
@@ -234,7 +234,7 @@ export function createMcpServer(app: AppConnection, version = "0.1.0"): McpServe
     "send_email",
     {
       title: "Send an email",
-      description: "Sends an email immediately. Only works if the user enabled 'Allow agents to send' in Única. Only use when the user explicitly asked to send.",
+      description: "Sends an email immediately. Only works if the user enabled 'Allow agents to send' in Terno. Only use when the user explicitly asked to send.",
       inputSchema: compose,
       annotations: { destructiveHint: true, openWorldHint: true },
     },
@@ -274,7 +274,7 @@ export function createMcpServer(app: AppConnection, version = "0.1.0"): McpServe
         const preview = await client.call("filters.preview", { rule, limit: 5 });
         if (dryRun) return text({ wouldMatch: preview.count, sample: await summarize(preview.sample) });
         const f = await client.call("filters.save", { name, enabled: true, source: "ai", rule });
-        return text({ filterId: f.id, matchesExisting: preview.count, note: "Applies to new mail. The user can apply it to existing mail from Única." });
+        return text({ filterId: f.id, matchesExisting: preview.count, note: "Applies to new mail. The user can apply it to existing mail from Terno." });
       } catch (e) {
         return failure(e);
       }

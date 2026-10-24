@@ -18,7 +18,7 @@ export async function buildRaw(p: SendPayload, options: { keepBcc?: boolean; now
     references: p.references.length ? p.references.map((r) => `<${r}>`).join(" ") : undefined,
     date: now,
     // MailComposer drops the Bcc header by default; the envelope carries Bcc recipients
-    headers: { "X-Mailer": "Única" },
+    headers: { "X-Mailer": "Terno" },
   });
   const node = composer.compile();
   // SMTP carries Bcc in the envelope only; the Gmail API reads recipients from headers, so keep it there.

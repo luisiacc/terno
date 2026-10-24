@@ -44,7 +44,7 @@ export async function boot(): Promise<void> {
       const name = getApp().categories.find((c) => c.id === categoryId)?.name;
       if (!name) return;
       const n = threadIds.length;
-      toast(`Única añadió ${n} ${n === 1 ? "conversación" : "conversaciones"} a ${name}`, {
+      toast(`Terno añadió ${n} ${n === 1 ? "conversación" : "conversaciones"} a ${name}`, {
         id: `auto-${categoryId}`,
         duration: 8000,
         // undoing the engine is a correction: it learns from it

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "\u00danica: el \u00fanico cliente de email que necesitas",
+  "description": "Terno: tu correo, hecho a la medida",
   "scripts": {
     "build": "node scripts/build.mjs",
     "dev": "node scripts/dev.mjs",

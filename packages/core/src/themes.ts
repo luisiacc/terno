@@ -38,7 +38,7 @@ export const THEME_TOKENS = [
   "sidebar-accent-foreground",
   "sidebar-border",
   "sidebar-ring",
-  // Única email tokens
+  // Terno email tokens
   "pane",
   "row-hover",
   "row-selected",

@@ -1,5 +1,5 @@
 /**
- * Seeds a fresh Única database with the deterministic demo mailbox.
+ * Seeds a fresh Terno database with the deterministic demo mailbox.
  *   tsx src/seed.ts --out <dir> [--accounts 8] [--threads 12000]
  * Used by `pnpm dev:desktop:seeded` so the app opens instantly on a full mailbox.
  */

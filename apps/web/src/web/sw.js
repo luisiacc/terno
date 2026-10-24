@@ -1,5 +1,5 @@
 /*
- * Única's service worker (web build only; the build injects the build id and
+ * Terno's service worker (web build only; the build injects the build id and
  * the file list). Same-origin files only:
  * - the page (navigations) is network-first, so a deploy shows up on reload, with the cached shell as the offline fallback;
  * - hashed assets, the backend worker and sqlite3.wasm are cache-first from this build's cache.

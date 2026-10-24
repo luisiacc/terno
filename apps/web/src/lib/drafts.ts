@@ -25,7 +25,7 @@ import { client } from "~/rpc/connection";
 
 export type DraftStatus = "clean" | "dirty" | "saving" | "saved" | "error";
 
-/** Per field, the addresses Única put there (anything else in that field the user typed). */
+/** Per field, the addresses Terno put there (anything else in that field the user typed). */
 export interface AutoRecipients {
   to: string[];
   cc: string[];
@@ -46,7 +46,7 @@ export interface LocalDraft {
   accountId: number;
   threadId: number | null;
   mode: DraftMode;
-  /** recipients as typed (comma-separated); `auto` remembers, per field, which addresses Única filled in there */
+  /** recipients as typed (comma-separated); `auto` remembers, per field, which addresses Terno filled in there */
   toText: string;
   ccText: string;
   bccText: string;
@@ -87,7 +87,7 @@ const drop = (key: string) =>
 
 /**
  * Recipients as typed, for saving: everything, unfinished addresses too
- * ("bob@" must survive a reload), `auto` on the ones Única filled in.
+ * ("bob@" must survive a reload), `auto` on the ones Terno filled in.
  */
 export function recipients(text: string, auto: readonly string[]): DraftAddress[] {
   const autoSet = new Set(auto.map((e) => e.toLowerCase()));
@@ -148,7 +148,7 @@ export function fieldsOf(d: LocalDraft): DraftFields {
   return { accountId, threadId, mode, toText, ccText, bccText, auto, subject, subjectEdited, bodyText, quotedText, includeQuote, inReplyToMessageId, forwardOfMessageId, uiState };
 }
 
-/** Has the user written anything worth keeping? A reply only prefilled by Única isn't saved. */
+/** Has the user written anything worth keeping? A reply only prefilled by Terno isn't saved. */
 export const authored = (d: LocalDraft): boolean => d.localRev > 0 || d.id !== null;
 
 // ───────────────────────────── the writer ─────────────────────────────

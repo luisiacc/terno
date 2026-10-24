@@ -137,7 +137,7 @@ function CategoryItem({ category, stats, index, count, autoMode }: { category: C
                     onOpenChange={setDeleting}
                     testId="category-delete-dialog"
                     title={`¿Borrar ${name}?`}
-                    description="Sus conversaciones siguen en tu correo y en sus otras categorías. Lo que Única aprendió para esta categoría se pierde."
+                    description="Sus conversaciones siguen en tu correo y en sus otras categorías. Lo que Terno aprendió para esta categoría se pierde."
                     confirm="Borrar categoría"
                     onConfirm={async () => {
                       try {
@@ -234,7 +234,7 @@ export function CategoriesTab({ settings, update }: { settings: AppSettings; upd
       <SettingsGroup
         title="Categorías"
         testId="categories-list"
-        footer={settings.autoCategorize === "auto" ? "El interruptor de cada una deja que Única la añada sola cuando está segura." : "Con la categorización en «Automática», cada categoría puede añadirse sola."}
+        footer={settings.autoCategorize === "auto" ? "El interruptor de cada una deja que Terno la añada por su cuenta cuando está seguro." : "Con la categorización en «Automática», cada categoría puede añadirse sola."}
       >
         {categories.map((c, i) => (
           <CategoryItem key={c.id} category={c} stats={stats.find((s) => s.categoryId === c.id)} index={i} count={categories.length} autoMode={settings.autoCategorize === "auto"} />

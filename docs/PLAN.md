@@ -1,10 +1,10 @@
-# Única: technical plan (v1)
+# Terno: technical plan (v1)
 
-> "El único cliente de email que necesitas"
+> "Tu correo, hecho a la medida"
 
-Única is a minimalist, extremely fast desktop email client. It supports unlimited accounts, cross-account categories, AI-built filters, filters learned from user behavior, and agent access for Codex / Claude Code.
+Terno is a minimalist, extremely fast desktop email client. It supports unlimited accounts, cross-account categories, AI-built filters, filters learned from user behavior, and agent access for Codex / Claude Code.
 
-This document is the source of truth for architecture, design system, and technical decisions. §12 records the plan review with Codex. The deliverable of the first implementation session is a **working, measured developer preview**: a real arm64 `.app`, real IMAP/SMTP + Gmail code paths tested against in-process servers and fakes, and performance proven by tests.
+This document is the source of truth for architecture, design system, and technical decisions. §12 records the plan review with Codex; §14 records the rename from Única. The deliverable of the first implementation session is a **working, measured developer preview**: a real arm64 `.app`, real IMAP/SMTP + Gmail code paths tested against in-process servers and fakes, and performance proven by tests.
 
 ---
 
@@ -19,7 +19,7 @@ This document is the source of truth for architecture, design system, and techni
 | Filters | Typed rule DSL (no regex), visual builder with live preview + apply-to-existing. Actions: archive, trash, spam, mark read, star, add category | Scheduling |
 | AI filters | Natural language → structured `FilterRule` → visual builder → preview → save. Providers (plan 05): **local** Ollama, LM Studio and any loopback OpenAI-compatible server; **cloud** Anthropic, OpenAI and OpenAI-compatible APIs (OpenRouter, Groq, Together, Azure, custom) with the user's own keys; **Fake** (tests, demo) | Summaries, smart reply, embeddings / background classify |
 | Local mode | On for new installs: nothing leaves the Mac except mail with the user's servers (and loopback AI). One network policy in the backend, a renderer backstop in main | — |
-| Owner identity | The first verified mailbox becomes the owner ("tu cuenta Única"), separate from mailboxes; change requires live re-verification | Cloud sign-in, billing |
+| Owner identity | The first verified mailbox becomes the owner ("tu cuenta de Terno"), separate from mailboxes; change requires live re-verification | Cloud sign-in, billing |
 | Learned filters | From **explicit user actions only** (automated filter actions are excluded): sender/List-Id/domain → proposed rules accepted in one click | ML ranking |
 | Agents | **MCP stdio server** (tools over a local socket to the running app) + **SKILL.md** | Remote MCP, headless mode, JSON CLI |
 | Platform | macOS arm64 `.app` + `.dmg`, ad-hoc signed. **Web** (plans 03/04 steps 8–10): the same renderer as a static site, the backend in a dedicated worker on SQLite-WASM/OPFS or IndexedDB; Gmail only (IMAP/SMTP, MCP and background sync need the Mac app) | Notarization, Win/Linux, mobile (Expo reusing `core`), WebKit/Firefox validation |
@@ -37,10 +37,10 @@ This document is the source of truth for architecture, design system, and techni
 │ Renderer (React 19, sandboxed) ◀── MessagePort, typed RPC ──▶ backend          │
 └─────────────────────────────────────────────────────────────────────────────────┘
   apps/backend-dev: same backend over WebSocket (dev-in-browser + Playwright)
-  unica-mcp (stdio, ELECTRON_RUN_AS_NODE) ── unix socket ──▶ backend (app must run)
+  terno-mcp (stdio, ELECTRON_RUN_AS_NODE) ── unix socket ──▶ backend (app must run)
 
   Web (VITE_TARGET=web, static site): page ── MessagePort ──▶ dedicated worker (the tab holding Web Lock
-  `unica-backend`): BackendCore → StoreRegistry → SqlMailStore on SQLite-WASM (opfs-sahpool) | IdbMailStore
+  `terno-backend`): BackendCore → StoreRegistry → SqlMailStore on SQLite-WASM (opfs-sahpool) | IdbMailStore
 ```
 
 6. **Web host** (`apps/web/src/web`): `BackendCore` (`@terno/backend/portable`, the class desktop's `Backend` extends with Node defaults) runs in a dedicated worker. One tab leads by Web Lock; takeover asks the leader to close the store and pause the VFS before the lock passes. The adapter a mailbox was created with is pinned; an open error, a newer schema or a build mismatch is a screen, never a fallback to an empty store. A service worker precaches one build (shell, worker, `sqlite3.wasm`). The network policy has a browser mode (no DNS: only literal loopback counts as local, nothing pinned, vetted requests refuse redirects). Secrets: AES-GCM under a non-extractable key in IndexedDB. Gmail: Google Identity Services' token model with the user's client ID, tokens in worker memory only. The renderer gates features on `bootstrap.host` (IMAP, agents, background sync, how local mode is enforced). The desktop bundle contains none of it (compile-time target, build guard).
@@ -179,7 +179,7 @@ Sidebar counts are computed with `count(*)` over partial indexes (measured; no t
 ## 8. Agent integration (decision: MCP primary + SKILL)
 
 - MCP works identically in Claude Code and Codex with typed tools. The SKILL.md teaches Claude Code the query syntax, safety rules (never send without explicit confirmation), and workflows.
-- `unica-mcp` is a standalone CJS bundle in `extraResources` plus a wrapper script `Contents/Resources/bin/unica-mcp` that runs `ELECTRON_RUN_AS_NODE=1 "<app binary>" "<resources>/mcp/unica-mcp.cjs"`. The RunAsNode fuse stays enabled, paths are quoted, and stdout carries only protocol output.
+- `terno-mcp` is a standalone CJS bundle in `extraResources` plus a wrapper script `Contents/Resources/bin/terno-mcp` that runs `ELECTRON_RUN_AS_NODE=1 "<app binary>" "<resources>/mcp/terno-mcp.cjs"`. The RunAsNode fuse stays enabled, paths are quoted, and stdout carries only protocol output.
 - It connects to the running app's backend via a unix socket in `userData` with a token file (0600). The backend stays the sole writer. If the app isn't running, tools return a clear error.
 - Tools: `list_accounts`, `search_emails`, `get_thread`, `list_categories`, `add_to_category`, `archive_threads`, `trash_threads`, `mark_read`, `create_draft`, `send_email` (only if "allow agents to send" is on; otherwise it fails with guidance), `list_filters`, `create_filter`.
 - Settings → Agents shows copy-paste setup commands for Claude Code and Codex.
@@ -191,10 +191,10 @@ Base: **shadcn/ui, Base UI flavor** (the current shadcn default), Tailwind v4 CS
 **Personality:** calm, paper-like, typographic, quiet chrome, content first (Superhuman speed, Apple Mail restraint, Linear precision). Plan 07 refreshed it: mail is never boxed (hairlines and faint surface shifts), chrome is quiet, and replies and new messages are written in place.
 
 - **Type:** SF (the system font) on macOS, desktop and web; Geist Variable elsewhere (bundled offline); Geist Mono only for kbd and code. Scale 11/12/13/14/15/17/20, weights 400/500/600, tighter tracking at 15+ px, tabular numbers for dates and counts.
-- **Themes** (plan 01): mode `system | light | dark` plus a named theme per mode — Única, Apple, Solarized, Gruvbox, GitHub, Catppuccin Latte (light); Única, Dracula, Monokai, Tokyo Night, Gruvbox, Nord, Catppuccin Mocha (dark) — and custom JSON themes. The typed registry in `packages/ui/src/themes` is the source of truth; `themes.generated.css` (one `[data-theme]` block each) is generated from it and checked in. Every theme passes WCAG AA in a test. The values below are the Única themes.
+- **Themes** (plan 01): mode `system | light | dark` plus a named theme per mode — Terno, Apple, Solarized, Gruvbox, GitHub, Catppuccin Latte (light); Terno, Dracula, Monokai, Tokyo Night, Gruvbox, Nord, Catppuccin Mocha (dark) — and custom JSON themes. The typed registry in `packages/ui/src/themes` is the source of truth; `themes.generated.css` (one `[data-theme]` block each) is generated from it and checked in. Every theme passes WCAG AA in a test. The values below are the Terno themes.
 - **Light:** paper neutrals (hue 85, chroma ≤ .006).
   - background `oklch(.99 .002 85)`, sidebar `oklch(.965 .004 85 / .82)`, foreground `oklch(.22 .01 265)`, muted-fg `oklch(.52 .01 265)`, border `oklch(.91 .004 85)`.
-  - Accent "Única indigo" `oklch(.56 .19 268)`. Destructive `oklch(.58 .21 25)`.
+  - Accent "Terno indigo" `oklch(.56 .19 268)`. Destructive `oklch(.58 .21 25)`.
 - **Dark:** background `oklch(.17 .006 265)`, sidebar `oklch(.2 .006 265 / .78)`, foreground `oklch(.95 .004 85)`, accent `oklch(.7 .16 268)`.
 - **Interaction tokens:** `--row-hover`, `--row-selected`, `--row-selected-fg`, `--row-selected-rail`, `--unread`, `--focus-ring`. Contrast checked (AA) in a test.
 - **Plan 07 tokens (derived for every theme, custom ones included):** `hairline` (separators), `tint` (faint surfaces: search, remote-content row, attachment tiles, drafts), `highlight` (inset top light on raised controls), `draft-foreground` (the «Borrador» label, stepped until it reads on selected rows), `sidebar-glyph`, `popover-glass` (menus as translucent as their text allows over black and white; often solid). 63 contrast pairs per theme, checked as drawn.
@@ -233,7 +233,7 @@ Base: **shadcn/ui, Base UI flavor** (the current shadcn default), Tailwind v4 CS
 8. **UI perf (Playwright, test build with a render probe):** j-key handler→commit p95 and keypress→next-frame p95 (target ≤ 16 ms) over 300 consecutive moves, with no animation started; keystroke→results-rendered p95 ≤ 100 ms; DOM rows bounded; theme switch → painted ≤ 50 ms with zero row renders; drag start ≤ 16 ms, pointermove handler ≤ 2 ms, zero row renders during a drag, ≤ 2 NavItem renders per target change, drop → dot ≤ 16 ms.
    - **Themes and motion:** WCAG AA for 49 token pairs in every theme; the generated CSS matches the registry (and ≤ 8 KB gzip); a scan rejects literal colors, literal durations and translucent text in app code; custom-theme schema incl. CSS-injection cases; theme.js in a `node:vm` sandbox; `themes.spec` / `motion.spec` / `dnd.spec` and a visual baseline per theme.
 9. **Web** (`apps/web/playwright.web.config.ts`): `web` (OPFS boot, repeat visit, takeover/handover, open errors never swap the mailbox, offline via the service worker, gating, the nudge, Gmail through Google's flow with routes, `?storage=idb`), `web-conformance` (the store suite on OPFS SQLite and on IndexedDB, and the engine suite, inside a Chromium worker), `web-perf` (plan 04 §8 budgets at 10k/50k messages on real OPFS, per adapter, instant and durable paths). In Node: project `db-wasm` (the whole db suite on SQLite-WASM) and the store suite on fake-indexeddb.
-10. **Electron smoke on the packaged arm64 app, copied outside the repo:** launches, utility process alive, demo seed renders, search works, thread opens, `unica-mcp` answers `list_accounts`; in local mode main cancels a remote `<img>`; `codesign --verify` passes.
+10. **Electron smoke on the packaged arm64 app, copied outside the repo:** launches, utility process alive, demo seed renders, search works, thread opens, `terno-mcp` answers `list_accounts`; in local mode main cancels a remote `<img>`; `codesign --verify` passes.
 
 ## 12. Plan review with Codex: outcome
 
@@ -323,3 +323,18 @@ All were fixed with regression tests. One fix (superseding ops) introduced a qua
 9. `ai` + `mcp` + SKILL
 10. Playwright e2e/visual/UI-perf + packaged Electron smoke
 11. Codex review rounds → fixes
+
+## 14. Rename: Única → Terno
+
+The app was called **Única** (tagline "El único cliente de email que necesitas"). It is **Terno** now: the bundle `Terno.app` (`dev.terno.mail`, one ASCII name everywhere, so the old CFBundleDisplayName workaround for "Ú" is gone), packages `@terno/*`, `TERNO_*` variables, `window.ternoDesktop`, `terno-mcp`, `terno.db`, `~/Library/Application Support/Terno`, `terno:*` storage keys, the default themes `terno-light`/`terno-dark`. Nothing inside the SQLite schema named the app, so there is no schema migration. What existing installs carry over, once and without user action:
+
+- **Variables.** For one release a `UNICA_X` variable is read as `TERNO_X` when that isn't set, with a deprecation warning (`@terno/core/legacy-env`, also in `dev.mjs`).
+- **Desktop profile** (`apps/desktop/src/legacy-profile.ts`, run by `profile.ts` before anything opens the profile): `<appData>/Terno` takes over `<appData>/Unica`, and `dev.mjs` renames `Unica-dev-seeded`/`Unica-dev-demo` to their `Terno-dev-*` names. Always a rename, never a copy, never over an existing Terno profile, and refused (with a dialog) while Única still holds the old profile open (a live `SingletonLock`). `unica.db` and its `-wal`/`-shm`/`-journal`/`.search` sidecars become `terno.db`, sidecars first so an interrupted rename finishes cleanly. An explicit `TERNO_USER_DATA` path is used as is (only the database files inside are renamed).
+- **Keychain secrets** (`apps/desktop/src/keychain-helper.ts`, `packages/backend/src/keychain.ts`). Electron's safeStorage keeps its key in a keychain item named after the app, fixed at startup: service "`<name>` Safe Storage", account "`<name>` Key" (checked against Electron 45 with a throwaway name). Blobs sealed as "Única" don't open as "Terno". The chosen approach is a **one-shot helper**: main launches its own executable with `--terno-legacy-keychain` under the old name (scratch `userData`, no window, no dock icon), writes the sealed blobs to its stdin and reads the plaintexts from its stdout, a pipe only main holds. The backend seals each plaintext again under Terno's item and replaces a blob only after the new one opens to the same text and only if nothing rewrote it meanwhile; a plaintext that couldn't be text (what a wrong key can yield past the CBC padding check) is refused. Nothing is deleted, not even the old keychain item. On a packaged app macOS may first ask whether Terno may use "Única Safe Storage" (the helper waits up to two minutes).
+  - **Fallback**, for whatever can't be opened (access denied, the old item gone): the blob stays as it was and is recorded as pending by fingerprint in `settings["secrets.keychain"]`, and the next start retries it. Until then `getSecret` throws `SecretUnreadableError`: an IMAP password or Gmail token makes the account's sync fail as a sign-in to redo, with what to do in Ajustes → Cuentas ("Cambiar contraseña…", "Conectar con Google"); the AI key and the Google client secret show "Terno no pudo abrir … que guardó Única" with the field to save them again. Saving a secret again, by any path, clears it. Never a crash, never a silent drop.
+  - Tests: `keychain.test.ts` (two fake keychains: migration, fresh installs, refusal, partial and implausible results, verification failure, retries) and `apps/desktop/e2e/migration.smoke.ts`, which runs the whole upgrade on the packaged app with throwaway keychain items (`TERNO_TEST_APP_NAME`, `TERNO_TEST_LEGACY_APP_NAME`) and deletes them afterwards, including the fallback without the old item.
+- **Renderer storage on desktop.** The renderer moved from `app://unica` to `app://terno`; once per profile a hidden window copies the old origin's localStorage over (without overwriting) and clears it only after every key reads back.
+- **Web** (`apps/web/src/web/worker/legacy-storage.ts`, in the worker of the tab holding the mailbox, before anything opens it): every `unica-*` IndexedDB database (the key store `unica-keys` first, so the same non-extractable CryptoKey keeps opening what it sealed; the mailboxes, the default "unica" becoming "terno") is copied whole and checked store by store, then deleted; every database in OPFS `.unica-sahpool` is exported, imported into `.terno-sahpool` and compared byte for byte, then unlinked; the caches in `unica-files` move to `terno-files`. `theme.js` renames `unica:*` localStorage/sessionStorage keys before anything reads them. A name present under both is left alone (Terno's wins); a failure deletes nothing and is an open error, never an empty mailbox. For one release the leader also holds Única's Web Lock (`unica-backend`) and listens on its channel (`unica-tabs`), so a tab of the older build keeps the mailbox until it hands it over and is told to reload.
+- **Settings and files.** Theme ids saved as `unica-light`/`unica-dark` (settings, custom themes' `extends`, the cached appearance) read as their Terno successors; exports written as `unica-export` still import.
+- **Agents.** Existing MCP setups point at `/Applications/Unica.app/…/unica-mcp`: re-add them with the commands in Ajustes → Agentes (`claude mcp add terno …`, `[mcp_servers.terno]`) and copy the skill to `~/.claude/skills/terno`.
+

@@ -91,7 +91,7 @@ export function AgentsTab({ settings, update }: { settings: AppSettings; update:
   const mcp = agent?.mcpCommand ?? "/Applications/Terno.app/Contents/Resources/bin/terno-mcp";
   return (
     <div data-testid="agents-tab">
-      <SettingsGroup title="Conectar" footer="Claude Code o Codex llegan a todas tus cuentas por MCP mientras Única está abierta.">
+      <SettingsGroup title="Conectar" footer="Claude Code o Codex llegan a todas tus cuentas por MCP mientras Terno está abierto.">
         <SettingsRow stacked label="Claude Code">
           {() => <CopyBlock testId="mcp-claude" label="comando de Claude Code" text={`claude mcp add terno -- "${mcp}"`} />}
         </SettingsRow>

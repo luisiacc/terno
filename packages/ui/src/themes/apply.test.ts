@@ -48,7 +48,7 @@ describe("opaqueBackground", () => {
     const glassy = resolveCustomTheme({ id: "glass", name: "Glass", mode: "light", extends: "github-light", tokens: { background: "#aabbcc80" } });
     const out = opaqueBackground(glassy);
     expect(out).toMatch(/^#[0-9a-f]{6}$/);
-    // half #aabbcc over Única claro's paper (≈ #fcfcfa)
+    // half #aabbcc over Terno claro's paper (≈ #fcfcfa)
     expect(out).toBe("#d3dbe3");
   });
 });

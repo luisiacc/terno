@@ -110,7 +110,7 @@ export function GeneralTab({ settings, update, onLocalOff }: { settings: AppSett
           label="Modo local"
           hint={
             WEB
-              ? "Única solo se conecta con Google (tu correo) y con IA de este equipo (localhost). En el navegador no puede fijar direcciones DNS ni controlar otras pestañas o extensiones."
+              ? "Terno solo se conecta con Google (tu correo) y con IA de este equipo (localhost). En el navegador no puede fijar direcciones DNS ni controlar otras pestañas o extensiones."
               : "Nada sale de este Mac salvo el correo con tus servidores. La IA solo puede usar modelos de este Mac."
           }
         >
@@ -155,7 +155,7 @@ export function GeneralTab({ settings, update, onLocalOff }: { settings: AppSett
       </SettingsGroup>
 
       <SettingsGroup title="Teclado">
-        <SettingsRow label="Atajos de teclado" hint="Única se usa entera con el teclado. También con ?, en cualquier momento.">
+        <SettingsRow label="Atajos de teclado" hint="Terno se usa entero con el teclado. También con ?, en cualquier momento.">
           {({ id: _id, "aria-labelledby": _l, ...a }) => (
             <Button {...a} variant="outline" size="sm" data-testid="open-shortcuts" onClick={() => setApp({ dialog: "shortcuts" })}>
               <Keyboard /> Ver atajos

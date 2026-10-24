@@ -239,11 +239,11 @@ export interface OwnerIdentity { userId: string; email: string; displayName: str
 None of these are available to MCP. Evidence details stay in the backend.
 
 ### UI
-- **Cuentas tab, top card:** "Tu cuenta Única: x@y.com — se usa para iniciar sesión y para la facturación. Verificada con Google · 22 oct 2026 · [Cambiar…]".
-  - With no owner: "Tu cuenta Única será el primer correo que conectes."
-  - In demo mode: "Modo demo: sin cuenta Única."
-- **Removing the owner's mailbox:** the confirm says "Seguirá siendo tu cuenta Única; cámbiala en Cambiar…".
-- **Add-account dialog** (only while there is no owner): "El primer correo que conectes será tu cuenta Única: con él iniciarás sesión y te facturaremos."
+- **Cuentas tab, top card:** "Tu cuenta de Terno: x@y.com — se usa para iniciar sesión y para la facturación. Verificada con Google · 22 oct 2026 · [Cambiar…]".
+  - With no owner: "Tu cuenta de Terno será el primer correo que conectes."
+  - In demo mode: "Modo demo: sin cuenta de Terno."
+- **Removing the owner's mailbox:** the confirm says "Seguirá siendo tu cuenta de Terno; cámbiala en Cambiar…".
+- **Add-account dialog** (only while there is no owner): "El primer correo que conectes será tu cuenta de Terno: con él iniciarás sesión y te facturaremos."
 - **First run** (fresh install, no accounts, not demo) has two steps: (1) Local vs Connected, (2) Add account, with the owner copy.
 - The **web client** later uses the same RPC. On a hosted backend, local mode shows as "solo en escritorio".
 

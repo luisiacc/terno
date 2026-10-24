@@ -19,7 +19,7 @@ Status: implemented (see "Implementation notes" at the end) · Scope: `packages/
 | Theme selector | `html.dark` (mode, kept for shadcn `dark:` variants) + `data-theme` + `color-scheme`. Selectors are `[data-theme=…]`, not `:root[…]`, so preview cards can nest a theme. | Theme as a class name (collides with utilities). |
 | Category & avatar colors | Each theme redefines all 8 `--cat-*` values. Badge and avatar text uses `--cat-*-ink = color-mix(in oklch, cat 60%, var(--ink-anchor))`, which passes 4.5:1 in every theme (verified). | 8 extra hand-tuned tokens × 13 themes. |
 | HTML mail | `htmlMailAppearance: "auto" | "paper"`. In auto mode, mail without its own colors gets the theme's bg/fg/link. Mail that sets colors renders on a light `--mail-paper` card, so designed mail is never inverted. | Always white (jarring in dark themes). CSS inversion (breaks logos). |
-| Electron chrome | IPC `unica:appearance` sets `nativeTheme.themeSource`, vibrancy on/off and the window bg hex, persisted in `userData/appearance.json` for the next window. | Leave main theme-agnostic (today the vibrancy is light when the app is dark on a light OS). |
+| Electron chrome | IPC `terno:appearance` sets `nativeTheme.themeSource`, vibrancy on/off and the window bg hex, persisted in `userData/appearance.json` for the next window. | Leave main theme-agnostic (today the vibrancy is light when the app is dark on a light OS). |
 
 ## 3. Settings and data model
 
@@ -27,8 +27,8 @@ Status: implemented (see "Implementation notes" at the end) · Scope: `packages/
 
 ```ts
 theme: "system" | "light" | "dark";        // unchanged name = MODE (no migration)
-lightTheme: string;                        // default "unica-light"
-darkTheme: string;                         // default "unica-dark"
+lightTheme: string;                        // default "terno-light"
+darkTheme: string;                         // default "terno-dark"
 motionMs: 0 | 50 | 75 | 100;               // default 75; zod: z.union of literals
 htmlMailAppearance: "auto" | "paper";      // default "auto"
 customThemes: CustomTheme[];               // default [], max 20, ≤16 KB total
@@ -40,7 +40,7 @@ customThemes: CustomTheme[];               // default [], max 20, ≤16 KB total
 Migration:
 - **DB:** none needed. `readSettings` already spreads `DEFAULT_SETTINGS` over the stored blob, so the new fields take their defaults.
 - **Unknown or deleted theme ids:** the renderer's `resolveTheme()` falls back to the mode default.
-- **localStorage:** `unica:theme` becomes `unica:appearance = {mode, light, dark, motion, vibrancy, custom?: tokens}`. theme.js converts the old key once.
+- **localStorage:** `terno:theme` becomes `terno:appearance = {mode, light, dark, motion, vibrancy, custom?: tokens}`. theme.js converts the old key once.
 
 ## 4. File-by-file changes
 
@@ -54,7 +54,7 @@ Migration:
 - `src/themes/generate.ts` and the script `gen:themes` → `src/styles/themes.generated.css`.
 - `src/themes/apply.ts`: `motionVars(ms)` and `applyCustomTheme(sheet, theme)` (CSSOM).
 - `styles/globals.css`:
-  - import the generated CSS and drop the hand-written `:root`/`.dark` values (`:root` keeps the unica-light fallback)
+  - import the generated CSS and drop the hand-written `:root`/`.dark` values (`:root` keeps the terno-light fallback)
   - `--font-sans: var(--theme-font, "Geist Variable", …)`
   - `--color-overlay`, `--color-cat-*-ink`, `--color-drop-target: color-mix(in oklch, var(--primary) 16%, transparent)`
   - shadow overrides `--shadow-{sm,md,lg,2xl}` using `var(--shadow-color)`
@@ -78,7 +78,7 @@ Migration:
 **apps/desktop**
 - `preload.ts`: `setAppearance({themeSource, background, vibrancy})`.
 - `main.ts`:
-  - validated `ipcMain.on("unica:appearance")` → `nativeTheme.themeSource`, `win.setVibrancy`, `win.setBackgroundColor`, and a debounced write of `appearance.json`
+  - validated `ipcMain.on("terno:appearance")` → `nativeTheme.themeSource`, `win.setVibrancy`, `win.setBackgroundColor`, and a debounced write of `appearance.json`
   - `createWindow` reads that file for its initial `backgroundColor`/`vibrancy`.
 
 **apps/web**
@@ -118,12 +118,12 @@ Each theme declares the tokens below. Values marked AA-adjusted were nudged in l
 - `mail-ink` .24 .01 265, `mail-link` .5 .18 265
 - `sidebar-translucent` = sidebar at alpha .72 (light) / .62 (dark).
 
-**Vibrancy** is on for `unica-*` and `apple-light` and off for every other theme (named palettes must render exactly). `apple-light` also sets `--theme-font: -apple-system, BlinkMacSystemFont, system-ui`.
+**Vibrancy** is on for `terno-*` and `apple-light` and off for every other theme (named palettes must render exactly). `apple-light` also sets `--theme-font: -apple-system, BlinkMacSystemFont, system-ui`.
 
 Cat order in the tables: rose, amber, lime, emerald, cyan, indigo, violet, slate.
 
 ```
-unica-light "Única claro" (AA-adjusted: success .6→.54, star .78→.665, cats amber/lime/emerald/cyan to ≥3:1)
+terno-light "Terno claro" (AA-adjusted: success .6→.54, star .78→.665, cats amber/lime/emerald/cyan to ≥3:1)
   bg .99 .002 85; fg .22 .01 265; pane .99 .002 85; card 1 0 0; popover 1 0 0; sidebar .965 .004 85
   muted .955 .004 85; muted-fg .5 .012 265; accent .945 .012 268; accent-fg .3 .06 268; border .91 .004 85; input .89 .005 85
   primary .56 .19 268; primary-fg .99 .004 268; destructive .58 .21 25; success .54 .13 160; unread .56 .19 268; star .665 .16 80
@@ -159,7 +159,7 @@ catppuccin-latte "Catppuccin Latte"
   primary .555 .25 297; primary-fg .958 .006 265; destructive .55 .216 20; success .52 .177 140; unread .555 .25 297; star .644 .149 68
   row-hover .933 .009 265; row-selected .899 .043 299; row-selected-fg .435 .043 279; sidebar-accent .906 .012 265
   cats .55 .216 20 | .657 .204 42 | .644 .149 68 | .62 .177 140 | .627 .145 235 | .559 .226 262 | .555 .25 297 | .601 .03 279
-unica-dark "Única oscuro" (unchanged)
+terno-dark "Terno oscuro" (unchanged)
   bg .17 .006 265; fg .95 .004 85; pane .17 .006 265; card .2 .006 265; popover .21 .007 265; sidebar .2 .006 265
   muted .24 .007 265; muted-fg .68 .01 265; accent .27 .03 268; accent-fg .92 .03 268; border 1 0 0 / 9%; input 1 0 0 / 13%
   primary .7 .16 268; primary-fg .16 .03 268; destructive .68 .19 22; success .72 .13 160; unread .72 .15 268; star .82 .15 85
@@ -274,7 +274,7 @@ Easing is `cubic-bezier(.2,.8,.2,1)`, and exits always use fast. `data-motion=of
 - `ui/themes/no-hardcoded.test.ts`: greps `apps/web/src` and `packages/ui/src` for hex/`rgb(`/`oklch(` in tsx, `bg|text-(white|black)`, `duration-\d`, `delay-\d`, and `text-(foreground|sidebar-foreground)/\d`.
 - `core/themes.test.ts`: the schema accepts valid themes and rejects `red;}body{…}`, `url(`, `var(`, unknown tokens and >20 themes. `extends` resolves to a full map.
 - `backend/settings.test.ts`: every new field round-trips; a legacy `{theme:"dark"}` blob gets the defaults; `motionMs: 60` is rejected; a dangling custom id falls back.
-- `web/public/theme.test.ts`: runs `theme.js` in `node:vm` with fake localStorage/matchMedia and checks the attributes, the migration from `unica:theme`, and that reduced motion turns motion off.
+- `web/public/theme.test.ts`: runs `theme.js` in `node:vm` with fake localStorage/matchMedia and checks the attributes, the migration from `terno:theme`, and that reduced motion turns motion off.
 - `web/lib/drag.test.ts`: payload order, hit-test, `newIds` (already-member exclusion), optimistic counts, motion vars (75 → 50/75/100; 100 → 66/100/100; 0 → 0).
 
 **Playwright** (motion specs use `test.use({reducedMotion:"no-preference"})`)
@@ -298,7 +298,7 @@ Easing is `cubic-bezier(.2,.8,.2,1)`, and exits always use fast. `data-motion=of
 - **Visual:**
   - `inbox-<theme>.png` for all 13 themes (DSF 1 to keep baselines small)
   - Apariencia tab in light and dark
-  - mid-drag (ghost and highlighted target) in unica-light and dracula.
+  - mid-drag (ghost and highlighted target) in terno-light and dracula.
 
 **Performance** (`perf.spec.ts`, production build with `VITE_RENDER_PROBE=1`, all p95)
 
@@ -355,7 +355,7 @@ Where the implementation departs from the proposal above, and why:
 - **Move** (`categories.moveThreads`; exclusive since plan 06: removed from every other category, journaled per category in migration v8, applied and undone in slices since its review): the memberships flip in one set-based transaction (added to the target, removed from the current category), which also journals what it overwrites in `cat_move_*` (migration v5: source rows with origin and batch, both categories' examples, decision outcomes). The per-thread training (a positive in the target, a removal example in the source) follows in time slices with per-thread progress, resumed at start after a crash. `categorize.undo` on a move flips memberships and decision outcomes back in one transaction and restores the examples in slices, so an earlier batch's undo still works. Measured on the 20k-thread / ~50k-message perf mailbox with the maximum selection (5,000): longest event-loop stall ~41 ms for the move and ~35 ms for its undo, a concurrent `threads.list` p95 ~0.6 ms (asserted ≤ 50 / ≤ 20 ms). Journals of moves older than a day are pruned (those moves can no longer be undone). The snackbar says «Movido a …», closes only after a successful undo and offers «Reintentar» on failure.
 - **Badge inks are derived tokens**, not `color-mix(in oklch, …)` in CSS: mixing with a near-neutral anchor in oklch rotates the hue (the anchor's hue is interpolated), and Chromium's handling of powerless hues isn't something a test can mirror. `derive()` mixes in OKLab (60/40 toward the ink anchor, more only if 4.5:1 on the 15% tint over bg, card and popover needs it) and writes `--cat-*-ink` per theme. Avatars use the same inks on a 15% tint.
 - **Two more contrast pairs**: `mail-ink` and `mail-link` on `mail-paper` (49 pairs per theme).
-- **Custom themes never use vibrancy** (their colors render exactly), are applied with CSSOM `setProperty` (preview cards through React's style object), and theme.js re-validates cached tokens with the same numbers-only grammar before applying them. The cache is `unica:appearance = {mode, light, dark, motion, vibrancy: {light, dark}, custom?: {light|dark: {base, tokens}}}`.
+- **Custom themes never use vibrancy** (their colors render exactly), are applied with CSSOM `setProperty` (preview cards through React's style object), and theme.js re-validates cached tokens with the same numbers-only grammar before applying them. The cache is `terno:appearance = {mode, light, dark, motion, vibrancy: {light, dark}, custom?: {light|dark: {base, tokens}}}`.
 - **HTML mail**: "mail that sets colors" is read from the sanitized HTML parsed in an inert document: color attributes or a `color`/`background` declaration in any element's CSSStyleDeclaration (`lib/mail.ts`). The CSP is untouched, so local mode keeps the strict policy.
 - **Mode** moved from Ajustes → General to the new Apariencia tab.
 - **Row removal**: virtualized rows unmount at once, so the leaving rows fade as detached copies while `data-reflow` lets the rest slide up for one slow window; archive and trash use it too.

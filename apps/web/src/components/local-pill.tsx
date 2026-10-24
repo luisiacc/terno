@@ -12,7 +12,7 @@ export function LocalPill() {
   const label = localMode ? "Local" : `IA: ${providerName(cloudAi!)} (nube)`;
   const tip = localMode
     ? import.meta.env.VITE_TARGET === "web"
-      ? "Única solo se conecta con Google (tu correo) y con IA de este equipo"
+      ? "Terno solo se conecta con Google (tu correo) y con IA de este equipo"
       : "Nada sale de este Mac salvo el correo con tus servidores"
     : "La IA usa un servicio en la nube. Ajustes → General para activar el modo local.";
   return (

@@ -24,7 +24,7 @@ export function quoteFor(mode: Exclude<DraftMode, "new">, detail: ThreadDetail):
   return `El ${date(last.date)}, ${last.from.name || last.from.email} escribió:\n${text.split("\n").map((l) => `> ${l}`).join("\n")}`;
 }
 
-/** Who a reply goes to (auto: Única filled them in): the sender, plus everyone else on reply-all, never me. */
+/** Who a reply goes to (auto: Terno filled them in): the sender, plus everyone else on reply-all, never me. */
 export function autoRecipients(mode: Exclude<DraftMode, "new">, detail: ThreadDetail, me: string): { to: Address[]; cc: Address[] } {
   if (mode === "forward") return { to: [], cc: [] };
   const last = answered(detail);
@@ -73,13 +73,13 @@ export function newFields(accountId: number): DraftFields {
 /**
  * A draft turned into another mode (r → a, a → f, …), keeping what the user
  * wrote: the body, every recipient they typed, and a subject they edited.
- * Only what Única filled in (auto recipients, subject, quote, threading) is
+ * Only what Terno filled in (auto recipients, subject, quote, threading) is
  * recomputed for the new mode.
  */
 export function convertFields(d: DraftFields, mode: Exclude<DraftMode, "new">, detail: ThreadDetail, account: Account): DraftFields {
   const fresh = replyFields(mode, detail, account);
   const lower = (e: string) => e.toLowerCase();
-  // what the user typed, field by field (Única's own entries in that field excluded)
+  // what the user typed, field by field (Terno's own entries in that field excluded)
   const typed = (text: string, auto: readonly string[]) => {
     const mine = new Set(auto.map(lower));
     return parseAddressList(text).filter((a) => !mine.has(lower(a.email)));
@@ -87,7 +87,7 @@ export function convertFields(d: DraftFields, mode: Exclude<DraftMode, "new">, d
   const typedTo = typed(d.toText, d.auto.to);
   const typedCc = typed(d.ccText, d.auto.cc);
   const typedBcc = typed(d.bccText, d.auto.bcc);
-  // Única's recipients for the new mode, minus anyone the user already put in any field
+  // Terno's recipients for the new mode, minus anyone the user already put in any field
   const taken = new Set([...typedTo, ...typedCc, ...typedBcc].map((a) => lower(a.email)));
   const autoTo = parseAddressList(fresh.toText).filter((a) => !taken.has(lower(a.email)));
   for (const a of autoTo) taken.add(lower(a.email));

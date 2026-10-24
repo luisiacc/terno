@@ -50,7 +50,7 @@ test("boots from app:// with the backend in a utility process", async () => {
 test("the window follows the theme: native theme, vibrancy and background, remembered for the next launch", async () => {
   const file = join(userData, "appearance.json");
   const read = () => (existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : null);
-  // Única claro sits on the native vibrancy
+  // Terno claro sits on the native vibrancy
   await expect.poll(read).toMatchObject({ themeSource: "system", vibrancy: true });
   expect(await page.evaluate(() => document.documentElement.hasAttribute("data-vibrancy"))).toBe(true);
   // a named palette renders exactly: opaque window in its own background

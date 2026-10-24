@@ -283,9 +283,9 @@ test.describe("the engine's suggestions and auto adds in the UI", () => {
     await expect(badge.getByTestId("auto-mark")).toHaveText("auto");
     await settled(server, t);
     // keyboard and assistive tech reach the explanation too
-    const mark = badge.getByRole("button", { name: /Única la añadió a Facturas: mismo remitente que 12 conversaciones en Facturas/ });
+    const mark = badge.getByRole("button", { name: /Terno la añadió a Facturas: mismo remitente que 12 conversaciones en Facturas/ });
     await mark.focus();
-    await expect(page.getByTestId("category-reasons")).toContainText("Única la añadió a Facturas");
+    await expect(page.getByTestId("category-reasons")).toContainText("Terno la añadió a Facturas");
     await badge.getByRole("button", { name: "No es Facturas" }).click();
     await expect(badge).toHaveCount(0);
     await expect.poll(() => db.get("SELECT outcome FROM cls_decisions WHERE thread_id = ?", t)).toEqual({ outcome: "reverted" });

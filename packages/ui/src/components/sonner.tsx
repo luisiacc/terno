@@ -1,7 +1,7 @@
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
 
-// Única: the app passes the resolved mode (system is resolved by lib/appearance).
+// Terno: the app passes the resolved mode (system is resolved by lib/appearance).
 const Toaster = ({ theme = "light", ...props }: Omit<ToasterProps, "theme"> & { theme?: "light" | "dark" }) => {
   return (
     <Sonner

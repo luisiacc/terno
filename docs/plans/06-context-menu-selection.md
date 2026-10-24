@@ -20,7 +20,7 @@
 
 Common ground: the menu acts on the selection if the clicked row is in it, else on that row; ⌘A selects what is loaded (Gmail's banner reaches the whole view); ⇧ extends; Esc clears.
 
-## 2. Shortcuts for Única
+## 2. Shortcuts for Terno
 
 Existing bindings stay (j/k ↑/↓, Enter/o, x, Esc, e, #, ⌫, !, s, u, l, c, r, a, f, /, ⌘K, g-sequences, ⌘↵, y/n, snackbar 1–5/z/Esc). New:
 

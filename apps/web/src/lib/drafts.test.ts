@@ -56,7 +56,7 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("the draft writer", () => {
-  it("a draft Única only prefilled is never saved; the first edit saves 800 ms after typing stops", async () => {
+  it("a draft Terno only prefilled is never saved; the first edit saves 800 ms after typing stops", async () => {
     const k = draft();
     await vi.advanceTimersByTimeAsync(5000);
     expect(calls).toHaveLength(0);
@@ -175,7 +175,7 @@ describe("the draft writer", () => {
 });
 
 describe("drafts: helpers and restore", () => {
-  it("saved recipients are what was typed, unfinished ones included; Única's are marked; sending takes valid ones only", () => {
+  it("saved recipients are what was typed, unfinished ones included; Terno's are marked; sending takes valid ones only", () => {
     expect(recipients('Ana <ana@example.com>, "Pérez, Luis" <luis@example.com>, bob@', ["ANA@example.com"])).toEqual([
       { name: "Ana", email: "ana@example.com", auto: true },
       { name: "Pérez, Luis", email: "luis@example.com" },
@@ -238,7 +238,7 @@ describe("converting a draft to another mode keeps what the user wrote", () => {
     expect(convertFields({ ...reply, subject: "Mío", subjectEdited: true }, "forward", detail, me).subject).toBe("Mío");
   });
 
-  it("→ forward clears what Única filled in, swaps the threading and the quote", () => {
+  it("→ forward clears what Terno filled in, swaps the threading and the quote", () => {
     const all = convertFields({ ...replyFields("replyAll", detail, me), bodyText: "x" }, "forward", detail, me);
     expect(all.toText).toBe("");
     expect(all.ccText).toBe("");

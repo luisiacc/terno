@@ -193,7 +193,7 @@ const cats = (s: string) => s.split("|").map((x) => x.trim()) as unknown as Cats
 export const THEMES: readonly Theme[] = [
   defineTheme({
     id: "terno-light",
-    name: "Única claro",
+    name: "Terno claro",
     mode: "light",
     vibrancy: true,
     tokens: {
@@ -380,7 +380,7 @@ export const THEMES: readonly Theme[] = [
   }),
   defineTheme({
     id: "terno-dark",
-    name: "Única oscuro",
+    name: "Terno oscuro",
     mode: "dark",
     vibrancy: true,
     tokens: {

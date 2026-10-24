@@ -47,7 +47,7 @@ describe("theme.js", () => {
     expect(run({ desktop: "linux" }).attrs.has("data-vibrancy")).toBe(false);
   });
 
-  it("defaults: system mode on a light OS, Única claro, motion 75", () => {
+  it("defaults: system mode on a light OS, Terno claro, motion 75", () => {
     const r = run();
     expect(r.classes.has("dark")).toBe(false);
     expect(r.attrs.get("data-theme")).toBe("terno-light");

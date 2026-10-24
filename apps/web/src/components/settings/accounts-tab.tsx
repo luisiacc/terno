@@ -115,7 +115,7 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
       <SettingsRow label="Conexión" hint={status(account)}>
         {() => <Reconnect account={account} />}
       </SettingsRow>
-      <SettingsRow label="Quitar la cuenta" hint={isOwner ? "Seguirá siendo tu cuenta Única; cámbiala arriba." : "Borra sus correos de este equipo; en el servidor no cambia nada."}>
+      <SettingsRow label="Quitar la cuenta" hint={isOwner ? "Seguirá siendo tu cuenta de Terno; cámbiala arriba." : "Borra sus correos de este equipo; en el servidor no cambia nada."}>
         {({ id: _id, "aria-labelledby": _l, ...a }) => (
           <>
             <Button {...a} variant="ghost" size="sm" className="text-destructive-ink" data-testid="account-remove" onClick={() => setRemoving(true)}>
@@ -126,7 +126,7 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
               onOpenChange={setRemoving}
               testId="account-remove-dialog"
               title={`¿Quitar ${account.email}?`}
-              description={`Se borran de este equipo sus correos, borradores y acciones pendientes. En el servidor no cambia nada: puedes volver a añadirla.${isOwner ? " Seguirá siendo tu cuenta Única." : ""}`}
+              description={`Se borran de este equipo sus correos, borradores y acciones pendientes. En el servidor no cambia nada: puedes volver a añadirla.${isOwner ? " Seguirá siendo tu cuenta de Terno." : ""}`}
               confirm="Quitar cuenta"
               onConfirm={async () => {
                 try {

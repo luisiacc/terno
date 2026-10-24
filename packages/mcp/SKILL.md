@@ -1,11 +1,11 @@
 ---
-name: unica
-description: Read, search, triage and organize the user's email across all their accounts through the Única email client (MCP server "unica"). Use when the user asks about their email, inbox, newsletters, receipts, replies to write, or mail filters.
+name: terno
+description: Read, search, triage and organize the user's email across all their accounts through the Terno email client (MCP server "terno"). Use when the user asks about their email, inbox, newsletters, receipts, replies to write, or mail filters.
 ---
 
-# Única: email for agents
+# Terno: email for agents
 
-Única is the user's local email client. Its MCP server (`unica`) gives you one access point to **every connected account** (Gmail and IMAP). The Única app must be running.
+Terno is the user's local email client. Its MCP server (`terno`) gives you one access point to **every connected account** (Gmail and IMAP). The Terno app must be running.
 
 ## Tools
 - `list_accounts`: accounts, categories, unread counts. Call this first to learn account ids.
@@ -15,7 +15,7 @@ description: Read, search, triage and organize the user's email across all their
 - `update_threads`: `archive`, `trash`, `spam`, `markRead`, `star`… (syncs to the server).
 - `categorize`: add/remove conversations to cross-account categories (creates the category by name).
 - `create_draft`: save a reply or new email for the user to review.
-- `send_email`: send immediately. **Only when the user explicitly asked to send**, and only works if they enabled it in Única → Settings → Agents.
+- `send_email`: send immediately. **Only when the user explicitly asked to send**, and only works if they enabled it in Terno → Ajustes → Agentes.
 - `list_filters` / `create_filter`: inspect or create mail filters (use `dryRun: true` first and report how many emails it would match).
 
 ## Search syntax

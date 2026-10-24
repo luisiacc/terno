@@ -41,7 +41,7 @@ describe("theme registry", () => {
     expect(parseColor(dark["sidebar-translucent"]).alpha).toBe(0.62);
   });
 
-  it("only Única and Apple sit on the native vibrancy; Apple uses the system font", () => {
+  it("only Terno and Apple sit on the native vibrancy; Apple uses the system font", () => {
     expect(THEMES.filter((t) => t.vibrancy).map((t) => t.id)).toEqual(["terno-light", "apple-light", "terno-dark"]);
     expect(builtinTheme("apple-light")!.font).toContain("-apple-system");
   });

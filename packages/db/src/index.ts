@@ -18,7 +18,7 @@ export function sqliteDriver(): SqliteDriver {
   return defaultDriver;
 }
 
-/** Opens (and migrates, unless read-only) the Única database on the default driver (node:sqlite). */
+/** Opens (and migrates, unless read-only) the Terno database on the default driver (node:sqlite). */
 export function openDatabase(path: string, options: OpenOptions = {}): Db {
   return openDatabaseWith(defaultDriver, path, { uuid: nodePlatform.uuid, ...options });
 }

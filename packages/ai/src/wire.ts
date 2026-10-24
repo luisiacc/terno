@@ -81,7 +81,7 @@ export const EXAMPLE_WIRE_FILTER: WireFilter = {
 
 export function systemPrompt(ctx: FilterGenerationContext): string {
   return [
-    "You turn a user's description of an email filter into a structured rule for the Única email client.",
+    "You turn a user's description of an email filter into a structured rule for the Terno email client.",
     "Fields: from (sender name or address), fromDomain, recipients, subject, body (whole words/phrases), listId (mailing list id), hasAttachment, account, ageDays.",
     "Text ops: contains, equals, startsWith, endsWith. hasAttachment and account use op 'is'. ageDays uses 'gt' (older than N days) or 'lt' (newer than).",
     "Actions: archive, trash, spam, markRead, star, addCategory (with categoryId). Use at most one of archive/trash/spam.",

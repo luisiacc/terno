@@ -295,7 +295,7 @@ INSERT OR IGNORE INTO op_targets (op_id, message_id, grp)
 
 /**
  * v3: owner identity, AI secret rename, and local mode for existing installs.
- * - The owner (the "Única account") is separate from mailboxes: removing its
+ * - The owner (the "Terno account") is separate from mailboxes: removing its
  *   mailbox only clears account_id. Existing installs adopt their earliest
  *   non-demo account, flagged {"migrated":true} so a future cloud can confirm it.
  * - New installs default to local mode; an install that already has accounts or
@@ -734,7 +734,7 @@ export const SEARCH_SCHEMA_VERSION = 7;
 export function migrate(db: Db): { from: number; to: number } {
   const from = Number((db.get<{ user_version: number }>("PRAGMA user_version"))!.user_version);
   if (from > SCHEMA_VERSION) {
-    throw new Error(`Database schema v${from} is newer than this app (v${SCHEMA_VERSION}). Update Única.`);
+    throw new Error(`Database schema v${from} is newer than this app (v${SCHEMA_VERSION}). Update Terno.`);
   }
   for (const m of MIGRATIONS) {
     if (m.version <= from) continue;

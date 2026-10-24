@@ -19,7 +19,7 @@ export function defaultEndpoint(): Endpoint {
 
 export class NotRunningError extends Error {
   constructor() {
-    super("Única is not running. Open the Única app and try again.");
+    super("Terno is not running. Open the Terno app and try again.");
   }
 }
 
@@ -70,7 +70,7 @@ export function connectToApp(endpoint: Endpoint): Promise<RpcClient> {
             };
             resolve(new RpcClient(transport, { defaultTimeoutMs: 60_000 }));
           } else {
-            reject(new Error("Única rejected the connection (stale token). Restart Única."));
+            reject(new Error("Terno rejected the connection (stale token). Restart Terno."));
             socket.destroy();
           }
           continue;

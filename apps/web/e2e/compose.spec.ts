@@ -176,7 +176,7 @@ test.describe("drafts are kept", () => {
     await page.keyboard.press("f");
     await expect(composer(page)).toHaveAttribute("data-mode", "forward");
     await expect(page.getByTestId("compose-body")).toHaveValue("Mi respuesta.");
-    // a forward drops the recipients Única filled in, keeps the one typed
+    // a forward drops the recipients Terno filled in, keeps the one typed
     await expect(to).toHaveValue("Extra <extra@example.com>");
     await toast(page, "Convertido en Reenviar").getByRole("button", { name: "Deshacer" }).click();
     await expect(composer(page)).toHaveAttribute("data-mode", "replyAll");

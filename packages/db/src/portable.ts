@@ -22,7 +22,7 @@ export * from "./categorize";
 export * from "./categorize-bulk";
 export * from "./outbox";
 
-/** Opens (and migrates, unless read-only) the Única database on any driver. */
+/** Opens (and migrates, unless read-only) the Terno database on any driver. */
 export function openDatabaseWith(driver: SqliteDriver, path: string, options: OpenOptions = {}): Db {
   const db = new Db(driver, path, options);
   registerFunctions(db);

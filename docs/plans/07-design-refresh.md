@@ -55,14 +55,14 @@ The generator writes `--glass-alpha` into each theme block. `applyCustomTheme()`
 
 Only our own themes change; named palettes stay exact. If a value fails, adjust its lightness only.
 
-| Token | unica-light | unica-dark | apple-light |
+| Token | terno-light | terno-dark | apple-light |
 |---|---|---|---|
 | border | `.22 .01 265 / 11%` | `1 0 0 / 8%` | `0 0 0 / 10%` |
 | input | `.22 .01 265 / 16%` | `1 0 0 / 12%` | `0 0 0 / 15%` |
 | sidebar-accent | `.22 .01 265 / 7%` | `1 0 0 / 8%` | `0 0 0 / 7%` |
 | row-selected | `.93 .04 268` | `.29 .05 268` | `.93 .035 257` |
 
-unica-dark also changes:
+terno-dark also changes:
 - background and pane: `.165 .005 265`
 - card: `.195 .006 265`
 - popover: `.215 .007 265`
@@ -199,7 +199,7 @@ The generated CSS stays ≤ 8 KB gzip (today 5.2 KB, about +0.4 KB).
 ```ts
 { id, revision, format: 2, accountId, threadId: number|null,
   mode: "new"|"reply"|"replyAll"|"forward",
-  to, cc, bcc: Address & { auto?: true }[],   // auto = filled in by Única, not typed
+  to, cc, bcc: Address & { auto?: true }[],   // auto = filled in by Terno, not typed
   subject, subjectEdited: boolean,
   bodyText,                                   // only what the user writes
   quotedText, includeQuote: boolean,          // generated once, never inside bodyText
@@ -435,7 +435,7 @@ Measured (load average 5–7 from other work): j at key repeat frame p95 16.7 ms
 
 - One send per draft: sends are tracked per draft key (a remounted pane gets the first send's outcome), the draft is locked while it runs, and both stores refuse a second send of a draft that is gone.
 - Recipients are saved as typed («bob@» survives a reload); addresses are validated only when sending. A failed send restarts the autosave.
-- Authorship is per field and per recipient: a conversion never removes a recipient the user typed, and Única's recipients skip anyone already in another field. Fields a conversion fills in (Cc, a forward's Asunto) show while the draft is open.
+- Authorship is per field and per recipient: a conversion never removes a recipient the user typed, and Terno's recipients skip anyone already in another field. Fields a conversion fills in (Cc, a forward's Asunto) show while the draft is open.
 - A strip item opens exactly that draft (`draftShown`); orphaned replies and forwards come back as new messages with their threading cleared (SQL and IndexedDB).
 - One draft index per update (newest per conversation, conversations with something written) replaces the per-draft and per-row scans; gate: typing with 2,000 drafts, keystroke → rendered p95 ≤ 16 ms (~3 ms).
 - A message toggle keeps its node (and focus) across expand and collapse; revealing «N mensajes más» focuses the first revealed message.

@@ -141,7 +141,7 @@ test("first run in the browser offers the Mac app once, then the usual steps", a
   await expect(page.getByTestId("first-run")).toBeVisible();
   await expect(page.getByTestId("mac-onboarding")).toBeVisible();
   await expect(page.getByTestId("mac-onboarding").getByTestId("mac-download")).toHaveAttribute("href", /^https:/);
-  await expect(page.getByTestId("first-run-local")).toContainText("Única solo se conecta con Google");
+  await expect(page.getByTestId("first-run-local")).toContainText("Terno solo se conecta con Google");
 });
 
 /** Google, stubbed: Identity Services answers like its popup, the Gmail and OpenID APIs like Google (two messages). Returns the requests seen. */
@@ -242,7 +242,7 @@ test("blocking screens take focus, make the app behind them inert and suspend it
   await boot(page);
   const second = await context.newPage();
   await second.goto(DEMO);
-  const screen = second.getByRole("dialog", { name: "Única está abierta en otra pestaña" });
+  const screen = second.getByRole("dialog", { name: "Terno está abierto en otra pestaña" });
   await expect(screen).toBeVisible();
   await expect(screen).toHaveAttribute("aria-modal", "true");
   await expect(second.getByTestId("web-use-here")).toBeFocused();
@@ -262,7 +262,7 @@ test("blocking screens take focus, make the app behind them inert and suspend it
   await second.getByTestId("web-use-here").click();
   await rows(second).first().waitFor();
   expect(await second.evaluate(() => (document.getElementById("root") as HTMLElement & { inert: boolean }).inert)).toBe(false);
-  await expect(page.getByRole("dialog", { name: "Única se abrió en otra pestaña" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Terno se abrió en otra pestaña" })).toBeVisible();
   await expect(page.getByTestId("web-take-back")).toBeFocused();
 });
 

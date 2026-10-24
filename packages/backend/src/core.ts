@@ -381,7 +381,7 @@ export class BackendCore {
     return model ? { model, mode: await readAutoCategorize(this.store) } : null;
   }
 
-  /** One "Única añadió N conversaciones a X" per category at most every 30 s. */
+  /** One "Terno añadió N conversaciones a X" per category at most every 30 s. */
   private announceAuto(auto: Map<number, number[]>): void {
     for (const [categoryId, threadIds] of auto) {
       let n = this.autoNotices.get(categoryId);

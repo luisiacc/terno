@@ -28,7 +28,7 @@ async function findLocalModel(): Promise<Found | null> {
   return Promise.any(probes).catch(() => null);
 }
 
-/** Fresh install, no accounts: choose Local or Connected, then add the first mailbox (the Única account). */
+/** Fresh install, no accounts: choose Local or Connected, then add the first mailbox (the Terno account). */
 export function FirstRun() {
   const [step, setStep] = useState<"mode" | "account" | null>(() => (localStorage.getItem(STEP_KEY) === "account" ? "account" : "mode"));
   const [choice, setChoice] = useState<"local" | "connected">("local");
@@ -75,7 +75,7 @@ export function FirstRun() {
       <DialogContent className="sm:max-w-lg" data-testid="first-run">
         {step === "mode" ? (
           <>
-            <DialogTitle>Bienvenido a Única</DialogTitle>
+            <DialogTitle>Bienvenido a Terno</DialogTitle>
             <DialogDescription>Paso 1 de 2 · ¿Cómo quieres usarla? Puedes cambiarlo cuando quieras en Ajustes.</DialogDescription>
             {OnboardingNudge && (
               <Suspense>
@@ -89,7 +89,7 @@ export function FirstRun() {
                 "Local (recomendado)",
                 <>
                   {import.meta.env.VITE_TARGET === "web"
-                    ? "Única solo se conecta con Google (tu correo) y con IA de este equipo."
+                    ? "Terno solo se conecta con Google (tu correo) y con IA de este equipo."
                     : "Nada sale de este Mac salvo el correo con tus servidores. La IA usa modelos de este Mac."}
                   {found && (
                     <span className="mt-1 block text-foreground" data-testid="first-run-found">
@@ -111,7 +111,7 @@ export function FirstRun() {
             <DialogTitle>Añade tu primera cuenta</DialogTitle>
             <DialogDescription>Paso 2 de 2</DialogDescription>
             <p className="rounded-lg border border-primary/25 bg-accent/50 px-3 py-2 text-sm text-accent-foreground">
-              El primer correo que conectes será tu cuenta Única: con él iniciarás sesión y te facturaremos.
+              El primer correo que conectes será tu cuenta de Terno: con él iniciarás sesión y te facturaremos.
             </p>
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => go("done")}>

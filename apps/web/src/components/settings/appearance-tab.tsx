@@ -176,7 +176,7 @@ function CustomThemeItem({ theme, all }: { theme: CustomTheme; all: readonly Cus
         onOpenChange={setDeleting}
         testId="theme-delete-dialog"
         title={`¿Borrar ${name}?`}
-        description="Si lo estás usando, Única vuelve al tema incluido de ese modo. Exporta antes el tema si quieres conservarlo."
+        description="Si lo estás usando, Terno vuelve al tema incluido de ese modo. Exporta antes el tema si quieres conservarlo."
         confirm="Borrar tema"
         onConfirm={() => void updateAppearance({ customThemes: all.filter((t) => t.id !== theme.id) })}
       />

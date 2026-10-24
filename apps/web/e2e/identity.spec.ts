@@ -12,12 +12,12 @@ async function addImap(page: Page, email: string) {
 test.describe("owner identity", () => {
   test.use({ backendOptions: { ownerClaims: true } });
 
-  test("the first connected mailbox becomes the Única account, and stays it after that mailbox is removed", async ({ app: page, server }) => {
+  test("the first connected mailbox becomes the Terno account, and stays it after that mailbox is removed", async ({ app: page, server }) => {
     await page.getByTestId("open-settings").click();
     await page.getByTestId("tab-accounts").click();
-    await expect(page.getByTestId("owner-card")).toHaveText(/Tu cuenta Única será el primer correo que conectes/);
+    await expect(page.getByTestId("owner-card")).toHaveText(/Tu cuenta de Terno será el primer correo que conectes/);
     await page.getByRole("button", { name: "Añadir cuenta" }).click();
-    await expect(page.getByTestId("owner-first-copy")).toContainText("será tu cuenta Única");
+    await expect(page.getByTestId("owner-first-copy")).toContainText("será tu cuenta de Terno");
     await addImap(page, "luis@fastmail.com");
 
     await page.getByTestId("open-settings").click();
@@ -40,7 +40,7 @@ test.describe("owner identity", () => {
     await luis.getByTestId("account-remove").click();
     const confirm = page.getByTestId("account-remove-dialog");
     await expect(confirm).toContainText("¿Quitar luis@fastmail.com?");
-    await expect(confirm).toContainText("Seguirá siendo tu cuenta Única.");
+    await expect(confirm).toContainText("Seguirá siendo tu cuenta de Terno.");
     await page.getByTestId("account-remove-dialog-confirm").click();
     await expect(luis).toHaveCount(0);
     await expect(page.getByTestId("owner-email")).toHaveText("luis@fastmail.com");
@@ -90,7 +90,7 @@ test.describe("first run", () => {
       await expect(page.getByTestId("first-run-found")).toHaveText("Encontramos Ollama con qwen3:8b");
       await page.getByTestId("first-run-next").click();
       await expect(dialog).toContainText("Paso 2 de 2");
-      await expect(dialog).toContainText("El primer correo que conectes será tu cuenta Única");
+      await expect(dialog).toContainText("El primer correo que conectes será tu cuenta de Terno");
       await page.getByTestId("first-run-add-account").click();
       await expect(page.getByTestId("owner-first-copy")).toBeVisible();
       await addImap(page, "ana@icloud.com");

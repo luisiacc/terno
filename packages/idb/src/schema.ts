@@ -139,7 +139,7 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
     return db;
   } catch (error) {
     if (error instanceof DOMException && error.name === "VersionError") {
-      throw new Error(`Database schema is newer than this app (IndexedDB v${IDB_VERSION}). Update Única.`);
+      throw new Error(`Database schema is newer than this app (IndexedDB v${IDB_VERSION}). Update Terno.`);
     }
     throw error;
   }

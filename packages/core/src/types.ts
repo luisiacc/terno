@@ -10,7 +10,7 @@ export interface Account {
   id: AccountId;
   kind: AccountKind;
   email: string;
-  /** what Única shows (sidebar, lists) */
+  /** what Terno shows (sidebar, lists) */
   displayName: string;
   color: string;
   /** the name on mail sent from it (From:) */
