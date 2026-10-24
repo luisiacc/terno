@@ -23,6 +23,8 @@ beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "unica-scopeperf-"));
   backend = new Backend({ dbPath: join(dir, "perf.db"), version: "perf", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, instantSearch: true });
   seedDataset(sqlDb(backend.store), generateDataset({ threads: 20_000, accounts: 8, seed: 5, now: NOW, bodyScale: 3 }), { now: NOW });
+  // the seed leaves a WAL of hundreds of MB that a running app, checkpointing all along, never has
+  sqlDb(backend.store).exec("PRAGMA wal_checkpoint(TRUNCATE)");
   expect(await (backend.store as SqlMailStore).instant!.settled()).toBe(true);
 }, 600_000);
 
@@ -114,6 +116,7 @@ it("a 50,000-thread category: counted in one indexed query, acted on with no sta
   try {
     const db = sqlDb(big.store);
     seedDataset(db, generateDataset({ threads: 50_000, accounts: 8, seed: 9, now: NOW, bodyScale: 0.2 }), { now: NOW });
+    db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
     db.run("INSERT INTO categories (name, color, position) VALUES ('Todo', 'rose', 99)");
     const cat = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Todo'")!.id;
     db.run("INSERT INTO thread_categories (thread_id, category_id, added_by, added_at) SELECT id, ?, 'user', 0 FROM threads WHERE in_trash = 0 AND in_spam = 0", cat);

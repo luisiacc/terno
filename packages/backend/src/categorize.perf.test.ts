@@ -42,6 +42,8 @@ beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), "unica-catperf-"));
   backend = open(join(dir, "base.db"));
   accountIds = seedDataset(sqlDb(backend.store), generateDataset({ threads: 20_000, accounts: 8, seed: 5, now: NOW, bodyScale: 3 }), { now: NOW }).accountIds;
+  // the seed leaves a WAL of hundreds of MB that a running app, checkpointing all along, never has
+  sqlDb(backend.store).exec("PRAGMA wal_checkpoint(TRUNCATE)");
   // 20 categories: the 5 seeded ones plus 15 the user filled by hand
   const threads = sqlDb(backend.store).all<{ id: number }>("SELECT id FROM threads ORDER BY id").map((r) => r.id);
   for (let k = 0; k < 15; k++) {
