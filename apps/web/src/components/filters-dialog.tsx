@@ -16,6 +16,7 @@ import { listDate } from "~/lib/format";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";
 import { reloadList } from "~/state/list";
+import { ConfirmDialog } from "./settings/parts";
 
 type Field = Condition["field"];
 
@@ -212,8 +213,11 @@ export function FiltersDialog() {
   // "Crear filtro desde este remitente…" opens the builder with its rule
   const [draft, setDraft] = useState<Draft>(() => {
     const prefill = getApp().filterPrefill;
-    return prefill ? { ...emptyDraft(), name: prefill.name, rule: prefill.rule } : emptyDraft();
+    return prefill ? { ...emptyDraft(), id: prefill.id, name: prefill.name, rule: prefill.rule, enabled: prefill.enabled ?? true, source: prefill.source ?? "manual" } : emptyDraft();
   });
+  // opened from Ajustes → Filtros: closing goes back there
+  const [returnTo] = useState(() => getApp().filterPrefill?.returnTo ?? null);
+  const [deleting, setDeleting] = useState(false);
   useEffect(() => {
     if (getApp().filterPrefill) setApp({ filterPrefill: null });
   }, []);
@@ -282,7 +286,7 @@ export function FiltersDialog() {
   };
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && setApp({ dialog: null })}>
+    <Dialog open={open} onOpenChange={(o) => !o && setApp(returnTo === "settings" ? { dialog: "settings", settingsTab: "filters" } : { dialog: null })}>
       <DialogContent className="flex h-[min(760px,88vh)] max-w-[min(1040px,94vw)] gap-0 overflow-hidden p-0 sm:max-w-[min(1040px,94vw)]" data-testid="filters-dialog">
         <DialogTitle className="sr-only">Filtros</DialogTitle>
         <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-muted/30">
@@ -312,6 +316,7 @@ export function FiltersDialog() {
                 </button>
                 <Switch
                   size="sm"
+                  aria-label={`Activar «${f.name}»`}
                   checked={f.enabled}
                   onCheckedChange={async (enabled) => {
                     await client.call("filters.save", { id: f.id, name: f.name, enabled, source: f.source, rule: f.rule });
@@ -469,18 +474,24 @@ export function FiltersDialog() {
           <div className="flex shrink-0 items-center gap-2 border-t border-border px-6 py-3">
             {draft.source !== "manual" && <Badge variant="secondary">{draft.source === "ai" ? "Creado con IA" : "Aprendido"}</Badge>}
             {draft.id && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-destructive"
-                onClick={async () => {
-                  await client.call("filters.delete", { id: draft.id! });
-                  setDraft(emptyDraft());
-                  void refresh();
-                }}
-              >
-                <Trash2 /> Eliminar
-              </Button>
+              <>
+                <Button variant="ghost" size="sm" className="text-destructive" data-testid="filter-delete" onClick={() => setDeleting(true)}>
+                  <Trash2 /> Eliminar…
+                </Button>
+                <ConfirmDialog
+                  open={deleting}
+                  onOpenChange={setDeleting}
+                  testId="filter-delete-dialog"
+                  title={`¿Eliminar «${draft.name || "este filtro"}»?`}
+                  description="Deja de aplicarse al correo nuevo. Lo que ya hizo (archivar, categorías…) se queda como está."
+                  confirm="Eliminar filtro"
+                  onConfirm={async () => {
+                    await client.call("filters.delete", { id: draft.id! });
+                    setDraft(emptyDraft());
+                    void refresh();
+                  }}
+                />
+              </>
             )}
             <div className="ml-auto flex gap-2">
               <Button variant="outline" data-testid="filter-save" disabled={!valid.success || saving} onClick={() => save(false)}>

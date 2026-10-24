@@ -12,6 +12,7 @@ import { AiTab } from "./settings/ai-tab";
 import { AppearanceTab } from "./settings/appearance-tab";
 import { CategoriesTab } from "./settings/categories-tab";
 import { AccountsTab } from "./settings/accounts-tab";
+import { FiltersTab } from "./settings/filters-tab";
 import { GeneralTab } from "./settings/general-tab";
 import { SETTINGS_TABS } from "./settings/tabs";
 import { reconcileSettings } from "~/lib/appearance";
@@ -101,6 +102,10 @@ export function SettingsDialog() {
 
             <TabsContent value="categories">
               <CategoriesTab settings={settings} update={update} />
+            </TabsContent>
+
+            <TabsContent value="filters">
+              <FiltersTab />
             </TabsContent>
 
             <TabsContent value="ai">

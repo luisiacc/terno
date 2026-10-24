@@ -43,7 +43,7 @@ test.describe("accounts, settings and command palette", () => {
   });
 
   test("every settings tab opens from the palette; ⌘, opens settings, also from the search field", async ({ app: page }) => {
-    for (const [tab, label] of [["general", "General"], ["appearance", "Apariencia"], ["accounts", "Cuentas"], ["categories", "Categorías"], ["ai", "IA"], ["agents", "Agentes"]] as const) {
+    for (const [tab, label] of [["general", "General"], ["appearance", "Apariencia"], ["accounts", "Cuentas"], ["categories", "Categorías"], ["filters", "Filtros"], ["ai", "IA"], ["agents", "Agentes"]] as const) {
       await page.keyboard.press("Meta+k");
       await page.getByTestId("palette-input").fill(`ajustes ${label}`);
       await expect(page.getByRole("option", { selected: true })).toHaveAttribute("data-testid", `palette-settings-${tab}`);
@@ -55,6 +55,29 @@ test.describe("accounts, settings and command palette", () => {
     await page.getByTestId("search-input").focus();
     await page.keyboard.press("Meta+Comma");
     await expect(page.getByTestId("tab-general")).toHaveAttribute("aria-selected", "true");
+  });
+
+  test("Ajustes → Filtros: turn off, edit in the builder (closing comes back), delete after confirming", async ({ app: page, server }) => {
+    const ctx = { clientId: "t", origin: "dev" as const };
+    const f = await server.backend.server.invoke("filters.save", { name: "Boletines", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "fromDomain", op: "equals", value: "news.example" }], actions: [{ type: "archive" }] } }, ctx);
+    await page.keyboard.press("Meta+k");
+    await page.getByTestId("palette-input").fill("ajustes filtros");
+    await page.keyboard.press("Enter");
+    const row = page.locator(`[data-filter-id="${f.id}"]`);
+    await expect(row).toContainText("Dominio es «news.example»");
+    await row.getByRole("switch", { name: "Activar «Boletines»" }).click();
+    await expect.poll(async () => (await server.backend.server.invoke("filters.list", {}, ctx)).find((x) => x.id === f.id)!.enabled).toBe(false);
+    await row.getByRole("button", { name: "Editar «Boletines»" }).click();
+    await expect(page.getByTestId("filter-name")).toHaveValue("Boletines");
+    await page.getByTestId("filter-name").fill("Boletines semanales");
+    await page.getByTestId("filter-save").click();
+    await expect.poll(async () => (await server.backend.server.invoke("filters.list", {}, ctx)).filter((x) => x.id === f.id).map((x) => [x.name, x.enabled])).toEqual([["Boletines semanales", false]]);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("tab-filters")).toHaveAttribute("aria-selected", "true");
+    await row.getByRole("button", { name: "Eliminar «Boletines semanales»" }).click();
+    await page.getByTestId("settings-filter-delete-dialog-confirm").click();
+    await expect(row).toHaveCount(0);
+    expect((await server.backend.server.invoke("filters.list", {}, ctx)).some((x) => x.id === f.id)).toBe(false);
   });
 
   test("⌘K jumps to a category and runs a search", async ({ app: page }) => {

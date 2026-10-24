@@ -1,9 +1,9 @@
-import type { Account, Category, Counts, FilterRule, View } from "@unica/core";
+import type { Account, Category, Counts, Filter, FilterRule, View } from "@unica/core";
 import type { AppSettings, HostInfo, OwnerIdentity, ThreadScope } from "@unica/core/rpc";
 import { create } from "zustand";
 
 export type DialogName = "settings" | "shortcuts" | "palette" | "categoryPicker" | "filters" | "addAccount" | null;
-export type SettingsTab = "general" | "appearance" | "accounts" | "categories" | "ai" | "agents";
+export type SettingsTab = "general" | "appearance" | "accounts" | "categories" | "filters" | "ai" | "agents";
 
 /** The draft being written (lib/drafts holds its content); seq changes each time it is (re)opened, for focus. */
 export interface ComposeState {
@@ -51,8 +51,8 @@ export interface AppState {
   scope: ScopeSelection | null;
   /** the thread context menu is open: global shortcuts wait (its own keys apply) */
   menuOpen: boolean;
-  /** "Crear filtro desde este remitente…": what the filter builder opens with */
-  filterPrefill: { name: string; rule: FilterRule } | null;
+  /** "Crear filtro desde este remitente…", Ajustes → Filtros → Editar: what the filter builder opens with (an id edits that filter) */
+  filterPrefill: { id?: number; name: string; rule: FilterRule; enabled?: boolean; source?: Filter["source"]; returnTo?: "settings" } | null;
   /** the reader pane shows the selected thread */
   readerOpen: boolean;
 
