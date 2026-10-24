@@ -1,12 +1,13 @@
 /**
  * Seeds a fresh Terno database with the deterministic demo mailbox.
- *   tsx src/seed.ts --out <dir> [--accounts 8] [--threads 12000]
+ *   tsx src/seed.ts --out <dir> [--accounts 8] [--threads 12000] [--print-fixtures]
  * Used by `pnpm dev:desktop:seeded` so the app opens instantly on a full mailbox.
+ * --print-fixtures adds the print test conversations (plan 09) to the first inbox.
  */
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { openDatabase, SqlMailStore } from "@terno/db";
-import { seedDemo } from "@terno/backend";
+import { seedDemo, seedPrintFixtures } from "@terno/backend";
 
 const arg = (name: string, fallback: string) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -27,7 +28,9 @@ for (const suffix of ["", "-wal", "-shm", ".search"]) rmSync(dbPath + suffix, { 
 const started = performance.now();
 const db = openDatabase(dbPath);
 const store = new SqlMailStore(db);
-await seedDemo(store, { accounts, threads, now: Date.now() });
+const now = Date.now();
+await seedDemo(store, { accounts, threads, now });
+if (process.argv.includes("--print-fixtures")) await seedPrintFixtures(store, { now });
 await store.settings.set("app", { ai: { provider: "fake" } });
 const counts = db.get<{ m: number; t: number }>("SELECT (SELECT count(*) FROM messages) AS m, (SELECT count(*) FROM threads) AS t")!;
 db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
