@@ -253,3 +253,13 @@ Run first, on Electron 45.0.0, macOS (Darwin 25.6), with a scratch app: a `show:
 - On the web, the browser's own headers and footers can only be turned off by the user; the hint says how.
 - A newsletter's table rows can't split, so a page may end early, with the rest of its background showing.
 - The web preview is one continuous sheet, not paged, and there is no page count (both dropped from v1).
+
+### After the Codex code review (7 findings)
+
+- **Remote content** is stripped per message by allowlist. Every attribute that can fetch keeps only `data:`, or absolute http(s) where the message may load remote content. The same goes for every `url()` in styles and SVG attributes; `image-set()` and CSS escapes go, and media, links, frames and objects are forbidden. The URL list main allows comes from approved messages only. An e2e intercepts requests under mixed consent and sees none for the blocked message.
+- **The hidden window.** One that fails to load is destroyed on the spot. After `dom-ready`, images get 5 s, then the page prints what arrived.
+- **The preview's deadline** runs from navigation (4 s). Images still loading then print as their description.
+- **Outlook quote detection** is linear: no suffix copies.
+- **PDF names** are cut at 200 UTF-8 bytes on grapheme boundaries. The temp file is `.terno-export-<random>.tmp`.
+- **The sheet** builds once changes settle (it counts builds in test builds). Below 768 px it stacks, and the buttons stay pinned in view.
+- **Two regressions** turned up and were fixed. A `data:` SVG was rewritten by the `url()` rule; the print-quality baselines caught it. The preload imported `node:path`; the packaged smoke caught it, and the desktop build now fails if the preload requires anything but electron.
