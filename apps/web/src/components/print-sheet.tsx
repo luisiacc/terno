@@ -194,7 +194,8 @@ function Sheet({ target, onClose }: { target: PrintTarget; onClose: () => void }
   return (
     <DialogContent
       initialFocus={primaryRef}
-      className="flex h-[min(660px,90vh)] w-[min(960px,94vw)] max-w-none flex-row gap-0 overflow-hidden p-0 sm:max-w-[min(960px,94vw)]"
+      // narrow (a small window, or zoomed in): preview above, options below, the sheet scrolls and the buttons stay in view
+      className="flex max-h-[90vh] w-[min(960px,94vw)] max-w-none flex-col gap-0 overflow-x-hidden overflow-y-auto p-0 sm:max-w-[min(960px,94vw)] md:h-[min(660px,90vh)] md:flex-row md:overflow-hidden"
       data-testid="print-sheet"
       onKeyDown={(e) => {
         // Return prints (or saves, from ⇧⌘P), unless a control has its own use for it
@@ -205,14 +206,14 @@ function Sheet({ target, onClose }: { target: PrintTarget; onClose: () => void }
       }}
     >
       <Preview doc={shown} current={current} onFitted={setFitted} />
-      <div className="hairline-l flex w-[340px] shrink-0 flex-col">
+      <div className="hairline-t flex w-full shrink-0 flex-col md:w-[340px] md:border-t-0 md:hairline-l">
         <div className="px-5 pt-5 pb-4">
           <DialogTitle className="text-lg font-semibold tracking-tight">{scope === "message" && count > 1 ? "Imprimir mensaje" : "Imprimir"}</DialogTitle>
           <DialogDescription className="mt-1 truncate text-xs" data-testid="print-subject">
             {subject || "(sin asunto)"}
           </DialogDescription>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
+        <div className="px-5 pb-4 md:min-h-0 md:flex-1 md:overflow-y-auto">
           <SettingsGroup>
             {count > 1 && (
               <SettingsRow label="Alcance" stacked>
@@ -254,7 +255,7 @@ function Sheet({ target, onClose }: { target: PrintTarget; onClose: () => void }
             )}
           </div>
         </div>
-        <div className="hairline-t flex items-center justify-end gap-2 px-5 py-3.5">
+        <div className="hairline-t sticky bottom-0 z-20 flex flex-wrap items-center justify-end gap-2 bg-popover px-5 py-3.5">
           <Button
             ref={primary === "pdf" ? primaryRef : undefined}
             variant={primary === "pdf" ? "default" : "outline"}
@@ -302,7 +303,7 @@ function Segmented({ a, value, onChange, items, testId, full }: { a: { "aria-lab
           value={v}
           data-testid={`${testId}-${v}`}
           className={cn(
-            "h-6 min-w-0 rounded-[7px]! px-3 text-[12.5px] font-medium text-muted-foreground transition-[background-color,color,box-shadow] hover:bg-transparent hover:text-foreground aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-raised dark:aria-pressed:bg-foreground/[0.14]",
+            "min-h-6 h-auto min-w-0 rounded-[7px]! px-3 py-0.5 text-[12.5px] leading-tight font-medium whitespace-normal text-muted-foreground transition-[background-color,color,box-shadow] hover:bg-transparent hover:text-foreground aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-raised dark:aria-pressed:bg-foreground/[0.14]",
             full && "flex-1",
           )}
         >
@@ -336,7 +337,7 @@ function Preview({ doc, current, onFitted }: { doc: { html: string; paper: Paper
   const [height, setHeight] = useState(0);
   const [ready, setReady] = useState(false);
   const paperPx = PAGE[paper].width * MM_PX;
-  const scale = width ? Math.min(1, (width - 64) / paperPx) : 0;
+  const scale = width ? Math.min(1, (width - (width < 500 ? 32 : 64)) / paperPx) : 0;
 
   useEffect(() => {
     const el = pane.current;
@@ -382,8 +383,8 @@ function Preview({ doc, current, onFitted }: { doc: { html: string; paper: Paper
   }, [html]);
 
   return (
-    <div ref={pane} className="relative min-w-0 flex-1 overflow-y-auto bg-tint" data-testid="print-preview-pane">
-      <div className="px-8 py-8">
+    <div ref={pane} className="relative h-[40vh] min-h-44 min-w-0 shrink-0 overflow-y-auto bg-tint md:h-auto md:flex-1 md:shrink" data-testid="print-preview-pane">
+      <div className="px-4 py-4 md:px-8 md:py-8">
         <div
           className="mx-auto overflow-hidden rounded-[3px] shadow-popover transition-opacity duration-base data-pending:opacity-60"
           data-pending={!(ready && current) || undefined}

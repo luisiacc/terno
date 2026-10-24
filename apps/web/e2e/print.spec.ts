@@ -343,6 +343,40 @@ test.describe("print sheet", () => {
     await expect(preview(page).locator(".missing")).toHaveText("Contenido aún no descargado");
   });
 
+  for (const [label, size] of [["a 320 px window", { width: 320, height: 640 }], ["200% zoom (720×450)", { width: 720, height: 450 }]] as const) {
+    test(`at ${label} every control is on screen and reachable, nothing cut off`, async ({ app: page, server }) => {
+      await open(page, server, "inline-replies", 'subject:"Preguntas sobre el contrato"');
+      await page.setViewportSize(size);
+      await page.keyboard.press("ControlOrMeta+p");
+      await ready(page);
+      const s = sheet(page);
+      // nothing runs past the sheet's sides
+      expect(await s.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+      const box = (await s.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(size.width);
+      const controls = ["print-scope-thread", "print-scope-message", "print-content-headers", "print-content-body", "print-quoted-hide", "print-quoted-show", "print-paper-letter", "print-paper-a4", "print-save-pdf", "print-submit"];
+      for (const id of controls) {
+        const c = page.getByTestId(id);
+        await c.scrollIntoViewIfNeeded();
+        await expect(c).toBeInViewport({ ratio: 1 });
+        const b = (await c.boundingBox())!;
+        expect(b.x).toBeGreaterThanOrEqual(box.x);
+        expect(b.x + b.width).toBeLessThanOrEqual(box.x + box.width + 0.5);
+      }
+      // the buttons stay in view while the sheet scrolls
+      await s.evaluate((el) => el.scrollTo(0, 0));
+      await expect(page.getByTestId("print-submit")).toBeInViewport({ ratio: 1 });
+      // and the keyboard gets there
+      await page.getByTestId("print-scope-thread").focus();
+      for (let i = 0; i < 20 && !(await page.getByTestId("print-submit").evaluate((el) => el === document.activeElement)); i++) await page.keyboard.press("Tab");
+      await expect(page.getByTestId("print-submit")).toBeFocused();
+      await page.getByTestId("print-content-body").click();
+      await ready(page);
+      await expect(preview(page).locator(".head")).toHaveCount(0);
+    });
+  }
+
   for (const scheme of ["light", "dark"] as const) {
     test(`accessible (axe) in ${scheme}`, async ({ app: page, server }) => {
       await page.emulateMedia({ colorScheme: scheme });
