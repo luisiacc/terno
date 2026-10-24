@@ -94,9 +94,14 @@ parentPort.on("message", (m) => {
 });
 `;
 
-/** Past this much WAL, bulk writers get the checkpoint to catch up so the next write starts it over. */
+/** Past this much WAL, bulk writers let the checkpoint catch up so the next write starts it over. */
 const WAL_BUDGET = 16 * 2 ** 20;
-/** Once no more than this is left to copy, they wait for that last checkpoint (a few ms and its fsyncs). */
+/**
+ * They wait only once no more than this is left to copy, which is right after
+ * the worker's periodic pass: one short extra pass (a few ms and its fsyncs).
+ * Asking for passes of its own as soon as the budget is crossed copied the
+ * hot pages more often: +16% process CPU on a 14k-message import.
+ */
 const WAL_FINAL_COPY = 2 * 2 ** 20;
 /** Past this they wait however much is left: the journal_size_limit, so a restart never truncates much. */
 const WAL_HARD_LIMIT = 64 * 2 ** 20;
@@ -166,11 +171,8 @@ function startNodeCheckpointWorker(path: string, onExit: () => void, intervalMs:
     async settle() {
       const s = wal.read();
       if (stopped || exited || !s || s.frames * s.frameBytes <= WAL_BUDGET || s.unchecked === 0) return;
-      // copying is the worker's: the caller keeps writing until little is left
-      if (s.unchecked * s.frameBytes > WAL_FINAL_COPY && s.frames * s.frameBytes < WAL_HARD_LIMIT) {
-        void checkpointNow();
-        return;
-      }
+      // copying is the worker's periodic pass: the caller keeps writing until little is left (right after a pass)
+      if (s.unchecked * s.frameBytes > WAL_FINAL_COPY && s.frames * s.frameBytes < WAL_HARD_LIMIT) return;
       // a checkpoint that started before the caller's last write can't cover it: wait for it, then one that can
       await asked;
       const left = wal.read();

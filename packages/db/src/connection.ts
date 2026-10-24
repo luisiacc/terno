@@ -37,10 +37,11 @@ export interface CheckpointWorker {
    * write begins with every frame already checkpointed, which never happens
    * while slices keep committing faster than a passive checkpoint finishes:
    * left alone, it grows by gigabytes and the commit that finally restarts
-   * it truncates the file on the writer's thread. Past a budget this asks
-   * the worker to checkpoint right away and, once little is left to copy,
-   * holds the caller (asynchronously) until a checkpoint caught up, so its
-   * next write starts the WAL over. Resolves at once otherwise.
+   * it truncates the file on the writer's thread. Past a budget, once the
+   * worker's periodic pass left little to copy (or the WAL reached its
+   * limit), this holds the caller (asynchronously) until one more pass
+   * caught up, so its next write starts the WAL over. Resolves at once
+   * otherwise.
    */
   settle(): Promise<void>;
   stop(): Promise<void>;
