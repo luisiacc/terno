@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -20,6 +20,7 @@ import { parseAppearance, windowVibrancy, type Appearance } from "./appearance";
 import type { BackendToMain, MainToBackend } from "./ipc";
 import { readLegacySecrets } from "./keychain-helper";
 import { DB_FILE } from "./legacy-profile";
+import { LEGACY_STORAGE_PENDING } from "./profile";
 
 // V8 compile cache for the main bundle (t3code trick): faster subsequent boots.
 try {
@@ -206,17 +207,17 @@ async function connectWindow(win: BrowserWindow) {
 
 /**
  * localStorage belongs to an origin, and the renderer moved from app://unica
- * to app://terno. Once per profile, a hidden window reads what the old origin
- * kept (the cached appearance, first-run progress) and writes it under the new
- * one without overwriting anything; the old origin is cleared only after every
- * key reads back. The renderer renames the keys themselves (theme.js).
+ * to app://terno. In a profile that came from Única (profile.ts leaves a
+ * marker), a hidden window reads what the old origin kept (the cached
+ * appearance, first-run progress) and writes it under the new one without
+ * overwriting anything; the old origin is cleared only after every key reads
+ * back, and the marker goes (a failure retries on the next launch). The
+ * renderer renames the keys themselves (theme.js).
  */
 async function carryLegacyLocalStorage(): Promise<void> {
-  const userData = app.getPath("userData");
-  const marker = join(userData, "legacy-storage-moved");
-  if (existsSync(marker)) return;
-  const done = () => writeFileSync(marker, `${new Date().toISOString()}\n`);
-  if (!existsSync(join(userData, "Local Storage"))) return done();
+  const pending = join(app.getPath("userData"), LEGACY_STORAGE_PENDING);
+  if (!existsSync(pending)) return;
+  const done = () => rmSync(pending, { force: true });
   const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
   try {
     await win.loadURL(`${LEGACY_ORIGIN}${STORAGE_PAGE}`);

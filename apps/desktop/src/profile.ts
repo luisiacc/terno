@@ -1,8 +1,11 @@
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { app, dialog } from "electron";
 import { LegacyProfileInUseError, migrateLegacyProfile } from "./legacy-profile";
 
 export const APP_NAME = process.env.TERNO_TEST_APP_NAME ?? "Terno";
+/** in a profile that came from Única: its renderer localStorage (origin app://unica) still has to move (app.ts) */
+export const LEGACY_STORAGE_PENDING = "legacy-storage-pending";
 
 /**
  * Names the app (which also names its keychain item) and points userData at
@@ -18,6 +21,7 @@ export function prepareProfile(): boolean {
     if (m.movedFrom) console.log(`[profile] moved ${m.movedFrom} → ${profile}`);
     for (const r of m.renamed) console.log(`[profile] renamed ${r}`);
     for (const c of m.conflicts) console.warn(`[profile] left alone (the Terno one exists): ${c}`);
+    if (m.movedFrom || m.renamed.length) writeFileSync(join(profile, LEGACY_STORAGE_PENDING), `${new Date().toISOString()}\n`);
   } catch (error) {
     if (!(error instanceof LegacyProfileInUseError)) throw error;
     dialog.showErrorBox("Única sigue abierta", "Cierra Única y vuelve a abrir Terno: tu correo pasa a Terno en cuanto Única no lo esté usando.");

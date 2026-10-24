@@ -12,7 +12,7 @@ import { existsSync, mkdtempSync, renameSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
-import { _electron as electron, expect, test, type ElectronApplication } from "@playwright/test";
+import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SOURCE_APP = join(here, "../release/mac-arm64/Terno.app");
@@ -30,6 +30,17 @@ function launch(profile: string, env: Record<string, string>) {
   const e: Record<string, string | undefined> = { ...process.env, TERNO_DEMO: "1", TERNO_USER_DATA: profile, ...env };
   delete e.ELECTRON_RUN_AS_NODE;
   return electron.launch({ executablePath: join(appPath, "Contents/MacOS/Terno"), env: e as Record<string, string> }).then((a) => (running.push(a), a));
+}
+
+/** The app's window (a profile from Única first opens a hidden one to move its localStorage). */
+async function mainWindow(app: ElectronApplication): Promise<Page> {
+  const until = Date.now() + 60_000;
+  for (;;) {
+    const page = app.windows().find((p) => !p.isClosed() && p.url().startsWith("app://terno/") && !p.url().includes("__storage-migration"));
+    if (page) return page;
+    if (Date.now() > until) throw new Error("the app window never opened");
+    await new Promise((r) => setTimeout(r, 100));
+  }
 }
 
 const sqlite = (file: string) => new DatabaseSync(file);
@@ -70,7 +81,6 @@ async function legacyProfile(name: string): Promise<{ profile: string; threads: 
   db.close();
   const threads = threadCount(dbFile);
   for (const suffix of ["-wal", "-shm", ".search", ""]) if (existsSync(dbFile + suffix)) renameSync(dbFile + suffix, join(profile, `unica.db${suffix}`));
-  rmSync(join(profile, "legacy-storage-moved"), { force: true });
   renameSync(profile, join(workdir, `Unica-${name}`));
   return { profile, threads, sealed };
 }
@@ -98,7 +108,7 @@ test.afterAll(async () => {
 test("a legacy profile is renamed, its secrets sealed again under the new keychain item and its localStorage moved", async () => {
   const { profile, threads, sealed } = await legacyProfile("smoke");
   const app = await launch(profile, { TERNO_TEST_APP_NAME: NEW, TERNO_TEST_LEGACY_APP_NAME: LEGACY });
-  const page = await app.firstWindow();
+  const page = await mainWindow(app);
   await page.locator("[data-testid=thread-row]").first().waitFor({ timeout: 60_000 });
 
   expect(existsSync(join(workdir, "Unica-smoke"))).toBe(false);
@@ -119,13 +129,14 @@ test("a legacy profile is renamed, its secrets sealed again under the new keycha
   // the renderer's localStorage came along from app://unica, under Terno's key names
   expect(page.url()).toBe("app://terno/");
   expect(await page.evaluate(() => [localStorage.getItem("terno:first-run"), localStorage.getItem("unica:first-run")])).toEqual(["done", null]);
+  expect(existsSync(join(profile, "legacy-storage-pending"))).toBe(false);
   await app.close();
 });
 
 test("without the old keychain item nothing is lost: the blobs stay, the app runs, Settings asks for the key again", async () => {
   const { profile, threads, sealed } = await legacyProfile("fallback");
   const app = await launch(profile, { TERNO_TEST_APP_NAME: NEW, TERNO_TEST_LEGACY_APP_NAME: MISSING });
-  const page = await app.firstWindow();
+  const page = await mainWindow(app);
   await page.locator("[data-testid=thread-row]").first().waitFor({ timeout: 60_000 });
   expect(threadCount(join(profile, "terno.db"))).toBe(threads);
 
