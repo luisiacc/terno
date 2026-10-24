@@ -36,7 +36,8 @@ export function CategoryPicker() {
   const current = new Set(targets.flatMap((id) => rows.items[rows.index.get(id) ?? -1]?.categoryIds ?? []));
   const close = () => {
     setSearch("");
-    setApp({ dialog: null });
+    // a move is asked for each time (v, "Mover a…"): whatever opens the picker next toggles unless it says otherwise
+    setApp({ dialog: null, pickerMode: "toggle" });
   };
 
   const apply = async (categoryId: number, on: boolean) => {

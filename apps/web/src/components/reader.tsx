@@ -180,7 +180,7 @@ export function Reader() {
           <OctagonAlert />
         </ToolButton>
         <span className="mx-1.5 h-4 w-px bg-border" />
-        <ToolButton label="Categoría" keys="l" onClick={() => setApp({ dialog: "categoryPicker" })} testId="action-category">
+        <ToolButton label="Categoría" keys="l" onClick={() => setApp({ dialog: "categoryPicker", pickerMode: "toggle" })} testId="action-category">
           <Tag />
         </ToolButton>
         <ToolButton label="Marcar como no leído" keys="u" onClick={() => act("markUnread")} testId="action-unread">
