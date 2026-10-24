@@ -614,6 +614,8 @@ export interface Events {
   owner: OwnerIdentity | null;
   /** progress of a scope action (threads.actScope / undoScope, categories.addScope), at most ~10 per second */
   bulkProgress: { jobId: string; done: number; total: number };
+  /** drafts were added outside this window (an import): reload them */
+  drafts: { reason: "import" };
   /** the engine filed new mail on its own (coalesced per category, at most every 30 s) */
   categorized: { categoryId: number; threadIds: number[]; by: "auto" };
 }

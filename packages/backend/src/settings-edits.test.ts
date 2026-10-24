@@ -329,3 +329,24 @@ describe("drafts in an export (format 2)", () => {
     expect(await client.call("drafts.list", {})).toMatchObject([{ mode: "new", subject: "Hola", bodyText: "Texto", bcc: [] }]);
   });
 });
+
+describe("importing drafts twice", () => {
+  it("adds each draft once, and tells every window to show them", async () => {
+    const { client } = setup();
+    const a = await client.call("accounts.addImap", imap("luis@fastmail.com"));
+    const file = {
+      format: "unica-export", version: 2, accounts: [], categories: [], filters: [],
+      drafts: [
+        { accountEmail: a.email, mode: "new", to: [{ name: "", email: "ana@x.dev" }], cc: [], bcc: [{ name: "", email: "b@x.dev" }], subject: "Hola", subjectEdited: true, bodyText: "Texto", quotedText: "", includeQuote: false, inReplyTo: null, forwardOf: null, uiState: "open", updatedAt: NOW },
+        { accountEmail: a.email, mode: "reply", to: [], cc: [], subject: "Re: x", bodyText: "Sí", quotedText: "> x", includeQuote: true, inReplyTo: "missing@x", forwardOf: null, uiState: "open", updatedAt: NOW },
+      ],
+    };
+    const events: unknown[] = [];
+    client.on("drafts", (e) => events.push(e));
+    expect((await client.call("app.import", { data: file as never })).drafts).toBe(2);
+    expect((await client.call("app.import", { data: file as never })).drafts).toBe(0);
+    expect((await client.call("drafts.list", {})).map((d) => d.subject).sort()).toEqual(["Hola", "Re: x"]);
+    await until(() => events.length > 0);
+    expect(events).toEqual([{ reason: "import" }]);
+  });
+});

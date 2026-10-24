@@ -38,6 +38,8 @@ export async function boot(): Promise<void> {
     client.on("accounts", (accounts) => setApp({ accounts }));
     client.on("categories", (categories) => setApp({ categories }));
     client.on("owner", (owner) => setApp({ owner }));
+    // drafts added elsewhere (an import, in this window or another): merged in as they are
+    client.on("drafts", () => void loadDrafts());
     client.on("categorized", ({ categoryId, threadIds }) => {
       const name = getApp().categories.find((c) => c.id === categoryId)?.name;
       if (!name) return;

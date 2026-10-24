@@ -298,10 +298,18 @@ test.describe("editable, persisted and in effect", () => {
     const download = page.waitForEvent("download");
     await page.getByTestId("data-export").click();
     const file = await download;
-    const dump = JSON.parse(await (await import("node:fs/promises")).readFile((await file.path())!, "utf8")) as { categories: { name: string }[] };
+    const dump = JSON.parse(await (await import("node:fs/promises")).readFile((await file.path())!, "utf8")) as { categories: { name: string }[]; accounts: { email: string }[]; drafts: unknown[] };
     dump.categories.push({ ...dump.categories[0]!, name: "Desde el archivo", id: 999 } as never);
-    await page.getByTestId("data-import-input").setInputFiles({ name: "unica.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(dump)) });
+    dump.drafts.push({ accountEmail: dump.accounts[0]!.email, mode: "new", to: [{ name: "", email: "copia@x.dev" }], cc: [], bcc: [], subject: "Desde la copia", subjectEdited: true, bodyText: "Hola", quotedText: "", includeQuote: false, inReplyTo: null, forwardOf: null, uiState: "open", updatedAt: 1 });
+    const input = page.getByTestId("data-import-input");
+    await input.setInputFiles({ name: "unica.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(dump)) });
     await expect(page.locator("[data-testid^=nav-category-]").filter({ hasText: "Desde el archivo" })).toBeVisible();
+    // its draft shows at once, and importing the same file again doesn't add it twice
+    await expect(page.getByTestId("strip-item").filter({ hasText: "copia@x.dev" })).toHaveCount(1);
+    await input.setInputFiles({ name: "unica.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(dump)) });
+    await expect(page.getByText(/Importado: 0 categorías nuevas/)).toBeVisible();
+    await expect(page.getByTestId("strip-item").filter({ hasText: "copia@x.dev" })).toHaveCount(1);
+    expect((await server.backend.server.invoke("drafts.list", {}, ctx)).filter((d) => d.subject === "Desde la copia")).toHaveLength(1);
     expect((await server.backend.server.invoke("app.bootstrap", {}, ctx)).categories.some((c) => c.name === "Desde el archivo")).toBe(true);
   });
 });

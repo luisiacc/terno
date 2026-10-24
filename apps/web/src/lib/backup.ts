@@ -2,6 +2,7 @@ import type { ImportResult } from "@unica/core/rpc";
 import { client } from "~/rpc/connection";
 import { setApp } from "~/state/app";
 import { adoptSettings } from "./appearance";
+import { loadDrafts } from "./drafts";
 
 /** Downloads what the mailbox can't re-sync (categories, filters, settings without secrets, drafts, pending sends) as JSON. */
 export async function downloadExport(): Promise<void> {
@@ -25,6 +26,8 @@ export async function importFile(file: File): Promise<ImportResult> {
   }
   if ((data as { format?: unknown } | null)?.format !== "unica-export") throw new Error("No es una exportación de Única.");
   const result = await client.call("app.import", { data: data as never });
+  // the drafts it brought show at once (the backend's event does the same for other windows)
+  await loadDrafts();
   const boot = await client.call("app.bootstrap", {});
   adoptSettings(boot.settings);
     setApp({ categories: boot.categories });

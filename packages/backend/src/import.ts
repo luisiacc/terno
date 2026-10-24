@@ -1,6 +1,6 @@
 import type { Condition, FilterAction, FilterRule } from "@unica/core";
 import { draftAddressSchema, settingsPatchSchema, type DraftAddress, type ExportedDraft, type ExportFile, type ImportResult, type MailboxExport, type SettingsPatch } from "@unica/core/rpc";
-import type { DraftInput } from "@unica/store";
+import type { DraftInput, DraftRow } from "@unica/store";
 import type { BackendCore as Backend } from "./core";
 import { pinKeyOrigins, readSettings, SettingsError, updateSettings } from "./settings";
 
@@ -76,6 +76,15 @@ export async function exportMailbox(b: Backend): Promise<MailboxExport> {
       .filter((o) => o.state !== "succeeded")
       .map((o) => ({ accountEmail: emailOf(o.account_id), kind: o.kind, state: o.state, createdAt: o.created_at, lastError: o.last_error, target: JSON.parse(o.target_json), payload: JSON.parse(o.payload_json) })),
   };
+}
+
+/** What makes two drafts the same draft: where it goes, from where, and everything written in it. */
+function draftKey(d: DraftInput | DraftRow): string {
+  const norm = (list: unknown) => (list as DraftAddress[]).map((a) => [a.name, a.email, a.auto === true]);
+  if ("account_id" in d) {
+    return JSON.stringify([d.account_id, d.mode, d.subject, d.body_text, d.quoted_text, norm(JSON.parse(d.to_json)), norm(JSON.parse(d.cc_json)), norm(JSON.parse(d.bcc_json))]);
+  }
+  return JSON.stringify([d.accountId, d.mode, d.subject, d.bodyText, d.quotedText ?? "", norm(d.to), norm(d.cc), norm(d.bcc ?? [])]);
 }
 
 /**
@@ -170,15 +179,20 @@ export async function importMailbox(b: Backend, data: ExportFile): Promise<Impor
     addedFilters++;
   }
 
-  // drafts of mailboxes connected here come back as new messages
+  // drafts of mailboxes connected here; one that is already here (the same file imported again) isn't added twice
   let drafts = 0;
+  const present = new Set((await store.drafts.list()).map(draftKey));
   for (const d of data.drafts) {
     const account = accounts.find((a) => a.email === d.accountEmail?.toLowerCase());
     const draft = account ? await draftFrom(b, account.id, d) : null;
     if (!draft) continue;
+    const key = draftKey(draft);
+    if (present.has(key)) continue;
+    present.add(key);
     await store.drafts.save(draft, now);
     drafts++;
   }
+  if (drafts) b.server.emit("drafts", { reason: "import" });
 
   // settings: never secrets; a cloud AI refused by local mode is left out, the rest applies
   let settings = false;
