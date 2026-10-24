@@ -329,3 +329,16 @@ describe("migration v9: drafts v2", () => {
     ]);
   });
 });
+
+describe("migration v10: the next op's sequence number", () => {
+  it("is read from an index, not by scanning every op", () => {
+    const dir = mkdtempSync(join(tmpdir(), "unica-mig10-"));
+    dirs.push(dir);
+    const db = new Db(nodeSqliteDriver, join(dir, "v10.db"));
+    dbs.push(db);
+    migrate(db);
+    const plan = db.all<{ detail: string }>("EXPLAIN QUERY PLAN SELECT coalesce(max(seq), 0) + 1 FROM ops").map((r) => r.detail).join(" | ");
+    expect(plan).toMatch(/ops_seq/);
+    expect(plan).not.toMatch(/ops_account/);
+  });
+});

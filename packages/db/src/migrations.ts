@@ -698,6 +698,15 @@ DROP TABLE cat_move_rows;
 ALTER TABLE cat_move_rows_v8 RENAME TO cat_move_rows;
 `;
 
+/**
+ * v10: every op takes the next global sequence number (max(seq) + 1); without
+ * an index on seq that read scanned every op, so a bulk action queueing
+ * thousands paid for all the earlier ones on each insert.
+ */
+const OPS_SEQ_V10 = `
+CREATE INDEX ops_seq ON ops(seq);
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "initial schema", sql: SCHEMA_V1 },
   { version: 2, name: "op target index", sql: OP_TARGETS_V2 },
@@ -708,6 +717,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 7, name: "search outbox", sql: OUTBOX_V7 },
   { version: 8, name: "exclusive moves", sql: EXCLUSIVE_MOVES_V8 },
   { version: 9, name: "drafts v2", sql: DRAFTS_V9 },
+  { version: 10, name: "ops sequence index", sql: OPS_SEQ_V10 },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;
