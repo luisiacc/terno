@@ -354,6 +354,8 @@ export const contract = {
       autoApply: z.boolean().optional(),
     }),
   ),
+  /** The sidebar order: positions follow `ids` (one transaction); returns the new list. */
+  "categories.reorder": m<Category[]>()(z.object({ ids: z.array(id).min(1).max(1000) })),
   "categories.delete": m<{ ok: true }>()(z.object({ id })),
   /** The one way the UI files threads (picker, drag and drop, snackbar, accepted suggestion): it trains the model and returns what changed for undo. */
   "categories.addThreads": m<AddThreadsResult>()(

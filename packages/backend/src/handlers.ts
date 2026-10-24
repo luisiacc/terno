@@ -220,6 +220,11 @@ export function createHandlers(b: Backend): Handlers {
       b.server.emit("categories", await store.categories.list());
       return c;
     },
+    "categories.reorder": async ({ ids }) => {
+      const list = await store.categories.reorder(ids);
+      b.server.emit("categories", list);
+      return list;
+    },
     "categories.delete": async ({ id }) => {
       await store.categories.delete(id);
       b.categorizer.dropCategory(id);

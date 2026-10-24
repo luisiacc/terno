@@ -844,6 +844,15 @@ export function updateCategory(c: Ctx, id: number, patch: { name?: string; color
   return listCategories(c).find((x) => x.id === id) ?? null;
 }
 
+/** Positions in the given order; categories it leaves out keep their order after those. */
+export function reorderCategories(c: Ctx, ids: readonly number[]): Category[] {
+  const categories = T(c, "categories");
+  const current = listCategories(c).map((x) => x.id);
+  const order = [...new Set(ids.filter((id) => current.includes(id))), ...current.filter((id) => !ids.includes(id))];
+  order.forEach((id, position) => categories.update(categories.get(id)!, { position }));
+  return listCategories(c);
+}
+
 const toFilter = (r: R): Filter => ({ id: r.id, name: r.name, enabled: r.enabled === 1, source: r.source, rule: JSON.parse(r.rule_json) as FilterRule, hits: r.hits, createdAt: r.created_at });
 
 export function listFilters(c: Ctx): Filter[] {

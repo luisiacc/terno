@@ -1266,6 +1266,22 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       });
     });
 
+    describe("categories in settings", () => {
+      it("reorder sets every position in one unit, keeps unlisted ones after, and survives a reopen", async () => {
+        let store = await fresh();
+        const ids: number[] = [];
+        for (const name of ["Facturas", "Clientes", "Viajes", "Lecturas"]) ids.push((await store.categories.create(name, "indigo")).id);
+        const [f, c, v, l] = ids as [number, number, number, number];
+        expect((await store.categories.reorder([v, f, 9999])).map((x) => x.name)).toEqual(["Viajes", "Facturas", "Clientes", "Lecturas"]);
+        expect((await store.categories.list()).map((x) => x.position)).toEqual([0, 1, 2, 3]);
+        await store.categories.reorder([l, c, v, f]);
+        await store.categories.update(c, { name: "Clientes VIP", color: "rose" });
+        store = await harness.reopen(store);
+        open.push(store);
+        expect((await store.categories.list()).map((x) => [x.name, x.color])).toEqual([["Lecturas", "indigo"], ["Clientes VIP", "rose"], ["Viajes", "indigo"], ["Facturas", "indigo"]]);
+      });
+    });
+
     describe("durability and migrations", () => {
       it("what a command committed survives a reopen", async () => {
         let store = await fresh();

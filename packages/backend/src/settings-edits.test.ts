@@ -143,3 +143,21 @@ describe("accounts.reconnect", () => {
     expect(await errorOf(mcp.call("accounts.update", { id: a.id, signature: "x" }))).toMatchObject({ code: "FORBIDDEN" });
   });
 });
+
+describe("categories from Ajustes", () => {
+  it("rename, recolor, reorder and delete are announced to every window; agents can't reorder or delete", async () => {
+    const { client, mcp } = setup();
+    const a = await client.call("categories.create", { name: "Facturas", color: "amber" });
+    const b = await client.call("categories.create", { name: "Viajes", color: "cyan" });
+    const events: { name: string }[][] = [];
+    client.on("categories", (list) => events.push(list));
+    expect(await client.call("categories.update", { id: a.id, name: "Recibos", color: "rose" })).toMatchObject({ name: "Recibos", color: "rose" });
+    expect((await client.call("categories.reorder", { ids: [b.id, a.id] })).map((c) => c.name)).toEqual(["Viajes", "Recibos"]);
+    await until(() => events.length >= 2);
+    expect(events.at(-1)!.map((c) => c.name)).toEqual(["Viajes", "Recibos"]);
+    expect(await errorOf(client.call("categories.update", { id: a.id, name: " " }))).toMatchObject({ code: "BAD_REQUEST" });
+    expect(await errorOf(mcp.call("categories.reorder", { ids: [a.id, b.id] }))).toMatchObject({ code: "FORBIDDEN" });
+    await client.call("categories.delete", { id: b.id });
+    expect((await client.call("app.bootstrap", {})).categories.map((c) => c.name)).toEqual(["Recibos"]);
+  });
+});

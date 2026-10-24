@@ -100,7 +100,7 @@ export function SettingsDialog() {
             </TabsContent>
 
             <TabsContent value="categories">
-              <CategoriesTab settings={settings} />
+              <CategoriesTab settings={settings} update={update} />
             </TabsContent>
 
             <TabsContent value="ai">

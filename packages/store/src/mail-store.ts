@@ -277,6 +277,8 @@ export interface MailStore {
     exists(id: number): Promise<boolean>;
     create(name: string, color: CategoryColor): Promise<Category>;
     update(id: number, patch: { name?: string; color?: CategoryColor; position?: number; autoApply?: boolean }): Promise<Category | null>;
+    /** positions in this order, in one unit (ids it leaves out keep their order after those); the new list */
+    reorder(ids: readonly number[]): Promise<Category[]>;
     delete(id: number): Promise<void>;
     createBatch(categoryId: number, source: string, scope: unknown, now: number): Promise<number>;
     /** adds (and trains on explicit origins); counts the adds into the batch, in one unit */

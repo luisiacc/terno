@@ -120,6 +120,7 @@ import {
   toSummary,
   updateAccount,
   updateCategory,
+  reorderCategories,
   type ActionResult,
   type Ctx,
   type R,
@@ -896,6 +897,7 @@ export class IdbMailStore implements MailStore {
     exists: (id) => this.early(() => T(this.c, "categories").has(id)),
     create: (name, color) => this.command(() => createCategory(this.c, name, color)),
     update: (id, patch) => this.command(() => updateCategory(this.c, id, patch)),
+    reorder: (ids) => this.command(() => reorderCategories(this.c, ids)),
     delete: (id) => this.command(() => void T(this.c, "categories").delete(id)),
     createBatch: (categoryId, source, scope, now) => this.command(() => createBatch(this.c, categoryId, source, scope, now)),
     add: (a) =>

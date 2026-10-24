@@ -105,6 +105,7 @@ import {
   setSetting,
   updateAccount,
   updateCategory,
+  reorderCategories,
 } from "./repos";
 import { beginSearchBuild, materializeChanges, searchChangeIds, searchHead } from "./outbox";
 import { SEARCH_SCHEMA_VERSION } from "./migrations";
@@ -582,6 +583,7 @@ export class SqlMailStore implements MailStore {
     exists: async (id) => this.db.get("SELECT 1 FROM categories WHERE id = ?", id) !== undefined,
     create: async (name, color) => createCategory(this.db, name, color),
     update: async (id, patch) => updateCategory(this.db, id, patch),
+    reorder: async (ids) => reorderCategories(this.db, ids),
     delete: async (id) => this.db.tx(() => deleteCategory(this.db, id)),
     createBatch: async (categoryId, source, scope, now) => createBatch(this.db, categoryId, source, scope, now),
     add: async (a) =>

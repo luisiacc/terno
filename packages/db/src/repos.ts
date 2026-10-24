@@ -160,6 +160,16 @@ export function updateCategory(
   return listCategories(db).find((c) => c.id === id) ?? null;
 }
 
+/** Positions in the given order; categories it leaves out keep their order after those. */
+export function reorderCategories(db: Db, ids: readonly number[]): Category[] {
+  return db.tx(() => {
+    const current = listCategories(db).map((c) => c.id);
+    const order = [...new Set(ids.filter((id) => current.includes(id))), ...current.filter((id) => !ids.includes(id))];
+    order.forEach((id, position) => db.run("UPDATE categories SET position = ? WHERE id = ?", position, id));
+    return listCategories(db);
+  });
+}
+
 export function deleteCategory(db: Db, id: number): void {
   db.run("DELETE FROM categories WHERE id = ?", id);
 }
