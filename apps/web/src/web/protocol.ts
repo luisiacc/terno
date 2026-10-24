@@ -16,6 +16,8 @@ export interface WorkerInit {
   build: string;
   /** demo builds (perf): false measures the durable search path alone */
   instantSearch: boolean;
+  /** demo builds (tests): hold the legacy IndexedDB copy of a mailbox after its first batch, so a test can close the tab mid-copy */
+  pauseLegacyCopy?: boolean;
 }
 
 export type PageToWorker =

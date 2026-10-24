@@ -362,6 +362,7 @@ export async function connectWorker(client: RpcClient): Promise<void> {
     demo: DEMO_BUILD && demoThreads > 0 ? { threads: demoThreads, accounts: Number(params.get("accounts") ?? 4) } : null,
     build: BUILD,
     instantSearch: !(DEMO_BUILD && params.get("instant") === "0"),
+    pauseLegacyCopy: DEMO_BUILD && params.get("legacyPause") === "1",
   };
   worker.postMessage(init, [channel.port2]);
   const first = await Promise.race([next(worker, ["ready", "fatal"]), new Promise<null>((r) => worker.addEventListener("error", () => r(null)))]);

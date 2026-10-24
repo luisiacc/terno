@@ -92,6 +92,45 @@ describe("web storage from when the app was called Única", () => {
     expect(await migrateLegacyIdb(indexedDB, "terno")).toEqual([]);
   });
 
+  it("a copy cut short (the tab closed mid-copy) is rebuilt on the next start, never taken as complete", async () => {
+    await legacyDb("unica-unica", 4, 1100);
+    // the worker dies after the destination's first batch: its next write never commits, and every connection goes
+    const connections: IDBDatabase[] = [];
+    let writes = 0;
+    const hang = { objectStore: () => ({ put() {} }) } as unknown as IDBTransaction;
+    const dying = new Proxy(indexedDB, {
+      get(target, prop) {
+        if (prop !== "open") return Reflect.get(target, prop, target).bind?.(target) ?? Reflect.get(target, prop, target);
+        return (name: string, version?: number) => {
+          const r = target.open(name, version);
+          r.addEventListener("success", () => {
+            const db = r.result;
+            connections.push(db);
+            if (name !== "terno-terno") return;
+            const transaction = db.transaction.bind(db);
+            db.transaction = ((stores: string | string[], mode?: IDBTransactionMode) => (mode === "readwrite" && stores === "threads" && ++writes > 1 ? hang : transaction(stores, mode))) as IDBDatabase["transaction"];
+          });
+          return r;
+        };
+      },
+    }) as IDBFactory;
+    void migrateLegacyIdb(dying, "terno");
+    for (let i = 0; i < 200 && writes < 2; i++) await new Promise((r) => setTimeout(r, 5));
+    expect(writes).toBe(2);
+    for (const db of connections) db.close();
+    const partial = await request(indexedDB.open("terno-terno"));
+    const copied = await request(partial.transaction("threads").objectStore("threads").count());
+    partial.close();
+    expect(copied).toBe(500);
+
+    // the next start finishes the job from the legacy database, which was never touched
+    expect(await migrateLegacyIdb(indexedDB, "terno")).toEqual([expect.stringMatching(/^IndexedDB unica-unica → terno-terno/)]);
+    const db = await request(indexedDB.open("terno-terno"));
+    expect(await request(db.transaction("threads").objectStore("threads").count())).toBe(1100);
+    db.close();
+    expect((await indexedDB.databases()).map((d) => d.name)).toEqual(["terno-terno"]);
+  });
+
   it("leaves both alone when the Terno database already exists", async () => {
     await legacyDb("unica-unica", 4, 3);
     await legacyDb("terno-terno", 4, 9);

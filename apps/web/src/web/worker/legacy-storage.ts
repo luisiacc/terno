@@ -86,7 +86,7 @@ const BATCH = 500;
  * every record (in batches, so no transaction holds a whole mailbox), then
  * checks every store's count. The target must not exist.
  */
-export async function copyIdbDatabase(factory: IDBFactory, from: string, to: string): Promise<Record<string, number>> {
+export async function copyIdbDatabase(factory: IDBFactory, from: string, to: string, afterBatch?: () => Promise<void>): Promise<Record<string, number>> {
   const source = await request(factory.open(from));
   try {
     const stores = [...source.objectStoreNames].map((name) => {
@@ -118,6 +118,7 @@ export async function copyIdbDatabase(factory: IDBFactory, from: string, to: str
           const write = tx.objectStore(s.name);
           for (let i = 0; i < keys.length; i++) write.put(values[i], s.keyPath === null ? keys[i] : undefined);
           await committed(tx);
+          await afterBatch?.();
           after = keys[keys.length - 1];
           if (keys.length < BATCH) break;
         }
@@ -143,25 +144,86 @@ function deleteIdb(factory: IDBFactory, name: string): Promise<void> {
   });
 }
 
+/**
+ * The copies in flight, in their own small database: a destination is
+ * recorded "copying" before it is created and "copied" once verified, and the
+ * record goes after the legacy database is deleted. A start that finds
+ * "copying" (the tab closed mid-copy) rebuilds that destination from the
+ * untouched legacy database; one that finds "copied" finishes the cleanup.
+ */
+export const MIGRATION_JOURNAL = "terno-legacy-migration";
+type CopyState = { from: string; state: "copying" | "copied" };
+
+async function openJournal(factory: IDBFactory): Promise<IDBDatabase> {
+  const open = factory.open(MIGRATION_JOURNAL, 1);
+  open.onupgradeneeded = () => open.result.createObjectStore("copies");
+  return request(open);
+}
+
+async function journalWrite(journal: IDBDatabase, to: string, value: CopyState | null): Promise<void> {
+  const tx = journal.transaction("copies", "readwrite");
+  if (value) tx.objectStore("copies").put(value, to);
+  else tx.objectStore("copies").delete(to);
+  await committed(tx);
+}
+
+async function journalEntries(journal: IDBDatabase): Promise<Map<string, CopyState>> {
+  const store = journal.transaction("copies").objectStore("copies");
+  const [keys, values] = await Promise.all([request(store.getAllKeys()), request(store.getAll())]);
+  return new Map(keys.map((k, i) => [String(k), values[i] as CopyState]));
+}
+
 /** Every legacy IndexedDB database (the key store first, the mailboxes) to its Terno name. */
-export async function migrateLegacyIdb(factory: IDBFactory, mailbox: string, log: Log = () => {}): Promise<string[]> {
+export async function migrateLegacyIdb(factory: IDBFactory, mailbox: string, log: Log = () => {}, options: { afterBatch?: (to: string) => Promise<void> } = {}): Promise<string[]> {
   const report: string[] = [];
   const names = (await legacyIdbNames(factory, mailbox)).sort((a, b) => Number(b.endsWith("-keys")) - Number(a.endsWith("-keys")));
-  for (const from of names) {
-    const to = idbName(from)!;
-    if (await idbExists(factory, to)) {
-      log(`IndexedDB ${from} left alone: ${to} exists`);
-      continue;
-    }
-    try {
-      const counts = await copyIdbDatabase(factory, from, to);
+  const hadJournal = await idbExists(factory, MIGRATION_JOURNAL);
+  if (names.length === 0 && !hadJournal) return report;
+  const journal = await openJournal(factory);
+  try {
+    const entries = await journalEntries(journal);
+    for (const from of names) {
+      const to = idbName(from)!;
+      const state = entries.get(to)?.state;
+      if (state === "copied") {
+        // verified before the tab went away: only the cleanup was left
+        await deleteIdb(factory, from);
+        await journalWrite(journal, to, null);
+        report.push(`IndexedDB ${from} → ${to} (finished)`);
+        continue;
+      }
+      if (state === "copying") {
+        log(`IndexedDB ${to} is an interrupted copy of ${from}: copying it again`);
+        await deleteIdb(factory, to);
+      } else if (await idbExists(factory, to)) {
+        log(`IndexedDB ${from} left alone: ${to} exists`);
+        continue;
+      }
+      await journalWrite(journal, to, { from, state: "copying" });
+      let counts: Record<string, number>;
+      try {
+        counts = await copyIdbDatabase(factory, from, to, options.afterBatch && (() => options.afterBatch!(to)));
+      } catch (error) {
+        // a partial copy goes (and its record after it); the legacy database stays as it was
+        await deleteIdb(factory, to).catch(() => {});
+        await journalWrite(journal, to, null).catch(() => {});
+        throw new Error(`${from}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      await journalWrite(journal, to, { from, state: "copied" });
       await deleteIdb(factory, from);
+      await journalWrite(journal, to, null);
       report.push(`IndexedDB ${from} → ${to} (${Object.values(counts).reduce((a, b) => a + b, 0)} records)`);
-    } catch (error) {
-      // a partial copy goes; the legacy database stays as it was
-      await deleteIdb(factory, to).catch(() => {});
-      throw new Error(`${from}: ${error instanceof Error ? error.message : String(error)}`);
     }
+    for (const [to, { from, state }] of await journalEntries(journal)) {
+      // a record whose legacy database is gone: a verified copy is simply done; an unverified one is kept and reported
+      if (state === "copied") await journalWrite(journal, to, null);
+      else log(`IndexedDB ${to}: an interrupted copy of ${from}, which no longer exists; kept as it is`);
+    }
+    const empty = (await journalEntries(journal)).size === 0;
+    journal.close();
+    if (empty) await deleteIdb(factory, MIGRATION_JOURNAL);
+  } finally {
+    journal.close();
   }
   return report;
 }

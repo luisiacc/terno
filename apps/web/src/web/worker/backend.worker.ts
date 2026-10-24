@@ -87,7 +87,10 @@ async function start(init: WorkerInit): Promise<void> {
   const moved: string[] = [];
   const note = (message: string) => console.warn(`[storage] ${message}`);
   try {
-    moved.push(...(await migrateLegacyIdb(indexedDB, init.name, note)));
+    // demo builds (tests): ?legacyPause=1 holds a mailbox's copy after its first batch until the tab goes away
+    const pause = import.meta.env.VITE_WEB_DEMO === "1" && init.pauseLegacyCopy;
+    const afterBatch = pause ? (to: string) => (to.endsWith("-keys") ? Promise.resolve() : new Promise<void>(() => {})) : undefined;
+    moved.push(...(await migrateLegacyIdb(indexedDB, init.name, note, { afterBatch })));
   } catch (error) {
     return migrationFailed(error);
   }

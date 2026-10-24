@@ -173,6 +173,30 @@ for (const storage of ["opfs-sqlite", "idb"] as const) {
   });
 }
 
+test("a tab closed in the middle of moving Única's IndexedDB mailbox: the next start copies it again, whole", async ({ context, page }) => {
+  const before = await seedLegacyMailbox(page, "idb");
+  await page.close();
+  const fixture = await context.newPage();
+  await fixture.goto("/theme.js");
+  const probe = (await sealWithKeyStore(fixture, "terno-keys")) as number[];
+  await renameToLegacy(fixture);
+  const names = () => fixture.evaluate(async () => (await indexedDB.databases()).map((d) => d.name!).sort());
+
+  // the copy is held after the mailbox's first batch (demo builds, ?legacyPause=1): closing the tab kills its worker mid-copy
+  const cut = await context.newPage();
+  await cut.goto("/?demo=0&legacyPause=1");
+  await expect.poll(names).toEqual(["terno-keys", "terno-legacy-migration", "terno-terno", "unica-unica"]);
+  await cut.close();
+
+  const app = await context.newPage();
+  await app.goto("/?demo=0");
+  await rows(app).first().waitFor({ timeout: 60_000 });
+  expect(await app.evaluate(() => window.__ternoWeb!.storage)).toBe("idb");
+  expect(await snapshot(app)).toEqual(before);
+  expect(await sealWithKeyStore(app, "terno-keys", probe)).toBe("probe ñ");
+  expect(await names()).toEqual(["terno-keys", "terno-terno"]);
+});
+
 test("a tab of the older build (still called Única) keeps the mailbox until it hands it over, and learns it should reload", async ({ context, page }) => {
   // stands in for the old build: it leads under the legacy lock and answers on the legacy channel as that build did
   await page.goto("/theme.js");
