@@ -50,6 +50,7 @@ test.describe("accounts, settings and command palette", () => {
       await page.getByTestId("palette-input").fill(`ajustes ${label}`);
       await expect(page.getByRole("option", { selected: true })).toHaveAttribute("data-testid", `palette-settings-${tab}`);
       await page.keyboard.press("Enter");
+      await expect(page.getByTestId("palette-input")).toHaveCount(0);
       await expect(page.getByTestId(`tab-${tab}`)).toHaveAttribute("aria-selected", "true");
       await page.keyboard.press("Escape");
       await expect(page.getByTestId("settings-dialog")).toHaveCount(0);

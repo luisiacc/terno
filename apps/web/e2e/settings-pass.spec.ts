@@ -38,6 +38,8 @@ async function openVia(page: Page, how: "gear" | "palette" | "keyboard", tab: Ta
     await page.getByTestId("palette-input").fill(`ajustes ${TABS.find(([t]) => t === tab)![1]}`);
     await expect(page.getByRole("option", { selected: true })).toHaveAttribute("data-testid", `palette-settings-${tab}`);
     await page.keyboard.press("Enter");
+    // the palette has finished closing (Esc meant for settings must not reach it)
+    await expect(page.getByTestId("palette-input")).toHaveCount(0);
   } else {
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await page.keyboard.press("Meta+Comma");
