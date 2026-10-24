@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient, type RpcError } from "@unica/core/rpc";
 import { createAccount, sqlDb } from "@unica/db";
+import type { IncomingMessage } from "@unica/store";
 import type { GmailConnectResult, MailProvider, ProviderRegistry, SyncSink } from "@unica/mail";
 import { afterEach, describe, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
@@ -272,5 +273,59 @@ describe("an account's preferences and its sync cursor", () => {
     store.config = config;
     expect(await store.get(a.id)).toMatchObject({ signature: "Luis", syncWindowDays: 30 });
     expect((await store.config<{ cursor: unknown }>(a.id))!.config.cursor).toEqual({ uidNext: 42 });
+  });
+});
+
+describe("drafts in an export (format 2)", () => {
+  const original = (accountId: number, rfc: string): IncomingMessage => ({
+    accountId, providerMsgId: rfc, providerThreadId: null, rfcMessageId: `<${rfc}@x>`, inReplyTo: null, references: [],
+    from: { name: "Yuki", email: "yuki@acme.studio" }, to: [{ name: "Luis", email: "luis@fastmail.com" }], cc: [], bcc: [],
+    subject: "Propuesta", date: NOW - DAY, snippet: "hola", bodyText: "hola", bodyHtml: null, bodyState: "full", listId: null,
+    isRead: true, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 100,
+  });
+  const ingest = (b: Backend, m: IncomingMessage) => b.store.sync.ingest([m], { applyFilters: false, now: NOW, classifier: null });
+  const messageId = (b: Backend, rfc: string) => sqlDb(b.store).get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE rfc_message_id = ?", `${rfc}@x`)!;
+
+  it("keep mode, Bcc, the quote and what they answer or forward (by Message-ID), and send as they would have", async () => {
+    const from = setup();
+    const a = await from.client.call("accounts.addImap", imap("luis@fastmail.com"));
+    await ingest(from.backend, original(a.id, "orig"));
+    await ingest(from.backend, original(a.id, "gone"));
+    const src = messageId(from.backend, "orig");
+    const bcc = [{ name: "", email: "jefe@acme.studio" }];
+    await from.client.call("drafts.save", { accountId: a.id, threadId: src.thread_id, mode: "forward", to: [{ name: "", email: "ana@x.dev" }], bcc, subject: "Fwd: Propuesta", subjectEdited: true, bodyText: "Mira esto", quotedText: "---------- Mensaje reenviado ----------\nhola", includeQuote: true, forwardOfMessageId: src.id, uiState: "collapsed" });
+    await from.client.call("drafts.save", { accountId: a.id, mode: "reply", to: [{ name: "Yuki", email: "yuki@acme.studio", auto: true }], subject: "Re: Propuesta", bodyText: "Sí", quotedText: "> hola", includeQuote: true, inReplyToMessageId: src.id });
+    const gone = messageId(from.backend, "gone");
+    await from.client.call("drafts.save", { accountId: a.id, mode: "reply", to: [{ name: "Yuki", email: "yuki@acme.studio" }], subject: "Re: Propuesta", bodyText: "Lo vemos", quotedText: "> otra", includeQuote: true, inReplyToMessageId: gone.id });
+    const dump = await from.client.call("app.export", {});
+    expect(dump.version).toBe(2);
+
+    // elsewhere: the same mailbox, re-synced, has the original but not the other message
+    const to = setup();
+    const here = await to.client.call("accounts.addImap", imap("luis@fastmail.com"));
+    await ingest(to.backend, { ...original(here.id, "orig"), providerMsgId: "other-id" });
+    const dst = messageId(to.backend, "orig");
+    await to.client.call("app.import", { data: dump });
+    const drafts = await to.client.call("drafts.list", {});
+    const fwd = drafts.find((d) => d.mode === "forward")!;
+    expect(fwd).toMatchObject({ accountId: here.id, threadId: dst.thread_id, forwardOfMessageId: dst.id, to: [{ name: "", email: "ana@x.dev" }], bcc, subject: "Fwd: Propuesta", subjectEdited: true, bodyText: "Mira esto", quotedText: "---------- Mensaje reenviado ----------\nhola", includeQuote: true, uiState: "collapsed" });
+    expect(drafts.find((d) => d.mode === "reply")).toMatchObject({ inReplyToMessageId: dst.id, threadId: dst.thread_id, to: [{ name: "Yuki", email: "yuki@acme.studio", auto: true }], quotedText: "> hola", includeQuote: true });
+    // what it answered isn't here: a new message that still carries the quote, visibly, in its text
+    expect(drafts.find((d) => d.bodyText.startsWith("Lo vemos"))).toMatchObject({ mode: "new", threadId: null, inReplyToMessageId: null, bodyText: "Lo vemos\n\n> otra", quotedText: "", includeQuote: false });
+
+    // sending the imported forward: its Bcc and the forwarded text go out, and the draft is gone
+    const sent = await to.client.call("compose.send", { accountId: here.id, to: fwd.to, cc: fwd.cc, bcc: fwd.bcc, subject: fwd.subject, bodyText: `${fwd.bodyText}\n\n${fwd.quotedText}`, forwardOfMessageId: fwd.forwardOfMessageId!, draftId: fwd.id });
+    const op = sqlDb(to.backend.store).get<{ payload_json: string }>("SELECT payload_json FROM ops WHERE id = ?", sent.opId)!;
+    expect(op.payload_json).toContain("jefe@acme.studio");
+    expect(op.payload_json).toContain("Mensaje reenviado");
+    expect((await to.client.call("drafts.list", {})).some((d) => d.id === fwd.id)).toBe(false);
+  });
+
+  it("an export from before (format 1) still imports its drafts", async () => {
+    const { client } = setup();
+    const a = await client.call("accounts.addImap", imap("luis@fastmail.com"));
+    const v1 = { format: "unica-export", version: 1, accounts: [], categories: [], filters: [], drafts: [{ accountEmail: a.email, to: [{ name: "", email: "ana@x.dev" }], cc: [], subject: "Hola", bodyText: "Texto", updatedAt: NOW }] };
+    await client.call("app.import", { data: v1 as never });
+    expect(await client.call("drafts.list", {})).toMatchObject([{ mode: "new", subject: "Hola", bodyText: "Texto", bcc: [] }]);
   });
 });

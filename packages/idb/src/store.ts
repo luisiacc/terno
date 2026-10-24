@@ -1072,6 +1072,15 @@ export class IdbMailStore implements MailStore {
     // waits for the messages: an orphan (its original gone) is told apart from a draft whose original is loading
     list: () => this.read(() => listDrafts(this.c)),
     delete: (id) => this.command(() => void T(this.c, "drafts").delete(id)),
+    messageRef: (id) => this.read(() => (T(this.c, "messages").get(id)?.rfc_message_id as string | null | undefined) ?? null),
+    findMessage: (accountId, rfc) =>
+      this.read(() => {
+        const id = rfc.trim().replace(/^<|>$/g, "").trim().toLowerCase();
+        const m = T(this.c, "messages")
+          .by("rfc", accountId, id)
+          .sort((x, y) => y.id - x.id)[0];
+        return m ? { id: m.id as number, threadId: m.thread_id as number } : null;
+      }),
   };
 
   readonly settings: MailStore["settings"] = {

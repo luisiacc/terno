@@ -666,6 +666,18 @@ export function normalizeOrphan(d: DraftRow, exists: (messageId: number | null) 
   return lost ? { ...d, mode: "new", thread_id: null, in_reply_to_message_id: null, forward_of_message_id: null } : d;
 }
 
+/** Message-IDs are stored as ingestion normalizes them: no <>, lower case. */
+export const normalizeRfcId = (id: string): string => id.trim().replace(/^<|>$/g, "").trim().toLowerCase();
+
+export function messageRef(db: Db, messageId: number): string | null {
+  return db.get<{ r: string | null }>("SELECT rfc_message_id AS r FROM messages WHERE id = ?", messageId)?.r ?? null;
+}
+
+export function findMessageByRef(db: Db, accountId: number, rfcMessageId: string): { id: number; threadId: number } | null {
+  const r = db.get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE account_id = ? AND rfc_message_id = ? ORDER BY id DESC LIMIT 1", accountId, normalizeRfcId(rfcMessageId));
+  return r ? { id: r.id, threadId: r.thread_id } : null;
+}
+
 export function deleteDraft(db: Db, id: number): void {
   db.run("DELETE FROM drafts WHERE id = ?", id);
 }

@@ -99,6 +99,8 @@ import {
   removeAccount,
   resumeAuthOps,
   saveDraft,
+  messageRef,
+  findMessageByRef,
   saveFilter,
   setAccountProviderConfig,
   setAccountCursor,
@@ -700,6 +702,8 @@ export class SqlMailStore implements MailStore {
     save: async (d, now) => saveDraft(this.db, d, now),
     list: async () => listDrafts(this.db),
     delete: async (id) => deleteDraft(this.db, id),
+    messageRef: async (id) => messageRef(this.db, id),
+    findMessage: async (accountId, rfc) => findMessageByRef(this.db, accountId, rfc),
   };
 
   readonly settings: MailStore["settings"] = {

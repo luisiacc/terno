@@ -32,12 +32,12 @@ it("exports categories, filters, settings, drafts and unsent ops, and no secret"
   await client.call("drafts.save", { accountId: accounts[0]!.id, to: [{ name: "", email: "ana@example.com" }], cc: [], subject: "Borrador", bodyText: "hola" });
 
   const dump = await client.call("app.export", {});
-  expect(dump).toMatchObject({ format: "unica-export", version: 1 });
+  expect(dump).toMatchObject({ format: "unica-export", version: 2 });
   expect(dump.categories.length).toBeGreaterThan(0);
   expect(dump.filters.map((f) => f.name)).toContain("Notificaciones de GitHub → Desarrollo");
   expect(dump.settings).toMatchObject({ gmailClientId: "client-1.apps.googleusercontent.com", density: "compact" });
   expect(dump.accounts.map((a) => a.email)).toEqual(accounts.map((a) => a.email));
-  expect(dump.drafts).toMatchObject([{ subject: "Borrador" }]);
+  expect(dump.drafts).toMatchObject([{ subject: "Borrador", mode: "new", bcc: [], quotedText: "", inReplyTo: null, forwardOf: null }]);
   expect(dump.ops).toMatchObject([{ kind: "archive", state: "queued" }]);
   expect(JSON.stringify(dump)).not.toContain("sk-ant-secret");
   // agents can't take it

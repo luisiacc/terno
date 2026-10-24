@@ -151,9 +151,28 @@ export interface Bootstrap {
 }
 
 /** What a browser mailbox can't afford to lose to storage eviction (re-syncable mail excluded), never a secret. */
+/** A draft in an export (format 2): all of it; what it answers or forwards by Message-ID, which survives a re-sync. */
+export interface ExportedDraft {
+  accountEmail: string | null;
+  mode: DraftMode;
+  to: DraftAddress[];
+  cc: DraftAddress[];
+  bcc: DraftAddress[];
+  subject: string;
+  subjectEdited: boolean;
+  bodyText: string;
+  quotedText: string;
+  includeQuote: boolean;
+  inReplyTo: string | null;
+  forwardOf: string | null;
+  uiState: "open" | "collapsed";
+  updatedAt: number;
+}
+
 export interface MailboxExport {
   format: "unica-export";
-  version: 1;
+  /** 2: drafts carry their whole shape (1 had only recipients, subject and text) */
+  version: 2;
   exportedAt: number;
   app: string;
   /** ids let an import map filters' account conditions to the same mailbox by address */
@@ -161,7 +180,7 @@ export interface MailboxExport {
   categories: Category[];
   filters: Filter[];
   settings: AppSettings;
-  drafts: { accountEmail: string | null; to: unknown; cc: unknown; subject: string; bodyText: string; updatedAt: number }[];
+  drafts: ExportedDraft[];
   /** provider operations not yet done (sends included, with their message) */
   ops: { accountEmail: string | null; kind: string; state: string; createdAt: number; lastError: string | null; target: unknown; payload: unknown }[];
 }
@@ -281,13 +300,33 @@ export { settingsPatch as settingsPatchSchema, draftAddress as draftAddressSchem
 /** An export file (app.export) as app.import reads it: what it knows, validated; anything else ignored. */
 const exportFile = z.object({
   format: z.literal("unica-export"),
-  version: z.literal(1),
+  version: z.union([z.literal(1), z.literal(2)]),
   accounts: z.array(z.object({ id: id.optional(), email: z.string().max(320), kind: z.string().max(20), displayName: z.string().max(300) })).max(1000).default([]),
   categories: z.array(z.object({ id, name: z.string().trim().min(1).max(60), color: z.enum(CATEGORY_COLORS), position: z.number().int().optional(), autoApply: z.boolean().optional() })).max(1000).default([]),
   filters: z.array(z.object({ name: z.string().trim().min(1).max(120), enabled: z.boolean(), source: z.enum(["manual", "ai", "learned"]), rule: filterRuleSchema })).max(5000).default([]),
   /** read field by field on import (each only if valid) */
   settings: z.unknown().optional(),
-  drafts: z.array(z.object({ accountEmail: z.string().max(320).nullable(), to: z.unknown(), cc: z.unknown(), subject: z.string().max(998), bodyText: z.string().max(5_000_000) })).max(5000).default([]),
+  drafts: z
+    .array(
+      z.object({
+        accountEmail: z.string().max(320).nullable(),
+        // format 2 (format 1 had only recipients, subject and text: those import as new messages)
+        mode: z.enum(DRAFT_MODES).default("new"),
+        to: z.unknown(),
+        cc: z.unknown(),
+        bcc: z.unknown().optional(),
+        subject: z.string().max(998),
+        subjectEdited: z.boolean().default(false),
+        bodyText: z.string().max(5_000_000),
+        quotedText: z.string().max(5_000_000).default(""),
+        includeQuote: z.boolean().default(false),
+        inReplyTo: z.string().max(1000).nullable().default(null),
+        forwardOf: z.string().max(1000).nullable().default(null),
+        uiState: z.enum(["open", "collapsed"]).default("open"),
+      }),
+    )
+    .max(5000)
+    .default([]),
 });
 export type ExportFile = z.output<typeof exportFile>;
 

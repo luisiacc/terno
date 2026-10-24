@@ -367,6 +367,10 @@ export interface MailStore {
     save(d: DraftInput, now: number): Promise<DraftRow | null>;
     list(): Promise<DraftRow[]>;
     delete(id: number): Promise<void>;
+    /** a message's Message-ID (what a draft answers or forwards, portably, in an export) */
+    messageRef(messageId: number): Promise<string | null>;
+    /** the newest message of an account with that Message-ID (any case, with or without <>), for an import */
+    findMessage(accountId: number, rfcMessageId: string): Promise<{ id: number; threadId: number } | null>;
   };
 
   settings: {

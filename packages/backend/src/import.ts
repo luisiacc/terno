@@ -1,5 +1,6 @@
 import type { Condition, FilterAction, FilterRule } from "@unica/core";
-import { draftAddressSchema, settingsPatchSchema, type ExportFile, type ImportResult, type SettingsPatch } from "@unica/core/rpc";
+import { draftAddressSchema, settingsPatchSchema, type DraftAddress, type ExportedDraft, type ExportFile, type ImportResult, type MailboxExport, type SettingsPatch } from "@unica/core/rpc";
+import type { DraftInput } from "@unica/store";
 import type { BackendCore as Backend } from "./core";
 import { pinKeyOrigins, readSettings, SettingsError, updateSettings } from "./settings";
 
@@ -34,6 +35,77 @@ function settingsFrom(raw: Record<string, unknown>, current: { localMode: boolea
   const ai = raw.ai as { provider?: unknown; model?: unknown; baseURL?: unknown; preset?: unknown } | undefined;
   const parsed = ai ? settingsPatchSchema.safeParse({ ai: { provider: ai.provider, model: ai.model, baseURL: ai.baseURL ?? null, preset: ai.preset ?? null } }) : null;
   return { general: general as SettingsPatch, ai: parsed?.success ? parsed.data.ai : undefined };
+}
+
+/** What can't be re-synced, as a file (format 2): drafts whole, what they answer or forward by Message-ID. */
+export async function exportMailbox(b: Backend): Promise<MailboxExport> {
+  const store = b.store;
+  const accounts = await store.accounts.list();
+  const emailOf = (id: number) => accounts.find((a) => a.id === id)?.email ?? null;
+  const ref = (id: number | null) => (id === null ? Promise.resolve(null) : store.drafts.messageRef(id));
+  const drafts: ExportedDraft[] = [];
+  for (const d of await store.drafts.list()) {
+    drafts.push({
+      accountEmail: emailOf(d.account_id),
+      mode: d.mode,
+      to: JSON.parse(d.to_json) as DraftAddress[],
+      cc: JSON.parse(d.cc_json) as DraftAddress[],
+      bcc: JSON.parse(d.bcc_json) as DraftAddress[],
+      subject: d.subject,
+      subjectEdited: d.subject_edited === 1,
+      bodyText: d.body_text,
+      quotedText: d.quoted_text,
+      includeQuote: d.include_quote === 1,
+      inReplyTo: await ref(d.in_reply_to_message_id),
+      forwardOf: await ref(d.forward_of_message_id),
+      uiState: d.ui_state,
+      updatedAt: d.updated_at,
+    });
+  }
+  return {
+    format: "unica-export",
+    version: 2,
+    exportedAt: b.now(),
+    app: b.options.version,
+    accounts: accounts.map((a) => ({ id: a.id, email: a.email, kind: a.kind, displayName: a.displayName })),
+    categories: await store.categories.list(),
+    filters: await store.filters.list(),
+    settings: await readSettings(store),
+    drafts,
+    ops: (await store.ops.recent(100_000))
+      .filter((o) => o.state !== "succeeded")
+      .map((o) => ({ accountEmail: emailOf(o.account_id), kind: o.kind, state: o.state, createdAt: o.created_at, lastError: o.last_error, target: JSON.parse(o.target_json), payload: JSON.parse(o.payload_json) })),
+  };
+}
+
+/**
+ * A draft from a file, for an account here. A reply or forward whose
+ * original is here (by Message-ID) comes back as itself; otherwise it is a
+ * new message whose kept quote joins its text, so nothing it would have sent
+ * is hidden or lost.
+ */
+async function draftFrom(b: Backend, accountId: number, d: ExportFile["drafts"][number]): Promise<DraftInput | null> {
+  const to = addresses.safeParse(d.to);
+  const cc = addresses.safeParse(d.cc);
+  const bcc = addresses.safeParse(d.bcc ?? []);
+  if (!to.success || !cc.success || !bcc.success) return null;
+  const base = { accountId, to: to.data, cc: cc.data, bcc: bcc.data, subject: d.subject, subjectEdited: d.subjectEdited, uiState: d.uiState };
+  const ref = d.mode === "forward" ? d.forwardOf : d.mode === "new" ? null : d.inReplyTo;
+  const original = ref ? await b.store.drafts.findMessage(accountId, ref) : null;
+  if (original) {
+    return {
+      ...base,
+      mode: d.mode,
+      threadId: original.threadId,
+      bodyText: d.bodyText,
+      quotedText: d.quotedText,
+      includeQuote: d.includeQuote,
+      inReplyToMessageId: d.mode === "forward" ? null : original.id,
+      forwardOfMessageId: d.mode === "forward" ? original.id : null,
+    };
+  }
+  const body = d.includeQuote && d.quotedText ? [d.bodyText.replace(/\s+$/, ""), d.quotedText].filter(Boolean).join("\n\n") : d.bodyText;
+  return { ...base, mode: "new", threadId: null, bodyText: body, quotedText: "", includeQuote: false, inReplyToMessageId: null, forwardOfMessageId: null };
 }
 
 export async function importMailbox(b: Backend, data: ExportFile): Promise<ImportResult> {
@@ -102,10 +174,9 @@ export async function importMailbox(b: Backend, data: ExportFile): Promise<Impor
   let drafts = 0;
   for (const d of data.drafts) {
     const account = accounts.find((a) => a.email === d.accountEmail?.toLowerCase());
-    const to = addresses.safeParse(d.to);
-    const cc = addresses.safeParse(d.cc);
-    if (!account || !to.success || !cc.success) continue;
-    await store.drafts.save({ accountId: account.id, mode: "new", to: to.data, cc: cc.data, subject: d.subject, bodyText: d.bodyText }, now);
+    const draft = account ? await draftFrom(b, account.id, d) : null;
+    if (!draft) continue;
+    await store.drafts.save(draft, now);
     drafts++;
   }
 
