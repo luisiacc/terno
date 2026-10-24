@@ -64,6 +64,13 @@ export const THEME_TOKENS = [
   "cat-indigo-ink",
   "cat-violet-ink",
   "cat-slate-ink",
+  // plan 07: separators, faint surfaces, raised highlights, the draft label, sidebar glyphs, translucent menus
+  "hairline",
+  "tint",
+  "highlight",
+  "draft-foreground",
+  "sidebar-glyph",
+  "popover-glass",
   // chrome
   "overlay",
   "shadow-color",

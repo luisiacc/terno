@@ -1,6 +1,6 @@
 import type { ThemeToken } from "@unica/core";
 import { contrast, parseColor, withAlpha } from "./color";
-import { CAT_NAMES, type Theme } from "./registry";
+import { CAT_NAMES, GLASS_BACKDROPS, GLASS_TEXT, type Theme } from "./registry";
 
 export interface ContrastPair {
   fg: ThemeToken;
@@ -8,6 +8,8 @@ export interface ContrastPair {
   /** the background is this token at 15% (soft badges) */
   tint?: boolean;
   min: 4.5 | 3;
+  /** what the (translucent) background sits on, instead of the theme background: e.g. a menu over a white HTML mail */
+  over?: string;
 }
 
 const text = (fg: ThemeToken, bgs: ThemeToken[]): ContrastPair[] => bgs.map((bg) => ({ fg, bg, min: 4.5 }));
@@ -35,6 +37,13 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   ...ui("ring", ["background"]),
   ...ui("star", ["background"]),
   ...CAT_NAMES.map((c): ContrastPair => ({ fg: `cat-${c}`, bg: "background", min: 3 })),
+  // plan 07: the pairs as they are drawn
+  ...text("foreground", ["tint"]),
+  ...text("muted-foreground", ["tint"]),
+  ...text("draft-foreground", ["background", "row-hover", "row-selected", "accent"]),
+  ...ui("sidebar-glyph", ["sidebar", "sidebar-accent"]),
+  // translucent menus: their text over anything (black or white) behind them
+  ...GLASS_TEXT.flatMap((fg) => GLASS_BACKDROPS.map((over): ContrastPair => ({ fg, bg: "popover-glass", min: 4.5, over: `oklch(${over})` }))),
 ];
 
 export interface ContrastFailure {
@@ -49,8 +58,8 @@ export function contrastFailures(theme: Pick<Theme, "tokens">, pairs: readonly C
   const out: ContrastFailure[] = [];
   for (const p of pairs) {
     const bg = p.tint ? withAlpha(parseColor(t[p.bg]), 0.15) : parseColor(t[p.bg]);
-    const ratio = contrast(parseColor(t[p.fg]), bg, t.background);
-    if (ratio < p.min) out.push({ pair: `${p.fg} / ${p.bg}${p.tint ? " 15%" : ""}`, ratio: Math.round(ratio * 100) / 100, min: p.min });
+    const ratio = contrast(parseColor(t[p.fg]), bg, p.over ?? t.background);
+    if (ratio < p.min) out.push({ pair: `${p.fg} / ${p.bg}${p.tint ? " 15%" : ""}${p.over ? ` over ${p.over}` : ""}`, ratio: Math.round(ratio * 100) / 100, min: p.min });
   }
   return out;
 }

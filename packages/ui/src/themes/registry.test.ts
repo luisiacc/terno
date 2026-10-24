@@ -1,7 +1,7 @@
 import { BUILTIN_THEMES, customThemeSchema, DEFAULT_THEME, THEME_TOKENS } from "@unica/core";
 import { describe, expect, it } from "vitest";
 import { contrast, parseColor } from "./color";
-import { builtinTheme, resolveCustomTheme, THEMES, themesFor } from "./registry";
+import { builtinTheme, glassAlpha, resolveCustomTheme, THEMES, themesFor } from "./registry";
 
 describe("theme registry", () => {
   it("matches core's built-in list, in order, with unique ids", () => {
@@ -44,6 +44,49 @@ describe("theme registry", () => {
   it("only Única and Apple sit on the native vibrancy; Apple uses the system font", () => {
     expect(THEMES.filter((t) => t.vibrancy).map((t) => t.id)).toEqual(["unica-light", "apple-light", "unica-dark"]);
     expect(builtinTheme("apple-light")!.font).toContain("-apple-system");
+  });
+});
+
+describe("plan 07 tokens", () => {
+  it("hairline is ink at 9 % / 8 %; highlight is white at 16 % / 6 %", () => {
+    expect(parseColor(builtinTheme("unica-light")!.tokens.hairline).alpha).toBe(0.09);
+    expect(parseColor(builtinTheme("unica-dark")!.tokens.hairline).alpha).toBe(0.08);
+    expect(parseColor(builtinTheme("unica-light")!.tokens.highlight).alpha).toBe(0.16);
+    expect(parseColor(builtinTheme("nord")!.tokens.highlight).alpha).toBe(0.06);
+  });
+
+  it("tint sits between the background and the ink, and text on it still reads", () => {
+    for (const t of THEMES) {
+      const [bg, tint, fg] = [t.tokens.background, t.tokens.tint, t.tokens.foreground].map((c) => parseColor(c).l);
+      expect(Math.abs(tint! - bg!), t.id).toBeLessThanOrEqual(Math.abs(fg! - bg!) * 0.06);
+      expect(contrast(t.tokens["muted-foreground"], t.tokens.tint, t.tokens.background), t.id).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("the draft label steps away from destructive only when a row would make it unreadable", () => {
+    // Dracula's destructive reads at 3.52:1 on its selected row: stepped lighter
+    const dracula = builtinTheme("dracula")!.tokens;
+    expect(parseColor(dracula["draft-foreground"]).l).toBeGreaterThan(parseColor(dracula.destructive).l);
+    expect(contrast(dracula["draft-foreground"], dracula["row-selected"])).toBeGreaterThanOrEqual(4.5);
+    // GitHub's reads everywhere already: unchanged
+    const gh = builtinTheme("github-light")!.tokens;
+    expect(gh["draft-foreground"]).toBe(gh.destructive);
+  });
+
+  it("menus are translucent only as far as their text stays readable over black and white", () => {
+    const white = parseColor("oklch(1 0 0)");
+    // dark ink reads on a white menu over anything at the lowest alpha
+    expect(glassAlpha(white, [parseColor("oklch(0.15 0 0)")])).toBe(0.88);
+    // light grey text on a white menu fails over black until the menu is solid enough
+    expect(glassAlpha(white, [parseColor("oklch(0.56 0 0)")])).toBeGreaterThan(0.88);
+    // Nord's muted text would read 3.74:1 at 88 % over white: its menus go solid
+    expect(parseColor(builtinTheme("nord")!.tokens["popover-glass"]).alpha).toBe(1);
+  });
+
+  it("custom themes re-derive the plan 07 tokens from their own colors", () => {
+    const custom = customThemeSchema.parse({ id: "gris", name: "Gris", mode: "light", extends: "unica-light", tokens: { popover: "#f0f0f0", "muted-foreground": "#777777" } });
+    const t = resolveCustomTheme(custom);
+    expect(t.tokens["popover-glass"]).not.toBe(builtinTheme("unica-light")!.tokens["popover-glass"]);
   });
 });
 

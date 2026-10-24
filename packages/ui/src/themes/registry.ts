@@ -85,6 +85,32 @@ function inkFor(cat: Oklch, anchor: Oklch, surfaces: string[]): Oklch {
   return anchor;
 }
 
+/**
+ * `color` stepped in lightness (away from the surfaces) until it reaches
+ * `ratio` on every one of them; `fallback` if no step does.
+ */
+function stepUntil(color: Oklch, surfaces: string[], ratio: number, base: string, fallback: Oklch, darker: boolean): Oklch {
+  for (let i = 0; i <= 60; i++) {
+    const c = { ...color, l: Math.max(0, Math.min(1, color.l + (darker ? -0.01 : 0.01) * i)) };
+    if (surfaces.every((s) => contrast(c, s, base) >= ratio)) return c;
+  }
+  return fallback;
+}
+
+/** The text tokens drawn on a translucent menu. */
+export const GLASS_TEXT = ["popover-foreground", "muted-foreground", "destructive"] as const;
+/** Worst-case backdrops behind a translucent menu: anything may be under it (HTML mail, images). */
+export const GLASS_BACKDROPS = ["0 0 0", "1 0 0"] as const;
+
+/** The lowest popover alpha in [.88, 1] (.02 steps) at which every glass text pair passes 4.5:1 over both backdrops. */
+export function glassAlpha(popover: Oklch, texts: Oklch[]): number {
+  for (let a = 0.88; a < 1; a = Math.round((a + 0.02) * 100) / 100) {
+    const glass = withAlpha(popover, a);
+    if (GLASS_BACKDROPS.every((b) => texts.every((t) => contrast(t, glass, formatOklch(p(b))) >= 4.5))) return a;
+  }
+  return 1;
+}
+
 /** Fills in every token a theme doesn't declare. */
 export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "overrides">): Record<ThemeToken, string> {
   const t = input.tokens;
@@ -126,6 +152,22 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   def("mail-ink", () => "0.24 0.01 265");
   def("mail-link", () => "0.5 0.18 265");
   def("sidebar-translucent", () => withAlpha(o("sidebar"), light ? 0.72 : 0.62));
+  // plan 07
+  def("hairline", () => withAlpha(o("foreground"), light ? 0.09 : 0.08));
+  def("highlight", () => (light ? "1 0 0 / 16%" : "1 0 0 / 6%"));
+  def("tint", () => {
+    // a faint shift toward the ink, smaller until text on it still reads
+    for (let t = light ? 0.035 : 0.05; t > 0; t = Math.round((t - 0.005) * 1000) / 1000) {
+      const c = mixOklab(o("background"), o("foreground"), t);
+      if (contrast(o("muted-foreground"), c, bg) >= 4.5 && contrast(o("foreground"), c, bg) >= 4.5) return c;
+    }
+    return o("background");
+  });
+  def("draft-foreground", () =>
+    stepUntil(o("destructive"), ["background", "row-hover", "row-selected", "accent"].map((k) => formatOklch(o(k as ThemeToken))), 4.5, bg, o("foreground"), light),
+  );
+  def("sidebar-glyph", () => stepUntil(o("sidebar-primary"), [formatOklch(o("sidebar")), formatOklch(o("sidebar-accent"))], 3, bg, o("muted-foreground"), light));
+  def("popover-glass", () => withAlpha(o("popover"), glassAlpha(o("popover"), GLASS_TEXT.map((k) => o(k)))));
   const surfaces = [bg, formatOklch(o("card")), formatOklch(o("popover"))];
   for (const name of CAT_NAMES) def(`cat-${name}-ink`, () => inkFor(o(`cat-${name}`), o("ink-anchor"), surfaces));
 
@@ -160,8 +202,8 @@ export const THEMES: readonly Theme[] = [
       "muted-foreground": "0.5 0.012 265",
       accent: "0.945 0.012 268",
       "accent-foreground": "0.3 0.06 268",
-      border: "0.91 0.004 85",
-      input: "0.89 0.005 85",
+      border: "0.22 0.01 265 / 11%",
+      input: "0.22 0.01 265 / 16%",
       primary: "0.56 0.19 268",
       "primary-foreground": "0.99 0.004 268",
       destructive: "0.58 0.21 25",
@@ -169,9 +211,9 @@ export const THEMES: readonly Theme[] = [
       unread: "0.56 0.19 268",
       star: "0.665 0.16 80",
       "row-hover": "0.965 0.004 85",
-      "row-selected": "0.94 0.03 268",
+      "row-selected": "0.93 0.04 268",
       "row-selected-foreground": "0.22 0.04 268",
-      "sidebar-accent": "0.91 0.008 85",
+      "sidebar-accent": "0.22 0.01 265 / 7%",
     },
     cats: cats(".675 .12 10 | .665 .12 75 | .65 .12 130 | .645 .12 165 | .65 .1 215 | .62 .13 268 | .64 .13 300 | .62 .02 265"),
   }),
@@ -192,8 +234,8 @@ export const THEMES: readonly Theme[] = [
       "muted-foreground": "0.49 0.008 286",
       accent: "0.932 0.007 286",
       "accent-foreground": "0.232 0.004 286",
-      border: "0.916 0 0",
-      input: "0.862 0.007 286",
+      border: "0 0 0 / 10%",
+      input: "0 0 0 / 15%",
       primary: "0.573 0.218 257",
       "primary-foreground": "1 0 0",
       destructive: "0.594 0.232 29",
@@ -201,9 +243,9 @@ export const THEMES: readonly Theme[] = [
       unread: "0.603 0.218 257",
       star: "0.68 0.175 63",
       "row-hover": "0.971 0.003 286",
-      "row-selected": "0.927 0.031 259",
+      "row-selected": "0.93 0.035 257",
       "row-selected-foreground": "0.232 0.004 286",
-      "sidebar-accent": "0.894 0 0",
+      "sidebar-accent": "0 0 0 / 7%",
     },
     cats: cats(".65 .238 18 | .68 .175 63 | .665 .177 90 | .645 .194 147 | .662 .133 234 | .529 .191 278 | .615 .213 312 | .648 .007 286"),
   }),
@@ -337,18 +379,18 @@ export const THEMES: readonly Theme[] = [
     mode: "dark",
     vibrancy: true,
     tokens: {
-      background: "0.17 0.006 265",
+      background: "0.165 0.005 265",
       foreground: "0.95 0.004 85",
-      pane: "0.17 0.006 265",
-      card: "0.2 0.006 265",
-      popover: "0.21 0.007 265",
+      pane: "0.165 0.005 265",
+      card: "0.195 0.006 265",
+      popover: "0.215 0.007 265",
       sidebar: "0.2 0.006 265",
       muted: "0.24 0.007 265",
       "muted-foreground": "0.68 0.01 265",
       accent: "0.27 0.03 268",
       "accent-foreground": "0.92 0.03 268",
-      border: "1 0 0 / 9%",
-      input: "1 0 0 / 13%",
+      border: "1 0 0 / 8%",
+      input: "1 0 0 / 12%",
       primary: "0.7 0.16 268",
       "primary-foreground": "0.16 0.03 268",
       destructive: "0.68 0.19 22",
@@ -356,9 +398,9 @@ export const THEMES: readonly Theme[] = [
       unread: "0.72 0.15 268",
       star: "0.82 0.15 85",
       "row-hover": "1 0 0 / 4%",
-      "row-selected": "0.3 0.05 268",
+      "row-selected": "0.29 0.05 268",
       "row-selected-foreground": "0.97 0.01 268",
-      "sidebar-accent": "1 0 0 / 7%",
+      "sidebar-accent": "1 0 0 / 8%",
     },
     cats: cats(".72 .12 10 | .78 .12 75 | .78 .12 130 | .74 .12 165 | .76 .1 215 | .7 .13 268 | .72 .13 300 | .7 .02 265"),
   }),
