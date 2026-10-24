@@ -46,6 +46,7 @@ export interface Ctx {
   db: MemDb;
   uuid(): string;
   order: ThreadOrder;
+  scopes: ScopeIndex;
   /** a message's stored body: written by this command, read ahead of it, or absent; throws if it wasn't read ahead */
   body(messageId: number): { body_text: string | null; body_html: string | null } | null;
 }
@@ -132,6 +133,65 @@ export class ThreadOrder {
     }
     return lo;
   }
+}
+
+// ───────────────────────────── scope pages ─────────────────────────────
+
+/**
+ * Ascending thread ids, and each category's member thread ids ascending:
+ * what "select all N" pages seek into (binary search past the last id, then
+ * forward until the page is full). Built on first use and dropped when ids
+ * come or go (an update to a row keeps them), so pages never rescan and
+ * re-sort the mailbox.
+ */
+export class ScopeIndex {
+  private threadIds: number[] | null = null;
+  private readonly members = new Map<number, number[]>();
+
+  constructor(db: MemDb) {
+    db.onRow((table, row, prev) => {
+      if (table === "threads") {
+        if (!row || !prev) this.threadIds = null;
+      } else if (table === "thread_categories") {
+        const was = prev?.category_id as number | undefined;
+        const is = row?.category_id as number | undefined;
+        if (was !== undefined && (!row || is !== was)) this.members.delete(was);
+        if (is !== undefined && (!prev || is !== was)) this.members.delete(is);
+      }
+    });
+  }
+
+  /** every thread id, ascending */
+  threads(c: Ctx): readonly number[] {
+    if (!this.threadIds) {
+      const ids: number[] = [];
+      for (const t of T(c, "threads").all()) ids.push(t.id as number);
+      this.threadIds = ids.sort((x, y) => x - y);
+    }
+    return this.threadIds;
+  }
+
+  /** a category's member thread ids, ascending */
+  category(c: Ctx, categoryId: number): readonly number[] {
+    let ids = this.members.get(categoryId);
+    if (!ids) {
+      ids = T(c, "thread_categories").by("fk_category_id", categoryId).map((m) => m.thread_id as number).sort((x, y) => x - y);
+      this.members.set(categoryId, ids);
+    }
+    return ids;
+  }
+}
+
+/** the first position in an ascending list holding a value greater than `after` */
+export function seekAfter(ids: readonly number[], after: number): number {
+  let lo = 0;
+  let hi = ids.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (ids[mid]! <= after) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
 }
 
 // ───────────────────────────── settings ─────────────────────────────
@@ -661,15 +721,14 @@ export function listThreads(c: Ctx, p: ListParams): Page {
 export function scopeThreadIds(c: Ctx, p: ScopeParams & { after?: number; limit: number }): number[] {
   const threads = T(c, "threads");
   const test = VIEW_TEST[p.view];
-  const after = p.after ?? 0;
-  const keep = (t: R | undefined) => !!t && t.id > after && test(t) && (p.accountId === undefined || t.account_id === p.accountId);
-  const ids: number[] = [];
-  if (p.categoryId !== undefined) {
-    for (const m of T(c, "thread_categories").by("fk_category_id", p.categoryId)) if (keep(threads.get(m.thread_id))) ids.push(m.thread_id as number);
-  } else {
-    for (const t of threads.all()) if (keep(t)) ids.push(t.id as number);
+  // ascending ids, seeked past the last page and walked until this one is full
+  const ids = p.categoryId !== undefined ? c.scopes.category(c, p.categoryId) : c.scopes.threads(c);
+  const out: number[] = [];
+  for (let i = seekAfter(ids, p.after ?? 0); i < ids.length && out.length < p.limit; i++) {
+    const t = threads.get(ids[i]!);
+    if (t && test(t) && (p.accountId === undefined || t.account_id === p.accountId)) out.push(t.id as number);
   }
-  return ids.sort((x, y) => x - y).slice(0, p.limit);
+  return out;
 }
 
 export function summariesInOrder(c: Ctx, ids: readonly number[]): ThreadSummary[] {

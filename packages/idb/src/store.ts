@@ -117,6 +117,7 @@ import {
   summariesInOrder,
   T,
   ThreadOrder,
+  ScopeIndex,
   threadDoc,
   toSummary,
   updateAccount,
@@ -188,10 +189,12 @@ export class IdbMailStore implements MailStore {
   ) {
     this.log = o.log ?? (() => {});
     const order = new ThreadOrder(db);
+    const scopes = new ScopeIndex(db);
     const bodies = db.table<R>("message_bodies");
     this.c = {
       db,
       order,
+      scopes,
       uuid: () => o.platform.uuid(),
       body: (id) => {
         const r = bodies.get(id);

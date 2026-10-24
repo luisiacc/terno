@@ -184,3 +184,28 @@ describe("an undo of a version-1 move left half-restored", () => {
     expect(deltas.filter((d) => d.op === "untrain").length).toBe(4);
   });
 });
+
+describe("scope pages after the mailbox changes", () => {
+  it("the seek index follows threads and memberships that come and go, and commands that fail", async () => {
+    const store = await open();
+    const [a] = await withAccounts(store);
+    await ingest(store, Array.from({ length: 6 }, (_, i) => msg({ accountId: a!, providerMsgId: `s${i}`, date: NOW - i * 1000 })), NOW);
+    const ids = (await store.debug.snapshot()).threads.map((t) => t.id).sort((x, y) => x - y);
+    const cat = (await store.categories.create("C", "rose")).id;
+    const page = (p: { categoryId?: number }) => store.threads.scopeIds({ view: "all", ...p, after: 0, limit: 100 });
+    expect(await page({})).toEqual(ids);
+    expect(await page({ categoryId: cat })).toEqual([]);
+    await store.categories.add({ categoryId: cat, threadIds: ids.slice(0, 3), addedBy: "user", now: NOW });
+    expect(await page({ categoryId: cat })).toEqual(ids.slice(0, 3));
+    await store.categories.remove({ categoryId: cat, threadIds: [ids[1]!], reason: "user", now: NOW });
+    expect(await page({ categoryId: cat })).toEqual([ids[0], ids[2]]);
+    // a failed command rolls memory back: the index follows the rollback too
+    await expect(store.categories.add({ categoryId: cat + 999, threadIds: [ids[4]!], addedBy: "user", now: NOW })).rejects.toThrow();
+    expect(await page({ categoryId: cat })).toEqual([ids[0], ids[2]]);
+    await store.sync.remove((await store.debug.snapshot()).messages.filter((m) => m.threadId === ids[0]).map((m) => m.id));
+    expect(await page({})).toEqual(ids.slice(1));
+    expect(await page({ categoryId: cat })).toEqual([ids[2]]);
+    await ingest(store, [msg({ accountId: a!, providerMsgId: "new", date: NOW })], NOW);
+    expect((await page({})).length).toBe(ids.length);
+  });
+});

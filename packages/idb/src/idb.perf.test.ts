@@ -93,3 +93,37 @@ it("an index rebuild reads the store once in order: bounded CPU, no stall", asyn
   // linear in the mailbox: one ordered enumeration, ~0.05 ms of CPU per message measured (the per-page key sort made it quadratic)
   expect(cpuMs / messages, "rebuild CPU per message").toBeLessThanOrEqual(0.1 * MULT);
 }, 900_000);
+
+it("select all N pages seek, never rescan: a 28,000-thread view, account and category page in bounded time", async () => {
+  const all = (await store.debug.snapshot()).threads;
+  const account = all[0]!.accountId;
+  const cat = (await store.categories.create("Todo", "rose")).id;
+  await store.categories.add({ categoryId: cat, threadIds: all.map((t) => t.id), addedBy: "filter", now: NOW });
+  for (const [label, scope] of [
+    ["all", { view: "all" as const }],
+    ["account", { view: "all" as const, accountId: account }],
+    ["category", { view: "all" as const, categoryId: cat }],
+  ] as const) {
+    for (const limit of [500, 100]) {
+      const pages: number[] = [];
+      const seen: number[] = [];
+      for (let after = 0; ; ) {
+        const t = performance.now();
+        const page = await store.threads.scopeIds({ ...scope, after, limit });
+        pages.push(performance.now() - t);
+        seen.push(...page);
+        if (page.length < limit) break;
+        after = page[page.length - 1]!;
+      }
+      const sorted = [...pages].sort((a, b) => a - b);
+      const total = pages.reduce((a, b) => a + b, 0);
+      console.log(`scope ${label}, pages of ${limit}: ${seen.length} ids in ${pages.length} pages, ${total.toFixed(1)} ms in all, max ${sorted.at(-1)!.toFixed(2)} ms`);
+      expect(seen.length).toBe(await store.threads.scopeCount({ ...scope, limit: 1_000_000 }));
+      // a page is a seek and at most a page of rows (plus the ones the view filters out), never the whole mailbox:
+      // walking all of it costs about one pass, whatever the page size (rescanning per page cost ~130 ms in pages of 100)
+      expect(total, `${label} / ${limit}: all pages`).toBeLessThanOrEqual(25 * MULT);
+      expect(sorted.at(-1)!, `${label} / ${limit}: one page`).toBeLessThanOrEqual(FRAME * MULT);
+    }
+  }
+  await store.categories.delete(cat);
+}, 900_000);
