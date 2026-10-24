@@ -65,15 +65,7 @@ export interface Theme {
 
 const p = parseColor;
 
-/** The lowest alpha ≥ min (in .05 steps) at which `color` reaches `ratio` on `bg`. */
-function alphaFor(color: Oklch, bg: string, ratio: number, min: number): number {
-  for (let a = min; a < 1; a = Math.round((a + 0.05) * 100) / 100) {
-    if (contrast(withAlpha(color, a), bg) >= ratio) return a;
-  }
-  return 1;
-}
-
-/** alphaFor, on a surface that may itself be translucent (composited over `base`). */
+/** The lowest alpha ≥ min (in .05 steps) at which `color` reaches `ratio` on `surface` (itself composited over `base` when translucent). */
 function alphaOver(color: Oklch, surface: string, base: string, ratio: number, min: number): number {
   for (let a = min; a < 1; a = Math.round((a + 0.05) * 100) / 100) {
     if (contrast(withAlpha(color, a), surface, base) >= ratio) return a;
@@ -146,12 +138,6 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   def("sidebar-border", () => o("border"));
   def("row-rail", () => o("primary"));
   const bg = formatOklch(o("background"));
-  // the focus ring reads (3:1) on the background and on the sidebar (settings' tab list, the app's)
-  def("ring", () => {
-    const a = Math.max(alphaFor(o("primary"), bg, 3, 0.55), alphaOver(o("primary"), formatOklch(o("sidebar")), bg, 3, 0.55));
-    return withAlpha(o("primary"), a);
-  });
-  def("sidebar-ring", () => o("ring"));
   def("chart-1", () => o("primary"));
   def("chart-2", () => o("cat-emerald"));
   def("chart-3", () => o("cat-amber"));
@@ -171,15 +157,20 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
     // a faint shift toward the ink, smaller until text on it still reads
     for (let t = light ? 0.035 : 0.05; t > 0; t = Math.round((t - 0.005) * 1000) / 1000) {
       const c = mixOklab(o("background"), o("foreground"), t);
-      // what settings draw on it too: errors, "saved", links, a switch that is on, the focus ring
-      const text = (["foreground", "muted-foreground", "destructive", "success", "primary"] as const).every((k) => contrast(o(k), c, bg) >= 4.5);
-      if (text && contrast(o("ring"), c, bg) >= 3 && contrast(o("primary"), c, bg) >= 3) return c;
+      if (contrast(o("muted-foreground"), c, bg) >= 4.5 && contrast(o("foreground"), c, bg) >= 4.5) return c;
     }
     return o("background");
   });
   def("draft-foreground", () =>
     stepUntil(o("destructive"), ["background", "row-hover", "row-selected", "accent"].map((k) => formatOklch(o(k as ThemeToken))), 4.5, bg, o("foreground"), light),
   );
+  // the focus ring: primary at the lowest alpha ≥ .55 that reaches 3:1 on the background, on tint groups and on the sidebar
+  def("ring", () => withAlpha(o("primary"), Math.max(...[bg, formatOklch(o("tint")), formatOklch(o("sidebar"))].map((s) => alphaOver(o("primary"), s, bg, 3, 0.55)))));
+  def("sidebar-ring", () => o("ring"));
+  // plan 08: error and "saved" text that reads on tint groups as well as on the background and menus
+  const inkSurfaces = ["background", "tint", "popover"].map((k) => formatOklch(o(k as ThemeToken)));
+  def("destructive-ink", () => stepUntil(o("destructive"), inkSurfaces, 4.5, bg, o("foreground"), light));
+  def("success-ink", () => stepUntil(o("success"), inkSurfaces, 4.5, bg, o("foreground"), light));
   def("sidebar-glyph", () => stepUntil(o("sidebar-primary"), [formatOklch(o("sidebar")), formatOklch(o("sidebar-accent"))], 3, bg, o("muted-foreground"), light));
   def("popover-glass", () => withAlpha(o("popover"), glassAlpha(o("popover"), GLASS_TEXT.map((k) => o(k)))));
   const surfaces = [bg, formatOklch(o("card")), formatOklch(o("popover"))];

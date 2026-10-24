@@ -71,6 +71,9 @@ export const THEME_TOKENS = [
   "draft-foreground",
   "sidebar-glyph",
   "popover-glass",
+  // plan 08: error and "saved" text that reads on tint groups too
+  "destructive-ink",
+  "success-ink",
   // chrome
   "overlay",
   "shadow-color",

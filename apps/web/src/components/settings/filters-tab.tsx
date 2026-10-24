@@ -63,7 +63,7 @@ function FilterItem({ filter, onChange }: { filter: Filter; onChange: () => void
       <Button variant="ghost" size="icon-sm" aria-label={`Editar ${name}`} data-testid="settings-filter-edit" onClick={() => edit(filter)}>
         <Pencil />
       </Button>
-      <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive" aria-label={`Eliminar ${name}`} data-testid="settings-filter-delete" onClick={() => setDeleting(true)}>
+      <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive-ink" aria-label={`Eliminar ${name}`} data-testid="settings-filter-delete" onClick={() => setDeleting(true)}>
         <Trash2 />
       </Button>
       <ConfirmDialog
@@ -98,7 +98,7 @@ export function FiltersTab() {
         {filters?.map((f) => <FilterItem key={f.id} filter={f} onChange={refresh} />)}
         {filters?.length === 0 && <p className="py-3 text-sm text-muted-foreground">Aún no tienes filtros.</p>}
         <div className="py-1.5">
-          <Button variant="ghost" size="sm" className="-mx-2 text-primary" data-testid="settings-filter-new" onClick={() => edit(null)}>
+          <Button variant="ghost" size="sm" className="-mx-2" data-testid="settings-filter-new" onClick={() => edit(null)}>
             <Plus /> Nuevo filtro…
           </Button>
         </div>

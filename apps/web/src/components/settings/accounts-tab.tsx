@@ -95,7 +95,7 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
         {(a) => <CommitInput key={account.senderName} a11y={a} className="w-56" data-testid="account-sender" value={account.senderName} onCommit={(v) => save({ senderName: v.trim() })} />}
       </SettingsRow>
       <SettingsRow label="Color">
-        {(a) => <ColorPicker a11y={a} name={`account-color-${account.id}`} testId="account-color" value={account.color} onChange={(color) => void save({ color }).catch((e) => toast.error(errorText(e)))} />}
+        {(a) => <ColorPicker key={account.color} a11y={a} name={`account-color-${account.id}`} testId="account-color" value={account.color} onChange={(color) => save({ color }).catch((e: unknown) => { toast.error(errorText(e)); throw e; })} />}
       </SettingsRow>
       <SettingsRow stacked labelFor label="Firma" hint="Se añade debajo de lo que escribes al enviar desde esta cuenta, tras una línea «-- ».">
         {(a) => <CommitInput key={account.signature} multiline a11y={a} data-testid="account-signature" value={account.signature} placeholder="Luis Cordero · Acme Studio" maxLength={10_000} onCommit={(v) => save({ signature: v })} />}
@@ -119,7 +119,7 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
       <SettingsRow label="Quitar la cuenta" hint={isOwner ? "Seguirá siendo tu cuenta Única; cámbiala arriba." : "Borra sus correos de este equipo; en el servidor no cambia nada."}>
         {({ id: _id, "aria-labelledby": _l, ...a }) => (
           <>
-            <Button {...a} variant="ghost" size="sm" className="text-destructive" data-testid="account-remove" onClick={() => setRemoving(true)}>
+            <Button {...a} variant="ghost" size="sm" className="text-destructive-ink" data-testid="account-remove" onClick={() => setRemoving(true)}>
               <Trash2 /> Quitar…
             </Button>
             <ConfirmDialog
@@ -162,7 +162,7 @@ function AccountItem({ account, generalWindow, isOwner }: { account: Account; ge
         <CategoryDot color={account.color as CategoryColor} />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium">{account.displayName}</span>
-          <span className={cn("block truncate text-xs", attention ? "text-destructive" : "text-muted-foreground")}>
+          <span className={cn("block truncate text-xs", attention ? "text-destructive-ink" : "text-muted-foreground")}>
             {account.email} · {account.kind === "gmail" ? "Gmail" : "IMAP/SMTP"} · {status(account)}
           </span>
         </span>
@@ -204,7 +204,7 @@ function GoogleClient({ settings, update }: { settings: AppSettings; update: Set
           {(a) =>
             settings.gmailClientSecretSet ? (
               <div className="flex items-center gap-2 text-sm" data-testid="gmail-secret-saved">
-                <span className="text-success">Guardado</span>
+                <span className="text-success-ink">Guardado</span>
                 <Button variant="ghost" size="xs" onClick={() => void saveSecret("")}>
                   Quitar
                 </Button>
@@ -242,7 +242,7 @@ export function AccountsTab({ settings, update }: { settings: AppSettings; updat
           <AccountItem key={a.id} account={a} generalWindow={settings.syncWindowDays} isOwner={owner?.accountId === a.id} />
         ))}
         <div className="py-1.5">
-          <Button variant="ghost" size="sm" className="-mx-2 text-primary" data-testid="settings-add-account" onClick={() => setApp({ dialog: "addAccount" })}>
+          <Button variant="ghost" size="sm" className="-mx-2" data-testid="settings-add-account" onClick={() => setApp({ dialog: "addAccount" })}>
             <Plus /> Añadir cuenta…
           </Button>
         </div>

@@ -78,7 +78,7 @@ export function SettingsRow({
         </p>
       )}
       {error && (
-        <p id={ids.error} role="alert" className="mt-0.5 text-xs text-destructive" data-testid={errorTestId ?? (testId ? `${testId}-error` : undefined)}>
+        <p id={ids.error} role="alert" className="mt-0.5 text-xs text-destructive-ink" data-testid={errorTestId ?? (testId ? `${testId}-error` : undefined)}>
           {error}
         </p>
       )}
@@ -176,7 +176,7 @@ export function CommitInput({
         />
       )}
       {error && (
-        <span id={errorId} role="alert" className="text-xs text-destructive">
+        <span id={errorId} role="alert" className="text-xs text-destructive-ink">
           {error}
         </span>
       )}
@@ -195,13 +195,30 @@ export const COLOR_LABEL: Record<CategoryColor, string> = {
   slate: "Pizarra",
 };
 
-/** The palette as native radio buttons (arrow keys, one tab stop), each named by its color. */
-export function ColorPicker({ value, onChange, a11y, name, testId }: { value: string; onChange: (color: CategoryColor) => void; a11y: RowA11y; name: string; testId?: string }) {
+/**
+ * The palette as native radio buttons (arrow keys, one tab stop), each named
+ * by its color. The pick shows at once; a save that fails puts the stored
+ * color back. Keyed by the stored color by its parent.
+ */
+export function ColorPicker({ value, onChange, a11y, name, testId }: { value: string; onChange: (color: CategoryColor) => Promise<void>; a11y: RowA11y; name: string; testId?: string }) {
+  const [picked, setPicked] = useState(value);
   return (
     <div role="radiogroup" aria-labelledby={a11y["aria-labelledby"]} aria-describedby={a11y["aria-describedby"]} className="flex items-center gap-1" data-testid={testId}>
       {CATEGORY_COLORS.map((c) => (
         <label key={c} className="relative flex size-6 cursor-pointer items-center justify-center rounded-full has-focus-visible:ring-2 has-focus-visible:ring-ring">
-          <input type="radio" name={name} value={c} checked={value === c} onChange={() => onChange(c)} aria-label={COLOR_LABEL[c]} className="peer sr-only" data-testid={testId ? `${testId}-${c}` : undefined} />
+          <input
+            type="radio"
+            name={name}
+            value={c}
+            checked={picked === c}
+            onChange={() => {
+              setPicked(c);
+              onChange(c).catch(() => setPicked(value));
+            }}
+            aria-label={COLOR_LABEL[c]}
+            className="peer sr-only"
+            data-testid={testId ? `${testId}-${c}` : undefined}
+          />
           <CategoryDot color={c} className="size-3.5 peer-checked:ring-2 peer-checked:ring-foreground peer-checked:ring-offset-2 peer-checked:ring-offset-tint" />
         </label>
       ))}

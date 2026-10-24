@@ -105,6 +105,8 @@
   --color-tint: var(--tint);
   --color-highlight: var(--highlight);
   --color-draft-foreground: var(--draft-foreground);
+  --color-destructive-ink: var(--destructive-ink);
+  --color-success-ink: var(--success-ink);
   --color-sidebar-glyph: var(--sidebar-glyph);
   --color-popover-glass: var(--popover-glass);
   --color-drop-target: color-mix(in oklch, var(--primary) 16%, transparent);

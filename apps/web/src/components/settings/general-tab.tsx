@@ -78,7 +78,7 @@ export function DaysField({
         días
       </span>
       {error && (
-        <span id={errorId} role="alert" className="text-xs text-destructive" data-testid={testId ? `${testId}-error` : undefined}>
+        <span id={errorId} role="alert" className="text-xs text-destructive-ink" data-testid={testId ? `${testId}-error` : undefined}>
           {error}
         </span>
       )}

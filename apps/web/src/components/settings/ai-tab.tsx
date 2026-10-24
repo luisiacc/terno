@@ -264,7 +264,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
             {(a) =>
               ai.hasKey ? (
                 <div className="flex items-center gap-2 text-sm" data-testid="ai-key-saved">
-                  <span className="text-success">Guardada{ai.keyHint ? ` · …${ai.keyHint}` : ""}</span>
+                  <span className="text-success-ink">Guardada{ai.keyHint ? ` · …${ai.keyHint}` : ""}</span>
                   <Button variant="ghost" size="xs" aria-label={`Quitar la API key de ${providerName(ai)}`} onClick={() => void saveKey("")}>
                     Quitar
                   </Button>
@@ -310,7 +310,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
                   </Button>
                 </div>
                 {discovery.state === "error" && (
-                  <p role="alert" className="flex items-center gap-1.5 text-xs text-destructive" data-testid="ai-discovery-error">
+                  <p role="alert" className="flex items-center gap-1.5 text-xs text-destructive-ink" data-testid="ai-discovery-error">
                     <CircleAlert className="size-3.5" aria-hidden /> {discovery.message}
                   </p>
                 )}
@@ -327,7 +327,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
                           className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset data-selected:bg-accent data-selected:text-accent-foreground"
                         >
                           <span className="min-w-0 flex-1 truncate font-mono">{m.label ?? m.id}</span>
-                          {m.loaded && <span className="rounded bg-success/15 px-1 text-2xs text-success">cargado</span>}
+                          {m.loaded && <span className="rounded bg-success/15 px-1 text-2xs text-success-ink">cargado</span>}
                           {m.contextTokens ? <span className="text-muted-foreground tabular">{Math.round(m.contextTokens / 1024)}k ctx</span> : null}
                           {m.sizeBytes ? <span className="text-muted-foreground tabular">{formatBytes(m.sizeBytes)}</span> : null}
                         </button>
@@ -348,7 +348,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
               </Button>
               <span role="status" aria-live="polite" className="text-xs">
                 {test?.ok && (
-                  <span className="flex items-center gap-1.5 text-success" data-testid="ai-test-result">
+                  <span className="flex items-center gap-1.5 text-success-ink" data-testid="ai-test-result">
                     <CircleCheck className="size-3.5" aria-hidden /> Conectado · <span data-testid="ai-test-latency">{test.latencyMs} ms</span> · {OUTPUT_LABEL[test.capabilities!.output]}
                   </span>
                 )}
@@ -362,7 +362,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
             )}
             {test && !test.ok && (
               <div role="alert" className="text-xs" data-testid="ai-test-error">
-                <p className="text-destructive">{test.error?.message}</p>
+                <p className="text-destructive-ink">{test.error?.message}</p>
                 {errorHelp(test.error?.kind, ai) && <p className="mt-0.5 text-muted-foreground">{errorHelp(test.error?.kind, ai)}</p>}
               </div>
             )}

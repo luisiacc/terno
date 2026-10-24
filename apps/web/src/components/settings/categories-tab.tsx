@@ -53,7 +53,7 @@ function statsLine(s: CategoryModelStats | undefined): React.ReactNode {
       {`${s.examples} ${s.examples === 1 ? "ejemplo" : "ejemplos"}`}
       {s.autoPrecision !== null && ` · acierta ${Math.round(s.autoPrecision * 100)}% (${s.kept + s.reverted})`}
       {s.pendingSuggestions ? ` · ${s.pendingSuggestions} por revisar` : ""}
-      {s.paused && <span className="font-medium text-destructive"> · En pausa: demasiadas correcciones</span>}
+      {s.paused && <span className="font-medium text-destructive-ink"> · En pausa: demasiadas correcciones</span>}
     </>
   );
 }
@@ -125,12 +125,12 @@ function CategoryItem({ category, stats, index, count, autoMode }: { category: C
               )}
             </SettingsRow>
             <SettingsRow label="Color">
-              {(a) => <ColorPicker a11y={a} name={`category-color-${category.id}`} testId="category-color" value={category.color} onChange={(color) => void updateCategory(category.id, { color }).catch((e) => toast.error(errorText(e)))} />}
+              {(a) => <ColorPicker key={category.color} a11y={a} name={`category-color-${category.id}`} testId="category-color" value={category.color} onChange={(color) => updateCategory(category.id, { color }).catch((e: unknown) => { toast.error(errorText(e)); throw e; })} />}
             </SettingsRow>
             <SettingsRow label="Borrar la categoría" hint="Sus conversaciones no se borran: solo dejan de estar en ella. Lo aprendido para ella se pierde.">
               {({ id: _id, "aria-labelledby": _l, ...a }) => (
                 <>
-                  <Button {...a} variant="ghost" size="sm" className="text-destructive" data-testid="category-delete" onClick={() => setDeleting(true)}>
+                  <Button {...a} variant="ghost" size="sm" className="text-destructive-ink" data-testid="category-delete" onClick={() => setDeleting(true)}>
                     <Trash2 /> Borrar…
                   </Button>
                   <ConfirmDialog

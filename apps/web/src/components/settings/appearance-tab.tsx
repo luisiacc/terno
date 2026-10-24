@@ -61,7 +61,7 @@ function ThemeCard({ theme, base, selected, onSelect, note }: { theme: Theme; ba
         <span className="truncate font-medium">{theme.name}</span>
         {selected && <Check className="ml-auto size-3.5 shrink-0 text-primary" />}
       </span>
-      {note && <span className="w-[132px] text-2xs text-muted-foreground">{note}</span>}
+      {note && <span className="w-[132px] text-2xs">{note}</span>}
     </button>
   );
 }
@@ -134,7 +134,7 @@ function ThemeEditor({ theme, all, onDone }: { theme: CustomTheme; all: readonly
         data-testid="theme-editor-json"
       />
       {error && (
-        <p id={`${id}-error`} role="alert" className="text-xs text-destructive" data-testid="theme-editor-error">
+        <p id={`${id}-error`} role="alert" className="text-xs text-destructive-ink" data-testid="theme-editor-error">
           {error}
         </p>
       )}
@@ -166,7 +166,7 @@ function CustomThemeItem({ theme, all }: { theme: CustomTheme; all: readonly Cus
         <Button variant="ghost" size="sm" aria-expanded={editing} aria-label={`Editar ${name}`} data-testid={`theme-edit-${CUSTOM_PREFIX}${theme.id}`} onClick={() => setEditing((e) => !e)}>
           <Pencil /> Editar
         </Button>
-        <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive" aria-label={`Borrar ${name}`} data-testid={`theme-delete-${CUSTOM_PREFIX}${theme.id}`} onClick={() => setDeleting(true)}>
+        <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive-ink" aria-label={`Borrar ${name}`} data-testid={`theme-delete-${CUSTOM_PREFIX}${theme.id}`} onClick={() => setDeleting(true)}>
           <Trash2 />
         </Button>
       </div>
@@ -301,13 +301,13 @@ export function AppearanceTab({ settings }: { settings: AppSettings }) {
             />
           </div>
           {imported?.error && (
-            <p role="alert" className="mt-2 text-xs text-destructive" data-testid="theme-import-error">
+            <p role="alert" className="mt-2 text-xs text-destructive-ink" data-testid="theme-import-error">
               {imported.error}
             </p>
           )}
           {imported?.name && (
             <div role="status" className="mt-2 text-xs" data-testid="theme-import-result">
-              <p className="text-success">Importado: {imported.name}</p>
+              <p className="text-success-ink">Importado: {imported.name}</p>
               {imported.warnings && imported.warnings.length > 0 && (
                 <div className="mt-1 text-muted-foreground" data-testid="theme-import-warnings">
                   <p>Contraste insuficiente en {imported.warnings.length} {imported.warnings.length === 1 ? "par" : "pares"} (no impide usarlo):</p>

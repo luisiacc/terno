@@ -43,9 +43,8 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   ...text("draft-foreground", ["background", "row-hover", "row-selected", "accent"]),
   ...ui("sidebar-glyph", ["sidebar", "sidebar-accent"]),
   // plan 08: settings draw on tint groups and in a sidebar
-  ...text("destructive", ["tint"]),
-  ...text("success", ["tint"]),
-  ...text("primary", ["tint"]),
+  ...text("destructive-ink", ["background", "tint", "popover"]),
+  ...text("success-ink", ["background", "tint"]),
   ...ui("ring", ["tint", "sidebar"]),
   ...ui("primary", ["tint"]),
   ...text("sidebar-foreground", ["sidebar", "sidebar-accent"]),

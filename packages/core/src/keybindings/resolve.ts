@@ -129,8 +129,8 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "g a", command: "go.archive" },
   { keys: "g #", command: "go.trash" },
   { keys: "?", command: "help.shortcuts" },
-  // the platform's Settings shortcut; also while typing (a chord types nothing)
-  { keys: "mod+,", command: "settings.open", inEditable: true },
+  // the platform's Settings shortcut: from anywhere, also while typing or writing a draft (a chord types nothing)
+  { keys: "mod+,", command: "settings.open", inEditable: true, inDialog: true },
   { keys: "y", command: "suggestion.accept" },
   { keys: "n", command: "suggestion.reject" },
   { keys: "1", command: "snackbar.action1", context: "snackbar" },
