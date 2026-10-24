@@ -103,3 +103,11 @@ Shipped as planned, with these decisions made on the way:
 - In scope mode, "Mover a…" is disabled (moves stay per thread, ≤ 5,000); Categorías adds the whole scope as one undoable batch.
 
 Measured (load average 5–6 from other work): menu painted p95 ~13 ms with no row renders; ⌘A over 500 loaded rows ~1.6 ms p95; scope archive of 18,792 threads longest stall ~24 ms with `threads.list` p95 ~0.5 ms; 5,000-thread exclusive move ~33 ms stall, its undo ~35 ms.
+
+## 10. After review (Codex, 9 findings)
+
+- Undo is exact: every action returns its changed messages as they were (read, star, place); `threads.undo` restores exactly those, for loaded selections and scopes, with the provider ops in order (out of Papelera/Spam through the inbox). It replaces the inverse-action undo, which sent archived mail to Entrada.
+- Exclusive moves run in slices (record, then apply per slice, train; undo likewise), so a 5,000-thread move out of 20 categories each stalls ~35 ms instead of ~150 ms (undo ~30 ms instead of ~320 ms). Visible atomicity gives way to per-slice atomicity; progress is per thread and resumes forward.
+- View scopes are counted and enumerated from the indexes (`scopeIds` / `scopeCount`); a 47,000-thread category counts in ~7 ms.
+- v7-era move journals restore cleanly after the upgrade; a failing resume at startup is logged, never an unhandled rejection.
+- Selection: the dwell's mark-read never clears it; ⇧F10 opens on the selection; no dragging in scope mode; the Categoría button always toggles; z undoes an action still in flight; aria-selected follows the real selection and the open thread is the listbox's `aria-activedescendant`.

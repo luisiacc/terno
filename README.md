@@ -96,7 +96,8 @@ Web: Page ──MessagePort──▶ Dedicated Worker (the tab holding the Web L
 | Snackbar counts: sender / domain / list · topic | ≤ 5 ms · ≤ 25 ms | ~1 ms · ~9 ms |
 | 14k-message import with the categorizer on | ≤ 10% slower | ~6% |
 | "Select all N" archive of 18,792 threads, its undo: longest stall · list RPC | ≤ 50 ms · ≤ 20 ms | ~24 ms · ~0.5 ms |
-| Exclusive move of 5,000 threads, its undo: longest stall | ≤ 50 ms | ~33–35 ms |
+| Exclusive move of 5,000 threads (in 1 or 20 categories each), its undo: longest stall | ≤ 50 ms | ~15 ms · ~35 ms |
+| Count a 47,000-thread category · mark it all read: longest stall | ≤ 25 ms · ≤ 50 ms | ~7 ms · ~36 ms |
 
 **In the real renderer** (`apps/web/e2e/perf.spec.ts`, Chromium, production build, real backend):
 
