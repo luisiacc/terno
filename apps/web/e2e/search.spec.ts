@@ -29,7 +29,7 @@ test.describe("search", () => {
 
   test("searches across all accounts at once", async ({ app: page }) => {
     await search(page, "in:all factura");
-    const bars = await page.getByTestId("account-bar").evaluateAll((els) => new Set(els.map((e) => e.className)).size);
+    const bars = await page.getByTestId("account-mark").evaluateAll((els) => new Set(els.map((e) => e.className)).size);
     expect(bars).toBeGreaterThan(1);
   });
 

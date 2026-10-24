@@ -9,15 +9,16 @@ import { useHasDraft } from "~/lib/drafts";
 import { pressRow, releaseRow } from "~/lib/select";
 import { useApp } from "~/state/app";
 
-const ACCOUNT_BAR: Record<CategoryColor, string> = {
-  rose: "bg-cat-rose",
-  amber: "bg-cat-amber",
-  lime: "bg-cat-lime",
-  emerald: "bg-cat-emerald",
-  cyan: "bg-cat-cyan",
-  indigo: "bg-cat-indigo",
-  violet: "bg-cat-violet",
-  slate: "bg-cat-slate",
+/** The account, in "Todas las cuentas": a small ring in its color (category dots are filled). */
+const ACCOUNT_MARK: Record<CategoryColor, string> = {
+  rose: "border-cat-rose",
+  amber: "border-cat-amber",
+  lime: "border-cat-lime",
+  emerald: "border-cat-emerald",
+  cyan: "border-cat-cyan",
+  indigo: "border-cat-indigo",
+  violet: "border-cat-violet",
+  slate: "border-cat-slate",
 };
 
 export const ROW_HEIGHT = { comfortable: 68, compact: 40 } as const;
@@ -90,7 +91,7 @@ export const ThreadRow = memo(function ThreadRow({ thread: t, top, height, compa
           ))}
           {t.hasAttachments && <Paperclip className="size-3 text-muted-foreground" />}
           {t.starred && <Star className="size-3 fill-star text-star" />}
-          {accountColor && <span data-testid="account-bar" className={cn("h-3 w-0.5 rounded-full", ACCOUNT_BAR[accountColor])} />}
+          {accountColor && <span data-testid="account-mark" className={cn("size-1.5 shrink-0 rounded-full border-[1.5px]", ACCOUNT_MARK[accountColor])} />}
           <span className={cn("text-xs tabular", t.unread ? "text-foreground" : "text-muted-foreground")}>{listDate(t.lastDate)}</span>
         </span>
       </div>
