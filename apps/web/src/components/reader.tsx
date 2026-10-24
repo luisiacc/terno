@@ -5,7 +5,8 @@ import { Shortcut } from "@unica/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@unica/ui/components/tooltip";
 import { cn } from "@unica/ui/lib/utils";
 import { Archive, Forward, Inbox, MailOpen, OctagonAlert, Paperclip, Reply, ReplyAll, Star, Tag, Trash2, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { installScrollHairline } from "~/lib/scroll-hairline";
 import { act, cancelMarkRead, openCompose, scheduleMarkRead, toggleStar } from "~/lib/actions";
 import { acceptSuggestion, rejectSuggestion, removeFromCategory } from "~/lib/categorize";
 import { avatarColor, formatBytes, fullDate, initials, listDate } from "~/lib/format";
@@ -159,6 +160,15 @@ export function Reader() {
     setExpanded(open);
   }, [detail?.thread.id, detail?.messages.length]);
 
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const open = selectedId !== null;
+  useEffect(() => {
+    const [root, sentinel, bar] = [scrollerRef.current, sentinelRef.current, toolbarRef.current];
+    return open && root && sentinel && bar ? installScrollHairline(root, sentinel, bar) : undefined;
+  }, [open]);
+
   if (selectedId === null) return <Welcome />;
   const t = detail?.thread;
   const cats = t ? categories.filter((c) => t.categoryIds.includes(c.id)) : [];
@@ -166,7 +176,7 @@ export function Reader() {
 
   return (
     <section className="flex h-full min-h-0 flex-col bg-background" data-testid="reader">
-      <div className="drag-region flex h-11 shrink-0 items-center gap-0.5 border-b border-border px-3">
+      <div ref={toolbarRef} className="drag-region scroll-hairline flex h-[52px] shrink-0 items-center gap-0.5 px-3">
         {t?.inTrash || t?.inSpam ? (
           <ToolButton label="Mover a Entrada" onClick={() => act(t.inSpam ? "notSpam" : "moveToInbox")} testId="action-inbox">
             <Inbox />
@@ -205,7 +215,8 @@ export function Reader() {
           </ToolButton>
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={scrollerRef} className="relative min-h-0 flex-1 overflow-y-auto">
+        <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
         <div className="mx-auto max-w-[760px] px-8 pt-6 pb-16">
           {!detail ? (
             <div className="space-y-3">

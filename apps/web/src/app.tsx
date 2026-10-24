@@ -71,7 +71,7 @@ export function App() {
       {gate}
       <div className="grid h-screen grid-cols-[232px_minmax(340px,400px)_minmax(0,1fr)] overflow-hidden" data-ready={ready || undefined}>
         <Sidebar />
-        <div className="min-h-0 border-r border-l border-border">
+        <div className="hairline-l hairline-r hairline-strong min-h-0">
           <ThreadList />
         </div>
         <main className="relative min-h-0">

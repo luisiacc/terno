@@ -259,7 +259,8 @@ function createWindow() {
     show: false,
     title: "Única",
     titleBarStyle: isMac ? "hiddenInset" : "default",
-    trafficLightPosition: { x: 16, y: 15 },
+    // centered on the 52 px toolbar row
+    trafficLightPosition: { x: 20, y: 19 },
     vibrancy: vibrancy ? "sidebar" : undefined,
     visualEffectState: "followWindow",
     backgroundColor: vibrancy ? "#00000000" : (saved?.background ?? (nativeTheme.shouldUseDarkColors ? "#1c1d22" : "#fcfcfa")),

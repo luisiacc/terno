@@ -5,8 +5,7 @@ import { CategoryDot } from "@unica/ui/components/category-dot";
 import { Shortcut } from "@unica/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@unica/ui/components/tooltip";
 import { cn } from "@unica/ui/lib/utils";
-import { Archive, Check, Inbox, Layers, OctagonAlert, PenLine, Plus, Send, Settings2, Sparkles, Star, Trash2 } from "lucide-react";
-import { openCompose } from "~/lib/actions";
+import { Archive, Check, Inbox, Layers, OctagonAlert, Plus, Send, Settings2, Sparkles, Star, Trash2 } from "lucide-react";
 import { VIEW_LABEL } from "~/lib/format";
 import { navigate, setApp, useApp } from "~/state/app";
 import { client } from "~/rpc/connection";
@@ -63,11 +62,11 @@ function NavItem({
         "data-[drop-state=already]:bg-sidebar-accent data-[drop-state=already]:text-muted-foreground",
       )}
     >
-      <span className="flex size-4 items-center justify-center text-muted-foreground transition-transform group-data-active:text-sidebar-primary group-data-[drop-state=over]:scale-125">{icon}</span>
+      <span className="flex size-4 items-center justify-center text-sidebar-glyph transition-transform group-data-[drop-state=over]:scale-125">{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {drop === "already" && <Check aria-label="Ya está aquí" className="size-3.5 text-muted-foreground" />}
       {count ? (
-        <span data-slot="nav-count" className="inline-block font-mono text-2xs tabular text-muted-foreground">
+        <span data-slot="nav-count" className="inline-block text-xs tabular text-muted-foreground">
           {count}
         </span>
       ) : null}
@@ -77,8 +76,8 @@ function NavItem({
 
 function SectionTitle({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <div className="mt-5 mb-1 flex h-5 items-center justify-between px-2">
-      <span className="text-2xs font-medium tracking-wide text-muted-foreground uppercase">{children}</span>
+    <div className="group/section mt-4 mb-0.5 flex h-5 items-center justify-between px-2">
+      <span className="text-2xs font-semibold text-muted-foreground">{children}</span>
       {action}
     </div>
   );
@@ -108,14 +107,7 @@ export function Sidebar() {
 
   return (
     <aside data-testid="sidebar" className="flex h-full min-h-0 w-full flex-col bg-sidebar text-sidebar-foreground">
-      <div className="drag-region h-11 shrink-0 [.is-mac_&]:pl-[76px]" />
-      <div className="px-3 pb-2">
-        <Button data-testid="compose-button" className="no-drag w-full justify-start gap-2" onClick={() => openCompose("new")}>
-          <PenLine />
-          <span className="flex-1 text-left">Escribir</span>
-          <Shortcut keys="c" className="[&_kbd]:bg-primary-foreground/15 [&_kbd]:text-primary-foreground [&_kbd]:shadow-none" />
-        </Button>
-      </div>
+      <div className="drag-region h-[52px] shrink-0" />
       <nav data-drop-scroll className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {VIEWS.map(({ view: v, icon: Icon, keys }) => (
           <Tooltip key={v}>
@@ -141,7 +133,7 @@ export function Sidebar() {
 
         <SectionTitle
           action={
-            <button type="button" data-testid="new-category" aria-label="Nueva categoría" onClick={() => setCreating(true)} className="rounded p-0.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground">
+            <button type="button" data-testid="new-category" aria-label="Nueva categoría" onClick={() => setCreating(true)} className="rounded p-0.5 text-muted-foreground opacity-0 group-hover/section:opacity-100 hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:opacity-100">
               <Plus className="size-3.5" />
             </button>
           }
@@ -165,11 +157,11 @@ export function Sidebar() {
                 data-testid={`nav-review-${c.id}`}
                 data-active={reviewCategoryId === c.id || undefined}
                 onClick={() => navigate({ view: "all", reviewCategoryId: c.id })}
-                className="flex h-6 w-full items-center gap-2 rounded-md pr-2 pl-8 text-left text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
+                className="flex h-6 w-full items-center gap-2 rounded-md pr-2 pl-8 text-left text-xs text-muted-foreground tabular hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
               >
-                <Sparkles className="size-3 text-sidebar-primary" />
+                <Sparkles className="size-3 text-sidebar-glyph" />
                 <span className="flex-1">Revisar</span>
-                <span className="font-mono text-2xs tabular">{counts.categorySuggestions[c.id]}</span>
+                <span className="text-xs tabular">{counts.categorySuggestions[c.id]}</span>
               </button>
             )}
           </div>
@@ -221,9 +213,9 @@ export function Sidebar() {
           <Plus className="size-4" /> Añadir cuenta
         </button>
       </nav>
-      <div className="flex shrink-0 items-center gap-1 border-t border-sidebar-border px-2 py-2">
+      <div className="hairline-t hairline-strong flex shrink-0 items-center gap-1 px-2 py-2">
         <Button data-testid="open-filters" variant="ghost" size="sm" className="flex-1 justify-start gap-2 text-sidebar-foreground" onClick={() => setApp({ dialog: "filters" })}>
-          <Sparkles className="text-sidebar-primary" /> Filtros
+          <Sparkles className="text-sidebar-glyph" /> Filtros
         </Button>
         <LocalPill />
         <Tooltip>

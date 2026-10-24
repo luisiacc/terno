@@ -2,7 +2,12 @@ import { Input } from "@unica/ui/components/input";
 import { Kbd } from "@unica/ui/components/kbd";
 import { Skeleton } from "@unica/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Search, X } from "lucide-react";
+import { Search, SquarePen, X } from "lucide-react";
+import { Button } from "@unica/ui/components/button";
+import { Shortcut } from "@unica/ui/components/shortcut";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@unica/ui/components/tooltip";
+import { openCompose } from "~/lib/actions";
+import { installScrollHairline } from "~/lib/scroll-hairline";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { VIEW_LABEL } from "~/lib/format";
 import { getApp, setApp, useApp } from "~/state/app";
@@ -18,7 +23,7 @@ import { DesktopBanner, GmailReconnect } from "~/lib/web-parts";
 export const searchInputRef: { current: HTMLInputElement | null } = { current: null };
 export const listScroller: { scrollToIndex?: (i: number) => void } = {};
 
-function Header() {
+function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   const view = useApp((s) => s.view);
   const category = useApp((s) => s.categories.find((c) => c.id === s.categoryId));
   const review = useApp((s) => s.categories.find((c) => c.id === s.reviewCategoryId));
@@ -31,18 +36,30 @@ function Header() {
   const title = review ? `Revisar · ${review.name}` : (category?.name ?? VIEW_LABEL[view]);
 
   return (
-    <div className="drag-region shrink-0 border-b border-border px-3 pt-2.5 pb-2">
-      <div className="mb-2 flex h-6 items-baseline justify-between px-1">
-        <h1 className="truncate text-[15px] font-semibold tracking-tight" data-testid="list-title">
+    <div ref={hairlineRef} className="drag-region scroll-hairline shrink-0 px-3 pb-2">
+      <div className="flex h-[52px] items-center gap-2 pl-1">
+        <h1 className="min-w-0 flex-1 truncate text-md font-semibold tracking-tight" data-testid="list-title">
           {title}
-          {account && <span className="ml-1.5 text-sm font-normal text-muted-foreground">· {account.displayName}</span>}
+          {account && <span className="ml-1.5 text-sm font-normal tracking-normal text-muted-foreground">· {account.displayName}</span>}
         </h1>
         {query && searchMs !== null && (
-          <span data-testid="search-stats" className="font-mono text-2xs text-muted-foreground tabular">
+          <span data-testid="search-stats" className="shrink-0 text-2xs text-muted-foreground tabular">
             {count}
             {more ? "+" : ""} resultados · {searchMs < 1 ? "<1" : Math.round(searchMs)} ms{!complete && " · indexando"}
           </span>
         )}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button data-testid="compose-button" variant="ghost" size="icon-sm" aria-label="Escribir" className="no-drag shrink-0 text-muted-foreground hover:text-foreground" onClick={() => openCompose("new")}>
+                <SquarePen />
+              </Button>
+            }
+          />
+          <TooltipContent>
+            Escribir <Shortcut keys="c" />
+          </TooltipContent>
+        </Tooltip>
       </div>
       <div className="no-drag relative">
         <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -53,7 +70,7 @@ function Header() {
           data-testid="search-input"
           value={query}
           placeholder="Buscar en todas tus cuentas"
-          className="h-8 bg-muted/60 pr-14 pl-8 text-sm"
+          className="h-[30px] rounded-lg border-0 bg-tint pr-14 pl-8 text-sm shadow-none dark:bg-tint"
           onChange={(e) => {
             setApp({ query: e.target.value });
           }}
@@ -113,7 +130,7 @@ function SelectAllBanner() {
   const n = count?.key === key ? count : null;
   const fmt = (x: number) => x.toLocaleString("es-MX");
   return (
-    <div data-testid="select-all-banner" className="flex shrink-0 flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 border-b border-border bg-muted/60 px-3 py-1.5 text-center text-xs text-muted-foreground">
+    <div data-testid="select-all-banner" className="hairline-b flex shrink-0 flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 bg-tint px-3 py-1.5 text-center text-xs text-muted-foreground">
       {scope ? (
         <>
           <span data-testid="select-all-scope">
@@ -162,6 +179,8 @@ export function ThreadList() {
   const showAccount = useApp((s) => s.accountId === null && s.accounts.length > 1);
   const height = compact ? ROW_HEIGHT.compact : ROW_HEIGHT.comfortable;
   const parentRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   const virtualizer = useVirtualizer({
     count: items.length,
@@ -170,6 +189,11 @@ export function ThreadList() {
     overscan: 10,
     getItemKey: (i) => items[i]!.id,
   });
+
+  useEffect(() => {
+    const [root, sentinel, header] = [parentRef.current, sentinelRef.current, headerRef.current];
+    return root && sentinel && header ? installScrollHairline(root, sentinel, header) : undefined;
+  }, []);
 
   // drag rows onto sidebar categories: one delegated listener on the listbox
   useEffect(() => (parentRef.current ? installDragController(parentRef.current) : undefined), []);
@@ -198,7 +222,7 @@ export function ThreadList() {
 
   return (
     <section className="flex h-full min-h-0 flex-col bg-pane" data-testid="thread-list" data-results-for={itemsKey}>
-      <Header />
+      <Header hairlineRef={headerRef} />
       <LearnedBanner />
       {DesktopBanner && GmailReconnect && (
         <Suspense>
@@ -209,6 +233,7 @@ export function ThreadList() {
       <SelectAllBanner />
       <ThreadMenu>
       <div ref={parentRef} role="listbox" aria-label="Conversaciones" aria-multiselectable className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain [contain:strict]">
+        <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
         {loading && items.length === 0 ? (
           <div className="space-y-3 p-4">
             {Array.from({ length: 8 }, (_, i) => (

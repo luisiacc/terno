@@ -37,6 +37,23 @@ async function ready(page: Page, { banner = true } = {}) {
   await stabilize(page);
 }
 
+test.describe("chrome", () => {
+  test("toolbar hairlines appear only once content scrolls under them", async ({ app: page }) => {
+    const header = page.getByTestId("list-title").locator("xpath=../..");
+    await expect(header).not.toHaveAttribute("data-scrolled");
+    await page.getByRole("listbox").evaluate((el) => el.scrollTo(0, 400));
+    await expect(header).toHaveAttribute("data-scrolled", "");
+    await page.getByRole("listbox").evaluate((el) => el.scrollTo(0, 0));
+    await expect(header).not.toHaveAttribute("data-scrolled");
+  });
+
+  test("compose is a quiet icon in the list header, named for assistive tech", async ({ app: page }) => {
+    const button = page.getByRole("button", { name: "Escribir" });
+    await expect(button).toBeVisible();
+    await expect(page.getByTestId("sidebar").getByRole("button", { name: /Escribir/ })).toHaveCount(0);
+  });
+});
+
 test.describe("light", () => {
   test("inbox with the reader", async ({ app: page }) => {
     await ready(page);
