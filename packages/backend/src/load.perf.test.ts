@@ -5,8 +5,11 @@
  * they actually take, so the event loop still never stalls past 50 ms and
  * lists keep answering within 50 ms.
  *
- * A stall is a gap between two 1 ms ticks, measured in wall-clock time: a
- * blocking wait on the event loop is as visible to the user as computing.
+ * A stall is a gap between two 1 ms ticks during which the event loop was
+ * busy, in wall-clock time: computing or blocked in a synchronous wait (both
+ * are "active" in Node's event-loop utilization, and both are what a user
+ * sees). Time the loop spent idle, waiting for work, isn't a stall even when
+ * the OS delays an idle process's timers (macOS coalesces them by tens of ms).
  * The only excuse is narrow and explicit: a gap that is one store command
  * which by itself took longer than a slice's target (the OS held it, or it
  * ran on: no slicing decision could split it) may run over, at most twice
@@ -116,7 +119,10 @@ afterAll(async () => {
 interface Gap {
   start: number;
   end: number;
+  /** the loop was busy (computing or blocked) for this long of it: the stall */
   ms: number;
+  /** wall-clock length of the gap (busy + idle) */
+  wall: number;
   cpu: number;
 }
 
@@ -132,17 +138,21 @@ async function measure(fn: () => Promise<unknown>): Promise<StageResult & { took
   backend.connect(srv, { clientId: `probe-${Math.random()}`, origin: "renderer" });
   const probe = new RpcClient(c);
   const gaps: Gap[] = [];
-  let maxGap: Gap = { start: 0, end: 0, ms: 0, cpu: 0 };
+  let maxGap: Gap = { start: 0, end: 0, ms: 0, wall: 0, cpu: 0 };
   let last = performance.now();
   let lastCpu = process.threadCpuUsage();
+  let lastElu = performance.eventLoopUtilization();
   const tick = setInterval(() => {
     const now = performance.now();
     const cpu = process.threadCpuUsage();
-    const gap: Gap = { start: last, end: now, ms: now - last, cpu: (cpu.user - lastCpu.user + cpu.system - lastCpu.system) / 1000 };
+    const elu = performance.eventLoopUtilization();
+    const busy = performance.eventLoopUtilization(elu, lastElu).active;
+    const gap: Gap = { start: last, end: now, ms: Math.min(now - last, busy), wall: now - last, cpu: (cpu.user - lastCpu.user + cpu.system - lastCpu.system) / 1000 };
     if (gap.ms > BUDGET) gaps.push(gap);
     if (gap.ms > maxGap.ms) maxGap = gap;
     last = now;
     lastCpu = cpu;
+    lastElu = elu;
   }, 1);
   const lists: StageResult["lists"] = [];
   let done = false;
@@ -195,7 +205,7 @@ async function underLoad(name: string, fn: () => Promise<unknown>) {
   const during = m.commands.filter((r) => r.start < m.maxGap.end && r.end > m.maxGap.start).map(runName);
   stats.push({
     name:
-      `${name}: ${m.took.toFixed(0)} ms, longest stall ${m.maxGap.ms.toFixed(1)} ms (cpu ${m.maxGap.cpu.toFixed(1)} ms), ` +
+      `${name}: ${m.took.toFixed(0)} ms, longest stall ${m.maxGap.ms.toFixed(1)} ms (wall ${m.maxGap.wall.toFixed(1)}, cpu ${m.maxGap.cpu.toFixed(1)} ms), ` +
       `${excused.filter((e) => e.by).length} excused [${excused.flatMap((e) => (e.by ? [`${e.gap.ms.toFixed(0)} ms: ${runName(e.by)}`] : [])).join("; ")}], ` +
       `list p95 ${p95(m.lists.map((l) => l.ms)).toFixed(1)} ms, max ${listMax.toFixed(1)} ms (${m.lists.length}); longest command ${longest ? runName(longest) : "-"}; longest GC ${longestGc.toFixed(0)} ms; ` +
       `during the longest stall: ${during.join(", ") || "no store command"}`,
@@ -272,7 +282,7 @@ it("a disk that turns slow mid-job: one slice runs over, the next ones shrink ba
     const over = m.gaps.filter((g) => g.end > switchedAt);
     const after = m.commands.filter((r) => r.name === "act" && r.start >= switchedAt);
     stats.push({
-      name: `slow disk mid-job: switched at a slice of ${after[0]?.n ?? "?"} items; stalls over budget after it: ${over.map((g) => `${g.ms.toFixed(0)} ms (cpu ${g.cpu.toFixed(0)}${m.commands.some((r) => r.start < g.end && r.end > g.start) ? "" : ", no command"})`).join(", ") || "none"}; slices after: ${after.slice(0, 8).map((r) => `${r.n}→${(r.end - r.start).toFixed(0)} ms`).join(", ")}; longest GC ${longestGc.toFixed(0)} ms`,
+      name: `slow disk mid-job: switched at a slice of ${after[0]?.n ?? "?"} items; stalls over budget after it: ${over.map((g) => `${g.ms.toFixed(0)} ms (wall ${g.wall.toFixed(0)}, cpu ${g.cpu.toFixed(0)}${m.commands.some((r) => r.start < g.end && r.end > g.start) ? "" : ", no command"})`).join(", ") || "none"}; slices after: ${after.slice(0, 8).map((r) => `${r.n}→${(r.end - r.start).toFixed(0)} ms`).join(", ")}; longest GC ${longestGc.toFixed(0)} ms`,
       budgetMs: 50,
       p50: m.maxGap.ms,
       p95: m.maxGap.ms,

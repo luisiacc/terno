@@ -267,11 +267,15 @@ async function underLoad(fn: () => Promise<unknown>): Promise<{ stall: number; r
   backend.connect(srv, { clientId: `load-${Math.random()}`, origin: "renderer" });
   const client = new RpcClient(c);
   let last = performance.now();
+  let lastElu = performance.eventLoopUtilization();
   let stall = 0;
+  // a stall is time the loop was busy (computing or blocked), not an idle loop whose timer the OS fired late
   const tick = setInterval(() => {
     const now = performance.now();
-    stall = Math.max(stall, now - last);
+    const elu = performance.eventLoopUtilization();
+    stall = Math.max(stall, Math.min(now - last, performance.eventLoopUtilization(elu, lastElu).active));
     last = now;
+    lastElu = elu;
   }, 1);
   const rpc: number[] = [];
   let done = false;
