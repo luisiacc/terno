@@ -460,8 +460,18 @@ export class BackendCore {
       await work(chunk);
       sizer.record(chunk.length, performance.now() - started);
       i += chunk.length;
-      await this.platform.yield();
+      await this.yieldTurn();
     }
+  }
+
+  /**
+   * Gives the event loop a whole turn: work the slice scheduled for the next
+   * one (the changed event, sidebar counts) runs there, and the next slice
+   * only in the turn after, never back to back with it.
+   */
+  async yieldTurn(): Promise<void> {
+    await this.platform.yield();
+    await this.platform.yield();
   }
 
   // ───────────────────────────── providers & sync ─────────────────────────────

@@ -30,7 +30,7 @@ export async function resolveThreadScope(b: BackendCore, scope: ThreadScope, cap
       for (const id of page) ids.push(id);
       if (page.length < limit) break;
       after = page[page.length - 1]!;
-      await b.platform.yield();
+      await b.yieldTurn();
     }
     return { ids: ids.slice(0, cap), capped: ids.length > cap };
   } else {

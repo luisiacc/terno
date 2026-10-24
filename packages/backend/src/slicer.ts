@@ -2,8 +2,9 @@
  * Time-budgeted slices for bulk work: each slice is sized from how long the
  * previous ones actually took, so a busy machine (slow fsync, CPU
  * contention) gets smaller slices instead of longer stalls. The per-item
- * cost estimate takes a slower sample at once and forgets it slowly (items
- * vary: one thread can cost ten times another), a slice that overran at least
+ * cost estimate is the slowest of the last few slices (items vary: one
+ * thread can cost ten times another, so a slow sample counts at once and is
+ * forgotten only when it leaves the window), a slice that overran at least
  * halves the next and holds growth for a few slices, and growth is at most
  * ×1.25 (and at least +1) per slice, so quick slices can't buy a long one.
  * The floor guarantees progress; the ceiling keeps an idle machine's slices
@@ -24,9 +25,11 @@ export const BULK_SLICE: SliceBudget = { targetMs: 15, initial: 4, floor: 1, cei
 
 /** Slices after an overrun during which the size doesn't grow. */
 const HOLD_AFTER_OVERRUN = 4;
+/** The per-item cost is the slowest of this many recent slices. */
+const WINDOW = 8;
 
 export class SliceSizer {
-  private perItem: number | null = null;
+  private readonly rates: number[] = [];
   private current: number;
   private hold = 0;
 
@@ -42,9 +45,9 @@ export class SliceSizer {
   /** A slice of `n` items took `ms`: sizes the next one. */
   record(n: number, ms: number): number {
     if (n <= 0) return this.current;
-    const rate = ms / n;
-    this.perItem = this.perItem === null || rate > this.perItem ? rate : this.perItem * 0.9 + rate * 0.1;
-    const ideal = this.budget.targetMs / Math.max(this.perItem, 1e-4);
+    this.rates.push(ms / n);
+    if (this.rates.length > WINDOW) this.rates.shift();
+    const ideal = this.budget.targetMs / Math.max(Math.max(...this.rates), 1e-4);
     let next: number;
     if (ms > this.budget.targetMs) {
       next = Math.min(ideal, this.current / 2);
