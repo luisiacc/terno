@@ -26,7 +26,7 @@ import {
   type View,
 } from "@unica/core";
 import type { OwnerIdentity } from "@unica/core/rpc";
-import { AWAITING_AUTH, type DraftRow, type IncomingMessage, type ListParams, type ModelDelta, type OpRow, type OwnerClaim, type Page, type ScopeParams, type SearchMessageDoc, type SearchThreadDoc } from "@unica/store";
+import { AWAITING_AUTH, type DraftRow, type IncomingMessage, type ListParams, type ModelDelta, type OpRow, type OwnerClaim, type MessageState, type Page, type ScopeParams, type SearchMessageDoc, type SearchThreadDoc } from "@unica/store";
 import type { MemDb, Row, Table } from "./mem";
 
 /**
@@ -494,6 +494,8 @@ export function deleteMessages(c: Ctx, messageIds: readonly number[]): Set<numbe
 export interface ActionResult {
   threadIds: number[];
   targets: { accountId: number; messageIds: number[] }[];
+  /** each changed message as it was before */
+  before: MessageState[];
 }
 
 function plan(action: ThreadAction, msgs: R[], explicit: boolean): { ids: number[]; set: Partial<R> } {
@@ -544,14 +546,56 @@ function applyToMessages(c: Ctx, msgs: R[], action: ThreadAction, explicit: bool
   const messages = T(c, "messages");
   const touched = new Set<number>();
   const byAccount = new Map<number, number[]>();
+  const before: MessageState[] = [];
   for (const id of ids) {
     const m = messages.get(id)!;
+    before.push(stateOf(m));
     messages.update(m, set);
     touched.add(m.thread_id);
     byAccount.set(m.account_id, [...(byAccount.get(m.account_id) ?? []), id]);
   }
   recomputeThreads(c, touched);
-  return { threadIds: [...touched], targets: [...byAccount].map(([accountId, messageIds]) => ({ accountId, messageIds })) };
+  return { threadIds: [...touched], targets: [...byAccount].map(([accountId, messageIds]) => ({ accountId, messageIds })), before };
+}
+
+const stateOf = (m: R): MessageState => ({ id: m.id, isRead: !!m.is_read, isStarred: !!m.is_starred, inInbox: !!m.in_inbox, isTrash: !!m.is_trash, isSpam: !!m.is_spam });
+type Place = "inbox" | "archive" | "trash" | "spam";
+const placeOf = (s: MessageState): Place => (s.isTrash ? "trash" : s.isSpam ? "spam" : s.inInbox ? "inbox" : "archive");
+/** The provider ops from one place to another, in order (out of Papelera or Spam goes through the inbox first). */
+function placeOps(from: Place, to: Place): ThreadAction[] {
+  if (from === to) return [];
+  const out: ThreadAction[] = from === "trash" || from === "spam" ? ["moveToInbox"] : [];
+  if (to === "inbox") return out.length ? out : ["moveToInbox"];
+  out.push(to);
+  return out;
+}
+
+/** An undo: messages back exactly as they were, and the provider ops that take them there (in order). */
+export function restoreMessages(c: Ctx, states: readonly MessageState[]): { threadIds: number[]; ops: { accountId: number; kind: ThreadAction; messageIds: number[] }[] } {
+  return c.db.tx(() => {
+    const messages = T(c, "messages");
+    const steps = [new Map<string, { accountId: number; kind: ThreadAction; messageIds: number[] }>(), new Map<string, { accountId: number; kind: ThreadAction; messageIds: number[] }>()];
+    const add = (step: number, accountId: number, kind: ThreadAction, id: number) => {
+      const key = `${accountId}:${kind}`;
+      const op = steps[step]!.get(key) ?? { accountId, kind, messageIds: [] };
+      op.messageIds.push(id);
+      steps[step]!.set(key, op);
+    };
+    const touched = new Set<number>();
+    for (const was of [...states].sort((x, y) => x.id - y.id)) {
+      const m = messages.get(was.id);
+      if (!m) continue;
+      const now = stateOf(m);
+      if (now.isRead === was.isRead && now.isStarred === was.isStarred && placeOf(now) === placeOf(was)) continue;
+      messages.update(m, { is_read: +was.isRead, is_starred: +was.isStarred, in_inbox: +was.inInbox, is_trash: +was.isTrash, is_spam: +was.isSpam });
+      touched.add(m.thread_id);
+      if (now.isRead !== was.isRead) add(0, m.account_id, was.isRead ? "markRead" : "markUnread", m.id);
+      if (now.isStarred !== was.isStarred) add(0, m.account_id, was.isStarred ? "star" : "unstar", m.id);
+      placeOps(placeOf(now), placeOf(was)).forEach((kind, step) => add(step, m.account_id, kind, m.id));
+    }
+    recomputeThreads(c, touched);
+    return { threadIds: [...touched], ops: steps.flatMap((s) => [...s.values()]) };
+  });
 }
 
 // ───────────────────────────── lists, threads, counts ─────────────────────────────

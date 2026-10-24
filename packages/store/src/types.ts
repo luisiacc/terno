@@ -50,6 +50,16 @@ export interface IncomingMessage {
   locations?: IncomingLocation[];
 }
 
+/** A message's state an action may change: what an undo puts back, exactly. */
+export interface MessageState {
+  id: number;
+  isRead: boolean;
+  isStarred: boolean;
+  inInbox: boolean;
+  isTrash: boolean;
+  isSpam: boolean;
+}
+
 export interface FlagUpdate {
   messageId: number;
   flags: Partial<{ isRead: boolean; isStarred: boolean; inInbox: boolean; isTrash: boolean; isSpam: boolean; isSent: boolean; isDraft: boolean }>;

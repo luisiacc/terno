@@ -54,29 +54,6 @@ const DOING: Record<ThreadAction, string> = {
 /** One thread's undo toast only for these (reads and stars show in the row itself); several threads always get one. */
 const TOAST_ALWAYS = new Set<ThreadAction>(["archive", "trash", "spam", "notSpam", "moveToInbox"]);
 
-/** The action that takes another back, in the view it was taken in (null: none). */
-export function inverseOf(action: ThreadAction, view: View): ThreadAction | null {
-  switch (action) {
-    case "archive":
-    case "trash":
-      return "moveToInbox";
-    case "spam":
-      return "notSpam";
-    case "notSpam":
-      return "spam";
-    case "moveToInbox":
-      return view === "trash" ? "trash" : view === "spam" ? "spam" : view === "archive" ? "archive" : null;
-    case "markRead":
-      return "markUnread";
-    case "markUnread":
-      return "markRead";
-    case "star":
-      return "unstar";
-    case "unstar":
-      return "star";
-  }
-}
-
 /** z / ⌘Z: the last undoable action, until another replaces it. */
 let lastUndo: (() => void) | null = null;
 export function undoLast(): void {
@@ -139,13 +116,16 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
   const onTargets = !options.quiet && targets.some((id) => s.checked.has(id));
   if (onTargets && (s.checked.size || s.scope)) setApp({ checked: new Set(), scope: null });
   try {
-    // the contract takes ≤ 5,000 ids a call (the backend slices each)
-    for (let i = 0; i < targets.length; i += 5000) await client.call("threads.act", { threadIds: targets.slice(i, i + 5000), action });
+    // the contract takes ≤ 5,000 ids a call (the backend slices each); each call can be undone exactly
+    const undoIds: number[] = [];
+    for (let i = 0; i < targets.length; i += 5000) {
+      const r = await client.call("threads.act", { threadIds: targets.slice(i, i + 5000), action });
+      if (r.undoId !== null) undoIds.push(r.undoId);
+    }
     invalidateThreads(targets);
-    // an undo, or the read-after-dwell: nothing to announce or to undo
+    // the read-after-dwell: nothing to announce or to undo
     if (options.quiet) return;
-    const inverse = inverseOf(action, s.view);
-    const undo = inverse ? () => void act(inverse, targets, { quiet: true }).then(() => reloadList({ keepSelection: true })) : null;
+    const undo = undoIds.length ? () => void undoActions(undoIds, targets.length) : null;
     lastUndo = undo;
     if (TOAST_ALWAYS.has(action) || targets.length > 1) toast(said(action, targets.length), { action: undo ? { label: "Deshacer", onClick: undo } : undefined });
   } catch (error) {
@@ -185,7 +165,7 @@ async function actScope(action: ThreadAction, sel: ScopeSelection): Promise<void
   try {
     const r = await client.call("threads.actScope", { scope: sel.scope, action, jobId: progress.jobId });
     invalidateThreads(loaded);
-    const undo = r.undoId === null ? null : () => void undoScope(r.undoId!, r.affected);
+    const undo = r.undoId === null ? null : () => void undoActions([r.undoId!], r.affected);
     lastUndo = undo;
     toast.success(said(action, r.affected), { id: progress.toastId, duration: 8000, action: undo ? { label: "Deshacer", onClick: undo } : undefined });
   } catch (error) {
@@ -196,15 +176,20 @@ async function actScope(action: ThreadAction, sel: ScopeSelection): Promise<void
   }
 }
 
-async function undoScope(undoId: number, n: number): Promise<void> {
-  const progress = trackJob(`Deshaciendo ${fmt(n)} conversaciones`);
+/**
+ * Deshacer: the backend puts back each message the action changed, exactly
+ * as it was (read, star, place). Large ones show their progress.
+ */
+async function undoActions(undoIds: readonly number[], n: number): Promise<void> {
+  const progress = n > 200 ? trackJob(`Deshaciendo ${fmt(n)} conversaciones`) : null;
   try {
-    const r = await client.call("threads.undoScope", { undoId, jobId: progress.jobId });
-    toast.success(`Deshecho · ${fmt(r.restored)} conversaciones`, { id: progress.toastId, duration: 4000 });
+    let restored = 0;
+    for (const undoId of undoIds) restored += (await client.call("threads.undo", { undoId, jobId: progress?.jobId })).restored;
+    if (progress) toast.success(`Deshecho · ${fmt(restored)} conversaciones`, { id: progress.toastId, duration: 4000 });
   } catch (error) {
-    toast.error(`No se pudo deshacer: ${error instanceof Error ? error.message : error}`, { id: progress.toastId });
+    toast.error(`No se pudo deshacer: ${error instanceof Error ? error.message : error}`, progress ? { id: progress.toastId } : undefined);
   } finally {
-    progress.stop();
+    progress?.stop();
     void reloadList({ keepSelection: true });
   }
 }

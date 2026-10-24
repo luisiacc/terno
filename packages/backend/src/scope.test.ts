@@ -124,25 +124,65 @@ describe("scope actions", () => {
     expect(wasUnread.length).toBeLessThan(inbox.length);
     const r = await client.call("threads.actScope", { scope: { kind: "view", view: "inbox" }, action: "markRead" });
     expect(r.affected).toBe(wasUnread.length);
-    expect(await client.call("threads.undoScope", { undoId: r.undoId! })).toEqual({ restored: wasUnread.length });
+    expect(await client.call("threads.undo", { undoId: r.undoId! })).toEqual({ restored: wasUnread.length });
     // the threads that were already read stay read
     expect(ids(db.all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 AND unread_count > 0"))).toEqual(wasUnread);
-    await expect(client.call("threads.undoScope", { undoId: r.undoId! })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(client.call("threads.undo", { undoId: r.undoId! })).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   it("an archive's undo brings back the archived threads; a restore from Papelera goes back to Papelera", async () => {
     const { db, client } = setup(300);
     const inbox = ids(db.all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1"));
     const r = await client.call("threads.actScope", { scope: { kind: "view", view: "inbox" }, action: "archive" });
-    await client.call("threads.undoScope", { undoId: r.undoId! });
+    await client.call("threads.undo", { undoId: r.undoId! });
     expect(ids(db.all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1"))).toEqual(inbox);
 
     const trash = ids(db.all<{ id: number }>("SELECT id FROM threads WHERE in_trash = 1"));
     expect(trash.length).toBeGreaterThan(0);
     const back = await client.call("threads.actScope", { scope: { kind: "view", view: "trash" }, action: "moveToInbox" });
     expect(db.get("SELECT count(*) AS c FROM threads WHERE in_trash = 1")).toEqual({ c: 0 });
-    await client.call("threads.undoScope", { undoId: back.undoId! });
+    await client.call("threads.undo", { undoId: back.undoId! });
     expect(ids(db.all<{ id: number }>("SELECT id FROM threads WHERE in_trash = 1"))).toEqual(trash);
+  });
+
+  describe("undo restores each message as it was", () => {
+    type M = { id: number; is_read: number; is_starred: number; in_inbox: number; is_trash: number; is_spam: number };
+    const messages = (db: ReturnType<typeof setup>["db"]) => db.all<M>("SELECT id, is_read, is_starred, in_inbox, is_trash, is_spam FROM messages ORDER BY id");
+
+    it("select all of Archivo → Papelera → Deshacer: back in the archive, not the inbox", async () => {
+      const { db, client } = setup(300);
+      const before = messages(db);
+      const archived = db.get<{ c: number }>("SELECT count(*) AS c FROM threads WHERE in_inbox = 0 AND in_trash = 0 AND in_spam = 0")!.c;
+      expect(archived).toBeGreaterThan(10);
+      const r = await client.call("threads.actScope", { scope: { kind: "view", view: "archive" }, action: "trash" });
+      expect(r.affected).toBe(archived);
+      await client.call("threads.undo", { undoId: r.undoId! });
+      expect(messages(db)).toEqual(before);
+      expect(db.get("SELECT count(*) AS c FROM threads WHERE in_inbox = 0 AND in_trash = 0 AND in_spam = 0")).toEqual({ c: archived });
+    });
+
+    it("a loaded selection with mixed read states: mark read, undo, and only the unread ones are unread again", async () => {
+      const { db, client } = setup(300);
+      const picked = ids(db.all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 ORDER BY id LIMIT 60"));
+      const mixed = db.all<{ thread_id: number }>(`SELECT thread_id FROM messages WHERE thread_id IN (${picked.join(",")}) GROUP BY thread_id HAVING min(is_read) = 0 AND max(is_read) = 1`);
+      expect(mixed.length).toBeGreaterThan(0);
+      const before = messages(db);
+      const r = await client.call("threads.act", { threadIds: picked, action: "markRead" });
+      expect(r.undoId).not.toBeNull();
+      await client.call("threads.undo", { undoId: r.undoId! });
+      expect(messages(db)).toEqual(before);
+    });
+
+    it("starred messages come back starred, one by one", async () => {
+      const { db, client } = setup(300);
+      const starred = ids(db.all<{ id: number }>("SELECT DISTINCT thread_id AS id FROM messages WHERE is_starred = 1 LIMIT 30"));
+      expect(starred.length).toBeGreaterThan(0);
+      const before = messages(db);
+      const r = await client.call("threads.act", { threadIds: starred, action: "unstar" });
+      expect(db.get("SELECT count(*) AS c FROM messages WHERE is_starred = 1 AND thread_id IN (" + starred.join(",") + ")")).toEqual({ c: 0 });
+      await client.call("threads.undo", { undoId: r.undoId! });
+      expect(messages(db)).toEqual(before);
+    });
   });
 
   it("reports progress for its job: from 0 to the total, in order", async () => {
@@ -173,7 +213,7 @@ describe("scope actions", () => {
     const { agent } = setup(50);
     const scope = { kind: "view" as const, view: "inbox" as const };
     await expect(agent.call("threads.actScope", { scope, action: "trash" })).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await expect(agent.call("threads.undoScope", { undoId: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(agent.call("threads.undo", { undoId: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(agent.call("threads.scopeCount", { scope })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(agent.call("categories.addScope", { categoryId: 1, scope })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
@@ -195,9 +235,9 @@ describe("scope actions", () => {
     const some = ids(db.all<{ id: number }>("SELECT id FROM threads WHERE is_starred = 0 LIMIT 400"));
     expect(some).toHaveLength(400);
     const calls = countActs(backend);
-    expect(await client.call("threads.act", { threadIds: some, action: "star" })).toEqual({ affected: 400 });
+    expect(await client.call("threads.act", { threadIds: some, action: "star" })).toMatchObject({ affected: 400 });
     expect(calls.length).toBeGreaterThan(1);
     expect(calls.reduce((a, b) => a + b, 0)).toBe(400);
-    expect(await client.call("threads.act", { threadIds: some.slice(0, 10), action: "star" })).toEqual({ affected: 0 });
+    expect(await client.call("threads.act", { threadIds: some.slice(0, 10), action: "star" })).toEqual({ affected: 0, undoId: null });
   });
 });

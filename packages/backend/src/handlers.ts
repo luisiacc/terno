@@ -1,10 +1,10 @@
 import { RpcError, type Handlers } from "@unica/core/rpc";
 import { COUNT_CAP, proposeLearnedFilters, type Address, type ThreadAction } from "@unica/core";
-import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow } from "@unica/store";
+import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type MessageState } from "@unica/store";
 import type { GmailAccountConfig, ImapAccountConfig } from "@unica/mail";
 import { BackendCore as Backend } from "./core";
 import { changeOwnerTo, gmailClaim, imapClaim } from "./identity";
-import { countThreadScope, inverseAction, progressReporter, resolveThreadScope, ScopeUndoJournal } from "./scope";
+import { countThreadScope, progressReporter, resolveThreadScope, UndoJournal } from "./scope";
 import { readAutoCategorize, readSettings, SettingsError, updateSettings } from "./settings";
 
 /** How a UI entry point is recorded: bulk (snackbar) adds weigh half and their content is capped per sender. */
@@ -64,10 +64,12 @@ export function createHandlers(b: Backend): Handlers {
    */
   const actOn = async (threadIds: readonly number[], action: ThreadAction, signal: ReturnType<typeof Backend.learningSignal> | null, progress?: (done: number) => void, alwaysSliced = false) => {
     const changed = new Set<number>();
+    const before: MessageState[] = [];
     let done = 0;
     const run = async (chunk: number[]) => {
       const r = await store.threads.act({ threadIds: chunk, action, signal: signal ?? null, now: b.now() });
       for (const t of r.threadIds) changed.add(t);
+      for (const m of r.before) before.push(m);
       b.opsQueued(r.opIds);
       b.notifyChanged(r.threadIds);
       progress?.((done += chunk.length));
@@ -77,9 +79,10 @@ export function createHandlers(b: Backend): Handlers {
     // half the usual budget: an action's commit writes every message, thread and op it touches, and that write is the
     // part of a slice whose time the disk decides
     else await b.runSliced([...threadIds], 50, run, b.options.sliceBudgetMs / 2);
-    return [...changed];
+    // what an undo puts back: these messages, exactly as they were
+    return { threads: [...changed], undoId: before.length ? undoJournal.remember(before) : null };
   };
-  const scopeUndo = new ScopeUndoJournal();
+  const undoJournal = new UndoJournal();
   const nextAccountColor = async () => ACCOUNT_COLORS[(await store.accounts.list()).length % ACCOUNT_COLORS.length]!;
 
   return {
@@ -159,8 +162,8 @@ export function createHandlers(b: Backend): Handlers {
     "threads.act": async ({ threadIds, action }, ctx) => {
       const signal = Backend.learningSignal(action);
       // only explicit renderer actions feed learned filters
-      const changed = await actOn([...new Set(threadIds)], action, signal && ctx.origin === "renderer" ? signal : null);
-      return { affected: changed.length };
+      const r = await actOn([...new Set(threadIds)], action, signal && ctx.origin === "renderer" ? signal : null);
+      return { affected: r.threads.length, undoId: r.undoId };
     },
     "threads.scopeCount": ({ scope }) => countThreadScope(b, scope),
     "threads.actScope": async ({ scope, action, jobId }) => {
@@ -169,18 +172,31 @@ export function createHandlers(b: Backend): Handlers {
       const progress = progressReporter(b, jobId, ids.length);
       progress(0);
       // a sweep over a whole view says nothing about senders: never a learning signal
-      const changed = await actOn(ids, action, null, progress, true);
+      const r = await actOn(ids, action, null, progress, true);
       progress(ids.length);
-      const inverse = inverseAction(action, scope);
-      return { undoId: inverse && changed.length ? scopeUndo.remember(inverse, changed) : null, affected: changed.length, total: ids.length };
+      return { undoId: r.undoId, affected: r.threads.length, total: ids.length };
     },
-    "threads.undoScope": async ({ undoId, jobId }) => {
-      const entry = scopeUndo.take(undoId);
-      if (!entry) throw new RpcError("NOT_FOUND", "Esta acción ya no se puede deshacer");
-      const progress = progressReporter(b, jobId, entry.threadIds.length);
-      const changed = await actOn(entry.threadIds, entry.action, null, progress, true);
-      progress(entry.threadIds.length);
-      return { restored: changed.length };
+    "threads.undo": async ({ undoId, jobId }) => {
+      const before = undoJournal.take(undoId);
+      if (!before) throw new RpcError("NOT_FOUND", "Esta acción ya no se puede deshacer");
+      const progress = progressReporter(b, jobId, before.length);
+      const restored = new Set<number>();
+      let done = 0;
+      progress(0);
+      // like the action: one store command (transaction, ops per account) per slice
+      await b.runSliced(
+        before,
+        200,
+        async (chunk) => {
+          const r = await store.threads.restore({ messages: chunk, now: b.now() });
+          for (const t of r.threadIds) restored.add(t);
+          b.opsQueued(r.opIds);
+          b.notifyChanged(r.threadIds);
+          progress((done += chunk.length));
+        },
+        b.options.sliceBudgetMs / 2,
+      );
+      return { restored: restored.size };
     },
 
     "categories.create": async ({ name, color }) => {

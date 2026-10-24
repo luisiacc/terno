@@ -69,6 +69,7 @@ import {
   adoptProviderThread,
   applyMessageAction,
   applyThreadAction,
+  restoreMessages,
   awaitAuthOp,
   changeOwner,
   claimFilterApplications,
@@ -575,7 +576,17 @@ export class IdbMailStore implements MailStore {
       this.command(() => {
         const r = applyThreadAction(this.c, [...new Set(threadIds)], action);
         if (signal && r.threadIds.length) recordUserActions(this.c, r.threadIds, signal, now);
-        return { threadIds: r.threadIds, opIds: this.queueActionOps(r, action, now) };
+        return { threadIds: r.threadIds, opIds: this.queueActionOps(r, action, now), before: r.before };
+      }),
+    restore: ({ messages, now }) =>
+      this.command(() => {
+        const r = restoreMessages(this.c, messages);
+        const opIds: string[] = [];
+        for (const op of r.ops) {
+          const id = enqueueOp(this.c, { accountId: op.accountId, kind: op.kind, target: { messageIds: op.messageIds } }, now);
+          if (id) opIds.push(id);
+        }
+        return { threadIds: r.threadIds, opIds };
       }),
   };
 

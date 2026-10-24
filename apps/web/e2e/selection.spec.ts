@@ -350,6 +350,38 @@ test.describe("multi-selection", () => {
   });
 });
 
+test.describe("undo is exact", () => {
+  test("all of Archivo to Papelera, then Deshacer: they're back in Archivo, none in Entrada", async ({ app: page, server }) => {
+    const count = (where: string) => db(server).get<{ c: number }>(`SELECT count(*) AS c FROM threads WHERE ${where}`)!.c;
+    const archived = count("in_inbox = 0 AND in_trash = 0 AND in_spam = 0");
+    const inbox = count("in_inbox = 1");
+    await page.getByTestId("nav-archive").click();
+    await expect(page.getByTestId("list-title")).toHaveText("Archivo");
+    await focusList(page);
+    await page.keyboard.press("ControlOrMeta+a");
+    await page.getByTestId("select-all-scope-button").click();
+    await expect(page.getByTestId("select-all-scope")).toBeVisible();
+    await page.keyboard.press("Backspace");
+    await expect.poll(() => count("in_inbox = 0 AND in_trash = 0 AND in_spam = 0")).toBe(0);
+    await toast(page, "Movido a la papelera").getByRole("button", { name: "Deshacer" }).click();
+    await expect.poll(() => count("in_inbox = 0 AND in_trash = 0 AND in_spam = 0")).toBe(archived);
+    expect(count("in_inbox = 1")).toBe(inbox);
+    await expect(rows(page).first()).toBeVisible();
+  });
+
+  test("marking a mixed selection read, then z: the ones that were read stay read", async ({ app: page, server }) => {
+    const ids = (await idsOf(rows(page))).slice(0, 8);
+    const unreadBefore = ids.filter((id) => flags(server, id).unread_count > 0);
+    expect(unreadBefore.length).toBeGreaterThan(0);
+    expect(unreadBefore.length).toBeLessThan(ids.length);
+    await selectRows(page, ids);
+    await page.keyboard.press("Shift+I");
+    await expect.poll(() => ids.every((id) => flags(server, id).unread_count === 0)).toBe(true);
+    await page.keyboard.press("z");
+    await expect.poll(() => ids.filter((id) => flags(server, id).unread_count > 0)).toEqual(unreadBefore);
+  });
+});
+
 test.describe("select all N and dragging", () => {
   test("with all N of a view selected, rows don't drag (only part of them would move)", async ({ app: page, server }) => {
     const viajes = db(server).get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id;

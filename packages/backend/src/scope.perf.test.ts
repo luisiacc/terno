@@ -84,7 +84,7 @@ it("archiving every thread of a view (≥ 5,000) and undoing it: no stall over 5
         result = await client.call("threads.actScope", { scope: { kind: "view", view: "inbox" }, action: "archive", jobId: "perf" });
       },
     ],
-    ["its undo", () => client.call("threads.undoScope", { undoId: result.undoId! })],
+    ["its undo", () => client.call("threads.undo", { undoId: result.undoId! })],
     ["scope mark read of «Todo el correo»", () => client.call("threads.actScope", { scope: { kind: "view", view: "all" }, action: "markRead" })],
   ];
   const out: { name: string; stall: number; list: number }[] = [];

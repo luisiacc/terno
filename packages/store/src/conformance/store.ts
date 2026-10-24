@@ -234,7 +234,74 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect(r.opIds).toHaveLength(1);
         expect((await store.ops.get(r.opIds[0]!))!).toMatchObject({ account_id: a, kind: "archive", target_json: JSON.stringify({ messageIds: [inboxMsg] }) });
         // a second archive is a no-op: nothing to send to the provider
-        expect(await store.threads.act({ threadIds: [t], action: "archive", signal: null, now: NOW })).toEqual({ threadIds: [], opIds: [] });
+        expect(await store.threads.act({ threadIds: [t], action: "archive", signal: null, now: NOW })).toEqual({ threadIds: [], opIds: [], before: [] });
+      });
+
+      describe("undo puts each message back exactly", () => {
+        const state = (m: { id: number; isRead: boolean; isStarred: boolean; inInbox: boolean; isTrash: boolean; isSpam: boolean }) => ({ id: m.id, isRead: m.isRead, isStarred: m.isStarred, inInbox: m.inInbox, isTrash: m.isTrash, isSpam: m.isSpam });
+        const states = async (store: MailStore) => (await store.debug.snapshot()).messages.map(state).sort((x, y) => x.id - y.id);
+
+        it("mixed read states: marking read and restoring leaves the read ones read", async () => {
+          const store = await fresh();
+          const [a] = await withAccounts(store);
+          await ingest(store, [
+            msg({ accountId: a!, providerMsgId: "a1", rfcMessageId: "a@x", date: 1000, isRead: true }),
+            msg({ accountId: a!, providerMsgId: "a2", inReplyTo: "a@x", date: 2000, isRead: false }),
+            msg({ accountId: a!, providerMsgId: "b1", rfcMessageId: "b@x", date: 3000, isRead: true }),
+          ]);
+          const before = await states(store);
+          const ts = [await threadOf(store, "a1"), await threadOf(store, "b1")];
+          const r = await store.threads.act({ threadIds: ts, action: "markRead", signal: null, now: NOW });
+          // only the message that changed is journaled, as it was
+          expect(r.before).toEqual(before.filter((m) => !m.isRead));
+          const back = await store.threads.restore({ messages: r.before, now: NOW + 1 });
+          expect(await states(store)).toEqual(before);
+          expect(back.threadIds).toEqual([ts[0]]);
+          const ops = (await store.debug.snapshot()).ops;
+          // the markRead never reached the provider: its exact opposite cancels it
+          expect(ops.filter((o) => o.kind === "markRead" || o.kind === "markUnread")).toEqual([]);
+        });
+
+        it("archived then trashed: the undo returns them to the archive, not the inbox, with ops in order", async () => {
+          const store = await fresh();
+          const [a] = await withAccounts(store);
+          await ingest(store, [msg({ accountId: a!, providerMsgId: "arch", inInbox: false }), msg({ accountId: a!, providerMsgId: "inb", inInbox: true })]);
+          const before = await states(store);
+          const ts = [await threadOf(store, "arch"), await threadOf(store, "inb")];
+          const r = await store.threads.act({ threadIds: ts, action: "trash", signal: null, now: NOW });
+          expect(r.before).toHaveLength(2);
+          await store.threads.restore({ messages: r.before, now: NOW + 1 });
+          expect(await states(store)).toEqual(before);
+          const snap = await store.debug.snapshot();
+          const arch = snap.messages.find((m) => m.providerMsgId === "arch")!.id;
+          const inb = snap.messages.find((m) => m.providerMsgId === "inb")!.id;
+          expect(snap.threads.find((t) => t.id === ts[0])).toMatchObject({ inInbox: false, inTrash: false });
+          // the provider: the trash, then out of it through the inbox; the archived one goes on to the archive
+          const restoring = snap.ops.filter((o) => o.kind !== "trash");
+          expect(restoring.map((o) => [o.kind, [...o.messageIds].sort()])).toEqual([
+            ["moveToInbox", [arch, inb].sort()],
+            ["archive", [arch]],
+          ]);
+        });
+
+        it("starred messages: every one that was starred is starred again, the others aren't", async () => {
+          const store = await fresh();
+          const [a] = await withAccounts(store);
+          await ingest(store, [
+            msg({ accountId: a!, providerMsgId: "s1", rfcMessageId: "s@x", date: 1000, isStarred: true }),
+            msg({ accountId: a!, providerMsgId: "s2", inReplyTo: "s@x", date: 2000, isStarred: false }),
+            msg({ accountId: a!, providerMsgId: "s3", inReplyTo: "s@x", date: 3000, isStarred: true }),
+          ]);
+          const before = await states(store);
+          const t = await threadOf(store, "s1");
+          const r = await store.threads.act({ threadIds: [t], action: "unstar", signal: null, now: NOW });
+          expect(r.before.map((m) => m.isStarred)).toEqual([true, true]);
+          await store.threads.restore({ messages: r.before, now: NOW + 1 });
+          expect(await states(store)).toEqual(before);
+          expect((await store.debug.snapshot()).threads.find((x) => x.id === t)!.isStarred).toBe(true);
+          // a message deleted meanwhile is skipped
+          expect(await store.threads.restore({ messages: [{ id: 987_654, isRead: true, isStarred: true, inInbox: true, isTrash: false, isSpam: false }], now: NOW })).toEqual({ threadIds: [], opIds: [] });
+        });
       });
 
       it("markUnread and star act on the latest message only; unstar clears all", async () => {

@@ -1,4 +1,5 @@
 import type { ThreadAction } from "@unica/core";
+import type { MessageState } from "@unica/store";
 import { recomputeThreads } from "./ingest";
 import { placeholders, type Db } from "./sqlite";
 
@@ -11,6 +12,8 @@ export interface ActionTarget {
 export interface ActionResult {
   threadIds: number[];
   targets: ActionTarget[];
+  /** each changed message as it was before */
+  before: MessageState[];
 }
 
 interface Msg {
@@ -126,5 +129,84 @@ function applyToMessages(db: Db, msgs: Msg[], action: ThreadAction, explicit: bo
   return {
     threadIds: [...touched],
     targets: [...byAccount].map(([accountId, messageIds]) => ({ accountId, messageIds })),
+    before: ids.map((id) => stateOf(byId.get(id)!)),
   };
+}
+
+const stateOf = (m: Pick<Msg, "id" | "is_read" | "is_starred" | "in_inbox" | "is_trash" | "is_spam">): MessageState => ({
+  id: m.id,
+  isRead: !!m.is_read,
+  isStarred: !!m.is_starred,
+  inInbox: !!m.in_inbox,
+  isTrash: !!m.is_trash,
+  isSpam: !!m.is_spam,
+});
+
+type Place = "inbox" | "archive" | "trash" | "spam";
+const placeOf = (s: Pick<MessageState, "inInbox" | "isTrash" | "isSpam">): Place => (s.isTrash ? "trash" : s.isSpam ? "spam" : s.inInbox ? "inbox" : "archive");
+
+/**
+ * The provider ops that take a message from one place to another, in order:
+ * out of Papelera or Spam goes through the inbox first (Gmail's archive
+ * doesn't untrash; IMAP moves from wherever it is).
+ */
+export function placeOps(from: Place, to: Place): ThreadAction[] {
+  if (from === to) return [];
+  const out: ThreadAction[] = from === "trash" || from === "spam" ? ["moveToInbox"] : [];
+  if (to === "inbox") return out.length ? out : ["moveToInbox"];
+  out.push(to);
+  return out;
+}
+
+export interface RestoreResult {
+  threadIds: number[];
+  /** ops to queue, in this order (a message's location steps stay in sequence) */
+  ops: { accountId: number; kind: ThreadAction; messageIds: number[] }[];
+}
+
+/** Puts messages back exactly as they were (an undo) and says which provider ops take them there. */
+export function restoreMessages(db: Db, states: readonly MessageState[]): RestoreResult {
+  return db.tx(() => {
+    const wanted = new Map(states.map((s) => [s.id, s]));
+    const msgs: (Msg & { id: number })[] = [];
+    const ids = [...wanted.keys()];
+    for (let i = 0; i < ids.length; i += 500) {
+      const chunk = ids.slice(i, i + 500);
+      msgs.push(
+        ...db.all<Msg>(
+          `SELECT id, account_id, thread_id, date, is_sent, is_trash, is_spam, in_inbox, is_read, is_starred FROM messages WHERE id IN (${placeholders(chunk.length)})`,
+          ...chunk,
+        ),
+      );
+    }
+    // step 0: read/star and the first location step; step 1: the second location step
+    const steps = [new Map<string, { accountId: number; kind: ThreadAction; messageIds: number[] }>(), new Map<string, { accountId: number; kind: ThreadAction; messageIds: number[] }>()];
+    const add = (step: number, accountId: number, kind: ThreadAction, id: number) => {
+      const key = `${accountId}:${kind}`;
+      const op = steps[step]!.get(key) ?? { accountId, kind, messageIds: [] };
+      op.messageIds.push(id);
+      steps[step]!.set(key, op);
+    };
+    const touched = new Set<number>();
+    for (const m of msgs) {
+      const was = wanted.get(m.id)!;
+      const now = stateOf(m);
+      if (now.isRead === was.isRead && now.isStarred === was.isStarred && placeOf(now) === placeOf(was)) continue;
+      db.run(
+        "UPDATE messages SET is_read = ?, is_starred = ?, in_inbox = ?, is_trash = ?, is_spam = ? WHERE id = ?",
+        +was.isRead,
+        +was.isStarred,
+        +was.inInbox,
+        +was.isTrash,
+        +was.isSpam,
+        m.id,
+      );
+      touched.add(m.thread_id);
+      if (now.isRead !== was.isRead) add(0, m.account_id, was.isRead ? "markRead" : "markUnread", m.id);
+      if (now.isStarred !== was.isStarred) add(0, m.account_id, was.isStarred ? "star" : "unstar", m.id);
+      placeOps(placeOf(now), placeOf(was)).forEach((kind, step) => add(step, m.account_id, kind, m.id));
+    }
+    recomputeThreads(db, touched);
+    return { threadIds: [...touched], ops: steps.flatMap((s) => [...s.values()]) };
+  });
 }

@@ -7,9 +7,8 @@
  * then goes through runSliced: one store command per slice, each its own
  * transaction with one provider op per account.
  */
-import type { ThreadAction, View } from "@unica/core";
 import type { ThreadScope } from "@unica/core/rpc";
-import { StaleCursorError } from "@unica/store";
+import { StaleCursorError, type MessageState } from "@unica/store";
 import type { BackendCore } from "./core";
 
 /** More than this and a scope is refused as capped (a count says "100 000+"). */
@@ -45,31 +44,6 @@ export async function resolveThreadScope(b: BackendCore, scope: ThreadScope, cap
   return { ids: unique.slice(0, cap), capped: unique.length > cap };
 }
 
-/** The action that takes a scope action back (null: none). A restore to the inbox goes back where the scope's view was. */
-export function inverseAction(action: ThreadAction, scope: ThreadScope): ThreadAction | null {
-  switch (action) {
-    case "archive":
-    case "trash":
-      return "moveToInbox";
-    case "spam":
-      return "notSpam";
-    case "notSpam":
-      return "spam";
-    case "moveToInbox": {
-      const view: View | null = scope.kind === "view" ? scope.view : null;
-      return view === "trash" ? "trash" : view === "spam" ? "spam" : view === "archive" ? "archive" : null;
-    }
-    case "markRead":
-      return "markUnread";
-    case "markUnread":
-      return "markRead";
-    case "star":
-      return "unstar";
-    case "unstar":
-      return "star";
-  }
-}
-
 /** How many threads a scope holds: a view is counted, a search is resolved. */
 export async function countThreadScope(b: BackendCore, scope: ThreadScope, cap = SCOPE_CAP): Promise<{ count: number; capped: boolean }> {
   if (scope.kind === "view") {
@@ -93,22 +67,23 @@ export function progressReporter(b: BackendCore, jobId: string | undefined, tota
 }
 
 /**
- * The undo journal of scope actions: the exact threads each one changed,
- * in memory (a restart loses the undo, never the action), the last 16 jobs.
+ * The undo journal of thread actions: each message an action changed, as it
+ * was before (read, star, place), in memory (a restart loses the undo, never
+ * the action), the last 16 actions.
  */
-export class ScopeUndoJournal {
-  private readonly entries = new Map<number, { action: ThreadAction; threadIds: number[] }>();
+export class UndoJournal {
+  private readonly entries = new Map<number, MessageState[]>();
   private seq = 0;
 
-  remember(action: ThreadAction, threadIds: number[]): number {
+  remember(before: MessageState[]): number {
     const id = ++this.seq;
-    this.entries.set(id, { action, threadIds });
+    this.entries.set(id, before);
     while (this.entries.size > 16) this.entries.delete(this.entries.keys().next().value as number);
     return id;
   }
 
   /** One-shot: an undo is taken out of the journal as it starts. */
-  take(id: number): { action: ThreadAction; threadIds: number[] } | null {
+  take(id: number): MessageState[] | null {
     const e = this.entries.get(id) ?? null;
     this.entries.delete(id);
     return e;

@@ -21,7 +21,7 @@ import {
   type StoreSearchPage,
 } from "@unica/store";
 import { InstantSearch, type InstantSearchOptions } from "@unica/store/instant";
-import { applyMessageAction, applyThreadAction, type ActionResult } from "./actions";
+import { applyMessageAction, applyThreadAction, restoreMessages, type ActionResult } from "./actions";
 import {
   addToCategory,
   backfillCandidates,
@@ -278,7 +278,17 @@ export class SqlMailStore implements MailStore {
         const r = applyThreadAction(this.db, [...new Set(threadIds)], action);
         // only actions that changed something feed learned filters (repeats must not manufacture support)
         if (signal && r.threadIds.length) recordUserActions(this.db, r.threadIds, signal, now);
-        return { threadIds: r.threadIds, opIds: this.queueActionOps(r, action, now) };
+        return { threadIds: r.threadIds, opIds: this.queueActionOps(r, action, now), before: r.before };
+      }),
+    restore: async ({ messages, now }) =>
+      this.db.tx(() => {
+        const r = restoreMessages(this.db, messages);
+        const opIds: string[] = [];
+        for (const op of r.ops) {
+          const id = enqueueOp(this.db, { accountId: op.accountId, kind: op.kind, target: { messageIds: op.messageIds } }, now);
+          if (id) opIds.push(id);
+        }
+        return { threadIds: r.threadIds, opIds };
       }),
   };
 

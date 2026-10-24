@@ -38,6 +38,7 @@ import type {
   OpRow,
   OwnerClaim,
   Page,
+  MessageState,
   PendingSuggestion,
   ScopeParams,
   ThreadFeatureSet,
@@ -213,8 +214,14 @@ export interface MailStore {
     /** an RPC cursor without revision/key (older renderers) continues this query */
     /** `signal`: the caller no longer wants the answer (a newer search); a slow path may stop and reject with SearchCancelledError */
     searchText(p: { query: string; accountId?: number; categoryId?: number; cursor?: Cursor & Partial<Pick<SearchCursor, "revision" | "queryKey">>; limit: number; now: number; signal?: { readonly aborted: boolean } }): Promise<StoreSearchPage>;
-    /** local optimistic change + learning signal + provider ops, atomically */
-    act(c: { threadIds: readonly number[]; action: ThreadAction; signal: UserActionKind | null; now: number }): Promise<{ threadIds: number[]; opIds: string[] }>;
+    /** local optimistic change + learning signal + provider ops, atomically; `before`: each changed message as it was */
+    act(c: { threadIds: readonly number[]; action: ThreadAction; signal: UserActionKind | null; now: number }): Promise<{ threadIds: number[]; opIds: string[]; before: MessageState[] }>;
+    /**
+     * An undo: every message back to the given state (those still there),
+     * with the provider ops that take it there, in order per message; never a
+     * learning signal.
+     */
+    restore(c: { messages: readonly MessageState[]; now: number }): Promise<{ threadIds: number[]; opIds: string[] }>;
   };
 
   sync: {

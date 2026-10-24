@@ -295,7 +295,8 @@ export const contract = {
     }),
   ),
   "threads.get": m<ThreadDetail>()(z.object({ threadId: id })),
-  "threads.act": m<{ affected: number }>()(
+  /** `undoId` (null when nothing changed) puts back exactly the messages it changed (threads.undo) */
+  "threads.act": m<{ affected: number; undoId: number | null }>()(
     z.object({
       threadIds: ids,
       action: z.enum(THREAD_ACTIONS),
@@ -307,13 +308,14 @@ export const contract = {
    * An action on every thread of a scope, resolved once and applied in time
    * slices (one transaction and one op per account each), with `bulkProgress`
    * events for `jobId`. Never a learning signal. `undoId` (null when nothing
-   * changed or the action has no inverse) undoes exactly the threads it changed.
+   * changed) puts back exactly the messages it changed (threads.undo).
    */
   "threads.actScope": m<{ undoId: number | null; affected: number; total: number }>()(
     z.object({ scope: threadScope, action: z.enum(THREAD_ACTIONS), jobId: jobId.optional() }),
     { timeoutMs: 300_000 },
   ),
-  "threads.undoScope": m<{ restored: number }>()(z.object({ undoId: id, jobId: jobId.optional() }), { timeoutMs: 300_000 }),
+  /** Takes an action back (threads.act or actScope): each message it changed returns to its previous read, star and place. Once. */
+  "threads.undo": m<{ restored: number }>()(z.object({ undoId: id, jobId: jobId.optional() }), { timeoutMs: 300_000 }),
 
   "categories.create": m<Category>()(
     z.object({ name: z.string().trim().min(1).max(60), color: z.enum(CATEGORY_COLORS) }),
