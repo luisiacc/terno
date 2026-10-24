@@ -91,7 +91,7 @@ describe("bodies live in message_bodies; the FTS index follows both tables", () 
 
 describe("migration v6: message bodies", () => {
   it("moves every body out of messages, keeps the index without rebuilding it, and leaves search and rules unchanged", () => {
-    const dir = mkdtempSync(join(tmpdir(), "unica-mig6-"));
+    const dir = mkdtempSync(join(tmpdir(), "terno-mig6-"));
     const source = openDatabase(join(dir, "source.db"));
     seedDataset(source, generateDataset({ threads: 400, accounts: 2, seed: 6, now: Date.UTC(2026, 9, 22) }), { now: Date.UTC(2026, 9, 22) });
     // one message without any body, as IMAP envelopes arrive

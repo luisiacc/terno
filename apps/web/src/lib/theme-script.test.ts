@@ -26,7 +26,7 @@ function run(options: { storage?: Record<string, string>; dark?: boolean; reduce
     localStorage: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) },
     matchMedia: (q: string) => ({ matches: q.includes("dark") ? !!options.dark : q.includes("reduced-motion") ? !!options.reduced : q.includes("reduced-transparency") ? !!options.opaque : false }),
     document: { documentElement: html },
-    window: options.desktop ? { unicaDesktop: { platform: options.desktop } } : {},
+    window: options.desktop ? { ternoDesktop: { platform: options.desktop } } : {},
   };
   runInNewContext(SOURCE, sandbox);
   return { classes, attrs, props, style, store };
@@ -42,7 +42,7 @@ describe("theme.js", () => {
   it("defaults: system mode on a light OS, Única claro, motion 75", () => {
     const r = run();
     expect(r.classes.has("dark")).toBe(false);
-    expect(r.attrs.get("data-theme")).toBe("unica-light");
+    expect(r.attrs.get("data-theme")).toBe("terno-light");
     expect(r.attrs.get("data-motion")).toBe("on");
     expect(r.style.colorScheme).toBe("light");
     expect(r.attrs.has("data-vibrancy")).toBe(false);
@@ -59,27 +59,27 @@ describe("theme.js", () => {
 
   it("computes the same motion variables as motionVars()", () => {
     for (const ms of [0, 50, 75, 100]) {
-      const r = run({ storage: { "unica:appearance": JSON.stringify({ mode: "light", light: "unica-light", dark: "unica-dark", motion: ms }) } });
+      const r = run({ storage: { "unica:appearance": JSON.stringify({ mode: "light", light: "terno-light", dark: "terno-dark", motion: ms }) } });
       for (const [k, v] of Object.entries(motionVars(ms))) expect(r.props.get(k), `${ms} ${k}`).toBe(v);
       expect(r.attrs.get("data-motion")).toBe(ms === 0 ? "off" : "on");
     }
   });
 
   it("reduced motion turns motion off whatever the setting", () => {
-    const r = run({ storage: { "unica:appearance": JSON.stringify({ mode: "light", light: "unica-light", dark: "unica-dark", motion: 100 }) }, reduced: true });
+    const r = run({ storage: { "unica:appearance": JSON.stringify({ mode: "light", light: "terno-light", dark: "terno-dark", motion: 100 }) }, reduced: true });
     expect(r.attrs.get("data-motion")).toBe("off");
   });
 
   it("migrates the v1 unica:theme key once", () => {
     const r = run({ storage: { "unica:theme": "dark" } });
     expect(r.classes.has("dark")).toBe(true);
-    expect(r.attrs.get("data-theme")).toBe("unica-dark");
+    expect(r.attrs.get("data-theme")).toBe("terno-dark");
     expect(r.store.has("unica:theme")).toBe(false);
-    expect(JSON.parse(r.store.get("unica:appearance")!)).toMatchObject({ mode: "dark", light: "unica-light", dark: "unica-dark", motion: 75 });
+    expect(JSON.parse(r.store.get("unica:appearance")!)).toMatchObject({ mode: "dark", light: "terno-light", dark: "terno-dark", motion: 75 });
   });
 
   it("applies a cached custom theme over its base, dropping anything that isn't a plain color", () => {
-    const appearance = { mode: "dark", light: "unica-light", dark: "custom:rosa", motion: 50, custom: { dark: { base: "dracula", tokens: { primary: "oklch(0.7 0.2 0)", background: "#101010", foreground: "red;}body{display:none", "x;y": "#fff", ring: "url(https://x.test)" } } } };
+    const appearance = { mode: "dark", light: "terno-light", dark: "custom:rosa", motion: 50, custom: { dark: { base: "dracula", tokens: { primary: "oklch(0.7 0.2 0)", background: "#101010", foreground: "red;}body{display:none", "x;y": "#fff", ring: "url(https://x.test)" } } } };
     const r = run({ storage: { "unica:appearance": JSON.stringify(appearance) } });
     expect(r.attrs.get("data-theme")).toBe("dracula");
     expect(r.props.get("--primary")).toBe("oklch(0.7 0.2 0)");
@@ -90,8 +90,8 @@ describe("theme.js", () => {
   });
 
   it("ignores a tampered or broken cache", () => {
-    expect(run({ storage: { "unica:appearance": "{not json" } }).attrs.get("data-theme")).toBe("unica-light");
-    expect(run({ storage: { "unica:appearance": JSON.stringify({ mode: "light", light: '"]{}body{', motion: 999 }) } }).attrs.get("data-theme")).toBe("unica-light");
+    expect(run({ storage: { "unica:appearance": "{not json" } }).attrs.get("data-theme")).toBe("terno-light");
+    expect(run({ storage: { "unica:appearance": JSON.stringify({ mode: "light", light: '"]{}body{', motion: 999 }) } }).attrs.get("data-theme")).toBe("terno-light");
     expect(run({ storage: { "unica:appearance": JSON.stringify({ mode: "light", light: "x", motion: 999 }) } }).props.get("--motion")).toBe("75ms");
   });
 
@@ -99,7 +99,7 @@ describe("theme.js", () => {
     const allow = run({ desktop: "darwin" });
     expect([...allow.classes]).toEqual(expect.arrayContaining(["is-desktop", "is-mac"]));
     expect(allow.attrs.has("data-vibrancy")).toBe(true);
-    const named = run({ desktop: "darwin", storage: { "unica:appearance": JSON.stringify({ mode: "light", light: "github-light", dark: "unica-dark", motion: 75, vibrancy: { light: false, dark: true } }) } });
+    const named = run({ desktop: "darwin", storage: { "unica:appearance": JSON.stringify({ mode: "light", light: "github-light", dark: "terno-dark", motion: 75, vibrancy: { light: false, dark: true } }) } });
     expect(named.attrs.has("data-vibrancy")).toBe(false);
     expect(run({ desktop: "linux" }).attrs.has("data-vibrancy")).toBe(false);
   });

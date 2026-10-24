@@ -6,6 +6,8 @@
     var KEY = "unica:appearance";
     var MODES = ["system", "light", "dark"];
     var ID = /^[a-z0-9-]{1,60}$/;
+    // the default themes' ids from when the app was called Única (@terno/core LEGACY_THEME_IDS)
+    var LEGACY_IDS = { "unica-light": "terno-light", "unica-dark": "terno-dark" };
     // the same numbers-only grammar as @terno/core THEME_COLOR_RE
     var N = "(?:\\d+(?:\\.\\d+)?|\\.\\d+)";
     var COLOR = new RegExp("^(?:#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})|oklch\\(\\s*" + N + "%?\\s+" + N + "\\s+" + N + "(?:deg)?\\s*(?:\\/\\s*" + N + "%?\\s*)?\\))$", "i");
@@ -16,7 +18,7 @@
     if (!a || typeof a !== "object") {
       // v1 kept only the mode under unica:theme: convert it once
       var legacy = localStorage.getItem("unica:theme");
-      a = { mode: MODES.indexOf(legacy) >= 0 ? legacy : "system", light: "unica-light", dark: "unica-dark", motion: 75, vibrancy: { light: true, dark: true } };
+      a = { mode: MODES.indexOf(legacy) >= 0 ? legacy : "system", light: "terno-light", dark: "terno-dark", motion: 75, vibrancy: { light: true, dark: true } };
       localStorage.setItem(KEY, JSON.stringify(a));
       localStorage.removeItem("unica:theme");
     }
@@ -31,7 +33,8 @@
 
     var custom = a.custom && a.custom[m];
     var id = custom ? custom.base : a[m];
-    html.setAttribute("data-theme", typeof id === "string" && ID.test(id) ? id : dark ? "unica-dark" : "unica-light");
+    if (typeof id === "string" && Object.prototype.hasOwnProperty.call(LEGACY_IDS, id)) id = LEGACY_IDS[id];
+    html.setAttribute("data-theme", typeof id === "string" && ID.test(id) ? id : dark ? "terno-dark" : "terno-light");
     if (custom && custom.tokens) {
       for (var k in custom.tokens) {
         var v = custom.tokens[k];
@@ -47,9 +50,9 @@
     html.style.setProperty("--motion-slow", Math.round(Math.min(ms * 1.33, 100)) + "ms");
     html.setAttribute("data-motion", ms === 0 || reduced ? "off" : "on");
 
-    if (window.unicaDesktop) {
+    if (window.ternoDesktop) {
       c.add("is-desktop");
-      if (window.unicaDesktop.platform === "darwin") {
+      if (window.ternoDesktop.platform === "darwin") {
         c.add("is-mac");
         // reduced transparency (System Settings → Accessibility) turns the native vibrancy off too
         var opaque = matchMedia("(prefers-reduced-transparency: reduce)").matches;

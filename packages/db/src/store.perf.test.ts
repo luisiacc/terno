@@ -21,7 +21,7 @@ const stats: Stat[] = [];
 const meta: Record<string, unknown> = {};
 
 beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), "unica-store-perf-"));
+  dir = mkdtempSync(join(tmpdir(), "terno-store-perf-"));
   // like perf.perf.test.ts, SQLite's own autocheckpoints: right after a 50k seed the worker's WAL still holds the hot pages (read without mmap)
   store = new SqlMailStore(openDatabase(join(dir, "perf.db")));
   const seeded = await store.dev.seed(generateDataset({ threads: 29_500, accounts: 8, seed: 2026, now: NOW, bodyScale: 4 }), { now: NOW });

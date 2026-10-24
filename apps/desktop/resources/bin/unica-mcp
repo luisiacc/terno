@@ -1,6 +1,0 @@
-#!/bin/sh
-# Única MCP server for Codex / Claude Code. Runs the app's bundled Node (Electron
-# in RunAsNode mode) so no separate Node install is needed. Única must be running.
-RES="$(cd "$(dirname "$0")/.." && pwd)"
-APP_BIN="$(cd "$RES/../MacOS" && pwd)/Unica"
-ELECTRON_RUN_AS_NODE=1 exec "$APP_BIN" "$RES/mcp/unica-mcp.cjs" "$@"

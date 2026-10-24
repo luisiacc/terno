@@ -7,8 +7,8 @@
  * activates it (skip-waiting), so the page, the worker and the WASM of one
  * tab always come from the same build. Mail never goes through here.
  */
-const BUILD = __UNICA_BUILD__;
-const PRECACHE = __UNICA_PRECACHE__;
+const BUILD = __TERNO_BUILD__;
+const PRECACHE = __TERNO_PRECACHE__;
 const CACHE = `unica-${BUILD}`;
 
 self.addEventListener("install", (event) => {

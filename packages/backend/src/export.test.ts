@@ -14,7 +14,7 @@ afterEach(async () => {
 });
 
 it("exports categories, filters, settings, drafts and unsent ops, and no secret", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "unica-export-"));
+  const dir = mkdtempSync(join(tmpdir(), "terno-export-"));
   const backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false });
   cleanups.push(async () => {
     await backend.stop();
@@ -32,7 +32,7 @@ it("exports categories, filters, settings, drafts and unsent ops, and no secret"
   await client.call("drafts.save", { accountId: accounts[0]!.id, to: [{ name: "", email: "ana@example.com" }], cc: [], subject: "Borrador", bodyText: "hola" });
 
   const dump = await client.call("app.export", {});
-  expect(dump).toMatchObject({ format: "unica-export", version: 2 });
+  expect(dump).toMatchObject({ format: "terno-export", version: 2 });
   expect(dump.categories.length).toBeGreaterThan(0);
   expect(dump.filters.map((f) => f.name)).toContain("Notificaciones de GitHub → Desarrollo");
   expect(dump.settings).toMatchObject({ gmailClientId: "client-1.apps.googleusercontent.com", density: "compact" });

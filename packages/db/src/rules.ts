@@ -61,7 +61,7 @@ function conditionSql(c: Condition, now: number, params: Param[], range?: { from
           return fts;
         case "equals":
           params.push(`body : ^ "${phrase}"`, "equals", c.value);
-          return `(${fts} AND unica_body_match(?, ${BODY}, ?) = 1)`;
+          return `(${fts} AND terno_body_match(?, ${BODY}, ?) = 1)`;
         case "endsWith": {
           const needle = tokenize(c.value);
           if (needle.length > 0 && needle.length <= BODY_TAIL_TOKENS) {
@@ -71,7 +71,7 @@ function conditionSql(c: Condition, now: number, params: Param[], range?: { from
             return "substr(' ' || m.body_tail_norm, -length(?)) = ?";
           }
           params.push(`body : "${phrase}"`, "endsWith", c.value);
-          return `(${fts} AND unica_body_match(?, ${BODY}, ?) = 1)`;
+          return `(${fts} AND terno_body_match(?, ${BODY}, ?) = 1)`;
         }
       }
     }
@@ -95,7 +95,7 @@ export function compileRuleToSql(rule: FilterRule, now: number, range?: { from: 
 
 /** Registers SQL functions the rule compiler relies on. Called once per connection. */
 export function registerFunctions(db: Db): void {
-  db.function("unica_body_match", { deterministic: true }, (op, body, value) =>
+  db.function("terno_body_match", { deterministic: true }, (op, body, value) =>
     bodyMatches(op as TextOp, (body as string | null) ?? null, String(value)) ? 1 : 0,
   );
 }

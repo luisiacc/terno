@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./rpc": "./src/rpc/index.ts"
+    "./rpc": "./src/rpc/index.ts",
+    "./legacy-env": "./src/legacy-env.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

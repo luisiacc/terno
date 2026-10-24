@@ -790,7 +790,7 @@ export class IdbMailStore implements MailStore {
           replyThreadId = original.thread_id;
           if (original.account_id === p.accountId) providerThreadId = T(this.c, "threads").get(original.thread_id)!.provider_thread_id;
         }
-        const messageId = `${this.c.uuid()}@${account.email.split("@")[1] || "unica.local"}`;
+        const messageId = `${this.c.uuid()}@${account.email.split("@")[1] || "terno.local"}`;
         const payload = { from, to: p.to, cc: p.cc, bcc: p.bcc, subject: p.subject, text: p.bodyText, messageId, inReplyTo, references, providerThreadId };
         const ingest = ingestMessages(
           this.c,

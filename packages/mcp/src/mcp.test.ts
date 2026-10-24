@@ -47,7 +47,7 @@ afterAll(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe("unica MCP server", () => {
+describe("terno MCP server", () => {
   it("exposes the documented tools with annotations", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(

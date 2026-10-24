@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const SOURCE_APP = join(here, "../release/mac-arm64/Unica.app");
+const SOURCE_APP = join(here, "../release/mac-arm64/Terno.app");
 let workdir: string;
 let app: ElectronApplication;
 let page: Page;
@@ -19,15 +19,15 @@ let coldStartMs = 0;
 
 test.beforeAll(async () => {
   test.skip(!existsSync(SOURCE_APP), "run `pnpm dist:mac` first");
-  workdir = mkdtempSync(join("/tmp", "unica-smoke-"));
-  appPath = join(workdir, "Unica.app");
+  workdir = mkdtempSync(join("/tmp", "terno-smoke-"));
+  appPath = join(workdir, "Terno.app");
   execFileSync("ditto", [SOURCE_APP, appPath]);
   execFileSync("codesign", ["--verify", "--deep", "--strict", appPath]);
   userData = join(workdir, "profile");
-  const env = { ...process.env, UNICA_DEMO: "1", UNICA_USER_DATA: userData };
+  const env = { ...process.env, TERNO_DEMO: "1", TERNO_USER_DATA: userData };
   delete env.ELECTRON_RUN_AS_NODE;
   const started = Date.now();
-  app = await electron.launch({ executablePath: join(appPath, "Contents/MacOS/Unica"), env });
+  app = await electron.launch({ executablePath: join(appPath, "Contents/MacOS/Terno"), env });
   page = await app.firstWindow();
   await page.locator("[data-testid=thread-row]").first().waitFor({ timeout: 60_000 });
   coldStartMs = Date.now() - started;
@@ -55,15 +55,15 @@ test("the window follows the theme: native theme, vibrancy and background, remem
   expect(await page.evaluate(() => document.documentElement.hasAttribute("data-vibrancy"))).toBe(true);
   // a named palette renders exactly: opaque window in its own background
   await page.evaluate(() => {
-    localStorage.setItem("unica:appearance", JSON.stringify({ mode: "dark", light: "unica-light", dark: "nord", motion: 75, vibrancy: { light: true, dark: false } }));
-    (window as any).unicaDesktop.setAppearance({ themeSource: "dark", background: "#2e3440", vibrancy: false });
+    localStorage.setItem("unica:appearance", JSON.stringify({ mode: "dark", light: "terno-light", dark: "nord", motion: 75, vibrancy: { light: true, dark: false } }));
+    (window as any).ternoDesktop.setAppearance({ themeSource: "dark", background: "#2e3440", vibrancy: false });
   });
   await expect.poll(read).toMatchObject({ themeSource: "dark", background: "#2e3440", vibrancy: false });
   expect(await app.evaluate(({ nativeTheme }) => nativeTheme.themeSource)).toBe("dark");
   // put it back for the rest of the suite
   await page.evaluate(() => {
     localStorage.removeItem("unica:appearance");
-    (window as any).unicaDesktop.setAppearance({ themeSource: "system", background: "#fcfcfa", vibrancy: true });
+    (window as any).ternoDesktop.setAppearance({ themeSource: "system", background: "#fcfcfa", vibrancy: true });
   });
   await expect.poll(read).toMatchObject({ themeSource: "system", vibrancy: true });
 });
@@ -111,9 +111,9 @@ test("local mode (the default for a new profile): main cancels the renderer's re
   await expect.poll(() => app.evaluate(() => (globalThis as unknown as { blocked: string[] }).blocked)).toContainEqual(expect.stringContaining("https://example.com/pixel.png"));
 });
 
-test("the bundled unica-mcp wrapper answers MCP requests against the running app", async () => {
-  const wrapper = join(appPath, "Contents/Resources/bin/unica-mcp");
-  const env = { ...process.env, UNICA_USER_DATA: userData };
+test("the bundled terno-mcp wrapper answers MCP requests against the running app", async () => {
+  const wrapper = join(appPath, "Contents/Resources/bin/terno-mcp");
+  const env = { ...process.env, TERNO_USER_DATA: userData };
   delete env.ELECTRON_RUN_AS_NODE;
   const child = spawn(wrapper, [], { env, stdio: ["pipe", "pipe", "pipe"] });
   const lines: string[] = [];
@@ -131,12 +131,12 @@ test("the bundled unica-mcp wrapper answers MCP requests against the running app
 
 test("warm start: relaunching with an existing mailbox shows mail fast", async () => {
   await app.close();
-  const env = { ...process.env, UNICA_DEMO: "1", UNICA_USER_DATA: userData };
+  const env = { ...process.env, TERNO_DEMO: "1", TERNO_USER_DATA: userData };
   delete env.ELECTRON_RUN_AS_NODE;
   const samples: number[] = [];
   for (let i = 0; i < 3; i++) {
     const started = Date.now();
-    app = await electron.launch({ executablePath: join(appPath, "Contents/MacOS/Unica"), env });
+    app = await electron.launch({ executablePath: join(appPath, "Contents/MacOS/Terno"), env });
     page = await app.firstWindow();
     await page.locator("[data-testid=thread-row]").first().waitFor({ timeout: 30_000 });
     samples.push(Date.now() - started);

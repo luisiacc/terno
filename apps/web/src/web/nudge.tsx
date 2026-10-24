@@ -4,7 +4,7 @@ import { Laptop, Lock, X } from "lucide-react";
 import { useState } from "react";
 
 /** Where "Descargar para Mac" goes (set VITE_MAC_DOWNLOAD_URL at build time). */
-export const MAC_DOWNLOAD_URL: string = import.meta.env.VITE_MAC_DOWNLOAD_URL || "https://unica.app/mac";
+export const MAC_DOWNLOAD_URL: string = import.meta.env.VITE_MAC_DOWNLOAD_URL || "https://terno.app/mac";
 
 const DISMISSED = "unica:mac-banner-dismissed-at";
 const WEEK = 7 * 86_400_000;

@@ -77,7 +77,7 @@ afterEach(async () => {
 });
 
 function setup(options: { dns?: Record<string, string[]>; localMode?: boolean; onPolicy?: (p: { localMode: boolean }) => void } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), "unica-ai-"));
+  const dir = mkdtempSync(join(tmpdir(), "terno-ai-"));
   const lookup: LookupAll = async (host) => {
     const addrs = options.dns?.[host] ?? (host === "localhost" ? ["127.0.0.1"] : undefined);
     if (!addrs) throw Object.assign(new Error(`ENOTFOUND ${host}`), { code: "ENOTFOUND" });

@@ -9,6 +9,6 @@ export interface DesktopBridge {
 
 declare global {
   interface Window {
-    unicaDesktop?: DesktopBridge;
+    ternoDesktop?: DesktopBridge;
   }
 }

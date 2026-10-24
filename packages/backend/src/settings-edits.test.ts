@@ -31,7 +31,7 @@ function setup(o: { gmail?: (hint?: string) => Promise<GmailConnectResult> } = {
     },
     connectGmail: async (c) => (o.gmail ? o.gmail(c.loginHint) : Promise.reject(new Error("no gmail here"))),
   };
-  const dir = mkdtempSync(join(tmpdir(), "unica-accounts-"));
+  const dir = mkdtempSync(join(tmpdir(), "terno-accounts-"));
   const backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: registry, now: () => NOW, autoSync: false, openExternal: async () => {} });
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "r", origin: "renderer" });
@@ -203,7 +203,7 @@ describe("app.import", () => {
 });
 
 describe("AI keys are bound to the endpoint they were saved for", () => {
-  const exportWith = (ai: object) => ({ format: "unica-export" as const, version: 1 as const, exportedAt: NOW, app: "t", accounts: [], categories: [], filters: [], drafts: [], ops: [], settings: { ai } });
+  const exportWith = (ai: object) => ({ format: "terno-export" as const, version: 1 as const, exportedAt: NOW, app: "t", accounts: [], categories: [], filters: [], drafts: [], ops: [], settings: { ai } });
 
   it("an imported endpoint never gets the saved key: it asks to confirm or re-enter it", async () => {
     const { backend, client } = setup();
@@ -245,7 +245,7 @@ describe("an account's preferences and its sync cursor", () => {
       async verifyImap() {},
       connectGmail: () => Promise.reject(new Error("no")),
     };
-    const dir = mkdtempSync(join(tmpdir(), "unica-cursor-"));
+    const dir = mkdtempSync(join(tmpdir(), "terno-cursor-"));
     const backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: registry, now: () => NOW, autoSync: false });
     cleanups.push(async () => {
       await backend.stop();
@@ -322,7 +322,7 @@ describe("drafts in an export (format 2)", () => {
     expect((await to.client.call("drafts.list", {})).some((d) => d.id === fwd.id)).toBe(false);
   });
 
-  it("an export from before (format 1) still imports its drafts", async () => {
+  it("an export from before (format 1, written when the app was called Única) still imports its drafts", async () => {
     const { client } = setup();
     const a = await client.call("accounts.addImap", imap("luis@fastmail.com"));
     const v1 = { format: "unica-export", version: 1, accounts: [], categories: [], filters: [], drafts: [{ accountEmail: a.email, to: [{ name: "", email: "ana@x.dev" }], cc: [], subject: "Hola", bodyText: "Texto", updatedAt: NOW }] };
@@ -336,7 +336,7 @@ describe("importing drafts twice", () => {
     const { client } = setup();
     const a = await client.call("accounts.addImap", imap("luis@fastmail.com"));
     const file = {
-      format: "unica-export", version: 2, accounts: [], categories: [], filters: [],
+      format: "terno-export", version: 2, accounts: [], categories: [], filters: [],
       drafts: [
         { accountEmail: a.email, mode: "new", to: [{ name: "", email: "ana@x.dev" }], cc: [], bcc: [{ name: "", email: "b@x.dev" }], subject: "Hola", subjectEdited: true, bodyText: "Texto", quotedText: "", includeQuote: false, inReplyTo: null, forwardOf: null, uiState: "open", updatedAt: NOW },
         { accountEmail: a.email, mode: "reply", to: [], cc: [], subject: "Re: x", bodyText: "Sí", quotedText: "> x", includeQuote: true, inReplyTo: "missing@x", forwardOf: null, uiState: "open", updatedAt: NOW },
@@ -372,7 +372,7 @@ describe("an import into a mailbox whose accounts aren't connected yet (a fresh 
 
     // the other side: no accounts yet; its sync (when it comes) brings the original
     let syncs = 0;
-    const dir = mkdtempSync(join(tmpdir(), "unica-pending-"));
+    const dir = mkdtempSync(join(tmpdir(), "terno-pending-"));
     let gate!: () => void;
     const synced = new Promise<void>((r) => (gate = r));
     const registry: ProviderRegistry = {
@@ -422,7 +422,7 @@ describe("a large or partly broken import", () => {
     const { client } = setup();
     const ok = { name: "Bueno", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "fromDomain", op: "equals", value: "a.dev" }], actions: [{ type: "star" }] } };
     const bad = { name: "Roto", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "nope", op: "x", value: 1 }], actions: [] } };
-    const r = await client.call("app.import", { data: { format: "unica-export", version: 2, categories: [{ id: 1, name: "Bien", color: "rose" }, { id: 2, name: "", color: "nope" }], filters: [ok, bad] } as never });
+    const r = await client.call("app.import", { data: { format: "terno-export", version: 2, categories: [{ id: 1, name: "Bien", color: "rose" }, { id: 2, name: "", color: "nope" }], filters: [ok, bad] } as never });
     expect(r).toMatchObject({ categories: { added: 1 }, filters: { added: 1, skipped: ["Roto"] } });
   });
 });

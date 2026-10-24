@@ -24,7 +24,7 @@ test.describe("accounts, settings and command palette", () => {
     await page.getByTestId("mode-dark").click();
     await expect(page.locator("html")).toHaveClass(/dark/);
     await page.getByTestId("tab-agents").click();
-    await expect(page.getByTestId("mcp-claude")).toContainText('claude mcp add unica -- "/Applications/Unica.app/Contents/Resources/bin/unica-mcp"');
+    await expect(page.getByTestId("mcp-claude")).toContainText('claude mcp add terno -- "/Applications/Terno.app/Contents/Resources/bin/terno-mcp"');
     await page.reload();
     await expect(page.locator("html")).toHaveClass(/dark/); // persisted before React mounts
   });

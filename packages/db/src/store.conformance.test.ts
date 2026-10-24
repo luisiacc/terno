@@ -13,7 +13,7 @@ afterAll(() => {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 });
 const tempDir = () => {
-  const d = mkdtempSync(join(tmpdir(), "unica-conf-"));
+  const d = mkdtempSync(join(tmpdir(), "terno-conf-"));
   dirs.push(d);
   return d;
 };

@@ -13,7 +13,7 @@ import { SEARCH_LOG_BYTES } from "./outbox";
 import { msg, withAccounts } from "./test/helpers";
 import { BUDGET_MULTIPLIER, measure, report, type Stat } from "./test/perf";
 
-const dir = mkdtempSync(join(tmpdir(), "unica-outbox-perf-"));
+const dir = mkdtempSync(join(tmpdir(), "terno-outbox-perf-"));
 const stats: Stat[] = [];
 afterAll(() => {
   report("outbox.json", "Search outbox", {}, stats);

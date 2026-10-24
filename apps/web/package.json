@@ -12,7 +12,7 @@
     "test:e2e:update": "playwright test --project=e2e --update-snapshots",
     "test:ui-perf": "playwright test --project=perf --no-deps",
     "build:web": "VITE_TARGET=web vite build",
-    "dev:web": "VITE_TARGET=web VITE_WEB_DEMO=1 vite build --outDir dist-web-demo && vite preview --outDir dist-web-demo --port ${UNICA_WEB_PORT:-5175} --strictPort --host 127.0.0.1",
+    "dev:web": "VITE_TARGET=web VITE_WEB_DEMO=1 vite build --outDir dist-web-demo && vite preview --outDir dist-web-demo --port ${TERNO_WEB_PORT:-${UNICA_WEB_PORT:-5175}} --strictPort --host 127.0.0.1",
     "test:web": "playwright test -c playwright.web.config.ts --project=web --project=web-conformance",
     "test:web-perf": "playwright test -c playwright.web.config.ts --project=web-perf"
   },

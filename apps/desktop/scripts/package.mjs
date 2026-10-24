@@ -1,4 +1,4 @@
-// Packages Única for macOS Apple Silicon: a self-contained staging app (bundles
+// Packages Terno for macOS Apple Silicon: a self-contained staging app (bundles
 // only, no node_modules), electron-builder for the .app, explicit ad-hoc
 // signing with verification, then a compressed DMG.
 import { execFileSync } from "node:child_process";
@@ -16,12 +16,9 @@ const electronPkg = JSON.parse(readFileSync(require.resolve("electron/package.js
 const electronDist = join(dirname(require.resolve("electron/package.json")), "dist");
 const stage = join(root, ".stage");
 const release = join(root, "release");
-// File names stay ASCII: Electron locates "<name> Helper.app" by path, and a
-// non-ASCII name (Ú) can differ in Unicode normalization on APFS → startup crash.
-// The user-visible name is "Única" via CFBundleDisplayName. CFBundleName must stay
-// ASCII too: Electron derives the helper app file name from it.
-const productName = "Unica";
-const displayName = "Única";
+// One ASCII name everywhere: bundle, CFBundleName (Electron derives the
+// "<name> Helper.app" file names from it), the executable and the DMG volume.
+const productName = "Terno";
 
 if (!existsSync(join(root, "dist/main.cjs"))) throw new Error("run `pnpm --filter @terno/desktop build` first");
 
@@ -31,16 +28,16 @@ mkdirSync(stage, { recursive: true });
 cpSync(join(root, "dist"), join(stage, "dist"), { recursive: true });
 writeFileSync(
   join(stage, "package.json"),
-  JSON.stringify({ name: "unica", productName, version: pkg.version, description: pkg.description, main: "dist/main.cjs", author: "Única", license: "UNLICENSED" }, null, 2),
+  JSON.stringify({ name: "terno", productName, version: pkg.version, description: pkg.description, main: "dist/main.cjs", author: productName, license: "UNLICENSED" }, null, 2),
 );
 
 await build({
   targets: Platform.MAC.createTarget(["dir"], Arch.arm64),
   projectDir: stage,
   config: {
-    appId: "dev.unica.mail",
+    appId: "dev.terno.mail",
     productName,
-    copyright: "© 2026 Única",
+    copyright: `© 2026 ${productName}`,
     electronVersion: electronPkg.version,
     electronDist,
     directories: { output: release, buildResources: join(root, "resources") },
@@ -60,7 +57,6 @@ await build({
       identity: null, // signed explicitly (ad-hoc) below
       hardenedRuntime: false,
       darkModeSupport: true,
-      extendInfo: { CFBundleDisplayName: displayName, NSHumanReadableCopyright: "El único cliente de email que necesitas" },
     },
   },
 });
@@ -75,6 +71,6 @@ execFileSync("codesign", ["--verify", "--deep", "--strict", "--verbose=2", app],
 const arch = execFileSync("lipo", ["-archs", join(app, "Contents/MacOS", productName)]).toString().trim();
 if (arch !== "arm64") throw new Error(`unexpected architecture: ${arch}`);
 
-const dmg = join(release, `Unica-${pkg.version}-arm64.dmg`);
-execFileSync("hdiutil", ["create", "-volname", displayName, "-srcfolder", app, "-ov", "-format", "UDZO", "-fs", "APFS", dmg], { stdio: "inherit" });
+const dmg = join(release, `${productName}-${pkg.version}-arm64.dmg`);
+execFileSync("hdiutil", ["create", "-volname", productName, "-srcfolder", app, "-ov", "-format", "UDZO", "-fs", "APFS", dmg], { stdio: "inherit" });
 console.log(`\n✓ ${app}\n✓ ${dmg}`);

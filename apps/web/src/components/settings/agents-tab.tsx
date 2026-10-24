@@ -79,7 +79,7 @@ export function AgentsTab({ settings, update }: { settings: AppSettings; update:
   const agentsHere = useApp((s) => s.host?.capabilities.agents ?? true);
   const [agent, setAgent] = useState<{ mcpCommand: string; socketPath: string; skillPath: string } | null>(null);
   useEffect(() => {
-    if (window.unicaDesktop) void window.unicaDesktop.agentInfo().then(setAgent).catch(() => {});
+    if (window.ternoDesktop) void window.ternoDesktop.agentInfo().then(setAgent).catch(() => {});
   }, []);
   if (!agentsHere && DesktopOnly) {
     return (
@@ -88,19 +88,19 @@ export function AgentsTab({ settings, update }: { settings: AppSettings; update:
       </Suspense>
     );
   }
-  const mcp = agent?.mcpCommand ?? "/Applications/Unica.app/Contents/Resources/bin/unica-mcp";
+  const mcp = agent?.mcpCommand ?? "/Applications/Terno.app/Contents/Resources/bin/terno-mcp";
   return (
     <div data-testid="agents-tab">
       <SettingsGroup title="Conectar" footer="Claude Code o Codex llegan a todas tus cuentas por MCP mientras Única está abierta.">
         <SettingsRow stacked label="Claude Code">
-          {() => <CopyBlock testId="mcp-claude" label="comando de Claude Code" text={`claude mcp add unica -- "${mcp}"`} />}
+          {() => <CopyBlock testId="mcp-claude" label="comando de Claude Code" text={`claude mcp add terno -- "${mcp}"`} />}
         </SettingsRow>
         <SettingsRow stacked label="Codex" hint="En ~/.codex/config.toml">
-          {() => <CopyBlock testId="mcp-codex" label="configuración de Codex" text={`[mcp_servers.unica]\ncommand = "${mcp}"`} />}
+          {() => <CopyBlock testId="mcp-codex" label="configuración de Codex" text={`[mcp_servers.terno]\ncommand = "${mcp}"`} />}
         </SettingsRow>
         {agent && (
           <SettingsRow stacked label="Skill para Claude Code">
-            {() => <CopyBlock label="instalación de la skill" text={`mkdir -p ~/.claude/skills/unica && cp "${agent.skillPath}" ~/.claude/skills/unica/SKILL.md`} />}
+            {() => <CopyBlock label="instalación de la skill" text={`mkdir -p ~/.claude/skills/terno && cp "${agent.skillPath}" ~/.claude/skills/terno/SKILL.md`} />}
           </SettingsRow>
         )}
       </SettingsGroup>

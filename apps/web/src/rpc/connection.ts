@@ -46,14 +46,14 @@ function wsTransport(url: string): Promise<Transport> {
 function nextDesktopPort(): Promise<MessagePort> {
   return new Promise((resolve) => {
     const onMessage = (e: MessageEvent) => {
-      if (e.source === window && e.data === "unica:backend-port" && e.ports[0]) {
+      if (e.source === window && e.data === "terno:backend-port" && e.ports[0]) {
         window.removeEventListener("message", onMessage);
         resolve(e.ports[0]);
       }
     };
     window.addEventListener("message", onMessage);
     // handshake: the preload hands over its port only when the page is listening
-    window.postMessage("unica:request-port", "*");
+    window.postMessage("terno:request-port", "*");
   });
 }
 
@@ -65,7 +65,7 @@ export async function connectBackend(): Promise<void> {
     const { connectWorker } = await import("~/web/connect");
     return connectWorker(client);
   }
-  if (window.unicaDesktop) {
+  if (window.ternoDesktop) {
     client.attach(portTransport(await nextDesktopPort()));
     // main re-sends a fresh port if the backend restarts; reattach transparently
     client.onClose(() => void nextDesktopPort().then((p) => client.attach(portTransport(p))));

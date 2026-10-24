@@ -14,7 +14,7 @@ import { nodePlatform, openDatabase } from "./index";
 import { SqlMailStore, type SqlMailStoreOptions } from "./sql-store";
 
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
-const root = mkdtempSync(join(tmpdir(), "unica-instant-store-"));
+const root = mkdtempSync(join(tmpdir(), "terno-instant-store-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 let n = 0;
 const freshPath = () => join(mkdtempSync(join(root, `s${n++}-`)), "unica.db");

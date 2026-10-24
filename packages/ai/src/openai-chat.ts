@@ -9,7 +9,7 @@ type Sdk = typeof import("openai");
 /** GA version with structured outputs (json_schema) on chat completions. */
 export const AZURE_API_VERSION = "2024-10-21";
 /** OpenRouter attributes traffic to the calling app with these. */
-const OPENROUTER_HEADERS = { "HTTP-Referer": "https://unica.app", "X-Title": "Unica" };
+const OPENROUTER_HEADERS = { "HTTP-Referer": "https://terno.app", "X-Title": "Terno" };
 
 /**
  * One adapter for every OpenAI Chat Completions server: OpenAI, OpenRouter,

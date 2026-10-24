@@ -92,7 +92,7 @@ function slowDown(target: Record<string, unknown>, names: string[]) {
 }
 
 beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), "unica-loadperf-"));
+  dir = mkdtempSync(join(tmpdir(), "terno-loadperf-"));
   backend = new Backend({ dbPath: join(dir, "load.db"), version: "perf", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, instantSearch: false });
   seedDataset(sqlDb(backend.store), generateDataset({ threads: 20_000, accounts: 8, seed: 5, now: NOW, bodyScale: 3 }), { now: NOW });
   await backend.ready;

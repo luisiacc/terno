@@ -9,7 +9,7 @@ async function boot(page: Page, url = DEMO) {
   await rows(page).first().waitFor({ timeout: 60_000 });
 }
 
-const web = (page: Page) => page.evaluate(() => window.__unicaWeb!);
+const web = (page: Page) => page.evaluate(() => window.__ternoWeb!);
 
 test("the backend runs in a worker on SQLite-WASM over OPFS: seeds, lists, searches, opens", async ({ page }) => {
   await boot(page);
@@ -278,9 +278,9 @@ test("storage: persistence is requested and shown in Ajustes → Datos, and the 
   const download = page.waitForEvent("download");
   await page.getByTestId("data-export").click();
   const file = await download;
-  expect(file.suggestedFilename()).toMatch(/^unica-export-\d{4}-\d{2}-\d{2}\.json$/);
+  expect(file.suggestedFilename()).toMatch(/^terno-export-\d{4}-\d{2}-\d{2}\.json$/);
   const dump = JSON.parse(await (await import("node:fs/promises")).readFile((await file.path())!, "utf8")) as { format: string; categories: unknown[]; filters: unknown[]; settings: object; ops: unknown[] };
-  expect(dump.format).toBe("unica-export");
+  expect(dump.format).toBe("terno-export");
   expect(dump.categories.length).toBeGreaterThan(0);
   expect(dump.filters.length).toBeGreaterThan(0);
   expect(dump.settings).toBeTruthy();
@@ -290,7 +290,7 @@ test("Ajustes → Datos: switching the engine to IndexedDB carries settings and 
   await boot(page, "/?demo=200&mailbox=switch");
   expect((await web(page)).storage).toBe("opfs-sqlite");
   await page.evaluate(async () => {
-    const c = window.__unicaWeb!.client;
+    const c = window.__ternoWeb!.client;
     await c.call("categories.create", { name: "Mudanza", color: "violet" });
     await c.call("settings.update", { density: "compact", motionMs: 50 });
   });
@@ -305,7 +305,7 @@ test("Ajustes → Datos: switching the engine to IndexedDB carries settings and 
   // the page reloads into the other engine
   await Promise.all([page.waitForEvent("load"), page.getByTestId("storage-switch-dialog-confirm").click()]);
   await rows(page).first().waitFor({ timeout: 60_000 });
-  await expect.poll(() => page.evaluate(() => window.__unicaWeb?.storage)).toBe("idb");
+  await expect.poll(() => page.evaluate(() => window.__ternoWeb?.storage)).toBe("idb");
   // what the other engine held came along
   await expect(page.locator("[data-testid^=nav-category-]").filter({ hasText: "Mudanza" })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("data-motion", /./);
@@ -322,14 +322,14 @@ test("Ajustes → Datos: switching the engine to IndexedDB carries settings and 
   await page.getByTestId("storage-engine-opfs-sqlite").click();
   await Promise.all([page.waitForEvent("load"), page.getByTestId("storage-switch-dialog-confirm").click()]);
   await rows(page).first().waitFor({ timeout: 60_000 });
-  await expect.poll(() => page.evaluate(() => window.__unicaWeb?.storage)).toBe("opfs-sqlite");
+  await expect.poll(() => page.evaluate(() => window.__ternoWeb?.storage)).toBe("opfs-sqlite");
   await expect(page.locator("[data-testid^=nav-category-]").filter({ hasText: "Mudanza" })).toHaveCount(1);
 });
 
 test("Ajustes → Datos: an export imports into another mailbox (categories by name, settings), and a wrong file says why", async ({ page }) => {
   await boot(page, "/?demo=200&mailbox=import-a");
   const dump = await page.evaluate(async () => {
-    const c = window.__unicaWeb!.client;
+    const c = window.__ternoWeb!.client;
     await c.call("categories.create", { name: "Importada", color: "lime" });
     return c.call("app.export", {});
   });
@@ -339,7 +339,7 @@ test("Ajustes → Datos: an export imports into another mailbox (categories by n
   const input = page.getByTestId("data-import-input");
   await input.setInputFiles({ name: "malo.json", mimeType: "application/json", buffer: Buffer.from("{}") });
   await expect(page.getByTestId("data-import-error")).toContainText("No es una exportación de Única");
-  await input.setInputFiles({ name: "unica.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(dump)) });
+  await input.setInputFiles({ name: "terno.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(dump)) });
   await expect(page.getByTestId("data-import-error")).toHaveCount(0);
   await expect(page.locator("[data-testid^=nav-category-]").filter({ hasText: "Importada" })).toBeVisible();
 });
@@ -348,7 +348,7 @@ test("switching into a fresh, empty engine: drafts and account filters wait for 
   await stubGoogle(context, "luis.cordero@gmail.com");
   await boot(page, "/?demo=200&mailbox=fresh-switch");
   await page.evaluate(async () => {
-    const c = window.__unicaWeb!.client;
+    const c = window.__ternoWeb!.client;
     const account = (await c.call("app.bootstrap", {})).accounts.find((a) => a.email === "luis.cordero@gmail.com")!;
     await c.call("drafts.save", { accountId: account.id, to: [{ name: "", email: "ana@pendiente.dev" }], bcc: [{ name: "", email: "copia@pendiente.dev" }], subject: "Pendiente", bodyText: "Hola Ana" });
     await c.call("filters.save", { name: "Solo Personal", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "account", op: "is", value: account.id }], actions: [{ type: "star" }] } });
@@ -362,9 +362,9 @@ test("switching into a fresh, empty engine: drafts and account filters wait for 
   await page.getByRole("combobox", { name: "Motor" }).click();
   await page.getByTestId("storage-engine-idb").click();
   await Promise.all([page.waitForEvent("load"), page.getByTestId("storage-switch-dialog-confirm").click()]);
-  await expect.poll(() => page.evaluate(() => window.__unicaWeb?.storage)).toBe("idb");
+  await expect.poll(() => page.evaluate(() => window.__ternoWeb?.storage)).toBe("idb");
   await expect(page.getByText(/vuelven en cuanto las conectes/)).toBeVisible({ timeout: 30_000 });
-  expect(await page.evaluate(() => window.__unicaWeb!.client.call("drafts.list", {}))).toEqual([]);
+  expect(await page.evaluate(() => window.__ternoWeb!.client.call("drafts.list", {}))).toEqual([]);
 
   // connecting that Gmail account brings its draft and its filter back
   await page.keyboard.press("Escape");
@@ -378,7 +378,7 @@ test("switching into a fresh, empty engine: drafts and account filters wait for 
   await expect(page.getByText("luis.cordero@gmail.com conectada")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("strip-item").filter({ hasText: "ana@pendiente.dev" })).toBeVisible();
-  const drafts = await page.evaluate(() => window.__unicaWeb!.client.call("drafts.list", {}));
+  const drafts = await page.evaluate(() => window.__ternoWeb!.client.call("drafts.list", {}));
   expect(drafts).toMatchObject([{ subject: "Pendiente", bcc: [{ name: "", email: "copia@pendiente.dev" }] }]);
   await page.keyboard.press("Meta+Comma");
   await page.getByTestId("tab-filters").click();

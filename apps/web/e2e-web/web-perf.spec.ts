@@ -66,7 +66,7 @@ function stat(name: string, budgetMs: number, samples: number[], note?: string):
 async function rpc(page: Page, method: string, params: unknown, n = ITERATIONS): Promise<number[]> {
   return page.evaluate(
     async ({ method, params, n }) => {
-      const call = (window.__unicaWeb!.client as unknown as { call(m: string, p: unknown): Promise<unknown> }).call.bind(window.__unicaWeb!.client);
+      const call = (window.__ternoWeb!.client as unknown as { call(m: string, p: unknown): Promise<unknown> }).call.bind(window.__ternoWeb!.client);
       for (let i = 0; i < 5; i++) await call(method, params);
       const out: number[] = [];
       for (let i = 0; i < n; i++) {
@@ -85,7 +85,7 @@ type Call = [method: string, params: unknown];
 /** a few different RPCs, each timed */
 async function rpcBatch(page: Page, calls: Call[]): Promise<number[]> {
   return page.evaluate(async (calls) => {
-    const c = window.__unicaWeb!.client as unknown as { call(m: string, p: unknown): Promise<unknown> };
+    const c = window.__ternoWeb!.client as unknown as { call(m: string, p: unknown): Promise<unknown> };
     const out: number[] = [];
     for (const [m, p] of calls) {
       const t = performance.now();
@@ -100,7 +100,7 @@ async function rpcBatch(page: Page, calls: Call[]): Promise<number[]> {
 async function whileRunning(page: Page, method: string, params: unknown, probe: Call): Promise<number[]> {
   return page.evaluate(
     async ({ method, params, probe }) => {
-      const c = window.__unicaWeb!.client as unknown as { call(m: string, p: unknown): Promise<unknown> };
+      const c = window.__ternoWeb!.client as unknown as { call(m: string, p: unknown): Promise<unknown> };
       let running = true;
       const slow = c.call(method, params).finally(() => (running = false));
       const out: number[] = [];
@@ -119,7 +119,7 @@ async function whileRunning(page: Page, method: string, params: unknown, probe: 
 
 async function whileImporting(page: Page, threads: number) {
   return page.evaluate(async (threads) => {
-    const w = window.__unicaWeb!;
+    const w = window.__ternoWeb!;
     const c = w.client as unknown as { call(m: string, p: unknown): Promise<{ items?: { id: number }[]; strategy?: string }> };
     const thread = (await c.call("threads.list", { view: "inbox", limit: 5 })).items![2]!.id;
     let running = true;
@@ -193,7 +193,7 @@ async function waitForInstant(page: Page): Promise<string> {
   if (DURABLE) return "durable";
   for (let i = 0; i < 240; i++) {
     strategy = await page.evaluate(async () => {
-      const r = (await (window.__unicaWeb!.client as unknown as { call(m: string, p: unknown): Promise<{ strategy: string }> }).call("threads.search", { query: "factura", limit: 100 })) as { strategy: string };
+      const r = (await (window.__ternoWeb!.client as unknown as { call(m: string, p: unknown): Promise<{ strategy: string }> }).call("threads.search", { query: "factura", limit: 100 })) as { strategy: string };
       return r.strategy;
     });
     if (strategy.startsWith("instant")) return strategy;
@@ -230,7 +230,7 @@ test("cold first visit: the shell is interactive within 1.5 s", async ({ browser
 for (const size of SIZES) {
   test(`${size.label} messages on ${STORAGE || "the default storage"}: repeat visit, lists, views, search, actions, preview`, async () => {
     test.setTimeout(1_800_000);
-    const dir = mkdtempSync(join(tmpdir(), "unica-web-perf-"));
+    const dir = mkdtempSync(join(tmpdir(), "terno-web-perf-"));
     const context = await chromium.launchPersistentContext(dir, { viewport: { width: 1440, height: 900 }, locale: "es-MX", timezoneId: "America/Mexico_City", reducedMotion: "reduce", baseURL: test.info().project.use.baseURL });
     try {
       await installProbes(context);
@@ -238,7 +238,7 @@ for (const size of SIZES) {
       const seedStarted = Date.now();
       await page.goto(mailboxUrl(size));
       await page.getByTestId("thread-row").first().waitFor({ timeout: 1_200_000 });
-      const info = await page.evaluate(() => window.__unicaWeb!);
+      const info = await page.evaluate(() => window.__ternoWeb!);
       const seedMs = info.timings.seed ?? null;
       const strategy = await waitForInstant(page);
       // the snapshot is written after a build; give it a moment, then measure a real repeat visit
@@ -260,11 +260,11 @@ for (const size of SIZES) {
       stats.push(stat("first search after open (RPC)", size.budgets.firstSearch, firstSearch));
       await waitForInstant(page);
 
-      const counts = (await page.evaluate(async () => (window.__unicaWeb!.client as unknown as { call(m: string, p: unknown): Promise<unknown> }).call("app.bootstrap", {}))) as { categories: { id: number }[]; accounts: { id: number }[] };
-      const firstPage = (await page.evaluate(async () => (window.__unicaWeb!.client as unknown as { call(m: string, p: unknown): Promise<unknown> }).call("threads.list", { view: "all", limit: 100 }))) as { items: { id: number }[]; nextCursor: unknown };
+      const counts = (await page.evaluate(async () => (window.__ternoWeb!.client as unknown as { call(m: string, p: unknown): Promise<unknown> }).call("app.bootstrap", {}))) as { categories: { id: number }[]; accounts: { id: number }[] };
+      const firstPage = (await page.evaluate(async () => (window.__ternoWeb!.client as unknown as { call(m: string, p: unknown): Promise<unknown> }).call("threads.list", { view: "all", limit: 100 }))) as { items: { id: number }[]; nextCursor: unknown };
       let cursor: unknown = firstPage.nextCursor;
       for (let i = 0; i < 30 && cursor; i++) {
-        const p = (await page.evaluate(async (c) => (window.__unicaWeb!.client as unknown as { call(m: string, p: unknown): Promise<unknown> }).call("threads.list", { view: "all", limit: 100, cursor: c }), cursor)) as { nextCursor: unknown };
+        const p = (await page.evaluate(async (c) => (window.__ternoWeb!.client as unknown as { call(m: string, p: unknown): Promise<unknown> }).call("threads.list", { view: "all", limit: 100, cursor: c }), cursor)) as { nextCursor: unknown };
         cursor = p.nextCursor ?? cursor;
         if (!p.nextCursor) break;
       }
@@ -276,17 +276,17 @@ for (const size of SIZES) {
       // every number here includes the RPC round trip and the structured clone of the answer; the transport with a tiny one:
       stats.push(stat("RPC round trip (owner identity)", size.budgets.rpc, await rpc(page, "identity.get", {})));
 
-      const before = await page.evaluate(() => window.__unicaWeb!.cacheStatus());
+      const before = await page.evaluate(() => window.__ternoWeb!.cacheStatus());
       const strategies = new Set<string>();
       for (const query of SEARCHES) {
         const samples = await rpc(page, "threads.search", { query, limit: 100 }, 25);
-        const r = (await page.evaluate(async (q) => (window.__unicaWeb!.client as unknown as { call(m: string, p: unknown): Promise<{ strategy: string }> }).call("threads.search", { query: q, limit: 100 }), query)) as { strategy: string };
+        const r = (await page.evaluate(async (q) => (window.__ternoWeb!.client as unknown as { call(m: string, p: unknown): Promise<{ strategy: string }> }).call("threads.search", { query: q, limit: 100 }), query)) as { strategy: string };
         strategies.add(r.strategy.split(":")[0]!);
         // the durable path alone: FTS5's one-character prefix and IndexedDB's exact scan have their own (finite) budgets
         const durable = DURABLE && (query.length === 1 || STORAGE === "idb");
         stats.push(stat(`search ${query} (RPC)`, durable ? size.budgets.durable : size.budgets.search, samples, r.strategy));
       }
-      const after = await page.evaluate(() => window.__unicaWeb!.cacheStatus());
+      const after = await page.evaluate(() => window.__ternoWeb!.cacheStatus());
       if (DURABLE) {
         // the index is unavailable: lists keep answering while a search that reads every message runs
         stats.push(stat("list while a durable search runs (RPC)", size.budgets.concurrent, await whileRunning(page, "threads.search", { query: "presupuesto zzqxjv", limit: 100 }, ["threads.list", { view: "inbox", limit: 100 }])));
@@ -296,7 +296,7 @@ for (const size of SIZES) {
       const target = firstPage.items[0]!.id;
       const actions = await page.evaluate(
         async ({ id, n }) => {
-          const c = window.__unicaWeb!.client as unknown as { call(m: string, p: unknown): Promise<unknown> };
+          const c = window.__ternoWeb!.client as unknown as { call(m: string, p: unknown): Promise<unknown> };
           const out: number[] = [];
           for (let i = 0; i < n; i++) {
             const t = performance.now();
@@ -351,7 +351,7 @@ for (const size of SIZES) {
       stats.push(stat("j: keydown → selection committed", size.budgets.jKey, await holdJ(page, 100)));
 
       // an import (a sync): its pace on its own, then interactions while another one runs
-      const alone = await page.evaluate(async () => window.__unicaWeb!.importMail(1500, 7));
+      const alone = await page.evaluate(async () => window.__ternoWeb!.importMail(1500, 7));
       const rate = alone.messages / (alone.ms / 1000);
       const imported = await whileImporting(page, 1500);
       stats.push(stat("list during an import (RPC)", size.budgets.concurrent, imported.list));

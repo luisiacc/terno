@@ -61,7 +61,7 @@ function scriptedRegistry() {
 }
 
 function setup(options: { dir?: string } = {}) {
-  const dir = options.dir ?? mkdtempSync(join(tmpdir(), "unica-backend-"));
+  const dir = options.dir ?? mkdtempSync(join(tmpdir(), "terno-backend-"));
   const { registry, providers } = scriptedRegistry();
   const backend = new Backend({
     dbPath: join(dir, "unica.db"),
@@ -438,7 +438,7 @@ describe("accounts", () => {
 describe("agent socket", () => {
   it("requires the token, then speaks the RPC envelope", async () => {
     const { backend } = setup();
-    const dir = mkdtempSync(join(tmpdir(), "unica-sock-"));
+    const dir = mkdtempSync(join(tmpdir(), "terno-sock-"));
     const endpoint = await startAgentSocket(backend, join(dir, "s.sock"), join(dir, "token"));
     cleanups.push(async () => {
       await endpoint.close();
@@ -458,7 +458,7 @@ describe("agent socket", () => {
 
   it("rotating the token cuts connected agents off, refuses the old token and accepts the new one; renderers only", async () => {
     const { backend } = setup();
-    const dir = mkdtempSync(join(tmpdir(), "unica-sock-"));
+    const dir = mkdtempSync(join(tmpdir(), "terno-sock-"));
     const endpoint = await startAgentSocket(backend, join(dir, "s.sock"), join(dir, "token"));
     cleanups.push(async () => {
       await endpoint.close();

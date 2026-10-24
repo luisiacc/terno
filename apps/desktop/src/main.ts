@@ -16,6 +16,7 @@ import {
   utilityProcess,
   type UtilityProcess,
 } from "electron";
+import { adoptLegacyEnv } from "@terno/core/legacy-env";
 import { parseAppearance, windowVibrancy, type Appearance } from "./appearance";
 import type { BackendToMain, MainToBackend } from "./ipc";
 
@@ -26,11 +27,12 @@ try {
   /* older runtimes */
 }
 
-const isDev = Boolean(process.env.UNICA_DEV_URL);
-const demo = process.env.UNICA_DEMO === "1" || process.argv.includes("--demo");
+adoptLegacyEnv(process.env, (m) => console.warn(m));
+const isDev = Boolean(process.env.TERNO_DEV_URL);
+const demo = process.env.TERNO_DEMO === "1" || process.argv.includes("--demo");
 app.setName("Única");
 // ASCII profile path (also what the MCP sidecar looks for)
-app.setPath("userData", process.env.UNICA_USER_DATA ?? join(app.getPath("appData"), "Unica"));
+app.setPath("userData", process.env.TERNO_USER_DATA ?? join(app.getPath("appData"), "Unica"));
 
 // Privileged scheme: standard + secure origin and, crucially, V8 code cache for renderer scripts (file:// has none).
 protocol.registerSchemesAsPrivileged([
@@ -186,7 +188,7 @@ async function connectWindow(win: BrowserWindow) {
   if (!backend || win.isDestroyed()) return;
   const { port1, port2 } = new MessageChannelMain();
   backend.postMessage({ type: "port", clientId: `renderer-${++clientSeq}` } satisfies MainToBackend, [port1]);
-  win.webContents.postMessage("unica:backend-port", null, [port2]);
+  win.webContents.postMessage("terno:backend-port", null, [port2]);
 }
 
 // ───────────────────────────── appearance ─────────────────────────────
@@ -221,7 +223,7 @@ nativeTheme.on("updated", () => {
   for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) applyAppearanceTo(win, appearance);
 });
 
-ipcMain.on("unica:appearance", (event, value: unknown) => {
+ipcMain.on("terno:appearance", (event, value: unknown) => {
   const next = parseAppearance(value);
   if (!next) return;
   const changed = JSON.stringify(next) !== JSON.stringify(appearance);
@@ -292,10 +294,10 @@ function createWindow() {
     return { action: "deny" };
   });
   win.webContents.on("will-navigate", (event, url) => {
-    if (!url.startsWith("app://") && !(isDev && url.startsWith(process.env.UNICA_DEV_URL!))) event.preventDefault();
+    if (!url.startsWith("app://") && !(isDev && url.startsWith(process.env.TERNO_DEV_URL!))) event.preventDefault();
   });
 
-  void win.loadURL(isDev ? process.env.UNICA_DEV_URL! : "app://unica/");
+  void win.loadURL(isDev ? process.env.TERNO_DEV_URL! : "app://unica/");
   return win;
 }
 
@@ -312,15 +314,15 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-ipcMain.on("unica:version", (e) => {
+ipcMain.on("terno:version", (e) => {
   e.returnValue = app.getVersion();
 });
-ipcMain.on("unica:open-external", (_e, url: string) => {
+ipcMain.on("terno:open-external", (_e, url: string) => {
   if (typeof url === "string" && /^(https?:|mailto:)/i.test(url)) void shell.openExternal(url);
 });
-ipcMain.handle("unica:agent-info", () => {
+ipcMain.handle("terno:agent-info", () => {
   const res = resourcesDir();
-  return { mcpCommand: join(res, "bin", "unica-mcp"), socketPath: agentPaths().socketPath, skillPath: join(res, "mcp", "SKILL.md") };
+  return { mcpCommand: join(res, "bin", "terno-mcp"), socketPath: agentPaths().socketPath, skillPath: join(res, "mcp", "SKILL.md") };
 });
 
 if (!app.requestSingleInstanceLock()) {

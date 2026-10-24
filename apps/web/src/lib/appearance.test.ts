@@ -42,8 +42,8 @@ const { toast } = await import("sonner");
 const SERVER: AppSettings = {
   localMode: true,
   theme: "dark",
-  lightTheme: "unica-light",
-  darkTheme: "unica-dark",
+  lightTheme: "terno-light",
+  darkTheme: "terno-dark",
   motionMs: 75,
   htmlMailAppearance: "auto",
   customThemes: [],
@@ -114,7 +114,7 @@ describe("concurrent appearance changes", () => {
   it("a snapshot from an unrelated change keeps the pending choice too", async () => {
     void updateAppearance({ motionMs: 0 });
     void updateAppearance({ darkTheme: "monokai" });
-    await answer(); // motion's answer still has darkTheme unica-dark
+    await answer(); // motion's answer still has darkTheme terno-dark
     expect(painted()).toBe("monokai");
     expect(getApp().settings?.motionMs).toBe(0);
     // any other settings answer (General, IA…) is reconciled the same way
@@ -128,10 +128,10 @@ describe("concurrent appearance changes", () => {
     void updateAppearance({ motionMs: 50 });
     await answer(false);
     expect(toast.error).toHaveBeenCalled();
-    expect(painted()).toBe("unica-dark");
-    expect(getApp().settings).toMatchObject({ darkTheme: "unica-dark", motionMs: 50 });
+    expect(painted()).toBe("terno-dark");
+    expect(getApp().settings).toMatchObject({ darkTheme: "terno-dark", motionMs: 50 });
     await answer();
-    expect(getApp().settings).toMatchObject({ darkTheme: "unica-dark", motionMs: 50 });
+    expect(getApp().settings).toMatchObject({ darkTheme: "terno-dark", motionMs: 50 });
   });
 
   it("a refused change behind a newer one of the same field doesn't revert it", async () => {

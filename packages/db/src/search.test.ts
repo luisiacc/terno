@@ -20,7 +20,7 @@ let db: Db;
 
 function open(): Db {
   db ??= (() => {
-    const d = openDatabase(join(mkdtempSync(join(tmpdir(), "unica-search-")), "s.db"));
+    const d = openDatabase(join(mkdtempSync(join(tmpdir(), "terno-search-")), "s.db"));
     seedDataset(d, generateDataset({ threads: 2500, accounts: 4, seed: 11, now: NOW }), { now: NOW });
     return d;
   })();

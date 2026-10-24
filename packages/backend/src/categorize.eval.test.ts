@@ -102,7 +102,7 @@ function dataset(s: Scenario) {
 async function run(s: Scenario): Promise<Report> {
   const started = performance.now();
   const { data, cutoff, threads } = dataset(s);
-  const dir = mkdtempSync(join(tmpdir(), "unica-eval-"));
+  const dir = mkdtempSync(join(tmpdir(), "terno-eval-"));
   let clock = cutoff;
   const backend = new Backend({ dbPath: join(dir, "eval.db"), version: "eval", cipher: plaintextCipher, providers: demoRegistry, now: () => clock, autoSync: false });
   try {

@@ -16,7 +16,7 @@ describe("generated theme CSS", () => {
   it("has one block per theme and :root falls back to Única claro", () => {
     const css = generateThemesCss();
     for (const t of THEMES) expect(css).toContain(`[data-theme="${t.id}"] {`);
-    expect(css).toMatch(/^:root,\n\[data-theme="unica-light"\] \{/m);
+    expect(css).toMatch(/^:root,\n\[data-theme="terno-light"\] \{/m);
     expect(css.match(/color-scheme: dark;/g)).toHaveLength(7);
   });
 

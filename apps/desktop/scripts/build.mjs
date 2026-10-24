@@ -25,7 +25,7 @@ const common = {
   logLevel: "warning",
   // every node builtin (incl. node:sqlite, which esbuild may not know) stays external
   external: ["electron", "node:*"],
-  define: { "process.env.UNICA_BUILD_VERSION": JSON.stringify(version) },
+  define: { "process.env.TERNO_BUILD_VERSION": JSON.stringify(version) },
   // ESM deps that read import.meta.url get a CJS-compatible value
   banner: { js: "const __importMetaUrl = require('url').pathToFileURL(__filename).href;" },
 };
@@ -34,7 +34,7 @@ const entries = [
   { in: join(root, "src/main.ts"), out: "main" },
   { in: join(root, "src/backend-entry.ts"), out: "backend" },
   { in: join(root, "src/preload.ts"), out: "preload" },
-  { in: join(repo, "packages/mcp/src/bin.ts"), out: "mcp/unica-mcp" },
+  { in: join(repo, "packages/mcp/src/bin.ts"), out: "mcp/terno-mcp" },
 ];
 
 const results = await Promise.all(

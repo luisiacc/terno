@@ -10,7 +10,7 @@ export async function downloadExport(): Promise<void> {
   const url = URL.createObjectURL(new Blob([JSON.stringify(dump, null, 2)], { type: "application/json" }));
   const a = document.createElement("a");
   a.href = url;
-  a.download = `unica-export-${new Date(dump.exportedAt).toISOString().slice(0, 10)}.json`;
+  a.download = `terno-export-${new Date(dump.exportedAt).toISOString().slice(0, 10)}.json`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
@@ -24,7 +24,9 @@ export async function importFile(file: File): Promise<ImportResult> {
   } catch {
     throw new Error("El archivo no es JSON válido.");
   }
-  if ((data as { format?: unknown } | null)?.format !== "unica-export") throw new Error("No es una exportación de Única.");
+  const format = (data as { format?: unknown } | null)?.format;
+  // "unica-export": files exported when the app was called Única
+  if (format !== "terno-export" && format !== "unica-export") throw new Error("No es una exportación de Terno.");
   const result = await client.call("app.import", { data: data as never });
   // the drafts it brought show at once (the backend's event does the same for other windows)
   await loadDrafts();

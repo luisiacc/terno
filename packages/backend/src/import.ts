@@ -63,7 +63,7 @@ export async function exportMailbox(b: Backend): Promise<MailboxExport> {
     });
   }
   return {
-    format: "unica-export",
+    format: "terno-export",
     version: 2,
     exportedAt: b.now(),
     app: b.options.version,

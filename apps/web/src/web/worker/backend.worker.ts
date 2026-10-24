@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 /**
  * The web's backend: the same BackendCore as desktop's utility process, in a
- * dedicated worker (unica-backend-worker), on SQLite-WASM over OPFS. The tab
+ * dedicated worker (terno-backend-worker), on SQLite-WASM over OPFS. The tab
  * that holds the Web Lock starts it; RPC runs over a MessagePort with the
  * same envelope as desktop.
  */

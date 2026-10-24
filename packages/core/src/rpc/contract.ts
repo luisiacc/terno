@@ -170,7 +170,7 @@ export interface ExportedDraft {
 }
 
 export interface MailboxExport {
-  format: "unica-export";
+  format: "terno-export";
   /** 2: drafts carry their whole shape (1 had only recipients, subject and text) */
   version: 2;
   exportedAt: number;
@@ -324,7 +324,8 @@ export type ExportDraftItem = z.output<typeof exportDraftSchema>;
 
 /** An export file (app.export) as app.import reads it: the envelope here; categories, filters and drafts item by item. */
 const exportFile = z.object({
-  format: z.literal("unica-export"),
+  // "unica-export": a file exported when the app was called Única
+  format: z.enum(["terno-export", "unica-export"]),
   version: z.union([z.literal(1), z.literal(2)]),
   accounts: z.array(z.object({ id: id.optional(), email: z.string().max(320), kind: z.string().max(20), displayName: z.string().max(300) })).max(1000).default([]),
   categories: z.array(z.unknown()).max(1000).default([]),

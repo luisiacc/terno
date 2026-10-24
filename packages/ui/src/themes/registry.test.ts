@@ -27,8 +27,8 @@ describe("theme registry", () => {
   });
 
   it("derives tokens: copies, ring alpha, light/dark chrome", () => {
-    const light = builtinTheme("unica-light")!.tokens;
-    const dark = builtinTheme("unica-dark")!.tokens;
+    const light = builtinTheme("terno-light")!.tokens;
+    const dark = builtinTheme("terno-dark")!.tokens;
     expect(light["card-foreground"]).toBe(light.foreground);
     expect(light["sidebar-primary"]).toBe(light.primary);
     expect(light["row-rail"]).toBe(light.primary);
@@ -42,16 +42,16 @@ describe("theme registry", () => {
   });
 
   it("only Única and Apple sit on the native vibrancy; Apple uses the system font", () => {
-    expect(THEMES.filter((t) => t.vibrancy).map((t) => t.id)).toEqual(["unica-light", "apple-light", "unica-dark"]);
+    expect(THEMES.filter((t) => t.vibrancy).map((t) => t.id)).toEqual(["terno-light", "apple-light", "terno-dark"]);
     expect(builtinTheme("apple-light")!.font).toContain("-apple-system");
   });
 });
 
 describe("plan 07 tokens", () => {
   it("hairline is ink at 9 % / 8 %; highlight is white at 16 % / 6 %", () => {
-    expect(parseColor(builtinTheme("unica-light")!.tokens.hairline).alpha).toBe(0.09);
-    expect(parseColor(builtinTheme("unica-dark")!.tokens.hairline).alpha).toBe(0.08);
-    expect(parseColor(builtinTheme("unica-light")!.tokens.highlight).alpha).toBe(0.16);
+    expect(parseColor(builtinTheme("terno-light")!.tokens.hairline).alpha).toBe(0.09);
+    expect(parseColor(builtinTheme("terno-dark")!.tokens.hairline).alpha).toBe(0.08);
+    expect(parseColor(builtinTheme("terno-light")!.tokens.highlight).alpha).toBe(0.16);
     expect(parseColor(builtinTheme("nord")!.tokens.highlight).alpha).toBe(0.06);
   });
 
@@ -84,9 +84,9 @@ describe("plan 07 tokens", () => {
   });
 
   it("custom themes re-derive the plan 07 tokens from their own colors", () => {
-    const custom = customThemeSchema.parse({ id: "gris", name: "Gris", mode: "light", extends: "unica-light", tokens: { popover: "#f0f0f0", "muted-foreground": "#777777" } });
+    const custom = customThemeSchema.parse({ id: "gris", name: "Gris", mode: "light", extends: "terno-light", tokens: { popover: "#f0f0f0", "muted-foreground": "#777777" } });
     const t = resolveCustomTheme(custom);
-    expect(t.tokens["popover-glass"]).not.toBe(builtinTheme("unica-light")!.tokens["popover-glass"]);
+    expect(t.tokens["popover-glass"]).not.toBe(builtinTheme("terno-light")!.tokens["popover-glass"]);
   });
 });
 

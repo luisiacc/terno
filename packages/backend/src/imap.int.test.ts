@@ -138,7 +138,7 @@ async function startDroppingSmtp() {
 async function setup(opts: { smtp?: Parameters<typeof startSmtp>[0] } = {}) {
   const imap = await startImap();
   const smtp = opts.smtp?.dropDuringData ? await startDroppingSmtp() : await startSmtp(opts.smtp);
-  const dir = mkdtempSync(join(tmpdir(), "unica-imap-"));
+  const dir = mkdtempSync(join(tmpdir(), "terno-imap-"));
   const backend = new Backend({
     dbPath: join(dir, "u.db"),
     version: "t",

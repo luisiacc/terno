@@ -91,13 +91,13 @@ export type ThemeMode = (typeof THEME_MODES)[number];
 
 /** Built-in themes (values live in @terno/ui/themes/registry; a test keeps both in sync). */
 export const BUILTIN_THEMES = [
-  { id: "unica-light", mode: "light" },
+  { id: "terno-light", mode: "light" },
   { id: "apple-light", mode: "light" },
   { id: "solarized-light", mode: "light" },
   { id: "gruvbox-light", mode: "light" },
   { id: "github-light", mode: "light" },
   { id: "catppuccin-latte", mode: "light" },
-  { id: "unica-dark", mode: "dark" },
+  { id: "terno-dark", mode: "dark" },
   { id: "dracula", mode: "dark" },
   { id: "monokai", mode: "dark" },
   { id: "tokyo-night", mode: "dark" },
@@ -107,7 +107,15 @@ export const BUILTIN_THEMES = [
 ] as const satisfies readonly { id: string; mode: ThemeMode }[];
 export type BuiltinThemeId = (typeof BUILTIN_THEMES)[number]["id"];
 export const BUILTIN_THEME_IDS = BUILTIN_THEMES.map((t) => t.id) as BuiltinThemeId[];
-export const DEFAULT_THEME: Record<ThemeMode, BuiltinThemeId> = { light: "unica-light", dark: "unica-dark" };
+export const DEFAULT_THEME: Record<ThemeMode, BuiltinThemeId> = { light: "terno-light", dark: "terno-dark" };
+
+/** Ids of the default themes from when the app was called Única: settings, custom themes and exports saved then still name them. */
+export const LEGACY_THEME_IDS: Readonly<Record<string, BuiltinThemeId>> = { "unica-light": "terno-light", "unica-dark": "terno-dark" };
+
+/** A theme id as it is named now (legacy ids map to their successors; anything else is returned as is). */
+export function canonicalThemeId(id: string): string {
+  return Object.hasOwn(LEGACY_THEME_IDS, id) ? LEGACY_THEME_IDS[id]! : id;
+}
 
 export function builtinMode(id: string): ThemeMode | null {
   return BUILTIN_THEMES.find((t) => t.id === id)?.mode ?? null;
@@ -132,7 +140,7 @@ export const customThemeSchema = z
     id: z.string().regex(/^[a-z0-9-]{1,40}$/, "El id solo admite a-z, 0-9 y guiones (máx. 40)"),
     name: z.string().trim().min(1).max(40),
     mode: z.enum(THEME_MODES),
-    extends: z.enum(BUILTIN_THEME_IDS as [BuiltinThemeId, ...BuiltinThemeId[]]),
+    extends: z.preprocess((v) => (typeof v === "string" ? canonicalThemeId(v) : v), z.enum(BUILTIN_THEME_IDS as [BuiltinThemeId, ...BuiltinThemeId[]])),
     tokens: z.partialRecord(z.enum(THEME_TOKENS), themeColor).refine((t) => Object.keys(t).length > 0, "El tema no cambia ningún color"),
   })
   .strict()

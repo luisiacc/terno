@@ -10,10 +10,10 @@ export interface Endpoint {
 }
 
 export function defaultEndpoint(): Endpoint {
-  const dir = process.env.UNICA_USER_DATA ?? join(homedir(), "Library", "Application Support", "Unica");
+  const dir = process.env.TERNO_USER_DATA ?? join(homedir(), "Library", "Application Support", "Unica");
   return {
-    socketPath: process.env.UNICA_SOCKET ?? join(dir, "agent.sock"),
-    tokenPath: process.env.UNICA_TOKEN_FILE ?? join(dir, "agent.token"),
+    socketPath: process.env.TERNO_SOCKET ?? join(dir, "agent.sock"),
+    tokenPath: process.env.TERNO_TOKEN_FILE ?? join(dir, "agent.token"),
   };
 }
 

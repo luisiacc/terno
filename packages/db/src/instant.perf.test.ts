@@ -56,7 +56,7 @@ function samplesStat(name: string, budgetMs: number, samples: number[]): Stat {
 }
 
 beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), "unica-instant-perf-"));
+  dir = mkdtempSync(join(tmpdir(), "terno-instant-perf-"));
   path = join(dir, "perf.db");
   const seed = new SqlMailStore(openDatabase(path));
   const seeded = await seed.dev.seed(generateDataset({ threads: 29_500, accounts: 8, seed: 2026, now: NOW, bodyScale: 4 }), { now: NOW });

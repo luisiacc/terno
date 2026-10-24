@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BUILTIN_THEMES, customThemeSchema, customThemesSchema, MAX_CUSTOM_THEMES, THEME_COLOR_RE, THEME_TOKENS } from "./themes";
+import { BUILTIN_THEMES, canonicalThemeId, customThemeSchema, customThemesSchema, MAX_CUSTOM_THEMES, THEME_COLOR_RE, THEME_TOKENS } from "./themes";
 
 const valid = { id: "mi-tema", name: "Mi tema", mode: "dark", extends: "dracula", tokens: { primary: "#ff79c6", background: "oklch(0.25 0.02 280)" } };
 
@@ -40,9 +40,17 @@ describe("custom theme schema", () => {
     expect(customThemeSchema.safeParse({ ...valid, id: "Mi Tema" }).success).toBe(false);
     expect(customThemeSchema.safeParse({ ...valid, id: "a".repeat(41) }).success).toBe(false);
     expect(customThemeSchema.safeParse({ ...valid, name: "x".repeat(41) }).success).toBe(false);
-    expect(customThemeSchema.safeParse({ ...valid, extends: "unica-light" }).success).toBe(false);
+    expect(customThemeSchema.safeParse({ ...valid, extends: "terno-light" }).success).toBe(false);
     expect(customThemeSchema.safeParse({ ...valid, extends: "nope" }).success).toBe(false);
     expect(customThemeSchema.safeParse({ ...valid, tokens: {} }).success).toBe(false);
+  });
+
+  it("reads the default themes' Única ids as their successors", () => {
+    expect(canonicalThemeId("unica-light")).toBe("terno-light");
+    expect(canonicalThemeId("unica-dark")).toBe("terno-dark");
+    expect(canonicalThemeId("nord")).toBe("nord");
+    expect(canonicalThemeId("toString")).toBe("toString");
+    expect(customThemeSchema.parse({ ...valid, extends: "unica-dark" }).extends).toBe("terno-dark");
   });
 
   it("limits the list: at most 20 themes, unique ids, 16 KB in total", () => {

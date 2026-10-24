@@ -12,7 +12,7 @@ let sheet: HTMLStyleElement | null = null;
 function render() {
   if (!sheet) {
     sheet = document.createElement("style");
-    sheet.id = "unica-flash";
+    sheet.id = "terno-flash";
     document.head.appendChild(sheet);
   }
   sheet.textContent = [...rules.values()].join("\n");

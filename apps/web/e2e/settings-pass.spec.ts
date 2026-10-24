@@ -345,7 +345,7 @@ test.describe("editable, persisted and in effect", () => {
     await expect(item).toHaveCount(0);
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("list-title")).toHaveText("Entrada");
-    expect(await page.evaluate(() => (window as unknown as { __unica: { getApp(): { reviewCategoryId: number | null; categoryId: number | null; view: string } } }).__unica.getApp())).toMatchObject({ reviewCategoryId: null, categoryId: null, view: "inbox" });
+    expect(await page.evaluate(() => (window as unknown as { __terno: { getApp(): { reviewCategoryId: number | null; categoryId: number | null; view: string } } }).__terno.getApp())).toMatchObject({ reviewCategoryId: null, categoryId: null, view: "inbox" });
   });
 
   test("IA: provider, endpoint (validated, announced), model, all persisted", async ({ app: page }) => {
@@ -371,7 +371,7 @@ test.describe("editable, persisted and in effect", () => {
   test("IA: a saved key isn't sent to an endpoint it wasn't saved for (an import, say) until confirmed", async ({ app: page, server }) => {
     await server.backend.server.invoke("settings.update", { localMode: false, ai: { provider: "openai", model: "gpt-x" } }, ctx);
     await server.backend.server.invoke("ai.setKey", { provider: "openai", value: "sk-e2e-0123456789" }, ctx);
-    await server.backend.server.invoke("app.import", { data: { format: "unica-export", version: 1, settings: { ai: { provider: "openai", model: "gpt-x", baseURL: "https://evil.example/v1" } } } as never }, ctx);
+    await server.backend.server.invoke("app.import", { data: { format: "terno-export", version: 1, settings: { ai: { provider: "openai", model: "gpt-x", baseURL: "https://evil.example/v1" } } } as never }, ctx);
     await page.reload();
     await page.locator("[data-ready]").waitFor();
     await openVia(page, "gear", "ai");
@@ -395,11 +395,11 @@ test.describe("editable, persisted and in effect", () => {
     dump.categories.push({ ...dump.categories[0]!, name: "Desde el archivo", id: 999 } as never);
     dump.drafts.push({ accountEmail: dump.accounts[0]!.email, mode: "new", to: [{ name: "", email: "copia@x.dev" }], cc: [], bcc: [], subject: "Desde la copia", subjectEdited: true, bodyText: "Hola", quotedText: "", includeQuote: false, inReplyTo: null, forwardOf: null, uiState: "open", updatedAt: 1 });
     const input = page.getByTestId("data-import-input");
-    await input.setInputFiles({ name: "unica.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(dump)) });
+    await input.setInputFiles({ name: "terno.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(dump)) });
     await expect(page.locator("[data-testid^=nav-category-]").filter({ hasText: "Desde el archivo" })).toBeVisible();
     // its draft shows at once, and importing the same file again doesn't add it twice
     await expect(page.getByTestId("strip-item").filter({ hasText: "copia@x.dev" })).toHaveCount(1);
-    await input.setInputFiles({ name: "unica.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(dump)) });
+    await input.setInputFiles({ name: "terno.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(dump)) });
     await expect(page.getByText(/Importado: 0 categorías nuevas/)).toBeVisible();
     await expect(page.getByTestId("strip-item").filter({ hasText: "copia@x.dev" })).toHaveCount(1);
     expect((await server.backend.server.invoke("drafts.list", {}, ctx)).filter((d) => d.subject === "Desde la copia")).toHaveLength(1);

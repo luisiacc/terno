@@ -214,7 +214,7 @@ function browser(google: FakeGoogle, behaviour: "approve" | "deny" | "forge-then
 async function setup(behaviour?: Parameters<typeof browser>[1]) {
   const google = await new FakeGoogle().start();
   cleanups.push(() => google.stop());
-  const dir = mkdtempSync(join(tmpdir(), "unica-gmail-"));
+  const dir = mkdtempSync(join(tmpdir(), "terno-gmail-"));
   const backend = new Backend({
     dbPath: join(dir, "u.db"),
     version: "t",
@@ -471,7 +471,7 @@ describe("Gmail on the web (Google's token model, no refresh token)", () => {
       verifyImap: async () => Promise.reject(new Error("desktop only")),
       connectGmail: async () => Promise.reject(new Error("token model only")),
     };
-    const dir = mkdtempSync(join(tmpdir(), "unica-gmail-web-"));
+    const dir = mkdtempSync(join(tmpdir(), "terno-gmail-web-"));
     const backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers, autoSync: false, now });
     cleanups.push(async () => {
       await backend.stop();

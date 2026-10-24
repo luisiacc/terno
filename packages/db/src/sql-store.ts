@@ -499,7 +499,7 @@ export class SqlMailStore implements MailStore {
             providerThreadId = this.db.get<{ provider_thread_id: string | null }>("SELECT provider_thread_id FROM threads WHERE id = ?", original.thread_id)!.provider_thread_id;
           }
         }
-        const messageId = `${this.db.uuid()}@${account.email.split("@")[1] || "unica.local"}`;
+        const messageId = `${this.db.uuid()}@${account.email.split("@")[1] || "terno.local"}`;
         const payload = { from, to: p.to, cc: p.cc, bcc: p.bcc, subject: p.subject, text: p.bodyText, messageId, inReplyTo, references, providerThreadId };
         const ingest = ingestMessages(
           this.db,

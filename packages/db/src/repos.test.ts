@@ -53,7 +53,7 @@ describe("migrations", () => {
     const { mkdtempSync } = await import("node:fs");
     const { join } = await import("node:path");
     const { tmpdir } = await import("node:os");
-    const db = new Db(nodeSqliteDriver, join(mkdtempSync(join(tmpdir(), "unica-mig-")), "v1.db"));
+    const db = new Db(nodeSqliteDriver, join(mkdtempSync(join(tmpdir(), "terno-mig-")), "v1.db"));
     db.exec(MIGRATIONS[0]!.sql);
     db.exec("PRAGMA user_version = 1");
     db.run("INSERT INTO accounts (id, kind, email, created_at) VALUES (1, 'imap', 'a@b.c', 0)");

@@ -9,7 +9,7 @@ const base = {
   bcc: [],
   subject: "Reunión",
   text: "hola",
-  messageId: "m1@unica",
+  messageId: "m1@terno",
   inReplyTo: null,
   references: [],
   providerThreadId: null,
@@ -21,7 +21,7 @@ it("round-trips through a MIME parser: encoded words, threading headers, UTF-8 b
   expect(text).toMatch(/^Date: Fri, 23 Oct 2026 12:00:00 \+0000\r$/m);
   expect(text.split("\r\n").every((l) => l.length <= 998)).toBe(true);
   const parsed = await parseRaw(raw);
-  expect(parsed).toMatchObject({ subject: "Reunión", from: { name: "Luis Cordero", email: "luis@example.com" }, to: [{ name: "Ana Pérez", email: "ana@example.com" }], rfcMessageId: "m1@unica", inReplyTo: "p@x", references: ["r@x", "p@x"] });
+  expect(parsed).toMatchObject({ subject: "Reunión", from: { name: "Luis Cordero", email: "luis@example.com" }, to: [{ name: "Ana Pérez", email: "ana@example.com" }], rfcMessageId: "m1@terno", inReplyTo: "p@x", references: ["r@x", "p@x"] });
   expect(parsed.text?.replace(/\r\n/g, "\n")).toBe("línea uno\nlínea dos ".repeat(30));
 });
 

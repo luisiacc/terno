@@ -24,10 +24,11 @@ const threads = (ms: MockMessage[]) => {
 
 describe("mock dataset", () => {
   it("is byte-identical to the generator before gold tags and adversarial families existed", () => {
-    // fingerprints of the previous generator's output (seeded fixtures, perf DBs and screenshots depend on it)
+    // fingerprints of the previous generator's output (seeded fixtures, perf DBs and screenshots depend on it);
+    // Message-IDs moved from @mock.unica to @mock.terno with the rename, nothing else (before: af58f003, 55936846)
     for (const [options, expected] of [
-      [{ threads: 800, seed: 42, accounts: 4, bodyScale: 2 }, "af58f003"],
-      [{ threads: 500, seed: 5, accounts: 8, bodyScale: 3 }, "55936846"],
+      [{ threads: 800, seed: 42, accounts: 4, bodyScale: 2 }, "631e09a5"],
+      [{ threads: 500, seed: 5, accounts: 8, bodyScale: 3 }, "3c522abe"],
     ] as const) {
       const data = generateDataset(options);
       const legacy = { ...data, messages: data.messages.map(({ tags: _t, family: _f, ...m }) => m) };

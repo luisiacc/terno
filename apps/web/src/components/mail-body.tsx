@@ -9,7 +9,7 @@ import { csp, hasOwnColors, hasRemoteContent } from "~/lib/mail";
 
 function openLink(href: string) {
   if (!/^(https?:|mailto:)/i.test(href)) return;
-  if (window.unicaDesktop) window.unicaDesktop.openExternal(href);
+  if (window.ternoDesktop) window.ternoDesktop.openExternal(href);
   else window.open(href, "_blank", "noopener,noreferrer");
 }
 

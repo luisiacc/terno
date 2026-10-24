@@ -21,8 +21,8 @@ const idsOf = (l: Locator) => l.evaluateAll((els) => els.map((e) => e.getAttribu
 /** the list shows that view's rows (the title changes before they arrive) */
 const viewLoaded = (page: Page, view: string) => expect(page.getByTestId("thread-list")).toHaveAttribute("data-results-for", new RegExp(`^\\["${view}"`));
 /** how many threads are checked (the DOM holds only the rows in view) */
-const checkedCount = (page: Page) => page.evaluate(() => (window as unknown as { __unica: { getApp(): { checked: Set<number> } } }).__unica.getApp().checked.size);
-const loadedIds = (page: Page) => page.evaluate(() => (window as unknown as { __unica: { loadedIds(): number[] } }).__unica.loadedIds());
+const checkedCount = (page: Page) => page.evaluate(() => (window as unknown as { __terno: { getApp(): { checked: Set<number> } } }).__terno.getApp().checked.size);
+const loadedIds = (page: Page) => page.evaluate(() => (window as unknown as { __terno: { loadedIds(): number[] } }).__terno.loadedIds());
 /** submenus render in their own popup, outside the menu's element */
 const sub = (page: Page, id: string) => page.getByTestId(id);
 
@@ -464,7 +464,7 @@ test.describe("help", () => {
 
 test.describe("visual: context menu and bulk bar", () => {
   test.use({ deviceScaleFactor: 1 });
-  for (const theme of ["unica-light", "dracula"] as const) {
+  for (const theme of ["terno-light", "dracula"] as const) {
     test(`the menu on one thread in ${theme}`, async ({ app: page, server }) => {
       await server.backend.server.invoke("settings.update", theme === "dracula" ? { theme: "dark", darkTheme: "dracula" } : { theme: "light" }, ctx);
       await page.reload();

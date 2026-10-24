@@ -19,7 +19,7 @@ export type ConformanceMessage = { type: "result"; result: TestResult } | { type
 async function defineSuites(suite: string): Promise<void> {
   if (suite === "opfs-sqlite") {
     const sqlite3 = await sqlite3InitModule();
-    const pool = await sqlite3.installOpfsSAHPoolVfs({ name: "unica-conformance", directory: ".unica-conformance", clearOnInit: true, initialCapacity: 16 });
+    const pool = await sqlite3.installOpfsSAHPoolVfs({ name: "terno-conformance", directory: ".terno-conformance", clearOnInit: true, initialCapacity: 16 });
     const driver = wasmSqliteDriver(sqlite3, { pool });
     let n = 0;
     const open = async (path: string) => {

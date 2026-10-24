@@ -17,7 +17,7 @@ afterEach(() => {
 
 /** A fresh, migrated database on a temp file (WAL, like production). */
 export function testDb(): Db {
-  const dir = mkdtempSync(join(tmpdir(), "unica-test-"));
+  const dir = mkdtempSync(join(tmpdir(), "terno-test-"));
   const db = openDatabase(join(dir, "test.db"));
   opened.push({ db, dir });
   return db;

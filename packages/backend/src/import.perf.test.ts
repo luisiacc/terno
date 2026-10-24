@@ -20,7 +20,7 @@ let dir: string;
 let backend: Backend;
 
 beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), "unica-importperf-"));
+  dir = mkdtempSync(join(tmpdir(), "terno-importperf-"));
   backend = new Backend({ dbPath: join(dir, "perf.db"), version: "perf", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, instantSearch: false });
   seedDataset(sqlDb(backend.store), generateDataset({ threads: 2_000, accounts: 4, seed: 3, now: NOW, bodyScale: 0.3 }), { now: NOW });
 }, 300_000);
@@ -50,7 +50,7 @@ it("importing 5,000 filters, 500 categories and 2,000 drafts: no stall over 50 m
     rule: { match: "all" as const, conditions: [{ field: "fromDomain" as const, op: "equals" as const, value: `d${i}.example` }], actions: [{ type: "addCategory" as const, categoryId: 10_000 + (i % 500) }] },
   }));
   const drafts = Array.from({ length: 2_000 }, (_, i) => ({ accountEmail: email, mode: "new" as const, to: [{ name: "", email: `p${i}@x.dev` }], cc: [], bcc: [], subject: `Borrador ${i}`, subjectEdited: true, bodyText: `Texto ${i}`, quotedText: "", includeQuote: false, inReplyTo: null, forwardOf: null, uiState: "open" as const, updatedAt: NOW }));
-  const data = { format: "unica-export" as const, version: 2 as const, accounts: [], categories, filters, drafts };
+  const data = { format: "terno-export" as const, version: 2 as const, accounts: [], categories, filters, drafts };
 
   let last = performance.now();
   let stall = 0;

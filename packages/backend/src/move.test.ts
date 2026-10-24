@@ -23,7 +23,7 @@ afterEach(async () => {
 const open = (dir: string) => new Backend({ dbPath: join(dir, "unica.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false });
 
 function setup() {
-  const dir = mkdtempSync(join(tmpdir(), "unica-move-"));
+  const dir = mkdtempSync(join(tmpdir(), "terno-move-"));
   const backend = open(dir);
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "renderer", origin: "renderer" });

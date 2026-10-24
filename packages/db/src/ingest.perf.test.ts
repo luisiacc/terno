@@ -42,7 +42,7 @@ export function calibrate(mail: readonly { subject: string; bodyText: string | n
   db.close();
   return rate;
 }
-const dir = mkdtempSync(join(tmpdir(), "unica-ingest-perf-"));
+const dir = mkdtempSync(join(tmpdir(), "terno-ingest-perf-"));
 const stats: Stat[] = [];
 afterAll(() => {
   report("ingest.json", "Ingestion throughput", { baselineRatio: BASELINE_RATIO }, stats);

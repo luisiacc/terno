@@ -62,7 +62,7 @@ function baseId(theme: Theme, a: Pick<Appearance, "customThemes">): string {
   return a.customThemes.find((t) => `${CUSTOM_PREFIX}${t.id}` === theme.id)?.extends ?? DEFAULT_THEME[theme.mode];
 }
 
-const isMacDesktop = () => window.unicaDesktop?.platform === "darwin";
+const isMacDesktop = () => window.ternoDesktop?.platform === "darwin";
 const REDUCED_TRANSPARENCY = "(prefers-reduced-transparency: reduce)";
 
 /** The sidebar shows the window's vibrancy only on macOS, with a theme that allows it, and when the OS doesn't ask for less transparency. */
@@ -120,7 +120,7 @@ export function applyAppearance(a: Appearance): void {
   } catch {
     /* private mode / quota: theme.js falls back to defaults */
   }
-  window.unicaDesktop?.setAppearance?.({ themeSource: a.theme, background: opaqueBackground(theme), vibrancy });
+  window.ternoDesktop?.setAppearance?.({ themeSource: a.theme, background: opaqueBackground(theme), vibrancy });
 }
 
 /** Re-applies when the OS switches light/dark (only matters in system mode) or toggles reduced motion. */

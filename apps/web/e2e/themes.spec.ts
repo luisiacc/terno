@@ -153,7 +153,7 @@ test.describe("themes", () => {
       [`<p>color: red; background: blue (texto, no estilo)</p>`, false],
       [`<p title="color:red">x</p>`, false],
     ];
-    const results = await page.evaluate((list) => list.map(([html]) => (window as unknown as { __unica: { hasOwnColors(h: string): boolean } }).__unica.hasOwnColors(html)), cases);
+    const results = await page.evaluate((list) => list.map(([html]) => (window as unknown as { __terno: { hasOwnColors(h: string): boolean } }).__terno.hasOwnColors(html)), cases);
     expect(results).toEqual(cases.map(([, expected]) => expected));
 
     // and in the reader: dark text from an ordinary inline style lands on the paper card, not on a dark theme
@@ -209,7 +209,7 @@ test.describe("themes", () => {
     await page.getByTestId("theme-delete-custom:rosa").click();
     await page.getByTestId("theme-delete-dialog-confirm").click();
     await expect(page.getByTestId("theme-card-custom:rosa")).toHaveCount(0);
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "unica-dark");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "terno-dark");
     expect(await page.evaluate(() => document.documentElement.style.getPropertyValue("--primary"))).toBe("");
   });
 });

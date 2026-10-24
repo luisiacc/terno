@@ -26,7 +26,7 @@ const registry: ProviderRegistry = {
 };
 
 function setup(providers: ProviderRegistry = registry) {
-  const dir = mkdtempSync(join(tmpdir(), "unica-owner-"));
+  const dir = mkdtempSync(join(tmpdir(), "terno-owner-"));
   let clock = NOW;
   const backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers, now: () => clock, autoSync: false });
   const [c, s] = createMemoryTransportPair();

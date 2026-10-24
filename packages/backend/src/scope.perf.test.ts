@@ -20,7 +20,7 @@ let dir: string;
 let backend: Backend;
 
 beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), "unica-scopeperf-"));
+  dir = mkdtempSync(join(tmpdir(), "terno-scopeperf-"));
   backend = new Backend({ dbPath: join(dir, "perf.db"), version: "perf", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, instantSearch: true });
   seedDataset(sqlDb(backend.store), generateDataset({ threads: 20_000, accounts: 8, seed: 5, now: NOW, bodyScale: 3 }), { now: NOW });
   // the seed leaves a WAL of hundreds of MB that a running app, checkpointing all along, never has
@@ -115,7 +115,7 @@ it("archiving every thread of a view (≥ 5,000) and undoing it: no stall over 5
 }, 600_000);
 
 it("a 50,000-thread category: counted in one indexed query, acted on with no stall over 50 ms", async () => {
-  const dir50 = mkdtempSync(join(tmpdir(), "unica-scopeperf50-"));
+  const dir50 = mkdtempSync(join(tmpdir(), "terno-scopeperf50-"));
   const big = new Backend({ dbPath: join(dir50, "big.db"), version: "perf", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, instantSearch: false });
   try {
     const db = sqlDb(big.store);

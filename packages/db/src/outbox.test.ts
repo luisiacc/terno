@@ -58,7 +58,7 @@ describe("search outbox (SQL)", () => {
   });
 
   it("a write outside any transaction is batched by the next one (and on open)", () => {
-    const dir = mkdtempSync(join(tmpdir(), "unica-outbox-"));
+    const dir = mkdtempSync(join(tmpdir(), "terno-outbox-"));
     let db = openDatabase(join(dir, "o.db"));
     const [a] = withAccounts(db);
     const [id] = ingestMessages(db, [msg({ accountId: a! })]).inserted;
@@ -73,7 +73,7 @@ describe("search outbox (SQL)", () => {
   });
 
   it("prunes the oldest batches past the size cap, never the newest nor past an active build; a consumer behind them must rebuild", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "unica-outbox-"));
+    const dir = mkdtempSync(join(tmpdir(), "terno-outbox-"));
     const db = openDatabase(join(dir, "p.db"), { searchLogBytes: 60 });
     const [a] = withAccounts(db);
     const start = searchHead(db);
@@ -92,7 +92,7 @@ describe("search outbox (SQL)", () => {
   });
 
   it("counts retention in bytes, not characters, so multibyte mail can't overrun the cap", () => {
-    const dir = mkdtempSync(join(tmpdir(), "unica-outbox-"));
+    const dir = mkdtempSync(join(tmpdir(), "terno-outbox-"));
     const db = openDatabase(join(dir, "mb.db"), { searchLogBytes: 30_000 });
     const [a] = withAccounts(db);
     for (let i = 0; i < 40; i++) ingestMessages(db, [msg({ accountId: a!, subject: `Reunión 会议 ${i} 😀`, bodyText: "😀漢字のメール ".repeat(150) })]);
@@ -105,7 +105,7 @@ describe("search outbox (SQL)", () => {
   });
 
   it("leases don't survive a restart", () => {
-    const dir = mkdtempSync(join(tmpdir(), "unica-outbox-"));
+    const dir = mkdtempSync(join(tmpdir(), "terno-outbox-"));
     let db = openDatabase(join(dir, "l.db"));
     beginSearchBuild(db);
     expect(db.get("SELECT count(*) AS c FROM search_leases")).toEqual({ c: 1 });

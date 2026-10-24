@@ -20,7 +20,7 @@ afterEach(() => {
 
 /** A database exactly as v2 of the app left it. */
 function v2(): Db {
-  const dir = mkdtempSync(join(tmpdir(), "unica-mig3-"));
+  const dir = mkdtempSync(join(tmpdir(), "terno-mig3-"));
   dirs.push(dir);
   const db = new Db(nodeSqliteDriver, join(dir, "v2.db"));
   dbs.push(db);
@@ -113,7 +113,7 @@ describe("migration v3: owner identity, AI secret, local mode", () => {
   });
 
   it("writes nothing for a fresh install, so local mode stays the default", () => {
-    const dir = mkdtempSync(join(tmpdir(), "unica-mig3-"));
+    const dir = mkdtempSync(join(tmpdir(), "terno-mig3-"));
     dirs.push(dir);
     const db = new Db(nodeSqliteDriver, join(dir, "fresh.db"));
     dbs.push(db);
@@ -143,7 +143,7 @@ describe("migration v3: owner identity, AI secret, local mode", () => {
 describe("migration v4: smart categorization", () => {
   /** A v3 database with real mail and categories, as the previous release left it. */
   function seededV3(): { db: Db; threads: number[] } {
-    const dir = mkdtempSync(join(tmpdir(), "unica-mig4-"));
+    const dir = mkdtempSync(join(tmpdir(), "terno-mig4-"));
     dirs.push(dir);
     // mail threaded by today's code, written into the v3 schema the way that release stored it
     const source = openDatabase(join(dir, "source.db"));
@@ -225,7 +225,7 @@ describe("migration v4: smart categorization", () => {
 
 describe("migration v8: exclusive moves", () => {
   it("keys journaled move rows by their category, taken from the old move's single source, and that move still trains and undoes", () => {
-    const dir = mkdtempSync(join(tmpdir(), "unica-mig8-"));
+    const dir = mkdtempSync(join(tmpdir(), "terno-mig8-"));
     dirs.push(dir);
     const db = new Db(nodeSqliteDriver, join(dir, "v7.db"));
     dbs.push(db);
@@ -262,7 +262,7 @@ describe("migration v8: exclusive moves", () => {
 describe("migration v8: an undo of a v7 move left half-restored", () => {
   /** A v7 database whose ⌥-move (from 1 to 2) was undone and crashed while restoring examples. */
   function v7Restoring() {
-    const dir = mkdtempSync(join(tmpdir(), "unica-mig8r-"));
+    const dir = mkdtempSync(join(tmpdir(), "terno-mig8r-"));
     dirs.push(dir);
     const path = join(dir, "v7.db");
     const db = new Db(nodeSqliteDriver, path);
@@ -309,7 +309,7 @@ describe("migration v8: an undo of a v7 move left half-restored", () => {
 
 describe("migration v9: drafts v2", () => {
   it("keeps every v8 draft as format 1 (its text untouched, no separate quote) and gives replies their conversation", () => {
-    const dir = mkdtempSync(join(tmpdir(), "unica-mig9-"));
+    const dir = mkdtempSync(join(tmpdir(), "terno-mig9-"));
     dirs.push(dir);
     const db = new Db(nodeSqliteDriver, join(dir, "v8.db"));
     dbs.push(db);
@@ -332,7 +332,7 @@ describe("migration v9: drafts v2", () => {
 
 describe("migration v10: the next op's sequence number", () => {
   it("is read from an index, not by scanning every op", () => {
-    const dir = mkdtempSync(join(tmpdir(), "unica-mig10-"));
+    const dir = mkdtempSync(join(tmpdir(), "terno-mig10-"));
     dirs.push(dir);
     const db = new Db(nodeSqliteDriver, join(dir, "v10.db"));
     dbs.push(db);
@@ -346,7 +346,7 @@ describe("migration v10: the next op's sequence number", () => {
 describe("scope pages walk an index in key order", () => {
   it("every view, account and category scope pages without a temporary sort", async () => {
     const { scopeIdsSql } = await import("./queries");
-    const dir = mkdtempSync(join(tmpdir(), "unica-scopeplan-"));
+    const dir = mkdtempSync(join(tmpdir(), "terno-scopeplan-"));
     dirs.push(dir);
     const db = new Db(nodeSqliteDriver, join(dir, "plan.db"));
     dbs.push(db);

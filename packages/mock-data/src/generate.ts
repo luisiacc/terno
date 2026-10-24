@@ -172,7 +172,7 @@ export function generateDataset(options: GenerateOptions): MockDataset {
     const refs: string[] = [];
     for (const d of drafts) {
       const id = ++msgCounter;
-      const rfcMessageId = `${threadKey}.${id}@mock.unica`;
+      const rfcMessageId = `${threadKey}.${id}@mock.terno`;
       messages.push({
         ...d,
         tags,

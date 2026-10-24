@@ -94,7 +94,7 @@ export interface WebDebug {
 declare global {
   interface Window {
     /** demo and perf builds: what the web perf gate reads */
-    __unicaWeb?: WebDebug;
+    __ternoWeb?: WebDebug;
   }
 }
 
@@ -291,7 +291,7 @@ export async function connectWorker(client: RpcClient): Promise<void> {
   setWeb({ phase: "starting" });
 
   const started = performance.now();
-  const worker = new Worker(new URL("./worker/backend.worker.ts", import.meta.url), { type: "module", name: "unica-backend-worker" });
+  const worker = new Worker(new URL("./worker/backend.worker.ts", import.meta.url), { type: "module", name: "terno-backend-worker" });
   let stopped = false;
   /** the mailbox can't be used here: stop the worker and let another tab have it (nothing is handed over by name) */
   const fail = (code: NonNullable<WebLifecycle["code"]>, message: string) => {
@@ -350,7 +350,7 @@ export async function connectWorker(client: RpcClient): Promise<void> {
   client.attach(portTransport(channel.port1));
   void carryOver(client, first.storage);
   if (DEMO_BUILD) {
-    window.__unicaWeb = {
+    window.__ternoWeb = {
       build: BUILD,
       storage: first.storage,
       timings: { ...first.timings, workerReady: Math.round(performance.now() - started) },

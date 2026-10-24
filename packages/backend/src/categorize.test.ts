@@ -25,7 +25,7 @@ function open(dir: string, now: () => number = () => NOW) {
 }
 
 function setup(options: { seed?: boolean } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), "unica-cat-"));
+  const dir = mkdtempSync(join(tmpdir(), "terno-cat-"));
   const { backend, client } = open(dir);
   let stopped = false;
   cleanups.push(async () => {

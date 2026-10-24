@@ -190,6 +190,9 @@ importers:
       '@terno/backend':
         specifier: workspace:*
         version: link:../../packages/backend
+      '@terno/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@terno/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -409,12 +412,12 @@ importers:
         specifier: workspace:*
         version: link:../store
     devDependencies:
-      '@types/node':
-        specifier: 'catalog:'
-        version: 24.19.2
       '@terno/mock-data':
         specifier: workspace:*
         version: link:../mock-data
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.19.2
 
   packages/idb:
     dependencies:
@@ -469,9 +472,6 @@ importers:
         specifier: 'catalog:'
         version: 4.6.7
     devDependencies:
-      '@types/node':
-        specifier: 'catalog:'
-        version: 24.19.2
       '@terno/backend':
         specifier: workspace:*
         version: link:../backend
@@ -481,6 +481,9 @@ importers:
       '@terno/mail':
         specifier: workspace:*
         version: link:../mail
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.19.2
 
   packages/mock-data:
     dependencies:

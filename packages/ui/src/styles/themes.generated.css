@@ -1,7 +1,7 @@
 /* Generated from packages/ui/src/themes/registry.ts by `pnpm --filter @terno/ui gen:themes`. Do not edit. */
 
 :root,
-[data-theme="unica-light"] {
+[data-theme="terno-light"] {
   color-scheme: light;
   --theme-font: initial;
   --background: oklch(0.99 0.002 85);
@@ -451,7 +451,7 @@
   --mail-link: oklch(0.5 0.18 265);
 }
 
-[data-theme="unica-dark"] {
+[data-theme="terno-dark"] {
   color-scheme: dark;
   --theme-font: initial;
   --background: oklch(0.165 0.005 265);

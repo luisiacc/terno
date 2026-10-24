@@ -428,7 +428,7 @@ test("switching theme: painted within 50 ms, no row re-renders", async ({ app: p
   const before = await renders(page, "ThreadRow");
   expect(before).toBeGreaterThan(0); // the probe is compiled into this build
   const samples = await page.evaluate(async () => {
-    const u = (window as unknown as { __unica: { updateAppearance(p: object): Promise<unknown> } }).__unica;
+    const u = (window as unknown as { __terno: { updateAppearance(p: object): Promise<unknown> } }).__terno;
     const frame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
     const out: number[] = [];
     // alternate light/dark and named palettes: mode, data-theme and every color change each time
@@ -436,7 +436,7 @@ test("switching theme: painted within 50 ms, no row re-renders", async ({ app: p
       { theme: "dark", darkTheme: "dracula" },
       { theme: "light", lightTheme: "solarized-light" },
       { theme: "dark", darkTheme: "nord" },
-      { theme: "light", lightTheme: "unica-light" },
+      { theme: "light", lightTheme: "terno-light" },
     ];
     for (let i = 0; i < 32; i++) {
       const t0 = performance.now();
@@ -629,7 +629,7 @@ test("selection: toggling one row renders one row; ⌘A over 500 loaded rows com
   // load five pages (500 rows), then come back to the top
   await page.evaluate(async () => {
     const scroller = document.querySelector("[role=listbox]") as HTMLElement;
-    const loaded = () => (window as unknown as { __unica: { loadedIds(): number[] } }).__unica.loadedIds().length;
+    const loaded = () => (window as unknown as { __terno: { loadedIds(): number[] } }).__terno.loadedIds().length;
     while (loaded() < 500) {
       scroller.scrollTop = scroller.scrollHeight;
       await new Promise((r) => setTimeout(r, 50));
@@ -637,7 +637,7 @@ test("selection: toggling one row renders one row; ⌘A over 500 loaded rows com
     scroller.scrollTop = 0;
     await new Promise((r) => setTimeout(r, 100));
   });
-  const loaded = await page.evaluate(() => (window as unknown as { __unica: { loadedIds(): number[] } }).__unica.loadedIds().length);
+  const loaded = await page.evaluate(() => (window as unknown as { __terno: { loadedIds(): number[] } }).__terno.loadedIds().length);
   expect(loaded).toBeGreaterThanOrEqual(500);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 

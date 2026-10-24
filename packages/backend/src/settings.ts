@@ -8,7 +8,7 @@ import {
   type Capabilities,
   type CompatiblePreset,
 } from "@terno/ai";
-import { AI_PROVIDER_IDS, builtinMode, COMPATIBLE_PRESETS, CUSTOM_PREFIX, DEFAULT_THEME, type CustomTheme, type ThemeMode } from "@terno/core";
+import { AI_PROVIDER_IDS, builtinMode, canonicalThemeId, COMPATIBLE_PRESETS, CUSTOM_PREFIX, DEFAULT_THEME, type CustomTheme, type ThemeMode } from "@terno/core";
 import type { AiProfile, AiSettings, AppSettings, SettingsPatch } from "@terno/core/rpc";
 import type { MailStore } from "@terno/store";
 
@@ -145,10 +145,15 @@ function themeMode(id: string, custom: readonly CustomTheme[]): ThemeMode | null
   return builtinMode(id);
 }
 
-/** A stored theme id that no longer resolves (or is of the other mode) falls back to the mode's default. */
+/**
+ * Theme ids saved under their Única names read as their successors; a stored
+ * id that no longer resolves (or is of the other mode) falls back to the mode's default.
+ */
 function resolveThemes(g: General): General {
-  const ok = (id: string, mode: ThemeMode) => themeMode(id, g.customThemes) === mode;
-  return { ...g, lightTheme: ok(g.lightTheme, "light") ? g.lightTheme : DEFAULT_THEME.light, darkTheme: ok(g.darkTheme, "dark") ? g.darkTheme : DEFAULT_THEME.dark };
+  const customThemes = g.customThemes.map((t) => ({ ...t, extends: canonicalThemeId(t.extends) as CustomTheme["extends"] }));
+  const ok = (id: string, mode: ThemeMode) => themeMode(id, customThemes) === mode;
+  const [lightTheme, darkTheme] = [canonicalThemeId(g.lightTheme), canonicalThemeId(g.darkTheme)];
+  return { ...g, customThemes, lightTheme: ok(lightTheme, "light") ? lightTheme : DEFAULT_THEME.light, darkTheme: ok(darkTheme, "dark") ? darkTheme : DEFAULT_THEME.dark };
 }
 
 export async function readSettings(store: SettingsStore): Promise<AppSettings> {

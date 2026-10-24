@@ -256,7 +256,7 @@ test.describe("drag and drop to a category", () => {
 
 test.describe("visual: mid-drag", () => {
   test.use({ deviceScaleFactor: 1 });
-  for (const theme of ["unica-light", "dracula"] as const) {
+  for (const theme of ["terno-light", "dracula"] as const) {
     test(`ghost and highlighted target in ${theme}`, async ({ app: page, server }) => {
       await server.backend.server.invoke("settings.update", theme === "dracula" ? { theme: "dark", darkTheme: "dracula" } : { theme: "light" }, ctx);
       await page.reload();

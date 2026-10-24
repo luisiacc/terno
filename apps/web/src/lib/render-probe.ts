@@ -11,7 +11,7 @@ export function renderProbe(name: string): void {
   }
 }
 
-/** Test builds expose a few internals to the perf spec (window.__unica). */
+/** Test builds expose a few internals to the perf spec (window.__terno). */
 export function exposeForTests(hooks: Record<string, unknown>): void {
-  if (import.meta.env.VITE_RENDER_PROBE) Object.assign(((window as unknown as { __unica?: object }).__unica ??= {}), hooks);
+  if (import.meta.env.VITE_RENDER_PROBE) Object.assign(((window as unknown as { __terno?: object }).__terno ??= {}), hooks);
 }

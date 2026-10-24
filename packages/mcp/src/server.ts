@@ -37,7 +37,7 @@ function failure(error: unknown) {
 
 export function createMcpServer(app: AppConnection, version = "0.1.0"): McpServer {
   const server = new McpServer(
-    { name: "unica", version },
+    { name: "terno", version },
     {
       instructions:
         "Única is the user's email client: one access point to all of their connected accounts (Gmail and IMAP). " +

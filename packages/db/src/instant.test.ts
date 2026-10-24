@@ -19,7 +19,7 @@ import { Fts5SearchEngine } from "./search-engine";
 import { SqlMailStore } from "./sql-store";
 
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
-const dir = mkdtempSync(join(tmpdir(), "unica-instant-"));
+const dir = mkdtempSync(join(tmpdir(), "terno-instant-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 async function catchUp(e: InstantSearchEngine, feed: SearchFeed): Promise<void> {

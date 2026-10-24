@@ -16,12 +16,12 @@ const version = JSON.parse(readFileSync(resolve(import.meta.dirname, "package.js
 /** Fails the desktop build if anything from the web host leaks into it. */
 function desktopGuard(): Plugin {
   return {
-    name: "unica:desktop-guard",
+    name: "terno:desktop-guard",
     apply: "build",
     generateBundle(_options, bundle) {
       for (const [name, file] of Object.entries(bundle)) {
         const code = file.type === "chunk" ? file.code : "";
-        if (name.endsWith(".wasm") || /installOpfsSAHPoolVfs|sqlite3InitModule|unica-backend-worker/.test(code)) {
+        if (name.endsWith(".wasm") || /installOpfsSAHPoolVfs|sqlite3InitModule|terno-backend-worker/.test(code)) {
           this.error(`the desktop renderer must not ship the web host (${name})`);
         }
       }
@@ -36,14 +36,14 @@ function desktopGuard(): Plugin {
  */
 function serviceWorker(buildId: string): Plugin {
   return {
-    name: "unica:service-worker",
+    name: "terno:service-worker",
     apply: "build",
     generateBundle(_options, bundle) {
       // SQLite-WASM's own worker and OPFS proxy are emitted but never loaded (the sahpool VFS needs neither)
       const files = Object.keys(bundle).filter((f) => !f.endsWith(".map") && !/sqlite3-(worker1|opfs-async-proxy)/.test(f));
       const source = readFileSync(resolve(import.meta.dirname, "src/web/sw.js"), "utf8")
-        .replace("__UNICA_BUILD__", JSON.stringify(buildId))
-        .replace("__UNICA_PRECACHE__", JSON.stringify(["./", "theme.js", ...files]));
+        .replace("__TERNO_BUILD__", JSON.stringify(buildId))
+        .replace("__TERNO_PRECACHE__", JSON.stringify(["./", "theme.js", ...files]));
       this.emitFile({ type: "asset", fileName: "sw.js", source });
       this.emitFile({
         type: "asset",
@@ -71,7 +71,7 @@ const WEB_CSP = [
 
 function webHtml(): Plugin {
   return {
-    name: "unica:web-html",
+    name: "terno:web-html",
     transformIndexHtml: (html) => html.replace("<head>", `<head>\n    <meta http-equiv="Content-Security-Policy" content="${WEB_CSP}" />\n    <link rel="manifest" href="./manifest.webmanifest" />`),
   };
 }

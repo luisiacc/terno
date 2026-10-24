@@ -263,8 +263,8 @@ describeProviderContract({
   config: (url) => ({ id: "compatible", preset: "openrouter", baseURL: `${url}/api/v1`, apiKey: "sk-or-test", model: "qwen/qwen3-32b", capabilities: PROBED_SCHEMA }),
   checkRequest: (req) => {
     openaiAuth("sk-or-test")(req);
-    expect(req.headers["http-referer"]).toBe("https://unica.app");
-    expect(req.headers["x-title"]).toBe("Unica");
+    expect(req.headers["http-referer"]).toBe("https://terno.app");
+    expect(req.headers["x-title"]).toBe("Terno");
     expect(req.body.max_tokens).toBeGreaterThan(0);
     expect(req.body.response_format.json_schema).toMatchObject({ name: "filter", strict: true });
   },
@@ -272,8 +272,8 @@ describeProviderContract({
 
 describeProviderContract({
   name: "compatible (Azure)",
-  dialect: openaiDialect("/openai/deployments/unica-gpt/chat/completions"),
-  config: (url) => ({ id: "compatible", preset: "azure", baseURL: url, apiKey: "azure-key", model: "unica-gpt", capabilities: PROBED_SCHEMA }),
+  dialect: openaiDialect("/openai/deployments/terno-gpt/chat/completions"),
+  config: (url) => ({ id: "compatible", preset: "azure", baseURL: url, apiKey: "azure-key", model: "terno-gpt", capabilities: PROBED_SCHEMA }),
   checkRequest: (req) => {
     expect(req.headers["api-key"]).toBe("azure-key");
     expect(req.headers.authorization).toBeUndefined();

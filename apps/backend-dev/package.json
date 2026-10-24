@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@terno/backend": "workspace:*",
+    "@terno/core": "workspace:*",
     "@terno/mail": "workspace:*",
     "ws": "^8.22.0",
     "@terno/db": "workspace:*"

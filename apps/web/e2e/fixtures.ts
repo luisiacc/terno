@@ -24,7 +24,7 @@ export const test = base.extend<Fixtures>({
   server: async ({ backendOptions }, use) => {
     const template = process.env[TEMPLATE_ENV];
     if (!template) throw new Error("global setup did not seed a template database");
-    const dir = mkdtempSync(join(tmpdir(), "unica-e2e-"));
+    const dir = mkdtempSync(join(tmpdir(), "terno-e2e-"));
     if (!backendOptions.empty) {
       copyFileSync(template, join(dir, "unica.db"));
       // the template's search snapshot too (written on close), so each backend restores instead of building

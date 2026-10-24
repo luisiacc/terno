@@ -14,7 +14,7 @@ afterEach(async () => {
 });
 
 function setup() {
-  const dir = mkdtempSync(join(tmpdir(), "unica-settings-"));
+  const dir = mkdtempSync(join(tmpdir(), "terno-settings-"));
   const backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false });
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "renderer", origin: "renderer" });
@@ -32,14 +32,14 @@ describe("appearance settings", () => {
   it("new installs get the defaults", async () => {
     const { client } = setup();
     const s = (await client.call("app.bootstrap", {})).settings;
-    expect(s).toMatchObject({ theme: "system", lightTheme: "unica-light", darkTheme: "unica-dark", motionMs: 75, htmlMailAppearance: "auto", customThemes: [] });
+    expect(s).toMatchObject({ theme: "system", lightTheme: "terno-light", darkTheme: "terno-dark", motionMs: 75, htmlMailAppearance: "auto", customThemes: [] });
   });
 
   it("a legacy blob keeps its mode and gets the new fields' defaults", async () => {
     const { backend, client } = setup();
     setSetting(sqlDb(backend.store), "app", { theme: "dark", density: "compact" });
     const s = (await client.call("app.bootstrap", {})).settings;
-    expect(s).toMatchObject({ theme: "dark", density: "compact", lightTheme: "unica-light", darkTheme: "unica-dark", motionMs: 75, htmlMailAppearance: "auto", customThemes: [] });
+    expect(s).toMatchObject({ theme: "dark", density: "compact", lightTheme: "terno-light", darkTheme: "terno-dark", motionMs: 75, htmlMailAppearance: "auto", customThemes: [] });
   });
 
   it("every new field round-trips", async () => {
@@ -61,16 +61,24 @@ describe("appearance settings", () => {
     // a light-mode slot can't take a dark custom theme
     expect(await errorOf(client.call("settings.update", { customThemes: [nord], lightTheme: "custom:mi-nord" }))).toMatchObject({ code: "BAD_REQUEST" });
     expect(await errorOf(client.call("settings.update", { customThemes: [{ ...nord, tokens: { primary: "red;}body{display:none" } }] }))).toMatchObject({ code: "BAD_REQUEST" });
-    expect((await client.call("app.bootstrap", {})).settings).toMatchObject({ lightTheme: "unica-light", darkTheme: "unica-dark", customThemes: [] });
+    expect((await client.call("app.bootstrap", {})).settings).toMatchObject({ lightTheme: "terno-light", darkTheme: "terno-dark", customThemes: [] });
   });
 
   it("deleting a custom theme in use falls back to the mode's default", async () => {
     const { backend, client } = setup();
     await client.call("settings.update", { customThemes: [nord], darkTheme: "custom:mi-nord" });
     const after = await client.call("settings.update", { customThemes: [] });
-    expect(after.darkTheme).toBe("unica-dark");
+    expect(after.darkTheme).toBe("terno-dark");
     // and a stored id that names nothing (edited by hand, or a removed built-in) too
     setSetting(sqlDb(backend.store), "app", { lightTheme: "retired-theme", darkTheme: "github-light" });
-    expect((await client.call("app.bootstrap", {})).settings).toMatchObject({ lightTheme: "unica-light", darkTheme: "unica-dark" });
+    expect((await client.call("app.bootstrap", {})).settings).toMatchObject({ lightTheme: "terno-light", darkTheme: "terno-dark" });
+  });
+
+  it("reads themes saved under their Única ids as the Terno ones", async () => {
+    const { backend, client } = setup();
+    setSetting(sqlDb(backend.store), "app", { lightTheme: "unica-light", darkTheme: "custom:mi-nord", customThemes: [{ ...nord, extends: "unica-dark" }] });
+    const settings = (await client.call("app.bootstrap", {})).settings;
+    expect(settings).toMatchObject({ lightTheme: "terno-light", darkTheme: "custom:mi-nord" });
+    expect(settings.customThemes[0]).toMatchObject({ id: "mi-nord", extends: "terno-dark" });
   });
 });

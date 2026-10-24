@@ -26,7 +26,7 @@ const stats: Stat[] = [];
 const meta: Record<string, unknown> = {};
 
 beforeAll(() => {
-  dir = mkdtempSync(join(tmpdir(), "unica-perf-"));
+  dir = mkdtempSync(join(tmpdir(), "terno-perf-"));
   db = openDatabase(join(dir, "perf.db"));
   const t0 = performance.now();
   const data = generateDataset({ threads: 29_500, accounts: 8, seed: 2026, now: NOW, bodyScale: 4 });
