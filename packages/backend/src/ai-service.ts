@@ -114,6 +114,8 @@ export class AiService {
       preset,
       apiKey,
       fetch: this.b.net.fetchFor("ai", { providerLocality }),
+      // the web build: the SDKs run in this tab's worker, with the user's own key (still through the policy fetch)
+      browserOrigin: this.b.host.capabilities.network === "browser" ? ((globalThis as { location?: { origin: string } }).location?.origin ?? "null") : undefined,
       // the first local call may load the model into memory; cloud calls retry once
       timeoutMs: local ? 90_000 : 30_000,
       maxRetries: local ? 0 : 1,

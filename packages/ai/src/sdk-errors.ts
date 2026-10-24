@@ -1,4 +1,4 @@
-import { AiError } from "./types";
+import { AiError, type AiProviderId } from "./types";
 
 /** The error classes both Stainless-generated SDKs (Anthropic, OpenAI) export. */
 interface SdkErrors {
@@ -21,11 +21,28 @@ export interface ErrorInfo {
   label: string;
   local: boolean;
   host: string;
+  provider?: AiProviderId;
+  /** the page's origin, in a browser */
+  browserOrigin?: string;
+}
+
+/**
+ * A browser hides why a request failed: a server that is down and one that
+ * refuses this page's origin (CORS) both look like "Failed to fetch". Local
+ * servers only answer origins they were told to allow, so say how.
+ */
+function browserConnectionError(info: ErrorInfo, origin: string): AiError {
+  const cannot = `No se pudo conectar con ${info.label} (${info.host}).`;
+  if (info.provider === "ollama") return new AiError(`${cannot} Si está abierto, permite el origen ${origin} en Ollama: OLLAMA_ORIGINS=${origin} (y reinícialo).`, "unavailable");
+  if (info.provider === "lmstudio") return new AiError(`${cannot} Si está abierto, activa CORS en LM Studio (Developer → Server Settings → Enable CORS) para que acepte ${origin}.`, "unavailable");
+  if (info.local) return new AiError(`${cannot} Si está abierto, permite el origen ${origin} (CORS) en ese servidor.`, "unavailable");
+  return new AiError(`${cannot} Revisa tu conexión; si sigue fallando, ese servidor no acepta peticiones desde una página web (CORS).`, "unavailable");
 }
 
 function connectionError(chain: unknown[], info: ErrorInfo): AiError {
   const refused = chain.some((e) => (e as { code?: string })?.code === "ECONNREFUSED");
   if (refused && info.local) return new AiError(`No encontramos ${info.label} en ${info.host}. ¿Está abierto?`, "unavailable");
+  if (info.browserOrigin) return browserConnectionError(info, info.browserOrigin);
   return new AiError(`No se pudo conectar con ${info.label} (${info.host}).`, "unavailable");
 }
 

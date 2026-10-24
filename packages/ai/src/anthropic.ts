@@ -8,14 +8,15 @@ type Sdk = typeof import("@anthropic-ai/sdk");
 /** Anthropic Messages API. The SDK is imported on first use so backend boot never pays for it. */
 export function anthropicTransport(config: ProviderConfig): ModelTransport {
   const baseURL = resolveBaseURL(config)!;
-  const info = { label: "Anthropic", local: false, host: new URL(baseURL).host };
+  const info = { label: "Anthropic", local: false, host: new URL(baseURL).host, provider: config.id, browserOrigin: config.browserOrigin };
   let loaded: Promise<{ sdk: Sdk; client: Anthropic }> | null = null;
   const load = () =>
     (loaded ??= import("@anthropic-ai/sdk").then((sdk) => {
       if (!config.apiKey) throw new AiError("Guarda tu API key de Anthropic en Ajustes → IA.", "not_configured");
       // Every option explicit: ambient ANTHROPIC_* env vars must never redirect or re-key requests.
+      // In the web build's worker: the opt-in sends anthropic-dangerous-direct-browser-access, without which the API refuses CORS.
       const { default: Anthropic } = sdk;
-      const client = new Anthropic({ apiKey: config.apiKey, authToken: null, baseURL, maxRetries: config.maxRetries, timeout: config.timeoutMs, fetch: config.fetch });
+      const client = new Anthropic({ apiKey: config.apiKey, authToken: null, baseURL, maxRetries: config.maxRetries, timeout: config.timeoutMs, fetch: config.fetch, dangerouslyAllowBrowser: config.browserOrigin !== undefined });
       return { sdk, client };
     }));
 

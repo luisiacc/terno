@@ -1,3 +1,5 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { expect, test, type Page } from "@playwright/test";
 
 /** A small demo mailbox: enough rows to triage and search, quick to seed. */
@@ -383,4 +385,60 @@ test("switching into a fresh, empty engine: drafts and account filters wait for 
   await page.keyboard.press("Meta+Comma");
   await page.getByTestId("tab-filters").click();
   await expect(page.locator("[data-testid=settings-filter]").filter({ hasText: "Solo Personal" })).toContainText("luis.cordero@gmail.com");
+});
+
+test("AI with your own key runs from the worker: OpenAI and Anthropic get the request (stubbed), a local server refusing this origin says how to allow it", async ({ context, page }) => {
+  const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "GET, POST, OPTIONS" };
+  const wire = JSON.stringify({ name: "Recibos", explanation: "Archiva los recibos de Uber", match: "all", conditions: [{ field: "fromDomain", op: "equals", value: "uber.com", negate: false }], actions: [{ type: "archive", categoryId: null }] });
+  const sent: { url: string; key: string; origin: string; browserAccess?: string }[] = [];
+  await context.route(/https:\/\/api\.(openai|anthropic)\.com\/.*/, (route) => {
+    const req = route.request();
+    if (req.method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
+    const h = req.headers();
+    sent.push({ url: req.url(), key: h.authorization ?? h["x-api-key"] ?? "", origin: h.origin ?? "", browserAccess: h["anthropic-dangerous-direct-browser-access"] });
+    const json = (body: unknown, status = 200, headers: Record<string, string> = cors) => route.fulfill({ status, headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify(body) });
+    if (req.url().startsWith("https://api.anthropic.com/")) {
+      // like the real API: a browser's request without the opt-in header gets no CORS headers
+      if (h["anthropic-dangerous-direct-browser-access"] !== "true") return json({ type: "error", error: { type: "authentication_error", message: "CORS requests must set 'anthropic-dangerous-direct-browser-access' header" } }, 401, {});
+      return json({ id: "m", type: "message", role: "assistant", model: "claude-opus-5-5", content: [{ type: "text", text: wire }], stop_reason: "end_turn", stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } });
+    }
+    return json({ id: "c", object: "chat.completion", created: 0, model: "gpt-x", choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: wire, refusal: null } }] });
+  });
+  // Ollama as it answers an origin it wasn't told to allow (OLLAMA_ORIGINS): 403, no CORS headers. A real server:
+  // Playwright adds CORS headers to the responses it fulfills itself
+  const ollama = createServer((req, res) => {
+    res.writeHead(req.headers.origin ? 403 : 200, { "content-type": "application/json" });
+    res.end(req.headers.origin ? "" : JSON.stringify({ models: [{ name: "qwen3:8b" }] }));
+  });
+  await new Promise<void>((r) => ollama.listen(0, "127.0.0.1", r));
+  const ollamaURL = `http://127.0.0.1:${(ollama.address() as AddressInfo).port}/v1`;
+  await boot(page, "/?demo=40&mailbox=byo-ai");
+  const origin = new URL(page.url()).origin;
+  const generate = (provider: "openai" | "anthropic", model: string, key: string) =>
+    page.evaluate(
+      async ({ provider, model, key }) => {
+        const client = window.__ternoWeb!.client;
+        await client.call("settings.update", { localMode: false, ai: { provider, model } });
+        await client.call("ai.setKey", { provider, value: key });
+        return client.call("filters.generate", { prompt: "archiva los recibos de uber" });
+      },
+      { provider, model, key },
+    );
+  expect(await generate("openai", "gpt-x", "sk-web-openai-1234")).toMatchObject({ name: "Recibos", rule: { actions: [{ type: "archive" }] } });
+  expect(await generate("anthropic", "claude-opus-5-5", "sk-ant-web-5678")).toMatchObject({ name: "Recibos" });
+  expect(sent).toEqual([
+    { url: "https://api.openai.com/v1/chat/completions", key: "Bearer sk-web-openai-1234", origin, browserAccess: undefined },
+    { url: "https://api.anthropic.com/v1/messages?beta=true", key: "Bearer sk-ant-web-5678", origin, browserAccess: "true" },
+  ]);
+  // local mode back on: a literal loopback server is allowed, and when it refuses this page the message says what to do
+  const error = await page.evaluate(async (baseURL) => {
+    const client = window.__ternoWeb!.client;
+    await client.call("settings.update", { localMode: true, ai: { provider: "ollama", model: "qwen3:8b", baseURL } });
+    return client.call("ai.listModels", { provider: "ollama", baseURL }).then(
+      () => "listed",
+      (e: Error) => e.message,
+    );
+  }, ollamaURL);
+  ollama.close();
+  expect(error).toContain(`permite el origen ${origin} en Ollama: OLLAMA_ORIGINS=${origin}`);
 });

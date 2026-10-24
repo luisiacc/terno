@@ -12,6 +12,14 @@ export interface ProviderConfig {
   capabilities?: Capabilities;
   /** ALWAYS the backend's network-policy fetch: SDKs never get to open sockets on their own */
   fetch: typeof fetch;
+  /**
+   * The page's origin when the backend runs in a browser (the web build's
+   * worker). The SDKs then opt in to running there (they refuse by default to
+   * keep a site's own key out of its pages; this key is the user's, kept on
+   * this device), and a failed connection may be a server that doesn't allow
+   * this origin (CORS): local servers say how to allow it.
+   */
+  browserOrigin?: string;
   timeoutMs: number;
   maxRetries: number;
 }

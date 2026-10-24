@@ -24,6 +24,8 @@ export function openaiChatTransport(config: ProviderConfig): ModelTransport {
     label: config.id === "compatible" ? PRESETS[config.preset ?? "custom"].label : descriptor.label,
     local: isLocalProvider(config),
     host: new URL(baseURL).host,
+    provider: config.id,
+    browserOrigin: config.browserOrigin,
   };
   // Local servers ignore auth but the SDK refuses to run without a key: send a placeholder, never a real secret.
   const apiKey = config.apiKey ?? (needsKey(config) ? null : "local");
@@ -35,9 +37,11 @@ export function openaiChatTransport(config: ProviderConfig): ModelTransport {
       if (!apiKey) throw new AiError(`Guarda tu API key de ${info.label} en Ajustes → IA.`, "not_configured");
       const { default: OpenAI, AzureOpenAI } = sdk;
       // Every value explicit: the SDK otherwise falls back to OPENAI_BASE_URL / _API_KEY / _ORG_ID / _PROJECT_ID.
+      // In the web build's worker the SDK must be told it may run there (the user's own key, on their device).
+      const dangerouslyAllowBrowser = config.browserOrigin !== undefined;
       const client = azure
-        ? new AzureOpenAI({ apiKey, baseURL: `${baseURL.replace(/\/+$/, "")}/openai`, apiVersion: AZURE_API_VERSION, deployment: config.model, organization: null, project: null, webhookSecret: null, fetch: config.fetch, timeout: config.timeoutMs, maxRetries: config.maxRetries })
-        : new OpenAI({ apiKey, adminAPIKey: null, baseURL, organization: null, project: null, webhookSecret: null, defaultHeaders: config.preset === "openrouter" ? OPENROUTER_HEADERS : undefined, fetch: config.fetch, timeout: config.timeoutMs, maxRetries: config.maxRetries });
+        ? new AzureOpenAI({ apiKey, baseURL: `${baseURL.replace(/\/+$/, "")}/openai`, apiVersion: AZURE_API_VERSION, deployment: config.model, organization: null, project: null, webhookSecret: null, fetch: config.fetch, timeout: config.timeoutMs, maxRetries: config.maxRetries, dangerouslyAllowBrowser })
+        : new OpenAI({ apiKey, adminAPIKey: null, baseURL, organization: null, project: null, webhookSecret: null, defaultHeaders: config.preset === "openrouter" ? OPENROUTER_HEADERS : undefined, fetch: config.fetch, timeout: config.timeoutMs, maxRetries: config.maxRetries, dangerouslyAllowBrowser });
       return { sdk, client };
     }));
 
