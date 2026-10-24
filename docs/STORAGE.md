@@ -24,8 +24,9 @@ An open error (corrupt file, newer schema, a handle another tab still holds) is 
 
 1. **Implement `MailStore`.** Every method is one atomic unit; nothing may interleave inside it. Start from the closest existing adapter: `SqlMailStore` (`packages/db/src/sql-store.ts`) if your backend speaks SQL (a Postgres port reuses the logic with a dialect port of the queries), `IdbMailStore` (`packages/idb/src/store.ts`) if it doesn't.
 2. **Keep the outbox contract.** Each command that changes what search indexes (messages, bodies, threads, category memberships) appends **one** batch `{ seq, messageIds, threadIds }` under the next revision, in the same transaction; a rollback takes it along. `feed.changes()` serves absolute projections read at serving time; `feed.beginBuild()` holds the log while a rebuild scans. Cursors are valid only at their revision (`StaleCursorError` otherwise).
-3. **Search exactly.** Either a durable engine that answers every query exactly (FTS5, Postgres full text with the same semantics), or the instant index (`@unica/store/instant`) in front of an exact fallback. Never return a page that silently misses matches; slow is acceptable while an index builds.
-4. **Pass the suite.** Add a harness next to your adapter:
+3. **Ops wait for sign-ins.** `ops.awaitAuth` puts a claimed op back without spending its attempt (next attempt `AWAITING_AUTH`, never scheduled); `ops.resumeAuth(account)` makes the account's waiting ops ready. The suite checks both.
+4. **Search exactly.** Either a durable engine that answers every query exactly (FTS5, Postgres full text with the same semantics), or the instant index (`@unica/store/instant`) in front of an exact fallback. Never return a page that silently misses matches; slow is acceptable while an index builds, as long as it yields (time slices) and stops when `searchText`'s `signal` says the caller moved on.
+5. **Pass the suite.** Add a harness next to your adapter:
 
    ```ts
    import { defineStoreConformance } from "@unica/store/conformance";
@@ -38,7 +39,7 @@ An open error (corrupt file, newer schema, a handle another tab still holds) is 
    ```
 
    It covers threading, derived thread state under random operations, actions, the ops state machine and crash recovery, the search oracle on every page, keyset pagination, counts, filter rules against core's evaluator, categorization (training, removals, merges, moves, undo), the search outbox (one batch per command, rollbacks, cascades, merges, replay convergence, leases, epochs), durability and migrations.
-5. **Register it** where the host builds its registry, with `automatic: false` until it has also passed the host's perf gate (`pnpm test:web-perf` with `WEB_PERF_STORAGE=<id>` on the web):
+6. **Register it** where the host builds its registry, with `automatic: false` until it has also passed the host's perf gate (`pnpm test:web-perf` with `WEB_PERF_STORAGE=<id>` on the web):
 
    ```ts
    registry.register({
@@ -51,6 +52,6 @@ An open error (corrupt file, newer schema, a handle another tab still holds) is 
    });
    ```
 
-6. **Report capabilities honestly** (`capabilities.engine`, `search`, `bulkRuleScan`, `durability`): hosts show them, and the renderer gates features on the host, not the store.
+7. **Report capabilities honestly** (`capabilities.engine`, `search`, `bulkRuleScan`, `durability`): hosts show them, and the renderer gates features on the host, not the store.
 
 Migrations keep logical ids across adapters (v1–v7 today, see `packages/db/src/migrations.ts`); an adapter implements each id its own way (SQL scripts, IndexedDB version upgrades, resumable data jobs) and refuses data written by a newer version with `Database schema … is newer than this app`, so hosts handle it alike (reload, change nothing).

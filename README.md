@@ -37,9 +37,10 @@ pnpm build:web           # → apps/web/dist-web, a static site (any static host
 
 The same renderer, built as a static site: the backend (the same code as the Mac app's) runs in a dedicated Web Worker on SQLite-WASM over OPFS, with the same migrations, FTS5 and instant search index, and talks to the page over the same MessagePort RPC.
 
-- **One tab owns the mailbox** (Web Lock). Another tab waits and can take over; the owner closes every storage handle first. A newer build in another tab, or a mailbox already migrated by one, asks to reload instead of touching the data. An error opening the mailbox is shown as such: Única never starts an empty mailbox in its place.
+- **One tab owns the mailbox** (Web Lock). Another tab waits and can take over: the mailbox goes to the tab that asked, after the owner closed every storage handle; a tab that fails to start gives it up. Those screens are modal (focus, the app behind them inert, shortcuts suspended). A newer build in another tab, or a mailbox already migrated by one, asks to reload instead of touching the data. An error opening the mailbox is shown as such: Única never starts an empty mailbox in its place.
 - **Storage adapters** are plug-and-play ([`docs/STORAGE.md`](docs/STORAGE.md)): SQLite on OPFS by default, a native IndexedDB store (`?storage=idb`, and automatically where OPFS isn't available).
-- **Gmail** signs in with Google's browser flow and your own client ID. Without a server there is no refresh token: access lasts an hour and isn't stored, so after a reload or an hour Única asks you to reconnect with one click (sync and queued actions wait meanwhile).
+- **Gmail** signs in with Google's browser flow and your own client ID. Without a server there is no refresh token: access lasts an hour and isn't stored, so after a reload or an hour Única asks you to reconnect with one click. Queued actions and sends wait for it however long it takes, without spending their retries, and go out as soon as you reconnect (the same applies on the Mac when Google revokes a sign-in).
+- **Storage:** Única asks the browser to keep its storage persistent and says in Ajustes → General whether it did. If not, the browser may evict the mailbox under pressure (or after Safari's 7 days): mail re-syncs, but categories, filters, settings and unsent work don't, so the same section exports them as JSON.
 - **What needs the Mac app:** IMAP/SMTP accounts (a browser can't open those connections), the MCP server for Claude Code and Codex, and sync with the window closed. The app says so where it matters, and suggests the Mac app once (first run, one dismissible line above the list, Ajustes → General).
 - **Local mode in the browser** allows only Google (your mail) and AI on this computer (literal localhost), refuses redirects for those requests, and can't pin DNS or control other tabs and extensions; the settings say exactly that.
 - **Secrets** (Gmail sessions, AI keys) are sealed with AES-GCM under a non-extractable WebCrypto key kept in IndexedDB. A service worker serves the shell, worker and WASM of one build, so reloads work offline and an update is a single "Recargar".
@@ -118,7 +119,7 @@ Web: Page ──MessagePort──▶ Dedicated Worker (the tab holding the Web L
 | List first / deep page | ≤ 2 ms | 0.7 / 0.8 ms | 0.2 / 0.2 ms |
 | Category view · counts · open | ≤ 6 ms (IndexedDB ≤ 4) | 1.7 · 3.9 · 0.2 ms | 0.4 · 0.8 · 0.1 ms |
 | Search (instant index) | ≤ 25 ms | ≤ 1.9 ms | ≤ 8 ms |
-| Search, durable path alone | ≤ 25 ms | FTS5 ≤ 9.3 ms (1 char: 38 ms, reported) | exact scan 0.1–0.9 s, reported |
+| Search, durable path alone | ≤ 25 ms (FTS5 1 char ≤ 60; exact scan ≤ 1.5 s) | FTS5 ≤ 9.3 ms (1 char ~38 ms) | exact scan ≤ 1.5 s, in ≤ 8 ms slices |
 | Action commit | ≤ 16 ms | ~11.5 ms | ~11 ms (15–29 ms under load) |
 | Filter preview over all mail | ≤ 50 ms (IndexedDB ≤ 600) | ~20 ms | ~46 ms |
 | Keystroke → results rendered | ≤ 100 ms | ~19 ms | ~18 ms |
