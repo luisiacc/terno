@@ -26,9 +26,11 @@ export interface ProfileMigration {
 }
 
 export class LegacyProfileInUseError extends Error {
-  constructor(readonly path: string) {
+  readonly path: string;
+  constructor(path: string) {
     super(`${path} is open in another app (Única is still running). Quit it and open Terno again.`);
     this.name = "LegacyProfileInUseError";
+    this.path = path;
   }
 }
 

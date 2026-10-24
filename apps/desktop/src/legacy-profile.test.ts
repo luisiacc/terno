@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,6 +21,12 @@ function legacyProfile(dir: string, files: Record<string, string> = { "unica.db"
 }
 
 describe("legacy profile migration", () => {
+  it("loads in plain Node (scripts/dev.mjs imports it with type stripping only)", () => {
+    const file = join(import.meta.dirname, "legacy-profile.ts");
+    const out = execFileSync(process.execPath, ["--input-type=module", "-e", `const m = await import(${JSON.stringify(file)}); console.log(typeof m.migrateLegacyProfile, m.DB_FILE)`], { encoding: "utf8" });
+    expect(out.trim()).toBe("function terno.db");
+  });
+
   it("only Terno… paths have a legacy sibling", () => {
     expect(legacyProfilePath("/a/Application Support/Terno")).toBe("/a/Application Support/Unica");
     expect(legacyProfilePath("/a/Terno-dev-seeded")).toBe("/a/Unica-dev-seeded");
