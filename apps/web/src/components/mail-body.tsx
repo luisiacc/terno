@@ -6,6 +6,7 @@ import { Button } from "@terno/ui/components/button";
 import { setApp } from "~/state/app";
 import { mailColors, useAppearance } from "~/lib/appearance";
 import { csp, hasOwnColors, hasRemoteContent } from "~/lib/mail";
+import { splitTextQuote } from "~/lib/quote";
 
 function openLink(href: string) {
   if (!/^(https?:|mailto:)/i.test(href)) return;
@@ -140,13 +141,10 @@ function RemoteBlocked({ localMode, onLoad }: { localMode: boolean; onLoad: () =
 
 const URL_RE = /(https?:\/\/[^\s<>"')]+)/g;
 
-/** Plain-text body: quoted history folded, links clickable. */
+/** Plain-text body: trailing quoted history folded, links clickable. */
 export function TextBody({ text }: { text: string }) {
   const [showQuoted, setShowQuoted] = useState(false);
-  const lines = text.split("\n");
-  const firstQuote = lines.findIndex((l, i) => l.startsWith(">") || (/escribió:$|wrote:$/.test(l.trim()) && lines[i + 1]?.startsWith(">")));
-  const main = firstQuote > 0 ? lines.slice(0, firstQuote).join("\n").trimEnd() : text;
-  const quoted = firstQuote > 0 ? lines.slice(firstQuote).join("\n") : "";
+  const { main, quoted } = splitTextQuote(text);
   const render = (s: string) =>
     s.split(URL_RE).map((part, i) =>
       i % 2 ? (
