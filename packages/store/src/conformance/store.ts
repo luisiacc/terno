@@ -781,6 +781,22 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect((await store.debug.snapshot()).memberships.map(key).sort()).toEqual(before.map(key).sort());
       });
 
+      it("a view's scope ids and count are exactly its list, by account and by category, up to a limit", async () => {
+        const { store, acct, cat, thread } = await setup();
+        const ts = [await thread(), await thread(), await thread(), await thread({ subject: "otro" })];
+        await store.categories.add({ categoryId: cat, threadIds: ts.slice(0, 3), addedBy: "user", now: NOW });
+        await store.threads.act({ threadIds: [ts[0]!], action: "archive", signal: null, now: NOW });
+        await store.threads.act({ threadIds: [ts[1]!], action: "trash", signal: null, now: NOW });
+        const listed = async (p: { view: "inbox" | "all" | "trash"; accountId?: number; categoryId?: number }) => (await store.threads.list({ ...p, limit: 500 })).items.map((t) => t.id).sort((a, b) => a - b);
+        for (const p of [{ view: "inbox" as const }, { view: "all" as const, categoryId: cat }, { view: "inbox" as const, accountId: acct }, { view: "trash" as const, categoryId: cat }, { view: "all" as const, accountId: acct + 999 }]) {
+          const want = await listed(p);
+          expect((await store.threads.scopeIds({ ...p, limit: 1000 })).sort((a, b) => a - b), JSON.stringify(p)).toEqual(want);
+          expect(await store.threads.scopeCount({ ...p, limit: 1000 }), JSON.stringify(p)).toBe(want.length);
+        }
+        expect(await store.threads.scopeIds({ view: "all", limit: 2 })).toHaveLength(2);
+        expect(await store.threads.scopeCount({ view: "all", limit: 2 })).toBe(2);
+      });
+
       it("bulk scopes: sender scope is received mail only, not filed, not removed, outside spam and trash; counts cap at 1 000", async () => {
         const { store, acct, cat, thread } = await setup();
         const [filed, removed, a, b] = [await thread(), await thread(), await thread(), await thread()];

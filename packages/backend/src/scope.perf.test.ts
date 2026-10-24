@@ -35,9 +35,9 @@ afterAll(async () => {
 const p95 = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.max(0, Math.ceil(xs.length * 0.95) - 1)] ?? 0;
 
 /** Runs fn while sampling the event loop (max gap between 1 ms ticks) and a renderer listing its view. */
-async function underLoad(fn: () => Promise<unknown>): Promise<{ stall: number; list: number[] }> {
+async function underLoad(fn: () => Promise<unknown>, on: Backend = backend): Promise<{ stall: number; list: number[] }> {
   const [c, srv] = createMemoryTransportPair();
-  backend.connect(srv, { clientId: `load-${Math.random()}`, origin: "renderer" });
+  on.connect(srv, { clientId: `load-${Math.random()}`, origin: "renderer" });
   const client = new RpcClient(c);
   let last = performance.now();
   let stall = 0;
@@ -107,3 +107,39 @@ it("archiving every thread of a view (≥ 5,000) and undoing it: no stall over 5
     expect(r.list, r.name).toBeLessThanOrEqual(20 * BUDGET_MULTIPLIER);
   }
 }, 600_000);
+
+it("a 50,000-thread category: counted in one indexed query, acted on with no stall over 50 ms", async () => {
+  const dir50 = mkdtempSync(join(tmpdir(), "unica-scopeperf50-"));
+  const big = new Backend({ dbPath: join(dir50, "big.db"), version: "perf", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, instantSearch: false });
+  try {
+    const db = sqlDb(big.store);
+    seedDataset(db, generateDataset({ threads: 50_000, accounts: 8, seed: 9, now: NOW, bodyScale: 0.2 }), { now: NOW });
+    db.run("INSERT INTO categories (name, color, position) VALUES ('Todo', 'rose', 99)");
+    const cat = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Todo'")!.id;
+    db.run("INSERT INTO thread_categories (thread_id, category_id, added_by, added_at) SELECT id, ?, 'user', 0 FROM threads WHERE in_trash = 0 AND in_spam = 0", cat);
+    const inCat = db.get<{ c: number }>("SELECT count(*) AS c FROM thread_categories WHERE category_id = ?", cat)!.c;
+    expect(inCat).toBeGreaterThanOrEqual(45_000);
+    const [c, srv] = createMemoryTransportPair();
+    big.connect(srv, { clientId: "big", origin: "renderer" });
+    const client = new RpcClient(c);
+    const scope = { kind: "view" as const, view: "all" as const, categoryId: cat };
+    const counts: number[] = [];
+    for (let i = 0; i < 25; i++) {
+      const t = performance.now();
+      expect((await client.call("threads.scopeCount", { scope })).count).toBe(inCat);
+      counts.push(performance.now() - t);
+    }
+    const sc = { name: `count a ${inCat}-thread category (RPC)`, budgetMs: 25, p50: [...counts].sort((a, b) => a - b)[12]!, p95: p95(counts), max: Math.max(...counts), iterations: counts.length };
+    stats.push(sc);
+    let result = { total: 0 };
+    const { stall, list } = await underLoad(async () => (result = await client.call("threads.actScope", { scope, action: "markRead" })), big);
+    stats.push({ name: `mark read a ${inCat}-thread category: max event-loop stall ${stall.toFixed(1)} ms, list RPC p95 ${p95(list).toFixed(1)} ms (${list.length})`, budgetMs: 50, p50: stall, p95: stall, max: stall, iterations: list.length });
+    expect(result.total).toBe(inCat);
+    expect(sc.p95).toBeLessThanOrEqual(25 * BUDGET_MULTIPLIER);
+    expect(stall).toBeLessThanOrEqual(50 * BUDGET_MULTIPLIER);
+    expect(p95(list)).toBeLessThanOrEqual(20 * BUDGET_MULTIPLIER);
+  } finally {
+    await big.stop();
+    rmSync(dir50, { recursive: true, force: true });
+  }
+}, 900_000);

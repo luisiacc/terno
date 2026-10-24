@@ -6,7 +6,7 @@ import type {
   ThreadSummary,
   View,
 } from "@unica/core";
-import type { ListParams, Page } from "@unica/store";
+import type { ListParams, Page, ScopeParams } from "@unica/store";
 import { placeholders, type Db, type Param } from "./sqlite";
 
 export type { Cursor, ListParams, Page } from "@unica/store";
@@ -96,6 +96,36 @@ export function listThreads(db: Db, p: ListParams): Page {
     ...params,
   );
   return pageFrom(rows, p.limit);
+}
+
+/** What a view (account/category optional) is, for the id-only scope queries: index-backed, no display columns. */
+function scopeFrom(p: ScopeParams): { from: string; where: string; params: Param[] } {
+  const where = [VIEW_WHERE[p.view]];
+  const params: Param[] = [];
+  let from = "threads t";
+  if (p.categoryId !== undefined) {
+    // through the membership index (category_id, thread_id), then the thread by key
+    from = "thread_categories tc JOIN threads t ON t.id = tc.thread_id";
+    where.unshift("tc.category_id = ?");
+    params.push(p.categoryId);
+  }
+  if (p.accountId !== undefined) {
+    where.push("t.account_id = ?");
+    params.push(p.accountId);
+  }
+  return { from, where: where.join(" AND "), params };
+}
+
+/** Every thread id of a view ("select all N"), up to `limit`, in no particular order. */
+export function scopeThreadIds(db: Db, p: ScopeParams & { limit: number }): number[] {
+  const s = scopeFrom(p);
+  return db.all<{ id: number }>(`SELECT t.id FROM ${s.from} WHERE ${s.where} LIMIT ?`, ...s.params, p.limit).map((r) => r.id);
+}
+
+/** How many threads a view holds, counted (up to `limit`). */
+export function countScopeThreads(db: Db, p: ScopeParams & { limit: number }): number {
+  const s = scopeFrom(p);
+  return db.get<{ c: number }>(`SELECT count(*) AS c FROM (SELECT 1 FROM ${s.from} WHERE ${s.where} LIMIT ?)`, ...s.params, p.limit)!.c;
 }
 
 export function getSummaries(db: Db, threadIds: readonly number[]): ThreadSummary[] {

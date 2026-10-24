@@ -100,6 +100,22 @@ describe("scope actions", () => {
     expect(db.get<{ c: number }>(`SELECT count(*) AS c FROM threads WHERE id IN (${all.join(",")}) AND unread_count > 0`)!.c).toBe(0);
   });
 
+  it("a view scope is counted and enumerated from the indexes, never by hydrating list pages", async () => {
+    const { backend, db, client } = setup(600);
+    const cat = createCategory(db, "Grande", "rose").id;
+    const all = ids(db.all<{ id: number }>("SELECT id FROM threads WHERE in_trash = 0 AND in_spam = 0"));
+    await client.call("categories.addThreads", { categoryId: cat, threadIds: all });
+    let pages = 0;
+    const list = backend.store.threads.list.bind(backend.store.threads);
+    backend.store.threads.list = (p) => (pages++, list(p));
+    const scope = { kind: "view" as const, view: "all" as const, categoryId: cat };
+    expect(await client.call("threads.scopeCount", { scope })).toEqual({ count: all.length, capped: false });
+    const r = await client.call("threads.actScope", { scope, action: "star" });
+    expect(r.total).toBe(all.length);
+    expect(pages).toBe(0);
+    expect(db.get("SELECT count(*) AS c FROM threads WHERE in_trash = 0 AND in_spam = 0 AND is_starred = 0")).toEqual({ c: 0 });
+  });
+
   it("undo takes back exactly the threads the action changed, once", async () => {
     const { db, client } = setup(300);
     const inbox = ids(db.all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1"));

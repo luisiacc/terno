@@ -62,6 +62,13 @@ export interface Cursor {
   id: number;
 }
 
+/** A whole view (account/category optional), for "select all N": ids or a count, never display rows. */
+export interface ScopeParams {
+  view: View;
+  accountId?: number;
+  categoryId?: number;
+}
+
 export interface ListParams {
   view: View;
   accountId?: number;

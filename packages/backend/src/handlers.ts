@@ -4,7 +4,7 @@ import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow } f
 import type { GmailAccountConfig, ImapAccountConfig } from "@unica/mail";
 import { BackendCore as Backend } from "./core";
 import { changeOwnerTo, gmailClaim, imapClaim } from "./identity";
-import { inverseAction, progressReporter, resolveThreadScope, ScopeUndoJournal } from "./scope";
+import { countThreadScope, inverseAction, progressReporter, resolveThreadScope, ScopeUndoJournal } from "./scope";
 import { readAutoCategorize, readSettings, SettingsError, updateSettings } from "./settings";
 
 /** How a UI entry point is recorded: bulk (snackbar) adds weigh half and their content is capped per sender. */
@@ -162,10 +162,7 @@ export function createHandlers(b: Backend): Handlers {
       const changed = await actOn([...new Set(threadIds)], action, signal && ctx.origin === "renderer" ? signal : null);
       return { affected: changed.length };
     },
-    "threads.scopeCount": async ({ scope }) => {
-      const { ids, capped } = await resolveThreadScope(b, scope);
-      return { count: ids.length, capped };
-    },
+    "threads.scopeCount": ({ scope }) => countThreadScope(b, scope),
     "threads.actScope": async ({ scope, action, jobId }) => {
       const { ids, capped } = await resolveThreadScope(b, scope);
       if (capped) throw new RpcError("BAD_REQUEST", "Demasiadas conversaciones: acota la vista o la búsqueda");

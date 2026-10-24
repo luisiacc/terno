@@ -58,7 +58,7 @@ import { autoReasons, categoryStats, countScope, pendingSuggestions, predictThre
 import { startCheckpointWorker, type CheckpointWorker } from "./checkpoint";
 import { adoptProviderThread, deleteMessages, ingestMessages, recomputeThreads, setMessageBody } from "./ingest";
 import { changeOwner, claimOwner, getOwner } from "./owner";
-import { getCounts, getSummaries, getThread, listThreads, SUMMARY_COLUMNS, toSummary, type SummaryRow } from "./queries";
+import { countScopeThreads, getCounts, getSummaries, getThread, listThreads, scopeThreadIds, SUMMARY_COLUMNS, toSummary, type SummaryRow } from "./queries";
 import {
   accountStamp,
   addThreadsToCategory,
@@ -260,6 +260,8 @@ export class SqlMailStore implements MailStore {
   readonly threads: MailStore["threads"] = {
     list: async (p) => listThreads(this.db, p),
     summaries: async (ids) => getSummaries(this.db, ids),
+    scopeIds: async (p) => scopeThreadIds(this.db, p),
+    scopeCount: async (p) => countScopeThreads(this.db, p),
     get: async (id) => {
       const thread = getThread(this.db, id);
       if (!thread) return null;

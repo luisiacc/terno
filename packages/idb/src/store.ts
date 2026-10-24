@@ -96,6 +96,7 @@ import {
   listFilters,
   listRecentOps,
   listThreads,
+  scopeThreadIds,
   loadUserActions,
   markOpUnknown,
   messageDoc,
@@ -548,6 +549,8 @@ export class IdbMailStore implements MailStore {
 
   readonly threads: MailStore["threads"] = {
     list: (p) => this.early(() => listThreads(this.c, p)),
+    scopeIds: (p) => this.early(() => scopeThreadIds(this.c, p)),
+    scopeCount: (p) => this.early(() => scopeThreadIds(this.c, p).length),
     summaries: (ids) => this.early(() => summariesInOrder(this.c, ids)),
     get: async (id) => {
       await this.settled();
