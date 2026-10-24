@@ -659,6 +659,28 @@ ${ftsTriggers(true)}
  * move journal keeps each removed row with its category. Rows of earlier
  * moves came from the batch's single source.
  */
+/**
+ * v9: drafts carry their conversation, mode, Bcc, the forwarded message, the
+ * quote apart from what the user writes, their open/collapsed state and a
+ * revision. Existing drafts are format 1 (bodyText holds everything, quote
+ * included) and get their conversation from the message they reply to.
+ */
+const DRAFTS_V9 = `
+ALTER TABLE drafts ADD COLUMN thread_id INTEGER REFERENCES threads(id) ON DELETE SET NULL;
+ALTER TABLE drafts ADD COLUMN format INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE drafts ADD COLUMN mode TEXT NOT NULL DEFAULT 'new';
+ALTER TABLE drafts ADD COLUMN bcc_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE drafts ADD COLUMN subject_edited INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE drafts ADD COLUMN quoted_text TEXT NOT NULL DEFAULT '';
+ALTER TABLE drafts ADD COLUMN include_quote INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE drafts ADD COLUMN forward_of_message_id INTEGER;
+ALTER TABLE drafts ADD COLUMN ui_state TEXT NOT NULL DEFAULT 'open';
+ALTER TABLE drafts ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;
+UPDATE drafts SET mode = 'reply', thread_id = (SELECT thread_id FROM messages WHERE messages.id = drafts.in_reply_to_message_id)
+  WHERE in_reply_to_message_id IS NOT NULL;
+CREATE INDEX drafts_thread ON drafts(thread_id);
+`;
+
 const EXCLUSIVE_MOVES_V8 = `
 CREATE TABLE cat_move_rows_v8 (
   batch_id INTEGER NOT NULL REFERENCES cat_batches(id) ON DELETE CASCADE,
@@ -685,6 +707,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 6, name: "message bodies", sql: BODIES_V6 },
   { version: 7, name: "search outbox", sql: OUTBOX_V7 },
   { version: 8, name: "exclusive moves", sql: EXCLUSIVE_MOVES_V8 },
+  { version: 9, name: "drafts v2", sql: DRAFTS_V9 },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

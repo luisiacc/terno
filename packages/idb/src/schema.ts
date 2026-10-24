@@ -5,11 +5,12 @@ import { MemDb, type Committed, type ForeignKey, type Key, type Row, type Table,
  * columns, so the store commands read like their SQL counterparts), plus
  * `meta`. Logical migration ids follow the SQL ones; this adapter starts at
  * the v7 shape (bodies split, search outbox) as IndexedDB version 1; version 2
- * is SQL's v8 (the move journal keeps each removed row with its category).
+ * is SQL's v8 (the move journal keeps each removed row with its category);
+ * version 3 is SQL's v9 (drafts v2).
  */
-export const IDB_VERSION = 2;
+export const IDB_VERSION = 3;
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 8;
+export const LOGICAL_SCHEMA = 9;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -41,7 +42,7 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "op_targets", early: true, key: ["op_id", "message_id"], indexes: { ...fk("op_id"), message: ["message_id"] } },
   { name: "user_actions", key: ["id"], autoId: true },
   { name: "dismissed_suggestions", early: true, key: ["key"] },
-  { name: "drafts", early: true, key: ["id"], autoId: true, indexes: fk("account_id") },
+  { name: "drafts", early: true, key: ["id"], autoId: true, indexes: { ...fk("account_id"), ...fk("thread_id") } },
   { name: "settings", early: true, key: ["key"] },
   { name: "secrets", early: true, key: ["name"] },
   { name: "owner", early: true, key: ["id"], indexes: fk("account_id") },
@@ -77,6 +78,7 @@ export const FOREIGN_KEYS: readonly ForeignKey[] = [
   c("ops", "account_id", "accounts"),
   c("op_targets", "op_id", "ops"),
   c("drafts", "account_id", "accounts"),
+  { table: "drafts", column: "thread_id", parent: "threads", onDelete: "setNull" },
   { table: "owner", column: "account_id", parent: "accounts", onDelete: "setNull" },
   c("cls_examples", "thread_id", "threads"),
   c("cls_examples", "category_id", "categories"),
@@ -124,7 +126,10 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
     if (event.oldVersion < 1) {
       for (const t of PERSISTED) db.createObjectStore(t.name);
       db.createObjectStore("meta");
-    } else if (event.oldVersion < 2) upgradeMoveRows(open.transaction!);
+    } else {
+      if (event.oldVersion < 2) upgradeMoveRows(open.transaction!);
+      if (event.oldVersion < 3) upgradeDrafts(open.transaction!);
+    }
   };
   open.onblocked = () => {};
   try {
@@ -157,6 +162,27 @@ function upgradeMoveRows(tx: IDBTransaction): void {
         if (categoryId !== undefined) rows.put({ ...r, category_id: categoryId }, [r.batch_id as number, r.thread_id as number, categoryId]);
       }
     };
+  };
+}
+
+/**
+ * Version 3 (SQL v9): drafts v2. Existing drafts are format 1 (bodyText holds
+ * everything) and take their conversation from the message they reply to.
+ */
+function upgradeDrafts(tx: IDBTransaction): void {
+  const drafts = tx.objectStore("drafts");
+  const messages = tx.objectStore("messages");
+  const all = drafts.getAll() as IDBRequest<Row[]>;
+  all.onsuccess = () => {
+    for (const d of all.result) {
+      const v2 = { thread_id: null, format: 1, mode: "new", bcc_json: "[]", subject_edited: 0, quoted_text: "", include_quote: 0, forward_of_message_id: null, ui_state: "open", revision: 1, ...d };
+      if (d.in_reply_to_message_id == null) {
+        drafts.put(v2, d.id as number);
+        continue;
+      }
+      const m = messages.get(d.in_reply_to_message_id as number) as IDBRequest<Row | undefined>;
+      m.onsuccess = () => drafts.put({ ...v2, mode: "reply", thread_id: (m.result?.thread_id as number | undefined) ?? null }, d.id as number);
+    }
   };
 }
 

@@ -35,6 +35,7 @@ const searchCursor = cursor.extend({
   queryKey: z.string().max(5000).optional(),
 });
 const address = z.object({ name: z.string().max(300), email: z.string().email().max(320) });
+const draftAddress = address.extend({ auto: z.literal(true).optional() });
 
 export interface ThreadPage {
   items: ThreadSummary[];
@@ -179,14 +180,35 @@ export interface OpInfo {
   summary: string;
 }
 
+export const DRAFT_MODES = ["new", "reply", "replyAll", "forward"] as const;
+export type DraftMode = (typeof DRAFT_MODES)[number];
+/** a recipient of a draft; `auto` = filled in by Única (reply/reply-all/forward), not typed */
+export type DraftAddress = z.infer<typeof address> & { auto?: true };
+
+/**
+ * A draft (format 2): what the user writes (bodyText) is kept apart from the
+ * quoted original (quotedText), joined only when sent, so a restore never
+ * quotes twice. Format-1 drafts (before v9) carry everything in bodyText.
+ */
 export interface Draft {
   id: number;
+  revision: number;
+  format: 1 | 2;
   accountId: number;
-  to: z.infer<typeof address>[];
-  cc: z.infer<typeof address>[];
+  /** the conversation it belongs to (null: a new message, or its conversation is gone) */
+  threadId: number | null;
+  mode: DraftMode;
+  to: DraftAddress[];
+  cc: DraftAddress[];
+  bcc: DraftAddress[];
   subject: string;
+  subjectEdited: boolean;
   bodyText: string;
+  quotedText: string;
+  includeQuote: boolean;
   inReplyToMessageId: number | null;
+  forwardOfMessageId: number | null;
+  uiState: "open" | "collapsed";
   updatedAt: number;
 }
 
@@ -413,15 +435,25 @@ export const contract = {
       draftId: id.optional(),
     }),
   ),
-  "drafts.save": m<Draft>()(
+  /** null: the draft is gone (sent or discarded elsewhere). A stale baseRevision never overwrites: it saves a new draft. */
+  "drafts.save": m<Draft | null>()(
     z.object({
       id: id.optional(),
+      baseRevision: z.number().int().min(0).optional(),
       accountId: id,
-      to: z.array(address).max(200).default([]),
-      cc: z.array(address).max(200).default([]),
+      threadId: id.nullable().optional(),
+      mode: z.enum(DRAFT_MODES).optional(),
+      to: z.array(draftAddress).max(200).default([]),
+      cc: z.array(draftAddress).max(200).default([]),
+      bcc: z.array(draftAddress).max(200).default([]),
       subject: z.string().max(998).default(""),
+      subjectEdited: z.boolean().optional(),
       bodyText: z.string().max(5_000_000).default(""),
-      inReplyToMessageId: id.optional(),
+      quotedText: z.string().max(5_000_000).optional(),
+      includeQuote: z.boolean().optional(),
+      inReplyToMessageId: id.nullable().optional(),
+      forwardOfMessageId: id.nullable().optional(),
+      uiState: z.enum(["open", "collapsed"]).optional(),
     }),
   ),
   "drafts.list": m<Draft[]>()(empty),

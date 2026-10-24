@@ -1143,6 +1143,75 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       });
     });
 
+    describe("drafts (v2)", () => {
+      const to = [{ name: "Yuki", email: "yuki@example.com", auto: true }];
+      it("a new draft is format 2 at revision 1; a reply takes its conversation and mode from the message; everything survives a reopen", async () => {
+        let store = await fresh();
+        const [a] = await withAccounts(store);
+        await ingest(store, [msg({ accountId: a!, providerMsgId: "orig", subject: "Propuesta" })]);
+        const thread = await threadOf(store, "orig");
+        const origId = (await store.debug.snapshot()).messages.find((m) => m.providerMsgId === "orig")!.id;
+        const fresh1 = (await store.drafts.save({ accountId: a!, to: [], cc: [], subject: "", bodyText: "hola" }, NOW))!;
+        expect(fresh1).toMatchObject({ format: 2, revision: 1, mode: "new", thread_id: null, include_quote: 0, ui_state: "open" });
+        const reply = (await store.drafts.save(
+          { accountId: a!, to, cc: [], bcc: [{ name: "", email: "jefe@example.com" }], subject: "Re: Propuesta", bodyText: "Sí, va.", quotedText: "> Propuesta", includeQuote: true, inReplyToMessageId: origId, uiState: "collapsed" },
+          NOW,
+        ))!;
+        expect(reply).toMatchObject({ mode: "reply", thread_id: thread, quoted_text: "> Propuesta", include_quote: 1, ui_state: "collapsed" });
+        expect(JSON.parse(reply.to_json)).toEqual(to);
+        expect(JSON.parse(reply.bcc_json)).toEqual([{ name: "", email: "jefe@example.com" }]);
+        store = await harness.reopen(store);
+        open.push(store);
+        const listed = await store.drafts.list();
+        expect(listed.find((d) => d.id === reply.id)).toEqual(reply);
+        expect(listed.find((d) => d.id === fresh1.id)).toEqual(fresh1);
+      });
+
+      it("an update bumps the revision and keeps what it doesn't mention; an edit from a replaced revision becomes its own draft", async () => {
+        const store = await fresh();
+        const [a] = await withAccounts(store);
+        const d = (await store.drafts.save({ accountId: a!, mode: "forward", forwardOfMessageId: null, to: [], cc: [], subject: "Fwd: x", bodyText: "uno", quotedText: "---- reenviado ----", includeQuote: true }, NOW))!;
+        const d2 = (await store.drafts.save({ id: d.id, baseRevision: 1, accountId: a!, to, cc: [], subject: "Fwd: x", bodyText: "uno dos" }, NOW + 1))!;
+        expect(d2).toMatchObject({ id: d.id, revision: 2, mode: "forward", quoted_text: "---- reenviado ----", include_quote: 1, body_text: "uno dos" });
+        // another writer is at revision 2; an edit made on revision 1 must not overwrite it
+        const stale = (await store.drafts.save({ id: d.id, baseRevision: 1, accountId: a!, to: [], cc: [], subject: "Fwd: x", bodyText: "versión vieja" }, NOW + 2))!;
+        expect(stale.id).not.toBe(d.id);
+        expect(stale).toMatchObject({ revision: 1, format: 2, body_text: "versión vieja" });
+        expect((await store.drafts.list()).find((x) => x.id === d.id)!.body_text).toBe("uno dos");
+      });
+
+      it("a save for a draft that is gone (sent or discarded) says so instead of bringing it back", async () => {
+        const store = await fresh();
+        const [a] = await withAccounts(store);
+        const d = (await store.drafts.save({ accountId: a!, to, cc: [], subject: "s", bodyText: "b" }, NOW))!;
+        await store.drafts.delete(d.id);
+        expect(await store.drafts.save({ id: d.id, baseRevision: 1, accountId: a!, to, cc: [], subject: "s", bodyText: "b2" }, NOW)).toBeNull();
+        expect(await store.drafts.list()).toEqual([]);
+      });
+
+      it("sending a draft deletes it in the same command", async () => {
+        const store = await fresh();
+        const [a] = await withAccounts(store);
+        const d = (await store.drafts.save({ accountId: a!, to, cc: [], subject: "Hola", bodyText: "texto" }, NOW))!;
+        await store.compose.queueSend({ accountId: a!, to: [{ name: "Yuki", email: "yuki@example.com" }], cc: [], bcc: [], subject: "Hola", bodyText: "texto", draftId: d.id, recordReply: false, now: NOW });
+        expect(await store.drafts.list()).toEqual([]);
+      });
+
+      it("a draft whose conversation disappears stays, as an orphan (thread null)", async () => {
+        const store = await fresh();
+        const [a] = await withAccounts(store);
+        await ingest(store, [msg({ accountId: a!, providerMsgId: "gone", subject: "Se irá" })]);
+        const m = (await store.debug.snapshot()).messages.find((x) => x.providerMsgId === "gone")!;
+        const d = (await store.drafts.save({ accountId: a!, to, cc: [], subject: "Re: Se irá", bodyText: "texto", inReplyToMessageId: m.id }, NOW))!;
+        expect(d.thread_id).toBe(m.threadId);
+        await store.sync.remove([m.id]);
+        expect((await store.debug.snapshot()).threads.find((t) => t.id === m.threadId)).toBeUndefined();
+        const after = (await store.drafts.list()).find((x) => x.id === d.id)!;
+        expect(after.thread_id).toBeNull();
+        expect(after.body_text).toBe("texto");
+      });
+    });
+
     describe("durability and migrations", () => {
       it("what a command committed survives a reopen", async () => {
         let store = await fresh();

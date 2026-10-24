@@ -26,7 +26,7 @@ import {
   type View,
 } from "@unica/core";
 import type { OwnerIdentity } from "@unica/core/rpc";
-import { AWAITING_AUTH, type DraftRow, type IncomingMessage, type ListParams, type ModelDelta, type OpRow, type OwnerClaim, type MessageState, type Page, type ScopeParams, type SearchMessageDoc, type SearchThreadDoc } from "@unica/store";
+import { AWAITING_AUTH, type DraftInput, type DraftRow, type IncomingMessage, type ListParams, type ModelDelta, type OpRow, type OwnerClaim, type MessageState, type Page, type ScopeParams, type SearchMessageDoc, type SearchThreadDoc } from "@unica/store";
 import type { MemDb, Row, Table } from "./mem";
 
 /**
@@ -1121,18 +1121,55 @@ export function loadUserActions(c: Ctx, since: number) {
 
 // ───────────────────────────── drafts ─────────────────────────────
 
-const draftRow = (r: R): DraftRow => ({ id: r.id, account_id: r.account_id, to_json: r.to_json, cc_json: r.cc_json, subject: r.subject, body_text: r.body_text, in_reply_to_message_id: r.in_reply_to_message_id, updated_at: r.updated_at });
+const draftRow = (r: R): DraftRow => ({
+  id: r.id,
+  account_id: r.account_id,
+  thread_id: r.thread_id ?? null,
+  format: r.format ?? 1,
+  mode: r.mode ?? "new",
+  to_json: r.to_json,
+  cc_json: r.cc_json,
+  bcc_json: r.bcc_json ?? "[]",
+  subject: r.subject,
+  subject_edited: r.subject_edited ?? 0,
+  body_text: r.body_text,
+  quoted_text: r.quoted_text ?? "",
+  include_quote: r.include_quote ?? 0,
+  in_reply_to_message_id: r.in_reply_to_message_id ?? null,
+  forward_of_message_id: r.forward_of_message_id ?? null,
+  ui_state: r.ui_state ?? "open",
+  revision: r.revision ?? 1,
+  updated_at: r.updated_at,
+});
 
-export function saveDraft(c: Ctx, d: { id?: number; accountId: number; to: unknown[]; cc: unknown[]; subject: string; bodyText: string; inReplyToMessageId?: number }, now: number): DraftRow {
+/** The same contract as SQL's saveDraft: revisions, stale edits become new drafts, null when gone. */
+export function saveDraft(c: Ctx, d: DraftInput, now: number): DraftRow | null {
   const drafts = T(c, "drafts");
-  const values = { account_id: d.accountId, to_json: JSON.stringify(d.to), cc_json: JSON.stringify(d.cc), subject: d.subject, body_text: d.bodyText, in_reply_to_message_id: d.inReplyToMessageId ?? null, updated_at: now };
-  if (d.id !== undefined) {
-    const r = drafts.get(d.id);
-    return draftRow(r ? drafts.update(r, values) : { id: d.id, ...values });
-  }
-  const row: R = { id: undefined, ...values };
-  drafts.insert(row);
-  return draftRow(row);
+  const row = d.id !== undefined ? drafts.get(d.id) : undefined;
+  if (d.id !== undefined && !row) return null;
+  const inReplyTo = d.inReplyToMessageId !== undefined ? d.inReplyToMessageId : (row?.in_reply_to_message_id ?? null);
+  const replyThread = inReplyTo ? ((T(c, "messages").get(inReplyTo)?.thread_id as number | undefined) ?? null) : null;
+  const values = {
+    account_id: d.accountId,
+    thread_id: d.threadId !== undefined ? d.threadId : row ? (row.thread_id ?? null) : replyThread,
+    mode: d.mode ?? row?.mode ?? (inReplyTo ? "reply" : "new"),
+    to_json: JSON.stringify(d.to),
+    cc_json: JSON.stringify(d.cc),
+    bcc_json: d.bcc !== undefined ? JSON.stringify(d.bcc) : (row?.bcc_json ?? "[]"),
+    subject: d.subject,
+    subject_edited: d.subjectEdited !== undefined ? Number(d.subjectEdited) : (row?.subject_edited ?? 0),
+    body_text: d.bodyText,
+    quoted_text: d.quotedText ?? row?.quoted_text ?? "",
+    include_quote: d.includeQuote !== undefined ? Number(d.includeQuote) : (row?.include_quote ?? 0),
+    in_reply_to_message_id: inReplyTo,
+    forward_of_message_id: d.forwardOfMessageId !== undefined ? d.forwardOfMessageId : (row?.forward_of_message_id ?? null),
+    ui_state: d.uiState ?? row?.ui_state ?? "open",
+    updated_at: now,
+  };
+  if (row && (d.baseRevision === undefined || d.baseRevision === row.revision)) return draftRow(drafts.update(row, { ...values, revision: (row.revision ?? 1) + 1 }));
+  const fresh: R = { id: undefined, ...values, format: 2, revision: 1 };
+  drafts.insert(fresh);
+  return draftRow(fresh);
 }
 
 export function listDrafts(c: Ctx): DraftRow[] {

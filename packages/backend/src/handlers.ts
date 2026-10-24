@@ -1,5 +1,5 @@
-import { RpcError, type Handlers } from "@unica/core/rpc";
-import { COUNT_CAP, proposeLearnedFilters, type Address, type ThreadAction } from "@unica/core";
+import { RpcError, type Draft, type DraftAddress, type Handlers } from "@unica/core/rpc";
+import { COUNT_CAP, proposeLearnedFilters, type ThreadAction } from "@unica/core";
 import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type MessageState } from "@unica/store";
 import type { GmailAccountConfig, ImapAccountConfig } from "@unica/mail";
 import { BackendCore as Backend } from "./core";
@@ -15,15 +15,25 @@ const ADDED_BY = { picker: "user", dnd: "user", suggestion: "suggestion", snackb
 
 const ACCOUNT_COLORS = ["indigo", "emerald", "amber", "cyan", "violet", "rose", "lime", "slate"];
 
-function toDraft(r: DraftRow) {
+function toDraft(r: DraftRow): Draft {
   return {
     id: r.id,
+    revision: r.revision,
+    format: r.format === 1 ? 1 : 2,
     accountId: r.account_id,
-    to: JSON.parse(r.to_json) as Address[],
-    cc: JSON.parse(r.cc_json) as Address[],
+    threadId: r.thread_id,
+    mode: r.mode,
+    to: JSON.parse(r.to_json) as DraftAddress[],
+    cc: JSON.parse(r.cc_json) as DraftAddress[],
+    bcc: JSON.parse(r.bcc_json) as DraftAddress[],
     subject: r.subject,
+    subjectEdited: r.subject_edited === 1,
     bodyText: r.body_text,
+    quotedText: r.quoted_text,
+    includeQuote: r.include_quote === 1,
     inReplyToMessageId: r.in_reply_to_message_id,
+    forwardOfMessageId: r.forward_of_message_id,
+    uiState: r.ui_state,
     updatedAt: r.updated_at,
   };
 }
@@ -388,7 +398,10 @@ export function createHandlers(b: Backend): Handlers {
       return { opId, threadId };
     },
 
-    "drafts.save": async (p) => toDraft(await store.drafts.save(p, b.now())),
+    "drafts.save": async (p) => {
+      const saved = await store.drafts.save(p, b.now());
+      return saved ? toDraft(saved) : null;
+    },
     "drafts.list": async () => (await store.drafts.list()).map(toDraft),
     "drafts.delete": async ({ id }) => {
       await store.drafts.delete(id);

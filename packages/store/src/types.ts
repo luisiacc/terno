@@ -192,10 +192,45 @@ export interface OwnerClaim {
 export interface DraftRow {
   id: number;
   account_id: number;
+  /** the conversation (null: new message, or the conversation is gone) */
+  thread_id: number | null;
+  /** 1: before v9, bodyText holds everything; 2: the quote is apart */
+  format: number;
+  mode: "new" | "reply" | "replyAll" | "forward";
   to_json: string;
   cc_json: string;
+  bcc_json: string;
   subject: string;
+  subject_edited: number;
   body_text: string;
+  quoted_text: string;
+  include_quote: number;
   in_reply_to_message_id: number | null;
+  forward_of_message_id: number | null;
+  ui_state: "open" | "collapsed";
+  revision: number;
   updated_at: number;
+}
+
+/** What drafts.save writes. Omitted fields keep their stored value on an update, their default on an insert. */
+export interface DraftInput {
+  id?: number;
+  /** the revision this edit was made on: a different stored one means another writer, so this becomes a new draft */
+  baseRevision?: number;
+  accountId: number;
+  /** undefined: derived from inReplyToMessageId's conversation */
+  threadId?: number | null;
+  /** undefined: "reply" with inReplyToMessageId, else "new" */
+  mode?: DraftRow["mode"];
+  to: unknown[];
+  cc: unknown[];
+  bcc?: unknown[];
+  subject: string;
+  subjectEdited?: boolean;
+  bodyText: string;
+  quotedText?: string;
+  includeQuote?: boolean;
+  inReplyToMessageId?: number | null;
+  forwardOfMessageId?: number | null;
+  uiState?: "open" | "collapsed";
 }

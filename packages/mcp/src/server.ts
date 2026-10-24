@@ -222,7 +222,8 @@ export function createMcpServer(app: AppConnection, version = "0.1.0"): McpServe
     async (a) => {
       try {
         const d = await (await app.get()).call("drafts.save", { accountId: a.accountId, to: a.to, cc: a.cc, subject: a.subject, bodyText: a.body, inReplyToMessageId: a.inReplyToMessageId });
-        return text({ draftId: d.id, note: "Draft saved. The user can review it in Única." });
+        // a new draft (no id given) is always saved
+        return text({ draftId: d!.id, note: "Draft saved. The user can review it in Única." });
       } catch (e) {
         return failure(e);
       }

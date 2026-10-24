@@ -119,6 +119,33 @@ describe("IndexedDB version 2 (SQL v8)", () => {
   });
 });
 
+describe("IndexedDB version 3 (SQL v9): drafts v2", () => {
+  for (const from of [1, 2]) {
+    it(`upgrades a version-${from} database's drafts to format 1 with their conversation`, async () => {
+      const name = `drafts-v${from}-${Date.now()}`;
+      const req = (r: IDBRequest | IDBOpenDBRequest) => new Promise((resolve, reject) => ((r.onsuccess = () => resolve(r.result)), (r.onerror = () => reject(r.error))));
+      const old = indexedDB.open(databaseName(name), from);
+      old.onupgradeneeded = () => {
+        for (const t of TABLES.filter((t) => !t.memoryOnly)) old.result.createObjectStore(t.name);
+        old.result.createObjectStore("meta");
+        const tx = old.transaction!;
+        tx.objectStore("messages").put({ id: 40, thread_id: 7, account_id: 1 }, 40);
+        tx.objectStore("drafts").put({ id: 1, account_id: 1, to_json: "[]", cc_json: "[]", subject: "Re: x", body_text: "Sí.\n> hola", in_reply_to_message_id: 40, updated_at: 5 }, 1);
+        tx.objectStore("drafts").put({ id: 2, account_id: 1, to_json: "[]", cc_json: "[]", subject: "Nuevo", body_text: "texto", in_reply_to_message_id: null, updated_at: 6 }, 2);
+      };
+      ((await req(old)) as IDBDatabase).close();
+      const db = await openIdb(indexedDB, name);
+      expect(db.version).toBe(IDB_VERSION);
+      const rows = (await req(db.transaction("drafts").objectStore("drafts").getAll())) as Record<string, unknown>[];
+      expect(rows.map((r) => ({ id: r.id, format: r.format, mode: r.mode, thread_id: r.thread_id, body_text: r.body_text, quoted_text: r.quoted_text, include_quote: r.include_quote, revision: r.revision }))).toEqual([
+        { id: 1, format: 1, mode: "reply", thread_id: 7, body_text: "Sí.\n> hola", quoted_text: "", include_quote: 0, revision: 1 },
+        { id: 2, format: 1, mode: "new", thread_id: null, body_text: "texto", quoted_text: "", include_quote: 0, revision: 1 },
+      ]);
+      db.close();
+    });
+  }
+});
+
 describe("an undo of a version-1 move left half-restored", () => {
   it("finishes after the upgrade: the legacy source counts as touched, the journal replaces what is there", async () => {
     const name = `legacy-restore-${Date.now()}`;

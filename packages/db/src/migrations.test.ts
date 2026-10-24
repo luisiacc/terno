@@ -306,3 +306,26 @@ describe("migration v8: an undo of a v7 move left half-restored", () => {
     );
   });
 });
+
+describe("migration v9: drafts v2", () => {
+  it("keeps every v8 draft as format 1 (its text untouched, no separate quote) and gives replies their conversation", () => {
+    const dir = mkdtempSync(join(tmpdir(), "unica-mig9-"));
+    dirs.push(dir);
+    const db = new Db(nodeSqliteDriver, join(dir, "v8.db"));
+    dbs.push(db);
+    for (const m of MIGRATIONS.filter((m) => m.version <= 8)) db.exec(m.sql);
+    db.exec("PRAGMA user_version = 8");
+    const data = generateDataset({ threads: 3, accounts: 1, seed: 9, now: Date.UTC(2026, 9, 22) });
+    db.run("INSERT INTO accounts (id, kind, email, display_name, provider_config, created_at) VALUES (1, 'imap', 'yo@x.mx', '', '{}', 0)");
+    ingestMessages(db, data.messages.map((m) => ({ ...m, accountId: 1 })));
+    const m = db.get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id LIMIT 1")!;
+    const quoted = "Sí.\n\nEl 22 oct, Ana escribió:\n> hola";
+    db.run("INSERT INTO drafts (id, account_id, to_json, cc_json, subject, body_text, in_reply_to_message_id, updated_at) VALUES (1, 1, '[]', '[]', 'Re: x', ?, ?, 5)", quoted, m.id);
+    db.run("INSERT INTO drafts (id, account_id, to_json, cc_json, subject, body_text, in_reply_to_message_id, updated_at) VALUES (2, 1, '[]', '[]', 'Nuevo', 'texto', NULL, 6)");
+    expect(migrate(db)).toEqual({ from: 8, to: SCHEMA_VERSION });
+    expect(db.all("SELECT id, format, mode, thread_id, body_text, quoted_text, include_quote, revision, ui_state, bcc_json FROM drafts ORDER BY id")).toEqual([
+      { id: 1, format: 1, mode: "reply", thread_id: m.thread_id, body_text: quoted, quoted_text: "", include_quote: 0, revision: 1, ui_state: "open", bcc_json: "[]" },
+      { id: 2, format: 1, mode: "new", thread_id: null, body_text: "texto", quoted_text: "", include_quote: 0, revision: 1, ui_state: "open", bcc_json: "[]" },
+    ]);
+  });
+});

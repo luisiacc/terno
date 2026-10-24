@@ -28,6 +28,7 @@ import type {
   AddedBy,
   ClassifyResult,
   Cursor,
+  DraftInput,
   DraftRow,
   ExampleKey,
   FlagUpdate,
@@ -356,7 +357,8 @@ export interface MailStore {
   };
 
   drafts: {
-    save(d: { id?: number; accountId: number; to: unknown[]; cc: unknown[]; subject: string; bodyText: string; inReplyToMessageId?: number }, now: number): Promise<DraftRow>;
+    /** null: `id` no longer exists (sent or deleted); a stale baseRevision inserts a new draft instead of overwriting */
+    save(d: DraftInput, now: number): Promise<DraftRow | null>;
     list(): Promise<DraftRow[]>;
     delete(id: number): Promise<void>;
   };

@@ -10,8 +10,8 @@ import type {
   UserActionKind,
 } from "@unica/core";
 import { addToCategory, removeFromCategory, type AddedBy } from "./categorize";
-import { AWAITING_AUTH, type DraftRow, type OpRow } from "@unica/store";
-import type { Db } from "./sqlite";
+import { AWAITING_AUTH, type DraftInput, type DraftRow, type OpRow } from "@unica/store";
+import type { Db, Param } from "./sqlite";
 
 export type { DraftRow, OpRow } from "@unica/store";
 
@@ -578,33 +578,42 @@ export function deleteSecret(db: Db, name: string): void {
 // ───────────────────────────── drafts ─────────────────────────────
 
 
-export function saveDraft(
-  db: Db,
-  d: { id?: number; accountId: number; to: unknown[]; cc: unknown[]; subject: string; bodyText: string; inReplyToMessageId?: number },
-  now = Date.now(),
-): DraftRow {
-  if (d.id !== undefined) {
-    db.run(
-      "UPDATE drafts SET account_id = ?, to_json = ?, cc_json = ?, subject = ?, body_text = ?, in_reply_to_message_id = ?, updated_at = ? WHERE id = ?",
-      d.accountId,
-      JSON.stringify(d.to),
-      JSON.stringify(d.cc),
-      d.subject,
-      d.bodyText,
-      d.inReplyToMessageId ?? null,
-      now,
-      d.id,
-    );
-    return db.get<DraftRow>("SELECT * FROM drafts WHERE id = ?", d.id)!;
+/**
+ * Saves a draft (see DraftInput): an insert starts at revision 1 in format 2;
+ * an update bumps the revision, unless the stored one isn't the one the edit
+ * was made on (another writer), in which case the edit becomes a new draft.
+ * null: the draft no longer exists (sent or discarded).
+ */
+export function saveDraft(db: Db, d: DraftInput, now = Date.now()): DraftRow | null {
+  const row = d.id !== undefined ? db.get<DraftRow>("SELECT * FROM drafts WHERE id = ?", d.id) : undefined;
+  if (d.id !== undefined && !row) return null;
+  const replyThread = (msgId: number | null | undefined) => (msgId ? (db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", msgId)?.thread_id ?? null) : null);
+  const inReplyTo = d.inReplyToMessageId !== undefined ? d.inReplyToMessageId : (row?.in_reply_to_message_id ?? null);
+  const values = {
+    account_id: d.accountId,
+    thread_id: d.threadId !== undefined ? d.threadId : row ? row.thread_id : replyThread(inReplyTo),
+    mode: d.mode ?? row?.mode ?? (inReplyTo ? "reply" : "new"),
+    to_json: JSON.stringify(d.to),
+    cc_json: JSON.stringify(d.cc),
+    bcc_json: d.bcc !== undefined ? JSON.stringify(d.bcc) : (row?.bcc_json ?? "[]"),
+    subject: d.subject,
+    subject_edited: d.subjectEdited !== undefined ? Number(d.subjectEdited) : (row?.subject_edited ?? 0),
+    body_text: d.bodyText,
+    quoted_text: d.quotedText ?? row?.quoted_text ?? "",
+    include_quote: d.includeQuote !== undefined ? Number(d.includeQuote) : (row?.include_quote ?? 0),
+    in_reply_to_message_id: inReplyTo,
+    forward_of_message_id: d.forwardOfMessageId !== undefined ? d.forwardOfMessageId : (row?.forward_of_message_id ?? null),
+    ui_state: d.uiState ?? row?.ui_state ?? "open",
+  };
+  const cols = Object.keys(values);
+  if (row && (d.baseRevision === undefined || d.baseRevision === row.revision)) {
+    db.run(`UPDATE drafts SET ${cols.map((c) => `${c} = ?`).join(", ")}, revision = revision + 1, updated_at = ? WHERE id = ?`, ...(Object.values(values) as Param[]), now, row.id);
+    return db.get<DraftRow>("SELECT * FROM drafts WHERE id = ?", row.id)!;
   }
+  // new (or edited from a revision another writer replaced): its own draft, format 2
   const id = db.run(
-    "INSERT INTO drafts (account_id, to_json, cc_json, subject, body_text, in_reply_to_message_id, updated_at) VALUES (?,?,?,?,?,?,?)",
-    d.accountId,
-    JSON.stringify(d.to),
-    JSON.stringify(d.cc),
-    d.subject,
-    d.bodyText,
-    d.inReplyToMessageId ?? null,
+    `INSERT INTO drafts (${cols.join(", ")}, format, revision, updated_at) VALUES (${cols.map(() => "?").join(", ")}, 2, 1, ?)`,
+    ...(Object.values(values) as Param[]),
     now,
   ).lastInsertRowid;
   return db.get<DraftRow>("SELECT * FROM drafts WHERE id = ?", id)!;
