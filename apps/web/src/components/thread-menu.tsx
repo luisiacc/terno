@@ -138,7 +138,8 @@ export function ThreadMenu({ children }: { children: ReactElement }) {
           const row = Number(el.dataset.threadId);
           const target = targetFor(row);
           useMenuTarget.setState(target);
-          setRule("menu-target", `${rowSelector([row])}{box-shadow:inset 0 0 0 2px var(--ring)}`);
+          // the ring follows the row's inset, rounded selection shape
+          setRule("menu-target", `${rowSelector([row], "::before")}{box-shadow:inset 0 0 0 2px var(--ring)}`);
         }}
       />
       <ContextMenuContent className="w-64" data-testid="thread-menu">

@@ -40,14 +40,14 @@ test.describe("context menu on one thread", () => {
     await expect(item(page, "menu-reply")).toBeVisible();
     await expect(item(page, "menu-unread")).toHaveCount(0);
     await expect(item(page, "menu-read")).toContainText("⇧I");
-    // the row is outlined while the menu is up; the selection didn't move to it
-    expect(await row(page, id).evaluate((e) => getComputedStyle(e).boxShadow)).not.toBe("none");
+    // the row's inset selection shape is outlined while the menu is up; the selection didn't move to it
+    expect(await row(page, id).evaluate((e) => getComputedStyle(e, "::before").boxShadow)).not.toBe("none");
     await expect(row(page, id)).not.toHaveAttribute("aria-selected", "true");
     await item(page, "menu-read").click();
     await expect(menu(page)).toBeHidden();
     await expect(row(page, id)).not.toHaveAttribute("data-unread");
     await expect.poll(() => flags(server, id).unread_count).toBe(0);
-    expect(await row(page, id).evaluate((e) => getComputedStyle(e).boxShadow)).toBe("none");
+    expect(await row(page, id).evaluate((e) => getComputedStyle(e, "::before").boxShadow)).toBe("none");
 
     await rightClick(page, row(page, id));
     await item(page, "menu-star").click();

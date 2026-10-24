@@ -99,6 +99,117 @@ test("holding j: every move commits within a frame and the DOM stays bounded", a
   expect(await page.locator("[data-cursor]").getAttribute("data-thread-id")).not.toBeNull();
 });
 
+/**
+ * Frame timing while something runs: every rAF interval, plus the
+ * long-animation-frame entries Chromium reports (frames > 50 ms).
+ */
+async function startFrames(page: import("@playwright/test").Page) {
+  await page.evaluate(() => {
+    const w = window as unknown as { __frames: { deltas: number[]; loaf: number; stop: boolean; obs?: PerformanceObserver } };
+    w.__frames = { deltas: [], loaf: 0, stop: false };
+    let last = 0;
+    const tick = (t: number) => {
+      if (last) w.__frames.deltas.push(t - last);
+      last = t;
+      if (!w.__frames.stop) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    try {
+      w.__frames.obs = new PerformanceObserver((l) => (w.__frames.loaf += l.getEntries().length));
+      w.__frames.obs.observe({ type: "long-animation-frame" });
+    } catch {
+      /* no LoAF: the rAF intervals still bound the longest frame */
+    }
+  });
+}
+async function stopFrames(page: import("@playwright/test").Page): Promise<{ deltas: number[]; loaf: number }> {
+  return page.evaluate(() => {
+    const w = window as unknown as { __frames: { deltas: number[]; loaf: number; stop: boolean; obs?: PerformanceObserver } };
+    w.__frames.stop = true;
+    w.__frames.obs?.disconnect();
+    return { deltas: w.__frames.deltas, loaf: w.__frames.loaf };
+  });
+}
+/** Frame interval p95 ≤ 20 ms and no frame longer than 50 ms. */
+function frameGate(label: string, f: { deltas: number[]; loaf: number }) {
+  const s = stat(`${label}: frame interval`, 20, f.deltas);
+  stats.push({ name: `${label}: long animation frames ${f.loaf}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+  expect(s.p95, `${label} frame p95`).toBeLessThanOrEqual(20 * MULT);
+  expect(s.max, `${label} longest frame`).toBeLessThanOrEqual(50 * MULT);
+}
+async function setDensity(page: import("@playwright/test").Page, server: import("../../backend-dev/src/server").DevServer, density: "comfortable" | "compact") {
+  await server.backend.server.invoke("settings.update", { density }, { clientId: "setup", origin: "dev" as const });
+  await page.reload();
+  await page.locator("[data-ready]").waitFor();
+  await rows(page).first().waitFor();
+}
+
+for (const density of ["comfortable", "compact"] as const) {
+  test(`sustained j at key-repeat rate (${density}): frames stay smooth and the selection keeps up`, async ({ app: page, server }) => {
+    await setDensity(page, server, density);
+    await expect(page.locator(`[data-testid=thread-row]`).first()).toHaveCSS("height", density === "compact" ? "40px" : "68px");
+    await page.evaluate(() => {
+      const w = window as unknown as { __moves: number };
+      w.__moves = 0;
+      new MutationObserver((records) => {
+        for (const r of records) if ((r.target as Element).hasAttribute("data-cursor")) w.__moves++;
+      }).observe(document.querySelector("[role=listbox]")!, { attributes: true, subtree: true, attributeFilter: ["data-cursor"] });
+    });
+    await startFrames(page);
+    // 300 presses at macOS's default key repeat (~30/s), without waiting for each one
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          let n = 0;
+          const id = setInterval(() => {
+            document.dispatchEvent(new KeyboardEvent("keydown", { key: "j", code: "KeyJ", bubbles: true }));
+            if (++n === 300) {
+              clearInterval(id);
+              setTimeout(resolve, 200);
+            }
+          }, 33);
+        }),
+    );
+    const f = await stopFrames(page);
+    const moves = await page.evaluate(() => (window as unknown as { __moves: number }).__moves);
+    stats.push({ name: `j at key repeat (${density}): selection moves ${moves}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+    expect(moves).toBeGreaterThanOrEqual(300);
+    expect(await rows(page).count()).toBeLessThanOrEqual(60);
+    frameGate(`j at key repeat (${density})`, f);
+  });
+
+  test(`continuous scrolling across 2,000 threads (${density}): frames stay smooth, the DOM stays bounded`, async ({ app: page, server }) => {
+    await setDensity(page, server, density);
+    await page.getByTestId("nav-all").click();
+    await expect(page.getByTestId("list-title")).toHaveText("Todo el correo");
+    const rowH = density === "compact" ? 40 : 68;
+    await expect(rows(page).first()).toHaveCSS("height", `${rowH}px`);
+    await startFrames(page);
+    const r = await page.evaluate(async (h) => {
+      const scroller = document.querySelector("[role=listbox]") as HTMLElement;
+      const target = 2000 * h;
+      const perFrame = target / 180; // ~3 s at 60 Hz, as a fast trackpad fling
+      let maxRows = 0;
+      const t0 = performance.now();
+      await new Promise<void>((resolve, reject) => {
+        const step = () => {
+          if (performance.now() - t0 > 20_000) return reject(new Error(`stuck at ${scroller.scrollTop}px`));
+          scroller.scrollTop = Math.min(scroller.scrollTop + perFrame, scroller.scrollHeight);
+          maxRows = Math.max(maxRows, document.querySelectorAll("[data-testid=thread-row]").length);
+          if (scroller.scrollTop + scroller.clientHeight >= target) resolve();
+          else requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      });
+      return { maxRows, ms: performance.now() - t0 };
+    }, rowH);
+    const f = await stopFrames(page);
+    stats.push({ name: `scroll 2,000 (${density}): ${Math.round(r.ms)} ms, max DOM rows ${r.maxRows}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+    expect(r.maxRows).toBeLessThanOrEqual(80);
+    frameGate(`continuous scroll (${density})`, f);
+  });
+}
+
 test("typing a search: each keystroke renders its results fast", async ({ app: page }) => {
   await page.evaluate(() => {
     const w = window as unknown as { __search: { started: Map<string, number>; done: Map<string, number> } };

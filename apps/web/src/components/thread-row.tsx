@@ -60,17 +60,21 @@ export const ThreadRow = memo(function ThreadRow({ thread: t, top, height, compa
       onMouseDown={(e) => e.button === 0 && pressRow(t.id, { meta: e.metaKey, ctrl: e.ctrlKey, shift: e.shiftKey })}
       onClick={(e) => !e.metaKey && !e.ctrlKey && !e.shiftKey && releaseRow(t.id)}
       className={cn(
-        "absolute left-0 w-full cursor-default border-b border-border/60 px-4 select-none",
+        "group/row absolute left-0 w-full cursor-default px-5 select-none",
         "flex flex-col justify-center",
-        selected ? "bg-row-selected text-row-selected-foreground" : checked ? "bg-accent" : "hover:bg-row-hover",
+        // the selection is an inset, rounded shape; one hairline separator, hidden under it
+        "before:absolute before:inset-x-2 before:inset-y-px before:rounded-md",
+        "after:absolute after:right-4 after:bottom-0 after:left-5 after:h-(--hairline-w) after:bg-hairline",
+        // and above it (rows render in list order, so the next sibling is the next row)
+        "[&:has(+[data-cursor])]:after:hidden [&:has(+[data-checked])]:after:hidden",
+        selected ? "text-row-selected-foreground before:bg-row-selected after:hidden" : checked ? "before:bg-accent after:hidden" : "hover:before:bg-row-hover",
       )}
       style={{ transform: `translateY(${top}px)`, height }}
     >
-      {selected && <span className="absolute inset-y-0 left-0 w-0.5 bg-row-rail" />}
-      <span className={cn("absolute top-1/2 left-1.5 size-1.5 -translate-y-1/2 rounded-full bg-unread", !t.unread && "invisible")} />
-      <div className="flex min-w-0 items-center gap-2">
+      <span className={cn("absolute top-1/2 left-[11px] size-1.5 -translate-y-1/2 rounded-full bg-unread", !t.unread && "invisible")} />
+      <div className="relative flex min-w-0 items-center gap-2">
         <span data-testid="row-from" className={cn("min-w-0 truncate text-sm", t.unread ? "font-semibold" : "font-normal text-foreground")}>{t.fromName}</span>
-        {t.messageCount > 1 && <span className="font-mono text-2xs text-muted-foreground tabular">{t.messageCount}</span>}
+        {t.messageCount > 1 && <span className="text-xs text-muted-foreground tabular">{t.messageCount}</span>}
         {compact && (
           <span className={cn("min-w-0 flex-1 truncate text-sm", t.unread ? "text-foreground" : "text-muted-foreground")}>
             {t.subject} <span className="text-muted-foreground">— {t.snippet}</span>
@@ -83,11 +87,11 @@ export const ThreadRow = memo(function ThreadRow({ thread: t, top, height, compa
           {t.hasAttachments && <Paperclip className="size-3 text-muted-foreground" />}
           {t.starred && <Star className="size-3 fill-star text-star" />}
           {accountColor && <span data-testid="account-bar" className={cn("h-3 w-0.5 rounded-full", ACCOUNT_BAR[accountColor])} />}
-          <span className={cn("font-mono text-2xs tabular", t.unread ? "text-foreground" : "text-muted-foreground")}>{listDate(t.lastDate)}</span>
+          <span className={cn("text-xs tabular", t.unread ? "text-foreground" : "text-muted-foreground")}>{listDate(t.lastDate)}</span>
         </span>
       </div>
       {!compact && (
-        <div className="mt-0.5 flex min-w-0 items-baseline gap-1.5 text-sm">
+        <div className="relative mt-0.5 flex min-w-0 items-baseline gap-1.5 text-sm">
           <span data-testid="row-subject" className={cn("shrink-0 truncate", t.unread ? "font-medium text-foreground" : "text-foreground")} style={{ maxWidth: "60%" }}>
             {t.subject || "(sin asunto)"}
           </span>

@@ -352,8 +352,8 @@
     bottom: 0;
     height: var(--hairline-w);
     background: var(--border);
+    /* scrolling never animates: the hairline simply appears */
     opacity: 0;
-    transition: opacity var(--motion-base) var(--motion-ease);
   }
   &[data-scrolled]::after {
     opacity: 1;
