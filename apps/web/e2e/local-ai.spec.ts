@@ -53,7 +53,7 @@ test.describe("local mode and AI providers", () => {
     const row = page.getByTestId("local-mode-row");
     await expect(row).toBeVisible();
     // it is the first row of General
-    await expect(page.locator("[data-testid=settings-dialog] [role=tabpanel] > div").first()).toHaveAttribute("data-testid", "local-mode-row");
+    await expect(page.locator("[data-testid=settings-dialog] [role=tabpanel] section > div > :first-child").first()).toHaveAttribute("data-testid", "local-mode-row");
     const toggle = page.getByRole("switch", { name: "Modo local" });
     await expect(toggle).toHaveAccessibleDescription(/Nada sale de este Mac salvo el correo con tus servidores/);
     await expect(toggle).toBeChecked();

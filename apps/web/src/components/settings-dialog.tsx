@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@unica/ui/components/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@unica/ui/components/tabs";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@unica/ui/components/alert-dialog";
-import { Check, Copy, Trash2 } from "lucide-react";
+import { AtSign, Bot, Check, Copy, Palette, SlidersHorizontal, Sparkles, Tag, Trash2 } from "lucide-react";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { client } from "~/rpc/connection";
@@ -25,7 +25,7 @@ const WEB = import.meta.env.VITE_TARGET === "web";
 
 function Row({ label, hint, children, testId, labelId, hintId }: { label: string; hint?: string; children: React.ReactNode; testId?: string; labelId?: string; hintId?: string }) {
   return (
-    <div className="flex items-center justify-between gap-6 border-b border-border py-3 last:border-0" data-testid={testId}>
+    <div className="hairline-b flex items-center justify-between gap-6 py-3 last:border-b-0" data-testid={testId}>
       <div>
         <p id={labelId} className="text-sm font-medium">
           {label}
@@ -41,11 +41,30 @@ function Row({ label, hint, children, testId, labelId, hintId }: { label: string
   );
 }
 
+/** An inset-grouped block of rows (macOS System Settings): a tint surface, rows split by hairlines. */
+function Group({ children, title }: { children: React.ReactNode; title?: string }) {
+  return (
+    <section className="mb-5">
+      {title && <h3 className="mb-1.5 px-1 text-xs font-semibold text-muted-foreground">{title}</h3>}
+      <div className="rounded-[10px] bg-tint px-4">{children}</div>
+    </section>
+  );
+}
+
+const TABS: { value: SettingsTab; label: string; icon: typeof AtSign }[] = [
+  { value: "general", label: "General", icon: SlidersHorizontal },
+  { value: "appearance", label: "Apariencia", icon: Palette },
+  { value: "accounts", label: "Cuentas", icon: AtSign },
+  { value: "categories", label: "Categorías", icon: Tag },
+  { value: "ai", label: "IA", icon: Sparkles },
+  { value: "agents", label: "Agentes", icon: Bot },
+];
+
 function CopyBlock({ text, testId }: { text: string; testId?: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <div className="group relative" data-testid={testId}>
-      <pre className="overflow-x-auto rounded-lg border border-border bg-muted/50 p-3 pr-10 font-mono text-xs leading-relaxed whitespace-pre-wrap">{text}</pre>
+      <pre className="overflow-x-auto rounded-lg bg-tint p-3 pr-10 font-mono text-xs leading-relaxed whitespace-pre-wrap">{text}</pre>
       <button
         type="button"
         aria-label="Copiar"
@@ -86,22 +105,30 @@ export function SettingsDialog() {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && setApp({ dialog: null })}>
-      <DialogContent className="h-[min(640px,85vh)] max-w-[min(720px,92vw)] gap-0 overflow-hidden p-0 sm:max-w-[min(720px,92vw)]" data-testid="settings-dialog">
+      <DialogContent className="h-[min(640px,85vh)] max-w-[min(820px,94vw)] gap-0 overflow-hidden p-0 sm:max-w-[min(820px,94vw)]" data-testid="settings-dialog">
         <DialogTitle className="sr-only">Ajustes</DialogTitle>
-        <Tabs value={tab} onValueChange={(v) => setApp({ settingsTab: v as SettingsTab })} className="flex h-full flex-col gap-0">
-          <div className="border-b border-border px-5 pt-4 pb-3">
-            <h2 className="mb-3 text-base font-semibold">Ajustes</h2>
-            <TabsList>
-              <TabsTrigger value="general" data-testid="tab-general">General</TabsTrigger>
-              <TabsTrigger value="appearance" data-testid="tab-appearance">Apariencia</TabsTrigger>
-              <TabsTrigger value="accounts" data-testid="tab-accounts">Cuentas</TabsTrigger>
-              <TabsTrigger value="categories" data-testid="tab-categories">Categorías</TabsTrigger>
-              <TabsTrigger value="ai" data-testid="tab-ai">IA</TabsTrigger>
-              <TabsTrigger value="agents" data-testid="tab-agents">Agentes</TabsTrigger>
+        <Tabs value={tab} onValueChange={(v) => setApp({ settingsTab: v as SettingsTab })} orientation="vertical" className="flex h-full flex-row gap-0">
+          {/* macOS System Settings: a sidebar of sections with accent glyphs */}
+          <nav className="hairline-r hairline-strong flex w-[180px] shrink-0 flex-col bg-sidebar px-2 pt-5 pb-3">
+            <h2 className="mb-3 px-2 text-md font-semibold tracking-tight">Ajustes</h2>
+            <TabsList className="w-full items-stretch bg-transparent p-0">
+              {TABS.map(({ value, label, icon: Icon }) => (
+                <TabsTrigger
+                  key={value}
+                  value={value}
+                  data-testid={`tab-${value}`}
+                  className="h-7 justify-start gap-2.5 rounded-md px-2 font-normal text-sidebar-foreground after:hidden data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground data-active:shadow-none dark:data-active:border-transparent dark:data-active:bg-sidebar-accent"
+                >
+                  <Icon className="size-4 text-sidebar-glyph" />
+                  {label}
+                </TabsTrigger>
+              ))}
             </TabsList>
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-2">
+          </nav>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-5 pb-4">
+            <h2 className="mb-4 text-lg font-semibold tracking-tight">{TABS.find((t) => t.value === tab)?.label}</h2>
             <TabsContent value="general">
+              <Group>
               <Row
                 label="Modo local"
                 hint={
@@ -133,6 +160,7 @@ export function SettingsDialog() {
               <Row label="Ventana de sincronización" hint="Días de correo a descargar al conectar una cuenta.">
                 <Input type="number" className="h-8 w-24" defaultValue={settings.syncWindowDays} onBlur={(e) => update({ syncWindowDays: Math.max(7, Number(e.target.value) || 90) })} />
               </Row>
+              </Group>
               {StorageSection && (
                 <Suspense>
                   <StorageSection />
@@ -155,7 +183,7 @@ export function SettingsDialog() {
               </div>
               <div className="space-y-1 py-2">
                 {accounts.map((a) => (
-                  <div key={a.id} className="flex items-center gap-3 rounded-lg border border-border px-3 py-2.5" data-testid="settings-account">
+                  <div key={a.id} className="flex items-center gap-3 rounded-[10px] bg-tint px-3 py-2.5" data-testid="settings-account">
                     <CategoryDot color={a.color as CategoryColor} />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{a.displayName}</p>

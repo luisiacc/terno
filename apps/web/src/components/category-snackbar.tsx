@@ -78,7 +78,7 @@ function undoScope(categoryId: number, batchId: number, name: string): void {
 function Chip({ n, label, count, onClick, testId, children }: { n: number; label: string; count?: Count | "loading"; onClick: () => void; testId: string; children?: React.ReactNode }) {
   if (count === null) return null;
   return (
-    <span data-testid={testId} className="inline-flex h-7 max-w-full items-center rounded-md border border-border bg-background text-xs shadow-xs">
+    <span data-testid={testId} className="inline-flex h-7 max-w-full items-center rounded-md bg-background text-xs shadow-raised">
       <button type="button" onClick={onClick} className="inline-flex h-full min-w-0 items-center gap-1.5 rounded-md px-2 hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
         <Kbd className="h-4 min-w-4 text-2xs">{n}</Kbd>
         <span className="truncate">{label}</span>
@@ -263,7 +263,7 @@ function CategorySnackbar({ filed, onClose }: { filed: Filed; onClose: () => voi
       onBlurCapture={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(false);
       }}
-      className="w-[min(560px,calc(100vw-2rem))] rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-lg"
+      className="w-[min(560px,calc(100vw-2rem))] rounded-xl bg-popover p-3 text-popover-foreground shadow-popover"
     >
       <div className="flex items-center gap-2 text-sm">
         <CategoryDot color={category.color as CategoryColor} />

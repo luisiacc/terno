@@ -31,8 +31,7 @@ function ThemePreview({ theme, base }: { theme: Theme; base: string }) {
       </div>
       <div className="flex min-w-0 flex-1 flex-col bg-pane">
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className={cn("relative flex h-[18px] shrink-0 flex-col justify-center gap-0.5 border-b border-border pr-1.5 pl-2.5", i === 1 && "bg-row-selected")}>
-            {i === 1 && <span className="absolute inset-y-0 left-0 w-0.5 bg-row-rail" />}
+          <div key={i} className={cn("relative mx-0.5 flex h-[18px] shrink-0 flex-col justify-center gap-0.5 rounded-sm pr-1.5 pl-2", i === 1 ? "bg-row-selected" : "hairline-b")}>
             {i === 0 && <span className="absolute top-1/2 left-1 size-1 -translate-y-1/2 rounded-full bg-unread" />}
             <span className={cn("h-1 rounded-full", i === 1 ? "w-10 bg-row-selected-foreground" : "w-9 bg-foreground")} />
             <span className="h-0.5 w-14 rounded-full bg-muted-foreground" />

@@ -43,7 +43,7 @@ export function SelectionBar() {
   return (
     <section data-testid="selection-bar" className="flex h-full min-h-0 flex-col items-center justify-center gap-6 bg-background p-10 text-center">
       <div>
-        <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-2xl bg-accent text-lg font-semibold text-accent-foreground tabular" data-testid="selection-count">
+        <div className="mb-3 inline-flex h-10 min-w-10 items-center justify-center rounded-xl bg-tint px-2.5 text-xl font-semibold tracking-display text-foreground tabular" data-testid="selection-count">
           {count > 999 ? "999+" : count}
         </div>
         <p className="text-lg font-semibold tracking-tight">{scope ? `Las ${fmt(count)} conversaciones de ${scope.label}` : `${fmt(count)} conversaciones seleccionadas`}</p>

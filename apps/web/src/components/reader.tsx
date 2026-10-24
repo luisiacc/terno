@@ -222,7 +222,7 @@ function Welcome() {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-6 p-10 text-center" data-testid="reader-empty">
       <div>
-        <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-primary text-xl font-semibold text-primary-foreground shadow-sm">Ú</div>
+        <div className="mx-auto mb-4 flex size-10 items-center justify-center rounded-xl bg-tint text-lg font-semibold text-muted-foreground">Ú</div>
         <p className="text-lg font-semibold tracking-tight">Única</p>
         <p className="mt-1 text-sm text-muted-foreground">El único cliente de email que necesitas</p>
       </div>

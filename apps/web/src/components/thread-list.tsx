@@ -2,7 +2,7 @@ import { Input } from "@unica/ui/components/input";
 import { Kbd } from "@unica/ui/components/kbd";
 import { Skeleton } from "@unica/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Search, SquarePen, X } from "lucide-react";
+import { Inbox, Search, SquarePen, X } from "lucide-react";
 import { Button } from "@unica/ui/components/button";
 import { Shortcut } from "@unica/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@unica/ui/components/tooltip";
@@ -164,7 +164,8 @@ function EmptyState() {
   const view = useApp((s) => s.view);
   return (
     <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center" data-testid="list-empty">
-      <p className="text-sm font-medium">{query ? "Sin resultados" : view === "inbox" ? "Bandeja vacía" : "Nada por aquí"}</p>
+      <Inbox className="mb-2 size-7 stroke-[1.25] text-muted-foreground" aria-hidden />
+      <p className="text-lg font-semibold tracking-tight">{query ? "Sin resultados" : view === "inbox" ? "Bandeja vacía" : "Nada por aquí"}</p>
       <p className="text-xs text-muted-foreground">
         {query ? "Prueba con from:, subject:, has:adjunto o quita filtros." : view === "inbox" ? "Disfruta el silencio." : "Los correos aparecerán aquí."}
       </p>
