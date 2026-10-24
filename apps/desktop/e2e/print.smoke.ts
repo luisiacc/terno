@@ -185,4 +185,6 @@ test("main enforces local mode on the print window, whatever the renderer asks f
   await expect.poll(() => app.evaluate(() => (globalThis as unknown as { printBlocked: string[] }).printBlocked)).toContain(url);
   // and a job that isn't one is refused outright
   expect(await page.evaluate(() => (window as unknown as { ternoDesktop: { print(j: unknown): Promise<{ status: string }> } }).ternoDesktop.print({ html: 1, action: "fax" }))).toEqual({ status: "failed", reason: "error" });
+  // every job's hidden window is gone: only the app's own window is left
+  await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
 });

@@ -1,6 +1,7 @@
+import { EventEmitter } from "node:events";
 import type { MenuItemConstructorOptions } from "electron";
-import { describe, expect, it } from "vitest";
-import { fileMenu, footerTemplate, tempSibling, isTrustedSender, MAX_HTML_BYTES, parsePrintJob, pdfFileName, PRINT_COMMANDS, printCsp, printOutcome, requestAllowed, testPdfDir, withHead } from "./print-policy";
+import { describe, expect, it, vi } from "vitest";
+import { fileMenu, footerTemplate, pageReady, readyOrDestroyed, tempSibling, type PageEvents, isTrustedSender, MAX_HTML_BYTES, parsePrintJob, pdfFileName, PRINT_COMMANDS, printCsp, printOutcome, requestAllowed, testPdfDir, withHead } from "./print-policy";
 
 const job = { html: "<!doctype html><html><head></head><body>x</body></html>", action: "pdf", paper: "letter", subject: "Factura", headers: true, remote: [] as unknown[] };
 
@@ -140,5 +141,42 @@ describe("main: the Archivo menu", () => {
     for (const i of items) (i.click as () => void)();
     expect(sent).toEqual(["thread.print", "thread.exportPdf"]);
     for (const c of sent) expect(PRINT_COMMANDS).toContain(c);
+  });
+});
+
+describe("main: the print window's lifecycle", () => {
+  const page = () => Object.assign(new EventEmitter(), { stop: vi.fn() }) as unknown as EventEmitter & PageEvents & { stop: ReturnType<typeof vi.fn> };
+  const opts = { loadMs: 200, graceMs: 50 };
+
+  it("ready when loaded; a failed or late document rejects", async () => {
+    const a = page();
+    const ready = pageReady(a, opts);
+    a.emit("did-finish-load");
+    await expect(ready).resolves.toBeUndefined();
+
+    const b = page();
+    const failed = pageReady(b, opts);
+    b.emit("did-fail-load", {}, -2, "net::ERR_FAILED", "terno-print://job/x", false);
+    b.emit("did-fail-load", {}, -6, "net::ERR_FILE_NOT_FOUND", "terno-print://job/x", true);
+    await expect(failed).rejects.toThrow("ERR_FILE_NOT_FOUND");
+
+    await expect(pageReady(page(), opts)).rejects.toThrow("didn't load in time");
+  });
+
+  it("a stalled image doesn't hold the print: after the DOM, the grace period stops loading and it goes", async () => {
+    const p = page();
+    const ready = pageReady(p, opts);
+    p.emit("dom-ready");
+    await expect(ready).resolves.toBeUndefined();
+    expect(p.stop).toHaveBeenCalledOnce();
+  });
+
+  it("a window that never got ready is destroyed, not leaked", async () => {
+    const win = { destroyed: false, isDestroyed() { return this.destroyed; }, destroy() { this.destroyed = true; } };
+    await expect(readyOrDestroyed(win, Promise.reject(new Error("timeout")))).rejects.toThrow("timeout");
+    expect(win.destroyed).toBe(true);
+    const ok = { destroyed: false, isDestroyed() { return this.destroyed; }, destroy() { this.destroyed = true; } };
+    await expect(readyOrDestroyed(ok, Promise.resolve())).resolves.toBe(ok);
+    expect(ok.destroyed).toBe(false);
   });
 });

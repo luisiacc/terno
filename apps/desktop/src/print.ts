@@ -9,12 +9,14 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { open, rename, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, session, shell, type IpcMainInvokeEvent, type Session } from "electron";
-import { footerTemplate, parsePrintJob, PDF_MARGINS, PDF_PAGE, pdfFileName, printCsp, printOutcome, requestAllowed, tempSibling, withHead, type PrintJob, type PrintResult } from "./print-policy";
+import { footerTemplate, parsePrintJob, PDF_MARGINS, PDF_PAGE, pageReady, pdfFileName, printCsp, printOutcome, readyOrDestroyed, requestAllowed, tempSibling, withHead, type PrintJob, type PrintResult } from "./print-policy";
 
 const PARTITION = "terno-print";
 const SCHEME = "terno-print";
 /** For loading the document only: the system dialog stays up as long as the user needs. */
 const LOAD_TIMEOUT_MS = 20_000;
+/** After the document's DOM is there, how long images may take before it prints with what arrived. */
+const IMAGE_GRACE_MS = 5_000;
 
 export interface PrintDeps {
   /** the main window's top frame, on the app's own URL */
@@ -75,15 +77,9 @@ async function load(job: PrintJob, deps: PrintDeps): Promise<BrowserWindow> {
   const wc = win.webContents;
   wc.setWindowOpenHandler(() => ({ action: "deny" }));
   wc.on("will-navigate", (event) => event.preventDefault());
-  const url = active.url;
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("the print document didn't load in time")), LOAD_TIMEOUT_MS);
-    wc.once("did-finish-load", () => (clearTimeout(timer), resolve()));
-    // subframes can't exist (no frames in the sanitized page); a blocked image is not a failed load
-    wc.on("did-fail-load", (_e, code, description, _url, isMainFrame) => isMainFrame && (clearTimeout(timer), reject(new Error(`${description} (${code})`))));
-    win.loadURL(url).catch(() => {});
-  });
-  return win;
+  const ready = pageReady(wc, { loadMs: LOAD_TIMEOUT_MS, graceMs: IMAGE_GRACE_MS });
+  win.loadURL(active.url).catch(() => {});
+  return readyOrDestroyed(win, ready);
 }
 
 /** Forgets the job: window, document buffer, and anything the session kept. */

@@ -150,3 +150,49 @@ export function fileMenu(send: (command: PrintCommand) => void): MenuItemConstru
     ],
   };
 }
+
+/** What pageReady listens to: a webContents, or a stand-in in tests. */
+export interface PageEvents {
+  once(event: "did-finish-load" | "dom-ready", listener: () => void): unknown;
+  on(event: "did-fail-load", listener: (e: unknown, code: number, description: string, url: string, isMainFrame: boolean) => void): unknown;
+  stop(): void;
+}
+
+/**
+ * Resolves when the print document is ready to print: fully loaded, or, once
+ * its DOM is there, after `graceMs` at most (an approved image whose server
+ * stalls prints as whatever arrived; loading stops). Rejects if the document
+ * itself fails or doesn't arrive within `loadMs`.
+ */
+export function pageReady(page: PageEvents, o: { loadMs: number; graceMs: number }): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    let grace: ReturnType<typeof setTimeout> | undefined;
+    const done = (error?: Error) => {
+      clearTimeout(timer);
+      clearTimeout(grace);
+      if (error) reject(error);
+      else resolve();
+    };
+    const timer = setTimeout(() => done(new Error("the print document didn't load in time")), o.loadMs);
+    page.once("did-finish-load", () => done());
+    page.once("dom-ready", () => {
+      grace = setTimeout(() => {
+        page.stop();
+        done();
+      }, o.graceMs);
+    });
+    // subframes can't exist (no frames in the sanitized page); a blocked image is not a failed load
+    page.on("did-fail-load", (_e, code, description, _url, isMainFrame) => isMainFrame && done(new Error(`${description} (${code})`)));
+  });
+}
+
+/** A window that got ready, or none: one that didn't is destroyed here, never left behind (hidden, maybe still loading). */
+export async function readyOrDestroyed<W extends { isDestroyed(): boolean; destroy(): void }>(win: W, ready: Promise<void>): Promise<W> {
+  try {
+    await ready;
+    return win;
+  } catch (error) {
+    if (!win.isDestroyed()) win.destroy();
+    throw error;
+  }
+}
