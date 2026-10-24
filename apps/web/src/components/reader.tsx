@@ -130,7 +130,7 @@ function Message({ m, expanded, onToggle }: { m: MessageDetail; expanded: boolea
           <div className="hairline-t ml-12" />
           <div className="pt-3.5 pb-5">
             {m.bodyHtml ? (
-              <HtmlBody html={m.bodyHtml} cacheKey={m.id} remoteImages={remoteImages} localMode={localMode} appearance={mailAppearance} />
+              <HtmlBody html={m.bodyHtml} messageId={m.id} remoteImages={remoteImages} localMode={localMode} appearance={mailAppearance} />
             ) : m.bodyText !== null ? (
               <TextBody text={m.bodyText} />
             ) : (

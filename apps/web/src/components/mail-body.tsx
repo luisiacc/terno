@@ -7,6 +7,7 @@ import { setApp } from "~/state/app";
 import { mailColors, useAppearance } from "~/lib/appearance";
 import { csp, hasOwnColors, hasRemoteContent } from "~/lib/mail";
 import { splitTextQuote } from "~/lib/quote";
+import { allowRemoteFor, remoteAllowed, useRemoteConsent } from "~/lib/remote-consent";
 
 function openLink(href: string) {
   if (!/^(https?:|mailto:)/i.test(href)) return;
@@ -19,8 +20,7 @@ const MAX_HEIGHT = 20000;
 /** The last measured height of each message's frame: an expanding message opens to it, not to a guess. */
 const heights = new Map<number, number>();
 const HEIGHTS_MAX = 500;
-function rememberHeight(key: number | undefined, h: number) {
-  if (key === undefined) return;
+function rememberHeight(key: number, h: number) {
   heights.delete(key);
   heights.set(key, h);
   if (heights.size > HEIGHTS_MAX) heights.delete(heights.keys().next().value!);
@@ -31,12 +31,11 @@ function rememberHeight(key: number | undefined, h: number) {
  * scripts (sandbox without allow-scripts), strict CSP, links opened externally.
  * allow-same-origin (without scripts) only lets the parent measure the height.
  */
-export function HtmlBody({ html, cacheKey, remoteImages, localMode, appearance }: { html: string; cacheKey?: number; remoteImages: "ask" | "always"; localMode: boolean; appearance: "auto" | "paper" }) {
+export function HtmlBody({ html, messageId, remoteImages, localMode, appearance }: { html: string; messageId: number; remoteImages: "ask" | "always"; localMode: boolean; appearance: "auto" | "paper" }) {
   const ref = useRef<HTMLIFrameElement>(null);
-  const [userAllowed, setAllowRemote] = useState(remoteImages === "always");
   // local mode: remote content is never loaded, whatever the setting or a click says
-  const allowRemote = userAllowed && !localMode;
-  const [height, setHeight] = useState(() => (cacheKey !== undefined ? heights.get(cacheKey) : undefined) ?? 120);
+  const allowRemote = useRemoteConsent((s) => remoteAllowed(messageId, { remoteImages, localMode }, s.allowed));
+  const [height, setHeight] = useState(() => heights.get(messageId) ?? 120);
   const blocked = !allowRemote && hasRemoteContent(html);
   // re-rendered when the painted theme changes (the colors are literals inside the document)
   const themeKey = useAppearance((s) => s.themeKey);
@@ -67,7 +66,7 @@ export function HtmlBody({ html, cacheKey, remoteImages, localMode, appearance }
         // past the cap the document scrolls: hidden content would be unreachable
         d.documentElement.style.overflowY = content > MAX_HEIGHT ? "auto" : "";
         const h = Math.min(MAX_HEIGHT, content);
-        rememberHeight(cacheKey, h);
+        rememberHeight(messageId, h);
         setHeight(h);
       };
       measure();
@@ -93,7 +92,7 @@ export function HtmlBody({ html, cacheKey, remoteImages, localMode, appearance }
 
   return (
     <div>
-      {blocked && <RemoteBlocked localMode={localMode} onLoad={() => setAllowRemote(true)} />}
+      {blocked && <RemoteBlocked localMode={localMode} onLoad={() => allowRemoteFor(messageId)} />}
       {/* themed mail flows on the page with no box; mail with its own colors keeps a borderless paper surface */}
       <div className={paper ? "overflow-hidden rounded-lg bg-[var(--mail-paper)]" : undefined}>
         <iframe
