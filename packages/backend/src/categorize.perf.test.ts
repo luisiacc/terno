@@ -354,6 +354,46 @@ it("a move of the largest selection (5,000 threads) and its undo: atomic, no lon
   }
 }, 600_000);
 
+it("moving 5,000 threads filed in 20 categories each (100,000 memberships) and undoing it: sliced, no stall over 50 ms, exact", async () => {
+  if (!backend.categorizer.ready) await backend.categorizer.rebuildNow();
+  const [c, srv] = createMemoryTransportPair();
+  backend.connect(srv, { clientId: "move20", origin: "renderer" });
+  const client = new RpcClient(c);
+  const db = sqlDb(backend.store);
+  const sources: number[] = [];
+  for (let k = 0; k < 20; k++) sources.push((await client.call("categories.create", { name: `Origen ${k}`, color: "slate" })).id);
+  const to = (await client.call("categories.create", { name: "Destino único", color: "cyan" })).id;
+  const ids = db.all<{ id: number }>("SELECT id FROM threads WHERE in_trash = 0 AND in_spam = 0 ORDER BY id LIMIT 5000").map((r) => r.id);
+  expect(ids).toHaveLength(5000);
+  // filed by hand earlier, in every source (set up directly: the move is what is measured)
+  db.exec("BEGIN");
+  for (const cat of sources) db.run("INSERT OR IGNORE INTO thread_categories (thread_id, category_id, added_by, added_at) SELECT value, ?, 'user', 1 FROM json_each(?)", cat, JSON.stringify(ids));
+  db.exec("COMMIT");
+  const memberships = () => db.all<{ t: number; c: number; by: string; at: number; b: number | null }>(`SELECT thread_id AS t, category_id AS c, added_by AS by, added_at AS at, batch_id AS b FROM thread_categories WHERE category_id IN (${[...sources, to].join(",")}) ORDER BY t, c`);
+  const before = memberships();
+  expect(before).toHaveLength(100_000);
+  const p95 = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.ceil(xs.length * 0.95) - 1] ?? 0;
+  let batchId = 0;
+  const results: { name: string; stall: number; list: number }[] = [];
+  for (const [name, fn] of [
+    ["move 5,000 threads × 20 categories", async () => (batchId = (await client.call("categories.moveThreads", { to, threadIds: ids, source: "dnd" })).batchId)],
+    ["undo that move", () => client.call("categorize.undo", { batchId })],
+  ] as [string, () => Promise<unknown>][]) {
+    const t = performance.now();
+    const { stall, rpc } = await underLoad(fn);
+    const took = performance.now() - t;
+    results.push({ name, stall, list: p95(rpc) });
+    stats.push({ name: `${name}: ${took.toFixed(0)} ms, max event-loop stall ${stall.toFixed(1)} ms, list RPC p95 ${p95(rpc).toFixed(1)} ms (${rpc.length})`, budgetMs: 50, p50: stall, p95: stall, max: stall, iterations: rpc.length });
+    if (name.startsWith("move")) expect(memberships().map((m) => m.c)).toEqual(ids.map(() => to));
+    else expect(memberships()).toEqual(before);
+  }
+  for (const cat of [...sources, to]) await client.call("categories.delete", { id: cat });
+  for (const r of results) {
+    expect(r.stall, r.name).toBeLessThanOrEqual(50 * BUDGET_MULTIPLIER);
+    expect(r.list, r.name).toBeLessThanOrEqual(20 * BUDGET_MULTIPLIER);
+  }
+}, 600_000);
+
 it("a rebuild never stalls the event loop for long, even with 40,000 training examples", async () => {
   if (!backend.categorizer.ready) await backend.categorizer.rebuildNow();
   const [c, srv] = createMemoryTransportPair();

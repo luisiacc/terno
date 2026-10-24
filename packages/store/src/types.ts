@@ -150,7 +150,7 @@ export interface PendingSuggestion {
   at: number;
 }
 
-export type MovePhase = "training" | "done" | "restoring" | "undone" | "expired";
+export type MovePhase = "moving" | "training" | "done" | "unmoving" | "restoring" | "undone" | "expired";
 
 // ───────────────────────────── ops, owner, drafts ─────────────────────────────
 

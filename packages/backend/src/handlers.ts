@@ -220,12 +220,10 @@ export function createHandlers(b: Backend): Handlers {
     "categories.addThreads": ({ categoryId, threadIds, source }, ctx) => fileThreads(categoryId, threadIds, ctx.origin === "mcp" ? "agent" : ADDED_BY[source], source),
     "categories.moveThreads": async ({ to, threadIds, source }, ctx) => {
       await requireCategory(to);
-      // the membership commit is the long part: don't add it to the turn that parsed 5,000 ids
+      // don't add the move to the turn that parsed 5,000 ids
       await b.platform.yield();
-      // memberships move in one transaction (every other category left); the training follows in slices (journaled)
+      // recorded at once; memberships move in slices (every other category left, each row journaled), then the training
       const r = await store.categories.beginMove({ to, threadIds, addedBy: ctx.origin === "mcp" ? "agent" : ADDED_BY[source], now: b.now(), source });
-      b.categorizer.apply(r.deltas);
-      b.notifyChanged([...new Set([...r.added, ...r.moved])]);
       await b.finishMove(r.batchId);
       return { added: r.added.length, addedIds: r.added, batchId: r.batchId, moved: r.moved };
     },
@@ -301,13 +299,14 @@ export function createHandlers(b: Backend): Handlers {
     "categorize.stats": () => store.categorize.stats(),
     "categorize.undo": async ({ batchId }) => {
       if ((await store.categories.movePhase(batchId)) !== null) {
-        // memberships and decisions come back in one transaction; examples follow in slices
-        await b.finishMove(batchId);
-        const r = await store.categories.undoMoveCommit(batchId, b.now());
-        b.categorizer.apply(r.deltas);
-        b.notifyChanged([...new Set([...r.removed, ...r.restored])]);
-        await b.finishMove(batchId);
-        return { removed: r.removed.length, restored: r.restored.length };
+        // a move still being applied or trained finishes first; an undo cut short (a failure, a crash) picks up where it was
+        const phase = await store.categories.movePhase(batchId);
+        if (phase === "moving" || phase === "training") await b.finishMove(batchId);
+        if ((await store.categories.movePhase(batchId)) === "done") await store.categories.undoMoveBegin(batchId, b.now());
+        // memberships and decisions come back in slices, then the examples
+        const tally = { removed: new Set<number>(), restored: new Set<number>() };
+        await b.finishMove(batchId, tally);
+        return { removed: tally.removed.size, restored: tally.restored.size };
       }
       let removed = 0;
       await sliced(await store.categories.batchThreads(batchId), async (chunk) => {

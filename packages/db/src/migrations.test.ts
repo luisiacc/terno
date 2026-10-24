@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { generateDataset } from "@unica/mock-data";
-import { movePending, movePhase, restoreMoveSlice, trainMoveSlice, undoMoveCommit } from "./categorize";
+import { movePending, movePhase, restoreMoveSlice, trainMoveSlice, undoMoveBegin, undoMoveSlice } from "./categorize";
 import { ingestMessages } from "./ingest";
 import { MIGRATIONS, migrate, SCHEMA_VERSION } from "./migrations";
 import { openDatabase } from "./index";
@@ -250,7 +250,8 @@ describe("migration v8: exclusive moves", () => {
     expect(movePhase(db, 5)).toBe("done");
     // the removal examples land in the old move's source
     expect(db.all("SELECT DISTINCT category_id FROM cls_examples WHERE label = -1")).toEqual([{ category_id: 1 }]);
-    undoMoveCommit(db, 5, 40);
+    undoMoveBegin(db, 5, 40);
+    undoMoveSlice(db, 5, movePending(db, 5), 40);
     expect(db.all("SELECT thread_id, category_id, added_by, batch_id FROM thread_categories ORDER BY thread_id")).toEqual([
       { thread_id: t1, category_id: 1, added_by: "user", batch_id: null },
       { thread_id: t2, category_id: 1, added_by: "bulk", batch_id: 3 },

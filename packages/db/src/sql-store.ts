@@ -49,7 +49,9 @@ import {
   threadFeatures,
   trainMoveSlice,
   undoBatchPart,
-  undoMoveCommit,
+  undoMoveBegin,
+  undoMoveSlice,
+  applyMoveSlice,
   unfinishedMoves,
   vetoesFor,
   type ClassifyResult,
@@ -595,7 +597,9 @@ export class SqlMailStore implements MailStore {
     movePending: async (batchId) => movePending(this.db, batchId),
     unfinishedMoves: async () => unfinishedMoves(this.db),
     trainMoveSlice: async (batchId, threadIds, now) => trainMoveSlice(this.db, batchId, threadIds, now),
-    undoMoveCommit: async (batchId, now) => undoMoveCommit(this.db, batchId, now),
+    applyMoveSlice: async (batchId, threadIds, now) => applyMoveSlice(this.db, batchId, threadIds, now),
+    undoMoveBegin: async (batchId, now) => undoMoveBegin(this.db, batchId, now),
+    undoMoveSlice: async (batchId, threadIds, now) => undoMoveSlice(this.db, batchId, threadIds, now),
     restoreMoveSlice: async (batchId, threadIds) => restoreMoveSlice(this.db, batchId, threadIds),
   };
 

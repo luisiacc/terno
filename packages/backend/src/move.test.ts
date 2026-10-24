@@ -114,43 +114,48 @@ describe("moving threads between categories", () => {
     expect(pick.batchId).not.toBeNull();
   });
 
-  it("is atomic: a move that fails half-way leaves both categories untouched", async () => {
+  it("each slice is atomic: a failed one leaves its threads untouched, and the move and its undo resume exactly", async () => {
     const { backend, client, a, b, threads } = setup();
     const [t1] = threads as [number];
     await client.call("categories.addThreads", { categoryId: a, threadIds: [t1], source: "picker" });
-    // make the step that takes the thread out of `a` fail inside the move's transaction
+    // make the step that takes the thread out of `a` fail inside the slice's transaction
     sqlDb(backend.store).exec("CREATE TRIGGER fail_removal BEFORE DELETE ON thread_categories BEGIN SELECT RAISE(ABORT, 'boom'); END");
     await expect(client.call("categories.moveThreads", { to: b, threadIds: [t1] })).rejects.toThrow();
     expect(membership(backend, t1, a)).toMatchObject({ added_by: "user" });
     expect(membership(backend, t1, b)).toBeUndefined();
+    const batchId = sqlDb(backend.store).get<{ id: number }>("SELECT max(id) AS id FROM cat_batches")!.id;
+    expect(movePhase(sqlDb(backend.store), batchId)).toBe("moving");
     sqlDb(backend.store).exec("DROP TRIGGER fail_removal");
-    // and the undo: if restoring fails, the destination keeps the threads too
-    const move = await client.call("categories.moveThreads", { to: b, threadIds: [t1] });
+    // the move picks up where it stopped
+    await backend.finishMove(batchId);
+    expect([membership(backend, t1, a), membership(backend, t1, b)?.batch_id]).toEqual([undefined, batchId]);
+    // and the undo: if restoring fails, the destination keeps the thread too
     sqlDb(backend.store).exec("CREATE TRIGGER fail_restore BEFORE INSERT ON thread_categories BEGIN SELECT RAISE(ABORT, 'boom'); END");
-    await expect(client.call("categorize.undo", { batchId: move.batchId })).rejects.toThrow();
-    expect(membership(backend, t1, b)).toMatchObject({ batch_id: move.batchId });
+    await expect(client.call("categorize.undo", { batchId })).rejects.toThrow();
+    expect(membership(backend, t1, b)).toMatchObject({ batch_id: batchId });
     expect(membership(backend, t1, a)).toBeUndefined();
     sqlDb(backend.store).exec("DROP TRIGGER fail_restore");
     // retrying succeeds
-    expect(await client.call("categorize.undo", { batchId: move.batchId })).toEqual({ removed: 1, restored: 1 });
+    expect(await client.call("categorize.undo", { batchId })).toEqual({ removed: 1, restored: 1 });
     expect(membership(backend, t1, a)).toMatchObject({ added_by: "user" });
+    expect(membership(backend, t1, b)).toBeUndefined();
   });
 
-  it("a move interrupted after its memberships committed finishes its training on the next start", async () => {
+  it("a move recorded before the app quit is applied and trained on the next start", async () => {
     const { backend, a, b, threads, dir } = setup();
     const [t1, t2] = threads as [number, number];
     sqlDb(backend.store).run("INSERT INTO thread_categories (thread_id, category_id, added_by, added_at) VALUES (?, ?, 'user', 0), (?, ?, 'user', 0)", t1, a, t2, a);
-    // the commit happened, the sliced training never ran (the app quit)
+    // recorded, nothing applied yet (the app quit)
     const m = beginMove(sqlDb(backend.store), { to: b, threadIds: [t1, t2], addedBy: "user", now: NOW, source: "dnd" });
-    expect(movePhase(sqlDb(backend.store), m.batchId)).toBe("training");
-    expect([membership(backend, t1, a), membership(backend, t1, b)?.batch_id]).toEqual([undefined, m.batchId]);
-    expect(example(backend, t1, b)).toBeUndefined();
+    expect(movePhase(sqlDb(backend.store), m.batchId)).toBe("moving");
+    expect(membership(backend, t1, b)).toBeUndefined();
     await backend.stop();
     const again = open(dir);
     try {
       await again.start();
       await expect.poll(() => movePhase(sqlDb(again.store), m.batchId)).toBe("done");
       for (const t of [t1, t2]) {
+        expect([membership(again, t, a), membership(again, t, b)?.batch_id]).toEqual([undefined, m.batchId]);
         expect(example(again, t, b)).toMatchObject({ label: 1, source: "user", batch_id: m.batchId });
         expect(example(again, t, a)).toMatchObject({ label: -1, source: "removal" });
       }

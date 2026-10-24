@@ -745,18 +745,42 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect((await store.debug.snapshot()).memberships).toEqual([]);
       });
 
-      it("a move commits memberships at once and trains in slices; its undo restores the source", async () => {
+      /** A move as the backend runs it: recorded, applied in slices, then trained. */
+      const applyAll = async (store: MailStore, batchId: number) => {
+        for (const t of await store.categories.movePending(batchId)) await store.categories.applyMoveSlice(batchId, [t], NOW);
+      };
+      /** Its undo: started, memberships back in slices; returns what those slices removed and restored. */
+      const undoAll = async (store: MailStore, batchId: number) => {
+        expect(await store.categories.undoMoveBegin(batchId, NOW + 1)).toBe(true);
+        const out = { removed: [] as number[], restored: [] as number[] };
+        for (const t of await store.categories.movePending(batchId)) {
+          const r = await store.categories.undoMoveSlice(batchId, [t], NOW + 1);
+          out.removed.push(...r.removed);
+          out.restored.push(...r.restored);
+        }
+        return out;
+      };
+
+      it("a move is applied in slices (one unit each) and trained in slices; its undo restores the source", async () => {
         const { store, cat, other, thread } = await setup();
         const [t1, t2] = [await thread(), await thread()];
         await store.categories.add({ categoryId: cat, threadIds: [t1, t2], addedBy: "user", now: NOW });
         const m = await store.categories.beginMove({ to: other, threadIds: [t1, t2], addedBy: "user", now: NOW, source: "dnd" });
         expect([m.added.sort(), m.moved.sort()]).toEqual([[t1, t2].sort(), [t1, t2].sort()]);
+        expect(await store.categories.movePhase(m.batchId)).toBe("moving");
+        // nothing moved yet; one slice moves exactly its threads
+        expect((await store.debug.snapshot()).memberships.map((x) => x.categoryId)).toEqual([cat, cat]);
+        const first = await store.categories.applyMoveSlice(m.batchId, [t1], NOW);
+        expect(first.touched).toEqual([t1]);
+        expect((await store.debug.snapshot()).memberships.map((x) => [x.threadId, x.categoryId]).sort()).toEqual([[t1, other], [t2, cat]].sort());
+        await applyAll(store, m.batchId);
         expect((await store.debug.snapshot()).memberships.map((x) => x.categoryId)).toEqual([other, other]);
         expect(await store.categories.movePhase(m.batchId)).toBe("training");
         await store.categories.trainMoveSlice(m.batchId, await store.categories.movePending(m.batchId), NOW);
         expect(await store.categories.movePhase(m.batchId)).toBe("done");
-        const undo = await store.categories.undoMoveCommit(m.batchId, NOW + 1);
+        const undo = await undoAll(store, m.batchId);
         expect([undo.removed.sort(), undo.restored.sort()]).toEqual([[t1, t2].sort(), [t1, t2].sort()]);
+        expect(await store.categories.movePhase(m.batchId)).toBe("restoring");
         await store.categories.restoreMoveSlice(m.batchId, await store.categories.movePending(m.batchId));
         const snap = await store.debug.snapshot();
         expect(snap.memberships.map((x) => x.categoryId)).toEqual([cat, cat]);
@@ -776,6 +800,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         const m = await store.categories.beginMove({ to: third, threadIds: [t1, t2, t3], addedBy: "user", now: NOW, source: "dnd" });
         expect(m.added).toEqual([t1]);
         expect(m.moved).toEqual([t1, t3].sort((a, b) => a - b));
+        await applyAll(store, m.batchId);
         const after = (await store.debug.snapshot()).memberships.map((x) => [x.threadId, x.categoryId]).sort((a, b) => a[0]! - b[0]!);
         expect(after).toEqual([[t1, third], [t2, third], [t3, third]].sort((a, b) => a[0]! - b[0]!));
         await store.categories.trainMoveSlice(m.batchId, await store.categories.movePending(m.batchId), NOW);
@@ -791,7 +816,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
             [t3, third, 1],
           ].sort(),
         );
-        const undo = await store.categories.undoMoveCommit(m.batchId, NOW + 1);
+        const undo = await undoAll(store, m.batchId);
         expect(undo.removed).toEqual([t1]);
         expect(undo.restored).toEqual([t1, t3].sort((a, b) => a - b));
         await store.categories.restoreMoveSlice(m.batchId, await store.categories.movePending(m.batchId));
@@ -803,6 +828,20 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect((await store.categories.undoBatchPart(bulk, await store.categories.batchThreads(bulk), NOW + 2)).removed.sort()).toEqual([t1, t3].sort());
       });
 
+      it("a move older than a day can't be undone any more", async () => {
+        const { store, cat, other, thread } = await setup();
+        const t = await thread();
+        await store.categories.add({ categoryId: cat, threadIds: [t], addedBy: "user", now: NOW });
+        const m = await store.categories.beginMove({ to: other, threadIds: [t], addedBy: "user", now: NOW, source: "dnd" });
+        await applyAll(store, m.batchId);
+        await store.categories.trainMoveSlice(m.batchId, await store.categories.movePending(m.batchId), NOW);
+        expect(await store.categories.movePhase(m.batchId)).toBe("done");
+        // the next move, two days later, prunes it
+        await store.categories.beginMove({ to: cat, threadIds: [t], addedBy: "user", now: NOW + 2 * DAY, source: "dnd" });
+        expect(await store.categories.movePhase(m.batchId)).toBe("expired");
+        await expect(store.categories.undoMoveBegin(m.batchId, NOW + 2 * DAY)).rejects.toThrow(/ya no se puede deshacer/);
+      });
+
       it("a thread already only in the destination is not moved; a multi-filed one dropped on one of its categories leaves the others", async () => {
         const { store, cat, other, thread } = await setup();
         const [only, multi] = [await thread(), await thread()];
@@ -810,10 +849,11 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         await store.categories.add({ categoryId: other, threadIds: [multi], addedBy: "user", now: NOW });
         const m = await store.categories.beginMove({ to: cat, threadIds: [only, multi], addedBy: "user", now: NOW, source: "dnd" });
         expect([m.added, m.moved]).toEqual([[], [multi]]);
+        await applyAll(store, m.batchId);
         expect((await store.debug.snapshot()).memberships.map((x) => [x.threadId, x.categoryId]).sort()).toEqual([[only, cat], [multi, cat]].sort());
       });
 
-      it("a move interrupted by a crash resumes its training after a reopen and can still be undone", async () => {
+      it("a move interrupted by a crash resumes (moving, training, unmoving, restoring) after a reopen and comes back exactly", async () => {
         let store = await fresh();
         const a = (await store.categories.create("A", "rose")).id;
         const b = (await store.categories.create("B", "lime")).id;
@@ -829,6 +869,13 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         await store.categories.add({ categoryId: b, threadIds: ids.slice(0, 2), addedBy: "user", now: NOW - DAY });
         const before = (await store.debug.snapshot()).memberships;
         const m = await store.categories.beginMove({ to: c, threadIds: ids, addedBy: "user", now: NOW, source: "dnd" });
+        await store.categories.applyMoveSlice(m.batchId, ids.slice(0, 2), NOW);
+        store = await harness.reopen(store);
+        open.push(store);
+        expect(await store.categories.unfinishedMoves()).toEqual([{ batchId: m.batchId, phase: "moving" }]);
+        expect((await store.categories.movePending(m.batchId)).sort()).toEqual(ids.slice(2).sort());
+        await applyAll(store, m.batchId);
+        expect((await store.debug.snapshot()).memberships.map((x) => x.categoryId)).toEqual(ids.map(() => c));
         await store.categories.trainMoveSlice(m.batchId, ids.slice(0, 1), NOW);
         store = await harness.reopen(store);
         open.push(store);
@@ -838,7 +885,12 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect(await store.categories.unfinishedMoves()).toEqual([]);
         const removals = (await store.debug.snapshot()).examples.filter((e) => e.label === -1).map((e) => `${e.threadId}:${e.categoryId}`).sort();
         expect(removals).toEqual([...ids.map((t) => `${t}:${a}`), ...ids.slice(0, 2).map((t) => `${t}:${b}`)].sort());
-        await store.categories.undoMoveCommit(m.batchId, NOW + 1);
+        expect(await store.categories.undoMoveBegin(m.batchId, NOW + 1)).toBe(true);
+        await store.categories.undoMoveSlice(m.batchId, ids.slice(0, 1), NOW + 1);
+        store = await harness.reopen(store);
+        open.push(store);
+        expect(await store.categories.unfinishedMoves()).toEqual([{ batchId: m.batchId, phase: "unmoving" }]);
+        await store.categories.undoMoveSlice(m.batchId, await store.categories.movePending(m.batchId), NOW + 1);
         expect(await store.categories.unfinishedMoves()).toEqual([{ batchId: m.batchId, phase: "restoring" }]);
         store = await harness.reopen(store);
         open.push(store);
@@ -943,10 +995,12 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         const [x, y] = [(await store.categories.create("X", "rose")).id, (await store.categories.create("Y", "lime")).id];
         await store.categories.add({ categoryId: x, threadIds: [t], addedBy: "user", now: NOW });
         const m = await store.categories.beginMove({ to: y, threadIds: [t], addedBy: "user", now: NOW, source: "dnd" });
+        await store.categories.applyMoveSlice(m.batchId, [t], NOW);
         await store.categories.trainMoveSlice(m.batchId, [t], NOW);
         await inSync();
         expect(replica.threads.get(t)).toMatchObject({ unreadCount: 0, isStarred: true, categoryIds: [y] });
-        await store.categories.undoMoveCommit(m.batchId, NOW);
+        await store.categories.undoMoveBegin(m.batchId, NOW);
+        await store.categories.undoMoveSlice(m.batchId, [t], NOW);
         await store.categories.delete(x);
         await inSync();
         expect(replica.threads.get(t)!.categoryIds).toEqual([]);

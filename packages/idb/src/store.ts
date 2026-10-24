@@ -61,7 +61,9 @@ import {
   threadFeatures,
   trainMoveSlice,
   undoBatchPart,
-  undoMoveCommit,
+  undoMoveBegin,
+  undoMoveSlice,
+  applyMoveSlice,
   unfinishedMoves,
   vetoesFor,
 } from "./categorize";
@@ -912,10 +914,9 @@ export class IdbMailStore implements MailStore {
     movePending: (batchId) => this.read(() => movePending(this.c, batchId)),
     unfinishedMoves: () => this.early(() => unfinishedMoves(this.c)),
     trainMoveSlice: (batchId, threadIds, now) => this.command(() => trainMoveSlice(this.c, batchId, threadIds, now), { prefetch: () => this.prefetchRoots(threadIds) }),
-    undoMoveCommit: (batchId, now) =>
-      this.command(() => undoMoveCommit(this.c, batchId, now), {
-        prefetch: () => this.prefetchRoots(T(this.c, "cat_move_threads").by("fk_batch_id", batchId).map((r) => r.thread_id as number)),
-      }),
+    applyMoveSlice: (batchId, threadIds, now) => this.command(() => applyMoveSlice(this.c, batchId, threadIds, now)),
+    undoMoveBegin: (batchId, now) => this.command(() => undoMoveBegin(this.c, batchId, now)),
+    undoMoveSlice: (batchId, threadIds, now) => this.command(() => undoMoveSlice(this.c, batchId, threadIds, now), { prefetch: () => this.prefetchRoots(threadIds) }),
     restoreMoveSlice: (batchId, threadIds) => this.command(() => restoreMoveSlice(this.c, batchId, threadIds)),
   };
 

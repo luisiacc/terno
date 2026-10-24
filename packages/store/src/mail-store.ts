@@ -283,13 +283,18 @@ export interface MailStore {
     batchThreads(batchId: number): Promise<number[]>;
     undoBatchPart(batchId: number, threadIds: readonly number[], now: number): Promise<{ removed: number[]; deltas: ModelDelta[] }>;
     finishUndo(batchId: number, now: number): Promise<void>;
-    /** exclusive: afterwards every thread is in `to` and no other category (each removed row is journaled for undo) */
+    /** an exclusive move, recorded: afterwards every thread will be in `to` and no other category; applyMoveSlice moves them */
     beginMove(m: { to: number; threadIds: readonly number[]; addedBy: AddedBy; now: number; source: string }): Promise<{ batchId: number; added: number[]; moved: number[]; deltas: ModelDelta[] }>;
     movePhase(batchId: number): Promise<MovePhase | null>;
+    /** the threads the current phase (moving, training, unmoving, restoring) hasn't reached yet */
     movePending(batchId: number): Promise<number[]>;
-    unfinishedMoves(): Promise<{ batchId: number; phase: "training" | "restoring" }[]>;
+    unfinishedMoves(): Promise<{ batchId: number; phase: "moving" | "training" | "unmoving" | "restoring" }[]>;
+    /** one slice of a move, one unit: these threads leave every other category (journaled per row) and join `to` */
+    applyMoveSlice(batchId: number, threadIds: readonly number[], now: number): Promise<{ deltas: ModelDelta[]; touched: number[] }>;
     trainMoveSlice(batchId: number, threadIds: readonly number[], now: number): Promise<ModelDelta[]>;
-    undoMoveCommit(batchId: number, now: number): Promise<{ removed: number[]; restored: number[]; deltas: ModelDelta[] }>;
+    /** starts an undo (false: nothing left to undo); undoMoveSlice then restores memberships and decisions */
+    undoMoveBegin(batchId: number, now: number): Promise<boolean>;
+    undoMoveSlice(batchId: number, threadIds: readonly number[], now: number): Promise<{ removed: number[]; restored: number[]; deltas: ModelDelta[] }>;
     restoreMoveSlice(batchId: number, threadIds: readonly number[]): Promise<ModelDelta[]>;
   };
 

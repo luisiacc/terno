@@ -381,26 +381,45 @@ export class BackendCore {
   private readonly moves = new Map<number, Promise<void>>();
 
   /**
-   * Runs (or joins) whatever a move still has to do in slices: its training
-   * after the move, or its example restore after an undo. Resumable: progress
-   * is per thread in the journal, so after a crash start() picks it up.
+   * Runs (or joins) whatever a move still has to do, in slices: its
+   * memberships ("moving"), its training, an undo's memberships
+   * ("unmoving") and its example restore. Resumable: progress is per thread
+   * in the journal, so after a crash start() picks it up. `tally` collects
+   * what an undo's slices took out and put back.
    */
-  finishMove(batchId: number): Promise<void> {
+  finishMove(batchId: number, tally?: { removed: Set<number>; restored: Set<number> }): Promise<void> {
     const running = this.moves.get(batchId);
-    if (running) return running;
+    if (running) return running.then(() => (tally ? this.finishMove(batchId, tally) : undefined));
     const job = (async () => {
-      // the membership commit that started this was a long transaction: let interactive work in before training
       await this.platform.yield();
       for (;;) {
         const phase = await this.store.categories.movePhase(batchId);
-        if (phase !== "training" && phase !== "restoring") return;
+        if (phase !== "moving" && phase !== "training" && phase !== "unmoving" && phase !== "restoring") return;
         const pending = await this.store.categories.movePending(batchId);
         if (pending.length === 0) return;
-        await this.runSliced(pending, 50, async (chunk) => {
-          const deltas =
-            phase === "training" ? await this.store.categories.trainMoveSlice(batchId, chunk, this.now()) : await this.store.categories.restoreMoveSlice(batchId, chunk);
-          this.categorizer.apply(deltas);
-        });
+        // membership slices write many rows per thread (one per category): half the usual budget, as thread actions
+        const budget = phase === "moving" || phase === "unmoving" ? this.options.sliceBudgetMs / 2 : this.options.sliceBudgetMs;
+        await this.runSliced(
+          pending,
+          50,
+          async (chunk) => {
+            const now = this.now();
+            if (phase === "moving") {
+              const r = await this.store.categories.applyMoveSlice(batchId, chunk, now);
+              this.categorizer.apply(r.deltas);
+              this.notifyChanged(r.touched);
+            } else if (phase === "unmoving") {
+              const r = await this.store.categories.undoMoveSlice(batchId, chunk, now);
+              this.categorizer.apply(r.deltas);
+              for (const t of r.removed) tally?.removed.add(t);
+              for (const t of r.restored) tally?.restored.add(t);
+              this.notifyChanged([...r.removed, ...r.restored]);
+            } else {
+              this.categorizer.apply(phase === "training" ? await this.store.categories.trainMoveSlice(batchId, chunk, now) : await this.store.categories.restoreMoveSlice(batchId, chunk));
+            }
+          },
+          budget,
+        );
         if (this.stopped) return;
       }
     })().finally(() => this.moves.delete(batchId));

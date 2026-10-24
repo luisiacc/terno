@@ -400,30 +400,37 @@ export function finishUndo(db: Db, batchId: number, now: number): void {
 
 // ───────────────────────────── move (drag, "Mover a…") ─────────────────────────────
 //
-// A move is exclusive: afterwards each thread is in `to` and nowhere else. It
-// is visible all at once: its memberships (added to `to`, removed from every
-// other category) commit in one set-based transaction, which also journals
-// what they overwrite (cat_move_*: each removed row with its category). The
-// training that follows (a positive example in `to`, a removal example per
-// category left) is per-thread feature work, so it runs afterwards in slices
-// tracked per thread; the in-memory model catches up as it goes, as with any
-// sliced filing. Undo mirrors it: memberships and decision outcomes come back
-// in one transaction, examples in slices.
+// A move is exclusive: afterwards each thread is in `to` and nowhere else.
+// beginMove records its threads (phase "moving"); applyMoveSlice then moves
+// them in set-based slices, each one transaction that journals what it
+// overwrites (cat_move_*: each removed row with its category) — a thread
+// filed in 20 categories touches 20 rows, so 5,000 of them can't be one
+// transaction within the event-loop budget. The training that follows (a
+// positive example in `to`, a removal example per category left) runs in
+// slices too ("training"). Progress is per thread (cat_move_threads.done),
+// so a crash resumes forward. Undo mirrors it: undoMoveBegin, then
+// memberships and decision outcomes in slices ("unmoving"), then examples
+// ("restoring"); each thread comes back exactly.
 
 /** How long a move can be undone (its journal is pruned after that). */
 export const MOVE_UNDO_WINDOW_MS = 86_400_000;
 
 const JOURNAL_TABLES = ["cat_move_threads", "cat_move_rows", "cat_move_examples", "cat_move_decisions"];
 
+/** Journal rows of expired moves deleted per call: a large move journals 100,000s of rows, gone a part at a time. */
+const PRUNE_THREADS = 200;
+
 function pruneMoveJournals(db: Db, now: number): void {
-  const old = db.all<{ id: number }>(
-    "SELECT id FROM cat_batches WHERE scope_json ->> '$.kind' = 'move' AND scope_json ->> '$.phase' = 'done' AND created_at < ?",
+  // a move older than the window can no longer be undone
+  db.run(
+    "UPDATE cat_batches SET scope_json = json_set(scope_json, '$.phase', 'expired') WHERE scope_json ->> '$.kind' = 'move' AND scope_json ->> '$.phase' = 'done' AND created_at < ?",
     now - MOVE_UNDO_WINDOW_MS,
   );
-  for (const { id } of old) {
-    for (const t of JOURNAL_TABLES) db.run(`DELETE FROM ${t} WHERE batch_id = ?`, id);
-    setPhase(db, id, "expired");
-  }
+  const left = db.all<{ batch_id: number; thread_id: number }>(
+    `SELECT batch_id, thread_id FROM cat_move_threads WHERE batch_id IN (SELECT id FROM cat_batches WHERE scope_json ->> '$.kind' = 'move' AND scope_json ->> '$.phase' = 'expired') LIMIT ?`,
+    PRUNE_THREADS,
+  );
+  for (const r of left) for (const t of JOURNAL_TABLES) db.run(`DELETE FROM ${t} WHERE batch_id = ? AND thread_id = ?`, r.batch_id, r.thread_id);
 }
 
 export interface MoveBegin {
@@ -448,11 +455,21 @@ export function isMoveBatch(db: Db, batchId: number): boolean {
   return movePhase(db, batchId) !== null;
 }
 
-/** Moves that a crash left half-trained or half-restored. */
-export function unfinishedMoves(db: Db): { batchId: number; phase: "training" | "restoring" }[] {
-  return db.all<{ id: number; phase: "training" | "restoring" }>(
-    "SELECT id, scope_json ->> '$.phase' AS phase FROM cat_batches WHERE scope_json ->> '$.kind' = 'move' AND scope_json ->> '$.phase' IN ('training', 'restoring') ORDER BY id",
+export type UnfinishedPhase = "moving" | "training" | "unmoving" | "restoring";
+
+/** Moves (or their undos) that a crash left half-done. */
+export function unfinishedMoves(db: Db): { batchId: number; phase: UnfinishedPhase }[] {
+  return db.all<{ id: number; phase: UnfinishedPhase }>(
+    "SELECT id, scope_json ->> '$.phase' AS phase FROM cat_batches WHERE scope_json ->> '$.kind' = 'move' AND scope_json ->> '$.phase' IN ('moving', 'training', 'unmoving', 'restoring') ORDER BY id",
   ).map((r) => ({ batchId: r.id, phase: r.phase }));
+}
+
+/** The phase is over for every thread: the next one starts from the top. */
+function nextPhaseWhenDone(db: Db, batchId: number, next: MovePhase): boolean {
+  if (db.get("SELECT 1 FROM cat_move_threads WHERE batch_id = ? AND done = 0 LIMIT 1", batchId)) return false;
+  db.run("UPDATE cat_move_threads SET done = 0 WHERE batch_id = ?", batchId);
+  setPhase(db, batchId, next);
+  return true;
 }
 
 /** The move's threads whose current phase (training or restore) hasn't reached them yet. */
@@ -478,11 +495,15 @@ function touched(table: string, batchId: number, to: number, ids: string | null,
   };
 }
 
-/** Commits a move's memberships atomically and journals what they overwrite. Set-based: ~tens of ms for 5,000 threads. */
+/**
+ * Records a move: its threads (those that exist), whether each is new to
+ * `to` and leaves other categories as things stand now. Nothing moves yet:
+ * applyMoveSlice does, in slices.
+ */
 export function beginMove(db: Db, m: { to: number; threadIds: readonly number[]; addedBy: AddedBy; now: number; source: string }): MoveBegin {
   return db.tx(() => {
     pruneMoveJournals(db, m.now);
-    const batchId = createBatch(db, m.to, m.source, { kind: "move", exclusive: true, addedBy: m.addedBy, phase: "training" satisfies MovePhase }, m.now);
+    const batchId = createBatch(db, m.to, m.source, { kind: "move", exclusive: true, addedBy: m.addedBy, phase: "moving" satisfies MovePhase }, m.now);
     db.run(
       `INSERT INTO cat_move_threads (batch_id, thread_id, added, moved)
        SELECT ?, j.value,
@@ -494,51 +515,93 @@ export function beginMove(db: Db, m: { to: number; threadIds: readonly number[];
       m.to,
       JSON.stringify(m.threadIds),
     );
-    const leaving = "SELECT thread_id FROM cat_move_threads WHERE batch_id = ? AND moved = 1";
-    // every row the move removes, with its category, origin and batch (undo puts each back exactly)
-    db.run(
-      `INSERT INTO cat_move_rows (batch_id, thread_id, category_id, added_by, added_at, prev_batch_id)
-       SELECT ?, thread_id, category_id, added_by, added_at, batch_id FROM thread_categories WHERE thread_id IN (${leaving}) AND category_id != ?`,
+    const added = db.all<{ thread_id: number }>("SELECT thread_id FROM cat_move_threads WHERE batch_id = ? AND added = 1 ORDER BY thread_id", batchId).map((r) => r.thread_id);
+    const moved = db.all<{ thread_id: number }>("SELECT thread_id FROM cat_move_threads WHERE batch_id = ? AND moved = 1 ORDER BY thread_id", batchId).map((r) => r.thread_id);
+    finishBatch(db, batchId, added.length);
+    // nothing to move (every thread gone): nothing to train or undo either
+    if (!db.get("SELECT 1 FROM cat_move_threads WHERE batch_id = ? LIMIT 1", batchId)) setPhase(db, batchId, "done");
+    return { batchId, added, moved, deltas: [] };
+  });
+}
+
+/**
+ * One slice of a move, in one set-based transaction: these threads leave
+ * every other category and join `to`, and what that overwrites is journaled
+ * (each removed row with its category, the decisions of every affected
+ * category). Memberships are read now, so a filing since beginMove is
+ * journaled too.
+ */
+export function applyMoveSlice(db: Db, batchId: number, threadIds: readonly number[], now: number): { deltas: ModelDelta[]; touched: number[] } {
+  return db.tx(() => {
+    const meta = db.get<{ to: number; addedBy: AddedBy; phase: MovePhase }>(
+      "SELECT category_id AS 'to', scope_json ->> '$.addedBy' AS addedBy, scope_json ->> '$.phase' AS phase FROM cat_batches WHERE id = ?",
       batchId,
-      batchId,
-      m.to,
     );
-    const decisions = touched("cls_decisions", batchId, m.to, null);
+    if (!meta || meta.phase !== "moving") return { deltas: [], touched: [] };
+    const ids = JSON.stringify(
+      db
+        .all<{ thread_id: number }>("SELECT thread_id FROM cat_move_threads WHERE batch_id = ? AND done = 0 AND thread_id IN (SELECT value FROM json_each(?))", batchId, JSON.stringify(threadIds))
+        .map((r) => r.thread_id),
+    );
+    const slice = "SELECT value FROM json_each(?)";
     db.run(
-      `INSERT INTO cat_move_decisions (batch_id, thread_id, category_id, outcome)
+      `UPDATE cat_move_threads SET
+         added = NOT EXISTS (SELECT 1 FROM thread_categories tc WHERE tc.thread_id = cat_move_threads.thread_id AND tc.category_id = ?),
+         moved = EXISTS (SELECT 1 FROM thread_categories tc WHERE tc.thread_id = cat_move_threads.thread_id AND tc.category_id != ?)
+       WHERE batch_id = ? AND thread_id IN (${slice})`,
+      meta.to,
+      meta.to,
+      batchId,
+      ids,
+    );
+    // every row the slice removes, with its category, origin and batch (undo puts each back exactly)
+    db.run(
+      `INSERT OR IGNORE INTO cat_move_rows (batch_id, thread_id, category_id, added_by, added_at, prev_batch_id)
+       SELECT ?, thread_id, category_id, added_by, added_at, batch_id FROM thread_categories WHERE thread_id IN (${slice}) AND category_id != ?`,
+      batchId,
+      ids,
+      meta.to,
+    );
+    const decisions = touched("cls_decisions", batchId, meta.to, ids);
+    db.run(
+      `INSERT OR IGNORE INTO cat_move_decisions (batch_id, thread_id, category_id, outcome)
        SELECT ?, thread_id, category_id, outcome FROM cls_decisions WHERE ${decisions.where}`,
       batchId,
       ...decisions.params,
     );
-    db.run(`DELETE FROM thread_categories WHERE thread_id IN (${leaving}) AND category_id != ?`, batchId, m.to);
-    db.run(
-      `INSERT INTO thread_categories (thread_id, category_id, added_by, added_at, batch_id)
-       SELECT thread_id, ?, ?, ?, ? FROM cat_move_threads WHERE batch_id = ? AND added = 1`,
-      m.to,
-      m.addedBy,
-      m.now,
-      batchId,
-      batchId,
-    );
-    const added = db.all<{ thread_id: number }>("SELECT thread_id FROM cat_move_threads WHERE batch_id = ? AND added = 1 ORDER BY thread_id", batchId).map((r) => r.thread_id);
-    const moved = db.all<{ thread_id: number }>("SELECT thread_id FROM cat_move_threads WHERE batch_id = ? AND moved = 1 ORDER BY thread_id", batchId).map((r) => r.thread_id);
+    db.run(`DELETE FROM thread_categories WHERE thread_id IN (${slice}) AND category_id != ?`, ids, meta.to);
+    const added = db
+      .all<{ thread_id: number }>(
+        `INSERT INTO thread_categories (thread_id, category_id, added_by, added_at, batch_id)
+         SELECT thread_id, ?, ?, ?, ? FROM cat_move_threads WHERE batch_id = ? AND added = 1 AND thread_id IN (${slice})
+         RETURNING thread_id`,
+        meta.to,
+        meta.addedBy,
+        now,
+        batchId,
+        batchId,
+        ids,
+      )
+      .map((r) => r.thread_id);
     // what addToCategory / removeFromCategory record about decisions
     db.run(
       `UPDATE cls_decisions SET outcome = 'accepted' WHERE category_id = ? AND kind = 'suggest' AND outcome IS NULL
-         AND thread_id IN (SELECT thread_id FROM cat_move_threads WHERE batch_id = ? AND added = 1)`,
-      m.to,
-      batchId,
+         AND thread_id IN (SELECT value FROM json_each(?))`,
+      meta.to,
+      JSON.stringify(added),
     );
     db.run(
       `UPDATE cls_decisions SET outcome = 'reverted' WHERE kind = 'auto' AND outcome IS NULL AND at >= ?
-         AND thread_id IN (SELECT thread_id FROM cat_move_rows WHERE batch_id = ? AND added_by = 'auto')
+         AND thread_id IN (SELECT thread_id FROM cat_move_rows WHERE batch_id = ? AND added_by = 'auto' AND thread_id IN (${slice}))
          AND EXISTS (SELECT 1 FROM cat_move_rows r WHERE r.batch_id = ? AND r.added_by = 'auto' AND r.thread_id = cls_decisions.thread_id AND r.category_id = cls_decisions.category_id)`,
-      m.now - POLICY.revertWindowDays * 86_400_000,
+      now - POLICY.revertWindowDays * 86_400_000,
       batchId,
+      ids,
       batchId,
     );
-    finishBatch(db, batchId, added.length);
-    return { batchId, added, moved, deltas: added.map((threadId): ModelDelta => ({ op: "unbackground", threadId })) };
+    db.run(`UPDATE cat_move_threads SET done = 1 WHERE batch_id = ? AND thread_id IN (${slice})`, batchId, ids);
+    nextPhaseWhenDone(db, batchId, "training");
+    return { deltas: added.map((threadId): ModelDelta => ({ op: "unbackground", threadId })), touched: JSON.parse(ids) as number[] };
   });
 }
 
@@ -594,46 +657,64 @@ export interface UndoMoveResult extends UndoResult {
 }
 
 /**
- * Takes a (fully trained) move's memberships back in one transaction: the
- * destination loses what the move added, every category a thread left gets
- * its row back with its original origin and batch (so undoing that earlier
- * batch still works), and decision outcomes return to what they were.
- * Examples follow in slices (restoreMoveSlice). Idempotent.
+ * Starts taking a (fully applied and trained) move back: its memberships and
+ * decisions then come back in slices (undoMoveSlice), its examples after
+ * (restoreMoveSlice). Idempotent: false when there is nothing (left) to start.
  */
-export function undoMoveCommit(db: Db, batchId: number, now: number): UndoMoveResult {
+export function undoMoveBegin(db: Db, batchId: number, now: number): boolean {
   return db.tx(() => {
-    const batch = db.get<{ category_id: number; undone_at: number | null; phase: MovePhase }>(
-      "SELECT category_id, undone_at, scope_json ->> '$.phase' AS phase FROM cat_batches WHERE id = ?",
-      batchId,
-    );
-    if (!batch || batch.undone_at !== null) return { categoryId: null, removed: [], restored: [], deltas: [] };
+    const batch = db.get<{ undone_at: number | null; phase: MovePhase }>("SELECT undone_at, scope_json ->> '$.phase' AS phase FROM cat_batches WHERE id = ?", batchId);
+    if (!batch || batch.undone_at !== null) return false;
     if (batch.phase === "expired") throw new Error("Este movimiento ya no se puede deshacer");
     if (batch.phase !== "done") throw new Error(`move ${batchId} is still being applied`);
+    db.run("UPDATE cat_move_threads SET done = 0 WHERE batch_id = ?", batchId);
+    setPhase(db, batchId, "unmoving");
+    finishUndo(db, batchId, now);
+    return true;
+  });
+}
+
+/**
+ * One slice of an undo, in one transaction: these threads leave the
+ * destination if the move added them, get every row they lost back with its
+ * original origin and batch (so undoing that earlier batch still works), and
+ * their decision outcomes return to what they were.
+ */
+export function undoMoveSlice(db: Db, batchId: number, threadIds: readonly number[], now: number): UndoMoveResult {
+  return db.tx(() => {
+    const batch = db.get<{ category_id: number; phase: MovePhase }>("SELECT category_id, scope_json ->> '$.phase' AS phase FROM cat_batches WHERE id = ?", batchId);
+    if (!batch || batch.phase !== "unmoving") return { categoryId: null, removed: [], restored: [], deltas: [] };
     const to = batch.category_id;
-    const mine = "SELECT thread_id FROM cat_move_threads WHERE batch_id = ?";
+    const ids = JSON.stringify(
+      db
+        .all<{ thread_id: number }>("SELECT thread_id FROM cat_move_threads WHERE batch_id = ? AND done = 0 AND thread_id IN (SELECT value FROM json_each(?))", batchId, JSON.stringify(threadIds))
+        .map((r) => r.thread_id),
+    );
     const removed = db
-      .all<{ thread_id: number }>(`DELETE FROM thread_categories WHERE batch_id = ? AND category_id = ? AND thread_id IN (${mine}) RETURNING thread_id`, batchId, to, batchId)
+      .all<{ thread_id: number }>(`DELETE FROM thread_categories WHERE batch_id = ? AND category_id = ? AND thread_id IN (SELECT value FROM json_each(?)) RETURNING thread_id`, batchId, to, ids)
       .map((r) => r.thread_id);
     // a category deleted since has nothing to come back to
     const restored = db
       .all<{ thread_id: number }>(
         `INSERT OR REPLACE INTO thread_categories (thread_id, category_id, added_by, added_at, batch_id)
          SELECT r.thread_id, r.category_id, r.added_by, r.added_at, r.prev_batch_id FROM cat_move_rows r
-         WHERE r.batch_id = ? AND EXISTS (SELECT 1 FROM threads WHERE id = r.thread_id) AND EXISTS (SELECT 1 FROM categories WHERE id = r.category_id)
+         WHERE r.batch_id = ? AND r.thread_id IN (SELECT value FROM json_each(?))
+           AND EXISTS (SELECT 1 FROM threads WHERE id = r.thread_id) AND EXISTS (SELECT 1 FROM categories WHERE id = r.category_id)
          RETURNING thread_id`,
         batchId,
+        ids,
       )
       .map((r) => r.thread_id);
-    const decisions = touched("cls_decisions", batchId, to, null);
+    const decisions = touched("cls_decisions", batchId, to, ids);
     db.run(`UPDATE cls_decisions SET outcome = NULL WHERE ${decisions.where}`, ...decisions.params);
     db.run(
       `UPDATE cls_decisions SET outcome = d.outcome FROM cat_move_decisions d
-       WHERE d.batch_id = ? AND cls_decisions.thread_id = d.thread_id AND cls_decisions.category_id = d.category_id`,
+       WHERE d.batch_id = ? AND d.thread_id IN (SELECT value FROM json_each(?)) AND cls_decisions.thread_id = d.thread_id AND cls_decisions.category_id = d.category_id`,
       batchId,
+      ids,
     );
-    db.run("UPDATE cat_move_threads SET done = 0 WHERE batch_id = ?", batchId);
-    setPhase(db, batchId, "restoring");
-    finishUndo(db, batchId, now);
+    db.run("UPDATE cat_move_threads SET done = 1 WHERE batch_id = ? AND thread_id IN (SELECT value FROM json_each(?))", batchId, ids);
+    nextPhaseWhenDone(db, batchId, "restoring");
     const back = [...new Set(restored)].sort((a, b) => a - b);
     const deltas: ModelDelta[] = back.map((threadId) => ({ op: "unbackground", threadId }));
     deltas.push(...backgroundDeltas(db, removed, now));
@@ -667,6 +748,8 @@ export function restoreMoveSlice(db: Db, batchId: number, threadIds: readonly nu
       deltas.push({ op: "train", example: toExample(r), key: [r.thread_id, r.category_id] });
     }
     db.run("UPDATE cat_move_threads SET done = 1 WHERE batch_id = ? AND thread_id IN (SELECT value FROM json_each(?))", batchId, ids);
+    // these threads are back for good: their journal goes with this slice (one delete for 100,000 rows would stall)
+    for (const t of ["cat_move_rows", "cat_move_examples", "cat_move_decisions"]) db.run(`DELETE FROM ${t} WHERE batch_id = ? AND thread_id IN (SELECT value FROM json_each(?))`, batchId, ids);
     if (!db.get("SELECT 1 FROM cat_move_threads WHERE batch_id = ? AND done = 0 LIMIT 1", batchId)) {
       setPhase(db, batchId, "undone");
       for (const t of JOURNAL_TABLES) db.run(`DELETE FROM ${t} WHERE batch_id = ?`, batchId);
