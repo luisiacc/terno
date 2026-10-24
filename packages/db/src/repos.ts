@@ -619,8 +619,21 @@ export function saveDraft(db: Db, d: DraftInput, now = Date.now()): DraftRow | n
   return db.get<DraftRow>("SELECT * FROM drafts WHERE id = ?", id)!;
 }
 
+/**
+ * Every draft, newest first. A reply or forward whose conversation or
+ * original message is gone comes back as a new message (threading ids
+ * cleared): it keeps its recipients and text and can be sent.
+ */
 export function listDrafts(db: Db): DraftRow[] {
-  return db.all<DraftRow>("SELECT * FROM drafts ORDER BY updated_at DESC");
+  const exists = (id: number | null) => id !== null && db.get("SELECT 1 FROM messages WHERE id = ?", id) !== undefined;
+  return db.all<DraftRow>("SELECT * FROM drafts ORDER BY updated_at DESC").map((d) => normalizeOrphan(d, exists));
+}
+
+/** A draft whose conversation or original message is gone, as a new message (IdbMailStore applies the same rule). */
+export function normalizeOrphan(d: DraftRow, exists: (messageId: number | null) => boolean): DraftRow {
+  if (d.mode === "new") return d;
+  const lost = d.thread_id === null || (d.in_reply_to_message_id !== null && !exists(d.in_reply_to_message_id)) || (d.forward_of_message_id !== null && !exists(d.forward_of_message_id));
+  return lost ? { ...d, mode: "new", thread_id: null, in_reply_to_message_id: null, forward_of_message_id: null } : d;
 }
 
 export function deleteDraft(db: Db, id: number): void {

@@ -1172,8 +1172,18 @@ export function saveDraft(c: Ctx, d: DraftInput, now: number): DraftRow | null {
   return draftRow(fresh);
 }
 
+/** Every draft, newest first; a reply or forward whose conversation or original is gone comes back as a new message (as in SQL). */
 export function listDrafts(c: Ctx): DraftRow[] {
-  return [...T(c, "drafts").all()].sort((x, y) => y.updated_at - x.updated_at || y.id - x.id).map(draftRow);
+  const messages = T(c, "messages");
+  const exists = (id: number | null) => id !== null && messages.get(id) !== undefined;
+  return [...T(c, "drafts").all()]
+    .sort((x, y) => y.updated_at - x.updated_at || y.id - x.id)
+    .map(draftRow)
+    .map((d) => {
+      if (d.mode === "new") return d;
+      const lost = d.thread_id === null || (d.in_reply_to_message_id !== null && !exists(d.in_reply_to_message_id)) || (d.forward_of_message_id !== null && !exists(d.forward_of_message_id));
+      return lost ? { ...d, mode: "new" as const, thread_id: null, in_reply_to_message_id: null, forward_of_message_id: null } : d;
+    });
 }
 
 // ───────────────────────────── owner ─────────────────────────────

@@ -1060,7 +1060,8 @@ export class IdbMailStore implements MailStore {
 
   readonly drafts: MailStore["drafts"] = {
     save: (d, now) => this.command(() => saveDraft(this.c, d, now)),
-    list: () => this.early(() => listDrafts(this.c)),
+    // waits for the messages: an orphan (its original gone) is told apart from a draft whose original is loading
+    list: () => this.read(() => listDrafts(this.c)),
     delete: (id) => this.command(() => void T(this.c, "drafts").delete(id)),
   };
 

@@ -1220,6 +1220,31 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         const after = (await store.drafts.list()).find((x) => x.id === d.id)!;
         expect(after.thread_id).toBeNull();
         expect(after.body_text).toBe("texto");
+        // it comes back as a new message, threading ids cleared, so it can be sent
+        expect(after).toMatchObject({ mode: "new", in_reply_to_message_id: null, forward_of_message_id: null });
+        await store.compose.queueSend({
+          accountId: a!,
+          to: [{ name: "Yuki", email: "yuki@example.com" }],
+          cc: [],
+          bcc: [],
+          subject: after.subject,
+          bodyText: after.body_text,
+          inReplyToMessageId: after.in_reply_to_message_id ?? undefined,
+          draftId: after.id,
+          recordReply: false,
+          now: NOW,
+        });
+        expect(await store.drafts.list()).toEqual([]);
+      });
+
+      it("a forward whose original is gone comes back as a new message too", async () => {
+        const store = await fresh();
+        const [a] = await withAccounts(store);
+        await ingest(store, [msg({ accountId: a!, providerMsgId: "fwd-src", subject: "Original" })]);
+        const m = (await store.debug.snapshot()).messages.find((x) => x.providerMsgId === "fwd-src")!;
+        const d = (await store.drafts.save({ accountId: a!, mode: "forward", threadId: m.threadId, forwardOfMessageId: m.id, to: [], cc: [], subject: "Fwd: Original", bodyText: "mira" }, NOW))!;
+        await store.sync.remove([m.id]);
+        expect((await store.drafts.list()).find((x) => x.id === d.id)).toMatchObject({ mode: "new", thread_id: null, forward_of_message_id: null, body_text: "mira" });
       });
     });
 
