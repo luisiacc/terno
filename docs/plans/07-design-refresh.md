@@ -413,3 +413,20 @@ Each test lands in the commit that changes the behavior or look it covers. Basel
 - Cross-writer draft conflicts become extra drafts, not merges.
 - Frame gates are noisy under load.
 - Attachments stay view-only until their own plan.
+
+## 9. Outcome
+
+Shipped in 13 commits on top of plan 06 and its review fixes, in the order of §7. Where it departs from the plan, and why:
+
+- **`--glass-alpha` is a color token, `popover-glass`** (the popover at the derived alpha). Custom themes then carry it like any other token (CSSOM, the pre-paint cache) with no extra variable. Honest result of the contrast rule: menu text must read over pure black and white, so light themes end at ~.98 and several dark ones (Nord, Dracula, Monokai, Gruvbox) are solid; the blur shows mostly at the edges.
+- **Hairline utilities are `hairline`, `hairline-t/-b/-l/-r`, `hairline-divide`, `hairline-strong`** (not `border-hairline`, which Tailwind already generates as a color utility from the token).
+- **Scroll-linked toolbar hairlines don't fade**: the first frame gate caught the fade as an animation started by scrolling (scrolling never animates).
+- **The separator above the selected row** (`:has(+ [data-cursor])`) shipped: the frame gates pass with it.
+- **Enter and Space on a focused button or link** are left to the control (native activation) instead of the global `list.open`; other single keys keep working from a focused button.
+- **Opening uses `@starting-style`** (Tailwind `starting:`) instead of a frame at 0fr, so a draft or message starts growing in the frame it first paints; only toggled opens animate.
+- **Inline reply gate**: keypress → first frame (≤ 50 ms) and first frame → expansion done (≤ slow + 2 frames) are enforced; their sum (~120–132 ms p95) is reported, too close to 133 ms to gate under load.
+- **The j gate's row renders** are ≤ 3.5 per move: the two rows whose selection changed plus the row the scroll mounts (virtualization), never one for drafts.
+- **The quote join happens in the renderer** (`sendBody`), `compose.send` sending the request's text; the backend never joins anything.
+- **Settings**: General is inset-grouped; the other tabs keep their own layouts inside the new sidebar shell.
+
+Measured (load average 5–7 from other work): j at key repeat frame p95 16.7 ms (both densities, with a collapsed and a restored draft); continuous scroll 16.8 ms; long conversation 16.8 ms, no frame or observer left; inline reply first frame ~15 ms, expansion ~115–126 ms; context menu ~15–17 ms; every earlier gate unchanged. Packaged smoke: warm start ~0.5 s to first rows. One backend gate from plan 06 (the 5,000-thread × 20-category move, ≤ 50 ms stall) failed once at load average ~7 (99 ms) and passed on rerun (36 ms): load-sensitive, untouched by this plan.

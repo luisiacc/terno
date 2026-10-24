@@ -11,7 +11,8 @@
 - Filters learned from what you archive.
 - Drag one or many conversations onto a category to move them there (out of every other category); the same undoable snackbar as the `l` picker.
 - A right-click menu on a conversation or a selection (read/unread, star, archive, delete, spam, categories with checkmarks, "Mover a…", everything from a sender, a filter from them), selection with ⌘A, ⌘/⇧-click and ⇧J/K, the usual triage keys (⌫, ⇧I, ⇧U, ⌘⇧U, ⌃⌘A, z…), and "select all N conversations" that the backend applies to a whole view in slices, with progress and undo ([plan 06](docs/plans/06-context-menu-selection.md)).
-- 13 themes (Única, Apple, Solarized, Gruvbox, GitHub, Catppuccin, Dracula, Monokai, Tokyo Night, Nord) with a light and a dark choice for system mode, your own themes as JSON, all checked for WCAG AA contrast; animations you can set to 0/50/75/100 ms (Ajustes → Apariencia).
+- A quiet, Apple-Mail-like interface: conversations without boxes (hairlines and faint surfaces), replies and new messages written in place (no dialogs), drafts that are never lost (saved as you type, restored after a restart).
+- 13 themes (Única, Apple, Solarized, Gruvbox, GitHub, Catppuccin, Dracula, Monokai, Tokyo Night, Nord) with a light and a dark choice for system mode, your own themes as JSON, all checked for WCAG AA contrast; animations you can set to 0/50/75/100 ms (Ajustes → Apariencia); reduced transparency respected.
 - An MCP server so **Claude Code** and **Codex** get one access point to all your email.
 
 The technical plan, and the design review held with Codex before implementation, live in [`docs/PLAN.md`](docs/PLAN.md).
@@ -114,6 +115,10 @@ Web: Page ──MessagePort──▶ Dedicated Worker (the tab holding the Web L
 | Drop → dot on the row | ≤ 16 ms | ~1 ms, 1 row render |
 | Right-click → context menu painted | ≤ 50 ms | ~9 ms p50, ~13 ms p95, 0 row renders |
 | ⌘A over 500 loaded rows → committed | ≤ 16 ms | ~1.6 ms, only the rows that changed render; a toggle renders 1 row |
+| `j` at key repeat (30/s, 300 presses, both densities, drafts present): frame interval · longest frame | ≤ 20 ms · ≤ 50 ms | 16.7 ms · ≤ 33 ms, 0 long frames, ~3 row renders per move |
+| Continuous scroll across 2,000 threads (3 s fling, both densities): frame interval · longest frame | ≤ 20 ms · ≤ 50 ms | 16.8 ms · 16.8 ms |
+| Expanding 19 messages of a conversation (5 HTML): frame interval · longest frame | ≤ 20 ms · ≤ 50 ms | 16.8 ms, nothing left mounted when collapsed |
+| Inline reply: keypress → first frame showing it · that frame → expansion done | ≤ 50 ms · ≤ 133 ms | ~15 ms · ~115–126 ms |
 
 **Packaged app** (`pnpm test:smoke`): about 0.5 s from a warm start to the first mail painted.
 
