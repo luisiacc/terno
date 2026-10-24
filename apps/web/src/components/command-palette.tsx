@@ -1,13 +1,14 @@
 import type { CategoryColor } from "@unica/core";
 import { CategoryDot } from "@unica/ui/components/category-dot";
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@unica/ui/components/command";
-import { Archive, CheckCheck, FolderInput, Inbox, Layers, Mail, MailOpen, Moon, OctagonAlert, PenLine, Search, Send, Settings2, Sparkles, Star, Sun, Trash2, Undo2 } from "lucide-react";
+import { Archive, CheckCheck, FolderInput, Inbox, Layers, Mail, MailOpen, Moon, OctagonAlert, PenLine, Search, Send, Sparkles, Star, Sun, Trash2, Undo2 } from "lucide-react";
 import { useState } from "react";
 import { act, openCompose, toggleStar, undoLast } from "~/lib/actions";
 import { addScopeToCategory, addToCategory } from "~/lib/categorize";
-import { currentTargets, selectAll } from "~/lib/select";
+import { currentTargets, isMac, selectAll } from "~/lib/select";
 import { updateAppearance } from "~/lib/appearance";
 import { navigate, setApp, useApp } from "~/state/app";
+import { SETTINGS_TABS } from "./settings/tabs";
 
 export function CommandPalette() {
   const open = useApp((s) => s.dialog === "palette");
@@ -61,7 +62,6 @@ export function CommandPalette() {
           <CommandItem onSelect={() => run(selectAll)}><CheckCheck /> Seleccionar todo<CommandShortcut>⌘A</CommandShortcut></CommandItem>
           <CommandItem onSelect={() => run(undoLast)}><Undo2 /> Deshacer<CommandShortcut>Z</CommandShortcut></CommandItem>
           <CommandItem onSelect={() => run(() => setApp({ dialog: "filters" }))}><Sparkles /> Crear filtro con IA</CommandItem>
-          <CommandItem onSelect={() => run(() => setApp({ dialog: "settings", settingsTab: "general" }))}><Settings2 /> Ajustes</CommandItem>
           <CommandItem
             onSelect={() =>
               run(() => {
@@ -72,6 +72,14 @@ export function CommandPalette() {
             <Moon className="dark:hidden" />
             <Sun className="hidden dark:block" /> Cambiar tema
           </CommandItem>
+        </CommandGroup>
+        <CommandGroup heading="Ajustes">
+          {SETTINGS_TABS.map(({ value, label, icon: Icon }) => (
+            <CommandItem key={value} value={`ajustes ${label}`} data-testid={`palette-settings-${value}`} onSelect={() => run(() => setApp({ dialog: "settings", settingsTab: value }))}>
+              <Icon /> Ajustes <span aria-hidden>→</span> {label}
+              {value === "general" && <CommandShortcut>{isMac ? "⌘," : "Ctrl+,"}</CommandShortcut>}
+            </CommandItem>
+          ))}
         </CommandGroup>
         {targets > 0 && (
           <CommandGroup heading={targets > 1 ? `Añadir ${targets} conversaciones` : "Añadir a categoría"}>

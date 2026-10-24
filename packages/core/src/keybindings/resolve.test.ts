@@ -30,6 +30,14 @@ describe("resolveKey", () => {
     expect(resolveKey(key("Enter", { meta: true }), { ...typing, composing: true }, null).command).toBe("compose.send");
   });
 
+  it("⌘, (Ctrl+, off Mac) opens settings, also while typing, but not over another dialog", () => {
+    expect(resolveKey(key(",", { meta: true }), ctx, null).command).toBe("settings.open");
+    expect(resolveKey(key(",", { meta: true }), { ...ctx, editable: true }, null).command).toBe("settings.open");
+    expect(resolveKey(key(",", { ctrl: true }), ctx, null, undefined, false).command).toBe("settings.open");
+    expect(resolveKey(key(",", { meta: true }), { ...ctx, dialogOpen: true }, null).command).toBe(null);
+    expect(resolveKey(key(","), ctx, null).command).toBe(null);
+  });
+
   it("uses ctrl as mod on non-mac platforms", () => {
     expect(resolveKey(key("k", { ctrl: true }), ctx, null, undefined, false).command).toBe("palette.open");
     expect(resolveKey(key("k", { ctrl: true }), ctx, null, undefined, true).command).toBe(null);

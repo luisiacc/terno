@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@unica/ui/components/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@unica/ui/components/tabs";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@unica/ui/components/alert-dialog";
-import { AtSign, Bot, Check, Copy, Palette, SlidersHorizontal, Sparkles, Tag, Trash2 } from "lucide-react";
+import { Check, Copy, Trash2 } from "lucide-react";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { client } from "~/rpc/connection";
@@ -18,6 +18,7 @@ import { AiTab } from "./settings/ai-tab";
 import { AppearanceTab } from "./settings/appearance-tab";
 import { CategoriesTab } from "./settings/categories-tab";
 import { OwnerCard } from "./settings/owner-card";
+import { SETTINGS_TABS } from "./settings/tabs";
 import { reconcileSettings } from "~/lib/appearance";
 import { DesktopOnly, MacSection, StorageSection } from "~/lib/web-parts";
 
@@ -51,14 +52,6 @@ function Group({ children, title }: { children: React.ReactNode; title?: string 
   );
 }
 
-const TABS: { value: SettingsTab; label: string; icon: typeof AtSign }[] = [
-  { value: "general", label: "General", icon: SlidersHorizontal },
-  { value: "appearance", label: "Apariencia", icon: Palette },
-  { value: "accounts", label: "Cuentas", icon: AtSign },
-  { value: "categories", label: "Categorías", icon: Tag },
-  { value: "ai", label: "IA", icon: Sparkles },
-  { value: "agents", label: "Agentes", icon: Bot },
-];
 
 function CopyBlock({ text, testId }: { text: string; testId?: string }) {
   const [copied, setCopied] = useState(false);
@@ -112,7 +105,7 @@ export function SettingsDialog() {
           <nav className="hairline-r hairline-strong flex w-[180px] shrink-0 flex-col bg-sidebar px-2 pt-5 pb-3">
             <h2 className="mb-3 px-2 text-md font-semibold tracking-tight">Ajustes</h2>
             <TabsList activateOnFocus className="w-full items-stretch bg-transparent p-0">
-              {TABS.map(({ value, label, icon: Icon }) => (
+              {SETTINGS_TABS.map(({ value, label, icon: Icon }) => (
                 <TabsTrigger
                   key={value}
                   value={value}
@@ -126,7 +119,7 @@ export function SettingsDialog() {
             </TabsList>
           </nav>
           <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-5 pb-4">
-            <h2 className="mb-4 text-lg font-semibold tracking-tight">{TABS.find((t) => t.value === tab)?.label}</h2>
+            <h2 className="mb-4 text-lg font-semibold tracking-tight">{SETTINGS_TABS.find((t) => t.value === tab)?.label}</h2>
             <TabsContent value="general">
               <Group>
               <Row

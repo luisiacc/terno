@@ -42,6 +42,21 @@ test.describe("accounts, settings and command palette", () => {
     await expect(page.getByTestId("open-settings")).toBeFocused();
   });
 
+  test("every settings tab opens from the palette; ⌘, opens settings, also from the search field", async ({ app: page }) => {
+    for (const [tab, label] of [["general", "General"], ["appearance", "Apariencia"], ["accounts", "Cuentas"], ["categories", "Categorías"], ["ai", "IA"], ["agents", "Agentes"]] as const) {
+      await page.keyboard.press("Meta+k");
+      await page.getByTestId("palette-input").fill(`ajustes ${label}`);
+      await expect(page.getByRole("option", { selected: true })).toHaveAttribute("data-testid", `palette-settings-${tab}`);
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId(`tab-${tab}`)).toHaveAttribute("aria-selected", "true");
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("settings-dialog")).toHaveCount(0);
+    }
+    await page.getByTestId("search-input").focus();
+    await page.keyboard.press("Meta+Comma");
+    await expect(page.getByTestId("tab-general")).toHaveAttribute("aria-selected", "true");
+  });
+
   test("⌘K jumps to a category and runs a search", async ({ app: page }) => {
     await page.keyboard.press("Meta+k");
     await page.getByTestId("palette-input").fill("Viajes");

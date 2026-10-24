@@ -70,6 +70,7 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "go.archive": () => navigate({ view: "archive" }),
   "go.trash": () => navigate({ view: "trash" }),
   "help.shortcuts": () => setApp({ dialog: "shortcuts" }),
+  "settings.open": () => setApp({ dialog: "settings", settingsTab: "general" }),
   "suggestion.accept": () => answerSuggestion(true),
   "suggestion.reject": () => answerSuggestion(false),
   "snackbar.action1": () => snackbarControls.current?.action(1),

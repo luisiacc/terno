@@ -35,6 +35,7 @@ export type Command =
   | "go.archive"
   | "go.trash"
   | "help.shortcuts"
+  | "settings.open"
   | "snackbar.action1"
   | "snackbar.action2"
   | "snackbar.action3"
@@ -128,6 +129,8 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "g a", command: "go.archive" },
   { keys: "g #", command: "go.trash" },
   { keys: "?", command: "help.shortcuts" },
+  // the platform's Settings shortcut; also while typing (a chord types nothing)
+  { keys: "mod+,", command: "settings.open", inEditable: true },
   { keys: "y", command: "suggestion.accept" },
   { keys: "n", command: "suggestion.reject" },
   { keys: "1", command: "snackbar.action1", context: "snackbar" },
