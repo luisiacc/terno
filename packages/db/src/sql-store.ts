@@ -101,6 +101,7 @@ import {
   saveDraft,
   saveFilter,
   setAccountProviderConfig,
+  setAccountCursor,
   setAccountSyncState,
   setSetting,
   updateAccount,
@@ -679,6 +680,7 @@ export class SqlMailStore implements MailStore {
       }),
     setSyncState: async (id, patch) => setAccountSyncState(this.db, id, patch),
     setProviderConfig: async (id, config) => setAccountProviderConfig(this.db, id, config),
+    setCursor: async (id, cursor) => setAccountCursor(this.db, id, cursor),
   };
 
   readonly owner: MailStore["owner"] = {

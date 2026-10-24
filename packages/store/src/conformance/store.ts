@@ -1260,6 +1260,11 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         open.push(store);
         expect((await store.accounts.list())[0]).toMatchObject({ displayName: "Trabajo", color: "emerald", senderName: "Luis Cordero", signature: "Luis\nAcme Studio", syncWindowDays: 365 });
         expect((await store.accounts.config<{ cursor: unknown; senderName: string }>(a!))!.config).toMatchObject({ cursor: { historyId: "42" }, senderName: "Luis Cordero" });
+        // the sync cursor and the preferences never overwrite each other, whatever the interleaving
+        await Promise.all([store.accounts.setCursor(a!, { historyId: "43" }), store.accounts.update(a!, { signature: "Otra firma" }), store.accounts.setCursor(a!, { historyId: "44" })]);
+        expect((await store.accounts.config<{ cursor: unknown; senderName: string }>(a!))!.config).toMatchObject({ cursor: { historyId: "44" }, senderName: "Luis Cordero" });
+        expect(await store.accounts.get(a!)).toMatchObject({ signature: "Otra firma", syncWindowDays: 365 });
+        await store.accounts.update(a!, { signature: "Luis\nAcme Studio" });
         // null goes back to the general window; an untouched field stays
         expect(await store.accounts.update(a!, { syncWindowDays: null })).toMatchObject({ syncWindowDays: null, signature: "Luis\nAcme Studio", displayName: "Trabajo" });
         expect(await store.accounts.update(9999, { displayName: "x" })).toBeNull();

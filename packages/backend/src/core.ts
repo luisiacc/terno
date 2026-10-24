@@ -468,10 +468,8 @@ export class BackendCore {
         setSecret: (name, value) => this.setSecret(`account:${accountId}:${name}`, value),
         getAppSecret: (name) => this.getSecret(name),
         loadCursor: async <T,>() => ((await this.store.accounts.config<{ cursor?: T }>(accountId))?.config.cursor ?? null) as T | null,
-        saveCursor: async (cursor) => {
-          const current = await this.store.accounts.config<Record<string, unknown>>(accountId);
-          if (current) await this.store.accounts.setProviderConfig(accountId, { ...current.config, cursor });
-        },
+        // one store command: a read here and a write later would undo a preference saved in between
+        saveCursor: (cursor) => this.store.accounts.setCursor(accountId, cursor),
         fetch: this.net.fetchFor("mail"),
       });
     })();

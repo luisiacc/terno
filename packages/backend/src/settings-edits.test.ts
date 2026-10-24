@@ -234,3 +234,43 @@ describe("AI keys are bound to the endpoint they were saved for", () => {
     await expect(client.call("ai.confirmKey", { provider: "openai" }).then(() => null, (e) => e)).resolves.toBeNull();
   });
 });
+
+describe("an account's preferences and its sync cursor", () => {
+  it("a cursor saved while the user edits the signature never undoes the edit", async () => {
+    let ctx: Parameters<ProviderRegistry["create"]>[0] | null = null;
+    const registry: ProviderRegistry = {
+      create: (c): MailProvider => ((ctx = c), { async verify() {}, async sync() {}, async execute() {}, async close() {} }),
+      async verifyImap() {},
+      connectGmail: () => Promise.reject(new Error("no")),
+    };
+    const dir = mkdtempSync(join(tmpdir(), "unica-cursor-"));
+    const backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: registry, now: () => NOW, autoSync: false });
+    cleanups.push(async () => {
+      await backend.stop();
+      rmSync(dir, { recursive: true, force: true });
+    });
+    const [c, s] = createMemoryTransportPair();
+    backend.connect(s, { clientId: "r", origin: "renderer" });
+    const client = new RpcClient(c);
+    const a = await client.call("accounts.addImap", imap("luis@fastmail.com"));
+    await until(() => ctx !== null);
+    // the sync reads the stored config, then the user's edit lands, then the cursor is written
+    const store = backend.store.accounts;
+    const config = store.config.bind(store);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    store.config = async <T,>(id: number) => {
+      const v = await config<T>(id);
+      await gate;
+      return v;
+    };
+    const saving = ctx!.saveCursor({ uidNext: 42 });
+    await new Promise((r) => setTimeout(r, 5));
+    await client.call("accounts.update", { id: a.id, signature: "Luis", syncWindowDays: 30 });
+    release();
+    await saving;
+    store.config = config;
+    expect(await store.get(a.id)).toMatchObject({ signature: "Luis", syncWindowDays: 30 });
+    expect((await store.config<{ cursor: unknown }>(a.id))!.config.cursor).toEqual({ uidNext: 42 });
+  });
+});

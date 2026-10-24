@@ -126,6 +126,14 @@ export function setAccountProviderConfig(db: Db, id: number, config: unknown): v
   db.run("UPDATE accounts SET provider_config = ? WHERE id = ?", JSON.stringify(config), id);
 }
 
+/** The sync cursor, merged into the stored config inside one transaction (a preference saved meanwhile stays). */
+export function setAccountCursor(db: Db, id: number, cursor: unknown): void {
+  db.tx(() => {
+    const row = db.get<{ provider_config: string }>("SELECT provider_config FROM accounts WHERE id = ?", id);
+    if (row) db.run("UPDATE accounts SET provider_config = ? WHERE id = ?", JSON.stringify({ ...(JSON.parse(row.provider_config) as object), cursor }), id);
+  });
+}
+
 export function removeAccount(db: Db, id: number): void {
   // cascades to threads, messages, ops, drafts; FTS rows go via the delete trigger
   db.tx(() => {

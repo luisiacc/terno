@@ -1047,6 +1047,13 @@ export class IdbMailStore implements MailStore {
         const r = accounts.get(id);
         if (r) accounts.update(r, { provider_config: JSON.stringify(config) });
       }),
+    // merged into the latest stored config in one command: preferences saved meanwhile stay
+    setCursor: (id, cursor) =>
+      this.command(() => {
+        const accounts = T(this.c, "accounts");
+        const r = accounts.get(id);
+        if (r) accounts.update(r, { provider_config: JSON.stringify({ ...(JSON.parse(r.provider_config) as object), cursor }) });
+      }),
   };
 
   readonly owner: MailStore["owner"] = {

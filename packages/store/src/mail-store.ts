@@ -352,6 +352,8 @@ export interface MailStore {
     remove(id: number): Promise<void>;
     setSyncState(id: number, patch: Partial<AccountSyncState>): Promise<void>;
     setProviderConfig(id: number, config: unknown): Promise<void>;
+    /** the provider's sync cursor, merged into the latest stored config in one unit (preferences beside it are kept) */
+    setCursor(id: number, cursor: unknown): Promise<void>;
   };
 
   owner: {
