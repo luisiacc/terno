@@ -1,11 +1,9 @@
 import type { CategoryColor } from "@unica/core";
-import type { AppSettings, SettingsPatch } from "@unica/core/rpc";
 import { Button } from "@unica/ui/components/button";
 import { CategoryDot } from "@unica/ui/components/category-dot";
 import { Dialog, DialogContent, DialogTitle } from "@unica/ui/components/dialog";
 import { Input } from "@unica/ui/components/input";
 import { Label } from "@unica/ui/components/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@unica/ui/components/select";
 import { Switch } from "@unica/ui/components/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@unica/ui/components/tabs";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@unica/ui/components/alert-dialog";
@@ -18,40 +16,13 @@ import { AiTab } from "./settings/ai-tab";
 import { AppearanceTab } from "./settings/appearance-tab";
 import { CategoriesTab } from "./settings/categories-tab";
 import { OwnerCard } from "./settings/owner-card";
+import { GeneralTab } from "./settings/general-tab";
 import { SETTINGS_TABS } from "./settings/tabs";
 import { reconcileSettings } from "~/lib/appearance";
-import { DesktopOnly, MacSection, StorageSection } from "~/lib/web-parts";
+import { DesktopOnly } from "~/lib/web-parts";
+import { SettingsGroup, SettingsRow, type SettingsUpdate } from "./settings/parts";
 
 const WEB = import.meta.env.VITE_TARGET === "web";
-
-function Row({ label, hint, children, testId, labelId, hintId }: { label: string; hint?: string; children: React.ReactNode; testId?: string; labelId?: string; hintId?: string }) {
-  return (
-    <div className="hairline-b flex items-center justify-between gap-6 py-3 last:border-b-0" data-testid={testId}>
-      <div>
-        <p id={labelId} className="text-sm font-medium">
-          {label}
-        </p>
-        {hint && (
-          <p id={hintId} className="mt-0.5 text-xs text-muted-foreground">
-            {hint}
-          </p>
-        )}
-      </div>
-      <div className="shrink-0">{children}</div>
-    </div>
-  );
-}
-
-/** An inset-grouped block of rows (macOS System Settings): a tint surface, rows split by hairlines. */
-function Group({ children, title }: { children: React.ReactNode; title?: string }) {
-  return (
-    <section className="mb-5">
-      {title && <h3 className="mb-1.5 px-1 text-xs font-semibold text-muted-foreground">{title}</h3>}
-      <div className="rounded-[10px] bg-tint px-4">{children}</div>
-    </section>
-  );
-}
-
 
 function CopyBlock({ text, testId }: { text: string; testId?: string }) {
   const [copied, setCopied] = useState(false);
@@ -89,9 +60,14 @@ export function SettingsDialog() {
     if (open && window.unicaDesktop) void window.unicaDesktop.agentInfo().then(setAgent).catch(() => {});
   }, [open]);
 
-  const update = useCallback(async (patch: SettingsPatch) => {
-    const next = await client.call("settings.update", patch);
-    setApp({ settings: reconcileSettings(next) });
+  const update = useCallback<SettingsUpdate>(async (patch, options) => {
+    try {
+      setApp({ settings: reconcileSettings(await client.call("settings.update", patch)) });
+    } catch (error) {
+      // a field that shows its own error asks to hear about it; anything else says so in a toast
+      if (options?.quiet) throw error;
+      toast.error(error instanceof Error ? error.message : String(error));
+    }
   }, []);
   if (!settings) return null;
   const mcp = agent?.mcpCommand ?? "/Applications/Unica.app/Contents/Resources/bin/unica-mcp";
@@ -121,49 +97,7 @@ export function SettingsDialog() {
           <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-5 pb-4">
             <h2 className="mb-4 text-lg font-semibold tracking-tight">{SETTINGS_TABS.find((t) => t.value === tab)?.label}</h2>
             <TabsContent value="general">
-              <Group>
-              <Row
-                label="Modo local"
-                hint={
-                  WEB
-                    ? "Única solo se conecta con Google (tu correo) y con IA de este equipo (localhost). En el navegador no puede fijar direcciones DNS ni controlar otras pestañas o extensiones."
-                    : "Nada sale de este Mac salvo el correo con tus servidores. La IA solo puede usar modelos de este Mac."
-                }
-                testId="local-mode-row" labelId="local-mode-label" hintId="local-mode-hint">
-                <Switch
-                  data-testid="local-mode-switch"
-                  aria-labelledby="local-mode-label"
-                  aria-describedby="local-mode-hint"
-                  checked={settings.localMode}
-                  onCheckedChange={(on) => (on ? void update({ localMode: true }) : setConfirmLocalOff(true))}
-                />
-              </Row>
-              <Row label="Densidad" hint="Compacta muestra una línea por conversación.">
-                <Select value={settings.density} onValueChange={(v) => update({ density: v as AppSettings["density"] })} items={[{ value: "comfortable", label: "Cómoda" }, { value: "compact", label: "Compacta" }]}>
-                  <SelectTrigger size="sm" className="w-32"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="comfortable">Cómoda</SelectItem>
-                    <SelectItem value="compact">Compacta</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Row>
-              <Row label="Cargar imágenes remotas siempre" hint={settings.localMode ? "El modo local las bloquea siempre." : "Por defecto se bloquean para evitar rastreo."}>
-                <Switch disabled={settings.localMode} checked={settings.remoteImages === "always" && !settings.localMode} onCheckedChange={(on) => update({ remoteImages: on ? "always" : "ask" })} />
-              </Row>
-              <Row label="Ventana de sincronización" hint="Días de correo a descargar al conectar una cuenta.">
-                <Input type="number" className="h-8 w-24" defaultValue={settings.syncWindowDays} onBlur={(e) => update({ syncWindowDays: Math.max(7, Number(e.target.value) || 90) })} />
-              </Row>
-              </Group>
-              {StorageSection && (
-                <Suspense>
-                  <StorageSection />
-                </Suspense>
-              )}
-              {MacSection && (
-                <Suspense>
-                  <MacSection />
-                </Suspense>
-              )}
+              <GeneralTab settings={settings} update={update} onLocalOff={() => setConfirmLocalOff(true)} />
             </TabsContent>
 
             <TabsContent value="appearance">
@@ -255,9 +189,11 @@ export function SettingsDialog() {
                       <CopyBlock text={`mkdir -p ~/.claude/skills/unica && cp "${agent.skillPath}" ~/.claude/skills/unica/SKILL.md`} />
                     </div>
                   )}
-                  <Row label="Permitir que los agentes envíen correos" hint="Si está desactivado, los agentes solo pueden leer, organizar y crear borradores.">
-                    <Switch data-testid="allow-agent-send" checked={settings.allowAgentSend} onCheckedChange={(on) => update({ allowAgentSend: on })} />
-                  </Row>
+                  <SettingsGroup>
+                    <SettingsRow label="Permitir que los agentes envíen correos" hint="Si está desactivado, los agentes solo pueden leer, organizar y crear borradores.">
+                      {(a) => <Switch {...a} data-testid="allow-agent-send" checked={settings.allowAgentSend} onCheckedChange={(on) => void update({ allowAgentSend: on })} />}
+                    </SettingsRow>
+                  </SettingsGroup>
                 </>
               )}
             </TabsContent>

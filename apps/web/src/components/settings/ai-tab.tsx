@@ -1,5 +1,6 @@
 import type { CompatiblePreset, ModelInfo, PresetDescriptor, ProviderDescriptor } from "@unica/core";
-import type { AiTestResult, AppSettings, SettingsPatch } from "@unica/core/rpc";
+import type { AiTestResult, AppSettings } from "@unica/core/rpc";
+import type { SettingsUpdate } from "./parts";
 import { Button } from "@unica/ui/components/button";
 import { Input } from "@unica/ui/components/input";
 import { Label } from "@unica/ui/components/label";
@@ -47,7 +48,7 @@ function Field({ label, htmlFor, hint, children }: { label: string; htmlFor?: st
   );
 }
 
-export function AiTab({ settings, update }: { settings: AppSettings; update: (patch: SettingsPatch) => Promise<void> }) {
+export function AiTab({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
   const { ai, localMode } = settings;
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const choice = choiceOf(ai);
@@ -77,7 +78,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: (pa
         return setEndpointError("En modo local el endpoint debe estar en este Mac (127.0.0.1 o localhost).");
       }
       setEndpointError(null);
-      update({ ai: { baseURL: value } }).catch((e) => setEndpointError(e instanceof Error ? e.message : String(e)));
+      update({ ai: { baseURL: value } }, { quiet: true }).catch((e) => setEndpointError(e instanceof Error ? e.message : String(e)));
     }, 400);
     return () => clearTimeout(timer);
   }, [endpointDraft, endpoint, localMode, choice, update]);
