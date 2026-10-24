@@ -10,7 +10,7 @@ import { ChevronDown, ChevronRight, ChevronUp, Plus, Trash2 } from "lucide-react
 import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import { client } from "~/rpc/connection";
-import { getApp, setApp, useApp } from "~/state/app";
+import { getApp, setApp, setCategories, useApp } from "~/state/app";
 import { ColorPicker, CommitInput, ConfirmDialog, SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
 
 const MODES = [
@@ -142,7 +142,8 @@ function CategoryItem({ category, stats, index, count, autoMode }: { category: C
                     onConfirm={async () => {
                       try {
                         await client.call("categories.delete", { id: category.id });
-                        setApp((s) => ({ categories: s.categories.filter((c) => c.id !== category.id), categoryId: s.categoryId === category.id ? null : s.categoryId }));
+                        // its list or its Revisar view, if open, goes back to the inbox
+                        setCategories(getApp().categories.filter((c) => c.id !== category.id));
                         toast.success(`${name} borrada`);
                       } catch (e) {
                         toast.error(errorText(e));

@@ -308,6 +308,28 @@ test.describe("editable, persisted and in effect", () => {
     await expect(page.locator("[data-testid^=nav-category-]").filter({ hasText: "Mudanza" })).toHaveCount(0);
   });
 
+  test("deleting the category whose Revisar view is open leaves that view for the inbox", async ({ app: page, server }) => {
+    // a pending suggestion, so Facturas has its Revisar view
+    const db = sqlDb(server.backend.store);
+    const id = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
+    const thread = db.get<{ id: number }>("SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id) ORDER BY t.last_date DESC LIMIT 1")!.id;
+    db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'suggest', 0.91, '[]', ?)", thread, id, Date.now());
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    const review = page.getByTestId(`nav-review-${id}`);
+    await review.click();
+    await expect(review).toHaveAttribute("data-active", "true");
+    await openVia(page, "gear", "categories");
+    const item = page.locator(`[data-category-id="${id}"]`);
+    await item.getByTestId("category-toggle").click();
+    await item.getByTestId("category-delete").click();
+    await page.getByTestId("category-delete-dialog-confirm").click();
+    await expect(item).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("list-title")).toHaveText("Entrada");
+    expect(await page.evaluate(() => (window as unknown as { __unica: { getApp(): { reviewCategoryId: number | null; categoryId: number | null; view: string } } }).__unica.getApp())).toMatchObject({ reviewCategoryId: null, categoryId: null, view: "inbox" });
+  });
+
   test("IA: provider, endpoint (validated, announced), model, all persisted", async ({ app: page }) => {
     await openVia(page, "gear", "ai");
     await page.getByRole("combobox", { name: "Proveedor" }).click();

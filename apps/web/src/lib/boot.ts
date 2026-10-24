@@ -1,7 +1,7 @@
 import { flushAllDrafts, loadDrafts } from "~/lib/drafts";
 import { client, connectBackend } from "~/rpc/connection";
 import { removeFromCategory } from "~/lib/categorize";
-import { getApp, navigate, setApp } from "~/state/app";
+import { getApp, navigate, setApp, setCategories } from "~/state/app";
 import { reloadList, useList } from "~/state/list";
 import { invalidateThreads, loadThread } from "~/state/threads";
 import { toast } from "sonner";
@@ -36,7 +36,7 @@ export async function boot(): Promise<void> {
     });
     client.on("counts", (counts) => setApp({ counts }));
     client.on("accounts", (accounts) => setApp({ accounts }));
-    client.on("categories", (categories) => setApp({ categories }));
+    client.on("categories", (categories) => setCategories(categories));
     client.on("owner", (owner) => setApp({ owner }));
     // drafts added elsewhere (an import, in this window or another): merged in as they are
     client.on("drafts", () => void loadDrafts());

@@ -122,3 +122,15 @@ export function navigate(to: { view?: View; accountId?: number | null; categoryI
     scope: null,
   }));
 }
+
+/**
+ * The category list changed (an edit here, an event from the backend): a
+ * view of a category that is gone (its list or its Revisar) goes back to the
+ * inbox instead of querying nothing.
+ */
+export function setCategories(categories: Category[]): void {
+  setApp({ categories });
+  const { categoryId, reviewCategoryId } = getApp();
+  const gone = (id: number | null) => id !== null && !categories.some((c) => c.id === id);
+  if (gone(categoryId) || gone(reviewCategoryId)) navigate({ view: "inbox", categoryId: null, reviewCategoryId: null });
+}
