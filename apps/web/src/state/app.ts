@@ -1,8 +1,9 @@
 import type { Account, Category, Counts, Filter, FilterRule, View } from "@terno/core";
 import type { AppSettings, HostInfo, OwnerIdentity, ThreadScope } from "@terno/core/rpc";
 import { create } from "zustand";
+import type { PrintTarget } from "~/lib/print-open";
 
-export type DialogName = "settings" | "shortcuts" | "palette" | "categoryPicker" | "filters" | "addAccount" | null;
+export type DialogName = "settings" | "shortcuts" | "palette" | "categoryPicker" | "filters" | "addAccount" | "print" | null;
 export type SettingsTab = "general" | "appearance" | "accounts" | "categories" | "filters" | "ai" | "agents" | "data";
 
 /** The draft being written (lib/drafts holds its content); seq changes each time it is (re)opened, for focus. */
@@ -62,6 +63,8 @@ export interface AppState {
   /** a conversation's draft opened explicitly (from the strip): shown inline instead of its newest one */
   draftShown: { threadId: number; key: string } | null;
   dialog: DialogName;
+  /** what the print sheet prints (set with dialog "print") */
+  printTarget: PrintTarget | null;
   /** the category picker toggles categories (l) or moves exclusively (v, "Mover a…") */
   pickerMode: "toggle" | "move";
   settingsTab: SettingsTab;
@@ -100,6 +103,7 @@ export const useApp = create<AppState>(() => ({
   draftFocus: null,
   draftShown: null,
   dialog: null,
+  printTarget: null,
   pickerMode: "toggle",
   settingsTab: "general",
   pendingKeys: null,

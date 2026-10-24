@@ -1,12 +1,13 @@
 import type { CategoryColor } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
-import { Archive, CheckCheck, FolderInput, Inbox, Layers, Mail, MailOpen, Moon, OctagonAlert, PenLine, Search, Send, Sparkles, Star, Sun, Trash2, Undo2 } from "lucide-react";
+import { Archive, CheckCheck, FileDown, FolderInput, Inbox, Layers, Mail, MailOpen, Moon, OctagonAlert, PenLine, Printer, Search, Send, Sparkles, Star, Sun, Trash2, Undo2 } from "lucide-react";
 import { useState } from "react";
 import { act, openCompose, toggleStar, undoLast } from "~/lib/actions";
 import { addScopeToCategory, addToCategory } from "~/lib/categorize";
 import { currentTargets, isMac, selectAll } from "~/lib/select";
 import { updateAppearance } from "~/lib/appearance";
+import { printCommand } from "~/lib/print-open";
 import { navigate, setApp, useApp } from "~/state/app";
 import { SETTINGS_TABS } from "./settings/tabs";
 
@@ -16,6 +17,8 @@ export function CommandPalette() {
   const accounts = useApp((s) => s.accounts);
   // what the actions and "Añadir a" apply to: all N of a view, the checked threads, else the selected one
   const targets = useApp((s) => (open ? (s.scope ? s.scope.count : s.checked.size ? s.checked.size : s.selectedId !== null ? 1 : 0) : 0));
+  // printing takes the conversation the reader shows (one, with no new message in the pane)
+  const printable = useApp((s) => open && s.selectedId !== null && !s.scope && s.checked.size < 2 && s.compose === null);
   const [value, setValue] = useState("");
   const run = (fn: () => void) => {
     setApp({ dialog: null });
@@ -57,6 +60,12 @@ export function CommandPalette() {
               <CommandItem onSelect={() => run(() => void act("markUnread"))}><Mail /> Marcar como no leído<CommandShortcut>⇧U</CommandShortcut></CommandItem>
               <CommandItem onSelect={() => run(() => toggleStar())}><Star /> Destacar o quitar destacado<CommandShortcut>S</CommandShortcut></CommandItem>
               <CommandItem onSelect={() => run(() => setApp({ dialog: "categoryPicker", pickerMode: "move" }))}><FolderInput /> Mover a…<CommandShortcut>V</CommandShortcut></CommandItem>
+            </>
+          )}
+          {printable && (
+            <>
+              <CommandItem data-testid="palette-print" onSelect={() => run(() => printCommand("print"))}><Printer /> Imprimir conversación<CommandShortcut>{isMac ? "⌘P" : "Ctrl+P"}</CommandShortcut></CommandItem>
+              <CommandItem data-testid="palette-pdf" onSelect={() => run(() => printCommand("pdf"))}><FileDown /> Exportar como PDF<CommandShortcut>{isMac ? "⇧⌘P" : "Ctrl+Shift+P"}</CommandShortcut></CommandItem>
             </>
           )}
           <CommandItem onSelect={() => run(selectAll)}><CheckCheck /> Seleccionar todo<CommandShortcut>⌘A</CommandShortcut></CommandItem>

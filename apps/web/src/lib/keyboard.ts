@@ -6,6 +6,7 @@ import { getApp, navigate, setApp } from "~/state/app";
 import { useList } from "~/state/list";
 import { loadThread, useThreads } from "~/state/threads";
 import { acceptSuggestion, rejectSuggestion } from "~/lib/categorize";
+import { printCommand } from "~/lib/print-open";
 import { listScroller, searchInputRef } from "~/components/thread-list";
 import { snackbarControls } from "~/components/category-snackbar";
 
@@ -58,6 +59,8 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "thread.category": () => hasTargets() && setApp({ dialog: "categoryPicker", pickerMode: "toggle" }),
   "thread.move": () => hasTargets() && setApp({ dialog: "categoryPicker", pickerMode: "move" }),
   "action.undo": undoLast,
+  "thread.print": () => printCommand("print"),
+  "thread.exportPdf": () => printCommand("pdf"),
   "compose.new": () => openCompose("new"),
   "compose.reply": () => openCompose("reply"),
   "compose.replyAll": () => openCompose("replyAll"),
@@ -99,7 +102,10 @@ function activates(el: Element | null, e: KeyboardEvent): boolean {
   return el.tagName === "BUTTON" || el.tagName === "A" || el.tagName === "SUMMARY" || el.getAttribute("role") === "button";
 }
 
-/** One document-level handler; commands are resolved by the pure resolver in @terno/core. */
+/**
+ * One document-level handler; commands are resolved by the pure resolver in
+ * @terno/core. The desktop's menu commands run through the same handlers.
+ */
 export function installKeyboard(): () => void {
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.defaultPrevented || e.isComposing) return;
@@ -130,5 +136,10 @@ export function installKeyboard(): () => void {
     handler();
   };
   document.addEventListener("keydown", onKeyDown);
-  return () => document.removeEventListener("keydown", onKeyDown);
+  // Archivo → Imprimir… / Exportar como PDF…: the handler decides like it does for ⌘P (the accelerator may have fired from a mail's frame)
+  const offMenu = window.ternoDesktop?.onCommand?.((command) => HANDLERS[command]?.());
+  return () => {
+    document.removeEventListener("keydown", onKeyDown);
+    offMenu?.();
+  };
 }

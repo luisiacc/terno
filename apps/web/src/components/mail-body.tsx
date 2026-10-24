@@ -7,6 +7,7 @@ import { setApp } from "~/state/app";
 import { mailColors, useAppearance } from "~/lib/appearance";
 import { csp, hasOwnColors, hasRemoteContent } from "~/lib/mail";
 import { splitTextQuote } from "~/lib/quote";
+import { forwardPrintKey, wantsNativeMenu } from "~/lib/print-open";
 import { allowRemoteFor, remoteAllowed, useRemoteConsent } from "~/lib/remote-consent";
 
 function openLink(href: string) {
@@ -79,8 +80,21 @@ export function HtmlBody({ html, messageId, remoteImages, localMode, appearance 
           openLink(a.href);
         }
       };
+      // a right-click inside the mail doesn't leave its frame: replayed on the frame, where the message's menu listens
+      const onMenu = (e: MouseEvent) => {
+        if (wantsNativeMenu(e.target, d.getSelection()?.toString() ?? "")) return;
+        e.preventDefault();
+        const r = frame.getBoundingClientRect();
+        frame.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + e.clientX, clientY: r.top + e.clientY, button: 2 }));
+      };
       d.addEventListener("click", onClick);
-      detach = () => d.removeEventListener("click", onClick);
+      d.addEventListener("contextmenu", onMenu);
+      d.addEventListener("keydown", forwardPrintKey);
+      detach = () => {
+        d.removeEventListener("click", onClick);
+        d.removeEventListener("contextmenu", onMenu);
+        d.removeEventListener("keydown", forwardPrintKey);
+      };
     };
     frame.addEventListener("load", onLoad);
     return () => {

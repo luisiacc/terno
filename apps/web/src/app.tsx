@@ -23,6 +23,8 @@ const SettingsDialog = lazy(() => import("./components/settings-dialog").then((m
 const AddAccountDialog = lazy(() => import("./components/add-account-dialog").then((m) => ({ default: m.AddAccountDialog })));
 const ShortcutsDialog = lazy(() => import("./components/shortcuts-dialog").then((m) => ({ default: m.ShortcutsDialog })));
 const FirstRun = lazy(() => import("./components/first-run").then((m) => ({ default: m.FirstRun })));
+// printing loads its sheet and the document builder when it opens
+const PrintSheet = lazy(() => import("./components/print-sheet").then((m) => ({ default: m.PrintSheet })));
 // web build only (a compile-time constant): which tab owns the mailbox, open errors, updates
 const WebGate = import.meta.env.VITE_TARGET === "web" ? lazy(() => import("./web/gate").then((m) => ({ default: m.WebGate }))) : null;
 
@@ -89,6 +91,7 @@ export function App() {
         {dialog === "settings" && <SettingsDialog />}
         {dialog === "addAccount" && <AddAccountDialog />}
         {dialog === "shortcuts" && <ShortcutsDialog />}
+        {dialog === "print" && <PrintSheet />}
         {fresh && dialog === null && needsFirstRun() && <FirstRun />}
       </Suspense>
       <CategorySnackbarHost />

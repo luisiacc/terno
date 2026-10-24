@@ -4,7 +4,7 @@ import { CategoryBadge, CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, Forward, Inbox, Layers, MailOpen, OctagonAlert, Reply, ReplyAll, Star, Tag, Trash2, X } from "lucide-react";
+import { Archive, Forward, Inbox, Layers, MailOpen, OctagonAlert, Printer, Reply, ReplyAll, Star, Tag, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { cancelReaderScroll, keepInView } from "~/lib/reader-scroll";
@@ -16,7 +16,9 @@ import { acceptSuggestion, rejectSuggestion, removeFromCategory } from "~/lib/ca
 import { avatarColor, formatBytes, fullDate, initials, listDate } from "~/lib/format";
 import { setApp, useApp } from "~/state/app";
 import { loadThread, useThread } from "~/state/threads";
+import { printCommand } from "~/lib/print-open";
 import { HtmlBody, TextBody } from "./mail-body";
+import { MessageMenu } from "./message-menu";
 
 const AVATAR_BG: Record<string, string> = {
   rose: "bg-cat-rose/15 text-cat-rose-ink",
@@ -79,7 +81,7 @@ function Message({ m, expanded, onToggle }: { m: MessageDetail; expanded: boolea
   const bodyId = `msg-body-${m.id}`;
   const people = (list: typeof m.to) => list.map((a) => a.name || a.email).join(", ");
   return (
-    <article data-testid="message" data-expanded={expanded || undefined} className="hairline-b">
+    <article data-testid="message" data-message-id={m.id} data-expanded={expanded || undefined} className="hairline-b">
       {/* one heading and one button in both states, so the focused control survives expanding and collapsing */}
       <h3>
         <button
@@ -331,6 +333,11 @@ export function Reader() {
             <Forward />
           </ToolButton>
         </div>
+        <div className="flex items-center" role="group" aria-label="Imprimir">
+          <ToolButton label="Imprimir" keys="mod+p" onClick={() => printCommand("print")} testId="action-print">
+            <Printer />
+          </ToolButton>
+        </div>
       </div>
       <div ref={scrollerRef} data-reader-scroller className="relative min-h-0 flex-1 overflow-y-auto">
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
@@ -397,7 +404,11 @@ export function Reader() {
                   );
                 })}
               </div>
-              <Conversation messages={detail.messages} threadId={detail.thread.id} />
+              <MessageMenu threadId={detail.thread.id}>
+                <div>
+                  <Conversation messages={detail.messages} threadId={detail.thread.id} />
+                </div>
+              </MessageMenu>
               <DraftSlot key={detail.thread.id} threadId={detail.thread.id} draftKey={draftKey} replyTo={replyTo(detail.messages)} account={account} />
             </>
           )}

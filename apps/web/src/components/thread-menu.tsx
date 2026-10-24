@@ -24,6 +24,7 @@ import {
   MailOpen,
   OctagonAlert,
   Plus,
+  Printer,
   Reply,
   ReplyAll,
   Search,
@@ -43,6 +44,7 @@ import { rowSelector, setRule } from "~/lib/flash";
 import { renderProbe } from "~/lib/render-probe";
 import { isMac, selectAll } from "~/lib/select";
 import { menuTargets } from "~/lib/selection";
+import { openPrint } from "~/lib/print-open";
 import { getApp, setApp, useApp, type ScopeSelection } from "~/state/app";
 import { listKey, useList } from "~/state/list";
 import { applyScope } from "./category-snackbar";
@@ -231,6 +233,8 @@ function MenuItems() {
           <Item icon={<Reply />} label="Responder" command="compose.reply" onClick={() => reply("reply")} testId="menu-reply" />
           <Item icon={<ReplyAll />} label="Responder a todos" command="compose.replyAll" onClick={() => reply("replyAll")} testId="menu-reply-all" />
           <Item icon={<Forward />} label="Reenviar" command="compose.forward" onClick={() => reply("forward")} testId="menu-forward" />
+          {/* one conversation only: printing several at once isn't a thing */}
+          <Item icon={<Printer />} label="Imprimir…" command="thread.print" onClick={() => openPrint({ threadId: single.id, messageId: null, intent: "print" })} testId="menu-print" />
           <ContextMenuSeparator />
         </>
       )}
