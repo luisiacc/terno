@@ -188,8 +188,26 @@ test.describe("themes", () => {
     // the preview card carries the same tokens
     expect(await page.getByTestId("theme-card-custom:rosa").locator("[data-theme]").evaluate((el) => getComputedStyle(el).getPropertyValue("--primary").trim())).toBe(pink);
 
-    // deleting the theme in use falls back to the mode's default
+    // editing: the JSON in place, validated like an import; the id stays
+    await page.getByTestId("theme-edit-custom:rosa").click();
+    const json = page.getByTestId("theme-editor-json");
+    await json.fill(JSON.stringify({ ...rosa, id: "otra" }));
+    await page.getByTestId("theme-editor-save").click();
+    await expect(page.getByTestId("theme-editor-error")).toContainText("El id no se puede cambiar");
+    const fuchsia = "#ff55aa";
+    await json.fill(JSON.stringify({ ...rosa, name: "Rosa fuerte", tokens: { ...rosa.tokens, primary: fuchsia } }));
+    await page.getByTestId("theme-editor-save").click();
+    await expect(page.getByTestId("theme-editor")).toHaveCount(0);
+    await expect(page.getByTestId("theme-card-custom:rosa")).toContainText("Rosa fuerte");
+    await expect.poll(() => page.evaluate(() => document.documentElement.style.getPropertyValue("--primary"))).toBe(formatOklch(parseColor(fuchsia)));
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    expect(await page.evaluate(() => document.documentElement.style.getPropertyValue("--primary"))).toBe(formatOklch(parseColor(fuchsia)));
+    await openAppearance(page);
+
+    // deleting the theme in use (after confirming) falls back to the mode's default
     await page.getByTestId("theme-delete-custom:rosa").click();
+    await page.getByTestId("theme-delete-dialog-confirm").click();
     await expect(page.getByTestId("theme-card-custom:rosa")).toHaveCount(0);
     await expect(page.locator("html")).toHaveAttribute("data-theme", "unica-dark");
     expect(await page.evaluate(() => document.documentElement.style.getPropertyValue("--primary"))).toBe("");

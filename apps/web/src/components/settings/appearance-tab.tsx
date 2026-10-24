@@ -1,14 +1,16 @@
 import { CUSTOM_PREFIX, customThemeSchema, MAX_CUSTOM_THEMES, THEME_TOKENS, type CustomTheme, type ThemeMode } from "@unica/core";
 import type { AppSettings } from "@unica/core/rpc";
 import { Button } from "@unica/ui/components/button";
+import { Textarea } from "@unica/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@unica/ui/components/toggle-group";
 import { contrastFailures } from "@unica/ui/themes/contrast";
 import { builtinTheme, resolveCustomTheme, themesFor, type Theme } from "@unica/ui/themes/registry";
 import { cn } from "@unica/ui/lib/utils";
-import { Check, Copy, Trash2, Upload } from "lucide-react";
-import { useRef, useState } from "react";
+import { Check, Copy, Pencil, Trash2, Upload } from "lucide-react";
+import { useId, useRef, useState } from "react";
 import { toast } from "sonner";
 import { resolvedMode, resolveTheme, updateAppearance, useAppearance } from "~/lib/appearance";
+import { ConfirmDialog, SettingsGroup, SettingsRow, type RowA11y } from "./parts";
 
 const MODE_LABEL: Record<ThemeMode, string> = { light: "claro", dark: "oscuro" };
 
@@ -45,44 +47,27 @@ function ThemePreview({ theme, base }: { theme: Theme; base: string }) {
   );
 }
 
-function ThemeCard({ theme, base, selected, onSelect, onDelete, note }: { theme: Theme; base: string; selected: boolean; onSelect: () => void; onDelete?: () => void; note?: string }) {
+function ThemeCard({ theme, base, selected, onSelect, note }: { theme: Theme; base: string; selected: boolean; onSelect: () => void; note?: string }) {
   return (
-    <div className="relative">
-      <button
-        type="button"
-        data-testid={`theme-card-${theme.id}`}
-        aria-pressed={selected}
-        onClick={onSelect}
-        className={cn("flex flex-col gap-1.5 rounded-lg p-1.5 text-left hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none", selected && "bg-accent text-accent-foreground hover:bg-accent")}
-      >
-        <ThemePreview theme={theme} base={base} />
-        <span className="flex w-[132px] items-center gap-1 text-xs">
-          <span className="truncate font-medium">{theme.name}</span>
-          {selected && <Check className="ml-auto size-3.5 shrink-0 text-primary" />}
-        </span>
-        {note && <span className="w-[132px] text-2xs text-muted-foreground">{note}</span>}
-      </button>
-      {onDelete && (
-        <button type="button" aria-label={`Borrar ${theme.name}`} data-testid={`theme-delete-${theme.id}`} onClick={onDelete} className="absolute top-2.5 right-2.5 rounded-md bg-popover p-1 text-muted-foreground shadow-sm hover:text-destructive">
-          <Trash2 className="size-3" />
-        </button>
-      )}
-    </div>
-  );
-}
-
-function Section({ title, hint, children, testId }: { title: string; hint?: string; children: React.ReactNode; testId?: string }) {
-  return (
-    <section className="border-b border-border py-4 last:border-0" data-testid={testId}>
-      <h3 className="text-sm font-medium">{title}</h3>
-      {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
-      <div className="mt-3">{children}</div>
-    </section>
+    <button
+      type="button"
+      data-testid={`theme-card-${theme.id}`}
+      aria-pressed={selected}
+      onClick={onSelect}
+      className={cn("flex flex-col gap-1.5 rounded-lg p-1.5 text-left hover:bg-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none", selected && "bg-accent text-accent-foreground hover:bg-accent")}
+    >
+      <ThemePreview theme={theme} base={base} />
+      <span className="flex w-[132px] items-center gap-1 text-xs">
+        <span className="truncate font-medium">{theme.name}</span>
+        {selected && <Check className="ml-auto size-3.5 shrink-0 text-primary" />}
+      </span>
+      {note && <span className="w-[132px] text-2xs text-muted-foreground">{note}</span>}
+    </button>
   );
 }
 
 /** Validates an imported theme file; errors block, contrast problems only warn. */
-export function parseThemeFile(text: string, existing: readonly CustomTheme[]): { theme: CustomTheme; warnings: string[] } | { error: string } {
+export function parseThemeFile(text: string, existing: readonly CustomTheme[], editing?: string): { theme: CustomTheme; warnings: string[] } | { error: string } {
   let json: unknown;
   try {
     json = JSON.parse(text);
@@ -94,8 +79,9 @@ export function parseThemeFile(text: string, existing: readonly CustomTheme[]): 
     const issue = r.error.issues[0]!;
     return { error: `${issue.path.length ? `${issue.path.join(".")}: ` : ""}${issue.message}` };
   }
-  if (existing.some((t) => t.id === r.data.id)) return { error: `Ya tienes un tema con el id «${r.data.id}».` };
-  if (existing.length >= MAX_CUSTOM_THEMES) return { error: `Puedes tener hasta ${MAX_CUSTOM_THEMES} temas propios.` };
+  if (editing !== undefined && r.data.id !== editing) return { error: `El id no se puede cambiar: es «${editing}».` };
+  if (editing === undefined && existing.some((t) => t.id === r.data.id)) return { error: `Ya tienes un tema con el id «${r.data.id}».` };
+  if (editing === undefined && existing.length >= MAX_CUSTOM_THEMES) return { error: `Puedes tener hasta ${MAX_CUSTOM_THEMES} temas propios.` };
   const warnings = contrastFailures(resolveCustomTheme(r.data)).map((f) => `${f.pair}: ${f.ratio}:1 (mínimo ${f.min}:1)`);
   return { theme: r.data, warnings };
 }
@@ -110,6 +96,91 @@ function MotionDemo({ ms }: { ms: number }) {
         data-ms={ms}
       />
     </button>
+  );
+}
+
+/** A custom theme's JSON, edited in place: validated like an import (same id), warnings shown, saved on Guardar. */
+function ThemeEditor({ theme, all, onDone }: { theme: CustomTheme; all: readonly CustomTheme[]; onDone: () => void }) {
+  const [text, setText] = useState(() => JSON.stringify(theme, null, 2));
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const id = useId();
+  const save = async () => {
+    const result = parseThemeFile(text, all, theme.id);
+    if ("error" in result) return setError(result.error);
+    setBusy(true);
+    const next = await updateAppearance({ customThemes: all.map((t) => (t.id === theme.id ? result.theme : t)) });
+    setBusy(false);
+    if (!next) return setError("No se pudo guardar el tema.");
+    toast.success(result.warnings.length ? `«${result.theme.name}» guardado, con ${result.warnings.length} avisos de contraste` : `«${result.theme.name}» guardado`);
+    onDone();
+  };
+  return (
+    <div className="space-y-2 pb-3" data-testid="theme-editor">
+      <label htmlFor={id} className="sr-only">
+        JSON de {theme.name}
+      </label>
+      <Textarea
+        id={id}
+        spellCheck={false}
+        value={text}
+        onChange={(e) => {
+          setText(e.target.value);
+          setError(null);
+        }}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? `${id}-error` : undefined}
+        className="max-h-72 min-h-40 bg-background font-mono text-xs dark:bg-input/30"
+        data-testid="theme-editor-json"
+      />
+      {error && (
+        <p id={`${id}-error`} role="alert" className="text-xs text-destructive" data-testid="theme-editor-error">
+          {error}
+        </p>
+      )}
+      <div className="flex justify-end gap-2">
+        <Button variant="ghost" size="sm" onClick={onDone}>
+          Cancelar
+        </Button>
+        <Button size="sm" disabled={busy} onClick={() => void save()} data-testid="theme-editor-save">
+          Guardar
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function CustomThemeItem({ theme, all }: { theme: CustomTheme; all: readonly CustomTheme[] }) {
+  const [editing, setEditing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const name = `«${theme.name}»`;
+  return (
+    <div data-testid={`custom-theme-${theme.id}`}>
+      <div className="flex min-h-11 items-center gap-2 py-2">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium">{theme.name}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {theme.mode === "light" ? "Claro" : "Oscuro"} · basado en {builtinTheme(theme.extends)?.name ?? theme.extends}
+          </p>
+        </div>
+        <Button variant="ghost" size="sm" aria-expanded={editing} aria-label={`Editar ${name}`} data-testid={`theme-edit-${CUSTOM_PREFIX}${theme.id}`} onClick={() => setEditing((e) => !e)}>
+          <Pencil /> Editar
+        </Button>
+        <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive" aria-label={`Borrar ${name}`} data-testid={`theme-delete-${CUSTOM_PREFIX}${theme.id}`} onClick={() => setDeleting(true)}>
+          <Trash2 />
+        </Button>
+      </div>
+      {editing && <ThemeEditor theme={theme} all={all} onDone={() => setEditing(false)} />}
+      <ConfirmDialog
+        open={deleting}
+        onOpenChange={setDeleting}
+        testId="theme-delete-dialog"
+        title={`¿Borrar ${name}?`}
+        description="Si lo estás usando, Única vuelve al tema incluido de ese modo. Exporta antes el tema si quieres conservarlo."
+        confirm="Borrar tema"
+        onConfirm={() => void updateAppearance({ customThemes: all.filter((t) => t.id !== theme.id) })}
+      />
+    </div>
   );
 }
 
@@ -142,20 +213,18 @@ export function AppearanceTab({ settings }: { settings: AppSettings }) {
     );
   };
 
-  const remove = (id: string) => void updateAppearance({ customThemes: settings.customThemes.filter((t) => t.id !== id) });
-
-  const grid = (m: ThemeMode) => {
+  const grid = (m: ThemeMode, a: RowA11y) => {
     const selected = resolveTheme(settings, m).id;
     const custom = settings.customThemes.filter((t) => t.mode === m);
     const note = m !== active ? `Se aplicará en modo ${MODE_LABEL[m]}` : undefined;
     return (
-      <div className="-mx-1.5 flex flex-wrap gap-1" data-testid={`theme-grid-${m}`}>
+      <div role="group" aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} className="-mx-1.5 flex flex-wrap gap-1" data-testid={`theme-grid-${m}`}>
         {themesFor(m).map((t) => (
           <ThemeCard key={t.id} theme={t} base={t.id} selected={selected === t.id} onSelect={() => pick(m, t.id)} note={selected === t.id ? note : undefined} />
         ))}
         {custom.map((c) => {
           const t = resolveCustomTheme(c);
-          return <ThemeCard key={t.id} theme={t} base={builtinTheme(c.extends)?.id ?? c.extends} selected={selected === t.id} onSelect={() => pick(m, t.id)} onDelete={() => remove(c.id)} note={selected === t.id ? note : undefined} />;
+          return <ThemeCard key={t.id} theme={t} base={builtinTheme(c.extends)?.id ?? c.extends} selected={selected === t.id} onSelect={() => pick(m, t.id)} note={selected === t.id ? note : undefined} />;
         })}
       </div>
     );
@@ -163,75 +232,98 @@ export function AppearanceTab({ settings }: { settings: AppSettings }) {
 
   return (
     <div data-testid="appearance-tab">
-      <Section title="Modo">
-        <ToggleGroup variant="outline" size="sm" value={[settings.theme]} onValueChange={(v: string[]) => v[0] && void updateAppearance({ theme: v[0] as AppSettings["theme"] })} data-testid="mode-toggle">
-          <ToggleGroupItem value="system" data-testid="mode-system">Sistema</ToggleGroupItem>
-          <ToggleGroupItem value="light" data-testid="mode-light">Claro</ToggleGroupItem>
-          <ToggleGroupItem value="dark" data-testid="mode-dark">Oscuro</ToggleGroupItem>
-        </ToggleGroup>
-      </Section>
-      <Section title="Tema claro">{grid("light")}</Section>
-      <Section title="Tema oscuro">{grid("dark")}</Section>
-      <Section title="Animaciones" hint={reduced ? "Tu Mac pide reducir el movimiento: no se anima nada." : "Duración de las animaciones. Si el sistema pide reducir el movimiento, no se anima nada."}>
-        <div className="flex items-center gap-4">
-          <ToggleGroup variant="outline" size="sm" value={[String(settings.motionMs)]} onValueChange={(v: string[]) => v[0] && void updateAppearance({ motionMs: Number(v[0]) as AppSettings["motionMs"] })} data-testid="motion-toggle">
-            <ToggleGroupItem value="0" data-testid="motion-0">Sin animación</ToggleGroupItem>
-            <ToggleGroupItem value="50" data-testid="motion-50">50 ms</ToggleGroupItem>
-            <ToggleGroupItem value="75" data-testid="motion-75">75 ms</ToggleGroupItem>
-            <ToggleGroupItem value="100" data-testid="motion-100">100 ms</ToggleGroupItem>
-          </ToggleGroup>
-          <MotionDemo ms={settings.motionMs} />
-        </div>
-      </Section>
-      <Section title="Correo HTML" hint="«Según el tema» usa los colores del tema en correos sin colores propios; los correos diseñados se muestran sobre papel claro.">
-        <ToggleGroup variant="outline" size="sm" value={[settings.htmlMailAppearance]} onValueChange={(v: string[]) => v[0] && void updateAppearance({ htmlMailAppearance: v[0] as AppSettings["htmlMailAppearance"] })} data-testid="mail-appearance-toggle">
-          <ToggleGroupItem value="auto" data-testid="mail-auto">Según el tema</ToggleGroupItem>
-          <ToggleGroupItem value="paper" data-testid="mail-paper">Siempre papel</ToggleGroupItem>
-        </ToggleGroup>
-      </Section>
-      <Section title="Temas propios" hint="Un archivo JSON con id, name, mode, extends (un tema incluido) y tokens (#hex u oklch).">
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} data-testid="theme-import">
-            <Upload /> Importar tema…
-          </Button>
-          <Button variant="ghost" size="sm" onClick={exportCurrent} data-testid="theme-export">
-            <Copy /> Exportar tema actual
-          </Button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="application/json,.json"
-            className="hidden"
-            data-testid="theme-import-input"
-            onChange={(e) => {
-              void onFile(e.target.files?.[0]);
-              e.target.value = "";
-            }}
-          />
-        </div>
-        {imported?.error && (
-          <p role="alert" className="mt-2 text-xs text-destructive" data-testid="theme-import-error">
-            {imported.error}
-          </p>
-        )}
-        {imported?.name && (
-          <div className="mt-2 text-xs" data-testid="theme-import-result">
-            <p className="text-success">Importado: {imported.name}</p>
-            {imported.warnings && imported.warnings.length > 0 && (
-              <div className="mt-1 text-muted-foreground" data-testid="theme-import-warnings">
-                <p>Contraste insuficiente en {imported.warnings.length} {imported.warnings.length === 1 ? "par" : "pares"} (no impide usarlo):</p>
-                <ul className="mt-0.5 list-disc pl-4">
-                  {imported.warnings.slice(0, 6).map((w) => (
-                    <li key={w} className="font-mono text-2xs">
-                      {w}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+      <SettingsGroup>
+        <SettingsRow label="Modo" hint="«Sistema» sigue al de tu equipo y usa el tema claro o el oscuro de abajo.">
+          {(a) => (
+            <ToggleGroup aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} variant="outline" size="sm" value={[settings.theme]} onValueChange={(v: string[]) => v[0] && void updateAppearance({ theme: v[0] as AppSettings["theme"] })} data-testid="mode-toggle">
+              <ToggleGroupItem value="system" data-testid="mode-system">Sistema</ToggleGroupItem>
+              <ToggleGroupItem value="light" data-testid="mode-light">Claro</ToggleGroupItem>
+              <ToggleGroupItem value="dark" data-testid="mode-dark">Oscuro</ToggleGroupItem>
+            </ToggleGroup>
+          )}
+        </SettingsRow>
+        <SettingsRow stacked label="Tema claro">
+          {(a) => grid("light", a)}
+        </SettingsRow>
+        <SettingsRow stacked label="Tema oscuro">
+          {(a) => grid("dark", a)}
+        </SettingsRow>
+      </SettingsGroup>
+
+      <SettingsGroup title="Movimiento y correo">
+        <SettingsRow stacked label="Animaciones" hint={reduced ? "Tu equipo pide reducir el movimiento: no se anima nada." : "Duración de las animaciones. Si el sistema pide reducir el movimiento, no se anima nada."}>
+          {(a) => (
+            <div className="flex items-center gap-4">
+              <ToggleGroup aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} variant="outline" size="sm" value={[String(settings.motionMs)]} onValueChange={(v: string[]) => v[0] && void updateAppearance({ motionMs: Number(v[0]) as AppSettings["motionMs"] })} data-testid="motion-toggle">
+                <ToggleGroupItem value="0" data-testid="motion-0">Sin animación</ToggleGroupItem>
+                <ToggleGroupItem value="50" data-testid="motion-50">50 ms</ToggleGroupItem>
+                <ToggleGroupItem value="75" data-testid="motion-75">75 ms</ToggleGroupItem>
+                <ToggleGroupItem value="100" data-testid="motion-100">100 ms</ToggleGroupItem>
+              </ToggleGroup>
+              <MotionDemo ms={settings.motionMs} />
+            </div>
+          )}
+        </SettingsRow>
+        <SettingsRow stacked label="Correo HTML" hint="«Según el tema» usa los colores del tema en correos sin colores propios; los correos diseñados se muestran sobre papel claro.">
+          {(a) => (
+            <ToggleGroup aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} variant="outline" size="sm" value={[settings.htmlMailAppearance]} onValueChange={(v: string[]) => v[0] && void updateAppearance({ htmlMailAppearance: v[0] as AppSettings["htmlMailAppearance"] })} data-testid="mail-appearance-toggle">
+              <ToggleGroupItem value="auto" data-testid="mail-auto">Según el tema</ToggleGroupItem>
+              <ToggleGroupItem value="paper" data-testid="mail-paper">Siempre papel</ToggleGroupItem>
+            </ToggleGroup>
+          )}
+        </SettingsRow>
+      </SettingsGroup>
+
+      <SettingsGroup title="Temas propios" testId="custom-themes" footer="Un archivo JSON con id, name, mode, extends (un tema incluido) y tokens (#hex u oklch).">
+        {settings.customThemes.map((t) => (
+          <CustomThemeItem key={t.id} theme={t} all={settings.customThemes} />
+        ))}
+        <div className="py-2.5">
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} data-testid="theme-import">
+              <Upload /> Importar tema…
+            </Button>
+            <Button variant="ghost" size="sm" onClick={exportCurrent} data-testid="theme-export">
+              <Copy /> Exportar tema actual
+            </Button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              tabIndex={-1}
+              aria-hidden
+              data-testid="theme-import-input"
+              onChange={(e) => {
+                void onFile(e.target.files?.[0]);
+                e.target.value = "";
+              }}
+            />
           </div>
-        )}
-      </Section>
+          {imported?.error && (
+            <p role="alert" className="mt-2 text-xs text-destructive" data-testid="theme-import-error">
+              {imported.error}
+            </p>
+          )}
+          {imported?.name && (
+            <div role="status" className="mt-2 text-xs" data-testid="theme-import-result">
+              <p className="text-success">Importado: {imported.name}</p>
+              {imported.warnings && imported.warnings.length > 0 && (
+                <div className="mt-1 text-muted-foreground" data-testid="theme-import-warnings">
+                  <p>Contraste insuficiente en {imported.warnings.length} {imported.warnings.length === 1 ? "par" : "pares"} (no impide usarlo):</p>
+                  <ul className="mt-0.5 list-disc pl-4">
+                    {imported.warnings.slice(0, 6).map((w) => (
+                      <li key={w} className="font-mono text-2xs">
+                        {w}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </SettingsGroup>
     </div>
   );
 }
