@@ -116,10 +116,17 @@ function scopeFrom(p: ScopeParams): { from: string; where: string; params: Param
   return { from, where: where.join(" AND "), params };
 }
 
-/** Every thread id of a view ("select all N"), up to `limit`, in no particular order. */
-export function scopeThreadIds(db: Db, p: ScopeParams & { limit: number }): number[] {
+/**
+ * A view's thread ids above `after`, ascending ("select all N" in keyset
+ * pages): a category walks its membership index (category_id, thread_id) in
+ * order, any other view the threads by key.
+ */
+export function scopeThreadIds(db: Db, p: ScopeParams & { after?: number; limit: number }): number[] {
   const s = scopeFrom(p);
-  return db.all<{ id: number }>(`SELECT t.id FROM ${s.from} WHERE ${s.where} LIMIT ?`, ...s.params, p.limit).map((r) => r.id);
+  const key = p.categoryId !== undefined ? "tc.thread_id" : "t.id";
+  return db
+    .all<{ id: number }>(`SELECT ${key} AS id FROM ${s.from} WHERE ${s.where} AND ${key} > ? ORDER BY ${key} LIMIT ?`, ...s.params, p.after ?? 0, p.limit)
+    .map((r) => r.id);
 }
 
 /** How many threads a view holds, counted (up to `limit`). */

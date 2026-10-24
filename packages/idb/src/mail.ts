@@ -657,24 +657,19 @@ export function listThreads(c: Ctx, p: ListParams): Page {
   return { items, nextCursor: hasMore && last ? { lastDate: last.lastDate, id: last.id } : null };
 }
 
-/** Every thread id of a view ("select all N"), up to `limit`: a category walks its memberships, not the whole mailbox. */
-export function scopeThreadIds(c: Ctx, p: ScopeParams & { limit: number }): number[] {
+/** A view's thread ids above `after`, ascending, up to `limit`: a category walks its memberships, not the whole mailbox. */
+export function scopeThreadIds(c: Ctx, p: ScopeParams & { after?: number; limit: number }): number[] {
   const threads = T(c, "threads");
   const test = VIEW_TEST[p.view];
-  const out: number[] = [];
-  const keep = (t: R | undefined) => !!t && test(t) && (p.accountId === undefined || t.account_id === p.accountId);
+  const after = p.after ?? 0;
+  const keep = (t: R | undefined) => !!t && t.id > after && test(t) && (p.accountId === undefined || t.account_id === p.accountId);
+  const ids: number[] = [];
   if (p.categoryId !== undefined) {
-    for (const m of T(c, "thread_categories").by("fk_category_id", p.categoryId)) {
-      if (out.length >= p.limit) break;
-      if (keep(threads.get(m.thread_id))) out.push(m.thread_id as number);
-    }
-    return out;
+    for (const m of T(c, "thread_categories").by("fk_category_id", p.categoryId)) if (keep(threads.get(m.thread_id))) ids.push(m.thread_id as number);
+  } else {
+    for (const t of threads.all()) if (keep(t)) ids.push(t.id as number);
   }
-  for (const t of threads.all()) {
-    if (out.length >= p.limit) break;
-    if (keep(t)) out.push(t.id as number);
-  }
-  return out;
+  return ids.sort((x, y) => x - y).slice(0, p.limit);
 }
 
 export function summariesInOrder(c: Ctx, ids: readonly number[]): ThreadSummary[] {

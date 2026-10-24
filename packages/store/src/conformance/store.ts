@@ -913,6 +913,15 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
           expect(await store.threads.scopeCount({ ...p, limit: 1000 }), JSON.stringify(p)).toBe(want.length);
         }
         expect(await store.threads.scopeIds({ view: "all", limit: 2 })).toHaveLength(2);
+        // keyset pages of one walk the whole view, ascending
+        const walked: number[] = [];
+        for (let after = 0; ; ) {
+          const page = await store.threads.scopeIds({ view: "all", categoryId: cat, after, limit: 1 });
+          if (page.length === 0) break;
+          walked.push(...page);
+          after = page[0]!;
+        }
+        expect(walked).toEqual(await listed({ view: "all", categoryId: cat }));
         expect(await store.threads.scopeCount({ view: "all", limit: 2 })).toBe(2);
       });
 

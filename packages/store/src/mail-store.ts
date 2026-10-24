@@ -206,8 +206,8 @@ export interface MailStore {
   threads: MailStoreSearch & {
     list(p: ListParams): Promise<Page>;
     summaries(ids: readonly number[]): Promise<ThreadSummary[]>;
-    /** every thread id of a view, up to `limit`, straight from the indexes (no display rows, no order) */
-    scopeIds(p: ScopeParams & { limit: number }): Promise<number[]>;
+    /** a view's thread ids above `after`, ascending, up to `limit`, straight from the indexes (keyset pages, no display rows) */
+    scopeIds(p: ScopeParams & { after?: number; limit: number }): Promise<number[]>;
     /** how many threads a view holds, counted up to `limit` */
     scopeCount(p: ScopeParams & { limit: number }): Promise<number>;
     get(id: number): Promise<(ThreadDetail & { categorization: { auto: { categoryId: number; reasons: string[] }[]; suggestions: PendingSuggestion[] } }) | null>;

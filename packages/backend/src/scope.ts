@@ -9,6 +9,7 @@
  */
 import type { ThreadScope } from "@unica/core/rpc";
 import { StaleCursorError, type MessageState } from "@unica/store";
+import { SliceSizer } from "./slicer";
 import type { BackendCore } from "./core";
 
 /** More than this and a scope is refused as capped (a count says "100 000+"). */
@@ -19,8 +20,19 @@ export async function resolveThreadScope(b: BackendCore, scope: ThreadScope, cap
   const ids: number[] = [];
   const { accountId, categoryId } = scope;
   if (scope.kind === "view") {
-    const found = await b.store.threads.scopeIds({ view: scope.view, accountId, categoryId, limit: cap + 1 });
-    return { ids: found.slice(0, cap), capped: found.length > cap };
+    // keyset pages sized by the time they take (an 18,000-row read in one go is a stall on a busy machine)
+    const sizer = new SliceSizer({ targetMs: 15, initial: 500, floor: 100, ceiling: 20_000 });
+    for (let after = 0; ids.length <= cap; ) {
+      const limit = sizer.size;
+      const started = performance.now();
+      const page = await b.store.threads.scopeIds({ view: scope.view, accountId, categoryId, after, limit });
+      sizer.record(Math.max(1, page.length), performance.now() - started);
+      for (const id of page) ids.push(id);
+      if (page.length < limit) break;
+      after = page[page.length - 1]!;
+      await b.platform.yield();
+    }
+    return { ids: ids.slice(0, cap), capped: ids.length > cap };
   } else {
     // a write landing between pages (sync) invalidates the cursor: start over, a few times
     for (let attempt = 0; ; attempt++) {
