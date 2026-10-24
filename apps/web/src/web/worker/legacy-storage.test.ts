@@ -1,7 +1,8 @@
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it } from "vitest";
 import { webCipher } from "./cipher";
-import { copyIdbDatabase, fileName, idbExists, idbName, mailboxName, migrateLegacyIdb } from "./legacy-storage";
+import type { Sqlite3Static } from "@sqlite.org/sqlite-wasm";
+import { copyIdbDatabase, fileName, idbExists, idbName, LEGACY_POOL, mailboxName, migrateLegacyIdb, migrateLegacyPool } from "./legacy-storage";
 
 function request<T>(r: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -112,3 +113,35 @@ describe("web storage from when the app was called Única", () => {
     expect((await indexedDB.databases()).map((d) => d.name)).toEqual(["unica-unica"]);
   });
 });
+
+describe("Única's OPFS pool", () => {
+  /** An OPFS root holding Única's pool directory, and SQLite-WASM's installer as it behaves when the pool can't initialize. */
+  function failingInit() {
+    const entries = new Set([LEGACY_POOL.directory, "unica-files"]);
+    const root = {
+      async getDirectoryHandle(name: string) {
+        if (!entries.has(name)) throw new DOMException("missing", "NotFoundError");
+        return {};
+      },
+    } as unknown as FileSystemDirectoryHandle;
+    const calls: Record<string, unknown>[] = [];
+    const sqlite3 = {
+      async installOpfsSAHPoolVfs(options: Record<string, unknown>) {
+        calls.push(options);
+        // an access handle another context still holds: without preserveOnInitFailure the library
+        // calls removeVfs(), which deletes the pool's directory, mailbox and all
+        if (!options.preserveOnInitFailure) entries.delete(String(options.directory));
+        throw new DOMException("Access Handles cannot be created if there is another open Access Handle", "NoModificationAllowedError");
+      },
+    } as unknown as Sqlite3Static;
+    return { root, sqlite3, entries, calls };
+  }
+
+  it("a pool that fails to initialize is reported and left exactly as it was", async () => {
+    const { root, sqlite3, entries, calls } = failingInit();
+    await expect(migrateLegacyPool(root, sqlite3, () => Promise.reject(new Error("not reached")))).rejects.toThrow(/Access Handles/);
+    expect(calls).toEqual([expect.objectContaining({ name: LEGACY_POOL.name, directory: LEGACY_POOL.directory, preserveOnInitFailure: true })]);
+    expect(entries.has(LEGACY_POOL.directory)).toBe(true);
+  });
+});
+

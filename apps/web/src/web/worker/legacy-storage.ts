@@ -184,7 +184,8 @@ const sameBytes = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.e
  */
 export async function migrateLegacyPool(root: FileSystemDirectoryHandle, sqlite3: Sqlite3Static, pool: () => Promise<SAHPoolUtil>, log: Log = () => {}): Promise<string[]> {
   if (!(await directory(root, LEGACY_POOL.directory))) return [];
-  const legacy = await sqlite3.installOpfsSAHPoolVfs({ ...LEGACY_POOL });
+  // preserveOnInitFailure: by default a pool that fails to initialize is removed (removeVfs), mailbox and all
+  const legacy = await sqlite3.installOpfsSAHPoolVfs({ ...LEGACY_POOL, preserveOnInitFailure: true });
   const target = await pool();
   const report: string[] = [];
   for (const from of legacy.getFileNames().filter((f) => f.endsWith(".db"))) {
