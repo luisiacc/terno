@@ -232,7 +232,7 @@ Easing is `cubic-bezier(.2,.8,.2,1)`, and exits always use fast. `data-motion=of
 | Toasts (sonner enter, exit, stack) | slow |
 | Banners (learned, suggestions) appear | base |
 | DnD | ghost in fast; target highlight fast; ghost fly-to-target slow; row flash slow; dot pop base; count bump slow; cancel fade fast |
-| Row removal (archive, trash, ⌥-move) | leaving rows fade fast; the rest slide up slow, only while `[data-reflow]` is set (cleared after slow) |
+| Row removal (archive, trash, a move out of the category view) | leaving rows fade fast; the rest slide up slow, only while `[data-reflow]` is set (cleared after slow) |
 | Spinner, skeleton pulse, sync ping (loops) | run; stopped when motion is off |
 
 ## 7. Drag-and-drop spec
@@ -252,7 +252,7 @@ Easing is `cubic-bezier(.2,.8,.2,1)`, and exits always use fast. `data-motion=of
    - `addToCategory(id, newIds)`: rows get their dot immediately (`dot-pop` and a `drop-flash` keyed by id) and the counts are bumped optimistically (`count-bump`). The ghost flies to the dot and fades out.
    - Toast: "Añadido a «Viajes» · 3 conversaciones", with **Deshacer**. Undo removes only `newIds`.
    - Dropping a single thread runs the existing "add similar?" suggestion.
-   - Holding ⌥ while in a category view = move: the threads are also removed from the current category, rows leave with the reflow animation, and undo restores both.
+   - Superseded by plan 06 §5: every drop is an exclusive move (out of every other category, not only the one viewed; ⌥ no longer matters); in a category view the rows leave with the reflow animation, and undo restores every membership.
 5. **Cancel:** Esc (captured, so it doesn't also close the reader), pointerup off a target, `pointercancel` or window blur. The ghost fades out (fast) with no fly-back.
 6. **Keyboard / screen reader:** `l` picker, plus palette "Añadir a «X»". Both use the same toast and undo, and sonner's live region announces the result.
 
@@ -343,7 +343,7 @@ Easing is `cubic-bezier(.2,.8,.2,1)`, and exits always use fast. `data-motion=of
 16. web: `addToCategory()` (picker, undo, optimistic counts) + palette commands.
 17. web: drag store, controller, ghost, sidebar targets, `flash.ts` + unit tests.
 18. web: drop/cancel animations, Esc, auto-scroll.
-19. web: ⌥-move + `data-reflow` (also used by archive and trash).
+19. web: move + `data-reflow` (also used by archive and trash).
 20. `dnd.spec` + drag perf cases + mid-drag baselines.
 21. docs: update PLAN.md §9/§11 and the README perf table.
 
@@ -352,7 +352,7 @@ Easing is `cubic-bezier(.2,.8,.2,1)`, and exits always use fast. `data-motion=of
 Where the implementation departs from the proposal above, and why:
 
 - **Undo toast → the categorization snackbar.** Plan 02 landed first: drag and drop, the `l` picker and the palette's «Añadir a «X»» all call `addToCategory` (`lib/categorize.ts`, RPC `categories.addThreads`, source `dnd` for drops), which records the training signal, returns what changed and shows the reusable snackbar with its undo and quick actions. The "add similar?" step is the snackbar's quick actions (plan 02 retired the card). `addToCategory` also bumps the sidebar's unread count optimistically.
-- **⌥-move** (`categories.moveThreads`): the memberships flip in one set-based transaction (added to the target, removed from the current category), which also journals what it overwrites in `cat_move_*` (migration v5: source rows with origin and batch, both categories' examples, decision outcomes). The per-thread training (a positive in the target, a removal example in the source) follows in time slices with per-thread progress, resumed at start after a crash. `categorize.undo` on a move flips memberships and decision outcomes back in one transaction and restores the examples in slices, so an earlier batch's undo still works. Measured on the 20k-thread / ~50k-message perf mailbox with the maximum selection (5,000): longest event-loop stall ~41 ms for the move and ~35 ms for its undo, a concurrent `threads.list` p95 ~0.6 ms (asserted ≤ 50 / ≤ 20 ms). Journals of moves older than a day are pruned (those moves can no longer be undone). The snackbar says «Movido a …», closes only after a successful undo and offers «Reintentar» on failure.
+- **Move** (`categories.moveThreads`; exclusive since plan 06: removed from every other category, journaled per category in migration v8): the memberships flip in one set-based transaction (added to the target, removed from the current category), which also journals what it overwrites in `cat_move_*` (migration v5: source rows with origin and batch, both categories' examples, decision outcomes). The per-thread training (a positive in the target, a removal example in the source) follows in time slices with per-thread progress, resumed at start after a crash. `categorize.undo` on a move flips memberships and decision outcomes back in one transaction and restores the examples in slices, so an earlier batch's undo still works. Measured on the 20k-thread / ~50k-message perf mailbox with the maximum selection (5,000): longest event-loop stall ~41 ms for the move and ~35 ms for its undo, a concurrent `threads.list` p95 ~0.6 ms (asserted ≤ 50 / ≤ 20 ms). Journals of moves older than a day are pruned (those moves can no longer be undone). The snackbar says «Movido a …», closes only after a successful undo and offers «Reintentar» on failure.
 - **Badge inks are derived tokens**, not `color-mix(in oklch, …)` in CSS: mixing with a near-neutral anchor in oklch rotates the hue (the anchor's hue is interpolated), and Chromium's handling of powerless hues isn't something a test can mirror. `derive()` mixes in OKLab (60/40 toward the ink anchor, more only if 4.5:1 on the 15% tint over bg, card and popover needs it) and writes `--cat-*-ink` per theme. Avatars use the same inks on a 15% tint.
 - **Two more contrast pairs**: `mail-ink` and `mail-link` on `mail-paper` (49 pairs per theme).
 - **Custom themes never use vibrancy** (their colors render exactly), are applied with CSSOM `setProperty` (preview cards through React's style object), and theme.js re-validates cached tokens with the same numbers-only grammar before applying them. The cache is `unica:appearance = {mode, light, dark, motion, vibrancy: {light, dark}, custom?: {light|dark: {base, tokens}}}`.

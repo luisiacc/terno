@@ -327,46 +327,62 @@ export function movePending(c: Ctx, batchId: number): number[] {
     .sort((x, y) => x - y);
 }
 
-export function beginMove(c: Ctx, m: { from: number; to: number; threadIds: readonly number[]; addedBy: AddedBy; now: number; source: string }): { batchId: number; added: number[]; moved: number[]; deltas: ModelDelta[] } {
+/** Each move thread's journaled source rows (the categories it left), by thread. */
+function leftBy(c: Ctx, batchId: number): Map<number, R[]> {
+  const out = new Map<number, R[]>();
+  for (const r of T(c, "cat_move_rows").by("fk_batch_id", batchId)) {
+    const list = out.get(r.thread_id) ?? [];
+    list.push(r);
+    out.set(r.thread_id, list);
+  }
+  for (const list of out.values()) list.sort((x, y) => x.category_id - y.category_id);
+  return out;
+}
+
+/** The categories a move touches for one thread: the destination and every one it left. */
+const touchedCategories = (to: number, left: readonly R[] | undefined) => [to, ...(left ?? []).map((r) => r.category_id as number)];
+
+/** Exclusive: afterwards each thread is in `to` only. Journals every removed row with its category. */
+export function beginMove(c: Ctx, m: { to: number; threadIds: readonly number[]; addedBy: AddedBy; now: number; source: string }): { batchId: number; added: number[]; moved: number[]; deltas: ModelDelta[] } {
   return c.db.tx(() => {
     pruneMoveJournals(c, m.now);
-    const batchId = createBatch(c, m.to, m.source, { kind: "move", from: m.from, addedBy: m.addedBy, phase: "training" satisfies MovePhase }, m.now);
+    const batchId = createBatch(c, m.to, m.source, { kind: "move", exclusive: true, addedBy: m.addedBy, phase: "training" satisfies MovePhase }, m.now);
     const threads = T(c, "threads");
     const memberships = T(c, "thread_categories");
     const decisions = T(c, "cls_decisions");
     const journal = T(c, "cat_move_threads");
-    const mine: R[] = [];
+    const mine: { row: R; others: R[] }[] = [];
     for (const t of new Set(m.threadIds)) {
       if (!threads.has(t)) continue;
-      const row: R = { batch_id: batchId, thread_id: t, added: memberships.has(t, m.to) ? 0 : 1, moved: memberships.has(t, m.from) ? 1 : 0, done: 0 };
+      const rows = memberships.by("fk_thread_id", t);
+      const others = rows.filter((r) => r.category_id !== m.to).sort((x, y) => x.category_id - y.category_id);
+      const row: R = { batch_id: batchId, thread_id: t, added: rows.some((r) => r.category_id === m.to) ? 0 : 1, moved: others.length ? 1 : 0, done: 0 };
       journal.insert(row);
-      mine.push(row);
+      mine.push({ row, others });
     }
-    for (const r of mine) {
-      const src = memberships.get(r.thread_id, m.from);
-      if (src) T(c, "cat_move_rows").insert({ batch_id: batchId, thread_id: r.thread_id, added_by: src.added_by, added_at: src.added_at, prev_batch_id: src.batch_id });
-      for (const cat of [m.from, m.to]) {
-        const d = decisions.get(r.thread_id, cat);
-        if (d) T(c, "cat_move_decisions").insert({ batch_id: batchId, thread_id: r.thread_id, category_id: cat, outcome: d.outcome });
+    for (const { row, others } of mine) {
+      for (const src of others) T(c, "cat_move_rows").insert({ batch_id: batchId, thread_id: row.thread_id, category_id: src.category_id, added_by: src.added_by, added_at: src.added_at, prev_batch_id: src.batch_id });
+      for (const cat of touchedCategories(m.to, others)) {
+        const d = decisions.get(row.thread_id, cat);
+        if (d) T(c, "cat_move_decisions").insert({ batch_id: batchId, thread_id: row.thread_id, category_id: cat, outcome: d.outcome });
       }
     }
-    for (const r of mine) {
-      if (r.added && r.moved) {
-        const src = memberships.get(r.thread_id, m.from)!;
-        memberships.update(src, { category_id: m.to, added_by: m.addedBy, added_at: m.now, batch_id: batchId });
-      } else if (r.added) memberships.insert({ thread_id: r.thread_id, category_id: m.to, added_by: m.addedBy, added_at: m.now, batch_id: batchId });
-      else if (r.moved) memberships.delete(r.thread_id, m.from);
+    for (const { row, others } of mine) {
+      for (const src of others) memberships.deleteRow(src);
+      if (row.added) memberships.insert({ thread_id: row.thread_id, category_id: m.to, added_by: m.addedBy, added_at: m.now, batch_id: batchId });
     }
-    const added = mine.filter((r) => r.added).map((r) => r.thread_id as number).sort((x, y) => x - y);
-    const removed = T(c, "cat_move_rows").by("fk_batch_id", batchId).sort((x, y) => x.thread_id - y.thread_id);
+    const added = mine.filter((x) => x.row.added).map((x) => x.row.thread_id as number).sort((x, y) => x - y);
+    const moved = mine.filter((x) => x.row.moved).map((x) => x.row.thread_id as number).sort((x, y) => x - y);
     settleSuggestions(c, m.to, added, "accepted");
-    for (const r of removed) {
-      if (r.added_by !== "auto") continue;
-      const d = decisions.get(r.thread_id, m.from);
-      if (d && d.kind === "auto" && d.outcome === null && d.at >= m.now - POLICY.revertWindowDays * DAY) decisions.update(d, { outcome: "reverted" });
+    for (const { others } of mine) {
+      for (const r of others) {
+        if (r.added_by !== "auto") continue;
+        const d = decisions.get(r.thread_id, r.category_id);
+        if (d && d.kind === "auto" && d.outcome === null && d.at >= m.now - POLICY.revertWindowDays * DAY) decisions.update(d, { outcome: "reverted" });
+      }
     }
     finishBatch(c, batchId, added.length);
-    return { batchId, added, moved: removed.map((r) => r.thread_id as number), deltas: added.map((threadId): ModelDelta => ({ op: "unbackground", threadId })) };
+    return { batchId, added, moved, deltas: added.map((threadId): ModelDelta => ({ op: "unbackground", threadId })) };
   });
 }
 
@@ -376,13 +392,13 @@ export function trainMoveSlice(c: Ctx, batchId: number, threadIds: readonly numb
     if (!batch) return [];
     const s = scopeOf(batch);
     const to = batch.category_id as number;
-    const from = s.from!;
     const journal = T(c, "cat_move_threads");
     const wanted = new Set(threadIds);
     const rows = journal.by("fk_batch_id", batchId).filter((r) => r.done === 0 && wanted.has(r.thread_id)).sort((x, y) => x.thread_id - y.thread_id);
+    const left = leftBy(c, batchId);
     const examples = T(c, "cls_examples");
     for (const r of rows) {
-      for (const cat of [from, to]) {
+      for (const cat of touchedCategories(to, left.get(r.thread_id))) {
         const e = examples.get(r.thread_id, cat);
         if (e) T(c, "cat_move_examples").insert({ batch_id: batchId, thread_id: e.thread_id, category_id: e.category_id, label: e.label, weight: e.weight, source: e.source, at: e.at, sender: e.sender, content: e.content, example_batch_id: e.batch_id, features: e.features });
       }
@@ -394,7 +410,7 @@ export function trainMoveSlice(c: Ctx, batchId: number, threadIds: readonly numb
       const set = sets.get(r.thread_id);
       if (!set) continue;
       if (r.added && source) deltas.push(...putExample(c, { threadId: r.thread_id, categoryId: to, label: 1, source, at: now, batchId, set }));
-      if (r.moved) deltas.push(...putExample(c, { threadId: r.thread_id, categoryId: from, label: -1, source: "removal", at: now, batchId: null, set }));
+      for (const src of left.get(r.thread_id) ?? []) deltas.push(...putExample(c, { threadId: r.thread_id, categoryId: src.category_id, label: -1, source: "removal", at: now, batchId: null, set }));
     }
     for (const r of rows) journal.update(journal.get(batchId, r.thread_id)!, { done: 1 });
     if (!journal.by("fk_batch_id", batchId).some((r) => r.done === 0)) setPhase(c, batchId, "done");
@@ -410,17 +426,11 @@ export function undoMoveCommit(c: Ctx, batchId: number, now: number): { category
     if (s.phase === "expired") throw new Error("Este movimiento ya no se puede deshacer");
     if (s.phase !== "done") throw new Error(`move ${batchId} is still being applied`);
     const to = batch.category_id as number;
-    const from = s.from!;
     const threads = T(c, "threads");
+    const categories = T(c, "categories");
     const memberships = T(c, "thread_categories");
     const decisions = T(c, "cls_decisions");
     const journal = T(c, "cat_move_threads");
-    const restored: number[] = [];
-    for (const r of T(c, "cat_move_rows").by("fk_batch_id", batchId).sort((x, y) => x.thread_id - y.thread_id)) {
-      if (!threads.has(r.thread_id)) continue;
-      memberships.put({ thread_id: r.thread_id, category_id: from, added_by: r.added_by, added_at: r.added_at, batch_id: r.prev_batch_id });
-      restored.push(r.thread_id);
-    }
     const mine = journal.by("fk_batch_id", batchId).map((r) => r.thread_id as number).sort((x, y) => x - y);
     const removed: number[] = [];
     for (const t of mine) {
@@ -430,7 +440,18 @@ export function undoMoveCommit(c: Ctx, batchId: number, now: number): { category
         removed.push(t);
       }
     }
-    for (const t of mine) for (const cat of [from, to]) {
+    const left = leftBy(c, batchId);
+    const restored = new Set<number>();
+    for (const [t, rows] of left) {
+      if (!threads.has(t)) continue;
+      for (const r of rows) {
+        // a category deleted since has nothing to come back to
+        if (!categories.has(r.category_id)) continue;
+        memberships.put({ thread_id: t, category_id: r.category_id, added_by: r.added_by, added_at: r.added_at, batch_id: r.prev_batch_id });
+        restored.add(t);
+      }
+    }
+    for (const t of mine) for (const cat of touchedCategories(to, left.get(t))) {
       const d = decisions.get(t, cat);
       if (d) decisions.update(d, { outcome: null });
     }
@@ -441,9 +462,10 @@ export function undoMoveCommit(c: Ctx, batchId: number, now: number): { category
     for (const r of journal.by("fk_batch_id", batchId)) journal.update(r, { done: 0 });
     setPhase(c, batchId, "restoring");
     finishUndo(c, batchId, now);
-    const deltas: ModelDelta[] = restored.map((threadId) => ({ op: "unbackground", threadId }));
+    const back = [...restored].sort((x, y) => x - y);
+    const deltas: ModelDelta[] = back.map((threadId) => ({ op: "unbackground", threadId }));
     deltas.push(...backgroundDeltas(c, removed, now));
-    return { categoryId: to, removed, restored, deltas };
+    return { categoryId: to, removed, restored: back, deltas };
   });
 }
 
@@ -452,20 +474,21 @@ export function restoreMoveSlice(c: Ctx, batchId: number, threadIds: readonly nu
     const batch = T(c, "cat_batches").get(batchId);
     if (!batch) return [];
     const to = batch.category_id as number;
-    const from = scopeOf(batch).from!;
     const journal = T(c, "cat_move_threads");
     const wanted = new Set(threadIds);
     const ids = journal.by("fk_batch_id", batchId).filter((r) => r.done === 0 && wanted.has(r.thread_id)).map((r) => r.thread_id as number).sort((x, y) => x - y);
+    const left = leftBy(c, batchId);
     const examples = T(c, "cls_examples");
     const deltas: ModelDelta[] = [];
-    for (const t of ids) for (const cat of [from, to]) {
+    for (const t of ids) for (const cat of touchedCategories(to, left.get(t))) {
       const e = examples.delete(t, cat);
       if (e) deltas.push({ op: "untrain", example: toExample(e), key: [e.thread_id, e.category_id] });
     }
     const threads = T(c, "threads");
+    const categories = T(c, "categories");
     const idSet = new Set(ids);
     for (const e of T(c, "cat_move_examples").by("fk_batch_id", batchId).sort((x, y) => x.thread_id - y.thread_id || x.category_id - y.category_id)) {
-      if (!idSet.has(e.thread_id) || !threads.has(e.thread_id)) continue;
+      if (!idSet.has(e.thread_id) || !threads.has(e.thread_id) || !categories.has(e.category_id)) continue;
       const row: R = { thread_id: e.thread_id, category_id: e.category_id, label: e.label, weight: e.weight, source: e.source, at: e.at, sender: e.sender, content: e.content, batch_id: e.example_batch_id, features: e.features };
       examples.insert(row);
       deltas.push({ op: "train", example: toExample(row), key: [row.thread_id, row.category_id] });

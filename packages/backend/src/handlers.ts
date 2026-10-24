@@ -158,13 +158,12 @@ export function createHandlers(b: Backend): Handlers {
       return { ok: true as const };
     },
     "categories.addThreads": ({ categoryId, threadIds, source }, ctx) => fileThreads(categoryId, threadIds, ctx.origin === "mcp" ? "agent" : ADDED_BY[source], source),
-    "categories.moveThreads": async ({ from, to, threadIds, source }, ctx) => {
-      await requireCategory(from);
+    "categories.moveThreads": async ({ to, threadIds, source }, ctx) => {
       await requireCategory(to);
       // the membership commit is the long part: don't add it to the turn that parsed 5,000 ids
       await b.platform.yield();
-      // memberships move in one transaction; the training follows in slices (journaled)
-      const r = await store.categories.beginMove({ from, to, threadIds, addedBy: ctx.origin === "mcp" ? "agent" : ADDED_BY[source], now: b.now(), source });
+      // memberships move in one transaction (every other category left); the training follows in slices (journaled)
+      const r = await store.categories.beginMove({ to, threadIds, addedBy: ctx.origin === "mcp" ? "agent" : ADDED_BY[source], now: b.now(), source });
       b.categorizer.apply(r.deltas);
       b.notifyChanged([...new Set([...r.added, ...r.moved])]);
       await b.finishMove(r.batchId);

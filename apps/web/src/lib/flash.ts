@@ -55,7 +55,7 @@ export function flashDrop(ids: readonly number[], categoryId: number): void {
 
 let reflowTimer: ReturnType<typeof setTimeout> | null = null;
 /**
- * Rows are leaving the list (archive, trash, ⌥-move): the ones leaving fade
+ * Rows are leaving the list (archive, trash, a move out of the category view): the ones leaving fade
  * out as detached copies while the rest slide up. data-reflow enables the
  * slide on the listbox only for this window, so navigation never animates.
  */

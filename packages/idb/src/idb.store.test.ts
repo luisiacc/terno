@@ -4,7 +4,7 @@ import { generateDataset } from "@unica/mock-data";
 import type { Platform } from "@unica/store";
 import { ingest, msg, withAccounts } from "@unica/store/conformance";
 import { afterEach, describe, expect, it } from "vitest";
-import { createMemDb } from "./schema";
+import { createMemDb, databaseName, IDB_VERSION, openIdb, TABLES } from "./schema";
 import { IdbMailStore } from "./store";
 
 const platform: Pick<Platform, "uuid" | "yield"> = { uuid: () => crypto.randomUUID(), yield: () => new Promise((r) => setTimeout(r, 0)) };
@@ -91,5 +91,30 @@ describe("right after a reopen", () => {
     await store.close();
     store = await open(name);
     expect(await store.categorize.countScope(seeded.categoryIds[0]!, { kind: "sender", email: sender }, NOW)).toEqual(before);
+  });
+});
+
+describe("IndexedDB version 2 (SQL v8)", () => {
+  it("re-keys a version-1 database's journaled move rows by category, from the old move's single source", async () => {
+    const name = `upgrade-${Date.now()}`;
+    const req = (r: IDBRequest | IDBOpenDBRequest) => new Promise((resolve, reject) => ((r.onsuccess = () => resolve(r.result)), (r.onerror = () => reject(r.error))));
+    // version 1 as the previous adapter left it: out-of-line keys, [batch, thread] for move rows
+    const v1 = indexedDB.open(databaseName(name), 1);
+    v1.onupgradeneeded = () => {
+      for (const t of TABLES.filter((t) => !t.memoryOnly)) v1.result.createObjectStore(t.name);
+      v1.result.createObjectStore("meta");
+      const tx = v1.transaction!;
+      tx.objectStore("cat_batches").put({ id: 5, category_id: 2, source: "dnd", scope_json: JSON.stringify({ kind: "move", from: 1, phase: "done" }), added: 1, created_at: 0, undone_at: null }, 5);
+      tx.objectStore("cat_move_rows").put({ batch_id: 5, thread_id: 9, added_by: "user", added_at: 10, prev_batch_id: null }, [5, 9]);
+    };
+    const old = (await req(v1)) as IDBDatabase;
+    old.close();
+    const db = await openIdb(indexedDB, name);
+    expect(db.version).toBe(IDB_VERSION);
+    const tx = db.transaction("cat_move_rows");
+    const [keys, rows] = await Promise.all([req(tx.objectStore("cat_move_rows").getAllKeys()), req(tx.objectStore("cat_move_rows").getAll())]);
+    expect(keys).toEqual([[5, 9, 1]]);
+    expect(rows).toEqual([{ batch_id: 5, thread_id: 9, category_id: 1, added_by: "user", added_at: 10, prev_batch_id: null }]);
+    db.close();
   });
 });

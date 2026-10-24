@@ -654,6 +654,28 @@ DROP TRIGGER message_bodies_fts_ad;
 ${ftsTriggers(true)}
 `;
 
+/**
+ * v8: moves are exclusive (a thread leaves every other category), so the
+ * move journal keeps each removed row with its category. Rows of earlier
+ * moves came from the batch's single source.
+ */
+const EXCLUSIVE_MOVES_V8 = `
+CREATE TABLE cat_move_rows_v8 (
+  batch_id INTEGER NOT NULL REFERENCES cat_batches(id) ON DELETE CASCADE,
+  thread_id INTEGER NOT NULL,
+  category_id INTEGER NOT NULL,
+  added_by TEXT NOT NULL,
+  added_at INTEGER NOT NULL,
+  prev_batch_id INTEGER,
+  PRIMARY KEY (batch_id, thread_id, category_id)
+) WITHOUT ROWID;
+INSERT INTO cat_move_rows_v8 (batch_id, thread_id, category_id, added_by, added_at, prev_batch_id)
+  SELECT r.batch_id, r.thread_id, b.scope_json ->> '$.from', r.added_by, r.added_at, r.prev_batch_id
+  FROM cat_move_rows r JOIN cat_batches b ON b.id = r.batch_id WHERE b.scope_json ->> '$.from' IS NOT NULL;
+DROP TABLE cat_move_rows;
+ALTER TABLE cat_move_rows_v8 RENAME TO cat_move_rows;
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "initial schema", sql: SCHEMA_V1 },
   { version: 2, name: "op target index", sql: OP_TARGETS_V2 },
@@ -662,6 +684,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 5, name: "move journal", sql: MOVES_V5 },
   { version: 6, name: "message bodies", sql: BODIES_V6 },
   { version: 7, name: "search outbox", sql: OUTBOX_V7 },
+  { version: 8, name: "exclusive moves", sql: EXCLUSIVE_MOVES_V8 },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

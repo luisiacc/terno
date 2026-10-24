@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { generateDataset } from "@unica/mock-data";
+import { movePhase, trainMoveSlice, undoMoveCommit } from "./categorize";
 import { ingestMessages } from "./ingest";
 import { MIGRATIONS, migrate, SCHEMA_VERSION } from "./migrations";
 import { openDatabase } from "./index";
@@ -219,5 +220,40 @@ describe("migration v4: smart categorization", () => {
     expect(db.get<{ user_version: number }>("PRAGMA user_version")!.user_version).toBe(3);
     expect(db.get<{ c: number }>("SELECT count(*) AS c FROM thread_categories")!.c).toBe(200);
     expect(db.get("SELECT name FROM sqlite_master WHERE name = 'cls_examples'")).toBeUndefined();
+  });
+});
+
+describe("migration v8: exclusive moves", () => {
+  it("keys journaled move rows by their category, taken from the old move's single source, and that move still trains and undoes", () => {
+    const dir = mkdtempSync(join(tmpdir(), "unica-mig8-"));
+    dirs.push(dir);
+    const db = new Db(nodeSqliteDriver, join(dir, "v7.db"));
+    dbs.push(db);
+    for (const m of MIGRATIONS.filter((m) => m.version <= 7)) db.exec(m.sql);
+    db.exec("PRAGMA user_version = 7");
+    const data = generateDataset({ threads: 20, accounts: 1, seed: 3, now: Date.UTC(2026, 9, 22) });
+    db.run("INSERT INTO accounts (id, kind, email, display_name, provider_config, created_at) VALUES (1, 'imap', 'yo@x.mx', '', '{}', 0)");
+    ingestMessages(db, data.messages.map((m) => ({ ...m, accountId: 1 })));
+    const [t1, t2] = db.all<{ id: number }>("SELECT id FROM threads ORDER BY id LIMIT 2").map((r) => r.id) as [number, number];
+    db.run("INSERT INTO categories (id, name, color, position) VALUES (1, 'Origen', 'rose', 0), (2, 'Destino', 'cyan', 1)");
+    // a v7 move from 1 to 2 that committed its memberships before the upgrade, its training not done yet
+    db.run("INSERT INTO cat_batches (id, category_id, source, scope_json, created_at, added) VALUES (5, 2, 'dnd', ?, 0, 2)", JSON.stringify({ kind: "move", from: 1, addedBy: "user", phase: "training" }));
+    db.run("INSERT INTO cat_move_threads (batch_id, thread_id, added, moved) VALUES (5, ?, 1, 1), (5, ?, 1, 1)", t1, t2);
+    db.run("INSERT INTO cat_move_rows (batch_id, thread_id, added_by, added_at, prev_batch_id) VALUES (5, ?, 'user', 10, NULL), (5, ?, 'bulk', 11, 3)", t1, t2);
+    db.run("INSERT INTO thread_categories (thread_id, category_id, added_by, added_at, batch_id) VALUES (?, 2, 'user', 20, 5), (?, 2, 'user', 20, 5)", t1, t2);
+    expect(migrate(db)).toEqual({ from: 7, to: SCHEMA_VERSION });
+    expect(db.all("SELECT thread_id, category_id, added_by, added_at, prev_batch_id FROM cat_move_rows ORDER BY thread_id")).toEqual([
+      { thread_id: t1, category_id: 1, added_by: "user", added_at: 10, prev_batch_id: null },
+      { thread_id: t2, category_id: 1, added_by: "bulk", added_at: 11, prev_batch_id: 3 },
+    ]);
+    trainMoveSlice(db, 5, [t1, t2], 30);
+    expect(movePhase(db, 5)).toBe("done");
+    // the removal examples land in the old move's source
+    expect(db.all("SELECT DISTINCT category_id FROM cls_examples WHERE label = -1")).toEqual([{ category_id: 1 }]);
+    undoMoveCommit(db, 5, 40);
+    expect(db.all("SELECT thread_id, category_id, added_by, batch_id FROM thread_categories ORDER BY thread_id")).toEqual([
+      { thread_id: t1, category_id: 1, added_by: "user", batch_id: null },
+      { thread_id: t2, category_id: 1, added_by: "bulk", batch_id: 3 },
+    ]);
   });
 });

@@ -682,7 +682,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         const { store, cat, other, thread } = await setup();
         const [t1, t2] = [await thread(), await thread()];
         await store.categories.add({ categoryId: cat, threadIds: [t1, t2], addedBy: "user", now: NOW });
-        const m = await store.categories.beginMove({ from: cat, to: other, threadIds: [t1, t2], addedBy: "user", now: NOW, source: "dnd" });
+        const m = await store.categories.beginMove({ to: other, threadIds: [t1, t2], addedBy: "user", now: NOW, source: "dnd" });
         expect([m.added.sort(), m.moved.sort()]).toEqual([[t1, t2].sort(), [t1, t2].sort()]);
         expect((await store.debug.snapshot()).memberships.map((x) => x.categoryId)).toEqual([other, other]);
         expect(await store.categories.movePhase(m.batchId)).toBe("training");
@@ -694,6 +694,91 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         const snap = await store.debug.snapshot();
         expect(snap.memberships.map((x) => x.categoryId)).toEqual([cat, cat]);
         expect(snap.examples.map((e) => [e.categoryId, e.label])).toEqual([[cat, 1], [cat, 1]]);
+      });
+
+      it("a move is exclusive: every other category is left, each gets a removal example, undo restores every source exactly", async () => {
+        const { store, cat, other, thread, examples } = await setup();
+        const third = (await store.categories.create("Viajes", "cyan")).id;
+        // t1 in cat + other (two batches, two origins), t2 only in the destination already, t3 in cat + the destination
+        const [t1, t2, t3] = [await thread(), await thread(), await thread()];
+        const bulk = await store.categories.createBatch(cat, "snackbar", { kind: "sender", email: "uber.receipts@uber.com" }, NOW - DAY);
+        await store.categories.add({ categoryId: cat, threadIds: [t1, t3], addedBy: "bulk", now: NOW - DAY, batchId: bulk });
+        await store.categories.add({ categoryId: other, threadIds: [t1], addedBy: "user", now: NOW - 2 * DAY });
+        await store.categories.add({ categoryId: third, threadIds: [t2, t3], addedBy: "user", now: NOW - 3 * DAY });
+        const before = await store.debug.snapshot();
+        const m = await store.categories.beginMove({ to: third, threadIds: [t1, t2, t3], addedBy: "user", now: NOW, source: "dnd" });
+        expect(m.added).toEqual([t1]);
+        expect(m.moved).toEqual([t1, t3].sort((a, b) => a - b));
+        const after = (await store.debug.snapshot()).memberships.map((x) => [x.threadId, x.categoryId]).sort((a, b) => a[0]! - b[0]!);
+        expect(after).toEqual([[t1, third], [t2, third], [t3, third]].sort((a, b) => a[0]! - b[0]!));
+        await store.categories.trainMoveSlice(m.batchId, await store.categories.movePending(m.batchId), NOW);
+        const trained = (await examples()).map((e) => [e.threadId, e.categoryId, e.label]).sort();
+        // a positive in the destination for the thread it added; a removal example in each category left
+        expect(trained).toEqual(
+          [
+            [t1, third, 1],
+            [t1, cat, -1],
+            [t1, other, -1],
+            [t2, third, 1],
+            [t3, cat, -1],
+            [t3, third, 1],
+          ].sort(),
+        );
+        const undo = await store.categories.undoMoveCommit(m.batchId, NOW + 1);
+        expect(undo.removed).toEqual([t1]);
+        expect(undo.restored).toEqual([t1, t3].sort((a, b) => a - b));
+        await store.categories.restoreMoveSlice(m.batchId, await store.categories.movePending(m.batchId));
+        const back = await store.debug.snapshot();
+        const key = (x: { threadId: number; categoryId: number }) => `${x.threadId}:${x.categoryId}`;
+        // every source row with its origin and batch, so undoing the earlier bulk batch still works
+        expect([...back.memberships].sort((a, b) => key(a).localeCompare(key(b)))).toEqual([...before.memberships].sort((a, b) => key(a).localeCompare(key(b))));
+        expect([...back.examples].sort((a, b) => key(a).localeCompare(key(b)))).toEqual([...before.examples].sort((a, b) => key(a).localeCompare(key(b))));
+        expect((await store.categories.undoBatchPart(bulk, await store.categories.batchThreads(bulk), NOW + 2)).removed.sort()).toEqual([t1, t3].sort());
+      });
+
+      it("a thread already only in the destination is not moved; a multi-filed one dropped on one of its categories leaves the others", async () => {
+        const { store, cat, other, thread } = await setup();
+        const [only, multi] = [await thread(), await thread()];
+        await store.categories.add({ categoryId: cat, threadIds: [only, multi], addedBy: "user", now: NOW });
+        await store.categories.add({ categoryId: other, threadIds: [multi], addedBy: "user", now: NOW });
+        const m = await store.categories.beginMove({ to: cat, threadIds: [only, multi], addedBy: "user", now: NOW, source: "dnd" });
+        expect([m.added, m.moved]).toEqual([[], [multi]]);
+        expect((await store.debug.snapshot()).memberships.map((x) => [x.threadId, x.categoryId]).sort()).toEqual([[only, cat], [multi, cat]].sort());
+      });
+
+      it("a move interrupted by a crash resumes its training after a reopen and can still be undone", async () => {
+        let store = await fresh();
+        const a = (await store.categories.create("A", "rose")).id;
+        const b = (await store.categories.create("B", "lime")).id;
+        const c = (await store.categories.create("C", "cyan")).id;
+        const [acct] = await withAccounts(store, 1);
+        const ids: number[] = [];
+        for (let i = 0; i < 4; i++) {
+          const m = msg({ accountId: acct!, from: { name: "Ana", email: "ana@cafealtura.mx" }, subject: `Pedido ${i}`, bodyText: "Café de Veracruz, pedido semanal.", date: NOW - 10 * DAY });
+          await ingest(store, [m]);
+          ids.push(await threadOf(store, m.providerMsgId!));
+        }
+        await store.categories.add({ categoryId: a, threadIds: ids, addedBy: "user", now: NOW - DAY });
+        await store.categories.add({ categoryId: b, threadIds: ids.slice(0, 2), addedBy: "user", now: NOW - DAY });
+        const before = (await store.debug.snapshot()).memberships;
+        const m = await store.categories.beginMove({ to: c, threadIds: ids, addedBy: "user", now: NOW, source: "dnd" });
+        await store.categories.trainMoveSlice(m.batchId, ids.slice(0, 1), NOW);
+        store = await harness.reopen(store);
+        open.push(store);
+        expect(await store.categories.unfinishedMoves()).toEqual([{ batchId: m.batchId, phase: "training" }]);
+        expect((await store.categories.movePending(m.batchId)).sort()).toEqual(ids.slice(1).sort());
+        await store.categories.trainMoveSlice(m.batchId, await store.categories.movePending(m.batchId), NOW);
+        expect(await store.categories.unfinishedMoves()).toEqual([]);
+        const removals = (await store.debug.snapshot()).examples.filter((e) => e.label === -1).map((e) => `${e.threadId}:${e.categoryId}`).sort();
+        expect(removals).toEqual([...ids.map((t) => `${t}:${a}`), ...ids.slice(0, 2).map((t) => `${t}:${b}`)].sort());
+        await store.categories.undoMoveCommit(m.batchId, NOW + 1);
+        expect(await store.categories.unfinishedMoves()).toEqual([{ batchId: m.batchId, phase: "restoring" }]);
+        store = await harness.reopen(store);
+        open.push(store);
+        await store.categories.restoreMoveSlice(m.batchId, await store.categories.movePending(m.batchId));
+        expect(await store.categories.movePhase(m.batchId)).toBe("undone");
+        const key = (x: { threadId: number; categoryId: number }) => `${x.threadId}:${x.categoryId}`;
+        expect((await store.debug.snapshot()).memberships.map(key).sort()).toEqual(before.map(key).sort());
       });
 
       it("bulk scopes: sender scope is received mail only, not filed, not removed, outside spam and trash; counts cap at 1 000", async () => {
@@ -774,7 +859,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         await store.sync.updateFlags(a, [{ messageId: r.inserted[0]!, flags: { isRead: true, isStarred: true } }]);
         const [x, y] = [(await store.categories.create("X", "rose")).id, (await store.categories.create("Y", "lime")).id];
         await store.categories.add({ categoryId: x, threadIds: [t], addedBy: "user", now: NOW });
-        const m = await store.categories.beginMove({ from: x, to: y, threadIds: [t], addedBy: "user", now: NOW, source: "dnd" });
+        const m = await store.categories.beginMove({ to: y, threadIds: [t], addedBy: "user", now: NOW, source: "dnd" });
         await store.categories.trainMoveSlice(m.batchId, [t], NOW);
         await inSync();
         expect(replica.threads.get(t)).toMatchObject({ unreadCount: 0, isStarred: true, categoryIds: [y] });

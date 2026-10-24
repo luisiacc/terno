@@ -321,7 +321,7 @@ it("large UI adds, removals and undo are sliced: no long stall, interactive RPCs
   await client.call("categories.delete", { id: cat });
 }, 600_000);
 
-it("an ⌥-move of the largest selection (5,000 threads) and its undo: atomic, no long stall, lists keep flowing", async () => {
+it("a move of the largest selection (5,000 threads) and its undo: atomic, no long stall, lists keep flowing", async () => {
   if (!backend.categorizer.ready) await backend.categorizer.rebuildNow();
   const [c, srv] = createMemoryTransportPair();
   backend.connect(srv, { clientId: "move", origin: "renderer" });
@@ -335,7 +335,7 @@ it("an ⌥-move of the largest selection (5,000 threads) and its undo: atomic, n
   let batchId = 0;
   const inCat = (cat: number) => sqlDb(backend.store).get<{ n: number }>("SELECT count(*) AS n FROM thread_categories WHERE category_id = ?", cat)!.n;
   const runs: [string, () => Promise<unknown>][] = [
-    ["move 5,000 threads (⌥-drag)", async () => (batchId = (await client.call("categories.moveThreads", { from, to, threadIds: ids, source: "dnd" })).batchId)],
+    ["move 5,000 threads (drag, exclusive)", async () => (batchId = (await client.call("categories.moveThreads", { to, threadIds: ids, source: "dnd" })).batchId)],
     ["undo that move", () => client.call("categorize.undo", { batchId })],
   ];
   const results: { name: string; stall: number; list: number }[] = [];

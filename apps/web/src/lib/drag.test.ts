@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DragController, exceedsThreshold, hitTest, newIds, payloadFor, type DragEnv, type DropState, type TargetRect } from "./drag";
+import { DragController, exceedsThreshold, exclusivelyIn, hitTest, newIds, payloadFor, type DragEnv, type DropState, type TargetRect } from "./drag";
 
 const RECTS: TargetRect[] = [
   { id: 1, left: 0, right: 200, top: 100, bottom: 128 },
@@ -7,8 +7,8 @@ const RECTS: TargetRect[] = [
   { id: 3, left: 0, right: 200, top: 156, bottom: 184 },
 ];
 
-/** Category membership: thread 10 is already in 2; the "view" is category 3. */
-const MEMBERS: Record<number, number[]> = { 10: [2], 11: [], 12: [2] };
+/** Category membership: thread 10 is in 2 alone, 12 in 2 and 3. */
+const MEMBERS: Record<number, number[]> = { 10: [2], 11: [], 12: [2, 3] };
 
 function setup(overrides: Partial<DragEnv> = {}) {
   const log: string[] = [];
@@ -17,11 +17,11 @@ function setup(overrides: Partial<DragEnv> = {}) {
   const env: DragEnv = {
     payload: (id) => payloadFor(id, new Set([11, 12]), [10, 11, 12]),
     targets: () => (measured++, RECTS),
-    isAlready: (cat, ids) => cat === 3 || newIds(ids, cat, (id) => MEMBERS[id]).length === 0,
+    isAlready: (cat, ids) => exclusivelyIn(ids, cat, (id) => MEMBERS[id]),
     start: (ids) => log.push(`start ${ids.join(",")}`),
     move: () => {},
     target: (id, state) => targets.push([id, state]),
-    drop: (cat, ids, { move }) => log.push(`drop ${cat} ${ids.join(",")}${move ? " move" : ""}`),
+    drop: (cat, ids) => log.push(`drop ${cat} ${ids.join(",")}`),
     cancel: () => log.push("cancel"),
     ...overrides,
   };
@@ -46,6 +46,14 @@ describe("drag helpers", () => {
     expect(hitTest(RECTS, 50, 128)).toBe(2);
     expect(hitTest(RECTS, 250, 110)).toBeNull();
     expect(hitTest(RECTS, 50, 90)).toBeNull();
+  });
+
+  it("a drop changes nothing only when every thread is in that category alone", () => {
+    expect(exclusivelyIn([10], 2, (id) => MEMBERS[id])).toBe(true);
+    // 12 is in 2 and 3: dropping it on 2 still takes it out of 3
+    expect(exclusivelyIn([10, 12], 2, (id) => MEMBERS[id])).toBe(false);
+    expect(exclusivelyIn([11], 2, (id) => MEMBERS[id])).toBe(false);
+    expect(exclusivelyIn([99], 2, () => undefined)).toBe(false);
   });
 
   it("only counts threads not yet in the category as new", () => {
@@ -85,20 +93,20 @@ describe("DragController", () => {
     ctl.move({ x: 50, y: 160 });
     expect(targets).toEqual([
       [1, "over"],
-      [3, "already"], // the current view
+      [3, "over"], // 10 is in 2 alone: a move to 3 changes it
     ]);
     ctl.move({ x: 50, y: 110 });
     ctl.up({ x: 50, y: 110 });
     expect(log).toEqual(["start 10", "drop 1 10"]);
   });
 
-  it("drags the checked group and passes ⌥ as a move", () => {
+  it("drags the checked group; ⌥ changes nothing (every drop moves)", () => {
     const { ctl, log } = setup();
     ctl.down(12, { x: 300, y: 300 });
     ctl.move({ x: 300, y: 310 });
     ctl.move({ x: 50, y: 110 });
     ctl.up({ x: 50, y: 110, altKey: true });
-    expect(log).toEqual(["start 11,12", "drop 1 11,12 move"]);
+    expect(log).toEqual(["start 11,12", "drop 1 11,12"]);
   });
 
   it("a drop where everything is already filed does nothing but cancel", () => {

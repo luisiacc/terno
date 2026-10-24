@@ -2,12 +2,13 @@
  * Binds the drag controller to the DOM: one delegated pointerdown on the
  * listbox (it stays mounted while rows virtualize away) and pointer capture on
  * it once the drag starts; the ghost moves imperatively in rAF; targets are
- * the sidebar's [data-drop-target] items, measured at drag start. During a
+ * the sidebar's [data-drop-target] items, measured at drag start. A drop is
+ * an exclusive move (the threads end up in that category only). During a
  * drag no row renders: the dimming is a keyed CSS rule (lib/flash.ts) and only
  * the two NavItems whose state changes re-render.
  */
 import { motionMs } from "~/lib/appearance";
-import { addToCategory } from "~/lib/categorize";
+import { isExclusivelyIn, moveToCategory } from "~/lib/categorize";
 import { DragController, newIds, payloadFor, type PointerLike, type TargetRect } from "~/lib/drag";
 import { dimRows, flashDrop } from "~/lib/flash";
 import { getApp } from "~/state/app";
@@ -105,16 +106,12 @@ function end() {
 
 let latest: PointerLike | null = null;
 let frame = 0;
-let alt = false;
 
-/** One frame per burst of pointermoves: ghost position, ⌥ hint, sidebar auto-scroll. */
+/** One frame per burst of pointermoves: ghost position, sidebar auto-scroll. */
 function tick() {
   frame = 0;
   if (!latest || !ghost || ghost.hidden) return;
   placeGhost(latest);
-  const moving = alt && getApp().categoryId !== null;
-  const hint = ghost.querySelector<HTMLElement>("[data-ghost-move]");
-  if (hint && hint.hidden === moving) hint.hidden = !moving;
   const nav = scroller();
   if (!nav) return;
   const r = nav.getBoundingClientRect();
@@ -133,11 +130,8 @@ export function installDragController(list: HTMLElement): () => void {
       return checked.has(id) ? payloadFor(id, checked, useList.getState().items.map((t) => t.id)) : [id];
     },
     targets: measureTargets,
-    isAlready: (categoryId, ids) => {
-      const s = getApp();
-      if (s.categoryId === categoryId && s.reviewCategoryId === null) return true;
-      return newIds(ids, categoryId, (id) => row(id)?.categoryIds).length === 0;
-    },
+    // a drop moves exclusively: it changes nothing only when every thread is in that category alone
+    isAlready: (categoryId, ids) => isExclusivelyIn(categoryId, ids),
     start: (ids, at) => {
       html().setAttribute("data-dragging", "");
       dimRows(ids);
@@ -146,17 +140,14 @@ export function installDragController(list: HTMLElement): () => void {
     },
     move: (at) => {
       latest = at;
-      alt = !!at.altKey;
       if (!frame) frame = requestAnimationFrame(tick);
     },
     target: (overTarget, overState) => useDrag.setState({ overTarget, overState }),
-    drop: (categoryId, ids, { move }) => {
-      const s = getApp();
-      const from = move && s.categoryId !== null && s.reviewCategoryId === null && s.categoryId !== categoryId ? s.categoryId : null;
+    drop: (categoryId, ids) => {
       flyGhost(categoryId);
       end();
       const added = newIds(ids, categoryId, (id) => row(id)?.categoryIds);
-      void addToCategory(categoryId, ids, { source: "dnd", movedFrom: from ?? undefined });
+      void moveToCategory(categoryId, ids, { source: "dnd" });
       flashDrop(added.length ? added : ids, categoryId);
     },
     cancel: () => {
@@ -172,7 +163,6 @@ export function installDragController(list: HTMLElement): () => void {
     window.removeEventListener("pointerup", onUp, true);
     window.removeEventListener("pointercancel", onCancel, true);
     window.removeEventListener("keydown", onKey, true);
-    window.removeEventListener("keyup", onKey, true);
     window.removeEventListener("blur", onCancel);
     scroller()?.removeEventListener("scroll", onScroll);
     if (frame) cancelAnimationFrame(frame);
@@ -217,17 +207,11 @@ export function installDragController(list: HTMLElement): () => void {
     cleanup();
   }
   function onKey(e: KeyboardEvent) {
-    if (!ctl.dragging) return;
-    if (e.key === "Escape" && e.type === "keydown") {
-      // captured: Esc cancels the drag and nothing else (the reader stays open)
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      onCancel();
-    } else if (e.key === "Alt") {
-      alt = e.type === "keydown";
-      if (latest) latest = { ...latest, altKey: alt };
-      if (!frame) frame = requestAnimationFrame(tick);
-    }
+    if (!ctl.dragging || e.key !== "Escape") return;
+    // captured: Esc cancels the drag and nothing else (the reader stays open)
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    onCancel();
   }
   function onScroll() {
     ctl.refreshTargets();
@@ -240,7 +224,6 @@ export function installDragController(list: HTMLElement): () => void {
     window.addEventListener("pointerup", onUp, true);
     window.addEventListener("pointercancel", onCancel, true);
     window.addEventListener("keydown", onKey, true);
-    window.addEventListener("keyup", onKey, true);
     window.addEventListener("blur", onCancel);
   };
   list.addEventListener("pointerdown", onDown);

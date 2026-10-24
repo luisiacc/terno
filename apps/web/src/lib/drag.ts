@@ -36,13 +36,14 @@ export interface DragEnv {
   payload(id: number): number[];
   /** drop targets, measured once at drag start (and again after the sidebar scrolls) */
   targets(): TargetRect[];
-  /** dropping here would change nothing: every thread is already in it, or it is the current view */
+  /** dropping here would change nothing: every thread is already in it, and in it alone (a drop moves) */
   isAlready(categoryId: number, ids: readonly number[]): boolean;
   start(ids: number[], at: PointerLike): void;
   /** every pointermove while dragging (the binding coalesces to one frame) */
   move(at: PointerLike): void;
   target(categoryId: number | null, state: DropState | null): void;
-  drop(categoryId: number, ids: number[], options: { move: boolean }): void;
+  /** an exclusive move: afterwards the threads are in this category only */
+  drop(categoryId: number, ids: number[]): void;
   cancel(): void;
 }
 
@@ -59,6 +60,14 @@ export function hitTest(rects: readonly TargetRect[], x: number, y: number): num
 export function payloadFor(id: number, checked: ReadonlySet<number>, order: readonly number[]): number[] {
   if (!checked.has(id)) return [id];
   return order.filter((x) => checked.has(x));
+}
+
+/** A drop moves exclusively: it changes nothing only when every thread is in the category and no other. */
+export function exclusivelyIn(ids: readonly number[], categoryId: number, categoriesOf: (id: number) => readonly number[] | undefined): boolean {
+  return ids.every((id) => {
+    const cats = categoriesOf(id);
+    return cats !== undefined && cats.length === 1 && cats[0] === categoryId;
+  });
 }
 
 /** The threads a drop actually adds (undo removes exactly these). */
@@ -129,7 +138,7 @@ export class DragController {
     this.phase = { kind: "idle" };
     if (p.kind !== "dragging") return;
     const over = hitTest(p.rects, e.x, e.y);
-    if (over !== null && !this.env.isAlready(over, p.ids)) this.env.drop(over, p.ids, { move: !!e.altKey });
+    if (over !== null && !this.env.isAlready(over, p.ids)) this.env.drop(over, p.ids);
     else this.env.cancel();
   }
 

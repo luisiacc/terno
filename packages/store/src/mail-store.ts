@@ -271,7 +271,8 @@ export interface MailStore {
     batchThreads(batchId: number): Promise<number[]>;
     undoBatchPart(batchId: number, threadIds: readonly number[], now: number): Promise<{ removed: number[]; deltas: ModelDelta[] }>;
     finishUndo(batchId: number, now: number): Promise<void>;
-    beginMove(m: { from: number; to: number; threadIds: readonly number[]; addedBy: AddedBy; now: number; source: string }): Promise<{ batchId: number; added: number[]; moved: number[]; deltas: ModelDelta[] }>;
+    /** exclusive: afterwards every thread is in `to` and no other category (each removed row is journaled for undo) */
+    beginMove(m: { to: number; threadIds: readonly number[]; addedBy: AddedBy; now: number; source: string }): Promise<{ batchId: number; added: number[]; moved: number[]; deltas: ModelDelta[] }>;
     movePhase(batchId: number): Promise<MovePhase | null>;
     movePending(batchId: number): Promise<number[]>;
     unfinishedMoves(): Promise<{ batchId: number; phase: "training" | "restoring" }[]>;

@@ -268,7 +268,7 @@ function CategorySnackbar({ filed, onClose }: { filed: Filed; onClose: () => voi
       <div className="flex items-center gap-2 text-sm">
         <CategoryDot color={category.color as CategoryColor} />
         <span className="min-w-0 flex-1 truncate font-medium" data-testid="snackbar-title">
-          {filed.movedFrom
+          {filed.moved
             ? many
               ? `${filed.threadIds.length} conversaciones movidas a ${category.name}`
               : `Movido a ${category.name}`

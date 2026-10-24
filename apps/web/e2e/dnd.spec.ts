@@ -1,8 +1,9 @@
 /**
  * Drag rows from the virtualized list onto sidebar categories: one row and a
  * multi-selection, the "already" state, Esc, a click that stays a click,
- * ⌥-move in a category view, the keyboard path, and mid-drag baselines.
- * Every drop goes through addToCategory: the categorization snackbar appears.
+ * moves out of a category view and out of several categories, the keyboard
+ * path, and mid-drag baselines. Every drop is an exclusive move (the thread
+ * ends up in that category only) and offers the categorization snackbar.
  */
 import type { Locator, Page } from "@playwright/test";
 import type { DevServer } from "../../backend-dev/src/server";
@@ -56,9 +57,10 @@ test.describe("drag and drop to a category", () => {
     await page.mouse.up();
 
     await expect(page.getByTestId("category-snackbar")).toBeVisible();
-    await expect(page.getByTestId("snackbar-title")).toHaveText("Añadido a Viajes");
+    await expect(page.getByTestId("snackbar-title")).toHaveText("Movido a Viajes");
     const dropped = page.locator(`[data-thread-id="${id}"]`);
     await expect(dropped.locator(`[data-cat-dot="${viajes}"]`)).toHaveCount(1);
+    await expect(dropped.locator("[data-cat-dot]")).toHaveCount(1);
     await expect.poll(() => navCount(page, viajes)).toBe(before + 1);
     await expect(target).not.toHaveAttribute("data-drop-state");
     await expect(page.locator("html")).not.toHaveAttribute("data-dragging");
@@ -87,13 +89,14 @@ test.describe("drag and drop to a category", () => {
     // the dragged rows are dimmed by a keyed rule, not by re-rendering them
     expect(await page.locator(`[data-thread-id="${ids[0]}"]`).evaluate((e) => getComputedStyle(e).opacity)).toBe("0.5");
     await page.mouse.up();
-    await expect(page.getByTestId("snackbar-title")).toHaveText("3 conversaciones añadidas a Viajes");
+    await expect(page.getByTestId("snackbar-title")).toHaveText("3 conversaciones movidas a Viajes");
     for (const id of ids) await expect(page.locator(`[data-thread-id="${id}"] [data-cat-dot="${viajes}"]`)).toHaveCount(1);
+    for (const id of ids) await expect(page.locator(`[data-thread-id="${id}"] [data-cat-dot]`)).toHaveCount(1);
   });
 
-  test("a category that already has every dragged thread shows a check and ignores the drop", async ({ app: page, server }) => {
+  test("a category that already has every dragged thread (and only it) shows a check and ignores the drop", async ({ app: page, server }) => {
     const lecturas = categoryId(server, "Lecturas");
-    const row = page.locator(`[data-testid=thread-row]:has([data-cat-dot="${lecturas}"])`).first();
+    const row = page.locator(`[data-testid=thread-row]:has([data-cat-dot="${lecturas}"]):not(:has([data-cat-dot]:not([data-cat-dot="${lecturas}"])))`).first();
     const target = page.getByTestId(`nav-category-${lecturas}`);
     await dragTo(page, row, target);
     await expect(target).toHaveAttribute("data-drop-state", "already");
@@ -133,7 +136,7 @@ test.describe("drag and drop to a category", () => {
     await expect(page.locator("html")).not.toHaveAttribute("data-dragging");
   });
 
-  test("⌥ in a category view moves: the row leaves, the snackbar says so, undo restores both", async ({ app: page, server }) => {
+  test("in a category view a drop moves the row out: it leaves, the snackbar says so, undo restores both", async ({ app: page, server }) => {
     const lecturas = categoryId(server, "Lecturas");
     const viajes = categoryId(server, "Viajes");
     await page.getByTestId(`nav-category-${lecturas}`).click();
@@ -144,10 +147,7 @@ test.describe("drag and drop to a category", () => {
     const row = notIn(page, viajes).first();
     const id = Number(await row.getAttribute("data-thread-id"));
     await dragTo(page, row, page.getByTestId(`nav-category-${viajes}`));
-    await page.keyboard.down("Alt");
-    await expect(page.getByTestId("drag-ghost")).toContainText("Mover");
     await page.mouse.up();
-    await page.keyboard.up("Alt");
     await expect(page.getByTestId("snackbar-title")).toHaveText("Movido a Viajes");
     await expect(page.locator(`[data-thread-id="${id}"]`)).toHaveCount(0);
     const inCat = (cat: number) => !!sqlDb(server.backend.store).get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", id, cat);
@@ -155,6 +155,43 @@ test.describe("drag and drop to a category", () => {
     await page.getByTestId("snackbar-undo").click();
     await expect(page.locator(`[data-thread-id="${id}"]`)).toHaveCount(1);
     await expect.poll(() => [inCat(viajes), inCat(lecturas)]).toEqual([false, true]);
+  });
+
+  test("a thread in two categories dragged to a third ends in the third only; undo puts it back in both", async ({ app: page, server }) => {
+    const [lecturas, clientes, viajes] = [categoryId(server, "Lecturas"), categoryId(server, "Clientes"), categoryId(server, "Viajes")];
+    const row = page.locator("[data-testid=thread-row]:not(:has([data-cat-dot]))").first();
+    const id = Number(await row.getAttribute("data-thread-id"));
+    for (const cat of [lecturas, clientes]) await server.backend.server.invoke("categories.addThreads", { categoryId: cat, threadIds: [id], source: "picker" }, ctx);
+    const dropped = page.locator(`[data-thread-id="${id}"]`);
+    await expect(dropped.locator("[data-cat-dot]")).toHaveCount(2);
+    const cats = () => sqlDb(server.backend.store).all<{ category_id: number }>("SELECT category_id FROM thread_categories WHERE thread_id = ? ORDER BY category_id", id).map((r) => r.category_id);
+    const before = cats();
+    await dragTo(page, dropped, page.getByTestId(`nav-category-${viajes}`));
+    await page.mouse.up();
+    await expect(page.getByTestId("snackbar-title")).toHaveText("Movido a Viajes");
+    // the same frame shows the target alone; the backend agrees
+    await expect(dropped.locator("[data-cat-dot]")).toHaveCount(1);
+    await expect(dropped.locator(`[data-cat-dot="${viajes}"]`)).toHaveCount(1);
+    await expect.poll(cats).toEqual([viajes]);
+    await page.getByTestId("snackbar-undo").click();
+    await expect.poll(cats).toEqual(before);
+    await expect(dropped.locator("[data-cat-dot]")).toHaveCount(2);
+  });
+
+  test("dropping a multi-filed thread on one of its categories is not a no-op: it leaves the other", async ({ app: page, server }) => {
+    const [lecturas, clientes] = [categoryId(server, "Lecturas"), categoryId(server, "Clientes")];
+    const row = page.locator("[data-testid=thread-row]:not(:has([data-cat-dot]))").first();
+    const id = Number(await row.getAttribute("data-thread-id"));
+    for (const cat of [lecturas, clientes]) await server.backend.server.invoke("categories.addThreads", { categoryId: cat, threadIds: [id], source: "picker" }, ctx);
+    const dropped = page.locator(`[data-thread-id="${id}"]`);
+    await expect(dropped.locator("[data-cat-dot]")).toHaveCount(2);
+    const target = page.getByTestId(`nav-category-${lecturas}`);
+    await dragTo(page, dropped, target);
+    await expect(target).toHaveAttribute("data-drop-state", "over");
+    await page.mouse.up();
+    await expect(page.getByTestId("snackbar-title")).toHaveText("Movido a Lecturas");
+    await expect(dropped.locator("[data-cat-dot]")).toHaveCount(1);
+    await expect.poll(() => sqlDb(server.backend.store).all("SELECT category_id FROM thread_categories WHERE thread_id = ?", id)).toEqual([{ category_id: lecturas }]);
   });
 
   test("a move's undo is one atomic step: when it fails nothing changes and the snackbar offers a retry", async ({ app: page, server }) => {
@@ -167,9 +204,7 @@ test.describe("drag and drop to a category", () => {
     const inCat = (cat: number) => !!sqlDb(server.backend.store).get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", id, cat);
     const before = sqlDb(server.backend.store).get("SELECT added_by, added_at, batch_id FROM thread_categories WHERE thread_id = ? AND category_id = ?", id, lecturas);
     await dragTo(page, row, page.getByTestId(`nav-category-${viajes}`));
-    await page.keyboard.down("Alt");
     await page.mouse.up();
-    await page.keyboard.up("Alt");
     await expect(page.getByTestId("snackbar-title")).toHaveText("Movido a Viajes");
     await expect.poll(() => [inCat(viajes), inCat(lecturas)]).toEqual([true, false]);
 

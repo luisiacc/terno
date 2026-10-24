@@ -1,6 +1,7 @@
 import type { CategorizeSource } from "@unica/core/rpc";
 import { toast } from "sonner";
 import { client } from "~/rpc/connection";
+import { exclusivelyIn } from "~/lib/drag";
 import { reflowRemoval } from "~/lib/flash";
 import { patchRows, reloadList, useList } from "~/state/list";
 import { invalidateThreads, loadThread } from "~/state/threads";
@@ -13,8 +14,8 @@ export interface Filed {
   /** the ones that were not in the category before: undo removes exactly these */
   addedIds: number[];
   batchId: number | null;
-  /** ⌥-drag in a category view: the threads also left this category (undo puts them back) */
-  movedFrom?: { categoryId: number; threadIds: number[] };
+  /** an exclusive move (drag and drop, "Mover a…"): the threads also left every other category; undo puts them back */
+  moved?: boolean;
 }
 
 type Listener = (filed: Filed, source: CategorizeSource) => void;
@@ -40,30 +41,24 @@ function refreshReader(threadIds: readonly number[]): void {
 }
 
 /**
- * The one way the UI files threads into a category: the picker, an accepted
- * suggestion and drag and drop all come through here. Rows update in the same
- * frame, the backend records the training signal, and listeners (the
- * snackbar) get what changed so it can be undone.
+ * The one way the UI files threads into a category (additive): the picker,
+ * the context menu's toggles and an accepted suggestion come through here.
+ * Rows update in the same frame, the backend records the training signal,
+ * and listeners (the snackbar) get what changed so it can be undone.
  */
-export async function addToCategory(categoryId: number, threadIds: readonly number[], options: { source?: CategorizeSource; movedFrom?: number } = {}): Promise<Filed | null> {
+export async function addToCategory(categoryId: number, threadIds: readonly number[], options: { source?: CategorizeSource } = {}): Promise<Filed | null> {
   const ids = [...new Set(threadIds)];
   if (ids.length === 0) return null;
   const { items, index } = useList.getState();
-  const from = options.movedFrom;
-  if (from !== undefined) leaveView(ids, from);
   const fresh = ids.filter((id) => !items[index.get(id) ?? -1]?.categoryIds.includes(categoryId));
   patch(fresh, categoryId, true);
   // the sidebar count moves in the same frame; the backend's counts event confirms it
   const unread = fresh.filter((id) => items[index.get(id) ?? -1]?.unread).length;
-  const bumped = unread ? bumpUnread(categoryId, unread) : null;
+  const bumped = unread ? bumpUnread({ [categoryId]: unread }) : null;
   try {
-    // a move is one backend transaction (added here, removed there); its undo is one too
-    const res =
-      from === undefined
-        ? await client.call("categories.addThreads", { categoryId, threadIds: ids, source: options.source ?? "picker" })
-        : await client.call("categories.moveThreads", { from, to: categoryId, threadIds: ids, source: options.source ?? "dnd" });
+    const res = await client.call("categories.addThreads", { categoryId, threadIds: ids, source: options.source ?? "picker" });
     refreshReader(ids);
-    const filed: Filed = { categoryId, threadIds: ids, addedIds: res.addedIds, batchId: res.batchId, movedFrom: from === undefined ? undefined : { categoryId: from, threadIds: ids } };
+    const filed: Filed = { categoryId, threadIds: ids, addedIds: res.addedIds, batchId: res.batchId };
     for (const l of listeners) l(filed, options.source ?? "picker");
     return filed;
   } catch (error) {
@@ -74,26 +69,67 @@ export async function addToCategory(categoryId: number, threadIds: readonly numb
   }
 }
 
-/** The optimistic +n on a category's unread count. */
-interface Bump {
-  categoryId: number;
-  n: number;
-}
-
-function bumpUnread(categoryId: number, n: number): Bump {
-  const counts = getApp().counts;
-  setApp({ counts: { ...counts, categoryUnread: { ...counts.categoryUnread, [categoryId]: (counts.categoryUnread[categoryId] ?? 0) + n } } });
-  return { categoryId, n };
+/** Would moving these threads to the category change nothing (each is in it, and only in it)? */
+export function isExclusivelyIn(categoryId: number, threadIds: readonly number[]): boolean {
+  const { items, index } = useList.getState();
+  return exclusivelyIn(threadIds, categoryId, (id) => items[index.get(id) ?? -1]?.categoryIds);
 }
 
 /**
- * The add failed: take the bump back at once, then ask the backend for the
+ * Drag and drop and "Mover a…": an exclusive move. Afterwards every thread
+ * is in `categoryId` and nowhere else. Rows show it in the same frame; in a
+ * category view the rows that left it leave the list (as with archive); the
+ * sidebar's unread counts move from the sources to the target. One undo
+ * (the snackbar's) restores every membership.
+ */
+export async function moveToCategory(categoryId: number, threadIds: readonly number[], options: { source?: CategorizeSource } = {}): Promise<Filed | null> {
+  const ids = [...new Set(threadIds)];
+  if (ids.length === 0) return null;
+  const { items, index } = useList.getState();
+  const delta: Record<number, number> = {};
+  for (const id of ids) {
+    const t = items[index.get(id) ?? -1];
+    if (!t?.unread) continue;
+    for (const c of t.categoryIds) if (c !== categoryId) delta[c] = (delta[c] ?? 0) - 1;
+    if (!t.categoryIds.includes(categoryId)) delta[categoryId] = (delta[categoryId] ?? 0) + 1;
+  }
+  const s = getApp();
+  const viewing = s.reviewCategoryId === null ? s.categoryId : null;
+  if (viewing !== null && viewing !== categoryId) leaveView(ids.filter((id) => index.has(id)));
+  else patchRows(ids, (t) => ({ ...t, categoryIds: [categoryId] }));
+  const bumped = Object.keys(delta).length ? bumpUnread(delta) : null;
+  const source = options.source ?? "dnd";
+  try {
+    const res = await client.call("categories.moveThreads", { to: categoryId, threadIds: ids, source });
+    refreshReader(ids);
+    const filed: Filed = { categoryId, threadIds: ids, addedIds: res.addedIds, batchId: res.batchId, moved: true };
+    for (const l of listeners) l(filed, source);
+    return filed;
+  } catch (error) {
+    toast.error(`No se pudo mover: ${error instanceof Error ? error.message : error}`);
+    if (bumped) void reconcileCounts(bumped);
+    void reloadList({ keepSelection: true });
+    return null;
+  }
+}
+
+/** The optimistic change of categories' unread counts (by category id). */
+type Bump = Record<number, number>;
+
+function bumpUnread(delta: Bump): Bump {
+  const counts = getApp().counts;
+  const categoryUnread = { ...counts.categoryUnread };
+  for (const [c, n] of Object.entries(delta)) categoryUnread[Number(c)] = Math.max(0, (categoryUnread[Number(c)] ?? 0) + n);
+  setApp({ counts: { ...counts, categoryUnread } });
+  return delta;
+}
+
+/**
+ * The change failed: take the bump back at once, then ask the backend for the
  * real numbers (a reloaded list doesn't reload counts).
  */
 async function reconcileCounts(b: Bump): Promise<void> {
-  const now = getApp().counts;
-  const unread = now.categoryUnread[b.categoryId] ?? 0;
-  setApp({ counts: { ...now, categoryUnread: { ...now.categoryUnread, [b.categoryId]: Math.max(0, unread - b.n) } } });
+  bumpUnread(Object.fromEntries(Object.entries(b).map(([c, n]) => [c, -n])));
   try {
     setApp({ counts: await client.call("counts.get", {}) });
   } catch {
@@ -102,12 +138,11 @@ async function reconcileCounts(b: Bump): Promise<void> {
 }
 
 /**
- * ⌥-move out of the category being viewed: the rows leave the list in this
+ * A move out of the category being viewed: the rows leave the list in this
  * frame (the rest slide up) and the selection moves on, as with archive.
  */
-function leaveView(ids: readonly number[], from: number): void {
+function leaveView(ids: readonly number[]): void {
   const s = getApp();
-  if (s.categoryId !== from) return;
   const { items, index } = useList.getState();
   const leaving = new Set(ids);
   if (s.selectedId !== null && leaving.has(s.selectedId)) {
@@ -135,17 +170,16 @@ export async function removeFromCategory(categoryId: number, threadIds: readonly
 
 /**
  * Takes back one categorization exactly (its batch), whether one thread or a
- * thousand; for a move, the backend restores the source in the same
- * transaction. Throws when the backend refuses: the caller keeps its undo
+ * thousand; for a move, the backend restores every category the threads
+ * left in the same transaction. Throws when the backend refuses: the caller keeps its undo
  * control so the user can retry (the undo is idempotent).
  */
-export async function undoFiled(filed: Pick<Filed, "categoryId" | "addedIds" | "batchId" | "movedFrom">): Promise<number> {
+export async function undoFiled(filed: Pick<Filed, "categoryId" | "addedIds" | "batchId" | "moved"> & { threadIds?: number[] }): Promise<number> {
   if (filed.batchId === null) return 0;
-  const moved = filed.movedFrom;
-  if (!moved) patch(filed.addedIds, filed.categoryId, false);
+  if (!filed.moved) patch(filed.addedIds, filed.categoryId, false);
   try {
     const { removed } = await client.call("categorize.undo", { batchId: filed.batchId });
-    refreshReader(moved ? [...new Set([...filed.addedIds, ...moved.threadIds])] : filed.addedIds);
+    refreshReader(filed.moved ? [...new Set([...filed.addedIds, ...(filed.threadIds ?? [])])] : filed.addedIds);
     return removed;
   } finally {
     // success shows the restored rows; failure puts the optimistic removal back

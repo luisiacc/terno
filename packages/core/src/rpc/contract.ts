@@ -310,11 +310,13 @@ export const contract = {
     z.object({ categoryId: id, threadIds: ids, source: z.enum(CATEGORIZE_SOURCES).default("picker") }),
   ),
   /**
-   * ⌥-drag in a category view: added to `to` and removed from `from` in one
-   * transaction. categorize.undo on the returned batch restores both exactly.
+   * Drag and drop, "Mover a…": an exclusive move. Afterwards every thread is
+   * in `to` and in no other category, in one transaction; `moved` are the
+   * threads that left at least one. categorize.undo on the returned batch
+   * restores every membership exactly.
    */
   "categories.moveThreads": m<AddThreadsResult & { batchId: number; moved: number[] }>()(
-    z.object({ from: id, to: id, threadIds: ids, source: z.enum(CATEGORIZE_SOURCES).default("dnd") }).refine((p) => p.from !== p.to, "from and to must differ"),
+    z.object({ to: id, threadIds: ids, source: z.enum(CATEGORIZE_SOURCES).default("dnd") }),
   ),
   /** "user" removals teach the model (a strong negative); "undo" takes back the user's own add without learning anything. */
   "categories.removeThreads": m<{ removed: number }>()(

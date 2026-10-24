@@ -9,7 +9,7 @@
 - Filters built with AI from a plain-language description, then refined in a visual editor. The AI can run on this Mac (Ollama, LM Studio, any local OpenAI-compatible server) or in the cloud with your own key (Claude, OpenAI, OpenRouter, Groq, Together, Azure).
 - **Local mode** (on for new installs): nothing leaves the Mac except mail with your own servers.
 - Filters learned from what you archive.
-- Drag one or many conversations onto a category (⌥ moves them out of the current one); the same undoable snackbar as the `l` picker.
+- Drag one or many conversations onto a category to move them there (out of every other category); the same undoable snackbar as the `l` picker.
 - 13 themes (Única, Apple, Solarized, Gruvbox, GitHub, Catppuccin, Dracula, Monokai, Tokyo Night, Nord) with a light and a dark choice for system mode, your own themes as JSON, all checked for WCAG AA contrast; animations you can set to 0/50/75/100 ms (Ajustes → Apariencia).
 - An MCP server so **Claude Code** and **Codex** get one access point to all your email.
 

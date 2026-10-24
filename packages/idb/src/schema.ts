@@ -4,11 +4,12 @@ import { MemDb, type Committed, type ForeignKey, type Key, type Row, type Table,
  * The IndexedDB schema: one object store per table of the SQL schema (same
  * columns, so the store commands read like their SQL counterparts), plus
  * `meta`. Logical migration ids follow the SQL ones; this adapter starts at
- * the v7 shape (bodies split, search outbox) as IndexedDB version 1.
+ * the v7 shape (bodies split, search outbox) as IndexedDB version 1; version 2
+ * is SQL's v8 (the move journal keeps each removed row with its category).
  */
-export const IDB_VERSION = 1;
+export const IDB_VERSION = 2;
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 7;
+export const LOGICAL_SCHEMA = 8;
 
 const fk = (column: string) => ({ [`fk_${column}`]: [column] as const });
 
@@ -48,7 +49,7 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "cat_batches", early: true, key: ["id"], autoId: true, indexes: fk("category_id") },
   { name: "cls_snapshot", early: true, key: ["id"] },
   { name: "cat_move_threads", key: ["batch_id", "thread_id"], indexes: fk("batch_id") },
-  { name: "cat_move_rows", key: ["batch_id", "thread_id"], indexes: fk("batch_id") },
+  { name: "cat_move_rows", key: ["batch_id", "thread_id", "category_id"], indexes: fk("batch_id") },
   { name: "cat_move_examples", key: ["batch_id", "thread_id", "category_id"], indexes: fk("batch_id") },
   { name: "cat_move_decisions", key: ["batch_id", "thread_id", "category_id"], indexes: fk("batch_id") },
   { name: "search_outbox", early: true, key: ["seq"] },
@@ -121,7 +122,7 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
     if (event.oldVersion < 1) {
       for (const t of PERSISTED) db.createObjectStore(t.name);
       db.createObjectStore("meta");
-    }
+    } else if (event.oldVersion < 2) upgradeMoveRows(open.transaction!);
   };
   open.onblocked = () => {};
   try {
@@ -135,6 +136,26 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
     }
     throw error;
   }
+}
+
+/**
+ * Version 2 (SQL v8): journaled move rows are keyed by their category too.
+ * Rows of earlier moves came from the batch's single source (`from`).
+ */
+function upgradeMoveRows(tx: IDBTransaction): void {
+  const rows = tx.objectStore("cat_move_rows");
+  const batches = tx.objectStore("cat_batches").getAll() as IDBRequest<Row[]>;
+  batches.onsuccess = () => {
+    const from = new Map(batches.result.map((b) => [b.id as number, (JSON.parse(b.scope_json as string) as { from?: number }).from]));
+    const all = rows.getAll() as IDBRequest<Row[]>;
+    all.onsuccess = () => {
+      rows.clear();
+      for (const r of all.result) {
+        const categoryId = from.get(r.batch_id as number);
+        if (categoryId !== undefined) rows.put({ ...r, category_id: categoryId }, [r.batch_id as number, r.thread_id as number, categoryId]);
+      }
+    };
+  };
 }
 
 export async function idbExists(factory: IDBFactory, name: string): Promise<boolean> {

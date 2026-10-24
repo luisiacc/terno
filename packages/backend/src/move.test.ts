@@ -1,7 +1,8 @@
 /**
- * ⌥-drag moves: one transaction to move, one to undo, and the undo restores
- * the source membership with its provenance (origin, batch, training example)
- * so an earlier batch's undo still works afterwards.
+ * Moves (drag and drop, "Mover a…") are exclusive: one transaction to move a
+ * thread out of every other category, one to undo, and the undo restores
+ * each source membership with its provenance (origin, batch, training
+ * example) so an earlier batch's undo still works afterwards.
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -55,7 +56,7 @@ describe("moving threads between categories", () => {
     const before = { row: membership(backend, t1, a), example: example(backend, t1, a) };
     expect(before.row).toEqual({ added_by: "bulk", batch_id: bulk.batchId });
 
-    const move = await client.call("categories.moveThreads", { from: a, to: b, threadIds: [t1], source: "dnd" });
+    const move = await client.call("categories.moveThreads", { to: b, threadIds: [t1], source: "dnd" });
     expect(move).toMatchObject({ addedIds: [t1], moved: [t1] });
     expect(membership(backend, t1, a)).toBeUndefined();
     expect(membership(backend, t1, b)).toMatchObject({ added_by: "user", batch_id: move.batchId });
@@ -76,6 +77,26 @@ describe("moving threads between categories", () => {
     expect(example(backend, t1, a)).toBeUndefined();
   });
 
+  it("leaves every other category, not only one: A+B dragged to C ends in C alone; undo puts it back in A and B", async () => {
+    const { backend, client, a, b, threads } = setup();
+    const c = createCategory(sqlDb(backend.store), "Tercera", "lime").id;
+    const [t1, t2] = threads as [number, number];
+    await client.call("categories.addThreads", { categoryId: a, threadIds: [t1, t2], source: "snackbar" });
+    await client.call("categories.addThreads", { categoryId: b, threadIds: [t1], source: "picker" });
+    const before = [membership(backend, t1, a), membership(backend, t1, b), membership(backend, t2, a)];
+    const move = await client.call("categories.moveThreads", { to: c, threadIds: [t1, t2], source: "dnd" });
+    expect(move.moved.sort()).toEqual([t1, t2].sort());
+    const cats = (t: number) => sqlDb(backend.store).all<{ category_id: number }>("SELECT category_id FROM thread_categories WHERE thread_id = ? ORDER BY category_id", t).map((r) => r.category_id);
+    expect([cats(t1), cats(t2)]).toEqual([[c], [c]]);
+    // a removal example for each category t1 left
+    expect([example(backend, t1, a)?.source, example(backend, t1, b)?.source, example(backend, t1, c)?.label]).toEqual(["removal", "removal", 1]);
+    expect(await client.call("categorize.undo", { batchId: move.batchId })).toEqual({ removed: 2, restored: 2 });
+    expect([membership(backend, t1, a), membership(backend, t1, b), membership(backend, t2, a)]).toEqual(before);
+    expect(cats(t1)).toEqual([a, b].sort((x, y) => x - y));
+    expect(example(backend, t1, c)).toBeUndefined();
+    expect(example(backend, t1, b)).toMatchObject({ label: 1, source: "user" });
+  });
+
   it("an undo is idempotent and keeps what the destination had before", async () => {
     const { backend, client, a, b, threads } = setup();
     const [t1, t2] = threads as [number, number];
@@ -83,7 +104,7 @@ describe("moving threads between categories", () => {
     // t2 was already in B (from the picker): the move adds only t1 there, and the undo leaves t2 in B
     const pick = await client.call("categories.addThreads", { categoryId: b, threadIds: [t2], source: "picker" });
     const bRow = membership(backend, t2, b);
-    const move = await client.call("categories.moveThreads", { from: a, to: b, threadIds: [t1, t2] });
+    const move = await client.call("categories.moveThreads", { to: b, threadIds: [t1, t2] });
     expect(move.addedIds).toEqual([t1]);
     expect(move.moved.sort()).toEqual([t1, t2].sort());
     await client.call("categorize.undo", { batchId: move.batchId });
@@ -98,13 +119,13 @@ describe("moving threads between categories", () => {
     const [t1] = threads as [number];
     await client.call("categories.addThreads", { categoryId: a, threadIds: [t1], source: "picker" });
     // make the step that takes the thread out of `a` fail inside the move's transaction
-    sqlDb(backend.store).exec("CREATE TRIGGER fail_removal BEFORE UPDATE ON thread_categories BEGIN SELECT RAISE(ABORT, 'boom'); END");
-    await expect(client.call("categories.moveThreads", { from: a, to: b, threadIds: [t1] })).rejects.toThrow();
+    sqlDb(backend.store).exec("CREATE TRIGGER fail_removal BEFORE DELETE ON thread_categories BEGIN SELECT RAISE(ABORT, 'boom'); END");
+    await expect(client.call("categories.moveThreads", { to: b, threadIds: [t1] })).rejects.toThrow();
     expect(membership(backend, t1, a)).toMatchObject({ added_by: "user" });
     expect(membership(backend, t1, b)).toBeUndefined();
     sqlDb(backend.store).exec("DROP TRIGGER fail_removal");
     // and the undo: if restoring fails, the destination keeps the threads too
-    const move = await client.call("categories.moveThreads", { from: a, to: b, threadIds: [t1] });
+    const move = await client.call("categories.moveThreads", { to: b, threadIds: [t1] });
     sqlDb(backend.store).exec("CREATE TRIGGER fail_restore BEFORE INSERT ON thread_categories BEGIN SELECT RAISE(ABORT, 'boom'); END");
     await expect(client.call("categorize.undo", { batchId: move.batchId })).rejects.toThrow();
     expect(membership(backend, t1, b)).toMatchObject({ batch_id: move.batchId });
@@ -120,7 +141,7 @@ describe("moving threads between categories", () => {
     const [t1, t2] = threads as [number, number];
     sqlDb(backend.store).run("INSERT INTO thread_categories (thread_id, category_id, added_by, added_at) VALUES (?, ?, 'user', 0), (?, ?, 'user', 0)", t1, a, t2, a);
     // the commit happened, the sliced training never ran (the app quit)
-    const m = beginMove(sqlDb(backend.store), { from: a, to: b, threadIds: [t1, t2], addedBy: "user", now: NOW, source: "dnd" });
+    const m = beginMove(sqlDb(backend.store), { to: b, threadIds: [t1, t2], addedBy: "user", now: NOW, source: "dnd" });
     expect(movePhase(sqlDb(backend.store), m.batchId)).toBe("training");
     expect([membership(backend, t1, a), membership(backend, t1, b)?.batch_id]).toEqual([undefined, m.batchId]);
     expect(example(backend, t1, b)).toBeUndefined();
