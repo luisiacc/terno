@@ -11,11 +11,12 @@ import {
 import { AI_PROVIDER_IDS, builtinMode, canonicalThemeId, COMPATIBLE_PRESETS, CUSTOM_PREFIX, DEFAULT_THEME, type CustomTheme, type ThemeMode } from "@terno/core";
 import type { AiProfile, AiSettings, AppSettings, SettingsPatch } from "@terno/core/rpc";
 import type { MailStore } from "@terno/store";
+import { unreadableSecrets } from "./keychain";
 
 /** The part of the store settings live in. */
 export type SettingsStore = Pick<MailStore, "settings" | "secrets">;
 
-type General = Omit<AppSettings, "ai" | "gmailClientSecretSet">;
+type General = Omit<AppSettings, "ai" | "gmailClientSecretSet" | "gmailClientSecretUnreadable">;
 
 /** What is persisted under settings.app. The renderer only ever sees AppSettings. */
 interface StoredSettings extends Partial<General> {
@@ -163,12 +164,14 @@ export async function readSettings(store: SettingsStore): Promise<AppSettings> {
   const profile = profiles[provider] ?? { model: "" };
   const secret = keySecretName(provider, profile.preset);
   const bound = (await keyOrigins(store))[secret] ?? null;
+  const unreadable = await unreadableSecrets(store);
   const ai: AiSettings = {
     provider,
     model: profile.model,
     baseURL: profile.baseURL ?? null,
     preset: profile.preset ?? null,
     hasKey: await store.secrets.has(secret),
+    keyUnreadable: unreadable.has(secret),
     keyHint: (await store.settings.get<Record<string, string>>(KEY_HINTS, {}))[secret] ?? null,
     keyOrigin: bound,
     // unbound: saved before origins were recorded and its endpoint never changed since (pinKeyOrigins)
@@ -177,7 +180,7 @@ export async function readSettings(store: SettingsStore): Promise<AppSettings> {
     capabilities: capabilities[capabilityKey(provider, profile)] ?? null,
     profiles,
   };
-  return { ...resolveThemes({ ...DEFAULT_SETTINGS, ...general }), gmailClientSecretSet: await store.secrets.has("gmailClientSecret"), ai };
+  return { ...resolveThemes({ ...DEFAULT_SETTINGS, ...general }), gmailClientSecretSet: await store.secrets.has("gmailClientSecret"), gmailClientSecretUnreadable: unreadable.has("gmailClientSecret"), ai };
 }
 
 export class SettingsError extends Error {}

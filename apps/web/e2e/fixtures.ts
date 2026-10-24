@@ -26,9 +26,9 @@ export const test = base.extend<Fixtures>({
     if (!template) throw new Error("global setup did not seed a template database");
     const dir = mkdtempSync(join(tmpdir(), "terno-e2e-"));
     if (!backendOptions.empty) {
-      copyFileSync(template, join(dir, "unica.db"));
+      copyFileSync(template, join(dir, "terno.db"));
       // the template's search snapshot too (written on close), so each backend restores instead of building
-      if (existsSync(`${template}.search`)) copyFileSync(`${template}.search`, join(dir, "unica.db.search"));
+      if (existsSync(`${template}.search`)) copyFileSync(`${template}.search`, join(dir, "terno.db.search"));
     }
     const server = await startDevServer({ port: 0, dataDir: dir, token: "e2e", now: () => E2E_NOW, autoSync: true, seed: !backendOptions.empty, ownerClaims: backendOptions.ownerClaims, agentSocket: backendOptions.agentSocket });
     await use(server);

@@ -383,6 +383,8 @@ export interface MailStore {
   };
 
   secrets: {
+    /** every stored secret's name, sorted */
+    names(): Promise<string[]>;
     get(name: string): Promise<Uint8Array | null>;
     has(name: string): Promise<boolean>;
     put(name: string, blob: Uint8Array): Promise<void>;

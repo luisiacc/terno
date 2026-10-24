@@ -8,6 +8,7 @@ import { AiAssist } from "./ai-assist";
 import { Categorizer } from "./categorizer";
 import { createHandlers } from "./handlers";
 import { restorePending } from "./import";
+import { blobFingerprint, migrateLegacySecrets, readKeychainState, SecretUnreadableError, type LegacySecretReader } from "./keychain";
 import { createNetworkPolicy, type LookupAll, type NetworkPolicy } from "./net-policy";
 import { readAutoCategorize, readLocalMode, readSettings } from "./settings";
 import { BULK_SLICE, SliceSizer, type SliceBudget } from "./slicer";
@@ -59,6 +60,8 @@ export interface BackendCoreOptions {
   lookup?: LookupAll;
   /** the host's kind and capabilities, reported to the renderer (default: everything, as on desktop) */
   host?: HostInfo;
+  /** desktop: opens secrets sealed under Única's keychain item, so start() seals them again under Terno's (see keychain.ts) */
+  legacySecrets?: LegacySecretReader;
 }
 
 const COUNTS_EVERY_MS = 200;
@@ -164,6 +167,13 @@ export class BackendCore {
   async start(): Promise<void> {
     await this.ready;
     if (this.stopped) return;
+    // before anything syncs: secrets sealed by Única are sealed again (or stay pending, and Settings asks for them)
+    if (this.options.legacySecrets) {
+      await migrateLegacySecrets(this.store, this.options.cipher, this.options.legacySecrets, (level, message) => this.log(level, message)).catch((error: unknown) =>
+        this.log("warn", "keychain migration failed; it is retried on the next start", error instanceof Error ? error.message : error),
+      );
+      if (this.stopped) return;
+    }
     if (!this.categorizer.ready) void this.categorizer.rebuild();
     // a resume that fails waits for the next start (its journal is intact); it must never crash the backend
     for (const m of await this.store.categories.unfinishedMoves()) {
@@ -240,9 +250,17 @@ export class BackendCore {
 
   // ───────────────────────────── secrets ─────────────────────────────
 
+  /** null: none saved. Throws SecretUnreadableError when one is saved but can't be opened (sealed by Única and not migrated, or refused by the keychain). */
   async getSecret(name: string): Promise<string | null> {
     const blob = await this.store.secrets.get(name);
-    return blob ? this.options.cipher.decrypt(blob) : null;
+    if (!blob) return null;
+    if ((await readKeychainState(this.store))?.pending[name] === blobFingerprint(blob)) throw new SecretUnreadableError(name, true);
+    try {
+      return await this.options.cipher.decrypt(blob);
+    } catch (error) {
+      this.log("warn", `secret ${name} couldn't be opened`, error instanceof Error ? error.message : error);
+      throw new SecretUnreadableError(name, false);
+    }
   }
 
   async setSecret(name: string, value: string): Promise<void> {
@@ -487,7 +505,11 @@ export class BackendCore {
         store: this.store.providerStore(accountId),
         account,
         config: cfg.config,
-        getSecret: (name) => this.getSecret(`account:${accountId}:${name}`),
+        // an unreadable password or token is a sign-in to redo: ops wait for it, Settings shows the account's error with its fix
+        getSecret: (name) =>
+          this.getSecret(`account:${accountId}:${name}`).catch((error: unknown) => {
+            throw error instanceof SecretUnreadableError ? new ProviderAuthError(error.message) : error;
+          }),
         setSecret: (name, value) => this.setSecret(`account:${accountId}:${name}`, value),
         getAppSecret: (name) => this.getSecret(name),
         loadCursor: async <T,>() => ((await this.store.accounts.config<{ cursor?: T }>(accountId))?.config.cursor ?? null) as T | null,

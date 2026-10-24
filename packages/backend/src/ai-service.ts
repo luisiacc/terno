@@ -20,6 +20,7 @@ import {
 } from "@terno/ai";
 import { RpcError, type AiTestResult, type AppSettings } from "@terno/core/rpc";
 import type { BackendCore as Backend } from "./core";
+import { SecretUnreadableError } from "./keychain";
 import { NetworkPolicyError } from "./net-policy";
 import { bindKeyOrigin, endpointOrigin, keyOrigins, readSettings, saveCapabilities, setKeyHint } from "./settings";
 
@@ -79,7 +80,9 @@ export class AiService {
     const baseURL = resolveBaseURL({ id: provider, baseURL: target.baseURL, preset });
     if (provider !== "fake" && !baseURL) throw new AiError("Indica la URL del servidor en Ajustes → IA.", "not_configured");
     const secretName = keySecretName(provider, preset);
-    let apiKey = await this.b.getSecret(secretName);
+    let apiKey = await this.b.getSecret(secretName).catch((error: unknown) => {
+      throw error instanceof SecretUnreadableError ? new AiError(error.message, "not_configured") : error;
+    });
     if (apiKey) {
       // a key goes only to the origin it was saved (or confirmed) for
       const origin = new URL(baseURL!).origin;

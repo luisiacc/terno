@@ -21,7 +21,7 @@ const accounts = Number(arg("accounts", "8"));
 const threads = Number(arg("threads", "12000"));
 
 mkdirSync(out, { recursive: true });
-const dbPath = join(out, "unica.db");
+const dbPath = join(out, "terno.db");
 for (const suffix of ["", "-wal", "-shm", ".search"]) rmSync(dbPath + suffix, { force: true });
 
 const started = performance.now();

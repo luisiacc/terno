@@ -64,7 +64,7 @@ function setup(options: { dir?: string } = {}) {
   const dir = options.dir ?? mkdtempSync(join(tmpdir(), "terno-backend-"));
   const { registry, providers } = scriptedRegistry();
   const backend = new Backend({
-    dbPath: join(dir, "unica.db"),
+    dbPath: join(dir, "terno.db"),
     version: "test",
     cipher: plaintextCipher,
     providers: registry,

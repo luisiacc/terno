@@ -39,7 +39,7 @@ test.afterAll(async () => {
 });
 
 test("boots from app:// with the backend in a utility process", async () => {
-  expect(page.url()).toBe("app://unica/");
+  expect(page.url()).toBe("app://terno/");
   const types = await app.evaluate(({ app: a }) => a.getAppMetrics().map((m) => m.type));
   expect(types).toContain("Utility");
   expect(await page.locator("[data-testid=thread-row]").count()).toBeGreaterThan(5);

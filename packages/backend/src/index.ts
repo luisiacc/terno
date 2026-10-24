@@ -6,3 +6,4 @@ export * from "./agent-socket";
 export * from "./demo";
 export * from "./net-policy";
 export * from "./identity";
+export * from "./keychain";

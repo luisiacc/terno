@@ -79,7 +79,7 @@ function webHtml(): Plugin {
 export default defineConfig(() => {
   const buildId = `${version}-${Date.now().toString(36)}`;
   return {
-    // relative asset URLs so the bundle works from app://unica/ in Electron (and from any path on a static host)
+    // relative asset URLs so the bundle works from app://terno/ in Electron (and from any path on a static host)
     base: "./",
     plugins: [react({ compiler: true }), tailwindcss(), ...(target === "web" ? [serviceWorker(buildId), webHtml()] : [desktopGuard()])],
     define: {

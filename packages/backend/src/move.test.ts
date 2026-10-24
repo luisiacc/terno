@@ -20,7 +20,7 @@ afterEach(async () => {
   for (const c of cleanups.splice(0).reverse()) await c();
 });
 
-const open = (dir: string) => new Backend({ dbPath: join(dir, "unica.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false });
+const open = (dir: string) => new Backend({ dbPath: join(dir, "terno.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false });
 
 function setup() {
   const dir = mkdtempSync(join(tmpdir(), "terno-move-"));
@@ -177,7 +177,7 @@ describe("resuming a move at startup", () => {
     const onRejection = (e: unknown) => rejections.push(e);
     process.on("unhandledRejection", onRejection);
     const logs: string[] = [];
-    const again = new Backend({ dbPath: join(dir, "unica.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, log: (level, message) => logs.push(`${level} ${message}`) });
+    const again = new Backend({ dbPath: join(dir, "terno.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, log: (level, message) => logs.push(`${level} ${message}`) });
     try {
       // the training can't write: the resume fails
       sqlDb(again.store).exec("CREATE TRIGGER fail_training BEFORE INSERT ON cls_examples BEGIN SELECT RAISE(ABORT, 'disco lleno'); END");

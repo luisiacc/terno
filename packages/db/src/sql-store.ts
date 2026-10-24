@@ -84,6 +84,7 @@ import {
   getFilter,
   getOp,
   getSecret,
+  secretNames,
   getSetting,
   learnedFilterKeys,
   listAccounts,
@@ -720,6 +721,7 @@ export class SqlMailStore implements MailStore {
   };
 
   readonly secrets: MailStore["secrets"] = {
+    names: async () => secretNames(this.db),
     get: async (name) => getSecret(this.db, name),
     has: async (name) => getSecret(this.db, name) !== null,
     put: async (name, blob) => putSecret(this.db, name, blob),

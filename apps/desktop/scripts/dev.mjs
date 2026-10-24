@@ -1,6 +1,6 @@
 // One-command desktop dev: bundles main/preload/backend, starts the Vite dev
 // server (renderer with HMR) and launches Electron against it.
-//   pnpm dev:desktop            → your real profile (~/Library/Application Support/Unica)
+//   pnpm dev:desktop            → your real profile (~/Library/Application Support/Terno)
 //   pnpm dev:desktop --demo     → a separate dev profile seeded with the demo mailbox
 //   pnpm dev:desktop --seeded   → a profile pre-seeded with 8 accounts / ~20k messages
 //                                 (reused on later runs; add --reseed to start over;
@@ -11,6 +11,7 @@ import { dirname, join } from "node:path";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { DB_FILE, LegacyProfileInUseError, migrateLegacyProfile } from "../src/legacy-profile.ts";
 
 // For one release UNICA_* variables still work (the same rule as @terno/core/legacy-env).
 for (const legacy of Object.keys(process.env).filter((k) => k.startsWith("UNICA_"))) {
@@ -30,9 +31,24 @@ const seeded = process.argv.includes("--seeded");
 const port = Number(process.env.TERNO_VITE_PORT ?? 5173);
 const url = `http://localhost:${port}`;
 
+/** Renames a legacy Unica-dev-* profile (and its unica.db) before anything looks inside. */
+function migrateProfile(profile) {
+  try {
+    const m = migrateLegacyProfile(profile);
+    if (m.movedFrom) console.log(`[dev] renamed ${m.movedFrom} → ${profile}`);
+    for (const r of m.renamed) console.log(`[dev] renamed ${r}`);
+    for (const c of m.conflicts) console.warn(`[dev] left alone (the Terno one exists): ${c}`);
+  } catch (error) {
+    if (!(error instanceof LegacyProfileInUseError)) throw error;
+    console.error(`[dev] ${error.message}`);
+    process.exit(1);
+  }
+}
+
 if (seeded) {
-  const profile = (process.env.TERNO_USER_DATA ??= join(homedir(), "Library", "Application Support", "Unica-dev-seeded"));
-  if (process.argv.includes("--reseed") || !existsSync(join(profile, "unica.db"))) {
+  const profile = (process.env.TERNO_USER_DATA ??= join(homedir(), "Library", "Application Support", "Terno-dev-seeded"));
+  migrateProfile(profile);
+  if (process.argv.includes("--reseed") || !existsSync(join(profile, DB_FILE))) {
     console.log(`[dev] seeding ${profile} …`);
     const seed = spawnSync(
       process.platform === "win32" ? "pnpm.cmd" : "pnpm",
@@ -91,7 +107,8 @@ const env = { ...process.env, TERNO_DEV_URL: url };
 delete env.ELECTRON_RUN_AS_NODE;
 if (demo) {
   env.TERNO_DEMO = "1";
-  env.TERNO_USER_DATA ??= join(homedir(), "Library", "Application Support", "Unica-dev-demo");
+  env.TERNO_USER_DATA ??= join(homedir(), "Library", "Application Support", "Terno-dev-demo");
+  migrateProfile(env.TERNO_USER_DATA);
 }
 console.log(`\n[dev] launching Electron → ${url}${demo ? " (demo profile)" : ""}\n`);
 const args = [join(root, "dist/main.cjs")];

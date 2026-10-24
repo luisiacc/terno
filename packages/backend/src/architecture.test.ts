@@ -38,7 +38,7 @@ const ALLOWED: Record<string, { patterns: string[]; why: string }> = {
   "packages/mail/src/smtp.ts": { patterns: ["SMTP client"], why: "SMTP to the account's own server" },
   "packages/ai/src/anthropic.ts": { patterns: ["Anthropic client"], why: "constructed with the policy fetch (checked below)" },
   "packages/ai/src/openai-chat.ts": { patterns: ["OpenAI client"], why: "constructed with the policy fetch (checked below)" },
-  "apps/desktop/src/main.ts": { patterns: ["Electron net"], why: "app:// handler reading bundled files (file: URLs only)" },
+  "apps/desktop/src/app.ts": { patterns: ["Electron net"], why: "app:// handler reading bundled files (file: URLs only)" },
   "apps/web/src/rpc/connection.ts": { patterns: ["WebSocket client"], why: "renderer ↔ loopback backend-dev; the renderer is fenced by main's webRequest backstop" },
   "apps/web/src/web/sw.js": { patterns: ["global fetch"], why: "web build's service worker: same-origin app files only (cross-origin requests are not intercepted)" },
   "packages/mcp/src/connection.ts": { patterns: ["raw sockets"], why: "unix socket to the local backend" },
@@ -85,7 +85,7 @@ describe("architecture: every outbound connection goes through the network polic
   });
 
   it("Electron's net.fetch is only used for bundled file: URLs", () => {
-    const main = files.find((f) => f.rel === "apps/desktop/src/main.ts")!;
+    const main = files.find((f) => f.rel === "apps/desktop/src/app.ts")!;
     for (const m of main.code.matchAll(/net\.fetch\(([^)]*)\)/g)) expect(m[1]).toMatch(/pathToFileURL/);
   });
 

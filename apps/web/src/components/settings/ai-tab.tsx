@@ -1,6 +1,6 @@
 import type { CompatiblePreset, ModelInfo, PresetDescriptor, ProviderDescriptor } from "@terno/core";
 import type { AiTestResult, AppSettings } from "@terno/core/rpc";
-import { SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
+import { SettingsGroup, SettingsRow, type RowA11y, type SettingsUpdate } from "./parts";
 import { Button } from "@terno/ui/components/button";
 import { Input } from "@terno/ui/components/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@terno/ui/components/select";
@@ -132,6 +132,20 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
     setKey("");
     toast.success(value ? "API key guardada en el llavero" : "API key eliminada");
   };
+  const keyForm = (a: RowA11y) => (
+    <form
+      className="flex gap-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (key.trim()) void saveKey(key.trim());
+      }}
+    >
+      <Input {...a} data-testid="ai-key" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder={ai.provider === "anthropic" ? "sk-ant-…" : "sk-…"} className="h-7 bg-background dark:bg-input/30" />
+      <Button type="submit" size="sm" disabled={!key.trim()}>
+        Guardar
+      </Button>
+    </form>
+  );
 
   const select = async (value: ProviderChoice) => {
     try {
@@ -263,7 +277,14 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
         {showsKey && (
           <SettingsRow stacked labelFor label={`API key de ${providerName(ai)}${needsKey ? "" : " (opcional)"}`} hint="Se cifra con el llavero de macOS y solo se envía a este proveedor.">
             {(a) =>
-              ai.hasKey && !ai.keyConfirmed ? (
+              ai.keyUnreadable ? (
+                <div className="space-y-1.5" data-testid="ai-key-unreadable">
+                  <p role="alert" className="text-xs text-destructive-ink">
+                    Terno no pudo abrir la API key que guardó Única en el llavero. Vuelve a guardarla para seguir usando {providerName(ai)}.
+                  </p>
+                  {keyForm(a)}
+                </div>
+              ) : ai.hasKey && !ai.keyConfirmed ? (
                 <div className="space-y-1.5 text-sm" data-testid="ai-key-unconfirmed">
                   <p role="alert" className="text-xs text-destructive-ink">
                     Tu API key se guardó para {ai.keyOrigin}; el endpoint ahora es {hostOf(ai) ?? "otro"}. No se enviará ahí hasta que lo confirmes o guardes otra.
@@ -285,18 +306,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
                   </Button>
                 </div>
               ) : (
-                <form
-                  className="flex gap-2"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (key.trim()) void saveKey(key.trim());
-                  }}
-                >
-                  <Input {...a} data-testid="ai-key" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder={ai.provider === "anthropic" ? "sk-ant-…" : "sk-…"} className="h-7 bg-background dark:bg-input/30" />
-                  <Button type="submit" size="sm" disabled={!key.trim()}>
-                    Guardar
-                  </Button>
-                </form>
+                keyForm(a)
               )
             }
           </SettingsRow>

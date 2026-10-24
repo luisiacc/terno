@@ -179,7 +179,7 @@ function GoogleClient({ settings, update }: { settings: AppSettings; update: Set
   const saveSecret = async (value: string) => {
     try {
       await client.call("settings.setSecret", { name: "gmailClientSecret", value });
-      setApp((s) => (s.settings ? { settings: { ...s.settings, gmailClientSecretSet: value !== "" } } : {}));
+      setApp((s) => (s.settings ? { settings: { ...s.settings, gmailClientSecretSet: value !== "", gmailClientSecretUnreadable: false } } : {}));
       setSecret("");
       toast.success(value ? "Client secret guardado" : "Client secret quitado");
     } catch (e) {
@@ -201,7 +201,7 @@ function GoogleClient({ settings, update }: { settings: AppSettings; update: Set
       {!WEB && (
         <SettingsRow stacked labelFor label="Client secret (opcional)" hint="Se cifra con el llavero de macOS; nunca se muestra.">
           {(a) =>
-            settings.gmailClientSecretSet ? (
+            settings.gmailClientSecretSet && !settings.gmailClientSecretUnreadable ? (
               <div className="flex items-center gap-2 text-sm" data-testid="gmail-secret-saved">
                 <span className="text-success-ink">Guardado</span>
                 <Button variant="ghost" size="xs" onClick={() => void saveSecret("")}>
@@ -209,18 +209,25 @@ function GoogleClient({ settings, update }: { settings: AppSettings; update: Set
                 </Button>
               </div>
             ) : (
-              <form
-                className="flex gap-2"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (secret.trim()) void saveSecret(secret.trim());
-                }}
-              >
-                <Input {...a} type="password" autoComplete="off" className="h-7 bg-background dark:bg-input/30" data-testid="gmail-secret" value={secret} onChange={(e) => setSecret(e.target.value)} />
-                <Button type="submit" size="sm" disabled={!secret.trim()}>
-                  Guardar
-                </Button>
-              </form>
+              <>
+                {settings.gmailClientSecretUnreadable && (
+                  <p role="alert" className="mb-1.5 text-xs text-destructive-ink" data-testid="gmail-secret-unreadable">
+                    Terno no pudo abrir el client secret que guardó Única en el llavero. Vuelve a guardarlo.
+                  </p>
+                )}
+                <form
+                  className="flex gap-2"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (secret.trim()) void saveSecret(secret.trim());
+                  }}
+                >
+                  <Input {...a} type="password" autoComplete="off" className="h-7 bg-background dark:bg-input/30" data-testid="gmail-secret" value={secret} onChange={(e) => setSecret(e.target.value)} />
+                  <Button type="submit" size="sm" disabled={!secret.trim()}>
+                    Guardar
+                  </Button>
+                </form>
+              </>
             )
           }
         </SettingsRow>

@@ -22,7 +22,7 @@ afterEach(async () => {
 function setup(threads = 900) {
   const dir = mkdtempSync(join(tmpdir(), "terno-scope-"));
   // a tiny slice budget: a few hundred threads already take many slices
-  const backend = new Backend({ dbPath: join(dir, "unica.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, sliceBudgetMs: 1 });
+  const backend = new Backend({ dbPath: join(dir, "terno.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, sliceBudgetMs: 1 });
   const connect = (origin: "renderer" | "mcp") => {
     const [c, s] = createMemoryTransportPair();
     backend.connect(s, { clientId: `${origin}-${Math.random()}`, origin });

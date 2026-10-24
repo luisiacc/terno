@@ -52,10 +52,11 @@ const SERVER: AppSettings = {
   allowAgentSend: false,
   gmailClientId: "",
   gmailClientSecretSet: false,
+  gmailClientSecretUnreadable: false,
   syncWindowDays: 90,
   autoCategorize: "auto",
   aiCategorize: false,
-  ai: { provider: "none", model: "", baseURL: null, preset: null, hasKey: false, keyHint: null, keyOrigin: null, keyConfirmed: true, local: true, capabilities: null, profiles: {} },
+  ai: { provider: "none", model: "", baseURL: null, preset: null, hasKey: false, keyUnreadable: false, keyHint: null, keyOrigin: null, keyConfirmed: true, local: true, capabilities: null, profiles: {} },
 };
 /** The backend's state, as each answer would report it. */
 let server: AppSettings;

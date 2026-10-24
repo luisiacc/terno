@@ -18,7 +18,7 @@ afterEach(async () => {
 });
 
 function open(dir: string, now: () => number = () => NOW) {
-  const backend = new Backend({ dbPath: join(dir, "unica.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, now, autoSync: false });
+  const backend = new Backend({ dbPath: join(dir, "terno.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, now, autoSync: false });
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "renderer", origin: "renderer" });
   return { backend, client: new RpcClient(c) };

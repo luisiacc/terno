@@ -3,7 +3,7 @@
  * database and sync; the renderer talks to it over a direct MessagePort, so
  * mail data never hops through the main process.
  */
-import { Backend, seedDemo, startAgentSocket, type SecretCipher } from "@terno/backend";
+import { Backend, seedDemo, startAgentSocket, type LegacySecretReader, type SecretCipher } from "@terno/backend";
 import { isRpcMessage, type RpcMessage, type Transport } from "@terno/core/rpc";
 import { createRegistry } from "@terno/mail/registry";
 import type { BackendToMain, MainToBackend } from "./ipc";
@@ -36,6 +36,14 @@ const cipher: SecretCipher = {
       send({ type: "secret", id, op: "decrypt", blob: [...blob] });
     }),
 };
+
+/** Única's secrets: main opens them with the keychain helper (one plaintext or null per blob). */
+const legacySecrets: LegacySecretReader = (blobs) =>
+  new Promise((resolve, reject) => {
+    const id = nextSecret++;
+    pendingSecrets.set(id, { resolve: (v) => resolve(v as (string | null)[]), reject });
+    send({ type: "legacy-secrets", id, blobs: blobs.map((b) => [...b]) });
+  });
 
 function portTransport(port: PortMain): Transport {
   const listeners = new Set<(m: RpcMessage) => void>();
@@ -78,6 +86,7 @@ parentPort.on("message", async (event) => {
         dbPath: msg.dbPath,
         version: msg.version,
         cipher,
+        legacySecrets,
         providers: createRegistry(),
         openExternal: async (url) => send({ type: "open-external", url }),
         demoAi: msg.demo || msg.dev,

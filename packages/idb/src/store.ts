@@ -1100,6 +1100,7 @@ export class IdbMailStore implements MailStore {
   };
 
   readonly secrets: MailStore["secrets"] = {
+    names: () => this.early(() => [...T(this.c, "secrets").all()].map((s) => String(s.name)).sort()),
     get: (name) => this.early(() => (T(this.c, "secrets").get(name)?.blob as Uint8Array | undefined) ?? null),
     has: (name) => this.early(() => T(this.c, "secrets").has(name)),
     put: (name, blob) => this.command(() => void T(this.c, "secrets").put({ name, blob })),

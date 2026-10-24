@@ -596,6 +596,10 @@ export function putSecret(db: Db, name: string, blob: Uint8Array): void {
   db.run("INSERT OR REPLACE INTO secrets (name, blob) VALUES (?, ?)", name, blob);
 }
 
+export function secretNames(db: Db): string[] {
+  return db.all<{ name: string }>("SELECT name FROM secrets ORDER BY name").map((r) => r.name);
+}
+
 export function getSecret(db: Db, name: string): Uint8Array | null {
   const r = db.get<{ blob: Uint8Array }>("SELECT blob FROM secrets WHERE name = ?", name);
   return r?.blob ?? null;

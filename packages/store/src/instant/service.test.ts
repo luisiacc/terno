@@ -129,7 +129,7 @@ describe("InstantSearch", () => {
 
   it("without file support it never schedules snapshot deadlines (no polling)", async () => {
     const feed = new MemoryFeed();
-    const s = service(feed, { snapshotPath: "/nowhere/unica.db.search", snapshotEvery: { changes: 1e9, ms: 5 } });
+    const s = service(feed, { snapshotPath: "/nowhere/terno.db.search", snapshotEvery: { changes: 1e9, ms: 5 } });
     expect(await s.settled()).toBe(true);
     await new Promise((r) => setTimeout(r, 50));
     const before = feed.heads;

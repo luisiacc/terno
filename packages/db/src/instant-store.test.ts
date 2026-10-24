@@ -17,7 +17,7 @@ const NOW = Date.UTC(2026, 9, 22, 15, 30);
 const root = mkdtempSync(join(tmpdir(), "terno-instant-store-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 let n = 0;
-const freshPath = () => join(mkdtempSync(join(root, `s${n++}-`)), "unica.db");
+const freshPath = () => join(mkdtempSync(join(root, `s${n++}-`)), "terno.db");
 
 function open(path: string, instant: SqlMailStoreOptions["instantSearch"] = true, dbOptions: Parameters<typeof openDatabase>[1] = {}) {
   return new SqlMailStore(openDatabase(path, dbOptions), { instantSearch: instant, platform: nodePlatform });

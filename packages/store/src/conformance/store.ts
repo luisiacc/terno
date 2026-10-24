@@ -1280,6 +1280,23 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       });
     });
 
+    describe("secrets", () => {
+      it("lists, replaces and deletes sealed blobs by name, and they survive a reopen", async () => {
+        let store = await fresh();
+        expect(await store.secrets.names()).toEqual([]);
+        await store.secrets.put("gmailClientSecret", Uint8Array.of(1, 2, 3));
+        await store.secrets.put("account:1:password", Uint8Array.of(4));
+        await store.secrets.put("account:1:password", Uint8Array.of(5, 6));
+        expect(await store.secrets.names()).toEqual(["account:1:password", "gmailClientSecret"]);
+        store = await harness.reopen(store);
+        open.push(store);
+        expect([...(await store.secrets.get("account:1:password"))!]).toEqual([5, 6]);
+        await store.secrets.delete("gmailClientSecret");
+        expect(await store.secrets.names()).toEqual(["account:1:password"]);
+        expect(await store.secrets.has("gmailClientSecret")).toBe(false);
+      });
+    });
+
     describe("portable message references (exports)", () => {
       it("a message's Message-ID and back: the newest copy in that account, any case, with or without <>", async () => {
         const store = await fresh();

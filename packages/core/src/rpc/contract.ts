@@ -65,6 +65,8 @@ export interface AiSettings {
   preset: CompatiblePreset | null;
   /** keys never cross to the renderer: only whether one is saved and its last 4 characters */
   hasKey: boolean;
+  /** the saved key was sealed by Única and couldn't be moved to Terno's keychain: it has to be saved again */
+  keyUnreadable: boolean;
   keyHint: string | null;
   /** the endpoint origin the saved key belongs to; it is only sent there */
   keyOrigin: string | null;
@@ -96,6 +98,8 @@ export interface AppSettings {
   gmailClientId: string;
   /** a Google OAuth client secret is saved (never the secret itself) */
   gmailClientSecretSet: boolean;
+  /** the saved client secret was sealed by Única and couldn't be moved: it has to be saved again */
+  gmailClientSecretUnreadable: boolean;
   syncWindowDays: number;
   /** what the categorization engine may do with new mail */
   autoCategorize: AutoCategorize;
