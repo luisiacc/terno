@@ -168,6 +168,11 @@ function show(settings: AppSettings): void {
   applyAppearance(settings);
 }
 
+/** Settings changed outside this window's edits (an import, a storage switch): stored, reconciled and painted. */
+export function adoptSettings(settings: AppSettings): void {
+  show(reconcileSettings(settings));
+}
+
 /**
  * Optimistic and serialized: the app repaints at once, changes are persisted
  * one at a time in order, and each answer (or refusal) is reconciled against

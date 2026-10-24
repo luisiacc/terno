@@ -261,15 +261,17 @@ test("blocking screens take focus, make the app behind them inert and suspend it
   await expect(page.getByTestId("web-take-back")).toBeFocused();
 });
 
-test("storage: persistence is requested and shown in settings, and the mailbox's own data exports as JSON", async ({ page }) => {
+test("storage: persistence is requested and shown in Ajustes → Datos, and the mailbox's own data exports as JSON", async ({ page }) => {
   await boot(page);
   await page.getByTestId("open-settings").click();
+  await page.getByTestId("tab-data").click();
   const section = page.getByTestId("storage-section");
   await expect(section).toBeVisible();
-  await expect(section).toHaveAttribute("data-persisted", /^(granted|denied)$/);
-  await expect(section).toContainText(/Persistente|puede borrar/);
+  await expect(section.getByTestId("storage-persistence")).toHaveAttribute("data-persisted", /^(granted|denied)$/);
+  await expect(section).toContainText(/no borrará|puede borrar/);
+  await expect(page.getByRole("combobox", { name: "Motor" })).toContainText("SQLite (OPFS)");
   const download = page.waitForEvent("download");
-  await section.getByRole("button", { name: "Exportar" }).click();
+  await page.getByTestId("data-export").click();
   const file = await download;
   expect(file.suggestedFilename()).toMatch(/^unica-export-\d{4}-\d{2}-\d{2}\.json$/);
   const dump = JSON.parse(await (await import("node:fs/promises")).readFile((await file.path())!, "utf8")) as { format: string; categories: unknown[]; filters: unknown[]; settings: object; ops: unknown[] };
@@ -277,4 +279,62 @@ test("storage: persistence is requested and shown in settings, and the mailbox's
   expect(dump.categories.length).toBeGreaterThan(0);
   expect(dump.filters.length).toBeGreaterThan(0);
   expect(dump.settings).toBeTruthy();
+});
+
+test("Ajustes → Datos: switching the engine to IndexedDB carries settings and categories, stays pinned, and can switch back", async ({ page }) => {
+  await boot(page, "/?demo=200&mailbox=switch");
+  expect((await web(page)).storage).toBe("opfs-sqlite");
+  await page.evaluate(async () => {
+    const c = window.__unicaWeb!.client;
+    await c.call("categories.create", { name: "Mudanza", color: "violet" });
+    await c.call("settings.update", { density: "compact", motionMs: 50 });
+  });
+  await page.reload();
+  await rows(page).first().waitFor({ timeout: 60_000 });
+  await page.keyboard.press("Meta+k");
+  await page.getByTestId("palette-input").fill("ajustes datos");
+  await page.keyboard.press("Enter");
+  await page.getByRole("combobox", { name: "Motor" }).click();
+  await page.getByTestId("storage-engine-idb").click();
+  await expect(page.getByTestId("storage-switch-dialog")).toContainText("se queda donde está");
+  // the page reloads into the other engine
+  await Promise.all([page.waitForEvent("load"), page.getByTestId("storage-switch-dialog-confirm").click()]);
+  await rows(page).first().waitFor({ timeout: 60_000 });
+  await expect.poll(() => page.evaluate(() => window.__unicaWeb?.storage)).toBe("idb");
+  // what the other engine held came along
+  await expect(page.locator("[data-testid^=nav-category-]").filter({ hasText: "Mudanza" })).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("data-motion", /./);
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--motion").trim())).toBe("50ms");
+  // pinned: a reload opens IndexedDB again
+  await page.reload();
+  await rows(page).first().waitFor({ timeout: 60_000 });
+  expect((await web(page)).storage).toBe("idb");
+  // and back: the SQLite mailbox was left where it was
+  await page.keyboard.press("Meta+Comma");
+  await page.getByTestId("tab-data").click();
+  await expect(page.getByRole("combobox", { name: "Motor" })).toContainText("IndexedDB");
+  await page.getByRole("combobox", { name: "Motor" }).click();
+  await page.getByTestId("storage-engine-opfs-sqlite").click();
+  await Promise.all([page.waitForEvent("load"), page.getByTestId("storage-switch-dialog-confirm").click()]);
+  await rows(page).first().waitFor({ timeout: 60_000 });
+  await expect.poll(() => page.evaluate(() => window.__unicaWeb?.storage)).toBe("opfs-sqlite");
+  await expect(page.locator("[data-testid^=nav-category-]").filter({ hasText: "Mudanza" })).toHaveCount(1);
+});
+
+test("Ajustes → Datos: an export imports into another mailbox (categories by name, settings), and a wrong file says why", async ({ page }) => {
+  await boot(page, "/?demo=200&mailbox=import-a");
+  const dump = await page.evaluate(async () => {
+    const c = window.__unicaWeb!.client;
+    await c.call("categories.create", { name: "Importada", color: "lime" });
+    return c.call("app.export", {});
+  });
+  await boot(page, "/?demo=200&mailbox=import-b");
+  await page.keyboard.press("Meta+Comma");
+  await page.getByTestId("tab-data").click();
+  const input = page.getByTestId("data-import-input");
+  await input.setInputFiles({ name: "malo.json", mimeType: "application/json", buffer: Buffer.from("{}") });
+  await expect(page.getByTestId("data-import-error")).toContainText("No es una exportación de Única");
+  await input.setInputFiles({ name: "unica.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(dump)) });
+  await expect(page.getByTestId("data-import-error")).toHaveCount(0);
+  await expect(page.locator("[data-testid^=nav-category-]").filter({ hasText: "Importada" })).toBeVisible();
 });

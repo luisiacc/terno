@@ -6,7 +6,7 @@ import { Switch } from "@unica/ui/components/switch";
 import { Keyboard } from "lucide-react";
 import { Suspense, useState } from "react";
 import { setApp } from "~/state/app";
-import { MacSection, StorageSection } from "~/lib/web-parts";
+import { MacSection } from "~/lib/web-parts";
 import { parseSyncWindow, SYNC_WINDOW_MAX, SYNC_WINDOW_MIN } from "~/lib/settings-values";
 import { SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
 
@@ -154,11 +154,6 @@ export function GeneralTab({ settings, update, onLocalOff }: { settings: AppSett
         </SettingsRow>
       </SettingsGroup>
 
-      {StorageSection && (
-        <Suspense>
-          <StorageSection />
-        </Suspense>
-      )}
       {MacSection && (
         <Suspense>
           <MacSection />

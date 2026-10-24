@@ -152,13 +152,23 @@ export interface MailboxExport {
   version: 1;
   exportedAt: number;
   app: string;
-  accounts: { email: string; kind: Account["kind"]; displayName: string }[];
+  /** ids let an import map filters' account conditions to the same mailbox by address */
+  accounts: { id?: number; email: string; kind: Account["kind"]; displayName: string }[];
   categories: Category[];
   filters: Filter[];
   settings: AppSettings;
   drafts: { accountEmail: string | null; to: unknown; cc: unknown; subject: string; bodyText: string; updatedAt: number }[];
   /** provider operations not yet done (sends included, with their message) */
   ops: { accountEmail: string | null; kind: string; state: string; createdAt: number; lastError: string | null; target: unknown; payload: unknown }[];
+}
+
+/** What app.import brought in (and what it left out, by name, with the reason). */
+export interface ImportResult {
+  categories: { added: number; merged: number };
+  filters: { added: number; existing: number; skipped: string[] };
+  drafts: number;
+  /** the settings were applied (local mode and agent sending only ever become stricter) */
+  settings: boolean;
 }
 
 export const CATEGORIZE_SOURCES = ["picker", "dnd", "snackbar", "suggestion"] as const;
@@ -262,6 +272,20 @@ const settingsPatch = z.object({
   aiCategorize: z.boolean().optional(),
 });
 export type SettingsPatch = z.output<typeof settingsPatch>;
+export { settingsPatch as settingsPatchSchema, draftAddress as draftAddressSchema };
+
+/** An export file (app.export) as app.import reads it: what it knows, validated; anything else ignored. */
+const exportFile = z.object({
+  format: z.literal("unica-export"),
+  version: z.literal(1),
+  accounts: z.array(z.object({ id: id.optional(), email: z.string().max(320), kind: z.string().max(20), displayName: z.string().max(300) })).max(1000).default([]),
+  categories: z.array(z.object({ id, name: z.string().trim().min(1).max(60), color: z.enum(CATEGORY_COLORS), position: z.number().int().optional(), autoApply: z.boolean().optional() })).max(1000).default([]),
+  filters: z.array(z.object({ name: z.string().trim().min(1).max(120), enabled: z.boolean(), source: z.enum(["manual", "ai", "learned"]), rule: filterRuleSchema })).max(5000).default([]),
+  /** read field by field on import (each only if valid) */
+  settings: z.unknown().optional(),
+  drafts: z.array(z.object({ accountEmail: z.string().max(320).nullable(), to: z.unknown(), cc: z.unknown(), subject: z.string().max(998), bodyText: z.string().max(5_000_000) })).max(5000).default([]),
+});
+export type ExportFile = z.output<typeof exportFile>;
 
 const categorizeScope = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("sender"), email: z.string().trim().email().max(320) }),
@@ -300,6 +324,13 @@ const empty = z.object({}).strict();
 export const contract = {
   "app.bootstrap": m<Bootstrap>()(empty),
   "app.export": m<MailboxExport>()(empty),
+  /**
+   * Brings an export back: categories merged by name, filters (categories and
+   * accounts remapped; ones naming a mailbox that isn't here are left out),
+   * drafts of mailboxes that are here, and settings without secrets. Local
+   * mode and agent sending only become stricter.
+   */
+  "app.import": m<ImportResult>()(z.object({ data: exportFile }), { timeoutMs: 120_000 }),
 
   "threads.list": m<ThreadPage>()(
     z.object({

@@ -1,4 +1,7 @@
+import { toast } from "sonner";
+import { adoptSettings } from "~/lib/appearance";
 import { flushAllDrafts } from "~/lib/drafts";
+import { setApp } from "~/state/app";
 import { isRpcMessage, type RpcClient, type RpcMessage, type Transport } from "@unica/core/rpc";
 import { setWeb, type WebLifecycle } from "./lifecycle";
 import type { PageToWorker, WorkerToPage } from "./protocol";
@@ -27,6 +30,51 @@ type TabMessage =
   | { type: "leader"; build: string };
 
 const pinKey = (name: string) => `unica:storage:${name}`;
+/** what a storage switch carries to the other engine (sessionStorage: this tab, this reload) */
+const CARRY = "unica:carry";
+
+/** The mailbox this page opens (demo builds: ?mailbox=). */
+function mailboxName(): string {
+  return (DEMO_BUILD && new URLSearchParams(location.search).get("mailbox")) || "unica";
+}
+
+/**
+ * Opens this mailbox in another storage engine from the next load on. What
+ * can't be re-synced (settings, categories, filters, drafts) is exported now
+ * and imported there once it opens; the mailbox in the current engine stays
+ * where it is (switching back finds it).
+ */
+export async function switchStorage(client: RpcClient, target: string): Promise<void> {
+  await flushAllDrafts();
+  const dump = await client.call("app.export", {});
+  try {
+    sessionStorage.setItem(CARRY, JSON.stringify({ to: target, dump }));
+  } catch {
+    throw new Error("No cabe lo que hay que llevar al otro almacenamiento: exporta tus datos, cambia y luego impórtalos.");
+  }
+  localStorage.setItem(pinKey(mailboxName()), target);
+  const url = new URL(location.href);
+  url.searchParams.delete("storage");
+  location.replace(url.toString());
+}
+
+/** After a switch: what the previous engine held comes in, once. */
+async function carryOver(client: RpcClient, storage: string): Promise<void> {
+  const raw = sessionStorage.getItem(CARRY);
+  if (!raw) return;
+  sessionStorage.removeItem(CARRY);
+  const { to, dump } = JSON.parse(raw) as { to: string; dump: Parameters<RpcClient["call"]>[1] };
+  if (to !== storage) return;
+  try {
+    const r = await client.call("app.import", { data: dump as never });
+    const boot = await client.call("app.bootstrap", {});
+    adoptSettings(boot.settings);
+    setApp({ categories: boot.categories });
+    toast.success(`Traído de tu otro almacenamiento: ${r.categories.added + r.categories.merged} categorías, ${r.filters.added + r.filters.existing} filtros${r.drafts ? `, ${r.drafts} borradores` : ""} y tus ajustes.`);
+  } catch (error) {
+    toast.error(`No se pudieron traer tus ajustes: ${error instanceof Error ? error.message : String(error)}. Siguen en el otro almacenamiento.`);
+  }
+}
 
 export interface WebDebug {
   build: string;
@@ -233,7 +281,7 @@ function portTransport(port: MessagePort): Transport {
 export async function connectWorker(client: RpcClient): Promise<void> {
   void registerServiceWorker().catch((error) => console.warn("[web] service worker unavailable", error));
   const params = new URLSearchParams(location.search);
-  const name = (DEMO_BUILD && params.get("mailbox")) || "unica";
+  const name = mailboxName();
   const tabs = (leadership = new Leadership());
   await tabs.lead();
   setWeb({ phase: "starting" });
@@ -296,6 +344,7 @@ export async function connectWorker(client: RpcClient): Promise<void> {
   }
 
   client.attach(portTransport(channel.port1));
+  void carryOver(client, first.storage);
   if (DEMO_BUILD) {
     window.__unicaWeb = {
       build: BUILD,

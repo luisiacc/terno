@@ -161,3 +161,41 @@ describe("categories from Ajustes", () => {
     expect((await client.call("app.bootstrap", {})).categories.map((c) => c.name)).toEqual(["Recibos"]);
   });
 });
+
+describe("app.import", () => {
+  it("brings an export back: categories by name, filters remapped (or left out), drafts of mailboxes here, settings never less private", async () => {
+    const from = setup();
+    const a = await from.client.call("accounts.addImap", imap("luis@fastmail.com"));
+    const gone = await from.client.call("accounts.addImap", imap("old@other.dev"));
+    const facturas = await from.client.call("categories.create", { name: "Facturas", color: "amber" });
+    const viajes = await from.client.call("categories.create", { name: "Viajes", color: "cyan" });
+    await from.client.call("categories.update", { id: viajes.id, autoApply: false });
+    const rule = (conditions: object[], actions: object[]) => ({ match: "all" as const, conditions, actions }) as never;
+    await from.client.call("filters.save", { name: "Recibos", enabled: true, source: "manual", rule: rule([{ field: "fromDomain", op: "equals", value: "uber.com" }], [{ type: "addCategory", categoryId: facturas.id }]) });
+    await from.client.call("filters.save", { name: "Trabajo", enabled: false, source: "ai", rule: rule([{ field: "account", op: "is", value: a.id }], [{ type: "star" }]) });
+    await from.client.call("filters.save", { name: "Viejo", enabled: true, source: "manual", rule: rule([{ field: "account", op: "is", value: gone.id }], [{ type: "archive" }]) });
+    await from.client.call("drafts.save", { accountId: a.id, to: [{ name: "", email: "ana@" }], subject: "Pendiente", bodyText: "Hola Ana" });
+    await from.client.call("settings.update", { localMode: false, density: "compact", motionMs: 50, allowAgentSend: true, ai: { provider: "fake" } });
+    const dump = await from.client.call("app.export", {});
+
+    const to = setup();
+    const here = await to.client.call("accounts.addImap", imap("luis@fastmail.com"));
+    await to.client.call("categories.create", { name: "facturas", color: "rose" });
+    const result = await to.client.call("app.import", { data: dump });
+    expect(result).toEqual({ categories: { added: 1, merged: 1 }, filters: { added: 2, existing: 0, skipped: ["Viejo"] }, drafts: 1, settings: true });
+
+    const boot = await to.client.call("app.bootstrap", {});
+    expect(boot.categories.map((c) => [c.name, c.color, c.autoApply])).toEqual([["facturas", "rose", true], ["Viajes", "cyan", false]]);
+    const filters = await to.client.call("filters.list", {});
+    expect(filters.find((f) => f.name === "Recibos")!.rule.actions).toEqual([{ type: "addCategory", categoryId: boot.categories[0]!.id }]);
+    expect(filters.find((f) => f.name === "Trabajo")).toMatchObject({ enabled: false, source: "ai", rule: { conditions: [{ field: "account", value: here.id }] } });
+    expect((await to.client.call("drafts.list", {})).map((d) => [d.accountId, d.subject, d.to])).toEqual([[here.id, "Pendiente", [{ name: "", email: "ana@" }]]]);
+    // density and motion come along; local mode stays on and agents still can't send
+    expect(boot.settings).toMatchObject({ density: "compact", motionMs: 50, localMode: true, allowAgentSend: false });
+
+    // a second import adds nothing new
+    expect(await to.client.call("app.import", { data: dump })).toMatchObject({ categories: { added: 0, merged: 2 }, filters: { added: 0, existing: 2 } });
+    await expect(to.client.call("app.import", { data: { ...dump, format: "otra" } as never })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(to.mcp.call("app.import", { data: dump })).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+});

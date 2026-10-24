@@ -4,6 +4,7 @@ import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, ty
 import type { GmailAccountConfig, ImapAccountConfig } from "@unica/mail";
 import { BackendCore as Backend } from "./core";
 import { changeOwnerTo, gmailClaim, imapClaim, reconnectAccount } from "./identity";
+import { importMailbox } from "./import";
 import { countThreadScope, progressReporter, resolveThreadScope, UndoJournal } from "./scope";
 import { readAutoCategorize, readSettings, SettingsError, updateSettings } from "./settings";
 
@@ -116,7 +117,7 @@ export function createHandlers(b: Backend): Handlers {
         version: 1 as const,
         exportedAt: b.now(),
         app: b.options.version,
-        accounts: accounts.map((a) => ({ email: a.email, kind: a.kind, displayName: a.displayName })),
+        accounts: accounts.map((a) => ({ id: a.id, email: a.email, kind: a.kind, displayName: a.displayName })),
         categories: await store.categories.list(),
         filters: await store.filters.list(),
         settings: await readSettings(store),
@@ -126,6 +127,8 @@ export function createHandlers(b: Backend): Handlers {
           .map((o) => ({ accountEmail: emailOf(o.account_id), kind: o.kind, state: o.state, createdAt: o.created_at, lastError: o.last_error, target: JSON.parse(o.target_json), payload: JSON.parse(o.payload_json) })),
       };
     },
+
+    "app.import": ({ data }) => importMailbox(b, data),
 
     "threads.list": (p) => store.threads.list(p),
 

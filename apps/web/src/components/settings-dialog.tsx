@@ -11,6 +11,7 @@ import { AppearanceTab } from "./settings/appearance-tab";
 import { CategoriesTab } from "./settings/categories-tab";
 import { AccountsTab } from "./settings/accounts-tab";
 import { AgentsTab } from "./settings/agents-tab";
+import { DataTab } from "./settings/data-tab";
 import { FiltersTab } from "./settings/filters-tab";
 import { GeneralTab } from "./settings/general-tab";
 import { SETTINGS_TABS } from "./settings/tabs";
@@ -80,6 +81,10 @@ export function SettingsDialog() {
 
             <TabsContent value="ai">
               <AiTab settings={settings} update={update} />
+            </TabsContent>
+
+            <TabsContent value="data">
+              <DataTab />
             </TabsContent>
 
             <TabsContent value="agents">

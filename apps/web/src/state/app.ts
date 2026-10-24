@@ -3,7 +3,7 @@ import type { AppSettings, HostInfo, OwnerIdentity, ThreadScope } from "@unica/c
 import { create } from "zustand";
 
 export type DialogName = "settings" | "shortcuts" | "palette" | "categoryPicker" | "filters" | "addAccount" | null;
-export type SettingsTab = "general" | "appearance" | "accounts" | "categories" | "filters" | "ai" | "agents";
+export type SettingsTab = "general" | "appearance" | "accounts" | "categories" | "filters" | "ai" | "agents" | "data";
 
 /** The draft being written (lib/drafts holds its content); seq changes each time it is (re)opened, for focus. */
 export interface ComposeState {

@@ -45,7 +45,7 @@ test.describe("accounts, settings and command palette", () => {
   });
 
   test("every settings tab opens from the palette; ⌘, opens settings, also from the search field", async ({ app: page }) => {
-    for (const [tab, label] of [["general", "General"], ["appearance", "Apariencia"], ["accounts", "Cuentas"], ["categories", "Categorías"], ["filters", "Filtros"], ["ai", "IA"], ["agents", "Agentes"]] as const) {
+    for (const [tab, label] of [["general", "General"], ["appearance", "Apariencia"], ["accounts", "Cuentas"], ["categories", "Categorías"], ["filters", "Filtros"], ["ai", "IA"], ["agents", "Agentes"], ["data", "Datos"]] as const) {
       await page.keyboard.press("Meta+k");
       await page.getByTestId("palette-input").fill(`ajustes ${label}`);
       await expect(page.getByRole("option", { selected: true })).toHaveAttribute("data-testid", `palette-settings-${tab}`);

@@ -1,4 +1,4 @@
-import { AtSign, Bot, ListFilter, Palette, SlidersHorizontal, Sparkles, Tag } from "lucide-react";
+import { AtSign, Bot, Database, ListFilter, Palette, SlidersHorizontal, Sparkles, Tag } from "lucide-react";
 import type { SettingsTab } from "~/state/app";
 
 /** The settings sections, in sidebar order; the palette offers each as "Ajustes → <label>". */
@@ -10,4 +10,5 @@ export const SETTINGS_TABS: { value: SettingsTab; label: string; icon: typeof At
   { value: "filters", label: "Filtros", icon: ListFilter },
   { value: "ai", label: "IA", icon: Sparkles },
   { value: "agents", label: "Agentes", icon: Bot },
+  { value: "data", label: "Datos", icon: Database },
 ];
