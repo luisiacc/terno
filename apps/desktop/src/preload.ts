@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import { PRINT_COMMANDS, type PrintCommand } from "./print-policy";
+import { PRINT_COMMANDS, type PrintCommand } from "./print-commands";
 
 /**
  * Sandboxed preload. Only two things cross into the page: a MessagePort to the

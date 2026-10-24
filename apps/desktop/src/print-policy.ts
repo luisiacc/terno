@@ -5,10 +5,8 @@
  */
 import { join } from "node:path";
 import type { MenuItemConstructorOptions } from "electron";
-
-/** The only commands main sends the renderer; the preload drops anything else. */
-export const PRINT_COMMANDS = ["thread.print", "thread.exportPdf"] as const;
-export type PrintCommand = (typeof PRINT_COMMANDS)[number];
+import type { PrintCommand } from "./print-commands";
+export { PRINT_COMMANDS, type PrintCommand } from "./print-commands";
 
 export interface PrintJob {
   /** the renderer's fitted, sanitized page; main adds its own CSP and title */

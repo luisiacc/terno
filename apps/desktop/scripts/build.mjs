@@ -52,10 +52,14 @@ const results = await Promise.all(
   ),
 );
 
-// Guard: nothing but electron and node builtins may be left as runtime requires.
+// Guard: nothing but electron and node builtins may be left as runtime requires;
+// the sandboxed preload can require electron alone (a node: import there kills the bridge at runtime).
 for (const r of results) {
   for (const [file, meta] of Object.entries(r.metafile.outputs)) {
     for (const imp of meta.imports) {
+      if (file.endsWith("preload.cjs") && imp.external && imp.path !== "electron") {
+        throw new Error(`the sandboxed preload must require only electron, not "${imp.path}"`);
+      }
       if (imp.external && !(imp.path === "electron" || imp.path.startsWith("node:") || /^[a-z_]+$/.test(imp.path))) {
         throw new Error(`${file} still requires "${imp.path}" at runtime`);
       }
