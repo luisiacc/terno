@@ -1,5 +1,6 @@
-import type { ThreadSummary } from "@unica/core";
-import { RpcError } from "@unica/core/rpc";
+import type { ThreadSummary, View } from "@unica/core";
+import { RpcError, type ThreadScope } from "@unica/core/rpc";
+import { prune } from "~/lib/selection";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "./app";
@@ -52,14 +53,29 @@ async function fetchPage(cursor?: { lastDate: number; id: number }, limit = PAGE
     const { items } = await client.call("categorize.suggestions", { categoryId: s.reviewCategoryId, limit: 200 });
     return { items: items.map(({ prediction: _p, ...t }) => t), nextCursor: null };
   }
-  const scope = { accountId: s.accountId ?? undefined, categoryId: s.categoryId ?? undefined };
+  const scope = currentScope()!;
+  if (scope.kind === "search") return client.call("threads.search", { query: scope.query, cursor, limit, accountId: scope.accountId, categoryId: scope.categoryId });
+  return client.call("threads.list", { view: scope.view, cursor, limit, accountId: scope.accountId, categoryId: scope.categoryId });
+}
+
+/** the sidebar view scopes the search unless the query says otherwise (in:…) */
+const searchQuery = (q: string, view: View) => (/(^|\s)(in|en):/.test(q) || view === "all" ? q : `in:${view} ${q}`);
+
+/** Every thread the current list shows, as a scope the backend can act on ("select all N"); null for "Revisar". */
+export function currentScope(): ThreadScope | null {
+  const s = getApp();
+  if (s.reviewCategoryId !== null) return null;
+  const narrow = { accountId: s.accountId ?? undefined, categoryId: s.categoryId ?? undefined };
   const q = s.query.trim();
-  if (q) {
-    // the sidebar view scopes the search unless the query says otherwise (in:…)
-    const query = /(^|\s)(in|en):/.test(q) || s.view === "all" ? q : `in:${s.view} ${q}`;
-    return client.call("threads.search", { query, cursor, limit, ...scope });
-  }
-  return client.call("threads.list", { view: s.view, cursor, limit, ...scope });
+  return q ? { kind: "search", query: searchQuery(q, s.view), ...narrow } : { kind: "view", view: s.view, ...narrow };
+}
+
+/** Rows that left the view leave the selection (one write, only when something left). */
+function pruneSelection(index: Map<number, number>): void {
+  const s = getApp();
+  const checked = prune(s.checked, index);
+  const anchorGone = s.anchorId !== null && !index.has(s.anchorId);
+  if (checked || anchorGone) setApp({ ...(checked ? { checked } : {}), ...(anchorGone ? { anchorId: null } : {}) });
 }
 
 /** (Re)loads the first page for the current view/search. Latest call wins. */
@@ -85,6 +101,7 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
       searchMs: "tookMs" in page ? (page.tookMs as number) : null,
       complete: "complete" in page ? (page.complete as boolean) : true,
     });
+    pruneSelection(useList.getState().index);
     const s = getApp();
     if (!options.keepSelection && !sameView) setApp({ selectedId: page.items[0]?.id ?? null });
     else if (s.selectedId !== null && !page.items.some((t) => t.id === s.selectedId)) {
@@ -119,18 +136,24 @@ export async function loadMore(): Promise<void> {
 /** Optimistic local edit of rows (actions apply instantly, then the backend confirms). */
 export function patchRows(ids: readonly number[], patch: (t: ThreadSummary) => ThreadSummary | null): void {
   const set = new Set(ids);
+  let removed = false;
   const items = useList.getState().items.flatMap((t) => {
     if (!set.has(t.id)) return [t];
     const next = patch(t);
+    removed ||= next === null;
     return next ? [next] : [];
   });
-  useList.setState({ items, index: indexOf(items) });
+  const index = indexOf(items);
+  useList.setState({ items, index });
+  if (removed) pruneSelection(index);
 }
 
 // Any change of view / account / category / query reloads the list (navigation,
 // search box, palette, shortcuts all just update app state).
 useApp.subscribe((s, prev) => {
   if (s.view !== prev.view || s.accountId !== prev.accountId || s.categoryId !== prev.categoryId || s.reviewCategoryId !== prev.reviewCategoryId || s.query !== prev.query) {
+    // "all N of that list" means nothing in another one
+    if (s.scope) setApp({ scope: null });
     void reloadList();
   }
 });

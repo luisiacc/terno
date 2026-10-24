@@ -73,6 +73,18 @@ export async function openRow(page: Page, index: number): Promise<string> {
   return id;
 }
 
+/**
+ * Selects several rows like a hand would: a click on the first (it opens and
+ * becomes the selection), then ⌘-click (Ctrl-click off Mac) on each other.
+ */
+export async function selectRows(page: Page, ids: readonly (string | number)[]): Promise<void> {
+  const [first, ...rest] = ids;
+  await page.locator(`[data-thread-id="${first}"]`).dispatchEvent("mousedown", { button: 0 });
+  for (const id of rest) await page.locator(`[data-thread-id="${id}"]`).click({ modifiers: ["ControlOrMeta"] });
+  await expect(page.locator("[data-testid=thread-row][data-checked]")).toHaveCount(ids.length > 1 ? ids.length : 0);
+  await focusList(page);
+}
+
 /** Puts focus on the document body so single-key shortcuts apply. */
 export async function focusList(page: Page): Promise<void> {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());

@@ -7,7 +7,7 @@
  */
 import type { Locator, Page } from "@playwright/test";
 import type { DevServer } from "../../backend-dev/src/server";
-import { expect, focusList, rows, stabilize, test } from "./fixtures";
+import { expect, focusList, rows, selectRows, stabilize, test } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
 test.use({ reducedMotion: "no-preference" });
@@ -78,12 +78,7 @@ test.describe("drag and drop to a category", () => {
     const viajes = categoryId(server, "Viajes");
     const candidates = notIn(page, viajes);
     const ids = await candidates.evaluateAll((els) => els.slice(0, 3).map((e) => e.getAttribute("data-thread-id")!));
-    for (const id of ids) {
-      await page.locator(`[data-thread-id="${id}"]`).dispatchEvent("mousedown");
-      await focusList(page);
-      await page.keyboard.press("x");
-    }
-    await expect(page.locator("[data-testid=thread-row][data-checked]")).toHaveCount(3);
+    await selectRows(page, ids);
     await dragTo(page, page.locator(`[data-thread-id="${ids[1]}"]`), page.getByTestId(`nav-category-${viajes}`));
     await expect(page.getByTestId("drag-ghost-count")).toHaveText("3");
     // the dragged rows are dimmed by a keyed rule, not by re-rendering them
@@ -270,11 +265,7 @@ test.describe("visual: mid-drag", () => {
       await page.evaluate(() => document.fonts.ready);
       await stabilize(page);
       const ids = await notIn(page, viajes).evaluateAll((els) => els.slice(0, 2).map((e) => e.getAttribute("data-thread-id")!));
-      for (const id of ids) {
-        await page.locator(`[data-thread-id="${id}"]`).dispatchEvent("mousedown");
-        await focusList(page);
-        await page.keyboard.press("x");
-      }
+      await selectRows(page, ids);
       await dragTo(page, page.locator(`[data-thread-id="${ids[0]}"]`), page.getByTestId(`nav-category-${viajes}`));
       await expect(page.getByTestId(`nav-category-${viajes}`)).toHaveAttribute("data-drop-state", "over");
       await expect(page).toHaveScreenshot(`mid-drag-${theme}.png`);

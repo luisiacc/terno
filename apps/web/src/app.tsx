@@ -2,7 +2,8 @@ import { Toaster } from "@unica/ui/components/sonner";
 import { TooltipProvider } from "@unica/ui/components/tooltip";
 import { lazy, Suspense, useEffect } from "react";
 import { useAppearance } from "~/lib/appearance";
-import { onFiled } from "~/lib/categorize";
+import { setLastUndo } from "~/lib/actions";
+import { onFiled, undoFiled } from "~/lib/categorize";
 import { installKeyboard } from "~/lib/keyboard";
 import { useApp } from "~/state/app";
 import { CategoryPicker } from "./components/category-picker";
@@ -11,6 +12,7 @@ import { CommandPalette } from "./components/command-palette";
 import { DragGhost } from "./components/drag-ghost";
 import { Composer } from "./components/composer";
 import { Reader } from "./components/reader";
+import { SelectionBar } from "./components/selection-bar";
 import { Sidebar } from "./components/sidebar";
 import { ThreadList } from "./components/thread-list";
 
@@ -45,9 +47,18 @@ export function App() {
   const dialog = useApp((s) => s.dialog);
   const mode = useAppearance((s) => s.mode);
   const fresh = useApp((s) => s.ready && s.accounts.length === 0 && !s.owner && !s.demo);
+  const many = useApp((s) => s.scope !== null || s.checked.size >= 2);
   useEffect(() => installKeyboard(), []);
   // every way of filing threads offers the snackbar, except its own bulk adds
-  useEffect(() => onFiled((filed, source) => source !== "snackbar" && showCategorySnackbar(filed)), []);
+  useEffect(
+    () =>
+      onFiled((filed, source) => {
+        if (source !== "snackbar") showCategorySnackbar(filed);
+        // z / ⌘Z after the snackbar is gone still takes the filing back
+        setLastUndo(() => void undoFiled(filed).catch(() => {}));
+      }),
+    [],
+  );
 
   const gate = WebGate && (
     <Suspense>
@@ -64,7 +75,7 @@ export function App() {
           <ThreadList />
         </div>
         <main className="relative min-h-0">
-          <Reader />
+          {many ? <SelectionBar /> : <Reader />}
           <Composer />
         </main>
       </div>

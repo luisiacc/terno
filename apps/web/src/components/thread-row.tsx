@@ -5,7 +5,8 @@ import { Paperclip, Star } from "lucide-react";
 import { memo } from "react";
 import { listDate } from "~/lib/format";
 import { renderProbe } from "~/lib/render-probe";
-import { setApp, useApp } from "~/state/app";
+import { pressRow, releaseRow } from "~/lib/select";
+import { useApp } from "~/state/app";
 
 const ACCOUNT_BAR: Record<CategoryColor, string> = {
   rose: "bg-cat-rose",
@@ -29,14 +30,16 @@ interface Props {
 }
 
 /**
- * A list row. Cheap by design: no tooltips or Base UI primitives inside; the
- * selected/checked state is a per-row selector so moving the selection
- * re-renders exactly two rows.
+ * A list row. Cheap by design: no tooltips or Base UI primitives inside (the
+ * context menu wraps the whole list); the selected/checked state is a
+ * per-row selector so moving the selection re-renders exactly two rows and
+ * checking one re-renders one.
  */
 export const ThreadRow = memo(function ThreadRow({ thread: t, top, height, compact, showAccount }: Props) {
   renderProbe("ThreadRow");
   const selected = useApp((s) => s.selectedId === t.id);
-  const checked = useApp((s) => s.checked.has(t.id));
+  // "select all N" checks every row, loaded later or not
+  const checked = useApp((s) => s.scope !== null || s.checked.has(t.id));
   const accountColor = useApp((s) => (showAccount ? s.accounts.find((a) => a.id === t.accountId)?.color : undefined)) as CategoryColor | undefined;
   const categories = useApp((s) => s.categories);
   const cats = t.categoryIds.length ? categories.filter((c) => t.categoryIds.includes(c.id)) : [];
@@ -49,7 +52,8 @@ export const ThreadRow = memo(function ThreadRow({ thread: t, top, height, compa
       data-thread-id={t.id}
       data-unread={t.unread || undefined}
       data-checked={checked || undefined}
-      onMouseDown={() => setApp({ selectedId: t.id, readerOpen: true })}
+      onMouseDown={(e) => e.button === 0 && pressRow(t.id, { meta: e.metaKey, ctrl: e.ctrlKey, shift: e.shiftKey })}
+      onClick={(e) => !e.metaKey && !e.ctrlKey && !e.shiftKey && releaseRow(t.id)}
       className={cn(
         "absolute left-0 w-full cursor-default border-b border-border/60 px-4 select-none",
         "flex flex-col justify-center",

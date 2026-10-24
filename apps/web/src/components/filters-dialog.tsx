@@ -14,7 +14,7 @@ import { toast } from "sonner";
 import { errorHelp, privacyLine } from "~/lib/ai";
 import { listDate } from "~/lib/format";
 import { client } from "~/rpc/connection";
-import { setApp, useApp } from "~/state/app";
+import { getApp, setApp, useApp } from "~/state/app";
 import { reloadList } from "~/state/list";
 
 type Field = Condition["field"];
@@ -209,7 +209,14 @@ export function FiltersDialog() {
   const categories = useApp((s) => s.categories);
   const [filters, setFilters] = useState<Filter[]>([]);
   const [proposals, setProposals] = useState<LearnedProposal[]>([]);
-  const [draft, setDraft] = useState<Draft>(emptyDraft);
+  // "Crear filtro desde este remitente…" opens the builder with its rule
+  const [draft, setDraft] = useState<Draft>(() => {
+    const prefill = getApp().filterPrefill;
+    return prefill ? { ...emptyDraft(), name: prefill.name, rule: prefill.rule } : emptyDraft();
+  });
+  useEffect(() => {
+    if (getApp().filterPrefill) setApp({ filterPrefill: null });
+  }, []);
   const [prompt, setPrompt] = useState("");
   const [explanation, setExplanation] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);

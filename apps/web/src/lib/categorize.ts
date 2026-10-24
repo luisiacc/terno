@@ -5,7 +5,8 @@ import { exclusivelyIn } from "~/lib/drag";
 import { reflowRemoval } from "~/lib/flash";
 import { patchRows, reloadList, useList } from "~/state/list";
 import { invalidateThreads, loadThread } from "~/state/threads";
-import { getApp, setApp } from "~/state/app";
+import { getApp, setApp, type ScopeSelection } from "~/state/app";
+import { setLastUndo, trackJob } from "~/lib/actions";
 
 export interface Filed {
   categoryId: number;
@@ -110,6 +111,29 @@ export async function moveToCategory(categoryId: number, threadIds: readonly num
     if (bumped) void reconcileCounts(bumped);
     void reloadList({ keepSelection: true });
     return null;
+  }
+}
+
+/**
+ * "Select all N" + a category: the backend files the whole scope in slices
+ * (progress toast), then "N añadidas a X · Deshacer" (one batch).
+ */
+export async function addScopeToCategory(categoryId: number, sel: ScopeSelection): Promise<void> {
+  const name = getApp().categories.find((c) => c.id === categoryId)?.name ?? "";
+  const loaded = useList.getState().items.map((t) => t.id);
+  patch(loaded, categoryId, true);
+  setApp({ checked: new Set(), scope: null });
+  const progress = trackJob(`Añadiendo ${sel.count.toLocaleString("es-MX")} conversaciones a ${name}`);
+  try {
+    const { added, batchId } = await client.call("categories.addScope", { categoryId, scope: sel.scope, jobId: progress.jobId });
+    const undo = batchId === null ? undefined : () => void undoFiled({ categoryId, addedIds: [], batchId }).then((n) => toast(`${n.toLocaleString("es-MX")} quitadas de ${name}`));
+    setLastUndo(undo ?? null);
+    toast.success(`${added.toLocaleString("es-MX")} ${added === 1 ? "añadida" : "añadidas"} a ${name}`, { id: progress.toastId, duration: 8000, action: undo ? { label: "Deshacer", onClick: undo } : undefined });
+  } catch (error) {
+    toast.error(`No se pudo añadir: ${error instanceof Error ? error.message : error}`, { id: progress.toastId });
+  } finally {
+    progress.stop();
+    void reloadList({ keepSelection: true });
   }
 }
 

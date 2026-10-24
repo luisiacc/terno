@@ -323,3 +323,134 @@ test("dropping: the dot is on the row within a frame; only the dropped row rende
   // exactly the dragged row renders to show its dot
   expect(Math.max(...renderCounts)).toBe(1);
 });
+
+test("context menu: right-click → menu painted within 50 ms, no row renders", async ({ app: page }) => {
+  await expect(rows(page).first()).toBeVisible();
+  await page.evaluate(() => {
+    const w = window as unknown as { __menu: { t0: number; open: number[]; paint: number[]; renders: number[] }; __renders?: Record<string, number> };
+    w.__menu = { t0: 0, open: [], paint: [], renders: [] };
+    let r0 = 0;
+    // before the menu's own handler (capture on window): t0 precedes all of its work
+    window.addEventListener("contextmenu", () => ((w.__menu.t0 = performance.now()), (r0 = w.__renders?.ThreadRow ?? 0)), { capture: true });
+    new MutationObserver(() => {
+      const m = document.querySelector("[data-testid=thread-menu]");
+      if (!m || !w.__menu.t0) return;
+      const t0 = w.__menu.t0;
+      w.__menu.t0 = 0;
+      w.__menu.open.push(performance.now() - t0);
+      // the frame that shows it: rAF runs before its paint, a message posted from there after it
+      requestAnimationFrame(() => {
+        const ch = new MessageChannel();
+        ch.port1.onmessage = () => {
+          w.__menu.paint.push(performance.now() - t0);
+          w.__menu.renders.push((w.__renders?.ThreadRow ?? 0) - r0);
+        };
+        ch.port2.postMessage(null);
+      });
+    }).observe(document.body, { childList: true, subtree: true });
+  });
+  const N = 40;
+  for (let i = 0; i < N; i++) {
+    const b = (await rows(page).nth(1 + (i % 6)).boundingBox())!;
+    await page.mouse.click(b.x + 100, b.y + b.height / 2, { button: "right" });
+    await page.waitForFunction((n) => (window as any).__menu.paint.length >= n, i + 1);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("thread-menu")).toBeHidden();
+  }
+  const m = await page.evaluate(() => (window as any).__menu as { open: number[]; paint: number[]; renders: number[] });
+  stat("menu: right-click → menu in the DOM", 0, m.open);
+  const s = stat("menu: right-click → menu painted (rAF + task)", 50, m.paint);
+  stats.push({ name: `ThreadRow renders per menu open: max ${Math.max(...m.renders)}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+  expect(s.p95).toBeLessThanOrEqual(50 * MULT);
+  expect(Math.max(...m.renders)).toBe(0);
+});
+
+test("selection: toggling one row renders one row; ⌘A over 500 loaded rows commits within a frame and renders only rows that changed", async ({ app: page }) => {
+  await page.getByTestId("nav-all").click();
+  await expect(page.getByTestId("list-title")).toHaveText("Todo el correo");
+  await expect(rows(page).first()).toBeVisible();
+  // load five pages (500 rows), then come back to the top
+  await page.evaluate(async () => {
+    const scroller = document.querySelector("[role=listbox]") as HTMLElement;
+    const loaded = () => (window as unknown as { __unica: { loadedIds(): number[] } }).__unica.loadedIds().length;
+    while (loaded() < 500) {
+      scroller.scrollTop = scroller.scrollHeight;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    scroller.scrollTop = 0;
+    await new Promise((r) => setTimeout(r, 100));
+  });
+  const loaded = await page.evaluate(() => (window as unknown as { __unica: { loadedIds(): number[] } }).__unica.loadedIds().length);
+  expect(loaded).toBeGreaterThanOrEqual(500);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+
+  // x: one row changes, one row renders
+  const toggles: number[] = [];
+  for (let i = 0; i < 10; i++) {
+    const before = await renders(page, "ThreadRow");
+    await page.keyboard.press("x");
+    await page.waitForTimeout(30);
+    toggles.push((await renders(page, "ThreadRow")) - before);
+  }
+  // ⌘-click with others checked: one row
+  await page.keyboard.press("x"); // 11 presses: the open row is checked
+  const clicks: number[] = [];
+  for (let i = 3; i < 9; i++) {
+    const before = await renders(page, "ThreadRow");
+    await rows(page).nth(i).click({ modifiers: ["ControlOrMeta"] });
+    await page.waitForTimeout(30);
+    clicks.push((await renders(page, "ThreadRow")) - before);
+  }
+  await page.keyboard.press("Escape");
+  stats.push({ name: `ThreadRow renders per x toggle: max ${Math.max(...toggles)}, per ⌘-click: max ${Math.max(...clicks)}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: toggles.length + clicks.length });
+  expect(Math.max(...toggles)).toBe(1);
+  expect(Math.max(...clicks)).toBe(1);
+
+  await page.evaluate(() => {
+    const w = window as unknown as { __sel: { t0: number; commit: number[]; changed: number[]; renders: number[]; mounted: number[] }; __renders?: Record<string, number> };
+    w.__sel = { t0: 0, commit: [], changed: [], renders: [], mounted: [] };
+    let r0 = 0;
+    let changed = 0;
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "a" || !(e.metaKey || e.ctrlKey)) return;
+      w.__sel.t0 = performance.now();
+      r0 = w.__renders?.ThreadRow ?? 0;
+      changed = 0;
+      requestAnimationFrame(() => {
+        w.__sel.changed.push(changed);
+        w.__sel.renders.push((w.__renders?.ThreadRow ?? 0) - r0);
+        w.__sel.mounted.push(document.querySelectorAll("[data-testid=thread-row]").length);
+      });
+    }, { capture: true });
+    new MutationObserver((records) => {
+      const first = w.__sel.t0;
+      for (const r of records) if (r.attributeName === "data-checked") changed++;
+      if (first) {
+        w.__sel.commit.push(performance.now() - first);
+        w.__sel.t0 = 0;
+      }
+    }).observe(document.querySelector("[role=listbox]")!, { attributes: true, subtree: true, attributeFilter: ["data-checked"] });
+  });
+  const N = 40;
+  for (let i = 0; i < N; i++) {
+    await page.keyboard.press("ControlOrMeta+a");
+    await page.waitForFunction((n) => (window as any).__sel.renders.length >= n, i + 1);
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(20);
+  }
+  const r = await page.evaluate(() => (window as any).__sel as { commit: number[]; changed: number[]; renders: number[]; mounted: number[] });
+  const s = stat(`⌘A over ${loaded} loaded rows: keydown → committed`, 16, r.commit);
+  stats.push({ name: `⌘A: ThreadRow renders ${Math.max(...r.renders)} for ${Math.max(...r.changed)} changed of ${Math.max(...r.mounted)} mounted rows`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: N });
+  expect(r.commit).toHaveLength(N);
+  expect(s.p95).toBeLessThanOrEqual(16 * MULT);
+  // only the rows whose checked state changed render: the mounted ones (500 loaded, ~30 in the DOM)
+  for (let i = 0; i < N; i++) expect(r.renders[i]).toBe(r.changed[i]);
+  expect(Math.max(...r.mounted)).toBeLessThanOrEqual(60);
+  // ⌘A again with everything selected changes nothing and renders nothing
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.waitForTimeout(50);
+  const before = await renders(page, "ThreadRow");
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.waitForTimeout(50);
+  expect((await renders(page, "ThreadRow")) - before).toBe(0);
+});

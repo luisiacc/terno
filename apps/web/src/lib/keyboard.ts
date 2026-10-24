@@ -1,5 +1,7 @@
 import { resolveKey, type Command } from "@unica/core";
-import { act, openCompose, toggleStar } from "~/lib/actions";
+import { act, openCompose, toggleRead, toggleStar, undoLast } from "~/lib/actions";
+import { clearSelection, extendSelection, isMac, selectAll, selectWhere, toggleCurrent } from "~/lib/select";
+import { openMenuForSelection } from "~/components/thread-menu";
 import { getApp, navigate, setApp } from "~/state/app";
 import { useList } from "~/state/list";
 import { loadThread, useThreads } from "~/state/threads";
@@ -36,24 +38,26 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "list.next": () => move(1),
   "list.prev": () => move(-1),
   "list.open": () => setApp({ readerOpen: true }),
-  "list.toggleSelect": () => {
-    const s = getApp();
-    if (s.selectedId === null) return;
-    const checked = new Set(s.checked);
-    if (checked.has(s.selectedId)) checked.delete(s.selectedId);
-    else checked.add(s.selectedId);
-    setApp({ checked });
-  },
-  "reader.close": () => {
-    const s = getApp();
-    if (s.checked.size) setApp({ checked: new Set() });
-  },
+  "list.toggleSelect": toggleCurrent,
+  "list.selectAll": selectAll,
+  "list.selectNone": clearSelection,
+  "list.selectRead": () => selectWhere((t) => !t.unread),
+  "list.selectUnread": () => selectWhere((t) => t.unread),
+  "list.selectStarred": () => selectWhere((t) => t.starred),
+  "list.extendNext": () => extendSelection(1),
+  "list.extendPrev": () => extendSelection(-1),
+  "list.menu": () => openMenuForSelection(),
+  "reader.close": clearSelection,
   "thread.archive": () => void act("archive"),
   "thread.trash": () => void act("trash"),
   "thread.spam": () => void act("spam"),
   "thread.star": () => toggleStar(),
+  "thread.markRead": () => void act("markRead"),
   "thread.markUnread": () => void act("markUnread"),
-  "thread.category": () => getApp().selectedId !== null && setApp({ dialog: "categoryPicker" }),
+  "thread.toggleRead": () => toggleRead(),
+  "thread.category": () => hasTargets() && setApp({ dialog: "categoryPicker", pickerMode: "toggle" }),
+  "thread.move": () => hasTargets() && setApp({ dialog: "categoryPicker", pickerMode: "move" }),
+  "action.undo": undoLast,
   "compose.new": () => openCompose("new"),
   "compose.reply": () => openCompose("reply"),
   "compose.replyAll": () => openCompose("replyAll"),
@@ -77,6 +81,11 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "snackbar.close": () => snackbarControls.current?.close(),
 };
 
+const hasTargets = () => {
+  const s = getApp();
+  return s.selectedId !== null || s.checked.size > 0;
+};
+
 function isEditable(el: Element | null): boolean {
   if (!el) return false;
   const tag = el.tagName;
@@ -95,12 +104,13 @@ export function installKeyboard(): () => void {
       {
         editable: isEditable(document.activeElement),
         composing: s.compose !== null && document.activeElement?.closest("[data-testid=composer]") !== null,
-        dialogOpen: s.dialog !== null,
+        // the context menu is modal for the keyboard: its arrows, Enter and typeahead apply
+        dialogOpen: s.dialog !== null || s.menuOpen,
         snackbar: s.snackbar,
       },
       s.pendingKeys,
       undefined,
-      navigator.platform.includes("Mac"),
+      isMac,
     );
     if (result.pending !== s.pendingKeys) setApp({ pendingKeys: result.pending });
     if (!result.command) return;

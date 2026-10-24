@@ -1,0 +1,343 @@
+/**
+ * Plan 06: the thread context menu, multi-selection (⌘A, ⌘/⇧-click, ⇧J/K,
+ * Esc), triage keys on a selection, "select all N" acted on by the backend,
+ * the bulk bar, and baselines for the menu and the bar.
+ */
+import type { Locator, Page } from "@playwright/test";
+import type { DevServer } from "../../backend-dev/src/server";
+import { expect, focusList, rows, selectedRow, selectRows, stabilize, test } from "./fixtures";
+import { sqlDb } from "../../backend-dev/src/server";
+
+const ctx = { clientId: "setup", origin: "dev" as const };
+const menu = (page: Page) => page.getByTestId("thread-menu");
+const item = (page: Page, id: string) => menu(page).getByTestId(id);
+const checked = (page: Page) => page.locator("[data-testid=thread-row][data-checked]");
+const toast = (page: Page, text: string | RegExp) => page.locator("[data-sonner-toast]").filter({ hasText: text });
+const row = (page: Page, id: string | number) => page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
+const db = (server: DevServer) => sqlDb(server.backend.store);
+const flags = (server: DevServer, id: number | string) => db(server).get<{ in_inbox: number; in_trash: number; in_spam: number; unread_count: number; is_starred: number }>("SELECT in_inbox, in_trash, in_spam, unread_count, is_starred FROM threads WHERE id = ?", Number(id))!;
+const idsOf = (l: Locator) => l.evaluateAll((els) => els.map((e) => e.getAttribute("data-thread-id")!));
+/** every loaded row's id (the DOM only holds the rows in view) */
+const loadedIds = (page: Page) => page.evaluate(() => (window as unknown as { __unica: { loadedIds(): number[] } }).__unica.loadedIds());
+/** submenus render in their own popup, outside the menu's element */
+const sub = (page: Page, id: string) => page.getByTestId(id);
+
+async function rightClick(page: Page, target: Locator) {
+  await target.click({ button: "right" });
+  await expect(menu(page)).toBeVisible();
+}
+
+test.describe("context menu on one thread", () => {
+  test("acts on the row it opened on: read state, star, archive with undo", async ({ app: page, server }) => {
+    const unread = page.locator("[data-testid=thread-row][data-unread]").nth(1);
+    const id = (await unread.getAttribute("data-thread-id"))!;
+    await rightClick(page, unread);
+    // one thread: reply, reply all and forward lead; the read state it doesn't have isn't offered
+    await expect(item(page, "menu-reply")).toBeVisible();
+    await expect(item(page, "menu-unread")).toHaveCount(0);
+    await expect(item(page, "menu-read")).toContainText("⇧I");
+    // the row is outlined while the menu is up; the selection didn't move to it
+    expect(await row(page, id).evaluate((e) => getComputedStyle(e).boxShadow)).not.toBe("none");
+    await expect(row(page, id)).not.toHaveAttribute("aria-selected", "true");
+    await item(page, "menu-read").click();
+    await expect(menu(page)).toBeHidden();
+    await expect(row(page, id)).not.toHaveAttribute("data-unread");
+    await expect.poll(() => flags(server, id).unread_count).toBe(0);
+    expect(await row(page, id).evaluate((e) => getComputedStyle(e).boxShadow)).toBe("none");
+
+    await rightClick(page, row(page, id));
+    await item(page, "menu-star").click();
+    await expect(row(page, id).locator("svg.fill-star")).toBeVisible();
+    await expect.poll(() => flags(server, id).is_starred).toBe(1);
+
+    await rightClick(page, row(page, id));
+    await item(page, "menu-archive").click();
+    await expect(row(page, id)).toHaveCount(0);
+    await expect.poll(() => flags(server, id).in_inbox).toBe(0);
+    await toast(page, "Archivado").getByRole("button", { name: "Deshacer" }).click();
+    await expect(row(page, id)).toHaveCount(1);
+  });
+
+  test("delete and spam from the menu; z undoes the last one", async ({ app: page, server }) => {
+    const [a, b] = (await idsOf(rows(page))).slice(2, 4);
+    await rightClick(page, row(page, a!));
+    await item(page, "menu-trash").click();
+    await expect(row(page, a!)).toHaveCount(0);
+    await expect.poll(() => flags(server, a!).in_trash).toBe(1);
+    await rightClick(page, row(page, b!));
+    await item(page, "menu-spam").click();
+    await expect(row(page, b!)).toHaveCount(0);
+    await expect.poll(() => flags(server, b!).in_spam).toBe(1);
+    await focusList(page);
+    await page.keyboard.press("z");
+    await expect(row(page, b!)).toHaveCount(1);
+    await expect.poll(() => flags(server, b!).in_spam).toBe(0);
+  });
+
+  test("reply from the menu opens the composer on that thread", async ({ app: page }) => {
+    const target = rows(page).nth(4);
+    const subject = (await target.getByTestId("row-subject").textContent())!.trim();
+    await rightClick(page, target);
+    await item(page, "menu-reply").click();
+    await expect(page.getByTestId("composer")).toBeVisible();
+    await expect(page.getByTestId("compose-subject")).toHaveValue(subject.startsWith("Re:") ? subject : `Re: ${subject}`);
+  });
+
+  test("sender items: search their mail, copy the address, a filter prefilled with them", async ({ app: page }) => {
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    const target = rows(page).nth(1);
+    const id = (await target.getAttribute("data-thread-id"))!;
+    await rightClick(page, target);
+    await expect(item(page, "menu-sender-file")).toContainText("Todo de");
+    await item(page, "menu-copy").click();
+    const copied = await page.evaluate(() => navigator.clipboard.readText());
+    expect(copied).toMatch(/@/);
+    await rightClick(page, row(page, id));
+    await item(page, "menu-search-sender").click();
+    await expect(page.getByTestId("search-input")).toHaveValue(`from:${copied}`);
+    await expect(page.getByTestId("list-title")).toHaveText("Todo el correo");
+    await rightClick(page, rows(page).first());
+    await item(page, "menu-filter").click();
+    await expect(page.getByTestId("filters-dialog")).toBeVisible();
+    await expect(page.getByTestId("condition-value").first()).toHaveValue(copied);
+  });
+
+  test("Papelera and Spam: what can't apply there is disabled, the way back is offered", async ({ app: page }) => {
+    await page.getByTestId("nav-trash").click();
+    await expect(page.getByTestId("list-title")).toHaveText("Papelera");
+    await rightClick(page, rows(page).first());
+    await expect(item(page, "menu-trash")).toHaveAttribute("data-disabled", "");
+    await expect(item(page, "menu-archive")).toHaveAttribute("data-disabled", "");
+    await expect(item(page, "menu-inbox")).toHaveText(/Restaurar a Entrada/);
+    await expect(item(page, "menu-spam")).not.toHaveAttribute("data-disabled");
+    await page.keyboard.press("Escape");
+    await expect(menu(page)).toBeHidden();
+
+    await page.getByTestId("nav-spam").click();
+    await expect(page.getByTestId("list-title")).toHaveText("Spam");
+    await rightClick(page, rows(page).first());
+    await expect(item(page, "menu-spam")).toHaveAttribute("data-disabled", "");
+    await expect(item(page, "menu-not-spam")).toBeVisible();
+    await expect(item(page, "menu-trash")).not.toHaveAttribute("data-disabled");
+    const id = (await rows(page).first().getAttribute("data-thread-id"))!;
+    await item(page, "menu-not-spam").click();
+    await expect(row(page, id)).toHaveCount(0);
+  });
+
+  test("opens from the keyboard (⇧F10) and its items run with the arrows and Enter", async ({ app: page, server }) => {
+    const id = (await selectedRow(page).getAttribute("data-thread-id"))!;
+    await focusList(page);
+    await page.keyboard.press("Shift+F10");
+    await expect(menu(page)).toBeVisible();
+    // global shortcuts wait while the menu is open: "e" doesn't archive
+    await page.keyboard.press("e");
+    await expect(row(page, id)).toHaveCount(1);
+    // ("e" went to the menu's typeahead: the highlight may start anywhere)
+    for (let i = 0; i < 24; i++) {
+      await page.keyboard.press("ArrowDown");
+      if ((await menu(page).locator("[data-highlighted]").textContent())?.startsWith("Archivar")) break;
+    }
+    await expect(menu(page).locator("[data-highlighted]")).toContainText("Archivar");
+    await page.keyboard.press("Enter");
+    await expect(row(page, id)).toHaveCount(0);
+    await expect.poll(() => flags(server, id).in_inbox).toBe(0);
+  });
+
+  test("its category toggles can file a thread in two categories; Mover a… leaves it in one", async ({ app: page, server }) => {
+    const [lecturas, clientes, viajes] = ["Lecturas", "Clientes", "Viajes"].map((n) => db(server).get<{ id: number }>("SELECT id FROM categories WHERE name = ?", n)!.id) as [number, number, number];
+    const target = page.locator("[data-testid=thread-row]:not(:has([data-cat-dot]))").first();
+    const id = Number(await target.getAttribute("data-thread-id"));
+    const cats = () => db(server).all<{ category_id: number }>("SELECT category_id FROM thread_categories WHERE thread_id = ? ORDER BY category_id", id).map((r) => r.category_id);
+    for (const cat of [lecturas, clientes]) {
+      await rightClick(page, row(page, id));
+      await item(page, "menu-categories").hover();
+      await sub(page, `menu-category-${cat}`).click();
+      await expect(page.getByTestId("category-snackbar")).toBeVisible();
+    }
+    await expect.poll(cats).toEqual([lecturas, clientes].sort((a, b) => a - b));
+    await expect(row(page, id).locator("[data-cat-dot]")).toHaveCount(2);
+    // the checkmarks show where it is; unchecking removes
+    await rightClick(page, row(page, id));
+    await item(page, "menu-categories").hover();
+    await expect(sub(page, `menu-category-${lecturas}`)).toHaveAttribute("data-checked", "");
+    await expect(sub(page, `menu-category-${viajes}`)).toHaveAttribute("data-unchecked", "");
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    await expect(menu(page)).toBeHidden();
+    await rightClick(page, row(page, id));
+    await item(page, "menu-move").hover();
+    await sub(page, `menu-move-${viajes}`).click();
+    await expect(page.getByTestId("snackbar-title")).toHaveText("Movido a Viajes");
+    await expect.poll(cats).toEqual([viajes]);
+  });
+});
+
+test.describe("multi-selection", () => {
+  test("⇧-click selects a range, ⌘-click toggles, Esc clears; the reader becomes the bulk bar", async ({ app: page }) => {
+    const ids = await idsOf(rows(page));
+    await row(page, ids[1]!).dispatchEvent("mousedown", { button: 0 });
+    await row(page, ids[5]!).click({ modifiers: ["Shift"] });
+    await expect(checked(page)).toHaveCount(5);
+    expect(await idsOf(checked(page))).toEqual(ids.slice(1, 6));
+    await expect(page.getByTestId("selection-bar")).toContainText("5 conversaciones seleccionadas");
+    await row(page, ids[3]!).click({ modifiers: ["ControlOrMeta"] });
+    await expect(checked(page)).toHaveCount(4);
+    await focusList(page);
+    await page.keyboard.press("Escape");
+    await expect(checked(page)).toHaveCount(0);
+    await expect(page.getByTestId("reader")).toBeVisible();
+  });
+
+  test("⇧J extends and ⇧K shrinks from the anchor", async ({ app: page }) => {
+    const ids = await idsOf(rows(page));
+    await focusList(page);
+    for (let i = 0; i < 3; i++) await page.keyboard.press("Shift+J");
+    expect(await idsOf(checked(page))).toEqual(ids.slice(0, 4));
+    await page.keyboard.press("Shift+K");
+    expect(await idsOf(checked(page))).toEqual(ids.slice(0, 3));
+    await page.keyboard.press("Shift+ArrowDown");
+    expect(await idsOf(checked(page))).toEqual(ids.slice(0, 4));
+  });
+
+  test("⌘A selects the loaded rows; right-click → read, archive and delete apply to all, with undo", async ({ app: page, server }) => {
+    await page.getByTestId("search-input").fill("in:inbox factura");
+    await expect(page.getByTestId("search-stats")).toBeVisible();
+    await focusList(page);
+    const ids = await loadedIds(page);
+    expect(ids.length).toBeGreaterThan(30);
+    await page.keyboard.press("ControlOrMeta+a");
+    await expect(page.getByTestId("selection-bar")).toContainText(`${ids.length} conversaciones seleccionadas`);
+
+    await rightClick(page, rows(page).nth(1));
+    await expect(item(page, "menu-count")).toHaveText(`${ids.length} conversaciones`);
+    await expect(item(page, "menu-reply")).toHaveCount(0);
+    await item(page, "menu-read").click();
+    await expect.poll(() => ids.every((id) => flags(server, id).unread_count === 0)).toBe(true);
+    await expect(page.locator("[data-testid=thread-row][data-unread]")).toHaveCount(0);
+
+    await page.keyboard.press("ControlOrMeta+a");
+    await rightClick(page, rows(page).first());
+    await item(page, "menu-archive").click();
+    await expect.poll(() => ids.every((id) => flags(server, id).in_inbox === 0)).toBe(true);
+    // the search is in:inbox: none of them is listed any more
+    await expect.poll(async () => (await loadedIds(page)).filter((id) => ids.includes(id)).length).toBe(0);
+    await toast(page, `Archivado · ${ids.length} conversaciones`).getByRole("button", { name: "Deshacer" }).click();
+    await expect.poll(() => ids.every((id) => flags(server, id).in_inbox === 1)).toBe(true);
+    await expect.poll(async () => (await loadedIds(page)).filter((id) => ids.includes(id)).length).toBe(ids.length);
+
+    await focusList(page);
+    await page.keyboard.press("ControlOrMeta+a");
+    const again = await loadedIds(page);
+    await rightClick(page, rows(page).first());
+    await item(page, "menu-trash").click();
+    await expect.poll(() => again.every((id) => flags(server, id).in_trash === 1)).toBe(true);
+  });
+
+  test("right-clicking a row outside the selection acts on that row only and keeps the selection", async ({ app: page, server }) => {
+    const ids = await idsOf(rows(page));
+    await selectRows(page, ids.slice(0, 3));
+    const other = page.locator("[data-testid=thread-row][data-unread]:not([data-checked])").first();
+    const otherId = (await other.getAttribute("data-thread-id"))!;
+    await rightClick(page, other);
+    await expect(item(page, "menu-count")).toHaveCount(0);
+    await item(page, "menu-read").click();
+    await expect.poll(() => flags(server, otherId).unread_count).toBe(0);
+    await expect(checked(page)).toHaveCount(3);
+  });
+
+  test("⌫ trashes the selection", async ({ app: page, server }) => {
+    const ids = (await idsOf(rows(page))).slice(2, 5);
+    await selectRows(page, ids);
+    await page.keyboard.press("Backspace");
+    for (const id of ids) await expect(row(page, id)).toHaveCount(0);
+    await expect.poll(() => ids.every((id) => flags(server, id).in_trash === 1)).toBe(true);
+    await expect(toast(page, "3 conversaciones")).toBeVisible();
+  });
+
+  test("⌘A inside the search box selects its text, not the rows", async ({ app: page }) => {
+    const input = page.getByTestId("search-input");
+    await input.fill("factura");
+    await input.press("ControlOrMeta+a");
+    expect(await input.evaluate((e: HTMLInputElement) => [e.selectionStart, e.selectionEnd])).toEqual([0, 7]);
+    await expect(checked(page)).toHaveCount(0);
+    await input.press("Backspace");
+    await expect(input).toHaveValue("");
+  });
+
+  test("select all N of the view: the banner, a backend archive with progress, and its undo", async ({ app: page, server }) => {
+    const inboxCount = () => db(server).get<{ c: number }>("SELECT count(*) AS c FROM threads WHERE in_inbox = 1")!.c;
+    const total = inboxCount();
+    const signalsBefore = db(server).get<{ c: number }>("SELECT count(*) AS c FROM user_actions")!.c;
+    expect(total).toBeGreaterThan(100); // more than the first page: the banner has something to offer
+    await focusList(page);
+    await page.keyboard.press("ControlOrMeta+a");
+    const banner = page.getByTestId("select-all-banner");
+    await expect(banner).toContainText("100 conversaciones cargadas");
+    await expect(page.getByTestId("select-all-scope-button")).toHaveText(`Seleccionar las ${total.toLocaleString("es-MX")} conversaciones de «Entrada»`);
+    await page.getByTestId("select-all-scope-button").click();
+    await expect(page.getByTestId("select-all-scope")).toContainText(`Las ${total.toLocaleString("es-MX")} conversaciones de Entrada`);
+    await expect(page.getByTestId("selection-bar")).toContainText(`Las ${total.toLocaleString("es-MX")} conversaciones de Entrada`);
+    // the progress toast shows while the backend works through the slices
+    await page.evaluate(() => {
+      const w = window as unknown as { __progress: string[] };
+      w.__progress = [];
+      new MutationObserver(() => {
+        for (const t of document.querySelectorAll("[data-sonner-toast]")) if (t.textContent?.includes("Archivando")) w.__progress.push(t.textContent);
+      }).observe(document.body, { subtree: true, childList: true, characterData: true });
+    });
+    await focusList(page);
+    await page.keyboard.press("e");
+    await expect(toast(page, `Archivado · ${total.toLocaleString("es-MX")} conversaciones`)).toBeVisible();
+    expect((await page.evaluate(() => (window as unknown as { __progress: string[] }).__progress)).some((t) => t.includes(`Archivando ${total.toLocaleString("es-MX")} conversaciones`))).toBe(true);
+    expect(inboxCount()).toBe(0);
+    await expect(page.getByTestId("list-empty")).toBeVisible();
+    // no learned-filter signal from a sweep
+    expect(db(server).get<{ c: number }>("SELECT count(*) AS c FROM user_actions")!.c).toBe(signalsBefore);
+    await toast(page, "Archivado").getByRole("button", { name: "Deshacer" }).click();
+    await expect(toast(page, /Deshecho/)).toBeVisible();
+    await expect.poll(inboxCount).toBe(total);
+    await expect(rows(page).first()).toBeVisible();
+  });
+});
+
+test.describe("help", () => {
+  test("the shortcuts dialog lists the new keys", async ({ app: page }) => {
+    await focusList(page);
+    await page.keyboard.press("?");
+    const dialog = page.getByTestId("shortcuts-dialog");
+    await expect(dialog).toBeVisible();
+    for (const c of ["list.selectAll", "list.extendNext", "thread.markRead", "thread.toggleRead", "thread.move", "action.undo", "list.menu"]) await expect(dialog.getByTestId(`shortcut-${c}`)).toBeVisible();
+    await expect(dialog.getByTestId("shortcut-thread.trash")).toContainText("⌫");
+    await expect(dialog.getByTestId("shortcut-thread.trash")).toContainText("⌦");
+  });
+});
+
+test.describe("visual: context menu and bulk bar", () => {
+  test.use({ deviceScaleFactor: 1 });
+  for (const theme of ["unica-light", "dracula"] as const) {
+    test(`the menu on one thread in ${theme}`, async ({ app: page, server }) => {
+      await server.backend.server.invoke("settings.update", theme === "dracula" ? { theme: "dark", darkTheme: "dracula" } : { theme: "light" }, ctx);
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await rows(page).first().waitFor();
+      await page.evaluate(() => document.fonts.ready);
+      await stabilize(page);
+      const b = (await rows(page).nth(2).boundingBox())!;
+      await page.mouse.click(b.x + 120, b.y + b.height / 2, { button: "right" });
+      await expect(menu(page)).toBeVisible();
+      await item(page, "menu-categories").hover();
+      await expect(sub(page, "menu-categories-list")).toBeVisible();
+      await expect(page).toHaveScreenshot(`thread-menu-${theme}.png`);
+    });
+  }
+
+  test("the bulk bar for a selection", async ({ app: page }) => {
+    await page.evaluate(() => document.fonts.ready);
+    await stabilize(page);
+    const ids = await idsOf(rows(page));
+    await selectRows(page, ids.slice(0, 4));
+    await expect(page.getByTestId("selection-bar")).toBeVisible();
+    await page.mouse.move(0, 0);
+    await expect(page).toHaveScreenshot("selection-bar.png");
+  });
+});

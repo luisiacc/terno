@@ -3,11 +3,14 @@ import { Kbd } from "@unica/ui/components/kbd";
 import { Skeleton } from "@unica/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Search, X } from "lucide-react";
-import { Suspense, useEffect, useRef } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { VIEW_LABEL } from "~/lib/format";
 import { getApp, setApp, useApp } from "~/state/app";
 import { installDragController } from "~/lib/drag-install";
-import { loadMore, useList } from "~/state/list";
+import { currentScope, listKey, loadMore, useList } from "~/state/list";
+import { clearSelection, selectScope } from "~/lib/select";
+import { client } from "~/rpc/connection";
+import { ThreadMenu } from "./thread-menu";
 import { ROW_HEIGHT, ThreadRow } from "./thread-row";
 import { LearnedBanner } from "./learned-banner";
 import { DesktopBanner, GmailReconnect } from "~/lib/web-parts";
@@ -80,6 +83,64 @@ function Header() {
   );
 }
 
+/**
+ * Gmail's "select all": ⌘A checks the loaded rows; when the view has more,
+ * this offers every thread of it, which the backend then acts on (a scope).
+ */
+function SelectAllBanner() {
+  const loaded = useList((s) => s.items.length);
+  const more = useList((s) => s.nextCursor !== null);
+  const all = useApp((s) => s.checked.size > 0 && s.checked.size >= loaded);
+  const scope = useApp((s) => s.scope);
+  const view = useApp((s) => s.view);
+  const category = useApp((s) => s.categories.find((c) => c.id === s.categoryId)?.name);
+  const query = useApp((s) => s.query.trim());
+  const show = scope !== null || (all && more && loaded > 0);
+  const [count, setCount] = useState<{ key: string; n: number; capped: boolean } | null>(null);
+  const key = show ? listKey() : "";
+  useEffect(() => {
+    if (!show || count?.key === key) return;
+    const scopeNow = currentScope();
+    if (!scopeNow) return;
+    let alive = true;
+    void client.call("threads.scopeCount", { scope: scopeNow }).then((r) => alive && setCount({ key, n: r.count, capped: r.capped }), () => {});
+    return () => {
+      alive = false;
+    };
+  }, [show, key]);
+  if (!show || (!scope && !currentScope())) return null;
+  const label = query ? `«${query}»` : `«${category ?? VIEW_LABEL[view]}»`;
+  const n = count?.key === key ? count : null;
+  const fmt = (x: number) => x.toLocaleString("es-MX");
+  return (
+    <div data-testid="select-all-banner" className="flex shrink-0 flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 border-b border-border bg-muted/60 px-3 py-1.5 text-center text-xs text-muted-foreground">
+      {scope ? (
+        <>
+          <span data-testid="select-all-scope">
+            Las {fmt(scope.count)} conversaciones de {scope.label} están seleccionadas.
+          </span>
+          <button type="button" data-testid="select-all-clear" className="font-medium text-primary hover:underline" onClick={clearSelection}>
+            Deshacer la selección
+          </button>
+        </>
+      ) : (
+        <>
+          <span>Las {fmt(loaded)} conversaciones cargadas están seleccionadas.</span>
+          <button
+            type="button"
+            data-testid="select-all-scope-button"
+            disabled={!n || n.capped}
+            className="font-medium text-primary hover:underline disabled:opacity-60"
+            onClick={() => n && selectScope(n.n)}
+          >
+            {n ? (n.capped ? `Más de ${fmt(n.n)} en ${label}: acota la búsqueda` : `Seleccionar las ${fmt(n.n)} conversaciones de ${label}`) : `Seleccionar todas las de ${label}…`}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 function EmptyState() {
   const query = useApp((s) => s.query);
   const view = useApp((s) => s.view);
@@ -133,7 +194,9 @@ export function ThreadList() {
           <DesktopBanner />
         </Suspense>
       )}
-      <div ref={parentRef} role="listbox" aria-label="Conversaciones" className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain [contain:strict]">
+      <SelectAllBanner />
+      <ThreadMenu>
+      <div ref={parentRef} role="listbox" aria-label="Conversaciones" aria-multiselectable className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain [contain:strict]">
         {loading && items.length === 0 ? (
           <div className="space-y-3 p-4">
             {Array.from({ length: 8 }, (_, i) => (
@@ -153,6 +216,7 @@ export function ThreadList() {
           </div>
         )}
       </div>
+      </ThreadMenu>
     </section>
   );
 }

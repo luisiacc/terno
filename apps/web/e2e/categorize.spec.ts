@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import { termsQuery } from "@unica/core";
 import type { DevServer } from "../../backend-dev/src/server";
-import { expect, focusList, selectThread, test } from "./fixtures";
+import { expect, focusList, selectRows, selectThread, test } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
 /** What the backend would add for a scope (the same RPC the chips call). */
@@ -109,11 +109,7 @@ test.describe("categorization snackbar", () => {
     );
     await page.getByTestId("search-input").fill("in:inbox from:notifications@github.com");
     await expect(page.getByTestId("search-stats")).toBeVisible();
-    for (const id of [a!.id, b!.id]) {
-      await page.locator(`[data-thread-id="${id}"]`).dispatchEvent("mousedown");
-      await focusList(page);
-      await page.keyboard.press("x");
-    }
+    await selectRows(page, [a!.id, b!.id]);
     await fileWithPicker(page, lecturas);
     const snack = page.getByTestId("category-snackbar");
     await expect(snack.getByTestId("snackbar-title")).toHaveText("2 conversaciones añadidas a Lecturas");

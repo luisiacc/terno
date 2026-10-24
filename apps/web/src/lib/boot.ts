@@ -1,7 +1,7 @@
 import { client, connectBackend } from "~/rpc/connection";
 import { removeFromCategory } from "~/lib/categorize";
 import { getApp, navigate, setApp } from "~/state/app";
-import { reloadList } from "~/state/list";
+import { reloadList, useList } from "~/state/list";
 import { invalidateThreads, loadThread } from "~/state/threads";
 import { toast } from "sonner";
 import { applyAppearance, installAppearanceListeners, reconcileSettings, updateAppearance } from "~/lib/appearance";
@@ -14,7 +14,7 @@ export async function boot(): Promise<void> {
     applyAppearance(reconcileSettings(b.settings));
     setApp({ ready: true, accounts: b.accounts, categories: b.categories, counts: b.counts, settings: b.settings, owner: b.owner, demo: b.demo, version: b.version, host: b.host });
     installAppearanceListeners();
-    exposeForTests({ updateAppearance, getApp });
+    exposeForTests({ updateAppearance, getApp, loadedIds: () => useList.getState().items.map((t) => t.id) });
 
     let refreshQueued = false;
     client.on("changed", ({ threadIds }) => {

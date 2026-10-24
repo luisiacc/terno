@@ -1,19 +1,20 @@
 import type { CategoryColor } from "@unica/core";
 import { CategoryDot } from "@unica/ui/components/category-dot";
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@unica/ui/components/command";
-import { Archive, Inbox, Layers, Moon, PenLine, Search, Send, Settings2, Sparkles, Star, Sun, Trash2 } from "lucide-react";
+import { Archive, CheckCheck, FolderInput, Inbox, Layers, Mail, MailOpen, Moon, OctagonAlert, PenLine, Search, Send, Settings2, Sparkles, Star, Sun, Trash2, Undo2 } from "lucide-react";
 import { useState } from "react";
-import { act, openCompose } from "~/lib/actions";
-import { addToCategory } from "~/lib/categorize";
+import { act, openCompose, toggleStar, undoLast } from "~/lib/actions";
+import { addScopeToCategory, addToCategory } from "~/lib/categorize";
+import { currentTargets, selectAll } from "~/lib/select";
 import { updateAppearance } from "~/lib/appearance";
-import { getApp, navigate, setApp, useApp } from "~/state/app";
+import { navigate, setApp, useApp } from "~/state/app";
 
 export function CommandPalette() {
   const open = useApp((s) => s.dialog === "palette");
   const categories = useApp((s) => s.categories);
   const accounts = useApp((s) => s.accounts);
-  // what "Añadir a" files: the checked threads, else the selected one
-  const targets = useApp((s) => (open ? (s.checked.size ? s.checked.size : s.selectedId !== null ? 1 : 0) : 0));
+  // what the actions and "Añadir a" apply to: all N of a view, the checked threads, else the selected one
+  const targets = useApp((s) => (open ? (s.scope ? s.scope.count : s.checked.size ? s.checked.size : s.selectedId !== null ? 1 : 0) : 0));
   const [value, setValue] = useState("");
   const run = (fn: () => void) => {
     setApp({ dialog: null });
@@ -46,7 +47,19 @@ export function CommandPalette() {
         </CommandGroup>
         <CommandGroup heading="Acciones">
           <CommandItem onSelect={() => run(() => openCompose("new"))}><PenLine /> Escribir correo<CommandShortcut>C</CommandShortcut></CommandItem>
-          <CommandItem onSelect={() => run(() => void act("archive"))}><Archive /> Archivar conversación<CommandShortcut>E</CommandShortcut></CommandItem>
+          {targets > 0 && (
+            <>
+              <CommandItem onSelect={() => run(() => void act("archive"))}><Archive /> {targets > 1 ? `Archivar ${targets} conversaciones` : "Archivar conversación"}<CommandShortcut>E</CommandShortcut></CommandItem>
+              <CommandItem onSelect={() => run(() => void act("trash"))}><Trash2 /> Eliminar<CommandShortcut>⌫</CommandShortcut></CommandItem>
+              <CommandItem onSelect={() => run(() => void act("spam"))}><OctagonAlert /> Marcar como spam<CommandShortcut>!</CommandShortcut></CommandItem>
+              <CommandItem onSelect={() => run(() => void act("markRead"))}><MailOpen /> Marcar como leído<CommandShortcut>⇧I</CommandShortcut></CommandItem>
+              <CommandItem onSelect={() => run(() => void act("markUnread"))}><Mail /> Marcar como no leído<CommandShortcut>⇧U</CommandShortcut></CommandItem>
+              <CommandItem onSelect={() => run(() => toggleStar())}><Star /> Destacar o quitar destacado<CommandShortcut>S</CommandShortcut></CommandItem>
+              <CommandItem onSelect={() => run(() => setApp({ dialog: "categoryPicker", pickerMode: "move" }))}><FolderInput /> Mover a…<CommandShortcut>V</CommandShortcut></CommandItem>
+            </>
+          )}
+          <CommandItem onSelect={() => run(selectAll)}><CheckCheck /> Seleccionar todo<CommandShortcut>⌘A</CommandShortcut></CommandItem>
+          <CommandItem onSelect={() => run(undoLast)}><Undo2 /> Deshacer<CommandShortcut>Z</CommandShortcut></CommandItem>
           <CommandItem onSelect={() => run(() => setApp({ dialog: "filters" }))}><Sparkles /> Crear filtro con IA</CommandItem>
           <CommandItem onSelect={() => run(() => setApp({ dialog: "settings", settingsTab: "general" }))}><Settings2 /> Ajustes</CommandItem>
           <CommandItem
@@ -69,8 +82,9 @@ export function CommandPalette() {
                 data-testid={`palette-add-${c.id}`}
                 onSelect={() =>
                   run(() => {
-                    const s = getApp();
-                    void addToCategory(c.id, s.checked.size ? [...s.checked] : [s.selectedId!], { source: "picker" });
+                    const t = currentTargets();
+                    if ("scope" in t) void addScopeToCategory(c.id, t.scope);
+                    else void addToCategory(c.id, t.ids, { source: "picker" });
                   })
                 }
               >

@@ -1,48 +1,38 @@
-import { DEFAULT_BINDINGS, type Command } from "@unica/core";
+import { shortcutsFor } from "@unica/core";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@unica/ui/components/dialog";
 import { Shortcut } from "@unica/ui/components/shortcut";
+import { isMac } from "~/lib/select";
+import { SECTIONS } from "~/lib/shortcut-sections";
 import { setApp, useApp } from "~/state/app";
-
-const LABELS: Partial<Record<Command, string>> = {
-  "list.next": "Siguiente conversación",
-  "list.prev": "Conversación anterior",
-  "list.toggleSelect": "Seleccionar",
-  "thread.archive": "Archivar",
-  "thread.trash": "Eliminar",
-  "thread.spam": "Spam",
-  "thread.star": "Destacar",
-  "thread.markUnread": "Marcar no leído",
-  "thread.category": "Categoría",
-  "compose.new": "Escribir",
-  "compose.reply": "Responder",
-  "compose.replyAll": "Responder a todos",
-  "compose.forward": "Reenviar",
-  "compose.send": "Enviar",
-  "search.focus": "Buscar",
-  "palette.open": "Paleta de comandos",
-  "go.inbox": "Ir a Entrada",
-  "go.starred": "Ir a Destacados",
-  "go.sent": "Ir a Enviados",
-  "go.archive": "Ir a Archivo",
-  "go.trash": "Ir a Papelera",
-};
 
 export function ShortcutsDialog() {
   const open = useApp((s) => s.dialog === "shortcuts");
-  const seen = new Set<Command>();
-  const rows = DEFAULT_BINDINGS.filter((b) => LABELS[b.command] && !seen.has(b.command) && seen.add(b.command));
   return (
     <Dialog open={open} onOpenChange={(o) => !o && setApp({ dialog: null })}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl" data-testid="shortcuts-dialog">
         <DialogHeader>
           <DialogTitle>Atajos de teclado</DialogTitle>
         </DialogHeader>
-        <div className="grid grid-cols-2 gap-x-8 gap-y-2">
-          {rows.map((b) => (
-            <div key={b.command} className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">{LABELS[b.command]}</span>
-              <Shortcut keys={b.keys} />
-            </div>
+        <div className="grid grid-cols-2 gap-x-10 gap-y-5">
+          {SECTIONS.map((section) => (
+            <section key={section.title}>
+              <h3 className="mb-1.5 text-2xs font-medium tracking-wide text-muted-foreground uppercase">{section.title}</h3>
+              <div className="space-y-1.5">
+                {section.rows.map(([command, label]) => (
+                  <div key={command} className="flex items-center justify-between gap-3 text-sm" data-testid={`shortcut-${command}`}>
+                    <span className="text-muted-foreground">{label}</span>
+                    <span className="flex flex-wrap items-center justify-end gap-1">
+                      {shortcutsFor(command, undefined, isMac).map((keys, i) => (
+                        <span key={keys} className="inline-flex items-center gap-1">
+                          {i > 0 && <span className="text-2xs text-muted-foreground">o</span>}
+                          <Shortcut keys={keys} />
+                        </span>
+                      ))}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       </DialogContent>
