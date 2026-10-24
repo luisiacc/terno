@@ -144,8 +144,9 @@ function htmlBody(html: string, allowRemote: boolean, hideQuoted: boolean): stri
   for (const img of frag.querySelectorAll("img")) {
     img.removeAttribute("loading");
     const src = img.getAttribute("src") ?? "";
-    // attachment content isn't fetched: an inline image prints as its description
-    if (/^\s*cid:/i.test(src) || (REMOTE_URL.test(src) && !allowRemote)) replaceWithAlt(img);
+    // only data: images (and allowed remote ones) can load here; cid: (attachment content isn't fetched), relative
+    // or unknown sources would print a broken-image icon: they print as their description
+    if (!(/^\s*data:image\//i.test(src) || (REMOTE_URL.test(src) && allowRemote))) replaceWithAlt(img);
   }
   if (!allowRemote) {
     for (const el of frag.querySelectorAll("[background]")) if (REMOTE_URL.test(el.getAttribute("background")!)) el.removeAttribute("background");
@@ -193,6 +194,8 @@ function css(paper: Paper): string {
     `@media print{.doc{width:auto}}`,
     `.subject{margin:0 0 16pt;font-size:16pt;font-weight:600;line-height:1.25;letter-spacing:-.01em;text-wrap:balance}`,
     `.msg{break-inside:auto}`,
+    `.msg.keep{break-inside:avoid}`,
+    `p,li,.body-text,.body-html div{orphans:3;widows:3}`,
     `.msg+.msg{margin-top:20pt;padding-top:16pt;border-top:.75pt solid #d2d2d7}`,
     `.body-only .msg+.msg{margin-top:22pt;padding-top:20pt;border-top-color:#e5e5ea}`,
     `.head{margin-bottom:11pt;font-size:9pt;line-height:1.45;color:#6e6e73;break-inside:avoid;break-after:avoid}`,
@@ -233,22 +236,44 @@ export function buildPrintDocument(input: { subject: string; messages: PrintMess
 }
 
 /**
- * Fits HTML mail wider than the printable width with a zoom that brings it
- * down to it (never below MIN_ZOOM; past that it wraps). Runs on the loaded
+ * Fits HTML mail wider than the printable width: each block that runs past
+ * it (a 1000px table, a fixed-width layout) gets a zoom that brings it down
+ * to it, so the text around it keeps its size; never below MIN_ZOOM (past
+ * that it wraps). Short messages are kept on one page. Runs on the loaded
  * preview (same-origin, no scripts inside) and starts over on every build.
  */
 export function fitPrintDocument(doc: Document): void {
-  for (const body of doc.querySelectorAll<HTMLElement>(".body-html")) {
-    body.style.zoom = "";
-    body.classList.remove("fit-wrap");
-    const room = body.clientWidth;
-    const need = body.scrollWidth;
-    if (!room || need <= room + 0.5) continue;
+  for (const el of doc.querySelectorAll<HTMLElement>("[data-fit]")) {
+    el.style.zoom = "";
+    el.classList.remove("fit-wrap", "keep");
+    el.removeAttribute("data-fit");
+  }
+  const zoomTo = (el: HTMLElement, room: number, need: number) => {
     const zoom = Math.floor((room / need) * 1000) / 1000;
-    if (zoom < MIN_ZOOM) {
-      body.style.zoom = String(MIN_ZOOM);
-      body.classList.add("fit-wrap");
-    } else body.style.zoom = String(zoom);
+    el.dataset.fit = "";
+    el.style.zoom = String(Math.max(zoom, MIN_ZOOM));
+    if (zoom < MIN_ZOOM) el.classList.add("fit-wrap");
+  };
+  for (const body of doc.querySelectorAll<HTMLElement>(".body-html")) {
+    const room = body.clientWidth;
+    if (!room || body.scrollWidth <= room + 0.5) continue;
+    const left = body.getBoundingClientRect().left;
+    for (const child of body.children as HTMLCollectionOf<HTMLElement>) {
+      const box = child.getBoundingClientRect();
+      const need = box.left - left + Math.max(box.width, child.scrollWidth);
+      if (need > room + 0.5) zoomTo(child, room, need);
+    }
+    // what still runs over (inline content, offsets): the whole body
+    if (body.scrollWidth > room + 0.5) zoomTo(body, room, body.scrollWidth);
+  }
+  // a message shorter than a third of a page never splits across two
+  const paper: Paper = doc.documentElement.dataset.paper === "a4" ? "a4" : "letter";
+  const third = ((PAGE[paper].height - MARGIN.top - MARGIN.bottom) * (96 / 25.4)) / 3;
+  for (const msg of doc.querySelectorAll<HTMLElement>(".msg")) {
+    if (msg.getBoundingClientRect().height < third) {
+      msg.dataset.fit = "";
+      msg.classList.add("keep");
+    }
   }
 }
 

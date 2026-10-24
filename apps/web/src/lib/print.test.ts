@@ -76,6 +76,12 @@ describe("the print document", () => {
     expect(remoteUrls(allowed).sort()).toEqual(["https://img.test/a.png", "https://img.test/bg.png", "https://img.test/hero.png", "https://t.test/pixel.gif"]);
   });
 
+  it("an image that can't load in the page (relative, unknown scheme) prints as its description, not a broken icon", () => {
+    const doc = parse(build([msg({ bodyHtml: `<img src="x" alt="imagen rota"><img src="/logo.png"><img src="ftp://x.test/a.png" alt="ftp">` })]));
+    expect(doc.querySelectorAll(".body-html img")).toHaveLength(0);
+    expect([...doc.querySelectorAll(".img-alt")].map((e) => e.textContent)).toEqual(["imagen rota", "ftp"]);
+  });
+
   it("follows each message's own consent in a mixed conversation", () => {
     const doc = parse(build([msg({ bodyHtml: `<img src="https://a.test/1.png" alt="uno">`, allowRemote: true }), msg({ id: 2, bodyHtml: `<img src="https://b.test/2.png" alt="dos">` })]));
     expect(remoteUrls(doc)).toEqual(["https://a.test/1.png"]);
