@@ -28,7 +28,9 @@
     "test:ui-perf": "pnpm --filter @terno/web test:ui-perf"
   },
   "devDependencies": {
+    "@types/jsdom": "^30.0.0",
     "@types/node": "catalog:",
+    "jsdom": "30.1.3",
     "oxlint": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

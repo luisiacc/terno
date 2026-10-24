@@ -45,6 +45,7 @@
     "@vitejs/plugin-react": "catalog:",
     "fake-indexeddb": "6.2.6",
     "oxc-transform-react": "^0.155.0",
+    "pdfjs-dist": "6.4.299",
     "tailwindcss": "catalog:",
     "vite": "catalog:"
   }
