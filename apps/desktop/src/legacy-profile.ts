@@ -6,15 +6,18 @@
  * Plain Node and erasable TypeScript only: scripts/dev.mjs
  * imports this file directly (Node strips the types).
  */
-import { existsSync, readlinkSync, renameSync } from "node:fs";
+import { existsSync, readlinkSync, renameSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 export const DB_FILE = "terno.db";
 export const LEGACY_DB_FILE = "unica.db";
 export const PROFILE_PREFIX = "Terno";
 export const LEGACY_PROFILE_PREFIX = "Unica";
-/** what lives beside the database: WAL, shared memory, a rollback journal, the instant index's snapshot */
-const SIDECARS = ["-wal", "-shm", "-journal", ".search"];
+/** what SQLite keeps beside the database: one unit with it (WAL frames only make sense with their own database) */
+const UNIT = ["-wal", "-shm", "-journal"];
+/** the instant index's snapshot: a cache, rebuilt if missing */
+const SNAPSHOT = ".search";
 
 export interface ProfileMigration {
   /** the legacy directory renamed to the profile, if that happened now */
@@ -23,6 +26,20 @@ export interface ProfileMigration {
   renamed: string[];
   /** both names exist: the new one is used, the legacy one is left alone */
   conflicts: string[];
+}
+
+/**
+ * Files of an earlier, interrupted migration whose pairing can't be trusted
+ * (a terno.db WAL, shared memory or journal without terno.db): nothing was
+ * renamed or opened, and the app must not start on this profile.
+ */
+export class LegacyProfileConflictError extends Error {
+  readonly files: string[];
+  constructor(files: string[]) {
+    super(`Única's database can't move to Terno: ${files.join(", ")} already exist${files.length === 1 ? "s" : ""} without terno.db. Nothing was changed.`);
+    this.name = "LegacyProfileConflictError";
+    this.files = files;
+  }
 }
 
 export class LegacyProfileInUseError extends Error {
@@ -65,29 +82,52 @@ function pidAlive(pid: number): boolean {
   }
 }
 
+/** Terno's own sidecars lying there without terno.db: their database is unknown, so nothing may be paired with them. */
+function orphanedSidecars(dir: string): string[] {
+  return UNIT.map((suffix) => join(dir, DB_FILE + suffix)).filter((f) => existsSync(f));
+}
+
 /**
- * unica.db (and its sidecars) → terno.db, when terno.db doesn't exist yet.
- * Sidecars move first and the database last: interrupted halfway, the next
- * run still sees unica.db and finishes, and a WAL never ends up beside the
- * wrong database. A sidecar whose new name exists is left where it is.
+ * unica.db → terno.db, when terno.db doesn't exist yet. The database and its
+ * WAL, shared memory and journal are one unit: first SQLite folds the WAL
+ * (and any hot journal) into unica.db and closes it, so the move is a single
+ * rename of a self-contained file. If Terno sidecars already lie there
+ * without terno.db (an earlier run stopped halfway, and Única may have
+ * written since), LegacyProfileConflictError is thrown before anything is
+ * opened or renamed.
  */
 export function migrateLegacyDbFiles(dir: string): Pick<ProfileMigration, "renamed" | "conflicts"> {
-  const renamed: string[] = [];
-  const conflicts: string[] = [];
   const legacy = join(dir, LEGACY_DB_FILE);
   const current = join(dir, DB_FILE);
-  if (!existsSync(legacy)) return { renamed, conflicts };
-  if (existsSync(current)) return { renamed, conflicts: [legacy] };
-  for (const suffix of [...SIDECARS, ""]) {
-    const from = legacy + suffix;
-    const to = current + suffix;
-    if (!existsSync(from)) continue;
-    if (existsSync(to)) {
-      conflicts.push(from);
-      continue;
-    }
-    renameSync(from, to);
+  if (!existsSync(legacy)) return { renamed: [], conflicts: [] };
+  if (existsSync(current)) return { renamed: [], conflicts: [legacy] };
+  const orphans = orphanedSidecars(dir);
+  if (orphans.length) throw new LegacyProfileConflictError(orphans);
+
+  const db = new DatabaseSync(legacy);
+  try {
+    // a hot rollback journal is rolled back by the first read; the WAL is folded in and truncated
+    db.prepare("SELECT count(*) FROM sqlite_schema").get();
+    const { busy } = db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get() as { busy: number };
+    if (busy) throw new Error(`${legacy} is busy: its WAL couldn't be folded in`);
+  } finally {
+    db.close();
+  }
+  const unfolded = ["-wal", "-journal"].map((s) => legacy + s).filter((f) => existsSync(f) && statSync(f).size > 0);
+  if (unfolded.length) throw new Error(`${unfolded.join(", ")} still hold data after closing ${legacy}: nothing was renamed`);
+
+  const renamed: string[] = [];
+  const move = (suffix: string) => {
+    renameSync(legacy + suffix, current + suffix);
     renamed.push(`${LEGACY_DB_FILE}${suffix} → ${DB_FILE}${suffix}`);
+  };
+  // what's left of the unit is empty (an emptied WAL, shared memory SQLite rebuilds): it goes along, the database last
+  for (const suffix of UNIT) if (existsSync(legacy + suffix)) move(suffix);
+  move("");
+  const conflicts: string[] = [];
+  if (existsSync(legacy + SNAPSHOT)) {
+    if (existsSync(current + SNAPSHOT)) conflicts.push(legacy + SNAPSHOT);
+    else move(SNAPSHOT);
   }
   return { renamed, conflicts };
 }
@@ -106,6 +146,11 @@ export function migrateLegacyProfile(target: string, options: { isAlive?: (pid: 
     if (existsSync(target)) conflicts.push(legacy);
     else {
       if (profileInUse(legacy, options.isAlive)) throw new LegacyProfileInUseError(legacy);
+      // a conflict inside stops everything before the directory moves
+      if (existsSync(join(legacy, LEGACY_DB_FILE)) && !existsSync(join(legacy, DB_FILE))) {
+        const orphans = orphanedSidecars(legacy);
+        if (orphans.length) throw new LegacyProfileConflictError(orphans);
+      }
       renameSync(legacy, target);
       movedFrom = legacy;
     }

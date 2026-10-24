@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { DB_FILE, LegacyProfileInUseError, migrateLegacyProfile } from "../src/legacy-profile.ts";
+import { DB_FILE, LegacyProfileConflictError, LegacyProfileInUseError, migrateLegacyProfile } from "../src/legacy-profile.ts";
 
 // For one release UNICA_* variables still work (the same rule as @terno/core/legacy-env).
 for (const legacy of Object.keys(process.env).filter((k) => k.startsWith("UNICA_"))) {
@@ -39,7 +39,7 @@ function migrateProfile(profile) {
     for (const r of m.renamed) console.log(`[dev] renamed ${r}`);
     for (const c of m.conflicts) console.warn(`[dev] left alone (the Terno one exists): ${c}`);
   } catch (error) {
-    if (!(error instanceof LegacyProfileInUseError)) throw error;
+    if (!(error instanceof LegacyProfileInUseError || error instanceof LegacyProfileConflictError)) throw error;
     console.error(`[dev] ${error.message}`);
     process.exit(1);
   }
