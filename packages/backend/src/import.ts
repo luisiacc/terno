@@ -78,6 +78,98 @@ export async function exportMailbox(b: Backend): Promise<MailboxExport> {
   };
 }
 
+type ExportDraft = ExportFile["drafts"][number];
+/** A filter whose account conditions wait for their mailboxes: the old ids and the addresses they meant. */
+interface PendingFilter {
+  name: string;
+  enabled: boolean;
+  source: "manual" | "ai" | "learned";
+  rule: FilterRule;
+  accountEmails: Record<string, string>;
+}
+interface Pending {
+  drafts: ExportDraft[];
+  filters: PendingFilter[];
+}
+const PENDING = "import:pending";
+const emptyPending: Pending = { drafts: [], filters: [] };
+const pendingOf = (store: Backend["store"]) => store.settings.get<Pending>(PENDING, emptyPending);
+const savePending = (store: Backend["store"], p: Pending) => store.settings.set(PENDING, p);
+/** Both lists, each item once. */
+function mergePending(a: Pending, b: Pending): Pending {
+  const uniq = <T,>(xs: T[]) => [...new Map(xs.map((x) => [JSON.stringify(x), x])).values()];
+  return { drafts: uniq([...a.drafts, ...b.drafts]), filters: uniq([...a.filters, ...b.filters]) };
+}
+
+/**
+ * Puts in what has its mailbox here: filters whose every account condition
+ * names a connected address (remapped to it), drafts of connected mailboxes.
+ * A reply or forward whose original hasn't synced yet waits, unless `final`
+ * for its account (its first sync is done): then it comes in as a new message.
+ * Returns what still waits.
+ */
+async function restoreInto(b: Backend, items: Pending, options: { final: boolean | number }): Promise<{ filters: number; existingFilters: number; drafts: number; left: Pending }> {
+  const store = b.store;
+  const now = b.now();
+  const accounts = await store.accounts.list();
+  const idOf = (email: string) => accounts.find((a) => a.email === email.toLowerCase())?.id;
+  const left: Pending = { drafts: [], filters: [] };
+  const same = new Set((await store.filters.list()).map((f) => `${f.name}\n${JSON.stringify(f.rule)}`));
+  let filters = 0;
+  let existingFilters = 0;
+  for (const f of items.filters) {
+    const ids = Object.fromEntries(Object.entries(f.accountEmails).map(([old, email]) => [old, idOf(email)]));
+    if (Object.values(ids).some((id) => id === undefined)) {
+      left.filters.push(f);
+      continue;
+    }
+    const conditions = f.rule.conditions.map((c): Condition => (c.field === "account" ? { ...c, value: ids[String(c.value)]! } : c));
+    const rule: FilterRule = { ...f.rule, conditions };
+    const key = `${f.name}\n${JSON.stringify(rule)}`;
+    if (same.has(key)) {
+      existingFilters++;
+      continue;
+    }
+    same.add(key);
+    await store.filters.save({ name: f.name, enabled: f.enabled, source: f.source, rule }, now);
+    filters++;
+  }
+  let drafts = 0;
+  const present = new Set((await store.drafts.list()).map(draftKey));
+  for (const d of items.drafts) {
+    const accountId = d.accountEmail ? idOf(d.accountEmail) : undefined;
+    if (accountId === undefined) {
+      left.drafts.push(d);
+      continue;
+    }
+    const draft = await draftFrom(b, accountId, d);
+    if (!draft) continue;
+    const final = options.final === true || options.final === accountId;
+    if (draft.mode === "new" && d.mode !== "new" && !final) {
+      left.drafts.push(d);
+      continue;
+    }
+    const key = draftKey(draft);
+    if (present.has(key)) continue;
+    present.add(key);
+    await store.drafts.save(draft, now);
+    drafts++;
+  }
+  return { filters, existingFilters, drafts, left };
+}
+
+/**
+ * A mailbox was connected (or finished its first sync, `final`): what an
+ * import kept for it goes in now. Cheap when nothing waits.
+ */
+export async function restorePending(b: Backend, final: number | false = false): Promise<void> {
+  const pending = await pendingOf(b.store);
+  if (!pending.drafts.length && !pending.filters.length) return;
+  const r = await restoreInto(b, pending, { final });
+  await savePending(b.store, r.left);
+  if (r.drafts) b.server.emit("drafts", { reason: "import" });
+}
+
 /** What makes two drafts the same draft: where it goes, from where, and everything written in it. */
 function draftKey(d: DraftInput | DraftRow): string {
   const norm = (list: unknown) => (list as DraftAddress[]).map((a) => [a.name, a.email, a.auto === true]);
@@ -93,7 +185,7 @@ function draftKey(d: DraftInput | DraftRow): string {
  * new message whose kept quote joins its text, so nothing it would have sent
  * is hidden or lost.
  */
-async function draftFrom(b: Backend, accountId: number, d: ExportFile["drafts"][number]): Promise<DraftInput | null> {
+async function draftFrom(b: Backend, accountId: number, d: ExportDraft): Promise<DraftInput | null> {
   const to = addresses.safeParse(d.to);
   const cc = addresses.safeParse(d.cc);
   const bcc = addresses.safeParse(d.bcc ?? []);
@@ -119,7 +211,6 @@ async function draftFrom(b: Backend, accountId: number, d: ExportFile["drafts"][
 
 export async function importMailbox(b: Backend, data: ExportFile): Promise<ImportResult> {
   const store = b.store;
-  const now = b.now();
 
   // categories: the same name (any case) is the same category
   const existing = await store.categories.list();
@@ -140,59 +231,36 @@ export async function importMailbox(b: Backend, data: ExportFile): Promise<Impor
   }
   if (added) b.server.emit("categories", await store.categories.list());
 
-  // filters: categories and mailboxes remapped; a filter that names a mailbox not connected here would change meaning, so it stays out
-  const accounts = await store.accounts.list();
-  const accountIds = new Map<number, number>();
-  for (const a of data.accounts) {
-    const here = accounts.find((x) => x.email === a.email.toLowerCase());
-    if (a.id !== undefined && here) accountIds.set(a.id, here.id);
-  }
-  const current = await store.filters.list();
-  const same = new Set(current.map((f) => `${f.name}\n${JSON.stringify(f.rule)}`));
+  // filters: categories remapped; mailboxes by address. One naming a mailbox not connected yet waits for it (pending).
+  const emailOfOld = new Map(data.accounts.flatMap((a) => (a.id === undefined ? [] : [[a.id, a.email.toLowerCase()] as const])));
   const skipped: string[] = [];
-  let addedFilters = 0;
-  let existingFilters = 0;
+  const waitingFilters: PendingFilter[] = [];
   for (const f of data.filters) {
     let ok = true;
-    const conditions = f.rule.conditions.map((c): Condition => {
-      if (c.field !== "account") return c;
-      const to = accountIds.get(c.value);
-      if (to === undefined) ok = false;
-      return { ...c, value: to ?? c.value };
-    });
     const actions = f.rule.actions.flatMap((a): FilterAction[] => {
       if (a.type !== "addCategory") return [a];
       const to = categoryIds.get(a.categoryId);
       if (to === undefined) ok = false;
       return to === undefined ? [] : [{ ...a, categoryId: to }];
     });
-    if (!ok || actions.length === 0) {
-      skipped.push(f.name);
-      continue;
+    const emails: Record<string, string> = {};
+    for (const c of f.rule.conditions) {
+      if (c.field !== "account") continue;
+      const email = emailOfOld.get(c.value);
+      if (email === undefined) ok = false;
+      else emails[String(c.value)] = email;
     }
-    const rule: FilterRule = { ...f.rule, conditions, actions };
-    if (same.has(`${f.name}\n${JSON.stringify(rule)}`)) {
-      existingFilters++;
-      continue;
-    }
-    await store.filters.save({ name: f.name, enabled: f.enabled, source: f.source, rule }, now);
-    addedFilters++;
+    if (!ok || actions.length === 0) skipped.push(f.name);
+    else waitingFilters.push({ name: f.name, enabled: f.enabled, source: f.source, rule: { ...f.rule, actions }, accountEmails: emails });
   }
 
-  // drafts of mailboxes connected here; one that is already here (the same file imported again) isn't added twice
-  let drafts = 0;
-  const present = new Set((await store.drafts.list()).map(draftKey));
-  for (const d of data.drafts) {
-    const account = accounts.find((a) => a.email === d.accountEmail?.toLowerCase());
-    const draft = account ? await draftFrom(b, account.id, d) : null;
-    if (!draft) continue;
-    const key = draftKey(draft);
-    if (present.has(key)) continue;
-    present.add(key);
-    await store.drafts.save(draft, now);
-    drafts++;
-  }
-  if (drafts) b.server.emit("drafts", { reason: "import" });
+  // drafts and filters that need a mailbox go in now if it is here, else when it is connected
+  const waiting = await pendingOf(store);
+  // mailboxes here have synced what they have: a draft whose original isn't among it comes in as a new message
+  const restored = await restoreInto(b, { filters: waitingFilters, drafts: data.drafts }, { final: true });
+  await savePending(store, mergePending(waiting, restored.left));
+  const left = mergePending(emptyPending, restored.left);
+  if (restored.drafts) b.server.emit("drafts", { reason: "import" });
 
   // settings: never secrets; a cloud AI refused by local mode is left out, the rest applies
   let settings = false;
@@ -211,5 +279,11 @@ export async function importMailbox(b: Backend, data: ExportFile): Promise<Impor
     }
     if ((await readSettings(store)).localMode !== before.localMode) await b.publishPolicy();
   }
-  return { categories: { added, merged: data.categories.length - added }, filters: { added: addedFilters, existing: existingFilters, skipped }, drafts, settings };
+  return {
+    categories: { added, merged: data.categories.length - added },
+    filters: { added: restored.filters, existing: restored.existingFilters, skipped },
+    drafts: restored.drafts,
+    pending: { drafts: left.drafts.length, filters: left.filters.length },
+    settings,
+  };
 }

@@ -7,6 +7,7 @@ import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { AiAssist } from "./ai-assist";
 import { Categorizer } from "./categorizer";
 import { createHandlers } from "./handlers";
+import { restorePending } from "./import";
 import { createNetworkPolicy, type LookupAll, type NetworkPolicy } from "./net-policy";
 import { readAutoCategorize, readLocalMode, readSettings } from "./settings";
 
@@ -547,6 +548,8 @@ export class BackendCore {
         await setState({ status: "idle", lastError: null, lastSyncAt: this.now() });
         // the account works: whatever waited for its sign-in goes now
         await this.resumeAuth(accountId);
+        // its mail is here: drafts an import kept for it (answering messages that just synced) go in
+        await restorePending(this, accountId).catch((error: unknown) => this.log("warn", "restoring imported items failed", error instanceof Error ? error.message : error));
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         this.log("warn", `sync failed for account ${accountId}`, message);

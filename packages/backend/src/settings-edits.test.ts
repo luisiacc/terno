@@ -183,7 +183,8 @@ describe("app.import", () => {
     const here = await to.client.call("accounts.addImap", imap("luis@fastmail.com"));
     await to.client.call("categories.create", { name: "facturas", color: "rose" });
     const result = await to.client.call("app.import", { data: dump });
-    expect(result).toEqual({ categories: { added: 1, merged: 1 }, filters: { added: 2, existing: 0, skipped: ["Viejo"] }, drafts: 1, settings: true });
+    // the filter on a mailbox that isn't connected here waits for it
+    expect(result).toEqual({ categories: { added: 1, merged: 1 }, filters: { added: 2, existing: 0, skipped: [] }, drafts: 1, pending: { drafts: 0, filters: 1 }, settings: true });
 
     const boot = await to.client.call("app.bootstrap", {});
     expect(boot.categories.map((c) => [c.name, c.color, c.autoApply])).toEqual([["facturas", "rose", true], ["Viajes", "cyan", false]]);
@@ -348,5 +349,70 @@ describe("importing drafts twice", () => {
     expect((await client.call("drafts.list", {})).map((d) => d.subject).sort()).toEqual(["Hola", "Re: x"]);
     await until(() => events.length > 0);
     expect(events).toEqual([{ reason: "import" }]);
+  });
+});
+
+describe("an import into a mailbox whose accounts aren't connected yet (a fresh storage engine)", () => {
+  it("keeps their drafts and filters and puts them in when each mailbox connects; replies once their original has synced", async () => {
+    const from = setup();
+    const a = await from.client.call("accounts.addImap", imap("luis@fastmail.com"));
+    const rfc = "orig@x";
+    const message = (accountId: number): IncomingMessage => ({
+      accountId, providerMsgId: "p1", providerThreadId: null, rfcMessageId: `<${rfc}>`, inReplyTo: null, references: [],
+      from: { name: "Yuki", email: "yuki@acme.studio" }, to: [{ name: "Luis", email: "luis@fastmail.com" }], cc: [], bcc: [],
+      subject: "Propuesta", date: NOW - DAY, snippet: "hola", bodyText: "hola", bodyHtml: null, bodyState: "full", listId: null,
+      isRead: true, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 100,
+    });
+    await from.backend.store.sync.ingest([message(a.id)], { applyFilters: false, now: NOW, classifier: null });
+    const orig = sqlDb(from.backend.store).get<{ id: number }>("SELECT id FROM messages WHERE rfc_message_id = ?", rfc)!;
+    await from.client.call("filters.save", { name: "De Fastmail", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "account", op: "is", value: a.id }], actions: [{ type: "star" }] } as never });
+    await from.client.call("drafts.save", { accountId: a.id, to: [{ name: "", email: "ana@x.dev" }], subject: "Nuevo", bodyText: "Hola Ana" });
+    await from.client.call("drafts.save", { accountId: a.id, mode: "reply", to: [{ name: "Yuki", email: "yuki@acme.studio" }], subject: "Re: Propuesta", bodyText: "Sí", quotedText: "> hola", includeQuote: true, inReplyToMessageId: orig.id });
+    const dump = await from.client.call("app.export", {});
+
+    // the other side: no accounts yet; its sync (when it comes) brings the original
+    let syncs = 0;
+    const dir = mkdtempSync(join(tmpdir(), "unica-pending-"));
+    let gate!: () => void;
+    const synced = new Promise<void>((r) => (gate = r));
+    const registry: ProviderRegistry = {
+      create: ({ account }): MailProvider => ({
+        async verify() {},
+        async sync(sink) {
+          await synced;
+          await sink.ingest([message(account.id)]);
+          syncs++;
+        },
+        async execute() {},
+        async close() {},
+      }),
+      async verifyImap() {},
+      connectGmail: () => Promise.reject(new Error("no")),
+    };
+    const backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: registry, now: () => NOW, autoSync: false });
+    cleanups.push(async () => {
+      await backend.stop();
+      rmSync(dir, { recursive: true, force: true });
+    });
+    const [c, s] = createMemoryTransportPair();
+    backend.connect(s, { clientId: "r", origin: "renderer" });
+    const client = new RpcClient(c);
+    const events: unknown[] = [];
+    client.on("drafts", (e) => events.push(e));
+    expect(await client.call("app.import", { data: dump })).toMatchObject({ drafts: 0, filters: { added: 0 }, pending: { drafts: 2, filters: 1 } });
+    expect(await client.call("drafts.list", {})).toEqual([]);
+
+    // connecting the mailbox: the filter (remapped) and the new message go in at once
+    const here = await client.call("accounts.addImap", imap("luis@fastmail.com"));
+    expect((await client.call("filters.list", {})).find((f) => f.name === "De Fastmail")!.rule.conditions).toEqual([{ field: "account", op: "is", value: here.id }]);
+    expect((await client.call("drafts.list", {})).map((d) => d.subject)).toEqual(["Nuevo"]);
+    // the reply waits for its original, then comes back as a reply to it
+    gate();
+    await until(() => syncs === 1);
+    await until(() => (events.length >= 2));
+    const reply = (await client.call("drafts.list", {})).find((d) => d.subject === "Re: Propuesta")!;
+    const mine = sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages WHERE rfc_message_id = ?", rfc)!;
+    expect(reply).toMatchObject({ mode: "reply", inReplyToMessageId: mine.id, quotedText: "> hola", includeQuote: true });
+    expect(await backend.store.settings.get("import:pending", null)).toEqual({ drafts: [], filters: [] });
   });
 });

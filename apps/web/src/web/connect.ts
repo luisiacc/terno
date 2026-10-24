@@ -70,7 +70,11 @@ async function carryOver(client: RpcClient, storage: string): Promise<void> {
     const boot = await client.call("app.bootstrap", {});
     adoptSettings(boot.settings);
     setApp({ categories: boot.categories });
-    toast.success(`Traído de tu otro almacenamiento: ${r.categories.added + r.categories.merged} categorías, ${r.filters.added + r.filters.existing} filtros${r.drafts ? `, ${r.drafts} borradores` : ""} y tus ajustes.`);
+    const waiting = r.pending.drafts + r.pending.filters;
+    toast.success(`Traído de tu otro almacenamiento: ${r.categories.added + r.categories.merged} categorías, ${r.filters.added + r.filters.existing} filtros${r.drafts ? `, ${r.drafts} borradores` : ""} y tus ajustes.`, {
+      description: waiting ? `${r.pending.drafts} borradores y ${r.pending.filters} filtros de tus cuentas vuelven en cuanto las conectes.` : undefined,
+      duration: waiting ? 12_000 : undefined,
+    });
   } catch (error) {
     toast.error(`No se pudieron traer tus ajustes: ${error instanceof Error ? error.message : String(error)}. Siguen en el otro almacenamiento.`);
   }

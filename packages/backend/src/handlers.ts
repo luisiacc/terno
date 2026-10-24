@@ -4,7 +4,7 @@ import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, ty
 import type { GmailAccountConfig, ImapAccountConfig } from "@unica/mail";
 import { BackendCore as Backend } from "./core";
 import { changeOwnerTo, gmailClaim, imapClaim, reconnectAccount } from "./identity";
-import { exportMailbox, importMailbox } from "./import";
+import { exportMailbox, importMailbox, restorePending } from "./import";
 import { countThreadScope, progressReporter, resolveThreadScope, UndoJournal } from "./scope";
 import { readAutoCategorize, readSettings, SettingsError, updateSettings } from "./settings";
 
@@ -430,6 +430,8 @@ export function createHandlers(b: Backend): Handlers {
       });
       await b.emitAccounts();
       if (claimed) await b.emitOwner();
+      // what an import kept for this mailbox goes in now
+      await restorePending(b);
       b.startAccount(account);
       return account;
     },
@@ -463,6 +465,8 @@ export function createHandlers(b: Backend): Handlers {
       });
       await b.emitAccounts();
       if (claimed) await b.emitOwner();
+      // what an import kept for this mailbox goes in now
+      await restorePending(b);
       b.startAccount(account);
       return account;
     },
@@ -496,6 +500,8 @@ export function createHandlers(b: Backend): Handlers {
       tokens.set(account.id, accessToken, expiresAt);
       await b.emitAccounts();
       if (claimed) await b.emitOwner();
+      // what an import kept for this mailbox goes in now
+      await restorePending(b);
       b.startAccount(account);
       return account;
     },

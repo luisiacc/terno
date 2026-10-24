@@ -190,6 +190,8 @@ export interface ImportResult {
   categories: { added: number; merged: number };
   filters: { added: number; existing: number; skipped: string[] };
   drafts: number;
+  /** drafts and filters of mailboxes not connected here yet: they go in when those are connected */
+  pending: { drafts: number; filters: number };
   /** the settings were applied (local mode and agent sending only ever become stricter) */
   settings: boolean;
 }

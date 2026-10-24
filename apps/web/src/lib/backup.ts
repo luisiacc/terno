@@ -42,5 +42,6 @@ export function importSummary(r: ImportResult): string {
     r.drafts ? `${r.drafts} ${r.drafts === 1 ? "borrador" : "borradores"}` : null,
     r.settings ? "tus ajustes" : null,
   ].filter(Boolean);
-  return `Importado: ${parts.join(", ")}.${r.filters.skipped.length ? ` Sin importar (su cuenta no está aquí): ${r.filters.skipped.join(", ")}.` : ""}`;
+  const waiting = r.pending.drafts + r.pending.filters;
+  return `Importado: ${parts.join(", ")}.${waiting ? ` ${r.pending.drafts} borradores y ${r.pending.filters} filtros entran cuando conectes sus cuentas.` : ""}${r.filters.skipped.length ? ` Sin importar (su categoría no está en el archivo): ${r.filters.skipped.join(", ")}.` : ""}`;
 }

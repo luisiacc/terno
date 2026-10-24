@@ -144,11 +144,11 @@ test("first run in the browser offers the Mac app once, then the usual steps", a
   await expect(page.getByTestId("first-run-local")).toContainText("Única solo se conecta con Google");
 });
 
-test("Gmail in the browser: Google's token model through the page, the mailbox synced by the worker", async ({ context, page }) => {
+/** Google, stubbed: Identity Services answers like its popup, the Gmail and OpenID APIs like Google (two messages). Returns the requests seen. */
+async function stubGoogle(context: import("@playwright/test").BrowserContext, email = "luis@gmail.com"): Promise<string[]> {
   const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "authorization, content-type", "access-control-allow-methods": "GET, POST, OPTIONS" };
   const raw = (subject: string) =>
-    Buffer.from(`From: Ana <ana@example.com>\r\nTo: Luis <luis@gmail.com>\r\nSubject: ${subject}\r\nMessage-ID: <${subject}@x>\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nhola`).toString("base64url");
-  // Google Identity Services, stubbed: the token client answers like the real popup does
+    Buffer.from(`From: Ana <ana@example.com>\r\nTo: Luis <${email}>\r\nSubject: ${subject}\r\nMessage-ID: <${subject}@x>\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nhola`).toString("base64url");
   await context.route("https://accounts.google.com/gsi/client", (route) =>
     route.fulfill({
       contentType: "text/javascript",
@@ -166,12 +166,17 @@ test("Gmail in the browser: Google's token model through the page, the mailbox s
     const json = (data: unknown) => route.fulfill({ status: 200, headers: { ...cors, "content-type": "application/json" }, body: JSON.stringify(data) });
     if (url.hostname === "openidconnect.googleapis.com") return json({ name: "Luis Cordero", sub: "sub-1", email_verified: true });
     const path = url.pathname.replace("/gmail/v1/users/me", "");
-    if (path === "/profile") return json({ emailAddress: "luis@gmail.com", historyId: "10" });
+    if (path === "/profile") return json({ emailAddress: email, historyId: "10" });
     if (path === "/messages") return json({ messages: [{ id: "g1" }, { id: "g2" }] });
     const m = /^\/messages\/(g\d)$/.exec(path);
     if (m) return json({ id: m[1], threadId: `t-${m[1]}`, labelIds: ["INBOX", "UNREAD"], internalDate: String(Date.UTC(2026, 9, 20)), raw: raw(`Desde Gmail ${m[1]}`) });
     return route.fulfill({ status: 404, headers: cors, body: "{}" });
   });
+  return seen;
+}
+
+test("Gmail in the browser: Google's token model through the page, the mailbox synced by the worker", async ({ context, page }) => {
+  const seen = await stubGoogle(context);
   await page.goto("/?demo=0&mailbox=gmail");
   await page.getByTestId("first-run").waitFor();
   await page.keyboard.press("Escape");
@@ -337,4 +342,45 @@ test("Ajustes → Datos: an export imports into another mailbox (categories by n
   await input.setInputFiles({ name: "unica.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(dump)) });
   await expect(page.getByTestId("data-import-error")).toHaveCount(0);
   await expect(page.locator("[data-testid^=nav-category-]").filter({ hasText: "Importada" })).toBeVisible();
+});
+
+test("switching into a fresh, empty engine: drafts and account filters wait for their mailbox and come back when it is connected", async ({ context, page }) => {
+  await stubGoogle(context, "luis.cordero@gmail.com");
+  await boot(page, "/?demo=200&mailbox=fresh-switch");
+  await page.evaluate(async () => {
+    const c = window.__unicaWeb!.client;
+    const account = (await c.call("app.bootstrap", {})).accounts.find((a) => a.email === "luis.cordero@gmail.com")!;
+    await c.call("drafts.save", { accountId: account.id, to: [{ name: "", email: "ana@pendiente.dev" }], bcc: [{ name: "", email: "copia@pendiente.dev" }], subject: "Pendiente", bodyText: "Hola Ana" });
+    await c.call("filters.save", { name: "Solo Personal", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "account", op: "is", value: account.id }], actions: [{ type: "star" }] } });
+  });
+  // the same mailbox without the demo seed, so the other engine starts empty (as a real one would)
+  await page.goto("/?demo=0&mailbox=fresh-switch");
+  await rows(page).first().waitFor({ timeout: 60_000 });
+  await page.keyboard.press("Meta+k");
+  await page.getByTestId("palette-input").fill("ajustes datos");
+  await page.keyboard.press("Enter");
+  await page.getByRole("combobox", { name: "Motor" }).click();
+  await page.getByTestId("storage-engine-idb").click();
+  await Promise.all([page.waitForEvent("load"), page.getByTestId("storage-switch-dialog-confirm").click()]);
+  await expect.poll(() => page.evaluate(() => window.__unicaWeb?.storage)).toBe("idb");
+  await expect(page.getByText(/vuelven en cuanto las conectes/)).toBeVisible({ timeout: 30_000 });
+  expect(await page.evaluate(() => window.__unicaWeb!.client.call("drafts.list", {}))).toEqual([]);
+
+  // connecting that Gmail account brings its draft and its filter back
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Meta+Comma");
+  await page.getByTestId("tab-accounts").click();
+  const clientId = page.getByRole("textbox", { name: "Google OAuth Client ID" });
+  await clientId.fill("123-web.apps.googleusercontent.com");
+  await clientId.blur();
+  await page.getByRole("button", { name: "Añadir cuenta" }).click();
+  await page.getByTestId("connect-gmail").click();
+  await expect(page.getByText("luis.cordero@gmail.com conectada")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("strip-item").filter({ hasText: "ana@pendiente.dev" })).toBeVisible();
+  const drafts = await page.evaluate(() => window.__unicaWeb!.client.call("drafts.list", {}));
+  expect(drafts).toMatchObject([{ subject: "Pendiente", bcc: [{ name: "", email: "copia@pendiente.dev" }] }]);
+  await page.keyboard.press("Meta+Comma");
+  await page.getByTestId("tab-filters").click();
+  await expect(page.locator("[data-testid=settings-filter]").filter({ hasText: "Solo Personal" })).toContainText("luis.cordero@gmail.com");
 });
