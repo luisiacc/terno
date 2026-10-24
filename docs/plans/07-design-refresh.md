@@ -430,3 +430,13 @@ Shipped in 13 commits on top of plan 06 and its review fixes, in the order of §
 - **Settings**: General is inset-grouped; the other tabs keep their own layouts inside the new sidebar shell.
 
 Measured (load average 5–7 from other work): j at key repeat frame p95 16.7 ms (both densities, with a collapsed and a restored draft); continuous scroll 16.8 ms; long conversation 16.8 ms, no frame or observer left; inline reply first frame ~15 ms, expansion ~115–126 ms; context menu ~15–17 ms; every earlier gate unchanged. Packaged smoke: warm start ~0.5 s to first rows. One backend gate from plan 06 (the 5,000-thread × 20-category move, ≤ 50 ms stall) failed once at load average ~7 (99 ms) and passed on rerun (36 ms): load-sensitive, untouched by this plan.
+
+## 10. After review (Codex, 9 findings)
+
+- One send per draft: sends are tracked per draft key (a remounted pane gets the first send's outcome), the draft is locked while it runs, and both stores refuse a second send of a draft that is gone.
+- Recipients are saved as typed («bob@» survives a reload); addresses are validated only when sending. A failed send restarts the autosave.
+- Authorship is per field and per recipient: a conversion never removes a recipient the user typed, and Única's recipients skip anyone already in another field. Fields a conversion fills in (Cc, a forward's Asunto) show while the draft is open.
+- A strip item opens exactly that draft (`draftShown`); orphaned replies and forwards come back as new messages with their threading cleared (SQL and IndexedDB).
+- One draft index per update (newest per conversation, conversations with something written) replaces the per-draft and per-row scans; gate: typing with 2,000 drafts, keystroke → rendered p95 ≤ 16 ms (~3 ms).
+- A message toggle keeps its node (and focus) across expand and collapse; revealing «N mensajes más» focuses the first revealed message.
+- Polish: thin scrollbars in the theme's ink, shown only while their pane is hovered; the learned-filter suggestion uses a quiet button; the account beside a row's time is a 6 px ring.
