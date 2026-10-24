@@ -54,9 +54,14 @@ const input = "h-9 min-w-0 flex-1 bg-transparent text-sm outline-none placeholde
 /** The draft's fields, shared by the inline reply and the new message in the reader. */
 export function DraftFieldsForm({ d, accounts, showSubject, flat }: { d: LocalDraft; accounts: Account[]; showSubject: boolean; flat?: boolean }) {
   const id = useId();
-  const [cc, setCc] = useState(Boolean(d.ccText));
-  const [bcc, setBcc] = useState(Boolean(d.bccText));
-  const [subject, setSubject] = useState(showSubject || d.subjectEdited);
+  // a row shows when it was disclosed, when it has something in it, or when the mode needs it (a forward's
+  // subject): a conversion that fills Cc in while the draft is open shows it, never sends to a hidden field
+  const [ccOpen, setCc] = useState(false);
+  const [bccOpen, setBcc] = useState(false);
+  const [subjectOpen, setSubject] = useState(false);
+  const cc = ccOpen || d.ccText !== "";
+  const bcc = bccOpen || d.bccText !== "";
+  const subject = subjectOpen || showSubject || d.subjectEdited;
   const update = (patch: Partial<DraftFields>) => editDraft(d.key, patch);
   const toggle = (open: boolean, set: (v: boolean) => void, label: string, field: string, testId: string) =>
     !open && (
@@ -101,10 +106,10 @@ export function DraftFieldsForm({ d, accounts, showSubject, flat }: { d: LocalDr
         </span>
       </Row>
       <Row label="Cc" htmlFor={`${id}-cc`} hidden={!cc}>
-        <input id={`${id}-cc`} data-testid="compose-cc" className={input} value={d.ccText} onChange={(e) => update({ ccText: e.target.value })} autoComplete="off" />
+        <input id={`${id}-cc`} data-testid="compose-cc" className={input} value={d.ccText} onChange={(e) => (setCc(true), update({ ccText: e.target.value }))} autoComplete="off" />
       </Row>
       <Row label="Cco" htmlFor={`${id}-bcc`} hidden={!bcc}>
-        <input id={`${id}-bcc`} data-testid="compose-bcc" className={input} value={d.bccText} onChange={(e) => update({ bccText: e.target.value })} autoComplete="off" />
+        <input id={`${id}-bcc`} data-testid="compose-bcc" className={input} value={d.bccText} onChange={(e) => (setBcc(true), update({ bccText: e.target.value }))} autoComplete="off" />
       </Row>
       <Row label="Asunto" htmlFor={`${id}-subject`} hidden={!subject}>
         <input id={`${id}-subject`} data-testid="compose-subject" className={input} value={d.subject} onChange={(e) => update({ subject: e.target.value, subjectEdited: true })} />

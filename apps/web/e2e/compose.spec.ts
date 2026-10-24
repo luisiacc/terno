@@ -189,6 +189,29 @@ test.describe("drafts are kept", () => {
     await expect(to).toHaveValue(/extra@example\.com/);
   });
 
+  test("converting while the draft is open shows what the new mode fills in: Cc after reply-all, Asunto after forward", async ({ app: page, server }) => {
+    const row = sqlDb(server.backend.store).get<{ thread_id: number; subject: string }>(
+      `SELECT m.thread_id, t.subject FROM messages m JOIN threads t ON t.id = m.thread_id
+       WHERE t.in_inbox = 1 AND m.is_sent = 0 AND json_array_length(m.to_json) >= 3
+         AND m.id = (SELECT id FROM messages WHERE thread_id = m.thread_id AND is_sent = 0 ORDER BY date DESC, id DESC LIMIT 1)
+       ORDER BY t.last_date DESC LIMIT 1`,
+    )!;
+    await selectThread(page, row.thread_id, `in:inbox subject:"${row.subject}"`);
+    await page.keyboard.press("r");
+    await page.getByTestId("compose-body").focus();
+    await page.keyboard.type("Escribiendo.");
+    await expect(page.getByTestId("compose-cc")).toHaveCount(0);
+    // no collapse in between: the toolbar converts the open draft
+    await page.getByTestId("action-reply-all").click();
+    await expect(composer(page)).toHaveAttribute("data-mode", "replyAll");
+    await expect(page.getByTestId("compose-cc")).toBeVisible();
+    await expect(page.getByTestId("compose-cc")).not.toHaveValue("");
+    await page.getByTestId("action-forward").click();
+    await expect(composer(page)).toHaveAttribute("data-mode", "forward");
+    await expect(page.getByTestId("compose-subject")).toBeVisible();
+    await expect(page.getByTestId("compose-subject")).toHaveValue(/^Fwd: /);
+  });
+
   test("Descartar deletes the draft; Deshacer brings it back", async ({ app: page, server }) => {
     await openRow(page, 0);
     await focusList(page);
