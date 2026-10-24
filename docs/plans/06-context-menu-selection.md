@@ -92,3 +92,14 @@ Right-click → menu painted ≤ 50 ms p95; toggling one row renders 1 row; ⌘A
 ## 8. Risks
 
 The undo journal for scope actions is in memory (a restart loses the undo, not the action). Electron's Edit menu owns ⌘A/⌘Z: the renderer handles them first and prevents the default, verified in the app. Scope ops add one op per account per slice (hundreds for a large sweep); the worker drains them like any other.
+
+## 9. Outcome
+
+Shipped as planned, with these decisions made on the way:
+
+- A plain click opens a row and clears the multi-selection (desktop list convention); ⌘/⇧-click don't move the open thread, so a toggle renders exactly one row. A press on a row of the selection keeps it (it may start a drag of the group) and collapses it on release.
+- Thread actions slice at half the usual budget (4 ms): their commit writes every message, thread and op touched, and under external load that write was what stretched slices past 50 ms.
+- Migration v8 keeps instant search snapshots valid (their identity follows the last search-relevant migration, v7).
+- In scope mode, "Mover a…" is disabled (moves stay per thread, ≤ 5,000); Categorías adds the whole scope as one undoable batch.
+
+Measured (load average 5–6 from other work): menu painted p95 ~13 ms with no row renders; ⌘A over 500 loaded rows ~1.6 ms p95; scope archive of 18,792 threads longest stall ~24 ms with `threads.list` p95 ~0.5 ms; 5,000-thread exclusive move ~33 ms stall, its undo ~35 ms.

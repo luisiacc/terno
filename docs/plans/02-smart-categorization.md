@@ -53,7 +53,7 @@ p      = σ(prior + I + C + Nint)
 
 | Signal | Label | Weight |
 |---|---|---|
-| `added_by` `user` (picker, drag-and-drop) or `suggestion` (accepted) | + | 1.0 |
+| `added_by` `user` (picker, drag-and-drop, context menu) or `suggestion` (accepted) | + | 1.0 |
 | Bulk/snackbar adds | + | 0.5, and content is capped at 50 examples per (sender, category) so one bulk add can't turn the model into "Uber words" |
 | `agent` | + | 0.5 |
 | `filter`, `auto` | not trained (prevents feedback loops) | – |
@@ -191,7 +191,7 @@ event "categorized": { categoryId, threadIds, by: "auto" }  // coalesced per cat
 ## 7. UI spec
 
 **Snackbar** (`category-snackbar.tsx`, sonner `toast.custom`, bottom-left):
-- **Trigger:** any `toggleCategory(on)`, so the picker, drag-and-drop and accepted suggestions all get it.
+- **Trigger:** any `toggleCategory(on)`, so the picker, drag-and-drop and accepted suggestions all get it. (Since plan 06 a drop is an exclusive move, `categories.moveThreads`; its snackbar says «Movido a …».)
 - **Lifetime:** 10 s, paused on hover or focus and while editing chips. The next categorization replaces it.
 
 ```

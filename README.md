@@ -10,6 +10,7 @@
 - **Local mode** (on for new installs): nothing leaves the Mac except mail with your own servers.
 - Filters learned from what you archive.
 - Drag one or many conversations onto a category to move them there (out of every other category); the same undoable snackbar as the `l` picker.
+- A right-click menu on a conversation or a selection (read/unread, star, archive, delete, spam, categories with checkmarks, "Mover a…", everything from a sender, a filter from them), selection with ⌘A, ⌘/⇧-click and ⇧J/K, the usual triage keys (⌫, ⇧I, ⇧U, ⌘⇧U, ⌃⌘A, z…), and "select all N conversations" that the backend applies to a whole view in slices, with progress and undo ([plan 06](docs/plans/06-context-menu-selection.md)).
 - 13 themes (Única, Apple, Solarized, Gruvbox, GitHub, Catppuccin, Dracula, Monokai, Tokyo Night, Nord) with a light and a dark choice for system mode, your own themes as JSON, all checked for WCAG AA contrast; animations you can set to 0/50/75/100 ms (Ajustes → Apariencia).
 - An MCP server so **Claude Code** and **Codex** get one access point to all your email.
 
@@ -94,6 +95,8 @@ Web: Page ──MessagePort──▶ Dedicated Worker (the tab holding the Web L
 | Categorize a thread (20 categories) | ≤ 50 µs | ~30 µs |
 | Snackbar counts: sender / domain / list · topic | ≤ 5 ms · ≤ 25 ms | ~1 ms · ~9 ms |
 | 14k-message import with the categorizer on | ≤ 10% slower | ~6% |
+| "Select all N" archive of 18,792 threads, its undo: longest stall · list RPC | ≤ 50 ms · ≤ 20 ms | ~24 ms · ~0.5 ms |
+| Exclusive move of 5,000 threads, its undo: longest stall | ≤ 50 ms | ~33–35 ms |
 
 **In the real renderer** (`apps/web/e2e/perf.spec.ts`, Chromium, production build, real backend):
 
@@ -108,6 +111,8 @@ Web: Page ──MessagePort──▶ Dedicated Worker (the tab holding the Web L
 | Drag start: threshold move → the frame showing the ghost rendered | ≤ 1 frame (16.7 ms at 60 Hz) | ~6.5 ms |
 | Drag: pointermove handler · row renders during a drag | ≤ 2 ms · 0 | ~0.1 ms · 0 |
 | Drop → dot on the row | ≤ 16 ms | ~1 ms, 1 row render |
+| Right-click → context menu painted | ≤ 50 ms | ~9 ms p50, ~13 ms p95, 0 row renders |
+| ⌘A over 500 loaded rows → committed | ≤ 16 ms | ~1.6 ms, only the rows that changed render; a toggle renders 1 row |
 
 **Packaged app** (`pnpm test:smoke`): about 0.5 s from a warm start to the first mail painted.
 
