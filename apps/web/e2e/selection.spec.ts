@@ -348,6 +348,29 @@ test.describe("multi-selection", () => {
   });
 });
 
+test.describe("select all N and dragging", () => {
+  test("with all N of a view selected, rows don't drag (only part of them would move)", async ({ app: page, server }) => {
+    const viajes = db(server).get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id;
+    await focusList(page);
+    await page.keyboard.press("ControlOrMeta+a");
+    await expect(page.getByTestId("select-all-scope-button")).toHaveText(/Seleccionar las/);
+    await page.getByTestId("select-all-scope-button").click();
+    await expect(page.getByTestId("select-all-scope")).toBeVisible();
+    const before = db(server).get<{ c: number }>("SELECT count(*) AS c FROM thread_categories WHERE category_id = ?", viajes)!.c;
+    const from = (await rows(page).nth(2).boundingBox())!;
+    const to = (await page.getByTestId(`nav-category-${viajes}`).boundingBox())!;
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(from.x + from.width / 2 + 8, from.y + from.height / 2 + 2, { steps: 2 });
+    await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 8 });
+    await expect(page.getByTestId("drag-ghost")).toBeHidden();
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+    await expect(page.getByTestId("category-snackbar")).toHaveCount(0);
+    expect(db(server).get<{ c: number }>("SELECT count(*) AS c FROM thread_categories WHERE category_id = ?", viajes)!.c).toBe(before);
+  });
+});
+
 test.describe("help", () => {
   test("the shortcuts dialog lists the new keys", async ({ app: page }) => {
     await focusList(page);
