@@ -62,6 +62,20 @@ test.describe("chrome", () => {
     expect(hovered.color).not.toBe("auto");
   });
 
+  test("the learned-filter suggestion is quiet: its action isn't a solid primary button", async ({ app: page }) => {
+    const accept = page.getByTestId("learned-accept");
+    await expect(accept).toBeVisible();
+    const [bg, primary] = await accept.evaluate((el) => {
+      const probe = document.createElement("span");
+      probe.style.backgroundColor = "var(--primary)";
+      document.body.append(probe);
+      const p = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return [getComputedStyle(el).backgroundColor, p];
+    });
+    expect(bg).not.toBe(primary);
+  });
+
   test("compose is a quiet icon in the list header, named for assistive tech", async ({ app: page }) => {
     const button = page.getByRole("button", { name: "Escribir" });
     await expect(button).toBeVisible();
