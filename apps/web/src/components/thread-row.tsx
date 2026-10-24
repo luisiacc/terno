@@ -37,9 +37,12 @@ interface Props {
  */
 export const ThreadRow = memo(function ThreadRow({ thread: t, top, height, compact, showAccount }: Props) {
   renderProbe("ThreadRow");
+  /** the open thread (the cursor; the listbox's active descendant) */
   const selected = useApp((s) => s.selectedId === t.id);
   // "select all N" checks every row, loaded later or not
   const checked = useApp((s) => s.scope !== null || s.checked.has(t.id));
+  // what assistive tech hears as selected: the checked rows, or the open thread when nothing is checked
+  const inSelection = useApp((s) => s.scope !== null || s.checked.has(t.id) || (s.selectedId === t.id && s.checked.size === 0));
   const accountColor = useApp((s) => (showAccount ? s.accounts.find((a) => a.id === t.accountId)?.color : undefined)) as CategoryColor | undefined;
   const categories = useApp((s) => s.categories);
   const cats = t.categoryIds.length ? categories.filter((c) => t.categoryIds.includes(c.id)) : [];
@@ -47,7 +50,9 @@ export const ThreadRow = memo(function ThreadRow({ thread: t, top, height, compa
   return (
     <div
       role="option"
-      aria-selected={selected}
+      id={`thread-${t.id}`}
+      aria-selected={inSelection}
+      data-cursor={selected || undefined}
       data-testid="thread-row"
       data-thread-id={t.id}
       data-unread={t.unread || undefined}

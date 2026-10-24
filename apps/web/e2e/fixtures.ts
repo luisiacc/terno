@@ -47,7 +47,8 @@ export const test = base.extend<Fixtures>({
 });
 
 export const rows = (page: Page): Locator => page.getByTestId("thread-row");
-export const selectedRow = (page: Page): Locator => page.locator("[data-testid=thread-row][aria-selected=true]");
+/** the open thread (the list's cursor) */
+export const selectedRow = (page: Page): Locator => page.locator("[data-testid=thread-row][data-cursor]");
 
 export const rowSubject = (row: Locator): Locator => row.getByTestId("row-subject");
 export const rowFrom = (row: Locator): Locator => row.getByTestId("row-from");

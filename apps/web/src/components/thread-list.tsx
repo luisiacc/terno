@@ -178,6 +178,18 @@ export function ThreadList() {
     listScroller.scrollToIndex = (i) => virtualizer.scrollToIndex(i, { align: "auto" });
   }, [virtualizer]);
 
+  // the open thread is the listbox's active descendant; set on the element directly so moving it renders nothing
+  useEffect(() => {
+    const point = (id: number | null) => {
+      const el = parentRef.current;
+      if (!el) return;
+      if (id === null) el.removeAttribute("aria-activedescendant");
+      else el.setAttribute("aria-activedescendant", `thread-${Math.trunc(id)}`);
+    };
+    point(getApp().selectedId);
+    return useApp.subscribe((s, prev) => s.selectedId !== prev.selectedId && point(s.selectedId));
+  }, []);
+
   const virtualItems = virtualizer.getVirtualItems();
   const last = virtualItems[virtualItems.length - 1];
   useEffect(() => {

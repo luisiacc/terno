@@ -135,7 +135,9 @@ test.describe("context menu on one thread", () => {
     // ("e" went to the menu's typeahead: the highlight may start anywhere)
     for (let i = 0; i < 24; i++) {
       await page.keyboard.press("ArrowDown");
-      if ((await menu(page).locator("[data-highlighted]").textContent())?.startsWith("Archivar")) break;
+      // read without waiting: between two keys there may be no highlighted item yet
+      const now = await page.evaluate(() => document.querySelector("[data-testid=thread-menu] [data-highlighted]")?.textContent ?? "");
+      if (now.startsWith("Archivar")) break;
     }
     await expect(menu(page).locator("[data-highlighted]")).toContainText("Archivar");
     await page.keyboard.press("Enter");
@@ -368,6 +370,37 @@ test.describe("select all N and dragging", () => {
     await page.waitForTimeout(300);
     await expect(page.getByTestId("category-snackbar")).toHaveCount(0);
     expect(db(server).get<{ c: number }>("SELECT count(*) AS c FROM thread_categories WHERE category_id = ?", viajes)!.c).toBe(before);
+  });
+});
+
+test.describe("accessibility", () => {
+  test("the listbox is multi-selectable: aria-selected follows the real selection, the open thread is the active descendant", async ({ app: page }) => {
+    const list = page.getByRole("listbox", { name: "Conversaciones" });
+    const selectedOptions = page.locator("[role=option][aria-selected=true]");
+    await expect(list).toHaveAttribute("aria-multiselectable", "true");
+    // nothing checked: the open thread is the selection
+    await expect(selectedOptions).toHaveCount(1);
+    const cursor = page.locator("[data-testid=thread-row][data-cursor]");
+    await expect(list).toHaveAttribute("aria-activedescendant", (await cursor.getAttribute("id"))!);
+    await expect(selectedOptions.first()).toHaveAttribute("data-cursor", "true");
+    // ⌘A: every option is selected
+    await focusList(page);
+    await page.keyboard.press("ControlOrMeta+a");
+    await expect(selectedOptions).toHaveCount(await rows(page).count());
+    await page.keyboard.press("Escape");
+    await expect(selectedOptions).toHaveCount(1);
+    // ⌘-click: exactly the checked rows; the open thread can be outside them and stays the active descendant
+    const ids = await idsOf(rows(page));
+    await selectRows(page, ids.slice(0, 3));
+    await row(page, ids[0]!).click({ modifiers: ["ControlOrMeta"] });
+    expect(await idsOf(selectedOptions)).toEqual(ids.slice(1, 3));
+    await expect(list).toHaveAttribute("aria-activedescendant", `thread-${ids[0]}`);
+    await expect(row(page, ids[0]!)).toHaveAttribute("aria-selected", "false");
+    // j moves the active descendant without a multi-selection
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("j");
+    await expect(list).toHaveAttribute("aria-activedescendant", `thread-${ids[1]}`);
+    await expect(selectedOptions).toHaveCount(1);
   });
 });
 

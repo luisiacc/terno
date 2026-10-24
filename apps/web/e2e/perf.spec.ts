@@ -57,11 +57,12 @@ test("holding j: every move commits within a frame and the DOM stays bounded", a
       { capture: true },
     );
     new MutationObserver((records) => {
-      if (records.some((r) => r.attributeName === "aria-selected" && (r.target as Element).getAttribute("aria-selected") === "true")) {
+      // the open thread moved (the row gains data-cursor)
+      if (records.some((r) => r.attributeName === "data-cursor" && (r.target as Element).hasAttribute("data-cursor"))) {
         w.__perf.commit.push(performance.now() - w.__perf.t0);
         w.__perf.maxRows = Math.max(w.__perf.maxRows, document.querySelectorAll("[data-testid=thread-row]").length);
       }
-    }).observe(document.querySelector("[role=listbox]")!, { attributes: true, subtree: true, attributeFilter: ["aria-selected"] });
+    }).observe(document.querySelector("[role=listbox]")!, { attributes: true, subtree: true, attributeFilter: ["data-cursor"] });
   });
   // list navigation never animates: count finite animations started while j is held
   await page.evaluate(() => {
@@ -95,7 +96,7 @@ test("holding j: every move commits within a frame and the DOM stays bounded", a
   stats.push({ name: `animations started while holding j: ${anims}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
   expect(anims).toBe(0);
   // we navigated past the first page: pagination kept up
-  expect(await page.locator("[aria-selected=true]").getAttribute("data-thread-id")).not.toBeNull();
+  expect(await page.locator("[data-cursor]").getAttribute("data-thread-id")).not.toBeNull();
 });
 
 test("typing a search: each keystroke renders its results fast", async ({ app: page }) => {
