@@ -8,9 +8,8 @@ import { exportMailbox, importMailbox, restorePending } from "./import";
 import { countThreadScope, progressReporter, resolveThreadScope, UndoJournal } from "./scope";
 import { readAutoCategorize, readSettings, SettingsError, updateSettings } from "./settings";
 
-/** How a UI entry point is recorded: bulk (snackbar) adds weigh half and their content is capped per sender. */
-/** More ids than this and a categorization runs in time slices (plan 02 §6). */
-const SLICE_ABOVE = 200;
+/** More ids than this and a bulk command runs in time-budgeted slices (plan 02 §6, plan 06). */
+const ONE_GO = 20;
 
 const ADDED_BY = { picker: "user", dnd: "user", suggestion: "suggestion", snackbar: "bulk" } as const;
 
@@ -44,14 +43,14 @@ export function createHandlers(b: Backend): Handlers {
   const requireCategory = async (id: number) => {
     if (!(await store.categories.exists(id))) throw new RpcError("NOT_FOUND", `Category ${id} not found`);
   };
-  /** Small sets in one go (same tick), large ones through the backend's slicer. */
+  /** A handful in one go (same tick), more through time-budgeted slices (a thread's filing trains on its features). */
   const sliced = async <T,>(items: T[], work: (chunk: T[]) => Promise<void>) => {
-    if (items.length <= SLICE_ABOVE) await work(items);
-    else await b.runSliced(items, 100, work);
+    if (items.length <= ONE_GO) await work(items);
+    else await b.runBudgeted(items, work);
   };
   /**
    * The one store command behind every UI way of filing threads; returns
-   * what changed for undo. Above SLICE_ABOVE ids it runs in time slices (one
+   * what changed for undo. Above ONE_GO ids it runs in time slices (one
    * batch, several transactions) so interactive RPCs keep flowing.
    */
   const fileThreads = async (categoryId: number, threadIds: readonly number[], addedBy: AddedBy, source: string, progress?: (done: number) => void) => {
@@ -85,11 +84,9 @@ export function createHandlers(b: Backend): Handlers {
       b.notifyChanged(r.threadIds);
       progress?.((done += chunk.length));
     };
-    // small sets in one go; large ones through the slicer, starting small (an action recomputes every thread it touches)
-    if (threadIds.length <= SLICE_ABOVE && !alwaysSliced) await run([...threadIds]);
-    // half the usual budget: an action's commit writes every message, thread and op it touches, and that write is the
-    // part of a slice whose time the disk decides
-    else await b.runSliced([...threadIds], 50, run, b.options.sliceBudgetMs / 2);
+    // a handful in one go; more in time-budgeted slices (an action recomputes every thread it touches and writes their ops)
+    if (threadIds.length <= ONE_GO && !alwaysSliced) await run([...threadIds]);
+    else await b.runBudgeted([...threadIds], run);
     // what an undo puts back: these messages, exactly as they were
     return { threads: [...changed], undoId: before.length ? undoJournal.remember(before) : null };
   };
@@ -180,9 +177,8 @@ export function createHandlers(b: Backend): Handlers {
       let done = 0;
       progress(0);
       // like the action: one store command (transaction, ops per account) per slice
-      await b.runSliced(
+      await b.runBudgeted(
         before,
-        200,
         async (chunk) => {
           const r = await store.threads.restore({ messages: chunk, now: b.now() });
           for (const t of r.threadIds) restored.add(t);
@@ -190,7 +186,8 @@ export function createHandlers(b: Backend): Handlers {
           b.notifyChanged(r.threadIds);
           progress((done += chunk.length));
         },
-        b.options.sliceBudgetMs / 2,
+        // a message costs less than a thread: a bigger first probe
+        { initial: 16 },
       );
       return { restored: restored.size };
     },

@@ -10,6 +10,7 @@ import { createHandlers } from "./handlers";
 import { restorePending } from "./import";
 import { createNetworkPolicy, type LookupAll, type NetworkPolicy } from "./net-policy";
 import { readAutoCategorize, readLocalMode, readSettings } from "./settings";
+import { BULK_SLICE, SliceSizer, type SliceBudget } from "./slicer";
 
 export interface SecretCipher {
   encrypt(plain: string): Promise<Uint8Array>;
@@ -401,12 +402,8 @@ export class BackendCore {
         if (phase !== "moving" && phase !== "training" && phase !== "unmoving" && phase !== "restoring") return;
         const pending = await this.store.categories.movePending(batchId);
         if (pending.length === 0) return;
-        // membership slices write many rows per thread (one per category): half the usual budget, as thread actions
-        const budget = phase === "moving" || phase === "unmoving" ? this.options.sliceBudgetMs / 2 : this.options.sliceBudgetMs;
-        await this.runSliced(
-          pending,
-          50,
-          async (chunk) => {
+        // a thread can mean 20 rows (one per category) or 20 examples: slices are sized by the time they take
+        await this.runBudgeted(pending, async (chunk) => {
             const now = this.now();
             if (phase === "moving") {
               const r = await this.store.categories.applyMoveSlice(batchId, chunk, now);
@@ -421,9 +418,7 @@ export class BackendCore {
             } else {
               this.categorizer.apply(phase === "training" ? await this.store.categories.trainMoveSlice(batchId, chunk, now) : await this.store.categories.restoreMoveSlice(batchId, chunk));
             }
-          },
-          budget,
-        );
+        });
         if (this.stopped) return;
       }
     })().finally(() => this.moves.delete(batchId));
@@ -445,9 +440,26 @@ export class BackendCore {
       await work(chunk);
       i += chunk.length;
       const took = performance.now() - started;
-      // shrink immediately when over budget, grow cautiously (≤1.25× per slice) to avoid overshoot
+      // shrink immediately when over budget, grow cautiously (≤1.25× per slice, but at least +1: from 1 it must still grow)
       const ideal = (size * budgetMs) / Math.max(took, 0.25);
-      size = Math.max(1, Math.min(1000, Math.round(Math.min(ideal, size * 1.25))));
+      size = Math.max(1, Math.min(1000, Math.floor(Math.min(ideal, Math.max(size + 1, size * 1.25)))));
+      await this.platform.yield();
+    }
+  }
+
+  /**
+   * Bulk work the user started (scope actions, moves and their undo, large
+   * filings) in time-budgeted slices: each sized from how long the previous
+   * ones took (see slicer.ts), a yield between them.
+   */
+  async runBudgeted<T>(items: readonly T[], work: (chunk: T[]) => void | Promise<void>, budget: Partial<SliceBudget> = {}): Promise<void> {
+    const sizer = new SliceSizer({ ...BULK_SLICE, ...budget });
+    for (let i = 0; i < items.length && !this.stopped; ) {
+      const chunk = items.slice(i, i + sizer.size);
+      const started = performance.now();
+      await work(chunk);
+      sizer.record(chunk.length, performance.now() - started);
+      i += chunk.length;
       await this.platform.yield();
     }
   }
