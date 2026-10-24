@@ -77,6 +77,19 @@ describe("scope actions", () => {
     expect(targeted.length).toBeGreaterThanOrEqual(inbox.length);
   });
 
+  it("lets the store catch up between slices (its WAL starts over instead of growing through a long job)", async () => {
+    const { backend, client } = setup();
+    const order: string[] = [];
+    const act = backend.store.threads.act.bind(backend.store.threads);
+    backend.store.threads.act = (c) => (order.push("act"), act(c));
+    const settle = backend.store.settle!.bind(backend.store);
+    backend.store.settle = () => (order.push("settle"), settle());
+    await client.call("threads.actScope", { scope: { kind: "view", view: "all" }, action: "markRead" });
+    expect(order.filter((x) => x === "act").length).toBeGreaterThan(3);
+    // never two slices back to back without it
+    expect(order.join(" ")).not.toMatch(/act act/);
+  });
+
   it("narrows to an account or a category, and to a search, exactly like the list shows them", async () => {
     const { db, client, accountIds } = setup(400);
     const a = accountIds[1]!;

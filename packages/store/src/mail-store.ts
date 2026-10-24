@@ -199,6 +199,13 @@ export interface MailStore {
   readonly capabilities: StoreCapabilities;
   readonly isOpen: boolean;
   close(): Promise<void>;
+  /**
+   * Bulk writers await this between slices: the store may hold them back
+   * (asynchronously) until its own upkeep caught up with what they wrote
+   * (SQLite: the WAL checkpoint, so the log starts over instead of growing
+   * by gigabytes). Absent or immediate when there is nothing to wait for.
+   */
+  settle?(): Promise<void>;
 
   /** every committed change to what search indexes, as revisioned batches (the transactional outbox) */
   readonly feed: SearchFeed;

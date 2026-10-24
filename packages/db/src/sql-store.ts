@@ -210,6 +210,11 @@ export class SqlMailStore implements MailStore {
     return this.db.isOpen;
   }
 
+  /** Bulk writers between slices: lets the WAL checkpoint catch up so the WAL starts over (see CheckpointWorker.settle). */
+  async settle(): Promise<void> {
+    await this.checkpointer?.settle();
+  }
+
   async close(): Promise<void> {
     // writes the snapshot of what changed since the last one
     await this.instant?.close();

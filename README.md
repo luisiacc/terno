@@ -75,7 +75,7 @@ Web: Page ──MessagePort──▶ Dedicated Worker (the tab holding the Web L
 - **SQLite via `node:sqlite`:** no native modules. Tests run the same SQLite build the app ships.
 - **Every action is local-first.** The optimistic state and a durable op are written in one transaction, and the op worker syncs to the provider afterwards. A send whose outcome is ambiguous is marked *unknown* and never resent automatically.
 - **Search** answers from an in-memory instant index (typed-array postings, a newest-first walk over threads) whenever it is exactly at the database's revision, and from a selectivity-based planner over FTS5 otherwise (while it builds or catches up after a write), with identical results. Message predicates (`from:`, words, `has:attachment`, dates) must all match the *same* message.
-- **Background work** (imports, bulk filters) runs in ~8 ms adaptive slices, and WAL checkpoints run on a worker thread, so typing and navigation never stall.
+- **Background work** (imports, bulk filters) runs in ~8 ms adaptive slices, and WAL checkpoints run on a worker thread, so typing and navigation never stall. Once the WAL passes 16 MB, bulk slices wait (asynchronously) for the checkpoint to catch up so the WAL starts over: back-to-back slices otherwise grew it by gigabytes, and the commit that finally restarted it truncated the file on the backend's thread.
 
 ## Performance (measured, enforced by tests)
 

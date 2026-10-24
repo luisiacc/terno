@@ -148,6 +148,7 @@ export class Categorizer {
           const n = await store.categorize.backfillExamples(500);
           if (n === 0) break;
           await this.host.platform.yield();
+          await store.settle?.();
         }
         this.pending = [];
         this.readTo = null;

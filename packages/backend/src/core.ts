@@ -462,13 +462,15 @@ export class BackendCore {
       const ideal = (size * budgetMs) / Math.max(took, 0.25);
       size = Math.max(1, Math.min(1000, Math.floor(Math.min(ideal, Math.max(size + 1, size * 1.25)))));
       await this.platform.yield();
+      await this.store.settle?.();
     }
   }
 
   /**
    * Bulk work the user started (scope actions, moves and their undo, large
    * filings) in time-budgeted slices: each sized from how long the previous
-   * ones took (see slicer.ts), a yield between them.
+   * ones took (see slicer.ts), a yield between them and whatever the store
+   * needs to catch up (settle).
    */
   async runBudgeted<T>(items: readonly T[], work: (chunk: T[]) => void | Promise<void>, budget: Partial<SliceBudget> = {}): Promise<void> {
     const sizer = new SliceSizer({ ...BULK_SLICE, ...budget });
@@ -479,6 +481,7 @@ export class BackendCore {
       sizer.record(chunk.length, performance.now() - started);
       i += chunk.length;
       await this.yieldTurn();
+      await this.store.settle?.();
     }
   }
 

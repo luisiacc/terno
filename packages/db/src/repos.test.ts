@@ -43,6 +43,35 @@ describe.runIf(sqliteDriver().features.checkpointWorker)("checkpoint worker", ()
     await worker.stop();
     expect(statSync(`${db.path}-wal`).size).toBe(0); // TRUNCATE on stop
   });
+
+  it("starts the WAL over during bulk work: slices that settle between commits never grow it past its limit", async () => {
+    const { startCheckpointWorker } = await import("./checkpoint");
+    const { statSync } = await import("node:fs");
+    const db = testDb();
+    db.exec("CREATE TABLE bulk (id INTEGER PRIMARY KEY, a INTEGER, b TEXT); CREATE INDEX bulk_a ON bulk(a); CREATE INDEX bulk_b ON bulk(b)");
+    const random = () => Math.floor(Math.random() * 1e9);
+    db.tx(() => {
+      for (let i = 1; i <= 50_000; i++) db.run("INSERT INTO bulk (id, a, b) VALUES (?, ?, ?)", i, random(), random().toString(36));
+    });
+    db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    // the production interval: a passive checkpoint a second, which on its own never catches up with back-to-back slices
+    const worker = startCheckpointWorker(db)!;
+    let written = 0;
+    let largest = 0;
+    // small commits scattered over three indexes, a yield and a settle between them, until ~4× the limit went through the WAL
+    while (written < 256 * 2 ** 20) {
+      db.tx(() => {
+        for (let i = 0; i < 20; i++) db.run("UPDATE bulk SET a = ?, b = ? WHERE id = ?", random(), random().toString(36), 1 + Math.floor(Math.random() * 50_000));
+      });
+      written += 60 * 4120; // a lower bound: each update dirties a leaf of the table and of both indexes
+      await new Promise((r) => setImmediate(r));
+      await worker.settle();
+      largest = Math.max(largest, statSync(`${db.path}-wal`).size);
+    }
+    await worker.stop();
+    // without settle() it ends at whatever went through it (hundreds of MB), and the restart truncates on this thread
+    expect(largest).toBeLessThanOrEqual(80 * 2 ** 20);
+  });
 });
 
 describe("migrations", () => {
