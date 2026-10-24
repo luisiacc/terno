@@ -6,6 +6,7 @@
  * exactly what it previewed. Only the print sheet (a lazy chunk) imports it.
  */
 import type { Address } from "@terno/core";
+import { PRINT_INK as INK } from "@terno/ui/themes/print";
 import DOMPurify from "dompurify";
 import { formatBytes, fullDate } from "~/lib/format";
 import { csp } from "~/lib/mail";
@@ -186,8 +187,8 @@ function css(paper: Paper): string {
   return [
     `@page{size:${paper === "a4" ? "A4" : "letter"};margin:${m}}`,
     `:root{color-scheme:light}`,
-    `html{background:#fff}`,
-    `body{margin:0;color:#1d1d1f;font:10.5pt/1.5 ${FONT};overflow-wrap:anywhere;-webkit-print-color-adjust:exact;print-color-adjust:exact;-webkit-text-size-adjust:none}`,
+    `html{background:${INK.paper}}`,
+    `body{margin:0;color:${INK.text};font:10.5pt/1.5 ${FONT};overflow-wrap:anywhere;-webkit-print-color-adjust:exact;print-color-adjust:exact;-webkit-text-size-adjust:none}`,
     // a definite printable width on screen too, so the fit pass measures what the page will hold
     `.doc{width:${printableWidth(paper)}mm}`,
     `@media screen{body{padding:${m}}}`,
@@ -196,29 +197,29 @@ function css(paper: Paper): string {
     `.msg{break-inside:auto}`,
     `.msg.keep{break-inside:avoid}`,
     `p,li,.body-text,.body-html div{orphans:3;widows:3}`,
-    `.msg+.msg{margin-top:20pt;padding-top:16pt;border-top:.75pt solid #d2d2d7}`,
-    `.body-only .msg+.msg{margin-top:22pt;padding-top:20pt;border-top-color:#e5e5ea}`,
-    `.head{margin-bottom:11pt;font-size:9pt;line-height:1.45;color:#6e6e73;break-inside:avoid;break-after:avoid}`,
+    `.msg+.msg{margin-top:20pt;padding-top:16pt;border-top:.75pt solid ${INK.rule}}`,
+    `.body-only .msg+.msg{margin-top:22pt;padding-top:20pt;border-top-color:${INK.ruleSoft}}`,
+    `.head{margin-bottom:11pt;font-size:9pt;line-height:1.45;color:${INK.secondary};break-inside:avoid;break-after:avoid}`,
     `.from{display:flex;align-items:baseline;gap:6pt;margin-bottom:1.5pt}`,
-    `.name{font-size:10.5pt;font-weight:600;color:#1d1d1f}`,
+    `.name{font-size:10.5pt;font-weight:600;color:${INK.text}}`,
     `.date{margin-left:auto;padding-left:12pt;white-space:nowrap;font-variant-numeric:tabular-nums}`,
-    `.k{margin-right:3pt;font-weight:500;color:#1d1d1f}`,
-    `.addr{color:#86868b}`,
+    `.k{margin-right:3pt;font-weight:500;color:${INK.text}}`,
+    `.addr{color:${INK.tertiary}}`,
     `.body-text{white-space:pre-wrap}`,
-    `.quote{margin-top:9pt;padding-left:9pt;border-left:1.5pt solid #d2d2d7;color:#6e6e73}`,
+    `.quote{margin-top:9pt;padding-left:9pt;border-left:1.5pt solid ${INK.rule};color:${INK.secondary}}`,
     `.body-html img{max-width:100%;height:auto}`,
     `.body-html pre{white-space:pre-wrap}`,
-    `.body-html blockquote[type=cite],.body-html .gmail_quote{margin:6pt 0 6pt 2pt;padding-left:9pt;border-left:1.5pt solid #d2d2d7;color:#515154}`,
+    `.body-html blockquote[type=cite],.body-html .gmail_quote{margin:6pt 0 6pt 2pt;padding-left:9pt;border-left:1.5pt solid ${INK.rule};color:${INK.quote}}`,
     // past the smallest zoom: everything wraps to the page instead of running off it
     `.fit-wrap *{max-width:100%!important;min-width:0!important}`,
     `.fit-wrap table{table-layout:fixed;width:100%!important}`,
-    `.img-alt{color:#86868b;font-style:italic}`,
+    `.img-alt{color:${INK.tertiary};font-style:italic}`,
     `.img-alt::before{content:"["}.img-alt::after{content:"]"}`,
-    `.missing{margin:0;color:#86868b;font-style:italic}`,
-    `.atts{margin-top:11pt;font-size:9pt;color:#6e6e73;break-inside:avoid}`,
+    `.missing{margin:0;color:${INK.tertiary};font-style:italic}`,
+    `.atts{margin-top:11pt;font-size:9pt;color:${INK.secondary};break-inside:avoid}`,
     `.att{display:inline-block;margin-right:10pt}`,
-    `.size{color:#86868b}`,
-    `a{color:#0b4f9e;text-decoration:underline;text-decoration-thickness:.5pt;text-underline-offset:1.5pt}`,
+    `.size{color:${INK.tertiary}}`,
+    `a{color:${INK.link};text-decoration:underline;text-decoration-thickness:.5pt;text-underline-offset:1.5pt}`,
   ].join("");
 }
 

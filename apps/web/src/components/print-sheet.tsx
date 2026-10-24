@@ -3,6 +3,7 @@ import { Button } from "@terno/ui/components/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@terno/ui/components/dialog";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { cn } from "@terno/ui/lib/utils";
+import { PRINT_INK } from "@terno/ui/themes/print";
 import { CircleAlert, FileDown, ImageOff, Info, LoaderCircle, Printer } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -358,8 +359,9 @@ function Preview({ doc, current, onFitted }: { doc: { html: string; paper: Paper
     <div ref={pane} className="relative min-w-0 flex-1 overflow-y-auto bg-tint" data-testid="print-preview-pane">
       <div className="px-8 py-8">
         <div
-          className={cn("mx-auto overflow-hidden rounded-[3px] bg-white shadow-[0_0_0_0.5px_rgb(0_0_0/0.08),0_1px_2px_rgb(0_0_0/0.06),0_8px_28px_-6px_rgb(0_0_0/0.16)] transition-opacity duration-base", !(ready && current) && "opacity-60")}
-          style={{ width: paperPx * scale, height: Math.max(height, PAGE[paper].height * MM_PX) * scale }}
+          className="mx-auto overflow-hidden rounded-[3px] shadow-popover transition-opacity duration-base data-pending:opacity-60"
+          data-pending={!(ready && current) || undefined}
+          style={{ width: paperPx * scale, height: Math.max(height, PAGE[paper].height * MM_PX) * scale, background: PRINT_INK.paper }}
         >
           <iframe
             ref={frame}
@@ -370,7 +372,7 @@ function Preview({ doc, current, onFitted }: { doc: { html: string; paper: Paper
             sandbox="allow-same-origin allow-modals"
             srcDoc={html ?? undefined}
             tabIndex={-1}
-            className="block border-0 bg-white"
+            className="block border-0"
             style={{ width: paperPx, height: Math.max(height, PAGE[paper].height * MM_PX), transform: `scale(${scale})`, transformOrigin: "0 0" }}
           />
         </div>
