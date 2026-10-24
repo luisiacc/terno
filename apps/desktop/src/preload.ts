@@ -1,9 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
+import { PRINT_COMMANDS, type PrintCommand } from "./print-policy";
 
 /**
  * Sandboxed preload. Only two things cross into the page: a MessagePort to the
  * backend (handshake: the page asks, we hand over the latest port once) and a
- * few vetted desktop helpers.
+ * few vetted desktop helpers (printing among them).
  */
 let port: MessagePort | null = null;
 let wanted = false;
@@ -36,4 +37,15 @@ contextBridge.exposeInMainWorld("ternoDesktop", {
   // validated in main; main also remembers it for the next window's first frame
   setAppearance: (a: { themeSource: string; background: string; vibrancy: boolean }) =>
     ipcRenderer.send("terno:appearance", { themeSource: String(a?.themeSource), background: String(a?.background), vibrancy: a?.vibrancy === true }),
+  // the print document and its options; main validates every field and owns the CSP, title and footer
+  print: (job: unknown) => ipcRenderer.invoke("terno:print", job),
+  showSaved: (exportId: string) => ipcRenderer.invoke("terno:show-saved", String(exportId)),
+  // the Archivo menu's commands, whitelisted
+  onCommand: (listener: (command: PrintCommand) => void) => {
+    const relay = (_e: unknown, command: unknown) => {
+      if (PRINT_COMMANDS.includes(command as PrintCommand)) listener(command as PrintCommand);
+    };
+    ipcRenderer.on("terno:command", relay);
+    return () => ipcRenderer.removeListener("terno:command", relay);
+  },
 });

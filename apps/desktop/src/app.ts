@@ -20,6 +20,8 @@ import { parseAppearance, windowVibrancy, type Appearance } from "./appearance";
 import type { BackendToMain, MainToBackend } from "./ipc";
 import { readLegacySecrets } from "./keychain-helper";
 import { DB_FILE } from "./legacy-profile";
+import { printLocalModeChanged, registerPrint } from "./print";
+import { fileMenu, isTrustedSender, testPdfDir, type PrintCommand } from "./print-policy";
 import { LEGACY_STORAGE_PENDING } from "./profile";
 
 // V8 compile cache for the main bundle (t3code trick): faster subsequent boots.
@@ -153,6 +155,7 @@ function startBackend() {
         break;
       case "policy":
         localMode = msg.localMode;
+        printLocalModeChanged(localMode);
         break;
       case "open-external":
         if (/^https:\/\//i.test(msg.url)) void shell.openExternal(msg.url);
@@ -349,9 +352,16 @@ function createWindow() {
   return win;
 }
 
+/** Menu commands go to the focused Terno window's renderer, which applies them like their keys. */
+function sendCommand(command: PrintCommand) {
+  const win = BrowserWindow.getFocusedWindow() ?? [...windows][0];
+  if (win && windows.has(win) && !win.isDestroyed()) win.webContents.send("terno:command", command);
+}
+
 function buildMenu() {
   const template: Electron.MenuItemConstructorOptions[] = [
     { role: "appMenu" },
+    fileMenu(sendCommand),
     { role: "editMenu" },
     {
       label: "Ver",
@@ -386,6 +396,16 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     registerAppProtocol();
     installNetworkBackstop();
+    registerPrint({
+      trusted: (event) => {
+        const win = BrowserWindow.fromWebContents(event.sender);
+        const frame = event.senderFrame;
+        return Boolean(win && windows.has(win) && frame) && isTrustedSender(frame!.url, frame === event.sender.mainFrame, isDev ? process.env.TERNO_DEV_URL! : null);
+      },
+      localMode: () => localMode,
+      testPdfDir: testPdfDir(process.env, app.isPackaged, demo),
+      log,
+    });
     buildMenu();
     startBackend();
     await carryLegacyLocalStorage();
