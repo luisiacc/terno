@@ -120,7 +120,12 @@ test.describe("local mode and AI providers", () => {
   test("local mode blocks remote images in mail with no way to load them", async ({ app: page }) => {
     await openRow(page, 2);
     await expect(page.getByTestId("remote-blocked")).toContainText("bloqueado por el modo local");
-    await expect(page.getByRole("button", { name: "Cargar imágenes" })).toHaveCount(0);
+    await expect(page.getByTestId("remote-load")).toHaveCount(0);
+    // «Cargar contenido…» only explains why, and offers the setting
+    await page.getByTestId("remote-why").click();
+    await expect(page.getByTestId("remote-why-popover")).toContainText("El modo local no permite cargar contenido remoto");
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("remote-blocked")).toBeVisible();
   });
 
   test("an HTML mail fits its frame with no inner scroll, and the frame follows the content when the pane resizes", async ({ app: page }) => {

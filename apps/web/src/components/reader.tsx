@@ -4,7 +4,7 @@ import { CategoryBadge, CategoryDot } from "@unica/ui/components/category-dot";
 import { Shortcut } from "@unica/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@unica/ui/components/tooltip";
 import { cn } from "@unica/ui/lib/utils";
-import { Archive, Forward, Inbox, Layers, MailOpen, OctagonAlert, Paperclip, Reply, ReplyAll, Star, Tag, Trash2, X } from "lucide-react";
+import { Archive, Forward, Inbox, Layers, MailOpen, OctagonAlert, Reply, ReplyAll, Star, Tag, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { cancelReaderScroll, keepInView } from "~/lib/reader-scroll";
@@ -32,7 +32,7 @@ function ToolButton({ label, keys, onClick, children, testId, active }: { label:
     <Tooltip>
       <TooltipTrigger
         render={
-          <Button variant="ghost" size="icon-sm" aria-label={label} data-testid={testId} onClick={onClick} className={cn("no-drag text-muted-foreground hover:text-foreground", active && "text-star hover:text-star")}>
+          <Button variant="ghost" size="icon-sm" aria-label={label} data-testid={testId} onClick={onClick} className={cn("no-drag rounded-md text-muted-foreground hover:text-foreground [&_svg]:stroke-[1.75]", active && "text-star hover:text-star")}>
             {children}
           </Button>
         }
@@ -54,6 +54,12 @@ function Reasons({ title, reasons, hint }: { title: string; reasons: string[]; h
       {hint && <p className="text-muted-foreground">{hint}</p>}
     </TooltipContent>
   );
+}
+
+/** The extension a tile shows on its document glyph ("PDF", "XLSX"), or nothing. */
+function fileType(name: string): string {
+  const ext = /\.([a-z0-9]{1,5})$/i.exec(name)?.[1];
+  return ext ? ext.toUpperCase() : "";
 }
 
 function Message({ m, expanded, onToggle }: { m: MessageDetail; expanded: boolean; onToggle: () => void }) {
@@ -125,15 +131,20 @@ function Message({ m, expanded, onToggle }: { m: MessageDetail; expanded: boolea
               <p className="text-sm text-muted-foreground italic">Descargando el contenido…</p>
             )}
             {m.attachments.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-2">
+              // view-only tiles: opening and saving attachments needs content Única doesn't fetch yet
+              <ul aria-label="Adjuntos" className="mt-4 flex flex-wrap gap-2">
                 {m.attachments.map((a) => (
-                  <span key={a.id} className="inline-flex items-center gap-1.5 rounded-md bg-tint px-2 py-1 text-xs">
-                    <Paperclip className="size-3 text-muted-foreground" />
-                    {a.filename}
-                    <span className="text-muted-foreground">{formatBytes(a.size)}</span>
-                  </span>
+                  <li key={a.id} data-testid="attachment" className="flex h-14 w-[260px] items-center gap-3 rounded-[10px] bg-tint px-2.5">
+                    <span className="relative flex h-[34px] w-[27px] shrink-0 items-end justify-center rounded-[3px] rounded-tr-lg bg-card pb-1 shadow-hairline">
+                      <span className="text-[7px] leading-none font-bold tracking-wide text-muted-foreground uppercase">{fileType(a.filename)}</span>
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="line-clamp-2 text-sm leading-4 font-medium break-all">{a.filename}</span>
+                      <span className="block text-xs text-muted-foreground tabular">{formatBytes(a.size)}</span>
+                    </span>
+                  </li>
                 ))}
-              </div>
+              </ul>
             )}
           </div>
         </Expand>
@@ -195,6 +206,30 @@ function Conversation({ messages, threadId }: { messages: MessageDetail[]; threa
           </div>
         ),
       )}
+    </div>
+  );
+}
+
+/**
+ * After the last message: a quiet field that starts a reply to the last
+ * person who wrote, with reply-all and forward beside it.
+ */
+function ReplyBar({ messages, accountEmail, accountName }: { messages: MessageDetail[]; accountEmail?: string; accountName?: string }) {
+  const last = [...messages].reverse().find((m) => !m.isSent) ?? messages[messages.length - 1];
+  const who = last ? (last.from.name || last.from.email).split(/\s+/)[0] : "";
+  const me = accountName || accountEmail || "";
+  return (
+    <div className="mt-5 flex h-10 items-center gap-0.5 rounded-[10px] bg-tint pr-1.5 pl-2.5" data-testid="reply-bar">
+      <button type="button" onClick={() => openCompose("reply")} data-testid="quick-reply" className="flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-lg text-left text-sm text-muted-foreground">
+        <span className={cn("flex size-[22px] shrink-0 items-center justify-center rounded-full text-[9.5px] font-semibold", AVATAR_BG[avatarColor(accountEmail ?? me)])}>{initials(me)}</span>
+        <span className="truncate">Responder a {who}…</span>
+      </button>
+      <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" onClick={() => openCompose("replyAll")} data-testid="quick-reply-all">
+        <ReplyAll /> Responder a todos
+      </Button>
+      <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" onClick={() => openCompose("forward")} data-testid="quick-forward">
+        <Forward /> Reenviar
+      </Button>
     </div>
   );
 }
@@ -261,7 +296,8 @@ export function Reader() {
 
   return (
     <section className="flex h-full min-h-0 flex-col bg-background" data-testid="reader">
-      <div ref={toolbarRef} className="drag-region scroll-hairline flex h-[52px] shrink-0 items-center gap-0.5 px-3">
+      <div ref={toolbarRef} className="drag-region scroll-hairline flex h-[52px] shrink-0 items-center gap-3 px-3.5">
+        <div className="flex items-center gap-0.5" role="group" aria-label="Organizar">
         {t?.inTrash || t?.inSpam ? (
           <ToolButton label="Mover a Entrada" onClick={() => act(t.inSpam ? "notSpam" : "moveToInbox")} testId="action-inbox">
             <Inbox />
@@ -277,7 +313,8 @@ export function Reader() {
         <ToolButton label="Spam" keys="!" onClick={() => act("spam")} testId="action-spam">
           <OctagonAlert />
         </ToolButton>
-        <span className="mx-1.5 h-4 w-px bg-border" />
+        </div>
+        <div className="flex items-center gap-0.5" role="group" aria-label="Marcar">
         <ToolButton label="Categoría" keys="l" onClick={() => setApp({ dialog: "categoryPicker", pickerMode: "toggle" })} testId="action-category">
           <Tag />
         </ToolButton>
@@ -288,7 +325,8 @@ export function Reader() {
         <ToolButton key={t?.id ?? "none"} label={t?.starred ? "Quitar destacado" : "Destacar"} keys="s" onClick={() => toggleStar()} testId="action-star" active={t?.starred}>
           <Star className={cn(t?.starred && "fill-star")} />
         </ToolButton>
-        <div className="ml-auto flex items-center gap-0.5">
+        </div>
+        <div className="ml-auto flex items-center gap-0.5" role="group" aria-label="Responder">
           <ToolButton label="Responder" keys="r" onClick={() => openCompose("reply")} testId="action-reply">
             <Reply />
           </ToolButton>
@@ -366,17 +404,7 @@ export function Reader() {
                 })}
               </div>
               <Conversation messages={detail.messages} threadId={detail.thread.id} />
-              <div className="mt-5 flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => openCompose("reply")} data-testid="quick-reply">
-                  <Reply /> Responder
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => openCompose("replyAll")}>
-                  <ReplyAll /> Responder a todos
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => openCompose("forward")}>
-                  <Forward /> Reenviar
-                </Button>
-              </div>
+              <ReplyBar messages={detail.messages} accountEmail={account?.email} accountName={account?.displayName} />
             </>
           )}
         </div>

@@ -1,6 +1,9 @@
 import DOMPurify from "dompurify";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ImageOff } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@unica/ui/components/popover";
+import { Button } from "@unica/ui/components/button";
+import { setApp } from "~/state/app";
 import { mailColors, useAppearance } from "~/lib/appearance";
 import { csp, hasOwnColors, hasRemoteContent } from "~/lib/mail";
 
@@ -42,7 +45,7 @@ export function HtmlBody({ html, cacheKey, remoteImages, localMode, appearance }
   const doc = useMemo(() => {
     const c = mailColors()[paper ? "paper" : "themed"];
     // the CSP is unchanged by theming: local mode keeps the strict policy (allowRemote is false there)
-    return `<!doctype html><html data-mail="${paper ? "paper" : "themed"}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(allowRemote)}"><base target="_blank"><style>html{overflow-y:hidden}html,body{margin:0;padding:0;background:${c.bg};color:${c.fg};font:14px/1.55 -apple-system,BlinkMacSystemFont,"Geist Variable",sans-serif;overflow-wrap:anywhere;color-scheme:${paper ? "light" : mode}}body{padding:16px}img{max-width:100%;height:auto}a{color:${c.link}}table{max-width:100%}</style></head><body>${clean}</body></html>`;
+    return `<!doctype html><html data-mail="${paper ? "paper" : "themed"}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(allowRemote)}"><base target="_blank"><style>html{overflow-y:hidden}html,body{margin:0;padding:0;background:${c.bg};color:${c.fg};font:14px/1.55 -apple-system,BlinkMacSystemFont,"Geist Variable",sans-serif;overflow-wrap:anywhere;color-scheme:${paper ? "light" : mode}}body{padding:${paper ? "16px" : "0"}}img{max-width:100%;height:auto}a{color:${c.link}}table{max-width:100%}</style></head><body>${clean}</body></html>`;
   }, [clean, allowRemote, paper, themeKey, mode]);
 
   useEffect(() => {
@@ -88,27 +91,49 @@ export function HtmlBody({ html, cacheKey, remoteImages, localMode, appearance }
   }, [doc]);
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border">
-      {blocked && (
-        <div className="flex items-center gap-2 border-b border-border bg-muted/60 px-3 py-1.5 text-xs text-muted-foreground" data-testid="remote-blocked">
-          <ImageOff className="size-3.5" />
-          {localMode ? "Contenido remoto bloqueado por el modo local." : "Contenido remoto bloqueado para proteger tu privacidad."}
-          {!localMode && (
-            <button type="button" className="ml-auto font-medium text-primary hover:underline" onClick={() => setAllowRemote(true)}>
-              Cargar imágenes
-            </button>
-          )}
-        </div>
+    <div>
+      {blocked && <RemoteBlocked localMode={localMode} onLoad={() => setAllowRemote(true)} />}
+      {/* themed mail flows on the page with no box; mail with its own colors keeps a borderless paper surface */}
+      <div className={paper ? "overflow-hidden rounded-lg bg-[var(--mail-paper)]" : undefined}>
+        <iframe
+          ref={ref}
+          title="Contenido del correo"
+          sandbox="allow-same-origin allow-popups"
+          srcDoc={doc}
+          style={{ height }}
+          data-mail={paper ? "paper" : "themed"}
+          className="block w-full border-0"
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The remote-content row: a full-width tinted row with a pill on the right.
+ * In local mode the pill only explains (nothing remote is ever loaded there).
+ */
+function RemoteBlocked({ localMode, onLoad }: { localMode: boolean; onLoad: () => void }) {
+  const pill = "ml-auto h-[22px] shrink-0 rounded-full bg-accent px-2.5 text-[11.5px] font-medium text-accent-foreground transition-colors hover:text-foreground";
+  return (
+    <div className="mb-3 flex h-9 items-center gap-2.5 rounded-lg bg-tint pr-1.5 pl-3 text-xs text-muted-foreground" data-testid="remote-blocked">
+      <ImageOff className="size-3.5 shrink-0" />
+      <span className="min-w-0 truncate">{localMode ? "Contenido remoto bloqueado por el modo local." : "Contenido remoto bloqueado para proteger tu privacidad."}</span>
+      {localMode ? (
+        <Popover>
+          <PopoverTrigger render={<button type="button" className={pill} data-testid="remote-why" />}>Cargar contenido…</PopoverTrigger>
+          <PopoverContent align="end" className="w-72 gap-3 text-xs" data-testid="remote-why-popover">
+            <p className="text-sm text-popover-foreground">El modo local no permite cargar contenido remoto: solo se conecta con tus servidores de correo.</p>
+            <Button size="sm" variant="outline" className="self-end" onClick={() => setApp({ dialog: "settings", settingsTab: "general" })}>
+              Abrir Ajustes
+            </Button>
+          </PopoverContent>
+        </Popover>
+      ) : (
+        <button type="button" className={pill} onClick={onLoad} data-testid="remote-load">
+          Cargar contenido
+        </button>
       )}
-      <iframe
-        ref={ref}
-        title="Contenido del correo"
-        sandbox="allow-same-origin allow-popups"
-        srcDoc={doc}
-        style={{ height }}
-        data-mail={paper ? "paper" : "themed"}
-        className="block w-full border-0"
-      />
     </div>
   );
 }

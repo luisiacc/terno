@@ -4,7 +4,7 @@
  * open, and runs of collapsed messages folded into "N mensajes más".
  */
 import { E2E_NOW } from "./constants";
-import { expect, focusList, ingestConversation, selectThread, test } from "./fixtures";
+import { expect, focusList, ingestConversation, openRow, search, selectThread, test } from "./fixtures";
 
 test.describe("reader conversation", () => {
   test("messages are disclosure buttons that work with Enter and Space; collapsed bodies aren't mounted", async ({ app: page, server }) => {
@@ -56,5 +56,22 @@ test.describe("reader conversation", () => {
     await expect(frames).toHaveCount(2);
     await page.getByTestId("message").nth(0).getByTestId("message-toggle").click();
     await expect(frames).toHaveCount(1);
+  });
+
+  test("attachments are view-only tiles: name, type and size, no download control", async ({ app: page }) => {
+    await search(page, "has:adjunto");
+    await openRow(page, 0);
+    const tile = page.getByTestId("attachment").first();
+    await expect(tile).toBeVisible();
+    await expect(tile).toContainText(/\d/);
+    await expect(page.getByTestId("attachment").getByRole("button")).toHaveCount(0);
+  });
+
+  test("the reply bar after the last message starts a reply to who wrote last", async ({ app: page }) => {
+    await openRow(page, 0);
+    const subject = (await page.getByTestId("reader-subject").textContent())!;
+    await expect(page.getByTestId("quick-reply")).toContainText(/Responder a \S+…$/);
+    await page.getByTestId("quick-reply").click();
+    await expect(page.getByTestId("compose-subject")).toHaveValue(`Re: ${subject}`);
   });
 });
