@@ -22,6 +22,8 @@ export type Command =
   | "thread.move"
   | "action.undo"
   | "thread.category"
+  | "thread.print"
+  | "thread.exportPdf"
   | "compose.new"
   | "compose.reply"
   | "compose.replyAll"
@@ -131,6 +133,9 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "?", command: "help.shortcuts" },
   // the platform's Settings shortcut: from anywhere, also while typing or writing a draft (a chord types nothing)
   { keys: "mod+,", command: "settings.open", inEditable: true, inDialog: true },
+  // the platform's print chords resolve everywhere (else the browser prints the app's own window); the dispatcher decides if they apply
+  { keys: "mod+p", command: "thread.print", inEditable: true, inDialog: true },
+  { keys: "mod+shift+p", command: "thread.exportPdf", inEditable: true, inDialog: true },
   { keys: "y", command: "suggestion.accept" },
   { keys: "n", command: "suggestion.reject" },
   { keys: "1", command: "snackbar.action1", context: "snackbar" },

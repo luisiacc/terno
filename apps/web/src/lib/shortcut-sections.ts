@@ -47,6 +47,8 @@ export const SECTIONS: { title: string; rows: [Command, string][] }[] = [
       ["thread.category", "Categorías"],
       ["thread.move", "Mover a…"],
       ["action.undo", "Deshacer"],
+      ["thread.print", "Imprimir"],
+      ["thread.exportPdf", "Exportar como PDF"],
     ],
   },
   {
