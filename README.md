@@ -14,6 +14,7 @@ Terno is a minimalist, keyboard-first, extremely fast desktop email client for m
 - A quiet, Apple-Mail-like interface: conversations without boxes (hairlines and faint surfaces), replies and new messages written in place (no dialogs), drafts that are never lost (saved as you type, restored after a restart).
 - 13 themes (Terno, Apple, Solarized, Gruvbox, GitHub, Catppuccin, Dracula, Monokai, Tokyo Night, Nord) with a light and a dark choice for system mode, your own themes as JSON, all checked for WCAG AA contrast; animations you can set to 0/50/75/100 ms (Ajustes → Apariencia); reduced transparency respected.
 - An MCP server so **Claude Code** and **Codex** get one access point to all your email.
+- Printing and PDF (⌘P, ⇧⌘P, Archivo, the reader's printer button, or a right-click on a conversation or a single message): with headers or just the content, quoted history hidden or kept, Letter or A4, previewed as the exact page that prints; wide mail is fitted to the page and nothing leaves the Mac ([plan 09](docs/plans/09-print.md)).
 - Settings (⌘, or the gear, or "Ajustes → …" in ⌘K) where everything shown can be changed: per-account name, sender name, color, signature, sync window, reconnect and removal; categories renamed, recolored, reordered and deleted; filters; themes including your own JSON ones; the MCP token; export and import ([plan 08](docs/plans/08-settings-pass.md)).
 
 The technical plan, and the design review held with Codex before implementation, live in [`docs/PLAN.md`](docs/PLAN.md).
@@ -121,6 +122,7 @@ Web: Page ──MessagePort──▶ Dedicated Worker (the tab holding the Web L
 | Continuous scroll across 2,000 threads (3 s fling, both densities): frame interval · longest frame | ≤ 20 ms · ≤ 50 ms | 16.8 ms · 16.8 ms |
 | Expanding 19 messages of a conversation (5 HTML): frame interval · longest frame | ≤ 20 ms · ≤ 50 ms | 16.8 ms, nothing left mounted when collapsed |
 | Inline reply: keypress → first frame showing it · that frame → expansion done | ≤ 50 ms · ≤ 133 ms | ~15 ms · ~115–126 ms |
+| Print document for a 100-message conversation → built | ≤ 30 ms | ~9 ms |
 
 **Packaged app** (`pnpm test:smoke`): about 0.5 s from a warm start to the first mail painted.
 
@@ -166,6 +168,7 @@ What the tests cover:
 - `nodemailer` against an in-process SMTP server, including the "connection lost after DATA" case.
 - Gmail against a fake Google that verifies PKCE.
 - The MCP server end to end.
+- Printing from real PDFs: every print fixture (long quoted threads, inline replies, a newsletter, a 1000px table, CJK and emoji, long URLs, images, a hostile subject) exported through Chromium on the web and through Electron's `printToPDF` in the packaged app, read back with pdfjs-dist (page size, text present and absent, footer, nothing outside the printable box) and compared against rendered-page baselines.
 
 ## Agents (MCP + Skill)
 

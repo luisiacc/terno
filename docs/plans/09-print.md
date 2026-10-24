@@ -1,6 +1,6 @@
 # Plan 09: printing and PDF
 
-- **Status:** proposed.
+- **Status:** shipped (§10).
 - **Builds on:** 7b65035 (the rename to Terno shipped).
 - **Request:** "Nice print options, ability to print with only the contents of the email and not the metadata like title, sender, etc., allow PDF prints. Have tests and visually verify the quality of the prints."
 
@@ -198,3 +198,58 @@ These revisions override the sections above where they conflict. The full review
     - The live page count is dropped from v1.
     - The PDF is written to an exclusive, randomly named sibling temp file with mode 0600, renamed into place, and the temp file is removed in `finally`.
     - "Mostrar en Finder" is tied to the export that produced that file.
+
+## 10. As shipped
+
+Commits `8866856..3701dba`, plus this note.
+
+### The hidden-window print proof
+
+Run first, on Electron 45.0.0, macOS (Darwin 25.6), with a scratch app: a `show: false` window on an in-memory partition, its document served by `session.fromPartition(...).protocol.handle`, JS off.
+
+- `printToPDF` from the hidden window works, and is what every export uses.
+- `webContents.print({ silent: false })` on this Mac, which has **no printer configured**, never shows a dialog. Electron fails it at once with "No printers available on the network", and the callback returns cleanly. A visible window behaves the same, so the visible-window fallback was not built: it would change nothing here.
+- The sheet maps that failure to "No hay impresoras configuradas" and points to «Guardar PDF…». The packaged smoke checks this whenever `lpstat` lists no printer.
+- Not exercised: the dialog itself (cancel, the system PDF menu). Adding a printer changes the Mac's system configuration, so I left it alone. The code holds no timer while the dialog is up, and reports "submitted", "cancelled" or "failed".
+
+### Departures from the plan
+
+- **Fitting zooms only the block that runs over**, such as a 1000px table, instead of the whole body, so the text around it keeps its size. If something still runs over, the whole body is zoomed as before. MIN_ZOOM is still 0.5, and past it the content wraps.
+- **Page breaks.** A message shorter than a third of a page is kept on one page, and paragraphs keep three lines on each side of a break. The first PDFs showed a signature stranded alone on a page.
+- **Images that can't load** in the page print as their description, like `cid:` images: relative sources and unknown schemes. Before, they printed a broken-image icon.
+- **One quote rule.** `lib/quote.ts` is shared with the reader, so `TextBody` now folds only a trailing quote too. An inline reply is no longer hidden behind "•••".
+- **The sheet.**
+  - The scope reads "Conversación (N)" / "Solo este mensaje"; "Toda la conversación (N)" doesn't fit a segment.
+  - The options are a macOS segmented control (a track with the chosen segment raised): with outline toggles on the tint group, the chosen state couldn't be seen.
+  - The buttons stay focusable while the preview settles, so focus starts on the action of the entry point (Return prints, or saves after ⇧⌘P).
+  - The preview dims while a rebuild is pending.
+- **Print inks** live in `packages/ui/src/themes/print.ts`, with a contrast test: every text ink is AA on white. App code holds no literal colors.
+- **Right-click in a message.** On the web, the browser's own menu stays for selected text, links and images. On the desktop, which has no other menu there, it's always the message menu.
+- **Web «Imprimir…»** closes the sheet when `print()` returns: the page can't tell a print from a cancel.
+- **The footer** puts the subject on the left and "N / M" on the right, both 8pt grey and aligned with the text.
+- **`TERNO_TEST_PDF_DIR`** is honored only in an unpackaged build or with the demo mailbox, never for real mail in a release.
+- **The 100-message timing** is a gate in `test:ui-perf` (Chromium, production build): about 9 ms p95 against 30 ms. DOMPurify needs a DOM, and jsdom timings aren't representative. The unit tests run `print.ts` on jsdom.
+- **Fixtures** live in `@terno/mock-data` (`printFixtures`). The e2e suites ingest them into each test's own backend, so no other test's counts or baselines moved. `seed.ts --print-fixtures` seeds them into a profile for the desktop checks.
+
+### Verification
+
+- **Real desktop PDFs.** The print smoke exported every fixture plus a seeded demo conversation, in both modes and on both papers, through Electron's `printToPDF`: 36 PDFs, 47 pages, first from the dev build and then from the packaged app. I rasterized them with `pdftoppm -r 70` and inspected them; the scratch PNGs are in `/tmp/unica-scratch/print-09/`. They showed the three problems fixed in `85a8515`. After the fixes, the pages are:
+  - clean, with near-black text on white in either app theme;
+  - free of clipping;
+  - showing no header text at all in content-only;
+  - wrapping CJK, emoji and long URLs inside the margins.
+- **The sheet**, screenshotted at 1440×900 @2x in light and dark.
+- **Test runs:**
+  - `pnpm test`: 1,433 + 390 (db-wasm).
+  - `pnpm test:e2e`: 198, of which 9 are in `print.spec.ts` and 8 in `print-quality.spec.ts` (43 PDF-page baselines).
+  - `pnpm test:web`: 27.
+  - `pnpm test:ui-perf`: 16/16.
+  - `pnpm test:perf`: 102.
+  - `pnpm test:smoke` on the packaged app: 21, of which 12 are print.
+
+### Known limitations
+
+- The native print dialog wasn't exercised (see above).
+- On the web, the browser's own headers and footers can only be turned off by the user; the hint says how.
+- A newsletter's table rows can't split, so a page may end early, with the rest of its background showing.
+- The web preview is one continuous sheet, not paged, and there is no page count (both dropped from v1).
