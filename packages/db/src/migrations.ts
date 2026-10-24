@@ -689,6 +689,13 @@ export const MIGRATIONS: readonly Migration[] = [
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;
 
+/**
+ * The last migration that changed what the instant search index holds (its
+ * snapshots carry it). v8 only touched the move journal: snapshots written
+ * at v7 stay valid, so an upgrade restores instead of rebuilding.
+ */
+export const SEARCH_SCHEMA_VERSION = 7;
+
 export function migrate(db: Db): { from: number; to: number } {
   const from = Number((db.get<{ user_version: number }>("PRAGMA user_version"))!.user_version);
   if (from > SCHEMA_VERSION) {

@@ -122,7 +122,7 @@ import {
 } from "./mail";
 import type { Key, MemDb } from "./mem";
 import { IdbProviderStore } from "./provider-store";
-import { createMemDb, EARLY_TABLES, idbExists, LATE_TABLES, LOGICAL_SCHEMA, loadAll, openIdb, persist, readAll, readLazy, writeMeta } from "./schema";
+import { createMemDb, EARLY_TABLES, idbExists, LATE_TABLES, LOGICAL_SCHEMA, loadAll, SEARCH_SCHEMA, openIdb, persist, readAll, readLazy, writeMeta } from "./schema";
 import { sameRevision, SearchCancelledError } from "@unica/store";
 import { appendOutbox, checkCursor, columnsOf, materializeChanges, pageOf, planScan, scanPage, searchChangeIds, searchHead } from "./search";
 
@@ -201,7 +201,7 @@ export class IdbMailStore implements MailStore {
         feed: this.feed,
         platform: o.platform,
         snapshotPath: o.platform.files ? `/${o.name}.idb.search` : null,
-        identity: `idb-schema-${LOGICAL_SCHEMA}`,
+        identity: `idb-schema-${SEARCH_SCHEMA}`,
         log: this.log,
       });
       this.instant.start();

@@ -105,7 +105,7 @@ import {
   updateCategory,
 } from "./repos";
 import { beginSearchBuild, materializeChanges, searchChangeIds, searchHead } from "./outbox";
-import { SCHEMA_VERSION } from "./migrations";
+import { SEARCH_SCHEMA_VERSION } from "./migrations";
 import { findRuleMatches } from "./rules";
 import { ftsTermMessages, resolveQuery } from "./search";
 import { Fts5SearchEngine } from "./search-engine";
@@ -180,7 +180,7 @@ export class SqlMailStore implements MailStore {
         feed: this.feed,
         platform,
         snapshotPath: db.path === ":memory:" ? null : `${db.path}.search`,
-        identity: `sqlite-schema-${SCHEMA_VERSION}`,
+        identity: `sqlite-schema-${SEARCH_SCHEMA_VERSION}`,
         // inside the store's unit of work, like the engine's own answer
         phrases: (term) => ftsTermMessages(db, term),
         log: this.log,
