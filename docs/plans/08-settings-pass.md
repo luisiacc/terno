@@ -1,6 +1,6 @@
 # Plan 08: settings pass (reachable, accessible, editable)
 
-- **Status:** audit done; fixes in progress.
+- **Status:** shipped (§5).
 - **Builds on:** plan 07 as shipped (`52d1027..f3ba8d6`): General is inset-grouped; every other tab kept its own layout.
 - **Request:** "Go through settings and make sure all pages are accessible and everything inside them is editable."
 
@@ -83,3 +83,24 @@ Every tab but General keeps a pre-plan-07 layout (boxed rows, `border-border` di
 ## 4. Not made editable (and why)
 
 - **Keyboard shortcuts:** shown as a reference (`?`, and now from General); custom bindings would need a binding store, conflict detection and every surface reading user bindings — a feature of its own.
+
+## 5. Outcome
+
+Shipped in the order of §3, with these departures:
+
+- **Contrast on tint.** The first attempt (commit 5) made `tint` fainter until errors, "saved", links and the ring all read on it; that left Apple's groups white and Única's barely visible. `tint` is plan 07's again; two derived tokens, `destructive-ink` and `success-ink` (stepped to 4.5:1 on background, tint and menus), carry error, destructive and "saved" text in settings, the ring's alpha also reaches 3:1 on tint and the sidebar, and add buttons on tint are ink rather than primary text. 74 pairs per theme now.
+- **Settings tabs activate on focus** (System Settings' sidebar): ↑/↓ moves and shows.
+- **⌘, works from anywhere**, a draft included (a chord types nothing).
+- **The signature is not written into the draft**: like the quote, it is kept apart (shown under the draft, "-- " plus the account's signature) and joined only when sending, so a restored draft never carries it twice and changing the From account changes it.
+- **Reconnect on the Mac** goes through the same sign-in as adding (Google for the same address, or the IMAP password checked by a live login); the secret is written only if the mailbox is still the same one.
+- **Import never makes an install less private**: local mode can only come on and agent sending only go off. Filters naming a mailbox that isn't connected are left out (by name) instead of changing meaning.
+- **The storage engine switch** carries what can't be re-synced through an export kept in sessionStorage for the reload; the mailbox in the previous engine stays, so switching back finds it.
+- **Colour picks** show at once and go back if the save fails.
+
+Tests: `pnpm test` 1,327 + 386 (db-wasm), new: account and category conformance on every adapter, `settings-edits.test.ts` (accounts.update/reconnect, per-account sync window, categories, app.import), token rotation on the socket, signature in `sendBody`, sync-window parsing, ⌘, binding. `pnpm test:e2e` 178 (20 in `settings-pass.spec.ts`: every tab from gear/palette/keyboard, every control edited and checked after a reload and where it shows, axe with nothing serious in light and dark, axe contrast on every tab in all 13 themes, 980×600, motion). `pnpm test:web` 20 (engine switch and back, import, Ajustes → Datos). `test:ui-perf` 15/15, packaged smoke 6/6.
+
+## 6. Still not editable
+
+- **Keyboard shortcuts** (§4).
+- **The desktop storage engine**: one adapter (SQLite in the app's folder); Datos shows export/import only.
+- **The owner on a demo build**: demo installs have no Única account by design.
