@@ -701,10 +701,12 @@ ALTER TABLE cat_move_rows_v8 RENAME TO cat_move_rows;
 /**
  * v10: every op takes the next global sequence number (max(seq) + 1); without
  * an index on seq that read scanned every op, so a bulk action queueing
- * thousands paid for all the earlier ones on each insert.
+ * thousands paid for all the earlier ones on each insert. And "select all N"
+ * pages an account's threads by id: the account indexes are by date.
  */
 const OPS_SEQ_V10 = `
 CREATE INDEX ops_seq ON ops(seq);
+CREATE INDEX threads_account_id ON threads(account_id, id);
 `;
 
 export const MIGRATIONS: readonly Migration[] = [
@@ -717,7 +719,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 7, name: "search outbox", sql: OUTBOX_V7 },
   { version: 8, name: "exclusive moves", sql: EXCLUSIVE_MOVES_V8 },
   { version: 9, name: "drafts v2", sql: DRAFTS_V9 },
-  { version: 10, name: "ops sequence index", sql: OPS_SEQ_V10 },
+  { version: 10, name: "ops sequence and account id indexes", sql: OPS_SEQ_V10 },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

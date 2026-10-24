@@ -342,3 +342,27 @@ describe("migration v10: the next op's sequence number", () => {
     expect(plan).not.toMatch(/ops_account/);
   });
 });
+
+describe("scope pages walk an index in key order", () => {
+  it("every view, account and category scope pages without a temporary sort", async () => {
+    const { scopeIdsSql } = await import("./queries");
+    const dir = mkdtempSync(join(tmpdir(), "unica-scopeplan-"));
+    dirs.push(dir);
+    const db = new Db(nodeSqliteDriver, join(dir, "plan.db"));
+    dbs.push(db);
+    migrate(db);
+    db.exec("ANALYZE");
+    for (const p of [
+      { view: "all" as const },
+      { view: "inbox" as const, accountId: 1 },
+      { view: "archive" as const, accountId: 1 },
+      { view: "all" as const, categoryId: 1 },
+      { view: "inbox" as const, categoryId: 1, accountId: 1 },
+    ]) {
+      const q = scopeIdsSql({ ...p, after: 0, limit: 500 });
+      const plan = db.all<{ detail: string }>(`EXPLAIN QUERY PLAN ${q.sql}`, ...q.params).map((r) => r.detail).join(" | ");
+      expect(plan, JSON.stringify(p)).not.toMatch(/TEMP B-TREE/);
+      if (p.accountId !== undefined && p.categoryId === undefined) expect(plan, JSON.stringify(p)).toMatch(/threads_account_id/);
+    }
+  });
+});

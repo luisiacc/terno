@@ -99,13 +99,16 @@ export function listThreads(db: Db, p: ListParams): Page {
 }
 
 /** What a view (account/category optional) is, for the id-only scope queries: index-backed, no display columns. */
-function scopeFrom(p: ScopeParams): { from: string; where: string; params: Param[] } {
+function scopeFrom(p: ScopeParams, paged = false): { from: string; where: string; params: Param[] } {
   const where = [VIEW_WHERE[p.view]];
   const params: Param[] = [];
-  let from = "threads t";
+  // pages walk an index in id order and stop at the limit: the threads by key, an account's by (account_id, id),
+  // a category's memberships by (category_id, thread_id); pinned, so the planner never picks a date index and sorts
+  // (a count lets the planner pick: a view's partial index counts fastest)
+  let from = !paged ? "threads t" : p.accountId !== undefined ? "threads t INDEXED BY threads_account_id" : "threads t NOT INDEXED";
   if (p.categoryId !== undefined) {
-    // through the membership index (category_id, thread_id), then the thread by key
-    from = "thread_categories tc JOIN threads t ON t.id = tc.thread_id";
+    // CROSS JOIN keeps the memberships outer (SQLite never reorders it)
+    from = paged ? "thread_categories tc INDEXED BY thread_categories_c CROSS JOIN threads t ON t.id = tc.thread_id" : "thread_categories tc JOIN threads t ON t.id = tc.thread_id";
     where.unshift("tc.category_id = ?");
     params.push(p.categoryId);
   }
@@ -122,11 +125,15 @@ function scopeFrom(p: ScopeParams): { from: string; where: string; params: Param
  * order, any other view the threads by key.
  */
 export function scopeThreadIds(db: Db, p: ScopeParams & { after?: number; limit: number }): number[] {
-  const s = scopeFrom(p);
+  const q = scopeIdsSql(p);
+  return db.all<{ id: number }>(q.sql, ...q.params).map((r) => r.id);
+}
+
+/** The SQL a scope page runs (query-plan tests: an index walk in key order, never a sort). */
+export function scopeIdsSql(p: ScopeParams & { after?: number; limit: number }): { sql: string; params: Param[] } {
+  const s = scopeFrom(p, true);
   const key = p.categoryId !== undefined ? "tc.thread_id" : "t.id";
-  return db
-    .all<{ id: number }>(`SELECT ${key} AS id FROM ${s.from} WHERE ${s.where} AND ${key} > ? ORDER BY ${key} LIMIT ?`, ...s.params, p.after ?? 0, p.limit)
-    .map((r) => r.id);
+  return { sql: `SELECT ${key} AS id FROM ${s.from} WHERE ${s.where} AND ${key} > ? ORDER BY ${key} LIMIT ?`, params: [...s.params, p.after ?? 0, p.limit] };
 }
 
 /** How many threads a view holds, counted (up to `limit`). */
