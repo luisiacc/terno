@@ -376,6 +376,12 @@ export function threadDraftKey(drafts: Record<string, LocalDraft>, threadId: num
   return best?.key ?? null;
 }
 
+/** The draft a conversation shows inline: the one opened explicitly for it, else its most recent. */
+export function shownDraftKey(drafts: Record<string, LocalDraft>, threadId: number, shown: { threadId: number; key: string } | null): string | null {
+  if (shown && shown.threadId === threadId && drafts[shown.key]) return shown.key;
+  return threadDraftKey(drafts, threadId);
+}
+
 /** For list rows: does this conversation have a draft with something written in it? (one boolean per row) */
 export function useHasDraft(threadId: number): boolean {
   return useDrafts((s) => {

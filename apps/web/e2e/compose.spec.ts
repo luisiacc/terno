@@ -351,6 +351,25 @@ test.describe("new message, in the reader pane", () => {
     await expect(page.getByTestId("compose-body")).toHaveValue("Te contesto luego.");
   });
 
+  test("an older draft of a conversation opens as itself from the strip, not as the newest one", async ({ app: page, server }) => {
+    const db = sqlDb(server.backend.store);
+    const id = await openRow(page, 0);
+    const m = db.get<{ id: number; account_id: number }>("SELECT id, account_id FROM messages WHERE thread_id = ? ORDER BY date DESC LIMIT 1", Number(id))!;
+    const base = { accountId: m.account_id, threadId: Number(id), to: [], cc: [], subject: "Re: x", inReplyToMessageId: m.id };
+    await server.backend.store.drafts.save({ ...base, mode: "forward", bodyText: "Versión vieja", inReplyToMessageId: null, forwardOfMessageId: m.id, subject: "Fwd: x" }, Date.now() - 60_000);
+    await server.backend.store.drafts.save({ ...base, mode: "reply", bodyText: "Versión nueva" }, Date.now());
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`).dispatchEvent("mousedown");
+    await expect(page.getByTestId("draft-collapsed").or(page.getByTestId("composer"))).toContainText(/Versión nueva/);
+    await page.getByTestId("strip-item").filter({ hasText: "Fwd: x" }).click();
+    await expect(composer(page)).toHaveAttribute("data-mode", "forward");
+    await expect(page.getByTestId("compose-body")).toHaveValue("Versión vieja");
+    // the newest is untouched, and now waits in the strip
+    await expect(page.getByTestId("strip-item").filter({ hasText: "Re: x" })).toBeVisible();
+    expect(db.get<{ c: number }>("SELECT count(*) AS c FROM drafts WHERE body_text = 'Versión nueva' AND mode = 'reply'")!.c).toBe(1);
+  });
+
   test("new drafts come back to the strip after a reload", async ({ app: page }) => {
     await page.keyboard.press("c");
     await page.getByTestId("compose-to").fill("ana@example.com");

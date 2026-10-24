@@ -2,8 +2,8 @@ import { cn } from "@unica/ui/lib/utils";
 import { PenLine } from "lucide-react";
 import { useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { openCompose, showNewDraft } from "~/lib/compose";
-import { authored, threadDraftKey, useDrafts, type LocalDraft } from "~/lib/drafts";
+import { focusDraft, showNewDraft } from "~/lib/compose";
+import { authored, setDraftUi, shownDraftKey, useDrafts, type LocalDraft } from "~/lib/drafts";
 import { loadThread } from "~/state/threads";
 import { setApp, useApp } from "~/state/app";
 import { useList } from "~/state/list";
@@ -27,6 +27,7 @@ function recipientsLine(d: LocalDraft): string {
  */
 export function DraftsStrip() {
   const compose = useApp((s) => s.compose?.key ?? null);
+  const shown = useApp((s) => s.draftShown);
   const index = useList((s) => s.index);
   const [expanded, setExpanded] = useState(false);
   const items = useDrafts(
@@ -36,8 +37,8 @@ export function DraftsStrip() {
         if (d.mode === "new") {
           if (authored(d) || d.key === compose) out.push(d);
         } else if (authored(d)) {
-          const shown = d.threadId !== null && index.has(d.threadId) && threadDraftKey(s.drafts, d.threadId) === d.key;
-          if (!shown) out.push(d);
+          const inline = d.threadId !== null && index.has(d.threadId) && shownDraftKey(s.drafts, d.threadId, shown) === d.key;
+          if (!inline) out.push(d);
         }
       }
       return out.sort((a, b) => b.updatedAt - a.updatedAt);
@@ -48,9 +49,10 @@ export function DraftsStrip() {
 
   const open = (d: LocalDraft) => {
     if (d.mode === "new" || d.threadId === null) return showNewDraft(d.key);
-    // a conversation's draft: open that conversation (by id: it needn't be in this list) with the draft
-    setApp({ selectedId: d.threadId, readerOpen: true, compose: null, checked: new Set(), scope: null });
-    void loadThread(d.threadId).then(() => openCompose(d.mode, d.threadId));
+    // a conversation's draft: open that conversation (by id: it needn't be in this list) showing exactly this draft
+    setApp({ selectedId: d.threadId, readerOpen: true, compose: null, checked: new Set(), scope: null, draftShown: { threadId: d.threadId, key: d.key } });
+    setDraftUi(d.key, "open");
+    void loadThread(d.threadId).then(() => focusDraft(d.key, d.mode === "forward" ? "to" : "body"));
   };
 
   return (

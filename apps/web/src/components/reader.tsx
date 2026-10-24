@@ -10,7 +10,7 @@ import { installScrollHairline } from "~/lib/scroll-hairline";
 import { cancelReaderScroll, keepInView } from "~/lib/reader-scroll";
 import { Expand } from "./expand";
 import { DraftSlot } from "./inline-draft";
-import { threadDraftKey, useDrafts } from "~/lib/drafts";
+import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { act, cancelMarkRead, openCompose, scheduleMarkRead, toggleStar } from "~/lib/actions";
 import { acceptSuggestion, rejectSuggestion, removeFromCategory } from "~/lib/categorize";
 import { avatarColor, formatBytes, fullDate, initials, listDate } from "~/lib/format";
@@ -269,7 +269,8 @@ export function Reader() {
     },
     [selectedId],
   );
-  const draftKey = useDrafts((s) => (selectedId === null ? null : threadDraftKey(s.drafts, selectedId)));
+  const draftShown = useApp((s) => s.draftShown);
+  const draftKey = useDrafts((s) => (selectedId === null ? null : shownDraftKey(s.drafts, selectedId, draftShown)));
 
   const toolbarRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);

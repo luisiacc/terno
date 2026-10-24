@@ -7,7 +7,7 @@ import { invalidateThreads, loadThread } from "~/state/threads";
 import { setLastUndo } from "./actions";
 import { convertFields, newFields, replyFields } from "./compose-fields";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
-import { authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markSending, resumeDraft, validRecipients, sendBody, setDraftUi, threadDraftKey, useDrafts, type LocalDraft } from "./drafts";
+import { authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markSending, resumeDraft, validRecipients, sendBody, setDraftUi, shownDraftKey, useDrafts, type LocalDraft } from "./drafts";
 
 /**
  * Writing mail: which draft a reply, reply-all, forward or new message opens,
@@ -20,7 +20,7 @@ const MODE_LABEL: Record<DraftMode, string> = { new: "Mensaje nuevo", reply: "Re
 let seq = 0;
 
 /** Asks the inline draft to take focus (only an explicit open does; coming back to a thread never does). */
-function focusDraft(key: string, target: "body" | "to") {
+export function focusDraft(key: string, target: "body" | "to") {
   setApp({ draftFocus: { key, target, seq: ++seq } });
 }
 
@@ -50,7 +50,7 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
   }
   if (s.scope !== null || s.checked.size >= 2) return;
   const target = mode === "forward" ? "to" : "body";
-  const existingKey = threadDraftKey(useDrafts.getState().drafts, threadId);
+  const existingKey = shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown);
   const existing = existingKey ? useDrafts.getState().drafts[existingKey] : undefined;
   if (existing && existing.mode === mode) {
     setDraftUi(existing.key, "open");
