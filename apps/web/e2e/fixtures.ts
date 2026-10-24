@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { test as base, expect, type Locator, type Page } from "@playwright/test";
 import { sqlDb, startDevServer, type DevServer } from "../../backend-dev/src/server";
 import type { IncomingMessage } from "@terno/store";
+import { seedPrintFixtures } from "@terno/backend";
+import type { PrintFixtureKey } from "@terno/mock-data";
 import { E2E_NOW, TEMPLATE_ENV } from "./constants";
 
 export { expect };
@@ -171,4 +173,11 @@ export async function ingestConversation(server: DevServer, o: { subject: string
   });
   await server.backend.store.sync.ingest(messages, { applyFilters: false, now: o.now, classifier: null });
   return db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = ?", `${key}-0`)!.thread_id;
+}
+
+/** The print fixtures (plan 09), ingested into this test's own backend only. Returns each one's thread id. */
+export async function ingestPrintFixtures(server: DevServer): Promise<Record<PrintFixtureKey, number>> {
+  const first = await seedPrintFixtures(server.backend.store, { now: E2E_NOW });
+  const db = sqlDb(server.backend.store);
+  return Object.fromEntries(Object.entries(first).map(([key, msgId]) => [key, db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = ?", msgId)!.thread_id])) as Record<PrintFixtureKey, number>;
 }
