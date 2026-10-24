@@ -112,7 +112,7 @@ function done(tx: IDBTransaction): Promise<void> {
   });
 }
 
-export const databaseName = (name: string) => `unica-${name}`;
+export const databaseName = (name: string) => `terno-${name}`;
 
 /**
  * Opens (creating) the mailbox's database. A database written by a newer

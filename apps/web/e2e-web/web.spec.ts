@@ -82,12 +82,12 @@ test("an open error never swaps the mailbox for an empty one", async ({ page }) 
   await expect(page.getByTestId("mac-banner")).toBeVisible();
   const before = await rows(page).count();
   // the mailbox is pinned to the adapter it was created with; pretend that one is gone
-  await page.evaluate(() => localStorage.setItem("unica:storage:unica", "no-such-store"));
+  await page.evaluate(() => localStorage.setItem("terno:storage:terno", "no-such-store"));
   await page.reload();
   await expect(page.getByTestId("web-fatal")).toBeVisible();
   await expect(page.getByTestId("web-fatal")).toContainText("no se creó un buzón nuevo");
   // an explicit ?storage= that isn't available is refused the same way
-  await page.evaluate(() => localStorage.removeItem("unica:storage:unica"));
+  await page.evaluate(() => localStorage.removeItem("terno:storage:terno"));
   await page.goto("/?demo=400&storage=nope");
   await expect(page.getByTestId("web-fatal")).toBeVisible();
   // the stored mailbox is untouched
@@ -338,7 +338,7 @@ test("Ajustes → Datos: an export imports into another mailbox (categories by n
   await page.getByTestId("tab-data").click();
   const input = page.getByTestId("data-import-input");
   await input.setInputFiles({ name: "malo.json", mimeType: "application/json", buffer: Buffer.from("{}") });
-  await expect(page.getByTestId("data-import-error")).toContainText("No es una exportación de Única");
+  await expect(page.getByTestId("data-import-error")).toContainText("No es una exportación de Terno");
   await input.setInputFiles({ name: "terno.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(dump)) });
   await expect(page.getByTestId("data-import-error")).toHaveCount(0);
   await expect(page.locator("[data-testid^=nav-category-]").filter({ hasText: "Importada" })).toBeVisible();

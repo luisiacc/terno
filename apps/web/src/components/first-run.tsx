@@ -10,7 +10,7 @@ import { setApp } from "~/state/app";
 import { reconcileSettings } from "~/lib/appearance";
 import { OnboardingNudge } from "~/lib/web-parts";
 
-const STEP_KEY = "unica:first-run";
+const STEP_KEY = "terno:first-run";
 
 /** A local server we found on this Mac, offered as the AI in local mode. */
 type Found = { provider: AiProviderId; label: string; model: string };

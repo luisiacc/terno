@@ -11,7 +11,7 @@ import { getApp, setApp } from "~/state/app";
 type Appearance = Pick<AppSettings, "theme" | "lightTheme" | "darkTheme" | "motionMs" | "customThemes">;
 
 /** What theme.js reads before React (and before the backend answers) on the next launch. */
-export const APPEARANCE_KEY = "unica:appearance";
+export const APPEARANCE_KEY = "terno:appearance";
 export interface CachedAppearance {
   mode: AppSettings["theme"];
   light: string;

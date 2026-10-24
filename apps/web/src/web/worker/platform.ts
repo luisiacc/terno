@@ -1,4 +1,5 @@
 import type { Platform, PlatformFiles } from "@terno/store";
+import { FILES_DIR } from "./legacy-storage";
 
 /**
  * A macrotask yield without setTimeout's 4 ms clamp (nested timers in a
@@ -23,7 +24,7 @@ const notFound = (e: unknown) => e instanceof DOMException && (e.name === "NotFo
  * through createWritable(), which writes a swap file and swaps it in on
  * close: readers see the old or the new bytes, never a mix.
  */
-export async function opfsFiles(dirName = "unica-files"): Promise<PlatformFiles> {
+export async function opfsFiles(dirName = FILES_DIR): Promise<PlatformFiles> {
   const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(dirName, { create: true });
   const name = (path: string) => path.replace(/^\/+/, "").replace(/[/\\]/g, "_");
   return {

@@ -6,7 +6,7 @@ import { useState } from "react";
 /** Where "Descargar para Mac" goes (set VITE_MAC_DOWNLOAD_URL at build time). */
 export const MAC_DOWNLOAD_URL: string = import.meta.env.VITE_MAC_DOWNLOAD_URL || "https://terno.app/mac";
 
-const DISMISSED = "unica:mac-banner-dismissed-at";
+const DISMISSED = "terno:mac-banner-dismissed-at";
 const WEEK = 7 * 86_400_000;
 
 export function DownloadLink({ className, size = "sm", variant = "default" }: { className?: string; size?: "xs" | "sm" | "default"; variant?: "default" | "outline" | "ghost" }) {

@@ -2,7 +2,7 @@ import type { MailStore } from "./mail-store";
 import type { Platform } from "./platform";
 
 export interface StoreOpenOptions {
-  /** the mailbox's name: one database per name ("unica" in production) */
+  /** the mailbox's name: one database per name ("terno" in production) */
   name: string;
   platform: Platform;
   /** answer searches from the in-memory instant index when it is current (default); false: the durable path only (FTS5, or an exact scan) */

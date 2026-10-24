@@ -116,9 +116,9 @@ test("a legacy profile is renamed, its secrets sealed again under the new keycha
   const opened = await app.evaluate(({ safeStorage }, blobs) => blobs.map((b) => safeStorage.decryptString(Buffer.from(b))), rows.map((r) => [...r.blob]));
   expect(opened).toEqual(Object.values(SECRETS));
 
-  // the renderer's localStorage came along from app://unica
+  // the renderer's localStorage came along from app://unica, under Terno's key names
   expect(page.url()).toBe("app://terno/");
-  expect(await page.evaluate(() => localStorage.getItem("unica:first-run"))).toBe("done");
+  expect(await page.evaluate(() => [localStorage.getItem("terno:first-run"), localStorage.getItem("unica:first-run")])).toEqual(["done", null]);
   await app.close();
 });
 

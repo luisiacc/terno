@@ -28,7 +28,7 @@ const WebGate = import.meta.env.VITE_TARGET === "web" ? lazy(() => import("./web
 
 /** Fresh install: no mailboxes, no owner, not a demo, and the first-run steps not finished. */
 function needsFirstRun(): boolean {
-  return localStorage.getItem("unica:first-run") !== "done";
+  return localStorage.getItem("terno:first-run") !== "done";
 }
 
 function Fatal({ message }: { message: string }) {

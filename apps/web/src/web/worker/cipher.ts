@@ -1,6 +1,6 @@
 import type { SecretCipher } from "@terno/backend/portable";
 
-const DB = "unica-keys";
+const DB = "terno-keys";
 const STORE = "keys";
 const KEY_ID = "secrets-v1";
 const VERSION = 1;

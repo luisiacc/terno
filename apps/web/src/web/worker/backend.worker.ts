@@ -12,6 +12,7 @@ import { adaptPageCache, cacheBytesFor, databaseBytes, setCacheBytes, sqlDb, Sql
 import type { MailStore, Platform } from "@terno/store";
 import type { PageToWorker, WorkerInit, WorkerToPage } from "../protocol";
 import { webCipher } from "./cipher";
+import { migrateLegacyFiles, migrateLegacyIdb, migrateLegacyPool } from "./legacy-storage";
 import { opfsFiles, webPlatform } from "./platform";
 import { webRegistry } from "./providers";
 import { webStores } from "./stores";
@@ -80,12 +81,32 @@ async function start(init: WorkerInit): Promise<void> {
     post({ type: "fatal", code: "BUILD_MISMATCH", message: `This tab (${init.build}) and its worker (${BUILD}) come from different builds` });
     return;
   }
-  // the key store first: it must not queue behind the mailbox's own reads
+  // Única's storage takes its Terno names first (this tab holds both Web Locks); a failure deletes nothing and opens nothing
+  const migrationFailed = (error: unknown) =>
+    post({ type: "fatal", code: "OPEN_FAILED", message: `No se pudo pasar tu correo de Única a Terno (${error instanceof Error ? error.message : String(error)}). No se ha borrado nada: recarga para volver a intentarlo.` });
+  const moved: string[] = [];
+  const note = (message: string) => console.warn(`[storage] ${message}`);
+  try {
+    moved.push(...(await migrateLegacyIdb(indexedDB, init.name, note)));
+  } catch (error) {
+    return migrationFailed(error);
+  }
+  // the key store next: it must not queue behind the mailbox's own reads
   const cipherReady = webCipher();
   const sqlite3 = await sqlite3InitModule();
   mark("wasm");
   const stores = webStores(sqlite3);
   release = stores.release;
+  try {
+    const root = await navigator.storage?.getDirectory?.().catch(() => null);
+    if (root) moved.push(...(await migrateLegacyPool(root, sqlite3, stores.pool, note)), ...(await migrateLegacyFiles(root, note)));
+  } catch (error) {
+    return migrationFailed(error);
+  }
+  if (moved.length) {
+    console.info(`[storage] moved from Única's names:\n${moved.join("\n")}`);
+    mark("legacyMoved");
+  }
   const choice = await stores.registry.pick({ name: init.name, requested: init.requestedStorage, pinned: init.pinnedStorage }).catch((error: unknown) => ({
     adapter: null,
     reason: "unavailable" as const,

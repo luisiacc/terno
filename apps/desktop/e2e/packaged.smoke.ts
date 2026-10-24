@@ -55,14 +55,14 @@ test("the window follows the theme: native theme, vibrancy and background, remem
   expect(await page.evaluate(() => document.documentElement.hasAttribute("data-vibrancy"))).toBe(true);
   // a named palette renders exactly: opaque window in its own background
   await page.evaluate(() => {
-    localStorage.setItem("unica:appearance", JSON.stringify({ mode: "dark", light: "terno-light", dark: "nord", motion: 75, vibrancy: { light: true, dark: false } }));
+    localStorage.setItem("terno:appearance", JSON.stringify({ mode: "dark", light: "terno-light", dark: "nord", motion: 75, vibrancy: { light: true, dark: false } }));
     (window as any).ternoDesktop.setAppearance({ themeSource: "dark", background: "#2e3440", vibrancy: false });
   });
   await expect.poll(read).toMatchObject({ themeSource: "dark", background: "#2e3440", vibrancy: false });
   expect(await app.evaluate(({ nativeTheme }) => nativeTheme.themeSource)).toBe("dark");
   // put it back for the rest of the suite
   await page.evaluate(() => {
-    localStorage.removeItem("unica:appearance");
+    localStorage.removeItem("terno:appearance");
     (window as any).ternoDesktop.setAppearance({ themeSource: "system", background: "#fcfcfa", vibrancy: true });
   });
   await expect.poll(read).toMatchObject({ themeSource: "system", vibrancy: true });

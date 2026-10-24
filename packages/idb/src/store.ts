@@ -147,7 +147,7 @@ const FLAG_COLUMNS: Record<string, string> = { isRead: "is_read", isStarred: "is
 const NO_CLASSIFICATION: ClassifyResult = { deltas: [], auto: new Map(), touched: new Set(), suggested: 0, uncertain: [], backfill: 0 };
 
 export interface IdbMailStoreOptions {
-  /** the mailbox: one IndexedDB database per name (unica-<name>) */
+  /** the mailbox: one IndexedDB database per name (terno-<name>) */
   name: string;
   /** the browser's indexedDB (fake-indexeddb in Node tests) */
   factory: IDBFactory;

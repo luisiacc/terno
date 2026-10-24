@@ -4,7 +4,7 @@ import { idbAdapter } from "@terno/idb";
 import { StoreRegistry, type StoreAdapter } from "@terno/store";
 import { WEB_SEARCH_MEMORY } from "@terno/store/instant";
 
-export const DEFAULT_MAILBOX = "unica";
+export const DEFAULT_MAILBOX = "terno";
 
 /** OPFS's synchronous access handles exist only in dedicated workers (Chrome 108+, Safari 16.4+, Firefox 111+). */
 const hasSyncHandles = () => typeof FileSystemFileHandle !== "undefined" && "createSyncAccessHandle" in FileSystemFileHandle.prototype;
@@ -23,9 +23,9 @@ export class OpfsSqliteAdapter implements StoreAdapter {
 
   constructor(private readonly sqlite3: Sqlite3Static) {}
 
-  private install(): Promise<SAHPoolUtil> {
-    // installation failures (another tab still holds the handles, storage errors) surface to open(): never "unavailable"
-    this.pool ??= this.sqlite3.installOpfsSAHPoolVfs({ name: "unica-sahpool", directory: ".unica-sahpool", initialCapacity: 8, preserveOnInitFailure: true }).catch((error) => {
+  /** The pool (installed once). Failures (another tab still holds the handles, storage errors) surface to open(): never "unavailable". */
+  install(): Promise<SAHPoolUtil> {
+    this.pool ??= this.sqlite3.installOpfsSAHPoolVfs({ name: "terno-sahpool", directory: ".terno-sahpool", initialCapacity: 8, preserveOnInitFailure: true }).catch((error) => {
       this.pool = null;
       throw error;
     });
@@ -62,8 +62,8 @@ export class OpfsSqliteAdapter implements StoreAdapter {
  * sync handles are missing (it passed conformance in Node and Chromium and
  * the web-perf budgets at 10k and 50k before becoming automatic).
  */
-export function webStores(sqlite3: Sqlite3Static): { registry: StoreRegistry; release(): Promise<void> } {
+export function webStores(sqlite3: Sqlite3Static): { registry: StoreRegistry; release(): Promise<void>; pool(): Promise<SAHPoolUtil> } {
   const opfs = new OpfsSqliteAdapter(sqlite3);
   const registry = new StoreRegistry().register(opfs).register(idbAdapter(indexedDB, { automatic: true }));
-  return { registry, release: () => opfs.release() };
+  return { registry, release: () => opfs.release(), pool: () => opfs.install() };
 }

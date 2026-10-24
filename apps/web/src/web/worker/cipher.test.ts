@@ -14,7 +14,7 @@ it("seals secrets with AES-GCM under one non-extractable key kept as a CryptoKey
   expect(await b.decrypt(sealed)).toBe("refresh-or-api-key ñ");
   // the key can't leave the browser as bytes
   const key = await new Promise<CryptoKey>((resolve, reject) => {
-    const open = indexedDB.open("unica-keys", 1);
+    const open = indexedDB.open("terno-keys", 1);
     open.onsuccess = () => {
       const r = open.result.transaction("keys").objectStore("keys").get("secrets-v1");
       r.onsuccess = () => resolve(r.result as CryptoKey);

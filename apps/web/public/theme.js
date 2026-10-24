@@ -2,8 +2,32 @@
 // the right mode, theme and motion before first paint from the appearance the
 // app cached last time (lib/appearance.ts writes it; a test runs this file).
 (function () {
+  // Once: the keys from when the app was called Única ("unica:*") take their
+  // Terno names, the default mailbox's pin included ("unica" is "terno" now).
+  // A key already under its new name wins; the legacy one goes only once copied.
+  function moveLegacyKeys(store) {
+    try {
+      var legacy = [];
+      for (var i = 0; i < store.length; i++) {
+        var k = store.key(i);
+        if (k && k.indexOf("unica:") === 0) legacy.push(k);
+      }
+      for (var j = 0; j < legacy.length; j++) {
+        var from = legacy[j];
+        var to = from === "unica:storage:unica" ? "terno:storage:terno" : "terno:" + from.slice(6);
+        if (store.getItem(to) !== null) continue;
+        store.setItem(to, store.getItem(from));
+        if (store.getItem(to) !== null) store.removeItem(from);
+      }
+    } catch {}
+  }
+  moveLegacyKeys(localStorage);
   try {
-    var KEY = "unica:appearance";
+    moveLegacyKeys(sessionStorage);
+  } catch {}
+
+  try {
+    var KEY = "terno:appearance";
     var MODES = ["system", "light", "dark"];
     var ID = /^[a-z0-9-]{1,60}$/;
     // the default themes' ids from when the app was called Única (@terno/core LEGACY_THEME_IDS)
@@ -16,11 +40,11 @@
       a = JSON.parse(localStorage.getItem(KEY) || "null");
     } catch {}
     if (!a || typeof a !== "object") {
-      // v1 kept only the mode under unica:theme: convert it once
-      var legacy = localStorage.getItem("unica:theme");
+      // v1 kept only the mode under unica:theme (terno:theme since the move above): convert it once
+      var legacy = localStorage.getItem("terno:theme");
       a = { mode: MODES.indexOf(legacy) >= 0 ? legacy : "system", light: "terno-light", dark: "terno-dark", motion: 75, vibrancy: { light: true, dark: true } };
       localStorage.setItem(KEY, JSON.stringify(a));
-      localStorage.removeItem("unica:theme");
+      localStorage.removeItem("terno:theme");
     }
     var mode = MODES.indexOf(a.mode) >= 0 ? a.mode : "system";
     var dark = mode === "dark" || (mode === "system" && matchMedia("(prefers-color-scheme: dark)").matches);

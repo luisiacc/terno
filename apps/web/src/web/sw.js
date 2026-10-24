@@ -9,7 +9,7 @@
  */
 const BUILD = __TERNO_BUILD__;
 const PRECACHE = __TERNO_PRECACHE__;
-const CACHE = `unica-${BUILD}`;
+const CACHE = `terno-${BUILD}`;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(PRECACHE)));
@@ -18,7 +18,8 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
-      for (const key of await caches.keys()) if (key.startsWith("unica-") && key !== CACHE) await caches.delete(key);
+      // older builds' caches, including those from when the app was called Única ("unica-<build>")
+      for (const key of await caches.keys()) if ((key.startsWith("terno-") || key.startsWith("unica-")) && key !== CACHE) await caches.delete(key);
       await self.clients.claim();
     })(),
   );

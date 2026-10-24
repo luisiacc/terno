@@ -6,9 +6,17 @@ import { isRpcMessage, type RpcClient, type RpcMessage, type Transport } from "@
 import { setWeb, type WebLifecycle } from "./lifecycle";
 import type { PageToWorker, WorkerToPage } from "./protocol";
 
-const LOCK = "unica-backend";
-const TABS = "unica-tabs";
-const TAKEOVER = "unica:takeover";
+const LOCK = "terno-backend";
+const TABS = "terno-tabs";
+const TAKEOVER = "terno:takeover";
+/**
+ * The lock and channel of builds from when the app was called Única. For one
+ * release the leader holds that lock too, so an older tab still open and
+ * this one never have the mailbox open together, and talks on that channel
+ * so they can hand it over (and the older one learns it should reload).
+ */
+const LEGACY_LOCK = "unica-backend";
+const LEGACY_TABS = "unica-tabs";
 const BUILD = import.meta.env.VITE_BUILD_ID;
 const DEMO_BUILD = import.meta.env.VITE_WEB_DEMO === "1";
 /** a closing worker that hasn't released its handles by then is terminated (the browser drops them with it) */
@@ -29,13 +37,13 @@ type TabMessage =
   | { type: "released" }
   | { type: "leader"; build: string };
 
-const pinKey = (name: string) => `unica:storage:${name}`;
+const pinKey = (name: string) => `terno:storage:${name}`;
 /** what a storage switch carries to the other engine (sessionStorage: this tab, this reload) */
-const CARRY = "unica:carry";
+const CARRY = "terno:carry";
 
 /** The mailbox this page opens (demo builds: ?mailbox=). */
 function mailboxName(): string {
-  return (DEMO_BUILD && new URLSearchParams(location.search).get("mailbox")) || "unica";
+  return (DEMO_BUILD && new URLSearchParams(location.search).get("mailbox")) || "terno";
 }
 
 /**
@@ -102,6 +110,7 @@ declare global {
 class Leadership {
   readonly id = crypto.randomUUID();
   readonly tabs = new BroadcastChannel(TABS);
+  readonly legacyTabs = new BroadcastChannel(LEGACY_TABS);
   private giveUp: (() => void) | null = null;
   private granted: (() => void) | null = null;
   private quietUntil = 0;
@@ -114,9 +123,30 @@ class Leadership {
   constructor() {
     // registered before anything starts, so no request is lost while this tab starts its worker
     this.tabs.onmessage = (e: MessageEvent<TabMessage>) => void this.receive(e.data);
+    this.legacyTabs.onmessage = (e: MessageEvent<TabMessage>) => void this.receiveLegacy(e.data);
     addEventListener("pagehide", () => {
-      if (this.giveUp) this.tabs.postMessage({ type: "released" } satisfies TabMessage);
+      if (this.giveUp) this.post({ type: "released" });
     });
+  }
+
+  /** To this build's tabs and to older ones (still called Única) alike. */
+  private post(m: TabMessage): void {
+    this.tabs.postMessage(m);
+    this.legacyTabs.postMessage(m);
+  }
+
+  /**
+   * An older tab: its handoffs and releases count like ours; asked for the
+   * mailbox, the leader doesn't hand it back (that build would open the old,
+   * now empty storage names) but says which build leads, so it offers a reload.
+   */
+  private async receiveLegacy(m: TabMessage): Promise<void> {
+    if (m.type === "takeover") {
+      if (this.leading) this.legacyTabs.postMessage({ type: "leader", build: BUILD } satisfies TabMessage);
+      return;
+    }
+    if (m.type === "leader") return;
+    await this.receive(m);
   }
 
   get leading(): boolean {
@@ -151,15 +181,19 @@ class Leadership {
       const got = await new Promise<boolean>((resolve) => {
         void navigator.locks.request(LOCK, { ifAvailable: true }, async (lock) => {
           if (!lock) return resolve(false);
-          const held = new Promise<void>((r) => (this.giveUp = r));
-          resolve(true);
-          await held;
+          // an older tab leading under the legacy lock keeps the mailbox: neither lock is held then
+          await navigator.locks.request(LEGACY_LOCK, { ifAvailable: true }, async (legacy) => {
+            if (!legacy) return resolve(false);
+            const held = new Promise<void>((r) => (this.giveUp = r));
+            resolve(true);
+            await held;
+          });
         });
       });
       if (got) {
         if (this.poller) clearInterval(this.poller);
         this.poller = null;
-        this.tabs.postMessage({ type: "leader", build: BUILD } satisfies TabMessage);
+        this.post({ type: "leader", build: BUILD });
         this.granted?.();
         return true;
       }
@@ -185,7 +219,7 @@ class Leadership {
   /** "Usar aquí": ask the owner to close its mailbox and hand the lock to this tab. */
   requestTakeover(): void {
     setWeb({ phase: "taking-over" });
-    this.tabs.postMessage({ type: "takeover", from: this.id } satisfies TabMessage);
+    this.post({ type: "takeover", from: this.id });
   }
 
   /** Gives the lock up; `to` names the tab it goes to (others keep waiting). */
@@ -194,12 +228,13 @@ class Leadership {
     if (!giveUp) return;
     this.giveUp = null;
     giveUp();
-    this.tabs.postMessage((to ? { type: "handoff", to } : { type: "released" }) satisfies TabMessage);
+    this.post(to ? { type: "handoff", to } : { type: "released" });
   }
 
   close(): void {
     if (this.poller) clearInterval(this.poller);
     this.tabs.close();
+    this.legacyTabs.close();
   }
 }
 
