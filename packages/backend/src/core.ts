@@ -518,7 +518,8 @@ export class BackendCore {
         ingest: async (messages) => {
           await this.ingestSliced(messages);
         },
-        windowStart: this.now() - (await readSettings(this.store)).syncWindowDays * 86_400_000,
+        // the account's own window, else the general one
+        windowStart: this.now() - ((await this.store.accounts.get(accountId))?.syncWindowDays ?? (await readSettings(this.store)).syncWindowDays) * 86_400_000,
         updateFlags: async (updates) => {
           const touched = new Set<number>();
           await this.runSliced(updates, 200, async (chunk) => {

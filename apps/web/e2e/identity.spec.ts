@@ -35,11 +35,14 @@ test.describe("owner identity", () => {
     await page.getByTestId("open-settings").click();
     await page.getByTestId("tab-accounts").click();
     await expect(page.getByTestId("owner-email")).toHaveText("luis@fastmail.com");
-    const prompts: string[] = [];
-    page.on("dialog", (d) => (prompts.push(d.message()), void d.accept()));
-    await page.getByRole("button", { name: "Quitar luis@fastmail.com" }).click();
-    await expect(page.getByRole("button", { name: "Quitar luis@fastmail.com" })).toHaveCount(0);
-    expect(prompts[0]).toContain("Seguirá siendo tu cuenta Única; cámbiala en Cambiar…");
+    const luis = page.locator("[data-testid=settings-account]").filter({ hasText: "luis@fastmail.com" });
+    await luis.getByTestId("account-toggle").click();
+    await luis.getByTestId("account-remove").click();
+    const confirm = page.getByTestId("account-remove-dialog");
+    await expect(confirm).toContainText("¿Quitar luis@fastmail.com?");
+    await expect(confirm).toContainText("Seguirá siendo tu cuenta Única.");
+    await page.getByTestId("account-remove-dialog-confirm").click();
+    await expect(luis).toHaveCount(0);
     await expect(page.getByTestId("owner-email")).toHaveText("luis@fastmail.com");
     await expect(card).toContainText("su buzón ya no está conectado");
 

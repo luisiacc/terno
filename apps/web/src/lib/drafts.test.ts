@@ -199,6 +199,10 @@ describe("drafts: helpers and restore", () => {
   it("what is sent is what the user wrote, then the kept quote, once", () => {
     expect(sendBody({ bodyText: "Sí, va.\n\n", quotedText: "> hola", includeQuote: true })).toBe("Sí, va.\n\n> hola");
     expect(sendBody({ bodyText: "Sí, va.", quotedText: "> hola", includeQuote: false })).toBe("Sí, va.");
+    // the From account's signature goes between what is written and the quote, behind the "-- " line
+    expect(sendBody({ bodyText: "Sí, va.\n", quotedText: "> hola", includeQuote: true }, "Luis\nAcme Studio\n\n")).toBe("Sí, va.\n\n-- \nLuis\nAcme Studio\n\n> hola");
+    expect(sendBody({ bodyText: "", quotedText: "", includeQuote: false }, "Luis")).toBe("-- \nLuis");
+    expect(sendBody({ bodyText: "Hola", quotedText: "", includeQuote: false }, "  \n")).toBe("Hola");
   });
 
   it("at startup every stored draft comes back; a conversation shows its most recent one", async () => {

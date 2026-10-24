@@ -10,9 +10,49 @@ export interface Account {
   id: AccountId;
   kind: AccountKind;
   email: string;
+  /** what Única shows (sidebar, lists) */
   displayName: string;
   color: string;
+  /** the name on mail sent from it (From:) */
+  senderName: string;
+  /** added below what is written when sending from it ("-- \n" + signature); empty: none */
+  signature: string;
+  /** days of mail its first sync downloads; null: the general setting */
+  syncWindowDays: number | null;
   syncState: AccountSyncState;
+}
+
+/** What the user can change about an account (accounts.update). */
+export interface AccountPatch {
+  displayName?: string;
+  color?: CategoryColor;
+  senderName?: string;
+  signature?: string;
+  syncWindowDays?: number | null;
+}
+
+/** The account preferences kept in its provider config, beside what the provider stores there. */
+export interface AccountPrefs {
+  senderName?: string;
+  signature?: string;
+  syncWindowDays?: number | null;
+}
+
+/** An account's preferences as the renderer sees them, from its stored config. */
+export function accountPrefs(config: AccountPrefs, displayName: string): Pick<Account, "senderName" | "signature" | "syncWindowDays"> {
+  return { senderName: config.senderName || displayName, signature: config.signature ?? "", syncWindowDays: config.syncWindowDays ?? null };
+}
+
+/** The config with a patch's preferences applied (the rest of the patch lives in columns). */
+export function withAccountPrefs<T extends AccountPrefs>(config: T, patch: AccountPatch): T {
+  const next = { ...config };
+  if (patch.senderName !== undefined) next.senderName = patch.senderName;
+  if (patch.signature !== undefined) next.signature = patch.signature;
+  if (patch.syncWindowDays !== undefined) {
+    if (patch.syncWindowDays === null) delete next.syncWindowDays;
+    else next.syncWindowDays = patch.syncWindowDays;
+  }
+  return next;
 }
 
 export interface AccountSyncState {

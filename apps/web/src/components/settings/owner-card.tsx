@@ -7,6 +7,7 @@ import { BadgeCheck, Loader2, UserRound } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { client } from "~/rpc/connection";
+import { SettingsGroup } from "./parts";
 import { setApp } from "~/state/app";
 
 const dateFmt = new Intl.DateTimeFormat("es", { day: "numeric", month: "short", year: "numeric" });
@@ -24,7 +25,7 @@ function ChangeOwner({ owner, accounts, onDone }: { owner: OwnerIdentity; accoun
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const target = candidates.find((a) => a.id === accountId);
-  if (candidates.length === 0) return <p className="mt-3 text-xs text-muted-foreground">Conecta otra cuenta de correo para poder elegirla.</p>;
+  if (candidates.length === 0) return <p className="py-3 text-xs text-muted-foreground">Conecta otra cuenta de correo para poder elegirla.</p>;
 
   const submit = async () => {
     if (!target) return;
@@ -43,7 +44,7 @@ function ChangeOwner({ owner, accounts, onDone }: { owner: OwnerIdentity; accoun
 
   return (
     <form
-      className="mt-3 space-y-2 border-t border-border pt-3"
+      className="space-y-2 py-3"
       data-testid="change-owner"
       onSubmit={(e) => {
         e.preventDefault();
@@ -73,7 +74,7 @@ function ChangeOwner({ owner, accounts, onDone }: { owner: OwnerIdentity; accoun
           </SelectContent>
         </Select>
         {target?.kind === "imap" && (
-          <Input type="password" required autoComplete="off" disabled={busy} className="h-7 w-44" placeholder="Contraseña" aria-label="Contraseña de la cuenta" data-testid="change-owner-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <Input type="password" required autoComplete="off" disabled={busy} className="h-7 w-44 bg-background dark:bg-input/30" placeholder="Contraseña" aria-label="Contraseña de la cuenta" data-testid="change-owner-password" value={password} onChange={(e) => setPassword(e.target.value)} />
         )}
       </div>
       <div className="flex justify-end gap-2">
@@ -90,41 +91,35 @@ function ChangeOwner({ owner, accounts, onDone }: { owner: OwnerIdentity; accoun
 
 export function OwnerCard({ owner, demo, accounts }: { owner: OwnerIdentity | null; demo: boolean; accounts: Account[] }) {
   const [changing, setChanging] = useState(false);
-  if (demo) {
+  if (demo || !owner) {
     return (
-      <div className="flex items-center gap-3 rounded-lg border border-dashed border-border px-3 py-2.5 text-sm text-muted-foreground" data-testid="owner-card">
-        <UserRound className="size-4" /> Modo demo: sin cuenta Única.
-      </div>
-    );
-  }
-  if (!owner) {
-    return (
-      <div className="flex items-center gap-3 rounded-lg border border-dashed border-border px-3 py-2.5 text-sm text-muted-foreground" data-testid="owner-card">
-        <UserRound className="size-4" /> Tu cuenta Única será el primer correo que conectes.
-      </div>
+      <SettingsGroup title="Tu cuenta Única" testId="owner-card">
+        <div className="flex items-center gap-3 py-3 text-sm text-muted-foreground">
+          <UserRound className="size-4 shrink-0" /> {demo ? "Modo demo: sin cuenta Única." : "Tu cuenta Única será el primer correo que conectes."}
+        </div>
+      </SettingsGroup>
     );
   }
   return (
-    <div className="rounded-lg border border-primary/25 bg-accent/40 px-3 py-2.5" data-testid="owner-card">
-      <div className="flex items-start gap-3">
-        <BadgeCheck className="mt-0.5 size-4 shrink-0 text-primary" />
+    <SettingsGroup title="Tu cuenta Única" testId="owner-card" footer="Se usa para iniciar sesión y para la facturación.">
+      <div className="flex items-center gap-3 py-2.5">
+        <BadgeCheck className="size-4 shrink-0 text-primary" aria-hidden />
         <div className="min-w-0 flex-1">
-          <p className="text-sm">
-            Tu cuenta Única: <span className="font-medium" data-testid="owner-email">{owner.email}</span>
+          <p className="truncate text-sm font-medium" data-testid="owner-email">
+            {owner.email}
           </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">Se usa para iniciar sesión y para la facturación.</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {verifiedLine(owner)}
             {owner.accountId === null && " · su buzón ya no está conectado"}
           </p>
         </div>
         {!changing && (
-          <Button variant="outline" size="xs" data-testid="change-owner-open" onClick={() => setChanging(true)}>
+          <Button variant="outline" size="sm" data-testid="change-owner-open" onClick={() => setChanging(true)}>
             Cambiar…
           </Button>
         )}
       </div>
       {changing && <ChangeOwner owner={owner} accounts={accounts} onDone={() => setChanging(false)} />}
-    </div>
+    </SettingsGroup>
   );
 }

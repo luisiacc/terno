@@ -1248,6 +1248,24 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       });
     });
 
+    describe("what settings edit", () => {
+      it("an account's name, color, sender name, signature and sync window round-trip, survive a reopen and leave the provider's own config alone", async () => {
+        let store = await fresh();
+        const [a] = await withAccounts(store, 1);
+        expect(await store.accounts.get(a!)).toMatchObject({ displayName: "Account 0", senderName: "Account 0", signature: "", syncWindowDays: null });
+        await store.accounts.setProviderConfig(a!, { senderName: "Luis", cursor: { historyId: "42" } });
+        const edited = await store.accounts.update(a!, { displayName: "Trabajo", color: "emerald", senderName: "Luis Cordero", signature: "Luis\nAcme Studio", syncWindowDays: 365 });
+        expect(edited).toMatchObject({ displayName: "Trabajo", color: "emerald", senderName: "Luis Cordero", signature: "Luis\nAcme Studio", syncWindowDays: 365 });
+        store = await harness.reopen(store);
+        open.push(store);
+        expect((await store.accounts.list())[0]).toMatchObject({ displayName: "Trabajo", color: "emerald", senderName: "Luis Cordero", signature: "Luis\nAcme Studio", syncWindowDays: 365 });
+        expect((await store.accounts.config<{ cursor: unknown; senderName: string }>(a!))!.config).toMatchObject({ cursor: { historyId: "42" }, senderName: "Luis Cordero" });
+        // null goes back to the general window; an untouched field stays
+        expect(await store.accounts.update(a!, { syncWindowDays: null })).toMatchObject({ syncWindowDays: null, signature: "Luis\nAcme Studio", displayName: "Trabajo" });
+        expect(await store.accounts.update(9999, { displayName: "x" })).toBeNull();
+      });
+    });
+
     describe("durability and migrations", () => {
       it("what a command committed survives a reopen", async () => {
         let store = await fresh();

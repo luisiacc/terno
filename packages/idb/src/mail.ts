@@ -1,4 +1,5 @@
 import {
+  accountPrefs,
   baseSubject,
   BODY_TAIL_TOKENS,
   emailDomain,
@@ -8,6 +9,8 @@ import {
   trailingTokens,
   type Account,
   type AccountKind,
+  type AccountPatch,
+  type AccountPrefs,
   type AccountSyncState,
   type Address,
   type AttachmentInfo,
@@ -24,6 +27,7 @@ import {
   type ThreadSummary,
   type UserActionKind,
   type View,
+  withAccountPrefs,
 } from "@unica/core";
 import type { OwnerIdentity } from "@unica/core/rpc";
 import { AWAITING_AUTH, type DraftInput, type DraftRow, type IncomingMessage, type ListParams, type ModelDelta, type OpRow, type OwnerClaim, type MessageState, type Page, type ScopeParams, type SearchMessageDoc, type SearchThreadDoc } from "@unica/store";
@@ -762,7 +766,15 @@ export function getCounts(c: Ctx): Counts {
 
 const DEFAULT_SYNC: AccountSyncState = { status: "idle", syncedSince: null, bodiesPending: 0, lastError: null, lastSyncAt: null };
 
-const toAccount = (r: R): Account => ({ id: r.id, kind: r.kind, email: r.email, displayName: r.display_name, color: r.color, syncState: { ...DEFAULT_SYNC, ...JSON.parse(r.sync_state) } });
+const toAccount = (r: R): Account => ({
+  id: r.id,
+  kind: r.kind,
+  email: r.email,
+  displayName: r.display_name,
+  color: r.color,
+  ...accountPrefs(JSON.parse(r.provider_config) as AccountPrefs, r.display_name),
+  syncState: { ...DEFAULT_SYNC, ...JSON.parse(r.sync_state) },
+});
 
 const byPosition = (x: R, y: R) => x.position - y.position || x.id - y.id;
 
@@ -792,11 +804,16 @@ export function createAccount(c: Ctx, a: { kind: AccountKind; email: string; dis
   });
 }
 
-export function updateAccount(c: Ctx, id: number, patch: { displayName?: string; color?: string }): Account | null {
+export function updateAccount(c: Ctx, id: number, patch: AccountPatch): Account | null {
   const accounts = T(c, "accounts");
   const r = accounts.get(id);
   if (!r) return null;
-  accounts.update(r, { ...(patch.displayName !== undefined ? { display_name: patch.displayName } : {}), ...(patch.color !== undefined ? { color: patch.color } : {}) });
+  const prefs = patch.senderName !== undefined || patch.signature !== undefined || patch.syncWindowDays !== undefined;
+  accounts.update(r, {
+    ...(patch.displayName !== undefined ? { display_name: patch.displayName } : {}),
+    ...(patch.color !== undefined ? { color: patch.color } : {}),
+    ...(prefs ? { provider_config: JSON.stringify(withAccountPrefs(JSON.parse(r.provider_config) as AccountPrefs, patch)) } : {}),
+  });
   return getAccount(c, id);
 }
 

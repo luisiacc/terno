@@ -14,7 +14,7 @@ import type { MailStore } from "@unica/store";
 /** The part of the store settings live in. */
 export type SettingsStore = Pick<MailStore, "settings" | "secrets">;
 
-type General = Omit<AppSettings, "ai">;
+type General = Omit<AppSettings, "ai" | "gmailClientSecretSet">;
 
 /** What is persisted under settings.app. The renderer only ever sees AppSettings. */
 interface StoredSettings extends Partial<General> {
@@ -116,7 +116,7 @@ export async function readSettings(store: SettingsStore): Promise<AppSettings> {
     capabilities: capabilities[capabilityKey(provider, profile)] ?? null,
     profiles,
   };
-  return { ...resolveThemes({ ...DEFAULT_SETTINGS, ...general }), ai };
+  return { ...resolveThemes({ ...DEFAULT_SETTINGS, ...general }), gmailClientSecretSet: await store.secrets.has("gmailClientSecret"), ai };
 }
 
 export class SettingsError extends Error {}

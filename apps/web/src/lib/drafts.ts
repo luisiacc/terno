@@ -99,9 +99,16 @@ export function validRecipients(text: string): Address[] {
   return parseAddressList(text).filter((a) => isValidEmail(a.email));
 }
 
-/** What is sent: what the user wrote, then the quoted original when it is kept. */
-export function sendBody(d: Pick<LocalDraft, "bodyText" | "quotedText" | "includeQuote">): string {
-  const body = d.bodyText.replace(/\s+$/, "");
+/** The signature block appended below what is written (the "-- " line marks it, so clients can fold it). */
+export function signatureBlock(signature: string): string {
+  const sig = signature.replace(/\s+$/, "");
+  return sig ? `-- \n${sig}` : "";
+}
+
+/** What is sent: what the user wrote, the From account's signature, then the quoted original when it is kept. */
+export function sendBody(d: Pick<LocalDraft, "bodyText" | "quotedText" | "includeQuote">, signature = ""): string {
+  const parts = [d.bodyText.replace(/\s+$/, ""), signatureBlock(signature)].filter(Boolean);
+  const body = parts.join("\n\n");
   return d.includeQuote && d.quotedText ? `${body}\n\n${d.quotedText}` : body;
 }
 

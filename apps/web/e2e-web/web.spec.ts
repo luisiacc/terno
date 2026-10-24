@@ -178,8 +178,9 @@ test("Gmail in the browser: Google's token model through the page, the mailbox s
   await page.getByTestId("open-settings").click();
   const settings = page.getByTestId("settings-dialog");
   await settings.getByTestId("tab-accounts").click();
-  await settings.locator("#gmail-client-id").fill("123-web.apps.googleusercontent.com");
-  await settings.locator("#gmail-client-id").blur();
+  const clientId = settings.getByRole("textbox", { name: "Google OAuth Client ID" });
+  await clientId.fill("123-web.apps.googleusercontent.com");
+  await clientId.blur();
   await settings.getByRole("button", { name: "Añadir cuenta" }).click();
   await page.getByTestId("connect-gmail").click();
   await expect(page.getByText("luis@gmail.com conectada")).toBeVisible();

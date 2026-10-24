@@ -90,6 +90,8 @@ export interface AppSettings {
   ai: AiSettings;
   allowAgentSend: boolean;
   gmailClientId: string;
+  /** a Google OAuth client secret is saved (never the secret itself) */
+  gmailClientSecretSet: boolean;
   syncWindowDays: number;
   /** what the categorization engine may do with new mail */
   autoCategorize: AutoCategorize;
@@ -475,8 +477,22 @@ export const contract = {
   /** web: an access token from Google's token model (the page signs in); connects the mailbox or renews its token */
   "accounts.connectGmailToken": m<Account>()(z.object({ accessToken: z.string().min(1).max(4096), expiresIn: z.number().int().min(60).max(86_400) }), { timeoutMs: 60_000 }),
   "accounts.update": m<Account>()(
-    z.object({ id, displayName: z.string().trim().max(200).optional(), color: z.string().max(40).optional() }),
+    z.object({
+      id,
+      displayName: z.string().trim().min(1).max(200).optional(),
+      color: z.enum(CATEGORY_COLORS).optional(),
+      senderName: z.string().trim().max(200).optional(),
+      signature: z.string().max(10_000).optional(),
+      /** null: the general setting */
+      syncWindowDays: z.number().int().min(7).max(3650).nullable().optional(),
+    }),
   ),
+  /**
+   * Signs a connected mailbox in again (a revoked Gmail grant, a changed IMAP
+   * password): Google for the same address, or the password verified with a
+   * live login. Its waiting actions resume and it syncs.
+   */
+  "accounts.reconnect": m<Account>()(z.object({ id, password: z.string().min(1).max(1000).optional() }), { timeoutMs: 300_000 }),
   "accounts.remove": m<{ ok: true }>()(z.object({ id })),
 
   "settings.update": m<AppSettings>()(settingsPatch),

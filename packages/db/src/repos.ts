@@ -1,13 +1,17 @@
-import type {
-  Account,
-  AccountKind,
-  AccountSyncState,
-  Category,
-  CategoryColor,
-  Filter,
-  FilterRule,
-  OpState,
-  UserActionKind,
+import {
+  accountPrefs,
+  withAccountPrefs,
+  type Account,
+  type AccountKind,
+  type AccountPatch,
+  type AccountPrefs,
+  type AccountSyncState,
+  type Category,
+  type CategoryColor,
+  type Filter,
+  type FilterRule,
+  type OpState,
+  type UserActionKind,
 } from "@unica/core";
 import { addToCategory, removeFromCategory, type AddedBy } from "./categorize";
 import { AWAITING_AUTH, type DraftInput, type DraftRow, type OpRow } from "@unica/store";
@@ -37,6 +41,7 @@ function toAccount(r: AccountRow): Account {
     email: r.email,
     displayName: r.display_name,
     color: r.color,
+    ...accountPrefs(JSON.parse(r.provider_config) as AccountPrefs, r.display_name),
     syncState: { ...DEFAULT_SYNC, ...JSON.parse(r.sync_state) },
   };
 }
@@ -98,10 +103,17 @@ export function accountStamp(db: Db, id: number): { id: number; email: string; c
   return r ? { id, email: r.email, createdAt: r.created_at } : null;
 }
 
-export function updateAccount(db: Db, id: number, patch: { displayName?: string; color?: string }): Account | null {
-  if (patch.displayName !== undefined) db.run("UPDATE accounts SET display_name = ? WHERE id = ?", patch.displayName, id);
-  if (patch.color !== undefined) db.run("UPDATE accounts SET color = ? WHERE id = ?", patch.color, id);
-  return getAccount(db, id);
+export function updateAccount(db: Db, id: number, patch: AccountPatch): Account | null {
+  return db.tx(() => {
+    const row = db.get<{ provider_config: string }>("SELECT provider_config FROM accounts WHERE id = ?", id);
+    if (!row) return null;
+    if (patch.displayName !== undefined) db.run("UPDATE accounts SET display_name = ? WHERE id = ?", patch.displayName, id);
+    if (patch.color !== undefined) db.run("UPDATE accounts SET color = ? WHERE id = ?", patch.color, id);
+    if (patch.senderName !== undefined || patch.signature !== undefined || patch.syncWindowDays !== undefined) {
+      db.run("UPDATE accounts SET provider_config = ? WHERE id = ?", JSON.stringify(withAccountPrefs(JSON.parse(row.provider_config) as AccountPrefs, patch)), id);
+    }
+    return getAccount(db, id);
+  });
 }
 
 export function setAccountSyncState(db: Db, id: number, patch: Partial<AccountSyncState>): void {

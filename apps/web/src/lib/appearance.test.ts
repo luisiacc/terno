@@ -51,6 +51,7 @@ const SERVER: AppSettings = {
   remoteImages: "ask",
   allowAgentSend: false,
   gmailClientId: "",
+  gmailClientSecretSet: false,
   syncWindowDays: 90,
   autoCategorize: "auto",
   aiCategorize: false,

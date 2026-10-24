@@ -1,4 +1,5 @@
 import type {
+  AccountPatch,
   Account,
   AccountKind,
   AccountSyncState,
@@ -343,7 +344,8 @@ export interface MailStore {
       ownerClaim?: Omit<OwnerClaim, "accountId" | "email">;
       now: number;
     }): Promise<{ account: Account; claimed: boolean }>;
-    update(id: number, patch: { displayName?: string; color?: string }): Promise<Account | null>;
+    /** name and color in their columns; sender name, signature and sync window in the provider config, in one unit */
+    update(id: number, patch: AccountPatch): Promise<Account | null>;
     /** the account, its mail and its secrets; the owner row survives with account_id cleared */
     remove(id: number): Promise<void>;
     setSyncState(id: number, patch: Partial<AccountSyncState>): Promise<void>;

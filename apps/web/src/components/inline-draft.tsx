@@ -8,7 +8,7 @@ import { ChevronDown, Forward, PenLine, ReplyAll, Send, Trash2 } from "lucide-re
 import { useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 import { openCompose, sendDraft } from "~/lib/compose";
-import { discardDraft, editDraft, flushDraft, restoreDiscarded, retryDraft, setDraftUi, useDrafts, type DraftFields, type LocalDraft } from "~/lib/drafts";
+import { discardDraft, editDraft, flushDraft, restoreDiscarded, retryDraft, setDraftUi, signatureBlock, useDrafts, type DraftFields, type LocalDraft } from "~/lib/drafts";
 import { avatarColor, initials } from "~/lib/format";
 import { keepInView } from "~/lib/reader-scroll";
 import { setLastUndo } from "~/lib/actions";
@@ -132,6 +132,17 @@ export function SaveState({ d }: { d: LocalDraft }) {
         </>
       )}
     </span>
+  );
+}
+
+/** The From account's signature, as it will be sent below the text (edited in Ajustes → Cuentas). */
+export function SignaturePreview({ accountId, className }: { accountId: number; className?: string }) {
+  const signature = useApp((s) => s.accounts.find((a) => a.id === accountId)?.signature ?? "");
+  if (!signature.trim()) return null;
+  return (
+    <div className={cn("text-sm whitespace-pre-wrap text-muted-foreground", className)} data-testid="compose-signature" aria-label="Firma">
+      {signatureBlock(signature)}
+    </div>
   );
 }
 
@@ -303,6 +314,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account }: { threadId: 
               placeholder={d.mode === "forward" ? "Añade un mensaje…" : "Escribe tu respuesta…"}
               className="block min-h-[132px] w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-base outline-none [field-sizing:content] placeholder:text-muted-foreground"
             />
+            <SignaturePreview accountId={d.accountId} className="px-3.5 pb-2" />
             <Quote d={d} />
             <div className="flex items-center gap-2.5 px-2.5 pt-2 pb-2.5">
               <Button type="submit" size="sm" data-testid="compose-send" aria-busy={d.sending} disabled={d.sending} className="gap-2">

@@ -17,11 +17,31 @@ const WEB = import.meta.env.VITE_TARGET === "web";
  * anything else stays as typed with the reason, announced. Keyed by the
  * stored value by its parent, so a change made elsewhere shows here.
  */
-export function DaysField({ value, onSave, a11y, testId, placeholder }: { value: number | null; onSave: (days: number) => Promise<void>; a11y: { id: string; "aria-describedby"?: string }; testId?: string; placeholder?: string }) {
+export function DaysField({
+  value,
+  onSave,
+  a11y,
+  testId,
+  placeholder,
+  allowEmpty,
+}: {
+  value: number | null;
+  /** null: emptied (only with allowEmpty) */
+  onSave: (days: number | null) => Promise<void>;
+  a11y: { id: string; "aria-describedby"?: string };
+  testId?: string;
+  placeholder?: string;
+  allowEmpty?: boolean;
+}) {
   const errorId = `${a11y.id}-days-error`;
   const [text, setText] = useState(value === null ? "" : String(value));
   const [error, setError] = useState<string | null>(null);
   const commit = async () => {
+    if (allowEmpty && text.trim() === "") {
+      setError(null);
+      if (value !== null) await onSave(null).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+      return;
+    }
     const r = parseSyncWindow(text);
     if ("error" in r) return setError(r.error);
     setError(null);
@@ -120,7 +140,7 @@ export function GeneralTab({ settings, update, onLocalOff }: { settings: AppSett
 
       <SettingsGroup title="Sincronización">
         <SettingsRow labelFor label="Ventana de sincronización" hint="Días de correo a descargar al conectar una cuenta. Cada cuenta puede tener la suya en Cuentas.">
-          {(a) => <DaysField key={settings.syncWindowDays} a11y={a} testId="sync-window" value={settings.syncWindowDays} onSave={(days) => update({ syncWindowDays: days }, { quiet: true })} />}
+          {(a) => <DaysField key={settings.syncWindowDays} a11y={a} testId="sync-window" value={settings.syncWindowDays} onSave={(days) => update({ syncWindowDays: days ?? settings.syncWindowDays }, { quiet: true })} />}
         </SettingsRow>
       </SettingsGroup>
 

@@ -3,7 +3,7 @@ import { COUNT_CAP, proposeLearnedFilters, type ThreadAction } from "@unica/core
 import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type MessageState } from "@unica/store";
 import type { GmailAccountConfig, ImapAccountConfig } from "@unica/mail";
 import { BackendCore as Backend } from "./core";
-import { changeOwnerTo, gmailClaim, imapClaim } from "./identity";
+import { changeOwnerTo, gmailClaim, imapClaim, reconnectAccount } from "./identity";
 import { countThreadScope, progressReporter, resolveThreadScope, UndoJournal } from "./scope";
 import { readAutoCategorize, readSettings, SettingsError, updateSettings } from "./settings";
 
@@ -508,6 +508,8 @@ export function createHandlers(b: Backend): Handlers {
       b.startAccount(account);
       return account;
     },
+
+    "accounts.reconnect": ({ id, password }) => reconnectAccount(b, id, password),
 
     "accounts.update": async ({ id, ...patch }) => {
       const account = await store.accounts.update(id, patch);

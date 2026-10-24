@@ -9,7 +9,7 @@ import { setLastUndo } from "~/lib/actions";
 import { leaveNewDraft, sendDraft, showNewDraft } from "~/lib/compose";
 import { discardDraft, editDraft, restoreDiscarded, useDrafts } from "~/lib/drafts";
 import { useApp } from "~/state/app";
-import { DraftFieldsForm, focusSoon, SaveState } from "./inline-draft";
+import { DraftFieldsForm, focusSoon, SaveState, SignaturePreview } from "./inline-draft";
 
 /** Esc and sending leave the new message; focus goes to its strip item (kept) or back to the list. */
 function leave(key: string, focusStrip: boolean) {
@@ -103,6 +103,7 @@ export function NewMessage() {
             placeholder="Escribe tu mensaje…"
             className="block min-h-[260px] w-full flex-1 resize-none bg-transparent pt-4 text-base outline-none placeholder:text-muted-foreground"
           />
+          <SignaturePreview accountId={d.accountId} className="pt-2" />
           <div className="pt-2">
             <SaveState d={d} />
           </div>

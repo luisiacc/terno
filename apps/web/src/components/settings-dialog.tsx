@@ -1,13 +1,9 @@
-import type { CategoryColor } from "@unica/core";
 import { Button } from "@unica/ui/components/button";
-import { CategoryDot } from "@unica/ui/components/category-dot";
 import { Dialog, DialogContent, DialogTitle } from "@unica/ui/components/dialog";
-import { Input } from "@unica/ui/components/input";
-import { Label } from "@unica/ui/components/label";
 import { Switch } from "@unica/ui/components/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@unica/ui/components/tabs";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@unica/ui/components/alert-dialog";
-import { Check, Copy, Trash2 } from "lucide-react";
+import { Check, Copy } from "lucide-react";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { client } from "~/rpc/connection";
@@ -15,14 +11,12 @@ import { setApp, useApp, type SettingsTab } from "~/state/app";
 import { AiTab } from "./settings/ai-tab";
 import { AppearanceTab } from "./settings/appearance-tab";
 import { CategoriesTab } from "./settings/categories-tab";
-import { OwnerCard } from "./settings/owner-card";
+import { AccountsTab } from "./settings/accounts-tab";
 import { GeneralTab } from "./settings/general-tab";
 import { SETTINGS_TABS } from "./settings/tabs";
 import { reconcileSettings } from "~/lib/appearance";
 import { DesktopOnly } from "~/lib/web-parts";
 import { SettingsGroup, SettingsRow, type SettingsUpdate } from "./settings/parts";
-
-const WEB = import.meta.env.VITE_TARGET === "web";
 
 function CopyBlock({ text, testId }: { text: string; testId?: string }) {
   const [copied, setCopied] = useState(false);
@@ -49,9 +43,6 @@ export function SettingsDialog() {
   const open = useApp((s) => s.dialog === "settings");
   const tab = useApp((s) => s.settingsTab);
   const settings = useApp((s) => s.settings);
-  const accounts = useApp((s) => s.accounts);
-  const owner = useApp((s) => s.owner);
-  const demo = useApp((s) => s.demo);
   const agentsHere = useApp((s) => s.host?.capabilities.agents ?? true);
   const [confirmLocalOff, setConfirmLocalOff] = useState(false);
   const [agent, setAgent] = useState<{ mcpCommand: string; socketPath: string; skillPath: string } | null>(null);
@@ -105,56 +96,7 @@ export function SettingsDialog() {
             </TabsContent>
 
             <TabsContent value="accounts">
-              <div className="pt-2">
-                <OwnerCard owner={owner} demo={demo} accounts={accounts} />
-              </div>
-              <div className="space-y-1 py-2">
-                {accounts.map((a) => (
-                  <div key={a.id} className="flex items-center gap-3 rounded-[10px] bg-tint px-3 py-2.5" data-testid="settings-account">
-                    <CategoryDot color={a.color as CategoryColor} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{a.displayName}</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {a.email} · {a.kind === "gmail" ? "Gmail" : "IMAP/SMTP"} · {a.syncState.status === "error" ? `Error: ${a.syncState.lastError}` : a.syncState.status === "syncing" ? "Sincronizando…" : "Al día"}
-                      </p>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`Quitar ${a.email}`}
-                      onClick={async () => {
-                        const keepsOwner = owner?.accountId === a.id ? " Seguirá siendo tu cuenta Única; cámbiala en Cambiar…." : "";
-                        if (!confirm(`¿Quitar ${a.email}? Se borrarán sus correos locales.${keepsOwner}`)) return;
-                        await client.call("accounts.remove", { id: a.id });
-                        toast.success("Cuenta eliminada");
-                      }}
-                    >
-                      <Trash2 />
-                    </Button>
-                  </div>
-                ))}
-                <Button variant="outline" className="mt-2 w-full" onClick={() => setApp({ dialog: "addAccount" })}>
-                  Añadir cuenta
-                </Button>
-              </div>
-              <div className="mt-4 space-y-2 border-t border-border pt-4">
-                <Label htmlFor="gmail-client-id">Google OAuth Client ID</Label>
-                <p className="text-xs text-muted-foreground">
-                  {WEB
-                    ? `Crea un cliente OAuth de tipo «Aplicación web» en Google Cloud con la API de Gmail habilitada y ${location.origin} como origen de JavaScript autorizado.`
-                    : "Crea un cliente OAuth de tipo «App de escritorio» en Google Cloud con la API de Gmail habilitada."}
-                </p>
-                <Input id="gmail-client-id" defaultValue={settings.gmailClientId} placeholder="xxxxx.apps.googleusercontent.com" onBlur={(e) => update({ gmailClientId: e.target.value.trim() })} />
-                {!WEB && (
-                  <Input
-                    type="password"
-                    placeholder="Client secret (opcional)"
-                    onBlur={async (e) => {
-                      if (e.target.value) await client.call("settings.setSecret", { name: "gmailClientSecret", value: e.target.value.trim() });
-                    }}
-                  />
-                )}
-              </div>
+              <AccountsTab settings={settings} update={update} />
             </TabsContent>
 
             <TabsContent value="categories">

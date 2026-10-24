@@ -142,7 +142,7 @@ async function send(key: string): Promise<boolean> {
       cc,
       bcc,
       subject: d.subject,
-      bodyText: sendBody(d),
+      bodyText: sendBody(d, getApp().accounts.find((a) => a.id === d.accountId)?.signature),
       inReplyToMessageId: d.inReplyToMessageId ?? undefined,
       forwardOfMessageId: d.forwardOfMessageId ?? undefined,
       draftId: d.id ?? undefined,
