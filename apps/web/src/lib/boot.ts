@@ -1,3 +1,4 @@
+import { flushAllDrafts, loadDrafts } from "~/lib/drafts";
 import { client, connectBackend } from "~/rpc/connection";
 import { removeFromCategory } from "~/lib/categorize";
 import { getApp, navigate, setApp } from "~/state/app";
@@ -14,6 +15,10 @@ export async function boot(): Promise<void> {
     applyAppearance(reconcileSettings(b.settings));
     setApp({ ready: true, accounts: b.accounts, categories: b.categories, counts: b.counts, settings: b.settings, owner: b.owner, demo: b.demo, version: b.version, host: b.host });
     installAppearanceListeners();
+    // every stored draft comes back: replies onto their conversations, new ones to the drafts strip
+    void loadDrafts().catch((error) => console.warn("[drafts] could not load", error));
+    // best effort when the page goes away (the autosave pause may not have ended)
+    window.addEventListener("pagehide", () => void flushAllDrafts());
     exposeForTests({ updateAppearance, getApp, loadedIds: () => useList.getState().items.map((t) => t.id) });
 
     let refreshQueued = false;

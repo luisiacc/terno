@@ -202,8 +202,9 @@ function MenuItems() {
   const sender = scope ? null : sharedSender(rows);
   const reply = (mode: "reply" | "replyAll" | "forward") => {
     if (!single) return;
+    // the menu's own thread, passed explicitly (the selection follows, it isn't read back)
     setApp({ selectedId: single.id, readerOpen: true });
-    openCompose(mode);
+    void openCompose(mode, single.id);
   };
   const inAll = (categoryId: number) => rows.length > 0 && rows.every((t) => t.categoryIds.includes(categoryId));
   const toggleCategory = (categoryId: number) => {

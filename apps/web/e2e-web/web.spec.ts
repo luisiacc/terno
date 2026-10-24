@@ -55,6 +55,27 @@ test("one tab at a time: a second tab waits, takes over after the first closed i
   await rows(third).first().waitFor();
 });
 
+test("a draft being written reaches the mailbox before another tab takes it over", async ({ context, page }) => {
+  await boot(page);
+  const id = await rows(page).first().getAttribute("data-thread-id");
+  await rows(page).first().dispatchEvent("mousedown");
+  await expect(page.getByTestId("reader-subject")).toBeVisible();
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("r");
+  await page.getByTestId("compose-body").focus();
+  // typed and handed over at once: well inside the 800 ms autosave pause
+  await page.keyboard.type("Texto que no se pierde");
+  const second = await context.newPage();
+  await second.goto(DEMO);
+  await second.getByTestId("web-use-here").click();
+  await rows(second).first().waitFor();
+  await second.locator(`[data-testid=thread-row][data-thread-id="${id}"]`).dispatchEvent("mousedown");
+  await expect(second.getByTestId("reader-subject")).toBeVisible();
+  await second.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await second.keyboard.press("r");
+  await expect(second.getByTestId("compose-body")).toHaveValue(/Texto que no se pierde/);
+});
+
 test("an open error never swaps the mailbox for an empty one", async ({ page }) => {
   await boot(page);
   // the rows in the DOM depend on the list's height: count once the banners above it are in

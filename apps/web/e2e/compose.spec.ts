@@ -64,4 +64,22 @@ test.describe("compose, reply, reply-all, forward", () => {
     await page.getByTestId("nav-sent").click();
     await expect(page.getByTestId("row-subject").first()).toHaveText("Propuesta de colaboración");
   });
+
+  test("a reply being written survives closing it and reloading: r on the thread resumes it", async ({ app: page }) => {
+    const id = await openRow(page, 0);
+    await focusList(page);
+    await page.keyboard.press("r");
+    await page.getByTestId("compose-body").focus();
+    await page.keyboard.type("No lo pierdas. ");
+    await expect(page.getByTestId("composer")).toContainText("Borrador guardado");
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("composer")).toHaveCount(0);
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`).dispatchEvent("mousedown");
+    await expect(page.getByTestId("reader-subject")).toBeVisible();
+    await focusList(page);
+    await page.keyboard.press("r");
+    await expect(page.getByTestId("compose-body")).toHaveValue(/^No lo pierdas\. /);
+  });
 });

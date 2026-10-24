@@ -1,3 +1,4 @@
+import { flushAllDrafts } from "~/lib/drafts";
 import { Button } from "@unica/ui/components/button";
 import { Loader2 } from "lucide-react";
 import { useEffect, useId, useRef } from "react";
@@ -103,7 +104,7 @@ export function WebGate() {
           </>
         }
       >
-        <Button data-testid="web-reload" onClick={() => location.reload()}>
+        <Button data-testid="web-reload" onClick={() => void flushAllDrafts().then(() => location.reload())}>
           {stale ? "Recargar" : "Reintentar"}
         </Button>
       </Screen>

@@ -5,18 +5,10 @@ import { create } from "zustand";
 export type DialogName = "settings" | "shortcuts" | "palette" | "categoryPicker" | "filters" | "addAccount" | null;
 export type SettingsTab = "general" | "appearance" | "accounts" | "categories" | "ai" | "agents";
 
-export interface ComposeDraft {
-  key: number;
-  mode: "new" | "reply" | "replyAll" | "forward";
-  accountId: number;
-  to: string;
-  cc: string;
-  subject: string;
-  body: string;
-  inReplyToMessageId?: number;
-  forwardOfMessageId?: number;
-  threadId?: number;
-  draftId?: number;
+/** The draft being written (lib/drafts holds its content); seq changes each time it is (re)opened, for focus. */
+export interface ComposeState {
+  key: string;
+  seq: number;
 }
 
 /** "Select all N": the selection is every thread of the current view or search, acted on by the backend. */
@@ -64,7 +56,7 @@ export interface AppState {
   /** the reader pane shows the selected thread */
   readerOpen: boolean;
 
-  compose: ComposeDraft | null;
+  compose: ComposeState | null;
   dialog: DialogName;
   /** the category picker toggles categories (l) or moves exclusively (v, "Mover a…") */
   pickerMode: "toggle" | "move";

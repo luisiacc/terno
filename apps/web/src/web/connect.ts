@@ -1,3 +1,4 @@
+import { flushAllDrafts } from "~/lib/drafts";
 import { isRpcMessage, type RpcClient, type RpcMessage, type Transport } from "@unica/core/rpc";
 import { setWeb, type WebLifecycle } from "./lifecycle";
 import type { PageToWorker, WorkerToPage } from "./protocol";
@@ -71,7 +72,7 @@ class Leadership {
   }
 
   private async receive(m: TabMessage): Promise<void> {
-    if (m.type === "leader" && m.build !== BUILD) setWeb({ update: { apply: () => location.reload() } });
+    if (m.type === "leader" && m.build !== BUILD) setWeb({ update: { apply: () => void flushAllDrafts().then(() => location.reload()) } });
     if (m.type === "takeover") {
       if (this.leading) {
         if (this.onTakeover) await this.onTakeover(m.from);
@@ -254,6 +255,8 @@ export async function connectWorker(client: RpcClient): Promise<void> {
   const handOver = async (to: string) => {
     if (stopped) return tabs.release(to);
     stopped = true;
+    // what is being written reaches the worker before it closes (≤ 1 s)
+    await flushAllDrafts();
     setWeb({ phase: "taken" });
     worker.postMessage({ type: "close" } satisfies PageToWorker);
     await next(worker, ["closed"], CLOSE_TIMEOUT_MS);

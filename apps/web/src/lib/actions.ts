@@ -1,11 +1,11 @@
-import { formatAddressList, isValidEmail, parseAddressList, type ThreadAction, type ThreadSummary, type View } from "@unica/core";
+import { parseAddressList, type ThreadAction, type ThreadSummary, type View } from "@unica/core";
 import { toast } from "sonner";
 import { reflowRemoval } from "~/lib/flash";
 import { client } from "~/rpc/connection";
 import { currentTargets } from "~/lib/select";
-import { getApp, setApp, type ComposeDraft, type ScopeSelection } from "~/state/app";
+import { getApp, setApp, type ScopeSelection } from "~/state/app";
 import { patchRows, reloadList, useList } from "~/state/list";
-import { invalidateThreads, loadThread } from "~/state/threads";
+import { invalidateThreads } from "~/state/threads";
 
 /** Does a thread still belong in the current view after an action? */
 function staysInView(view: View, action: ThreadAction): boolean {
@@ -249,87 +249,5 @@ export function scheduleMarkRead(id: number): void {
 // ───────────────────────────── compose ─────────────────────────────
 
 // Structured formatting/parsing (quoted display names) so a crafted sender name can't add recipients.
-const formatList = formatAddressList;
 export const parseAddresses = parseAddressList;
-
-let composeKey = 0;
-export function openCompose(mode: ComposeDraft["mode"] = "new"): void {
-  const s = getApp();
-  const defaultAccount = s.accountId ?? s.accounts[0]?.id;
-  if (!defaultAccount) {
-    toast("Conecta una cuenta para escribir correos");
-    setApp({ dialog: "addAccount" });
-    return;
-  }
-  if (mode === "new" || s.selectedId === null) {
-    setApp({ compose: { key: ++composeKey, mode: "new", accountId: defaultAccount, to: "", cc: "", subject: "", body: "" } });
-    return;
-  }
-  void loadThread(s.selectedId).then((detail) => {
-    if (!detail) return;
-    const last = [...detail.messages].reverse().find((m) => !m.isSent) ?? detail.messages[detail.messages.length - 1]!;
-    const account = s.accounts.find((a) => a.id === detail.thread.accountId) ?? s.accounts[0]!;
-    const me = account.email.toLowerCase();
-    const date = new Date(last.date).toLocaleString("es", { dateStyle: "medium", timeStyle: "short" });
-    const quoted = (last.bodyText ?? last.snippet).split("\n").map((l) => `> ${l}`).join("\n");
-    const subj = detail.thread.subject;
-    if (mode === "forward") {
-      setApp({
-        compose: {
-          key: ++composeKey,
-          mode,
-          accountId: account.id,
-          to: "",
-          cc: "",
-          subject: /^fwd?:/i.test(subj) ? subj : `Fwd: ${subj}`,
-          body: `\n\n---------- Mensaje reenviado ----------\nDe: ${formatList([last.from])}\nFecha: ${date}\nAsunto: ${last.subject}\nPara: ${formatList(last.to)}\n\n${last.bodyText ?? last.snippet}`,
-          forwardOfMessageId: last.id,
-          threadId: detail.thread.id,
-        },
-      });
-      return;
-    }
-    const to = last.isSent ? last.to : [last.from];
-    const cc = mode === "replyAll" ? [...last.to, ...last.cc].filter((a) => a.email.toLowerCase() !== me && !to.some((t) => t.email === a.email)) : [];
-    setApp({
-      compose: {
-        key: ++composeKey,
-        mode,
-        accountId: account.id,
-        to: formatList(to),
-        cc: formatList(cc),
-        subject: /^re:/i.test(subj) ? subj : `Re: ${subj}`,
-        body: `\n\nEl ${date}, ${last.from.name || last.from.email} escribió:\n${quoted}`,
-        inReplyToMessageId: last.id,
-        threadId: detail.thread.id,
-      },
-    });
-  });
-}
-
-export async function sendCompose(draft: ComposeDraft): Promise<boolean> {
-  const to = parseAddresses(draft.to);
-  if (to.length === 0 || [...to, ...parseAddresses(draft.cc)].some((a) => !isValidEmail(a.email))) {
-    toast.error("Revisa los destinatarios");
-    return false;
-  }
-  try {
-    const res = await client.call("compose.send", {
-      accountId: draft.accountId,
-      to,
-      cc: parseAddresses(draft.cc),
-      subject: draft.subject,
-      bodyText: draft.body,
-      inReplyToMessageId: draft.inReplyToMessageId,
-      forwardOfMessageId: draft.forwardOfMessageId,
-      draftId: draft.draftId,
-    });
-    setApp({ compose: null });
-    invalidateThreads([res.threadId]);
-    toast.success("Enviando…");
-    return true;
-  } catch (error) {
-    toast.error(`No se pudo enviar: ${error instanceof Error ? error.message : error}`);
-    return false;
-  }
-}
+export { openCompose, sendDraft } from "./compose";
