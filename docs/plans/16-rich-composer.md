@@ -156,3 +156,16 @@ Codex (`codex exec -s read-only`, 12 points) against the plan and the code. What
 - **Huge drafts:** past 2,000 lines, lines off screen skip layout (`content-visibility`, only then: it changes how Chromium edits inside contained blocks). Measured budgets: keystroke → transaction ≤ 30 ms p95 at 2 MB (lines and dense marks) and for a 250 KB paragraph; the remaining cost is Chromium's own editing work. The placeholder check had serialized the document on every key: now O(1). One revision covers the keys until the save, so typing doesn't touch the store.
 - **Perf project without trace:** Playwright's trace snapshots walk the whole DOM on every action, on the page's thread, inside the timings.
 - **Shortcuts dialog** lists the formatting keys (a section of its own: they aren't app commands).
+
+## What the Codex code review changed
+
+Round 1 (`/tmp/unica-scratch/codex-review.sh 2d97038 …`, 8 findings), each fixed with a regression test:
+
+1. **High:** text typed into the loading stand-in wasn't the draft's body (a send before the editor loaded lost it). The stand-in is now the body source meanwhile (saved and sent as the draft's body plus those lines) and the editor takes it over. Test: the editor chunk held back by a route, type, see it saved, send, see it in the sent copy.
+2. **High:** the toolbar's "can indent" check built a step per selected line (quadratic: seconds for a whole-draft selection). Now a pure check that stops at the first line. Gate: select all in a 2 MB draft, toolbar state ≤ 16 ms.
+3. **Medium:** toolbar commands could edit under a send in flight. The bar is disabled and the controller does nothing while sending. Test with the send held.
+4. **Medium:** Enter right after a typed URL ran the rest of the chain on a stale state. One chain now. Test (with page errors watched).
+5. **Medium:** `textToHtml` recursed per quote level (a 10,000-level line overflowed) and a 2 MB quote blocked the import. Iterative, capped at 32 levels, in pieces; the import yields between pieces. Unit tests.
+6. **Medium:** a link with only its address at a caret inserted nothing. It goes in as the address. Test.
+7. **Medium:** ⇧⌘V of a URL over a selection linked the selection. Plain paste is honored. Test.
+8. **Medium:** the huge-draft gates didn't assert the painted frame. They gate its p50 (≤ 50 ms) and the select-all toolbar time.
