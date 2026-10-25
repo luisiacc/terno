@@ -513,6 +513,24 @@ describe("sending through SMTP", () => {
     expect((await client.call("threads.get", { threadId: t!.id })).messages.map((m) => m.isSent)).toEqual([false, true]);
   });
 
+  it("plan 16: a rich message goes out as multipart/alternative over SMTP, and the copy saved to Sent carries the same HTML", async () => {
+    const { imap, smtp, backend, client, addAccount } = await setup();
+    const account = await addAccount(imap.port);
+    const html = '<!DOCTYPE html><html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"></head><body><div>Hola <b>Ana</b></div></body></html>';
+    await client.call("compose.send", { accountId: account.id, to: [{ name: "Ana", email: "ana@example.com" }], subject: "Rico", bodyText: "Hola Ana", bodyHtml: html });
+    await backend.runWorker();
+    expect(smtp.received).toHaveLength(1);
+    const sent = smtp.received[0]!.raw;
+    expect(sent).toMatch(/^Content-Type: multipart\/alternative;/m);
+    const { parseRaw } = await import("@terno/mail");
+    const parsed = await parseRaw(sent);
+    expect(parsed.html?.trim()).toBe(html);
+    expect(parsed.text?.trim()).toBe("Hola Ana");
+    const [copy] = imap.server.control.listMessages("Sent", { raw: true }) as { raw?: Buffer }[];
+    const saved = await parseRaw(copy!.raw!);
+    expect(saved.html?.trim()).toBe(html);
+  });
+
   it("a rejected recipient fails permanently (no retries)", async () => {
     const { imap, backend, client, addAccount } = await setup({ smtp: { rejectRcpt: "nadie@example.com" } });
     const account = await addAccount(imap.port);
