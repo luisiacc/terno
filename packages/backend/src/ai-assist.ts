@@ -1,6 +1,6 @@
 import { AiError, type AiTasks } from "@terno/ai";
 import { captureError } from "@terno/core/diag";
-import { candidateCategories, POLICY, senderVetoed } from "@terno/core";
+import { candidateCategories, POLICY, reason, senderVetoed } from "@terno/core";
 import type { MailStore } from "@terno/store";
 import type { Categorizer } from "./categorizer";
 import { readSettings } from "./settings";
@@ -146,7 +146,7 @@ export class AiAssist {
         threadId,
         categoryId: score.categoryId,
         p: score.p,
-        explain: [`la IA (${ai.local ? "en este Mac" : ai.providerId}) cree que es de ${r.label}`],
+        explain: [ai.local ? reason("reason.aiLocal", { category: r.label }) : reason("reason.aiCloud", { provider: ai.providerId, category: r.label })],
         sender: set.features.sender,
         encoded: set.encoded,
         model: current,

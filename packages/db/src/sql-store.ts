@@ -1,5 +1,6 @@
 import { senderVetoed, type Address, type FilterAction, type ThreadAction, type ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
+import { L } from "@terno/i18n";
 import type { MockDataset } from "@terno/mock-data";
 import {
   AWAITING_AUTH,
@@ -458,7 +459,7 @@ export class SqlMailStore implements MailStore {
     resolveUnknown: async (id, resolution, now) =>
       this.db.tx(() => {
         const op = getOp(this.db, id);
-        if (!op || op.state !== "unknown") throw new RpcError("NOT_FOUND", "No unresolved operation with that id");
+        if (!op || op.state !== "unknown") throw new RpcError("NOT_FOUND", L("errors.opResolved"));
         if (resolution === "markSent") {
           completeOp(this.db, id, now);
           return { touched: [] };
@@ -485,11 +486,11 @@ export class SqlMailStore implements MailStore {
     queueSend: async (p) =>
       this.db.tx(() => {
         const account = getAccount(this.db, p.accountId);
-        if (!account) throw new RpcError("NOT_FOUND", "Account not found");
+        if (!account) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
         const cfg = getAccountConfig<{ senderName?: string }>(this.db, p.accountId)!;
         const from: Address = { name: cfg.config.senderName || account.displayName, email: account.email };
         // a draft is sent once: sending deletes it, so a second send of the same draft finds nothing
-        if (p.draftId !== undefined && !this.db.get("SELECT 1 FROM drafts WHERE id = ?", p.draftId)) throw new RpcError("STALE", "Este borrador ya se envió o se descartó");
+        if (p.draftId !== undefined && !this.db.get("SELECT 1 FROM drafts WHERE id = ?", p.draftId)) throw new RpcError("STALE", L("errors.draftGone"));
         let inReplyTo: string | null = null;
         let references: string[] = [];
         let providerThreadId: string | null = null;
@@ -499,7 +500,7 @@ export class SqlMailStore implements MailStore {
             "SELECT rfc_message_id, references_json, thread_id, account_id FROM messages WHERE id = ?",
             p.inReplyToMessageId,
           );
-          if (!original) throw new RpcError("NOT_FOUND", "Original message not found");
+          if (!original) throw new RpcError("NOT_FOUND", L("errors.originalGone"));
           inReplyTo = original.rfc_message_id;
           references = [...(JSON.parse(original.references_json) as string[]), ...(original.rfc_message_id ? [original.rfc_message_id] : [])];
           replyThreadId = original.thread_id;
@@ -579,7 +580,7 @@ export class SqlMailStore implements MailStore {
       this.db.tx(() => {
         // edited (or deleted) while it was being applied: stop, don't recreate stale claims
         const current = this.db.get<{ rule_json: string }>("SELECT rule_json FROM filters WHERE id = ?", id);
-        if (!current || current.rule_json !== ruleJson) throw new RpcError("CANCELLED", "The filter changed while it was being applied");
+        if (!current || current.rule_json !== ruleJson) throw new RpcError("CANCELLED", L("errors.filterChanged"));
         const rule = JSON.parse(ruleJson) as { actions: FilterAction[] };
         const ids = claimFilterApplications(this.db, id, messageIds, now);
         const opIds: string[] = [];
@@ -701,7 +702,7 @@ export class SqlMailStore implements MailStore {
       this.db.tx(() => {
         const now = accountStamp(this.db, c.claim.accountId);
         if (!now || now.createdAt !== c.stamp.createdAt || now.email !== c.stamp.email) {
-          throw new RpcError("NOT_FOUND", `${c.stamp.email} se quitó mientras se verificaba; no se cambió nada.`);
+          throw new RpcError("NOT_FOUND", L("errors.accountRemovedWhileVerifying", { email: c.stamp.email }));
         }
         putSecret(this.db, c.secret.name, c.secret.blob);
         changeOwner(this.db, c.claim, c.reason, c.now);

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { parseModelJson } from "./json";
+import { L } from "@terno/i18n";
 import { AiError, type ChatMsg, type ModelTransport, type OutputMode } from "./types";
 
 export type Validation<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -77,11 +78,11 @@ export async function runStructured<W, T>(transport: ModelTransport, task: Struc
       }
       throw error;
     }
-    if (completion.stop === "refusal") throw new AiError("La IA rechazó esta petición.", "refused");
-    if (completion.stop === "length") throw new AiError("La respuesta de la IA se cortó antes de terminar.", "invalid_output");
+    if (completion.stop === "refusal") throw new AiError(L("errors.ai.refused"), "refused");
+    if (completion.stop === "length") throw new AiError(L("errors.ai.truncated"), "invalid_output");
     const result = check(task, completion.text);
     if (result.ok) return result.value;
-    if (repairsLeft-- <= 0) throw new AiError(`La IA no produjo un resultado válido: ${result.error}`, "invalid_output");
+    if (repairsLeft-- <= 0) throw new AiError(L("errors.ai.invalidOutput", { detail: result.error }), "invalid_output");
     messages.push(
       { role: "assistant", content: completion.text },
       { role: "user", content: `That output is invalid: ${result.error}. Return only the corrected JSON object.` },

@@ -140,12 +140,14 @@ describe("keychain migration (Única → Terno)", () => {
     await backend.syncAccount(accountId);
     const account = (await backend.store.accounts.list())[0]!;
     expect(account.syncState.status).toBe("error");
-    expect(account.syncState.lastError).toMatch(/no pudo abrir lo que guardó Única: la contraseña de esta cuenta\. Vuelve a introducirla en Ajustes → Cuentas/);
+    expect(account.syncState.lastError).toMatch(/couldn’t open what Única saved: this account’s password\. Enter it again in Settings → Accounts/);
+    // the account's error goes to the renderer as a catalog message (its language)
+    expect(account.syncState.lastErrorI18n).toEqual({ key: "errors.secret.legacy.password" });
     // the AI key and the client secret
     let settings = (await client.call("app.bootstrap", {})).settings;
     expect(settings.ai).toMatchObject({ provider: "openai", hasKey: true, keyUnreadable: true });
     expect(settings).toMatchObject({ gmailClientSecretSet: true, gmailClientSecretUnreadable: true });
-    await expect(backend.aiService.config({ provider: "openai", model: "gpt-x" })).rejects.toMatchObject({ kind: "not_configured", message: expect.stringMatching(/tu API key\. Vuelve a guardarla en Ajustes → IA/) });
+    await expect(backend.aiService.config({ provider: "openai", model: "gpt-x" })).rejects.toMatchObject({ kind: "not_configured", message: expect.stringMatching(/your API key\. Save it again in Settings → AI/), i18n: { key: "errors.secret.legacy.apiKey" } });
 
     // entering them again clears each one, whichever way it is saved
     await client.call("accounts.reconnect", { id: accountId, password: "nueva" });

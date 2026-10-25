@@ -1,3 +1,4 @@
+import { L } from "@terno/i18n";
 import type { IncomingMessage } from "@terno/store";
 import { parseRaw } from "./mime";
 import { ProviderError, type FlagUpdate, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
@@ -100,7 +101,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     try {
       res = await netFetch(`${ep.api}${path}`, { ...init, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...init.headers } });
     } catch (e) {
-      throw new ProviderError(`Network error: ${e instanceof Error ? e.message : e}`, !init.ambiguousOnFailure, init.ambiguousOnFailure);
+      throw new ProviderError(L("errors.network", { detail: e instanceof Error ? e.message : String(e) }), !init.ambiguousOnFailure, init.ambiguousOnFailure);
     }
     if (res.status === 401 && !retried) {
       tokens.invalidate();

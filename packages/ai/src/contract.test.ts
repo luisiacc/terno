@@ -367,7 +367,7 @@ describe("model discovery", () => {
     const started = performance.now();
     const err = await discoverModels(cfg({ baseURL: `${closedUrl}/v1` }), AbortSignal.timeout(2000)).catch((e) => e);
     expect(performance.now() - started).toBeLessThan(100);
-    expect(err).toMatchObject({ kind: "unavailable", message: expect.stringMatching(/No encontramos Ollama en 127\.0\.0\.1:\d+/) });
+    expect(err).toMatchObject({ kind: "unavailable", message: expect.stringMatching(/Couldn’t find Ollama at 127\.0\.0\.1:\d+/), i18n: { key: "errors.ai.notRunning", params: { provider: "Ollama", host: expect.stringMatching(/^127\.0\.0\.1:\d+$/) } } });
     const chatErr = await createAi(cfg({ baseURL: `${closedUrl}/v1`, model: "qwen3:8b" })).generateFilter("x", ctx).catch((e) => e);
     expect(chatErr).toMatchObject({ kind: "unavailable" });
   });
@@ -398,6 +398,6 @@ describe("model discovery", () => {
     const result = await probe(cfg({ model: "tiny:1b" }), AbortSignal.timeout(3000));
     expect(result.capabilities).toMatchObject({ output: "json_object", contextTokens: 2048, embeddings: true, probedAt: expect.any(Number) });
     expect(result.latencyMs).toBeGreaterThanOrEqual(0);
-    expect(result.warning).toMatch(/2048|2\.048/);
+    expect(result.warning).toEqual({ key: "backend.ai.contextWindow", params: { tokens: 2048, needed: expect.any(Number) }, message: expect.stringMatching(/^The model accepts 2,048 tokens of context; filters need about [\d,]+\.$/) });
   });
 });

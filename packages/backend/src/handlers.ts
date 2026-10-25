@@ -1,9 +1,10 @@
 import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
-import { COUNT_CAP, proposeLearnedFilters, withUnreadOnly, type ThreadAction } from "@terno/core";
+import { COUNT_CAP, messageOf, proposeLearnedFilters, withUnreadOnly, type ThreadAction } from "@terno/core";
+import { L } from "@terno/i18n";
 import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type MessageState } from "@terno/store";
 import type { GmailAccountConfig, ImapAccountConfig } from "@terno/mail";
 import { BackendCore as Backend } from "./core";
-import { changeOwnerTo, gmailClaim, imapClaim, reconnectAccount } from "./identity";
+import { changeOwnerTo, gmailClaim, imapClaim, loginFailed, reconnectAccount } from "./identity";
 import { exportMailbox, importMailbox, restorePending } from "./import";
 import { countThreadScope, progressReporter, resolveThreadScope, UndoJournal } from "./scope";
 import { readAutoCategorize, readSettings, SettingsError, updateSettings } from "./settings";
@@ -41,7 +42,7 @@ function toDraft(r: DraftRow): Draft {
 export function createHandlers(b: Backend): Handlers {
   const store = b.store;
   const requireCategory = async (id: number) => {
-    if (!(await store.categories.exists(id))) throw new RpcError("NOT_FOUND", `Category ${id} not found`);
+    if (!(await store.categories.exists(id))) throw new RpcError("NOT_FOUND", L("errors.categoryGone"));
   };
   /** A handful in one go (same tick), more through time-budgeted slices (a thread's filing trains on its features). */
   const sliced = async <T,>(items: T[], work: (chunk: T[]) => Promise<void>) => {
@@ -148,7 +149,7 @@ export function createHandlers(b: Backend): Handlers {
 
     "threads.get": async ({ threadId }) => {
       const thread = await store.threads.get(threadId);
-      if (!thread) throw new RpcError("NOT_FOUND", `Thread ${threadId} not found`);
+      if (!thread) throw new RpcError("NOT_FOUND", L("errors.threadGone"));
       const { categorization, ...detail } = thread;
       return {
         ...detail,
@@ -165,7 +166,7 @@ export function createHandlers(b: Backend): Handlers {
     "threads.scopeCount": ({ scope }) => countThreadScope(b, scope),
     "threads.actScope": async ({ scope, action, jobId }) => {
       const { ids, capped } = await resolveThreadScope(b, scope);
-      if (capped) throw new RpcError("BAD_REQUEST", "Demasiadas conversaciones: acota la vista o la búsqueda");
+      if (capped) throw new RpcError("BAD_REQUEST", L("errors.tooManyThreads"));
       const progress = progressReporter(b, jobId, ids.length);
       progress(0);
       // a sweep over a whole view says nothing about senders: never a learning signal
@@ -175,7 +176,7 @@ export function createHandlers(b: Backend): Handlers {
     },
     "threads.undo": async ({ undoId, jobId }) => {
       const before = undoJournal.take(undoId);
-      if (!before) throw new RpcError("NOT_FOUND", "Esta acción ya no se puede deshacer");
+      if (!before) throw new RpcError("NOT_FOUND", L("errors.undoGone"));
       const progress = progressReporter(b, jobId, before.length);
       const restored = new Set<number>();
       let done = 0;
@@ -203,7 +204,7 @@ export function createHandlers(b: Backend): Handlers {
     },
     "categories.update": async ({ id, ...patch }) => {
       const c = await store.categories.update(id, patch);
-      if (!c) throw new RpcError("NOT_FOUND", `Category ${id} not found`);
+      if (!c) throw new RpcError("NOT_FOUND", L("errors.categoryGone"));
       b.server.emit("categories", await store.categories.list());
       return c;
     },
@@ -233,7 +234,7 @@ export function createHandlers(b: Backend): Handlers {
     "categories.addScope": async ({ categoryId, scope, jobId }) => {
       await requireCategory(categoryId);
       const { ids, capped } = await resolveThreadScope(b, scope);
-      if (capped) throw new RpcError("BAD_REQUEST", "Demasiadas conversaciones: acota la vista o la búsqueda");
+      if (capped) throw new RpcError("BAD_REQUEST", L("errors.tooManyThreads"));
       const progress = progressReporter(b, jobId, ids.length);
       progress(0);
       // a selection of a whole view weighs like the snackbar's bulk adds
@@ -333,7 +334,7 @@ export function createHandlers(b: Backend): Handlers {
     "filters.preview": ({ rule, limit }) => store.filters.preview(rule, b.now(), limit),
     "filters.apply": async ({ id }) => {
       const filter = await store.filters.get(id);
-      if (!filter) throw new RpcError("NOT_FOUND", `Filter ${id} not found`);
+      if (!filter) throw new RpcError("NOT_FOUND", L("errors.filterGone"));
       // match in id windows, yielding between them: no single long synchronous scan
       const bounds = await store.filters.messageIdRange();
       const matched: number[] = [];
@@ -363,7 +364,7 @@ export function createHandlers(b: Backend): Handlers {
       }),
     "learning.accept": async ({ key }) => {
       const proposal = proposeLearnedFilters(await store.learning.actionsSince(b.now() - 60 * 86_400_000), { now: b.now() }).find((p) => p.key === key);
-      if (!proposal) throw new RpcError("NOT_FOUND", "That suggestion is no longer available");
+      if (!proposal) throw new RpcError("NOT_FOUND", L("errors.suggestionGone"));
       const verb = { archive: "Archivar", trash: "Borrar", spam: "Spam" }[proposal.action];
       return store.filters.save({ name: `${verb}: ${proposal.value}`, enabled: true, source: "learned", rule: proposal.rule, learnedKey: key }, b.now());
     },
@@ -402,7 +403,7 @@ export function createHandlers(b: Backend): Handlers {
     },
 
     "accounts.addImap": async (p) => {
-      if (!b.host.capabilities.imap) throw new RpcError("UNAVAILABLE", "IMAP/SMTP needs the desktop app.");
+      if (!b.host.capabilities.imap) throw new RpcError("UNAVAILABLE", L("errors.imapNeedsDesktop"));
       const config: ImapAccountConfig = {
         imap: p.imap,
         smtp: p.smtp,
@@ -413,7 +414,7 @@ export function createHandlers(b: Backend): Handlers {
         try {
           await b.options.providers.verifyImap(config, p.password);
         } catch (error) {
-          throw new RpcError("BAD_REQUEST", `Could not connect: ${error instanceof Error ? error.message : String(error)}`);
+          throw loginFailed("errors.couldNotConnect", p.email, error);
         }
       }
       // only a live login establishes the owner; it is claimed in the same transaction as the account
@@ -441,9 +442,9 @@ export function createHandlers(b: Backend): Handlers {
     "accounts.connectGmail": async () => {
       const settings = await readSettings(store);
       if (!settings.gmailClientId) {
-        throw new RpcError("BAD_REQUEST", "Add your Google OAuth client ID in Settings → Accounts first.");
+        throw new RpcError("BAD_REQUEST", L("errors.gmailClientIdMissing"));
       }
-      if (!b.options.openExternal) throw new RpcError("UNAVAILABLE", "Gmail sign-in needs the desktop app.");
+      if (!b.options.openExternal) throw new RpcError("UNAVAILABLE", L("errors.googleConnectNeedsDesktop"));
       const result = await b.options.providers.connectGmail({
         clientId: settings.gmailClientId,
         clientSecret: await b.getSecret("gmailClientSecret"),
@@ -452,7 +453,7 @@ export function createHandlers(b: Backend): Handlers {
         fetch: b.net.fetchFor("mail"),
       });
       const existing = (await store.accounts.list()).find((a) => a.email === result.email.toLowerCase());
-      if (existing) throw new RpcError("BAD_REQUEST", `${result.email} is already connected.`);
+      if (existing) throw new RpcError("BAD_REQUEST", L("errors.alreadyConnected", { email: result.email }));
       const config: GmailAccountConfig = { senderName: result.name || result.email };
       const blob = await b.options.cipher.encrypt(result.refreshToken);
       const { account, claimed } = await store.accounts.create({
@@ -477,12 +478,12 @@ export function createHandlers(b: Backend): Handlers {
       const tokens = b.options.providers.gmailTokens;
       if (!tokens) throw new RpcError("UNAVAILABLE", "This host connects Gmail with accounts.connectGmail.");
       const who = await tokens.inspect(accessToken, b.net.fetchFor("mail")).catch((error: unknown) => {
-        throw new RpcError("BAD_REQUEST", error instanceof Error ? error.message : String(error));
+        throw new RpcError("BAD_REQUEST", messageOf(error));
       });
       const expiresAt = b.now() + expiresIn * 1000;
       const existing = (await store.accounts.list()).find((a) => a.email === who.email.toLowerCase());
       if (existing) {
-        if (existing.kind !== "gmail") throw new RpcError("BAD_REQUEST", `${who.email} is already connected over IMAP.`);
+        if (existing.kind !== "gmail") throw new RpcError("BAD_REQUEST", L("errors.alreadyConnectedImap", { email: who.email }));
         // reconnect: the same mailbox gets a fresh token and syncs what it missed
         tokens.set(existing.id, accessToken, expiresAt);
         await b.resumeAuth(existing.id);
@@ -512,7 +513,7 @@ export function createHandlers(b: Backend): Handlers {
 
     "accounts.update": async ({ id, ...patch }) => {
       const account = await store.accounts.update(id, patch);
-      if (!account) throw new RpcError("NOT_FOUND", "Account not found");
+      if (!account) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
       await b.emitAccounts();
       return account;
     },
@@ -537,7 +538,7 @@ export function createHandlers(b: Backend): Handlers {
         if (next.localMode !== was.localMode || next.errorReports !== was.errorReports || next.language !== was.language) await b.publishPolicy();
         return next;
       } catch (error) {
-        if (error instanceof SettingsError) throw new RpcError("BAD_REQUEST", error.message);
+        if (error instanceof SettingsError) throw new RpcError("BAD_REQUEST", messageOf(error));
         throw error;
       }
     },
@@ -558,7 +559,7 @@ export function createHandlers(b: Backend): Handlers {
 
     "agents.status": () => ({ available: b.agents !== null, connected: b.agents?.connected() ?? 0, tokenSince: b.agents?.tokenSince() ?? null }),
     "agents.rotateToken": () => {
-      if (!b.agents) throw new RpcError("UNAVAILABLE", "Los agentes necesitan la app de escritorio.");
+      if (!b.agents) throw new RpcError("UNAVAILABLE", L("errors.agentsNeedDesktop"));
       return b.agents.rotate();
     },
 

@@ -81,11 +81,11 @@ describe("in a browser (the web build's worker)", () => {
       throw new TypeError("Failed to fetch");
     }) as unknown as typeof fetch;
     const ollama: ProviderConfig = { ...base, fetch: failing, id: "ollama", model: "qwen3", apiKey: null, browserOrigin: ORIGIN };
-    const hint = `permite el origen ${ORIGIN} en Ollama: OLLAMA_ORIGINS=${ORIGIN}`;
+    const hint = `allow the origin ${ORIGIN} in Ollama: OLLAMA_ORIGINS=${ORIGIN}`;
     await expect(discoverModels(ollama, new AbortController().signal)).rejects.toThrow(hint);
     await expect(createAi(ollama).generateFilter("x", ctx)).rejects.toThrow(hint);
     // LM Studio has a switch for it; a cloud API that fails says what it may be
-    await expect(createAi({ ...ollama, id: "lmstudio" }).generateFilter("x", ctx)).rejects.toThrow(/activa CORS en LM Studio/);
-    await expect(createAi({ ...ollama, id: "openai", apiKey: "sk-user" }).generateFilter("x", ctx)).rejects.toThrow(/no acepta peticiones desde una página web \(CORS\)/);
+    await expect(createAi({ ...ollama, id: "lmstudio" }).generateFilter("x", ctx)).rejects.toThrow(/turn on CORS in LM Studio/);
+    await expect(createAi({ ...ollama, id: "openai", apiKey: "sk-user" }).generateFilter("x", ctx)).rejects.toThrow(/doesn’t accept requests from a web page \(CORS\)/);
   });
 });

@@ -1,3 +1,5 @@
+import { RpcError } from "@terno/core/rpc";
+import { L } from "@terno/i18n";
 import {
   BULK_CONTENT_CAP,
   candidateCategories,
@@ -657,7 +659,7 @@ export function undoMoveBegin(db: Db, batchId: number, now: number): boolean {
   return db.tx(() => {
     const batch = db.get<{ undone_at: number | null; phase: MovePhase }>("SELECT undone_at, scope_json ->> '$.phase' AS phase FROM cat_batches WHERE id = ?", batchId);
     if (!batch || batch.undone_at !== null) return false;
-    if (batch.phase === "expired") throw new Error("Este movimiento ya no se puede deshacer");
+    if (batch.phase === "expired") throw new RpcError("NOT_FOUND", L("errors.moveExpired"));
     if (batch.phase !== "done") throw new Error(`move ${batchId} is still being applied`);
     db.run("UPDATE cat_move_threads SET done = 0 WHERE batch_id = ?", batchId);
     setPhase(db, batchId, "unmoving");

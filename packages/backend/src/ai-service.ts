@@ -19,7 +19,9 @@ import {
   type ModelInfo,
   type ProviderConfig,
 } from "@terno/ai";
+import { messageOf, textRef } from "@terno/core";
 import { RpcError, type AiTestResult, type AppSettings } from "@terno/core/rpc";
+import { L } from "@terno/i18n";
 import type { BackendCore as Backend } from "./core";
 import { SecretUnreadableError } from "./keychain";
 import { NetworkPolicyError } from "./net-policy";
@@ -41,8 +43,8 @@ const MODELS_TTL_MS = 60_000;
 export function toRpcError(error: unknown): RpcError {
   if (error instanceof RpcError) return error;
   if (error instanceof AiError) {
-    if (error.kind === "cancelled") return new RpcError("CANCELLED", error.message, { aiErrorKind: error.kind });
-    return new RpcError("UNAVAILABLE", error.message, { aiErrorKind: error.kind });
+    if (error.kind === "cancelled") return new RpcError("CANCELLED", messageOf(error), { aiErrorKind: error.kind });
+    return new RpcError("UNAVAILABLE", messageOf(error), { aiErrorKind: error.kind });
   }
   // not the provider's verdict: our bug (the RPC server captures the original, once)
   return new RpcError("UNAVAILABLE", error instanceof Error ? error.message : String(error), { aiErrorKind: "unavailable" }, { expected: false, cause: error });
@@ -72,18 +74,18 @@ export class AiService {
   /** Resolves a target to a ready config, failing fast (before any SDK retry) when it can't run. */
   async config(target: Target): Promise<ProviderConfig> {
     const { provider, preset } = target;
-    if (provider === "none") throw new AiError("Conecta una IA en Ajustes → IA para crear filtros con IA.", "not_configured");
+    if (provider === "none") throw new AiError(L("errors.ai.notConfigured"), "not_configured");
     const local = isLocalProvider({ id: provider, baseURL: target.baseURL, preset });
     // a custom endpoint may be a name for a server on this Mac: the policy resolves it before connecting
     const declaredCloud = !local && !(provider === "compatible" && (preset ?? "custom") === "custom");
     if (declaredCloud && (await this.b.net.isLocalMode())) {
-      throw new AiError(`${describeProvider(provider).label} está en pausa por el modo local. Desactívalo en Ajustes → General o elige un modelo de este Mac.`, "blocked");
+      throw new AiError(L("errors.ai.pausedByLocalMode", { provider: describeProvider(provider).label }), "blocked");
     }
     const baseURL = resolveBaseURL({ id: provider, baseURL: target.baseURL, preset });
-    if (provider !== "fake" && !baseURL) throw new AiError("Indica la URL del servidor en Ajustes → IA.", "not_configured");
+    if (provider !== "fake" && !baseURL) throw new AiError(L("errors.ai.serverUrlMissing"), "not_configured");
     const secretName = keySecretName(provider, preset);
     let apiKey = await this.b.getSecret(secretName).catch((error: unknown) => {
-      throw error instanceof SecretUnreadableError ? new AiError(error.message, "not_configured") : error;
+      throw error instanceof SecretUnreadableError ? new AiError(messageOf(error), "not_configured") : error;
     });
     if (apiKey) {
       // a key goes only to the origin it was saved (or confirmed) for
@@ -92,20 +94,20 @@ export class AiService {
       if (!bound) await bindKeyOrigin(this.b.store, secretName, origin);
       else if (bound !== origin) {
         if (needsKey({ id: provider, preset })) {
-          throw new AiError(`Tu API key se guardó para ${bound}. Para usarla con ${origin}, confírmala o guarda otra en Ajustes → IA.`, "not_configured");
+          throw new AiError(L("errors.ai.keyBoundElsewhere", { bound, origin }), "not_configured");
         }
         apiKey = null;
       }
     }
     if (!apiKey && needsKey({ id: provider, preset })) {
-      throw new AiError(`Guarda tu API key de ${provider === "compatible" ? PRESETS[preset ?? "custom"].label : describeProvider(provider).label} en Ajustes → IA.`, "not_configured");
+      throw new AiError(L("errors.ai.keyMissing", { provider: provider === "compatible" ? PRESETS[preset ?? "custom"].label : describeProvider(provider).label }), "not_configured");
     }
     const providerLocality = declaredCloud ? "cloud" : "local";
     if (baseURL) {
       try {
         await this.b.net.assert("ai", baseURL, { providerLocality });
       } catch (error) {
-        if (error instanceof NetworkPolicyError) throw new AiError(error.message, "blocked");
+        if (error instanceof NetworkPolicyError) throw new AiError(messageOf(error), "blocked");
         throw error;
       }
     }
@@ -199,11 +201,11 @@ export class AiService {
       const config = await this.config(target);
       const result = await probe(config, this.b.abort.signal);
       await saveCapabilities(this.b.store, target.provider, { model: target.model, baseURL: target.baseURL, preset: target.preset }, result.capabilities);
-      return { ok: true, latencyMs: result.latencyMs, capabilities: result.capabilities, warning: result.warning };
+      return { ok: true, latencyMs: result.latencyMs, capabilities: result.capabilities, ...(result.warning ? { warning: result.warning.message, warningI18n: textRef(result.warning) } : {}) };
     } catch (error) {
       if (!(error instanceof AiError)) captureError(error, { code: "ai.unexpected", fields: { op: "test" } });
       const e = error instanceof AiError ? error : new AiError(error instanceof Error ? error.message : String(error), "unavailable");
-      return { ok: false, latencyMs: Math.round(performance.now() - started), error: { kind: e.kind, message: e.message } };
+      return { ok: false, latencyMs: Math.round(performance.now() - started), error: { kind: e.kind, message: e.message, ...(e.i18n ? { i18n: e.i18n } : {}) } };
     }
   }
 

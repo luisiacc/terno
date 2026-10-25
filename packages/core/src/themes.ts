@@ -1,3 +1,4 @@
+import { t } from "@terno/i18n";
 import { z } from "zod";
 
 /**
@@ -128,23 +129,25 @@ const NUM = String.raw`(?:\d+(?:\.\d+)?|\.\d+)`;
 /**
  * Numbers only: `#rgb[a]`, `#rrggbb[aa]` or `oklch(L C H [/ a])`. Nothing that
  * could close a declaration or reach out (`;`, `{`, `url(`, `var(`) matches.
+ * Issue messages are built when a check fails, so the renderer (which shows
+ * them) gets its own language.
  */
 export const THEME_COLOR_RE = new RegExp(String.raw`^(?:#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})|oklch\(\s*${NUM}%?\s+${NUM}\s+${NUM}(?:deg)?\s*(?:\/\s*${NUM}%?\s*)?\))$`, "i");
-export const themeColor = z.string().trim().max(64).regex(THEME_COLOR_RE, "Color no válido: usa #rrggbb u oklch(L C H)");
+export const themeColor = z.string().trim().max(64).regex(THEME_COLOR_RE, { error: () => t("errors.theme.color") });
 
 export const MAX_CUSTOM_THEMES = 20;
 export const MAX_CUSTOM_THEMES_BYTES = 16 * 1024;
 
 export const customThemeSchema = z
   .object({
-    id: z.string().regex(/^[a-z0-9-]{1,40}$/, "El id solo admite a-z, 0-9 y guiones (máx. 40)"),
+    id: z.string().regex(/^[a-z0-9-]{1,40}$/, { error: () => t("errors.theme.id") }),
     name: z.string().trim().min(1).max(40),
     mode: z.enum(THEME_MODES),
     extends: z.preprocess((v) => (typeof v === "string" ? canonicalThemeId(v) : v), z.enum(BUILTIN_THEME_IDS as [BuiltinThemeId, ...BuiltinThemeId[]])),
-    tokens: z.partialRecord(z.enum(THEME_TOKENS), themeColor).refine((t) => Object.keys(t).length > 0, "El tema no cambia ningún color"),
+    tokens: z.partialRecord(z.enum(THEME_TOKENS), themeColor).refine((tokens) => Object.keys(tokens).length > 0, { error: () => t("errors.theme.noColors") }),
   })
   .strict()
-  .refine((t) => builtinMode(t.extends) === t.mode, { message: "El tema base debe ser del mismo modo", path: ["extends"] });
+  .refine((theme) => builtinMode(theme.extends) === theme.mode, { error: () => t("errors.theme.baseMode"), path: ["extends"] });
 export type CustomTheme = z.output<typeof customThemeSchema>;
 
 function utf8Bytes(s: string): number {
@@ -158,9 +161,9 @@ function utf8Bytes(s: string): number {
 
 export const customThemesSchema = z
   .array(customThemeSchema)
-  .max(MAX_CUSTOM_THEMES, `Máximo ${MAX_CUSTOM_THEMES} temas`)
-  .refine((list) => new Set(list.map((t) => t.id)).size === list.length, "Ids de tema repetidos")
-  .refine((list) => utf8Bytes(JSON.stringify(list)) <= MAX_CUSTOM_THEMES_BYTES, "Los temas ocupan más de 16 KB");
+  .max(MAX_CUSTOM_THEMES, { error: () => t("errors.theme.max", { max: MAX_CUSTOM_THEMES }) })
+  .refine((list) => new Set(list.map((theme) => theme.id)).size === list.length, { error: () => t("errors.theme.duplicateIds") })
+  .refine((list) => utf8Bytes(JSON.stringify(list)) <= MAX_CUSTOM_THEMES_BYTES, { error: () => t("errors.theme.tooBig") });
 
 export const MOTION_STEPS = [0, 50, 75, 100] as const;
 export type MotionMs = (typeof MOTION_STEPS)[number];

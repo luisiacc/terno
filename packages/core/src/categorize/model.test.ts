@@ -1,5 +1,9 @@
+import { setLocale, translate } from "@terno/i18n";
+import en from "@terno/i18n/locales/en";
+import es from "@terno/i18n/locales/es";
 import { describe, expect, it } from "vitest";
-import { explain } from "./explain";
+import type { Reason } from "../types";
+import { explain, parseReasons } from "./explain";
 import { encodeFeatures, extractFeatures, type FeatureSource } from "./features";
 import { CategorizerModel, SOURCE_WEIGHT, type TrainExample } from "./model";
 
@@ -219,15 +223,45 @@ describe("categorizer model", () => {
   it("explains a prediction with identity, words, intents and counter-evidence", () => {
     const m = trained();
     const reasons = explain(m, feat(), FACTURAS, "Facturas", "Uber Receipts");
-    expect(reasons[0]).toBe("mismo remitente que 8 conversaciones en Facturas");
-    expect(reasons.some((r) => r.startsWith("menciona «"))).toBe(true);
-    expect(reasons).toContain("incluye un importe");
+    expect(reasons[0]).toEqual({ k: "reason.sameSender", p: { count: 8, category: "Facturas" } });
+    expect(reasons.some((r) => typeof r === "object" && r.k === "reason.mentions")).toBe(true);
+    expect(reasons).toContainEqual({ k: "reason.intent.amount" });
 
     const promo = { fromEmail: "promos@uber.com", fromName: "Uber", subject: "20% de descuento", bodyText: "Usa el código" };
     for (let i = 0; i < 10; i++) m.addBackground(9500 + i, enc(promo));
-    expect(explain(m, feat(promo), FACTURAS, "Facturas", "Uber").at(-1)).toBe("pero Uber también envía correos que no guardas aquí");
+    expect(explain(m, feat(promo), FACTURAS, "Facturas", "Uber").at(-1)).toEqual({ k: "reason.alsoElsewhere", p: { sender: "Uber" } });
 
     const fresh = explain(m, feat({ fromEmail: "info@netflix.com", fromName: "Netflix", subject: "Tu recibo · $199.00 MXN", bodyText: "Factura disponible" }), FACTURAS, "Facturas", "Netflix");
-    expect(fresh[0]).toBe("remitente nuevo");
+    expect(fresh[0]).toEqual({ k: "reason.newSender" });
+  });
+
+  it("explains in the reader's language: descriptors render through the catalog", () => {
+    const m = trained();
+    const reasons = explain(m, feat(), FACTURAS, "Facturas", "Uber Receipts");
+    const text = (r: Reason) => (typeof r === "string" ? r : translate({ key: r.k, params: r.p }));
+    expect(text(reasons[0]!)).toBe("same sender as 8 conversations in Facturas");
+    expect(text({ k: "reason.mentions", p: { count: 2, a: "uber", b: "viaje", c: "" } })).toBe("mentions “uber”, “viaje”");
+    setLocale("es", es);
+    try {
+      expect(text(reasons[0]!)).toBe("mismo remitente que 8 conversaciones en Facturas");
+      expect(text({ k: "reason.sameSender", p: { count: 1, category: "Facturas" } })).toBe("mismo remitente que 1 conversación en Facturas");
+      expect(text({ k: "reason.mentions", p: { count: 1, a: "uber", b: "", c: "" } })).toBe("menciona «uber»");
+      expect(text({ k: "reason.mentions", p: { count: 3, a: "a", b: "b", c: "c" } })).toBe("menciona «a», «b», «c»");
+      expect(text(reasons.find((r) => typeof r === "object" && r.k === "reason.intent.amount")!)).toBe("incluye un importe");
+    } finally {
+      setLocale("en", en);
+    }
+  });
+
+  it("reads stored reasons: descriptors, and strings persisted before them; nothing else", () => {
+    expect(parseReasons(JSON.stringify(["mismo remitente que 8 conversaciones en Facturas", { k: "reason.newSender" }, { k: "reason.sameSender", p: { count: 2, category: "X" } }]))).toEqual([
+      "mismo remitente que 8 conversaciones en Facturas",
+      { k: "reason.newSender" },
+      { k: "reason.sameSender", p: { count: 2, category: "X" } },
+    ]);
+    expect(parseReasons(JSON.stringify([1, null, { p: {} }, { k: "x", p: { a: {} } }, { k: "y", p: [1] }]))).toEqual([]);
+    expect(parseReasons("not json")).toEqual([]);
+    expect(parseReasons(JSON.stringify({ k: "reason.newSender" }))).toEqual([]);
+    expect(parseReasons(null)).toEqual([]);
   });
 });

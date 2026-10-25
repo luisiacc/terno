@@ -3,11 +3,13 @@ import {
   COUNT_CAP,
   decide,
   explain,
+  parseReasons,
   fnv1a,
   normalizeText,
   valvePaused,
   type AutoCategorize,
   type CategorizerModel,
+  type Reason,
   type CategorizeScope,
   type CategoryModelStats,
   type Prediction,
@@ -208,11 +210,11 @@ export function pendingSuggestions(db: Db, options: { categoryId?: number; threa
       ...params,
       options.limit,
     )
-    .map((r) => ({ threadId: r.thread_id, categoryId: r.category_id, p: r.p, reasons: JSON.parse(r.explain_json) as string[], at: r.at }));
+    .map((r) => ({ threadId: r.thread_id, categoryId: r.category_id, p: r.p, reasons: parseReasons(r.explain_json), at: r.at }));
 }
 
 /** Why the engine filed a thread on its own (auto decisions still in force). */
-export function autoReasons(db: Db, threadId: number): { categoryId: number; reasons: string[] }[] {
+export function autoReasons(db: Db, threadId: number): { categoryId: number; reasons: Reason[] }[] {
   return db
     .all<{ category_id: number; explain_json: string }>(
       `SELECT d.category_id, d.explain_json FROM cls_decisions d
@@ -220,7 +222,7 @@ export function autoReasons(db: Db, threadId: number): { categoryId: number; rea
        WHERE d.thread_id = ? AND d.kind = 'auto'`,
       threadId,
     )
-    .map((r) => ({ categoryId: r.category_id, reasons: JSON.parse(r.explain_json) as string[] }));
+    .map((r) => ({ categoryId: r.category_id, reasons: parseReasons(r.explain_json) }));
 }
 
 export function categoryStats(db: Db): CategoryModelStats[] {

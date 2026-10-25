@@ -15,6 +15,7 @@
   "dependencies": {
     "@sqlite.org/sqlite-wasm": "3.54.1-build1",
     "@terno/core": "workspace:*",
+    "@terno/i18n": "workspace:*",
     "@terno/store": "workspace:*"
   },
   "devDependencies": {

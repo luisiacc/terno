@@ -1,9 +1,21 @@
-import type { Account } from "@terno/core";
+import { messageOf, type Account } from "@terno/core";
 import { RpcError, type OwnerIdentity } from "@terno/core/rpc";
+import { L } from "@terno/i18n";
 import type { OwnerClaim } from "@terno/store";
 import type { GmailAccountConfig, GmailConnectResult, ImapAccountConfig } from "@terno/mail";
 import type { BackendCore as Backend } from "./core";
 import { readSettings } from "./settings";
+
+/**
+ * A failed live login: the provider's own words when they are Terno's (they
+ * already say what went wrong, in the user's language), else wrapped with
+ * the address.
+ */
+export function loginFailed(key: "errors.couldNotConnectAccount" | "errors.couldNotVerifyAccount" | "errors.couldNotConnect", email: string, error: unknown): RpcError {
+  const inner = messageOf(error);
+  if (typeof inner !== "string") return new RpcError("BAD_REQUEST", inner);
+  return new RpcError("BAD_REQUEST", key === "errors.couldNotConnect" ? L(key, { detail: inner }) : L(key, { email, detail: inner }));
+}
 
 /** An IMAP login proves the password, not the address: record whether the login user is the address. */
 export function imapClaim(account: { email: string }, config: ImapAccountConfig, displayName: string): Omit<OwnerClaim, "accountId" | "email"> {
@@ -34,23 +46,23 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
   const store = b.store;
   const account = await store.accounts.get(accountId);
   const stamp = await store.accounts.stamp(accountId);
-  if (!account || !stamp) throw new RpcError("NOT_FOUND", "Esa cuenta ya no está conectada.");
+  if (!account || !stamp) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
   const config = (await store.accounts.config<Record<string, unknown>>(accountId))!.config;
   let secret: { name: string; value: string };
   if (account.kind === "imap") {
-    if (!b.host.capabilities.imap) throw new RpcError("UNAVAILABLE", "IMAP/SMTP necesita la app de escritorio.");
-    if (!password) throw new RpcError("BAD_REQUEST", "Escribe la contraseña de la cuenta.");
+    if (!b.host.capabilities.imap) throw new RpcError("UNAVAILABLE", L("errors.imapNeedsDesktop"));
+    if (!password) throw new RpcError("BAD_REQUEST", L("errors.passwordRequired"));
     try {
       await b.options.providers.verifyImap(config as unknown as ImapAccountConfig, password);
     } catch (error) {
-      throw new RpcError("BAD_REQUEST", `No se pudo conectar ${account.email}: ${error instanceof Error ? error.message : String(error)}`);
+      throw loginFailed("errors.couldNotConnectAccount", account.email, error);
     }
     secret = { name: "password", value: password };
   } else {
-    if (b.options.providers.gmailTokens) throw new RpcError("UNAVAILABLE", "En el navegador, Gmail se reconecta con la ventana de Google.");
+    if (b.options.providers.gmailTokens) throw new RpcError("UNAVAILABLE", L("errors.gmailReconnectInBrowser"));
     const settings = await readSettings(store);
-    if (!settings.gmailClientId) throw new RpcError("BAD_REQUEST", "Añade tu Google OAuth client ID en Ajustes → Cuentas.");
-    if (!b.options.openExternal) throw new RpcError("UNAVAILABLE", "Conectar con Google necesita la app de escritorio.");
+    if (!settings.gmailClientId) throw new RpcError("BAD_REQUEST", L("errors.gmailClientIdMissing"));
+    if (!b.options.openExternal) throw new RpcError("UNAVAILABLE", L("errors.googleConnectNeedsDesktop"));
     let result: GmailConnectResult;
     try {
       result = await b.options.providers.connectGmail({
@@ -62,19 +74,19 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
         loginHint: account.email,
       });
     } catch (error) {
-      throw new RpcError("BAD_REQUEST", error instanceof Error ? error.message : String(error));
+      throw new RpcError("BAD_REQUEST", messageOf(error));
     }
     if (result.email.toLowerCase() !== account.email.toLowerCase()) {
-      throw new RpcError("BAD_REQUEST", `Google conectó ${result.email}, no ${account.email}. Elige esa cuenta en la ventana de Google.`);
+      throw new RpcError("BAD_REQUEST", L("errors.googleConnectedOther", { got: result.email, expected: account.email }));
     }
     secret = { name: "refreshToken", value: result.refreshToken };
   }
   // signing in took a while: the secret goes only to the same mailbox (not one removed and added again meanwhile)
   const now = await store.accounts.stamp(accountId);
-  if (!now || now.createdAt !== stamp.createdAt || now.email !== stamp.email) throw new RpcError("NOT_FOUND", "Esa cuenta ya no está conectada.");
+  if (!now || now.createdAt !== stamp.createdAt || now.email !== stamp.email) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
   await b.dropAccount(accountId);
   await b.setSecret(`account:${accountId}:${secret.name}`, secret.value);
-  await store.accounts.setSyncState(accountId, { status: "idle", lastError: null });
+  await store.accounts.setSyncState(accountId, { status: "idle", lastError: null, lastErrorI18n: null });
   await b.emitAccounts();
   await b.resumeAuth(accountId);
   b.startAccount((await store.accounts.get(accountId))!);
@@ -89,31 +101,31 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
  */
 export async function changeOwnerTo(b: Backend, accountId: number, password: string | undefined): Promise<OwnerIdentity> {
   const store = b.store;
-  if (!b.canClaimOwner()) throw new RpcError("BAD_REQUEST", "El modo demo no tiene cuenta de Terno.");
+  if (!b.canClaimOwner()) throw new RpcError("BAD_REQUEST", L("errors.demoNoOwner"));
   const account = await store.accounts.get(accountId);
   const stamp = await store.accounts.stamp(accountId);
-  if (!account || !stamp) throw new RpcError("NOT_FOUND", "Esa cuenta ya no está conectada.");
+  if (!account || !stamp) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
   const config = (await store.accounts.config<Record<string, unknown>>(accountId))!.config;
-  if (config.demo) throw new RpcError("BAD_REQUEST", "Una cuenta de demostración no puede ser tu cuenta de Terno.");
+  if (config.demo) throw new RpcError("BAD_REQUEST", L("errors.demoAccountOwner"));
   const current = await store.owner.get();
-  if (current?.accountId === accountId) throw new RpcError("BAD_REQUEST", `${account.email} ya es tu cuenta de Terno.`);
+  if (current?.accountId === accountId) throw new RpcError("BAD_REQUEST", L("errors.alreadyOwner", { email: account.email }));
 
   let claim: Omit<OwnerClaim, "accountId" | "email">;
   let secret: { name: string; blob: Uint8Array };
   if (account.kind === "imap") {
-    if (!password) throw new RpcError("BAD_REQUEST", "Escribe la contraseña de la cuenta para verificarla.");
+    if (!password) throw new RpcError("BAD_REQUEST", L("errors.passwordToVerify"));
     const imap = config as unknown as ImapAccountConfig;
     try {
       await b.options.providers.verifyImap(imap, password);
     } catch (error) {
-      throw new RpcError("BAD_REQUEST", `No se pudo verificar ${account.email}: ${error instanceof Error ? error.message : String(error)}`);
+      throw loginFailed("errors.couldNotVerifyAccount", account.email, error);
     }
     secret = { name: `account:${accountId}:password`, blob: await b.options.cipher.encrypt(password) };
     claim = imapClaim(account, imap, (config as unknown as ImapAccountConfig).senderName || account.displayName);
   } else {
     const settings = await readSettings(store);
-    if (!settings.gmailClientId) throw new RpcError("BAD_REQUEST", "Añade tu Google OAuth client ID en Ajustes → Cuentas.");
-    if (!b.options.openExternal) throw new RpcError("UNAVAILABLE", "Verificar con Google necesita la app de escritorio.");
+    if (!settings.gmailClientId) throw new RpcError("BAD_REQUEST", L("errors.gmailClientIdMissing"));
+    if (!b.options.openExternal) throw new RpcError("UNAVAILABLE", L("errors.googleVerifyNeedsDesktop"));
     const result = await b.options.providers.connectGmail({
       clientId: settings.gmailClientId,
       clientSecret: await b.getSecret("gmailClientSecret"),
@@ -123,7 +135,7 @@ export async function changeOwnerTo(b: Backend, accountId: number, password: str
       loginHint: account.email,
     });
     if (result.email.toLowerCase() !== account.email.toLowerCase()) {
-      throw new RpcError("BAD_REQUEST", `Google verificó ${result.email}, no ${account.email}. Elige esa cuenta en la ventana de Google.`);
+      throw new RpcError("BAD_REQUEST", L("errors.googleVerifiedOther", { got: result.email, expected: account.email }));
     }
     secret = { name: `account:${accountId}:refreshToken`, blob: await b.options.cipher.encrypt(result.refreshToken) };
     claim = gmailClaim({ ...result, name: result.name || (config as unknown as GmailAccountConfig).senderName });

@@ -1,3 +1,5 @@
+import { textRef, type TextRef } from "@terno/core";
+import { L } from "@terno/i18n";
 import type { MailStore } from "@terno/store";
 
 /**
@@ -27,24 +29,28 @@ export interface SecretSealer {
   decrypt(blob: Uint8Array): Promise<string>;
 }
 
-/** What a secret is, and where Settings asks for it again. */
-export function secretPrompt(name: string): string {
-  if (/^account:\d+:password$/.test(name)) return "la contraseña de esta cuenta. Vuelve a introducirla en Ajustes → Cuentas (Cambiar contraseña…)";
-  if (/^account:\d+:refreshToken$/.test(name)) return "la sesión de Google de esta cuenta. Vuelve a conectarla en Ajustes → Cuentas (Conectar con Google)";
-  if (name === "gmailClientSecret") return "el client secret de Google. Vuelve a guardarlo en Ajustes → Cuentas";
-  if (name.startsWith("ai:")) return "tu API key. Vuelve a guardarla en Ajustes → IA";
-  return "un secreto guardado. Vuelve a introducirlo en Ajustes";
+/** What a secret is (the message then says where Settings asks for it again). */
+export function secretKind(name: string): "password" | "googleSession" | "clientSecret" | "apiKey" | "other" {
+  if (/^account:\d+:password$/.test(name)) return "password";
+  if (/^account:\d+:refreshToken$/.test(name)) return "googleSession";
+  if (name === "gmailClientSecret") return "clientSecret";
+  if (name.startsWith("ai:")) return "apiKey";
+  return "other";
 }
 
 export class SecretUnreadableError extends Error {
   readonly expected = true;
+  /** the message as a catalog key: the renderer shows it in the user's language */
+  readonly i18n: TextRef;
   constructor(
     readonly secretName: string,
     /** sealed by Única and not migrated (else: the keychain refused it) */
     readonly legacy: boolean,
   ) {
-    super(`${legacy ? "Terno no pudo abrir lo que guardó Única: " : "El llavero no abre "}${secretPrompt(secretName)}.`);
+    const message = L(`errors.secret.${legacy ? "legacy" : "keychain"}.${secretKind(secretName)}`);
+    super(message.message);
     this.name = "SecretUnreadableError";
+    this.i18n = textRef(message)!;
   }
 }
 

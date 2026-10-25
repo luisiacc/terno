@@ -132,7 +132,7 @@ describe("settings: providers and profiles", () => {
     await client.call("ai.setKey", { provider: "openai", value: "sk-dormant-0000-1111" });
     const on = await client.call("settings.update", { localMode: true });
     expect(on.ai).toMatchObject({ provider: "openai", local: false });
-    expect(await errorOf(generate(client))).toMatchObject({ code: "UNAVAILABLE", details: { aiErrorKind: "blocked" }, message: expect.stringMatching(/en pausa por el modo local/) });
+    expect(await errorOf(generate(client))).toMatchObject({ code: "UNAVAILABLE", details: { aiErrorKind: "blocked" }, message: expect.stringMatching(/paused by local mode/), i18n: { key: "errors.ai.pausedByLocalMode", params: { provider: "OpenAI" } } });
     await client.call("settings.update", { localMode: false });
     await expect(generate(client)).resolves.toMatchObject({ name: "Uber" });
   });
@@ -257,7 +257,7 @@ describe("ai RPCs", () => {
     const { client } = setup({ localMode: false });
     expect(await errorOf(generate(client))).toMatchObject({ code: "UNAVAILABLE", details: { aiErrorKind: "not_configured" } });
     await client.call("settings.update", { ai: { provider: "openai", model: "gpt-x" } });
-    expect(await errorOf(generate(client))).toMatchObject({ details: { aiErrorKind: "not_configured" }, message: expect.stringMatching(/API key de OpenAI/) });
+    expect(await errorOf(generate(client))).toMatchObject({ details: { aiErrorKind: "not_configured" }, message: "Save your OpenAI API key in Settings → AI.", i18n: { key: "errors.ai.keyMissing", params: { provider: "OpenAI" } } });
   });
 
   it("a newer filters.generate from the same client aborts the previous one", async () => {

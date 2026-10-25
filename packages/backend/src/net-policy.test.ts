@@ -70,7 +70,7 @@ describe("network policy in local mode", () => {
   it("rejects a 'local' provider whose host resolves to the LAN, with zero connections", async () => {
     const { net } = policy(true, { "ollama.lan": ["10.0.0.5"] });
     await expect(net.fetchFor("ai", { providerLocality: "local" })(`http://ollama.lan:${port}/v1/models`)).rejects.toBeInstanceOf(NetworkPolicyError);
-    await expect(net.fetchFor("ai", { providerLocality: "local" })("http://192.168.1.20:11434/api/tags")).rejects.toThrow(/no es una dirección local/);
+    await expect(net.fetchFor("ai", { providerLocality: "local" })("http://192.168.1.20:11434/api/tags")).rejects.toThrow(/isn’t a local address/);
     await expect(net.fetchFor("ai", { providerLocality: "local" })("http://unresolvable.invalid/v1")).rejects.toBeInstanceOf(NetworkPolicyError);
     expect(connects).toEqual([]);
   });
@@ -206,7 +206,7 @@ describe("redirects", () => {
       for (const [path, init] of keyed) {
         const err = await (init instanceof Request ? ai(init) : ai(`${p.aUrl}${path}`, init)).catch((e: unknown) => e);
         expect(err).toBeInstanceOf(NetworkPolicyError);
-        expect((err as Error).message).toMatch(/no sigue redirecciones de peticiones que llevan tu API key/);
+        expect((err as Error).message).toMatch(/doesn’t follow redirects for requests that carry your API key/);
       }
       expect(p.seenB).toEqual([]);
     } finally {
@@ -220,7 +220,7 @@ describe("redirects", () => {
     try {
       const { net } = policy(false);
       const azure = createAi({ id: "compatible", preset: "azure", model: "dep", apiKey: "azure-secret", baseURL: p.aUrl, fetch: net.fetchFor("ai", { providerLocality: "cloud" }), timeoutMs: 5000, maxRetries: 1 });
-      await expect(azure.generateFilter("archiva lo de uber", { now: 0, categories: [], accounts: [] })).rejects.toMatchObject({ message: expect.stringMatching(/redirección a localhost:\d+: Terno no sigue redirecciones/) });
+      await expect(azure.generateFilter("archiva lo de uber", { now: 0, categories: [], accounts: [] })).rejects.toMatchObject({ message: expect.stringMatching(/redirect to localhost:\d+: Terno doesn’t follow redirects/), i18n: { key: "errors.net.redirect" } });
       expect(p.seenB).toEqual([]);
     } finally {
       p.close();
@@ -264,7 +264,7 @@ describe("network policy without DNS (the browser)", () => {
     try {
       const url = `http://127.0.0.1:${(hop.address() as AddressInfo).port}/openai/deployments/dep/chat/completions`;
       for (const headers of [{ "api-key": "azure-secret" }, { authorization: "Bearer sk-secret" }, { "x-api-key": "sk-ant-secret" }]) {
-        await expect(browser(false).fetchFor("ai", { providerLocality: "cloud" })(url, { method: "POST", body: "{}", headers })).rejects.toThrow(/no sigue redirecciones/);
+        await expect(browser(false).fetchFor("ai", { providerLocality: "cloud" })(url, { method: "POST", body: "{}", headers })).rejects.toThrow(/doesn’t follow redirects/);
       }
       expect(seen).toEqual([]);
     } finally {

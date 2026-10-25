@@ -862,7 +862,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         // the next move, two days later, prunes it
         await store.categories.beginMove({ to: cat, threadIds: [t], addedBy: "user", now: NOW + 2 * DAY, source: "dnd" });
         expect(await store.categories.movePhase(m.batchId)).toBe("expired");
-        await expect(store.categories.undoMoveBegin(m.batchId, NOW + 2 * DAY)).rejects.toThrow(/ya no se puede deshacer/);
+        await expect(store.categories.undoMoveBegin(m.batchId, NOW + 2 * DAY)).rejects.toThrow(/can no longer be undone/);
       });
 
       it("a thread already only in the destination is not moved; a multi-filed one dropped on one of its categories leaves the others", async () => {
@@ -1291,7 +1291,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         const d = (await store.drafts.save({ accountId: a!, to, cc: [], subject: "Una vez", bodyText: "texto" }, NOW))!;
         const send = { accountId: a!, to: [{ name: "Yuki", email: "yuki@example.com" }], cc: [], bcc: [], subject: "Una vez", bodyText: "texto", draftId: d.id, recordReply: false, now: NOW };
         await store.compose.queueSend(send);
-        await expect(store.compose.queueSend(send)).rejects.toThrow(/ya se envió/);
+        await expect(store.compose.queueSend(send)).rejects.toThrow(/already sent or discarded/);
         const sends = (await store.ops.recent(10)).filter((o) => o.kind === "send");
         expect(sends).toHaveLength(1);
       });

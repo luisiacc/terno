@@ -1,3 +1,4 @@
+import { L } from "@terno/i18n";
 import nodemailer from "nodemailer";
 import { buildRaw, envelopeOf } from "./compose";
 import { ProviderError, type SendPayload } from "./types";
@@ -29,12 +30,12 @@ export function classifySmtpError(error: unknown, dataStarted = false): Provider
   const message = e?.message ?? String(error);
   // An explicit reply code is a definitive answer: 5xx permanent, 4xx temporary (retry),
   // whether it came for a recipient (450/550) or after the body (451/554).
-  if (e.responseCode && e.responseCode >= 500) return new ProviderError(e.code === "EENVELOPE" ? `Recipient rejected: ${message}` : message, false);
+  if (e.responseCode && e.responseCode >= 500) return new ProviderError(e.code === "EENVELOPE" ? L("errors.smtp.recipientRejected", { detail: message }) : message, false);
   if (e.responseCode && e.responseCode >= 400) return new ProviderError(message, true);
-  if (e.code === "EAUTH") return new ProviderError(`SMTP authentication failed: ${message}`, false);
-  if (e.code === "EENVELOPE") return new ProviderError(`Recipient rejected: ${message}`, false);
+  if (e.code === "EAUTH") return new ProviderError(L("errors.smtp.authFailed", { detail: message }), false);
+  if (e.code === "EENVELOPE") return new ProviderError(L("errors.smtp.recipientRejected", { detail: message }), false);
   // No answer after the server said "354": it may have accepted the message.
-  if (dataStarted) return new ProviderError(`Connection lost while sending: ${message}`, false, true);
+  if (dataStarted) return new ProviderError(L("errors.smtp.connectionLost", { detail: message }), false, true);
   return new ProviderError(message, true);
 }
 

@@ -125,7 +125,7 @@ describe("changing the owner", () => {
     const before = await client.call("identity.get", {});
     // the stored password does not count: one must be typed now
     expect(await errorOf(client.call("identity.changeOwner", { accountId: work.id }))).toMatchObject({ code: "BAD_REQUEST" });
-    expect(await errorOf(client.call("identity.changeOwner", { accountId: work.id, password: "wrong" }))).toMatchObject({ code: "BAD_REQUEST", message: expect.stringMatching(/No se pudo verificar/) });
+    expect(await errorOf(client.call("identity.changeOwner", { accountId: work.id, password: "wrong" }))).toMatchObject({ code: "BAD_REQUEST", message: "Couldn’t verify work@acme.studio: AUTHENTICATIONFAILED", i18n: { key: "errors.couldNotVerifyAccount", params: { email: "work@acme.studio", detail: "AUTHENTICATIONFAILED" } } });
     expect(await client.call("identity.get", {})).toEqual(before);
     expect(await errorOf(client.call("identity.changeOwner", { accountId: before!.accountId!, password: "pw-luis@fastmail.com" }))).toMatchObject({ code: "BAD_REQUEST" });
     expect(await errorOf(client.call("identity.changeOwner", { accountId: 999, password: "x" }))).toMatchObject({ code: "NOT_FOUND" });

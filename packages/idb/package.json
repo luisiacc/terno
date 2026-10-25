@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@terno/core": "workspace:*",
+    "@terno/i18n": "workspace:*",
     "@terno/store": "workspace:*"
   },
   "devDependencies": {

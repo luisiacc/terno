@@ -147,7 +147,7 @@ describe("categorizer: training hooks", () => {
     const [t] = [...ingestMessages(sqlDb(backend.store), [incoming(acct)]).touchedThreads];
     await client.call("categories.addThreads", { categoryId: cat, threadIds: [t!] });
     expect(await client.call("categories.addThreads", { categoryId: cat, threadIds: [t!] })).toEqual({ added: 0, addedIds: [], batchId: null });
-    await expect(client.call("categories.addThreads", { categoryId: 999, threadIds: [t!] })).rejects.toThrow(/not found/);
+    await expect(client.call("categories.addThreads", { categoryId: 999, threadIds: [t!] })).rejects.toThrow(/no longer exists/);
   });
 
   it("a thread merge reconciles the model after commit (the losing example is untrained)", async () => {
@@ -302,7 +302,7 @@ describe("categorizer: auto-apply at ingestion", () => {
     expect(inCategory(thread)).toBe("auto");
     const d = decision(thread)!;
     expect(d.kind).toBe("auto");
-    expect(JSON.parse(d.explain_json)[0]).toMatch(/^mismo remitente que \d+ conversaciones en Facturas$/);
+    expect(JSON.parse(d.explain_json)[0]).toEqual({ k: "reason.sameSender", p: { count: expect.any(Number), category: "Facturas" } });
     // auto adds never train the model (no feedback loop)
     expect(backend.categorizer.model!.positives(cat)).toBe(positives);
     expect(sqlDb(backend.store).get("SELECT 1 FROM cls_examples WHERE thread_id = ?", thread)).toBeUndefined();
@@ -404,7 +404,7 @@ describe("categorizer: auto-apply at ingestion", () => {
     expect(decision(thread)).toBeUndefined();
     await backend.ingestSliced([{ ...message, bodyState: "full", bodyText: "Tu recibo de Netflix. Gracias por tu pago. Total: $199.00 MXN. Factura 77 disponible." }]);
     expect(inCategory(thread)).toBe("auto");
-    expect(JSON.parse(decision(thread)!.explain_json)[0]).toBe("remitente nuevo");
+    expect(JSON.parse(decision(thread)!.explain_json)[0]).toEqual({ k: "reason.newSender" });
   });
 
   /**
@@ -446,7 +446,7 @@ describe("categorizer: auto-apply at ingestion", () => {
     const { thread } = await arrive(await uncertainMail(backend, acct, cat));
     await backend.aiAssist.drain();
     expect(decision(thread)?.kind).toBe("suggest");
-    expect(JSON.parse(decision(thread)!.explain_json)[0]).toMatch(/^la IA .* cree que es de Facturas$/);
+    expect(JSON.parse(decision(thread)!.explain_json)[0]).toEqual({ k: "reason.aiLocal", p: { category: "Facturas" } });
     expect(inCategory(thread)).toBeNull();
   });
 
@@ -618,11 +618,11 @@ describe("categorize RPCs: bulk apply, undo, predictions, suggestions", () => {
     const fresh = sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = 'new-brief'")!.thread_id;
     const [best] = await client.call("categorize.predict", { threadId: fresh });
     expect(best).toMatchObject({ categoryId: cat, decision: "auto" });
-    expect(best!.reasons[0]).toMatch(/^mismo remitente que/);
+    expect(best!.reasons[0]).toMatchObject({ k: "reason.sameSender", p: { category: expect.any(String) } });
     const detail = await client.call("threads.get", { threadId: fresh });
-    expect(detail.categorization?.auto).toEqual([{ categoryId: cat, reasons: expect.arrayContaining([expect.stringMatching(/^mismo remitente/)]) }]);
+    expect(detail.categorization?.auto).toEqual([{ categoryId: cat, reasons: expect.arrayContaining([expect.objectContaining({ k: "reason.sameSender" })]) }]);
 
-    // a suggestion waiting for an answer
+    // a suggestion waiting for an answer, written before reasons were descriptors: its string reads as it is
     const friend = sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE from_email = 'amigo1@gmail.com' LIMIT 1")!.thread_id;
     sqlDb(backend.store).run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'suggest', 0.85, '[\"menciona «brief»\"]', ?)", friend, cat, NOW);
     expect((await client.call("counts.get", {})).categorySuggestions).toEqual({ [cat]: 1 });

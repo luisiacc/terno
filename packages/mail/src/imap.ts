@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { ImapFlow, type FetchMessageObject, type MessageStructureObject } from "imapflow";
+import { L, type Localized } from "@terno/i18n";
 import type { IncomingMessage } from "@terno/store";
 import { parseListId, parseRaw, splitIds } from "./mime";
 import { sendViaSmtp } from "./smtp";
@@ -46,7 +47,7 @@ function toProviderError(error: unknown): ProviderError {
   if (error instanceof ProviderError) return error;
   const e = error as { authenticationFailed?: boolean; code?: string; responseStatus?: string; message?: string };
   const message = e?.message ?? String(error);
-  if (e.authenticationFailed) return new ProviderError(`IMAP login failed: ${message}`, false);
+  if (e.authenticationFailed) return new ProviderError(L("errors.imap.loginFailed", { detail: message }), false);
   if (e.responseStatus === "NO" || e.responseStatus === "BAD") return new ProviderError(`IMAP: ${message}`, false);
   return new ProviderError(`IMAP: ${message}`, true);
 }
@@ -76,7 +77,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
 
   const makeClient = async (forIdle = false) => {
     const password = await ctx.getSecret("password");
-    if (!password) throw new ProviderError("Missing IMAP password", false);
+    if (!password) throw new ProviderError(L("errors.imap.noPassword"), false);
     return new ImapFlow({
       host: config.imap.host,
       port: config.imap.port,
@@ -424,9 +425,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     return fallbackName;
   }
 
-  async function send(payload: SendPayload): Promise<{ providerMsgId: string; warning?: string }> {
+  async function send(payload: SendPayload): Promise<{ providerMsgId: string; warning?: Localized }> {
     const password = await ctx.getSecret("password");
-    if (!password) throw new ProviderError("Missing password", false);
+    if (!password) throw new ProviderError(L("errors.imap.noPassword"), false);
     const { raw, rejected } = await sendViaSmtp({ ...config.smtp, password, allowInsecure: options.allowInsecure }, payload);
     if (config.appendToSent) {
       // Best effort: the message is already sent; a failed APPEND must not resend it.
@@ -438,7 +439,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         /* next sync still shows the local copy */
       }
     }
-    return { providerMsgId: messageKey(payload.messageId)!, warning: rejected.length ? `No se entregó a: ${rejected.join(", ")}` : undefined };
+    return { providerMsgId: messageKey(payload.messageId)!, warning: rejected.length ? L("errors.smtp.notDeliveredTo", { recipients: rejected.join(", ") }) : undefined };
   }
 
   return {

@@ -1,4 +1,5 @@
-import type { Account, AccountSyncState, Address } from "@terno/core";
+import { textRef, type Account, type AccountSyncState, type Address, type TextRef } from "@terno/core";
+import type { Localized } from "@terno/i18n";
 import type { FlagUpdate, IncomingMessage, ProviderStore } from "@terno/store";
 
 export type { FlagUpdate } from "@terno/store";
@@ -29,13 +30,17 @@ export interface ProviderOp {
  * ambiguous: the outcome is unknown (e.g. connection lost after SMTP DATA) → never retried.
  */
 export class ProviderError extends Error {
+  /** set when the message is a catalog message (L()): the renderer translates it */
+  readonly i18n?: TextRef;
   constructor(
-    message: string,
+    message: string | Localized,
     readonly retryable: boolean,
     readonly ambiguous = false,
   ) {
-    super(message);
+    super(typeof message === "string" ? message : message.message);
     this.name = "ProviderError";
+    const i18n = textRef(message);
+    if (i18n) this.i18n = i18n;
   }
 
   /** transient (offline, 5xx, 429) or unknowable: the provider classified it, not our bug */
@@ -50,7 +55,7 @@ export class ProviderError extends Error {
  * again (a successful sync, a reconnect).
  */
 export class ProviderAuthError extends ProviderError {
-  constructor(message: string) {
+  constructor(message: string | Localized) {
     super(message, false);
     this.name = "ProviderAuthError";
   }
@@ -96,7 +101,7 @@ export interface MailProvider {
   verify(): Promise<void>;
   sync(sink: SyncSink): Promise<void>;
   /** Executes a queued op. For `send`, returns the provider's id of the sent message when known. */
-  execute(op: ProviderOp): Promise<{ providerMsgId?: string; providerThreadId?: string; warning?: string } | void>;
+  execute(op: ProviderOp): Promise<{ providerMsgId?: string; providerThreadId?: string; warning?: string | Localized } | void>;
   /** Push notifications (IMAP IDLE, Gmail push). Calls onChange when a sync is worthwhile. */
   watch?(onChange: () => void): () => void;
   close(): Promise<void>;

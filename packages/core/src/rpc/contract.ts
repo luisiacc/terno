@@ -12,6 +12,7 @@ import {
   type ProviderDescriptor,
 } from "../ai";
 import type { CategoryModelStats, Prediction, QuickActions } from "../categorize/bulk";
+import type { I18nRef } from "./envelope";
 import type { AutoCategorize } from "../categorize/policy";
 import type { LearnedProposal } from "../learning/propose";
 import { filterRuleSchema, type Filter, type FilterRule } from "../rules/schema";
@@ -223,8 +224,12 @@ export interface OpInfo {
   state: OpState;
   attempts: number;
   lastError: string | null;
+  /** lastError as a catalog message (when it is one of Terno's): the renderer shows it in the user's language */
+  lastErrorI18n?: I18nRef;
   createdAt: number;
+  /** English (agents, logs); the renderer shows summaryI18n */
   summary: string;
+  summaryI18n?: I18nRef;
 }
 
 export const DRAFT_MODES = ["new", "reply", "replyAll", "forward"] as const;
@@ -264,7 +269,10 @@ export interface AiTestResult {
   latencyMs: number;
   capabilities?: Capabilities;
   warning?: string;
-  error?: { kind: AiErrorKind; message: string };
+  /** warning as a catalog message: the renderer shows it in the user's language */
+  warningI18n?: I18nRef;
+  /** message in English; i18n, when set, is what the renderer shows */
+  error?: { kind: AiErrorKind; message: string; i18n?: I18nRef };
 }
 
 /** http(s) only; the network policy decides whether the host is reachable. */

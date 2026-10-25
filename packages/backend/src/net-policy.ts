@@ -1,3 +1,6 @@
+import { textRef, type TextRef } from "@terno/core";
+import { L, type Localized } from "@terno/i18n";
+
 /**
  * Why a connection is being made. Every outbound call path names its purpose
  * and goes through this module (an architecture test enforces it), so local
@@ -13,13 +16,17 @@ export interface NetMeta {
 export class NetworkPolicyError extends Error {
   /** a policy decision (local mode), not a failure */
   readonly expected = true;
+  /** set when the message is a catalog message (L()): the renderer translates it */
+  readonly i18n?: TextRef;
   constructor(
-    message: string,
+    message: string | Localized,
     readonly purpose: NetPurpose,
     readonly host: string,
   ) {
-    super(message);
+    super(typeof message === "string" ? message : message.message);
     this.name = "NetworkPolicyError";
+    const i18n = textRef(message);
+    if (i18n) this.i18n = i18n;
   }
 }
 
@@ -82,11 +89,7 @@ function carriesCredential(headers: RequestInit["headers"]): boolean {
  * (api-key, x-api-key) to wherever a cross-origin 307/308 points.
  */
 function redirectRefused(purpose: NetPurpose, from: URL, to: URL | null): NetworkPolicyError {
-  return new NetworkPolicyError(
-    `${from.host} respondió con una redirección${to ? ` a ${to.host}` : ""}: Terno no sigue redirecciones de peticiones que llevan tu API key. Revisa la URL del servidor en Ajustes → IA.`,
-    purpose,
-    from.host,
-  );
+  return new NetworkPolicyError(to ? L("errors.net.redirect", { from: from.host, to: to.host }) : L("errors.net.redirectNowhere", { from: from.host }), purpose, from.host);
 }
 
 function requestUrl(input: Parameters<typeof fetch>[0]): URL {
@@ -117,12 +120,12 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
   async function assert(purpose: NetPurpose, target: string | URL, meta: NetMeta = {}): Promise<{ pinnedHost?: string }> {
     const url = new URL(String(target));
     if (purpose === "mail" || !(await options.localMode())) return {};
-    if (purpose !== "ai") throw new NetworkPolicyError(`El modo local bloquea las conexiones de tipo «${purpose}» (${url.host}).`, purpose, url.host);
+    if (purpose !== "ai") throw new NetworkPolicyError(L("errors.net.localModeBlocks", { purpose, host: url.host }), purpose, url.host);
     if (meta.providerLocality !== "local") {
-      throw new NetworkPolicyError(`El modo local no permite IA en la nube (${url.host}). Desactívalo en Ajustes → General para usarla.`, purpose, url.host);
+      throw new NetworkPolicyError(L("errors.net.localModeCloudAi", { host: url.host }), purpose, url.host);
     }
     const ip = await loopbackTarget(url.hostname);
-    if (!ip) throw new NetworkPolicyError(`El modo local solo permite IA en este Mac; ${url.hostname} no es una dirección local.`, purpose, url.host);
+    if (!ip) throw new NetworkPolicyError(L("errors.net.localModeNotLocal", { host: url.hostname }), purpose, url.host);
     return { pinnedHost: ip };
   }
 

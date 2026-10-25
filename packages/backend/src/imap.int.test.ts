@@ -466,7 +466,14 @@ describe("sending through SMTP", () => {
     const account = await addAccount(imap.port);
     const { opId } = await client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "ana@example.com" }, { name: "", email: "nadie@example.com" }], subject: "x", bodyText: "y" });
     await backend.runWorker();
-    expect(sqlDb(backend.store).get("SELECT state, last_error FROM ops WHERE id = ?", opId)).toEqual({ state: "succeeded", last_error: "No se entregó a: nadie@example.com" });
+    expect(sqlDb(backend.store).get("SELECT state FROM ops WHERE id = ?", opId)).toEqual({ state: "succeeded" });
+    // kept as a catalog message: the renderer says it in the user's language
+    expect((await client.call("ops.list", {})).find((o) => o.id === opId)).toMatchObject({
+      lastError: "Not delivered to: nadie@example.com",
+      lastErrorI18n: { key: "errors.smtp.notDeliveredTo", params: { recipients: "nadie@example.com" } },
+      summary: "Send “x”",
+      summaryI18n: { key: "backend.op.send", params: { subject: "x" } },
+    });
   });
 
   it("a temporary 450 rejection is retried, not failed", async () => {

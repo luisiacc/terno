@@ -1,5 +1,6 @@
 import { COUNT_CAP, parseSearch, resolveSearch, senderVetoed, type Address, type FilterAction, type ThreadAction, type ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
+import { L } from "@terno/i18n";
 import type { MockDataset } from "@terno/mock-data";
 import {
   AWAITING_AUTH,
@@ -751,7 +752,7 @@ export class IdbMailStore implements MailStore {
     resolveUnknown: (id, resolution, now) =>
       this.command(() => {
         const op = getOp(this.c, id);
-        if (!op || op.state !== "unknown") throw new RpcError("NOT_FOUND", "No unresolved operation with that id");
+        if (!op || op.state !== "unknown") throw new RpcError("NOT_FOUND", L("errors.opResolved"));
         const ops = T(this.c, "ops");
         if (resolution === "markSent") {
           completeOp(this.c, id, now);
@@ -777,18 +778,18 @@ export class IdbMailStore implements MailStore {
     queueSend: (p) =>
       this.command(() => {
         const account = getAccount(this.c, p.accountId);
-        if (!account) throw new RpcError("NOT_FOUND", "Account not found");
+        if (!account) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
         const cfg = getAccountConfig<{ senderName?: string }>(this.c, p.accountId)!;
         const from: Address = { name: cfg.config.senderName || account.displayName, email: account.email };
         // a draft is sent once: sending deletes it, so a second send of the same draft finds nothing
-        if (p.draftId !== undefined && !T(this.c, "drafts").get(p.draftId)) throw new RpcError("STALE", "Este borrador ya se envió o se descartó");
+        if (p.draftId !== undefined && !T(this.c, "drafts").get(p.draftId)) throw new RpcError("STALE", L("errors.draftGone"));
         let inReplyTo: string | null = null;
         let references: string[] = [];
         let providerThreadId: string | null = null;
         let replyThreadId: number | null = null;
         if (p.inReplyToMessageId) {
           const original = T(this.c, "messages").get(p.inReplyToMessageId);
-          if (!original) throw new RpcError("NOT_FOUND", "Original message not found");
+          if (!original) throw new RpcError("NOT_FOUND", L("errors.originalGone"));
           inReplyTo = original.rfc_message_id;
           references = [...(JSON.parse(original.references_json) as string[]), ...(original.rfc_message_id ? [original.rfc_message_id] : [])];
           replyThreadId = original.thread_id;
@@ -889,7 +890,7 @@ export class IdbMailStore implements MailStore {
     applyChunk: (id, ruleJson, messageIds, now) =>
       this.command(() => {
         const current = T(this.c, "filters").get(id);
-        if (!current || current.rule_json !== ruleJson) throw new RpcError("CANCELLED", "The filter changed while it was being applied");
+        if (!current || current.rule_json !== ruleJson) throw new RpcError("CANCELLED", L("errors.filterChanged"));
         const rule = JSON.parse(ruleJson) as { actions: FilterAction[] };
         const ids = claimFilterApplications(this.c, id, messageIds, now);
         const opIds: string[] = [];
@@ -1070,7 +1071,7 @@ export class IdbMailStore implements MailStore {
     change: (o) =>
       this.command(() => {
         const r = T(this.c, "accounts").get(o.claim.accountId);
-        if (!r || r.created_at !== o.stamp.createdAt || r.email !== o.stamp.email) throw new RpcError("NOT_FOUND", `${o.stamp.email} se quitó mientras se verificaba; no se cambió nada.`);
+        if (!r || r.created_at !== o.stamp.createdAt || r.email !== o.stamp.email) throw new RpcError("NOT_FOUND", L("errors.accountRemovedWhileVerifying", { email: o.stamp.email }));
         T(this.c, "secrets").put({ name: o.secret.name, blob: o.secret.blob });
         changeOwner(this.c, o.claim, o.reason, o.now);
       }),

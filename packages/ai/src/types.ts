@@ -1,4 +1,5 @@
-import type { AiErrorKind, AiProviderId, Capabilities, CompatiblePreset, FilterRule, ModelInfo, OutputMode } from "@terno/core";
+import { textRef, type AiErrorKind, type AiProviderId, type Capabilities, type CompatiblePreset, type FilterRule, type ModelInfo, type OutputMode, type TextRef } from "@terno/core";
+import type { Localized } from "@terno/i18n";
 import type { z } from "zod";
 
 export type { AiErrorKind, AiProviderId, Capabilities, CompatiblePreset, ModelInfo, OutputMode, PresetDescriptor, ProviderDescriptor } from "@terno/core";
@@ -80,11 +81,15 @@ export interface AiTasks {
 export class AiError extends Error {
   /** the provider (or the configuration) said no: shown to the user, never reported */
   readonly expected = true;
+  /** set when the message is a catalog message (L()): the renderer translates it */
+  readonly i18n?: TextRef;
   constructor(
-    message: string,
+    message: string | Localized,
     readonly kind: AiErrorKind,
   ) {
-    super(message);
+    super(typeof message === "string" ? message : message.message);
     this.name = "AiError";
+    const i18n = textRef(message);
+    if (i18n) this.i18n = i18n;
   }
 }

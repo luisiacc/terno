@@ -1,4 +1,4 @@
-import type { Condition, FilterAction, FilterRule } from "@terno/core";
+import { decodeText, type Condition, type FilterAction, type FilterRule } from "@terno/core";
 import { draftAddressSchema, exportCategorySchema, exportDraftSchema, exportFilterSchema, settingsPatchSchema, type ExportCategory, type ExportDraftItem, type ExportFilter, type DraftAddress, type ExportedDraft, type ExportFile, type ImportResult, type MailboxExport, type SettingsPatch } from "@terno/core/rpc";
 import type { DraftInput, DraftRow } from "@terno/store";
 import type { BackendCore as Backend } from "./core";
@@ -76,7 +76,7 @@ export async function exportMailbox(b: Backend): Promise<MailboxExport> {
     drafts,
     ops: (await store.ops.recent(100_000))
       .filter((o) => o.state !== "succeeded")
-      .map((o) => ({ accountEmail: emailOf(o.account_id), kind: o.kind, state: o.state, createdAt: o.created_at, lastError: o.last_error, target: JSON.parse(o.target_json), payload: JSON.parse(o.payload_json) })),
+      .map((o) => ({ accountEmail: emailOf(o.account_id), kind: o.kind, state: o.state, createdAt: o.created_at, lastError: o.last_error === null ? null : decodeText(o.last_error).message, target: JSON.parse(o.target_json), payload: JSON.parse(o.payload_json) })),
   };
 }
 

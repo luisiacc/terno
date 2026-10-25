@@ -1,3 +1,5 @@
+import { RpcError } from "@terno/core/rpc";
+import { L } from "@terno/i18n";
 import {
   BULK_CONTENT_CAP,
   candidateCategories,
@@ -6,6 +8,7 @@ import {
   decide,
   encodeFeatures,
   explain,
+  parseReasons,
   extractFeatures,
   featuresFromBlob,
   featuresToBlob,
@@ -16,6 +19,7 @@ import {
   valvePaused,
   type AutoCategorize,
   type CategorizerModel,
+  type Reason,
   type CategorizeScope,
   type CategoryModelStats,
   type CategoryPolicy,
@@ -466,7 +470,7 @@ export function undoMoveBegin(c: Ctx, batchId: number, now: number): boolean {
     const batch = T(c, "cat_batches").get(batchId);
     if (!batch || batch.undone_at !== null) return false;
     const s = scopeOf(batch);
-    if (s.phase === "expired") throw new Error("Este movimiento ya no se puede deshacer");
+    if (s.phase === "expired") throw new RpcError("NOT_FOUND", L("errors.moveExpired"));
     if (s.phase !== "done") throw new Error(`move ${batchId} is still being applied`);
     const journal = T(c, "cat_move_threads");
     for (const r of journal.by("fk_batch_id", batchId)) journal.update(r, { done: 0 });
@@ -979,16 +983,16 @@ export function pendingSuggestions(c: Ctx, o: { categoryId?: number; threadId?: 
       return ty.last_date - tx.last_date || ty.id - tx.id || y.p - x.p;
     })
     .slice(0, o.limit)
-    .map((d) => ({ threadId: d.thread_id, categoryId: d.category_id, p: d.p, reasons: JSON.parse(d.explain_json) as string[], at: d.at }));
+    .map((d) => ({ threadId: d.thread_id, categoryId: d.category_id, p: d.p, reasons: parseReasons(d.explain_json), at: d.at }));
 }
 
-export function autoReasons(c: Ctx, threadId: number): { categoryId: number; reasons: string[] }[] {
+export function autoReasons(c: Ctx, threadId: number): { categoryId: number; reasons: Reason[] }[] {
   const memberships = T(c, "thread_categories");
   return T(c, "cls_decisions")
     .by("fk_thread_id", threadId)
     .filter((d) => d.kind === "auto" && memberships.get(threadId, d.category_id)?.added_by === "auto")
     .sort((x, y) => x.category_id - y.category_id)
-    .map((d) => ({ categoryId: d.category_id, reasons: JSON.parse(d.explain_json) as string[] }));
+    .map((d) => ({ categoryId: d.category_id, reasons: parseReasons(d.explain_json) }));
 }
 
 export function categoryStats(c: Ctx): CategoryModelStats[] {

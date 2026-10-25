@@ -1,7 +1,8 @@
 import type { AiTasks } from "@terno/ai";
-import type { Account, AccountSyncState, ThreadAction } from "@terno/core";
+import { decodeText, encodeText, messageOf, textRef, type Account, type AccountSyncState, type ThreadAction } from "@terno/core";
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
 import { RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type Transport } from "@terno/core/rpc";
+import { L } from "@terno/i18n";
 import type { ClassifierInput, IncomingMessage, MailStore, OpRow, Platform } from "@terno/store";
 import { ProviderAuthError, ProviderError, type MailProvider, type ProviderRegistry, type SyncSink } from "@terno/mail/portable";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
@@ -70,6 +71,26 @@ const COUNTS_EVERY_MS = 200;
 const accountKindOf = (kind: string | undefined): FieldValueOf<"accountKind"> => (kind === "imap" || kind === "gmail" ? kind : "other");
 const OP_KINDS = new Set<string>(["archive", "trash", "spam", "notSpam", "moveToInbox", "markRead", "markUnread", "star", "unstar", "send", "move"]);
 const opKindOf = (kind: string): FieldValueOf<"opKind"> => (OP_KINDS.has(kind) ? (kind as FieldValueOf<"opKind">) : "other");
+
+const OP_SUMMARY = {
+  archive: "backend.op.archive",
+  trash: "backend.op.trash",
+  spam: "backend.op.spam",
+  notSpam: "backend.op.notSpam",
+  moveToInbox: "backend.op.moveToInbox",
+  markRead: "backend.op.markRead",
+  markUnread: "backend.op.markUnread",
+  star: "backend.op.star",
+  unstar: "backend.op.unstar",
+  move: "backend.op.move",
+} as const;
+
+/** What an op is, for the outbox and failure notices: English, plus the catalog message the renderer shows. */
+export function opSummary(kind: string, subject: string, count: number): Pick<OpInfo, "summary" | "summaryI18n"> {
+  const m = kind === "send" ? L("backend.op.send", { subject }) : Object.hasOwn(OP_SUMMARY, kind) ? L(OP_SUMMARY[kind as keyof typeof OP_SUMMARY], { count }) : L("backend.op.other", { kind, count });
+  return { summary: m.message, summaryI18n: textRef(m)! };
+}
+
 const AUTO_NOTICE_GATHER_MS = 1500;
 const AUTO_NOTICE_EVERY_MS = 30_000;
 
@@ -446,7 +467,7 @@ export class BackendCore {
     return model ? { model, mode: await readAutoCategorize(this.store) } : null;
   }
 
-  /** One "Terno añadió N conversaciones a X" per category at most every 30 s. */
+  /** One "Terno added N conversations to X" per category at most every 30 s. */
   private announceAuto(auto: Map<number, number[]>): void {
     for (const [categoryId, threadIds] of auto) {
       let n = this.autoNotices.get(categoryId);
@@ -576,7 +597,7 @@ export class BackendCore {
         // an unreadable password or token is a sign-in to redo: ops wait for it, Settings shows the account's error with its fix
         getSecret: (name) =>
           this.getSecret(`account:${accountId}:${name}`).catch((error: unknown) => {
-            throw error instanceof SecretUnreadableError ? new ProviderAuthError(error.message) : error;
+            throw error instanceof SecretUnreadableError ? new ProviderAuthError(messageOf(error)) : error;
           }),
         setSecret: (name, value) => this.setSecret(`account:${accountId}:${name}`, value),
         getAppSecret: (name) => this.getSecret(name),
@@ -660,7 +681,7 @@ export class BackendCore {
       try {
         await provider.sync(sink);
         breadcrumb("sync", "sync.done", { accountKind, durationMs: performance.now() - started });
-        await setState({ status: "idle", lastError: null, lastSyncAt: this.now() });
+        await setState({ status: "idle", lastError: null, lastErrorI18n: null, lastSyncAt: this.now() });
         // the account works: whatever waited for its sign-in goes now
         await this.resumeAuth(accountId);
         // its mail is here: drafts an import kept for it (answering messages that just synced) go in
@@ -670,10 +691,11 @@ export class BackendCore {
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        const lastErrorI18n = textRef((error as { i18n?: unknown } | null)?.i18n) ?? null;
         // offline or a sign-in to redo is the provider's verdict (expected); anything else is ours
         captureError(error, { code: "sync.failed", fields: { accountKind, retryable: error instanceof ProviderError && error.retryable } });
         this.log("warn", `sync failed for account ${accountId}`, message);
-        if (this.store.isOpen) await setState({ status: error instanceof ProviderError && error.retryable ? "offline" : "error", lastError: message });
+        if (this.store.isOpen) await setState({ status: error instanceof ProviderError && error.retryable ? "offline" : "error", lastError: message, lastErrorI18n });
       }
     })().finally(() => {
       this.syncing.delete(accountId);
@@ -761,15 +783,17 @@ export class BackendCore {
     const target = JSON.parse(op.target_json) as { messageIds?: number[] };
     const started = performance.now();
     try {
-      if (!provider) throw new ProviderError("Account no longer exists", false);
-      const result = await provider.execute({ id: op.id, kind: op.kind, target, payload: JSON.parse(op.payload_json) });
+      if (!provider) throw new ProviderError(L("errors.accountGone"), false);
+      const { warning, ...result } = (await provider.execute({ id: op.id, kind: op.kind, target, payload: JSON.parse(op.payload_json) })) || {};
       if (op.kind === "send") log.info("send.done", { durationMs: performance.now() - started });
       if (this.stopped && !this.store.isOpen) return;
-      const done = await this.store.ops.complete(op.id, result, this.now());
+      // a warning in Terno's words stays a catalog message (see opInfo)
+      const done = await this.store.ops.complete(op.id, warning === undefined ? result : { ...result, warning: encodeText(warning) }, this.now());
       this.categorizer.apply(done.deltas);
       if (done.touched.length) this.notifyChanged(done.touched);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      // a message in Terno's words is kept as a catalog message (see opInfo)
+      const message = encodeText(messageOf(error));
       const pe = error instanceof ProviderError ? error : null;
       // a deleted account is gone on purpose: its ops just fail
       const expected = pe ? pe.expected || !provider : undefined;
@@ -789,15 +813,17 @@ export class BackendCore {
   opInfo(op: OpRow): OpInfo {
     const payload = JSON.parse(op.payload_json) as { subject?: string };
     const n = (JSON.parse(op.target_json) as { messageIds?: number[] }).messageIds?.length ?? 0;
+    const stored = op.last_error === null ? null : decodeText(op.last_error);
+    const lastError = { lastError: stored?.message ?? null, ...(stored?.i18n ? { lastErrorI18n: stored.i18n } : {}) };
     return {
       id: op.id,
       accountId: op.account_id,
       kind: op.kind,
       state: op.state,
       attempts: op.attempts,
-      lastError: op.last_error,
+      ...lastError,
       createdAt: op.created_at,
-      summary: op.kind === "send" ? `Send “${payload.subject ?? ""}”` : `${op.kind} · ${n} message${n === 1 ? "" : "s"}`,
+      ...opSummary(op.kind, payload.subject ?? "", n),
     };
   }
 

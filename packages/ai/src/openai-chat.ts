@@ -1,5 +1,6 @@
 import type OpenAI from "openai";
 import type { ChatCompletionCreateParamsNonStreaming } from "openai/resources/chat/completions";
+import { L } from "@terno/i18n";
 import { describeProvider, isLocalProvider, needsKey, PRESETS, resolveBaseURL } from "./providers";
 import { mapNetworkError, mapSdkError, type ErrorInfo } from "./sdk-errors";
 import { AiError, type ModelInfo, type ModelTransport, type ProviderConfig } from "./types";
@@ -17,7 +18,7 @@ const OPENROUTER_HEADERS = { "HTTP-Referer": "https://terno.app", "X-Title": "Te
  */
 export function openaiChatTransport(config: ProviderConfig): ModelTransport {
   const baseURL = resolveBaseURL(config);
-  if (!baseURL) throw new AiError("Indica la URL del servidor en Ajustes → IA.", "not_configured");
+  if (!baseURL) throw new AiError(L("errors.ai.serverUrlMissing"), "not_configured");
   const descriptor = describeProvider(config.id);
   const azure = config.id === "compatible" && config.preset === "azure";
   const info: ErrorInfo = {
@@ -34,7 +35,7 @@ export function openaiChatTransport(config: ProviderConfig): ModelTransport {
   let loaded: Promise<{ sdk: Sdk; client: OpenAI }> | null = null;
   const load = () =>
     (loaded ??= import("openai").then((sdk) => {
-      if (!apiKey) throw new AiError(`Guarda tu API key de ${info.label} en Ajustes → IA.`, "not_configured");
+      if (!apiKey) throw new AiError(L("errors.ai.keyMissing", { provider: info.label }), "not_configured");
       const { default: OpenAI, AzureOpenAI } = sdk;
       // Every value explicit: the SDK otherwise falls back to OPENAI_BASE_URL / _API_KEY / _ORG_ID / _PROJECT_ID.
       // In the web build's worker the SDK must be told it may run there (the user's own key, on their device).
@@ -53,7 +54,7 @@ export function openaiChatTransport(config: ProviderConfig): ModelTransport {
     } catch (error) {
       throw mapNetworkError(error, info);
     }
-    if (res.status === 401 || res.status === 403) throw new AiError(`${info.label} rechazó la API key.`, "auth");
+    if (res.status === 401 || res.status === 403) throw new AiError(L("errors.ai.keyRejected", { provider: info.label }), "auth");
     return { status: res.status, body: res.ok ? ((await res.json().catch(() => null)) as T | null) : null };
   }
 
@@ -78,7 +79,7 @@ export function openaiChatTransport(config: ProviderConfig): ModelTransport {
       getJson<Tags>("/api/tags", signal),
       getJson<Tags>("/api/ps", signal).catch(() => ({ status: 0, body: null })),
     ]);
-    if (!tags.body?.models) throw new AiError(`${info.label} respondió sin lista de modelos (${tags.status}).`, "unavailable");
+    if (!tags.body?.models) throw new AiError(L("errors.ai.noModelList", { provider: info.label, status: tags.status }), "unavailable");
     const loadedNames = new Set(ps.body?.models?.map((m) => m.name) ?? []);
     const models: ModelInfo[] = tags.body.models.map((m) => ({ id: m.name, sizeBytes: m.size, loaded: loadedNames.has(m.name) }));
     const selected = models.find((m) => m.id === config.model || m.id === `${config.model}:latest`);
@@ -118,7 +119,7 @@ export function openaiChatTransport(config: ProviderConfig): ModelTransport {
       try {
         const completion = await client.chat.completions.create(body, { signal: req.signal });
         const choice = completion.choices[0];
-        if (!choice) throw new AiError(`${info.label} devolvió una respuesta vacía.`, "invalid_output");
+        if (!choice) throw new AiError(L("errors.ai.emptyAnswer", { provider: info.label }), "invalid_output");
         if (choice.message.refusal) return { text: "", stop: "refusal" };
         return { text: choice.message.content ?? "", stop: choice.finish_reason === "length" ? "length" : "end" };
       } catch (error) {

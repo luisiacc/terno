@@ -1,4 +1,4 @@
-import type { Address, FeatureSource, OpState, ThreadFeatures, ThreadSummary, TrainExample, View } from "@terno/core";
+import type { Address, FeatureSource, OpState, Reason, ThreadFeatures, ThreadSummary, TrainExample, View } from "@terno/core";
 
 // ───────────────────────────── ingestion ─────────────────────────────
 
@@ -152,7 +152,7 @@ export interface PendingSuggestion {
   threadId: number;
   categoryId: number;
   p: number;
-  reasons: string[];
+  reasons: Reason[];
   at: number;
 }
 

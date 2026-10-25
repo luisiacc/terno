@@ -1,4 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
+import { L } from "@terno/i18n";
 import { resolveBaseURL } from "./providers";
 import { mapSdkError } from "./sdk-errors";
 import { AiError, type ModelInfo, type ModelTransport, type ProviderConfig } from "./types";
@@ -12,7 +13,7 @@ export function anthropicTransport(config: ProviderConfig): ModelTransport {
   let loaded: Promise<{ sdk: Sdk; client: Anthropic }> | null = null;
   const load = () =>
     (loaded ??= import("@anthropic-ai/sdk").then((sdk) => {
-      if (!config.apiKey) throw new AiError("Guarda tu API key de Anthropic en Ajustes → IA.", "not_configured");
+      if (!config.apiKey) throw new AiError(L("errors.ai.keyMissing", { provider: "Anthropic" }), "not_configured");
       // Every option explicit: ambient ANTHROPIC_* env vars must never redirect or re-key requests.
       // In the web build's worker: the opt-in sends anthropic-dangerous-direct-browser-access, without which the API refuses CORS.
       const { default: Anthropic } = sdk;

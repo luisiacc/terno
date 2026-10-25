@@ -1,3 +1,5 @@
+import type { TextKey } from "@terno/i18n";
+
 export type AccountId = number;
 export type ThreadId = number;
 export type MessageId = number;
@@ -61,6 +63,8 @@ export interface AccountSyncState {
   syncedSince: number | null;
   bodiesPending: number;
   lastError: string | null;
+  /** lastError as a catalog message (when it is one of Terno's): the renderer shows it in the user's language */
+  lastErrorI18n?: { key: string; params?: Readonly<Record<string, string | number>> } | null;
   lastSyncAt: number | null;
 }
 
@@ -123,10 +127,18 @@ export interface ThreadDetail {
   messages: MessageDetail[];
   /** what the categorization engine did or suggests here, with its reasons */
   categorization?: {
-    auto: { categoryId: CategoryId; reasons: string[] }[];
-    suggestions: { categoryId: CategoryId; p: number; reasons: string[] }[];
+    auto: { categoryId: CategoryId; reasons: Reason[] }[];
+    suggestions: { categoryId: CategoryId; p: number; reasons: Reason[] }[];
   };
 }
+
+/**
+ * Why the categorization engine filed or suggests a conversation. A catalog
+ * descriptor (key + params) that the reader renders in the user's language;
+ * a plain string is a reason persisted before reasons were localized, shown
+ * as it is.
+ */
+export type Reason = string | { k: TextKey; p?: Record<string, string | number> };
 
 export interface Category {
   id: CategoryId;

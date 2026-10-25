@@ -108,7 +108,7 @@ describe("accounts.reconnect", () => {
     const a = await client.call("accounts.addImap", imap("luis@fastmail.com"));
     await backend.store.accounts.setSyncState(a.id, { status: "error", lastError: "AUTHENTICATIONFAILED" });
     expect(await errorOf(client.call("accounts.reconnect", { id: a.id }))).toMatchObject({ code: "BAD_REQUEST" });
-    expect(await errorOf(client.call("accounts.reconnect", { id: a.id, password: "wrong" }))).toMatchObject({ code: "BAD_REQUEST", message: expect.stringMatching(/No se pudo conectar/) });
+    expect(await errorOf(client.call("accounts.reconnect", { id: a.id, password: "wrong" }))).toMatchObject({ code: "BAD_REQUEST", message: expect.stringMatching(/^Couldn’t connect luis@fastmail\.com: /) });
     await backend.setSecret(`account:${a.id}:password`, "old");
     const syncs = windows.length;
     const r = await client.call("accounts.reconnect", { id: a.id, password: "pw-luis@fastmail.com" });
@@ -129,7 +129,7 @@ describe("accounts.reconnect", () => {
     });
     await client.call("settings.update", { gmailClientId: "id.apps.googleusercontent.com" });
     const a = createAccount(sqlDb(backend.store), { kind: "gmail", email: "luis@gmail.com", displayName: "luis", color: "indigo" });
-    expect(await errorOf(client.call("accounts.reconnect", { id: a.id }))).toMatchObject({ code: "BAD_REQUEST", message: expect.stringMatching(/no luis@gmail.com/) });
+    expect(await errorOf(client.call("accounts.reconnect", { id: a.id }))).toMatchObject({ code: "BAD_REQUEST", message: expect.stringMatching(/not luis@gmail.com/) });
     expect(await backend.getSecret(`account:${a.id}:refreshToken`)).toBeNull();
     email = "luis@gmail.com";
     await client.call("accounts.reconnect", { id: a.id });

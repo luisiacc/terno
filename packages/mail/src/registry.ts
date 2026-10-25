@@ -1,3 +1,4 @@
+import { L } from "@terno/i18n";
 import { createDemoProvider } from "./demo";
 import { createGmailProvider, connectGmail } from "./gmail";
 import { createImapProvider, type ImapProviderOptions } from "./imap";
@@ -38,12 +39,12 @@ export function createRegistry(options: RegistryOptions = {}): ProviderRegistry 
         await c.logout();
       } catch (error) {
         const e = error as { authenticationFailed?: boolean; message?: string };
-        throw new ProviderError(e.authenticationFailed ? "Usuario o contraseña incorrectos (IMAP)" : `No se pudo conectar a ${config.imap.host}: ${e.message}`, false);
+        throw new ProviderError(e.authenticationFailed ? L("errors.imap.badLogin") : L("errors.imap.cannotConnect", { host: config.imap.host, detail: String(e.message) }), false);
       }
       try {
         await verifySmtp({ ...config.smtp, password, allowInsecure: options.imap?.allowInsecure });
       } catch (error) {
-        throw new ProviderError(`No se pudo conectar al SMTP ${config.smtp.host}: ${error instanceof Error ? error.message : error}`, false);
+        throw new ProviderError(L("errors.smtp.cannotConnect", { host: config.smtp.host, detail: error instanceof Error ? error.message : String(error) }), false);
       }
     },
     connectGmail: (o) => connectGmail({ ...o, endpoints: options.gmail?.endpoints }),

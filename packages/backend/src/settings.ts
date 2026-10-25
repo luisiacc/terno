@@ -8,9 +8,9 @@ import {
   type Capabilities,
   type CompatiblePreset,
 } from "@terno/ai";
-import { AI_PROVIDER_IDS, builtinMode, canonicalThemeId, COMPATIBLE_PRESETS, CUSTOM_PREFIX, DEFAULT_THEME, type CustomTheme, type ThemeMode } from "@terno/core";
+import { AI_PROVIDER_IDS, builtinMode, canonicalThemeId, COMPATIBLE_PRESETS, CUSTOM_PREFIX, DEFAULT_THEME, textRef, type CustomTheme, type TextRef, type ThemeMode } from "@terno/core";
 import type { AiProfile, AiSettings, AppSettings, SettingsPatch } from "@terno/core/rpc";
-import { isLanguageSetting } from "@terno/i18n";
+import { isLanguageSetting, L, type Localized } from "@terno/i18n";
 import type { MailStore } from "@terno/store";
 import { unreadableSecrets } from "./keychain";
 
@@ -200,6 +200,14 @@ export async function readSettings(store: SettingsStore): Promise<AppSettings> {
 
 export class SettingsError extends Error {
   readonly expected = true;
+  /** set when the message is a catalog message (L()): the renderer translates it */
+  readonly i18n?: TextRef;
+  constructor(message: string | Localized) {
+    super(typeof message === "string" ? message : message.message);
+    this.name = "SettingsError";
+    const i18n = textRef(message);
+    if (i18n) this.i18n = i18n;
+  }
 }
 
 /**
@@ -244,14 +252,14 @@ function patchedSettings(s: StoredSettings, patch: SettingsPatch, options: { end
   const custom = (general.customThemes as CustomTheme[] | undefined) ?? s.customThemes ?? [];
   for (const [key, mode] of [["lightTheme", "light"], ["darkTheme", "dark"]] as const) {
     const id = general[key] as string | undefined;
-    if (id !== undefined && themeMode(id, custom) !== mode) throw new SettingsError(`Tema desconocido para el modo ${mode === "light" ? "claro" : "oscuro"}: ${id}`);
+    if (id !== undefined && themeMode(id, custom) !== mode) throw new SettingsError(L(mode === "light" ? "errors.themeUnknownLight" : "errors.themeUnknownDark", { id }));
   }
   const localMode = (general.localMode as boolean | undefined) ?? s.localMode ?? DEFAULT_SETTINGS.localMode;
   const profile = profiles[provider] ?? { model: "" };
   // a custom endpoint may be a name that resolves to loopback: the caller checked it (see endpointIsLocal)
   const local = isLocalProvider({ id: provider, baseURL: profile.baseURL, preset: profile.preset }) || (provider === "compatible" && profile.preset === "custom" && options.endpointIsLocal === true);
   if (selecting && localMode && provider !== "none" && !local) {
-    throw new SettingsError(`${describeProvider(provider).label} usa la nube y el modo local está activado. Desactívalo en Ajustes → General para usarla.`);
+    throw new SettingsError(L("errors.cloudAiLocalMode", { provider: describeProvider(provider).label }));
   }
   const { aiProvider: _p, aiModel: _m, ...kept } = s;
   return { ...kept, ...general, ai: { ...s.ai, provider, profiles } };

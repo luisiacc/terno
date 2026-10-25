@@ -1,3 +1,4 @@
+import type { Reason } from "../types";
 import type { FilterRule } from "../rules/schema";
 
 /** Counts above this show as "1 000+": a chip never pays for an exact count of a huge set. */
@@ -25,7 +26,7 @@ export interface Prediction {
   categoryId: number;
   p: number;
   decision: "auto" | "suggest" | "none";
-  reasons: string[];
+  reasons: Reason[];
 }
 
 export interface CategoryModelStats {

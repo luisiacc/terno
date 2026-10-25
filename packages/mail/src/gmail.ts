@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { DEFAULT_LOCALE, L, LOCALE_IDS, LOCALES } from "@terno/i18n";
 import { buildRaw } from "./compose";
 import { createGmailApiProvider, GMAIL_SCOPES as SCOPES, GOOGLE_ENDPOINTS, type GmailEndpoints } from "./gmail-api";
 import { ProviderAuthError, ProviderError, type GmailConnectResult, type MailProvider, type ProviderContext } from "./types";
@@ -24,6 +25,26 @@ export interface ConnectOptions {
   loginHint?: string;
 }
 
+type CallbackKey = "backend.oauth.invalid" | "backend.oauth.denied" | "backend.oauth.back";
+
+/**
+ * The page the browser shows after Google's redirect. The backend has no
+ * language, so the page carries every locale and shows the browser's own
+ * (English without script).
+ */
+export async function callbackPage(): Promise<(ok: boolean, msg: CallbackKey) => string> {
+  const catalogs = await Promise.all(LOCALE_IDS.map(async (id) => [id, await LOCALES[id].load()] as const));
+  const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
+  const pick = `<script>(function(){var ids=${JSON.stringify(LOCALE_IDS)};var l=(navigator.languages||[navigator.language]).map(function(t){return String(t).toLowerCase().split(/[-_]/)[0]}).find(function(b){return ids.indexOf(b)>=0});if(l)document.querySelectorAll("[data-locale]").forEach(function(e){e.hidden=e.getAttribute("data-locale")!==l})})()</script>`;
+  return (ok, msg) => {
+    const blocks = catalogs.map(([id, m]) => {
+      const text = (k: CallbackKey | "backend.oauth.connected" | "backend.oauth.failed") => esc(String(m[k] ?? k));
+      return `<div lang="${LOCALES[id].tag}" data-locale="${id}"${id === DEFAULT_LOCALE ? "" : " hidden"}><h2>${text(ok ? "backend.oauth.connected" : "backend.oauth.failed")}</h2><p>${text(msg)}</p></div>`;
+    });
+    return `<!doctype html><meta charset="utf-8"><body style="font:15px -apple-system;padding:40px;text-align:center">${blocks.join("")}${pick}</body>`;
+  };
+}
+
 /**
  * RFC 8252 flow: a one-shot HTTP listener on 127.0.0.1:<random>, PKCE S256 and
  * a random state. The redirect is accepted only with the matching state.
@@ -34,30 +55,31 @@ export async function connectGmail(options: ConnectOptions): Promise<GmailConnec
   const verifier = b64url(randomBytes(48));
   const challenge = b64url(createHash("sha256").update(verifier).digest());
   const state = b64url(randomBytes(24));
+  const page = await callbackPage();
   let server: Server | null = null;
   try {
     const code = await new Promise<{ code: string; redirectUri: string }>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new ProviderError("Google sign-in timed out", false)), options.timeoutMs ?? 300_000);
-      options.signal?.addEventListener("abort", () => reject(new ProviderError("Sign-in cancelled", false)));
+      const timer = setTimeout(() => reject(new ProviderError(L("errors.google.timedOut"), false)), options.timeoutMs ?? 300_000);
+      options.signal?.addEventListener("abort", () => reject(new ProviderError(L("errors.google.cancelled"), false)));
       server = createServer((req, res) => {
         const url = new URL(req.url ?? "/", "http://127.0.0.1");
         if (url.pathname !== "/callback") return void res.writeHead(404).end();
-        const done = (ok: boolean, msg: string) => {
+        const done = (ok: boolean, msg: CallbackKey) => {
           res.writeHead(ok ? 200 : 400, { "content-type": "text/html; charset=utf-8" });
-          res.end(`<!doctype html><meta charset="utf-8"><body style="font:15px -apple-system;padding:40px;text-align:center"><h2>${ok ? "Cuenta conectada ✓" : "No se pudo conectar"}</h2><p>${msg}</p></body>`);
+          res.end(page(ok, msg));
         };
         if (url.searchParams.get("state") !== state) {
-          done(false, "Solicitud inválida.");
+          done(false, "backend.oauth.invalid");
           return; // ignore forged/stale redirects, keep waiting for the real one
         }
         clearTimeout(timer);
         const error = url.searchParams.get("error");
         if (error) {
-          done(false, "Permiso denegado.");
-          reject(new ProviderError(error === "access_denied" ? "Google access was denied" : `Google error: ${error}`, false));
+          done(false, "backend.oauth.denied");
+          reject(new ProviderError(error === "access_denied" ? L("errors.google.denied") : L("errors.google.error", { code: error }), false));
           return;
         }
-        done(true, "Ya puedes volver a Terno.");
+        done(true, "backend.oauth.back");
         const port = (server!.address() as AddressInfo).port;
         resolve({ code: url.searchParams.get("code") ?? "", redirectUri: `http://127.0.0.1:${port}/callback` });
       });
@@ -82,7 +104,7 @@ export async function connectGmail(options: ConnectOptions): Promise<GmailConnec
     if (options.clientSecret) body.set("client_secret", options.clientSecret);
     const tokenRes = await netFetch(ep.token, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body });
     const tokens = (await tokenRes.json()) as { access_token?: string; refresh_token?: string; error?: string };
-    if (!tokenRes.ok || !tokens.access_token || !tokens.refresh_token) throw new ProviderError(`Token exchange failed: ${tokens.error ?? tokenRes.status}`, false);
+    if (!tokenRes.ok || !tokens.access_token || !tokens.refresh_token) throw new ProviderError(L("errors.google.signInFailed", { detail: tokens.error ?? tokenRes.status }), false);
     const profile = (await (await netFetch(`${ep.api}/profile`, { headers: { authorization: `Bearer ${tokens.access_token}` } })).json()) as { emailAddress: string };
     const info = (await netFetch(ep.userinfo, { headers: { authorization: `Bearer ${tokens.access_token}` } }).then((r) => (r.ok ? r.json() : {})).catch(() => ({}))) as { name?: string; sub?: string; email_verified?: boolean };
     return { email: profile.emailAddress, name: info.name ?? "", refreshToken: tokens.refresh_token, sub: info.sub ?? null, emailVerified: info.email_verified === true };
@@ -106,7 +128,7 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
     refreshing ??= (async () => {
       try {
         const refreshToken = await ctx.getSecret("refreshToken");
-        if (!refreshToken) throw new ProviderAuthError("Gmail account needs to be reconnected");
+        if (!refreshToken) throw new ProviderAuthError(L("errors.gmail.reconnect"));
         const clientId = (await store.setting<{ gmailClientId?: string }>("app"))?.gmailClientId;
         const body = new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: clientId ?? "" });
         const secret = await ctx.getAppSecret("gmailClientSecret").catch(() => null);
@@ -115,11 +137,11 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
         try {
           res = await netFetch(ep.token, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body });
         } catch (e) {
-          throw new ProviderError(`Network error refreshing Gmail token: ${e instanceof Error ? e.message : e}`, true);
+          throw new ProviderError(L("errors.gmail.refreshOffline", { detail: e instanceof Error ? e.message : String(e) }), true);
         }
         const json = (await res.json().catch(() => ({}))) as { access_token?: string; expires_in?: number; error?: string };
-        if (json.error === "invalid_grant") throw new ProviderAuthError("Gmail access was revoked; reconnect the account");
-        if (!res.ok || !json.access_token) throw new ProviderError(`Gmail token refresh failed (${res.status})`, res.status >= 500);
+        if (json.error === "invalid_grant") throw new ProviderAuthError(L("errors.gmail.revoked"));
+        if (!res.ok || !json.access_token) throw new ProviderError(L("errors.gmail.refreshFailed", { status: res.status }), res.status >= 500);
         access = { token: json.access_token, expiresAt: Date.now() + (json.expires_in ?? 3600) * 1000 - 60_000 };
         return json.access_token;
       } finally {

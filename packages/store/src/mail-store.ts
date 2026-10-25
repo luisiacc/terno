@@ -16,6 +16,7 @@ import type {
   OpState,
   Prediction,
   QuickActions,
+  Reason,
   ThreadAction,
   ThreadDetail,
   ThreadSummary,
@@ -217,7 +218,7 @@ export interface MailStore {
     scopeIds(p: ScopeParams & { after?: number; limit: number }): Promise<number[]>;
     /** how many threads a view holds, counted up to `limit` */
     scopeCount(p: ScopeParams & { limit: number }): Promise<number>;
-    get(id: number): Promise<(ThreadDetail & { categorization: { auto: { categoryId: number; reasons: string[] }[]; suggestions: PendingSuggestion[] } }) | null>;
+    get(id: number): Promise<(ThreadDetail & { categorization: { auto: { categoryId: number; reasons: Reason[] }[]; suggestions: PendingSuggestion[] } }) | null>;
     counts(): Promise<Counts>;
     /** resolves account:/category: and searches within one unit of work */
     /** an RPC cursor without revision/key (older renderers) continues this query */
@@ -337,7 +338,7 @@ export interface MailStore {
     aiCandidate(threadId: number): Promise<boolean>;
     vetoes(threadId: number, sender: string, categoryIds: readonly number[], now: number): Promise<Map<number, Vetoes>>;
     /** records the AI's suggestion if the thread is still undecided and nothing vetoes it now */
-    recordAiSuggestion(s: { threadId: number; categoryId: number; p: number; explain: string[]; sender: string; encoded: Uint32Array; model: CategorizerModel; now: number }): Promise<boolean>;
+    recordAiSuggestion(s: { threadId: number; categoryId: number; p: number; explain: Reason[]; sender: string; encoded: Uint32Array; model: CategorizerModel; now: number }): Promise<boolean>;
   };
 
   accounts: {

@@ -1,9 +1,10 @@
+import { L } from "@terno/i18n";
 import { createGmailApiProvider, GOOGLE_ENDPOINTS, type GmailEndpoints } from "./gmail-api";
 import { buildRawPortable } from "./compose-portable";
 import { ProviderAuthError, ProviderError, type GmailTokenBroker, type MailProvider, type ProviderContext } from "./types";
 
 /** What a web Gmail account shows when its hour-long token is gone (after a reload or an hour). */
-export const GMAIL_RECONNECT = "Vuelve a conectar Gmail: en el navegador, el acceso de Google dura una hora y no se guarda.";
+export const GMAIL_RECONNECT = L("errors.gmail.reconnectWeb");
 
 /**
  * Google's token model for the browser (no server, so no refresh token):
@@ -19,7 +20,7 @@ export function createGmailTokenBroker(o: { endpoints?: Partial<GmailEndpoints>;
     async inspect(accessToken, netFetch) {
       const auth = { authorization: `Bearer ${accessToken}` };
       const res = await netFetch(`${ep.api}/profile`, { headers: auth });
-      if (!res.ok) throw new ProviderError(res.status === 401 || res.status === 403 ? "Google no aceptó el acceso a Gmail (¿falta el permiso de Gmail?)" : `Gmail API ${res.status}`, false);
+      if (!res.ok) throw new ProviderError(res.status === 401 || res.status === 403 ? L("errors.gmail.accessRefused") : `Gmail API ${res.status}`, false);
       const profile = (await res.json()) as { emailAddress: string };
       const info = (await netFetch(ep.userinfo, { headers: auth })
         .then((r) => (r.ok ? r.json() : {}))

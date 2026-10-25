@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { L, type Localized } from "@terno/i18n";
 import { anthropicTransport } from "./anthropic";
 import { fakeTransport } from "./fake";
 import { runStructured, type StructuredTask } from "./ladder";
@@ -27,7 +28,7 @@ export function transportFor(config: ProviderConfig): ModelTransport {
     case "fake":
       return fakeTransport();
     case "none":
-      throw new AiError("La IA está desactivada.", "not_configured");
+      throw new AiError(L("errors.ai.off"), "not_configured");
   }
 }
 
@@ -38,8 +39,8 @@ async function withDeadline<T>(outer: AbortSignal | undefined, ms: number, fn: (
   try {
     return await fn(signal);
   } catch (error) {
-    if (outer?.aborted) throw new AiError("Cancelado.", "cancelled");
-    if (deadline.aborted) throw new AiError("La IA tardó demasiado en responder.", "timeout");
+    if (outer?.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
+    if (deadline.aborted) throw new AiError(L("errors.ai.tooSlow"), "timeout");
     if (error instanceof AiError) throw error;
     throw new AiError(error instanceof Error ? error.message : String(error), "unavailable");
   }
@@ -128,7 +129,7 @@ export interface ProbeResult {
   latencyMs: number;
   capabilities: Capabilities;
   /** e.g. the model's context window is smaller than the filter prompt needs */
-  warning?: string;
+  warning?: Localized;
 }
 
 /**
@@ -169,7 +170,7 @@ export async function probe(
     const contextTokens = models.find((m) => m.id === config.model)?.contextTokens ?? null;
     const capabilities: Capabilities = { output, contextTokens, embeddings: descriptor.declared.embeddings, probedAt: Date.now() };
     const needed = FILTER_PROMPT_TOKENS + FILTER_MAX_TOKENS;
-    const warning = contextTokens !== null && contextTokens < needed ? `El modelo admite ${contextTokens.toLocaleString("es")} tokens de contexto; los filtros necesitan unos ${needed.toLocaleString("es")}.` : undefined;
+    const warning = contextTokens !== null && contextTokens < needed ? L("backend.ai.contextWindow", { tokens: contextTokens, needed }) : undefined;
     return { latencyMs, capabilities, warning };
   });
 }

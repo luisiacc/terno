@@ -462,6 +462,9 @@ importers:
       '@terno/core':
         specifier: workspace:*
         version: link:../core
+      '@terno/i18n':
+        specifier: workspace:*
+        version: link:../i18n
       '@terno/store':
         specifier: workspace:*
         version: link:../store
@@ -490,6 +493,9 @@ importers:
       '@terno/core':
         specifier: workspace:*
         version: link:../core
+      '@terno/i18n':
+        specifier: workspace:*
+        version: link:../i18n
       '@terno/store':
         specifier: workspace:*
         version: link:../store

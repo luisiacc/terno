@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage as Req, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { encodeText } from "@terno/core";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { createGmailTokenBroker, createRegistry, GMAIL_RECONNECT, type ProviderRegistry } from "@terno/mail";
 import { afterEach, describe, expect, it } from "vitest";
@@ -276,12 +277,12 @@ describe("Gmail and the owner identity", () => {
     const gmail = await client.call("accounts.connectGmail", {});
     const owner = await client.call("identity.get", {});
     expect(owner).toMatchObject({ email: "luis@gmail.com" }); // the unverified IMAP add did not claim
-    await expect(client.call("identity.changeOwner", { accountId: gmail.id })).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringMatching(/ya es tu cuenta/) });
+    await expect(client.call("identity.changeOwner", { accountId: gmail.id })).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringMatching(/is already your Terno account/) });
 
     google.email = "other@gmail.com";
     const second = await client.call("accounts.connectGmail", {});
     google.email = "someone-else@gmail.com"; // the user picks the wrong account on the consent screen
-    await expect(client.call("identity.changeOwner", { accountId: second.id })).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringMatching(/no other@gmail.com/) });
+    await expect(client.call("identity.changeOwner", { accountId: second.id })).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringMatching(/not other@gmail.com/) });
     expect(google.loginHints.at(-1)).toBe("other@gmail.com");
     expect(await client.call("identity.get", {})).toEqual(owner);
 
@@ -514,10 +515,11 @@ describe("Gmail on the web (Google's token model, no refresh token)", () => {
       await backend.runWorker();
       now += 60_000;
     }
-    expect(sqlDb(backend.store).get("SELECT state, attempts, last_error FROM ops")).toEqual({ state: "queued", attempts: 0, last_error: GMAIL_RECONNECT });
+    expect(sqlDb(backend.store).get("SELECT state, attempts, last_error FROM ops")).toEqual({ state: "queued", attempts: 0, last_error: encodeText(GMAIL_RECONNECT) });
+    expect((await client.call("ops.list", {}))[0]).toMatchObject({ lastError: GMAIL_RECONNECT.message, lastErrorI18n: { key: "errors.gmail.reconnectWeb" } });
     expect(await backend.store.ops.nextAttemptAt()).toBeNull();
     await backend.syncAccount(account.id);
-    expect((await client.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "error", lastError: GMAIL_RECONNECT });
+    expect((await client.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "error", lastError: GMAIL_RECONNECT.message, lastErrorI18n: { key: "errors.gmail.reconnectWeb" } });
     // reconnecting resumes it right away
     await client.call("accounts.connectGmailToken", { accessToken: google.issue(), expiresIn: 3600 });
     await backend.runWorker();

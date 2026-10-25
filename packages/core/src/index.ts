@@ -8,3 +8,4 @@ export * from "./keybindings";
 export * from "./address";
 export * from "./ai";
 export * from "./themes";
+export * from "./localized";
