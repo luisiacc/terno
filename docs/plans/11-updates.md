@@ -1,6 +1,6 @@
 # Plan 11: in-app updates
 
-- **Status:** proposed.
+- **Status:** shipped (see §9, as shipped).
 - **Builds on:** plan 10 (the updater logs through its primitives).
 - **Request:** "Work on properly being able to update the app, like T3 Code, where there's a button to update the app inside the app. It works in the background and then asks to reload to load the update. Let's have that nice flow as well."
 
@@ -170,3 +170,56 @@ These revisions override §§2–6 where they conflict. The full critique is in 
    - Packaged spike turned into a test: two signed builds, a local generic feed, an update applied, a relaunch, the profile intact, the acknowledgement recorded, and a corrupted zip rejected by sha512.
    - If signing isn't available (CI), the test is skipped with a clear reason.
    - Web: two SW builds, with a dirty draft in a second tab.
+
+## 9. As shipped
+
+### What exists
+
+- **Spike first** (branch `worktree-agent-a1438f42869e1ab2d`): signing 0.1.0 and 0.1.1 with "Apple Development: lccpacc@gmail.com (DA229N496G)" gives a stable designated requirement (`identifier "…" and anchor apple generic and certificate leaf[subject.CN] = …`); Squirrel accepted the update, relaunched the same path, `codesign --verify` passed, safeStorage decrypted with no prompt, the profile was intact. Ad-hoc builds are refused (`SQRLCodeSignatureErrorDomain`); a tampered zip is refused by sha512.
+- **Backend quiesce** (`BackendCore.quiesce/resume/sendsIdle`, `ops.release` in both stores): once a quit or update begins no op starts; one claimed but not started goes back to the queue as it was (a send never turns "unknown" because the app quit); a send already at its server gets until the deadline.
+- **Coordinated shutdown on every quit** (`apps/desktop/src/shutdown.ts`): each window flushes its drafts and acknowledges (5 s at most; a page registers its flusher once booted), then the backend gets `shutdown` (quiesce up to 30 s, stop, database closed: the WAL is checkpointed and emptied), then main quits. A plain quit hides the windows at once and is `force`d (a send still running at 30 s is recovered as "unknown" next start, as after a crash); "Restart now" isn't forced: a send past the deadline answers "sending", the backend keeps running, the pill says "Waiting for Send…", and the install happens on `sends-idle`. A backend that never answers is given up on after the deadline plus 5 s.
+- **Updater** (`apps/desktop/src/updates/`): `@terno/core/updates` holds the pure reducer and the plain-text release notes; `policy.ts` the rules (policy matrix, grants, hosts, unsupported locations, feed, prefs, the install record, error kinds); `controller.ts` the flow with injected deps (unit-tested end to end with a fake engine and fake timers); `engine.ts` electron-updater's `MacUpdater` in its own bundle `dist/updater.cjs` (256 KB), required on the first check only; `main.ts` the Electron side (files under `userData/updates/`, the location probe, IPC trusted like printing).
+  - Isolated session `persist:terno-updater` (cache off): cookies, `Authorization` and `Set-Cookie` stripped; every request and redirect must be https to GitHub's release hosts (or a test build's own feed origin) **and** happen while a grant is open.
+  - Ready only on Squirrel's own `update-downloaded`; `autoInstallOnAppQuit` stays on (Squirrel validates right after the download), so a ready update installs at any quit: `quitting()` records it for the health check.
+  - Startup: nothing for 30 s (no engine loaded, no request); then the location probe (codesign + the bundle folder, local) and, policy permitting, a check; then every 4 h, scheduled only while automatic checks are allowed.
+  - Health: `updates/pending.json` `{ from, to, txId }` before an install; on the next run's first backend `ready`, `update.applied` (logged, a "Terno updated to X · What's New" snack) or `update.not_applied` (captured unexpected, the pill offers Try Again).
+- **Renderer:** `window.ternoDesktop.updates` (state, check, download, install, setPrefs, seen, onState) and `onFlushDrafts`; the sidebar pill and popover (`update-pill.tsx`), Settings → General → Updates (`updates-section.tsx`), ⌘K "Check for Updates…" and "Restart to Update", Terno → "Check for Updates…" (answered with a snack in the window).
+- **Web:** `registration.update()` every 30 min while the tab is visible (no timer while hidden); the same pill says "New Version · Reload" (the corner banner is gone); Reload flushes this tab's drafts, then activates; every tab flushes its own before reloading on `controllerchange`.
+- **Packaging** (`scripts/package.mjs`): identity `TERNO_SIGN_IDENTITY` → Developer ID Application → Apple Development → ad-hoc; a 30 s probe signature fails fast on a keychain prompt; Developer ID adds the hardened runtime (`resources/entitlements.mac.plist`) and notarization when `APPLE_*` credentials are set; the zip target writes the zip, blockmap, `latest-mac.yml` (`nightly-mac.yml` for an `x.y.z-nightly.n` version) and `Resources/app-update.yml`; the designated requirement and `app-update.yml` are checked. `pnpm release:mac` (`scripts/release.mjs`) refuses test builds, ad-hoc builds, dirty trees and existing tags, then `gh release create --draft` with the zip, blockmap, channel file and DMG.
+- **Test builds:** `TERNO_TEST_BUILD` (JSON: feed, profile, app data, app name, first-check delay) is baked by `build.mjs` (`__TERNO_TEST_BUILD__`) into `TERNO_BUILD_OUT` (never `dist/`), packaged as `dev.terno.updatetest` / `terno-updatetest`; `package.mjs` refuses to package a test build as a release or the other way round (`test-build.json` marker).
+
+### Cutting a release
+
+1. Bump `apps/desktop/package.json` (`0.2.0`, or `0.2.0-nightly.1` for nightly) and commit.
+2. `pnpm release:mac` (gh signed in; the signing identity in the keychain; `APPLE_*` for notarization with a Developer ID).
+3. Review the draft on GitHub (notes, assets) and publish it. Copies of Terno see it on their next check. The repository must be public for them to reach it.
+
+### Deviations from §§2–8
+
+- **Manual mode** still checks in the background (outside local mode) and only offers; automatic mode also downloads. §4 left "manual" undefined; this is T3 Code's.
+- **Test overrides:** honoured only in builds made with `TERNO_TEST_BUILD` (baked), not "`TERNO_TEST=1` and a test flag": no environment survives Squirrel's relaunch, and a release never reads one for its feed (unit test plus a packaged check that the release's `main.cjs` was never given the define and its `app-update.yml` is GitHub's).
+- **Channel switch with an update already staged:** Squirrel offers no way to unstage it, so the channel can't change until it's installed (Settings says so and the select waits); what the other channel offered or was downloading is dropped.
+- **Squirrel keeps no backup** and a binary can't be rolled back across a migration: a bad release is fixed by a newer one.
+- **Profile env overrides** (`TERNO_USER_DATA`) don't survive the relaunch; only test builds bake theirs.
+- electron-updater's staged-rollout id (`.updaterId`, sent as `x-user-staging-id`) is never created, and the header is stripped anyway: no stable identifier reaches GitHub.
+- **Copy** is English literals; the i18n catalog had not landed (strings and Spanish listed in the hand-off).
+- The web test passes in Chromium even with an immediate reload, because Chromium's `pagehide` flush also reaches the worker; the coordinated reload is for engines where it doesn't.
+
+### Verification
+
+- Unit: reducer and error/retry matrix (20), policy, hosts, locations, feed, prefs, install record and the override proof (38), the controller flow (20), the shutdown coordinator (6), quiesce (4 backend, 1 conformance on both stores), pill model and check messages (11), menu (2).
+- e2e (web fixture with a stand-in for main): every pill state light and dark with axe, the popover, Restart Now / Later, a deferred restart, a refused download, the post-update snack, Settings → Updates, an unsupported copy, ⌘K. Web: a deploy offered by the periodic check, a draft typed until another tab activates the new build survives, every tab ends on the new build.
+- Packaged (`update.smoke.ts`, ~1.5 min, real Squirrel): a tampered zip is refused with an integrity error and the bundle stays 0.1.0; through the pill (local mode: check, Download, Restart Now) 0.1.0 updates to 0.1.1, relaunches, logs `update.applied` from the new version after `shutdown.done{closed, restart}`; a plain quit of 0.1.1 leaves an empty WAL and every thread. Squirrel's caches and launchd job for the test bundle id are cleaned before and after.
+
+## 10. What the Codex code review changed (a36dbe0..)
+
+The review is in `/tmp/unica-scratch/updates-11/codex-review.txt`. Each fix has a regression test that fails without it.
+
+1. **A web reload never drops an unsaved draft.** `flushAllDrafts` gives up after its cap and swallows failures; activating or reloading into a new build now waits for `draftsSaved()` (every draft saved as written), and otherwise holds, with a snack offering Try Again or Reload Anyway (`web/reload.ts`).
+2. **An update's restart is never forced.** A backend that doesn't answer the shutdown in time is no longer killed for an install: the install is put off like a send in flight ("Waiting for Send…"), and a late "closed" answer brings a fresh backend up.
+3. **A send queued behind a slow op is never left "running".** Quiesce gives back every claimed op not yet at its provider before it answers, so a send behind a slow Gmail archive in the same batch can't be recovered as "unknown".
+4. **Readiness belongs to the download Squirrel checked.** The state keeps the download's `target`; Squirrel's "ready" makes that version ready, not a newer offer that arrived meanwhile; no check or download starts while Squirrel is still verifying.
+5. **No stable identifier goes to GitHub.** electron-updater's `x-user-staging-id` is stripped with cookies and credentials, and its `.updaterId` is never created (the packaged test checks both on the wire and on disk).
+6. **A staged update holds the channel** (see the deviation above) instead of silently installing a nightly after choosing Stable.
+7. **Local mode cuts an automatic check already in flight** (`session.closeAllConnections()`), not only a download.
+
