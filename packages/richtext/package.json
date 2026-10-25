@@ -1,0 +1,21 @@
+{
+  "name": "@terno/richtext",
+  "version": "0.1.0",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./html": "./src/html.ts",
+    "./parse": "./src/parse.ts",
+    "./palette": "./src/palette.ts",
+    "./links": "./src/links.ts",
+    "./quote": "./src/quote.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "prosemirror-model": "^1.25.12"
+  }
+}
