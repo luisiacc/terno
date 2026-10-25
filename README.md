@@ -172,13 +172,13 @@ What the tests cover:
 
 ## Diagnostics and error reports
 
-Every process logs structured lines (a dotted code plus typed, allowlisted fields; free text only scrubbed and only locally), leaves breadcrumbs, and records unexpected errors and crashes. Reports go to Sentry only from builds given a DSN, never in local mode, and only as the user chose (Settings → General → Diagnostics: Ask, Always or Never). [Plan 10](docs/plans/10-observability.md) has the design and the privacy rules.
+Every process logs structured lines (a dotted code plus typed, allowlisted fields; never free text, not even error messages), leaves breadcrumbs, and records unexpected errors and crashes. Reports go to Sentry only from builds given a DSN, never in local mode, and only as the user chose (Settings → General → Diagnostics: Ask, Always or Never). [Plan 10](docs/plans/10-observability.md) has the design and the privacy rules.
 
 **Where things live (desktop, under the profile, `~/Library/Application Support/Terno`):**
 
 | Path | What |
 |---|---|
-| `logs/{main,backend,renderer,mcp}.jsonl` (+ `.1`…`.4`) | one JSON line per entry: `{ts, level, proc, code, fields, session, version, build, msg?}`; 2 MB × 5 per process, 0600 |
+| `logs/{main,backend,renderer,mcp}.jsonl` (+ `.1`…`.4`) | one JSON line per entry: `{ts, level, proc, code, fields, session, version, build, err?}` (`err`: class, code, status, frames); 2 MB × 5 per process (UTF-8 bytes), 0600 |
 | `crashes/<ts>-<proc>-<id>.json` | records of unexpected errors, crashes, dead renderers/backends and unclean exits (64 KB each, 20 at most, 30 days) |
 | `crashes/rings.json` | the last breadcrumbs of every live process (so a hard crash still has its trail) |
 | `crashes/native/` | Electron crash dumps; never uploaded, exported only when ticked |
@@ -201,7 +201,7 @@ SENTRY_AUTH_TOKEN=… SENTRY_ORG=<org> SENTRY_PROJECT=<project> TERNO_SENTRY_DSN
 pnpm diag:symbolicate path/to/crashes/<record>.json [--maps <archive dir>]
 ```
 
-Builds without `TERNO_SENTRY_DSN` (dev, forks) never load the reporter. Release names are `terno@<version>+<sha>`. Server-side scrubbing in the Sentry project is a good extra, but nothing in a report needs it: there is no message, no address and no path in one ("What gets sent" shows the exact event).
+Builds without `TERNO_SENTRY_DSN` (dev, forks) never load the reporter. Release names are `terno@<version>+<sha>`, taken from the record (a crash kept across an upgrade reports the build that crashed). Server-side scrubbing in the Sentry project is a good extra, but nothing in a report needs it: there is no message, no address and no path in one ("What gets sent" shows the exact event).
 
 ## Agents (MCP + Skill)
 
