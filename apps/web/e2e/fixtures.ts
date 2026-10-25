@@ -99,7 +99,23 @@ export async function focusList(page: Page): Promise<void> {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 }
 
+/** The search field, opened first where the design keeps it behind a button ("/", as a keyboard user would). */
+export async function searchBox(page: Page): Promise<Locator> {
+  const input = page.getByTestId("search-input");
+  if (!(await input.isVisible())) {
+    await focusList(page);
+    await page.keyboard.press("/");
+    await input.waitFor();
+  }
+  return input;
+}
+
 export async function search(page: Page, query: string): Promise<void> {
+  // Lumen keeps search behind a button (plan 15): "/" opens it, as a keyboard user would (a click would change focus-visible for what follows)
+  if (!(await page.getByTestId("search-input").isVisible())) {
+    await focusList(page);
+    await page.keyboard.press("/");
+  }
   const input = page.getByTestId("search-input");
   await input.fill(query);
   await expect(page.getByTestId("search-stats")).toBeVisible();

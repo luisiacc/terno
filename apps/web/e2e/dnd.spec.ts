@@ -37,7 +37,7 @@ function notIn(page: Page, catId: number) {
 
 const navCount = async (page: Page, catId: number) => Number((await page.getByTestId(`nav-category-${catId}`).locator("[data-slot=nav-count]").textContent().catch(() => "0")) || 0);
 
-test.describe("drag and drop to a category", () => {
+test.describe("drag and drop to a category", { tag: "@design" }, () => {
   test("one row: ghost, target highlight, dot, count, the snackbar and its undo", async ({ app: page, server }) => {
     const viajes = categoryId(server, "Viajes");
     const target = page.getByTestId(`nav-category-${viajes}`);

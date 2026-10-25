@@ -25,7 +25,7 @@ async function open(page: Page, server: DevServer, key: "long-plain" | "inline-r
   return ids;
 }
 
-test.describe("print sheet", () => {
+test.describe("print sheet", { tag: "@design" }, () => {
   test("⌘P opens it on the open conversation, ⇧⌘P on “Save PDF…”; Esc closes; nothing to print, nothing opens", async ({ app: page, server }) => {
     // a new message in the reader pane: nothing to print, and the browser doesn't print the app either
     await focusList(page);
@@ -96,6 +96,8 @@ test.describe("print sheet", () => {
     // a right-click inside the last message's HTML frame (Outlook) opens that message's menu
     const frame = messages.nth(4).locator("iframe");
     await expect(frame).toBeVisible();
+    // taller reader headers (plan 15) can leave it below the fold
+    await frame.scrollIntoViewIfNeeded();
     const box = (await frame.boundingBox())!;
     await page.mouse.click(box.x + 40, box.y + 12, { button: "right" });
     await page.getByTestId("message-menu-pdf").click();

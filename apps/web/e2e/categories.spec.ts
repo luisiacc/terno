@@ -1,7 +1,7 @@
 import { expect, rows, test } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
-test.describe("categories", () => {
+test.describe("categories", { tag: "@design" }, () => {
   test("creates a new category from the picker by typing its name", async ({ app: page }) => {
     await rows(page).first().dispatchEvent("mousedown");
     await page.keyboard.press("l");

@@ -5,7 +5,7 @@
  */
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
-import { expect, focusList, openRow, rows, search, selectedRow, test } from "./fixtures";
+import { expect, focusList, openRow, rows, search, selectedRow, test, searchBox } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
 const dock = (page: Page) => page.getByTestId("snack");
@@ -24,7 +24,7 @@ function handlers(server: { backend: { server: unknown } }) {
   return (server.backend.server as { handlers: Record<string, (...a: unknown[]) => unknown> }).handlers;
 }
 
-test.describe("the docked snackbar", () => {
+test.describe("the docked snackbar", { tag: "@design" }, () => {
   test("archive: the bar sits inside the list column, compact, over neither the sidebar nor the reader", async ({ app: page }) => {
     await page.mouse.move(1300, 100);
     await archiveOne(page);
@@ -136,7 +136,7 @@ test.describe("the docked snackbar", () => {
     // showing it took nothing: focus is where it was
     await expect(page.locator("body")).toBeFocused();
     // from the search field (F6 works while typing), and back to it
-    const input = page.getByTestId("search-input");
+    const input = await searchBox(page);
     await input.focus();
     await page.keyboard.press("F6");
     await expect(dock(page).getByTestId("snack-action")).toBeFocused();

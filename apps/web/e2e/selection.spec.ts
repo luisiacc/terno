@@ -5,7 +5,7 @@
  */
 import type { Locator, Page } from "@playwright/test";
 import type { DevServer } from "../../backend-dev/src/server";
-import { expect, focusList, rows, selectedRow, selectRows, stabilize, test } from "./fixtures";
+import { expect, focusList, rows, selectedRow, selectRows, stabilize, test, searchBox } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
@@ -31,7 +31,7 @@ async function rightClick(page: Page, target: Locator) {
   await expect(menu(page)).toBeVisible();
 }
 
-test.describe("context menu on one thread", () => {
+test.describe("context menu on one thread", { tag: "@design" }, () => {
   test("acts on the row it opened on: read state, star, archive with undo", async ({ app: page, server }) => {
     const unread = page.locator("[data-testid=thread-row][data-unread]").nth(1);
     const id = (await unread.getAttribute("data-thread-id"))!;
@@ -184,7 +184,7 @@ test.describe("context menu on one thread", () => {
   });
 });
 
-test.describe("category picker modes", () => {
+test.describe("category picker modes", { tag: "@design" }, () => {
   test("after v (Move to…) is dismissed, the reader's Category button toggles again: picking C keeps A and B", async ({ app: page, server }) => {
     const [lecturas, clientes, viajes] = ["Lecturas", "Clientes", "Viajes"].map((n) => db(server).get<{ id: number }>("SELECT id FROM categories WHERE name = ?", n)!.id) as [number, number, number];
     const id = Number(await page.locator("[data-testid=thread-row]:not(:has([data-cat-dot]))").first().getAttribute("data-thread-id"));
@@ -205,7 +205,7 @@ test.describe("category picker modes", () => {
   });
 });
 
-test.describe("multi-selection", () => {
+test.describe("multi-selection", { tag: "@design" }, () => {
   test("⇧-click selects a range, ⌘-click toggles, Esc clears; the reader becomes the bulk bar", async ({ app: page }) => {
     const ids = await idsOf(rows(page));
     await row(page, ids[1]!).dispatchEvent("mousedown", { button: 0 });
@@ -233,7 +233,7 @@ test.describe("multi-selection", () => {
   });
 
   test("⌘A selects the loaded rows; right-click → read, archive and delete apply to all, with undo", async ({ app: page, server }) => {
-    await page.getByTestId("search-input").fill("in:inbox factura");
+    await (await searchBox(page)).fill("in:inbox factura");
     await expect(page.getByTestId("search-stats")).toBeVisible();
     await focusList(page);
     const ids = await loadedIds(page);
@@ -316,7 +316,7 @@ test.describe("multi-selection", () => {
   });
 
   test("⌘A inside the search box selects its text, not the rows", async ({ app: page }) => {
-    const input = page.getByTestId("search-input");
+    const input = await searchBox(page);
     await input.fill("factura");
     await input.press("ControlOrMeta+a");
     expect(await input.evaluate((e: HTMLInputElement) => [e.selectionStart, e.selectionEnd])).toEqual([0, 7]);
@@ -361,7 +361,7 @@ test.describe("multi-selection", () => {
   });
 });
 
-test.describe("undo is exact", () => {
+test.describe("undo is exact", { tag: "@design" }, () => {
   test("all of Archive to Trash, then Undo: they're back in Archive, none in Inbox", async ({ app: page, server }) => {
     const count = (where: string) => db(server).get<{ c: number }>(`SELECT count(*) AS c FROM threads WHERE ${where}`)!.c;
     const archived = count("in_inbox = 0 AND in_trash = 0 AND in_spam = 0");
@@ -394,7 +394,7 @@ test.describe("undo is exact", () => {
   });
 });
 
-test.describe("select all N and dragging", () => {
+test.describe("select all N and dragging", { tag: "@design" }, () => {
   test("with all N of a view selected, rows don't drag (only part of them would move)", async ({ app: page, server }) => {
     const viajes = db(server).get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id;
     await focusList(page);
@@ -417,7 +417,7 @@ test.describe("select all N and dragging", () => {
   });
 });
 
-test.describe("accessibility", () => {
+test.describe("accessibility", { tag: "@design" }, () => {
   test("the listbox is multi-selectable: aria-selected follows the real selection, the open thread is the active descendant", async ({ app: page }) => {
     const list = page.getByRole("listbox", { name: "Conversations" });
     const selectedOptions = page.locator("[role=option][aria-selected=true]");
@@ -450,7 +450,7 @@ test.describe("accessibility", () => {
   });
 });
 
-test.describe("help", () => {
+test.describe("help", { tag: "@design" }, () => {
   test("the shortcuts dialog lists the new keys", async ({ app: page }) => {
     await focusList(page);
     await page.keyboard.press("?");

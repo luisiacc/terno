@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import { termsQuery } from "@terno/core";
 import type { DevServer } from "../../backend-dev/src/server";
-import { expect, focusList, selectRows, selectThread, test } from "./fixtures";
+import { expect, focusList, selectRows, selectThread, test, searchBox } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
 /** What the backend would add for a scope (the same RPC the chips call). */
@@ -43,7 +43,7 @@ async function fileWithPicker(page: Page, categoryId: number) {
   await focusList(page);
 }
 
-test.describe("categorization snackbar", () => {
+test.describe("categorization snackbar", { tag: "@design" }, () => {
   test("filing one thread offers all mail from its sender: 1 files it, the result toast undoes it", async ({ app: page, server }) => {
     const { facturas, target, outside } = uberSetup(server);
     const rest = outside() - 1;
@@ -107,7 +107,7 @@ test.describe("categorization snackbar", () => {
        AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id AND category_id = ?) ORDER BY t.last_date DESC LIMIT 2`,
       lecturas,
     );
-    await page.getByTestId("search-input").fill("in:inbox from:notifications@github.com");
+    await (await searchBox(page)).fill("in:inbox from:notifications@github.com");
     await expect(page.getByTestId("search-stats")).toBeVisible();
     await selectRows(page, [a!.id, b!.id]);
     await fileWithPicker(page, lecturas);
@@ -129,7 +129,7 @@ test.describe("categorization snackbar", () => {
   });
 });
 
-test.describe("everything about X and Y", () => {
+test.describe("everything about X and Y", { tag: "@design" }, () => {
   test("topic chips recount as they toggle, View previews the query, 4 files it", async ({ app: page, server }) => {
     const { db, facturas, target } = uberSetup(server);
     await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
@@ -157,7 +157,7 @@ test.describe("everything about X and Y", () => {
     await expect(page.getByTestId("search-stats")).toBeVisible();
 
     // filing it from a fresh snackbar with the keyboard
-    await page.getByTestId("search-input").fill("in:inbox from:uber.receipts@uber.com");
+    await (await searchBox(page)).fill("in:inbox from:uber.receipts@uber.com");
     await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
     await fileWithPicker(page, db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id);
     await expect(page.getByTestId("snackbar-topic-count")).toBeVisible();
@@ -213,7 +213,7 @@ test.describe("everything about X and Y", () => {
   });
 });
 
-test.describe("the engine's suggestions and auto adds in the UI", () => {
+test.describe("the engine's suggestions and auto adds in the UI", { tag: "@design" }, () => {
   /** Two uncategorized inbox threads with a pending Facturas suggestion, then a fresh page (counts at boot). */
   async function withSuggestions(page: Page, server: DevServer) {
     const db = sqlDb(server.backend.store);

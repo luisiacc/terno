@@ -12,7 +12,7 @@ import { sqlDb } from "../../backend-dev/src/server";
 const composer = (page: Page) => page.getByTestId("reader").getByTestId("composer");
 const toast = (page: Page, text: string) => page.locator("[data-testid=snack]").filter({ hasText: text });
 
-test.describe("inline reply, reply-all, forward", () => {
+test.describe("inline reply, reply-all, forward", { tag: "@design" }, () => {
   test("r opens a reply inline, focused, with the quote apart; ⌘↵ sends and the message appears in the thread", async ({ app: page }) => {
     await openRow(page, 0);
     const subject = (await page.getByTestId("reader-subject").textContent())!;
@@ -97,7 +97,7 @@ test.describe("inline reply, reply-all, forward", () => {
   });
 });
 
-test.describe("drafts are kept", () => {
+test.describe("drafts are kept", { tag: "@design" }, () => {
   test("Esc collapses the draft (focus on it), the text survives switching threads, and Enter reopens it", async ({ app: page }) => {
     const id = await openRow(page, 0);
     await focusList(page);
@@ -229,7 +229,7 @@ test.describe("drafts are kept", () => {
   });
 });
 
-test.describe("new message, in the reader pane", () => {
+test.describe("new message, in the reader pane", { tag: "@design" }, () => {
   test("c writes a new message in the reader (no dialog), with the drafts strip; it lands in Sent", async ({ app: page }) => {
     await openRow(page, 0);
     await focusList(page);

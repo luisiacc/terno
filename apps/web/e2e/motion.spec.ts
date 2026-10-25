@@ -126,7 +126,7 @@ async function exerciseLoading(page: Page, server: DevServer) {
   releaseCount();
 }
 
-test.describe("motion", () => {
+test.describe("motion", { tag: "@design" }, () => {
   test.use({ reducedMotion: "no-preference" });
 
   test("at the default 75 ms nothing runs longer than 100 ms; loading loops run", async ({ app: page, server }) => {
@@ -192,7 +192,7 @@ test.describe("motion", () => {
   });
 });
 
-test.describe("motion under the OS reduced-motion preference", () => {
+test.describe("motion under the OS reduced-motion preference", { tag: "@design" }, () => {
   test.use({ reducedMotion: "reduce" });
 
   test("overrides the setting: nothing animates", async ({ app: page, server }) => {

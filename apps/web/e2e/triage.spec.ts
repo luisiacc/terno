@@ -1,6 +1,6 @@
 import { expect, focusList, openRow, rows, rowSubject, selectedId, selectedRow, test } from "./fixtures";
 
-test.describe("keyboard triage", () => {
+test.describe("keyboard triage", { tag: "@design" }, () => {
   test("j/k move the selection and the reader follows", async ({ app: page }) => {
     const ids = await rows(page).evaluateAll((els) => els.slice(0, 4).map((e) => e.getAttribute("data-thread-id")));
     await expect(selectedRow(page)).toHaveAttribute("data-thread-id", ids[0]!);

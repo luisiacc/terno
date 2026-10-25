@@ -6,7 +6,7 @@
 import { E2E_NOW } from "./constants";
 import { expect, focusList, ingestConversation, openRow, search, selectThread, test } from "./fixtures";
 
-test.describe("reader conversation", () => {
+test.describe("reader conversation", { tag: "@design" }, () => {
   test("messages are disclosure buttons that work with Enter and Space; collapsed bodies aren't mounted", async ({ app: page, server }) => {
     const id = await ingestConversation(server, { subject: "Propuesta campaña de Navidad", count: 3, now: E2E_NOW });
     await selectThread(page, id, 'subject:"Propuesta campaña de Navidad"');
