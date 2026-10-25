@@ -1,5 +1,6 @@
 import type { AiErrorKind, AiProviderId, CompatiblePreset, OutputMode } from "@terno/core";
 import type { AiSettings } from "@terno/core/rpc";
+import { t } from "@terno/i18n";
 
 /** What the AI tab's selector shows: compatible appears twice (a server on this Mac, or a cloud API). */
 export type ProviderChoice = Exclude<AiProviderId, "compatible"> | "local-server" | "compatible";
@@ -7,24 +8,28 @@ export type ProviderChoice = Exclude<AiProviderId, "compatible"> | "local-server
 export const LOCAL_CHOICES: ProviderChoice[] = ["ollama", "lmstudio", "local-server"];
 export const CLOUD_CHOICES: ProviderChoice[] = ["anthropic", "openai", "compatible"];
 
-export const CHOICE_LABEL: Record<ProviderChoice, string> = {
+// brand names stay as they are; the rest is read in the current language
+const CHOICE_LABEL = {
   ollama: "Ollama",
   lmstudio: "LM Studio",
-  "local-server": "Servidor local",
+  "local-server": "ai.choice.localServer",
   anthropic: "Claude (Anthropic)",
   openai: "OpenAI",
-  compatible: "Compatible con OpenAI",
-  fake: "Demo sin conexión",
-  none: "Desactivada",
-};
+  compatible: "ai.choice.compatible",
+  fake: "ai.choice.fake",
+  none: "ai.choice.none",
+} as const satisfies Record<ProviderChoice, string>;
 
-export const PRESET_LABEL: Record<CompatiblePreset, string> = {
-  openrouter: "OpenRouter",
-  groq: "Groq",
-  together: "Together",
-  azure: "Azure OpenAI",
-  custom: "Personalizado",
-};
+export function choiceLabel(choice: ProviderChoice): string {
+  const label = CHOICE_LABEL[choice];
+  return label.startsWith("ai.") ? t(label as Extract<typeof label, `ai.${string}`>) : label;
+}
+
+export const PRESETS: readonly CompatiblePreset[] = ["openrouter", "groq", "together", "azure", "custom"];
+
+export function presetLabel(preset: CompatiblePreset): string {
+  return preset === "custom" ? t("ai.preset.custom") : { openrouter: "OpenRouter", groq: "Groq", together: "Together", azure: "Azure OpenAI" }[preset];
+}
 
 export const DEFAULT_ENDPOINT: Partial<Record<ProviderChoice, string>> = {
   ollama: "http://127.0.0.1:11434/v1",
@@ -75,40 +80,41 @@ export function hostOf(ai: Pick<AiSettings, "provider" | "preset" | "baseURL" | 
 }
 
 export function providerName(ai: Pick<AiSettings, "provider" | "preset" | "local">): string {
-  if (ai.provider === "compatible" && ai.preset && ai.preset !== "custom") return PRESET_LABEL[ai.preset];
-  return CHOICE_LABEL[choiceOf(ai)];
+  if (ai.provider === "compatible" && ai.preset && ai.preset !== "custom") return presetLabel(ai.preset);
+  return choiceLabel(choiceOf(ai));
 }
 
 /** One line on what leaves the Mac when generating a filter. Never message content. */
 export function privacyLine(ai: AiSettings): string {
-  if (ai.provider === "none") return "La IA está desactivada.";
-  if (ai.local) return "Nada sale de este Mac.";
-  return `Se envía a ${hostOf(ai) ?? providerName(ai)}: tu descripción, los correos y nombres de tus cuentas, los nombres de tus categorías y la fecha de hoy. Nunca el contenido de tus mensajes.`;
+  if (ai.provider === "none") return t("ai.privacy.off");
+  if (ai.local) return t("ai.privacy.local");
+  return t("ai.privacy.cloud", { host: hostOf(ai) ?? providerName(ai) });
 }
 
-export const OUTPUT_LABEL: Record<OutputMode, string> = {
-  json_schema: "salida estructurada ✓",
-  json_object: "modo JSON",
-  text: "texto",
-};
+/** How a model answers (keys: read with t()). */
+export const OUTPUT_LABEL = {
+  json_schema: "ai.output.jsonSchema",
+  json_object: "ai.output.jsonObject",
+  text: "ai.output.text",
+} as const satisfies Record<OutputMode, string>;
 
 /** Help that depends on why the AI failed. */
 export function errorHelp(kind: AiErrorKind | undefined, ai: Pick<AiSettings, "provider" | "preset" | "local">): string | null {
   switch (kind) {
     case "auth":
-      return "Revisa la API key: puede estar mal copiada o revocada.";
+      return t("ai.help.auth");
     case "rate_limited":
-      return "El proveedor está limitando las peticiones. Espera un momento y vuelve a probar.";
+      return t("ai.help.rateLimited");
     case "unavailable":
-      return ai.local ? `Abre ${providerName(ai)} y comprueba el endpoint.` : "Comprueba tu conexión y el endpoint.";
+      return ai.local ? t("ai.help.unavailableLocal", { provider: providerName(ai) }) : t("ai.help.unavailable");
     case "timeout":
-      return ai.local ? "Los modelos locales tardan más la primera vez, mientras se cargan en memoria. Vuelve a probar." : "El proveedor tardó demasiado. Vuelve a probar.";
+      return ai.local ? t("ai.help.timeoutLocal") : t("ai.help.timeout");
     case "blocked":
-      return "El modo local solo permite modelos de este Mac.";
+      return t("ai.help.blocked");
     case "invalid_output":
-      return "El modelo no devolvió un filtro válido. Prueba un modelo instruct de 7B o más.";
+      return t("ai.help.invalidOutput");
     case "refused":
-      return "El modelo rechazó la petición. Reformúlala o prueba otro modelo.";
+      return t("ai.help.refused");
     default:
       return null;
   }

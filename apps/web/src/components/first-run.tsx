@@ -3,6 +3,7 @@ import { Button } from "@terno/ui/components/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@terno/ui/components/dialog";
 import { cn } from "@terno/ui/lib/utils";
 import { Cloud, LaptopMinimalCheck } from "lucide-react";
+import { t } from "@terno/i18n";
 import { Suspense, useEffect, useState } from "react";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
@@ -75,47 +76,45 @@ export function FirstRun() {
       <DialogContent className="sm:max-w-lg" data-testid="first-run">
         {step === "mode" ? (
           <>
-            <DialogTitle>Bienvenido a Terno</DialogTitle>
-            <DialogDescription>Paso 1 de 2 · ¿Cómo quieres usarla? Puedes cambiarlo cuando quieras en Ajustes.</DialogDescription>
+            <DialogTitle>{t("firstRun.welcome")}</DialogTitle>
+            <DialogDescription>{t("firstRun.step1")}</DialogDescription>
             {OnboardingNudge && (
               <Suspense>
                 <OnboardingNudge />
               </Suspense>
             )}
-            <div className="space-y-2" role="radiogroup" aria-label="Modo">
+            <div className="space-y-2" role="radiogroup" aria-label={t("firstRun.mode")}>
               {card(
                 "local",
                 <LaptopMinimalCheck className="size-5" />,
-                "Local (recomendado)",
+                t("firstRun.local"),
                 <>
-                  {import.meta.env.VITE_TARGET === "web"
-                    ? "Terno solo se conecta con Google (tu correo) y con IA de este equipo."
-                    : "Nada sale de este Mac salvo el correo con tus servidores. La IA usa modelos de este Mac."}
+                  {import.meta.env.VITE_TARGET === "web" ? t("firstRun.local.web") : t("firstRun.local.desktop")}
                   {found && (
                     <span className="mt-1 block text-foreground" data-testid="first-run-found">
-                      Encontramos {found.label} con {found.model}
+                      {t("firstRun.found", { app: found.label, model: found.model })}
                     </span>
                   )}
                 </>,
               )}
-              {card("connected", <Cloud className="size-5" />, "Conectado", "Además podrás usar IA en la nube (Claude, OpenAI…) con tu propia API key y cargar imágenes remotas cuando lo pidas.")}
+              {card("connected", <Cloud className="size-5" />, t("firstRun.connected"), t("firstRun.connected.body"))}
             </div>
             <div className="flex justify-end">
               <Button data-testid="first-run-next" onClick={() => void confirmMode()}>
-                Continuar
+                {t("common.continue")}
               </Button>
             </div>
           </>
         ) : (
           <>
-            <DialogTitle>Añade tu primera cuenta</DialogTitle>
-            <DialogDescription>Paso 2 de 2</DialogDescription>
+            <DialogTitle>{t("firstRun.addAccount")}</DialogTitle>
+            <DialogDescription>{t("firstRun.step2")}</DialogDescription>
             <p className="rounded-lg border border-primary/25 bg-accent/50 px-3 py-2 text-sm text-accent-foreground">
-              El primer correo que conectes será tu cuenta de Terno: con él iniciarás sesión y te facturaremos.
+              {t("account.ownerFirst")}
             </p>
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => go("done")}>
-                Ahora no
+                {t("firstRun.notNow")}
               </Button>
               <Button
                 data-testid="first-run-add-account"
@@ -124,7 +123,7 @@ export function FirstRun() {
                   setApp({ dialog: "addAccount" });
                 }}
               >
-                Añadir cuenta
+                {t("account.addTitle")}
               </Button>
             </div>
           </>

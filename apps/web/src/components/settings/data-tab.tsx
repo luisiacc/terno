@@ -1,5 +1,6 @@
 import { Button } from "@terno/ui/components/button";
 import { Download, Upload } from "lucide-react";
+import { t } from "@terno/i18n";
 import { Suspense, useRef, useState } from "react";
 import { snack } from "~/lib/snack";
 import { downloadExport, importFile, importSummary } from "~/lib/backup";
@@ -15,8 +16,8 @@ export function DataTab() {
   const [error, setError] = useState<string | null>(null);
   return (
     <div data-testid="data-tab">
-      <SettingsGroup title="Copia de seguridad" footer="Lleva tus categorías, filtros, ajustes (nunca contraseñas ni claves) y borradores. El correo no: se vuelve a descargar de tus cuentas.">
-        <SettingsRow label="Exportar" hint="Un archivo JSON con lo que no se puede volver a descargar.">
+      <SettingsGroup title={t("settings.data.backup")} footer={t("settings.data.backup.footer")}>
+        <SettingsRow label={t("settings.data.export")} hint={t("settings.data.export.hint")}>
           {({ id: _id, "aria-labelledby": _l, ...a }) => (
             <Button
               {...a}
@@ -35,15 +36,15 @@ export function DataTab() {
                 }
               }}
             >
-              <Download /> Exportar
+              <Download /> {t("settings.data.export")}
             </Button>
           )}
         </SettingsRow>
-        <SettingsRow label="Importar" hint="Suma una exportación a lo que ya tienes: las categorías con el mismo nombre se juntan y nada se borra." error={error} errorTestId="data-import-error">
+        <SettingsRow label={t("settings.data.import")} hint={t("settings.data.import.hint")} error={error} errorTestId="data-import-error">
           {({ id: _id, "aria-labelledby": _l, ...a }) => (
             <>
               <Button {...a} variant="outline" size="sm" disabled={busy !== null} data-testid="data-import" onClick={() => fileRef.current?.click()}>
-                <Upload /> Importar…
+                <Upload /> {t("settings.data.import.button")}
               </Button>
               <input
                 ref={fileRef}

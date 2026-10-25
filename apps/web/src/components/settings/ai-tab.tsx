@@ -6,10 +6,11 @@ import { Input } from "@terno/ui/components/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { cn } from "@terno/ui/lib/utils";
 import { CircleAlert, CircleCheck, LaptopMinimalCheck, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
+import { t } from "@terno/i18n";
 import { useEffect, useRef, useState } from "react";
 import { snack } from "~/lib/snack";
 import {
-  CHOICE_LABEL,
+  choiceLabel,
   choiceOf,
   CLOUD_CHOICES,
   DEFAULT_ENDPOINT,
@@ -20,7 +21,8 @@ import {
   LOCAL_CHOICES,
   OUTPUT_LABEL,
   PRESET_ENDPOINT,
-  PRESET_LABEL,
+  presetLabel,
+  PRESETS,
   privacyLine,
   providerName,
   type ProviderChoice,
@@ -61,9 +63,9 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
     if (endpointDraft === endpoint) return;
     const timer = setTimeout(() => {
       const value = endpointDraft.trim();
-      if (!/^https?:\/\/[^/\s]+/i.test(value)) return setEndpointError("Escribe una URL http:// o https://");
+      if (!/^https?:\/\/[^/\s]+/i.test(value)) return setEndpointError(t("ai.endpoint.invalid"));
       if (localMode && LOCAL_CHOICES.includes(choice) && !isLoopbackUrl(value) && choice !== "local-server") {
-        return setEndpointError("En modo local el endpoint debe estar en este Mac (127.0.0.1 o localhost).");
+        return setEndpointError(t("ai.endpoint.notLocal"));
       }
       setEndpointError(null);
       update({ ai: { baseURL: value } }, { quiet: true }).catch((e) => setEndpointError(e instanceof Error ? e.message : String(e)));
@@ -130,7 +132,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
     const next = await client.call("ai.setKey", { provider: ai.provider, preset: ai.preset ?? undefined, value });
     setApp({ settings: reconcileSettings(next) });
     setKey("");
-    snack.success(value ? "API key guardada en el llavero" : "API key eliminada");
+    snack.success(value ? t("ai.key.savedSnack") : t("ai.key.removedSnack"));
   };
   const keyForm = (a: RowA11y) => (
     <form
@@ -142,7 +144,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
     >
       <Input {...a} data-testid="ai-key" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder={ai.provider === "anthropic" ? "sk-ant-…" : "sk-…"} className="h-7 bg-background dark:bg-input/30" />
       <Button type="submit" size="sm" disabled={!key.trim()}>
-        Guardar
+        {t("common.save")}
       </Button>
     </form>
   );
@@ -167,7 +169,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
 
   const selectable = (c: ProviderChoice) => c !== "fake" || catalog?.providers.some((p) => p.id === "fake");
   const cloudDisabled = localMode;
-  const items = [...LOCAL_CHOICES, ...CLOUD_CHOICES, "fake" as const, "none" as const].filter(selectable).map((c) => ({ value: c, label: CHOICE_LABEL[c] }));
+  const items = [...LOCAL_CHOICES, ...CLOUD_CHOICES, "fake" as const, "none" as const].filter(selectable).map((c) => ({ value: c, label: choiceLabel(c) }));
   const models = discovery.state === "done" ? discovery.models : [];
 
   return (
@@ -177,7 +179,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
           <span className="flex items-start gap-1.5" data-testid="ai-privacy">
             <ShieldCheck className="mt-px size-3.5 shrink-0" aria-hidden />
             <span>
-              <span className="font-medium text-foreground">Privacidad{ai.provider !== "none" && !ai.local && hostOf(ai) ? ` · ${hostOf(ai)}` : ""}.</span> {privacyLine(ai)}
+              <span className="font-medium text-foreground">{ai.provider !== "none" && !ai.local && hostOf(ai) ? t("ai.privacyHost", { host: hostOf(ai)! }) : t("ai.privacy")}</span> {privacyLine(ai)}
             </span>
           </span>
         }
@@ -186,12 +188,12 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
           <div className="flex items-start gap-2 py-2.5 text-xs text-muted-foreground" data-testid="ai-local-banner">
             <LaptopMinimalCheck className="mt-px size-3.5 shrink-0 text-primary" aria-hidden />
             <span>
-              Modo local: la IA solo puede usar modelos de este Mac.
-              {paused && ` ${providerName(ai)} queda en pausa hasta que lo desactives.`}
+              {t("ai.localBanner")}
+              {paused && ` ${t("ai.localBanner.paused", { provider: providerName(ai) })}`}
             </span>
           </div>
         )}
-        <SettingsRow label="Proveedor" hint="La IA crea filtros a partir de tu descripción y, si quieres, sugiere categorías.">
+        <SettingsRow label={t("ai.provider")} hint={t("ai.provider.hint")}>
           {({ id: _id, ...a }) => (
             <Select value={choice} onValueChange={(v) => void select(v as ProviderChoice)} items={items}>
               <SelectTrigger {...a} size="sm" className="w-56" data-testid="ai-provider">
@@ -199,30 +201,30 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  <SelectLabel>En este Mac</SelectLabel>
+                  <SelectLabel>{t("ai.group.local")}</SelectLabel>
                   {LOCAL_CHOICES.map((c) => (
                     <SelectItem key={c} value={c} data-testid={`ai-choice-${c}`}>
-                      {CHOICE_LABEL[c]}
+                      {choiceLabel(c)}
                     </SelectItem>
                   ))}
                 </SelectGroup>
                 <SelectSeparator />
                 <SelectGroup>
-                  <SelectLabel>{cloudDisabled ? "En la nube · desactiva el modo local para usarla" : "En la nube"}</SelectLabel>
+                  <SelectLabel>{cloudDisabled ? t("ai.group.cloudDisabled") : t("ai.group.cloud")}</SelectLabel>
                   {CLOUD_CHOICES.map((c) => (
                     <SelectItem key={c} value={c} disabled={cloudDisabled} data-testid={`ai-choice-${c}`}>
-                      {CHOICE_LABEL[c]}
+                      {choiceLabel(c)}
                     </SelectItem>
                   ))}
                 </SelectGroup>
                 <SelectSeparator />
                 {selectable("fake") && (
                   <SelectItem value="fake" data-testid="ai-choice-fake">
-                    {CHOICE_LABEL.fake}
+                    {choiceLabel("fake")}
                   </SelectItem>
                 )}
                 <SelectItem value="none" data-testid="ai-choice-none">
-                  {CHOICE_LABEL.none}
+                  {choiceLabel("none")}
                 </SelectItem>
               </SelectContent>
             </Select>
@@ -230,20 +232,20 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
         </SettingsRow>
 
         {ai.provider === "compatible" && choice === "compatible" && (
-          <SettingsRow label="Servicio">
+          <SettingsRow label={t("ai.service")}>
             {({ id: _id, ...a }) => (
               <Select
                 value={ai.preset ?? "openrouter"}
                 onValueChange={(v) => void update({ ai: { preset: v as CompatiblePreset, baseURL: null } })}
-                items={(Object.keys(PRESET_LABEL) as CompatiblePreset[]).map((p) => ({ value: p, label: PRESET_LABEL[p] }))}
+                items={PRESETS.map((p) => ({ value: p, label: presetLabel(p) }))}
               >
                 <SelectTrigger {...a} size="sm" className="w-56" data-testid="ai-preset">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {(Object.keys(PRESET_LABEL) as CompatiblePreset[]).map((p) => (
+                  {PRESETS.map((p) => (
                     <SelectItem key={p} value={p}>
-                      {PRESET_LABEL[p]}
+                      {presetLabel(p)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -256,8 +258,8 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
           <SettingsRow
             stacked
             labelFor
-            label={ai.preset === "azure" ? "Endpoint de Azure" : "Endpoint"}
-            hint={ai.preset === "azure" ? "https://<recurso>.openai.azure.com · el modelo es el nombre del deployment." : undefined}
+            label={ai.preset === "azure" ? t("ai.endpoint.azure") : t("ai.endpoint")}
+            hint={ai.preset === "azure" ? t("ai.endpoint.azureHint", { url: `https://<${t("ai.endpoint.azureResource")}>.openai.azure.com` }) : undefined}
             error={endpointError}
             errorTestId="ai-endpoint-error"
           >
@@ -267,7 +269,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
                 data-testid="ai-endpoint"
                 className="h-7 bg-background font-mono text-xs dark:bg-input/30"
                 value={endpointDraft}
-                placeholder={ai.preset === "azure" ? "https://mi-recurso.openai.azure.com" : (DEFAULT_ENDPOINT[choice] ?? PRESET_ENDPOINT[ai.preset ?? "custom"] ?? "http://127.0.0.1:8080/v1")}
+                placeholder={ai.preset === "azure" ? t("ai.endpoint.azurePlaceholder") : (DEFAULT_ENDPOINT[choice] ?? PRESET_ENDPOINT[ai.preset ?? "custom"] ?? "http://127.0.0.1:8080/v1")}
                 onChange={(e) => setEndpointDraft(e.target.value)}
               />
             )}
@@ -275,34 +277,34 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
         )}
 
         {showsKey && (
-          <SettingsRow stacked labelFor label={`API key de ${providerName(ai)}${needsKey ? "" : " (opcional)"}`} hint="Se cifra con el llavero de macOS y solo se envía a este proveedor.">
+          <SettingsRow stacked labelFor label={t(needsKey ? "ai.key.label" : "ai.key.labelOptional", { provider: providerName(ai) })} hint={t("ai.key.hint")}>
             {(a) =>
               ai.keyUnreadable ? (
                 <div className="space-y-1.5" data-testid="ai-key-unreadable">
                   <p role="alert" className="text-xs text-destructive-ink">
-                    Terno no pudo abrir la API key que guardó Única en el llavero. Vuelve a guardarla para seguir usando {providerName(ai)}.
+                    {t("ai.key.unreadable", { provider: providerName(ai) })}
                   </p>
                   {keyForm(a)}
                 </div>
               ) : ai.hasKey && !ai.keyConfirmed ? (
                 <div className="space-y-1.5 text-sm" data-testid="ai-key-unconfirmed">
                   <p role="alert" className="text-xs text-destructive-ink">
-                    Tu API key se guardó para {ai.keyOrigin}; el endpoint ahora es {hostOf(ai) ?? "otro"}. No se enviará ahí hasta que lo confirmes o guardes otra.
+                    {hostOf(ai) ? t("ai.key.unconfirmed", { origin: ai.keyOrigin ?? "", host: hostOf(ai)! }) : t("ai.key.unconfirmedOther", { origin: ai.keyOrigin ?? "" })}
                   </p>
                   <div className="flex gap-2">
                     <Button variant="outline" size="xs" data-testid="ai-key-confirm" onClick={() => void client.call("ai.confirmKey", { provider: ai.provider, preset: ai.preset ?? undefined }).then((next) => setApp({ settings: reconcileSettings(next) }), (e: unknown) => snack.error(String(e)))}>
-                      Usarla con este endpoint
+                      {t("ai.key.confirm")}
                     </Button>
-                    <Button variant="ghost" size="xs" aria-label={`Quitar la API key de ${providerName(ai)}`} onClick={() => void saveKey("")}>
-                      Quitar
+                    <Button variant="ghost" size="xs" aria-label={t("ai.key.remove", { provider: providerName(ai) })} onClick={() => void saveKey("")}>
+                      {t("common.remove")}
                     </Button>
                   </div>
                 </div>
               ) : ai.hasKey ? (
                 <div className="flex items-center gap-2 text-sm" data-testid="ai-key-saved">
-                  <span className="text-success-ink">Guardada{ai.keyHint ? ` · …${ai.keyHint}` : ""}</span>
-                  <Button variant="ghost" size="xs" aria-label={`Quitar la API key de ${providerName(ai)}`} onClick={() => void saveKey("")}>
-                    Quitar
+                  <span className="text-success-ink">{ai.keyHint ? t("ai.key.savedHint", { hint: ai.keyHint }) : t("ai.key.saved")}</span>
+                  <Button variant="ghost" size="xs" aria-label={t("ai.key.remove", { provider: providerName(ai) })} onClick={() => void saveKey("")}>
+                    {t("common.remove")}
                   </Button>
                 </div>
               ) : (
@@ -313,7 +315,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
         )}
 
         {ai.provider !== "none" && ai.provider !== "fake" && (
-          <SettingsRow stacked labelFor label="Modelo" hint={needsKey && !ai.hasKey && !paused ? "Guarda la API key para ver los modelos disponibles." : undefined}>
+          <SettingsRow stacked labelFor label={t("ai.model")} hint={needsKey && !ai.hasKey && !paused ? t("ai.model.needsKey") : undefined}>
             {(a) => (
               <div className="space-y-2">
                 <div className="flex gap-2">
@@ -323,14 +325,14 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
                     data-testid="ai-model"
                     className="h-7 bg-background font-mono text-xs dark:bg-input/30"
                     defaultValue={ai.model}
-                    placeholder={choice === "ollama" ? "qwen3:8b" : "nombre del modelo"}
+                    placeholder={choice === "ollama" ? "qwen3:8b" : t("ai.model.placeholder")}
                     onBlur={(e) => {
                       const value = e.target.value.trim();
                       if (value !== ai.model) void update({ ai: { model: value } });
                     }}
                     onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
                   />
-                  <Button variant="outline" size="icon-sm" aria-label="Actualizar modelos" disabled={!canDiscover || discovery.state === "loading"} onClick={() => void discover()}>
+                  <Button variant="outline" size="icon-sm" aria-label={t("ai.model.refresh")} disabled={!canDiscover || discovery.state === "loading"} onClick={() => void discover()}>
                     <RefreshCw className={cn(discovery.state === "loading" && "animate-spin")} />
                   </Button>
                 </div>
@@ -340,7 +342,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
                   </p>
                 )}
                 {models.length > 0 && (
-                  <ul className="hairline-divide max-h-40 overflow-y-auto rounded-lg bg-background dark:bg-input/30" data-testid="ai-models" aria-label="Modelos disponibles">
+                  <ul className="hairline-divide max-h-40 overflow-y-auto rounded-lg bg-background dark:bg-input/30" data-testid="ai-models" aria-label={t("ai.model.available")}>
                     {models.map((m) => (
                       <li key={m.id}>
                         <button
@@ -352,7 +354,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
                           className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset data-selected:bg-accent data-selected:text-accent-foreground"
                         >
                           <span className="min-w-0 flex-1 truncate font-mono">{m.label ?? m.id}</span>
-                          {m.loaded && <span className="rounded bg-success/15 px-1 text-2xs text-success-ink">cargado</span>}
+                          {m.loaded && <span className="rounded bg-success/15 px-1 text-2xs text-success-ink">{t("ai.model.loaded")}</span>}
                           {m.contextTokens ? <span className="text-muted-foreground tabular">{Math.round(m.contextTokens / 1024)}k ctx</span> : null}
                           {m.sizeBytes ? <span className="text-muted-foreground tabular">{formatBytes(m.sizeBytes)}</span> : null}
                         </button>
@@ -369,15 +371,15 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
           <div className="space-y-2 py-3">
             <div className="flex items-center gap-3">
               <Button variant="outline" size="sm" data-testid="ai-test" disabled={testing || paused || (ai.provider !== "fake" && !ai.model)} onClick={() => void runTest()}>
-                {testing && <Loader2 className="animate-spin" />} Probar conexión
+                {testing && <Loader2 className="animate-spin" />} {t("ai.test")}
               </Button>
               <span role="status" aria-live="polite" className="text-xs">
                 {test?.ok && (
                   <span className="flex items-center gap-1.5 text-success-ink" data-testid="ai-test-result">
-                    <CircleCheck className="size-3.5" aria-hidden /> Conectado · <span data-testid="ai-test-latency">{test.latencyMs} ms</span> · {OUTPUT_LABEL[test.capabilities!.output]}
+                    <CircleCheck className="size-3.5" aria-hidden /> {t("ai.test.connected")} · <span data-testid="ai-test-latency">{test.latencyMs} ms</span> · {t(OUTPUT_LABEL[test.capabilities!.output])}
                   </span>
                 )}
-                {!test && ai.capabilities?.probedAt && <span className="text-muted-foreground">Última prueba: {OUTPUT_LABEL[ai.capabilities.output]}</span>}
+                {!test && ai.capabilities?.probedAt && <span className="text-muted-foreground">{t("ai.test.last", { output: t(OUTPUT_LABEL[ai.capabilities.output]) })}</span>}
               </span>
             </div>
             {test?.warning && (

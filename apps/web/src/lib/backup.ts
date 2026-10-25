@@ -1,4 +1,5 @@
 import type { ImportResult } from "@terno/core/rpc";
+import { formatList, t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
 import { setApp } from "~/state/app";
 import { adoptSettings } from "./appearance";
@@ -17,33 +18,38 @@ export async function downloadExport(): Promise<void> {
 
 /** Reads an export file and brings it in; the app shows the result at once. */
 export async function importFile(file: File): Promise<ImportResult> {
-  if (file.size > 50 * 2 ** 20) throw new Error("El archivo es demasiado grande (máx. 50 MB).");
+  if (file.size > 50 * 2 ** 20) throw new Error(t("settings.file.tooLarge", { max: "50 MB" }));
   let data: unknown;
   try {
     data = JSON.parse(await file.text());
   } catch {
-    throw new Error("El archivo no es JSON válido.");
+    throw new Error(t("settings.file.invalidJson"));
   }
   const format = (data as { format?: unknown } | null)?.format;
   // "unica-export": files exported when the app was called Única
-  if (format !== "terno-export" && format !== "unica-export") throw new Error("No es una exportación de Terno.");
+  if (format !== "terno-export" && format !== "unica-export") throw new Error(t("settings.data.notExport"));
   const result = await client.call("app.import", { data: data as never });
   // the drafts it brought show at once (the backend's event does the same for other windows)
   await loadDrafts();
   const boot = await client.call("app.bootstrap", {});
   adoptSettings(boot.settings);
-    setApp({ categories: boot.categories });
+  setApp({ categories: boot.categories });
   return result;
 }
 
-/** One line for a snack. */
+/** One line for a snack: what came in, what waits for its account, what was left out. */
 export function importSummary(r: ImportResult): string {
-  const parts = [
-    `${r.categories.added} ${r.categories.added === 1 ? "categoría nueva" : "categorías nuevas"}`,
-    `${r.filters.added} ${r.filters.added === 1 ? "filtro" : "filtros"}`,
-    r.drafts ? `${r.drafts} ${r.drafts === 1 ? "borrador" : "borradores"}` : null,
-    r.settings ? "tus ajustes" : null,
-  ].filter(Boolean);
-  const waiting = r.pending.drafts + r.pending.filters;
-  return `Importado: ${parts.join(", ")}.${waiting ? ` ${r.pending.drafts} borradores y ${r.pending.filters} filtros entran cuando conectes sus cuentas.` : ""}${r.filters.skipped.length ? ` Sin importar (su categoría no está en el archivo): ${r.filters.skipped.join(", ")}.` : ""}`;
+  const items = [
+    t("settings.data.summary.categories", { count: r.categories.added }),
+    t("settings.data.summary.filters", { count: r.filters.added }),
+    r.drafts ? t("settings.data.summary.drafts", { count: r.drafts }) : null,
+    r.settings ? t("settings.data.summary.settings") : null,
+  ].filter((x) => x !== null);
+  const sentences = [t("settings.data.summary", { items: formatList(items) })];
+  if (r.pending.drafts + r.pending.filters) {
+    const waiting = formatList([t("settings.data.summary.drafts", { count: r.pending.drafts }), t("settings.data.summary.filters", { count: r.pending.filters })]);
+    sentences.push(t("settings.data.summary.waiting", { items: waiting }));
+  }
+  if (r.filters.skipped.length) sentences.push(t("settings.data.summary.skipped", { names: formatList(r.filters.skipped) }));
+  return sentences.join(" ");
 }

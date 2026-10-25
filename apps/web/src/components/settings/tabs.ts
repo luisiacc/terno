@@ -1,14 +1,40 @@
+import { t } from "@terno/i18n";
 import { AtSign, Bot, Database, ListFilter, Palette, SlidersHorizontal, Sparkles, Tag } from "lucide-react";
 import type { SettingsTab } from "~/state/app";
 
-/** The settings sections, in sidebar order; the palette offers each as "Ajustes → <label>". */
-export const SETTINGS_TABS: { value: SettingsTab; label: string; icon: typeof AtSign }[] = [
-  { value: "general", label: "General", icon: SlidersHorizontal },
-  { value: "appearance", label: "Apariencia", icon: Palette },
-  { value: "accounts", label: "Cuentas", icon: AtSign },
-  { value: "categories", label: "Categorías", icon: Tag },
-  { value: "filters", label: "Filtros", icon: ListFilter },
-  { value: "ai", label: "IA", icon: Sparkles },
-  { value: "agents", label: "Agentes", icon: Bot },
-  { value: "data", label: "Datos", icon: Database },
+const LABEL_KEYS = {
+  general: "settings.tab.general",
+  appearance: "settings.tab.appearance",
+  accounts: "settings.tab.accounts",
+  categories: "settings.tab.categories",
+  filters: "settings.tab.filters",
+  ai: "settings.tab.ai",
+  agents: "settings.tab.agents",
+  data: "settings.tab.data",
+} as const satisfies Record<SettingsTab, string>;
+
+/** A section's name in the current language. */
+export function settingsTabLabel(tab: SettingsTab): string {
+  return t(LABEL_KEYS[tab]);
+}
+
+const tab = (value: SettingsTab, icon: typeof AtSign) => ({
+  value,
+  icon,
+  /** read when rendered, so it follows the language */
+  get label() {
+    return settingsTabLabel(value);
+  },
+});
+
+/** The settings sections, in sidebar order; the palette offers each as "Settings → <label>". */
+export const SETTINGS_TABS: readonly { readonly value: SettingsTab; readonly label: string; readonly icon: typeof AtSign }[] = [
+  tab("general", SlidersHorizontal),
+  tab("appearance", Palette),
+  tab("accounts", AtSign),
+  tab("categories", Tag),
+  tab("filters", ListFilter),
+  tab("ai", Sparkles),
+  tab("agents", Bot),
+  tab("data", Database),
 ];

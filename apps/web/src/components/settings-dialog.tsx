@@ -14,7 +14,8 @@ import { AgentsTab } from "./settings/agents-tab";
 import { DataTab } from "./settings/data-tab";
 import { FiltersTab } from "./settings/filters-tab";
 import { GeneralTab } from "./settings/general-tab";
-import { SETTINGS_TABS } from "./settings/tabs";
+import { SETTINGS_TABS, settingsTabLabel } from "./settings/tabs";
+import { t } from "@terno/i18n";
 import { reconcileSettings } from "~/lib/appearance";
 import type { SettingsUpdate } from "./settings/parts";
 import { PaneBoundary } from "./diag/error-boundary";
@@ -40,11 +41,11 @@ export function SettingsDialog() {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && setApp({ dialog: null })}>
       <DialogContent className="h-[min(640px,85vh)] max-w-[min(820px,94vw)] grid-rows-1 gap-0 overflow-hidden p-0 sm:max-w-[min(820px,94vw)]" data-testid="settings-dialog">
-        <DialogTitle className="sr-only">Ajustes</DialogTitle>
+        <DialogTitle className="sr-only">{t("common.settings")}</DialogTitle>
         <Tabs value={tab} onValueChange={(v) => setApp({ settingsTab: v as SettingsTab })} orientation="vertical" className="flex h-full flex-row gap-0">
           {/* macOS System Settings: a sidebar of sections with accent glyphs */}
           <nav className="hairline-r hairline-strong flex w-[180px] shrink-0 flex-col bg-sidebar px-2 pt-5 pb-3">
-            <h2 className="mb-3 px-2 text-md font-semibold tracking-tight">Ajustes</h2>
+            <h2 className="mb-3 px-2 text-md font-semibold tracking-tight">{t("common.settings")}</h2>
             <TabsList activateOnFocus className="w-full items-stretch bg-transparent p-0">
               {SETTINGS_TABS.map(({ value, label, icon: Icon }) => (
                 <TabsTrigger
@@ -60,9 +61,9 @@ export function SettingsDialog() {
             </TabsList>
           </nav>
           <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-5 pb-4">
-            <h2 className="mb-4 text-lg font-semibold tracking-tight">{SETTINGS_TABS.find((t) => t.value === tab)?.label}</h2>
+            <h2 className="mb-4 text-lg font-semibold tracking-tight">{settingsTabLabel(tab)}</h2>
             {/* a section that fails to render stays a section: the sheet and the other tabs keep working */}
-            <PaneBoundary area="settings" resetKey={tab} title="This section couldn't be shown">
+            <PaneBoundary area="settings" resetKey={tab} title={t("settings.sectionError")}>
               <TabsContent value="general">
                 <GeneralTab settings={settings} update={update} onLocalOff={() => setConfirmLocalOff(true)} />
               </TabsContent>
@@ -101,18 +102,18 @@ export function SettingsDialog() {
         <AlertDialog open={confirmLocalOff} onOpenChange={setConfirmLocalOff}>
           <AlertDialogContent data-testid="local-mode-confirm">
             <AlertDialogHeader>
-              <AlertDialogTitle>¿Desactivar el modo local?</AlertDialogTitle>
+              <AlertDialogTitle>{t("settings.localOff.title")}</AlertDialogTitle>
               <AlertDialogDescription render={<div />}>
-                <p>Al desactivarlo, Terno podrá:</p>
+                <p>{t("settings.localOff.intro")}</p>
                 <ul className="mt-2 list-disc space-y-1 pl-5 text-left">
-                  <li>usar IA en la nube (Claude, OpenAI y compatibles) con tu propia API key;</li>
-                  <li>cargar imágenes remotas de un correo cuando lo pidas.</li>
+                  <li>{t("settings.localOff.cloudAi")}</li>
+                  <li>{t("settings.localOff.remoteImages")}</li>
                 </ul>
-                <p className="mt-2">El correo con tus servidores funciona igual en los dos modos.</p>
+                <p className="mt-2">{t("settings.localOff.mail")}</p>
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Mantener activado</AlertDialogCancel>
+              <AlertDialogCancel>{t("settings.localOff.keep")}</AlertDialogCancel>
               <Button
                 variant="destructive"
                 data-testid="local-mode-confirm-off"
@@ -121,7 +122,7 @@ export function SettingsDialog() {
                   void update({ localMode: false });
                 }}
               >
-                Desactivar
+                {t("settings.localOff.confirm")}
               </Button>
             </AlertDialogFooter>
           </AlertDialogContent>

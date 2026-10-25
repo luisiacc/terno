@@ -6,6 +6,7 @@ import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Input } from "@terno/ui/components/input";
 import { Textarea } from "@terno/ui/components/textarea";
 import { cn } from "@terno/ui/lib/utils";
+import { t } from "@terno/i18n";
 import { useId, useState } from "react";
 
 /**
@@ -195,16 +196,17 @@ export function CommitInput({
   );
 }
 
-export const COLOR_LABEL: Record<CategoryColor, string> = {
-  rose: "Rosa",
-  amber: "Ámbar",
-  lime: "Lima",
-  emerald: "Esmeralda",
-  cyan: "Cian",
-  indigo: "Índigo",
-  violet: "Violeta",
-  slate: "Pizarra",
-};
+/** Each palette color's accessible name, as a key (read at render, in the current language). */
+export const COLOR_LABEL = {
+  rose: "settings.color.rose",
+  amber: "settings.color.amber",
+  lime: "settings.color.lime",
+  emerald: "settings.color.emerald",
+  cyan: "settings.color.cyan",
+  indigo: "settings.color.indigo",
+  violet: "settings.color.violet",
+  slate: "settings.color.slate",
+} as const satisfies Record<CategoryColor, string>;
 
 /**
  * The palette as native radio buttons (arrow keys, one tab stop), each named
@@ -233,7 +235,7 @@ export function ColorPicker({ value, onChange, a11y, name, testId }: { value: st
               setPicked(c);
               onChange(c).catch(() => setPicked(value));
             }}
-            aria-label={COLOR_LABEL[c]}
+            aria-label={t(COLOR_LABEL[c])}
             className="peer sr-only"
             data-testid={testId ? `${testId}-${c}` : undefined}
           />
@@ -270,7 +272,7 @@ export function ConfirmDialog({
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
           <Button
             variant="destructive"
             data-testid={testId ? `${testId}-confirm` : undefined}

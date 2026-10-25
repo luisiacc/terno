@@ -2,6 +2,7 @@ import type { AppSettings } from "@terno/core/rpc";
 import { Button } from "@terno/ui/components/button";
 import { Switch } from "@terno/ui/components/switch";
 import { Check, Copy, KeyRound } from "lucide-react";
+import { localeTag, t } from "@terno/i18n";
 import { Suspense, useEffect, useState } from "react";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
@@ -9,7 +10,7 @@ import { useApp } from "~/state/app";
 import { DesktopOnly } from "~/lib/web-parts";
 import { SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
 
-const time = new Intl.DateTimeFormat("es", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" });
+const time = (ms: number) => new Intl.DateTimeFormat(localeTag(), { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" }).format(ms);
 
 function CopyBlock({ text, label, testId }: { text: string; label: string; testId?: string }) {
   const [copied, setCopied] = useState(false);
@@ -18,7 +19,7 @@ function CopyBlock({ text, label, testId }: { text: string; label: string; testI
       <pre className="overflow-x-auto rounded-lg bg-background p-3 pr-10 font-mono text-xs leading-relaxed whitespace-pre-wrap dark:bg-input/30">{text}</pre>
       <button
         type="button"
-        aria-label={`Copiar: ${label}`}
+        aria-label={t("settings.agents.copy", { label })}
         className="absolute top-2 right-2 rounded p-1 text-muted-foreground hover:bg-tint hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         onClick={() => {
           void navigator.clipboard.writeText(text).then(
@@ -26,14 +27,14 @@ function CopyBlock({ text, label, testId }: { text: string; label: string; testI
               setCopied(true);
               setTimeout(() => setCopied(false), 1200);
             },
-            () => snack.error("No se pudo copiar"),
+            () => snack.error(t("settings.copyFailed")),
           );
         }}
       >
         {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
       </button>
       <span role="status" className="sr-only">
-        {copied ? "Copiado" : ""}
+        {copied ? t("common.copied") : ""}
       </span>
     </div>
   );
@@ -52,7 +53,7 @@ function TokenRow() {
     setBusy(true);
     try {
       const r = await client.call("agents.rotateToken", {});
-      snack.success(r.disconnected ? `Token cambiado: ${r.disconnected} ${r.disconnected === 1 ? "agente desconectado" : "agentes desconectados"}` : "Token cambiado");
+      snack.success(r.disconnected ? t("settings.agents.tokenChangedDisconnected", { count: r.disconnected }) : t("settings.agents.tokenChanged"));
       refresh();
     } catch (e) {
       snack.error(e instanceof Error ? e.message : String(e));
@@ -63,12 +64,12 @@ function TokenRow() {
   return (
     <SettingsRow
       testId="agents-token-row"
-      label="Token de acceso"
-      hint={`${status.connected === 1 ? "1 agente conectado" : `${status.connected} agentes conectados`}${status.tokenSince ? ` · válido desde ${time.format(status.tokenSince)}` : ""}. Cambiarlo desconecta a los agentes; vuelven al abrir una sesión nueva.`}
+      label={t("settings.agents.token")}
+      hint={status.tokenSince ? t("settings.agents.token.hintSince", { count: status.connected, since: time(status.tokenSince) }) : t("settings.agents.token.hint", { count: status.connected })}
     >
       {({ id: _id, "aria-labelledby": _l, ...a }) => (
         <Button {...a} variant="outline" size="sm" disabled={busy} data-testid="agents-rotate" onClick={() => void rotate()}>
-          <KeyRound /> Cambiar token
+          <KeyRound /> {t("settings.agents.rotate")}
         </Button>
       )}
     </SettingsRow>
@@ -91,21 +92,21 @@ export function AgentsTab({ settings, update }: { settings: AppSettings; update:
   const mcp = agent?.mcpCommand ?? "/Applications/Terno.app/Contents/Resources/bin/terno-mcp";
   return (
     <div data-testid="agents-tab">
-      <SettingsGroup title="Conectar" footer="Claude Code o Codex llegan a todas tus cuentas por MCP mientras Terno está abierto.">
+      <SettingsGroup title={t("common.connect")} footer={t("settings.agents.connect.footer")}>
         <SettingsRow stacked label="Claude Code">
-          {() => <CopyBlock testId="mcp-claude" label="comando de Claude Code" text={`claude mcp add terno -- "${mcp}"`} />}
+          {() => <CopyBlock testId="mcp-claude" label={t("settings.agents.claudeCommand")} text={`claude mcp add terno -- "${mcp}"`} />}
         </SettingsRow>
-        <SettingsRow stacked label="Codex" hint="En ~/.codex/config.toml">
-          {() => <CopyBlock testId="mcp-codex" label="configuración de Codex" text={`[mcp_servers.terno]\ncommand = "${mcp}"`} />}
+        <SettingsRow stacked label="Codex" hint={t("settings.agents.codex.hint", { path: "~/.codex/config.toml" })}>
+          {() => <CopyBlock testId="mcp-codex" label={t("settings.agents.codexConfig")} text={`[mcp_servers.terno]\ncommand = "${mcp}"`} />}
         </SettingsRow>
         {agent && (
-          <SettingsRow stacked label="Skill para Claude Code">
-            {() => <CopyBlock label="instalación de la skill" text={`mkdir -p ~/.claude/skills/terno && cp "${agent.skillPath}" ~/.claude/skills/terno/SKILL.md`} />}
+          <SettingsRow stacked label={t("settings.agents.skill")}>
+            {() => <CopyBlock label={t("settings.agents.skillInstall")} text={`mkdir -p ~/.claude/skills/terno && cp "${agent.skillPath}" ~/.claude/skills/terno/SKILL.md`} />}
           </SettingsRow>
         )}
       </SettingsGroup>
-      <SettingsGroup title="Permisos">
-        <SettingsRow label="Permitir que los agentes envíen correos" hint="Si está desactivado, los agentes solo pueden leer, organizar y crear borradores.">
+      <SettingsGroup title={t("settings.agents.permissions")}>
+        <SettingsRow label={t("settings.agents.allowSend")} hint={t("settings.agents.allowSend.hint")}>
           {(a) => <Switch {...a} data-testid="allow-agent-send" checked={settings.allowAgentSend} onCheckedChange={(on) => void update({ allowAgentSend: on })} />}
         </SettingsRow>
         <TokenRow />

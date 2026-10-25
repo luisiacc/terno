@@ -130,7 +130,7 @@ describe("concurrent appearance changes", () => {
     void updateAppearance({ darkTheme: "dracula" });
     void updateAppearance({ motionMs: 50 });
     await answer(false);
-    expect(snack.error).toHaveBeenCalled();
+    expect(snack.error).toHaveBeenCalledWith("Couldn’t change the appearance: refused");
     expect(painted()).toBe("terno-dark");
     expect(getApp().settings).toMatchObject({ darkTheme: "terno-dark", motionMs: 50 });
     await answer();

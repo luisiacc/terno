@@ -7,12 +7,14 @@ import { contrastFailures } from "@terno/ui/themes/contrast";
 import { builtinTheme, resolveCustomTheme, themesFor, type Theme } from "@terno/ui/themes/registry";
 import { cn } from "@terno/ui/lib/utils";
 import { Check, Copy, Pencil, Trash2, Upload } from "lucide-react";
+import { t } from "@terno/i18n";
 import { useId, useRef, useState } from "react";
 import { snack } from "~/lib/snack";
 import { resolvedMode, resolveTheme, updateAppearance, useAppearance } from "~/lib/appearance";
 import { ConfirmDialog, SettingsGroup, SettingsRow, type RowA11y } from "./parts";
 
-const MODE_LABEL: Record<ThemeMode, string> = { light: "claro", dark: "oscuro" };
+/** Under a theme picked for the mode not showing now. */
+const APPLIES_IN = { light: "settings.appearance.appliesLight", dark: "settings.appearance.appliesDark" } as const satisfies Record<ThemeMode, string>;
 
 /**
  * A 132×84 live mini-mock of the app in a theme: sidebar, three rows (one
@@ -72,24 +74,24 @@ export function parseThemeFile(text: string, existing: readonly CustomTheme[], e
   try {
     json = JSON.parse(text);
   } catch {
-    return { error: "El archivo no es JSON válido." };
+    return { error: t("settings.file.invalidJson") };
   }
   const r = customThemeSchema.safeParse(json);
   if (!r.success) {
     const issue = r.error.issues[0]!;
     return { error: `${issue.path.length ? `${issue.path.join(".")}: ` : ""}${issue.message}` };
   }
-  if (editing !== undefined && r.data.id !== editing) return { error: `El id no se puede cambiar: es «${editing}».` };
-  if (editing === undefined && existing.some((t) => t.id === r.data.id)) return { error: `Ya tienes un tema con el id «${r.data.id}».` };
-  if (editing === undefined && existing.length >= MAX_CUSTOM_THEMES) return { error: `Puedes tener hasta ${MAX_CUSTOM_THEMES} temas propios.` };
-  const warnings = contrastFailures(resolveCustomTheme(r.data)).map((f) => `${f.pair}: ${f.ratio}:1 (mínimo ${f.min}:1)`);
+  if (editing !== undefined && r.data.id !== editing) return { error: t("settings.appearance.idFixed", { id: editing }) };
+  if (editing === undefined && existing.some((c) => c.id === r.data.id)) return { error: t("settings.appearance.idTaken", { id: r.data.id }) };
+  if (editing === undefined && existing.length >= MAX_CUSTOM_THEMES) return { error: t("settings.appearance.tooMany", { max: MAX_CUSTOM_THEMES }) };
+  const warnings = contrastFailures(resolveCustomTheme(r.data)).map((f) => t("settings.appearance.contrastWarning", { pair: f.pair, ratio: f.ratio, min: f.min }));
   return { theme: r.data, warnings };
 }
 
 function MotionDemo({ ms }: { ms: number }) {
   const [right, setRight] = useState(false);
   return (
-    <button type="button" onClick={() => setRight((r) => !r)} aria-label="Probar la animación" data-testid="motion-demo" className="relative h-5 w-16 rounded-full bg-muted">
+    <button type="button" onClick={() => setRight((r) => !r)} aria-label={t("settings.appearance.tryMotion")} data-testid="motion-demo" className="relative h-5 w-16 rounded-full bg-muted">
       <span
         className="absolute top-1 left-1 size-3 rounded-full bg-primary transition-transform duration-slow ease-motion"
         style={{ transform: right ? "translateX(44px)" : undefined }}
@@ -109,16 +111,16 @@ function ThemeEditor({ theme, all, onDone }: { theme: CustomTheme; all: readonly
     const result = parseThemeFile(text, all, theme.id);
     if ("error" in result) return setError(result.error);
     setBusy(true);
-    const next = await updateAppearance({ customThemes: all.map((t) => (t.id === theme.id ? result.theme : t)) });
+    const next = await updateAppearance({ customThemes: all.map((c) => (c.id === theme.id ? result.theme : c)) });
     setBusy(false);
-    if (!next) return setError("No se pudo guardar el tema.");
-    snack.success(result.warnings.length ? `«${result.theme.name}» guardado, con ${result.warnings.length} avisos de contraste` : `«${result.theme.name}» guardado`);
+    if (!next) return setError(t("settings.appearance.saveFailed"));
+    snack.success(result.warnings.length ? t("settings.appearance.savedWarnings", { name: result.theme.name, count: result.warnings.length }) : t("settings.appearance.saved", { name: result.theme.name }));
     onDone();
   };
   return (
     <div className="space-y-2 pb-3" data-testid="theme-editor">
       <label htmlFor={id} className="sr-only">
-        JSON de {theme.name}
+        {t("settings.appearance.json", { name: theme.name })}
       </label>
       <Textarea
         id={id}
@@ -140,10 +142,10 @@ function ThemeEditor({ theme, all, onDone }: { theme: CustomTheme; all: readonly
       )}
       <div className="flex justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={onDone}>
-          Cancelar
+          {t("common.cancel")}
         </Button>
         <Button size="sm" disabled={busy} onClick={() => void save()} data-testid="theme-editor-save">
-          Guardar
+          {t("common.save")}
         </Button>
       </div>
     </div>
@@ -153,20 +155,19 @@ function ThemeEditor({ theme, all, onDone }: { theme: CustomTheme; all: readonly
 function CustomThemeItem({ theme, all }: { theme: CustomTheme; all: readonly CustomTheme[] }) {
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const name = `«${theme.name}»`;
   return (
     <div data-testid={`custom-theme-${theme.id}`}>
       <div className="flex min-h-11 items-center gap-2 py-2">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{theme.name}</p>
           <p className="truncate text-xs text-muted-foreground">
-            {theme.mode === "light" ? "Claro" : "Oscuro"} · basado en {builtinTheme(theme.extends)?.name ?? theme.extends}
+            {t(theme.mode === "light" ? "settings.appearance.basedOnLight" : "settings.appearance.basedOnDark", { base: builtinTheme(theme.extends)?.name ?? theme.extends })}
           </p>
         </div>
-        <Button variant="ghost" size="sm" aria-expanded={editing} aria-label={`Editar ${name}`} data-testid={`theme-edit-${CUSTOM_PREFIX}${theme.id}`} onClick={() => setEditing((e) => !e)}>
-          <Pencil /> Editar
+        <Button variant="ghost" size="sm" aria-expanded={editing} aria-label={t("settings.appearance.editTheme", { name: theme.name })} data-testid={`theme-edit-${CUSTOM_PREFIX}${theme.id}`} onClick={() => setEditing((e) => !e)}>
+          <Pencil /> {t("common.edit")}
         </Button>
-        <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive-ink" aria-label={`Borrar ${name}`} data-testid={`theme-delete-${CUSTOM_PREFIX}${theme.id}`} onClick={() => setDeleting(true)}>
+        <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive-ink" aria-label={t("settings.appearance.deleteTheme", { name: theme.name })} data-testid={`theme-delete-${CUSTOM_PREFIX}${theme.id}`} onClick={() => setDeleting(true)}>
           <Trash2 />
         </Button>
       </div>
@@ -175,10 +176,10 @@ function CustomThemeItem({ theme, all }: { theme: CustomTheme; all: readonly Cus
         open={deleting}
         onOpenChange={setDeleting}
         testId="theme-delete-dialog"
-        title={`¿Borrar ${name}?`}
-        description="Si lo estás usando, Terno vuelve al tema incluido de ese modo. Exporta antes el tema si quieres conservarlo."
-        confirm="Borrar tema"
-        onConfirm={() => void updateAppearance({ customThemes: all.filter((t) => t.id !== theme.id) })}
+        title={t("settings.appearance.delete.title", { name: theme.name })}
+        description={t("settings.appearance.delete.description")}
+        confirm={t("settings.appearance.delete.confirm")}
+        onConfirm={() => void updateAppearance({ customThemes: all.filter((c) => c.id !== theme.id) })}
       />
     </div>
   );
@@ -195,7 +196,7 @@ export function AppearanceTab({ settings }: { settings: AppSettings }) {
 
   const onFile = async (file: File | undefined) => {
     if (!file) return;
-    if (file.size > 32 * 1024) return setImported({ error: "El archivo es demasiado grande (máx. 32 KB)." });
+    if (file.size > 32 * 1024) return setImported({ error: t("settings.file.tooLarge", { max: "32 KB" }) });
     const result = parseThemeFile(await file.text(), settings.customThemes);
     if ("error" in result) return setImported({ error: result.error });
     const next = await updateAppearance({ customThemes: [...settings.customThemes, result.theme] });
@@ -203,28 +204,28 @@ export function AppearanceTab({ settings }: { settings: AppSettings }) {
   };
 
   const exportCurrent = () => {
-    const t = resolveTheme(settings, mode);
-    const base = t.id.startsWith(CUSTOM_PREFIX) ? (settings.customThemes.find((c) => `${CUSTOM_PREFIX}${c.id}` === t.id)?.extends ?? t.id) : t.id;
-    const slug = t.id.replace(CUSTOM_PREFIX, "").slice(0, 33);
-    const json: CustomTheme = { id: `${slug}-copia`, name: `${t.name} (copia)`.slice(0, 40), mode: t.mode, extends: base as CustomTheme["extends"], tokens: t.tokens };
+    const theme = resolveTheme(settings, mode);
+    const base = theme.id.startsWith(CUSTOM_PREFIX) ? (settings.customThemes.find((c) => `${CUSTOM_PREFIX}${c.id}` === theme.id)?.extends ?? theme.id) : theme.id;
+    const slug = theme.id.replace(CUSTOM_PREFIX, "").slice(0, 33);
+    const json: CustomTheme = { id: `${slug}-copia`, name: t("settings.appearance.copyName", { name: theme.name }).slice(0, 40), mode: theme.mode, extends: base as CustomTheme["extends"], tokens: theme.tokens };
     void navigator.clipboard.writeText(JSON.stringify(json, null, 2)).then(
-      () => snack.success("Tema copiado como JSON"),
-      () => snack.error("No se pudo copiar"),
+      () => snack.success(t("settings.appearance.copied")),
+      () => snack.error(t("settings.copyFailed")),
     );
   };
 
   const grid = (m: ThemeMode, a: RowA11y) => {
     const selected = resolveTheme(settings, m).id;
-    const custom = settings.customThemes.filter((t) => t.mode === m);
-    const note = m !== active ? `Se aplicará en modo ${MODE_LABEL[m]}` : undefined;
+    const custom = settings.customThemes.filter((c) => c.mode === m);
+    const note = m !== active ? t(APPLIES_IN[m]) : undefined;
     return (
       <div role="group" aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} className="-mx-1.5 flex flex-wrap gap-1" data-testid={`theme-grid-${m}`}>
-        {themesFor(m).map((t) => (
-          <ThemeCard key={t.id} theme={t} base={t.id} selected={selected === t.id} onSelect={() => pick(m, t.id)} note={selected === t.id ? note : undefined} />
+        {themesFor(m).map((theme) => (
+          <ThemeCard key={theme.id} theme={theme} base={theme.id} selected={selected === theme.id} onSelect={() => pick(m, theme.id)} note={selected === theme.id ? note : undefined} />
         ))}
         {custom.map((c) => {
-          const t = resolveCustomTheme(c);
-          return <ThemeCard key={t.id} theme={t} base={builtinTheme(c.extends)?.id ?? c.extends} selected={selected === t.id} onSelect={() => pick(m, t.id)} note={selected === t.id ? note : undefined} />;
+          const theme = resolveCustomTheme(c);
+          return <ThemeCard key={theme.id} theme={theme} base={builtinTheme(c.extends)?.id ?? c.extends} selected={selected === theme.id} onSelect={() => pick(m, theme.id)} note={selected === theme.id ? note : undefined} />;
         })}
       </div>
     );
@@ -233,29 +234,29 @@ export function AppearanceTab({ settings }: { settings: AppSettings }) {
   return (
     <div data-testid="appearance-tab">
       <SettingsGroup>
-        <SettingsRow label="Modo" hint="«Sistema» sigue al de tu equipo y usa el tema claro o el oscuro de abajo.">
+        <SettingsRow label={t("settings.appearance.mode")} hint={t("settings.appearance.mode.hint")}>
           {(a) => (
             <ToggleGroup aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} variant="outline" size="sm" value={[settings.theme]} onValueChange={(v: string[]) => v[0] && void updateAppearance({ theme: v[0] as AppSettings["theme"] })} data-testid="mode-toggle">
-              <ToggleGroupItem value="system" data-testid="mode-system">Sistema</ToggleGroupItem>
-              <ToggleGroupItem value="light" data-testid="mode-light">Claro</ToggleGroupItem>
-              <ToggleGroupItem value="dark" data-testid="mode-dark">Oscuro</ToggleGroupItem>
+              <ToggleGroupItem value="system" data-testid="mode-system">{t("settings.appearance.system")}</ToggleGroupItem>
+              <ToggleGroupItem value="light" data-testid="mode-light">{t("settings.appearance.light")}</ToggleGroupItem>
+              <ToggleGroupItem value="dark" data-testid="mode-dark">{t("settings.appearance.dark")}</ToggleGroupItem>
             </ToggleGroup>
           )}
         </SettingsRow>
-        <SettingsRow stacked label="Tema claro">
+        <SettingsRow stacked label={t("settings.appearance.lightTheme")}>
           {(a) => grid("light", a)}
         </SettingsRow>
-        <SettingsRow stacked label="Tema oscuro">
+        <SettingsRow stacked label={t("settings.appearance.darkTheme")}>
           {(a) => grid("dark", a)}
         </SettingsRow>
       </SettingsGroup>
 
-      <SettingsGroup title="Movimiento y correo">
-        <SettingsRow stacked label="Animaciones" hint={reduced ? "Tu equipo pide reducir el movimiento: no se anima nada." : "Duración de las animaciones. Si el sistema pide reducir el movimiento, no se anima nada."}>
+      <SettingsGroup title={t("settings.appearance.motionMail")}>
+        <SettingsRow stacked label={t("settings.appearance.motion")} hint={reduced ? t("settings.appearance.motion.reduced") : t("settings.appearance.motion.hint")}>
           {(a) => (
             <div className="flex items-center gap-4">
               <ToggleGroup aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} variant="outline" size="sm" value={[String(settings.motionMs)]} onValueChange={(v: string[]) => v[0] && void updateAppearance({ motionMs: Number(v[0]) as AppSettings["motionMs"] })} data-testid="motion-toggle">
-                <ToggleGroupItem value="0" data-testid="motion-0">Sin animación</ToggleGroupItem>
+                <ToggleGroupItem value="0" data-testid="motion-0">{t("settings.appearance.motion.none")}</ToggleGroupItem>
                 <ToggleGroupItem value="50" data-testid="motion-50">50 ms</ToggleGroupItem>
                 <ToggleGroupItem value="75" data-testid="motion-75">75 ms</ToggleGroupItem>
                 <ToggleGroupItem value="100" data-testid="motion-100">100 ms</ToggleGroupItem>
@@ -264,27 +265,27 @@ export function AppearanceTab({ settings }: { settings: AppSettings }) {
             </div>
           )}
         </SettingsRow>
-        <SettingsRow stacked label="Correo HTML" hint="«Según el tema» usa los colores del tema en correos sin colores propios; los correos diseñados se muestran sobre papel claro.">
+        <SettingsRow stacked label={t("settings.appearance.htmlMail")} hint={t("settings.appearance.htmlMail.hint")}>
           {(a) => (
             <ToggleGroup aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} variant="outline" size="sm" value={[settings.htmlMailAppearance]} onValueChange={(v: string[]) => v[0] && void updateAppearance({ htmlMailAppearance: v[0] as AppSettings["htmlMailAppearance"] })} data-testid="mail-appearance-toggle">
-              <ToggleGroupItem value="auto" data-testid="mail-auto">Según el tema</ToggleGroupItem>
-              <ToggleGroupItem value="paper" data-testid="mail-paper">Siempre papel</ToggleGroupItem>
+              <ToggleGroupItem value="auto" data-testid="mail-auto">{t("settings.appearance.htmlMail.auto")}</ToggleGroupItem>
+              <ToggleGroupItem value="paper" data-testid="mail-paper">{t("settings.appearance.htmlMail.paper")}</ToggleGroupItem>
             </ToggleGroup>
           )}
         </SettingsRow>
       </SettingsGroup>
 
-      <SettingsGroup title="Temas propios" testId="custom-themes" footer="Un archivo JSON con id, name, mode, extends (un tema incluido) y tokens (#hex u oklch).">
-        {settings.customThemes.map((t) => (
-          <CustomThemeItem key={t.id} theme={t} all={settings.customThemes} />
+      <SettingsGroup title={t("settings.appearance.custom")} testId="custom-themes" footer={t("settings.appearance.custom.footer")}>
+        {settings.customThemes.map((c) => (
+          <CustomThemeItem key={c.id} theme={c} all={settings.customThemes} />
         ))}
         <div className="py-2.5">
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} data-testid="theme-import">
-              <Upload /> Importar tema…
+              <Upload /> {t("settings.appearance.import")}
             </Button>
             <Button variant="ghost" size="sm" onClick={exportCurrent} data-testid="theme-export">
-              <Copy /> Exportar tema actual
+              <Copy /> {t("settings.appearance.export")}
             </Button>
             <input
               ref={fileRef}
@@ -307,10 +308,10 @@ export function AppearanceTab({ settings }: { settings: AppSettings }) {
           )}
           {imported?.name && (
             <div role="status" className="mt-2 text-xs" data-testid="theme-import-result">
-              <p className="text-success-ink">Importado: {imported.name}</p>
+              <p className="text-success-ink">{t("settings.appearance.imported", { name: imported.name })}</p>
               {imported.warnings && imported.warnings.length > 0 && (
                 <div className="mt-1 text-muted-foreground" data-testid="theme-import-warnings">
-                  <p>Contraste insuficiente en {imported.warnings.length} {imported.warnings.length === 1 ? "par" : "pares"} (no impide usarlo):</p>
+                  <p>{t("settings.appearance.importWarnings", { count: imported.warnings.length })}</p>
                   <ul className="mt-0.5 list-disc pl-4">
                     {imported.warnings.slice(0, 6).map((w) => (
                       <li key={w} className="font-mono text-2xs">

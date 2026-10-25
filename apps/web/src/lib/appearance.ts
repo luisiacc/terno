@@ -3,6 +3,7 @@ import type { AppSettings, SettingsPatch } from "@terno/core/rpc";
 import { applyCustomTheme, clampMotion, motionOff, motionVars, opaqueBackground } from "@terno/ui/themes/apply";
 import { toHex } from "@terno/ui/themes/color";
 import { builtinTheme, resolveCustomTheme, type Theme } from "@terno/ui/themes/registry";
+import { t } from "@terno/i18n";
 import { snack } from "~/lib/snack";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
@@ -194,7 +195,7 @@ export function updateAppearance(patch: AppearancePatch): Promise<AppSettings | 
       pending.splice(pending.indexOf(entry), 1);
       const base = { ...getApp().settings!, ...confirmed } as AppSettings;
       show(pending.reduce<AppSettings>((s, p) => ({ ...s, ...p.patch }) as AppSettings, base));
-      snack.error(`No se pudo cambiar la apariencia: ${error instanceof Error ? error.message : error}`);
+      snack.error(t("settings.appearance.failed", { error: error instanceof Error ? error.message : String(error) }));
       return null;
     }
   });

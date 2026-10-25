@@ -90,7 +90,7 @@ export function DaysField({
           onBlur={() => void commit()}
           onKeyDown={(e) => e.key === "Enter" && void commit()}
         />
-        días
+        {t("settings.days")}
       </span>
       {error && (
         <span id={errorId} role="alert" className="text-xs text-destructive-ink" data-testid={testId ? `${testId}-error` : undefined}>
@@ -101,10 +101,11 @@ export function DaysField({
   );
 }
 
-const DENSITY = [
-  { value: "comfortable", label: "Cómoda" },
-  { value: "compact", label: "Compacta" },
-] as const;
+const density = () =>
+  [
+    { value: "comfortable", label: t("settings.general.density.comfortable") },
+    { value: "compact", label: t("settings.general.density.compact") },
+  ] as const;
 
 /** Language: System (what it resolves to now), then each language by its own name. */
 function LanguageRow({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
@@ -145,16 +146,14 @@ export function GeneralTab({ settings, update, onLocalOff }: { settings: AppSett
       <SettingsGroup>
         <SettingsRow
           testId="local-mode-row"
-          label="Modo local"
+          label={t("settings.general.localMode")}
           hint={
-            WEB
-              ? "Terno solo se conecta con Google (tu correo) y con IA de este equipo (localhost). En el navegador no puede fijar direcciones DNS ni controlar otras pestañas o extensiones."
-              : "Nada sale de este Mac salvo el correo con tus servidores. La IA solo puede usar modelos de este Mac."
+            WEB ? t("settings.general.localMode.hintWeb") : t("settings.general.localMode.hint")
           }
         >
           {(a) => <Switch {...a} data-testid="local-mode-switch" checked={settings.localMode} onCheckedChange={(on) => (on ? void update({ localMode: true }) : onLocalOff())} />}
         </SettingsRow>
-        <SettingsRow label="Cargar imágenes remotas siempre" hint={settings.localMode ? "El modo local las bloquea siempre." : "Por defecto se bloquean para evitar rastreo; puedes cargarlas en cada correo."}>
+        <SettingsRow label={t("settings.general.remoteImages")} hint={settings.localMode ? t("settings.general.remoteImages.local") : t("settings.general.remoteImages.hint")}>
           {(a) => (
             <Switch
               {...a}
@@ -171,15 +170,15 @@ export function GeneralTab({ settings, update, onLocalOff }: { settings: AppSett
         <LanguageRow settings={settings} update={update} />
       </SettingsGroup>
 
-      <SettingsGroup title="Lista">
-        <SettingsRow label="Densidad" hint="Compacta muestra una línea por conversación.">
+      <SettingsGroup title={t("settings.general.list")}>
+        <SettingsRow label={t("settings.general.density")} hint={t("settings.general.density.hint")}>
           {({ id: _id, ...a }) => (
-            <Select value={settings.density} onValueChange={(v) => void update({ density: v as AppSettings["density"] })} items={DENSITY.map((d) => ({ ...d }))}>
+            <Select value={settings.density} onValueChange={(v) => void update({ density: v as AppSettings["density"] })} items={density().map((d) => ({ ...d }))}>
               <SelectTrigger {...a} size="sm" className="w-32" data-testid="density-select">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {DENSITY.map((d) => (
+                {density().map((d) => (
                   <SelectItem key={d.value} value={d.value} data-testid={`density-${d.value}`}>
                     {d.label}
                   </SelectItem>
@@ -190,17 +189,17 @@ export function GeneralTab({ settings, update, onLocalOff }: { settings: AppSett
         </SettingsRow>
       </SettingsGroup>
 
-      <SettingsGroup title="Sincronización">
-        <SettingsRow labelFor label="Ventana de sincronización" hint="Días de correo a descargar al conectar una cuenta. Cada cuenta puede tener la suya en Cuentas.">
+      <SettingsGroup title={t("settings.general.sync")}>
+        <SettingsRow labelFor label={t("settings.general.syncWindow")} hint={t("settings.general.syncWindow.hint")}>
           {(a) => <DaysField a11y={a} testId="sync-window" value={settings.syncWindowDays} onSave={(days) => update({ syncWindowDays: days ?? settings.syncWindowDays }, { quiet: true })} />}
         </SettingsRow>
       </SettingsGroup>
 
-      <SettingsGroup title="Teclado">
-        <SettingsRow label="Atajos de teclado" hint="Terno se usa entero con el teclado. También con ?, en cualquier momento.">
+      <SettingsGroup title={t("settings.general.keyboard")}>
+        <SettingsRow label={t("settings.general.shortcuts")} hint={t("settings.general.shortcuts.hint")}>
           {({ id: _id, "aria-labelledby": _l, ...a }) => (
             <Button {...a} variant="outline" size="sm" data-testid="open-shortcuts" onClick={() => setApp({ dialog: "shortcuts" })}>
-              <Keyboard /> Ver atajos
+              <Keyboard /> {t("settings.general.shortcuts.show")}
             </Button>
           )}
         </SettingsRow>

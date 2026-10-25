@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@terno/ui/components/input";
 import { Label } from "@terno/ui/components/label";
 import { Loader2, Mail } from "lucide-react";
+import { t } from "@terno/i18n";
 import { Suspense, useEffect, useState } from "react";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
@@ -46,7 +47,7 @@ export function AddAccountDialog() {
     setBusy("gmail");
     try {
       const a = WEB ? await (await import("~/web/google")).connectGmailWeb() : await client.call("accounts.connectGmail", {});
-      snack.success(`${a.email} conectada`);
+      snack.success(t("account.connected", { email: a.email }));
       setApp({ dialog: null });
     } catch (error) {
       snack.error(error instanceof Error ? error.message : String(error));
@@ -66,7 +67,7 @@ export function AddAccountDialog() {
         imap: { host: form.imapHost.trim(), port: form.imapPort, secure: form.imapPort === 993, user: form.user.trim() },
         smtp: { host: form.smtpHost.trim(), port: form.smtpPort, secure: form.smtpPort === 465, user: form.user.trim() },
       });
-      snack.success(`${a.email} conectada. Sincronizando…`);
+      snack.success(t("account.connectedSyncing", { email: a.email }));
       setApp({ dialog: null });
     } catch (error) {
       snack.error(error instanceof Error ? error.message : String(error));
@@ -79,16 +80,16 @@ export function AddAccountDialog() {
     <Dialog open={open} onOpenChange={(o) => !o && setApp({ dialog: null })}>
       <DialogContent className="sm:max-w-md" data-testid="add-account-dialog">
         <DialogHeader>
-          <DialogTitle>Añadir cuenta</DialogTitle>
-          <DialogDescription>Conecta todas las cuentas que quieras. Todo se guarda localmente.</DialogDescription>
+          <DialogTitle>{t("account.addTitle")}</DialogTitle>
+          <DialogDescription>{t("account.addDescription")}</DialogDescription>
         </DialogHeader>
         {firstOwner && (
           <p className="rounded-lg border border-primary/25 bg-accent/50 px-3 py-2 text-xs text-accent-foreground" data-testid="owner-first-copy">
-            El primer correo que conectes será tu cuenta de Terno: con él iniciarás sesión y te facturaremos.
+            {t("account.ownerFirst")}
           </p>
         )}
         <Button variant="outline" className="h-10 justify-center gap-2" onClick={connectGmail} disabled={busy !== null} data-testid="connect-gmail">
-          {busy === "gmail" ? <Loader2 className="animate-spin" /> : <Mail />} Continuar con Google
+          {busy === "gmail" ? <Loader2 className="animate-spin" /> : <Mail />} {t("account.continueGoogle")}
         </Button>
         {!imapHere && DesktopOnly ? (
           <Suspense>
@@ -97,7 +98,7 @@ export function AddAccountDialog() {
         ) : (
           <>
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="h-px flex-1 bg-border" /> o con IMAP/SMTP <span className="h-px flex-1 bg-border" />
+            <span className="h-px flex-1 bg-border" /> {t("account.orImap")} <span className="h-px flex-1 bg-border" />
           </div>
           <form
             className="space-y-3"
@@ -108,34 +109,34 @@ export function AddAccountDialog() {
           >
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2 space-y-1">
-                <Label htmlFor="acc-email">Correo</Label>
-                <Input id="acc-email" data-testid="imap-email" type="email" required value={form.email} onChange={(e) => onEmail(e.target.value)} placeholder="tu@dominio.com" />
+                <Label htmlFor="acc-email">{t("account.email")}</Label>
+                <Input id="acc-email" data-testid="imap-email" type="email" required value={form.email} onChange={(e) => onEmail(e.target.value)} placeholder={t("account.email.placeholder")} />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="acc-name">Tu nombre</Label>
+                <Label htmlFor="acc-name">{t("account.yourName")}</Label>
                 <Input id="acc-name" value={form.name} onChange={(e) => set({ name: e.target.value })} />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="acc-pass">Contraseña de app</Label>
+                <Label htmlFor="acc-pass">{t("account.appPassword")}</Label>
                 <Input id="acc-pass" data-testid="imap-password" type="password" required value={form.password} onChange={(e) => set({ password: e.target.value })} />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="acc-imap">Servidor IMAP</Label>
+                <Label htmlFor="acc-imap">{t("account.imapServer")}</Label>
                 <div className="flex gap-1.5">
                   <Input id="acc-imap" data-testid="imap-host" required value={form.imapHost} onChange={(e) => set({ imapHost: e.target.value })} />
-                  <Input aria-label="Puerto IMAP" className="w-16" type="number" value={form.imapPort} onChange={(e) => set({ imapPort: Number(e.target.value) })} />
+                  <Input aria-label={t("account.imapPort")} className="w-16" type="number" value={form.imapPort} onChange={(e) => set({ imapPort: Number(e.target.value) })} />
                 </div>
               </div>
               <div className="space-y-1">
-                <Label htmlFor="acc-smtp">Servidor SMTP</Label>
+                <Label htmlFor="acc-smtp">{t("account.smtpServer")}</Label>
                 <div className="flex gap-1.5">
                   <Input id="acc-smtp" data-testid="smtp-host" required value={form.smtpHost} onChange={(e) => set({ smtpHost: e.target.value })} />
-                  <Input aria-label="Puerto SMTP" className="w-16" type="number" value={form.smtpPort} onChange={(e) => set({ smtpPort: Number(e.target.value) })} />
+                  <Input aria-label={t("account.smtpPort")} className="w-16" type="number" value={form.smtpPort} onChange={(e) => set({ smtpPort: Number(e.target.value) })} />
                 </div>
               </div>
             </div>
             <Button type="submit" className="w-full" disabled={busy !== null} data-testid="imap-submit">
-              {busy === "imap" && <Loader2 className="animate-spin" />} Conectar cuenta
+              {busy === "imap" && <Loader2 className="animate-spin" />} {t("account.connectAccount")}
             </Button>
           </form>
           </>

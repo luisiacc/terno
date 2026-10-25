@@ -7,17 +7,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@terno/ui/components/switch";
 import { cn } from "@terno/ui/lib/utils";
 import { ChevronDown, ChevronRight, ChevronUp, Plus, Trash2 } from "lucide-react";
+import { t } from "@terno/i18n";
 import { useEffect, useId, useState } from "react";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, setCategories, useApp } from "~/state/app";
 import { ColorPicker, CommitInput, ConfirmDialog, SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
 
-const MODES = [
-  { value: "off", label: "Desactivada" },
-  { value: "suggest", label: "Solo sugerir" },
-  { value: "auto", label: "Automática" },
-] as const;
+const modes = () =>
+  [
+    { value: "off", label: t("settings.categories.mode.off") },
+    { value: "suggest", label: t("settings.categories.mode.suggest") },
+    { value: "auto", label: t("settings.categories.mode.auto") },
+  ] as const;
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -50,10 +52,10 @@ function statsLine(s: CategoryModelStats | undefined): React.ReactNode {
   if (!s) return "…";
   return (
     <>
-      {`${s.examples} ${s.examples === 1 ? "ejemplo" : "ejemplos"}`}
-      {s.autoPrecision !== null && ` · acierta ${Math.round(s.autoPrecision * 100)}% (${s.kept + s.reverted})`}
-      {s.pendingSuggestions ? ` · ${s.pendingSuggestions} por revisar` : ""}
-      {s.paused && <span className="font-medium text-destructive-ink"> · En pausa: demasiadas correcciones</span>}
+      {t("settings.categories.examples", { count: s.examples })}
+      {s.autoPrecision !== null && ` · ${t("settings.categories.precision", { percent: Math.round(s.autoPrecision * 100), total: s.kept + s.reverted })}`}
+      {s.pendingSuggestions ? ` · ${t("settings.categories.toReview", { n: s.pendingSuggestions })}` : ""}
+      {s.paused && <span className="font-medium text-destructive-ink"> · {t("settings.categories.paused")}</span>}
     </>
   );
 }
@@ -62,7 +64,7 @@ function CategoryItem({ category, stats, index, count, autoMode }: { category: C
   const [open, setOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const panel = useId();
-  const name = `«${category.name}»`;
+  const name = category.name;
   return (
     <div data-testid={`category-stats-${category.id}`} data-category-id={category.id}>
       <div className="flex items-center gap-2">
@@ -84,12 +86,12 @@ function CategoryItem({ category, stats, index, count, autoMode }: { category: C
           <ChevronRight aria-hidden className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-fast", open && "rotate-90")} />
         </button>
         <span className="text-xs text-muted-foreground" aria-hidden>
-          Añadir sola
+          {t("settings.categories.autoAdd")}
         </span>
         <Switch
           data-testid={`category-auto-${category.id}`}
-          aria-label={`Añadir sola a ${name}`}
-          title={autoMode ? "Añadir sola" : "Activa la categorización automática para que pueda añadir sola"}
+          aria-label={t("settings.categories.autoAddTo", { name })}
+          title={autoMode ? t("settings.categories.autoAdd") : t("settings.categories.autoAdd.off")}
           checked={category.autoApply}
           disabled={!autoMode}
           onCheckedChange={(on) => void updateCategory(category.id, { autoApply: on }).catch((e) => snack.error(errorText(e)))}
@@ -98,7 +100,7 @@ function CategoryItem({ category, stats, index, count, autoMode }: { category: C
       <div id={panel} hidden={!open}>
         {open && (
           <div className="hairline-divide pb-1 pl-5" data-testid="category-editor">
-            <SettingsRow labelFor label="Nombre">
+            <SettingsRow labelFor label={t("account.name")}>
               {(a) => (
                 <CommitInput
                   a11y={a}
@@ -106,45 +108,45 @@ function CategoryItem({ category, stats, index, count, autoMode }: { category: C
                   maxLength={60}
                   data-testid="category-rename"
                   value={category.name}
-                  validate={(v) => (v.trim() ? null : "Escribe un nombre.")}
+                  validate={(v) => (v.trim() ? null : t("settings.nameEmpty"))}
                   onCommit={(v) => updateCategory(category.id, { name: v.trim() })}
                 />
               )}
             </SettingsRow>
-            <SettingsRow label="Orden" hint={`${index + 1} de ${count} en la barra lateral.`}>
+            <SettingsRow label={t("settings.categories.order")} hint={t("settings.categories.order.hint", { position: index + 1, total: count })}>
               {() => (
                 <span className="flex gap-1">
-                  <Button variant="outline" size="sm" className="aria-disabled:opacity-50" aria-label={`Subir ${name}`} aria-disabled={index === 0 || undefined} data-testid="category-up" onClick={() => index > 0 && void move(category.id, -1)}>
-                    <ChevronUp /> Subir
+                  <Button variant="outline" size="sm" className="aria-disabled:opacity-50" aria-label={t("settings.categories.moveUpNamed", { name })} aria-disabled={index === 0 || undefined} data-testid="category-up" onClick={() => index > 0 && void move(category.id, -1)}>
+                    <ChevronUp /> {t("settings.categories.moveUp")}
                   </Button>
-                  <Button variant="outline" size="sm" className="aria-disabled:opacity-50" aria-label={`Bajar ${name}`} aria-disabled={index === count - 1 || undefined} data-testid="category-down" onClick={() => index < count - 1 && void move(category.id, 1)}>
-                    <ChevronDown /> Bajar
+                  <Button variant="outline" size="sm" className="aria-disabled:opacity-50" aria-label={t("settings.categories.moveDownNamed", { name })} aria-disabled={index === count - 1 || undefined} data-testid="category-down" onClick={() => index < count - 1 && void move(category.id, 1)}>
+                    <ChevronDown /> {t("settings.categories.moveDown")}
                   </Button>
                 </span>
               )}
             </SettingsRow>
-            <SettingsRow label="Color">
+            <SettingsRow label={t("settings.color")}>
               {(a) => <ColorPicker a11y={a} name={`category-color-${category.id}`} testId="category-color" value={category.color} onChange={(color) => updateCategory(category.id, { color }).catch((e: unknown) => { snack.error(errorText(e)); throw e; })} />}
             </SettingsRow>
-            <SettingsRow label="Borrar la categoría" hint="Sus conversaciones no se borran: solo dejan de estar en ella. Lo aprendido para ella se pierde.">
+            <SettingsRow label={t("settings.categories.delete")} hint={t("settings.categories.delete.hint")}>
               {({ id: _id, "aria-labelledby": _l, ...a }) => (
                 <>
                   <Button {...a} variant="ghost" size="sm" className="text-destructive-ink" data-testid="category-delete" onClick={() => setDeleting(true)}>
-                    <Trash2 /> Borrar…
+                    <Trash2 /> {t("settings.categories.delete.button")}
                   </Button>
                   <ConfirmDialog
                     open={deleting}
                     onOpenChange={setDeleting}
                     testId="category-delete-dialog"
-                    title={`¿Borrar ${name}?`}
-                    description="Sus conversaciones siguen en tu correo y en sus otras categorías. Lo que Terno aprendió para esta categoría se pierde."
-                    confirm="Borrar categoría"
+                    title={t("settings.categories.delete.title", { name })}
+                    description={t("settings.categories.delete.description")}
+                    confirm={t("settings.categories.delete.confirm")}
                     onConfirm={async () => {
                       try {
                         await client.call("categories.delete", { id: category.id });
                         // its list or its Revisar view, if open, goes back to the inbox
                         setCategories(getApp().categories.filter((c) => c.id !== category.id));
-                        snack.success(`${name} borrada`);
+                        snack.success(t("settings.categories.deleted", { name }));
                       } catch (e) {
                         snack.error(errorText(e));
                       }
@@ -171,7 +173,7 @@ function NewCategory() {
       const c = await client.call("categories.create", { name: value, color: CATEGORY_COLORS[categories.length % CATEGORY_COLORS.length]! });
       setApp((s) => ({ categories: s.categories.some((x) => x.id === c.id) ? s.categories : [...s.categories, c] }));
       setName("");
-      snack.success(`«${c.name}» creada`);
+      snack.success(t("settings.categories.created", { name: c.name }));
     } catch (e) {
       snack.error(errorText(e));
     }
@@ -185,11 +187,11 @@ function NewCategory() {
       }}
     >
       <label htmlFor={inputId} className="sr-only">
-        Nueva categoría
+        {t("settings.categories.new")}
       </label>
-      <Input id={inputId} className="h-7 flex-1 bg-background dark:bg-input/30" maxLength={60} placeholder="Nueva categoría" value={name} onChange={(e) => setName(e.target.value)} data-testid="category-new" />
+      <Input id={inputId} className="h-7 flex-1 bg-background dark:bg-input/30" maxLength={60} placeholder={t("settings.categories.new")} value={name} onChange={(e) => setName(e.target.value)} data-testid="category-new" />
       <Button type="submit" size="sm" variant="outline" disabled={!name.trim()} data-testid="category-create">
-        <Plus /> Crear
+        <Plus /> {t("settings.categories.create")}
       </Button>
     </form>
   );
@@ -207,14 +209,14 @@ export function CategoriesTab({ settings, update }: { settings: AppSettings; upd
   return (
     <div data-testid="categories-tab">
       <SettingsGroup>
-        <SettingsRow label="Categorización inteligente" hint="Aprende de cómo archivas. Sin IA ni red: todo ocurre en este Mac.">
+        <SettingsRow label={t("settings.categories.smart")} hint={t("settings.categories.smart.hint")}>
           {({ id: _id, ...a }) => (
-            <Select value={settings.autoCategorize} onValueChange={(v) => void update({ autoCategorize: v as AppSettings["autoCategorize"] })} items={MODES.map((m) => ({ ...m }))}>
+            <Select value={settings.autoCategorize} onValueChange={(v) => void update({ autoCategorize: v as AppSettings["autoCategorize"] })} items={modes().map((m) => ({ ...m }))}>
               <SelectTrigger {...a} size="sm" className="w-36" data-testid="auto-categorize-select">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {MODES.map((m) => (
+                {modes().map((m) => (
                   <SelectItem key={m.value} value={m.value} data-testid={`auto-categorize-${m.value}`}>
                     {m.label}
                   </SelectItem>
@@ -224,17 +226,17 @@ export function CategoriesTab({ settings, update }: { settings: AppSettings; upd
           )}
         </SettingsRow>
         <SettingsRow
-          label="Pedir ayuda a la IA"
-          hint={noAi ? "Conecta una IA en Ajustes → IA para usarla aquí." : "Para los correos dudosos: solo sugiere, nunca añade sola. Usa la IA de Ajustes → IA (en modo local, solo modelos de este Mac)."}
+          label={t("settings.categories.askAi")}
+          hint={noAi ? t("settings.categories.askAi.noAi") : t("settings.categories.askAi.hint")}
         >
           {(a) => <Switch {...a} data-testid="ai-categorize-switch" checked={settings.aiCategorize} disabled={noAi && !settings.aiCategorize} onCheckedChange={(on) => void update({ aiCategorize: on })} />}
         </SettingsRow>
       </SettingsGroup>
 
       <SettingsGroup
-        title="Categorías"
+        title={t("settings.tab.categories")}
         testId="categories-list"
-        footer={settings.autoCategorize === "auto" ? "El interruptor de cada una deja que Terno la añada por su cuenta cuando está seguro." : "Con la categorización en «Automática», cada categoría puede añadirse sola."}
+        footer={settings.autoCategorize === "auto" ? t("settings.categories.footer.auto") : t("settings.categories.footer")}
       >
         {categories.map((c, i) => (
           <CategoryItem key={c.id} category={c} stats={stats.find((s) => s.categoryId === c.id)} index={i} count={categories.length} autoMode={settings.autoCategorize === "auto"} />
