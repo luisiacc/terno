@@ -283,11 +283,47 @@ function next(worker: Worker, types: WorkerToPage["type"][], timeoutMs = Infinit
   });
 }
 
+/** a newer deployment is looked for this often, only while the page is visible (demo builds: ?swcheck=ms) */
+const SW_CHECK_MS = 30 * 60_000;
+
+/**
+ * registration.update() every SW_CHECK_MS while this tab is visible: a timer
+ * runs only then, and coming back after longer looks at once. What it finds
+ * installs beside this build and is offered ("New version · Reload").
+ */
+function watchDeployments(reg: ServiceWorkerRegistration): void {
+  const every = (DEMO_BUILD && Number(new URLSearchParams(location.search).get("swcheck"))) || SW_CHECK_MS;
+  let last = Date.now();
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const check = () => {
+    last = Date.now();
+    void reg.update().catch(() => {});
+  };
+  const arm = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    if (document.hidden) return;
+    timer = setTimeout(
+      () => {
+        check();
+        arm();
+      },
+      Math.max(0, every - (Date.now() - last)),
+    );
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && Date.now() - last >= every) check();
+    arm();
+  });
+  arm();
+}
+
 async function registerServiceWorker(): Promise<void> {
   if (!("serviceWorker" in navigator) || import.meta.env.DEV) return;
   const hadController = navigator.serviceWorker.controller !== null;
   const reg = await navigator.serviceWorker.register("./sw.js");
-  const offer = () => setWeb({ update: { apply: () => reg.waiting?.postMessage("skip-waiting") } });
+  // "Reload": this tab's drafts are saved, then the new build takes over (every tab reloads, each saving its own first)
+  const offer = () => setWeb({ update: { apply: () => void flushAllDrafts().then(() => reg.waiting?.postMessage("skip-waiting")) } });
   if (reg.waiting && hadController) offer();
   reg.addEventListener("updatefound", () => {
     const installing = reg.installing;
@@ -295,10 +331,15 @@ async function registerServiceWorker(): Promise<void> {
       if (installing.state === "installed" && navigator.serviceWorker.controller) offer();
     });
   });
-  // the new build took control (after "Recargar"): this page, its worker and the WASM must all come from it
+  // the new build took control ("Reload" here or in another tab): this page, its worker and the WASM must all
+  // come from it, once what this tab is writing is saved (its worker is still the old one, and still answers)
+  let reloading = false;
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    if (hadController) location.reload();
+    if (!hadController || reloading) return;
+    reloading = true;
+    void flushAllDrafts().then(() => location.reload());
   });
+  watchDeployments(reg);
 }
 
 function portTransport(port: MessagePort): Transport {

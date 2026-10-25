@@ -32,7 +32,7 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   projects: [
-    { name: "web", testMatch: /web\.spec\.ts/ },
+    { name: "web", testMatch: /(web|updates)\.spec\.ts/ },
     { name: "web-conformance", testMatch: /conformance\.spec\.ts/, use: { baseURL: `http://127.0.0.1:${CONFORMANCE}` } },
     // alone: timings must not compete with parallel workers
     { name: "web-perf", testMatch: /web-perf\.spec\.ts/, fullyParallel: false, workers: 1, timeout: 1_800_000 },

@@ -65,7 +65,7 @@ const FATAL_TITLE: Record<string, string> = {
  * for an empty one (it says so and offers to retry).
  */
 export function WebGate() {
-  const { phase, progress, code, message, update } = useWeb();
+  const { phase, progress, code, message } = useWeb();
   if (phase === "starting" && progress) {
     return (
       <Screen testId="web-starting" title={progress}>
@@ -110,15 +110,6 @@ export function WebGate() {
       </Screen>
     );
   }
-  if (update) {
-    return (
-      <div className="fixed right-4 bottom-4 z-50 flex items-center gap-3 rounded-lg border border-border bg-popover px-3 py-2 text-sm shadow-lg" data-testid="web-update">
-        Hay una versión nueva de Terno
-        <Button size="sm" onClick={update.apply}>
-          Recargar
-        </Button>
-      </div>
-    );
-  }
+  // a newer build waiting ("New version · Reload") is the sidebar's update pill
   return null;
 }
