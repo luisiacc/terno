@@ -1,6 +1,6 @@
 # Plan 13: the docked snackbar
 
-- **Status:** planned.
+- **Status:** shipped (§6).
 - **Builds on:** `2d28e57` (main with the diagnostics primitives).
 - **Request:** "these snackbars that show, lets show them always sticky on the bottom, but placed exactly where the list of threads is, at the bottom, with way less height, and kind of embedded there, the button to undo it should have a progress border denoting how much time left before that disappears, also make that button a bit more nicer and premium".
 
@@ -136,6 +136,6 @@ Also found while running `test:web`: a background sync error ("Falló: star…")
 
 - `pnpm test`: 1,540 + 390 (db-wasm).
 - `pnpm test:e2e` (E2E_PORT=5193): 222, including 13 in `snack.spec.ts`.
-- `pnpm test:web`: 26 of 27. `migration-web.spec.ts:176` fails on the `terno-diag` IndexedDB added by the diagnostics feature on main. It isn't touched here.
+- `pnpm test:web`: 27 of 27, after rebasing onto main's fix for the migration check (`096cccd`).
 - `pnpm test:ui-perf`: 16 of 16.
 - Screenshots of archive (start, mid-countdown, hovered and paused), draft discarded, error and categorization, in Terno light, Terno dark, Solarized light and Dracula: `/tmp/unica-scratch/snack-13/`.
