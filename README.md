@@ -260,3 +260,12 @@ packages/mcp      MCP server + SKILL.md
 packages/ui       Design system: shadcn (Base UI) re-themed with Terno tokens
 packages/mock-data Deterministic mock mailbox generator
 ```
+
+## License
+
+Terno is **source-available** under the [PolyForm Noncommercial License 1.0.0](LICENSE.md).
+
+- **Allowed:** reading the code, running it, and forking or changing it for your own personal, noncommercial version, including sharing that version noncommercially under the same license and with the `Required Notice` line. Use by charities, schools, public research and government bodies is also permitted.
+- **Not allowed:** any commercial use, such as selling Terno or a fork, offering it as a paid product or service, or using it inside a business for commercial advantage.
+
+To use Terno commercially, contact the author for a separate license.

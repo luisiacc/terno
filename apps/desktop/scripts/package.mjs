@@ -38,7 +38,7 @@ mkdirSync(stage, { recursive: true });
 cpSync(join(root, "dist"), join(stage, "dist"), { recursive: true });
 writeFileSync(
   join(stage, "package.json"),
-  JSON.stringify({ name: "terno", productName, version: pkg.version, description: pkg.description, main: "dist/main.cjs", author: productName, license: "UNLICENSED" }, null, 2),
+  JSON.stringify({ name: "terno", productName, version: pkg.version, description: pkg.description, main: "dist/main.cjs", author: productName, license: "PolyForm-Noncommercial-1.0.0" }, null, 2),
 );
 
 await build({
