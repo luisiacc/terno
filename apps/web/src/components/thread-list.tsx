@@ -515,7 +515,8 @@ export function ThreadList() {
         if (!el || rows.length === 0) return;
         const oldH = measuredHeight.current;
         const first = Math.min(rows.length - 1, Math.floor(el.scrollTop / oldH));
-        const delta = first * oldH - el.scrollTop;
+        // how far into that row the viewport starts (≥ 0), kept as the same share of the new height
+        const into = el.scrollTop - first * oldH;
         const id = getApp().selectedId;
         const sel = id === null ? undefined : useList.getState().index.get(id);
         const selVisible = sel !== undefined && sel * oldH < el.scrollTop + el.clientHeight && (sel + 1) * oldH > el.scrollTop;
@@ -524,10 +525,14 @@ export function ThreadList() {
           const i = useList.getState().index.get(anchorId);
           if (i === undefined) return;
           const h = measuredHeight.current;
-          el.scrollTop = Math.max(0, i * h + delta * (h / oldH));
+          el.scrollTop = Math.max(0, i * h + into * (h / oldH));
+          // the open thread was on screen: if the new heights carried it out of view, it comes back (set directly: the
+          // virtualizer's own scroll would land on positions measured before this switch)
           if (selVisible && sel !== undefined) {
             const top = sel * h;
-            if (top < el.scrollTop || top + h > el.scrollTop + el.clientHeight - useSnack.getState().inset) virtualizer.scrollToIndex(sel, { align: "auto" });
+            const bottom = el.scrollTop + el.clientHeight - useSnack.getState().inset;
+            if (top + h <= el.scrollTop) el.scrollTop = top;
+            else if (top >= bottom) el.scrollTop = top + h - (el.clientHeight - useSnack.getState().inset);
           }
         };
       }),

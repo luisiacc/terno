@@ -173,7 +173,20 @@ test.describe("switching designs", () => {
     await page.getByTestId("open-settings").click();
     await page.getByTestId("tab-appearance").click();
 
+    /** the row at the top of the list's viewport, and how far into it the viewport starts (a share of its height) */
+    // (the list is behind the modal sheet: found by its role attribute, not the accessibility tree)
+    const anchor = () =>
+      page.locator("[role=listbox]").evaluate((el) => {
+        const top = el.getBoundingClientRect().top;
+        const row = [...el.querySelectorAll<HTMLElement>("[data-testid=thread-row]")].filter((r) => r.getBoundingClientRect().bottom > top + 0.5).sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0]!;
+        const r = row.getBoundingClientRect();
+        return { id: row.dataset.threadId, into: (top - r.top) / r.height };
+      });
+    // a viewport that starts partway into a row (Codex review #3: the restore must keep the same row, at the same depth)
+    await page.locator("[role=listbox]").evaluate((el) => el.scrollBy(0, 30));
     for (const id of ["atelier", "lumen", "macos"] as const) {
+      const before = await anchor();
+      expect(before.into).toBeGreaterThan(0.05);
       const card = page.getByTestId(`design-card-${id}`);
       await card.focus();
       await page.evaluate(() => {
@@ -193,6 +206,9 @@ test.describe("switching designs", () => {
       await expect(page.getByTestId("compose-body")).toHaveValue("Half a sentence");
       const d = DESIGNS.find((x) => x.id === id)!;
       await expect(rows(page).first()).toHaveCSS("height", `${d.rows.comfortable}px`);
+      const after = await anchor();
+      expect(after.id, `the same row at the top after ${id}`).toBe(before.id);
+      expect(Math.abs(after.into - before.into), `as deep into it after ${id}`).toBeLessThan(0.06);
       // after the switch's own frame, nothing moves again (fonts were ready)
       await page.waitForTimeout(400);
       expect(await page.evaluate(() => (window as unknown as { __shifts: number }).__shifts)).toBeLessThan(0.01);
