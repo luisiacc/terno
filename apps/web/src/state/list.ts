@@ -130,7 +130,11 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
   const mine = ++seq;
   const current = useList.getState();
   const sameView = current.key === key;
-  if (!sameView) useList.setState({ key, loading: true, error: null });
+  if (!sameView) {
+    // another list: a page still on its way for the last one is no longer anyone's, and the next one may start
+    pageSeq++;
+    useList.setState({ key, loading: true, error: null, loadingMore: false });
+  }
   // keep as many rows as are loaded so a background refresh doesn't shrink the list
   const limit = sameView ? Math.min(Math.max(PAGE, current.items.length + (options.grow ? PAGE : 0)), 500) : PAGE;
   const editsAtStart = edits;
@@ -178,15 +182,19 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
   }
 }
 
+/** bumped when the list changes: a page that answers for an older list touches nothing (its loading flag was reset then) */
+let pageSeq = 0;
+
 export async function loadMore(): Promise<void> {
   const st = useList.getState();
   if (!st.nextCursor || st.loadingMore) return;
   const key = st.key;
+  const mine = pageSeq;
   const editsAtStart = edits;
   useList.setState({ loadingMore: true });
   try {
     const page = await fetchPage(st.nextCursor);
-    if (useList.getState().key !== key) return;
+    if (mine !== pageSeq || useList.getState().key !== key) return;
     if (edits !== editsAtStart) {
       // it may bring back a row an optimistic edit just took out: ask again from where the list ends now
       useList.setState({ loadingMore: false });
@@ -199,6 +207,7 @@ export async function loadMore(): Promise<void> {
     // a filtered search may answer a page with nothing kept (and more after it): nothing on screen would ask for the next one
     if (fresh.length === 0 && page.nextCursor) void loadMore();
   } catch (error) {
+    if (mine !== pageSeq) return;
     useList.setState({ loadingMore: false });
     // the mailbox changed since that page (a thread may have moved above it): refetch the loaded window and
     // the next page from the top instead of continuing a stale cursor

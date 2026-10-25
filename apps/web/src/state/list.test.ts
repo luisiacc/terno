@@ -130,3 +130,27 @@ it("a filtered search page with nothing kept but more after it: the list asks fo
   expect(useList.getState().nextCursor).toBeNull();
   setApp({ query: "", listFilters: new Map() });
 });
+
+it("a page still on its way for the last search doesn't hold the next one (Codex review round 2)", async () => {
+  // search A: an empty page with more after it, and the next page held
+  let releaseA!: () => void;
+  const heldA = new Promise<void>((r) => (releaseA = r));
+  answer = async (p) => {
+    if (p.query?.includes("alfa")) {
+      if (!p.cursor) return { items: [], nextCursor: cursor(10), strategy: "fts", tookMs: 1, complete: true };
+      await heldA;
+      return { items: rows(900, 2).map((t) => ({ ...t, hasAttachments: true })), nextCursor: null, strategy: "fts", tookMs: 1, complete: true };
+    }
+    // search B: the same shape, answered at once
+    return p.cursor ? { items: rows(700, 3).map((t) => ({ ...t, hasAttachments: true })), nextCursor: null, strategy: "fts", tookMs: 1, complete: true } : { items: [], nextCursor: cursor(20), strategy: "fts", tookMs: 1, complete: true };
+  };
+  setApp({ view: "inbox", query: "alfa", listFilters: new Map([["inbox||", "attachments"]]) });
+  await vi.waitFor(() => expect(useList.getState().loadingMore).toBe(true));
+  setApp({ query: "beta" });
+  await vi.waitFor(() => expect(useList.getState().items.map((t) => t.id)).toEqual([700, 701, 702]));
+  releaseA();
+  await new Promise((r) => setTimeout(r, 10));
+  expect(useList.getState().items.map((t) => t.id)).toEqual([700, 701, 702]);
+  expect(useList.getState().loadingMore).toBe(false);
+  setApp({ query: "", listFilters: new Map() });
+});
