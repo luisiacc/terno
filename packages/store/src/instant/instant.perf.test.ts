@@ -120,3 +120,35 @@ describe("stalls with a 6 MB message body", () => {
     expect(stall).toBeLessThanOrEqual(FRAME * MULT);
   }, 120_000);
 });
+
+describe("the attachments filter on one very long conversation (plan 15, Codex review round 3)", () => {
+  it("candidates rejected by a date in one 50,000-message conversation never rescan it: a page stays within budget", async () => {
+    const base = corpusFromDataset(generateDataset({ threads: 2_000, accounts: 2, seed: 13, now: NOW }));
+    const long = base.threads[0]!;
+    // one conversation of 50,000 messages; 1,000 of them have the searched word (few enough to be scanned as candidates),
+    // all too old for the query; its only attachment is its first message, at the far end of the conversation's list:
+    // every date-rejected candidate used to walk all of it
+    const messages: SearchMessageDoc[] = [...base.messages];
+    for (let i = 0; i < 50_000; i++) messages.push({ ...base.messages[0]!, messageId: 10_000_000 + i, threadId: long.threadId, date: NOW - (400 + (i % 1000)) * 86_400_000, body: i % 50 === 1 ? "zanahoria y otras cosas" : "otras cosas", hasAttachments: i === 0 });
+    const e = new InstantSearchEngine({ yield: macrotask, sliceMs: 4 });
+    const at = { epoch: "a", seq: 0 };
+    e.beginBuild(at);
+    for (let i = 0; i < messages.length; i += 2000) await e.loadMessages(messages.slice(i, i + 2000));
+    e.loadThreads(base.threads);
+    await e.finishBuild();
+    const { parseSearch, resolveSearch } = await import("@terno/core");
+    const lookup = { accounts: [], categories: [] };
+    const search = (threadAttachments: boolean) => resolveSearch(parseSearch("zanahoria after:30d", NOW), "zanahoria after:30d", { threadAttachments }, lookup);
+    const time = (threadAttachments: boolean) => {
+      const t = performance.now();
+      e.search({ search: search(threadAttachments), limit: 100 }, at);
+      return performance.now() - t;
+    };
+    for (let i = 0; i < 3; i++) time(true);
+    const filtered = Math.min(...Array.from({ length: 7 }, () => time(true)));
+    const plain = Math.min(...Array.from({ length: 7 }, () => time(false)));
+    (globalThis as { process?: { stderr: { write(s: string): void } } }).process?.stderr.write(`\n[gate] one 50,000-message conversation, date-rejected candidates: ${filtered.toFixed(2)} ms with the attachments filter, ${plain.toFixed(2)} ms without\n`);
+    // each thread's attachment check runs once per query (it was once per candidate: ~50 M visits)
+    expect(filtered).toBeLessThanOrEqual(Math.max(5, plain * 3) * MULT);
+  }, 300_000);
+});

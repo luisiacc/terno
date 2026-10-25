@@ -106,8 +106,9 @@ interface ThreadFilter {
   excludeAccounts: ReadonlySet<number> | null;
   inCats: Uint32Array[];
   outCats: Uint32Array[];
-  /** the conversation has attachments (plan 15's quick filter): one of its live messages has */
-  attachments: boolean;
+  /** the conversation has attachments (plan 15's quick filter): one of its live messages has; each thread's answer
+   * kept for the query, so candidates of one long conversation never rescan it */
+  attachments: Map<number, boolean> | null;
 }
 
 interface Phrase {
@@ -984,7 +985,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
       excludeAccounts: r.excludeAccountIds.length ? new Set(r.excludeAccountIds) : null,
       inCats,
       outCats,
-      attachments: q.threadAttachments === true,
+      attachments: q.threadAttachments ? new Map() : null,
     };
   }
 
@@ -994,7 +995,11 @@ export class InstantSearchEngine implements CachedSearchEngine {
     if (f.excludeAccounts && f.excludeAccounts.has(this.thrAccount[t]!)) return false;
     for (const s of f.inCats) if (!has(s, t)) return false;
     for (const s of f.outCats) if (has(s, t)) return false;
-    if (f.attachments && !this.threadHasAttachment(t)) return false;
+    if (f.attachments) {
+      let yes = f.attachments.get(t);
+      if (yes === undefined) f.attachments.set(t, (yes = this.threadHasAttachment(t)));
+      if (!yes) return false;
+    }
     return true;
   }
 
