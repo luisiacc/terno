@@ -7,7 +7,7 @@
  * then goes through runSliced: one store command per slice, each its own
  * transaction with one provider op per account.
  */
-import { listFilterOf, withListFilter } from "@terno/core";
+import { listFilterOf, searchWithFilter } from "@terno/core";
 import type { ThreadScope } from "@terno/core/rpc";
 import { StaleCursorError, type MessageState } from "@terno/store";
 import { SliceSizer } from "./slicer";
@@ -36,8 +36,8 @@ export async function resolveThreadScope(b: BackendCore, scope: ThreadScope, cap
     }
     return { ids: ids.slice(0, cap), capped: ids.length > cap };
   } else {
-    // the same query the list ran (threads.search): the quick filter is part of it
-    const query = filter ? withListFilter(scope.query, filter, b.now()) : scope.query;
+    // the same query the list ran (threads.search): the quick filter is part of it (attachments: the threads that have them)
+    const { query, threadLevel } = filter ? searchWithFilter(scope.query, filter, b.now()) : { query: scope.query, threadLevel: false };
     if (query === null) return { ids: [], capped: false };
     // a write landing between pages (sync) invalidates the cursor: start over, a few times
     for (let attempt = 0; ; attempt++) {
@@ -45,7 +45,7 @@ export async function resolveThreadScope(b: BackendCore, scope: ThreadScope, cap
         let cursor: Parameters<BackendCore["store"]["threads"]["searchText"]>[0]["cursor"];
         for (;;) {
           const page = await b.store.threads.searchText({ query, accountId, categoryId, cursor, limit: PAGE, now: b.now() });
-          for (const t of page.items) ids.push(t.id);
+          for (const t of page.items) if (!threadLevel || t.hasAttachments) ids.push(t.id);
           if (!page.nextCursor || ids.length > cap) break;
           cursor = page.nextCursor;
           await b.platform.yield();

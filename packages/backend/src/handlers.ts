@@ -1,5 +1,5 @@
 import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
-import { capFilterName, COUNT_CAP, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, withListFilter, type ThreadAction } from "@terno/core";
+import { capFilterName, COUNT_CAP, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, searchWithFilter, type ThreadAction } from "@terno/core";
 import { L } from "@terno/i18n";
 import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type MessageState } from "@terno/store";
 import type { GmailAccountConfig, ImapAccountConfig } from "@terno/mail";
@@ -125,14 +125,25 @@ export function createHandlers(b: Backend): Handlers {
       b.searchAborts.get(ctx.clientId)?.abort();
       // the quick filter is part of the query (cursors and the instant engine see one query); asking for its opposite too matches nothing
       const filter = listFilterOf({ filter: asked, unreadOnly });
-      const query = filter ? withListFilter(p.query, filter, b.now()) : p.query;
+      const { query, threadLevel } = filter ? searchWithFilter(p.query, filter, b.now()) : { query: p.query, threadLevel: false };
       if (query === null) return { items: [], nextCursor: null, strategy: "none", tookMs: performance.now() - started, complete: true };
       const abort = new AbortController();
       b.searchAborts.set(ctx.clientId, abort);
       try {
-        const page = await store.threads.searchText({ ...p, query, now: b.now(), signal: abort.signal });
+        let page = await store.threads.searchText({ ...p, query, now: b.now(), signal: abort.signal });
+        let items = page.items;
+        if (threadLevel) {
+          // "with attachments" is the conversation's: its threads among the results, reading on while a page comes up short
+          // (bounded in time; an empty page with a cursor makes the renderer ask for the next one)
+          items = items.filter((t) => t.hasAttachments);
+          while (items.length < p.limit && page.nextCursor && performance.now() - started < 150) {
+            await b.platform.yield();
+            page = await store.threads.searchText({ ...p, query, cursor: page.nextCursor, now: b.now(), signal: abort.signal });
+            items = [...items, ...page.items.filter((t) => t.hasAttachments)];
+          }
+        }
         return {
-          items: page.items,
+          items,
           nextCursor: page.nextCursor,
           strategy: page.strategy,
           tookMs: performance.now() - started,

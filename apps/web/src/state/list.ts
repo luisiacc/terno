@@ -164,6 +164,8 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
         if (mine === seq && r) useList.setState({ unreadTotal: { key, n: r.count, capped: r.capped } });
       });
     pruneSelection(useList.getState().index);
+    // the same for a first page that came back empty with more after it
+    if (page.items.length === 0 && page.nextCursor) void loadMore();
     const s = getApp();
     if (!options.keepSelection && !sameView) setApp({ selectedId: page.items[0]?.id ?? null });
     else if (s.selectedId !== null && !page.items.some((t) => t.id === s.selectedId)) {
@@ -194,6 +196,8 @@ export async function loadMore(): Promise<void> {
     const fresh = page.items.filter((t) => !seen.has(t.id));
     const items = [...useList.getState().items, ...(activeFilter(getApp()) ? heldOnly(fresh) : fresh)];
     useList.setState({ items, index: indexOf(items), nextCursor: page.nextCursor, loadingMore: false });
+    // a filtered search may answer a page with nothing kept (and more after it): nothing on screen would ask for the next one
+    if (fresh.length === 0 && page.nextCursor) void loadMore();
   } catch (error) {
     useList.setState({ loadingMore: false });
     // the mailbox changed since that page (a thread may have moved above it): refetch the loaded window and

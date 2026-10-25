@@ -305,3 +305,27 @@ describe("scope actions", () => {
     expect(await client.call("threads.act", { threadIds: some.slice(0, 10), action: "star" })).toEqual({ affected: 0, undoId: null });
   });
 });
+
+describe("the attachments filter in a search (plan 15)", () => {
+  it("keeps a conversation with attachments even when the message that matches has none; scope counts and ids agree", async () => {
+    const { backend, db, client } = setup(60);
+    const acct = db.get<{ id: number; email: string }>("SELECT id, email FROM accounts ORDER BY id LIMIT 1")!;
+    const base = { accountId: acct.id, providerThreadId: "thread-zanahoria", listId: null, isRead: false, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, size: 1000, bodyState: "full" as const, cc: [], bcc: [], bodyHtml: null };
+    await backend.store.sync.ingest(
+      [
+        { ...base, providerMsgId: "z1", rfcMessageId: "<z1@t>", inReplyTo: null, references: [], from: { name: "Ana", email: "ana@example.com" }, to: [{ name: "", email: acct.email }], subject: "Contrato", date: NOW - 7200_000, snippet: "el contrato firmado", bodyText: "Te mando el contrato firmado.", hasAttachments: true },
+        { ...base, providerMsgId: "z2", rfcMessageId: "<z2@t>", inReplyTo: "<z1@t>", references: ["<z1@t>"], from: { name: "Ana", email: "ana@example.com" }, to: [{ name: "", email: acct.email }], subject: "Re: Contrato", date: NOW - 3600_000, snippet: "y una zanahoria", bodyText: "Y otra cosa: compra una zanahoria.", hasAttachments: false },
+      ],
+      { applyFilters: false, now: NOW, classifier: null },
+    );
+    const thread = db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = 'z2'")!.thread_id;
+    const search = async () => (await client.call("threads.search", { query: "zanahoria", filter: "attachments", limit: 50 })).items.map((t) => t.id);
+    await expect.poll(search, { timeout: 10_000 }).toEqual([thread]);
+    // without attachments in the conversation it's left out
+    expect((await client.call("threads.search", { query: "zanahoria", filter: "starred", limit: 50 })).items).toEqual([]);
+    const scope = { kind: "search" as const, query: "zanahoria", filter: "attachments" as const };
+    expect(await client.call("threads.scopeCount", { scope })).toEqual({ count: 1, capped: false });
+    // and a query that asks for the opposite matches nothing
+    expect((await client.call("threads.search", { query: "zanahoria -has:attachment", filter: "attachments", limit: 50 })).items).toEqual([]);
+  });
+});

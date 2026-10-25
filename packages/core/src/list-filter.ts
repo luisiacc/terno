@@ -23,15 +23,25 @@ export function matchesFilter(filter: ListFilter | undefined, t: Pick<ThreadSumm
   return filter === undefined || (filter === "unread" ? t.unread : filter === "starred" ? t.starred : t.hasAttachments);
 }
 
-const OPERATOR: Record<ListFilter, string> = { unread: "is:unread", attachments: "has:attachment", starred: "is:starred" };
+const OPERATOR: Record<Exclude<ListFilter, "attachments">, string> = { unread: "is:unread", starred: "is:starred" };
 
 /**
- * A search narrowed by a filter: the query with the filter's operator in
- * front, so the token still being typed stays the last (prefix-matched) one;
- * null when the query asks for the opposite (both together match nothing).
+ * A search narrowed by a filter. Unread and starred are thread-level in every
+ * search engine, so their operator goes in front of the query (the token
+ * still being typed stays the last, prefix-matched one). `has:attachment` is
+ * per message there, but the filter means "the conversation has
+ * attachments": the query stays as it is and the caller keeps the threads
+ * with attachments (`threadLevel`). `query` is null when the query asks for
+ * the filter's opposite (both together match nothing).
  */
-export function withListFilter(query: string, filter: ListFilter, now: number = Date.now()): string | null {
+export function searchWithFilter(query: string, filter: ListFilter, now: number = Date.now()): { query: string | null; threadLevel: boolean } {
   const q = parseSearch(query, now);
   const opposite = filter === "unread" ? q.unread === false : filter === "starred" ? q.starred === false : q.hasAttachment === false;
-  return opposite ? null : `${OPERATOR[filter]} ${query}`;
+  if (opposite) return { query: null, threadLevel: false };
+  return filter === "attachments" ? { query, threadLevel: true } : { query: `${OPERATOR[filter]} ${query}`, threadLevel: false };
+}
+
+/** The query a filtered search runs: see searchWithFilter (the attachments filter is applied to its threads by the caller). */
+export function withListFilter(query: string, filter: ListFilter, now: number = Date.now()): string | null {
+  return searchWithFilter(query, filter, now).query;
 }

@@ -121,3 +121,12 @@ it("an optimistic edit wins over a reload that was already on its way: the answe
   await vi.waitFor(() => expect(n).toBe(2));
   await vi.waitFor(() => expect(useList.getState().items.map((t) => t.id)).toEqual([10]));
 });
+
+it("a filtered search page with nothing kept but more after it: the list asks for the next one by itself (plan 15)", async () => {
+  // first page empty with a cursor, the next one has the results
+  answer = async (p) => (p.cursor ? { items: rows(500, 3).map((t) => ({ ...t, hasAttachments: true })), nextCursor: null, strategy: "fts", tookMs: 1, complete: true } : { items: [], nextCursor: cursor(99), strategy: "fts", tookMs: 1, complete: true });
+  setApp({ view: "inbox", query: "zanahoria", listFilters: new Map([["inbox||", "attachments"]]) });
+  await vi.waitFor(() => expect(useList.getState().items.map((t) => t.id)).toEqual([500, 501, 502]));
+  expect(useList.getState().nextCursor).toBeNull();
+  setApp({ query: "", listFilters: new Map() });
+});
