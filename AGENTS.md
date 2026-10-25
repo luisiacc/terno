@@ -10,7 +10,7 @@ Terno is a minimalist, fast email client: Electron (macOS first) plus a web buil
    - motion within the `--motion` cap (≤ 100 ms), and none when motion is reduced or off
    - every control keyboard-reachable and named for screen readers (axe-clean in light and dark, AA contrast in all themes)
 
-   **All copy is English** (UI, errors, notifications, docs). Never Spanish.
+   **English is the source language** for all copy (UI, errors, notifications, docs). UI strings go through the i18n catalog: English is the default, and Spanish (`es`) ships alongside it. Every new or changed string updates `en` and `es` together, and the type check fails if a locale is missing a key.
 3. **Performance.**
    - No regressions against the perf gates (`pnpm test:perf`, `pnpm test:ui-perf`, `load.perf.test.ts`).
    - Lists are virtualized, and render counts are asserted.
