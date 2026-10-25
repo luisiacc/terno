@@ -309,3 +309,7 @@ Round 1 (`codex-review.sh d3b6e78`, focused on scale, memory, ranking, editor ed
 9. **Medium:** digits shared one mask bit ("ana 1" matched 2@x.io). Digits are walked; the oracle property test covers digit queries.
 10. **Medium:** a page of empty sent bodies ended learning (IndexedDB). `sentAfter` returns its cursor apart from its results. Conformance test.
 11. **Medium:** the UI gates held medians only, and latency was taken before the ghost was placed. Added a paired gate on each round's slowest quarter, with a twin (10 ms on one key in four: medians 1.03, slowest quarter 1.47 against a 1.32 gate); latency now runs to the frame that places the ghost.
+
+Round 2 (only the round-1 fixes, 3 findings), fixed with regression tests: the caps also hold while a large commit applies, and merges inside it respect the peak (service test with a 1,000-contact cap and a 12,000-person commit); a phrase snapshot over today's vocabulary limits is refused, and the format is bumped (unit test); the line-end test is deterministic (the editor narrowed so " you have" fits and " you have any" doesn't, in each design's own type: the ghost shows " you have", one line high, and Tab inserts exactly that; it fails without the round-1 fix).
+
+Also fixed while running the suites: the ops worker kept claiming batches after `stop()` gave up waiting for it (a long archive-all-then-undo queue on a loaded machine hit a closed database in e2e teardown); it now stops claiming once the backend is stopping.

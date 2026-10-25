@@ -430,8 +430,12 @@ export class Autocomplete {
     for (let i = 0; i < b.messages.length; i++) {
       c.add(b.messages[i]!);
       if ((i & 63) === 63) {
-        // the sorted delta stays small, and the caps hold, while it applies
-        if (c.needsMerge()) await c.merge(this.clock);
+        // the caps hold and the sorted delta stays small while it applies (each within the peak)
+        if (c.overCaps()) {
+          await c.enforceCaps(this.clock);
+          if (this.peakAllows(c.allocatedBytes() * 0.6)) await c.compact(this.clock);
+        }
+        if (c.needsMerge() && this.peakAllows(c.allocatedBytes() * 0.5)) await c.merge(this.clock);
         await this.clock.tick();
       }
     }

@@ -56,4 +56,28 @@ describe("the service", () => {
     expect(longest).toBeLessThan(60);
     await ac.close();
   });
+
+  it("holds the contact cap while it applies such a commit, not only after (codex review, round 2)", async () => {
+    const people: ContactMessage[] = Array.from({ length: 12_000 }, (_, i) => ({ id: i + 1, accountId: 1, date: Date.UTC(2026, 0, 1) + i, sent: false, spam: false, draft: false, from: { name: `Person ${i}`, email: `p${i}@x${i % 50}.io` }, to: [], cc: [], bcc: [], hasBody: false }));
+    const src = source(() => people);
+    let maxSize = 0;
+    const ac = new Autocomplete({
+      source: src,
+      phrases: false,
+      settleMs: 0,
+      contactCaps: { maxContacts: 1000, maxBytes: 64 * 1024 * 1024 },
+      platform: {
+        yield: async () => {
+          maxSize = Math.max(maxSize, (ac as unknown as { contacts: { size: number } | null }).contacts?.size ?? 0);
+          await new Promise((r) => setTimeout(r, 0));
+        },
+      },
+    });
+    await ac.warm();
+    src.commit();
+    ac.notify();
+    await ac.idle();
+    expect(maxSize).toBeLessThanOrEqual(1000 + 64);
+    await ac.close();
+  });
 });

@@ -127,7 +127,7 @@ export interface PhraseSuggestInput {
   me?: string;
 }
 
-export const PHRASES_SNAPSHOT: Omit<SnapshotKind, "identity"> = { tokenizer: 1, format: 1 };
+export const PHRASES_SNAPSHOT: Omit<SnapshotKind, "identity"> = { tokenizer: 1, format: 2 };
 
 interface Table {
   k1: Uint32Array;
@@ -546,6 +546,13 @@ export class PhraseModel {
       if (k1.length !== slots) return false;
       const words = await readStrings(s, "words", clock);
       if (words.length < RESERVED.length || words.length > this.caps.words + RESERVED.length || RESERVED.some((w, i) => words[i] !== w)) return false;
+      // within today's limits, whatever wrote it
+      let chars = 0;
+      for (let i = RESERVED.length; i < words.length; i++) {
+        if (words[i]!.length > MAX_WORD) return false;
+        chars += words[i]!.length;
+      }
+      if (chars > MAX_VOCAB_CHARS) return false;
       const n = words.length;
       const counts = ["lower", "cap", "upper", "other"].map((name) => s.u32(name));
       if (counts.some((c) => c.length !== n)) return false;

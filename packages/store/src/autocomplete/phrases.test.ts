@@ -144,6 +144,16 @@ describe("suggestions", () => {
     expect((big as unknown as { wordChars: number }).wordChars).toBeLessThanOrEqual(1_000_000);
   });
 
+  it("a snapshot over today's vocabulary limits is refused (codex review, round 2)", async () => {
+    const m = trained(["Let me know if you have any questions."]);
+    // as an older version could have written it: a 4,000-character "word"
+    (m as unknown as { words: string[] }).words.push("x".repeat(4000));
+    for (const k of ["lower", "cap", "upper", "other"]) (m as unknown as Record<string, Uint32Array>)[k] = new Uint32Array(64);
+    m.revision = { epoch: "e", seq: 1 };
+    const bytes = await m.snapshot("t", clock());
+    expect(await new PhraseModel().restore(bytes, "t", clock())).toBe(false);
+  });
+
   it("the vocabulary is capped", () => {
     const m = new PhraseModel({ slots: 1 << 12, words: 100 });
     for (let i = 0; i < 500; i++) m.learn(msg(`word${i} word${i + 1}`));

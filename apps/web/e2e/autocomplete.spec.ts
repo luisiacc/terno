@@ -320,26 +320,47 @@ test.describe("ghost text", { tag: "@design" }, () => {
     await seed(server);
     await newMessage(page);
     await body(page).click();
-    // a long line ending with the habit's start, a line of text below it
+    // a line of text below the caret's line
     await page.keyboard.press("Enter");
     await page.keyboard.type("Below.");
     await page.keyboard.press("ArrowUp");
-    await page.keyboard.press("Home");
-    const filler = "thanks again for everything you did for the whole team this week, it really made the difference ".repeat(2);
-    await page.evaluate((t) => document.execCommand("insertText", false, t), filler);
     await page.keyboard.type("Let me know if", { delay: 20 });
-    await page.waitForTimeout(400);
-    const shown = await page.evaluate(() => {
-      const layer = document.querySelector<HTMLElement>("[data-testid=compose-ghost]:not([hidden])");
-      if (!layer) return null;
-      const p = document.querySelector("[data-testid=compose-body] p")!;
-      return { h: layer.getBoundingClientRect().height, line: parseFloat(getComputedStyle(p).lineHeight), text: layer.dataset.ghost! };
+    await expect(ghost(page)).toHaveAttribute("data-ghost", " you have any questions.");
+    await page.keyboard.press("Escape");
+    // the editor narrowed so " you have" fits after the caret but " you have any" doesn't (in this design's own type)
+    await body(page).evaluate((root) => {
+      const p = root.querySelector("p")!;
+      const text = p.firstChild as Text;
+      const range = document.createRange();
+      range.setStart(text, text.length - 1);
+      range.setEnd(text, text.length);
+      const caret = range.getBoundingClientRect().right;
+      const probe = document.createElement("span");
+      probe.style.font = getComputedStyle(p).font;
+      probe.style.whiteSpace = "pre";
+      probe.style.position = "absolute";
+      document.body.append(probe);
+      const width = (s: string) => ((probe.textContent = s), probe.getBoundingClientRect().width);
+      const room = (width(" you have") + width(" you have any")) / 2;
+      probe.remove();
+      const box = (root as HTMLElement).getBoundingClientRect();
+      const padRight = parseFloat(getComputedStyle(root).paddingRight);
+      (root as HTMLElement).style.width = `${caret - box.left + room + padRight}px`;
+      (root as HTMLElement).style.flex = "none";
     });
-    // either nothing fits, or what shows stays on the caret's line, a start of the suggestion
-    if (shown) {
-      expect(shown.h).toBeLessThanOrEqual(shown.line * 1.5);
-      expect(" you have any questions.".startsWith(shown.text)).toBe(true);
-    }
+    // ask again (a keystroke)
+    await page.keyboard.press("Backspace");
+    await page.keyboard.type("f");
+    await expect(ghost(page)).toHaveAttribute("data-ghost", " you have");
+    const shown = await page.evaluate(() => {
+      const layer = document.querySelector<HTMLElement>("[data-testid=compose-ghost]:not([hidden])")!;
+      const p = document.querySelector("[data-testid=compose-body] p")!;
+      return { h: layer.getBoundingClientRect().height, line: parseFloat(getComputedStyle(p).lineHeight) };
+    });
+    expect(shown.h).toBeLessThanOrEqual(shown.line * 1.5);
+    // Tab inserts what showed, nothing more
+    await page.keyboard.press("Tab");
+    await expect(body(page).locator("p").first()).toHaveText("Let me know if you have");
   });
 
   test("an IME composition dismisses the ghost: cancelled, Tab inserts nothing unseen (codex review)", async ({ app: page, server }) => {
