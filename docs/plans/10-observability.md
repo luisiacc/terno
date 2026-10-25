@@ -1,6 +1,6 @@
 # Plan 10: diagnosing user errors (logs, breadcrumbs, crash reports, Sentry)
 
-- **Status:** proposed.
+- **Status:** shipped (see §11, as shipped).
 - **Builds on:** plan 09 as shipped (f7d2957).
 - **Request:** "Primitives for good debuggability of user errors later. We can use Sentry, plus good structured logs with breadcrumbs, so we get clear information on errors for any downloaded version of the app. The goal is to debug errors from users and not be blind to them. Check what T3 Code does. Do whatever is best for this kind of Electron desktop app."
 
@@ -167,3 +167,42 @@ These revisions override the sections above. The full critique is in `/tmp/unica
     - Local mode is proven by a counter at the transport, not by loopback.
     - Cover: a backend crash with backoff; consent revoked while an event is pending; a restart into local mode; a full disk (a log write fails silently); a production-build artifact.
     - A known minified exception must resolve to the right source line through the archived maps.
+
+## 11. As shipped
+
+### What exists
+
+- **Primitives** (`packages/core/src/diag`, `@terno/core/diag`): `log.info|warn|error(code, fields?, detail?)`, `breadcrumb(cat, code, fields?)`, `captureError(err, { code, fields, fatal?, expected?, kind? })`, `installDiag({ proc, version, build, channel, session?, sink, context })`. A schema per code (`codes.ts`) over one typed field table (`fields.ts`: enums, bounded ints, booleans, short ids); an undeclared key is a type error and dropped at runtime, a value that doesn't fit becomes `"<redacted>"`. `scrubText` for the free text kept locally. `Ring` (100 crumbs). `UserFacingError` and `isExpected` (anything with `expected === true`). `RotatingLog` (injected fs). `sanitize*` revalidators for everything crossing a boundary. `buildReport` (the Sentry event, by allowlist, no message). `consent.ts` (the matrix). `sentry.ts` (`@terno/core/diag/sentry`, loaded lazily): a bare `@sentry/core` client whose transport asks the live policy per envelope. Nothing throws, does I/O or waits; an idle process holds no timer (the mirror is a trailing one-shot).
+- **For plan 11:** log with `log.info("update.<event>", fields)` after adding the codes and their fields to `codes.ts`/`fields.ts`; capture with `captureError(error, { code })`. Expected failures (offline, no update) should carry `expected: true` or be thrown as `UserFacingError`; they then never become records.
+- **RPC:** `RpcErrorPayload` has `expected` and `diag`. A handler's `RpcError` is expected unless it says otherwise; zod failures and unknown throws are bugs, captured once in the backend (`rpc.handler_threw`, with the method) and never again in the renderer. `ProviderError` is expected when retryable or ambiguous, `ProviderAuthError`, `AiError`, `SettingsError`, `SecretUnreadableError`, `NetworkPolicyError` always.
+- **Instrumented sites:** RPC handlers; sync (`sync.failed`, `sync.done` crumbs); sends and other ops (`send.failed`, `ops.failed`, `ops.crashed`, `send.done`); categorizer rebuild and persist; AI assist and AI test; keychain migration and secret failures; move resumption; import restore; print and PDF export (main and renderer); renderer actions, sends, boot; worker open failures; MCP tool failures.
+- **Main** (`apps/desktop/src/diag/`): logs, records, rings, run marker, state and export as in §5/§10; IPC trusted like printing, 256 KB per batch, 200 entries/s per renderer, dropped counts logged; `render-process-gone` records and reloads (3 a minute at most), `child-process-gone` records GPU and other children, backend exits are recorded unless the backend's own fatal record arrived first. Backend supervisor: 0.5/1/2/4/8 s, then a visible "The mail engine stopped · Try Again"; a minute up resets the count; deliberate stops are ignored.
+- **Renderer:** installed first in `main.tsx`; boundaries for the window, the reader and the settings sheet; the quiet row at the top of the list; "What gets sent"; Settings → General → Diagnostics; Help → Export Diagnostics… / Show Logs. Web: IndexedDB ring with memory fallback, per-tab run markers paired with Web Locks, the worker's own handlers, `@sentry/browser`'s fetch transport behind the same consent boundary.
+- **Source maps:** every desktop bundle (main, backend, preload, reporter, MCP, renderer) and the web build get external maps and a content-derived debug id (appended, so mappings don't move); maps are archived in `apps/desktop/.maps/<version>-<sha>/` (web: `apps/web/.maps/<build>/`) with each minified file beside its map, before packaging; `dist:mac` uploads them with `sentry-cli` when `SENTRY_AUTH_TOKEN` is set; `pnpm diag:symbolicate` resolves records offline.
+
+### Deviations from §1–10
+
+- **SDK:** main uses `@sentry/core` 11.8.0 directly (a `Client` subclass, ~52 KB, bundled into its own `dist/reporter.cjs`, required only when a report is about to go), not `@sentry/node` or `@sentry/electron/main`. `@sentry/electron/main` needs its separate preload file at runtime (the standalone bundle guard rejects it, 615 KB); `@sentry/node` drags OpenTelemetry and adds the host name to events. Both build on this same client. The web uses `@sentry/browser` 11.8.0 for its transport only (no `init`, no integrations), in a chunk emitted only by web builds given a DSN.
+- **Exactness:** `beforeSend` swaps whatever the SDK prepared for the event we built, so "What gets sent" equals the transmitted event (checked byte for byte at a local sink).
+- **Install id:** kept (random, `diag/state.json` or localStorage), sent as `user.id`, shown in "What gets sent" with Reset. Read as "no *permanent* id": it is the user's to reset.
+- **IDs:** short-id fields allow camelCase (`/^[A-Za-z0-9_.-]{1,40}$/`): error class and RPC method names are camelCase. The `method` field is such an id rather than an enum of the contract, so main's bundle doesn't need zod.
+- **"Ask" in place:** the row asks in place only for unexpected errors when reports are on "Ask"; crashes and unclean exits always get the row (with Export when nothing can be sent).
+- **Unclean exit:** only main's own crash record explains a leftover marker (a backend or renderer crash main survived doesn't).
+- **MCP** writes its log and fatal records straight into the profile's `logs/` and `crashes/` (main finds them on its next start) instead of forwarding over a socket.
+- **Main's uncaught exceptions** are recorded (fatal, flushed) but main keeps running, as Electron does by default; the backend and MCP exit.
+- **Copy** is English (AGENTS.md, 87cac02/6e5e700); Spanish ships later as a translation.
+- **Idle:** no periodic timers anywhere (AGENTS.md): ring persistence is debounced on change, web tab liveness uses Web Locks instead of a heartbeat, account counts refresh when accounts are announced.
+
+### Verification
+
+- Unit: scrubber corpus (addresses with display names, OAuth tokens, URLs with codes, IMAP LOGIN/AUTHENTICATE, Message-IDs, home paths, JWTs, PEM, base64), field types and runtime drops, ring, normalization and stack parsing (no frame from a message line with an "@"), expected classification, the full consent matrix, reports carry no message, forged records cut back, rotation and full disk, record capping and 64 KB fitting, export validation (symlinks skipped, forged lines dropped, native dumps only when asked), restart policy, rate limit, RPC classification over the wire, backend sync/ops/RPC capture, the reporter (exact event, refusal never reaches the network, revocation stops the next envelope).
+- e2e: reader/settings/window boundaries through a test hook; an unclean tab exit shows the row; "What gets sent", the sample report and the decoded export contain no fixture subject or address.
+- Packaged smoke (9 tests, a local Sentry sink decoding every envelope): local mode and "never" send nothing even when approved (counted at the transport); "always" sends one event equal to its preview; "ask" sends what was approved; a minified exception from `main.cjs` resolves to `src/diag/main.ts` at the throwing line through the archived maps; `forcefullyCrashRenderer` leaves a record and a local dump and the window comes back; a killed backend restarts with backoff, then stops visibly until Try Again; the export is scrubbed; SIGKILL then relaunch reports the unclean exit without sending anything in local mode.
+- Perf: a log call 0.31 µs, a breadcrumb 0.17 µs (gate: 5 µs / 1 µs); main.cjs 23 KB → 66 KB (Sentry lives in reporter.cjs); warm start to first rows unchanged (~500 ms).
+
+### Limitations
+
+- `sentry-cli sourcemaps upload` is wired but was not exercised against a live Sentry project (no token in this environment).
+- Native dumps are never symbolicated (they never leave the machine).
+- The desktop sample report shows main's own trail, not the renderer's.
+- The web's unclean-exit detection needs Web Locks (every current browser); without it, nothing is reported rather than guessed.

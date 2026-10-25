@@ -170,6 +170,39 @@ What the tests cover:
 - The MCP server end to end.
 - Printing from real PDFs: every print fixture (long quoted threads, inline replies, a newsletter, a 1000px table, CJK and emoji, long URLs, images, a hostile subject) exported through Chromium on the web and through Electron's `printToPDF` in the packaged app, read back with pdfjs-dist (page size, text present and absent, footer, nothing outside the printable box) and compared against rendered-page baselines.
 
+## Diagnostics and error reports
+
+Every process logs structured lines (a dotted code plus typed, allowlisted fields; free text only scrubbed and only locally), leaves breadcrumbs, and records unexpected errors and crashes. Reports go to Sentry only from builds given a DSN, never in local mode, and only as the user chose (Settings → General → Diagnostics: Ask, Always or Never). [Plan 10](docs/plans/10-observability.md) has the design and the privacy rules.
+
+**Where things live (desktop, under the profile, `~/Library/Application Support/Terno`):**
+
+| Path | What |
+|---|---|
+| `logs/{main,backend,renderer,mcp}.jsonl` (+ `.1`…`.4`) | one JSON line per entry: `{ts, level, proc, code, fields, session, version, build, msg?}`; 2 MB × 5 per process, 0600 |
+| `crashes/<ts>-<proc>-<id>.json` | records of unexpected errors, crashes, dead renderers/backends and unclean exits (64 KB each, 20 at most, 30 days) |
+| `crashes/rings.json` | the last breadcrumbs of every live process (so a hard crash still has its trail) |
+| `crashes/native/` | Electron crash dumps; never uploaded, exported only when ticked |
+| `diag/state.json`, `diag/running` | install id, reports seen/sent, last policy; the run marker |
+
+Help → Show Logs opens the folder; Help → Export Diagnostics… (or the Settings row) writes a validated `.zip`. The web build keeps a 2,000-entry ring in IndexedDB (`terno-diag`) and exports JSON.
+
+**Configuring Sentry:**
+
+```bash
+# reports on: the DSN is baked in at build time (public by design: it can only submit events)
+TERNO_SENTRY_DSN=https://<key>@<org>.ingest.sentry.io/<project> pnpm dist:mac
+TERNO_SENTRY_DSN=… pnpm build:web          # the web build reports from the page (@sentry/browser)
+
+# source maps: every bundle gets a debug id; maps are archived outside the app in
+# apps/desktop/.maps/<version>-<sha>/ (web: apps/web/.maps/<build>/) and uploaded when a token is set
+SENTRY_AUTH_TOKEN=… SENTRY_ORG=<org> SENTRY_PROJECT=<project> TERNO_SENTRY_DSN=… pnpm dist:mac
+
+# a local crash record (or one from a user's export) back to source lines, offline
+pnpm diag:symbolicate path/to/crashes/<record>.json [--maps <archive dir>]
+```
+
+Builds without `TERNO_SENTRY_DSN` (dev, forks) never load the reporter. Release names are `terno@<version>+<sha>`. Server-side scrubbing in the Sentry project is a good extra, but nothing in a report needs it: there is no message, no address and no path in one ("What gets sent" shows the exact event).
+
 ## Agents (MCP + Skill)
 
 With Terno running:

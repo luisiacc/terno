@@ -5,7 +5,7 @@
 // outside dist/ and release/, before anything is packaged or signed.
 import { execFileSync } from "node:child_process";
 import { build } from "esbuild";
-import { cpSync, mkdirSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { cpSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -102,4 +102,6 @@ resetArchive(archive);
 const tagged = injectDebugIds(out);
 const moved = archiveMaps(out, archive, "dist");
 assertNoMaps(out);
+// what dist:mac uploads (when a Sentry token is set): this build's archive and release name
+writeFileSync(join(root, ".maps", "LATEST"), JSON.stringify({ release: `terno@${version}+${sha}`, archive }));
 console.log(`built desktop bundles → ${out} (${version}+${sha}${dsn ? ", reports on" : ""}); ${moved} source maps (${tagged.length} tagged) → ${archive}`);

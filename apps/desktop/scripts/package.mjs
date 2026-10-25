@@ -22,6 +22,16 @@ const productName = "Terno";
 
 if (!existsSync(join(root, "dist/main.cjs"))) throw new Error("run `pnpm --filter @terno/desktop build` first");
 
+// Source maps (archived by build.mjs, never in the app) go to Sentry only when a token is set.
+const latest = join(root, ".maps", "LATEST");
+if (process.env.SENTRY_AUTH_TOKEN && existsSync(latest)) {
+  const { release, archive } = JSON.parse(readFileSync(latest, "utf8"));
+  const cli = join(root, "node_modules/.bin/sentry-cli");
+  const scope = [...(process.env.SENTRY_ORG ? ["--org", process.env.SENTRY_ORG] : []), ...(process.env.SENTRY_PROJECT ? ["--project", process.env.SENTRY_PROJECT] : [])];
+  execFileSync(cli, ["sourcemaps", "upload", ...scope, "--release", release, archive], { stdio: "inherit" });
+  console.log(`✓ source maps for ${release} uploaded`);
+}
+
 rmSync(stage, { recursive: true, force: true });
 rmSync(release, { recursive: true, force: true });
 mkdirSync(stage, { recursive: true });
