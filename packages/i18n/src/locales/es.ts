@@ -768,6 +768,7 @@ const es = {
   "shortcuts.selectRead": "Seleccionar leídos",
   "shortcuts.selectUnread": "Seleccionar no leídos",
   "shortcuts.selectStarred": "Seleccionar destacados",
+  "shortcuts.selectNone": "Deseleccionar",
   "shortcuts.deselect": "Deseleccionar",
   "shortcuts.menu": "Menú de la conversación",
   "shortcuts.archive": "Archivar",

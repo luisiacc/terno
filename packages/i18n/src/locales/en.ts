@@ -775,6 +775,7 @@ const en = {
   "shortcuts.selectRead": "Select read",
   "shortcuts.selectUnread": "Select unread",
   "shortcuts.selectStarred": "Select starred",
+  "shortcuts.selectNone": "Select none",
   "shortcuts.deselect": "Deselect",
   "shortcuts.menu": "Conversation menu",
   "shortcuts.archive": "Archive",

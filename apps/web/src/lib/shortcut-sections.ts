@@ -35,7 +35,7 @@ export const SECTIONS: { title: Label; rows: [Command, Label][] }[] = [
       ["list.selectRead", "shortcuts.selectRead"],
       ["list.selectUnread", "shortcuts.selectUnread"],
       ["list.selectStarred", "shortcuts.selectStarred"],
-      ["list.selectNone", "shortcuts.deselect"],
+      ["list.selectNone", "shortcuts.selectNone"],
       ["reader.close", "shortcuts.deselect"],
       ["list.menu", "shortcuts.menu"],
     ],

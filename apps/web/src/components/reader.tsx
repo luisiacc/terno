@@ -245,7 +245,15 @@ function Welcome() {
         ).map(([k, label]) => (
           <div key={k} className="flex items-center justify-between gap-4">
             <span>{t(label)}</span>
-            <Shortcut keys={k} />
+            {/* j and k are two keys, not a sequence ("j then k") */}
+            {k === "j k" ? (
+              <span className="inline-flex items-center gap-1">
+                <Shortcut keys="j" />
+                <Shortcut keys="k" />
+              </span>
+            ) : (
+              <Shortcut keys={k} />
+            )}
           </div>
         ))}
       </div>
