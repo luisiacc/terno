@@ -72,6 +72,7 @@ export const DEFAULT_SETTINGS: General = {
   errorReports: "ask",
   // new installs follow the system: English unless it's a language Terno ships
   language: "system",
+  composeSuggestions: true,
 };
 
 const DEFAULT_PROVIDER: AiProviderId = "none";
@@ -158,6 +159,11 @@ function aiState(s: StoredSettings, hasLegacyKey: boolean) {
 /** Read on every ingestion slice: skips the AI and key lookups readSettings does. */
 export async function readAutoCategorize(store: SettingsStore): Promise<AppSettings["autoCategorize"]> {
   return (await stored(store)).autoCategorize ?? DEFAULT_SETTINGS.autoCategorize;
+}
+
+/** Body suggestions (plan 18), read when autocomplete warms and when the setting changes. */
+export async function readComposeSuggestions(store: SettingsStore): Promise<boolean> {
+  return (await stored(store)).composeSuggestions ?? DEFAULT_SETTINGS.composeSuggestions;
 }
 
 /** Local mode alone: read on every outbound request, so it skips everything else. */

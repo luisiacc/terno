@@ -42,6 +42,7 @@ const { snack } = await import("~/lib/snack");
 
 const SERVER: AppSettings = {
   localMode: true,
+  composeSuggestions: true,
   theme: "dark",
   design: "macos",
   lightTheme: "terno-light",

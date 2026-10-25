@@ -133,9 +133,12 @@ export class Autocomplete {
   async setPhrases(on: boolean): Promise<void> {
     this.phrasesOn = on;
     this.report.phrases.enabled = on;
-    if (!this.loop) {
-      // never warmed: a snapshot from an earlier session may still be on disk
-      if (!on) await this.removeFile("phrases");
+    if (!this.loop || this.stopped) {
+      // not running: a snapshot from an earlier session may still be on disk
+      if (!on) {
+        this.phrases = null;
+        await this.removeFile("phrases");
+      }
       return;
     }
     this.wake();

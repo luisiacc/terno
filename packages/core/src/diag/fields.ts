@@ -35,6 +35,8 @@ export const FIELD_TYPES = {
   ambiguous: bool,
   area: enumOf("app", "reader", "settings", "compose", "list", "other"),
   attempt: int(0, 1000),
+  /** a size in bytes (a snapshot, a cache): never content */
+  bytes: int(0, 4_294_967_295),
   childType: enumOf("Utility", "Zygote", "Sandbox helper", "GPU", "Pepper Plugin", "Pepper Plugin Broker", "Unknown"),
   count: int(0, 10_000_000),
   delayMs: int(0, 3_600_000),
@@ -51,6 +53,8 @@ export const FIELD_TYPES = {
   kind: enumOf("error", "crash", "unclean_exit", "renderer_gone", "backend_exit", "child_gone", "other"),
   // an RPC method name (threads.list): an id, so main's bundle doesn't need the contract (and zod) to check it
   method: id,
+  /** an autocomplete model (plan 18) */
+  model: enumOf("contacts", "phrases"),
   ok: bool,
   /** how a quit ended: the database closed, a send kept it open (deferred), or the deadline passed */
   outcome: enumOf("closed", "sending", "forced", "timeout", "other"),

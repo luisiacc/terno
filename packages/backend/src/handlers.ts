@@ -9,6 +9,9 @@ import { exportMailbox, importMailbox, restorePending } from "./import";
 import { countThreadScope, progressReporter, resolveThreadScope, UndoJournal } from "./scope";
 import { readAutoCategorize, readSettings, SettingsError, updateSettings } from "./settings";
 
+/** How long a recipient lookup waits for the index's first build (then answers with what it has: nothing). */
+const FIRST_BUILD_WAIT_MS = 250;
+
 /** More ids than this and a bulk command runs in time-budgeted slices (plan 02 §6, plan 06). */
 const ONE_GO = 20;
 
@@ -403,6 +406,24 @@ export function createHandlers(b: Backend): Handlers {
       const saved = await store.drafts.save(ctx.origin === "renderer" ? p : { ...p, bodyHtml: "" }, b.now());
       return saved ? toDraft(saved) : null;
     },
+    "compose.warm": async () => {
+      void b.warmAutocomplete();
+      return { ok: true as const };
+    },
+    "compose.suggestRecipients": async ({ query, exclude, accountId, limit }) => {
+      let r = b.autocomplete.suggestRecipients(query, { exclude, accountId, limit });
+      if (!r.ready) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([b.warmAutocomplete(), new Promise((resolve) => (timer = setTimeout(resolve, FIRST_BUILD_WAIT_MS)))]);
+        clearTimeout(timer);
+        r = b.autocomplete.suggestRecipients(query, { exclude, accountId, limit });
+      }
+      return r;
+    },
+    "compose.suggestText": async ({ before, names, me }) => {
+      if (!b.autocomplete.warmed) void b.warmAutocomplete();
+      return { text: b.autocomplete.suggestText({ before, names, me }) };
+    },
     "drafts.list": async () => (await store.drafts.list()).map(toDraft),
     "drafts.delete": async ({ id }) => {
       await store.drafts.delete(id);
@@ -531,6 +552,8 @@ export function createHandlers(b: Backend): Handlers {
       await b.dropAccount(id);
       // the owner row survives: its account_id is cleared (ON DELETE SET NULL)
       await store.accounts.remove(id);
+      // nobody from a removed account lingers in suggestions
+      await b.autocomplete.reset();
       await b.emitAccounts();
       if (wasOwner) await b.emitOwner();
       b.notifyChanged([]);
@@ -544,6 +567,7 @@ export function createHandlers(b: Backend): Handlers {
         const was = await readSettings(store);
         const next = await updateSettings(store, patch, { endpointIsLocal });
         if (next.localMode !== was.localMode || next.errorReports !== was.errorReports || next.language !== was.language) await b.publishPolicy();
+        if (next.composeSuggestions !== was.composeSuggestions) await b.autocomplete.setPhrases(next.composeSuggestions);
         return next;
       } catch (error) {
         if (error instanceof SettingsError) throw new RpcError("BAD_REQUEST", messageOf(error));

@@ -5,6 +5,7 @@ import { RpcServer, type AppSettings, type CallContext, type HostInfo, type Meth
 import { L } from "@terno/i18n";
 import type { ClassifierInput, IncomingMessage, MailStore, OpRow, Platform } from "@terno/store";
 import { ProviderAuthError, ProviderError, type MailProvider, type ProviderRegistry, type SyncSink } from "@terno/mail/portable";
+import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_PHRASE_CAPS, WEB_AUTOCOMPLETE_PEAK, WEB_CONTACT_CAPS, WEB_PHRASE_CAPS } from "@terno/store/autocomplete";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { AiAssist } from "./ai-assist";
 import { Categorizer } from "./categorizer";
@@ -12,7 +13,7 @@ import { createHandlers } from "./handlers";
 import { restorePending } from "./import";
 import { blobFingerprint, migrateLegacySecrets, readKeychainState, SecretUnreadableError, type LegacySecretReader } from "./keychain";
 import { createNetworkPolicy, type LookupAll, type NetworkPolicy } from "./net-policy";
-import { readAutoCategorize, readLocalMode, readPolicy, readSettings } from "./settings";
+import { readAutoCategorize, readComposeSuggestions, readLocalMode, readPolicy, readSettings } from "./settings";
 import { BULK_SLICE, SliceSizer, type SliceBudget } from "./slicer";
 
 export interface SecretCipher {
@@ -144,6 +145,9 @@ export class BackendCore {
   readonly aiService: AiService;
   readonly categorizer: Categorizer;
   readonly aiAssist: AiAssist;
+  /** plan 18: recipient and body suggestions, in memory, built on first use */
+  readonly autocomplete: Autocomplete;
+  private warming: Promise<void> | null = null;
   private idleTimer: ReturnType<typeof setInterval> | null = null;
   /** auto-filed threads waiting to be announced, per category */
   private readonly autoNotices = new Map<number, { threadIds: Set<number>; timer: ReturnType<typeof setTimeout> | null; lastAt: number }>();
@@ -158,6 +162,20 @@ export class BackendCore {
     this.aiService = new AiService(this, options.aiFactory ?? defaultAiFactory);
     this.categorizer = new Categorizer(this);
     this.aiAssist = new AiAssist(this);
+    const web = options.host?.kind === "web";
+    this.autocomplete = new Autocomplete({
+      source: this.store.autocomplete,
+      platform: this.platform,
+      contactCaps: web ? WEB_CONTACT_CAPS : DESKTOP_CONTACT_CAPS,
+      phraseCaps: web ? WEB_PHRASE_CAPS : DESKTOP_PHRASE_CAPS,
+      peakBytes: web ? WEB_AUTOCOMPLETE_PEAK : DESKTOP_AUTOCOMPLETE_PEAK,
+      sliceMs: web ? 6 : 4,
+      onEvent: (event, f) => {
+        const fields = { model: f.model, ...(f.count !== undefined && { count: f.count }), ...(f.durationMs !== undefined && { durationMs: f.durationMs }), ...(f.bytes !== undefined && { bytes: f.bytes }), ...(f.errorClass && { errorClass: f.errorClass }) };
+        if (event === "rebuild" || event === "disabled") log.warn(`autocomplete.${event}`, fields as never);
+        else log.info(`autocomplete.${event}`, fields as never);
+      },
+    });
     this.ready = this.init();
     this.server = new RpcServer(createHandlers(this), {
       onError: (error, method, payload) => {
@@ -291,6 +309,8 @@ export class BackendCore {
     for (let i = 0; this.workerRunning && i < 200; i++) await new Promise((r) => setTimeout(r, 10));
     await Promise.allSettled([...this.providers.values()].map(async (p) => (await p)?.close()));
     await this.ready.catch(() => {});
+    // its snapshots are written before the store closes under them
+    await this.autocomplete.close().catch(() => {});
     try {
       await this.categorizer.persist();
     } catch (error) {
@@ -370,6 +390,7 @@ export class BackendCore {
       this.pendingViews = false;
       this.server.emit("changed", { threadIds, views });
       this.emitCounts();
+      this.autocomplete.notify();
     });
   }
 
@@ -400,7 +421,22 @@ export class BackendCore {
   }
 
   async emitAccounts(): Promise<void> {
-    this.server.emit("accounts", await this.store.accounts.list());
+    const accounts = await this.store.accounts.list();
+    this.server.emit("accounts", accounts);
+    if (this.autocomplete.warmed) this.autocomplete.setOwn(accounts.map((a) => a.email));
+  }
+
+  /**
+   * Plan 18: the first draft or recipient field of the session: the models
+   * restore (or build, in slices) with the user's addresses and the
+   * body-suggestions setting. Once; returns when recipients can answer.
+   */
+  warmAutocomplete(): Promise<void> {
+    this.warming ??= (async () => {
+      this.autocomplete.setOwn((await this.store.accounts.list()).map((a) => a.email));
+      await this.autocomplete.setPhrases(await readComposeSuggestions(this.store));
+    })();
+    return this.warming.then(() => this.autocomplete.warm());
   }
 
   /** Tells the host the current policy (at startup and whenever local mode changes). */

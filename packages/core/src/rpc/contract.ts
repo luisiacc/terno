@@ -117,6 +117,8 @@ export interface AppSettings {
   errorReports: "ask" | "always" | "never";
   /** the UI language: follow the system, or a locale Terno ships (@terno/i18n LOCALES) */
   language: LanguageSetting;
+  /** plan 18: ghost text while writing, learned from the user's sent mail on this device (recipients are always suggested) */
+  composeSuggestions: boolean;
 }
 
 /** The person this install belongs to (the future Terno account). Verification evidence stays in the backend. */
@@ -327,6 +329,7 @@ const settingsPatch = z.object({
   aiCategorize: z.boolean().optional(),
   errorReports: z.enum(["ask", "always", "never"]).optional(),
   language: z.enum(LANGUAGE_SETTINGS).optional(),
+  composeSuggestions: z.boolean().optional(),
 });
 export type SettingsPatch = z.output<typeof settingsPatch>;
 export { settingsPatch as settingsPatchSchema, draftAddress as draftAddressSchema };
@@ -590,6 +593,25 @@ export const contract = {
       inReplyToMessageId: id.nullable().optional(),
       forwardOfMessageId: id.nullable().optional(),
       uiState: z.enum(["open", "collapsed"]).optional(),
+    }),
+  ),
+  /** plan 18: a draft or a recipient field opened: the autocomplete models restore or build (once) */
+  "compose.warm": m<{ ok: true }>()(empty),
+  /** recipients for what is typed in To/Cc/Bcc (in-memory; ready: false while the index is first built) */
+  "compose.suggestRecipients": m<{ items: { name: string; email: string }[]; ready: boolean }>()(
+    z.object({
+      query: z.string().max(320),
+      exclude: z.array(z.string().max(320)).max(600).default([]),
+      accountId: id.optional(),
+      limit: z.number().int().min(1).max(10).default(6),
+    }),
+  ),
+  /** ghost text after `before` (only its last 1,000 characters are read) */
+  "compose.suggestText": m<{ text: string | null }>()(
+    z.object({
+      before: z.string().max(2000),
+      names: z.array(z.string().max(300)).max(10).default([]),
+      me: z.string().max(300).optional(),
     }),
   ),
   "drafts.list": m<Draft[]>()(empty),

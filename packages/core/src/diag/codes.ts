@@ -76,6 +76,13 @@ export const CODES = {
   "secret.unreadable": c("op"),
   "agents.socket_failed": c("errno"),
   "search.failed": c("errorClass"),
+  // autocomplete (plan 18): counts, sizes and durations only
+  "autocomplete.built": c("model", "count", "durationMs"),
+  "autocomplete.restored": c("model", "count", "durationMs", "bytes"),
+  "autocomplete.snapshot": c("model", "durationMs", "bytes"),
+  "autocomplete.evicted": c("model", "count"),
+  "autocomplete.rebuild": c("model", "errorClass"),
+  "autocomplete.disabled": c("model", "errorClass"),
 
   // renderer
   "ui.boundary": c("area", "errorClass"),
