@@ -1,4 +1,5 @@
-import type { UpdateChannel, UpdateMode, UpdateState } from "@terno/core/updates";
+import type { UnsupportedReason, UpdateChannel, UpdateErrorKind, UpdateMode, UpdateState } from "@terno/core/updates";
+import { t, type TextKey } from "@terno/i18n";
 import { create } from "zustand";
 import { snack } from "~/lib/snack";
 import { useWeb } from "~/web/lifecycle";
@@ -37,11 +38,11 @@ function adopt(state: UpdateState): void {
   useUpdates.setState({ state });
   if (state.justUpdated && was?.justUpdated !== state.justUpdated) {
     const version = state.justUpdated;
-    snack.success(`Terno updated to ${version}`, {
+    snack.success(t("updates.updated", { version }), {
       id: "updated",
       background: true,
       duration: 8000,
-      secondary: { label: "What’s New", name: `What’s new in Terno ${version}`, onClick: () => openReleaseNotes(version) },
+      secondary: { label: t("updates.whatsNew"), name: t("updates.whatsNewIn", { version }), onClick: () => openReleaseNotes(version) },
     });
     bridge?.seen();
   }
@@ -89,7 +90,7 @@ export function updateLater(): void {
 /** "Check for Updates…" (menu, ⌘K, Settings): the result as a snack. */
 export async function checkForUpdates(): Promise<void> {
   if (!bridge) return;
-  const id = snack.loading("Checking for updates…", { id: "update-check" });
+  const id = snack.loading(t("updates.checking"), { id: "update-check" });
   let state: UpdateState | null = null;
   try {
     state = await bridge.check();
@@ -98,52 +99,48 @@ export async function checkForUpdates(): Promise<void> {
   }
   if (state) useUpdates.setState({ state });
   const said = checkResult(state);
-  if (said.tone === "error") snack.error(said.message, { id, description: said.description, action: { label: "Try Again", onClick: () => void checkForUpdates() } });
+  if (said.tone === "error") snack.error(said.message, { id, description: said.description, action: { label: t("updates.tryAgain"), onClick: () => void checkForUpdates() } });
   else if (said.tone === "success") snack.success(said.message, { id, description: said.description });
   else snack(said.message, { id, description: said.description });
 }
 
 /** What a manual check found, in words (pure: unit-tested). */
 export function checkResult(state: UpdateState | null): { tone: "success" | "neutral" | "error"; message: string; description?: string } {
-  if (!state) return { tone: "error", message: "Couldn’t check for updates", description: "Something went wrong. Try again in a moment." };
-  if (state.status === "unsupported" && state.unsupported) return { tone: "neutral", message: "This copy of Terno can’t update itself", description: unsupportedText(state.unsupported) };
-  if (state.ready) return { tone: "success", message: `Terno ${state.ready.version} is ready`, description: "Restart Terno to finish updating." };
-  if (state.status === "downloading" || state.status === "verifying") return { tone: "neutral", message: `Downloading Terno ${state.available?.version ?? ""}…`.replace("  ", " ") };
-  if (state.status === "available" && state.available) return { tone: "success", message: `Terno ${state.available.version} is available`, description: "Download it from the update button in the sidebar." };
-  if (state.status === "error" && state.error) return { tone: "error", message: "Couldn’t check for updates", description: errorText(state.error.kind) };
-  return { tone: "success", message: "Terno is up to date", description: `You have the latest version (${state.current}).` };
+  if (!state) return { tone: "error", message: t("updates.check.failed"), description: t("updates.error.unknown") };
+  if (state.status === "unsupported" && state.unsupported) return { tone: "neutral", message: t("updates.check.unsupported"), description: unsupportedText(state.unsupported) };
+  if (state.ready) return { tone: "success", message: t("updates.check.ready", { version: state.ready.version }), description: t("updates.check.readyHint") };
+  if (state.status === "downloading" || state.status === "verifying") return { tone: "neutral", message: t("updates.check.downloading", { version: state.available?.version ?? "" }).replace("  ", " ") };
+  if (state.status === "available" && state.available) return { tone: "success", message: t("updates.check.available", { version: state.available.version }), description: t("updates.check.availableHint") };
+  if (state.status === "error" && state.error) return { tone: "error", message: t("updates.check.failed"), description: errorText(state.error.kind) };
+  return { tone: "success", message: t("updates.check.upToDate"), description: t("updates.check.latest", { version: state.current }) };
 }
 
-export function unsupportedText(reason: NonNullable<UpdateState["unsupported"]>): string {
-  switch (reason) {
-    case "dev":
-      return "Updates are off in development builds.";
-    case "unsigned":
-      return "This build isn’t signed, so macOS won’t let it update itself. Download new versions from the releases page.";
-    case "translated":
-      return "This is the Intel build running on Apple silicon. Download the Apple silicon version to get updates.";
-    default:
-      return "Move Terno to Applications to get updates.";
-  }
+const UNSUPPORTED = {
+  dev: "updates.unsupported.dev",
+  unsigned: "updates.unsupported.unsigned",
+  translated: "updates.unsupported.translated",
+  dmg: "updates.unsupported.location",
+  translocated: "updates.unsupported.location",
+  "read-only": "updates.unsupported.location",
+  "not-writable": "updates.unsupported.location",
+} as const satisfies Record<UnsupportedReason, TextKey>;
+
+export function unsupportedText(reason: UnsupportedReason): string {
+  return t(UNSUPPORTED[reason] ?? "updates.unsupported.location");
 }
 
-export function errorText(kind: NonNullable<UpdateState["error"]>["kind"]): string {
-  switch (kind) {
-    case "offline":
-      return "Terno couldn’t reach GitHub. Check your connection and try again.";
-    case "server":
-      return "GitHub didn’t answer as expected. Try again later.";
-    case "integrity":
-      return "The download didn’t match what was published, so Terno discarded it. Try again.";
-    case "disk":
-      return "Terno couldn’t save the download. Check that your disk has space.";
-    case "blocked":
-      return "The request was stopped before it left this Mac.";
-    case "not-applied":
-      return "The update didn’t install. Terno is still on the previous version.";
-    default:
-      return "Something went wrong. Try again in a moment.";
-  }
+const ERRORS = {
+  offline: "updates.error.offline",
+  server: "updates.error.server",
+  integrity: "updates.error.integrity",
+  disk: "updates.error.disk",
+  blocked: "updates.error.blocked",
+  "not-applied": "updates.error.notApplied",
+  unknown: "updates.error.unknown",
+} as const satisfies Record<UpdateErrorKind, TextKey>;
+
+export function errorText(kind: UpdateErrorKind): string {
+  return t(ERRORS[kind] ?? "updates.error.unknown");
 }
 
 export async function downloadUpdate(): Promise<void> {

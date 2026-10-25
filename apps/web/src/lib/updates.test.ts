@@ -1,6 +1,11 @@
 import { initialUpdateState, reduceUpdate, type UpdateEvent, type UpdateState } from "@terno/core/updates";
-import { describe, expect, it } from "vitest";
-import { checkResult, pillModel } from "./updates";
+import { setLocale } from "@terno/i18n";
+import en from "@terno/i18n/locales/en";
+import es from "@terno/i18n/locales/es";
+import { afterEach, describe, expect, it } from "vitest";
+import { checkResult, errorText, pillModel, unsupportedText } from "./updates";
+
+afterEach(() => setLocale("en", en));
 
 const info = (version: string) => ({ version, notes: "", size: 1, releaseDate: null });
 const s = (...events: UpdateEvent[]): UpdateState => events.reduce(reduceUpdate, initialUpdateState({ current: "0.1.0", mode: "auto", channel: "stable", localMode: false }));
@@ -51,5 +56,14 @@ describe("updates: what a manual check says", () => {
     expect(checkResult(s({ type: "unsupported", reason: "dmg" })).description).toBe("Move Terno to Applications to get updates.");
     expect(checkResult(s({ type: "check-failed", at: 1, kind: "offline" })).description).toMatch(/couldn’t reach GitHub/);
     expect(checkResult(s({ type: "not-available", at: 1 })).description).toBe("You have the latest version (0.1.0).");
+  });
+
+  it("says it in Spanish too, every reason and error included", () => {
+    setLocale("es", es);
+    expect(checkResult(s(available()))).toMatchObject({ message: "Terno 0.2.0 está disponible", description: "Descárgala desde el botón de actualización de la barra lateral." });
+    expect(checkResult(s({ type: "not-available", at: 1 })).description).toBe("Tienes la última versión (0.1.0).");
+    expect(unsupportedText("translocated")).toBe("Mueve Terno a Aplicaciones para recibir actualizaciones.");
+    expect(errorText("not-applied")).toBe("La actualización no se instaló. Terno sigue en la versión anterior.");
+    expect(errorText("bogus" as never)).toBe("Algo salió mal. Inténtalo de nuevo en un momento.");
   });
 });

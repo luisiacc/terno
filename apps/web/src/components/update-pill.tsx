@@ -1,3 +1,4 @@
+import { localeTag, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from "@terno/ui/components/popover";
 import { cn } from "@terno/ui/lib/utils";
@@ -51,15 +52,15 @@ export function ProgressRing({ percent, spinning }: { percent: number; spinning?
 function label(pill: Exclude<PillModel, { kind: "hidden" } | { kind: "web" }>): string {
   switch (pill.kind) {
     case "available":
-      return `Update ${pill.version}`;
+      return t("updates.pill.available", { version: pill.version });
     case "downloading":
-      return `Downloading ${pill.percent}%`;
+      return t("updates.pill.downloading", { percent: pill.percent });
     case "verifying":
-      return "Verifying…";
+      return t("updates.pill.verifying");
     case "ready":
-      return pill.deferred ? "Waiting for Send…" : "Restart to Update";
+      return t(pill.deferred ? "updates.pill.waiting" : "updates.pill.restart");
     case "error":
-      return pill.stage === "install" ? "Update Didn’t Install" : "Update Failed";
+      return t(pill.stage === "install" ? "updates.pill.notInstalled" : "updates.pill.failed");
   }
 }
 
@@ -98,20 +99,20 @@ function UpdateDetails({ pill, close }: { pill: Exclude<PillModel, { kind: "hidd
   const subtitle =
     pill.kind === "ready"
       ? pill.deferred
-        ? "Will install when sending finishes: Terno restarts on its own then."
-        : "Downloaded and verified. Restart Terno to finish updating."
+        ? t("updates.popover.deferred")
+        : t("updates.popover.ready")
       : pill.kind === "available"
         ? state.localMode
-          ? "Local mode is on: Terno downloads it only when you ask. It comes from GitHub, where Terno’s releases are published."
-          : "A new version of Terno is available."
+          ? t("updates.popover.localMode")
+          : t("updates.popover.available")
         : pill.kind === "downloading"
-          ? `Downloading… ${pill.percent}%`
+          ? t("updates.popover.downloading", { percent: pill.percent })
           : pill.kind === "verifying"
-            ? "Checking the download’s signature…"
+            ? t("updates.verifying")
             : state.error
               ? errorText(state.error.kind)
               : "";
-  const meta = [info?.size ? formatBytes(info.size) : null, info?.releaseDate ? new Date(info.releaseDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : null].filter(Boolean).join(" · ");
+  const meta = [info?.size ? formatBytes(info.size) : null, info?.releaseDate ? new Date(info.releaseDate).toLocaleDateString(localeTag(), { month: "short", day: "numeric", year: "numeric" }) : null].filter(Boolean).join(" · ");
   const act = (fn: () => Promise<void>) => {
     setBusy(true);
     void fn().finally(() => setBusy(false));
@@ -119,7 +120,7 @@ function UpdateDetails({ pill, close }: { pill: Exclude<PillModel, { kind: "hidd
   return (
     <>
       <div className="flex flex-col gap-0.5">
-        <PopoverTitle className="text-sm">{version ? `Terno ${version}` : "Terno update"}</PopoverTitle>
+        <PopoverTitle className="text-sm">{version ? `Terno ${version}` : t("updates.popover.untitled")}</PopoverTitle>
         <PopoverDescription className="text-xs leading-relaxed" data-testid="update-subtitle">
           {subtitle}
         </PopoverDescription>
@@ -134,7 +135,7 @@ function UpdateDetails({ pill, close }: { pill: Exclude<PillModel, { kind: "hidd
             onClick={() => setNotesOpen((o) => !o)}
             className="flex items-center gap-1 self-start rounded-sm text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           >
-            What’s New
+            {t("updates.whatsNew")}
             <ChevronDown className={cn("size-3 transition-transform duration-fast", !notesOpen && "-rotate-90")} aria-hidden />
           </button>
           {notesOpen && (
@@ -146,7 +147,7 @@ function UpdateDetails({ pill, close }: { pill: Exclude<PillModel, { kind: "hidd
       ) : (
         version && (
           <button type="button" onClick={() => openReleaseNotes(version)} className="self-start rounded-sm text-xs text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring">
-            Release notes on GitHub
+            {t("updates.releaseNotes")}
           </button>
         )
       )}
@@ -154,26 +155,26 @@ function UpdateDetails({ pill, close }: { pill: Exclude<PillModel, { kind: "hidd
         {pill.kind === "ready" && (
           <>
             <Button size="sm" variant="ghost" onClick={() => (updateLater(), close())} data-testid="update-later">
-              Later
+              {t("updates.later")}
             </Button>
             <Button size="sm" disabled={busy || pill.deferred} onClick={() => act(installUpdate)} data-testid="update-restart">
-              Restart Now
+              {t("updates.restartNow")}
             </Button>
           </>
         )}
         {pill.kind === "available" && (
           <>
             <Button size="sm" variant="ghost" onClick={close}>
-              Later
+              {t("updates.later")}
             </Button>
             <Button size="sm" disabled={busy} onClick={() => act(downloadUpdate)} data-testid="update-download">
-              Download
+              {t("updates.download")}
             </Button>
           </>
         )}
         {pill.kind === "error" && (
           <Button size="sm" variant="outline" disabled={busy} onClick={() => act(pill.stage === "install" || !state.available ? checkForUpdates : downloadUpdate)} data-testid="update-retry">
-            Try Again
+            {t("updates.tryAgain")}
           </Button>
         )}
       </div>
@@ -187,7 +188,7 @@ function WebReload() {
   return (
     <button type="button" data-testid="update-pill" data-state="web" className={cn(capsule, accent)} onClick={() => update?.apply()}>
       <RotateCw className="size-3.5 shrink-0" aria-hidden />
-      <span className="truncate">New Version · Reload</span>
+      <span className="truncate">{t("updates.pill.webReload")}</span>
     </button>
   );
 }

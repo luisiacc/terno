@@ -97,13 +97,13 @@ export function CommandPalette() {
             <Sun className="hidden dark:block" /> {t("palette.theme")}
           </CommandItem>
           {updatesAvailable && (
-            <CommandItem data-testid="palette-check-updates" value="check for updates update" onSelect={() => run(() => void checkForUpdates())}>
-              <RefreshCw /> Check for Updates…
+            <CommandItem data-testid="palette-check-updates" value={t("updates.palette.check")} keywords={english("updates.palette.check")} onSelect={() => run(() => void checkForUpdates())}>
+              <RefreshCw /> {t("updates.palette.check")}
             </CommandItem>
           )}
           {readyVersion && (
-            <CommandItem data-testid="palette-restart-update" value={`restart to update ${readyVersion}`} onSelect={() => run(() => void installUpdate())}>
-              <RotateCw /> Restart to Update
+            <CommandItem data-testid="palette-restart-update" value={`${t("updates.pill.restart")} ${readyVersion}`} keywords={english("updates.pill.restart")} onSelect={() => run(() => void installUpdate())}>
+              <RotateCw /> {t("updates.pill.restart")}
             </CommandItem>
           )}
         </CommandGroup>

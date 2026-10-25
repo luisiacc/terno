@@ -1,3 +1,4 @@
+import { t } from "@terno/i18n";
 import { draftsSaved } from "~/lib/drafts";
 import { snack } from "~/lib/snack";
 
@@ -15,12 +16,12 @@ export interface WhenSavedDeps {
 const live: WhenSavedDeps = {
   saved: () => draftsSaved(),
   warn: ({ retry, anyway }) =>
-    snack.error("Your draft isn’t saved yet, so Terno didn’t reload", {
+    snack.error(t("updates.reload.title"), {
       id: "update-reload",
-      description: "A new version is waiting. Check your connection, then try again.",
+      description: t("updates.reload.body"),
       duration: 30_000,
-      action: { label: "Try Again", onClick: retry },
-      secondary: { label: "Reload Anyway", name: "Reload anyway and lose the unsaved draft", onClick: anyway },
+      action: { label: t("updates.tryAgain"), onClick: retry },
+      secondary: { label: t("updates.reload.anyway"), name: t("updates.reload.anywayName"), onClick: anyway },
     }),
 };
 
