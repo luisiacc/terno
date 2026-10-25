@@ -35,7 +35,7 @@ export const atelier: DesignDefinition = {
     compose: { family: "sans", size: "0.84375rem", leading: "1.25rem", weight: 500, strong: 600, tracking: "0em", style: "normal" },
   },
   icon: { stroke: 1.5, toolbar: 1.5 },
-  layout: { sidebar: "240px", listMin: "340px", listMax: "390px", readerMax: "768px", readerPadX: "2.5rem", rowRadius: "0.75rem", navRadius: "0.625rem", navHeight: "2rem" },
+  layout: { sidebar: "240px", listMin: "340px", listMax: "min(390px, 32vw)", readerMax: "768px", readerPadX: "2.5rem", rowRadius: "0.75rem", navRadius: "0.625rem", navHeight: "2rem" },
   rows: { comfortable: 84, compact: 44 },
   avatar: { row: 36, rowCompact: 22, message: 40, collapsed: 28, senderCard: 0 },
   surfaces: { draft: "outline", reviewBadge: "plain", inboxCount: "muted" },

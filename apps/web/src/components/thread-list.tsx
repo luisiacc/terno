@@ -140,8 +140,16 @@ function QuickChips({ filter }: { filter: QuickFilter | undefined }) {
   );
 }
 
-/** Search behind a button (Lumen): open while asked for or while there's a query. */
+/**
+ * Search behind a button (Lumen): open while asked for or while there's a
+ * query. It closes on Esc in an empty field, or when another mailbox opens
+ * with nothing typed; never on blur, so focus that leaves for a moment (F6 to
+ * the snack, a menu) comes back to it.
+ */
 const useSearchOpen = create<{ open: boolean }>(() => ({ open: false }));
+useApp.subscribe((s, prev) => {
+  if (useSearchOpen.getState().open && !s.query && (s.view !== prev.view || s.categoryId !== prev.categoryId || s.accountId !== prev.accountId || s.reviewCategoryId !== prev.reviewCategoryId)) useSearchOpen.setState({ open: false });
+});
 
 /** "/" and ⌘F: the search field, opened first where the design keeps it behind a button. */
 export function focusSearch(): void {
@@ -178,7 +186,6 @@ function SearchField({ autoCollapse }: { autoCollapse: boolean }) {
             e.currentTarget.blur();
           }
         }}
-        onBlur={() => autoCollapse && !getApp().query && useSearchOpen.setState({ open: false })}
       />
       {query ? (
         <button
@@ -243,7 +250,12 @@ function Subtitle({ filter, search }: { filter: QuickFilter | undefined; search:
   const unread = useApp((s) =>
     s.reviewCategoryId !== null ? null : s.categoryId !== null ? (s.counts.categoryUnread[s.categoryId] ?? 0) : s.view === "inbox" ? (s.accountId !== null ? (s.counts.inboxUnreadByAccount[s.accountId] ?? 0) : s.counts.inboxUnread) : null,
   );
-  if (filter && design.variants.quickFilters === "menu") return <FilterStatus search={search} filter={filter} />;
+  if (filter && design.variants.quickFilters === "menu")
+    return (
+      <div className="mt-1.5">
+        <FilterStatus search={search} filter={filter} />
+      </div>
+    );
   if (unread === null) return null;
   return (
     <p data-testid="list-subtitle" className="type-list-subtitle mt-1 truncate text-muted-foreground tabular">

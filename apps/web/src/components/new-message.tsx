@@ -87,8 +87,8 @@ export function NewMessage() {
         </Button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex min-h-full max-w-[860px] flex-col px-7 pt-5 pb-10">
-          <h2 className={cn("mb-4 text-xl font-semibold tracking-display text-balance", !d.subject && "text-muted-foreground")} data-testid="compose-title">
+        <div className="mx-auto flex min-h-full max-w-(--reader-max) flex-col px-(--reader-pad-x) pt-5 pb-10">
+          <h2 className={cn("type-reader-subject mb-4 text-balance", !d.subject && "text-muted-foreground")} data-testid="compose-title">
             {d.subject || t("compose.untitled")}
           </h2>
           <div className="-mx-3.5">

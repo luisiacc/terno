@@ -53,6 +53,7 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   ...text("sidebar-accent-foreground", ["sidebar-accent"]),
   // plan 15: "N unread" and unread counts as text; avatars and badges on rows hovered, selected and checked, on drafts and panes
   ...text("unread-ink", ["background", "pane", "sidebar", "sidebar-accent"]),
+  ...text("sidebar-primary-ink", ["sidebar", "sidebar-accent"]),
   ...CAT_NAMES.flatMap((c) => (["pane", "tint", "row-hover", "row-selected", "accent"] as const).map((over): ContrastPair => ({ fg: `cat-${c}-ink`, bg: `cat-${c}`, tint: true, min: 4.5, overToken: over }))),
   // translucent menus: their text over anything (black or white) behind them
   ...GLASS_TEXT.flatMap((fg) => GLASS_BACKDROPS.map((over): ContrastPair => ({ fg, bg: "popover-glass", min: 4.5, over: `oklch(${over})` }))),

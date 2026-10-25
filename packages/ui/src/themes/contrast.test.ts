@@ -16,8 +16,8 @@ describe("WCAG AA in every built-in theme", () => {
     // 9 + 9 fg/muted-fg surfaces, 8 single text pairs + 2 on the mail paper, 8 badge inks, 5 UI pairs, 8 dots;
     // plan 07: fg + muted-fg on tint, the draft label on 4 surfaces, sidebar glyphs on 2, 3 menu texts over black and white
     // plan 08: error and "saved" inks on background, tint (and menus); the ring on tint and the sidebar, an on switch on tint; sidebar text
-    // plan 15: unread ink on 4 surfaces, 8 badge inks over 5 row/draft surfaces
-    expect(CONTRAST_PAIRS).toHaveLength(49 + 2 + 4 + 2 + 6 + 5 + 3 + 3 + 4 + 40);
+    // plan 15: unread ink on 4 surfaces, 8 badge inks over 5 row/draft surfaces, the sidebar's accent as text on 2
+    expect(CONTRAST_PAIRS).toHaveLength(49 + 2 + 4 + 2 + 6 + 5 + 3 + 3 + 4 + 40 + 2);
   });
 
   it("reports a failing pair with its ratio", () => {

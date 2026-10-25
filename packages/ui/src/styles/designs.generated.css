@@ -117,7 +117,7 @@
   --icon-stroke-toolbar: 1.5;
   --sidebar-w: 248px;
   --list-min: 340px;
-  --list-max: 400px;
+  --list-max: min(400px, 32vw);
   --reader-max: 760px;
   --reader-pad-x: 2.5rem;
   --row-radius: 1rem;
@@ -253,7 +253,7 @@
   --icon-stroke-toolbar: 1.5;
   --sidebar-w: 240px;
   --list-min: 340px;
-  --list-max: 390px;
+  --list-max: min(390px, 32vw);
   --reader-max: 768px;
   --reader-pad-x: 2.5rem;
   --row-radius: 0.75rem;

@@ -75,8 +75,9 @@ export const THEME_TOKENS = [
   // plan 08: error and "saved" text that reads on tint groups too
   "destructive-ink",
   "success-ink",
-  // plan 15: "N unread" text and unread counts drawn as text
+  // plan 15: "N unread" text and unread counts drawn as text; the sidebar's accent as text (the Local pill)
   "unread-ink",
+  "sidebar-primary-ink",
   // chrome
   "overlay",
   "shadow-color",

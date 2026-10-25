@@ -171,6 +171,7 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   def("success-ink", () => stepUntil(o("success"), inkSurfaces, 4.5, bg, o("foreground"), light));
   // plan 15: unread counts and "N unread" as text, on every surface they're drawn on
   def("unread-ink", () => stepUntil(o("unread"), ["background", "pane", "sidebar", "sidebar-accent"].map((k) => formatOklch(o(k as ThemeToken))), 4.5, bg, o("foreground"), light));
+  def("sidebar-primary-ink", () => stepUntil(o("sidebar-primary"), [formatOklch(o("sidebar")), formatOklch(o("sidebar-accent"))], 4.5, bg, o("sidebar-foreground"), light));
   def("sidebar-glyph", () => stepUntil(o("sidebar-primary"), [formatOklch(o("sidebar")), formatOklch(o("sidebar-accent"))], 3, bg, o("muted-foreground"), light));
   def("popover-glass", () => withAlpha(o("popover"), glassAlpha(o("popover"), GLASS_TEXT.map((k) => o(k)))));
   // badges and avatars: the reader and menus, and (plan 15) rows hovered, selected and checked, drafts and panes

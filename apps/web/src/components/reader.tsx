@@ -449,10 +449,11 @@ export function Reader() {
             <Tooltip>
               <TooltipTrigger
                 render={
-                  <Button variant="outline" size="sm" aria-label={t("actions.reply")} data-testid="action-reply" onClick={() => openCompose("reply")} className="no-drag mr-1 h-8 gap-2 rounded-full px-3.5 font-semibold shadow-none @max-[560px]:w-8 @max-[560px]:px-0 [&_svg]:[stroke-width:var(--icon-stroke-toolbar)]">
+                  <Button variant="outline" size="sm" data-testid="action-reply" onClick={() => openCompose("reply")} className="no-drag mr-1 h-8 gap-2 rounded-full px-3.5 font-semibold shadow-none @max-[560px]:w-8 @max-[560px]:px-0 [&_svg]:[stroke-width:var(--icon-stroke-toolbar)]">
                     <Reply />
-                    <span className="@max-[560px]:hidden">{t("actions.reply")}</span>
-                    <Kbd className="@max-[560px]:hidden">R</Kbd>
+                    {/* the name is the visible label (still read when a narrow reader shows the icon alone); the key is decoration */}
+                    <span className="@max-[560px]:sr-only">{t("actions.reply")}</span>
+                    <Kbd aria-hidden className="@max-[560px]:hidden">R</Kbd>
                   </Button>
                 }
               />
