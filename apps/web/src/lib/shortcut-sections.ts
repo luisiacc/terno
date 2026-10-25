@@ -69,6 +69,21 @@ export const SECTIONS: { title: Label; rows: [Command, Label][] }[] = [
   },
 ];
 
+/** The editor's own keys while writing (plan 16): not app commands, so listed by their keys. */
+export const FORMATTING: [keys: string, label: Label][] = [
+  ["mod+b", "compose.format.bold"],
+  ["mod+i", "compose.format.italic"],
+  ["mod+u", "compose.format.underline"],
+  ["mod+shift+x", "compose.format.strike"],
+  ["mod+k", "compose.link.insert"],
+  ["mod+shift+7", "compose.format.numbered"],
+  ["mod+shift+8", "compose.format.bulleted"],
+  ["mod+]", "compose.format.indent"],
+  ["mod+[", "compose.format.outdent"],
+  ["mod+\\", "compose.format.clear"],
+  ["mod+shift+v", "shortcuts.pastePlain"],
+];
+
 /** Bindings that exist but the dialog doesn't list (the snackbar's own keys are shown on it). */
 export const UNLISTED: ReadonlySet<Command> = new Set<Command>(["snackbar.action1", "snackbar.action2", "snackbar.action3", "snackbar.action4", "snackbar.action5", "snackbar.undo", "snackbar.close", "suggestion.accept", "suggestion.reject"]);
 

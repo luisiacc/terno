@@ -849,6 +849,8 @@ const en = {
   "shortcuts.section.navigate": "Navigate",
   "shortcuts.section.select": "Select",
   "shortcuts.section.actions": "Actions",
+  "shortcuts.section.formatting": "Formatting, while writing",
+  "shortcuts.pastePlain": "Paste as plain text",
   "shortcuts.section.compose": "Compose",
   "shortcuts.next": "Next conversation",
   "shortcuts.prev": "Previous conversation",

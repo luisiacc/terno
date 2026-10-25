@@ -842,6 +842,8 @@ const es = {
   "shortcuts.section.navigate": "Moverse",
   "shortcuts.section.select": "Seleccionar",
   "shortcuts.section.actions": "Acciones",
+  "shortcuts.section.formatting": "Formato, al escribir",
+  "shortcuts.pastePlain": "Pegar como texto sin formato",
   "shortcuts.section.compose": "Escribir",
   "shortcuts.next": "Siguiente conversación",
   "shortcuts.prev": "Conversación anterior",
