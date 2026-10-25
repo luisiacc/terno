@@ -17,6 +17,7 @@ import { totalmem } from "node:os";
 import { join } from "node:path";
 import { app, BrowserWindow, crashReporter, dialog, ipcMain, shell, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from "electron";
 import {
+  breadcrumbs,
   buildReport,
   captureError,
   CLOSED_POLICY,
@@ -368,7 +369,7 @@ class MainDiag implements DiagSink {
     if (target === "sample") {
       record = { id: newId(), ts: Date.now(), kind: "error", proc: "main", code: "diag.selftest", fields: { source: "main" }, fatal: false, crumbs: [], context: diagContext() };
       record.error = { name: "Error", message: "", frames: [] };
-      record.crumbs = sanitizeCrumbs(this.rings?.get("main") ?? []);
+      record.crumbs = breadcrumbs();
     }
     if (!record) return null;
     let host: string | null = null;
