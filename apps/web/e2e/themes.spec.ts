@@ -73,7 +73,7 @@ test.describe("themes", () => {
       }
     }
     // the other mode's grid says when its choice applies
-    await expect(page.getByTestId("theme-grid-light")).toContainText("Se aplicará en modo claro");
+    await expect(page.getByTestId("theme-grid-light")).toContainText("Applies in light mode");
   });
 
   test("after a reload the theme is painted before React mounts", async ({ app: page, server }) => {
@@ -116,7 +116,7 @@ test.describe("themes", () => {
     await page.reload();
     await page.locator("[data-ready]").waitFor();
     const bodyBg = async () => {
-      const frame = page.frameLocator("iframe[title='Contenido del correo']");
+      const frame = page.frameLocator("iframe[title='Message content']");
       await expect(frame.locator("body")).toBeVisible();
       return frame.locator("body").evaluate((b) => getComputedStyle(b).backgroundColor);
     };
@@ -131,7 +131,7 @@ test.describe("themes", () => {
     await expect(page.locator("iframe[data-mail=paper]")).toBeVisible();
     expect(await bodyBg()).toBe(rgb(toHex(dracula["mail-paper"])));
 
-    // "Siempre papel": the plain one too
+    // "Always paper": the plain one too
     await openAppearance(page);
     await page.getByTestId("mail-paper").click();
     await page.keyboard.press("Escape");
@@ -193,7 +193,7 @@ test.describe("themes", () => {
     const json = page.getByTestId("theme-editor-json");
     await json.fill(JSON.stringify({ ...rosa, id: "otra" }));
     await page.getByTestId("theme-editor-save").click();
-    await expect(page.getByTestId("theme-editor-error")).toContainText("El id no se puede cambiar");
+    await expect(page.getByTestId("theme-editor-error")).toContainText("The id can’t be changed");
     const fuchsia = "#ff55aa";
     await json.fill(JSON.stringify({ ...rosa, name: "Rosa fuerte", tokens: { ...rosa.tokens, primary: fuchsia } }));
     await page.getByTestId("theme-editor-save").click();
@@ -237,7 +237,7 @@ test.describe("visual: every theme", () => {
       await page.reload();
       await page.locator("[data-ready]").waitFor();
       await openRow(page, 2);
-      await expect(page.frameLocator("iframe[title='Contenido del correo']").locator("h1")).toBeVisible();
+      await expect(page.frameLocator("iframe[title='Message content']").locator("h1")).toBeVisible();
       await page.evaluate(() => document.fonts.ready);
       await stabilize(page);
       await expect(page).toHaveScreenshot(`reader-${id}.png`);
@@ -245,7 +245,7 @@ test.describe("visual: every theme", () => {
   }
 
   for (const mode of ["light", "dark"] as const) {
-    test(`Apariencia tab in ${mode}`, async ({ app: page, server }) => {
+    test(`Appearance tab in ${mode}`, async ({ app: page, server }) => {
       await server.backend.server.invoke("settings.update", { theme: mode }, ctx);
       await page.reload();
       await page.locator("[data-ready]").waitFor();

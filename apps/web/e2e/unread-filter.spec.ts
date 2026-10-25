@@ -93,7 +93,7 @@ test.describe("the toggle", () => {
     await filterOn(page);
     await page.keyboard.press("g");
     await page.keyboard.press("a");
-    await expect(page.getByTestId("list-title")).toContainText("Archivo");
+    await expect(page.getByTestId("list-title")).toContainText("Archive");
     await expect(button(page)).toHaveAttribute("aria-pressed", "false");
     const cat = db(server).get<{ id: number; name: string }>("SELECT c.id, c.name FROM categories c JOIN thread_categories tc ON tc.category_id = c.id GROUP BY c.id ORDER BY count(*) DESC LIMIT 1")!;
     await page.locator(`[data-drop-target="${cat.id}"]`).click();
@@ -107,13 +107,13 @@ test.describe("the toggle", () => {
     await expect(button(page)).toHaveAttribute("aria-pressed", "true");
     await page.keyboard.press("g");
     await page.keyboard.press("i");
-    await expect(page.getByTestId("list-title")).toContainText("Entrada");
+    await expect(page.getByTestId("list-title")).toContainText("Inbox");
     await expect(button(page)).toHaveAttribute("aria-pressed", "true");
     await showing(page, true);
     await focusList(page);
     await page.keyboard.press("g");
     await page.keyboard.press("a");
-    await expect(page.getByTestId("list-title")).toContainText("Archivo");
+    await expect(page.getByTestId("list-title")).toContainText("Archive");
     await expect(button(page)).toHaveAttribute("aria-pressed", "false");
   });
 
@@ -126,7 +126,7 @@ test.describe("the toggle", () => {
     expect(shown.length).toBeGreaterThan(0);
     const unread = new Set(unreadInbox(server));
     expect(shown.every((id) => unread.has(id))).toBe(true);
-    await expect(page.getByTestId("search-stats")).toContainText(`${shown.length} resultados`);
+    await expect(page.getByTestId("search-stats")).toContainText(`${shown.length.toLocaleString("en-US")} results`);
   });
 });
 
@@ -210,7 +210,7 @@ test.describe("acting on a filtered mailbox", () => {
     await page.keyboard.press("e");
     await expect.poll(() => db(server).get<{ c: number }>(`SELECT count(*) AS c FROM threads WHERE in_inbox = 1 AND id IN (${shown.join(",")})`)!.c).toBe(0);
     expect(readInbox(server)).toEqual(read);
-    await toast(page, /Archivado/).getByTestId("snack-action").click();
+    await toast(page, /Archived/).getByTestId("snack-action").click();
     await expect.poll(() => db(server).get<{ c: number }>(`SELECT count(*) AS c FROM threads WHERE in_inbox = 1 AND id IN (${shown.join(",")})`)!.c).toBe(shown.length);
   });
 
@@ -225,9 +225,9 @@ test.describe("acting on a filtered mailbox", () => {
     await filterOn(page);
     await page.keyboard.press("ControlOrMeta+a");
     const banner = page.getByTestId("select-all-scope-button");
-    await expect(banner).toHaveText(`Seleccionar las ${unread.length.toLocaleString("es-MX")} conversaciones de «Entrada · Unread»`);
+    await expect(banner).toHaveText(`Select all ${unread.length.toLocaleString("en-US")} conversations in “Inbox · Unread”`);
     await banner.click();
-    await expect(page.getByTestId("select-all-scope")).toContainText("Entrada · Unread");
+    await expect(page.getByTestId("select-all-scope")).toContainText("Inbox · Unread");
     await page.keyboard.press("e");
     await expect.poll(() => unreadInbox(server).length).toBe(0);
     expect(readInbox(server)).toEqual(stillRead);

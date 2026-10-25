@@ -26,7 +26,7 @@ async function open(page: Page, server: DevServer, key: "long-plain" | "inline-r
 }
 
 test.describe("print sheet", () => {
-  test("⌘P opens it on the open conversation, ⇧⌘P on «Guardar PDF…»; Esc closes; nothing to print, nothing opens", async ({ app: page, server }) => {
+  test("⌘P opens it on the open conversation, ⇧⌘P on “Save PDF…”; Esc closes; nothing to print, nothing opens", async ({ app: page, server }) => {
     // a new message in the reader pane: nothing to print, and the browser doesn't print the app either
     await focusList(page);
     await page.keyboard.press("c");
@@ -40,7 +40,7 @@ test.describe("print sheet", () => {
     await expect(sheet(page)).toBeVisible();
     await expect(page.getByTestId("print-subject")).toHaveText("Notas de la junta de planeación — lanzamiento del primer trimestre");
     await pressed(page, "print-scope-thread");
-    await expect(page.getByTestId("print-scope-thread")).toHaveText("Conversación (4)");
+    await expect(page.getByTestId("print-scope-thread")).toHaveText("Conversation (4)");
     await ready(page);
     await expect(page.getByTestId("print-submit")).toBeFocused();
     await expect(preview(page).locator(".msg")).toHaveCount(4);
@@ -82,7 +82,7 @@ test.describe("print sheet", () => {
     await expect(page.getByTestId("message-menu")).toBeVisible();
     await page.getByTestId("message-menu-print").click();
     await pressed(page, "print-scope-message");
-    await expect(sheet(page).getByRole("heading", { name: "Imprimir mensaje" })).toBeVisible();
+    await expect(sheet(page).getByRole("heading", { name: "Print message" })).toBeVisible();
     await ready(page);
     await expect(preview(page).locator(".msg")).toHaveCount(1);
     await expect(preview(page).locator("body")).toContainText("A 30 días naturales desde la factura.");
@@ -115,7 +115,7 @@ test.describe("print sheet", () => {
 
     await focusList(page);
     await page.keyboard.press("ControlOrMeta+k");
-    await page.getByTestId("palette-input").fill("imprimir");
+    await page.getByTestId("palette-input").fill("print");
     await page.getByTestId("palette-print").click();
     await expect(sheet(page)).toBeVisible();
     await page.keyboard.press("Escape");
@@ -136,7 +136,7 @@ test.describe("print sheet", () => {
     await expect(doc.locator(".subject")).toHaveText("Notas de la junta de planeación — lanzamiento del primer trimestre");
     await expect(doc.locator(".head")).toHaveCount(4);
     await expect(doc.locator(".head").first()).toContainText("yuki.gutierrez@acme.studio");
-    await expect(doc.locator(".head").first()).toContainText("Para");
+    await expect(doc.locator(".head").first()).toContainText("To Luis Cordero");
     // the whole conversation hides the trailing quotes
     await expect(doc.locator("body")).not.toContainText("escribió:");
 
@@ -191,12 +191,12 @@ test.describe("print sheet", () => {
     await expect(preview(page).locator(".quote").first()).toContainText("escribió:");
   });
 
-  test("Imprimir prints the preview's own document under the subject, and puts the page's title back", async ({ app: page, server }) => {
+  test("Print prints the preview's own document under the subject, and puts the page's title back", async ({ app: page, server }) => {
     await open(page, server, "long-plain", 'subject:"Notas de la junta de planeación"');
     const title = await page.title();
     await page.keyboard.press("ControlOrMeta+p");
     await ready(page);
-    await expect(page.getByTestId("print-hint-web")).toContainText("Guardar como PDF");
+    await expect(page.getByTestId("print-hint-web")).toContainText("Save as PDF");
     // the browser's dialog, stubbed: what it would print, and under which title
     await page.evaluate(() => {
       const frame = document.querySelector<HTMLIFrameElement>("[data-testid=print-preview]")!;
@@ -216,7 +216,7 @@ test.describe("print sheet", () => {
     await open(page, server, "newsletter", 'subject:"Boletín Acme"');
     await page.keyboard.press("ControlOrMeta+p");
     await ready(page);
-    await expect(page.getByTestId("print-note-remote")).toContainText("modo local");
+    await expect(page.getByTestId("print-note-remote")).toContainText("Local mode blocks remote images");
     await expect(preview(page).locator('img[src^="https:"]')).toHaveCount(0);
     await expect(preview(page).locator(".img-alt")).toContainText(["Promoción de temporada"]);
     await page.keyboard.press("Escape");
@@ -227,9 +227,9 @@ test.describe("print sheet", () => {
     await selectThread(page, sqlDb(server.backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = 'print-newsletter-0'")!.thread_id, 'subject:"Boletín Acme"');
     await page.keyboard.press("ControlOrMeta+p");
     await ready(page);
-    await expect(page.getByTestId("print-note-remote")).toContainText("que no cargaste en el lector");
+    await expect(page.getByTestId("print-note-remote")).toContainText("you didn’t load in the reader");
     await page.keyboard.press("Escape");
-    // «Cargar contenido» in the reader: that message prints them
+    // “Load content” in the reader: that message prints them
     await page.getByTestId("remote-load").click();
     await page.keyboard.press("ControlOrMeta+p");
     await ready(page);
@@ -339,8 +339,8 @@ test.describe("print sheet", () => {
     await selectThread(page, ids.hostile, "from:soporte@banco-falso.test");
     await page.keyboard.press("ControlOrMeta+p");
     await ready(page);
-    await expect(page.getByTestId("print-note-missing")).toContainText("Un mensaje aún no se ha descargado");
-    await expect(preview(page).locator(".missing")).toHaveText("Contenido aún no descargado");
+    await expect(page.getByTestId("print-note-missing")).toContainText("One message hasn’t downloaded yet");
+    await expect(preview(page).locator(".missing")).toHaveText("Content not downloaded yet");
   });
 
   for (const [label, size] of [["a 320 px window", { width: 320, height: 640 }], ["200% zoom (720×450)", { width: 720, height: 450 }]] as const) {
@@ -395,8 +395,13 @@ test("the print sheet and document builder stay out of the startup bundle", () =
   const dist = join(here, process.env.E2E_PORT ? `../dist-e2e-${process.env.E2E_PORT}` : "../dist-e2e");
   const entry = /<script type="module"[^>]*src="\.\/(assets\/[^"]+\.js)"/.exec(readFileSync(join(dist, "index.html"), "utf8"))![1]!;
   const code = (f: string) => readFileSync(join(dist, f), "utf8");
-  expect(code(entry)).not.toContain("data-print-doc");
-  expect(code(entry)).not.toContain("Vista previa de impresión");
+  // markers the minifier keeps (copy lives in the catalog, in the entry): the document's root attribute and the
+  // sheet's own test ids as string literals in any quotes, so a chunk's file name in the entry's imports doesn't count
+  const markers = [/data-print-doc/, /["'`]print-preview["'`]/, /["'`]print-submit["'`]/];
   const chunks = readdirSync(join(dist, "assets")).filter((f) => f.endsWith(".js"));
-  expect(chunks.some((f) => code(`assets/${f}`).includes("data-print-doc"))).toBe(true);
+  for (const m of markers) {
+    expect(code(entry)).not.toMatch(m);
+    // and they are in the build at all, so their absence from the entry means something
+    expect(chunks.some((f) => m.test(code(`assets/${f}`))), String(m)).toBe(true);
+  }
 });

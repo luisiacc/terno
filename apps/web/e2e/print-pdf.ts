@@ -6,6 +6,8 @@
  */
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import en from "@terno/i18n/locales/en";
+import es from "@terno/i18n/locales/es";
 import type { PrintFixtureKey } from "@terno/mock-data";
 
 /** pdfjs needs its CMaps for CJK fonts (and its standard font data), from the pinned package. */
@@ -106,9 +108,11 @@ export function pdfProblems(pages: PdfPage[], o: { key: PrintFixtureKey; headers
     if (o.headers && !has) out.push(`headers mode is missing «${t}»`);
     if (!o.headers && has) out.push(`content only prints «${t}»`);
   }
-  const labels = pages.flatMap((p) => p.items).filter((i) => i.str.trim() === "Para").length;
-  if (!o.headers && labels) out.push("content only prints the «Para» label");
-  if (o.headers && !labels) out.push("headers mode has no «Para» label");
+  // the recipients' label in the app's language (the web suite runs in English; the desktop smoke follows the Mac's)
+  const to = new Set<string>([en["print.doc.to"], es["print.doc.to"]]);
+  const labels = pages.flatMap((p) => p.items).filter((i) => to.has(i.str.trim())).length;
+  if (!o.headers && labels) out.push("content only prints the «To» label");
+  if (o.headers && !labels) out.push("headers mode has no «To» label");
   // the footer: the page number on every page, with headers
   const footed = pages.filter((p) => p.items.some((i) => i.y < MARGIN_PT.bottom && /\d/.test(i.str))).length;
   if (o.headers && footed !== pages.length) out.push(`footer page numbers on ${footed} of ${pages.length} pages`);
