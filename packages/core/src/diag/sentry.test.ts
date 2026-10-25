@@ -85,4 +85,14 @@ describe("reporter", () => {
     expect(s.envelopes.map((e) => e.header.event_id)).toEqual(["d".repeat(32)]);
   });
 
+
+  it("a crash recorded by the previous build is sent under that build's release (review finding 9)", async () => {
+    const s = sink();
+    // the running app is 0.2.0; the record survived the upgrade from 0.1.0
+    const reporter = createReporter({ dsn: DSN, release: "terno@0.2.0+newsha", environment: "production", transport: fetchTransport(s.fetchImpl), allow: () => true });
+    const old = { ...record("9".repeat(32)), context: { ...record("9".repeat(32)).context, version: "0.1.0", build: "0.1.0+oldsha", channel: "demo" as const } };
+    await reporter.send(buildReport(old, options));
+    expect(s.envelopes[0]!.items[0]!.payload).toMatchObject({ release: "terno@0.1.0+oldsha", environment: "demo" });
+  });
 });
+
