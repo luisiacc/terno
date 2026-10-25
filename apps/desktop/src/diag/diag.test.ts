@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { inflateRawSync } from "node:zlib";
 import { appendFileSync } from "node:fs";
 import { captureError, installDiag, type ErrorRecord } from "@terno/core/diag";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { collectExport, zip } from "./export";
 import { diagPaths, ensureDirs, fitRecord, RECORD_MAX_BYTES, RecordStore, Rings, runMarker, StateFile } from "./store";
 import { BACKOFF_MS, HEALTHY_MS, RateLimit, RestartPolicy } from "./supervisor";
@@ -120,10 +120,10 @@ describe("state, rings, run marker", () => {
 
   it("rings persist with their session and come back sanitized", () => {
     const path = join(tmp(), "rings.json");
-    const r = new Rings(path);
+    const r = new Rings(path, () => "sess");
     r.set("backend#2", [{ ts: 1, cat: "sync", code: "sync.done", level: "info", fields: { accountKind: "gmail" } }]);
-    r.persistSync("sess");
-    expect(new Rings(path).readPrevious()).toEqual({ session: "sess", rings: { "backend#2": [{ ts: 1, cat: "sync", code: "sync.done", level: "info", fields: { accountKind: "gmail" } }] } });
+    r.persistSync();
+    expect(new Rings(path, () => "other").readPrevious()).toEqual({ session: "sess", rings: { "backend#2": [{ ts: 1, cat: "sync", code: "sync.done", level: "info", fields: { accountKind: "gmail" } }] } });
   });
 
   it("the marker is there while running and gone after a clean quit", () => {
@@ -132,6 +132,45 @@ describe("state, rings, run marker", () => {
     expect(runMarker.read(dir)).toMatchObject({ session: "s" });
     runMarker.clear(dir);
     expect(runMarker.read(dir)).toBeNull();
+  });
+});
+
+describe("rings in normal use never touch the disk synchronously (review finding 5)", () => {
+  it("a change is written 10 s later, asynchronously and one write at a time; sync only when asked (fatal, quit)", async () => {
+    vi.useFakeTimers();
+    try {
+      const calls: string[] = [];
+      let release!: () => void;
+      const io = {
+        write: vi.fn(async (_p: string, data: string) => {
+          calls.push(`start ${JSON.parse(data).rings.main.length}`);
+          await new Promise<void>((r) => (release = r));
+          calls.push("end");
+        }),
+        writeSync: vi.fn(() => {
+          throw new Error("synchronous write on the periodic path");
+        }),
+      };
+      const r = new Rings("/nowhere/rings.json", () => "s", { delayMs: 10_000, io });
+      const crumb = (i: number) => ({ ts: i, cat: "nav" as const, code: "nav.thread" as const, level: "info" as const, fields: { threadId: i } });
+      r.set("main", [crumb(1)]);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(io.write).toHaveBeenCalledTimes(1);
+      // a change while that write is still going: its write waits for the first to end
+      r.set("main", [crumb(1), crumb(2)]);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(calls).toEqual(["start 1"]);
+      release();
+      await vi.advanceTimersByTimeAsync(0);
+      release();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(calls).toEqual(["start 1", "end", "start 2", "end"]);
+      expect(io.writeSync).not.toHaveBeenCalled();
+      // idle: nothing more, no timer left
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

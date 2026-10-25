@@ -104,7 +104,6 @@ class MainDiag implements DiagSink {
   readonly counters = { allowed: 0, refused: 0, sent: 0, failed: 0 };
   private sessionStartedAt = Date.now();
   private recent = new Map<string, ErrorRecord>();
-  private ringsTimer: NodeJS.Timeout | null = null;
   private testHooks = false;
   readonly channel: Channel;
   readonly dsn: string;
@@ -171,7 +170,7 @@ class MainDiag implements DiagSink {
 
   flush(): void {
     for (const l of this.logs.values()) l.flushSync();
-    this.rings?.persistSync(diagSession());
+    this.rings?.persistSync();
   }
 
   private line(proc: Proc, entry: DiagEntry): void {
@@ -207,13 +206,8 @@ class MainDiag implements DiagSink {
     for (const e of this.early.splice(0)) this.logFor(e.proc).write(e.line);
     this.records = new RecordStore(paths.crashes);
     this.state = new StateFile(join(paths.diag, "state.json"));
-    // persisted 10 s after they change, and at once on a fatal event: an idle app writes nothing
-    this.rings = new Rings(join(paths.crashes, "rings.json"), () => {
-      this.ringsTimer ??= setTimeout(() => {
-        this.ringsTimer = null;
-        this.rings?.persistSync(diagSession());
-      }, RINGS_EVERY_MS).unref();
-    });
+    // persisted asynchronously 10 s after they change, synchronously only on a fatal event or quit
+    this.rings = new Rings(join(paths.crashes, "rings.json"), diagSession, { delayMs: RINGS_EVERY_MS });
     const known = this.state.get().policy;
     if (known) this.policy = { ...known, dsn: Boolean(this.dsn) };
     else this.policy = { ...CLOSED_POLICY, dsn: Boolean(this.dsn) };
@@ -276,7 +270,7 @@ class MainDiag implements DiagSink {
     if (reportsAutomatically(this.policy)) void this.send(record);
     if (record.fatal || record.kind !== "error") {
       this.records.writeSync(record);
-      this.rings?.persistSync(diagSession());
+      this.rings?.persistSync();
       this.changed();
     } else void this.records.write(record).then(() => this.changed());
   }
@@ -596,7 +590,7 @@ class MainDiag implements DiagSink {
     const started = Date.now();
     try {
       for (const l of this.logs.values()) await l.flush();
-      this.rings?.persistSync(diagSession());
+      await this.rings?.persist();
       const entries = collectExport({
         paths: this.paths!,
         system: { terno: { version: BUILD_VERSION, sha: BUILD_SHA, build: BUILD_ID, channel: this.channel }, ...this.context(), session: diagSession(), exportedAt: new Date().toISOString(), electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node },

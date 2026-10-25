@@ -112,19 +112,47 @@ export class StateFile {
 }
 
 /** The last ring of each live process instance, persisted for the case where one dies without a word. */
+/** How rings reach the disk: atomically, asynchronously in normal use, synchronously only when dying. */
+export interface RingsIo {
+  write(path: string, data: string): Promise<void>;
+  writeSync(path: string, data: string): void;
+}
+
+const nodeRingsIo: RingsIo = {
+  async write(path, data) {
+    const tmp = `${path}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`;
+    await writeFile(tmp, data, { mode: MODE });
+    await rename(tmp, path);
+  },
+  writeSync: (path, data) => writeAtomicSync(path, data),
+};
+
+/**
+ * The last ring of each live process instance, persisted for the case where
+ * one dies without a word: written (asynchronously, one write at a time) a
+ * little after they change, so an idle app writes nothing and main never
+ * blocks on the disk for it; synchronously only on a fatal event or quit.
+ */
 export class Rings {
   private rings = new Map<string, Crumb[]>();
   private dirty = false;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private chain: Promise<void> = Promise.resolve();
+  private readonly delayMs: number;
+  private readonly io: RingsIo;
+
   constructor(
     private readonly path: string,
-    /** told when the rings changed (main persists a little later) */
-    private readonly onDirty: () => void = () => {},
-  ) {}
+    private readonly session: () => string,
+    o: { delayMs?: number; io?: RingsIo } = {},
+  ) {
+    this.delayMs = o.delayMs ?? 10_000;
+    this.io = o.io ?? nodeRingsIo;
+  }
 
   set(instance: string, crumbs: Crumb[]): void {
     this.rings.set(instance, crumbs);
-    this.dirty = true;
-    this.onDirty();
+    this.changed();
   }
 
   get(instance: string): Crumb[] {
@@ -132,16 +160,46 @@ export class Rings {
   }
 
   delete(instance: string): void {
-    this.dirty = this.rings.delete(instance) || this.dirty;
+    if (this.rings.delete(instance)) this.changed();
   }
 
-  persistSync(session: string): void {
+  private changed(): void {
+    this.dirty = true;
+    if (this.timer) return;
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      void this.persist();
+    }, this.delayMs);
+    (this.timer as { unref?: () => void }).unref?.();
+  }
+
+  private snapshot(): string {
+    this.dirty = false;
+    return JSON.stringify({ session: this.session(), rings: Object.fromEntries(this.rings) });
+  }
+
+  /** The periodic path: asynchronous, serialized (a write never overlaps the previous one). */
+  persist(): Promise<void> {
+    this.chain = this.chain.then(async () => {
+      if (!this.dirty) return;
+      try {
+        await this.io.write(this.path, this.snapshot());
+      } catch {
+        this.dirty = true; // next time
+      }
+    });
+    return this.chain;
+  }
+
+  /** A fatal event or quit: whatever changed is on disk before this returns. */
+  persistSync(): void {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
     if (!this.dirty) return;
     try {
-      writeAtomicSync(this.path, JSON.stringify({ session, rings: Object.fromEntries(this.rings) }));
-      this.dirty = false;
+      this.io.writeSync(this.path, this.snapshot());
     } catch {
-      // next time
+      this.dirty = true;
     }
   }
 
