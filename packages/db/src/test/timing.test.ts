@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { classifyGaps, holdsExcusable, machineBusy, settle, type Gap } from "./timing";
+import { classifyGaps, holdsExcusable, machineBusy, pausedIn, settle, stallLessGc, type Gap, type LoopReport } from "./timing";
 
 const gap = (busy: number, cpu: number, at = 0): Gap => ({ start: at, end: at + busy, wall: busy, busy, cpu });
 const rare = () => [...Array.from({ length: 19 }, () => ({ wall: 2, cpu: 1.9 })), { wall: 9, cpu: 2 }];
@@ -61,6 +61,30 @@ describe("holdsExcusable", () => {
 
   it("holds over a fifth of the stage are ours, however few", () => {
     expect(holdsExcusable([700, 600], 5_000)).toBe(false);
+  });
+});
+
+describe("stallLessGc", () => {
+  const report = (over: Gap[], within = 10, descheduled: Gap[] = []): LoopReport => ({ over, longest: over[0]!, descheduled, stall: 0, within, held: 0, ms: 5_000 });
+
+  it("leaves out a collection inside the gap", () => {
+    expect(stallLessGc(report([gap(60, 60, 1_000)]), [{ start: 1_010, end: 1_050 }])).toBe(20);
+  });
+
+  it("a long collection elsewhere in the stage excuses nothing: a 60 ms block stays 60 ms", () => {
+    // the stall less the stage's longest collection would have been 16 ms here
+    expect(stallLessGc(report([gap(60, 60, 1_000), gap(50, 50, 3_000)]), [{ start: 3_002, end: 3_046 }])).toBe(60);
+  });
+
+  it("counts an excused gap at its CPU time, and never below the longest gap within budget", () => {
+    const brief = gap(80, 5, 1_000);
+    expect(stallLessGc(report([brief], 12, [brief]), [])).toBe(12);
+    const held = gap(80, 30, 1_000);
+    expect(stallLessGc(report([held], 12, [held]), [])).toBe(30);
+  });
+
+  it("measures only the overlap", () => {
+    expect(pausedIn({ start: 100, end: 200 }, [{ start: 90, end: 110 }, { start: 190, end: 250 }, { start: 300, end: 400 }])).toBe(20);
   });
 });
 

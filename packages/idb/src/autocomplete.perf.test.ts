@@ -18,7 +18,7 @@ import type { Platform } from "@terno/store";
 import { Autocomplete, WEB_AUTOCOMPLETE_PEAK, WEB_CONTACT_CAPS, WEB_PHRASE_CAPS } from "@terno/store/autocomplete";
 import { cpuMs, memoryFiles, PERF_MULT as MULT, perfLog as log } from "@terno/store/conformance";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { describeGap, watchGc, watchLoop } from "../../db/src/test/timing";
+import { describeGap, stallLessGc, watchGc, watchLoop } from "../../db/src/test/timing";
 import { IdbMailStore } from "./store";
 
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
@@ -40,10 +40,10 @@ const service = () =>
 const ATTEMPTS = 3;
 
 /**
- * The longest stall while `fn` ran (rare holds of the OS excused on a busy machine), the longest GC pause meanwhile,
- * and its wall time less what those holds took.
+ * The longest stall while `fn` ran (rare holds of the OS excused on a busy machine), and the same with the
+ * collections inside each gap left out; the longest GC pause meanwhile; its wall time less what those holds took.
  */
-async function stalls<T>(budgetMs: number, fn: () => Promise<T>): Promise<{ result: T; stall: number; maxGc: number; ms: number; held: number; longest: string; descheduled: number }> {
+async function stalls<T>(budgetMs: number, fn: () => Promise<T>): Promise<{ result: T; stall: number; lessGc: number; maxGc: number; ms: number; held: number; longest: string; descheduled: number }> {
   const loop = watchLoop(budgetMs);
   const gc = watchGc();
   const started = performance.now();
@@ -53,18 +53,20 @@ async function stalls<T>(budgetMs: number, fn: () => Promise<T>): Promise<{ resu
     const ms = performance.now() - started;
     const r = loop.stop();
     stopped = true;
-    return { result, stall: r.stall, maxGc: gc.stop(), ms: ms - r.held, held: r.held, longest: describeGap(r.longest), descheduled: r.descheduled.length };
+    const pauses = await gc.stop();
+    const maxGc = Math.max(0, ...pauses.map((x) => x.end - x.start));
+    return { result, stall: r.stall, lessGc: stallLessGc(r, pauses), maxGc, ms: ms - r.held, held: r.held, longest: describeGap(r.longest), descheduled: r.descheduled.length };
   } finally {
     if (!stopped) {
       loop.stop();
-      gc.stop();
+      await gc.stop();
     }
   }
 }
 
 /** a run's line in the log */
-const described = (r: { stall: number; maxGc: number; ms: number; held: number; longest: string; descheduled: number }) =>
-  `${r.ms.toFixed(0)} ms, stall ${r.stall.toFixed(1)} ms (GC ${r.maxGc.toFixed(1)}; longest gap ${r.longest}; ${r.descheduled} descheduled, ${r.held.toFixed(0)} ms held)`;
+const described = (r: { stall: number; lessGc: number; maxGc: number; ms: number; held: number; longest: string; descheduled: number }) =>
+  `${r.ms.toFixed(0)} ms, stall ${r.stall.toFixed(1)} ms (${r.lessGc.toFixed(1)} less its GC, longest GC ${r.maxGc.toFixed(1)}; longest gap ${r.longest}; ${r.descheduled} descheduled, ${r.held.toFixed(0)} ms held)`;
 
 beforeAll(async () => {
   store = await IdbMailStore.open({ name, factory: indexedDB, platform, instantSearch: false });
@@ -101,8 +103,8 @@ describe(`autocomplete on IndexedDB at ${N.toLocaleString("en")} messages`, () =
       });
       expect(ac.report.contacts.build, "a build, not a restore").toBeDefined();
       runs.push(`${described(run)}, a command ${commandMs.toFixed(1)} ms`);
-      // ours: the stall less the longest garbage collection meanwhile (a collection of a heap that isn't ours)
-      best.stall = Math.min(best.stall, run.stall - run.maxGc);
+      // ours: each gap less the collections inside it (of a heap that isn't ours)
+      best.stall = Math.min(best.stall, run.lessGc);
       best.commandMs = Math.min(best.commandMs, commandMs);
       // the wall time is the first build's (later ones run code already compiled)
       if (attempt === 1) best.ms = run.ms;

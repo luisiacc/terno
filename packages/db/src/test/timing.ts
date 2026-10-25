@@ -30,7 +30,7 @@ interface NodeProcess {
   threadCpuUsage(): { user: number; system: number };
   env: Record<string, string | undefined>;
   getBuiltinModule(id: "node:os"): { loadavg(): number[]; availableParallelism(): number };
-  getBuiltinModule(id: "node:perf_hooks"): { PerformanceObserver: new (cb: (list: { getEntries(): { duration: number }[] }) => void) => GcObserver };
+  getBuiltinModule(id: "node:perf_hooks"): { PerformanceObserver: new (cb: (list: { getEntries(): { startTime: number; duration: number }[] }) => void) => GcObserver };
 }
 interface NodePerformance {
   now(): number;
@@ -40,7 +40,7 @@ interface NodePerformance {
 const proc = (globalThis as unknown as { process: NodeProcess }).process;
 const perf = (globalThis as unknown as { performance: NodePerformance }).performance;
 // the store package's sources have neither DOM nor Node types
-const timers = globalThis as unknown as { setInterval(f: () => void, ms: number): unknown; clearInterval(t: unknown): void };
+const timers = globalThis as unknown as { setInterval(f: () => void, ms: number): unknown; clearInterval(t: unknown): void; setTimeout(f: () => void, ms: number): unknown };
 
 /** this thread's CPU time, ms */
 export function threadCpuMs(): number {
@@ -133,6 +133,8 @@ export interface LoopReport {
   descheduled: Gap[];
   /** the longest stall that counts: the gate */
   stall: number;
+  /** the longest gap within the budget */
+  within: number;
   /** ms the excused gaps held the thread off a CPU: what a wall time measured over the stage may leave out */
   held: number;
   /** ms the monitor ran */
@@ -197,25 +199,49 @@ export function watchLoop(budgetMs: number): { stop(): LoopReport } {
       const ms = perf.now() - started;
       const { descheduled, ours } = classifyGaps(over, ms, budgetMs);
       const held = descheduled.reduce((a, g) => a + g.busy - g.cpu, 0);
-      return { over, longest, descheduled, stall: Math.max(longestOk, ...ours.map((g) => g.busy), ...descheduled.map((g) => g.cpu)), held, ms };
+      return { over, longest, descheduled, stall: Math.max(longestOk, ...ours.map((g) => g.busy), ...descheduled.map((g) => g.cpu)), within: longestOk, held, ms };
     },
   };
 }
 
-/** The longest garbage-collection pause (Node's gc entries) until stop(): a gate on a big heap that isn't ours may leave it out. */
-export function watchGc(): { stop(): number } {
+export interface Pause {
+  start: number;
+  end: number;
+}
+
+/**
+ * Garbage-collection pauses (Node's gc entries) until stop(), which waits a
+ * macrotask: the entries of a collection are delivered after it.
+ */
+export function watchGc(): { stop(): Promise<Pause[]> } {
   const { PerformanceObserver } = proc.getBuiltinModule("node:perf_hooks");
-  let max = 0;
+  const pauses: Pause[] = [];
   const observer = new PerformanceObserver((list) => {
-    for (const e of list.getEntries()) max = Math.max(max, e.duration);
+    for (const e of list.getEntries()) pauses.push({ start: e.startTime, end: e.startTime + e.duration });
   });
   observer.observe({ entryTypes: ["gc"] });
   return {
-    stop() {
+    async stop() {
+      await new Promise<void>((r) => timers.setTimeout(r, 0));
       observer.disconnect();
-      return max;
+      return pauses;
     },
   };
+}
+
+/** ms of these pauses inside a gap */
+export function pausedIn(g: { start: number; end: number }, pauses: readonly Pause[]): number {
+  return pauses.reduce((a, p) => a + Math.max(0, Math.min(g.end, p.end) - Math.max(g.start, p.start)), 0);
+}
+
+/**
+ * A stage's stall (watchLoop's, the excused gaps at their CPU time) with the
+ * collections inside each gap left out: a collection of a big heap that isn't
+ * ours (an IndexedDB mirror of 300,000 rows). Only the gap's own: a long
+ * collection anywhere else in the stage excuses nothing here.
+ */
+export function stallLessGc(r: LoopReport, pauses: readonly Pause[]): number {
+  return Math.max(r.within, ...r.over.map((g) => Math.max(0, (r.descheduled.includes(g) ? g.cpu : g.busy) - pausedIn(g, pauses))));
 }
 
 export const describeGap =(g: Gap) => `${g.busy.toFixed(0)} ms (wall ${g.wall.toFixed(0)}, cpu ${g.cpu.toFixed(0)})`;
