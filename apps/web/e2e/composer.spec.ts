@@ -526,6 +526,8 @@ test.describe("the format bar", { tag: "@design" }, () => {
       await page.getByTestId("format-bold").click();
       const wcag = () => new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).disableRules(["scrollable-region-focusable"]).exclude("iframe");
       const check = async () => {
+        // a popover that is still fading in is checked mid-way otherwise (colors at partial opacity)
+        await expect.poll(() => page.evaluate(() => document.getAnimations().filter((a) => a.playState === "running").length)).toBe(0);
         const r = await wcag().analyze();
         expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 140)).join(", ")}`)).toEqual([]);
       };
