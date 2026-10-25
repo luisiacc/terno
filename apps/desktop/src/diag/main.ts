@@ -12,7 +12,7 @@
  *   sends what the user approved, one report at a time).
  */
 import { randomUUID } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { totalmem } from "node:os";
 import { join } from "node:path";
 import { app, BrowserWindow, crashReporter, dialog, ipcMain, shell, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from "electron";
@@ -591,12 +591,12 @@ class MainDiag implements DiagSink {
     try {
       for (const l of this.logs.values()) await l.flush();
       await this.rings?.persist();
-      const entries = collectExport({
+      const entries = await collectExport({
         paths: this.paths!,
         system: { terno: { version: BUILD_VERSION, sha: BUILD_SHA, build: BUILD_ID, channel: this.channel }, ...this.context(), session: diagSession(), exportedAt: new Date().toISOString(), electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node },
         nativeDir: includeNative ? join(this.paths!.crashes, "native") : null,
       });
-      writeFileSync(path, zip(entries), { mode: 0o600 });
+      await writeFile(path, await zip(entries), { mode: 0o600 });
       log.info("export.done", { count: entries.length, durationMs: Date.now() - started });
       return { status: "saved", name: path.split("/").pop() };
     } catch (error) {

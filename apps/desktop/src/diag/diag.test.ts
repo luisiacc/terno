@@ -175,7 +175,7 @@ describe("rings in normal use never touch the disk synchronously (review finding
 });
 
 describe("export", () => {
-  it("zips Terno's diagnostics only, validated again, never following a symlink", () => {
+  it("zips Terno's diagnostics only, validated again, never following a symlink", async () => {
     const root = tmp();
     const paths = diagPaths(root);
     ensureDirs(paths);
@@ -196,7 +196,7 @@ describe("export", () => {
     mkdirSync(join(paths.crashes, "native"), { recursive: true });
     writeFileSync(join(paths.crashes, "native", "a.dmp"), "MDMP");
 
-    const files = unzip(zip(collectExport({ paths, system: { terno: "0.1.0" } })));
+    const files = unzip(await zip(await collectExport({ paths, system: { terno: "0.1.0" } })));
     expect([...files.keys()].sort()).toEqual(["README.txt", expect.stringMatching(/^crashes\/\d+-backend-[0-9a-f]{32}\.json$/), "logs/renderer.jsonl", "system.json"].sort());
     const all = [...files.values()].map((b) => b.toString("utf8")).join("\n");
     expect(all).not.toContain("example.org");
@@ -205,13 +205,13 @@ describe("export", () => {
     expect(all).not.toContain("invented.code");
     expect(files.get("logs/renderer.jsonl")!.toString()).toContain('"accountKind":"imap"');
     // native dumps only when asked for
-    const withNative = unzip(zip(collectExport({ paths, system: {}, nativeDir: join(paths.crashes, "native") })));
+    const withNative = unzip(await zip(await collectExport({ paths, system: {}, nativeDir: join(paths.crashes, "native") })));
     expect(withNative.has("native/a.dmp")).toBe(true);
   });
 });
 
 describe("malformed AI output never reaches an export (review finding 1)", () => {
-  it("a parse error quoting the model's answer leaves only codes in logs, records and the unzipped export", () => {
+  it("a parse error quoting the model's answer leaves only codes in logs, records and the unzipped export", async () => {
     const root = tmp();
     const paths = diagPaths(root);
     ensureDirs(paths);
@@ -224,10 +224,35 @@ describe("malformed AI output never reaches an export (review finding 1)", () =>
     captureError(Object.assign(new Error(`La IA no produjo un resultado válido: ${output}`), { name: "AiError", expected: true }), { code: "ai.assist_failed", fields: { aiKind: "invalid_output" } });
     captureError(new SyntaxError(`Unexpected token } in JSON: ${output}`), { code: "ai.unexpected", fields: { op: "classify" } });
     expect(store.list()).toHaveLength(1);
-    const files = unzip(zip(collectExport({ paths, system: {} })));
+    const files = unzip(await zip(await collectExport({ paths, system: {} })));
     expect(files.has("logs/backend.jsonl")).toBe(true);
     const all = [...files.values()].map((b) => b.toString("utf8")).join("\n");
     for (const s of ["Quarterly", "layoffs", "confidential", "resultado válido", "Unexpected token"]) expect(all).not.toContain(s);
     expect(all).toContain('"code":"ai.unexpected"');
+  });
+});
+
+describe("export keeps main responsive (review finding 6)", () => {
+  it("exporting 10 MB of logs never holds the event loop for long", async () => {
+    const root = tmp();
+    const paths = diagPaths(root);
+    ensureDirs(paths);
+    const line = (i: number) => JSON.stringify({ ts: 1_700_000_000_000 + i, level: "info", proc: "backend", code: "rpc.call", fields: { method: "threads.list", durationMs: i % 90, ok: true }, session: "0123456789abcdef0123456789abcdef", version: "0.1.0", build: "0.1.0+abc" });
+    const chunk = Array.from({ length: 12_000 }, (_, i) => line(i)).join("\n");
+    for (const f of ["backend.jsonl", "backend.jsonl.1", "backend.jsonl.2", "backend.jsonl.3", "backend.jsonl.4"]) writeFileSync(join(paths.logs, f), chunk);
+    let last = performance.now();
+    let worst = 0;
+    const sampler = setInterval(() => {
+      const now = performance.now();
+      worst = Math.max(worst, now - last);
+      last = now;
+    }, 2);
+    const started = performance.now();
+    const archive = await zip(await collectExport({ paths, system: {} }));
+    const took = performance.now() - started;
+    clearInterval(sampler);
+    expect(unzip(archive).get("logs/backend.jsonl.4")!.toString().split("\n").filter(Boolean)).toHaveLength(12_000);
+    console.log(`export: ${Math.round(took)} ms, longest event-loop gap ${Math.round(worst)} ms`);
+    expect(worst).toBeLessThan(Math.max(80, took / 4));
   });
 });
