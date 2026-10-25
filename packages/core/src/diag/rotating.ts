@@ -20,6 +20,8 @@ export interface RotatingFs {
 export interface RotatingOptions {
   maxBytes?: number;
   maxFiles?: number;
+  /** a line longer than this (UTF-8 bytes) is dropped, counted: no single entry can blow the cap */
+  maxLineBytes?: number;
   /** a batch is written this long after its first line, at the latest */
   delayMs?: number;
   /** lines beyond this many queued are dropped (counted) */
@@ -27,17 +29,35 @@ export interface RotatingOptions {
   onError?(error: unknown): void;
 }
 
+/** UTF-8 length without TextEncoder (core runs everywhere). */
+export function utf8Bytes(s: string): number {
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c < 0x80) n += 1;
+    else if (c < 0x800) n += 2;
+    else if (c >= 0xd800 && c < 0xdc00 && i + 1 < s.length) {
+      n += 4;
+      i++;
+    } else n += 3;
+  }
+  return n;
+}
+
+type Op = "rotate" | { data: string; bytes: number; lines: number };
+
 export class RotatingLog {
-  private queue: string[] = [];
+  private queue: { line: string; bytes: number }[] = [];
   private queuedBytes = 0;
   private writing = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private size = -1;
   private readonly maxBytes: number;
   private readonly maxFiles: number;
+  private readonly maxLineBytes: number;
   private readonly delayMs: number;
   private readonly maxQueued: number;
-  /** lines lost to a full queue or a failed write */
+  /** lines lost to a full queue, an oversize line or a failed write */
   dropped = 0;
 
   constructor(
@@ -47,18 +67,20 @@ export class RotatingLog {
   ) {
     this.maxBytes = o.maxBytes ?? 2 * 1024 * 1024;
     this.maxFiles = o.maxFiles ?? 5;
+    this.maxLineBytes = Math.min(o.maxLineBytes ?? 64 * 1024, this.maxBytes);
     this.delayMs = o.delayMs ?? 250;
     this.maxQueued = o.maxQueued ?? 5000;
   }
 
   write(line: string): void {
-    if (this.queue.length >= this.maxQueued) {
+    const l = line.endsWith("\n") ? line : `${line}\n`;
+    const bytes = utf8Bytes(l);
+    if (this.queue.length >= this.maxQueued || bytes > this.maxLineBytes) {
       this.dropped++;
       return;
     }
-    const l = line.endsWith("\n") ? line : `${line}\n`;
-    this.queue.push(l);
-    this.queuedBytes += l.length;
+    this.queue.push({ line: l, bytes });
+    this.queuedBytes += bytes;
     if (!this.timer && !this.writing) this.timer = setTimeout(() => void this.drain(), this.delayMs);
   }
 
@@ -74,24 +96,61 @@ export class RotatingLog {
   flushSync(): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
-    const data = this.take();
-    if (!data) return;
+    const items = this.take();
+    if (!items.length) return;
     try {
       if (this.size < 0) this.size = this.fs.sizeSync(this.path);
-      if (this.size > 0 && this.size + data.length > this.maxBytes) this.rotateSync();
-      this.fs.appendFileSync(this.path, data);
-      this.size += data.length;
-    } catch (error) {
-      this.fail(error, data);
+    } catch {
+      this.size = 0;
+    }
+    for (const op of this.plan(items)) {
+      if (op === "rotate") this.rotateSync();
+      else {
+        try {
+          this.fs.appendFileSync(this.path, op.data);
+          this.size += op.bytes;
+        } catch (error) {
+          this.fail(error, op.lines);
+        }
+      }
     }
   }
 
-  private take(): string {
-    if (!this.queue.length) return "";
-    const data = this.queue.join("");
+  private take(): { line: string; bytes: number }[] {
+    const items = this.queue;
     this.queue = [];
     this.queuedBytes = 0;
-    return data;
+    return items;
+  }
+
+  /**
+   * The batch as appends that each fit what is left of the current file, a
+   * rotation before any line that wouldn't: no file ever passes maxBytes.
+   */
+  private plan(items: { line: string; bytes: number }[]): Op[] {
+    const ops: Op[] = [];
+    let size = Math.max(0, this.size);
+    let data = "";
+    let bytes = 0;
+    let lines = 0;
+    for (const it of items) {
+      if (size + bytes + it.bytes > this.maxBytes) {
+        if (lines) ops.push({ data, bytes, lines });
+        size += bytes;
+        data = "";
+        bytes = 0;
+        lines = 0;
+        if (size > 0) {
+          ops.push("rotate");
+          size = 0;
+        }
+      }
+      data += it.line;
+      bytes += it.bytes;
+      lines++;
+    }
+    if (lines) ops.push({ data, bytes, lines });
+    return ops;
   }
 
   private async drain(): Promise<void> {
@@ -99,14 +158,18 @@ export class RotatingLog {
     if (this.writing) return;
     this.writing = true;
     try {
-      for (let data = this.take(); data; data = this.take()) {
-        try {
-          if (this.size < 0) this.size = await this.fs.size(this.path);
-          if (this.size > 0 && this.size + data.length > this.maxBytes) await this.rotate();
-          await this.fs.appendFile(this.path, data);
-          this.size += data.length;
-        } catch (error) {
-          this.fail(error, data);
+      for (let items = this.take(); items.length; items = this.take()) {
+        if (this.size < 0) this.size = await this.fs.size(this.path).catch(() => 0);
+        for (const op of this.plan(items)) {
+          if (op === "rotate") await this.rotate();
+          else {
+            try {
+              await this.fs.appendFile(this.path, op.data);
+              this.size += op.bytes;
+            } catch (error) {
+              this.fail(error, op.lines);
+            }
+          }
         }
       }
     } finally {
@@ -114,8 +177,8 @@ export class RotatingLog {
     }
   }
 
-  private fail(error: unknown, data: string): void {
-    this.dropped += data.split("\n").length - 1;
+  private fail(error: unknown, lines: number): void {
+    this.dropped += lines;
     this.size = -1;
     try {
       this.o.onError?.(error);
@@ -123,7 +186,6 @@ export class RotatingLog {
       // a logging failure never throws
     }
   }
-
   private suffix(i: number): string {
     return i === 0 ? this.path : `${this.path}.${i}`;
   }
