@@ -1,4 +1,4 @@
-import { filterIssueKey, filterRuleSchema, describeCondition, LEARNED_FILTER_NAME, type CategoryColor, type Condition, type Filter, type FilterAction, type FilterRule, type LearnedProposal, type ThreadSummary } from "@terno/core";
+import { filterIssueKey, filterRuleSchema, describeCondition, capFilterName, LEARNED_FILTER_NAME, type CategoryColor, type Condition, type Filter, type FilterAction, type FilterRule, type LearnedProposal, type ThreadSummary } from "@terno/core";
 import { Badge } from "@terno/ui/components/badge";
 import { Button } from "@terno/ui/components/button";
 import { CategoryDot } from "@terno/ui/components/category-dot";
@@ -341,7 +341,7 @@ export function FiltersDialog() {
                         size="xs"
                         variant="secondary"
                         onClick={async () => {
-                          await client.call("learning.accept", { key: p.key, name: t(LEARNED_FILTER_NAME[p.action], { value: p.value }) });
+                          await client.call("learning.accept", { key: p.key, name: capFilterName(t(LEARNED_FILTER_NAME[p.action], { value: p.value })) });
                           snack.success(t("filters.created"));
                           void refresh();
                         }}

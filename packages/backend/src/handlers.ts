@@ -1,5 +1,5 @@
 import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
-import { COUNT_CAP, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, withUnreadOnly, type ThreadAction } from "@terno/core";
+import { capFilterName, COUNT_CAP, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, withUnreadOnly, type ThreadAction } from "@terno/core";
 import { L } from "@terno/i18n";
 import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type MessageState } from "@terno/store";
 import type { GmailAccountConfig, ImapAccountConfig } from "@terno/mail";
@@ -366,7 +366,7 @@ export function createHandlers(b: Backend): Handlers {
     "learning.accept": async ({ key, name }) => {
       const proposal = proposeLearnedFilters(await store.learning.actionsSince(b.now() - 60 * 86_400_000), { now: b.now() }).find((p) => p.key === key);
       if (!proposal) throw new RpcError("NOT_FOUND", L("errors.suggestionGone"));
-      const fallback = L(LEARNED_FILTER_NAME[proposal.action], { value: proposal.value }).message;
+      const fallback = capFilterName(L(LEARNED_FILTER_NAME[proposal.action], { value: proposal.value }).message);
       return store.filters.save({ name: name ?? fallback, enabled: true, source: "learned", rule: proposal.rule, learnedKey: key }, b.now());
     },
     "learning.dismiss": async ({ key }) => {

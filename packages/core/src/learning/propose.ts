@@ -16,6 +16,13 @@ export type DestructiveAction = "archive" | "trash" | "spam";
 /** A learned filter's name, per action (the renderer names it in the user's language; the backend falls back to English). */
 export const LEARNED_FILTER_NAME = { archive: "filters.learnedName.archive", trash: "filters.learnedName.trash", spam: "filters.learnedName.spam" } as const satisfies Record<DestructiveAction, TextKey>;
 
+/** A filter name fits what filters.save and exports accept (120 characters); a long list id or domain is cut with "…" (the rule keeps it whole). */
+export const FILTER_NAME_MAX = 120;
+export function capFilterName(name: string): string {
+  const chars = [...name.trim()];
+  return chars.length <= FILTER_NAME_MAX ? chars.join("") : `${chars.slice(0, FILTER_NAME_MAX - 1).join("").trimEnd()}…`;
+}
+
 export interface LearnedProposal {
   key: string;
   scope: LearnedScope;

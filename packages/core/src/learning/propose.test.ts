@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { proposeLearnedFilters, type LearningAction } from "./propose";
+import { contract } from "../rpc/contract";
+import { capFilterName, FILTER_NAME_MAX, proposeLearnedFilters, type LearningAction } from "./propose";
 
 const NOW = Date.UTC(2026, 9, 22);
 const DAY = 86_400_000;
@@ -75,5 +76,19 @@ describe("proposeLearnedFilters", () => {
   it("orders proposals by support", () => {
     const actions = [...times(5, () => act("archive", "a@one.com")), ...times(9, () => act("trash", "b@two.com"))];
     expect(proposeLearnedFilters(actions, { now: NOW }).map((p) => p.value)).toEqual(["b@two.com", "a@one.com"]);
+  });
+});
+
+describe("learned filter names", () => {
+  it("fit what learning.accept, filters.save and exports take, whatever the value's length", () => {
+    const long = `Archive: ${"news.".repeat(80)}example.com`;
+    const name = capFilterName(long);
+    expect([...name].length).toBe(FILTER_NAME_MAX);
+    expect(name.endsWith("…")).toBe(true);
+    expect(() => contract["learning.accept"].params.parse({ key: "k", name })).not.toThrow();
+    // a short one is left alone
+    expect(capFilterName("Archivar: uber.com")).toBe("Archivar: uber.com");
+    // emoji and accents are never cut in half
+    expect(capFilterName("Á".repeat(200))).toBe(`${"Á".repeat(FILTER_NAME_MAX - 1)}…`);
   });
 });

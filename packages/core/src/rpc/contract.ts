@@ -532,7 +532,7 @@ export const contract = {
 
   "learning.proposals": m<LearnedProposal[]>()(empty),
   // name: the filter's name in the user's language (the backend has none; without it, English)
-  "learning.accept": m<Filter>()(z.object({ key: z.string().max(400), name: z.string().trim().min(1).max(200).optional() })),
+  "learning.accept": m<Filter>()(z.object({ key: z.string().max(400), name: z.string().trim().min(1).max(120).optional() })),
   "learning.dismiss": m<{ ok: true }>()(z.object({ key: z.string().max(400) })),
 
   "compose.send": m<{ opId: string; threadId: number }>()(

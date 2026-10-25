@@ -1,4 +1,4 @@
-import { LEARNED_FILTER_NAME, type LearnedProposal } from "@terno/core";
+import { capFilterName, LEARNED_FILTER_NAME, type LearnedProposal } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { Sparkles, X } from "lucide-react";
 import { t } from "@terno/i18n";
@@ -44,7 +44,12 @@ export function LearnedBanner() {
             variant="outline"
             data-testid="learned-accept"
             onClick={async () => {
-              await client.call("learning.accept", { key: proposal.key, name: t(LEARNED_FILTER_NAME[proposal.action], { value: proposal.value }) });
+              try {
+                await client.call("learning.accept", { key: proposal.key, name: capFilterName(t(LEARNED_FILTER_NAME[proposal.action], { value: proposal.value })) });
+              } catch (error) {
+                snack.error(error instanceof Error ? error.message : String(error));
+                return;
+              }
               snack.success(t("list.learned.created", { action }));
               setProposal(null);
             }}
