@@ -40,7 +40,7 @@ import {
 } from "@terno/core/diag";
 import type { Reporter } from "@terno/core/diag/sentry";
 import { BUILD, pendingSink } from "./diag";
-import { ENTRIES_MAX, openDiagDb, readEntries, readRecords, writeBatch } from "./diag-store";
+import { ENTRIES_MAX, mergeRecords, openDiagDb, readEntries, readRecords, writeBatch } from "./diag-store";
 
 const DSN: string = import.meta.env.VITE_SENTRY_DSN ?? "";
 const RECORDS_MAX = 20;
@@ -83,8 +83,12 @@ export class LocalDiag implements DiagSink {
 
   async open(factory: IDBFactory = indexedDB): Promise<void> {
     try {
-      this.db = await openDiagDb(factory);
-      this.records = await readRecords(this.db);
+      const db = await openDiagDb(factory);
+      // what was captured while the store opened stays: merged with what it held, not replaced by it
+      this.records = mergeRecords(await readRecords(db), this.records);
+      this.db = db;
+      // and what was queued meanwhile goes in now
+      this.flush();
     } catch {
       this.db = null; // memory only
     }
@@ -126,9 +130,11 @@ export class LocalDiag implements DiagSink {
   flush(): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+    // not open yet: keep everything queued for when it is
+    if (!this.db) return;
     const entries = this.toWrite.splice(0);
     const records = this.recordsToWrite.splice(0);
-    if (!this.db || (!entries.length && !records.length)) return;
+    if (!entries.length && !records.length) return;
     const db = this.db;
     // one write at a time; retention is decided in it, from what every tab wrote
     this.writes = this.writes.then(() => writeBatch(db, entries, records)).catch(() => {

@@ -6,7 +6,7 @@
 import type { ErrorRecord } from "@terno/core/diag";
 import { IDBFactory } from "fake-indexeddb";
 import { beforeAll, describe, expect, it } from "vitest";
-import { openDiagDb, readRecords } from "./diag-store";
+import { openDiagDb, readRecords, writeBatch } from "./diag-store";
 
 const g = globalThis as Record<string, unknown>;
 let LocalDiag: typeof import("./diag-local").LocalDiag;
@@ -46,6 +46,20 @@ describe("LocalDiag", () => {
     await tabB.idle();
     const db = await openDiagDb(factory);
     expect((await readRecords(db)).map((r) => r.id).sort()).toEqual([fromA.id, fromB.id].sort());
+  });
+
+  it("an error captured while the store is still opening is kept, in memory and on disk (review finding 8)", async () => {
+    const factory = new IDBFactory();
+    const earlier = record(Date.now() - 60_000);
+    await writeBatch(await openDiagDb(factory), [], [earlier]);
+    const tab = new LocalDiag();
+    const opening = tab.open(factory);
+    const meanwhile = record();
+    tab.capture(meanwhile);
+    await opening;
+    expect(tab.records.map((r) => r.id)).toEqual([meanwhile.id, earlier.id]);
+    await tab.idle();
+    expect((await readRecords(await openDiagDb(factory))).map((r) => r.id)).toEqual([meanwhile.id, earlier.id]);
   });
 });
 
