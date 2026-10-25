@@ -4,13 +4,13 @@ Terno is a minimalist, fast email client: Electron (macOS first) plus a web buil
 
 ## Principles (every change upholds all four)
 
-1. **UX first.** Every flow should feel obvious and calm. Never lose the user's work or position: drafts autosave, undo is exact, and focus and scroll survive navigation. Errors say what happened and what to do next, in plain Spanish.
+1. **UX first.** Every flow should feel obvious and calm. Never lose the user's work or position: drafts autosave, undo is exact, and focus and scroll survive navigation. Errors say what happened and what to do next, in plain English.
 2. **Intuitive, premium UI.** Minimal, Apple Mail and t3code inspired:
    - hairlines rather than boxes, quiet controls, SF on macOS
    - motion within the `--motion` cap (≤ 100 ms), and none when motion is reduced or off
    - every control keyboard-reachable and named for screen readers (axe-clean in light and dark, AA contrast in all themes)
 
-   Copy is Spanish (es-MX).
+   **All copy is English** (UI, errors, notifications, docs). Never Spanish.
 3. **Performance.**
    - No regressions against the perf gates (`pnpm test:perf`, `pnpm test:ui-perf`, `load.perf.test.ts`).
    - Lists are virtualized, and render counts are asserted.
