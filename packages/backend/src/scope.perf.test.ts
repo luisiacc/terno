@@ -13,6 +13,7 @@ import { generateDataset } from "@terno/mock-data";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { BUDGET_MULTIPLIER, report, type Stat } from "../../db/src/test/perf";
+import { sampleAsync, settle, watchLoop, type LoopReport, type Sample } from "../../db/src/test/timing";
 
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
 const stats: Stat[] = [];
@@ -37,49 +38,28 @@ afterAll(async () => {
 const p95 = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.max(0, Math.ceil(xs.length * 0.95) - 1)] ?? 0;
 
 /** Runs fn while sampling the event loop (max gap between 1 ms ticks) and a renderer listing its view. */
-async function underLoad(fn: () => Promise<unknown>, on: Backend = backend): Promise<{ stall: number; cpu: number; list: number[] }> {
+async function underLoad(fn: () => Promise<unknown>, on: Backend = backend): Promise<{ stall: number; cpu: number; list: number[]; descheduled: number }> {
   const [c, srv] = createMemoryTransportPair();
   on.connect(srv, { clientId: `load-${Math.random()}`, origin: "renderer" });
   const client = new RpcClient(c);
-  let last = performance.now();
-  let lastElu = performance.eventLoopUtilization();
-  let lastCpu = process.threadCpuUsage();
-  let stall = 0;
-  // how much of the longest stall the thread spent on a CPU (the rest it was blocked or descheduled): a diagnostic
-  let stallCpu = 0;
-  // a stall is time the loop was busy (computing or blocked), not an idle loop whose timer the OS fired late
-  const tick = setInterval(() => {
-    const now = performance.now();
-    const elu = performance.eventLoopUtilization();
-    const cpu = process.threadCpuUsage();
-    const busy = Math.min(now - last, performance.eventLoopUtilization(elu, lastElu).active);
-    if (busy > stall) {
-      stall = busy;
-      stallCpu = (cpu.user - lastCpu.user + cpu.system - lastCpu.system) / 1000;
-    }
-    last = now;
-    lastElu = elu;
-    lastCpu = cpu;
-  }, 1);
-  const list: number[] = [];
+  const loop = watchLoop(50 * BUDGET_MULTIPLIER);
+  const list: Sample[] = [];
   let done = false;
   const probe = (async () => {
     while (!done) {
-      const t = performance.now();
-      await client.call("threads.list", { view: "inbox" });
-      list.push(performance.now() - t);
+      list.push(await sampleAsync(() => client.call("threads.list", { view: "inbox" })));
       await new Promise((r) => setTimeout(r, 2));
     }
   })();
+  let watched: LoopReport;
   try {
     await fn();
   } finally {
     done = true;
     await probe;
-    await new Promise((r) => setTimeout(r, 5));
-    clearInterval(tick);
+    watched = loop.stop();
   }
-  return { stall, cpu: stallCpu, list };
+  return { stall: watched.stall, cpu: watched.longest.cpu, list: settle(list).ms, descheduled: watched.descheduled.length };
 }
 
 it("archiving every thread of a view (≥ 5,000) and undoing it: no stall over 50 ms, threads.list p95 ≤ 20 ms", async () => {

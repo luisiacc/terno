@@ -15,7 +15,13 @@
  * ran on: no slicing decision could split it) may run over, at most twice
  * per stage, never past 250 ms, and each one is reported with its command.
  * A slicer that didn't adapt would run over on every slice and fail. The
- * thread's CPU time over the worst gap is kept as a diagnostic.
+ * other excuse is the machine's, and only on a busy machine (timing.ts): a
+ * gap in which this thread was on a CPU for at most the budget, the OS
+ * holding it for the rest, rarely (two per stage, or one a second of it, at
+ * most a fifth of it in all).
+ * Slices the OS held are excused the same way, and list calls lose the time
+ * such a gap held them. The injected slowness is spun, on the CPU, so a
+ * slicer that stopped adapting is never excused.
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -29,6 +35,7 @@ import { generateDataset } from "@terno/mock-data";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { BUDGET_MULTIPLIER, report, type Stat } from "../../db/src/test/perf";
+import { describeGap, HOLD_LIMIT_MS, holdsExcusable, loopActiveMs, machineBusy, sampleAsync, settle, threadCpuMs, watchLoop, type Gap } from "../../db/src/test/timing";
 
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
 /** each slowed command burns this many times its own CPU time (I/O waits aren't multiplied)… */
@@ -48,7 +55,12 @@ interface CommandRun {
   n: number | undefined;
   start: number;
   end: number;
+  /** the command's own CPU time, before the injected slowness */
   cpu: number;
+  /** the thread's CPU time over the whole run, the injected slowness included */
+  spent: number;
+  /** the time the event loop was busy over the run (the rest it waited, idle, on timers or I/O) */
+  active: number;
 }
 let commands: CommandRun[] = [];
 /** the longest garbage collection pause of the stage */
@@ -69,6 +81,8 @@ function slowDown(target: Record<string, unknown>, names: string[]) {
     const orig = target[name] as (...a: unknown[]) => Promise<unknown>;
     target[name] = async (...args: unknown[]) => {
       const start = performance.now();
+      const startCpu = threadCpuMs();
+      const startActive = loopActiveMs();
       const cpu = process.threadCpuUsage();
       const r = await orig.apply(target, args);
       const used = process.threadCpuUsage(cpu);
@@ -85,7 +99,7 @@ function slowDown(target: Record<string, unknown>, names: string[]) {
           /* the disk is slow */
         }
       }
-      commands.push({ name, n, start, end: performance.now(), cpu: (used.user + used.system) / 1000 });
+      commands.push({ name, n, start, end: performance.now(), cpu: (used.user + used.system) / 1000, spent: threadCpuMs() - startCpu, active: loopActiveMs() - startActive });
       return r;
     };
   }
@@ -116,19 +130,13 @@ afterAll(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-interface Gap {
-  start: number;
-  end: number;
-  /** the loop was busy (computing or blocked) for this long of it: the stall */
-  ms: number;
-  /** wall-clock length of the gap (busy + idle) */
-  wall: number;
-  cpu: number;
-}
-
 interface StageResult {
+  /** gaps over budget */
   gaps: Gap[];
-  lists: { start: number; end: number; ms: number }[];
+  /** of which the machine's (timing.ts) */
+  descheduled: Gap[];
+  /** list calls: wall ms, and ms less the time the OS held the thread */
+  lists: { start: number; end: number; ms: number; ours: number }[];
   commands: CommandRun[];
 }
 
@@ -137,91 +145,89 @@ async function measure(fn: () => Promise<unknown>): Promise<StageResult & { took
   const [c, srv] = createMemoryTransportPair();
   backend.connect(srv, { clientId: `probe-${Math.random()}`, origin: "renderer" });
   const probe = new RpcClient(c);
-  const gaps: Gap[] = [];
-  let maxGap: Gap = { start: 0, end: 0, ms: 0, wall: 0, cpu: 0 };
-  let last = performance.now();
-  let lastCpu = process.threadCpuUsage();
-  let lastElu = performance.eventLoopUtilization();
-  const tick = setInterval(() => {
-    const now = performance.now();
-    const cpu = process.threadCpuUsage();
-    const elu = performance.eventLoopUtilization();
-    const busy = performance.eventLoopUtilization(elu, lastElu).active;
-    const gap: Gap = { start: last, end: now, ms: Math.min(now - last, busy), wall: now - last, cpu: (cpu.user - lastCpu.user + cpu.system - lastCpu.system) / 1000 };
-    if (gap.ms > BUDGET) gaps.push(gap);
-    if (gap.ms > maxGap.ms) maxGap = gap;
-    last = now;
-    lastCpu = cpu;
-    lastElu = elu;
-  }, 1);
+  const loop = watchLoop(BUDGET);
   const lists: StageResult["lists"] = [];
   let done = false;
   const lister = (async () => {
     while (!done) {
       const start = performance.now();
-      await probe.call("threads.list", { view: "inbox" });
-      lists.push({ start, end: performance.now(), ms: performance.now() - start });
+      const s = await sampleAsync(() => probe.call("threads.list", { view: "inbox" }));
+      lists.push({ start, end: performance.now(), ms: s.wall, ours: s.cpu });
       await new Promise((r) => setTimeout(r, 2));
     }
   })();
   commands = [];
   longestGc = 0;
   const started = performance.now();
+  let watched: ReturnType<typeof loop.stop>;
   try {
     await fn();
   } finally {
     done = true;
     await lister;
-    await new Promise((r) => setTimeout(r, 5));
-    clearInterval(tick);
+    watched = loop.stop();
   }
-  return { gaps, lists, commands, took: performance.now() - started, maxGap };
+  return { gaps: watched.over, descheduled: watched.descheduled, lists, commands, took: performance.now() - started, maxGap: watched.longest };
 }
 
 /**
  * The narrow excuse: the gap is one store command (it covers at least 80% of
  * the gap) that took longer than a slice's target by itself.
  */
-function excusedBy(gap: { start: number; end: number; ms: number }, runs: readonly CommandRun[]): CommandRun | null {
+function excusedBy(gap: Gap, runs: readonly CommandRun[]): CommandRun | null {
   const inside = runs.filter((r) => r.start < gap.end && r.end > gap.start);
   if (inside.length !== 1) return null;
   const r = inside[0]!;
   const covered = Math.min(r.end, gap.end) - Math.max(r.start, gap.start);
-  return r.end - r.start > SLICE_TARGET && covered >= gap.ms * 0.8 ? r : null;
+  return r.end - r.start > SLICE_TARGET && covered >= gap.busy * 0.8 ? r : null;
 }
+
+/** List calls' times, those the OS held counted at what they took of this thread while they are rare (timing.ts). */
+const listTimes = (lists: StageResult["lists"]) => settle(lists.map((l) => ({ wall: l.ms, cpu: l.ours }))).ms;
 
 const p95 = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.max(0, Math.ceil(xs.length * 0.95) - 1)] ?? 0;
 const runName = (r: CommandRun) => `${r.name}(${r.n ?? "-"}) ${(r.end - r.start).toFixed(0)} ms, cpu ${r.cpu.toFixed(1)} ms`;
 
 async function underLoad(name: string, fn: () => Promise<unknown>) {
   const m = await measure(fn);
-  const excused = m.gaps.map((g) => ({ gap: g, by: excusedBy(g, m.commands) }));
+  // the machine's gaps first; of the rest, the ones a single long command explains
+  const ours = m.gaps.filter((g) => !m.descheduled.includes(g));
+  const excused = ours.map((g) => ({ gap: g, by: excusedBy(g, m.commands) }));
   const longest = m.commands.reduce<CommandRun | null>((a, r) => (!a || r.end - r.start > a.end - a.start ? r : a), null);
-  // a list call that ran into an excused gap is excused with it
+  // a list call that ran into a gap a single command explains is excused with it; one that ran into a gap the OS held
+  // loses only the time the thread was off a CPU in it (the rest of its wait is still its own)
   const excusedSpans = excused.filter((e) => e.by).map((e) => e.gap);
-  const listsHeld = m.lists.filter((l) => !excusedSpans.some((g) => l.start < g.end && l.end > g.start));
-  const listMax = Math.max(0, ...listsHeld.map((l) => l.ms));
+  const overlap = (l: { start: number; end: number }, g: Gap) => Math.max(0, Math.min(l.end, g.end) - Math.max(l.start, g.start));
+  const listsHeld = m.lists
+    .filter((l) => !excusedSpans.some((g) => overlap(l, g) > 0))
+    .map((l) => {
+      // never more than the call itself spent busy off a CPU: overlapping a hold isn't being held by it
+      const held = Math.min(l.ms - l.ours, m.descheduled.reduce((a, g) => a + Math.min(overlap(l, g), g.busy - g.cpu), 0));
+      return { ...l, ms: l.ms - held, ours: Math.min(l.ours, l.ms - held) };
+    });
+  const listMax = Math.max(0, ...listTimes(listsHeld));
   // what ran during the worst gap (diagnostics)
   const during = m.commands.filter((r) => r.start < m.maxGap.end && r.end > m.maxGap.start).map(runName);
   stats.push({
     name:
-      `${name}: ${m.took.toFixed(0)} ms, longest stall ${m.maxGap.ms.toFixed(1)} ms (wall ${m.maxGap.wall.toFixed(1)}, cpu ${m.maxGap.cpu.toFixed(1)} ms), ` +
-      `${excused.filter((e) => e.by).length} excused [${excused.flatMap((e) => (e.by ? [`${e.gap.ms.toFixed(0)} ms: ${runName(e.by)}`] : [])).join("; ")}], ` +
-      `list p95 ${p95(m.lists.map((l) => l.ms)).toFixed(1)} ms, max ${listMax.toFixed(1)} ms (${m.lists.length}); longest command ${longest ? runName(longest) : "-"}; longest GC ${longestGc.toFixed(0)} ms; ` +
+      `${name}: ${m.took.toFixed(0)} ms, longest stall ${describeGap(m.maxGap)}, ` +
+      `${excused.filter((e) => e.by).length} excused [${excused.flatMap((e) => (e.by ? [`${e.gap.busy.toFixed(0)} ms: ${runName(e.by)}`] : [])).join("; ")}], ` +
+      `${m.descheduled.length} descheduled [${m.descheduled.map(describeGap).join("; ")}], ` +
+      `list p95 ${p95(listTimes(m.lists)).toFixed(1)} ms, max ${listMax.toFixed(1)} ms (${m.lists.length}); longest command ${longest ? runName(longest) : "-"}; longest GC ${longestGc.toFixed(0)} ms; ` +
       `during the longest stall: ${during.join(", ") || "no store command"}`,
     budgetMs: 50,
-    p50: m.maxGap.ms,
-    p95: m.maxGap.ms,
-    max: m.maxGap.ms,
+    p50: m.maxGap.busy,
+    p95: m.maxGap.busy,
+    max: m.maxGap.busy,
     iterations: m.lists.length,
   });
   for (const e of excused) {
-    expect(e.by, `${name}: a ${e.gap.ms.toFixed(0)} ms stall no single-item command explains`).not.toBeNull();
-    expect(e.gap.ms, `${name}: even an excused stall`).toBeLessThanOrEqual(HARD_LIMIT);
+    expect(e.by, `${name}: a ${describeGap(e.gap)} stall no single-item command explains`).not.toBeNull();
+    expect(e.gap.busy, `${name}: even an excused stall`).toBeLessThanOrEqual(HARD_LIMIT);
   }
   expect(excused.length, `${name}: excused stalls`).toBeLessThanOrEqual(MAX_EXCUSED);
   expect(listMax, `${name}: the slowest list call`).toBeLessThanOrEqual(BUDGET);
-  expect(p95(m.lists.map((l) => l.ms)), `${name}: list p95`).toBeLessThanOrEqual(20 * BUDGET_MULTIPLIER);
+  expect(p95(listTimes(m.lists)), `${name}: list p95`).toBeLessThanOrEqual(20 * BUDGET_MULTIPLIER);
 }
 
 it("a scope mark-read of an 18,000-thread category, and its undo", async () => {
@@ -281,23 +287,31 @@ it("a disk that turns slow mid-job: one slice runs over, the next ones shrink ba
     const m = await measure(() => client.call("threads.actScope", { scope: { kind: "view", view: "all" }, action: "star" }));
     const over = m.gaps.filter((g) => g.end > switchedAt);
     const after = m.commands.filter((r) => r.name === "act" && r.start >= switchedAt);
+    // a slice the OS held: off a CPU for most of it (the injected slowness is spun, so it never is)
+    // busy off a CPU (not idle on a timer or I/O) for most of it, with at most the budget of CPU, under the hold limit
+    const offCpu = (r: CommandRun) => r.active - r.spent;
+    const held = (r: CommandRun) => offCpu(r) > (r.end - r.start) / 2 && r.spent <= BUDGET && r.end - r.start <= HOLD_LIMIT_MS;
     stats.push({
-      name: `slow disk mid-job: switched at a slice of ${after[0]?.n ?? "?"} items; stalls over budget after it: ${over.map((g) => `${g.ms.toFixed(0)} ms (wall ${g.wall.toFixed(0)}, cpu ${g.cpu.toFixed(0)}${m.commands.some((r) => r.start < g.end && r.end > g.start) ? "" : ", no command"})`).join(", ") || "none"}; slices after: ${after.slice(0, 8).map((r) => `${r.n}→${(r.end - r.start).toFixed(0)} ms`).join(", ")}; longest GC ${longestGc.toFixed(0)} ms`,
+      name: `slow disk mid-job: switched at a slice of ${after[0]?.n ?? "?"} items; stalls over budget after it: ${over.map((g) => `${describeGap(g)}${m.descheduled.includes(g) ? " descheduled" : ""}${m.commands.some((r) => r.start < g.end && r.end > g.start) ? "" : ", no command"}`).join(", ") || "none"}; slices after: ${after.slice(0, 8).map((r) => `${r.n}→${(r.end - r.start).toFixed(0)} ms`).join(", ")}; longest GC ${longestGc.toFixed(0)} ms`,
       budgetMs: 50,
-      p50: m.maxGap.ms,
-      p95: m.maxGap.ms,
-      max: m.maxGap.ms,
+      p50: m.maxGap.busy,
+      p95: m.maxGap.busy,
+      max: m.maxGap.busy,
       iterations: after.length,
     });
     expect(switchedAt, "the slices grew to 20 items before the disk turned slow").toBeLessThan(Infinity);
     expect(after[0]!.end - after[0]!.start, "the first slow slice ran over the budget").toBeGreaterThan(BUDGET);
-    // that one overrun, then the slices are back within budget: past it, only the narrow excuse (at most twice)
-    const later = over.filter((g) => g.start > after[0]!.end);
-    for (const g of over) expect(g.ms).toBeLessThanOrEqual(HARD_LIMIT);
-    for (const g of later) expect(excusedBy(g, m.commands), `a ${g.ms.toFixed(0)} ms stall after the overrun`).not.toBeNull();
+    // that one overrun, then the slices are back within budget: past it, only the narrow excuses (the machine's, and a
+    // single long command at most twice)
+    const later = over.filter((g) => g.start > after[0]!.end && !m.descheduled.includes(g));
+    for (const g of over.filter((x) => !m.descheduled.includes(x))) expect(g.busy).toBeLessThanOrEqual(HARD_LIMIT);
+    for (const g of later) expect(excusedBy(g, m.commands), `a ${describeGap(g)} stall after the overrun`).not.toBeNull();
     expect(later.length, "stalls over budget after the overrun").toBeLessThanOrEqual(MAX_EXCUSED);
-    const slices = after.slice(1).map((r) => r.end - r.start);
-    expect(slices.filter((ms) => ms > BUDGET).length, "slices over budget after the overrun").toBeLessThanOrEqual(MAX_EXCUSED);
+    const slow = after.slice(1).filter((r) => r.end - r.start > BUDGET);
+    // on a busy machine, slices the OS held are excused while they are rare, as stalls are
+    const heldSlow = slow.filter(held);
+    const counted = machineBusy() && holdsExcusable(heldSlow.map(offCpu), m.took) ? slow.filter((r) => !held(r)) : slow;
+    expect(counted.length, `slices over budget after the overrun: ${slow.map(runName).join("; ")}`).toBeLessThanOrEqual(MAX_EXCUSED);
   } finally {
     blockPerItemMs = 0;
     backend.store.threads.act = act;
