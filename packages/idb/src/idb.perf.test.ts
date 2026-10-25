@@ -2,15 +2,18 @@ import "fake-indexeddb/auto";
 import { generateDataset } from "@terno/mock-data";
 import type { Platform } from "@terno/store";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { sampleAsync, watchLoop } from "../../db/src/test/timing";
+import { machineBusy, sampleAsync, watchLoop } from "../../db/src/test/timing";
 import { IdbMailStore } from "./store";
 
 /**
  * IndexedDB adapter gates at ~50k messages (fake-indexeddb in Node: the
  * adapter's own CPU and event-loop stalls; browser timings are web-perf's).
- * Everything here runs as JS on this thread, never blocked in a system call:
- * time the loop was busy while the thread was off a CPU is other processes',
- * so timings leave it out (timing.ts) and stalls excuse it while it's rare.
+ * On a quiet machine every timing is wall clock and every count, walk and
+ * bulk change is timed once, as ever. On a busy one (timing.ts) a timing
+ * leaves out the time the loop was busy with the thread off a CPU (all the
+ * work here is JS on this thread, never a blocking system call), warm reads
+ * are the median of three, the dense/empty case runs three times, and rare
+ * stalls the OS held are excused.
  */
 const env = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env ?? {};
 const MULT = Number(env.PERF_BUDGET_MULTIPLIER ?? "1");
@@ -35,17 +38,18 @@ async function stalls<T>(budgetMs: number, fn: () => Promise<T>): Promise<{ resu
   }
 }
 
-/** how long `fn` took, less the time the OS held the thread while it ran */
+/** how long `fn` took (on a busy machine, less the time the OS held the thread while it ran) */
 async function timed<T>(fn: () => Promise<T>): Promise<{ result: T; ms: number }> {
   const s = await sampleAsync(fn);
-  return { result: s.result, ms: s.cpu };
+  return { result: s.result, ms: machineBusy() ? s.cpu : s.wall };
 }
 
-/** a warm read timed three times, at its median: what the code costs every time, not a collection that landed in one of them */
+/** a read timed once; on a busy machine three times, at the median (what it costs every time, not a moment the machine was busy) */
 async function warm<T>(fn: () => Promise<T>): Promise<{ result: T; ms: number; first: number }> {
-  const runs = [await timed(fn), await timed(fn), await timed(fn)];
-  const ms = runs.map((r) => r.ms).sort((a, b) => a - b)[1]!;
-  return { result: runs[0]!.result, ms, first: runs[0]!.ms };
+  const first = await timed(fn);
+  if (!machineBusy()) return { ...first, first: first.ms };
+  const ms = [first.ms, (await timed(fn)).ms, (await timed(fn)).ms].sort((a, b) => a - b)[1]!;
+  return { result: first.result, ms, first: first.ms };
 }
 
 /** the best of a few runs: a stall from our code repeats every time, preemption by other processes doesn't */
@@ -276,11 +280,11 @@ it("the quick filters (plan 15) page from their own orders: with attachments and
       expect(next.ms, `search "${query}" with attachments: next page`).toBeLessThanOrEqual(25 * MULT);
     }
   }
-  // dense and empty: every thread starred, then none; three times over, each measure at its median (each is the first
-  // read after a bulk change, so it can only be repeated with the change)
+  // dense and empty: every thread starred, then none; on a busy machine three times over, each measure at its median
+  // (each is the first read after a bulk change, so it can only be repeated with the change)
   const everyone = all.map((t) => t.id);
   const runs: { dense: number; denseCount: number; empty: number; emptyCount: number }[] = [];
-  for (let k = 0; k < 3; k++) {
+  for (let k = 0, n = machineBusy() ? 3 : 1; k < n; k++) {
     await store.threads.act({ threadIds: everyone, action: "star", signal: null, now: NOW });
     const dense = await timed(() => store.threads.list({ view: "all", filter: "starred", limit: 100 }));
     const denseCount = await timed(() => store.threads.scopeCount({ view: "all", filter: "starred", limit: 100_001 }));
@@ -290,7 +294,7 @@ it("the quick filters (plan 15) page from their own orders: with attachments and
     expect(empty.result.items).toEqual([]);
     runs.push({ dense: dense.ms, denseCount: denseCount.ms, empty: empty.ms, emptyCount: emptyCount.ms });
   }
-  const mid = (k: keyof (typeof runs)[number]) => runs.map((r) => r[k]).sort((a, b) => a - b)[1]!;
+  const mid = (k: keyof (typeof runs)[number]) => runs.map((r) => r[k]).sort((a, b) => a - b)[(runs.length - 1) >> 1]!;
   // the first page after starring all 28,400 at once pays one re-sort of the whole order
   expect(mid("dense"), "every thread starred: first page").toBeLessThanOrEqual(2 * FRAME * MULT);
   expect(mid("denseCount"), "every thread starred: count").toBeLessThanOrEqual(FRAME * MULT);

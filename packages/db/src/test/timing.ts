@@ -1,26 +1,30 @@
 /**
- * Timing that a loaded machine doesn't fail. Wall-clock time is what a user
- * waits, so it stays the measure; what is taken out is time the OS held our
- * thread: the event loop was busy (running a callback, or blocked in one) but
- * the thread wasn't on a CPU. That is preemption by other processes, but also
- * a synchronous wait of ours (fsync, a lock, a page fault), which no counter
- * tells apart on macOS, so it is excused only when it is the exception:
+ * Timing that a loaded machine doesn't fail, and a quiet one judges as
+ * strictly as ever. Wall-clock time is what a user waits, so it stays the
+ * measure. What a busy machine adds is time the OS held our thread: the event
+ * loop was busy (running a callback, or blocked in one) but the thread wasn't
+ * on a CPU. No counter tells that apart from a synchronous wait of ours
+ * (fsync, a lock) on macOS, so:
  *
- * - a sample is "descheduled" when its thread was off-CPU for over half of it;
- *   it then counts at the CPU time it used. Past a tenth of the samples none
- *   are excused: a wait that common is ours.
- * - a stall (a gap between 1 ms ticks with the loop busy) is descheduled when
- *   the thread used at most the budget of CPU in it; at most two such stalls,
- *   or one per 10 s of the stage, each under a hard limit. Past that, all
- *   count in full.
+ * - what can be measured again is (measure() in perf.ts retries a batch
+ *   that ran over: a regression is slow every time, a busy moment isn't);
+ * - what can't is excused only on a busy machine (1-minute load at least half
+ *   the cores, or PERF_MACHINE=busy; PERF_MACHINE=quiet turns it off), and
+ *   only when rare: a sample off-CPU for over half of it counts at its CPU
+ *   time while such samples are at most a tenth; a stall (a gap between 1 ms
+ *   ticks with the loop busy) in which the thread used at most the budget of
+ *   CPU is excused at most twice per stage (or once per 10 s), under a hard
+ *   limit. Past that, all count in full.
  *
- * A slower computation shows as CPU time and fails exactly as before; only
- * occasional off-CPU time is forgiven. Plain JS for the IndexedDB package
- * (no Node types there).
+ * On a quiet machine nothing is excused. A slower computation shows as CPU
+ * time and fails either way. Plain JS for the IndexedDB package (no Node
+ * types there).
  */
 
 interface NodeProcess {
   threadCpuUsage(): { user: number; system: number };
+  env: Record<string, string | undefined>;
+  getBuiltinModule(id: "node:os"): { loadavg(): number[]; availableParallelism(): number };
 }
 interface NodePerformance {
   now(): number;
@@ -34,6 +38,17 @@ const perf = (globalThis as unknown as { performance: NodePerformance }).perform
 export function threadCpuMs(): number {
   const u = proc.threadCpuUsage();
   return (u.user + u.system) / 1000;
+}
+
+/**
+ * Whether other work is loading the machine now: then off-CPU time may be the
+ * OS's and rare holds are excused. Read at each decision (load moves).
+ */
+export function machineBusy(): boolean {
+  const forced = proc.env.PERF_MACHINE;
+  if (forced === "busy" || forced === "quiet") return forced === "busy";
+  const os = proc.getBuiltinModule("node:os");
+  return os.loadavg()[0]! >= os.availableParallelism() / 2;
 }
 
 /** how long the event loop has been busy since it started, ms */
@@ -54,13 +69,13 @@ export const DESCHEDULED_SHARE = 0.1;
 const isDescheduled = (s: Sample) => s.wall - s.cpu > s.wall / 2;
 
 /**
- * Each sample's wall time, with the descheduled ones (if they are few enough)
- * at their CPU time. Returns the times in the samples' order and how many
- * were excused.
+ * Each sample's wall time, with the descheduled ones at their CPU time if the
+ * machine is busy and they are few enough. Returns the times in the samples'
+ * order and how many were excused.
  */
-export function settle(samples: readonly Sample[]): { ms: number[]; excused: number } {
+export function settle(samples: readonly Sample[], busy = machineBusy()): { ms: number[]; excused: number } {
   const off = samples.filter(isDescheduled).length;
-  const excuse = off <= Math.floor(samples.length * DESCHEDULED_SHARE);
+  const excuse = busy && off <= Math.floor(samples.length * DESCHEDULED_SHARE);
   return { ms: samples.map((s) => (excuse && isDescheduled(s) ? Math.min(s.wall, s.cpu) : s.wall)), excused: excuse ? off : 0 };
 }
 
@@ -118,10 +133,10 @@ export function deschedulingAllowance(stageMs: number): number {
   return Math.max(2, Math.floor(stageMs / 10_000));
 }
 
-/** Splits over-budget gaps into descheduled (excused, if rare and under the hard limit) and ours. */
-export function classifyGaps(over: readonly Gap[], stageMs: number, budgetMs: number, hardLimitMs = budgetMs * 5): { descheduled: Gap[]; ours: Gap[] } {
+/** Splits over-budget gaps into descheduled (excused on a busy machine, if rare and under the hard limit) and ours. */
+export function classifyGaps(over: readonly Gap[], stageMs: number, budgetMs: number, hardLimitMs = budgetMs * 5, busy = machineBusy()): { descheduled: Gap[]; ours: Gap[] } {
   const candidates = over.filter((g) => g.cpu <= budgetMs && g.busy <= hardLimitMs);
-  if (candidates.length > deschedulingAllowance(stageMs)) return { descheduled: [], ours: [...over] };
+  if (!busy || candidates.length > deschedulingAllowance(stageMs)) return { descheduled: [], ours: [...over] };
   return { descheduled: candidates, ours: over.filter((g) => !candidates.includes(g)) };
 }
 

@@ -1,6 +1,5 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { sampleAsync, sampleSync, settle, type Sample } from "./timing";
 
 export interface Stat {
   name: string;
@@ -16,22 +15,33 @@ export interface Stat {
 export const BUDGET_MULTIPLIER = Number(process.env.PERF_BUDGET_MULTIPLIER ?? "1");
 
 /**
- * p50/p95/max of `iterations` calls after `warmup`. Wall time, with calls the
- * OS descheduled counted at their CPU time while they are rare (timing.ts).
+ * A batch that ran over budget is measured again, up to this many times in
+ * all, and the best batch counts: a regression is slow in every one, a busy
+ * moment of the machine (timing.ts) isn't. Nothing is excused.
  */
+const ATTEMPTS = 3;
+
+/** p50/p95/max of `iterations` calls after `warmup`, wall clock. */
 export function measure(name: string, budgetMs: number, fn: (i: number) => unknown, iterations = 60, warmup = 5): Stat {
   for (let i = 0; i < warmup; i++) fn(i);
-  const samples: Sample[] = [];
-  for (let i = 0; i < iterations; i++) samples.push(sampleSync(() => fn(i)));
-  return stat(name, budgetMs, samples);
+  let best: Stat | null = null;
+  for (let attempt = 1; attempt <= ATTEMPTS && !(best && best.p95 <= budgetMs * BUDGET_MULTIPLIER); attempt++) {
+    const samples: number[] = [];
+    for (let i = 0; i < iterations; i++) {
+      const start = performance.now();
+      fn(i);
+      samples.push(performance.now() - start);
+    }
+    const s = stat(name, budgetMs, samples, attempt);
+    if (!best || s.p95 < best.p95) best = s;
+  }
+  return best!;
 }
 
-/** Percentiles of settled samples (timing.ts), with how many were excused as descheduled. */
-export function stat(name: string, budgetMs: number, samples: readonly Sample[]): Stat {
-  const { ms, excused } = settle(samples);
-  ms.sort((a, b) => a - b);
-  const q = (p: number) => ms[Math.min(ms.length - 1, Math.ceil(p * ms.length) - 1)]!;
-  return { name, budgetMs, p50: q(0.5), p95: q(0.95), max: ms[ms.length - 1]!, iterations: ms.length, ...(excused ? { note: `${excused} descheduled` } : {}) };
+function stat(name: string, budgetMs: number, samples: number[], attempt: number): Stat {
+  samples.sort((a, b) => a - b);
+  const q = (p: number) => samples[Math.min(samples.length - 1, Math.ceil(p * samples.length) - 1)]!;
+  return { name, budgetMs, p50: q(0.5), p95: q(0.95), max: samples[samples.length - 1]!, iterations: samples.length, ...(attempt > 1 ? { note: `batch ${attempt}` } : {}) };
 }
 
 export function report(file: string, title: string, meta: Record<string, unknown>, stats: Stat[]): void {
@@ -53,7 +63,16 @@ export function report(file: string, title: string, meta: Record<string, unknown
 /** measure() for async commands (store boundary): each sample awaits the command. */
 export async function measureAsync(name: string, budgetMs: number, fn: (i: number) => Promise<unknown>, iterations = 60, warmup = 5): Promise<Stat> {
   for (let i = 0; i < warmup; i++) await fn(i);
-  const samples: Sample[] = [];
-  for (let i = 0; i < iterations; i++) samples.push(await sampleAsync(() => fn(i)));
-  return stat(name, budgetMs, samples);
+  let best: Stat | null = null;
+  for (let attempt = 1; attempt <= ATTEMPTS && !(best && best.p95 <= budgetMs * BUDGET_MULTIPLIER); attempt++) {
+    const samples: number[] = [];
+    for (let i = 0; i < iterations; i++) {
+      const start = performance.now();
+      await fn(i);
+      samples.push(performance.now() - start);
+    }
+    const s = stat(name, budgetMs, samples, attempt);
+    if (!best || s.p95 < best.p95) best = s;
+  }
+  return best!;
 }

@@ -15,10 +15,11 @@
  * ran on: no slicing decision could split it) may run over, at most twice
  * per stage, never past 250 ms, and each one is reported with its command.
  * A slicer that didn't adapt would run over on every slice and fail. The
- * other excuse is the machine's (timing.ts): a gap in which this thread was
- * on a CPU for at most the budget, the OS holding it for the rest, rarely
- * (two per stage, or one per 10 s of it). Slices and list calls the OS held
- * are excused the same way. The injected slowness is spun, on the CPU, so a
+ * other excuse is the machine's, and only on a busy machine (timing.ts): a
+ * gap in which this thread was on a CPU for at most the budget, the OS
+ * holding it for the rest, rarely (two per stage, or one per 10 s of it).
+ * Slices the OS held are excused the same way, and list calls lose the time
+ * such a gap held them. The injected slowness is spun, on the CPU, so a
  * slicer that stopped adapting is never excused.
  */
 import { mkdtempSync, rmSync } from "node:fs";
@@ -33,7 +34,7 @@ import { generateDataset } from "@terno/mock-data";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { BUDGET_MULTIPLIER, report, type Stat } from "../../db/src/test/perf";
-import { deschedulingAllowance, describeGap, sampleAsync, settle, threadCpuMs, watchLoop, type Gap } from "../../db/src/test/timing";
+import { deschedulingAllowance, describeGap, machineBusy, sampleAsync, settle, threadCpuMs, watchLoop, type Gap } from "../../db/src/test/timing";
 
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
 /** each slowed command burns this many times its own CPU time (I/O waits aren't multiplied)… */
@@ -189,9 +190,16 @@ async function underLoad(name: string, fn: () => Promise<unknown>) {
   const ours = m.gaps.filter((g) => !m.descheduled.includes(g));
   const excused = ours.map((g) => ({ gap: g, by: excusedBy(g, m.commands) }));
   const longest = m.commands.reduce<CommandRun | null>((a, r) => (!a || r.end - r.start > a.end - a.start ? r : a), null);
-  // a list call that ran into an excused gap is excused with it
-  const excusedSpans = [...excused.filter((e) => e.by).map((e) => e.gap), ...m.descheduled];
-  const listsHeld = m.lists.filter((l) => !excusedSpans.some((g) => l.start < g.end && l.end > g.start));
+  // a list call that ran into a gap a single command explains is excused with it; one that ran into a gap the OS held
+  // loses only the time the thread was off a CPU in it (the rest of its wait is still its own)
+  const excusedSpans = excused.filter((e) => e.by).map((e) => e.gap);
+  const overlap = (l: { start: number; end: number }, g: Gap) => Math.max(0, Math.min(l.end, g.end) - Math.max(l.start, g.start));
+  const listsHeld = m.lists
+    .filter((l) => !excusedSpans.some((g) => overlap(l, g) > 0))
+    .map((l) => {
+      const held = m.descheduled.reduce((a, g) => a + Math.min(overlap(l, g), g.busy - g.cpu), 0);
+      return { ...l, ms: l.ms - held, ours: Math.min(l.ours, l.ms - held) };
+    });
   const listMax = Math.max(0, ...listTimes(listsHeld));
   // what ran during the worst gap (diagnostics)
   const during = m.commands.filter((r) => r.start < m.maxGap.end && r.end > m.maxGap.start).map(runName);
@@ -293,9 +301,9 @@ it("a disk that turns slow mid-job: one slice runs over, the next ones shrink ba
     for (const g of later) expect(excusedBy(g, m.commands), `a ${describeGap(g)} stall after the overrun`).not.toBeNull();
     expect(later.length, "stalls over budget after the overrun").toBeLessThanOrEqual(MAX_EXCUSED);
     const slow = after.slice(1).filter((r) => r.end - r.start > BUDGET);
-    // slices the OS held are excused while they are rare, as stalls are
+    // on a busy machine, slices the OS held are excused while they are rare, as stalls are
     const heldSlow = slow.filter(held);
-    const counted = heldSlow.length <= deschedulingAllowance(m.took) ? slow.filter((r) => !held(r)) : slow;
+    const counted = machineBusy() && heldSlow.length <= deschedulingAllowance(m.took) ? slow.filter((r) => !held(r)) : slow;
     expect(counted.length, `slices over budget after the overrun: ${slow.map(runName).join("; ")}`).toBeLessThanOrEqual(MAX_EXCUSED);
   } finally {
     blockPerItemMs = 0;
