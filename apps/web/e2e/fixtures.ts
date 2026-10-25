@@ -201,10 +201,10 @@ export async function isolateLocalDiscovery(server: DevServer, ollamaUrl?: strin
 /**
  * A conversation built straight into the store (no sync): `count` messages,
  * alternating between Yuki and the account's owner, the first `html` of them
- * with an HTML body. Every message is read, so all but the last start
- * collapsed. Returns the thread id.
+ * with an HTML body. Every message is read (the last `unread` of them
+ * aren't), so all but the last start collapsed. Returns the thread id.
  */
-export async function ingestConversation(server: DevServer, o: { subject: string; count: number; html?: number; now: number }): Promise<number> {
+export async function ingestConversation(server: DevServer, o: { subject: string; count: number; html?: number; unread?: number; now: number }): Promise<number> {
   const db = sqlDb(server.backend.store);
   const acct = db.get<{ id: number; email: string }>("SELECT id, email FROM accounts ORDER BY id LIMIT 1")!;
   const key = o.subject.toLowerCase().replace(/[^a-z0-9]+/g, "-");
@@ -231,7 +231,7 @@ export async function ingestConversation(server: DevServer, o: { subject: string
       bodyHtml: i < (o.html ?? 0) ? `<div>${Array.from({ length: 12 }, () => `<p>${para(i)}</p>`).join("")}<table><tr><td>Concepto</td><td>Monto</td></tr></table></div>` : null,
       bodyState: "full",
       listId: null,
-      isRead: true,
+      isRead: i < o.count - (o.unread ?? 0),
       isStarred: false,
       inInbox: true,
       isSent: mine,

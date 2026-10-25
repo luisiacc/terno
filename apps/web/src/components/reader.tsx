@@ -161,10 +161,13 @@ function Message({ m, expanded, onToggle }: { m: MessageDetail; expanded: boolea
  * last one open), computed during render so a swap never animates.
  */
 function Conversation({ messages, threadId }: { messages: MessageDetail[]; threadId: number }) {
-  const [state, setState] = useState<{ thread: number; toggled: Map<number, boolean>; revealed: Set<number> }>({ thread: threadId, toggled: new Map(), revealed: new Set() });
-  const own = state.thread === threadId ? state : { thread: threadId, toggled: new Map<number, boolean>(), revealed: new Set<number>() };
+  const [state, setState] = useState<{ thread: number; toggled: Map<number, boolean>; revealed: Set<number>; shown: Map<number, boolean> }>({ thread: threadId, toggled: new Map(), revealed: new Set(), shown: new Map() });
+  const own = state.thread === threadId ? state : { thread: threadId, toggled: new Map<number, boolean>(), revealed: new Set<number>(), shown: new Map<number, boolean>() };
   const last = messages[messages.length - 1];
-  const isOpen = (m: MessageDetail) => own.toggled.get(m.id) ?? (!m.isRead || m.id === last?.id);
+  // how each message first showed (open while unread, and the last): the dwell's mark-read or a newer message never folds one away under the reader
+  const unseen = messages.filter((m) => !own.shown.has(m.id));
+  if (unseen.length) setState({ ...own, shown: new Map([...own.shown, ...unseen.map((m) => [m.id, !m.isRead || m.id === last?.id] as const)]) });
+  const isOpen = (m: MessageDetail) => own.toggled.get(m.id) ?? own.shown.get(m.id) ?? (!m.isRead || m.id === last?.id);
   const toggle = (id: number, now: boolean) => setState({ ...own, toggled: new Map(own.toggled).set(id, !now) });
   // every message of a revealed run stays unfolded, whatever opens or closes around it later
   const reveal = (ids: number[]) => {
@@ -484,7 +487,7 @@ export function Reader() {
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
         <div className="mx-auto max-w-(--reader-max) px-(--reader-pad-x) pt-5 pb-16">
           {!detail ? (
-            <div className="space-y-3">
+            <div className="space-y-3" data-testid="reader-skeleton">
               <div className="h-6 w-2/3 animate-pulse rounded bg-muted" />
               <div className="h-32 animate-pulse rounded-xl bg-muted/70" />
             </div>
