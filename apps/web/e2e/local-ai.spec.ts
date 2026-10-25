@@ -7,37 +7,37 @@ test.describe("local mode and AI providers", () => {
     try {
       await page.getByTestId("open-settings").click();
       await page.getByTestId("tab-ai").click();
-      await expect(page.getByTestId("ai-local-banner")).toContainText("Modo local: la IA solo puede usar modelos de este Mac.");
+      await expect(page.getByTestId("ai-local-banner")).toContainText("Local mode: AI can only use models on this Mac.");
       await page.getByTestId("ai-provider").click();
       for (const cloud of ["anthropic", "openai", "compatible"]) await expect(page.getByTestId(`ai-choice-${cloud}`)).toHaveAttribute("data-disabled", "");
-      await expect(page.getByText("En la nube · desactiva el modo local para usarla")).toBeVisible();
+      await expect(page.getByText("In the cloud · turn off local mode to use it")).toBeVisible();
       await page.getByTestId("ai-choice-ollama").click();
       await expect(page.getByTestId("ai-provider")).toContainText("Ollama");
       await expect(page.getByTestId("ai-endpoint")).toHaveValue("http://127.0.0.1:11434/v1");
 
       // a LAN endpoint is rejected inline in local mode
       await page.getByTestId("ai-endpoint").fill("http://192.168.1.20:11434/v1");
-      await expect(page.getByTestId("ai-endpoint-error")).toContainText("debe estar en este Mac");
+      await expect(page.getByTestId("ai-endpoint-error")).toContainText("must be on this Mac");
 
       await page.getByTestId("ai-endpoint").fill(`${ollama.url}/v1`);
       const options = page.getByTestId("ai-model-option");
       await expect(options).toHaveCount(2);
       await expect(options.first()).toContainText("qwen3:8b");
-      await expect(options.first()).toContainText("cargado");
+      await expect(options.first()).toContainText("loaded");
       await expect(options.first()).toContainText("4.9 GB");
       await options.first().click();
       await expect(page.getByTestId("ai-model")).toHaveValue("qwen3:8b");
       await expect(options.first()).toContainText("40k ctx");
 
       await page.getByTestId("ai-test").click();
-      await expect(page.getByTestId("ai-test-result")).toContainText(/Conectado · \d+ ms · salida estructurada ✓/);
-      await expect(page.getByTestId("ai-privacy")).toContainText("Nada sale de este Mac.");
+      await expect(page.getByTestId("ai-test-result")).toContainText(/Connected · \d+ ms · structured output ✓/);
+      await expect(page.getByTestId("ai-privacy")).toContainText("Nothing leaves this Mac.");
       expect(ollama.requests).toContain("POST /v1/chat/completions");
 
       // the filter builder now uses the local model and says nothing leaves the Mac
       await page.keyboard.press("Escape");
       await page.getByTestId("open-filters").click();
-      await expect(page.getByTestId("ai-privacy-notice")).toHaveText("Nada sale de este Mac.");
+      await expect(page.getByTestId("ai-privacy-notice")).toHaveText("Nothing leaves this Mac.");
       await page.getByTestId("ai-prompt").fill("archiva los recibos de uber.com");
       await page.getByTestId("ai-generate").click();
       await expect(page.getByTestId("ai-explanation")).toContainText("Archiva los recibos de uber.com.");
@@ -54,15 +54,15 @@ test.describe("local mode and AI providers", () => {
     await expect(row).toBeVisible();
     // it is the first row of General
     await expect(page.locator("[data-testid=settings-dialog] [role=tabpanel] section > div > :first-child").first()).toHaveAttribute("data-testid", "local-mode-row");
-    const toggle = page.getByRole("switch", { name: "Modo local" });
-    await expect(toggle).toHaveAccessibleDescription(/Nada sale de este Mac salvo el correo con tus servidores/);
+    const toggle = page.getByRole("switch", { name: "Local mode" });
+    await expect(toggle).toHaveAccessibleDescription(/Nothing leaves this Mac except mail with your servers/);
     await expect(toggle).toBeChecked();
 
     await toggle.click();
     const confirm = page.getByTestId("local-mode-confirm");
-    await expect(confirm).toContainText("usar IA en la nube");
-    await expect(confirm).toContainText("cargar imágenes remotas");
-    await confirm.getByRole("button", { name: "Mantener activado" }).click();
+    await expect(confirm).toContainText("use cloud AI");
+    await expect(confirm).toContainText("load a message’s remote images");
+    await confirm.getByRole("button", { name: "Keep on" }).click();
     await expect(toggle).toBeChecked();
 
     await toggle.click();
@@ -75,13 +75,13 @@ test.describe("local mode and AI providers", () => {
     await page.getByTestId("ai-choice-openai").click();
     await expect(page.getByTestId("ai-key")).toBeVisible();
     await expect(page.getByTestId("ai-privacy")).toContainText("api.openai.com");
-    await expect(page.getByTestId("ai-privacy")).toContainText("Nunca el contenido de tus mensajes");
-    await expect(pill).toHaveText("IA: OpenAI (nube)");
+    await expect(page.getByTestId("ai-privacy")).toContainText("Never the content of your messages");
+    await expect(pill).toHaveText("AI: OpenAI (cloud)");
 
     // the key field is never pre-filled; once saved only the last 4 characters are shown
     await page.getByTestId("ai-key").fill("sk-proj-e2e-secret-key-a1b2");
-    await page.getByRole("button", { name: "Guardar" }).click();
-    await expect(page.getByTestId("ai-key-saved")).toHaveText(/Guardada · …a1b2/);
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByTestId("ai-key-saved")).toHaveText(/Saved · …a1b2/);
     await expect(page.locator("body")).not.toContainText("sk-proj-e2e-secret");
 
     // back to local mode: the cloud provider is kept but paused
@@ -89,7 +89,7 @@ test.describe("local mode and AI providers", () => {
     await page.getByTestId("local-mode-switch").click();
     await expect(pill).toHaveText("Local");
     await page.getByTestId("tab-ai").click();
-    await expect(page.getByTestId("ai-local-banner")).toContainText("OpenAI queda en pausa");
+    await expect(page.getByTestId("ai-local-banner")).toContainText("OpenAI is paused");
   });
 
   test("a slow connection test that finishes after switching provider doesn't touch the new one", async ({ app: page, server }) => {
@@ -100,7 +100,7 @@ test.describe("local mode and AI providers", () => {
       await page.locator("[data-ready]").waitFor();
       await page.getByTestId("open-settings").click();
       await page.getByTestId("tab-ai").click();
-      await expect(page.getByTestId("ai-privacy")).toContainText("Nada sale de este Mac.");
+      await expect(page.getByTestId("ai-privacy")).toContainText("Nothing leaves this Mac.");
       await page.getByTestId("ai-test").click();
       await page.getByTestId("ai-provider").click();
       await page.getByTestId("ai-choice-openai").click();
@@ -110,8 +110,8 @@ test.describe("local mode and AI providers", () => {
       await page.waitForTimeout(1800);
       await expect(page.getByTestId("ai-test-result")).toHaveCount(0);
       await expect(page.getByTestId("ai-privacy")).toContainText("api.openai.com");
-      await expect(page.getByTestId("ai-privacy")).not.toContainText("Nada sale de este Mac");
-      await expect(page.getByTestId("local-pill")).toHaveText("IA: OpenAI (nube)");
+      await expect(page.getByTestId("ai-privacy")).not.toContainText("Nothing leaves this Mac");
+      await expect(page.getByTestId("local-pill")).toHaveText("AI: OpenAI (cloud)");
     } finally {
       await ollama.close();
     }
@@ -119,19 +119,19 @@ test.describe("local mode and AI providers", () => {
 
   test("local mode blocks remote images in mail with no way to load them", async ({ app: page }) => {
     await openRow(page, 2);
-    await expect(page.getByTestId("remote-blocked")).toContainText("bloqueado por el modo local");
+    await expect(page.getByTestId("remote-blocked")).toContainText("blocked by local mode");
     await expect(page.getByTestId("remote-load")).toHaveCount(0);
-    // «Cargar contenido…» only explains why, and offers the setting
+    // «Load content…» only explains why, and offers the setting
     await page.getByTestId("remote-why").click();
-    await expect(page.getByTestId("remote-why-popover")).toContainText("El modo local no permite cargar contenido remoto");
+    await expect(page.getByTestId("remote-why-popover")).toContainText("Local mode doesn’t load remote content");
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("remote-blocked")).toBeVisible();
   });
 
   test("an HTML mail fits its frame with no inner scroll, and the frame follows the content when the pane resizes", async ({ app: page }) => {
     await openRow(page, 2);
-    const frame = page.locator("iframe[title='Contenido del correo']");
-    await expect(page.frameLocator("iframe[title='Contenido del correo']").locator("h1")).toBeVisible();
+    const frame = page.locator("iframe[title='Message content']");
+    await expect(page.frameLocator("iframe[title='Message content']").locator("h1")).toBeVisible();
     const fits = () =>
       frame.evaluate((f: HTMLIFrameElement) => {
         const root = f.contentDocument!.documentElement;

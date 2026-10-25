@@ -27,8 +27,8 @@ test.describe("AI filters and learned filters", () => {
     await expect(preview).toHaveText(String(uberCount));
 
     await page.getByTestId("filter-save-apply").click();
-    await expect(page.locator("[data-testid=snack]").filter({ hasText: /Filtro aplicado a \d+ conversaciones/ })).toBeVisible();
-    await expect(page.getByTestId("filter-item")).toContainText(["IA"]);
+    await expect(page.locator("[data-testid=snack]").filter({ hasText: /Filter applied to \d+ conversations/ })).toBeVisible();
+    await expect(page.getByTestId("filter-item")).toContainText(["AI"]);
     await expect.poll(inboxUber).toBe(0);
     await page.keyboard.press("Escape");
     await search(page, "from:uber.receipts@uber.com");
@@ -51,7 +51,7 @@ test.describe("AI filters and learned filters", () => {
     await page.getByTestId("learned-accept").click();
     await expect(banner).toHaveCount(0);
     await page.getByTestId("open-filters").click();
-    await expect(page.getByTestId("filter-item").filter({ hasText: "Aprendido" })).toContainText("daily.morningbrew.com");
+    await expect(page.getByTestId("filter-item").filter({ hasText: "Learned" })).toContainText("daily.morningbrew.com");
     await expect(rows(page).first()).toBeVisible();
   });
 });

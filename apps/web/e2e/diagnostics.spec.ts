@@ -26,7 +26,7 @@ test.describe("diagnostics", () => {
     await openRow(page, 0);
     await throwIn(page, "reader");
     await expect(page.getByTestId("reader-boundary")).toBeVisible();
-    await expect(page.getByTestId("reader-boundary")).toContainText("This conversation couldn't be shown");
+    await expect(page.getByTestId("reader-boundary")).toContainText("This conversation couldn’t be shown");
     // the list still works
     await expect(rows(page).first()).toBeVisible();
     await page.getByTestId("reader-boundary-retry").click();
@@ -93,7 +93,7 @@ test.describe("diagnostics", () => {
     const section = page.getByTestId("diagnostics-section");
     await section.scrollIntoViewIfNeeded();
     await expect(page.getByTestId("error-reports-select")).toBeDisabled();
-    await expect(page.getByTestId("error-reports-row")).toContainText(/Local mode sends nothing|doesn't send reports/);
+    await expect(page.getByTestId("error-reports-row")).toContainText(/Local mode sends nothing|doesn’t send reports/);
     await expect(page.getByTestId("build-line")).toContainText(/Terno \d+\.\d+\.\d+ · /);
 
     await page.getByTestId("report-sample").click();
