@@ -9,6 +9,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, ingestConversation, rows, selectThread, test } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
+import { DESIGNS } from "../../../packages/ui/src/designs/index";
 
 const MULT = Number(process.env.PERF_BUDGET_MULTIPLIER ?? "1");
 interface Stat { name: string; budgetMs: number; p50: number; p95: number; max: number; iterations: number }
@@ -144,8 +145,10 @@ async function setDensity(page: import("@playwright/test").Page, server: import(
   await rows(page).first().waitFor();
 }
 
-for (const density of ["comfortable", "compact"] as const) {
-  test(`sustained j at key-repeat rate (${density}): frames stay smooth and the selection keeps up, with drafts around`, async ({ app: page, server }) => {
+for (const design of DESIGNS) for (const density of ["comfortable", "compact"] as const) {
+ test.describe(`${design.id}`, () => {
+  test.use({ design: design.id });
+  test(`sustained j at key-repeat rate (${design.id}, ${density}): frames stay smooth and the selection keeps up, with drafts around`, async ({ app: page, server }) => {
     // a collapsed reply draft on a listed thread and a new draft in the strip, both restored by the reload below
     const ctx = { clientId: "setup", origin: "dev" as const };
     const db = sqlDb(server.backend.store);
@@ -156,7 +159,7 @@ for (const density of ["comfortable", "compact"] as const) {
     await expect(page.getByTestId("strip-item")).toHaveCount(1);
     await expect(page.locator(`[data-testid=thread-row][data-thread-id="${target.thread_id}"]`)).toContainText("Draft");
     const rendersBefore = await renders(page, "ThreadRow");
-    await expect(page.locator(`[data-testid=thread-row]`).first()).toHaveCSS("height", density === "compact" ? "40px" : "68px");
+    await expect(page.locator(`[data-testid=thread-row]`).first()).toHaveCSS("height", `${design.rows[density]}px`);
     await page.evaluate(() => {
       const w = window as unknown as { __moves: number };
       w.__moves = 0;
@@ -182,20 +185,20 @@ for (const density of ["comfortable", "compact"] as const) {
     const f = await stopFrames(page);
     const moves = await page.evaluate(() => (window as unknown as { __moves: number }).__moves);
     const perMove = ((await renders(page, "ThreadRow")) - rendersBefore) / moves;
-    stats.push({ name: `j at key repeat (${density}): selection moves ${moves}, row renders per move ${perMove.toFixed(2)}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+    stats.push({ name: `j at key repeat (${design.id}, ${density}): selection moves ${moves}, row renders per move ${perMove.toFixed(2)}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
     expect(moves).toBeGreaterThanOrEqual(300);
     // the two rows whose selection changed, plus the row the scroll brings into view (and a page load now and then);
     // drafts add none
     expect(perMove).toBeLessThanOrEqual(3.5);
     expect(await rows(page).count()).toBeLessThanOrEqual(60);
-    frameGate(`j at key repeat (${density})`, f);
+    frameGate(`j at key repeat (${design.id}, ${density})`, f);
   });
 
-  test(`continuous scrolling across 2,000 threads (${density}): frames stay smooth, the DOM stays bounded`, async ({ app: page, server }) => {
+  test(`continuous scrolling across 2,000 threads (${design.id}, ${density}): frames stay smooth, the DOM stays bounded`, async ({ app: page, server }) => {
     await setDensity(page, server, density);
     await page.getByTestId("nav-all").click();
     await expect(page.getByTestId("list-title")).toHaveText("All Mail");
-    const rowH = density === "compact" ? 40 : 68;
+    const rowH = design.rows[density];
     await expect(rows(page).first()).toHaveCSS("height", `${rowH}px`);
     await startFrames(page);
     const r = await page.evaluate(async (h) => {
@@ -217,11 +220,37 @@ for (const density of ["comfortable", "compact"] as const) {
       return { maxRows, ms: performance.now() - t0 };
     }, rowH);
     const f = await stopFrames(page);
-    stats.push({ name: `scroll 2,000 (${density}): ${Math.round(r.ms)} ms, max DOM rows ${r.maxRows}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+    stats.push({ name: `scroll 2,000 (${design.id}, ${density}): ${Math.round(r.ms)} ms, max DOM rows ${r.maxRows}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
     expect(r.maxRows).toBeLessThanOrEqual(80);
-    frameGate(`continuous scroll (${density})`, f);
+    frameGate(`continuous scroll (${design.id}, ${density})`, f);
   });
+ });
 }
+
+test("switching design with hundreds of rows loaded is one frame of work: no frame over 50 ms, data-design and the rows in step", async ({ app: page }) => {
+  await page.getByTestId("nav-all").click();
+  await expect(page.getByTestId("list-title")).toHaveText("All Mail");
+  // a few pages loaded, the list scrolled into them
+  await page.getByRole("listbox").evaluate((el) => el.scrollTo(0, 20_000));
+  await page.waitForTimeout(500);
+  const samples: number[] = [];
+  for (const id of ["lumen", "atelier", "macos", "lumen", "atelier", "macos"] as const) {
+    await startFrames(page);
+    const ms = await page.evaluate(async (want) => {
+      const t0 = performance.now();
+      (window as unknown as { __terno: { setDesign(d: string): void } }).__terno.setDesign(want);
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      if (document.documentElement.dataset.design !== want) throw new Error("not applied in that frame");
+      return performance.now() - t0;
+    }, id);
+    const f = await stopFrames(page);
+    samples.push(ms);
+    expect(f.deltas.length ? Math.max(...f.deltas) : 0, `longest frame switching to ${id}`).toBeLessThanOrEqual(50 * MULT);
+  }
+  const st = stat("design switch, hundreds of rows loaded (the first one lays out a new face)", 50, samples);
+  stats.push(st);
+  expect(st.p50).toBeLessThanOrEqual(50 * MULT);
+});
 
 test("a long conversation: expanding 19 messages (5 HTML) keeps every frame ≤ 50 ms and collapsing leaves no frame or observer behind", async ({ app: page, server }) => {
   const id = await ingestConversation(server, { subject: "Conversación larga del presupuesto", count: 20, html: 5, now: Date.now() });

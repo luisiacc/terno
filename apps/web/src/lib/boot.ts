@@ -1,5 +1,6 @@
 import { localized } from "~/lib/i18n";
 import { t } from "@terno/i18n";
+import type { DesignId } from "@terno/core";
 import { flushAllDrafts, loadDrafts } from "~/lib/drafts";
 import { client, connectBackend } from "~/rpc/connection";
 import { removeFromCategory } from "~/lib/categorize";
@@ -29,7 +30,18 @@ export async function boot(): Promise<void> {
     window.ternoDesktop?.onFlushDrafts?.(() => flushAllDrafts(4000));
     // desktop: main pushes the update state (nothing is checked here)
     startUpdates();
-    exposeForTests({ updateAppearance, getApp, loadedIds: () => useList.getState().items.map((t) => t.id), updatesBridge: setBridgeForTests });
+    exposeForTests({
+      updateAppearance,
+      getApp,
+      loadedIds: () => useList.getState().items.map((t) => t.id),
+      updatesBridge: setBridgeForTests,
+      // the perf gate times the switch itself (no save, no font wait)
+      setDesign: (design: DesignId) => {
+        const settings = { ...getApp().settings!, design };
+        setApp({ settings });
+        applyAppearance(settings);
+      },
+    });
 
     let refreshQueued = false;
     client.on("changed", ({ threadIds }) => {
