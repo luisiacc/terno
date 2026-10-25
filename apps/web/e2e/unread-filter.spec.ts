@@ -20,7 +20,7 @@ const loadedIds = (page: Page) => page.evaluate(() => (window as unknown as { __
 const row = (page: Page, id: number) => page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
 /** the list shows the rows of that list key (the header changes before they arrive) */
 const showing = (page: Page, unreadOnly: boolean) => expect(page.getByTestId("thread-list")).toHaveAttribute("data-results-for", new RegExp(`,${unreadOnly},"[^"]*"\\]$`));
-const toast = (page: Page, text: string | RegExp) => page.locator("[data-sonner-toast]").filter({ hasText: text });
+const toast = (page: Page, text: string | RegExp) => page.locator("[data-testid=snack]").filter({ hasText: text });
 
 /** a category with nothing in it, opened: nothing is open in it either */
 async function emptyCategory(page: Page, server: DevServer) {
@@ -210,7 +210,7 @@ test.describe("acting on a filtered mailbox", () => {
     await page.keyboard.press("e");
     await expect.poll(() => db(server).get<{ c: number }>(`SELECT count(*) AS c FROM threads WHERE in_inbox = 1 AND id IN (${shown.join(",")})`)!.c).toBe(0);
     expect(readInbox(server)).toEqual(read);
-    await toast(page, /Archivado/).getByRole("button", { name: "Deshacer" }).click();
+    await toast(page, /Archivado/).getByTestId("snack-action").click();
     await expect.poll(() => db(server).get<{ c: number }>(`SELECT count(*) AS c FROM threads WHERE in_inbox = 1 AND id IN (${shown.join(",")})`)!.c).toBe(shown.length);
   });
 
