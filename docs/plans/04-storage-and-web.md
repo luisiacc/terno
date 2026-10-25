@@ -335,3 +335,17 @@ EXPLAIN-plan, checkpoint-worker and strategy tests stay SQL-only. The whole `pac
 14. **Static deploy** (headers, CSP, preview deploys).
 
 **Deletions:** `Backend.db`, `ProviderContext.db`, raw SQL in `apps/desktop/src/backend-entry.ts` and `apps/backend-dev/src/server.ts` (they use `store.settings.set`), and `db.raw` use outside `packages/db`. **Kept:** `apps/backend-dev`, the Node e2e host, which can also run `sqlite-wasm-memory` to cross-check desktop/web parity.
+
+## 11. Perf gates on a loaded machine (October 2026)
+
+`pnpm test:perf` failed on main (d3b6e78) while the machine ran other work (load 6–9, peaks of 30+, 26 GB of swap in use). What we found and changed:
+
+- **The ingest gate measured the machine.** It divided ingest throughput by a bare SQLite workload's and compared with a constant from 75223cb. That ratio moved by up to ±10% between processes of the *same* code, and sank under load (the big-mailbox workload slows more than the tiny one). Now 75223cb's ingestion and SQLite wrapper are frozen in `packages/db/src/test/reference-ingest.ts` and run in the same process, slice for slice and in alternating order, on a v5 copy of the same mailbox. Today's ingest runs at about **1.04–1.05×** 75223cb's throughput (CPU about 0.98×). The old gate's failures were artifacts, not a regression.
+- **The filter indexes cost about 3% of ingest.** This is the median over six paired runs: v11+v12 against the same mailbox without them, with wall 2.4–4.0% and CPU 1.8–4.1%. The v13 draft column costs nothing, because ingest never writes drafts. `INDEX_COST=1 pnpm test:perf index-cost` measures it. We tried writing only the changed column groups of a thread (SQLite rewrites every index named in a SET list, whatever the value). It was not adopted: the CPU gain on ingest was not significant (0.996×, 95% 0.968–1.007).
+- **Timing policy** (`packages/db/src/test/timing.ts`):
+  - On a quiet machine nothing is excused.
+  - `measure()`/`measureAsync()` re-run a batch that went over budget, up to three batches, each with fresh indexes. The best batch counts.
+  - On a busy machine (any load average at half the cores, or `PERF_MACHINE=busy`), the time the OS held our thread (loop busy, thread off a CPU) is excused only when rare. For samples, that means at most a tenth. For stalls, slices and list calls, it means at most two holds, or one per second of the stage outside them, adding up to at most a fifth of the stage, each under 2 s.
+  - A slower computation fails on every machine.
+- **Codex reviews** (two rounds). Excusing off-CPU time also excused our own synchronous waits, so the excuse is now limited to busy machines and to rare holds. Retried write batches had become no-ops, so each batch now takes fresh indexes. The reference shared today's `Db`, so 75223cb's is now frozen too. p50 and median-of-3 hid tails and first calls, so those are strict again on a quiet machine. Long waits could buy their own allowance, so the held time no longer counts toward it.
+- **Proof.** Every changed gate fails under a deliberately injected regression (CPU spin, off-CPU waits recurring or on a quiet machine, a slicer that stops shrinking, a slower statement cache). Rare off-CPU holds on a busy machine are the one thing it lets through by design.
