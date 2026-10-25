@@ -63,8 +63,9 @@ export function NewMessage() {
         void send();
       }}
       onKeyDown={(e) => {
-        // what a popover or menu (portaled, or inside) already handled isn't the composer's
-        if (e.defaultPrevented || !e.currentTarget.contains(e.target as Node) || e.nativeEvent.isComposing) return;
+        // keys from a popover or menu (portaled: React still bubbles them here) aren't the composer's; the editor
+        // itself prevents every Enter and Esc (ProseMirror's own), so defaultPrevented can't tell
+        if (!e.currentTarget.contains(e.target as Node) || e.nativeEvent.isComposing) return;
         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
           e.preventDefault();
           void send();

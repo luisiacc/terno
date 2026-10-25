@@ -28,7 +28,7 @@ test.describe("inline reply, reply-all, forward", { tag: "@design" }, () => {
     await page.getByTestId("compose-show-subject").click();
     await expect(page.getByTestId("compose-subject")).toHaveValue(`Re: ${subject}`);
     // the text is the user's alone; the quote is apart
-    await expect(page.getByTestId("compose-body")).toHaveValue("");
+    await expect(page.getByTestId("compose-body")).toHaveText("");
     await page.getByTestId("compose-quote").click();
     await expect(composer(page)).toContainText("wrote:");
     await page.getByTestId("compose-body").focus();
@@ -37,7 +37,8 @@ test.describe("inline reply, reply-all, forward", { tag: "@design" }, () => {
     await expect(composer(page)).toHaveCount(0);
     await expect(page.getByTestId("quick-reply")).toBeFocused();
     await expect(page.getByTestId("message")).toHaveCount(before + 1);
-    await expect(page.getByTestId("message").last()).toContainText("¡Nos vemos ahí!");
+    // a reply is sent rich (plan 16): the sent copy reads as HTML, in its frame
+    await expect(page.getByTestId("message").last().locator("iframe").contentFrame().locator("body")).toContainText("¡Nos vemos ahí!");
     await expect(toast(page, "Message sent")).toBeVisible();
   });
 
@@ -90,7 +91,7 @@ test.describe("inline reply, reply-all, forward", { tag: "@design" }, () => {
     await page.getByTestId("compose-body").focus();
     await page.keyboard.type("jke#r");
     await page.keyboard.press("Backspace");
-    await expect(page.getByTestId("compose-body")).toHaveValue("jke#");
+    await expect(page.getByTestId("compose-body")).toHaveText("jke#");
     await expect(page.locator("[data-cursor]")).toHaveAttribute("data-thread-id", id);
     await expect(rows(page).filter({ has: page.locator(`[data-thread-id="${id}"]`) })).toHaveCount(0);
     await expect(page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`)).toHaveCount(1);
@@ -119,7 +120,7 @@ test.describe("drafts are kept", { tag: "@design" }, () => {
     await page.getByTestId("draft-collapsed").focus();
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("compose-body")).toBeFocused();
-    await expect(page.getByTestId("compose-body")).toHaveValue("Lo pienso y te digo.");
+    await expect(page.getByTestId("compose-body")).toHaveText("Lo pienso y te digo.");
   });
 
   test("a draft survives a reload: r on its thread resumes it", async ({ app: page }) => {
@@ -135,7 +136,7 @@ test.describe("drafts are kept", { tag: "@design" }, () => {
     await expect(page.getByTestId("reader-subject")).toBeVisible();
     await focusList(page);
     await page.keyboard.press("r");
-    await expect(page.getByTestId("compose-body")).toHaveValue("No lo pierdas.");
+    await expect(page.getByTestId("compose-body")).toHaveText("No lo pierdas.");
   });
 
   test("an unfinished recipient is kept as typed: «bob@» survives a reload", async ({ app: page }) => {
@@ -170,12 +171,12 @@ test.describe("drafts are kept", { tag: "@design" }, () => {
     await page.keyboard.press("a");
     await expect(toast(page, "Converted to reply all")).toBeVisible();
     await expect(composer(page)).toHaveAttribute("data-mode", "replyAll");
-    await expect(page.getByTestId("compose-body")).toHaveValue("Mi respuesta.");
+    await expect(page.getByTestId("compose-body")).toHaveText("Mi respuesta.");
     await expect(to).toHaveValue(/extra@example\.com/);
     await page.keyboard.press("Escape");
     await page.keyboard.press("f");
     await expect(composer(page)).toHaveAttribute("data-mode", "forward");
-    await expect(page.getByTestId("compose-body")).toHaveValue("Mi respuesta.");
+    await expect(page.getByTestId("compose-body")).toHaveText("Mi respuesta.");
     // a forward drops the recipients Terno filled in, keeps the one typed
     await expect(to).toHaveValue("Extra <extra@example.com>");
     await toast(page, "Converted to a forward").getByTestId("snack-action").click();
@@ -185,7 +186,7 @@ test.describe("drafts are kept", { tag: "@design" }, () => {
     await page.keyboard.press("Escape");
     await page.keyboard.press("r");
     await expect(composer(page)).toHaveAttribute("data-mode", "reply");
-    await expect(page.getByTestId("compose-body")).toHaveValue("Mi respuesta.");
+    await expect(page.getByTestId("compose-body")).toHaveText("Mi respuesta.");
     await expect(to).toHaveValue(/extra@example\.com/);
   });
 
@@ -224,7 +225,7 @@ test.describe("drafts are kept", { tag: "@design" }, () => {
     await expect(page.getByTestId("quick-reply")).toBeFocused();
     await expect.poll(() => sqlDb(server.backend.store).get<{ c: number }>("SELECT count(*) AS c FROM drafts")!.c).toBe(0);
     await toast(page, "Draft discarded").getByTestId("snack-action").click();
-    await expect(page.getByTestId("compose-body")).toHaveValue("Quizá no.");
+    await expect(page.getByTestId("compose-body")).toHaveText("Quizá no.");
     await expect.poll(() => sqlDb(server.backend.store).get<{ c: number }>("SELECT count(*) AS c FROM drafts")!.c).toBe(1);
   });
 });
@@ -265,7 +266,7 @@ test.describe("new message, in the reader pane", { tag: "@design" }, () => {
     await expect(item).toBeFocused();
     await expect(item).toContainText("To ana@example.com");
     await item.click();
-    await expect(page.getByTestId("compose-body")).toHaveValue("Borrador nuevo");
+    await expect(page.getByTestId("compose-body")).toHaveText("Borrador nuevo");
     // opening a conversation steps the new message aside, kept
     await page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`).dispatchEvent("mousedown");
     await expect(page.getByTestId("reader")).toBeVisible();
@@ -281,7 +282,7 @@ test.describe("new message, in the reader pane", { tag: "@design" }, () => {
     await expect(page.getByTestId("selection-bar")).toBeVisible();
     await focusList(page);
     await page.keyboard.press("Escape");
-    await expect(page.getByTestId("compose-body")).toHaveValue("Sigo aquí");
+    await expect(page.getByTestId("compose-body")).toHaveText("Sigo aquí");
   });
 
   test("a send in flight can't be sent again: Esc out, reopen from the strip, send again → one send", async ({ app: page, server }) => {
@@ -348,7 +349,7 @@ test.describe("new message, in the reader pane", { tag: "@design" }, () => {
     await expect(item).toBeVisible();
     await item.click();
     await expect(page.getByTestId("reader-subject")).toHaveText(subject);
-    await expect(page.getByTestId("compose-body")).toHaveValue("Te contesto luego.");
+    await expect(page.getByTestId("compose-body")).toHaveText("Te contesto luego.");
   });
 
   test("an older draft of a conversation opens as itself from the strip, not as the newest one", async ({ app: page, server }) => {
@@ -364,7 +365,7 @@ test.describe("new message, in the reader pane", { tag: "@design" }, () => {
     await expect(page.getByTestId("draft-collapsed").or(page.getByTestId("composer"))).toContainText(/Versión nueva/);
     await page.getByTestId("strip-item").filter({ hasText: "Fwd: x" }).click();
     await expect(composer(page)).toHaveAttribute("data-mode", "forward");
-    await expect(page.getByTestId("compose-body")).toHaveValue("Versión vieja");
+    await expect(page.getByTestId("compose-body")).toHaveText("Versión vieja");
     // the newest is untouched, and now waits in the strip
     await expect(page.getByTestId("strip-item").filter({ hasText: "Re: x" })).toBeVisible();
     expect(db.get<{ c: number }>("SELECT count(*) AS c FROM drafts WHERE body_text = 'Versión nueva' AND mode = 'reply'")!.c).toBe(1);
@@ -378,6 +379,6 @@ test.describe("new message, in the reader pane", { tag: "@design" }, () => {
     await page.reload();
     await page.locator("[data-ready]").waitFor();
     await page.getByTestId("strip-item").first().click();
-    await expect(page.getByTestId("compose-body")).toHaveValue("Para después");
+    await expect(page.getByTestId("compose-body")).toHaveText("Para después");
   });
 });

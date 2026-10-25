@@ -169,7 +169,7 @@ test.describe("switching designs", () => {
     await expect(selectedRow(page)).toHaveAttribute("data-thread-id", open);
     await page.getByTestId("quick-reply").click();
     await page.keyboard.type("Half a sentence");
-    await expect(page.getByTestId("compose-body")).toHaveValue("Half a sentence");
+    await expect(page.getByTestId("compose-body")).toHaveText("Half a sentence");
     await page.getByTestId("open-settings").click();
     await page.getByTestId("tab-appearance").click();
 
@@ -203,7 +203,7 @@ test.describe("switching designs", () => {
       // behind the sheet: the same thread open, still where the list was, the draft and its text
       await expect(selectedRow(page)).toHaveAttribute("data-thread-id", open);
       await expect(selectedRow(page)).toBeInViewport();
-      await expect(page.getByTestId("compose-body")).toHaveValue("Half a sentence");
+      await expect(page.getByTestId("compose-body")).toHaveText("Half a sentence");
       const d = DESIGNS.find((x) => x.id === id)!;
       await expect(rows(page).first()).toHaveCSS("height", `${d.rows.comfortable}px`);
       const after = await anchor();

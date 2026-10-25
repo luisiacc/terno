@@ -37,6 +37,7 @@ import type { EditorView } from "prosemirror-view";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { attachBody, useDrafts } from "~/lib/drafts";
 import { openLink } from "../mail-body";
+import { typedEarly } from "./lazy";
 import { EMPTY_FORMAT, registerController, useController, useFormatState, type Align, type ComposerController, type FormatCommand, type FormatState } from "./controller";
 import { applyLink, COMMANDS, createEditor, docOf, formatState, keepState, keptState, linkAt, newState, removeLink, sameFormat, serialize, setAlign, setMark } from "./editor";
 
@@ -182,6 +183,13 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
       view.focus();
     }
     format = formatState(view.state, !sendingRef.current);
+    // keys typed into the stand-in while this chunk loaded: kept, at the end, and focus follows
+    const early = typedEarly.get(draftKey);
+    if (early) {
+      typedEarly.delete(draftKey);
+      if (early.text) view.dispatch(view.state.tr.insertText(early.text.replace(/\u00a0/g, " "), view.state.doc.content.size - 1));
+      if (early.focused) focus("end");
+    }
     const unregister = registerController(draftKey, controller);
     return () => {
       if (frame) cancelAnimationFrame(frame);

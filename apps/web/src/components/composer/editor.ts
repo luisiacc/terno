@@ -331,6 +331,8 @@ function textSlice(text: string): Slice {
   return Slice.maxOpen(Fragment.from(lines.map((l) => nodes.paragraph.create(null, l ? schema.text(l) : null))));
 }
 
+const { Escape: _escape, ...BASE_KEYS } = baseKeymap;
+
 /** Each view's hooks (plugins are shared by kept states across mounts: they look the hooks up by view). */
 const viewHooks = new WeakMap<EditorView, EditorHooks>();
 
@@ -372,7 +374,8 @@ export function createPlugins(): Plugin[] {
       ],
     }),
     keymap(mod),
-    keymap(baseKeymap),
+    // Esc belongs to the composer (collapse, leave), not to "select the parent node"
+    keymap(BASE_KEYS),
     new Plugin({
       props: {
         // NBSP typed (⌥Space) reads as a space: mail encodes runs of spaces with it, and a draft's text stays plain

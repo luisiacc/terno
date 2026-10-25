@@ -86,7 +86,7 @@ test("a new deployment: offered in the pill, and a tab writing a draft saves it 
   // another tab activates the new build while this one is still typing (each key restarts the 800 ms autosave
   // pause): what the field held as the page went away must be what the mailbox has
   await second.evaluate(() =>
-    addEventListener("pagehide", () => sessionStorage.setItem("draft-at-reload", (document.querySelector("[data-testid=compose-body]") as HTMLTextAreaElement | null)?.value ?? "")),
+    addEventListener("pagehide", () => sessionStorage.setItem("draft-at-reload", (document.querySelector("[data-testid=compose-body]") as HTMLElement | null)?.innerText ?? "")),
   );
   await second.getByTestId("compose-body").focus();
   await second.keyboard.type("Lo que escribía al recargar");

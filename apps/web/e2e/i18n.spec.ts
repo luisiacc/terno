@@ -65,7 +65,7 @@ test.describe("languages", () => {
     await expect(page.getByTestId("action-trash")).toHaveAttribute("aria-label", es["actions.trash"]);
     expect(await selectedId(page)).toBe(id);
     await expect.poll(() => page.locator("[data-keep-scroll=list]").evaluate((el) => el.scrollTop)).toBe(480);
-    await expect(page.getByTestId("compose-body").first()).toHaveValue("Borrador que sobrevive al cambio de idioma");
+    await expect(page.getByTestId("compose-body").first()).toHaveText("Borrador que sobrevive al cambio de idioma");
     const dates = await rows(page).getByTestId("row-date").allTextContents();
     expect(dates.length).toBeGreaterThan(5);
     // Spanish list dates: "09:34", "21 oct", "3 sept 2024": never "AM", "Yesterday" or "Oct 21"

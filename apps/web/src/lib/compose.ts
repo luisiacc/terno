@@ -4,7 +4,7 @@ import type { DraftMode } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";
-import { invalidateThreads, loadThread } from "~/state/threads";
+import { invalidateThreads, loadThread, useThreads } from "~/state/threads";
 import { registerUndo, snack } from "./snack";
 import { convertFields, newFields, replyFields } from "./compose-fields";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
@@ -24,6 +24,15 @@ const CONVERTED = {
 } as const;
 
 let seq = 0;
+
+/**
+ * The last compose intent wins: an open that had to wait for its conversation
+ * (not loaded yet) does nothing if the user did something else with the draft
+ * meanwhile (another r/a/f, Esc). Otherwise "r, Esc, r" typed fast reopened
+ * the draft late, focused, and the second "r" went into the text.
+ */
+let intent = 0;
+export const supersedeCompose = (): void => void ++intent;
 
 /** Asks the inline draft to take focus (only an explicit open does; coming back to a thread never does). */
 export function focusDraft(key: string, target: "body" | "to") {
@@ -63,8 +72,10 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
     setDraftUi(existing.key, "open");
     return focusDraft(existing.key, target);
   }
-  const detail = await loadThread(threadId);
-  if (!detail) return;
+  const mine = ++intent;
+  // the open conversation is loaded: no wait, so nothing can come in between
+  const detail = useThreads.getState().details.get(threadId) ?? (await loadThread(threadId));
+  if (!detail || mine !== intent) return;
   const account = s.accounts.find((a) => a.id === detail.thread.accountId) ?? s.accounts[0]!;
   if (existing && existing.mode !== "new") {
     const before = fieldsOf(existing);

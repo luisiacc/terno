@@ -4,7 +4,7 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { CaseSensitive, Link2 } from "lucide-react";
-import { lazy, Suspense } from "react";
+import { useSyncExternalStore } from "react";
 import { controllerFor, toggleFormatBar, useFormatBar } from "./controller";
 
 /**
@@ -13,34 +13,68 @@ import { controllerFor, toggleFormatBar, useFormatBar } from "./controller";
  * button hovered or focused, a draft opened) and then kept.
  */
 
-let loading: Promise<typeof import("./rich")> | null = null;
-export const loadComposer = () => (loading ??= import("./rich"));
+type Rich = typeof import("./rich");
+let loading: Promise<Rich> | null = null;
+let loaded: Rich | null = null;
+const listeners = new Set<() => void>();
+export const loadComposer = (): Promise<Rich> =>
+  (loading ??= import("./rich").then((m) => {
+    loaded = m;
+    for (const l of listeners) l();
+    return m;
+  }));
 /** Starts loading the editor (idempotent). */
 export function preloadComposer(): void {
   void loadComposer();
 }
+/** The editor module once loaded: rendered in the same commit as its draft (no suspense gap for a fast "r"). */
+function useRich(): Rich | null {
+  return useSyncExternalStore(
+    (l) => {
+      listeners.add(l);
+      void loadComposer();
+      return () => listeners.delete(l);
+    },
+    () => loaded,
+  );
+}
 
-const LazyBody = lazy(() => loadComposer().then((m) => ({ default: m.RichBody })));
-const LazyBar = lazy(() => loadComposer().then((m) => ({ default: m.FormatBar })));
+/** What was typed into a body before its editor loaded, by draft: the editor takes it when it mounts. */
+export const typedEarly = new Map<string, { text: string; focused: boolean }>();
 
-/** The draft's body: the editor once loaded; until then a quiet placeholder of the same place (focus waits for the editor). */
+/**
+ * The draft's body: the editor once loaded. Until then (a first open on a slow
+ * disk) a plain editable stand-in in the same place, so keys typed at once are
+ * kept and handed to the editor.
+ */
 export function ComposerBody({ draftKey, placeholder, className }: { draftKey: string; placeholder: string; className?: string }) {
+  const rich = useRich();
+  if (rich) return <rich.RichBody draftKey={draftKey} placeholder={placeholder} className={className} />;
   return (
-    <Suspense fallback={<div className={cn("type-body text-muted-foreground", className)} aria-hidden data-testid="compose-body-loading">{placeholder}</div>}>
-      <LazyBody draftKey={draftKey} placeholder={placeholder} className={className} />
-    </Suspense>
+    <div
+      role="textbox"
+      aria-multiline="true"
+      aria-label={t("compose.body")}
+      aria-placeholder={placeholder}
+      contentEditable="plaintext-only"
+      suppressContentEditableWarning
+      tabIndex={0}
+      data-testid="compose-body-loading"
+      onInput={(e) => typedEarly.set(draftKey, { text: e.currentTarget.innerText, focused: true })}
+      onBlur={(e) => typedEarly.has(draftKey) && typedEarly.set(draftKey, { text: e.currentTarget.innerText, focused: false })}
+      className={cn("type-body outline-none whitespace-pre-wrap empty:before:text-muted-foreground empty:before:content-[attr(aria-placeholder)]", className)}
+    />
   );
 }
 
 /** The format bar, when shown (Aa). */
 export function ComposerFormatBar({ draftKey, id, className }: { draftKey: string; id: string; className?: string }) {
   const shown = useFormatBar((s) => s.shown);
+  const rich = useRich();
   if (!shown) return null;
   return (
     <div id={id} className={className}>
-      <Suspense fallback={<div className="h-9" aria-hidden />}>
-        <LazyBar draftKey={draftKey} />
-      </Suspense>
+      {rich ? <rich.FormatBar draftKey={draftKey} /> : <div className="h-9" aria-hidden />}
     </div>
   );
 }

@@ -7,7 +7,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { cn } from "@terno/ui/lib/utils";
 import { ChevronDown, Forward, PenLine, ReplyAll, Send, Trash2 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
-import { openCompose, sendDraft } from "~/lib/compose";
+import { openCompose, sendDraft, supersedeCompose } from "~/lib/compose";
 import { discardDraft, editDraft, flushDraft, restoreDiscarded, retryDraft, setDraftUi, signatureBlock, useDrafts, type DraftFields, type LocalDraft } from "~/lib/drafts";
 import { SenderAvatar } from "./sender-avatar";
 import { richT } from "~/lib/i18n";
@@ -17,20 +17,65 @@ import { setApp, useApp } from "~/state/app";
 import { Expand } from "./expand";
 import { ComposerBody, ComposerFormatBar, FormatToggle, LinkButton, preloadComposer } from "./composer/lazy";
 
+/** The focus move waiting for its element (one at a time: a newer request replaces it). */
+let pendingFocus: { find: () => HTMLElement | null; done: () => void } | null = null;
+
+const target = (selector: string, root: HTMLElement | null) =>
+  // while the editor's chunk loads, its stand-in takes the keys (and hands them over)
+  (root ?? document).querySelector<HTMLElement>(selector) ?? (selector.includes("compose-body") ? (root ?? document).querySelector<HTMLElement>("[data-testid=compose-body-loading]") : null);
+const focusable = (el: HTMLElement | null): el is HTMLElement => el !== null && el.isConnected && !el.closest("[inert]");
+
+function place(el: HTMLElement) {
+  el.focus({ preventScroll: true });
+  if (el instanceof HTMLTextAreaElement) el.setSelectionRange(el.value.length, el.value.length);
+}
+
+/**
+ * A key pressed while a focus move is still waiting for its frame (r, then Esc
+ * at once) belongs where focus is going, not to the page: focus moves now, a
+ * character follows it (the browser types into what is focused after keydown),
+ * and any other key is replayed there (Esc collapses that draft). Before this,
+ * "r, Esc, r" typed fast lost the Esc and typed the second "r" into the text.
+ */
+function keyDuringMove(e: KeyboardEvent) {
+  const p = pendingFocus;
+  if (!p || !e.isTrusted) return;
+  const active = document.activeElement;
+  if (active && active !== document.body) return;
+  const el = p.find();
+  if (!focusable(el)) return;
+  p.done();
+  place(el);
+  if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  el.dispatchEvent(new KeyboardEvent("keydown", { key: e.key, code: e.code, metaKey: e.metaKey, ctrlKey: e.ctrlKey, altKey: e.altKey, shiftKey: e.shiftKey, repeat: e.repeat, bubbles: true, cancelable: true }));
+}
+
 /**
  * Puts focus on an element of the draft area once it is rendered and no longer
- * inert (an opening part is inert for a frame). While the editor's chunk is
- * still loading it keeps waiting (up to ~10 s), so a fast "r" never loses focus.
+ * inert (an opening part is inert for a frame).
  */
-export function focusSoon(selector: string, root: HTMLElement | null, frames = 12, loading = 600) {
-  requestAnimationFrame(() => {
-    const el = (root ?? document).querySelector<HTMLElement>(selector);
-    const waiting = !el && loading > 0 && (root ?? document).querySelector("[data-testid=compose-body-loading]") !== null;
-    if (waiting) return focusSoon(selector, root, frames, loading - 1);
-    if ((!el || el.closest("[inert]")) && frames > 0) return focusSoon(selector, root, frames - 1, loading);
-    el?.focus({ preventScroll: true });
-    if (el instanceof HTMLTextAreaElement) el.setSelectionRange(el.value.length, el.value.length);
-  });
+export function focusSoon(selector: string, root: HTMLElement | null, frames = 12) {
+  pendingFocus?.done();
+  let raf = 0;
+  const done = () => {
+    cancelAnimationFrame(raf);
+    document.removeEventListener("keydown", keyDuringMove, true);
+    if (pendingFocus === mine) pendingFocus = null;
+  };
+  const mine = { find: () => target(selector, root), done };
+  pendingFocus = mine;
+  document.addEventListener("keydown", keyDuringMove, true);
+  const tick = (left: number) => {
+    raf = requestAnimationFrame(() => {
+      const el = target(selector, root);
+      if (!focusable(el) && left > 0) return tick(left - 1);
+      done();
+      if (el) place(el);
+    });
+  };
+  tick(frames);
 }
 
 /** A borderless field row: a real label, the control, hairline below. */
@@ -238,6 +283,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account }: { threadId: 
 
   const collapse = () => {
     if (!d) return;
+    supersedeCompose();
     setDraftUi(d.key, "collapsed");
     void flushDraft(d.key);
     focusSoon("[data-testid=draft-collapsed]", rootRef.current);
@@ -304,8 +350,9 @@ export function DraftSlot({ threadId, draftKey, replyTo, account }: { threadId: 
               void send();
             }}
             onKeyDown={(e) => {
-              // what a popover or menu (portaled, or inside) already handled isn't the composer's
-              if (e.defaultPrevented || !e.currentTarget.contains(e.target as Node) || e.nativeEvent.isComposing) return;
+              // keys from a popover or menu (portaled: React still bubbles them here) aren't the composer's; the editor
+              // itself prevents every Enter and Esc (ProseMirror's own), so defaultPrevented can't tell
+              if (!e.currentTarget.contains(e.target as Node) || e.nativeEvent.isComposing) return;
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
                 void send();

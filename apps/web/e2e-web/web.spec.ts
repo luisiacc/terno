@@ -85,7 +85,7 @@ test("a draft being written reaches the mailbox before another tab takes it over
   await expect(second.getByTestId("reader-subject")).toBeVisible();
   await second.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await second.keyboard.press("r");
-  await expect(second.getByTestId("compose-body")).toHaveValue(/Texto que no se pierde/);
+  await expect(second.getByTestId("compose-body")).toHaveText(/Texto que no se pierde/);
 });
 
 test("an open error never swaps the mailbox for an empty one", async ({ page }) => {
