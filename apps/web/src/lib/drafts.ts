@@ -3,6 +3,7 @@ import type { Draft, DraftAddress, DraftMode } from "@terno/core/rpc";
 import { create } from "zustand";
 import { emailDocument, GAP, signatureHtml, textToHtml } from "@terno/richtext/quote";
 import { client } from "~/rpc/connection";
+import { exposeForTests } from "~/lib/render-probe";
 
 /**
  * Drafts in the renderer: one entry per draft, keyed by a stable client key
@@ -533,3 +534,6 @@ export function useHasDraft(threadId: number): boolean {
 export function toAddressList(text: string): Address[] {
   return parseAddressList(text);
 }
+
+// test builds: a send held in flight, to check that nothing edits under it
+exposeForTests({ holdSending: (sending: boolean) => Object.keys(useDrafts.getState().drafts).forEach((k) => markSending(k, sending)) });

@@ -875,7 +875,10 @@ async function typeAndMeasure(page: import("@playwright/test").Page, name: strin
   const r = await page.evaluate(() => (window as unknown as { __kt: { handled: number[]; frame: number[] } }).__kt);
   expect(r.handled.length).toBeGreaterThanOrEqual(text.length - 1);
   const handled = stat(`${name}: keystroke → transaction`, HUGE_MS, r.handled);
-  stat(`${name}: keystroke → next frame`, 0, r.frame);
+  // rendered: the median keystroke is painted within a few frames (an autosave tick may take one frame longer)
+  const frame = stat(`${name}: keystroke → next frame (p50 gated)`, 0, r.frame);
+  expect(r.frame.length).toBeGreaterThanOrEqual(text.length - 1);
+  expect(frame.p50).toBeLessThanOrEqual(HUGE_FRAME_MS * MULT);
   return handled;
 }
 
@@ -888,6 +891,7 @@ async function typeAndMeasure(page: import("@playwright/test").Page, name: strin
  * whole on every key: measured at 250 KB.
  */
 const HUGE_MS = 30;
+const HUGE_FRAME_MS = 50;
 const LINE = "Hola, te paso las notas de la reunión con todos los puntos que vimos hoy.";
 
 test("a 2 MB draft of short lines: typing stays within a frame; no serialization per keystroke, one bounded one per save; the toolbar follows a selection fast", async ({ app: page, server }) => {
@@ -917,7 +921,11 @@ test("a 2 MB draft of short lines: typing stays within a frame; no serialization
   expect(await editor.evaluate((el) => el.lastElementChild!.textContent)).toBe("Nueva línea");
   for (let i = 0; i < 10; i++) await page.keyboard.press("Shift+ArrowLeft");
   await page.waitForTimeout(200);
-  const format = stat("2 MB draft (lines): toolbar state per selection change", 16, (await composerProbe(page)).format!);
+  // the whole draft selected (the toolbar walks the selection's marks and asks what indent could do)
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.waitForTimeout(300);
+  const format = stat("2 MB draft (lines): toolbar state per selection change (incl. select all)", 16, (await composerProbe(page)).format!);
+  await page.keyboard.press("ControlOrMeta+End");
   expect(handled.p95).toBeLessThanOrEqual(HUGE_MS * MULT);
   expect(save.p95).toBeLessThanOrEqual(150 * MULT);
   expect(format.p95).toBeLessThanOrEqual(16 * MULT);

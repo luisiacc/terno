@@ -5,6 +5,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { cn } from "@terno/ui/lib/utils";
 import { CaseSensitive, Link2 } from "lucide-react";
 import { useSyncExternalStore } from "react";
+import { encodeSpaces, escapeHtml } from "@terno/richtext/quote";
+import { attachBody, useDrafts } from "~/lib/drafts";
 import { controllerFor, toggleFormatBar, useFormatBar } from "./controller";
 
 /**
@@ -39,8 +41,51 @@ function useRich(): Rich | null {
   );
 }
 
-/** What was typed into a body before its editor loaded, by draft: the editor takes it when it mounts. */
-export const typedEarly = new Map<string, { text: string; focused: boolean }>();
+/**
+ * What was typed into a body before its editor loaded, by draft. The stand-in
+ * is the draft's body source meanwhile (saved and sent like the editor's: the
+ * draft's body with these lines after it), and the editor takes it over when
+ * it mounts.
+ */
+interface Early {
+  /** the draft's body when typing started */
+  base: { text: string; html: string };
+  text: string;
+  focused: boolean;
+  body: ReturnType<typeof attachBody>;
+}
+const early = new Map<string, Early>();
+
+/** The stand-in's body: what the draft had, then the typed lines (one per line, as the editor appends them). */
+export function withTyped(base: { text: string; html: string }, typed: string): { text: string; html: string } {
+  const lines = typed.replace(/\u00a0/g, " ").replace(/\r\n?/g, "\n");
+  if (!lines) return base;
+  // the same lines the editor will make of them: one plain paragraph each
+  const html = lines.split("\n").map((l) => `<div>${encodeSpaces(escapeHtml(l), true, true) || "<br>"}</div>`).join("");
+  return { text: base.text ? `${base.text}\n${lines}` : lines, html: base.html ? `${base.html}${html}` : "" };
+}
+
+function typedIn(key: string, text: string, focused: boolean) {
+  let e = early.get(key);
+  if (!e) {
+    const d = useDrafts.getState().drafts[key];
+    const base = { text: d?.bodyText ?? "", html: d?.bodyHtml ?? "" };
+    const entry: Early = { base, text, focused, body: attachBody(key, () => withTyped(entry.base, entry.text)) };
+    early.set(key, (e = entry));
+  }
+  const changed = e.text !== text;
+  e.text = text;
+  e.focused = focused;
+  if (changed) e.body.changed();
+}
+
+/** For the editor, once: what the stand-in got (its source is the editor's from now on). */
+export function takeEarly(key: string): { base: { text: string; html: string }; text: string; focused: boolean } | null {
+  const e = early.get(key);
+  if (!e) return null;
+  early.delete(key);
+  return { base: e.base, text: e.text, focused: e.focused };
+}
 
 /**
  * The draft's body: the editor once loaded. Until then (a first open on a slow
@@ -60,8 +105,8 @@ export function ComposerBody({ draftKey, placeholder, className }: { draftKey: s
       suppressContentEditableWarning
       tabIndex={0}
       data-testid="compose-body-loading"
-      onInput={(e) => typedEarly.set(draftKey, { text: e.currentTarget.innerText, focused: true })}
-      onBlur={(e) => typedEarly.has(draftKey) && typedEarly.set(draftKey, { text: e.currentTarget.innerText, focused: false })}
+      onInput={(e) => typedIn(draftKey, e.currentTarget.innerText, true)}
+      onBlur={(e) => early.has(draftKey) && typedIn(draftKey, e.currentTarget.innerText, false)}
       className={cn("type-body outline-none whitespace-pre-wrap empty:before:text-muted-foreground empty:before:content-[attr(aria-placeholder)]", className)}
     />
   );

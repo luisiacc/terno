@@ -276,6 +276,98 @@ async function paste(page: Page, data: Record<string, string>) {
   }, data);
 }
 
+test.describe("Codex review (plan 16)", { tag: "@design" }, () => {
+  test("Enter right after a typed URL links it and starts the next line (no error thrown)", async ({ app: page }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await reply(page, "https://example.com/x");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("siguiente");
+    await expect(body(page).locator("a")).toHaveAttribute("href", "https://example.com/x");
+    await expect(body(page).locator("p")).toHaveText(["https://example.com/x", "siguiente"]);
+    expect(errors).toEqual([]);
+  });
+
+  test("a link with only its address, at a caret, goes in as the address", async ({ app: page }) => {
+    await reply(page, "Ver ");
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.getByTestId("link-url").fill("plan.example");
+    await page.keyboard.press("Enter");
+    await expect(body(page).locator("a")).toHaveAttribute("href", "https://plan.example");
+    await expect(body(page).locator("a")).toHaveText("https://plan.example");
+  });
+
+  test("⇧⌘V of a URL over a selection replaces it with the plain URL (no link)", async ({ app: page }) => {
+    await reply(page, "uno dos tres");
+    await select(page, "dos");
+    await page.keyboard.down("Shift");
+    await paste(page, { "text/plain": "https://plain.example" });
+    await page.keyboard.up("Shift");
+    await expect(body(page)).toHaveText("uno https://plain.example tres");
+    await expect(body(page).locator("a")).toHaveCount(0);
+  });
+
+  test("while a send is in flight nothing edits the text: the bar is disabled, its shortcuts and undo do nothing", async ({ app: page }) => {
+    await reply(page, "texto que se envía");
+    await select(page, "texto");
+    await page.evaluate(() => (window as unknown as { __terno: { holdSending(v: boolean): void } }).__terno.holdSending(true));
+    await expect(page.getByTestId("format-bar")).toHaveAttribute("data-disabled", "");
+    await page.getByTestId("format-bold").click({ force: true });
+    await page.getByTestId("format-undo").click({ force: true });
+    await page.keyboard.press("ControlOrMeta+b");
+    await page.keyboard.press("ControlOrMeta+z");
+    await expect(body(page).locator("b")).toHaveCount(0);
+    await expect(body(page)).toHaveText("texto que se envía");
+    await page.evaluate(() => (window as unknown as { __terno: { holdSending(v: boolean): void } }).__terno.holdSending(false));
+    await expect(page.getByTestId("format-bar")).not.toHaveAttribute("data-disabled", "");
+  });
+});
+
+test.describe("before the editor has loaded", () => {
+  test("what is typed into the stand-in is saved and sent, and the editor takes it over", async ({ app: page, server }) => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    await page.route(/\/assets\/rich-[^/]+\.js$/, async (route) => {
+      await gate;
+      await route.continue();
+    });
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await openRow(page, 0);
+    await focusList(page);
+    await page.keyboard.press("r");
+    const standIn = page.getByTestId("compose-body-loading");
+    await expect(standIn).toBeFocused();
+    await page.keyboard.type("Escrito antes de cargar");
+    // saved like any draft
+    await expect.poll(() => sqlDb(server.backend.store).get<{ body_text: string }>("SELECT body_text FROM drafts ORDER BY id DESC LIMIT 1")?.body_text, { timeout: 10_000 }).toBe("Escrito antes de cargar");
+    // and sent as written, still before the editor loads
+    await page.keyboard.press("ControlOrMeta+Enter");
+    await expect.poll(() => sqlDb(server.backend.store).get<{ body_text: string }>("SELECT b.body_text FROM messages m JOIN message_bodies b ON b.message_id = m.id WHERE m.is_sent = 1 ORDER BY m.id DESC LIMIT 1")?.body_text).toContain("Escrito antes de cargar");
+    release();
+  });
+
+  test("the editor takes over the stand-in's text, once, and keeps the focus", async ({ app: page }) => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    await page.route(/\/assets\/rich-[^/]+\.js$/, async (route) => {
+      await gate;
+      await route.continue();
+    });
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await openRow(page, 0);
+    await focusList(page);
+    await page.keyboard.press("r");
+    await expect(page.getByTestId("compose-body-loading")).toBeFocused();
+    await page.keyboard.type("Hola");
+    release();
+    await expect(body(page)).toBeFocused();
+    await page.keyboard.type(" Ana");
+    await expect(body(page)).toHaveText("Hola Ana");
+  });
+});
+
 test.describe("paste", { tag: "@design" }, () => {
   test("rich paste keeps bold, italic, lists and links and drops styles, classes, scripts and images; ⇧⌘V pastes plain text", async ({ app: page }) => {
     const requests: string[] = [];

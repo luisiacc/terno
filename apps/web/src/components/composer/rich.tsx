@@ -39,9 +39,9 @@ import { flushSync } from "react-dom";
 import { attachBody, useDrafts } from "~/lib/drafts";
 import { exposeForTests } from "~/lib/render-probe";
 import { openLink } from "../mail-body";
-import { typedEarly } from "./lazy";
+import { takeEarly } from "./lazy";
 import { EMPTY_FORMAT, registerController, useController, useFormatState, type Align, type ComposerController, type FormatCommand, type FormatState } from "./controller";
-import { applyLink, COMMANDS, createEditor, docOf, formatState, isEmpty, keepState, keptState, linkAt, newState, removeLink, sameFormat, serialize, setAlign, setMark } from "./editor";
+import { appendTyped, applyLink, COMMANDS, createEditor, docOf, formatState, isEmpty, keepState, keptState, linkAt, newState, removeLink, sameFormat, serialize, setAlign, setMark } from "./editor";
 
 /**
  * The rich composer (plan 16), lazy: the editable body of a draft, its format
@@ -115,6 +115,8 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
   const [bubble, setBubble] = useState<{ from: number; to: number; href: string; top: number; left: number } | null>(null);
   const bodyRef = useRef<ReturnType<typeof attachBody> | null>(null);
   const openLinkRef = useRef<() => void>(() => {});
+  /** recomputes the toolbar's state (a send starting or ending changes what it may do) */
+  const refreshRef = useRef<() => void>(() => {});
 
   useLayoutEffect(() => {
     stylePalette();
@@ -122,7 +124,9 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
     const d = useDrafts.getState().drafts[draftKey];
     if (!d) return;
     versionRef.current = d.bodyVersion;
-    const state = keptState(draftKey, d.bodyVersion) ?? newState(docOf(d.bodyHtml, d.bodyText));
+    // keys typed into the stand-in while this chunk loaded: the document is what the draft had then, plus them
+    const early = takeEarly(draftKey);
+    const state = early ? newState(appendTyped(docOf(early.base.html, early.base.text), early.text)) : (keptState(draftKey, d.bodyVersion) ?? newState(docOf(d.bodyHtml, d.bodyText)));
     let format: FormatState = EMPTY_FORMAT;
     const listeners = new Set<() => void>();
     let frame = 0;
@@ -191,6 +195,8 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
     };
     const controller: ComposerController = {
       run: (command: FormatCommand) => {
+        // nothing changes under a send in flight (the draft is sending what is there now)
+        if (sendingRef.current) return;
         COMMANDS[command](view.state, view.dispatch, view);
         view.focus();
       },
@@ -209,15 +215,15 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
       },
     };
     function run(cmd: (s: EditorState, d?: EditorView["dispatch"]) => boolean, focusAfter = true) {
+      if (sendingRef.current) return;
       cmd(view.state, view.dispatch);
       if (focusAfter) view.focus();
     }
     format = formatState(view.state, !sendingRef.current);
-    // keys typed into the stand-in while this chunk loaded: kept, at the end, and focus follows
-    const early = typedEarly.get(draftKey);
+    refreshRef.current = schedule;
     if (early) {
-      typedEarly.delete(draftKey);
-      if (early.text) view.dispatch(view.state.tr.insertText(early.text.replace(/\u00a0/g, " "), view.state.doc.content.size - 1));
+      // the editor's document now holds what the stand-in saved and would send: it is the source from here
+      if (early.text) bodyRef.current?.changed();
       if (early.focused) focus("end");
     }
     const unregister = registerController(draftKey, controller);
@@ -248,6 +254,7 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
   // read-only while its send is in flight (edits would be dropped)
   useEffect(() => {
     viewRef.current?.setProps({ editable: () => !sending });
+    refreshRef.current();
   }, [sending]);
 
   function updateBubble(view: EditorView) {
@@ -761,7 +768,7 @@ export function FormatBar({ draftKey, className }: { draftKey: string; className
   const folded = shownIds ? GROUPS.filter((g) => !shownIds.has(g.id)) : [];
   return (
     <div ref={ref} className={cn("min-w-0", className)}>
-      <Toolbar aria-label={t("compose.format.toolbar")} data-testid="format-bar" className="h-9 gap-px overflow-hidden rounded-lg bg-(--format-bg) px-1 [box-shadow:var(--format-ring)]">
+      <Toolbar aria-label={t("compose.format.toolbar")} disabled={!s.editable} data-testid="format-bar" className="h-9 gap-px overflow-hidden rounded-lg bg-(--format-bg) px-1 [box-shadow:var(--format-ring)]">
         {shown.map((g, i) => (
           <FormatGroup key={g.id} group={g} c={c} s={s} last={i === shown.length - 1 && folded.length === 0} />
         ))}
@@ -773,7 +780,7 @@ export function FormatBar({ draftKey, className }: { draftKey: string; className
               </ToolbarButton>
             </Tip>
             <PopoverContent align="end" className="w-auto p-1" finalFocus={{ current: c.dom }} data-testid="format-more-popover">
-              <Toolbar aria-label={t("compose.format.more")} className="gap-px">
+              <Toolbar aria-label={t("compose.format.more")} disabled={!s.editable} className="gap-px">
                 {folded.map((g, i) => (
                   <FormatGroup key={g.id} group={g} c={c} s={s} last={i === folded.length - 1} />
                 ))}

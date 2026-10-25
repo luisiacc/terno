@@ -1,7 +1,7 @@
 import { decodeText, type Condition, type FilterAction, type FilterRule } from "@terno/core";
 import { draftAddressSchema, exportCategorySchema, exportDraftSchema, exportFilterSchema, settingsPatchSchema, type ExportCategory, type ExportDraftItem, type ExportFilter, type DraftAddress, type ExportedDraft, type ExportFile, type ImportResult, type MailboxExport, type SettingsPatch } from "@terno/core/rpc";
 import type { DraftInput, DraftRow } from "@terno/store";
-import { GAP, textToHtml } from "@terno/richtext/quote";
+import { GAP, textToHtmlChunks } from "@terno/richtext/quote";
 import type { BackendCore as Backend } from "./core";
 import { pinKeyOrigins, readSettings, SettingsError, updateSettings } from "./settings";
 
@@ -227,8 +227,16 @@ async function draftFrom(b: Backend, accountId: number, d: ExportDraft): Promise
   }
   const keepQuote = d.includeQuote && d.quotedText;
   const body = keepQuote ? [d.bodyText.replace(/\s+$/, ""), d.quotedText].filter(Boolean).join("\n\n") : d.bodyText;
-  // a rich draft gets its quote in the HTML too (as lines and nested quotes), so what it would have sent stays
-  const html = d.bodyHtml && keepQuote ? `${d.bodyHtml}${GAP}${textToHtml(d.quotedText)}` : d.bodyHtml;
+  // a rich draft gets its quote in the HTML too (as lines and nested quotes), so what it would have sent stays;
+  // converted in pieces with a turn between them (a quote can be megabytes: never one long block of the event loop)
+  let html = d.bodyHtml;
+  if (d.bodyHtml && keepQuote) {
+    html = `${d.bodyHtml}${GAP}`;
+    for (const piece of textToHtmlChunks(d.quotedText)) {
+      html += piece;
+      await b.yieldTurn();
+    }
+  }
   return { ...base, mode: "new", threadId: null, bodyText: body, bodyHtml: html, quotedText: "", includeQuote: false, inReplyToMessageId: null, forwardOfMessageId: null };
 }
 

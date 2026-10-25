@@ -53,22 +53,48 @@ export function lineHtml(line: string): string {
   return out + encodeSpaces(escapeHtml(line.slice(at)), at === 0, true);
 }
 
-/** Plain lines as the composer's lines (one <div> each), "> " runs as nested blockquotes. */
-function linesHtml(lines: readonly string[]): string {
-  let out = "";
-  for (let i = 0; i < lines.length; ) {
-    if (lines[i]!.startsWith(">")) {
-      const run: string[] = [];
-      while (i < lines.length && lines[i]!.startsWith(">")) run.push(lines[i++]!.replace(/^> ?/, ""));
-      out += `<blockquote style="${QUOTE_STYLE}">${linesHtml(run)}</blockquote>`;
-    } else out += `<div>${lineHtml(lines[i++]!)}</div>`;
+/** Quote levels past this stay as text (a hostile "> > > …" line can't nest without end). */
+export const MAX_QUOTE_DEPTH = 32;
+
+/** A line's quote depth ("> " per level, capped) and what follows it. */
+function quoteDepth(line: string): [number, string] {
+  let depth = 0;
+  let rest = line;
+  while (depth < MAX_QUOTE_DEPTH && rest.startsWith(">")) {
+    rest = rest.replace(/^> ?/, "");
+    depth++;
   }
-  return out;
+  return [depth, rest];
+}
+
+/**
+ * Plain lines as the composer's lines (one <div> each), "> " runs as nested
+ * blockquotes: iterative, in pieces of `chunk` lines (a caller in a time
+ * budget yields between them).
+ */
+export function* textToHtmlChunks(text: string, chunk = 2000): Generator<string> {
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  let open = 0;
+  let out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const [depth, rest] = quoteDepth(lines[i]!);
+    for (; open < depth; open++) out.push(`<blockquote style="${QUOTE_STYLE}">`);
+    for (; open > depth; open--) out.push("</blockquote>");
+    out.push(`<div>${lineHtml(rest)}</div>`);
+    if ((i + 1) % chunk === 0) {
+      yield out.join("");
+      out = [];
+    }
+  }
+  for (; open > 0; open--) out.push("</blockquote>");
+  yield out.join("");
 }
 
 /** A plain text (a signature, a quote, a forward's header and text) as HTML. */
 export function textToHtml(text: string): string {
-  return linesHtml(text.replace(/\r\n?/g, "\n").split("\n"));
+  let out = "";
+  for (const piece of textToHtmlChunks(text)) out += piece;
+  return out;
 }
 
 /** The signature block below the text ("-- " marks it, so clients can fold it). */

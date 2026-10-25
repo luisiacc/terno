@@ -25,6 +25,14 @@ export function docOf(html: string, text: string): PMNode {
   return text ? fromPlainText(text) : emptyDoc();
 }
 
+/** Lines typed before the editor loaded, after a document (in place of an empty one), one paragraph per line. */
+export function appendTyped(doc: PMNode, typed: string): PMNode {
+  const lines = typed.replace(/\u00a0/g, " ").replace(/\r\n?/g, "\n");
+  if (!lines) return doc;
+  const added = lines.split("\n").map((l) => nodes.paragraph.create(null, l ? schema.text(l) : null));
+  return isEmpty(doc) ? nodes.doc.create(null, added) : doc.copy(doc.content.append(Fragment.from(added)));
+}
+
 /** An empty body: one empty line (nothing to send as HTML). */
 export const isEmpty = (doc: PMNode) => doc.childCount === 1 && doc.firstChild!.type === nodes.paragraph && doc.firstChild!.childCount === 0 && doc.firstChild!.attrs.align === "left" && doc.firstChild!.attrs.indent === 0;
 
@@ -131,16 +139,31 @@ function toggleList(type: typeof nodes.bullet_list): Command {
 
 function paragraphIndent(delta: number): Command {
   return (state, dispatch) => {
-    let can = false;
+    const can = (node: PMNode) => Math.max(0, Math.min(MAX_INDENT, (node.attrs.indent as number) + delta)) !== node.attrs.indent;
+    if (!dispatch) {
+      // the toolbar asks on every selection change: a pure check that stops at the first line it could move
+      // (building the steps for a whole-draft selection was quadratic: seconds at 10,000 lines)
+      let any = false;
+      const { from, to } = state.selection;
+      state.doc.nodesBetween(from, to, (node) => {
+        if (any) return false;
+        if (node.type === nodes.paragraph) {
+          any = can(node);
+          return false;
+        }
+        return true;
+      });
+      return any;
+    }
+    let changed = false;
     const tr = state.tr;
     eachBlock(state, (node, pos) => {
-      const indent = Math.max(0, Math.min(MAX_INDENT, (node.attrs.indent as number) + delta));
-      if (indent === node.attrs.indent) return;
-      can = true;
-      tr.setNodeMarkup(pos, null, { ...node.attrs, indent });
+      if (!can(node)) return;
+      changed = true;
+      tr.setNodeMarkup(pos, null, { ...node.attrs, indent: Math.max(0, Math.min(MAX_INDENT, (node.attrs.indent as number) + delta)) });
     });
-    if (can && dispatch) dispatch(tr);
-    return can;
+    if (changed) dispatch(tr);
+    return changed;
   };
 }
 
@@ -222,10 +245,11 @@ export function applyLink(view: EditorView, range: { from: number; to: number },
   const link = marks.link.create({ href });
   let tr = state.tr;
   let { from, to } = range;
-  if (text !== undefined && text !== state.doc.textBetween(from, to)) {
+  // a caret always inserts (the URL itself when no text was given); a range is retyped only when its text changed
+  if (from === to || (text !== undefined && text !== state.doc.textBetween(from, to))) {
     const at = state.doc.resolve(from);
     const kept = (from === to ? (state.storedMarks ?? at.marks()) : (at.nodeAfter?.marks ?? at.marks())).filter((m) => m.type !== marks.link);
-    const value = text || href.replace(/^mailto:/, "");
+    const value = text?.trim() ? text : href.replace(/^mailto:/, "");
     tr = tr.replaceWith(from, to, schema.text(value, link.addToSet(kept)));
     to = from + value.length;
   } else {
@@ -264,12 +288,19 @@ const autolink = new InputRule(/\s$/, (state, match, start, end) => {
   return tr.insertText(match[0], start, end);
 });
 
-const autolinkOnEnter: Command = (state, dispatch) => {
-  if (!state.selection.empty) return false;
-  const tr = state.tr;
-  if (linkTypedUrl(state, state.selection.from, tr) && dispatch) dispatch(tr);
-  return false;
-};
+/** Enter after a typed URL links it, then does what Enter does, from the state with the link (one chain, no stale state). */
+const withAutolink =
+  (enter: Command): Command =>
+  (state, dispatch, view) => {
+    if (dispatch && view && state.selection.empty) {
+      const tr = state.tr;
+      if (linkTypedUrl(state, state.selection.from, tr)) {
+        dispatch(tr);
+        return enter(view.state, dispatch, view) || true;
+      }
+    }
+    return enter(state, dispatch, view);
+  };
 
 // ── the toolbar's state
 
@@ -364,7 +395,7 @@ export function createPlugins(): Plugin[] {
     Tab: (state, dispatch) => (listAt(state.selection.$from) ? sinkListItem(nodes.list_item)(state, dispatch) || true : false),
     "Shift-Tab": (state, dispatch) => (listAt(state.selection.$from) ? liftListItem(nodes.list_item)(state, dispatch) || true : false),
     // a new line keeps the line's alignment and indent (as Docs and Gmail do)
-    Enter: chainCommands(autolinkOnEnter, splitListItem(nodes.list_item), newlineInCode, createParagraphNear, liftEmptyBlock, splitBlockAs((node) => (node.type === nodes.paragraph ? { type: nodes.paragraph, attrs: node.attrs } : null))),
+    Enter: withAutolink(chainCommands(splitListItem(nodes.list_item), newlineInCode, createParagraphNear, liftEmptyBlock, splitBlockAs((node) => (node.type === nodes.paragraph ? { type: nodes.paragraph, attrs: node.attrs } : null)))),
     "Shift-Enter": (state, dispatch) => {
       if (dispatch) dispatch(state.tr.replaceSelectionWith(nodes.hard_break.create()).scrollIntoView());
       return true;
@@ -395,6 +426,9 @@ export function createPlugins(): Plugin[] {
         transformPasted: (slice) => restoreSlice(slice),
         clipboardTextParser: (text) => textSlice(text),
         handlePaste(view, event) {
+          // ⇧⌘V (ProseMirror's own plain-paste test): the text goes in as text, a URL included
+          const input = (view as unknown as { input?: { shiftKey?: boolean; lastKeyCode?: number } }).input;
+          if (input?.shiftKey && input.lastKeyCode !== 45) return false;
           const text = event.clipboardData?.getData("text/plain") ?? "";
           const href = urlIn(text);
           if (!href) return false;

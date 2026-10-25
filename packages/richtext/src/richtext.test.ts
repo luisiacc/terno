@@ -5,7 +5,7 @@ import { toEmailHtml } from "./html";
 import { isSafeHref, normalizeHref, urlIn } from "./links";
 import { contrast, HIGHLIGHT_HEX, HIGHLIGHT_INK, HIGHLIGHTS, inverted, TEXT_COLORS, TEXT_HEX, toHex } from "./palette";
 import { cleanPastedHtml, parseHtml } from "./parse";
-import { emailDocument, signatureHtml, textToHtml } from "./quote";
+import { emailDocument, signatureHtml, textToHtml, textToHtmlChunks } from "./quote";
 import { schema } from "./schema";
 import { fromPlainText, toPlainText } from "./text";
 
@@ -258,6 +258,20 @@ describe("quote, signature and the document around them", () => {
     expect(textToHtml("On Mon, Ana wrote:\n> hola\n> > antes\n> fin")).toBe(
       '<div>On Mon, Ana wrote:</div><blockquote style="margin:0 0 0 0.8ex;border-left:2px solid #ccc;padding-left:1ex"><div>hola</div><blockquote style="margin:0 0 0 0.8ex;border-left:2px solid #ccc;padding-left:1ex"><div>antes</div></blockquote><div>fin</div></blockquote>',
     );
+  });
+
+  it("a hostile quote can't nest without end or blow the stack; a 2 MB quote converts in pieces, fast", () => {
+    const deep = textToHtml(`${">".repeat(10_000)}texto`);
+    expect(deep.match(/<blockquote/g)).toHaveLength(32);
+    expect(deep.match(/<\/blockquote>/g)).toHaveLength(32);
+    expect(deep).toContain(`${"&gt;".repeat(10_000 - 32)}texto`);
+    const big = Array.from({ length: 40_000 }, (_, i) => `> línea ${i} de la cita, con algo de texto para pesar`).join("\n");
+    const started = performance.now();
+    const pieces = [...textToHtmlChunks(big)];
+    expect(performance.now() - started).toBeLessThan(400);
+    expect(pieces.length).toBeGreaterThan(10);
+    expect(pieces.join("")).toBe(textToHtml(big));
+    expect(pieces.join("").startsWith('<blockquote style="')).toBe(true);
   });
 
   it("escapes, keeps blank lines, links URLs", () => {
