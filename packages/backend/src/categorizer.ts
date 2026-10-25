@@ -1,4 +1,5 @@
 import { CategorizerModel, FEATURES_V } from "@terno/core";
+import { captureError } from "@terno/core/diag";
 import type { ExampleKey, MailStore, ModelDelta, Platform } from "@terno/store";
 import { readAutoCategorize } from "./settings";
 
@@ -178,7 +179,10 @@ export class Categorizer {
         this.pending = null;
         await this.suggestBackfill(m);
       } catch (error) {
-        if (store.isOpen) this.host.log("warn", "categorizer rebuild failed", error instanceof Error ? error.message : error);
+        if (store.isOpen) {
+          captureError(error, { code: "categorize.rebuild_failed" });
+          this.host.log("warn", "categorizer rebuild failed", error instanceof Error ? error.message : error);
+        }
       } finally {
         this.pending = null;
         this.readTo = null;

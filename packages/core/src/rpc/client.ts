@@ -83,7 +83,7 @@ export class RpcClient {
       this.pending.delete(msg.id);
       clearTimeout(p.timer);
       if (msg.ok) p.resolve(msg.r);
-      else p.reject(new RpcError(msg.e.code, msg.e.message, msg.e.details));
+      else p.reject(new RpcError(msg.e.code, msg.e.message, msg.e.details, { expected: msg.e.expected !== false, diag: msg.e.diag }));
     } else if (msg.t === "evt") {
       const set = this.listeners.get(msg.e);
       if (set) for (const l of set) l(msg.p);

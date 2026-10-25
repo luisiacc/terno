@@ -78,6 +78,8 @@ export interface AiTasks {
 }
 
 export class AiError extends Error {
+  /** the provider (or the configuration) said no: shown to the user, never reported */
+  readonly expected = true;
   constructor(
     message: string,
     readonly kind: AiErrorKind,

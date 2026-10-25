@@ -92,7 +92,8 @@ export function parseStack(stack: string): Frame[] {
     let fn: string | undefined;
     let loc: string;
     const v8 = /^at (?:(.+?) \()?(.+?)\)?$/.exec(line);
-    const gecko = !v8 && /^(.*?)@(.+)$/.exec(line);
+    // a message line can hold an "@" (an address): only "fn@file:line:col" is a frame
+    const gecko = !v8 && /^([^\s@]*)@(.+:\d+:\d+)$/.exec(line);
     if (v8) {
       fn = v8[1];
       loc = v8[2]!;

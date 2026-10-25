@@ -62,7 +62,6 @@ describe("fields", () => {
   });
 
   it("drop keys the code didn't declare, at runtime as at compile time", () => {
-    // @ts-expect-error subject is not a field of sync.failed
     const f = sanitizeFields("sync.failed", { accountKind: "gmail", subject: "Hola", email: HOSTILE.email, retryable: true });
     expect(f).toEqual({ accountKind: "gmail", retryable: true });
     // @ts-expect-error count is a number
@@ -98,6 +97,8 @@ describe("errors", () => {
     expect(v8[0]).toEqual({ fn: "Foo.bar", file: "dist/main.cjs", line: 12, col: 345 });
     expect(v8.at(-1)).toEqual({ file: "dist/backend.cjs", line: 1, col: 2 });
     expect(parseStack("render@app://terno/assets/index.js:3:9")[0]).toEqual({ fn: "render", file: "renderer/assets/index.js", line: 3, col: 9 });
+    // the message line is never a frame, even with an address in it
+    expect(parseStack("Error: no reply from luis@empresa.mx\n    at x (/a/app.asar/dist/main.cjs:1:1)")).toEqual([{ fn: "x", file: "dist/main.cjs", line: 1, col: 1 }]);
   });
 
   it("normalizes anything thrown, scrubbing its text", () => {
@@ -112,7 +113,7 @@ describe("errors", () => {
   it("tells user errors from bugs", () => {
     expect(isExpected(new UserFacingError("sync.failed", "Contraseña incorrecta"))).toBe(true);
     expect(isExpected(Object.assign(new Error("401"), { expected: true }))).toBe(true);
-    expect(isExpected(new DOMException("stop", "AbortError"))).toBe(true);
+    expect(isExpected(Object.assign(new Error("stop"), { name: "AbortError" }))).toBe(true);
     expect(isExpected(new TypeError("undefined is not a function"))).toBe(false);
     expect(isExpected("text")).toBe(false);
   });

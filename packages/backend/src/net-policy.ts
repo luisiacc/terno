@@ -11,6 +11,8 @@ export interface NetMeta {
 }
 
 export class NetworkPolicyError extends Error {
+  /** a policy decision (local mode), not a failure */
+  readonly expected = true;
   constructor(
     message: string,
     readonly purpose: NetPurpose,

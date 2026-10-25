@@ -12,6 +12,10 @@ export interface RpcErrorPayload {
   code: "BAD_REQUEST" | "NOT_FOUND" | "UNAVAILABLE" | "TIMEOUT" | "INTERNAL" | "UNKNOWN_METHOD" | "FORBIDDEN" | "CANCELLED" | "STALE";
   message: string;
   details?: unknown;
+  /** a user error (classified where it was thrown): shown, never reported; false is a bug the backend already captured */
+  expected?: boolean;
+  /** the diagnostic code the backend logged it under */
+  diag?: string;
 }
 
 export type RpcResponse =
@@ -36,13 +40,19 @@ export interface Transport {
 }
 
 export class RpcError extends Error {
+  /** thrown on purpose by a handler (not found, invalid input…) unless said otherwise */
+  readonly expected: boolean;
+  readonly diag?: string;
   constructor(
     readonly code: RpcErrorPayload["code"],
     message: string,
     readonly details?: unknown,
+    o: { expected?: boolean; diag?: string; cause?: unknown } = {},
   ) {
-    super(message);
+    super(message, o.cause === undefined ? undefined : { cause: o.cause });
     this.name = "RpcError";
+    this.expected = o.expected ?? true;
+    if (o.diag) this.diag = o.diag;
   }
 }
 

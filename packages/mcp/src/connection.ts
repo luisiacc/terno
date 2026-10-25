@@ -18,6 +18,7 @@ export function defaultEndpoint(): Endpoint {
 }
 
 export class NotRunningError extends Error {
+  readonly expected = true;
   constructor() {
     super("Terno is not running. Open the Terno app and try again.");
   }

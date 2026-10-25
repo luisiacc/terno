@@ -37,6 +37,7 @@ export function secretPrompt(name: string): string {
 }
 
 export class SecretUnreadableError extends Error {
+  readonly expected = true;
   constructor(
     readonly secretName: string,
     /** sealed by Única and not migrated (else: the keychain refused it) */

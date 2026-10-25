@@ -37,6 +37,11 @@ export class ProviderError extends Error {
     super(message);
     this.name = "ProviderError";
   }
+
+  /** transient (offline, 5xx, 429) or unknowable: the provider classified it, not our bug */
+  get expected(): boolean {
+    return this.retryable || this.ambiguous;
+  }
 }
 
 /**
@@ -48,6 +53,10 @@ export class ProviderAuthError extends ProviderError {
   constructor(message: string) {
     super(message, false);
     this.name = "ProviderAuthError";
+  }
+
+  override get expected(): boolean {
+    return true;
   }
 }
 

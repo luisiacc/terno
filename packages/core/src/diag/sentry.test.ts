@@ -3,6 +3,8 @@ import { buildReport } from "./report";
 import { createReporter, fetchTransport } from "./sentry";
 import type { ErrorRecord } from "./types";
 
+declare const TextDecoder: { new (): { decode(b: Uint8Array): string } };
+
 const DSN = "http://publickey@127.0.0.1:9/42";
 
 function record(id: string): ErrorRecord {

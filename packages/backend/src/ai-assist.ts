@@ -1,4 +1,5 @@
-import type { AiTasks } from "@terno/ai";
+import { AiError, type AiTasks } from "@terno/ai";
+import { captureError } from "@terno/core/diag";
 import { candidateCategories, POLICY, senderVetoed } from "@terno/core";
 import type { MailStore } from "@terno/store";
 import type { Categorizer } from "./categorizer";
@@ -153,6 +154,8 @@ export class AiAssist {
       });
       if (wrote) this.host.notifyChanged([threadId], false);
     } catch (error) {
+      // an AiError is the provider's verdict (expected); anything else is ours
+      captureError(error, { code: "ai.assist_failed", fields: { aiKind: error instanceof AiError ? error.kind : "other" } });
       this.host.log("warn", "categorization assist failed", error instanceof Error ? error.message : error);
     }
     return "done";

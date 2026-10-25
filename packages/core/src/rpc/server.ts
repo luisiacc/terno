@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isExpected } from "../diag/error";
 import { contract, type EventName, type Events, type MethodName, type ParsedParamsOf, type ResultOf } from "./contract";
 import { RPC_VERSION, RpcError, type RpcErrorPayload, type RpcRequest, type Transport } from "./envelope";
 
@@ -13,17 +14,25 @@ export type Handlers = {
 };
 
 export interface RpcServerOptions {
-  onError?: (error: unknown, method: string) => void;
+  /** an unexpected failure (a bug, not a user error): the host captures it once, here */
+  onError?: (error: unknown, method: string, payload: RpcErrorPayload) => void;
   /** Return false to reject a method for a given connection (e.g. MCP permissions). */
   authorize?: (method: MethodName, ctx: CallContext) => boolean | Promise<boolean>;
 }
 
-function toErrorPayload(error: unknown): RpcErrorPayload {
-  if (error instanceof RpcError) return { code: error.code, message: error.message, details: error.details };
+/**
+ * The error as it crosses the wire, classified: a handler's RpcError keeps
+ * its own verdict; params that fail the contract are the caller's bug; any
+ * other throw is expected only if its class says so (ProviderAuthError,
+ * SettingsError, AiError…).
+ */
+export function toErrorPayload(error: unknown): RpcErrorPayload {
+  if (error instanceof RpcError) return { code: error.code, message: error.message, details: error.details, expected: error.expected, ...(error.diag ? { diag: error.diag } : {}) };
   if (error instanceof z.ZodError) {
-    return { code: "BAD_REQUEST", message: z.prettifyError(error), details: error.issues };
+    return { code: "BAD_REQUEST", message: z.prettifyError(error), details: error.issues, expected: false, diag: "rpc.handler_threw" };
   }
-  return { code: "INTERNAL", message: error instanceof Error ? error.message : String(error) };
+  const expected = isExpected(error);
+  return { code: "INTERNAL", message: error instanceof Error ? error.message : String(error), expected, ...(expected ? {} : { diag: "rpc.handler_threw" }) };
 }
 
 export class RpcServer {
@@ -65,7 +74,7 @@ export class RpcServer {
       transport.send({ v: RPC_VERSION, t: "res", id: req.id, ok: true, r: result });
     } catch (error) {
       const payload = toErrorPayload(error);
-      if (payload.code === "INTERNAL") this.options.onError?.(error, req.m);
+      if (!payload.expected) this.options.onError?.(error, req.m, payload);
       transport.send({ v: RPC_VERSION, t: "res", id: req.id, ok: false, e: payload });
     }
   }

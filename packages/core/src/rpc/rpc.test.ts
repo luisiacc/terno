@@ -40,6 +40,33 @@ describe("rpc", () => {
     await expect(client.call("threads.get", { threadId: 9 })).rejects.toMatchObject({ code: "NOT_FOUND", message: "thread 9 not found" });
   });
 
+  it("keeps the expected/unexpected verdict across the wire; only bugs reach onError", async () => {
+    const onError = vi.fn();
+    const handlers = {
+      "threads.get": () => {
+        throw new RpcError("NOT_FOUND", "gone");
+      },
+      "counts.get": () => {
+        throw Object.assign(new Error("wrong password"), { expected: true });
+      },
+      "threads.list": () => {
+        throw new TypeError("x is undefined");
+      },
+    } as unknown as Handlers;
+    const server = new RpcServer(handlers, { onError });
+    const [clientSide, serverSide] = createMemoryTransportPair();
+    server.connect(serverSide, { clientId: "t", origin: "renderer" });
+    const client = new RpcClient(clientSide);
+    await expect(client.call("threads.get", { threadId: 1 })).rejects.toMatchObject({ code: "NOT_FOUND", expected: true });
+    await expect(client.call("counts.get", {})).rejects.toMatchObject({ code: "INTERNAL", expected: true });
+    await expect(client.call("threads.list", { view: "inbox" })).rejects.toMatchObject({ code: "INTERNAL", expected: false, diag: "rpc.handler_threw" });
+    await expect(client.call("threads.list", { view: "nope" as never })).rejects.toMatchObject({ code: "BAD_REQUEST", expected: false });
+    expect(onError.mock.calls.map(([e, m]) => [(e as Error).name, m])).toEqual([
+      ["TypeError", "threads.list"],
+      ["ZodError", "threads.list"],
+    ]);
+  });
+
   it("times out calls that never answer", async () => {
     const { client } = setup({ "threads.list": (() => new Promise(() => {})) as never });
     await expect(client.call("threads.list", { view: "inbox" })).rejects.toMatchObject({ code: "TIMEOUT" });

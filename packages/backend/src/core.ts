@@ -1,5 +1,6 @@
 import type { AiTasks } from "@terno/ai";
 import type { Account, AccountSyncState, ThreadAction } from "@terno/core";
+import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
 import { RpcServer, type CallContext, type HostInfo, type MethodName, type OpInfo, type Transport } from "@terno/core/rpc";
 import type { ClassifierInput, IncomingMessage, MailStore, OpRow, Platform } from "@terno/store";
 import { ProviderAuthError, ProviderError, type MailProvider, type ProviderRegistry, type SyncSink } from "@terno/mail/portable";
@@ -10,7 +11,7 @@ import { createHandlers } from "./handlers";
 import { restorePending } from "./import";
 import { blobFingerprint, migrateLegacySecrets, readKeychainState, SecretUnreadableError, type LegacySecretReader } from "./keychain";
 import { createNetworkPolicy, type LookupAll, type NetworkPolicy } from "./net-policy";
-import { readAutoCategorize, readLocalMode, readSettings } from "./settings";
+import { readAutoCategorize, readLocalMode, readPolicy, readSettings } from "./settings";
 import { BULK_SLICE, SliceSizer, type SliceBudget } from "./slicer";
 
 export interface SecretCipher {
@@ -47,7 +48,7 @@ export interface BackendCoreOptions {
   /** backend-dev E2E only: let the demo registry's no-op verification establish an owner */
   allowDemoOwnerClaims?: boolean;
   /** the host enforces the policy outside the backend too (Electron main fences the renderer) */
-  onPolicy?: (policy: { localMode: boolean }) => void;
+  onPolicy?: (policy: { localMode: boolean; errorReports: "ask" | "always" | "never" }) => void;
   openExternal?: (url: string) => Promise<void>;
   now?: () => number;
   log?: (level: "info" | "warn" | "error", message: string, extra?: unknown) => void;
@@ -65,6 +66,10 @@ export interface BackendCoreOptions {
 }
 
 const COUNTS_EVERY_MS = 200;
+
+const accountKindOf = (kind: string | undefined): FieldValueOf<"accountKind"> => (kind === "imap" || kind === "gmail" ? kind : "other");
+const OP_KINDS = new Set<string>(["archive", "trash", "spam", "notSpam", "moveToInbox", "markRead", "markUnread", "star", "unstar", "send", "move"]);
+const opKindOf = (kind: string): FieldValueOf<"opKind"> => (OP_KINDS.has(kind) ? (kind as FieldValueOf<"opKind">) : "other");
 const AUTO_NOTICE_GATHER_MS = 1500;
 const AUTO_NOTICE_EVERY_MS = 30_000;
 
@@ -127,7 +132,12 @@ export class BackendCore {
     this.aiAssist = new AiAssist(this);
     this.ready = this.init();
     this.server = new RpcServer(createHandlers(this), {
-      onError: (error, method) => this.log("error", `rpc ${method} failed`, error instanceof Error ? error.stack : error),
+      onError: (error, method, payload) => {
+        // the original failure, captured once here (an RpcError wrapping it carries it as its cause)
+        const original = error instanceof Error && error.cause !== undefined ? error.cause : error;
+        captureError(original, { code: "rpc.handler_threw", fields: { method: method as FieldValueOf<"method">, rpcCode: payload.code }, expected: false });
+        this.log("error", `rpc ${method} failed`, original instanceof Error ? original.stack : original);
+      },
       authorize: async (method, ctx) => {
         await this.ready;
         return this.authorize(method, ctx);
@@ -148,7 +158,10 @@ export class BackendCore {
   private async init(): Promise<void> {
     await this.categorizer.load();
     const recovered = await this.store.ops.recover(this.now());
-    if (recovered.requeued || recovered.unknown) this.log("info", "recovered ops after restart", recovered);
+    if (recovered.requeued || recovered.unknown) {
+      log.info("ops.recovered", { count: recovered.requeued + recovered.unknown });
+      this.log("info", "recovered ops after restart", recovered);
+    }
   }
 
   now(): number {
@@ -169,15 +182,19 @@ export class BackendCore {
     if (this.stopped) return;
     // before anything syncs: secrets sealed by Única are sealed again (or stay pending, and Settings asks for them)
     if (this.options.legacySecrets) {
-      await migrateLegacySecrets(this.store, this.options.cipher, this.options.legacySecrets, (level, message) => this.log(level, message)).catch((error: unknown) =>
-        this.log("warn", "keychain migration failed; it is retried on the next start", error instanceof Error ? error.message : error),
-      );
+      await migrateLegacySecrets(this.store, this.options.cipher, this.options.legacySecrets, (level, message) => this.log(level, message)).catch((error: unknown) => {
+        captureError(error, { code: "keychain.migration_failed" });
+        this.log("warn", "keychain migration failed; it is retried on the next start", error instanceof Error ? error.message : error);
+      });
       if (this.stopped) return;
     }
     if (!this.categorizer.ready) void this.categorizer.rebuild();
     // a resume that fails waits for the next start (its journal is intact); it must never crash the backend
     for (const m of await this.store.categories.unfinishedMoves()) {
-      this.finishMove(m.batchId).catch((error: unknown) => this.log("warn", `move ${m.batchId} couldn't be resumed`, error instanceof Error ? error.message : error));
+      this.finishMove(m.batchId).catch((error: unknown) => {
+        captureError(error, { code: "move.resume_failed" });
+        this.log("warn", `move ${m.batchId} couldn't be resumed`, error instanceof Error ? error.message : error);
+      });
     }
     if (this.options.autoSync === false) return;
     this.idleTimer = setInterval(() => void this.categorizer.idle(), 10 * 60_000);
@@ -210,6 +227,7 @@ export class BackendCore {
     try {
       await this.categorizer.persist();
     } catch (error) {
+      captureError(error, { code: "categorize.persist_failed" });
       this.log("warn", "could not persist the categorization model", error instanceof Error ? error.message : error);
     }
     await this.store.close();
@@ -258,6 +276,7 @@ export class BackendCore {
     try {
       return await this.options.cipher.decrypt(blob);
     } catch (error) {
+      log.warn("secret.unreadable", { op: "decrypt" });
       this.log("warn", `secret ${name} couldn't be opened`, error instanceof Error ? error.message : error);
       throw new SecretUnreadableError(name, false);
     }
@@ -319,7 +338,7 @@ export class BackendCore {
 
   /** Tells the host the current policy (at startup and whenever local mode changes). */
   async publishPolicy(): Promise<void> {
-    this.options.onPolicy?.({ localMode: await readLocalMode(this.store) });
+    this.options.onPolicy?.(await readPolicy(this.store));
   }
 
   async emitOwner(): Promise<void> {
@@ -590,15 +609,23 @@ export class BackendCore {
         setSyncState: (patch) => setState(patch),
       };
       await setState({ status: "syncing" });
+      const accountKind = accountKindOf((await this.store.accounts.get(accountId))?.kind);
+      const started = performance.now();
       try {
         await provider.sync(sink);
+        breadcrumb("sync", "sync.done", { accountKind, durationMs: performance.now() - started });
         await setState({ status: "idle", lastError: null, lastSyncAt: this.now() });
         // the account works: whatever waited for its sign-in goes now
         await this.resumeAuth(accountId);
         // its mail is here: drafts an import kept for it (answering messages that just synced) go in
-        await restorePending(this, accountId).catch((error: unknown) => this.log("warn", "restoring imported items failed", error instanceof Error ? error.message : error));
+        await restorePending(this, accountId).catch((error: unknown) => {
+          captureError(error, { code: "import.restore_failed" });
+          this.log("warn", "restoring imported items failed", error instanceof Error ? error.message : error);
+        });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        // offline or a sign-in to redo is the provider's verdict (expected); anything else is ours
+        captureError(error, { code: "sync.failed", fields: { accountKind, retryable: error instanceof ProviderError && error.retryable } });
         this.log("warn", `sync failed for account ${accountId}`, message);
         if (this.store.isOpen) await setState({ status: error instanceof ProviderError && error.retryable ? "offline" : "error", lastError: message });
       }
@@ -645,6 +672,7 @@ export class BackendCore {
                   await this.executeOp(op);
                 } catch (error) {
                   // never strand the rest of the batch in "running"
+                  captureError(error, { code: "ops.crashed", fields: { opKind: opKindOf(op.kind) } });
                   this.log("error", `op ${op.id} crashed`, error instanceof Error ? error.stack : error);
                   if (this.store.isOpen && (await this.store.ops.get(op.id))?.state === "running") await this.store.ops.fail(op.id, String(error), true, this.now());
                 }
@@ -676,15 +704,22 @@ export class BackendCore {
     if (!op || op.state !== "running") return;
     const provider = await this.provider(op.account_id);
     const target = JSON.parse(op.target_json) as { messageIds?: number[] };
+    const started = performance.now();
     try {
       if (!provider) throw new ProviderError("Account no longer exists", false);
       const result = await provider.execute({ id: op.id, kind: op.kind, target, payload: JSON.parse(op.payload_json) });
+      if (op.kind === "send") log.info("send.done", { durationMs: performance.now() - started });
       if (this.stopped && !this.store.isOpen) return;
       const done = await this.store.ops.complete(op.id, result, this.now());
       this.categorizer.apply(done.deltas);
       if (done.touched.length) this.notifyChanged(done.touched);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const pe = error instanceof ProviderError ? error : null;
+      // a deleted account is gone on purpose: its ops just fail
+      const expected = pe ? pe.expected || !provider : undefined;
+      if (op.kind === "send") captureError(error, { code: "send.failed", fields: { retryable: pe?.retryable, ambiguous: pe?.ambiguous }, expected });
+      else captureError(error, { code: "ops.failed", fields: { opKind: opKindOf(op.kind), retryable: pe?.retryable, ambiguous: pe?.ambiguous }, expected });
       if (error instanceof ProviderAuthError) await this.store.ops.awaitAuth(op.id, message, this.now());
       else if (error instanceof ProviderError && error.ambiguous) await this.store.ops.markUnknown(op.id, message, this.now());
       else await this.store.ops.fail(op.id, message, error instanceof ProviderError ? error.retryable : true, this.now());

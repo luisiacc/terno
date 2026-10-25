@@ -1,3 +1,4 @@
+import { captureError } from "@terno/core/diag";
 import {
   AiError,
   createAi,
@@ -43,7 +44,8 @@ export function toRpcError(error: unknown): RpcError {
     if (error.kind === "cancelled") return new RpcError("CANCELLED", error.message, { aiErrorKind: error.kind });
     return new RpcError("UNAVAILABLE", error.message, { aiErrorKind: error.kind });
   }
-  return new RpcError("UNAVAILABLE", error instanceof Error ? error.message : String(error), { aiErrorKind: "unavailable" });
+  // not the provider's verdict: our bug (the RPC server captures the original, once)
+  return new RpcError("UNAVAILABLE", error instanceof Error ? error.message : String(error), { aiErrorKind: "unavailable" }, { expected: false, cause: error });
 }
 
 /**
@@ -199,6 +201,7 @@ export class AiService {
       await saveCapabilities(this.b.store, target.provider, { model: target.model, baseURL: target.baseURL, preset: target.preset }, result.capabilities);
       return { ok: true, latencyMs: result.latencyMs, capabilities: result.capabilities, warning: result.warning };
     } catch (error) {
+      if (!(error instanceof AiError)) captureError(error, { code: "ai.unexpected", fields: { op: "test" } });
       const e = error instanceof AiError ? error : new AiError(error instanceof Error ? error.message : String(error), "unavailable");
       return { ok: false, latencyMs: Math.round(performance.now() - started), error: { kind: e.kind, message: e.message } };
     }

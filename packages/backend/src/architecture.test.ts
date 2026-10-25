@@ -42,6 +42,8 @@ const ALLOWED: Record<string, { patterns: string[]; why: string }> = {
   "apps/web/src/rpc/connection.ts": { patterns: ["WebSocket client"], why: "renderer ↔ loopback backend-dev; the renderer is fenced by main's webRequest backstop" },
   "apps/web/src/web/sw.js": { patterns: ["global fetch"], why: "web build's service worker: same-origin app files only (cross-origin requests are not intercepted)" },
   "packages/mcp/src/connection.ts": { patterns: ["raw sockets"], why: "unix socket to the local backend" },
+  "packages/core/src/diag/sentry.ts": { patterns: ["SMTP client"], why: "Sentry's createTransport (not SMTP): every envelope passes consentTransport, which refuses in local mode, without a DSN or consent" },
+  "apps/desktop/src/diag/reporter.ts": { patterns: ["Electron net"], why: "error reports from main, through consentTransport (local mode, the setting and the DSN, checked per envelope)" },
 };
 
 function sources(dir: string): string[] {

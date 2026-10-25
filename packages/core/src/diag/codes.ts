@@ -44,6 +44,7 @@ export const CODES = {
   "sync.failed": c("accountKind", "errorClass", "retryable", "expected"),
   "ops.failed": c("opKind", "errorClass", "retryable", "ambiguous", "expected"),
   "ops.crashed": c("opKind", "errorClass"),
+  "ops.recovered": c("count"),
   "send.failed": c("errorClass", "retryable", "ambiguous", "expected"),
   "send.done": c("durationMs"),
   "categorize.rebuild_failed": c("errorClass"),

@@ -47,6 +47,7 @@ export const DEFAULT_SETTINGS: General = {
   syncWindowDays: 90,
   autoCategorize: "auto",
   aiCategorize: false,
+  errorReports: "ask",
 };
 
 const DEFAULT_PROVIDER: AiProviderId = "none";
@@ -140,6 +141,12 @@ export async function readLocalMode(store: SettingsStore): Promise<boolean> {
   return (await stored(store)).localMode ?? DEFAULT_SETTINGS.localMode;
 }
 
+/** What the host enforces outside the backend: the network fence and whether error reports may go. */
+export async function readPolicy(store: SettingsStore): Promise<{ localMode: boolean; errorReports: AppSettings["errorReports"] }> {
+  const s = await stored(store);
+  return { localMode: s.localMode ?? DEFAULT_SETTINGS.localMode, errorReports: s.errorReports ?? DEFAULT_SETTINGS.errorReports };
+}
+
 /** The mode a theme id belongs to, or null when it names nothing (unknown or deleted custom theme). */
 function themeMode(id: string, custom: readonly CustomTheme[]): ThemeMode | null {
   if (id.startsWith(CUSTOM_PREFIX)) return custom.find((t) => t.id === id.slice(CUSTOM_PREFIX.length))?.mode ?? null;
@@ -183,7 +190,9 @@ export async function readSettings(store: SettingsStore): Promise<AppSettings> {
   return { ...resolveThemes({ ...DEFAULT_SETTINGS, ...general }), gmailClientSecretSet: await store.secrets.has("gmailClientSecret"), gmailClientSecretUnreadable: unreadable.has("gmailClientSecret"), ai };
 }
 
-export class SettingsError extends Error {}
+export class SettingsError extends Error {
+  readonly expected = true;
+}
 
 /**
  * Applies a settings patch. Selecting a cloud provider while local mode is on

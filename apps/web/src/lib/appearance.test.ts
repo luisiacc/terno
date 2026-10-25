@@ -56,6 +56,7 @@ const SERVER: AppSettings = {
   syncWindowDays: 90,
   autoCategorize: "auto",
   aiCategorize: false,
+  errorReports: "ask",
   ai: { provider: "none", model: "", baseURL: null, preset: null, hasKey: false, keyUnreadable: false, keyHint: null, keyOrigin: null, keyConfirmed: true, local: true, capabilities: null, profiles: {} },
 };
 /** The backend's state, as each answer would report it. */
