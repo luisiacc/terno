@@ -9,7 +9,8 @@
     "./rpc": "./src/rpc/index.ts",
     "./legacy-env": "./src/legacy-env.ts",
     "./diag": "./src/diag/index.ts",
-    "./diag/sentry": "./src/diag/sentry.ts"
+    "./diag/sentry": "./src/diag/sentry.ts",
+    "./updates": "./src/updates/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

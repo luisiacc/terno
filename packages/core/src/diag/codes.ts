@@ -36,6 +36,22 @@ export const CODES = {
   "report.sent": c("count"),
   "report.dropped": c("reason", "count"),
 
+  // main: quitting (drafts, then the backend) and updates
+  "shutdown.done": c("outcome", "durationMs", "trigger"),
+  "shutdown.drafts_timeout": c("count"),
+  "update.check": c("updateChannel", "trigger"),
+  "update.available": c("updateChannel", "toVersion"),
+  "update.not_available": c("updateChannel"),
+  "update.downloaded": c("toVersion", "durationMs"),
+  "update.ready": c("toVersion"),
+  "update.failed": c("stage", "errorClass", "errno", "status"),
+  "update.blocked": c("reason"),
+  "update.unsupported": c("unsupported"),
+  "update.install": c("toVersion", "trigger"),
+  "update.deferred": c("reason"),
+  "update.applied": c("fromVersion", "toVersion"),
+  "update.not_applied": c("fromVersion", "toVersion"),
+
   // a free-form line from code that predates codes (the store, the search engine): kept locally, scrubbed
   "log.message": c("source"),
 
