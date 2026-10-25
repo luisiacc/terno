@@ -85,6 +85,7 @@ const en = {
 
   // ── desktop menus (title case in English, macOS HIG)
   "menu.about": "About {app}",
+  "menu.checkForUpdates": "Check for Updates…",
   "menu.services": "Services",
   "menu.hide": "Hide {app}",
   "menu.hideOthers": "Hide Others",

@@ -1,11 +1,9 @@
 /**
  * The print job's rules, kept apart from Electron so they're unit-tested in
  * Node: what the renderer may ask for, what the print window may load, the
- * page geometry and footer, and the Archivo menu's commands.
+ * page geometry and footer.
  */
 import { join } from "node:path";
-import type { MenuItemConstructorOptions } from "electron";
-import type { PrintCommand } from "./print-commands";
 export { PRINT_COMMANDS, type PrintCommand } from "./print-commands";
 
 export interface PrintJob {
@@ -136,29 +134,6 @@ export function printOutcome(success: boolean, reason: string): PrintResult {
 export function testPdfDir(env: Record<string, string | undefined>, packaged: boolean, demo: boolean): string | null {
   const dir = env.TERNO_TEST_PDF_DIR;
   return dir && (!packaged || demo) ? dir : null;
-}
-
-/** Archivo: each item sends a command to the renderer, which decides like it does for the key (the menu never prints the app window). */
-export function fileMenu(send: (command: PrintCommand) => void): MenuItemConstructorOptions {
-  return {
-    label: "Archivo",
-    submenu: [
-      { id: "print", label: "Imprimir…", accelerator: "CmdOrCtrl+P", click: () => send("thread.print") },
-      { id: "export-pdf", label: "Exportar como PDF…", accelerator: "CmdOrCtrl+Shift+P", click: () => send("thread.exportPdf") },
-    ],
-  };
-}
-
-/** Help: diagnostics for a problem report (macOS puts the menu's search field here too). */
-export function helpMenu(o: { exportDiagnostics: () => void; showLogs: () => void }): MenuItemConstructorOptions {
-  return {
-    role: "help",
-    label: "Help",
-    submenu: [
-      { id: "export-diagnostics", label: "Export Diagnostics…", click: o.exportDiagnostics },
-      { id: "show-logs", label: "Show Logs", click: o.showLogs },
-    ],
-  };
 }
 
 export class PrintTimeoutError extends Error {

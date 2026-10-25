@@ -1,7 +1,6 @@
 import { EventEmitter } from "node:events";
-import type { MenuItemConstructorOptions } from "electron";
 import { describe, expect, it, vi } from "vitest";
-import { fileMenu, footerTemplate, pageReady, readyOrDestroyed, tempSibling, type PageEvents, isTrustedSender, MAX_HTML_BYTES, parsePrintJob, pdfFileName, PRINT_COMMANDS, printCsp, printOutcome, requestAllowed, testPdfDir, withHead } from "./print-policy";
+import { footerTemplate, pageReady, readyOrDestroyed, tempSibling, type PageEvents, isTrustedSender, MAX_HTML_BYTES, parsePrintJob, pdfFileName, printCsp, printOutcome, requestAllowed, testPdfDir, withHead } from "./print-policy";
 
 const job = { html: "<!doctype html><html><head></head><body>x</body></html>", action: "pdf", paper: "letter", subject: "Factura", headers: true, remote: [] as unknown[] };
 
@@ -127,22 +126,6 @@ describe("main: the document and the PDF", () => {
     expect(testPdfDir({ TERNO_TEST_PDF_DIR: "/tmp/x" }, true, true)).toBe("/tmp/x");
     expect(testPdfDir({ TERNO_TEST_PDF_DIR: "/tmp/x" }, true, false)).toBeNull();
     expect(testPdfDir({}, false, true)).toBeNull();
-  });
-});
-
-describe("main: the Archivo menu", () => {
-  it("sends only whitelisted commands, with the platform's print accelerators", () => {
-    const sent: string[] = [];
-    const menu = fileMenu((c) => sent.push(c));
-    const items = menu.submenu as MenuItemConstructorOptions[];
-    expect(menu.label).toBe("Archivo");
-    expect(items.map((i) => [i.label, i.accelerator])).toEqual([
-      ["Imprimir…", "CmdOrCtrl+P"],
-      ["Exportar como PDF…", "CmdOrCtrl+Shift+P"],
-    ]);
-    for (const i of items) (i.click as () => void)();
-    expect(sent).toEqual(["thread.print", "thread.exportPdf"]);
-    for (const c of sent) expect(PRINT_COMMANDS).toContain(c);
   });
 });
 

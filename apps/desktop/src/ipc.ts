@@ -20,7 +20,7 @@ export type BackendToMain =
   /** blobs sealed under Única's keychain item: main opens them through the keychain helper */
   | { type: "legacy-secrets"; id: number; blobs: number[][] }
   | { type: "open-external"; url: string }
-  | { type: "policy"; localMode: boolean; errorReports: "ask" | "always" | "never" }
+  | { type: "policy"; localMode: boolean; errorReports: "ask" | "always" | "never"; language: string }
   /** diagnostics: log entries (batched), the breadcrumb mirror, and records; main validates all of it again */
   | { type: "diag"; entries: unknown[] }
   | { type: "diag-ring"; crumbs: unknown[] }

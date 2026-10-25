@@ -17,6 +17,7 @@ import {
   type UtilityProcess,
 } from "electron";
 import { diagSession, log as diagLog } from "@terno/core/diag";
+import { isLanguageSetting } from "@terno/i18n";
 import { parseAppearance, windowVibrancy, type Appearance } from "./appearance";
 import { BUILD_ID } from "./diag/build-info";
 import { mainDiag } from "./diag/main";
@@ -25,8 +26,9 @@ import type { BackendToMain, MainToBackend } from "./ipc";
 import { readLegacySecrets } from "./keychain-helper";
 import { DB_FILE } from "./legacy-profile";
 import { printLocalModeChanged, registerPrint } from "./print";
-import { fileMenu, helpMenu, isTrustedSender, testPdfDir } from "./print-policy";
-import { appMenu, viewMenu } from "./menu";
+import { isTrustedSender, testPdfDir } from "./print-policy";
+import { menuTemplate } from "./menu";
+import { readLanguage, switchLanguage, writeLanguage } from "./locale";
 import type { MenuCommand } from "./print-commands";
 import { LEGACY_STORAGE_PENDING } from "./profile";
 import { coordinateShutdown, type BackendOutcome, type ShutdownOutcome } from "./shutdown";
@@ -195,6 +197,7 @@ function startBackend() {
         printLocalModeChanged(localMode);
         mainDiag.setPolicy(msg);
         updates?.setLocalMode(localMode);
+        void followLanguage(msg.language);
         break;
       case "open-external":
         if (/^https:\/\//i.test(msg.url)) void shell.openExternal(msg.url);
@@ -507,15 +510,31 @@ function buildMenu() {
     if (win && windows.has(win) && !win.isDestroyed()) sendCommand("updates.check");
     else void updates?.check("manual");
   };
-  const template: Electron.MenuItemConstructorOptions[] = [
-    appMenu(app.getName(), checkForUpdates),
-    fileMenu(sendCommand),
-    { role: "editMenu" },
-    viewMenu(sendCommand, isDev),
-    { role: "windowMenu" },
-    helpMenu({ exportDiagnostics: () => void mainDiag.exportInteractive(BrowserWindow.getFocusedWindow()), showLogs: () => mainDiag.showLogs() }),
-  ];
+  const template = menuTemplate({
+    appName: app.getName(),
+    dev: isDev,
+    send: sendCommand,
+    exportDiagnostics: () => void mainDiag.exportInteractive(BrowserWindow.getFocusedWindow()),
+    showLogs: () => mainDiag.showLogs(),
+    checkForUpdates,
+  });
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+// ───────────────────────────── language ─────────────────────────────
+
+/** The setting as main last saw it (locale.json until the backend reports). */
+let language = readLanguage(app.getPath("userData"));
+let languageSeq = 0;
+
+/** The backend reported the language setting: saved for the next start, and the menu rebuilt in it. */
+async function followLanguage(next: unknown) {
+  if (!isLanguageSetting(next) || next === language) return;
+  language = next;
+  writeLanguage(app.getPath("userData"), next);
+  const mine = ++languageSeq;
+  const changed = await switchLanguage(next, app.getPreferredSystemLanguages());
+  if (changed && mine === languageSeq && app.isReady()) buildMenu();
 }
 
 ipcMain.on("terno:version", (e) => {
@@ -556,6 +575,7 @@ if (!app.requestSingleInstanceLock()) {
       localMode: () => localMode,
       testPdfDir: testPdfDir(process.env, app.isPackaged, demo),
     });
+    await switchLanguage(language, app.getPreferredSystemLanguages());
     buildMenu();
     startBackend();
     // nothing runs before its startup delay (no engine loaded, no request)
