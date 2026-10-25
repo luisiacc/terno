@@ -24,7 +24,7 @@ export const PROVIDERS: readonly ProviderDescriptor[] = [
   },
   {
     id: "compatible",
-    label: "Compatible con OpenAI",
+    label: keyRef("ai.choice.compatible"),
     locality: "by-url",
     needsKey: true,
     presets: ["openrouter", "groq", "together", "azure", "custom"],

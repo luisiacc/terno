@@ -571,6 +571,9 @@ importers:
       '@terno/core':
         specifier: workspace:*
         version: link:../core
+      '@terno/i18n':
+        specifier: workspace:*
+        version: link:../i18n
     devDependencies:
       '@terno/mock-data':
         specifier: workspace:*

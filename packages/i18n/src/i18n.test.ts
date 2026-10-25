@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { compile, renderRich, renderText } from "./format";
-import { formatList, formatNumber, getLocale, hasKey, isLocalized, keyRef, L, loadLocale, plainText, LOCALES, onLocaleChange, resolveLocale, rich, setLocale, t, translate, type LocaleCheck, type Messages } from "./index";
+import { formatList, formatNumber, getLocale, hasKey, isLocalized, keyRef, L, loadLocale, plainText, refText, LOCALES, onLocaleChange, resolveLocale, rich, setLocale, t, translate, type LocaleCheck, type Messages } from "./index";
 import en from "./locales/en";
 import es from "./locales/es";
 
@@ -73,6 +73,15 @@ describe("descriptors", () => {
     setLocale("es", es);
     expect(translate(d)).toBe("Sistema (Entrada)");
     expect(t("language.system", { language: keyRef("view.trash") })).toBe("Sistema (Papelera)");
+  });
+
+  it("refText() shows a keyRef that came on its own (a model's label) in the active locale, other text as is", () => {
+    expect(refText(keyRef("ai.model.demo"))).toBe("Demo model");
+    expect(refText("llama3.1:8b")).toBe("llama3.1:8b");
+    expect(refText("GPT-4o mini")).toBe("GPT-4o mini");
+    setLocale("es", es);
+    expect(refText(keyRef("ai.model.demo"))).toBe("Modelo de demostración");
+    expect(refText(keyRef("ai.choice.compatible"))).toBe("Compatible con OpenAI");
   });
 
   it("isLocalized() checks shape, never trusts it", () => {

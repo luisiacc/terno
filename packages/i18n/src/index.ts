@@ -158,6 +158,13 @@ export function plainText(value: string): string {
   return typeof ref === "string" ? ref : value;
 }
 
+/** The value as text in the active locale: a keyRef that came over the wire (a model's label) translated, anything else as is. */
+export function refText(value: string): string {
+  const m = REF.exec(value);
+  const ref = m && (messages[m[1]!] ?? english[m[1]!]);
+  return typeof ref === "string" ? ref : value;
+}
+
 function refs(values: Readonly<Record<string, unknown>> | undefined, catalog: Messages): Readonly<Record<string, unknown>> {
   if (!values) return {};
   let out: Record<string, unknown> | null = null;

@@ -101,7 +101,7 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
         {(a) => <ColorPicker a11y={a} name={`account-color-${account.id}`} testId="account-color" value={account.color} onChange={(color) => save({ color }).catch((e: unknown) => { snack.error(errorText(e)); throw e; })} />}
       </SettingsRow>
       <SettingsRow stacked labelFor label={t("account.signature")} hint={t("account.signature.hint")}>
-        {(a) => <CommitInput multiline a11y={a} data-testid="account-signature" value={account.signature} placeholder="Luis Cordero · Acme Studio" maxLength={10_000} onCommit={(v) => save({ signature: v })} />}
+        {(a) => <CommitInput multiline a11y={a} data-testid="account-signature" value={account.signature} placeholder={t("account.signature.placeholder")} maxLength={10_000} onCommit={(v) => save({ signature: v })} />}
       </SettingsRow>
       <SettingsRow labelFor label={t("settings.general.syncWindow")} hint={t("account.syncWindow.hint", { days: generalWindow })}>
         {(a) => (
@@ -196,6 +196,7 @@ function GoogleClient({ settings, update }: { settings: AppSettings; update: Set
         WEB ? t("account.google.footerWeb", { origin: location.origin }) : t("account.google.footer")
       }
     >
+      {/* i18n-ignore: Google Cloud Console's name for the field, kept so it matches what people copy it from */}
       <SettingsRow stacked labelFor label="Google OAuth Client ID">
         {(a) => <CommitInput a11y={a} data-testid="gmail-client-id" value={settings.gmailClientId} placeholder="xxxxx.apps.googleusercontent.com" onCommit={(v) => update({ gmailClientId: v.trim() }, { quiet: true })} />}
       </SettingsRow>

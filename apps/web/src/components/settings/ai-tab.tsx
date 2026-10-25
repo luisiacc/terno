@@ -7,7 +7,7 @@ import { Input } from "@terno/ui/components/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { cn } from "@terno/ui/lib/utils";
 import { CircleAlert, CircleCheck, LaptopMinimalCheck, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
-import { t } from "@terno/i18n";
+import { refText, t } from "@terno/i18n";
 import { useEffect, useRef, useState } from "react";
 import { snack } from "~/lib/snack";
 import {
@@ -354,8 +354,9 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
                           onClick={() => void update({ ai: { model: m.id } })}
                           className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset data-selected:bg-accent data-selected:text-accent-foreground"
                         >
-                          <span className="min-w-0 flex-1 truncate font-mono">{m.label ?? m.id}</span>
+                          <span className="min-w-0 flex-1 truncate font-mono">{m.label ? refText(m.label) : m.id}</span>
                           {m.loaded && <span className="rounded bg-success/15 px-1 text-2xs text-success-ink">{t("ai.model.loaded")}</span>}
+                          {/* i18n-ignore: "32k ctx" is the context-window unit model servers print, the same in every language */}
                           {m.contextTokens ? <span className="text-muted-foreground tabular">{Math.round(m.contextTokens / 1024)}k ctx</span> : null}
                           {m.sizeBytes ? <span className="text-muted-foreground tabular">{formatBytes(m.sizeBytes)}</span> : null}
                         </button>

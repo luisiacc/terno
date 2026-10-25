@@ -112,6 +112,7 @@ async function start(init: WorkerInit): Promise<void> {
   const t0 = performance.now();
   const mark = (name: string) => (timings[name] = Math.round((performance.now() - t0) * 10) / 10);
   if (init.build !== BUILD) {
+    // i18n-ignore: for logs only; the gate shows a stale build's own title and body, never this message
     post({ type: "fatal", code: "BUILD_MISMATCH", message: `This tab (${init.build}) and its worker (${BUILD}) come from different builds` });
     return;
   }

@@ -107,6 +107,30 @@ describe("rpc", () => {
     await expect(client.call("counts.get", {})).rejects.toMatchObject({ code: "UNAVAILABLE" });
   });
 
+  it("failures made on this side (not connected, closed, restarted, timed out) are catalog messages, in this side's language", async () => {
+    const english = new RpcClient();
+    await expect(english.call("counts.get", {})).rejects.toMatchObject({ code: "UNAVAILABLE", message: "Terno isn’t connected to the mail engine yet. Try again in a moment.", i18n: { key: "errors.rpc.notConnected" } });
+
+    const translate = (m: { key: string; message: string }) => `es:${m.key}`;
+    const neverAnswers = { "threads.list": (() => new Promise(() => {})) as never };
+    const server = new RpcServer(neverAnswers as unknown as Handlers);
+    const [c1, s1] = createMemoryTransportPair();
+    server.connect(s1, { clientId: "t", origin: "renderer" });
+    const client = new RpcClient(c1, { translate, defaultTimeoutMs: 5 });
+    await expect(client.call("threads.list", { view: "inbox" })).rejects.toMatchObject({ code: "TIMEOUT", message: "es:errors.rpc.timeout", details: { method: "threads.list", timeoutMs: 5 } });
+
+    const replaced = client.call("threads.list", { view: "inbox" });
+    const [c2, s2] = createMemoryTransportPair();
+    server.connect(s2, { clientId: "t2", origin: "renderer" });
+    client.attach(c2);
+    await expect(replaced).rejects.toMatchObject({ code: "UNAVAILABLE", message: "es:errors.rpc.restarted" });
+
+    const closed = client.call("threads.list", { view: "inbox" });
+    s2.close();
+    await expect(closed).rejects.toMatchObject({ message: "es:errors.rpc.closed", i18n: { key: "errors.rpc.closed" } });
+    await expect(client.call("counts.get", {})).rejects.toMatchObject({ message: "es:errors.rpc.notConnected" });
+  });
+
   it("can reattach to a new transport after a backend restart", async () => {
     const { client, serverSide, server } = setup();
     serverSide.close();

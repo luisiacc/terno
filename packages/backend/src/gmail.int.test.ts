@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { encodeText } from "@terno/core";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
-import { createGmailTokenBroker, createRegistry, GMAIL_RECONNECT, type ProviderRegistry } from "@terno/mail";
+import { createGmailTokenBroker, createRegistry, gmailReconnect, type ProviderRegistry } from "@terno/mail";
 import { afterEach, describe, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { sqlDb } from "@terno/db";
@@ -515,11 +515,11 @@ describe("Gmail on the web (Google's token model, no refresh token)", () => {
       await backend.runWorker();
       now += 60_000;
     }
-    expect(sqlDb(backend.store).get("SELECT state, attempts, last_error FROM ops")).toEqual({ state: "queued", attempts: 0, last_error: encodeText(GMAIL_RECONNECT) });
-    expect((await client.call("ops.list", {}))[0]).toMatchObject({ lastError: GMAIL_RECONNECT.message, lastErrorI18n: { key: "errors.gmail.reconnectWeb" } });
+    expect(sqlDb(backend.store).get("SELECT state, attempts, last_error FROM ops")).toEqual({ state: "queued", attempts: 0, last_error: encodeText(gmailReconnect()) });
+    expect((await client.call("ops.list", {}))[0]).toMatchObject({ lastError: gmailReconnect().message, lastErrorI18n: { key: "errors.gmail.reconnectWeb" } });
     expect(await backend.store.ops.nextAttemptAt()).toBeNull();
     await backend.syncAccount(account.id);
-    expect((await client.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "error", lastError: GMAIL_RECONNECT.message, lastErrorI18n: { key: "errors.gmail.reconnectWeb" } });
+    expect((await client.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "error", lastError: gmailReconnect().message, lastErrorI18n: { key: "errors.gmail.reconnectWeb" } });
     // reconnecting resumes it right away
     await client.call("accounts.connectGmailToken", { accessToken: google.issue(), expiresIn: 3600 });
     await backend.runWorker();

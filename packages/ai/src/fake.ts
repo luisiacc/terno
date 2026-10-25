@@ -1,4 +1,5 @@
 import { normalizeText } from "@terno/core";
+import { keyRef } from "@terno/i18n";
 import type { ModelTransport } from "./types";
 import type { WireFilter } from "./wire";
 
@@ -72,7 +73,7 @@ export function fakeTransport(options: { failFirstAttempt?: boolean } = {}): Mod
       return { text: JSON.stringify(out), stop: "end" };
     },
     async listModels() {
-      return [{ id: "demo", label: "Modelo de demostración", contextTokens: 32_768, loaded: true }];
+      return [{ id: "demo", label: keyRef("ai.model.demo"), contextTokens: 32_768, loaded: true }];
     },
   };
 }

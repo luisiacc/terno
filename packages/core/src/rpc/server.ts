@@ -60,8 +60,10 @@ export class RpcServer {
   /** Executes a call directly (used by in-process callers and tests). */
   async invoke<M extends MethodName>(method: M, params: unknown, ctx: CallContext): Promise<ResultOf<M>> {
     const def = contract[method];
+    // i18n-ignore: protocol errors for developers and agents (a method the UI doesn't call, or an origin without access)
     if (!def) throw new RpcError("UNKNOWN_METHOD", `Unknown method ${String(method)}`);
     if (this.options.authorize && !(await this.options.authorize(method, ctx))) {
+      // i18n-ignore: as above, a protocol error for developers and agents
       throw new RpcError("FORBIDDEN", `${method} is not allowed for ${ctx.origin}`);
     }
     const parsed = def.params.parse(params ?? {}) as ParsedParamsOf<M>;

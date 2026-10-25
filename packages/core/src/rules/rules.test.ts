@@ -1,6 +1,9 @@
+import { setLocale, t } from "@terno/i18n";
+import en from "@terno/i18n/locales/en";
+import es from "@terno/i18n/locales/es";
 import { describe, expect, it } from "vitest";
 import { bodyMatches, evaluateRule, type RuleMessage } from "./evaluate";
-import { filterRuleSchema, type FilterRule } from "./schema";
+import { filterIssueKey, filterRuleSchema, type FilterRule } from "./schema";
 
 const NOW = Date.UTC(2026, 9, 22);
 const msg = (over: Partial<RuleMessage> = {}): RuleMessage => ({
@@ -121,5 +124,23 @@ describe("filterRuleSchema", () => {
     expect(parse({ field: "subject", op: "contains", value: "   " })).toBe(false);
     expect(parse({ field: "subject", op: "matches", value: ".*" })).toBe(false);
     expect(parse({ field: "ageDays", op: "gt", value: 30 })).toBe(true);
+  });
+
+  it("a rule check's issue reads as English for the AI and agents, and gives the filter builder a key for the user's language", () => {
+    const issues = (actions: unknown[], value = "x") => {
+      const r = filterRuleSchema.safeParse({ match: "all", conditions: [{ field: "subject", op: "contains", value }], actions });
+      return r.success ? [] : r.error.issues;
+    };
+    const conflict = issues([{ type: "archive" }, { type: "trash" }]);
+    expect(conflict[0]?.message).toBe("A filter can only move mail to one place (archive, trash or spam).");
+    expect(filterIssueKey(conflict)).toBe("filters.invalid.oneLocation");
+    const dup = issues([{ type: "star" }, { type: "star" }]);
+    expect(dup[0]).toMatchObject({ path: ["actions", 1], message: "A filter can’t have the same action twice." });
+    expect(filterIssueKey(dup)).toBe("filters.invalid.duplicate");
+    expect(filterIssueKey(issues([{ type: "star" }], " "))).toBe("filters.incomplete");
+    expect(filterIssueKey(issues([]))).toBe("filters.incomplete");
+    setLocale("es", es);
+    expect(t(filterIssueKey(conflict))).toBe("Un filtro solo puede mover el correo a un lugar (archivo, papelera o spam).");
+    setLocale("en", en);
   });
 });

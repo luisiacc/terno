@@ -1,4 +1,4 @@
-import { filterRuleSchema, describeCondition, LEARNED_FILTER_NAME, type CategoryColor, type Condition, type Filter, type FilterAction, type FilterRule, type LearnedProposal, type ThreadSummary } from "@terno/core";
+import { filterIssueKey, filterRuleSchema, describeCondition, LEARNED_FILTER_NAME, type CategoryColor, type Condition, type Filter, type FilterAction, type FilterRule, type LearnedProposal, type ThreadSummary } from "@terno/core";
 import { Badge } from "@terno/ui/components/badge";
 import { Button } from "@terno/ui/components/button";
 import { CategoryDot } from "@terno/ui/components/category-dot";
@@ -468,7 +468,7 @@ export function FiltersDialog() {
                   </SelectContent>
                 </Select>
               </div>
-              {!valid.success && <p className="text-xs text-destructive" data-testid="filter-invalid">{valid.error.issues[0]?.message.replace(/^Too small.*/, t("filters.incomplete"))}</p>}
+              {!valid.success && <p className="text-xs text-destructive" data-testid="filter-invalid">{t(filterIssueKey(valid.error.issues))}</p>}
             </div>
 
             <Preview rule={rule} />

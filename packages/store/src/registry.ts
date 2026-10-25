@@ -1,3 +1,4 @@
+import { L, type Localized } from "@terno/i18n";
 import type { MailStore } from "./mail-store";
 import type { Platform } from "./platform";
 
@@ -37,7 +38,7 @@ export interface StoreAdapter {
 
 export type StoreChoice =
   | { adapter: StoreAdapter; reason: "requested" | "pinned" | "existing" | "default" }
-  | { adapter: null; reason: "unavailable"; message: string };
+  | { adapter: null; reason: "unavailable"; message: Localized };
 
 /**
  * The adapters a host offers, in preference order. `pick` never trades an
@@ -73,8 +74,8 @@ export class StoreRegistry {
     ] as const) {
       if (!id) continue;
       const adapter = this.get(id);
-      if (!adapter) return { adapter: null, reason: "unavailable", message: `Unknown storage "${id}" (known: ${this.adapters.map((a) => a.id).join(", ")})` };
-      if (!(await adapter.available())) return { adapter: null, reason: "unavailable", message: `${adapter.label} is not available in this browser` };
+      if (!adapter) return { adapter: null, reason: "unavailable", message: L("web.storage.unknownEngine", { id, known: this.adapters.map((a) => a.id).join(", ") }) };
+      if (!(await adapter.available())) return { adapter: null, reason: "unavailable", message: L("web.storage.engineMissing", { engine: adapter.label }) };
       return { adapter, reason };
     }
     for (const adapter of this.adapters) {
@@ -83,6 +84,6 @@ export class StoreRegistry {
     for (const adapter of this.adapters) {
       if (adapter.automatic && (await adapter.available())) return { adapter, reason: "default" };
     }
-    return { adapter: null, reason: "unavailable", message: "No storage available in this browser (OPFS and IndexedDB are both missing)" };
+    return { adapter: null, reason: "unavailable", message: L("web.storage.noEngine") };
   }
 }

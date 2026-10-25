@@ -1,3 +1,4 @@
+import { L } from "@terno/i18n";
 import { contract, type EventName, type Events, type MethodName, type ParamsOf, type ResultOf } from "./contract";
 import { i18nOf, RPC_VERSION, RpcError, type I18nRef, type RpcMessage, type Transport } from "./envelope";
 
@@ -35,12 +36,12 @@ export class RpcClient {
 
   /** (Re)attach to a transport, e.g. after the backend restarted. In-flight calls fail fast. */
   attach(transport: Transport): void {
-    this.detachTransport(new RpcError("UNAVAILABLE", "Transport replaced"));
+    this.detachTransport(this.failure("UNAVAILABLE", "errors.rpc.restarted"));
     this.transport = transport;
     this.detach = [
       transport.onMessage((msg) => this.receive(msg)),
       transport.onClose(() => {
-        this.detachTransport(new RpcError("UNAVAILABLE", "Backend connection closed"));
+        this.detachTransport(this.failure("UNAVAILABLE", "errors.rpc.closed"));
         for (const l of this.closeListeners) l();
       }),
     ];
@@ -49,6 +50,12 @@ export class RpcClient {
   onClose(listener: () => void): () => void {
     this.closeListeners.add(listener);
     return () => this.closeListeners.delete(listener);
+  }
+
+  /** A failure this side makes up (no answer to translate): a catalog message, in this side's language when it has one. */
+  private failure(code: "UNAVAILABLE" | "TIMEOUT", key: "errors.rpc.restarted" | "errors.rpc.closed" | "errors.rpc.notConnected" | "errors.rpc.timeout", details?: unknown): RpcError {
+    const d = L(key);
+    return new RpcError(code, this.translate ? this.translate(d) : d.message, details, { i18n: { key: d.key } });
   }
 
   private detachTransport(reason: Error): void {
@@ -64,13 +71,13 @@ export class RpcClient {
 
   call<M extends MethodName>(method: M, params: ParamsOf<M>): Promise<ResultOf<M>> {
     const transport = this.transport;
-    if (!transport) return Promise.reject(new RpcError("UNAVAILABLE", "Backend not connected"));
+    if (!transport) return Promise.reject(this.failure("UNAVAILABLE", "errors.rpc.notConnected"));
     const id = this.nextId++;
     const timeoutMs = contract[method].timeoutMs ?? this.defaultTimeoutMs;
     const call = new Promise<ResultOf<M>>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new RpcError("TIMEOUT", `${method} timed out after ${timeoutMs}ms`));
+        reject(this.failure("TIMEOUT", "errors.rpc.timeout", { method, timeoutMs }));
       }, timeoutMs);
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer });
       transport.send({ v: RPC_VERSION, t: "req", id, m: method, p: params });
@@ -118,7 +125,7 @@ export class RpcClient {
 
   close(): void {
     const t = this.transport;
-    this.detachTransport(new RpcError("UNAVAILABLE", "Client closed"));
+    this.detachTransport(this.failure("UNAVAILABLE", "errors.rpc.closed"));
     t?.close();
   }
 }

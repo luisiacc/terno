@@ -118,6 +118,7 @@ export function createHandlers(b: Backend): Handlers {
       const seq = (b.searchSeq.get(ctx.clientId) ?? 0) + 1;
       b.searchSeq.set(ctx.clientId, seq);
       await b.platform.yield();
+      // i18n-ignore: never shown; the list drops CANCELLED (state/list.ts)
       if (b.searchSeq.get(ctx.clientId) !== seq) throw new RpcError("CANCELLED", "Superseded by a newer search");
       const started = performance.now();
       // this query supersedes the one still running, whatever it turns out to be
@@ -476,6 +477,7 @@ export function createHandlers(b: Backend): Handlers {
 
     "accounts.connectGmailToken": async ({ accessToken, expiresIn }) => {
       const tokens = b.options.providers.gmailTokens;
+      // i18n-ignore: a wiring mistake (only the web build calls this, and it has the broker), for developers
       if (!tokens) throw new RpcError("UNAVAILABLE", "This host connects Gmail with accounts.connectGmail.");
       const who = await tokens.inspect(accessToken, b.net.fetchFor("mail")).catch((error: unknown) => {
         throw new RpcError("BAD_REQUEST", messageOf(error));

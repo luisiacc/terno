@@ -4,13 +4,13 @@ import { buildRawPortable } from "./compose-portable";
 import { ProviderAuthError, ProviderError, type GmailTokenBroker, type MailProvider, type ProviderContext } from "./types";
 
 /** What a web Gmail account shows when its hour-long token is gone (after a reload or an hour). */
-export const GMAIL_RECONNECT = L("errors.gmail.reconnectWeb");
+export const gmailReconnect = () => L("errors.gmail.reconnectWeb");
 
 /**
  * Google's token model for the browser (no server, so no refresh token):
  * the page gets a 1-hour access token from Google Identity Services with
  * the user's client ID; it lives only in this worker's memory, per account.
- * Without one, sync and ops wait (retryable) behind "Reconectar Gmail".
+ * Without one, sync and ops wait (retryable) behind "Reconnect Gmail".
  */
 export function createGmailTokenBroker(o: { endpoints?: Partial<GmailEndpoints>; now?: () => number } = {}): GmailTokenBroker & { provider(ctx: ProviderContext): MailProvider } {
   const ep = { ...GOOGLE_ENDPOINTS, ...o.endpoints };
@@ -38,7 +38,7 @@ export function createGmailTokenBroker(o: { endpoints?: Partial<GmailEndpoints>;
           async get() {
             const t = tokens.get(id);
             // ops wait for the user (no attempts spent) and resume when the account is reconnected
-            if (!t || t.expiresAt - 60_000 <= now()) throw new ProviderAuthError(GMAIL_RECONNECT);
+            if (!t || t.expiresAt - 60_000 <= now()) throw new ProviderAuthError(gmailReconnect());
             return t.token;
           },
           invalidate: () => void tokens.delete(id),

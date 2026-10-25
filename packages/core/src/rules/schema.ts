@@ -1,3 +1,4 @@
+import { L, type TextKey } from "@terno/i18n";
 import { z } from "zod";
 
 export const TEXT_FIELDS = ["from", "fromDomain", "recipients", "subject", "body", "listId"] as const;
@@ -59,22 +60,29 @@ export const filterRuleSchema = z
     const locations = rule.actions.filter((a) =>
       (LOCATION_ACTIONS as readonly string[]).includes(a.type),
     );
-    if (locations.length > 1) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["actions"],
-        message: "A filter can only move mail to one place (archive, trash or spam).",
-      });
-    }
+    if (locations.length > 1) ctx.addIssue(ruleIssue("filters.invalid.oneLocation", ["actions"]));
     const seen = new Set<string>();
-    for (const action of rule.actions) {
+    rule.actions.forEach((action, i) => {
       const key = action.type === "addCategory" ? `cat:${action.categoryId}` : action.type;
-      if (seen.has(key)) {
-        ctx.addIssue({ code: "custom", path: ["actions"], message: `Duplicate action ${key}.` });
-      }
+      if (seen.has(key)) ctx.addIssue(ruleIssue("filters.invalid.duplicate", ["actions", i]));
       seen.add(key);
-    }
+    });
   });
+
+const RULE_ISSUES = ["filters.invalid.oneLocation", "filters.invalid.duplicate"] as const satisfies readonly TextKey[];
+type RuleIssueKey = (typeof RULE_ISSUES)[number];
+
+/** A rule check's issue: English text for the AI's repair loop and agents, the key for the filter builder (it says it in the user's language). */
+function ruleIssue(key: RuleIssueKey, path: (string | number)[]) {
+  return { code: "custom" as const, path, message: L(key).message, params: { i18n: key } };
+}
+
+/** What the filter builder says about an invalid rule: a rule check's own message, else "fill in every field". */
+export function filterIssueKey(issues: readonly z.core.$ZodIssue[]): RuleIssueKey | "filters.incomplete" {
+  const issue = issues[0];
+  const key: unknown = issue?.code === "custom" ? issue.params?.i18n : undefined;
+  return RULE_ISSUES.find((k) => k === key) ?? "filters.incomplete";
+}
 
 export type Condition = z.infer<typeof conditionSchema>;
 export type TextCondition = z.infer<typeof textConditionSchema>;

@@ -93,6 +93,7 @@ export function createAi(config: ProviderConfig, options: AiOptions = {}): AiTas
     },
 
     classify<L extends string>(input: ClassifyInput<L>, signal?: AbortSignal) {
+      // i18n-ignore: a caller's bug (the backend always passes labels), for developers
       if (input.labels.length === 0) throw new AiError("classify needs at least one label", "invalid_output");
       const ids = input.items.map((i) => i.id);
       const zod = z.object({
