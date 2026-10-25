@@ -527,13 +527,18 @@ function buildMenu() {
 let language = readLanguage(app.getPath("userData"));
 let languageSeq = 0;
 
+/** Smoke tests pin the system's languages (dev builds and the demo mailbox only); the renderer gets the same. */
+const pinnedLanguages = process.env.TERNO_TEST_LANGUAGES && (!app.isPackaged || demo) ? process.env.TERNO_TEST_LANGUAGES.split(",") : null;
+if (pinnedLanguages) app.commandLine.appendSwitch("lang", pinnedLanguages[0]!);
+const systemLanguages = () => pinnedLanguages ?? app.getPreferredSystemLanguages();
+
 /** The backend reported the language setting: saved for the next start, and the menu rebuilt in it. */
 async function followLanguage(next: unknown) {
   if (!isLanguageSetting(next) || next === language) return;
   language = next;
   writeLanguage(app.getPath("userData"), next);
   const mine = ++languageSeq;
-  const changed = await switchLanguage(next, app.getPreferredSystemLanguages());
+  const changed = await switchLanguage(next, systemLanguages());
   if (changed && mine === languageSeq && app.isReady()) buildMenu();
 }
 
@@ -575,7 +580,7 @@ if (!app.requestSingleInstanceLock()) {
       localMode: () => localMode,
       testPdfDir: testPdfDir(process.env, app.isPackaged, demo),
     });
-    await switchLanguage(language, app.getPreferredSystemLanguages());
+    await switchLanguage(language, systemLanguages());
     buildMenu();
     startBackend();
     // nothing runs before its startup delay (no engine loaded, no request)
