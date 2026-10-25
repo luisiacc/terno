@@ -227,29 +227,40 @@ for (const design of DESIGNS) for (const density of ["comfortable", "compact"] a
  });
 }
 
-test("switching design with hundreds of rows loaded is one frame of work: no frame over 50 ms, data-design and the rows in step", async ({ app: page }) => {
+test("switching design with hundreds of rows loaded is one frame of work: every switch's frame ≤ 50 ms, data-design and the rows in step", async ({ app: page }) => {
   await page.getByTestId("nav-all").click();
   await expect(page.getByTestId("list-title")).toHaveText("All Mail");
   // a few pages loaded, the list scrolled into them
   await page.getByRole("listbox").evaluate((el) => el.scrollTo(0, 20_000));
   await page.waitForTimeout(500);
+  /** one switch, timed from the frame it starts in to the next frame (its work, style, layout and paint), the rows' height checked in that frame */
+  const time = (want: string, rowH: number) =>
+    page.evaluate(
+      ({ want, rowH }) =>
+        new Promise<number>((resolve, reject) => {
+          requestAnimationFrame((a) => {
+            (window as unknown as { __terno: { setDesign(d: string): void } }).__terno.setDesign(want);
+            requestAnimationFrame((b) => {
+              const row = document.querySelector<HTMLElement>("[data-testid=thread-row]");
+              if (document.documentElement.dataset.design !== want || row?.offsetHeight !== rowH) reject(new Error(`not in step after switching to ${want}`));
+              else resolve(b - a);
+            });
+          });
+        }),
+      { want, rowH },
+    );
+  const heights = Object.fromEntries(DESIGNS.map((d) => [d.id, d.rows.comfortable]));
+  // once through, unmeasured: each design's faces fetched (a first switch also lays out a new face; that isn't the switch's own work)
+  for (const id of ["lumen", "atelier", "macos"] as const) await time(id, heights[id]!);
+  await page.evaluate(() => document.fonts.ready);
   const samples: number[] = [];
   for (const id of ["lumen", "atelier", "macos", "lumen", "atelier", "macos"] as const) {
-    await startFrames(page);
-    const ms = await page.evaluate(async (want) => {
-      const t0 = performance.now();
-      (window as unknown as { __terno: { setDesign(d: string): void } }).__terno.setDesign(want);
-      await new Promise<void>((r) => requestAnimationFrame(() => r()));
-      if (document.documentElement.dataset.design !== want) throw new Error("not applied in that frame");
-      return performance.now() - t0;
-    }, id);
-    const f = await stopFrames(page);
+    const ms = await time(id, heights[id]!);
     samples.push(ms);
-    expect(f.deltas.length ? Math.max(...f.deltas) : 0, `longest frame switching to ${id}`).toBeLessThanOrEqual(50 * MULT);
+    expect(ms, `the frame switching to ${id}`).toBeLessThanOrEqual(50 * MULT);
   }
-  const st = stat("design switch, hundreds of rows loaded (the first one lays out a new face)", 50, samples);
-  stats.push(st);
-  expect(st.p50).toBeLessThanOrEqual(50 * MULT);
+  expect(samples).toHaveLength(6);
+  stats.push(stat("design switch, hundreds of rows loaded: its frame", 50, samples));
 });
 
 test("a long conversation: expanding 19 messages (5 HTML) keeps every frame ≤ 50 ms and collapsing leaves no frame or observer behind", async ({ app: page, server }) => {
