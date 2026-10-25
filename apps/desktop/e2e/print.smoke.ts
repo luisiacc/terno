@@ -161,7 +161,8 @@ test("native print without a printer says so and suggests the PDF (only where no
   await page.keyboard.press("Meta+p");
   await expect(page.getByTestId("print-preview")).toHaveAttribute("data-ready", "true");
   await page.getByTestId("print-submit").click();
-  await expect(page.getByText("No hay impresoras configuradas")).toBeVisible();
+  // the dock's message (plan 13 also announces it in a screen-reader alert)
+  await expect(page.getByTestId("snack-message").getByText("No hay impresoras configuradas", { exact: true })).toBeVisible();
   // the sheet stays: the PDF is one click away
   await expect(page.getByTestId("print-sheet")).toBeVisible();
   await page.keyboard.press("Escape");
