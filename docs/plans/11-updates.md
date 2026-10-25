@@ -207,7 +207,8 @@ These revisions override §§2–6 where they conflict. The full critique is in 
 
 ### Verification
 
-- Unit: reducer and error/retry matrix (20), policy, hosts, locations, feed, prefs, install record and the override proof (38), the controller flow (20), the shutdown coordinator (6), quiesce (4 backend, 1 conformance on both stores), pill model and check messages (11), menu (2).
+- Unit: reducer and error/retry matrix (21), policy, hosts, headers, locations, feed, prefs, install record and the override proof (39), the controller flow (24), the shutdown coordinator (6), quiesce (5 backend, 1 conformance on both stores), pill model and check messages (11), reload-when-saved (5), menu (2).
+- Full suite after the rebase on 0eeb2dd: typecheck, lint, `pnpm test` (1686 + 393), `test:e2e` (248), `test:web` (28), `test:ui-perf` (17), `dist:mac` (signed with Apple Development) + `test:smoke` (34), `test:perf` (107): all pass.
 - e2e (web fixture with a stand-in for main): every pill state light and dark with axe, the popover, Restart Now / Later, a deferred restart, a refused download, the post-update snack, Settings → Updates, an unsupported copy, ⌘K. Web: a deploy offered by the periodic check, a draft typed until another tab activates the new build survives, every tab ends on the new build.
 - Packaged (`update.smoke.ts`, ~1.5 min, real Squirrel): a tampered zip is refused with an integrity error and the bundle stays 0.1.0; through the pill (local mode: check, Download, Restart Now) 0.1.0 updates to 0.1.1, relaunches, logs `update.applied` from the new version after `shutdown.done{closed, restart}`; a plain quit of 0.1.1 leaves an empty WAL and every thread. Squirrel's caches and launchd job for the test bundle id are cleaned before and after.
 
