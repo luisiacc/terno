@@ -6,12 +6,15 @@
   "exports": {
     ".": "./src/index.ts",
     "./rpc": "./src/rpc/index.ts",
-    "./legacy-env": "./src/legacy-env.ts"
+    "./legacy-env": "./src/legacy-env.ts",
+    "./diag": "./src/diag/index.ts",
+    "./diag/sentry": "./src/diag/sentry.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@sentry/core": "catalog:",
     "zod": "catalog:"
   }
 }

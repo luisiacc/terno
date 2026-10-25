@@ -21,7 +21,9 @@
     "@terno/mcp": "workspace:*"
   },
   "devDependencies": {
+    "@jridgewell/trace-mapping": "catalog:",
     "@playwright/test": "catalog:",
+    "@sentry/cli": "catalog:",
     "@terno/mock-data": "workspace:*",
     "@types/node": "catalog:",
     "electron": "catalog:",
