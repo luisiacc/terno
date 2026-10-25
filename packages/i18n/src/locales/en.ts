@@ -726,6 +726,7 @@ const en = {
   "compose.format.undo": "Undo",
   "compose.format.redo": "Redo",
   "compose.format.font": "Font",
+  "compose.format.fontValue": "Font: {font}",
   "compose.format.font.sans": "Sans Serif",
   "compose.format.font.serif": "Serif",
   "compose.format.font.mono": "Fixed width",

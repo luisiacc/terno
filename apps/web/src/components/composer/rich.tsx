@@ -35,6 +35,7 @@ import {
 import { TextSelection, type EditorState } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { attachBody, useDrafts } from "~/lib/drafts";
 import { openLink } from "../mail-body";
 import { typedEarly } from "./lazy";
@@ -243,7 +244,8 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
   };
 
   const closeLink = () => {
-    setLink(null);
+    // gone first, then focus: a popover still mounted would keep (or hand back) focus, and the next keys would miss the text
+    flushSync(() => setLink(null));
     viewRef.current?.focus();
   };
 
@@ -424,19 +426,19 @@ function Tool({ label, keys, pressed, disabled, onRun, testId, children }: { lab
 }
 
 /** A menu of exclusive values (font, size, alignment): picks apply to the selection, focus goes back to the text. */
-function ValueMenu<V extends string>({ label, value, items, onPick, trigger, testId, c }: { label: string; value: V; items: { value: V; label: string; className?: string; style?: React.CSSProperties; icon?: ReactNode }[]; onPick: (v: V) => void; trigger: ReactNode; testId: string; c: ComposerController }) {
+function ValueMenu<V extends string>({ label, name, value, items, onPick, trigger, testId, c }: { label: string; name?: string; value: V; items: { value: V; label: string; className?: string; style?: React.CSSProperties; icon?: ReactNode }[]; onPick: (v: V) => void; trigger: ReactNode; testId: string; c: ComposerController }) {
   return (
     <DropdownMenu>
       <Tip label={label}>
-        <ToolbarButton type="button" aria-label={label} onMouseDown={keepFocus} data-testid={testId} className={tool} render={<DropdownMenuTrigger />}>
+        <ToolbarButton type="button" aria-label={name ?? label} onMouseDown={keepFocus} data-testid={testId} className={tool} render={<DropdownMenuTrigger />}>
           {trigger}
           <ChevronDown className="size-3! text-muted-foreground" />
         </ToolbarButton>
       </Tip>
-      <DropdownMenuContent align="start" className="w-auto min-w-40" finalFocus={{ current: c.dom }} data-testid={`${testId}-menu`}>
+      <DropdownMenuContent align="start" className="w-auto min-w-40" finalFocus={() => c.dom} data-testid={`${testId}-menu`}>
         <DropdownMenuRadioGroup value={value} onValueChange={(v) => onPick(v as V)}>
           {items.map((i) => (
-            <DropdownMenuRadioItem key={i.value} value={i.value} className={i.className} style={i.style} data-testid={`${testId}-${i.value}`}>
+            <DropdownMenuRadioItem key={i.value} value={i.value} closeOnClick className={i.className} style={i.style} data-testid={`${testId}-${i.value}`}>
               {i.icon}
               {i.label}
             </DropdownMenuRadioItem>
@@ -561,6 +563,8 @@ const GROUPS: Group[] = [
         <ValueMenu
           c={c}
           label={t("compose.format.font")}
+          // the visible font name is part of the accessible name (WCAG 2.5.3)
+          name={t("compose.format.fontValue", { font: items.find((i) => i.value === value)!.label })}
           value={value}
           items={items}
           onPick={(v) => c.setFont(v === "sans" ? null : v)}

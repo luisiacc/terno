@@ -153,3 +153,6 @@ export function toggleFormatBar(): void {
     // private mode: remembered for this session only
   }
 }
+
+/** A popover or menu is open (the format bar's, a link's): Esc closes it, not the draft. */
+export const popupOpen = (): boolean => document.querySelector("[data-slot=popover-content][data-open], [data-slot=dropdown-menu-content][data-open]") !== null;

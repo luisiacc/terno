@@ -1,6 +1,6 @@
 import { emptyDoc, fromPlainText, parseHtml, restoreSlice, cleanPastedHtml, schema, toEmailHtml, toPlainText, urlIn, MAX_INDENT, type Align } from "@terno/richtext";
 import { baseKeymap, chainCommands, lift, toggleMark, wrapIn } from "prosemirror-commands";
-import { history, redo, redoDepth, undo, undoDepth } from "prosemirror-history";
+import { closeHistory, history, redo, redoDepth, undo, undoDepth } from "prosemirror-history";
 import { InputRule, inputRules, undoInputRule, wrappingInputRule } from "prosemirror-inputrules";
 import { keymap } from "prosemirror-keymap";
 import { Fragment, Slice, type Mark, type MarkType, type Node as PMNode, type ResolvedPos } from "prosemirror-model";
@@ -50,14 +50,20 @@ export const forgetState = (key: string) => kept.delete(key);
 
 // ── commands
 
+/** A formatting command is one undo step of its own (typing groups; ⌘] then ⌘[ undo one at a time). */
+const step =
+  (cmd: Command): Command =>
+  (state, dispatch, view) =>
+    cmd(state, dispatch && ((tr) => dispatch(closeHistory(tr))), view);
+
 const markApplies: Command = (state) => !state.selection.empty || state.selection.$from.parent.inlineContent;
 
 /** Bold, italic, underline, strike: on the whole selection unless all of it already has it (Word, Docs, Gmail). */
-const toggle = (type: MarkType): Command => toggleMark(type, null, { removeWhenPresent: false });
+const toggle = (type: MarkType): Command => step(toggleMark(type, null, { removeWhenPresent: false }));
 
 /** A valued mark (font, size, color, highlight): set to a value, or removed (null) — for the selection or what's typed next. */
 export function setMark(type: MarkType, value: string | null): Command {
-  return (state, dispatch) => {
+  return step((state, dispatch) => {
     if (!markApplies(state)) return false;
     if (!dispatch) return true;
     const tr = state.tr;
@@ -73,7 +79,7 @@ export function setMark(type: MarkType, value: string | null): Command {
     }
     dispatch(tr.scrollIntoView());
     return true;
-  };
+  });
 }
 
 /** The textblocks the selection touches. */
@@ -89,7 +95,7 @@ function eachBlock(state: EditorState, fn: (node: PMNode, pos: number) => void):
 }
 
 export function setAlign(align: Align): Command {
-  return (state, dispatch) => {
+  return step((state, dispatch) => {
     if (dispatch) {
       const tr = state.tr;
       eachBlock(state, (node, pos) => {
@@ -98,7 +104,7 @@ export function setAlign(align: Align): Command {
       dispatch(tr);
     }
     return true;
-  };
+  });
 }
 
 /** The nearest list around the selection's start: its node, depth and type. */
@@ -169,12 +175,12 @@ export const COMMANDS: Record<FormatCommand, Command> = {
   italic: toggle(marks.italic),
   underline: toggle(marks.underline),
   strike: toggle(marks.strike),
-  orderedList: toggleList(nodes.ordered_list),
-  bulletList: toggleList(nodes.bullet_list),
-  indent,
-  outdent,
-  quote: toggleQuote,
-  clear: clearFormatting,
+  orderedList: step(toggleList(nodes.ordered_list)),
+  bulletList: step(toggleList(nodes.bullet_list)),
+  indent: step(indent),
+  outdent: step(outdent),
+  quote: step(toggleQuote),
+  clear: step(clearFormatting),
 };
 
 // ── links
@@ -227,11 +233,11 @@ export function applyLink(view: EditorView, range: { from: number; to: number },
   }
   // the caret after the link, typing outside it (links aren't inclusive)
   tr.setSelection(TextSelection.create(tr.doc, to)).setStoredMarks(null);
-  view.dispatch(tr.scrollIntoView());
+  view.dispatch(closeHistory(tr.scrollIntoView()));
 }
 
 export function removeLink(view: EditorView, range: { from: number; to: number }): void {
-  view.dispatch(view.state.tr.removeMark(range.from, range.to, marks.link));
+  view.dispatch(closeHistory(view.state.tr.removeMark(range.from, range.to, marks.link)));
 }
 
 /** A URL just typed, before the caret, becomes a link (on space or Enter). */
@@ -327,7 +333,7 @@ export interface EditorHooks {
 
 /** Plain text pasted keeps its lines: one paragraph per line, empty lines included (as a plain draft opens). */
 function textSlice(text: string): Slice {
-  const lines = text.replace(/\r\n?/g, "\n").replace(/ /g, " ").split("\n");
+  const lines = text.replace(/\r\n?/g, "\n").replace(/\u00a0/g, " ").split("\n");
   return Slice.maxOpen(Fragment.from(lines.map((l) => nodes.paragraph.create(null, l ? schema.text(l) : null))));
 }
 
@@ -344,9 +350,9 @@ export function createPlugins(): Plugin[] {
     "Mod-Shift-x": COMMANDS.strike,
     "Mod-Shift-7": COMMANDS.orderedList,
     "Mod-Shift-8": COMMANDS.bulletList,
-    "Mod-]": indent,
-    "Mod-[": outdent,
-    "Mod-\\": clearFormatting,
+    "Mod-]": COMMANDS.indent,
+    "Mod-[": COMMANDS.outdent,
+    "Mod-\\": COMMANDS.clear,
     "Mod-z": undo,
     "Mod-Shift-z": redo,
     "Mod-y": redo,
@@ -380,8 +386,8 @@ export function createPlugins(): Plugin[] {
       props: {
         // NBSP typed (⌥Space) reads as a space: mail encodes runs of spaces with it, and a draft's text stays plain
         handleTextInput(view, from, to, text) {
-          if (!text.includes(" ")) return false;
-          view.dispatch(view.state.tr.insertText(text.replace(/ /g, " "), from, to));
+          if (!text.includes("\u00a0")) return false;
+          view.dispatch(view.state.tr.insertText(text.replace(/\u00a0/g, " "), from, to));
           return true;
         },
         transformPastedHTML: (html) => cleanPastedHtml(html),

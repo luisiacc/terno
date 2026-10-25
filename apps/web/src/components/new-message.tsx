@@ -10,6 +10,7 @@ import { leaveNewDraft, sendDraft, showNewDraft } from "~/lib/compose";
 import { discardDraft, restoreDiscarded, useDrafts } from "~/lib/drafts";
 import { useApp } from "~/state/app";
 import { DraftFieldsForm, focusSoon, SaveState, SignaturePreview } from "./inline-draft";
+import { popupOpen } from "./composer/controller";
 import { ComposerBody, ComposerFormatBar, FormatToggle, LinkButton, preloadComposer } from "./composer/lazy";
 
 /** Esc and sending leave the new message; focus goes to its strip item (kept) or back to the list. */
@@ -69,7 +70,7 @@ export function NewMessage() {
         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
           e.preventDefault();
           void send();
-        } else if (e.key === "Escape") {
+        } else if (e.key === "Escape" && !popupOpen()) {
           e.preventDefault();
           e.stopPropagation();
           leave(key, true);

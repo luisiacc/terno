@@ -720,6 +720,7 @@ const es = {
   "compose.format.undo": "Deshacer",
   "compose.format.redo": "Rehacer",
   "compose.format.font": "Fuente",
+  "compose.format.fontValue": "Fuente: {font}",
   "compose.format.font.sans": "Sans Serif",
   "compose.format.font.serif": "Serif",
   "compose.format.font.mono": "Ancho fijo",

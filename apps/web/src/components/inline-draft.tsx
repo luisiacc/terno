@@ -15,6 +15,7 @@ import { keepInView } from "~/lib/reader-scroll";
 import { registerUndo, snack } from "~/lib/snack";
 import { setApp, useApp } from "~/state/app";
 import { Expand } from "./expand";
+import { popupOpen } from "./composer/controller";
 import { ComposerBody, ComposerFormatBar, FormatToggle, LinkButton, preloadComposer } from "./composer/lazy";
 
 /** The focus move waiting for its element (one at a time: a newer request replaces it). */
@@ -356,7 +357,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account }: { threadId: 
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
                 void send();
-              } else if (e.key === "Escape") {
+              } else if (e.key === "Escape" && !popupOpen()) {
                 e.preventDefault();
                 e.stopPropagation();
                 collapse();
