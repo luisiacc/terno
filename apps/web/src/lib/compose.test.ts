@@ -13,7 +13,7 @@ vi.mock("~/rpc/connection", () => ({
 }));
 vi.mock("~/state/threads", () => ({ invalidateThreads: vi.fn(), loadThread: vi.fn() }));
 
-const { sendDraft } = await import("./compose");
+const { bodyParts, sendDraft } = await import("./compose");
 const { createDraft, discardDraft, editDraft, useDrafts } = await import("./drafts");
 const { newFields } = await import("./compose-fields");
 const { useSnack } = await import("./snack");
@@ -101,5 +101,26 @@ describe("what sending says", () => {
     rpc.calls.find((c) => c.method === "compose.send")!.resolve({ opId: "o", threadId: 1 });
     await q;
     expect(useSnack.getState().current?.message).toBe("Enviando…");
+  });
+});
+
+describe("the body sent (plan 16)", () => {
+  it("a plain draft sends text only; a stored rich body is re-read through the schema, so only schema HTML goes out and the text matches it", async () => {
+    const { JSDOM } = await import("jsdom");
+    const g = globalThis as { document?: Document };
+    const before = g.document;
+    g.document = new JSDOM("").window.document;
+    try {
+      expect(await bodyParts({ bodyText: "hola", bodyHtml: "", canonical: false })).toEqual({ text: "hola", html: null });
+      // what the editor serialized this session is trusted as is
+      expect(await bodyParts({ bodyText: "t", bodyHtml: "<div><b>t</b></div>", canonical: true })).toEqual({ text: "t", html: "<div><b>t</b></div>" });
+      // an imported or agent-era stored body: scripts, handlers, remote images and unsafe links don't survive; the text follows the HTML
+      const stored = '<div>Hola <b>Ana</b><img src="https://t.example/p.gif" onerror="x()"><script>x()</script> <a href="javascript:x()">mal</a> <a href="https://ok.example">bien</a></div><ul><li>uno</li></ul>';
+      const parts = await bodyParts({ bodyText: "algo distinto", bodyHtml: stored, canonical: false });
+      expect(parts.html).toBe('<div>Hola <b>Ana</b> mal <a href="https://ok.example">bien</a></div><ul style="margin:0 0 0 24px;padding:0"><li>uno</li></ul>');
+      expect(parts.text).toBe("Hola Ana mal bien (https://ok.example)\n• uno");
+    } finally {
+      g.document = before;
+    }
   });
 });

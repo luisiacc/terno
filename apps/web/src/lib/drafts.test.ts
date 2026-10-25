@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/rpc/connection", () => ({ client: { call: () => Promise.reject(new Error("not in tests")) } }));
 
-const { createDraft, discardDraft, draftForSend, editDraft, flushDraft, fromServer, loadDrafts, recipients, sendBody, setDraftTransport, threadDraftKey, useDrafts, validRecipients } = await import("./drafts");
+const { attachBody, createDraft, discardDraft, draftForSend, editDraft, fieldsOf, flushDraft, fromServer, loadDrafts, recipients, restoreDiscarded, retryDraft, sendBody, sendHtml, setDraftTransport, threadDraftKey, useDrafts, validRecipients } = await import("./drafts");
 const { convertFields, newFields, replyFields } = await import("./compose-fields");
 
 interface Pending {
@@ -206,7 +206,7 @@ describe("drafts: helpers and restore", () => {
   });
 
   it("at startup every stored draft comes back; a conversation shows its most recent one", async () => {
-    const base: Omit<Draft, "id" | "threadId" | "bodyText" | "updatedAt"> = { revision: 1, format: 2, accountId: 1, mode: "reply", to: [{ name: "Ana", email: "ana@example.com", auto: true }], cc: [], bcc: [], subject: "Re: x", subjectEdited: false, quotedText: "> x", includeQuote: true, inReplyToMessageId: 3, forwardOfMessageId: null, uiState: "collapsed" };
+    const base: Omit<Draft, "id" | "threadId" | "bodyText" | "updatedAt"> = { revision: 1, format: 2, accountId: 1, mode: "reply", to: [{ name: "Ana", email: "ana@example.com", auto: true }], cc: [], bcc: [], subject: "Re: x", subjectEdited: false, bodyHtml: "", quotedText: "> x", includeQuote: true, inReplyToMessageId: 3, forwardOfMessageId: null, uiState: "collapsed" };
     await loadDrafts(async () => [
       { ...base, id: 1, threadId: 7, bodyText: "viejo", updatedAt: 1 },
       { ...base, id: 2, threadId: 7, bodyText: "nuevo", updatedAt: 2 },
@@ -262,5 +262,106 @@ describe("converting a draft to another mode keeps what the user wrote", () => {
     const all = { ...replyFields("replyAll", detail, me), ccText: "Lucas <lucas@acme.studio>, Mía <mia@example.com>" };
     const back = convertFields(all, "reply", detail, me);
     expect(back.ccText).toBe("Mía <mia@example.com>");
+  });
+});
+
+describe("the editor's body (plan 16)", () => {
+  /** a stand-in editor: its document is a string; reads are counted */
+  function editor(k: string, initial = "") {
+    let doc = initial;
+    const reads = { n: 0 };
+    const body = attachBody(k, () => {
+      reads.n++;
+      return { html: doc ? `<div><b>${doc}</b></div>` : "", text: doc };
+    });
+    return {
+      reads,
+      body,
+      type(text: string) {
+        doc += text;
+        body.changed();
+      },
+    };
+  }
+
+  it("typing marks the draft dirty without serializing; the save serializes once, from the same document as its revision", async () => {
+    const k = draft();
+    const ed = editor(k);
+    for (const ch of "Hola") ed.type(ch);
+    expect(ed.reads.n).toBe(0);
+    expect(state(k)).toMatchObject({ localRev: 4, status: "dirty", bodyText: "" });
+    await vi.advanceTimersByTimeAsync(800);
+    expect(ed.reads.n).toBe(1);
+    expect(calls[0]!.params).toMatchObject({ bodyText: "Hola", bodyHtml: "<div><b>Hola</b></div>" });
+    // typing while that save is in flight: the next save carries it (and serializes again, once)
+    ed.type(" Ana");
+    await answer();
+    expect(calls[0]!.params).toMatchObject({ bodyText: "Hola Ana", bodyHtml: "<div><b>Hola Ana</b></div>" });
+    expect(ed.reads.n).toBe(2);
+    await answer();
+    expect(state(k)).toMatchObject({ status: "saved", canonical: true, bodyHtml: "<div><b>Hola Ana</b></div>" });
+  });
+
+  it("a snapshot of the fields (a conversion and its undo) and a send see what the editor has, not the last save", async () => {
+    const k = draft();
+    const ed = editor(k);
+    ed.type("Sí");
+    expect(fieldsOf(state(k))).toMatchObject({ bodyText: "Sí", bodyHtml: "<div><b>Sí</b></div>" });
+    ed.type(" va");
+    const sending = draftForSend(k);
+    expect((await sending)!.bodyHtml).toBe("<div><b>Sí va</b></div>");
+  });
+
+  it("a body set from elsewhere bumps bodyVersion (the editor reloads); the same body doesn't", () => {
+    const k = draft();
+    const ed = editor(k);
+    ed.type("uno");
+    const v = state(k).bodyVersion;
+    editDraft(k, { bodyText: "uno", bodyHtml: "<div><b>uno</b></div>", subject: "x" });
+    expect(state(k).bodyVersion).toBe(v);
+    editDraft(k, { bodyText: "otro", bodyHtml: "" });
+    expect(state(k)).toMatchObject({ bodyVersion: v + 1, bodyText: "otro", bodyHtml: "", canonical: false });
+    // and the editor's stale document doesn't overwrite it at the next save
+    expect(fieldsOf(state(k)).bodyText).toBe("otro");
+  });
+
+  it("unmounting writes what the editor has; a discarded draft comes back formatted; a source of a deleted draft does nothing", async () => {
+    const k = draft();
+    const ed = editor(k);
+    ed.type("Hola");
+    ed.body.dispose();
+    expect(state(k).bodyHtml).toBe("<div><b>Hola</b></div>");
+    const ed2 = editor(k, "Hola");
+    ed2.type("!");
+    const gone = await discardDraft(k);
+    expect(gone!.bodyHtml).toBe("<div><b>Hola!</b></div>");
+    expect(useDrafts.getState().drafts[k]).toBeUndefined();
+    ed2.type("?");
+    ed2.body.dispose();
+    expect(useDrafts.getState().drafts[k]).toBeUndefined();
+    const back = restoreDiscarded(gone!);
+    expect(state(back)).toMatchObject({ bodyText: "Hola!", bodyHtml: "<div><b>Hola!</b></div>" });
+  });
+
+  it("a save refused as invalid (too long) says so and doesn't retry by itself; Retry tries again", async () => {
+    const k = draft();
+    editDraft(k, { bodyText: "x" });
+    await vi.advanceTimersByTimeAsync(800);
+    const c = calls.shift()!;
+    c.reject(Object.assign(new Error("too big"), { code: "BAD_REQUEST" }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(state(k)).toMatchObject({ status: "error", tooLong: true });
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(calls).toHaveLength(0);
+    retryDraft(k);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("the HTML sent: the written part (trailing empty lines dropped), the signature, then the quote as nested blockquotes", () => {
+    const html = sendHtml("<div><b>Sí</b></div><div><br></div><div><br></div>", { quotedText: "El lunes, Ana escribió:\n> hola", includeQuote: true }, "Luis\nAcme");
+    expect(html).toBe(
+      '<!DOCTYPE html><html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"></head><body><div><b>Sí</b></div><div><br></div><div>-- <br>Luis<br>Acme</div><div><br></div><div>El lunes, Ana escribió:</div><blockquote style="margin:0 0 0 0.8ex;border-left:2px solid #ccc;padding-left:1ex"><div>hola</div></blockquote></body></html>',
+    );
+    expect(sendHtml("<div>x</div>", { quotedText: "> q", includeQuote: false })).not.toContain("blockquote");
   });
 });

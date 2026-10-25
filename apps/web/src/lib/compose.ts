@@ -8,7 +8,7 @@ import { invalidateThreads, loadThread } from "~/state/threads";
 import { registerUndo, snack } from "./snack";
 import { convertFields, newFields, replyFields } from "./compose-fields";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
-import { authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markSending, resumeDraft, validRecipients, sendBody, setDraftUi, shownDraftKey, useDrafts, type LocalDraft } from "./drafts";
+import { authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, type LocalDraft } from "./drafts";
 
 /**
  * Writing mail: which draft a reply, reply-all, forward or new message opens,
@@ -57,7 +57,8 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
   if (s.scope !== null || s.checked.size >= 2) return;
   const target = mode === "forward" ? "to" : "body";
   const existingKey = shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown);
-  const existing = existingKey ? useDrafts.getState().drafts[existingKey] : undefined;
+  // its body as the editor has it now (what "written" and a conversion's undo look at)
+  const existing = existingKey ? materialize(existingKey) : undefined;
   if (existing && existing.mode === mode) {
     setDraftUi(existing.key, "open");
     return focusDraft(existing.key, target);
@@ -109,6 +110,19 @@ export function installComposeFollowsSelection(): () => void {
   });
 }
 
+/**
+ * The written part as sent: plain text alone for a plain draft; for a rich one
+ * the HTML and the text both come from a document (the editor's, or the stored
+ * HTML read through the schema), so only schema HTML goes out and the two match.
+ */
+export async function bodyParts(d: Pick<LocalDraft, "bodyText" | "bodyHtml" | "canonical">): Promise<{ text: string; html: string | null }> {
+  if (!d.bodyHtml) return { text: d.bodyText, html: null };
+  if (d.canonical) return { text: d.bodyText, html: d.bodyHtml };
+  const rt = await import("@terno/richtext");
+  const doc = rt.parseHtml(d.bodyHtml);
+  return { text: rt.toPlainText(doc), html: rt.toEmailHtml(doc) };
+}
+
 /** Sends in flight, per draft: a second send of the same draft (a remounted pane, a double ⌘↩) gets the first one's outcome. */
 const pendingSends = new Map<string, Promise<boolean>>();
 
@@ -143,13 +157,16 @@ async function send(key: string): Promise<boolean> {
   markSending(key, true);
   breadcrumb("action", "action.send");
   try {
+    const body = await bodyParts(d);
+    const signature = getApp().accounts.find((a) => a.id === d.accountId)?.signature;
     const res = await client.call("compose.send", {
       accountId: d.accountId,
       to,
       cc,
       bcc,
       subject: d.subject,
-      bodyText: sendBody(d, getApp().accounts.find((a) => a.id === d.accountId)?.signature),
+      bodyText: sendBody({ ...d, bodyText: body.text }, signature),
+      bodyHtml: body.html === null ? undefined : sendHtml(body.html, d, signature),
       inReplyToMessageId: d.inReplyToMessageId ?? undefined,
       forwardOfMessageId: d.forwardOfMessageId ?? undefined,
       draftId: d.id ?? undefined,

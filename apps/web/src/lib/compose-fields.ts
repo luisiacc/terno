@@ -67,6 +67,7 @@ export function replyFields(mode: Exclude<DraftMode, "new">, detail: ThreadDetai
     subjectEdited: false,
     // the floating composer shows the quote inside the text; the inline one keeps it apart
     bodyText: opts.quoteInBody ? `\n\n${quote}` : "",
+    bodyHtml: "",
     quotedText: opts.quoteInBody ? "" : quote,
     includeQuote: !opts.quoteInBody,
     inReplyToMessageId: mode === "forward" ? null : last.id,
@@ -76,7 +77,7 @@ export function replyFields(mode: Exclude<DraftMode, "new">, detail: ThreadDetai
 }
 
 export function newFields(accountId: number): DraftFields {
-  return { accountId, threadId: null, mode: "new", toText: "", ccText: "", bccText: "", auto: { to: [], cc: [], bcc: [] }, subject: "", subjectEdited: false, bodyText: "", quotedText: "", includeQuote: false, inReplyToMessageId: null, forwardOfMessageId: null, uiState: "open" };
+  return { accountId, threadId: null, mode: "new", toText: "", ccText: "", bccText: "", auto: { to: [], cc: [], bcc: [] }, subject: "", subjectEdited: false, bodyText: "", bodyHtml: "", quotedText: "", includeQuote: false, inReplyToMessageId: null, forwardOfMessageId: null, uiState: "open" };
 }
 
 

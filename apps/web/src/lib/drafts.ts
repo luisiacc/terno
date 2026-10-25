@@ -1,6 +1,7 @@
 import { formatAddressList, isValidEmail, parseAddressList, type Address } from "@terno/core";
 import type { Draft, DraftAddress, DraftMode } from "@terno/core/rpc";
 import { create } from "zustand";
+import { emailDocument, GAP, signatureHtml, textToHtml } from "@terno/richtext/quote";
 import { client } from "~/rpc/connection";
 
 /**
@@ -21,6 +22,14 @@ import { client } from "~/rpc/connection";
  *
  * What can be lost in a crash: edits since the last acknowledgement (≤ 800 ms
  * after a pause, ≤ 5 s while typing).
+ *
+ * Rich text (plan 16): the editor owns the body while it is mounted. Each
+ * change marks the draft dirty (an edit with no fields) and its body source
+ * dirty; the body is serialized (mail HTML and its plain-text alternative,
+ * from the same document) only when it is needed: before a save, a flush, a
+ * send, a discard or a snapshot of the fields. A body patch from anywhere
+ * else bumps `bodyVersion`, and a mounted editor that didn't write it
+ * reloads its document.
  */
 
 export type DraftStatus = "clean" | "dirty" | "saving" | "saved" | "error";
@@ -53,7 +62,10 @@ export interface LocalDraft {
   auto: AutoRecipients;
   subject: string;
   subjectEdited: boolean;
+  /** the written part's plain text (always the alternative of bodyHtml when there is one) */
   bodyText: string;
+  /** the written part as mail HTML ('' = a plain draft, opened as its text) */
+  bodyHtml: string;
   quotedText: string;
   includeQuote: boolean;
   inReplyToMessageId: number | null;
@@ -62,11 +74,17 @@ export interface LocalDraft {
   updatedAt: number;
   /** a send is in flight: the draft can't be edited or discarded until it settles */
   sending: boolean;
+  /** bumped when the body changes other than through its editor (not stored) */
+  bodyVersion: number;
+  /** bodyHtml came from this session's editor (a stored one is re-read through the schema before it is sent) */
+  canonical: boolean;
+  /** the last save was refused for good (too long): no automatic retries */
+  tooLong: boolean;
 }
 
 export type DraftFields = Pick<
   LocalDraft,
-  "accountId" | "threadId" | "mode" | "toText" | "ccText" | "bccText" | "auto" | "subject" | "subjectEdited" | "bodyText" | "quotedText" | "includeQuote" | "inReplyToMessageId" | "forwardOfMessageId" | "uiState"
+  "accountId" | "threadId" | "mode" | "toText" | "ccText" | "bccText" | "auto" | "subject" | "subjectEdited" | "bodyText" | "bodyHtml" | "quotedText" | "includeQuote" | "inReplyToMessageId" | "forwardOfMessageId" | "uiState"
 >;
 
 interface DraftsState {
@@ -112,6 +130,14 @@ export function sendBody(d: Pick<LocalDraft, "bodyText" | "quotedText" | "includ
   return d.includeQuote && d.quotedText ? `${body}\n\n${d.quotedText}` : body;
 }
 
+/** sendBody's HTML twin (plan 16): the written part's mail HTML (trailing empty lines dropped), the signature, the quote. */
+export function sendHtml(bodyHtml: string, d: Pick<LocalDraft, "quotedText" | "includeQuote">, signature = ""): string {
+  const body = bodyHtml.replace(/(<div><br><\/div>)+$/, "");
+  let html = [body, signatureHtml(signature)].filter(Boolean).join(GAP);
+  if (d.includeQuote && d.quotedText) html += (html ? GAP : "") + textToHtml(d.quotedText);
+  return emailDocument(html);
+}
+
 /** A draft as the backend stored it, in the renderer's shape. */
 export function fromServer(d: Draft): LocalDraft {
   const text = (list: DraftAddress[]) => formatAddressList(list.map(({ name, email }) => ({ name, email })));
@@ -132,6 +158,7 @@ export function fromServer(d: Draft): LocalDraft {
     subject: d.subject,
     subjectEdited: d.subjectEdited,
     bodyText: d.bodyText,
+    bodyHtml: d.bodyHtml ?? "",
     quotedText: d.quotedText,
     includeQuote: d.includeQuote,
     inReplyToMessageId: d.inReplyToMessageId,
@@ -139,13 +166,67 @@ export function fromServer(d: Draft): LocalDraft {
     uiState: d.uiState,
     updatedAt: d.updatedAt,
     sending: false,
+    bodyVersion: 0,
+    canonical: false,
+    tooLong: false,
   };
 }
 
-/** A draft's content, without its identity or save state. */
+/** A draft's content, without its identity or save state (its body as the editor has it now). */
 export function fieldsOf(d: LocalDraft): DraftFields {
-  const { accountId, threadId, mode, toText, ccText, bccText, auto, subject, subjectEdited, bodyText, quotedText, includeQuote, inReplyToMessageId, forwardOfMessageId, uiState } = d;
-  return { accountId, threadId, mode, toText, ccText, bccText, auto, subject, subjectEdited, bodyText, quotedText, includeQuote, inReplyToMessageId, forwardOfMessageId, uiState };
+  const cur = materialize(d.key) ?? d;
+  const { accountId, threadId, mode, toText, ccText, bccText, auto, subject, subjectEdited, bodyText, bodyHtml, quotedText, includeQuote, inReplyToMessageId, forwardOfMessageId, uiState } = cur;
+  return { accountId, threadId, mode, toText, ccText, bccText, auto, subject, subjectEdited, bodyText, bodyHtml, quotedText, includeQuote, inReplyToMessageId, forwardOfMessageId, uiState };
+}
+
+// ───────────────────────────── the editor's body ─────────────────────────────
+
+/** What the editor gives for a draft's body: mail HTML ('' when empty) and its plain text, from one document. */
+export type BodyReader = () => { html: string; text: string };
+interface BodySource {
+  read: BodyReader;
+  dirty: boolean;
+}
+const sources = new Map<string, BodySource>();
+
+/**
+ * The editor of a draft takes its body: `changed()` after each document change
+ * (an edit: dirty, saved later), `dispose()` when it unmounts (what it has is
+ * written to the draft first). A source of a draft that is gone does nothing.
+ */
+export function attachBody(key: string, read: BodyReader): { changed(): void; reset(): void; dispose(): void } {
+  const source: BodySource = { read, dirty: false };
+  sources.set(key, source);
+  return {
+    changed() {
+      const d = get(key);
+      if (!d || d.sending) return;
+      source.dirty = true;
+      put({ ...d, localRev: d.localRev + 1, status: d.status === "saving" ? "saving" : "dirty", updatedAt: now(), tooLong: false });
+      schedule(key);
+    },
+    // the editor reloaded what the draft has: nothing of its own to write
+    reset() {
+      source.dirty = false;
+    },
+    dispose() {
+      if (sources.get(key) !== source) return;
+      materialize(key);
+      sources.delete(key);
+    },
+  };
+}
+
+/** Writes a dirty editor body into the draft (same revision: the edit was counted when it was made). */
+export function materialize(key: string): LocalDraft | undefined {
+  const d = get(key);
+  const source = sources.get(key);
+  if (!d || !source?.dirty) return d;
+  source.dirty = false;
+  const { html, text } = source.read();
+  const next = { ...d, bodyHtml: html, bodyText: text, canonical: true };
+  put(next);
+  return next;
 }
 
 /** Has the user written anything worth keeping? A reply only prefilled by Terno isn't saved. */
@@ -187,16 +268,30 @@ const newKey = () => `local-${Date.now().toString(36)}-${(++seq).toString(36)}`;
 /** A new draft (not saved until the user writes something). Returns its key. */
 export function createDraft(fields: DraftFields): string {
   const key = newKey();
-  put({ key, id: null, revision: 0, status: "clean", localRev: 0, savedRev: 0, updatedAt: now(), sending: false, ...fields });
+  put({ key, id: null, revision: 0, status: "clean", localRev: 0, savedRev: 0, updatedAt: now(), sending: false, bodyVersion: 0, canonical: false, tooLong: false, ...fields });
   return key;
 }
 
 /** An edit: the content changes now, the save follows (800 ms after the last edit, ≤ 5 s while typing). */
 export function editDraft(key: string, patch: Partial<DraftFields>): void {
-  const d = get(key);
+  // a body patch is compared with the body as the editor has it now
+  const d = "bodyText" in patch || "bodyHtml" in patch ? materialize(key) : get(key);
   // nothing changes under a send in flight (it is sending what is there now)
   if (!d || d.sending) return;
-  put({ ...d, ...patch, localRev: d.localRev + 1, status: d.status === "saving" ? "saving" : "dirty", updatedAt: now() });
+  const bodyChanged = (patch.bodyText !== undefined && patch.bodyText !== d.bodyText) || (patch.bodyHtml !== undefined && patch.bodyHtml !== d.bodyHtml);
+  put({
+    ...d,
+    ...patch,
+    localRev: d.localRev + 1,
+    status: d.status === "saving" ? "saving" : "dirty",
+    updatedAt: now(),
+    tooLong: false,
+    ...(bodyChanged ? { bodyVersion: d.bodyVersion + 1, canonical: false } : {}),
+  });
+  if (bodyChanged) {
+    const source = sources.get(key);
+    if (source) source.dirty = false;
+  }
   schedule(key);
 }
 
@@ -226,7 +321,8 @@ function schedule(key: string): void {
 function save(key: string): Promise<void> {
   const w = writer(key);
   if (w.inflight) return w.inflight;
-  const d = get(key);
+  // the editor's body, serialized once for this save (same document as the revision it saves)
+  const d = materialize(key);
   if (!d || !authored(d) || d.savedRev === d.localRev) return Promise.resolve();
   const rev = d.localRev;
   w.dirtySince = null;
@@ -243,6 +339,7 @@ function save(key: string): Promise<void> {
     subject: d.subject,
     subjectEdited: d.subjectEdited,
     bodyText: d.bodyText,
+    bodyHtml: d.bodyHtml,
     quotedText: d.quotedText,
     includeQuote: d.includeQuote,
     inReplyToMessageId: d.inReplyToMessageId,
@@ -266,10 +363,15 @@ function save(key: string): Promise<void> {
       put({ ...cur, id: saved.id, revision: saved.revision, savedRev: rev, status: done ? "saved" : "dirty" });
       if (!done) return save(key);
     },
-    () => {
+    (error: unknown) => {
       w.inflight = null;
       const cur = get(key);
       if (!cur) return;
+      // refused as invalid (past the size limits): trying again won't help until it changes; Retry stays
+      if ((error as { code?: string } | null)?.code === "BAD_REQUEST") {
+        put({ ...cur, status: "error", tooLong: true });
+        return;
+      }
       put({ ...cur, status: "error" });
       const delay = RETRY_MS[Math.min(w.attempts, RETRY_MS.length - 1)]!;
       w.attempts++;
@@ -323,6 +425,7 @@ export async function draftsSaved(capMs = 5000): Promise<boolean> {
 
 /** Waits for the save in flight (if any) and stops further saves: the draft is about to be sent or discarded. */
 async function settle(key: string): Promise<LocalDraft | undefined> {
+  materialize(key);
   const w = writers.get(key);
   if (w?.timer) clearTimeout(w.timer);
   if (w) w.timer = null;
@@ -402,7 +505,7 @@ export function draftIndex(drafts: Record<string, LocalDraft>): DraftIndex {
     if (d.threadId === null || d.mode === "new") continue;
     const best = index.newest.get(d.threadId);
     if (!best || d.updatedAt > best.updatedAt) index.newest.set(d.threadId, d);
-    if (authored(d) && (d.bodyText.trim() || d.id !== null)) index.written.add(d.threadId);
+    if (authored(d) && (d.bodyText.trim() || d.id !== null || sources.get(d.key)?.dirty)) index.written.add(d.threadId);
   }
   indexes.set(drafts, index);
   return index;
