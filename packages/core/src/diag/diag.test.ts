@@ -5,7 +5,6 @@ import { mayReport, reportOffer, reportsAutomatically, type ErrorReports } from 
 import { REDACTED, sanitizeField } from "./fields";
 import { buildReport } from "./report";
 import { Ring } from "./ring";
-import { RotatingLog, type RotatingFs } from "./rotating";
 import { scrubText } from "./scrub";
 import type { DiagEntry, ErrorRecord } from "./types";
 import { sanitizeEntry, sanitizeRecord } from "./validate";
@@ -101,10 +100,10 @@ describe("errors", () => {
     expect(parseStack("Error: no reply from luis@empresa.mx\n    at x (/a/app.asar/dist/main.cjs:1:1)")).toEqual([{ fn: "x", file: "dist/main.cjs", line: 1, col: 1 }]);
   });
 
-  it("normalizes anything thrown, scrubbing its text", () => {
-    const n = normalizeError(new Error(`could not send to ${HOSTILE.email}`));
-    expect(n.name).toBe("Error");
-    expect(n.message).not.toContain("luis");
+  it("normalizes anything thrown to class, code, status and frames: never its text", () => {
+    const n = normalizeError(Object.assign(new Error(`could not send to ${HOSTILE.email}`), { code: "ECONNRESET", status: 502 }));
+    expect(n).toMatchObject({ name: "Error", code: "ECONNRESET", status: 502 });
+    expect(JSON.stringify(n)).not.toContain("luis");
     expect(n.frames.length).toBeGreaterThan(0);
     expect(normalizeError("plain string").name).toBe("NonString");
     expect(normalizeError({ subject: "x" }).name).toBe("NonObject");
@@ -132,9 +131,8 @@ describe("log, breadcrumb, captureError", () => {
   it("writes one sanitized entry per call and leaves a crumb", () => {
     const m = memorySink();
     installDiag({ proc: "backend", version: "1.2.3", build: "1.2.3+abc", channel: "test", session: "s1", sink: m.sink });
-    log.warn("sync.failed", { accountKind: "imap", retryable: true }, `login failed for ${HOSTILE.email}`);
-    expect(m.entries[0]).toMatchObject({ level: "warn", proc: "backend", code: "sync.failed", fields: { accountKind: "imap", retryable: true }, session: "s1", version: "1.2.3" });
-    expect(m.entries[0]!.msg).not.toContain("luis");
+    log.warn("sync.failed", { accountKind: "imap", retryable: true });
+    expect(m.entries[0]).toEqual({ ts: expect.any(Number), level: "warn", proc: "backend", code: "sync.failed", fields: { accountKind: "imap", retryable: true }, session: "s1", version: "1.2.3", build: "1.2.3+abc" });
     breadcrumb("nav", "nav.view", { view: "inbox" });
     expect(breadcrumbs().map((c) => c.code)).toEqual(["sync.failed", "nav.view"]);
   });
@@ -228,17 +226,15 @@ describe("buildReport", () => {
     code: "sync.failed",
     fields: { accountKind: "imap", errorClass: "TypeError" },
     fatal: false,
-    error: { name: "TypeError", message: `Cannot read properties of undefined (reading 'from') for ${HOSTILE.email}`, frames: [{ fn: "a", file: "dist/backend.cjs", line: 1, col: 2 }, { file: "dist/backend.cjs", line: 9, col: 9 }] },
+    error: { name: "TypeError", frames: [{ fn: "a", file: "dist/backend.cjs", line: 1, col: 2 }, { file: "dist/backend.cjs", line: 9, col: 9 }] },
     crumbs: [{ ts: 1_699_999_999_000, cat: "sync", code: "sync.done", level: "info", fields: { accountKind: "gmail", durationMs: 120 } }],
     context: { version: "0.1.0", build: "0.1.0+abc1234", channel: "production", session: "sess1", os: "darwin", osVersion: "25.6.0", arch: "arm64", locale: "es-MX", runtime: "electron-45.0.0", uptimeS: 30, accounts: { imap: 1, gmail: 2 } },
     debugIds: { "dist/backend.cjs": "11111111-2222-4333-8444-555555555555" },
   };
 
   it("carries codes, classes and frames, never the message", () => {
-    const event = buildReport(record, { installId: "inst", release: "terno@0.1.0+abc1234", environment: "production" });
-    const json = JSON.stringify(event);
-    expect(json).not.toContain("Cannot read");
-    expect(json).not.toContain("luis");
+    const event = buildReport(record, { installId: "inst" });
+    expect(event).toMatchObject({ release: "terno@0.1.0+abc1234", environment: "production" });
     expect(event.exception.values[0]).toMatchObject({ type: "TypeError", value: "sync.failed", mechanism: { handled: true } });
     // outermost first for Sentry
     expect(event.exception.values[0]!.stacktrace!.frames.map((f) => f.lineno)).toEqual([9, 1]);
@@ -254,68 +250,43 @@ describe("buildReport", () => {
     expect(clean.proc).toBe("renderer");
     expect(clean.fields).toEqual({ accountKind: "imap" });
     expect(clean.error!.name).toBe("Error");
-    expect(clean.error!.message).not.toContain("ya29");
+    expect(JSON.stringify(clean)).not.toContain("ya29");
     expect(clean.error!.frames[0]).toEqual({ file: "<redacted>" });
     expect(clean.debugIds).toBeUndefined();
     expect(sanitizeEntry({ ts: 1, level: "info", code: "nope", session: "s", version: "v", build: "b" }, "renderer")).toBeNull();
   });
 });
 
-describe("RotatingLog", () => {
-  function memFs(failAppend = false) {
-    const files = new Map<string, string>();
-    const fs: RotatingFs = {
-      appendFile: async (p, d) => {
-        if (failAppend) throw Object.assign(new Error("no space"), { code: "ENOSPC" });
-        files.set(p, (files.get(p) ?? "") + d);
-      },
-      appendFileSync: (p, d) => void files.set(p, (files.get(p) ?? "") + d),
-      size: async (p) => files.get(p)?.length ?? 0,
-      sizeSync: (p) => files.get(p)?.length ?? 0,
-      rename: async (a, b) => {
-        if (!files.has(a)) throw new Error("ENOENT");
-        files.set(b, files.get(a)!);
-        files.delete(a);
-      },
-      renameSync: (a, b) => {
-        if (!files.has(a)) throw new Error("ENOENT");
-        files.set(b, files.get(a)!);
-        files.delete(a);
-      },
-      remove: async (p) => void files.delete(p),
-      removeSync: (p) => void files.delete(p),
-    };
-    return { fs, files };
-  }
+describe("no mail text survives an error (review finding 1)", () => {
+  // what a model answered, quoted back by an AI parse error: a subject and a body line from the mailbox
+  const SUBJECT = "The merger closes Friday";
+  const BODY = "Please keep the Acme numbers between us";
+  const aiError = () => Object.assign(new Error(`La IA no produjo un resultado válido: Unexpected token in JSON at position 3: {"label": "${SUBJECT}", "why": "${BODY}"`), { name: "AiError", kind: "invalid_output" });
 
-  it("rotates at the cap and keeps N files", async () => {
-    const { fs, files } = memFs();
-    const logFile = new RotatingLog("main.jsonl", fs, { maxBytes: 100, maxFiles: 3, delayMs: 0 });
-    for (let i = 0; i < 20; i++) {
-      logFile.write(`{"i":${i},"pad":"${"x".repeat(20)}"}`);
-      await logFile.flush();
+  it("neither the log entry, the record nor the report carries the model's output", () => {
+    const m = memorySink();
+    installDiag({ proc: "backend", version: "1", build: "1+a", channel: "test", sink: m.sink });
+    captureError(aiError(), { code: "ai.assist_failed", fields: { aiKind: "invalid_output" }, expected: true });
+    captureError(aiError(), { code: "ai.unexpected", fields: { op: "classify" }, expected: false });
+    expect(m.records).toHaveLength(1);
+    const report = buildReport(m.records[0]!, { installId: "i" });
+    for (const text of [JSON.stringify(m.entries), JSON.stringify(m.records), JSON.stringify(report)]) {
+      expect(text).not.toContain("merger");
+      expect(text).not.toContain("Acme");
+      expect(text).not.toContain("resultado válido");
     }
-    expect([...files.keys()].sort()).toEqual(["main.jsonl", "main.jsonl.1", "main.jsonl.2"]);
-    for (const v of files.values()) expect(v.length).toBeLessThanOrEqual(100);
-    expect(files.get("main.jsonl")).toContain('"i":19');
+    // a forged or old record with a message loses it on the way back in
+    const old = sanitizeRecord({ ...m.records[0], error: { name: "AiError", message: `${SUBJECT} ${BODY}`, frames: [] } })!;
+    expect(JSON.stringify(old)).not.toContain("merger");
+    expect(JSON.stringify(sanitizeEntry({ ...m.entries[0], msg: SUBJECT }, "backend"))).not.toContain("merger");
   });
+});
 
-  it("flushSync writes what is queued at once", () => {
-    const { fs, files } = memFs();
-    const logFile = new RotatingLog("b.jsonl", fs, { delayMs: 10_000 });
-    logFile.write("a");
-    logFile.write("b");
-    logFile.flushSync();
-    expect(files.get("b.jsonl")).toBe("a\nb\n");
-  });
-
-  it("a full disk drops the batch silently", async () => {
-    const { fs } = memFs(true);
-    const errors: unknown[] = [];
-    const logFile = new RotatingLog("c.jsonl", fs, { delayMs: 0, onError: (e) => errors.push(e) });
-    logFile.write("x");
-    await expect(logFile.flush()).resolves.toBeUndefined();
-    expect(logFile.dropped).toBe(1);
-    expect(errors).toHaveLength(1);
+describe("a record keeps its own build (review finding 9)", () => {
+  it("a crash kept across an upgrade reports the release and environment that failed", () => {
+    const m = memorySink();
+    installDiag({ proc: "main", version: "0.2.0", build: "0.2.0+newsha", channel: "production", sink: m.sink });
+    const old: ErrorRecord = { id: "f".repeat(32), ts: 1, kind: "crash", proc: "main", code: "process.uncaught", fatal: true, crumbs: [], context: { version: "0.1.0", build: "0.1.0+oldsha", channel: "demo", session: "s", os: "darwin" } };
+    expect(buildReport(old, { installId: "i" })).toMatchObject({ release: "terno@0.1.0+oldsha", environment: "demo", contexts: { app: { app_version: "0.1.0", build: "0.1.0+oldsha" } } });
   });
 });

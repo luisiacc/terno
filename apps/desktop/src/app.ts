@@ -136,9 +136,10 @@ function resourcesDir() {
   return app.isPackaged ? process.resourcesPath : join(__dirname, "..", "resources");
 }
 
-/** Main's free-form lines (legacy storage, print): kept locally, scrubbed, under one code. */
+/** Main's free-form lines: the log keeps that one happened (never its text); a dev build also prints it. */
 function log(level: "info" | "warn" | "error", message: string) {
-  diagLog[level]("log.message", { source: "main" }, message);
+  diagLog[level]("log.message", { source: "main" });
+  if (!app.isPackaged) process.stderr.write(`[main:${level}] ${message}\n`);
 }
 
 function startBackend() {
@@ -276,7 +277,7 @@ async function carryLegacyLocalStorage(): Promise<void> {
     }
     done();
   } catch (error) {
-    diagLog.warn("legacy.storage_failed", { errorClass: error instanceof Error ? error.name : "Error" }, error);
+    diagLog.warn("legacy.storage_failed", { errorClass: error instanceof Error ? error.name : "Error" });
   } finally {
     win.destroy();
   }

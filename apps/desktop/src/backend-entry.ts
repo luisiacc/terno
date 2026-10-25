@@ -141,15 +141,19 @@ parentPort.on("message", async (event) => {
         demoAi: msg.demo || msg.dev,
         demo: msg.demo,
         onPolicy: (policy) => send({ type: "policy", ...policy }),
-        // free-form lines (the store, the search engine): kept locally, scrubbed, under one code
-        log: (level, message, extra) => log[level]("log.message", { source: "backend" }, extra === undefined ? message : `${message} ${typeof extra === "string" ? extra : JSON.stringify(extra)}`),
+        // free-form lines (the store, the search engine): the log keeps that one happened, never its text
+        // (it can quote a provider's or a model's answer); a dev build also prints it
+        log: (level, message, extra) => {
+          log[level]("log.message", { source: "backend" });
+          if (msg.dev) console[level](`[backend] ${message}`, extra ?? "");
+        },
       });
       if (msg.demo && (await seedDemo(backend.store, { threads: 3000, accounts: 4 }))) {
         await backend.store.settings.set("app", { ai: { provider: "fake" } });
       }
       await backend.publishPolicy();
       await backend.start();
-      await startAgentSocket(backend, msg.socketPath, msg.tokenPath).catch((e) => log.warn("agents.socket_failed", { errno: (e as { code?: string }).code }, e));
+      await startAgentSocket(backend, msg.socketPath, msg.tokenPath).catch((e) => log.warn("agents.socket_failed", { errno: (e as { code?: string }).code }));
       const b = backend;
       const countAccounts = async () => {
         const list = await b.store.accounts.list().catch(() => []);

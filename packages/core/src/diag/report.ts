@@ -10,9 +10,6 @@ import type { ErrorRecord } from "./types";
 export interface ReportOptions {
   /** random, kept on this machine, resettable; never derived from an address */
   installId: string;
-  /** terno@<version>+<sha> */
-  release: string;
-  environment: string;
 }
 
 export interface ReportFrame {
@@ -78,8 +75,9 @@ export function buildReport(r: ErrorRecord, o: ReportOptions): ReportEvent {
     timestamp: Math.round(r.ts) / 1000,
     platform: "javascript",
     level: r.fatal ? "fatal" : "error",
-    release: o.release,
-    environment: o.environment,
+    // the build that failed, not the one sending (a crash kept across an upgrade stays with its release)
+    release: recordRelease(r),
+    environment: ctx.channel,
     tags,
     contexts: {
       app: { app_version: ctx.version, build: ctx.build },
@@ -108,4 +106,9 @@ function kindName(r: ErrorRecord): string {
 
 export function releaseName(version: string, sha: string): string {
   return `terno@${version}+${sha}`;
+}
+
+/** terno@<version>+<sha> of the build that wrote the record (its build id is version+sha). */
+export function recordRelease(r: ErrorRecord): string {
+  return r.context.build.includes("+") ? `terno@${r.context.build}` : `terno@${r.context.version}`;
 }

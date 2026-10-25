@@ -155,7 +155,8 @@ async function start(init: WorkerInit): Promise<void> {
   const platform = webPlatform(await opfsFiles().catch(() => undefined));
   const logLine = (level: "info" | "warn" | "error", message: string, extra?: unknown) => {
     (level === "error" ? console.error : level === "warn" ? console.warn : console.info)(`[backend] ${message}`, extra ?? "");
-    log[level]("log.message", { source: "worker" }, extra === undefined ? message : `${message} ${typeof extra === "string" ? extra : JSON.stringify(extra)}`);
+    // the log keeps that one happened, never its text (it can quote a provider's answer)
+    log[level]("log.message", { source: "worker" });
   };
   let store: MailStore;
   try {

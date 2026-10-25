@@ -376,7 +376,7 @@ export async function connectWorker(client: RpcClient): Promise<void> {
   worker.postMessage(init, [channel.port2]);
   const first = await Promise.race([next(worker, ["ready", "fatal"]), new Promise<null>((r) => worker.addEventListener("error", () => r(null)))]);
   if (!first || first.type === "fatal") {
-    if (first?.type === "fatal") log.warn("worker.open_failed", { fatalCode: first.code, engine: "wasm-opfs" }, first.message);
+    if (first?.type === "fatal") log.warn("worker.open_failed", { fatalCode: first.code, engine: "wasm-opfs" });
     const message = first?.type === "fatal" ? first.message : "El motor de correo se detuvo";
     fail(first?.type === "fatal" ? first.code : "CRASHED", message);
     throw new Error(message);

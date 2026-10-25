@@ -259,7 +259,7 @@ class LocalDiag implements DiagSink {
   }
 
   reportFor(r: ErrorRecord): ReportEvent {
-    return buildReport(r, { installId: this.state.installId, release: releaseName(BUILD.version, BUILD.sha), environment: BUILD.channel });
+    return buildReport(r, { installId: this.state.installId });
   }
 
   private async send(r: ErrorRecord): Promise<boolean> {
@@ -322,7 +322,7 @@ class LocalDiag implements DiagSink {
   preview(target: string): { event: ReportEvent; host: string | null } | null {
     const r =
       target === "sample"
-        ? ({ id: newId(), ts: Date.now(), kind: "error", proc: "renderer", code: "diag.selftest", fields: { source: "renderer" }, fatal: false, error: { name: "Error", message: "", frames: [] }, crumbs: breadcrumbs(), context: diagContext() } satisfies ErrorRecord)
+        ? ({ id: newId(), ts: Date.now(), kind: "error", proc: "renderer", code: "diag.selftest", fields: { source: "renderer" }, fatal: false, error: { name: "Error", frames: [] }, crumbs: breadcrumbs(), context: diagContext() } satisfies ErrorRecord)
         : this.records.find((x) => x.id === target);
     if (!r) return null;
     let host: string | null = null;

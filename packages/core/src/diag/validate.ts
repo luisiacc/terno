@@ -6,7 +6,6 @@
 import { isDiagCode } from "./codes";
 import { sanitizeFields } from "./diag";
 import type { Frame, NormalizedError } from "./error";
-import { scrubText } from "./scrub";
 import { CHANNELS, CRUMB_CATEGORIES, LEVELS, RECORD_KINDS, type Crumb, type DiagContext, type DiagEntry, type ErrorRecord, type Proc } from "./types";
 
 const ID = /^[A-Za-z0-9_.+-]{1,64}$/;
@@ -34,7 +33,6 @@ export function sanitizeEntry(raw: unknown, proc: Proc): DiagEntry | null {
   const entry: DiagEntry = { ts, level, proc, code: raw.code, session, version, build };
   const fields = sanitizeFields(raw.code, raw.fields);
   if (fields) entry.fields = fields;
-  if (typeof raw.msg === "string") entry.msg = scrubText(raw.msg);
   const err = sanitizeError(raw.err, 12);
   if (err) entry.err = err;
   return entry;
@@ -78,7 +76,12 @@ export function sanitizeFrames(raw: unknown, max = 40): Frame[] {
 
 export function sanitizeError(raw: unknown, maxFrames = 40): NormalizedError | undefined {
   if (!isObj(raw)) return undefined;
-  return { name: str(raw.name, CLASS) ?? "Error", message: typeof raw.message === "string" ? scrubText(raw.message) : "", frames: sanitizeFrames(raw.frames, maxFrames) };
+  const err: NormalizedError = { name: str(raw.name, CLASS) ?? "Error", frames: sanitizeFrames(raw.frames, maxFrames) };
+  const code = str(raw.code, /^[A-Za-z0-9_.-]{1,40}$/);
+  if (code) err.code = code;
+  const status = num(raw.status, 100, 599);
+  if (status !== undefined) err.status = status;
+  return err;
 }
 
 export function sanitizeContext(raw: unknown): DiagContext | null {

@@ -65,7 +65,7 @@ export function fitRecord(r: ErrorRecord): string {
     json = JSON.stringify(rec);
   }
   if (json.length > RECORD_MAX_BYTES && rec.error) {
-    rec = { ...rec, error: { ...rec.error, message: rec.error.message.slice(0, 200), frames: rec.error.frames.slice(0, 10) } };
+    rec = { ...rec, error: { ...rec.error, frames: rec.error.frames.slice(0, 10) } };
     json = JSON.stringify(rec);
   }
   return json;

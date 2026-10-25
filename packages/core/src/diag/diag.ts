@@ -9,7 +9,6 @@ import { CODES, type DiagCode, type FieldsFor } from "./codes";
 import { appRelative, errorClass, isExpected, normalizeError, type NormalizedError } from "./error";
 import { sanitizeField, type Fields } from "./fields";
 import { Ring } from "./ring";
-import { scrubText } from "./scrub";
 import type { Channel, Crumb, CrumbCategory, DiagContext, DiagEntry, ErrorRecord, Level, Proc, RecordKind } from "./types";
 
 export interface DiagSink {
@@ -132,14 +131,13 @@ function safe(fn: () => void): void {
   }
 }
 
-function emit(level: Level, code: DiagCode, fields: unknown, detail?: unknown, err?: NormalizedError): void {
+function emit(level: Level, code: DiagCode, fields: unknown, err?: NormalizedError): void {
   safe(() => {
     const s = state;
     const ts = s.o.now();
     const clean = sanitizeFields(code, fields);
     const entry: DiagEntry = { ts, level, proc: s.o.proc, code, session: s.o.session, version: s.o.version, build: s.o.build };
     if (clean) entry.fields = clean;
-    if (detail !== undefined) entry.msg = scrubText(detail);
     if (err) entry.err = err;
     pushCrumb(s, { ts, cat: categoryOf(code), code, level, ...(clean ? { fields: clean } : {}) });
     if (s.o.sink) s.o.sink.write(entry);
@@ -166,16 +164,16 @@ function mirrorNow(s: State): void {
   s.o.sink?.mirror?.(s.ring.toArray());
 }
 
-/** Structured log lines: a code and its typed fields; info and above also become breadcrumbs. */
+/** Structured log lines: a code and its typed fields (never free text); info and above also become breadcrumbs. */
 export const log = {
-  info<C extends DiagCode>(code: C, fields?: FieldsFor<C>, detail?: unknown): void {
-    emit("info", code, fields, detail);
+  info<C extends DiagCode>(code: C, fields?: FieldsFor<C>): void {
+    emit("info", code, fields);
   },
-  warn<C extends DiagCode>(code: C, fields?: FieldsFor<C>, detail?: unknown): void {
-    emit("warn", code, fields, detail);
+  warn<C extends DiagCode>(code: C, fields?: FieldsFor<C>): void {
+    emit("warn", code, fields);
   },
-  error<C extends DiagCode>(code: C, fields?: FieldsFor<C>, detail?: unknown): void {
-    emit("error", code, fields, detail);
+  error<C extends DiagCode>(code: C, fields?: FieldsFor<C>): void {
+    emit("error", code, fields);
   },
 };
 
@@ -232,7 +230,7 @@ export function captureError<C extends DiagCode>(error: unknown, o: CaptureOptio
     const normalized = normalizeError(error);
     const expected = o.expected ?? isExpected(error);
     const fields = { errorClass: errorClass(error), ...o.fields } as unknown as FieldsFor<C>;
-    emit(expected ? "warn" : o.fatal ? "fatal" : "error", o.code, fields, normalized.message, { ...normalized, frames: normalized.frames.slice(0, 12) });
+    emit(expected ? "warn" : o.fatal ? "fatal" : "error", o.code, fields, { ...normalized, frames: normalized.frames.slice(0, 12) });
     if (expected) return;
     const now = s.o.now();
     const top = normalized.frames[0];

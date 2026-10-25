@@ -1,9 +1,11 @@
 /**
- * Errors as diagnostics: the class name, a scrubbed message (local only) and
- * stack frames reduced to app-relative files, plus the line between what the
- * user can fix (expected: logged, never reported) and what is our bug.
+ * Errors as diagnostics: the class name, structured metadata (a system or
+ * library code, an HTTP status) and stack frames reduced to app-relative
+ * files, plus the line between what the user can fix (expected: logged, never
+ * reported) and what is our bug. Never the message: a provider's or a model's
+ * text can quote mail (an AI parse error embeds the output), and no regex can
+ * tell a subject from prose.
  */
-import { scrubText } from "./scrub";
 
 export interface Frame {
   /** the function, as the (minified) code names it */
@@ -16,8 +18,10 @@ export interface Frame {
 
 export interface NormalizedError {
   name: string;
-  /** scrubbed; kept in local logs and records, never in a remote report */
-  message: string;
+  /** error.code when it is a short id (ECONNRESET, SQLITE_FULL, ERR_…) */
+  code?: string;
+  /** error.status / statusCode when it is an HTTP status */
+  status?: number;
   /** innermost first, as V8 prints them */
   frames: Frame[];
 }
@@ -116,19 +120,16 @@ export function parseStack(stack: string): Frame[] {
   return frames;
 }
 
+const CODE = /^[A-Za-z0-9_.-]{1,40}$/;
+
 export function normalizeError(error: unknown): NormalizedError {
   const name = errorClass(error);
-  if (error instanceof Error) {
-    return { name, message: scrubText(error.message), frames: typeof error.stack === "string" ? parseStack(error.stack) : [] };
-  }
-  // a thrown string or object: its text is scrubbed like a message, it has no stack
-  return { name, message: scrubText(typeof error === "string" ? error : safeJson(error)), frames: [] };
-}
-
-function safeJson(v: unknown): string {
-  try {
-    return JSON.stringify(v) ?? String(v);
-  } catch {
-    return String(v);
-  }
+  // a thrown string or object: no stack, and its text is never kept
+  if (!(error instanceof Error)) return { name, frames: [] };
+  const out: NormalizedError = { name, frames: typeof error.stack === "string" ? parseStack(error.stack) : [] };
+  const e = error as { code?: unknown; status?: unknown; statusCode?: unknown };
+  if (typeof e.code === "string" && CODE.test(e.code)) out.code = e.code;
+  const status = typeof e.status === "number" ? e.status : e.statusCode;
+  if (typeof status === "number" && Number.isInteger(status) && status >= 100 && status < 600) out.status = status;
+  return out;
 }

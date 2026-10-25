@@ -25,9 +25,7 @@ export interface DiagEntry {
   session: string;
   version: string;
   build: string;
-  /** local only: a scrubbed detail (a legacy log line, an error's message) */
-  msg?: string;
-  /** local only: the error behind an error entry */
+  /** the error behind an error entry: class, code, status and frames (never its message) */
   err?: NormalizedError;
 }
 

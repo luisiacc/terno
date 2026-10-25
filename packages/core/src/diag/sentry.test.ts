@@ -16,14 +16,14 @@ function record(id: string): ErrorRecord {
     code: "export.failed",
     fields: { errno: "ENOSPC" },
     fatal: false,
-    error: { name: "Error", message: "write failed for ana@example.org", frames: [{ fn: "w", file: "dist/main.cjs", line: 3, col: 7 }] },
+    error: { name: "Error", code: "ENOSPC", frames: [{ fn: "w", file: "dist/main.cjs", line: 3, col: 7 }] },
     crumbs: [{ ts: 1_699_999_000_000, cat: "ui", code: "ui.dialog", level: "info", fields: { dialog: "settings" } }],
     context: { version: "0.1.0", build: "0.1.0+abc", channel: "test", session: "s", os: "darwin" },
   };
 }
 
 /** Decodes what a fake network received: every item of every envelope. */
-function sink(delayMs = 0) {
+function sink(delayMs = 0, respond: () => { status: number; headers?: Record<string, string> } = () => ({ status: 200 })) {
   const envelopes: { header: Record<string, unknown>; items: { header: Record<string, unknown>; payload: unknown }[] }[] = [];
   const fetchImpl = async (_url: string, init: { body: string | Uint8Array }) => {
     if (delayMs) await new Promise((r) => setTimeout(r, delayMs));
@@ -33,17 +33,19 @@ function sink(delayMs = 0) {
     const items = [];
     for (let i = 1; i < lines.length; i += 2) items.push({ header: JSON.parse(lines[i]!), payload: JSON.parse(lines[i + 1]!) });
     envelopes.push({ header, items });
-    return { status: 200, headers: { get: () => null } };
+    const r = respond();
+    return { status: r.status, headers: { get: (name: string) => r.headers?.[name.toLowerCase()] ?? null } };
   };
   return { envelopes, fetchImpl };
 }
 
-const options = { installId: "install-1", release: "terno@0.1.0+abc", environment: "test" };
+const options = { installId: "install-1" };
+const RELEASE = "terno@0.1.0+abc";
 
 describe("reporter", () => {
   it("sends exactly the built event, nothing else, as one event envelope", async () => {
     const s = sink();
-    const reporter = createReporter({ dsn: DSN, release: options.release, environment: "test", transport: fetchTransport(s.fetchImpl), allow: () => true });
+    const reporter = createReporter({ dsn: DSN, release: RELEASE, environment: "test", transport: fetchTransport(s.fetchImpl), allow: () => true });
     const event = buildReport(record("a".repeat(32)), options);
     await expect(reporter.send(event)).resolves.toMatchObject({ sent: true });
     expect(s.envelopes).toHaveLength(1);
@@ -61,7 +63,7 @@ describe("reporter", () => {
     const s = sink();
     let allowed = false;
     const results: string[] = [];
-    const reporter = createReporter({ dsn: DSN, release: options.release, environment: "test", transport: fetchTransport(s.fetchImpl), allow: () => allowed, onResult: (_id, r) => results.push(r.sent ? "sent" : r.reason) });
+    const reporter = createReporter({ dsn: DSN, release: RELEASE, environment: "test", transport: fetchTransport(s.fetchImpl), allow: () => allowed, onResult: (_id, r) => results.push(r.sent ? "sent" : r.reason) });
     await expect(reporter.send(buildReport(record("b".repeat(32)), options))).resolves.toEqual({ sent: false, reason: "policy" });
     allowed = true;
     await reporter.send(buildReport(record("c".repeat(32)), options));
@@ -73,7 +75,7 @@ describe("reporter", () => {
     const s = sink(50);
     const approved = new Set(["d".repeat(32), "e".repeat(32)]);
     let localMode = false;
-    const reporter = createReporter({ dsn: DSN, release: options.release, environment: "test", transport: fetchTransport(s.fetchImpl), allow: (id) => !localMode && approved.has(id) });
+    const reporter = createReporter({ dsn: DSN, release: RELEASE, environment: "test", transport: fetchTransport(s.fetchImpl), allow: (id) => !localMode && approved.has(id) });
     const first = reporter.send(buildReport(record("d".repeat(32)), options));
     await new Promise((r) => setTimeout(r, 5));
     localMode = true;
@@ -82,4 +84,5 @@ describe("reporter", () => {
     expect(await first).toMatchObject({ sent: true });
     expect(s.envelopes.map((e) => e.header.event_id)).toEqual(["d".repeat(32)]);
   });
+
 });

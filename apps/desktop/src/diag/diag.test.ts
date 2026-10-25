@@ -2,7 +2,8 @@ import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, symlinkSync, wri
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inflateRawSync } from "node:zlib";
-import type { ErrorRecord } from "@terno/core/diag";
+import { appendFileSync } from "node:fs";
+import { captureError, installDiag, type ErrorRecord } from "@terno/core/diag";
 import { afterEach, describe, expect, it } from "vitest";
 import { collectExport, zip } from "./export";
 import { diagPaths, ensureDirs, fitRecord, RECORD_MAX_BYTES, RecordStore, Rings, runMarker, StateFile } from "./store";
@@ -29,7 +30,7 @@ function record(over: Partial<ErrorRecord> = {}): ErrorRecord {
     code: "sync.failed",
     fields: { accountKind: "imap" },
     fatal: false,
-    error: { name: "TypeError", message: "x", frames: [{ fn: "f", file: "dist/backend.cjs", line: 1, col: 2 }] },
+    error: { name: "TypeError", frames: [{ fn: "f", file: "dist/backend.cjs", line: 1, col: 2 }] },
     crumbs: [],
     context: { version: "0.1.0", build: "0.1.0+abc", channel: "test", session: "s1", os: "darwin" },
     ...over,
@@ -148,7 +149,8 @@ describe("export", () => {
         "{ torn",
       ].join("\n"),
     );
-    new RecordStore(paths.crashes).writeSync(record({ error: { name: "Error", message: "Re: Contrato con Ana <ana.lopez@example.org>", frames: [] } }));
+    // a record from an older build, when messages were still kept
+    new RecordStore(paths.crashes).writeSync(record({ error: { name: "Error", message: "Re: Contrato con Ana <ana.lopez@example.org>", frames: [] } as never }));
     const secret = join(root, "secret.txt");
     writeFileSync(secret, "ana.lopez@example.org");
     symlinkSync(secret, join(paths.logs, "linked.jsonl"));
@@ -166,5 +168,27 @@ describe("export", () => {
     // native dumps only when asked for
     const withNative = unzip(zip(collectExport({ paths, system: {}, nativeDir: join(paths.crashes, "native") })));
     expect(withNative.has("native/a.dmp")).toBe(true);
+  });
+});
+
+describe("malformed AI output never reaches an export (review finding 1)", () => {
+  it("a parse error quoting the model's answer leaves only codes in logs, records and the unzipped export", () => {
+    const root = tmp();
+    const paths = diagPaths(root);
+    ensureDirs(paths);
+    const store = new RecordStore(paths.crashes);
+    installDiag({ proc: "backend", version: "0.1.0", build: "0.1.0+abc", channel: "test", sink: { write: (e) => appendFileSync(join(paths.logs, "backend.jsonl"), `${JSON.stringify(e)}\n`), capture: (r) => store.writeSync(r) } });
+    const SUBJECT = "Quarterly board deck draft";
+    const BODY = "the layoffs stay confidential until March";
+    const output = `{"label": "${SUBJECT}", "explain": "${BODY}"`;
+    // the provider's verdict (expected: a warning) and the same text in an unexpected failure (a record)
+    captureError(Object.assign(new Error(`La IA no produjo un resultado válido: ${output}`), { name: "AiError", expected: true }), { code: "ai.assist_failed", fields: { aiKind: "invalid_output" } });
+    captureError(new SyntaxError(`Unexpected token } in JSON: ${output}`), { code: "ai.unexpected", fields: { op: "classify" } });
+    expect(store.list()).toHaveLength(1);
+    const files = unzip(zip(collectExport({ paths, system: {} })));
+    expect(files.has("logs/backend.jsonl")).toBe(true);
+    const all = [...files.values()].map((b) => b.toString("utf8")).join("\n");
+    for (const s of ["Quarterly", "layoffs", "confidential", "resultado válido", "Unexpected token"]) expect(all).not.toContain(s);
+    expect(all).toContain('"code":"ai.unexpected"');
   });
 });

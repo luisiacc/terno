@@ -176,7 +176,7 @@ class MainDiag implements DiagSink {
 
   private line(proc: Proc, entry: DiagEntry): void {
     const line = JSON.stringify(entry);
-    if (!app.isPackaged && entry.level !== "info") process.stderr.write(`[${proc}:${entry.level}] ${entry.code} ${entry.fields ? JSON.stringify(entry.fields) : ""} ${entry.msg ?? ""}\n`);
+    if (!app.isPackaged && entry.level !== "info") process.stderr.write(`[${proc}:${entry.level}] ${entry.code} ${entry.fields ? JSON.stringify(entry.fields) : ""}\n`);
     if (!this.paths) {
       if (this.early.length < 500) this.early.push({ proc, line });
       return;
@@ -303,7 +303,7 @@ class MainDiag implements DiagSink {
   }
 
   private reportFor(record: ErrorRecord): ReportEvent {
-    return buildReport(record, { installId: this.state?.get().installId ?? "unknown", release: releaseName(BUILD_VERSION, BUILD_SHA), environment: this.channel });
+    return buildReport(record, { installId: this.state?.get().installId ?? "unknown" });
   }
 
   private async send(record: ErrorRecord): Promise<SendResult> {
@@ -379,7 +379,7 @@ class MainDiag implements DiagSink {
     let record = target === "sample" ? null : this.record(target);
     if (target === "sample") {
       record = { id: newId(), ts: Date.now(), kind: "error", proc: "main", code: "diag.selftest", fields: { source: "main" }, fatal: false, crumbs: [], context: diagContext() };
-      record.error = { name: "Error", message: "", frames: [] };
+      record.error = { name: "Error", frames: [] };
       record.crumbs = breadcrumbs();
     }
     if (!record) return null;
