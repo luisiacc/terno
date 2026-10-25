@@ -261,3 +261,35 @@ Codex (`codex exec -s read-only`, 12 points) against the plan and the code. What
 10. **Stale answers.** A ghost answer is shown only if, when it arrives, the editor still has focus, is editable, suggestions are still on, and the document, selection and the draft's recipients/account are those of the request. Recipient or account changes, blur, a send starting and the setting turning off dismiss a shown ghost. In the backend, `reset()`/`setPhrases(false)` wait for the unit in flight before deleting files; `close()` runs before the store closes.
 11. **Kept states.** Plugin state is plain data (`{ text, pos }`); the widget's DOM is made per view. The state kept for a remount has the ghost cleared. Suggestion-only transactions are `addToHistory: false`; an acceptance is its own undo step on both sides (`closeHistory` on it and on an empty transaction after it).
 12. **Forwards and recipient formatting.** `ownText` is tested against the real `quoteFor` → `sendBody` output in both languages (Terno's own "Forwarded message"/"Mensaje reenviado" and attributions). Accepted recipients are written with `formatAddress` (names with commas or quotes are quoted), with save/send round trips.
+
+## Implementation notes (what differs from the plan above)
+
+- **The ghost is a layer, not a decoration.** Measured as a widget decoration, every suggestion shown or consumed made ProseMirror walk the whole document (a decoration change at the root) and Chromium lay the caret's paragraph out again: +18 ms a keystroke at 5 MB, double in a 1 MB paragraph. It is now an absolutely positioned layer beside the editor (never in its DOM, its text or a copy): it starts at the caret's line box (snapped to the block's line grid), continues the line with `text-indent` at the caret in the caret's own font, is trimmed to the whole words that fit on that line (what shows is exactly what Tab inserts; nothing fits → nothing shows), and is placed in the frame's animation callback, where layout is due anyway. Suggestions require a left-aligned line. Plugin state stays plain data (`{ text, pos }`), so kept states and undo are as planned.
+- **Recipient lists paint in the keystroke's frame.** A recipient field prefetches the best 20 people per first letter and digit when it gets focus (`compose.recipientInitials`, sliced on the backend, at most every 30 s per account); a keystroke shows them, or narrows what is shown, at once, and the backend's answer replaces them a frame later.
+- **The contact index ranks with one key per contact**: (3·sent + recv) × penalty, scaled by 2^500 for people written to (exact for doubles, far above any other key), so most token entries are rejected with one multiplication. One-letter words of a multi-word query are checked against per-contact first-letter masks (by class, and one-letter tokens) instead of walking a sixth of the index. Tokens are kept as order-preserving bytes (one per UTF-16 unit below 0xFF, three otherwise): half the memory of UTF-16, comparisons on bytes, snapshots copy them as is.
+- **No `count` per contact** (nothing ranked on it); name weights are `Float32`.
+- **Snapshots**: contacts 16 MiB and phrases 13 MiB at 110k people / 105k sent messages (format 3: no start offsets, strings as escaped bytes).
+- **The slice clock restarts after resting** (an idle sleep isn't running time); snapshots, merges, restores and the IndexedDB id scans yield throughout.
+- **Peak check** estimates a snapshot's copies (about what the model holds) instead of 1.5× the model: under web caps the contact snapshot was never written and every start rebuilt.
+- **Drafts are limited to 5M characters** (plan 16): the 10 MB draft of the gates is Chinese text (three bytes a character in UTF-8).
+- **Known limitation:** the backend answers one request at a time, so a suggestion asked while a multi-megabyte draft is being saved waits for that save (seconds at 5 MB); it is shown when it arrives if nothing changed meanwhile.
+
+### Measured (this machine, loaded by other work; budgets in the tests)
+
+| | measured | gate |
+|---|---|---|
+| contacts build, 300k messages / 110k people | 8 µs CPU a message, longest stall 4.6 ms | ≤ 15 µs, ≤ 16 ms |
+| contacts memory | 30 MiB measured, 37 MiB counted | ≤ 32 MiB; counted ≥ measured, ≤ 1.6× |
+| contacts lookup, 5,000 realistic keystrokes | p50 97 µs, p95 197 µs, p99 336 µs | p95 ≤ 0.25 ms, p99 ≤ 1 ms |
+| contacts snapshot / cold start | 16 MiB / 107 ms CPU | ≤ 24 MiB / ≤ 250 ms |
+| contacts incremental | 14.6 µs a message | ≤ 20 µs |
+| phrases build, 100k sent | 46 µs CPU a message, stall 4 ms, 13 MiB | ≤ 60 µs, ≤ 16 ms, ≤ 24 MiB |
+| phrases suggest | p95 9 µs, p99 10 µs; 27 µs after a 1 MB line | p95 ≤ 0.1 ms, p99 ≤ 0.5 ms |
+| SQLite end to end (300k) | both models 5 s, stall 23 ms, cold start 123 ms, catch-up 78 µs | ≤ 120 s, ≤ 32 ms, ≤ 1.5 s, ≤ 150 µs |
+| IndexedDB end to end (300k, fake-indexeddb) | 20 s, stall less GC within 48 ms, cold start 206 ms, catch-up 241 µs | ≤ 300 s, ≤ 48 ms, ≤ 3 s, ≤ 300 µs |
+| typing with vs without suggestions (5 MB, 10 MB, 1 MB paragraph) | per-round ratio 0.99–1.02 | ≤ 1.10 + 1 ms |
+| typing stopped → ghost shown | 61–81 ms (60 of it the pause) | ≤ 120 ms |
+| keystroke → recipient list painted | p50 4 ms, p95 15 ms | ≤ 16.7 ms |
+| 300 suggestion cycles | heap +1.3 MiB | ≤ 2 MiB |
+
+Each gate has an injected-regression twin that must fail it: lookups by scanning (p95 151 ms), 30 µs extra per indexed message, 80 µs extra per learned message, an unbounded suggestion window (17 ms), 6 ms extra per keystroke in the editor (ratio 1.54).
