@@ -140,6 +140,12 @@ function newTable(slots: number): Table {
   return { k1: new Uint32Array(slots), k2: new Uint32Array(slots), tot: new Uint32Array(slots), nid: new Uint32Array(slots * K), ncnt: new Uint32Array(slots * K), nerr: new Uint16Array(slots * K), used: 0 };
 }
 
+let unboundedForTests = false;
+/** The perf suite's injected-regression twin for suggestions: reads all of `before`, not just its end. */
+export function setPhrasesUnboundedForTests(on: boolean): void {
+  unboundedForTests = on;
+}
+
 let slowForTests = 0;
 /** The perf suite's injected-regression twin: busy work per learned message (ms). */
 export function setPhrasesSlowdownForTests(ms: number): void {
@@ -308,9 +314,9 @@ export class PhraseModel {
         const tok = tokens[ti]!;
         const prev = ids[ids.length - 1]!;
         let id: number;
-        const f = fold(tok);
-        if (prev !== S && prev >= RESERVED.length && GREETINGS.has(this.words[prev]!) && recipients.has(f)) id = NAME;
-        else if (li >= signoffFrom && me.length > 1 && f === me) id = ME;
+        // folding only where a name can be: after a greeting, in the sign-off
+        if (prev !== S && prev >= RESERVED.length && recipients.size && GREETINGS.has(this.words[prev]!) && recipients.has(fold(tok))) id = NAME;
+        else if (li >= signoffFrom && me.length > 1 && fold(tok) === me) id = ME;
         else {
           id = this.wordId(tok, true);
           if (prev !== S) this.countForm(id, tok);
@@ -421,7 +427,7 @@ export class PhraseModel {
 
   /** Ghost text for the caret after `before`, or null. */
   suggest(input: PhraseSuggestInput): string | null {
-    const window = input.before.slice(-MAX_WINDOW);
+    const window = unboundedForTests ? input.before : input.before.slice(-MAX_WINDOW);
     const line = window.slice(window.lastIndexOf("\n") + 1);
     // the sentence being written: after the last sentence end on this line
     let start = 0;
