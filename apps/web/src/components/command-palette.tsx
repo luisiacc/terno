@@ -2,15 +2,17 @@ import type { CategoryColor } from "@terno/core";
 import { t } from "@terno/i18n";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
-import { Archive, CheckCheck, FileDown, FolderInput, Inbox, Layers, ListFilter, Mail, MailOpen, Moon, OctagonAlert, PenLine, Printer, RefreshCw, RotateCw, Search, Send, Sparkles, Star, Sun, Trash2, Undo2 } from "lucide-react";
+import { Archive, CheckCheck, FileDown, FolderInput, Palette, Paperclip, Inbox, Layers, ListFilter, Mail, MailOpen, Moon, OctagonAlert, PenLine, Printer, RefreshCw, RotateCw, Search, Send, Sparkles, Star, Sun, Trash2, Undo2 } from "lucide-react";
 import { useState } from "react";
 import { act, openCompose, toggleStar, undoLast } from "~/lib/actions";
 import { addScopeToCategory, addToCategory } from "~/lib/categorize";
 import { currentTargets, isMac, selectAll } from "~/lib/select";
 import { updateAppearance } from "~/lib/appearance";
 import { printCommand } from "~/lib/print-open";
-import { toggleUnreadFilter } from "~/lib/unread";
-import { isUnreadOnly } from "~/lib/unread-filter";
+import { setListFilter } from "~/lib/unread";
+import { activeFilter } from "~/lib/unread-filter";
+import { DESIGNS } from "@terno/ui/designs/index";
+import { designName } from "~/lib/design";
 import { checkForUpdates, installUpdate, useHasUpdates, useUpdates } from "~/lib/updates";
 import { englishWords as english } from "~/lib/palette-words";
 import { navigate, setApp, useApp } from "~/state/app";
@@ -25,7 +27,9 @@ export function CommandPalette() {
   // printing takes the conversation the reader shows (one, with no new message in the pane)
   const printable = useApp((s) => open && s.selectedId !== null && !s.scope && s.checked.size < 2 && s.compose === null);
   // the unread filter applies to a mailbox (not "Review")
-  const filter = useApp((s) => (open && s.reviewCategoryId === null ? (isUnreadOnly(s) ? "on" : "off") : null));
+  const filter = useApp((s) => (open && s.reviewCategoryId === null ? (activeFilter(s) ? "on" : "off") : null));
+  const active = useApp((s) => (open ? activeFilter(s) : undefined));
+  const design = useApp((s) => (open ? (s.settings?.design ?? null) : null));
   const updatesAvailable = useHasUpdates();
   const readyVersion = useUpdates((s) => (open && s.state?.ready && s.state.status !== "installing" ? s.state.ready.version : null));
   const [value, setValue] = useState("");
@@ -79,10 +83,26 @@ export function CommandPalette() {
           )}
           <CommandItem onSelect={() => run(selectAll)} keywords={english("palette.selectAll")}><CheckCheck /> {t("palette.selectAll")}<CommandShortcut>⌘A</CommandShortcut></CommandItem>
           {filter && (
-            <CommandItem data-testid="palette-unread-filter" value={`${t(filter === "on" ? "palette.showAll" : "palette.showUnread")} ${t("palette.search.unreadFilter")}`} keywords={[...english(filter === "on" ? "palette.showAll" : "palette.showUnread"), ...english("palette.search.unreadFilter")]} onSelect={() => run(toggleUnreadFilter)}>
+            <CommandItem data-testid="palette-unread-filter" value={`${t(filter === "on" ? "palette.showAll" : "palette.showUnread")} ${t("palette.search.unreadFilter")}`} keywords={[...english(filter === "on" ? "palette.showAll" : "palette.showUnread"), ...english("palette.search.unreadFilter")]} onSelect={() => run(() => setListFilter(filter === "on" ? undefined : "unread"))}>
               <ListFilter /> {t(filter === "on" ? "palette.showAll" : "palette.showUnread")}<CommandShortcut>{isMac ? "⌘L" : "Ctrl+L"}</CommandShortcut>
             </CommandItem>
           )}
+          {filter && active !== "attachments" && (
+            <CommandItem data-testid="palette-filter-attachments" value={`${t("palette.showAttachments")} ${t("palette.search.unreadFilter")}`} keywords={[...english("palette.showAttachments"), ...english("palette.search.unreadFilter")]} onSelect={() => run(() => setListFilter("attachments"))}>
+              <Paperclip /> {t("palette.showAttachments")}
+            </CommandItem>
+          )}
+          {filter && active !== "starred" && (
+            <CommandItem data-testid="palette-filter-starred" value={`${t("palette.showStarred")} ${t("palette.search.unreadFilter")}`} keywords={[...english("palette.showStarred"), ...english("palette.search.unreadFilter")]} onSelect={() => run(() => setListFilter("starred"))}>
+              <Star /> {t("palette.showStarred")}
+            </CommandItem>
+          )}
+          {design &&
+            DESIGNS.filter((d) => d.id !== design).map((d) => (
+              <CommandItem key={d.id} data-testid={`palette-design-${d.id}`} value={t("palette.style", { name: designName(d.id) })} keywords={[...english("palette.styleKeyword"), designName(d.id)]} onSelect={() => run(() => void updateAppearance({ design: d.id }))}>
+                <Palette /> {t("palette.style", { name: designName(d.id) })}
+              </CommandItem>
+            ))}
           <CommandItem onSelect={() => run(undoLast)} keywords={english("common.undo")}><Undo2 /> {t("common.undo")}<CommandShortcut>Z</CommandShortcut></CommandItem>
           <CommandItem onSelect={() => run(() => setApp({ dialog: "filters" }))} keywords={english("palette.aiFilter")}><Sparkles /> {t("palette.aiFilter")}</CommandItem>
           <CommandItem

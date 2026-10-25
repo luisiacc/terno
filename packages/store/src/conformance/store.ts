@@ -584,21 +584,32 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         const scopes: { accountId?: number; categoryId?: number }[] = [{}, { accountId: snap.accounts[1]!.id }, { categoryId: snap.categories[0]!.id }];
         for (const view of VIEWS) {
           for (const scope of scopes) {
-            // and the unread filter's pages: the same walk, read threads left out
-            for (const unreadOnly of [false, true]) {
+            // and the quick filters' pages (plan 12's unread, plan 15's attachments and starred): the same walk, the rest left out
+            const attach = new Set(snap.threads.filter((t) => t.hasAttachments).map((t) => t.id));
+            const keeps = { none: () => true, unread: (t: (typeof docs)[number]) => t.unreadCount > 0, attachments: (t: (typeof docs)[number]) => attach.has(t.threadId), starred: (t: (typeof docs)[number]) => t.isStarred };
+            for (const filter of ["none", "unread", "attachments", "starred"] as const) {
               const ids: number[] = [];
               let cursor: Cursor | undefined;
               do {
-                const page = await store.threads.list({ view, limit: 53, cursor, ...scope, unreadOnly });
+                const page = await store.threads.list({ view, limit: 53, cursor, ...scope, ...(filter === "none" ? {} : { filter }) });
                 ids.push(...page.items.map((t) => t.id));
                 cursor = page.nextCursor ?? undefined;
               } while (cursor);
               const expected = docs
-                .filter((t) => VIEW_TEST[view](t) && (scope.accountId === undefined || t.accountId === scope.accountId) && (scope.categoryId === undefined || t.categoryIds.includes(scope.categoryId)) && (!unreadOnly || t.unreadCount > 0))
+                .filter((t) => VIEW_TEST[view](t) && (scope.accountId === undefined || t.accountId === scope.accountId) && (scope.categoryId === undefined || t.categoryIds.includes(scope.categoryId)) && keeps[filter](t))
                 .sort(byRecency)
                 .map((t) => t.threadId);
-              expect(ids, `${view} ${JSON.stringify(scope)} unreadOnly=${unreadOnly}`).toEqual(expected);
-              if (unreadOnly) expect(await store.threads.scopeCount({ view, ...scope, unreadOnly, limit: 100_000 }), `${view} ${JSON.stringify(scope)} count`).toBe(expected.length);
+              expect(ids, `${view} ${JSON.stringify(scope)} filter=${filter}`).toEqual(expected);
+              if (filter !== "none") {
+                expect(await store.threads.scopeCount({ view, ...scope, filter, limit: 100_000 }), `${view} ${JSON.stringify(scope)} ${filter} count`).toBe(expected.length);
+                const scoped = await store.threads.scopeIds({ view, ...scope, filter, limit: 100_000 });
+                expect(scoped, `${view} ${JSON.stringify(scope)} ${filter} scope ids`).toEqual([...expected].sort((a, b) => a - b));
+              }
+              // plan 12's unreadOnly is the same as filter "unread"
+              if (filter === "unread") {
+                const legacy = await store.threads.list({ view, limit: 500, ...scope, unreadOnly: true });
+                expect(legacy.items.map((t) => t.id)).toEqual(expected.slice(0, 500));
+              }
             }
           }
         }

@@ -1,4 +1,4 @@
-import { COUNT_CAP, parseSearch, resolveSearch, senderVetoed, type Address, type FilterAction, type ThreadAction, type ThreadSummary } from "@terno/core";
+import { COUNT_CAP, LIST_FILTERS, parseSearch, resolveSearch, senderVetoed, type Address, type FilterAction, type ThreadAction, type ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { MockDataset } from "@terno/mock-data";
@@ -120,6 +120,7 @@ import {
   T,
   ThreadOrder,
   ScopeIndex,
+  FILTER_TEST,
   threadDoc,
   toSummary,
   updateAccount,
@@ -191,13 +192,13 @@ export class IdbMailStore implements MailStore {
   ) {
     this.log = o.log ?? (() => {});
     const order = new ThreadOrder(db);
-    const unreadOrder = new ThreadOrder(db, (t) => t.unread_count > 0);
+    const filterOrders = { unread: new ThreadOrder(db, FILTER_TEST.unread), attachments: new ThreadOrder(db, FILTER_TEST.attachments), starred: new ThreadOrder(db, FILTER_TEST.starred) };
     const scopes = new ScopeIndex(db);
     const bodies = db.table<R>("message_bodies");
     this.c = {
       db,
       order,
-      unreadOrder,
+      filterOrders,
       scopes,
       uuid: () => o.platform.uuid(),
       body: (id) => {
@@ -1158,14 +1159,15 @@ export class IdbMailStore implements MailStore {
           const b = threads.get(order[i]!)!;
           if (a.last_date < b.last_date || (a.last_date === b.last_date && a.id < b.id)) throw new Error("the recency order is out of order");
         }
-        // the unread order is the recency order's unread threads, exactly
-        const unread = this.c.unreadOrder.current(threads);
-        const expected = order.filter((id) => threads.get(id)!.unread_count > 0);
-        if (unread.length !== expected.length || unread.some((id, i) => id !== expected[i])) throw new Error("the unread order differs from the recency order's unread threads");
-        // and the unread scope ids are those threads, ascending
-        const scoped = this.c.scopes.unread(this.c);
-        const ascending = [...expected].sort((a, b) => a - b);
-        if (scoped.length !== ascending.length || scoped.some((id, i) => id !== ascending[i])) throw new Error("the unread scope ids differ from the unread threads");
+        // each filter's order is the recency order's threads it keeps, exactly; its scope ids are those threads, ascending
+        for (const f of LIST_FILTERS) {
+          const filtered = this.c.filterOrders[f].current(threads);
+          const expected = order.filter((id) => FILTER_TEST[f](threads.get(id)));
+          if (filtered.length !== expected.length || filtered.some((id, i) => id !== expected[i])) throw new Error(`the ${f} order differs from the recency order's ${f} threads`);
+          const scoped = this.c.scopes.matching(this.c, f);
+          const ascending = [...expected].sort((a, b) => a - b);
+          if (scoped.length !== ascending.length || scoped.some((id, i) => id !== ascending[i])) throw new Error(`the ${f} scope ids differ from the ${f} threads`);
+        }
       });
     },
   };

@@ -19,7 +19,7 @@ const readInbox = (server: DevServer) => db(server).all<{ id: number }>("SELECT 
 const loadedIds = (page: Page) => page.evaluate(() => (window as unknown as { __terno: { loadedIds(): number[] } }).__terno.loadedIds());
 const row = (page: Page, id: number) => page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
 /** the list shows the rows of that list key (the header changes before they arrive) */
-const showing = (page: Page, unreadOnly: boolean) => expect(page.getByTestId("thread-list")).toHaveAttribute("data-results-for", new RegExp(`,${unreadOnly},"[^"]*"\\]$`));
+const showing = (page: Page, unreadOnly: boolean) => expect(page.getByTestId("thread-list")).toHaveAttribute("data-results-for", new RegExp(`,${unreadOnly ? '"unread"' : "null"},"[^"]*"\\]$`));
 const toast = (page: Page, text: string | RegExp) => page.locator("[data-testid=snack]").filter({ hasText: text });
 
 /** a category with nothing in it, opened: nothing is open in it either */

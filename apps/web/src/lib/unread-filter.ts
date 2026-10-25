@@ -1,15 +1,20 @@
 /**
- * The unread filter (plan 12), like Mail's message filter: per mailbox (a
- * view, an account, a category), remembered across launches. A search
- * inherits the state of the mailbox it searches in. The filter is derived
- * from the mailbox, never set by navigation, so every way of changing
+ * The list's quick filter (plan 12's unread filter, generalized in plan 15
+ * to unread, with attachments and starred), like Mail's message filter: per
+ * mailbox (a view, an account, a category), remembered across launches. A
+ * search inherits the filter of the mailbox it searches in. The filter is
+ * derived from the mailbox, never set by navigation, so every way of changing
  * mailbox (the sidebar, a sender search, boot) gets the right one.
  */
-import type { View } from "@terno/core";
+import { isListFilter, type ListFilter, type View } from "@terno/core";
 
-export const STORAGE_KEY = "terno:unread-filter";
+export const STORAGE_KEY = "terno:list-filter";
+/** plan 12's: the keys whose unread filter was on */
+export const LEGACY_KEY = "terno:unread-filter";
 /** keys kept, newest last (old mailboxes fall off) */
 export const MAX_KEYS = 200;
+
+export type ListFilters = ReadonlyMap<string, ListFilter>;
 
 export interface Mailbox {
   view: View;
@@ -21,19 +26,38 @@ export interface Mailbox {
 /** "inbox||", "all||7", "inbox|2|" */
 export const mailboxKey = (m: Mailbox): string => `${m.view}|${m.accountId ?? ""}|${m.categoryId ?? ""}`;
 
-/** Is the current list filtered? "Revisar" (a category's suggestions) never is. */
-export function isUnreadOnly(m: Mailbox & { unreadFilters: ReadonlySet<string> }): boolean {
-  return m.reviewCategoryId === null && m.unreadFilters.has(mailboxKey(m));
+/** The current list's filter, if any. "Revisar" (a category's suggestions) is never filtered. */
+export function activeFilter(m: Mailbox & { listFilters: ListFilters }): ListFilter | undefined {
+  return m.reviewCategoryId === null ? m.listFilters.get(mailboxKey(m)) : undefined;
 }
 
-/** What was stored: an array of short strings, else nothing on (storage may be unavailable or hold anything). */
-export function parseStored(raw: string | null): Set<string> {
+/** Is the current list filtered to unread threads (⌘L's state, its "Filtered by" count)? */
+export function isUnreadOnly(m: Mailbox & { listFilters: ListFilters }): boolean {
+  return activeFilter(m) === "unread";
+}
+
+const goodKey = (k: unknown): k is string => typeof k === "string" && k.length > 0 && k.length <= 64;
+
+/** What was stored: [key, filter] pairs, else nothing on (storage may be unavailable or hold anything). */
+export function parseStored(raw: string | null): Map<string, ListFilter> {
   try {
     const v: unknown = raw === null ? [] : JSON.parse(raw);
-    if (!Array.isArray(v)) return new Set();
-    return new Set(v.filter((k): k is string => typeof k === "string" && k.length > 0 && k.length <= 64).slice(-MAX_KEYS));
+    if (!Array.isArray(v)) return new Map();
+    const pairs = v.filter((p): p is [string, ListFilter] => Array.isArray(p) && p.length === 2 && goodKey(p[0]) && isListFilter(p[1]));
+    return new Map(pairs.slice(-MAX_KEYS));
   } catch {
-    return new Set();
+    return new Map();
+  }
+}
+
+/** plan 12's list of keys whose unread filter was on */
+export function parseLegacy(raw: string | null): Map<string, ListFilter> {
+  try {
+    const v: unknown = raw === null ? [] : JSON.parse(raw);
+    if (!Array.isArray(v)) return new Map();
+    return new Map(v.filter(goodKey).slice(-MAX_KEYS).map((k) => [k, "unread" as const]));
+  } catch {
+    return new Map();
   }
 }
 
@@ -46,23 +70,25 @@ function local(): Storage | null {
   }
 }
 
-export function loadUnreadFilters(storage: Pick<Storage, "getItem"> | null = local()): Set<string> {
+/** The stored filters; the first time, plan 12's unread ones, carried over. */
+export function loadListFilters(storage: Pick<Storage, "getItem"> | null = local()): Map<string, ListFilter> {
   try {
-    return parseStored(storage?.getItem(STORAGE_KEY) ?? null);
+    const raw = storage?.getItem(STORAGE_KEY) ?? null;
+    return raw === null ? parseLegacy(storage?.getItem(LEGACY_KEY) ?? null) : parseStored(raw);
   } catch {
-    return new Set();
+    return new Map();
   }
 }
 
-/** The set with `key` flipped (an "on" key moves to the newest end; past MAX_KEYS the oldest fall off). */
-export function flipped(filters: ReadonlySet<string>, key: string): Set<string> {
-  const next = new Set(filters);
-  if (next.has(key)) next.delete(key);
-  else next.add(key);
-  return new Set([...next].slice(-MAX_KEYS));
+/** The filters with `key` set to `filter` (newest last; past MAX_KEYS the oldest fall off), or cleared. */
+export function withFilter(filters: ListFilters, key: string, filter: ListFilter | undefined): Map<string, ListFilter> {
+  const next = new Map(filters);
+  next.delete(key);
+  if (filter) next.set(key, filter);
+  return new Map([...next].slice(-MAX_KEYS));
 }
 
-export function saveUnreadFilters(filters: ReadonlySet<string>, storage: Pick<Storage, "setItem"> | null = local()): void {
+export function saveListFilters(filters: ListFilters, storage: Pick<Storage, "setItem"> | null = local()): void {
   try {
     storage?.setItem(STORAGE_KEY, JSON.stringify([...filters]));
   } catch {

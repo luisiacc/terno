@@ -1,8 +1,8 @@
-import type { Account, Category, Counts, Filter, FilterRule, View } from "@terno/core";
+import type { Account, Category, Counts, Filter, FilterRule, ListFilter, View } from "@terno/core";
 import type { AppSettings, HostInfo, OwnerIdentity, ThreadScope } from "@terno/core/rpc";
 import { create } from "zustand";
 import type { PrintTarget } from "~/lib/print-open";
-import { loadUnreadFilters } from "~/lib/unread-filter";
+import { loadListFilters } from "~/lib/unread-filter";
 
 export type DialogName = "settings" | "shortcuts" | "palette" | "categoryPicker" | "filters" | "addAccount" | "print" | null;
 export type SettingsTab = "general" | "appearance" | "accounts" | "categories" | "filters" | "ai" | "agents" | "data";
@@ -45,7 +45,8 @@ export interface AppState {
   reviewCategoryId: number | null;
   query: string;
   /** mailboxes with the unread filter on (lib/unread-filter: the current list's flag is derived from this) */
-  unreadFilters: ReadonlySet<string>;
+  /** each mailbox's quick filter (plan 12's unread filter, generalized in plan 15) */
+  listFilters: ReadonlyMap<string, ListFilter>;
   selectedId: number | null;
   /** multi-selection (x, ⌘-click, ⇧-click, ⇧J/⇧K, ⌘A) */
   checked: ReadonlySet<number>;
@@ -95,7 +96,7 @@ export const useApp = create<AppState>(() => ({
   categoryId: null,
   reviewCategoryId: null,
   query: "",
-  unreadFilters: loadUnreadFilters(),
+  listFilters: loadListFilters(),
   selectedId: null,
   checked: new Set(),
   anchorId: null,

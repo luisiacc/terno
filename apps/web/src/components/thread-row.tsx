@@ -1,4 +1,4 @@
-import type { CategoryColor, ThreadSummary } from "@terno/core";
+import { listFilterOf, matchesFilter, type CategoryColor, type ThreadSummary } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { cn } from "@terno/ui/lib/utils";
 import { Paperclip, Star } from "lucide-react";
@@ -45,8 +45,8 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
   renderProbe("ThreadRow");
   /** the open thread (the cursor; the listbox's active descendant) */
   const selected = useApp((s) => s.selectedId === thread.id);
-  // "select all N" checks every row, loaded later or not ("all N unread": not a read row the filter kept)
-  const inScope = (s: AppState) => s.scope !== null && (thread.unread || !s.scope.scope.unreadOnly);
+  // "select all N" checks every row, loaded later or not ("all N unread": not a read row the filter kept in place)
+  const inScope = (s: AppState) => s.scope !== null && matchesFilter(listFilterOf(s.scope.scope), thread);
   const checked = useApp((s) => inScope(s) || s.checked.has(thread.id));
   // what assistive tech hears as selected: the checked rows, or the open thread when nothing is checked
   const inSelection = useApp((s) => inScope(s) || s.checked.has(thread.id) || (s.selectedId === thread.id && s.checked.size === 0));

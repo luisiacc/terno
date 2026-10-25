@@ -99,11 +99,11 @@ describe("scope labels", () => {
   afterEach(() => setLocale("en", en));
 
   it("adds the unread filter to the name in the active language, and quotes a search by the locale's marks", () => {
-    expect(scopeLabel("Inbox", false)).toBe("Inbox");
-    expect(scopeLabel("Inbox", true)).toBe("Inbox · Unread");
-    expect(t("list.scope.quoted", { label: scopeLabel("uber", true) })).toBe("“uber · Unread”");
+    expect(scopeLabel("Inbox", undefined)).toBe("Inbox");
+    expect(scopeLabel("Inbox", "unread")).toBe("Inbox · Unread");
+    expect(t("list.scope.quoted", { label: scopeLabel("uber", "unread") })).toBe("“uber · Unread”");
     setLocale("es", es);
-    expect(scopeLabel("Entrada", true)).toBe("Entrada · No leídos");
+    expect(scopeLabel("Entrada", "unread")).toBe("Entrada · No leídos");
     expect(t("list.scope.quoted", { label: "uber" })).toBe("«uber»");
   });
 

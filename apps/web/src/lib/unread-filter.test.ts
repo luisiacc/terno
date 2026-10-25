@@ -1,45 +1,48 @@
 import { describe, expect, it } from "vitest";
-import { flipped, isUnreadOnly, loadUnreadFilters, mailboxKey, MAX_KEYS, parseStored, saveUnreadFilters, STORAGE_KEY } from "./unread-filter";
+import { activeFilter, isUnreadOnly, LEGACY_KEY, loadListFilters, mailboxKey, MAX_KEYS, parseLegacy, parseStored, saveListFilters, STORAGE_KEY, withFilter } from "./unread-filter";
 
 const inbox = { view: "inbox" as const, accountId: null, categoryId: null, reviewCategoryId: null };
 
-describe("the unread filter's state", () => {
+describe("the quick filter's state (plan 12's unread filter, generalized in plan 15)", () => {
   it("is per mailbox: view, account and category", () => {
     expect(mailboxKey(inbox)).toBe("inbox||");
     expect(mailboxKey({ ...inbox, accountId: 2 })).toBe("inbox|2|");
     expect(mailboxKey({ ...inbox, view: "all", categoryId: 7 })).toBe("all||7");
-    const on = new Set(["inbox||"]);
-    expect(isUnreadOnly({ ...inbox, unreadFilters: on })).toBe(true);
-    expect(isUnreadOnly({ ...inbox, accountId: 2, unreadFilters: on })).toBe(false);
-    expect(isUnreadOnly({ ...inbox, view: "archive", unreadFilters: on })).toBe(false);
+    const on = new Map([["inbox||", "unread" as const], ["archive||", "starred" as const]]);
+    expect(isUnreadOnly({ ...inbox, listFilters: on })).toBe(true);
+    expect(isUnreadOnly({ ...inbox, accountId: 2, listFilters: on })).toBe(false);
+    expect(activeFilter({ ...inbox, view: "archive", listFilters: on })).toBe("starred");
+    expect(isUnreadOnly({ ...inbox, view: "archive", listFilters: on })).toBe(false);
     // "Revisar" is a fixed list of suggestions: never filtered
-    expect(isUnreadOnly({ ...inbox, view: "all", categoryId: 7, reviewCategoryId: 7, unreadFilters: new Set(["all||7"]) })).toBe(false);
+    expect(activeFilter({ ...inbox, view: "all", categoryId: 7, reviewCategoryId: 7, listFilters: new Map([["all||7", "unread" as const]]) })).toBeUndefined();
   });
 
-  it("flips a key, newest last, keeping at most MAX_KEYS", () => {
-    expect([...flipped(new Set(["a", "b"]), "a")]).toEqual(["b"]);
-    expect([...flipped(new Set(["a"]), "b")]).toEqual(["a", "b"]);
-    const many = new Set(Array.from({ length: MAX_KEYS }, (_, i) => `k${i}`));
-    const next = flipped(many, "new");
+  it("sets or clears a key, newest last, keeping at most MAX_KEYS", () => {
+    expect([...withFilter(new Map([["a", "unread"], ["b", "starred"]]), "a", undefined)]).toEqual([["b", "starred"]]);
+    expect([...withFilter(new Map([["a", "unread"], ["b", "starred"]]), "a", "attachments")]).toEqual([["b", "starred"], ["a", "attachments"]]);
+    const many = new Map(Array.from({ length: MAX_KEYS }, (_, i) => [`k${i}`, "unread" as const]));
+    const next = withFilter(many, "new", "starred");
     expect(next.size).toBe(MAX_KEYS);
     expect(next.has("k0")).toBe(false);
-    expect(next.has("new")).toBe(true);
+    expect(next.get("new")).toBe("starred");
   });
 
-  it("reads only what it wrote: bad JSON, other shapes and failing storage mean nothing is on", () => {
-    expect(parseStored(null)).toEqual(new Set());
-    expect(parseStored("{")).toEqual(new Set());
-    expect(parseStored('{"inbox||":true}')).toEqual(new Set());
-    expect(parseStored(JSON.stringify(["inbox||", 3, null, "", "x".repeat(65), "all||7"]))).toEqual(new Set(["inbox||", "all||7"]));
-    expect(loadUnreadFilters({ getItem: () => { throw new Error("SecurityError"); } })).toEqual(new Set());
-    expect(() => saveUnreadFilters(new Set(["a"]), { setItem: () => { throw new Error("QuotaExceededError"); } })).not.toThrow();
+  it("reads only what it wrote: bad JSON, other shapes, unknown filters and failing storage mean nothing is on", () => {
+    expect(parseStored(null)).toEqual(new Map());
+    expect(parseStored("{")).toEqual(new Map());
+    expect(parseStored('{"inbox||":"unread"}')).toEqual(new Map());
+    expect(parseStored(JSON.stringify([["inbox||", "unread"], ["x", "people"], ["", "unread"], ["y".repeat(65), "unread"], ["all||7", "starred"], "z"]))).toEqual(new Map([["inbox||", "unread"], ["all||7", "starred"]]));
+    expect(loadListFilters({ getItem: () => { throw new Error("SecurityError"); } })).toEqual(new Map());
+    expect(() => saveListFilters(new Map([["a", "unread"]]), { setItem: () => { throw new Error("QuotaExceededError"); } })).not.toThrow();
   });
 
-  it("round-trips through storage", () => {
-    const store = new Map<string, string>();
+  it("carries plan 12's unread filters over the first time, then reads its own", () => {
+    expect(parseLegacy(JSON.stringify(["inbox||", 3, "all||7"]))).toEqual(new Map([["inbox||", "unread"], ["all||7", "unread"]]));
+    const store = new Map<string, string>([[LEGACY_KEY, '["inbox||"]']]);
     const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) };
-    saveUnreadFilters(new Set(["inbox||", "all||7"]), storage);
-    expect(store.get(STORAGE_KEY)).toBe('["inbox||","all||7"]');
-    expect(loadUnreadFilters(storage)).toEqual(new Set(["inbox||", "all||7"]));
+    expect(loadListFilters(storage)).toEqual(new Map([["inbox||", "unread"]]));
+    saveListFilters(new Map([["inbox||", "attachments"], ["all||7", "starred"]]), storage);
+    expect(store.get(STORAGE_KEY)).toBe('[["inbox||","attachments"],["all||7","starred"]]');
+    expect(loadListFilters(storage)).toEqual(new Map([["inbox||", "attachments"], ["all||7", "starred"]]));
   });
 });

@@ -16,6 +16,7 @@ import type { I18nRef } from "./envelope";
 import type { AutoCategorize } from "../categorize/policy";
 import type { LearnedProposal } from "../learning/propose";
 import { filterRuleSchema, type Filter, type FilterRule } from "../rules/schema";
+import { LIST_FILTERS } from "../list-filter";
 import { customThemesSchema, DESIGN_IDS, type CustomTheme, type DesignId, type MotionMs } from "../themes";
 import {
   CATEGORY_COLORS,
@@ -370,10 +371,10 @@ const categorizeScope = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("query"), query: z.string().trim().min(1).max(500) }),
 ]);
 
-/** Every thread of a view (account/category optional) or of a search: "select all N" acts on it on the backend. `unreadOnly`: the list's unread filter. */
+/** Every thread of a view (account/category optional) or of a search: "select all N" acts on it on the backend. `filter`: the list's quick filter (`unreadOnly`: plan 12's name for "unread", still accepted). */
 const threadScope = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("view"), view: z.enum(VIEWS), accountId: id.optional(), categoryId: id.optional(), unreadOnly: z.boolean().optional() }),
-  z.object({ kind: z.literal("search"), query: z.string().trim().min(1).max(2000), accountId: id.optional(), categoryId: id.optional(), unreadOnly: z.boolean().optional() }),
+  z.object({ kind: z.literal("view"), view: z.enum(VIEWS), accountId: id.optional(), categoryId: id.optional(), unreadOnly: z.boolean().optional(), filter: z.enum(LIST_FILTERS).optional() }),
+  z.object({ kind: z.literal("search"), query: z.string().trim().min(1).max(2000), accountId: id.optional(), categoryId: id.optional(), unreadOnly: z.boolean().optional(), filter: z.enum(LIST_FILTERS).optional() }),
 ]);
 export type ThreadScope = z.output<typeof threadScope>;
 
@@ -413,9 +414,11 @@ export const contract = {
       view: z.enum(VIEWS),
       accountId: id.optional(),
       categoryId: id.optional(),
-      /** the unread filter: threads with something unread only */
+      /** the unread filter: threads with something unread only (plan 12; `filter: "unread"` since plan 15) */
       unreadOnly: z.boolean().optional(),
-      /** with unreadOnly: the open and checked threads too, read or not, while they are in the view (they stay put until the selection moves) */
+      /** the quick filter: unread, with attachments or starred threads only */
+      filter: z.enum(LIST_FILTERS).optional(),
+      /** with a filter: the open and checked threads too, matching or not, while they are in the view (they stay put until the selection moves) */
       keepIds: z.array(id).max(500).optional(),
       cursor: cursor.optional(),
       limit: z.number().int().min(1).max(500).default(100),
@@ -426,8 +429,10 @@ export const contract = {
       query: z.string().max(2000),
       accountId: id.optional(),
       categoryId: id.optional(),
-      /** the unread filter, ANDed with the query */
+      /** the unread filter, ANDed with the query (plan 12; `filter: "unread"` since plan 15) */
       unreadOnly: z.boolean().optional(),
+      /** the quick filter, ANDed with the query */
+      filter: z.enum(LIST_FILTERS).optional(),
       cursor: searchCursor.optional(),
       limit: z.number().int().min(1).max(500).default(100),
     }),

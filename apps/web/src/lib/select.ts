@@ -1,3 +1,4 @@
+import { listFilterOf, matchesFilter } from "@terno/core";
 /**
  * The selection, bound to the app: clicks with their modifiers, ⌘A and the
  * `*` sequences, ⇧J/⇧K, Esc, and "select all N" (a scope the backend acts
@@ -116,15 +117,16 @@ export function selectScope(count: number): void {
   const s = getApp();
   const category = s.categories.find((c) => c.id === s.categoryId)?.name;
   const label = scope.kind === "search" ? t("list.scope.quoted", { label: s.query.trim() }) : (category ?? viewLabel(s.view));
-  setApp({ scope: { key: listKey(), scope, label: scopeLabel(label, scope.unreadOnly), count }, checked: new Set(scopeRows(useList.getState().items, scope).map((t) => t.id)) });
+  setApp({ scope: { key: listKey(), scope, label: scopeLabel(label, listFilterOf(scope)), count }, checked: new Set(scopeRows(useList.getState().items, scope).map((t) => t.id)) });
 }
 
 /**
- * A scope's loaded rows: with the unread filter, the unread ones (a read row
- * the filter kept, the open one, is shown but isn't part of "all N unread").
+ * A scope's loaded rows: with a filter, the ones it keeps (a row the filter
+ * kept in place, the open one, is shown but isn't part of "all N unread").
  */
-export function scopeRows<T extends { unread: boolean }>(items: readonly T[], scope: ThreadScope): T[] {
-  return scope.unreadOnly ? items.filter((t) => t.unread) : [...items];
+export function scopeRows<T extends { unread: boolean; starred: boolean; hasAttachments: boolean }>(items: readonly T[], scope: ThreadScope): T[] {
+  const filter = listFilterOf(scope);
+  return filter ? items.filter((t) => matchesFilter(filter, t)) : [...items];
 }
 
 /** What an action applies to now: a scope, the checked rows (in list order), or the open thread. */

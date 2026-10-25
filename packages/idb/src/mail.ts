@@ -1,4 +1,7 @@
 import {
+  LIST_FILTERS,
+  listFilterOf,
+  type ListFilter,
   accountPrefs,
   baseSubject,
   BODY_TAIL_TOKENS,
@@ -46,14 +49,21 @@ export interface Ctx {
   db: MemDb;
   uuid(): string;
   order: ThreadOrder;
-  /** the same order, unread threads only: the unread filter's pages never walk the read ones */
-  unreadOrder: ThreadOrder;
+  /** the same order, per quick filter (unread, attachments, starred): a filtered page never walks the threads it leaves out */
+  filterOrders: Record<ListFilter, ThreadOrder>;
   scopes: ScopeIndex;
   /** a message's stored body: written by this command, read ahead of it, or absent; throws if it wasn't read ahead */
   body(messageId: number): { body_text: string | null; body_html: string | null } | null;
 }
 
 export const T = (c: Ctx, name: string): Table<R> => c.db.table<R>(name);
+
+/** Each quick filter's test on a thread row (the SQL store's partial index predicates). */
+export const FILTER_TEST: Record<ListFilter, (t: Record<string, unknown> | null | undefined) => boolean> = {
+  unread: (t) => ((t?.unread_count as number | undefined) ?? 0) > 0,
+  attachments: (t) => t?.has_attachments === 1,
+  starred: (t) => t?.is_starred === 1,
+};
 
 // ───────────────────────────── recency order ─────────────────────────────
 
@@ -155,15 +165,15 @@ export class ThreadOrder {
 export class ScopeIndex {
   private threadIds: number[] | null = null;
   private readonly members = new Map<number, number[]>();
-  /** the unread ones, ascending (the unread filter's "select all N" and its count): kept by the threads that cross */
-  private unreadIds: number[] | null = null;
-  private readonly crossed = new Set<number>();
+  /** per quick filter, the matching ids ascending (a filtered "select all N" and its count): kept by the threads that cross */
+  private readonly filtered = new Map<ListFilter, number[]>();
+  private readonly crossed: Record<ListFilter, Set<number>> = { unread: new Set(), attachments: new Set(), starred: new Set() };
 
   constructor(db: MemDb) {
     db.onRow((table, row, prev) => {
       if (table === "threads") {
         if (!row || !prev) this.threadIds = null;
-        if (((row?.unread_count as number | undefined) ?? 0) > 0 !== ((prev?.unread_count as number | undefined) ?? 0) > 0) this.crossed.add((row ?? prev)!.id as number);
+        for (const f of LIST_FILTERS) if (FILTER_TEST[f](row) !== FILTER_TEST[f](prev)) this.crossed[f].add((row ?? prev)!.id as number);
       } else if (table === "thread_categories") {
         const was = prev?.category_id as number | undefined;
         const is = row?.category_id as number | undefined;
@@ -183,25 +193,34 @@ export class ScopeIndex {
     return this.threadIds;
   }
 
-  /** every unread thread id, ascending: a few crossings are placed by binary search, many (a bulk read) rebuild once */
-  unread(c: Ctx): readonly number[] {
+  /** every thread id a filter keeps, ascending: a few crossings are placed by binary search, many (a bulk read) rebuild once */
+  matching(c: Ctx, filter: ListFilter): readonly number[] {
     const threads = T(c, "threads");
-    if (this.unreadIds && this.crossed.size > 64) this.unreadIds = null;
-    if (!this.unreadIds) {
-      const ids: number[] = [];
-      for (const t of threads.all()) if (t.unread_count > 0) ids.push(t.id as number);
-      this.unreadIds = ids.sort((x, y) => x - y);
+    const crossed = this.crossed[filter];
+    const test = FILTER_TEST[filter];
+    let ids = this.filtered.get(filter);
+    if (ids && crossed.size > 64) ids = undefined;
+    if (!ids) {
+      ids = [];
+      for (const t of threads.all()) if (test(t)) ids.push(t.id as number);
+      ids.sort((x, y) => x - y);
+      this.filtered.set(filter, ids);
     } else {
-      for (const id of this.crossed) {
-        const at = seekAfter(this.unreadIds, id - 1);
-        const listed = this.unreadIds[at] === id;
-        const unread = (threads.get(id)?.unread_count ?? 0) > 0;
-        if (listed && !unread) this.unreadIds.splice(at, 1);
-        else if (!listed && unread) this.unreadIds.splice(at, 0, id);
+      for (const id of crossed) {
+        const at = seekAfter(ids, id - 1);
+        const listed = ids[at] === id;
+        const keeps = test(threads.get(id));
+        if (listed && !keeps) ids.splice(at, 1);
+        else if (!listed && keeps) ids.splice(at, 0, id);
       }
     }
-    this.crossed.clear();
-    return this.unreadIds;
+    crossed.clear();
+    return ids;
+  }
+
+  /** every unread thread id, ascending */
+  unread(c: Ctx): readonly number[] {
+    return this.matching(c, "unread");
   }
 
   /** a category's member thread ids, ascending */
@@ -733,7 +752,8 @@ export function toSummary(c: Ctx, t: R): ThreadSummary {
 
 export function listThreads(c: Ctx, p: ListParams): Page {
   const threads = T(c, "threads");
-  const order = p.unreadOnly ? c.unreadOrder : c.order;
+  const filter = listFilterOf(p);
+  const order = filter ? c.filterOrders[filter] : c.order;
   const ids = order.current(threads);
   const test = VIEW_TEST[p.view];
   const inCategory = p.categoryId === undefined ? null : T(c, "thread_categories");
@@ -749,7 +769,7 @@ export function listThreads(c: Ctx, p: ListParams): Page {
   const items = (hasMore ? rows.slice(0, p.limit) : rows).map((t) => toSummary(c, t));
   const last = items[items.length - 1];
   const page = { items, nextCursor: hasMore && last ? { lastDate: last.lastDate, id: last.id } : null };
-  if (!p.unreadOnly || !p.keepIds?.length) return page;
+  if (!filter || !p.keepIds?.length) return page;
   // the kept threads, against the view without the filter (and after the cursor, like the page)
   const after = (t: R) => !p.cursor || t.last_date < p.cursor.lastDate || (t.last_date === p.cursor.lastDate && t.id < p.cursor.id);
   const kept = [...new Set(p.keepIds)]
@@ -764,11 +784,12 @@ export function scopeThreadIds(c: Ctx, p: ScopeParams & { after?: number; limit:
   const test = VIEW_TEST[p.view];
   // ascending ids, seeked past the last page and walked until this one is full
   // (the unread filter: only the unread ids, so a scope of few or none never walks the read mailbox)
-  const ids = p.categoryId !== undefined ? c.scopes.category(c, p.categoryId) : p.unreadOnly ? c.scopes.unread(c) : c.scopes.threads(c);
+  const filter = listFilterOf(p);
+  const ids = p.categoryId !== undefined ? c.scopes.category(c, p.categoryId) : filter ? c.scopes.matching(c, filter) : c.scopes.threads(c);
   const out: number[] = [];
   for (let i = seekAfter(ids, p.after ?? 0); i < ids.length && out.length < p.limit; i++) {
     const t = threads.get(ids[i]!);
-    if (t && test(t) && (p.accountId === undefined || t.account_id === p.accountId) && (!p.unreadOnly || t.unread_count > 0)) out.push(t.id as number);
+    if (t && test(t) && (p.accountId === undefined || t.account_id === p.accountId) && (!filter || FILTER_TEST[filter](t))) out.push(t.id as number);
   }
   return out;
 }

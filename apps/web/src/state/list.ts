@@ -2,7 +2,8 @@ import type { ThreadSummary, View } from "@terno/core";
 import { RpcError, type ThreadScope } from "@terno/core/rpc";
 import { keepInPage } from "@terno/store/list";
 import { prune } from "~/lib/selection";
-import { isUnreadOnly } from "~/lib/unread-filter";
+import { activeFilter } from "~/lib/unread-filter";
+import { matchesFilter } from "@terno/core";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "./app";
@@ -46,7 +47,7 @@ function indexOf(items: ThreadSummary[]): Map<number, number> {
 export function listKey(): string {
   const s = getApp();
   // the query stays last (the UI perf gate reads it from data-results-for)
-  return JSON.stringify([s.view, s.accountId, s.categoryId, s.reviewCategoryId, isUnreadOnly(s), s.query.trim()]);
+  return JSON.stringify([s.view, s.accountId, s.categoryId, s.reviewCategoryId, activeFilter(s) ?? null, s.query.trim()]);
 }
 
 let seq = 0;
@@ -59,7 +60,7 @@ let edits = 0;
  * selected; it goes once the selection moves off it).
  */
 export function keptIds(s = getApp()): number[] {
-  if (!isUnreadOnly(s)) return [];
+  if (!activeFilter(s)) return [];
   const ids = new Set(s.checked);
   if (s.selectedId !== null) ids.add(s.selectedId);
   return [...ids].slice(0, 500);
@@ -74,9 +75,9 @@ async function fetchPage(cursor?: { lastDate: number; id: number }, limit = PAGE
     return { items: items.map(({ prediction: _p, ...t }) => t), nextCursor: null };
   }
   const scope = currentScope()!;
-  if (scope.kind === "search") return client.call("threads.search", { query: scope.query, cursor, limit, accountId: scope.accountId, categoryId: scope.categoryId, unreadOnly: scope.unreadOnly });
-  const keepIds = scope.unreadOnly ? keptIds(s) : [];
-  return client.call("threads.list", { view: scope.view, cursor, limit, accountId: scope.accountId, categoryId: scope.categoryId, unreadOnly: scope.unreadOnly, keepIds: keepIds.length ? keepIds : undefined });
+  if (scope.kind === "search") return client.call("threads.search", { query: scope.query, cursor, limit, accountId: scope.accountId, categoryId: scope.categoryId, filter: scope.filter });
+  const keepIds = scope.filter ? keptIds(s) : [];
+  return client.call("threads.list", { view: scope.view, cursor, limit, accountId: scope.accountId, categoryId: scope.categoryId, filter: scope.filter, keepIds: keepIds.length ? keepIds : undefined });
 }
 
 /**
@@ -84,9 +85,10 @@ async function fetchPage(cursor?: { lastDate: number; id: number }, limit = PAGE
  * a thread was open, it may arrive after the selection moved off it.
  */
 function heldOnly(items: ThreadSummary[]): ThreadSummary[] {
-  if (items.every((t) => t.unread)) return items;
+  const filter = activeFilter(getApp());
+  if (items.every((t) => matchesFilter(filter, t))) return items;
   const held = new Set(keptIds());
-  return items.filter((t) => t.unread || held.has(t.id));
+  return items.filter((t) => matchesFilter(filter, t) || held.has(t.id));
 }
 
 /**
@@ -108,7 +110,8 @@ const searchQuery = (q: string, view: View) => (/(^|\s)(in|en):/.test(q) || view
 export function currentScope(): ThreadScope | null {
   const s = getApp();
   if (s.reviewCategoryId !== null) return null;
-  const narrow = { accountId: s.accountId ?? undefined, categoryId: s.categoryId ?? undefined, ...(isUnreadOnly(s) ? { unreadOnly: true } : {}) };
+  const filter = activeFilter(s);
+  const narrow = { accountId: s.accountId ?? undefined, categoryId: s.categoryId ?? undefined, ...(filter ? { filter } : {}) };
   const q = s.query.trim();
   return q ? { kind: "search", query: searchQuery(q, s.view), ...narrow } : { kind: "view", view: s.view, ...narrow };
 }
@@ -133,7 +136,7 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
   const editsAtStart = edits;
   const scope = currentScope();
   // the filtered mailbox's unread count, alongside the page (a search shows its own result count)
-  const counting = scope?.kind === "view" && scope.unreadOnly ? client.call("threads.scopeCount", { scope }).catch(() => null) : null;
+  const counting = scope?.kind === "view" && scope.filter === "unread" ? client.call("threads.scopeCount", { scope }).catch(() => null) : null;
   try {
     let page = await fetchPage(undefined, limit);
     if (mine !== seq) return;
@@ -142,8 +145,8 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
       void reloadList({ ...options, keepSelection: true });
       if (sameView) return;
     }
-    if (scope?.kind === "search" && scope.unreadOnly && (sameView || options.keepSelection)) page = keepSearchRows(page, current.items);
-    if (scope?.unreadOnly) page = { ...page, items: heldOnly(page.items) };
+    if (scope?.kind === "search" && scope.filter && (sameView || options.keepSelection)) page = keepSearchRows(page, current.items);
+    if (scope?.filter) page = { ...page, items: heldOnly(page.items) };
     useList.setState({
       key,
       itemsKey: key,
@@ -189,7 +192,7 @@ export async function loadMore(): Promise<void> {
     }
     const seen = new Set(useList.getState().items.map((t) => t.id));
     const fresh = page.items.filter((t) => !seen.has(t.id));
-    const items = [...useList.getState().items, ...(isUnreadOnly(getApp()) ? heldOnly(fresh) : fresh)];
+    const items = [...useList.getState().items, ...(activeFilter(getApp()) ? heldOnly(fresh) : fresh)];
     useList.setState({ items, index: indexOf(items), nextCursor: page.nextCursor, loadingMore: false });
   } catch (error) {
     useList.setState({ loadingMore: false });
@@ -222,7 +225,7 @@ useApp.subscribe((s, prev) => {
     // "all N of that list" means nothing in another one
     if (s.scope) setApp({ scope: null });
     void reloadList();
-  } else if (isUnreadOnly(s) !== isUnreadOnly(prev)) {
+  } else if (activeFilter(s) !== activeFilter(prev)) {
     // the same mailbox, filtered or not: the open thread stays open (and in the list, read or not)
     if (s.scope) setApp({ scope: null });
     void reloadList({ keepSelection: true });

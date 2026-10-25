@@ -42,7 +42,7 @@ it("a STALE search page refetches from the top with the loaded window plus a pag
   expect(useList.getState().loadingMore).toBe(false);
 });
 
-const row = (id: number, unread: boolean) => ({ id, lastDate: 1e9 - id, unread }) as unknown as ThreadSummary;
+const row = (id: number, unread: boolean, starred = false) => ({ id, lastDate: 1e9 - id, unread, starred, hasAttachments: false }) as unknown as ThreadSummary;
 
 it("the unread filter: a filtered mailbox asks for unread threads, keeping the open and checked ones, and counts its unread", async () => {
   answer = async (p, method) => (method === "threads.scopeCount" ? { count: 1234, capped: false } : { items: [row(1, true), row(2, false), row(3, true)], nextCursor: null });
@@ -50,11 +50,11 @@ it("the unread filter: a filtered mailbox asks for unread threads, keeping the o
   await vi.waitFor(() => expect(useList.getState().itemsKey).toContain('"inbox"'));
   calls.length = 0;
   // the filter toggles on with thread 2 open and nothing checked: the same mailbox, the open thread kept
-  setApp({ selectedId: 2, unreadFilters: new Set(["inbox||"]) });
+  setApp({ selectedId: 2, listFilters: new Map([["inbox||", "unread"]]) });
   await vi.waitFor(() => expect(useList.getState().unreadTotal?.n).toBe(1234));
   const list = calls.find((c) => c.method === "threads.list")!;
-  expect(list.params).toMatchObject({ unreadOnly: true, keepIds: [2] });
-  expect(calls.find((c) => c.method === "threads.scopeCount")!.params.scope).toEqual({ kind: "view", view: "inbox", unreadOnly: true });
+  expect(list.params).toMatchObject({ filter: "unread", keepIds: [2] });
+  expect(calls.find((c) => c.method === "threads.scopeCount")!.params.scope).toEqual({ kind: "view", view: "inbox", filter: "unread" });
   const { getApp } = await import("~/state/app");
   expect(getApp().selectedId).toBe(2);
 
@@ -62,7 +62,7 @@ it("the unread filter: a filtered mailbox asks for unread threads, keeping the o
   answer = async () => ({ items: [row(1, true), row(3, true)], nextCursor: null, strategy: "fts", tookMs: 1, complete: true });
   setApp({ query: "factura" });
   await vi.waitFor(() => expect(useList.getState().itemsKey).toContain("factura"));
-  expect(calls.at(-1)!.params).toMatchObject({ query: "in:inbox factura", unreadOnly: true });
+  expect(calls.at(-1)!.params).toMatchObject({ query: "in:inbox factura", filter: "unread" });
   setApp({ selectedId: 3 });
   patchRows([3], (t) => ({ ...t, unread: false }));
   await reloadList({ keepSelection: true });
@@ -70,12 +70,23 @@ it("the unread filter: a filtered mailbox asks for unread threads, keeping the o
   answer = async () => ({ items: [row(1, true)], nextCursor: null, strategy: "fts", tookMs: 1, complete: true });
   await reloadList({ keepSelection: true });
   expect(useList.getState().items.map((t) => t.id)).toEqual([1, 3]);
-  setApp({ unreadFilters: new Set(), query: "" });
+  setApp({ listFilters: new Map(), query: "" });
+});
+
+it("the starred filter (plan 15): asked for as a filter, a thread unstarred elsewhere is dropped unless it's the open one", async () => {
+  answer = async () => ({ items: [row(30, false, true), row(31, false, false), row(32, false, true)], nextCursor: null });
+  setApp({ view: "inbox", query: "", listFilters: new Map([["inbox||", "starred"]]), selectedId: 31, checked: new Set() });
+  await vi.waitFor(() => expect(calls.at(-1)!.params).toMatchObject({ filter: "starred", keepIds: [31] }));
+  await vi.waitFor(() => expect(useList.getState().items.map((t) => t.id)).toEqual([30, 31, 32]));
+  setApp({ selectedId: 30 });
+  await reloadList({ keepSelection: true });
+  expect(useList.getState().items.map((t) => t.id)).toEqual([30, 32]);
+  setApp({ listFilters: new Map() });
 });
 
 it("a filtered answer asked for while a thread was open doesn't keep it once the selection moved off it", async () => {
   answer = async () => ({ items: [row(20, true), row(21, true), row(22, true)], nextCursor: null });
-  setApp({ view: "starred", query: "", unreadFilters: new Set(["starred||"]), selectedId: null, checked: new Set() });
+  setApp({ view: "starred", query: "", listFilters: new Map([["starred||", "unread"]]), selectedId: null, checked: new Set() });
   await vi.waitFor(() => expect(useList.getState().items.map((t) => t.id)).toEqual([20, 21, 22]));
   setApp({ selectedId: 20 });
   // 20 was read elsewhere; the refresh asks to keep it (open), and answers after the user moved to 21
@@ -91,7 +102,7 @@ it("a filtered answer asked for while a thread was open doesn't keep it once the
   release();
   await refresh;
   expect(useList.getState().items.map((t) => t.id)).toEqual([21, 22]);
-  setApp({ unreadFilters: new Set() });
+  setApp({ listFilters: new Map() });
 });
 
 it("an optimistic edit wins over a reload that was already on its way: the answer is dropped and asked again", async () => {

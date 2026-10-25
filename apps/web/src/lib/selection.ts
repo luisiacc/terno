@@ -1,3 +1,4 @@
+import type { ListFilter } from "@terno/core";
 /**
  * The multi-selection model, pure (no React, no store): which rows are
  * checked after a toggle, a range, an extension or a reload. Positions come
@@ -81,7 +82,7 @@ export function menuTargets(row: number, checked: ReadonlySet<number>, order?: O
   return checked.has(row) && checked.size > 1 ? targetsOf(checked, null, order) : [row];
 }
 
-/** A scope's name (a mailbox, a category, a quoted search), with "· Unread" when the filter is on. */
-export function scopeLabel(label: string, unreadOnly: boolean | undefined): string {
-  return unreadOnly ? t("list.scope.unread", { label }) : label;
+/** A scope's name (a mailbox, a category, a quoted search), with "· Unread" (or the filter on) after it. */
+export function scopeLabel(label: string, filter: ListFilter | undefined): string {
+  return filter === "unread" ? t("list.scope.unread", { label }) : filter === "attachments" ? t("list.scope.attachments", { label }) : filter === "starred" ? t("list.scope.starred", { label }) : label;
 }

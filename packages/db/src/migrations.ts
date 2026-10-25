@@ -722,6 +722,19 @@ CREATE INDEX threads_unread ON threads(last_date DESC, id DESC, account_id, in_i
 CREATE INDEX threads_unread_id ON threads(id, account_id, in_inbox, in_trash, in_spam, is_starred, has_sent) WHERE unread_count > 0;
 `;
 
+/**
+ * v12: the quick filters (plan 15), shaped like v11: threads with
+ * attachments and starred threads, by date (pages) and by id (scopes),
+ * carrying the columns a view or an account narrows by. Starred gets its own
+ * pair because threads_starred leaves out trash and spam.
+ */
+const FILTERS_V12 = `
+CREATE INDEX threads_attach ON threads(last_date DESC, id DESC, account_id, in_inbox, in_trash, in_spam, is_starred, has_sent) WHERE has_attachments = 1;
+CREATE INDEX threads_attach_id ON threads(id, account_id, in_inbox, in_trash, in_spam, is_starred, has_sent) WHERE has_attachments = 1;
+CREATE INDEX threads_starred_f ON threads(last_date DESC, id DESC, account_id, in_inbox, in_trash, in_spam, has_sent) WHERE is_starred = 1;
+CREATE INDEX threads_starred_f_id ON threads(id, account_id, in_inbox, in_trash, in_spam, has_sent) WHERE is_starred = 1;
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "initial schema", sql: SCHEMA_V1 },
   { version: 2, name: "op target index", sql: OP_TARGETS_V2 },
@@ -734,6 +747,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 9, name: "drafts v2", sql: DRAFTS_V9 },
   { version: 10, name: "ops sequence and account id indexes", sql: OPS_SEQ_V10 },
   { version: 11, name: "unread threads index", sql: UNREAD_V11 },
+  { version: 12, name: "quick filter indexes", sql: FILTERS_V12 },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

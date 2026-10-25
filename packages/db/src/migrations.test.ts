@@ -369,6 +369,32 @@ describe("migration v11: the unread filter's index", () => {
   });
 });
 
+describe("migration v12: the quick filters' indexes", () => {
+  it("every page filtered by attachments or starred walks its own index in order, without a temporary sort", async () => {
+    const { listSql, scopeIdsSql } = await import("./queries");
+    const dir = mkdtempSync(join(tmpdir(), "terno-mig12-"));
+    dirs.push(dir);
+    const db = new Db(nodeSqliteDriver, join(dir, "v12.db"));
+    dbs.push(db);
+    migrate(db);
+    db.exec("ANALYZE");
+    for (const [filter, byDate, byId] of [["attachments", "threads_attach", "threads_attach_id"], ["starred", "threads_starred_f", "threads_starred_f_id"]] as const) {
+      for (const view of ["inbox", "starred", "sent", "archive", "spam", "trash", "all"] as const) {
+        for (const scope of [{}, { accountId: 1 }, { categoryId: 1 }, { accountId: 1, categoryId: 1 }]) {
+          const q = listSql({ view, ...scope, filter, limit: 100, cursor: { lastDate: 1, id: 1 } });
+          const plan = db.all<{ detail: string }>(`EXPLAIN QUERY PLAN ${q.sql}`, ...q.params).map((r) => r.detail).join(" | ");
+          expect(plan, `${filter} ${view} ${JSON.stringify(scope)}`).toMatch(new RegExp(`USING (COVERING )?INDEX ${byDate}\\b`));
+          expect(plan, `${filter} ${view} ${JSON.stringify(scope)}`).not.toMatch(/TEMP B-TREE/);
+          const s = scopeIdsSql({ view, ...scope, filter, after: 0, limit: 500 });
+          const scopePlan = db.all<{ detail: string }>(`EXPLAIN QUERY PLAN ${s.sql}`, ...s.params).map((r) => r.detail).join(" | ");
+          expect(scopePlan, `scope ${filter} ${view} ${JSON.stringify(scope)}`).toMatch("categoryId" in scope ? /thread_categories_c/ : new RegExp(byId));
+          expect(scopePlan, `scope ${filter} ${view} ${JSON.stringify(scope)}`).not.toMatch(/TEMP B-TREE/);
+        }
+      }
+    }
+  });
+});
+
 describe("scope pages walk an index in key order", () => {
   it("every view, account and category scope pages without a temporary sort", async () => {
     const { scopeIdsSql } = await import("./queries");

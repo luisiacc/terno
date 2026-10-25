@@ -5,7 +5,8 @@ import { reflowRemoval } from "~/lib/flash";
 import { client } from "~/rpc/connection";
 import { currentTargets, scopeRows } from "~/lib/select";
 import { dismissSnack, registerUndo, snack, type Undo } from "~/lib/snack";
-import { isUnreadOnly } from "~/lib/unread-filter";
+import { activeFilter } from "~/lib/unread-filter";
+import type { ListFilter } from "@terno/core";
 import { getApp, setApp, type ScopeSelection } from "~/state/app";
 import { patchRows, reloadList, useList } from "~/state/list";
 import { invalidateThreads } from "~/state/threads";
@@ -98,6 +99,15 @@ function patched(t: ThreadSummary, action: ThreadAction): ThreadSummary {
   }
 }
 
+/** Does the action make its threads stop matching the list's filter (read under Unread, unstarred under Starred)? */
+function unmatches(action: ThreadAction, filter: ListFilter | undefined): boolean {
+  return (filter === "unread" && action === "markRead") || (filter === "starred" && action === "unstar");
+}
+
+function listFilterOfScope(scope: { filter?: ListFilter; unreadOnly?: boolean }): ListFilter | undefined {
+  return scope.filter ?? (scope.unreadOnly ? "unread" : undefined);
+}
+
 /**
  * Applies a triage action optimistically: the list updates in the same frame,
  * selection advances to the next thread, and the backend persists + syncs.
@@ -115,8 +125,8 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
   if (targets.length === 0) return;
   breadcrumb("action", "action.thread", { action, count: targets.length });
   const { items, index } = useList.getState();
-  // in a filtered list a read row leaves (a search too), except the open one: it stays put until the selection moves
-  const reading = action === "markRead" && isUnreadOnly(s);
+  // in a filtered list a row that stops matching leaves (a search too), except the open one: it stays put until the selection moves
+  const reading = unmatches(action, activeFilter(s));
   const leaving = reading || (s.query ? false : !staysInView(s.view, action));
   const stays = reading ? s.selectedId : null;
 
@@ -183,7 +193,7 @@ async function actScope(action: ThreadAction, sel: ScopeSelection): Promise<void
   const s = getApp();
   // the scope's loaded rows: with the unread filter, not a read row it kept (the open one)
   const loaded = scopeRows(useList.getState().items, sel.scope).map((t) => t.id);
-  const reading = action === "markRead" && sel.scope.unreadOnly === true;
+  const reading = unmatches(action, listFilterOfScope(sel.scope));
   const leaving = reading || (sel.scope.kind === "search" ? false : !staysInView(s.view, action));
   // the open thread stays open when it isn't leaving: kept outside the scope, or read in place (the filter keeps it)
   const stays = s.selectedId !== null && (reading || !loaded.includes(s.selectedId)) ? s.selectedId : null;

@@ -751,7 +751,7 @@ test("the unread filter: ⌘L → the other list rendered within 100 ms; moving 
   for (let i = 0; i < 16; i++) {
     const ms = await page.evaluate(async (want) => {
       const list = document.querySelector("[data-testid=thread-list]")!;
-      // [view, account, category, review, unreadOnly, query]
+      // [view, account, category, review, filter, query]
       const shows = () => (JSON.parse(list.getAttribute("data-results-for") ?? "[]") as unknown[])[4] === want;
       const t0 = performance.now();
       const mac = navigator.platform.includes("Mac");
@@ -767,7 +767,7 @@ test("the unread filter: ⌘L → the other list rendered within 100 ms; moving 
       });
       await new Promise<void>((r) => requestAnimationFrame(() => r()));
       return performance.now() - t0;
-    }, i % 2 === 0);
+    }, i % 2 === 0 ? "unread" : null);
     samples.push(ms);
   }
   const s = stat("unread filter: ⌘L → list rendered (+1 frame)", 100, samples.slice(2));

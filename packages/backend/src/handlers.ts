@@ -1,5 +1,5 @@
 import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
-import { capFilterName, COUNT_CAP, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, withUnreadOnly, type ThreadAction } from "@terno/core";
+import { capFilterName, COUNT_CAP, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, withListFilter, type ThreadAction } from "@terno/core";
 import { L } from "@terno/i18n";
 import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type MessageState } from "@terno/store";
 import type { GmailAccountConfig, ImapAccountConfig } from "@terno/mail";
@@ -113,7 +113,7 @@ export function createHandlers(b: Backend): Handlers {
 
     "threads.list": (p) => store.threads.list(p),
 
-    "threads.search": async ({ unreadOnly, ...p }, ctx) => {
+    "threads.search": async ({ unreadOnly, filter: asked, ...p }, ctx) => {
       // Latest-wins per client: a query superseded while queued is not executed.
       const seq = (b.searchSeq.get(ctx.clientId) ?? 0) + 1;
       b.searchSeq.set(ctx.clientId, seq);
@@ -123,8 +123,9 @@ export function createHandlers(b: Backend): Handlers {
       const started = performance.now();
       // this query supersedes the one still running, whatever it turns out to be
       b.searchAborts.get(ctx.clientId)?.abort();
-      // the unread filter is part of the query (cursors and the instant engine see one query); asking for read mail too matches nothing
-      const query = unreadOnly ? withUnreadOnly(p.query, b.now()) : p.query;
+      // the quick filter is part of the query (cursors and the instant engine see one query); asking for its opposite too matches nothing
+      const filter = listFilterOf({ filter: asked, unreadOnly });
+      const query = filter ? withListFilter(p.query, filter, b.now()) : p.query;
       if (query === null) return { items: [], nextCursor: null, strategy: "none", tookMs: performance.now() - started, complete: true };
       const abort = new AbortController();
       b.searchAborts.set(ctx.clientId, abort);

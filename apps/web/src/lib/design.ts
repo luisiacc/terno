@@ -7,6 +7,8 @@
 import type { DesignDefinition } from "@terno/ui/designs/index";
 import { designById } from "@terno/ui/designs/index";
 import { useAppearance } from "~/lib/appearance";
+import type { DesignId } from "@terno/core";
+import { t } from "@terno/i18n";
 
 /** The design in effect; components re-render when it changes. */
 export function useDesign(): DesignDefinition {
@@ -56,4 +58,13 @@ export async function loadDesignFaces(design: DesignDefinition, capMs: number): 
   let timer: ReturnType<typeof setTimeout> | undefined;
   await Promise.race([all, new Promise<void>((r) => (timer = setTimeout(r, capMs)))]);
   clearTimeout(timer);
+}
+
+/** A design's name and one-line description, in the active language. */
+export function designName(id: DesignId): string {
+  return id === "macos" ? t("design.macos") : id === "atelier" ? t("design.atelier") : t("design.lumen");
+}
+
+export function designDescription(id: DesignId): string {
+  return id === "macos" ? t("design.macos.description") : id === "atelier" ? t("design.atelier.description") : t("design.lumen.description");
 }

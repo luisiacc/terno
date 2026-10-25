@@ -1,4 +1,4 @@
-import type { Address, FeatureSource, OpState, Reason, ThreadFeatures, ThreadSummary, TrainExample, View } from "@terno/core";
+import type { Address, FeatureSource, ListFilter, OpState, Reason, ThreadFeatures, ThreadSummary, TrainExample, View } from "@terno/core";
 
 // ───────────────────────────── ingestion ─────────────────────────────
 
@@ -77,17 +77,21 @@ export interface ScopeParams {
   view: View;
   accountId?: number;
   categoryId?: number;
-  /** only threads with something unread (the list's unread filter) */
+  /** only threads with something unread (the list's unread filter; `filter: "unread"` since plan 15) */
   unreadOnly?: boolean;
+  /** the list's quick filter (wins over unreadOnly) */
+  filter?: ListFilter;
 }
 
 export interface ListParams {
   view: View;
   accountId?: number;
   categoryId?: number;
-  /** only threads with something unread (the list's unread filter) */
+  /** only threads with something unread (the list's unread filter; `filter: "unread"` since plan 15) */
   unreadOnly?: boolean;
-  /** with unreadOnly: these threads too while they are in the view, read or not (the open and checked ones stay put; see keepInPage) */
+  /** the list's quick filter (wins over unreadOnly) */
+  filter?: ListFilter;
+  /** with a filter: these threads too while they are in the view, read or not (the open and checked ones stay put; see keepInPage) */
   keepIds?: readonly number[];
   cursor?: Cursor;
   limit: number;

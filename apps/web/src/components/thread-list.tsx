@@ -2,10 +2,13 @@ import { Input } from "@terno/ui/components/input";
 import { Kbd } from "@terno/ui/components/kbd";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Inbox, ListFilter, Search, SquarePen, X } from "lucide-react";
+import { ChevronDown, Inbox, ListFilter, Search, SquarePen, X } from "lucide-react";
 import { cn } from "@terno/ui/lib/utils";
-import { isUnreadOnly } from "~/lib/unread-filter";
-import { toggleUnreadFilter } from "~/lib/unread";
+import { activeFilter } from "~/lib/unread-filter";
+import { setListFilter } from "~/lib/unread";
+import { LIST_FILTERS, matchesFilter, type ListFilter as QuickFilter } from "@terno/core";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
+import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { Button } from "@terno/ui/components/button";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
@@ -16,7 +19,6 @@ import { flushSync } from "react-dom";
 import { create } from "zustand";
 import { formatNumber, t } from "@terno/i18n";
 import { viewLabel } from "~/lib/format";
-import { richT } from "~/lib/i18n";
 import { getApp, setApp, useApp } from "~/state/app";
 import { installDragController } from "~/lib/drag-install";
 import { currentScope, listKey, loadMore, useList } from "~/state/list";
@@ -38,8 +40,9 @@ export const listScroller: { scrollToIndex?: (i: number) => void } = {};
 /** the header's filter button, where focus goes when the empty state's "Clear filter" disappears */
 export const unreadFilterButton: { current: HTMLButtonElement | null } = { current: null };
 
-/** Mail's message filter: a quiet icon off, the accent on. */
-function UnreadFilterButton({ active }: { active: boolean }) {
+/** Mail's message filter: a quiet icon off, the accent on (any filter); a click turns it off, or on as Unread. */
+function UnreadFilterButton({ filter }: { filter: QuickFilter | undefined }) {
+  const active = filter !== undefined;
   return (
     <Tooltip>
       <TooltipTrigger
@@ -55,7 +58,7 @@ function UnreadFilterButton({ active }: { active: boolean }) {
             aria-label={t("list.unreadFilter.label")}
             aria-pressed={active}
             className={cn("no-drag shrink-0 text-muted-foreground hover:text-foreground", active && "text-primary hover:text-primary")}
-            onClick={toggleUnreadFilter}
+            onClick={() => setListFilter(active ? undefined : "unread")}
           >
             <ListFilter />
           </Button>
@@ -68,14 +71,72 @@ function UnreadFilterButton({ active }: { active: boolean }) {
   );
 }
 
-/** "Filtered by: Unread · N" under the title (N: the mailbox's unread threads; a search shows its own count). */
-function FilterStatus({ search }: { search: boolean }) {
+/** A filter's name, at render time (the active language). */
+function filterName(f: QuickFilter): string {
+  return f === "unread" ? t("list.filter.unread") : f === "attachments" ? t("list.filter.attachments") : t("list.filter.starred");
+}
+
+/**
+ * "Filtered by: Unread · N" under the title (N: the mailbox's unread threads;
+ * a search shows its own count). Like Mail, the criterion is a menu: unread,
+ * with attachments, starred.
+ */
+function FilterStatus({ search, filter }: { search: boolean; filter: QuickFilter }) {
   const total = useList((s) => (s.unreadTotal && s.unreadTotal.key === s.key ? s.unreadTotal : null));
-  const b = (text: string) => <span className="text-foreground">{text}</span>;
+  const view = useApp((s) => s.view);
+  const n = filter === "unread" && !search && total && total.n > 0 ? `${formatNumber(total.n)}${total.capped ? "+" : ""}` : null;
   return (
-    <p data-testid="unread-filter-status" className="truncate text-2xs leading-tight text-muted-foreground tabular">
-      {!search && total && total.n > 0 ? richT("list.unreadFilter.statusCount", { n: `${formatNumber(total.n)}${total.capped ? "+" : ""}`, b }) : richT("list.unreadFilter.status", { b })}
+    <p data-testid="unread-filter-status" className="flex min-w-0 items-center truncate text-2xs leading-tight text-muted-foreground tabular">
+      {t("list.filter.by")}{" "}
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <button type="button" data-testid="filter-criterion" className="no-drag ml-1 inline-flex items-center gap-0.5 rounded-sm text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring">
+              {filterName(filter)}
+              <ChevronDown className="size-3 text-muted-foreground" aria-hidden />
+            </button>
+          }
+        />
+        <DropdownMenuContent align="start" className="min-w-44">
+          <DropdownMenuRadioGroup value={filter} onValueChange={(v) => setListFilter(v as QuickFilter)}>
+            {LIST_FILTERS.filter((f) => !(f === "starred" && view === "starred")).map((f) => (
+              <DropdownMenuRadioItem key={f} value={f} closeOnClick data-testid={`filter-option-${f}`}>
+                {filterName(f)}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {n && <span className="whitespace-pre"> · {n}</span>}
     </p>
+  );
+}
+
+/** Lumen: the filters as chips under the header (one choice; arrow keys move between them). */
+function QuickChips({ filter }: { filter: QuickFilter | undefined }) {
+  const view = useApp((s) => s.view);
+  const chips = (["all", ...LIST_FILTERS] as const).filter((f) => !(f === "starred" && view === "starred"));
+  return (
+    <ToggleGroup
+      data-testid="quick-filters"
+      aria-label={t("list.filter.label")}
+      value={[filter ?? "all"]}
+      onValueChange={(v: string[]) => v[0] && setListFilter(v[0] === "all" ? undefined : (v[0] as QuickFilter))}
+      spacing={1.5}
+      className="no-drag -mx-1 mt-1 mb-2 flex w-auto max-w-full overflow-x-auto px-1 py-0.5 [scrollbar-width:none]"
+    >
+      {chips.map((f) => (
+        <ToggleGroupItem
+          key={f}
+          value={f}
+          data-testid={`quick-filter-${f}`}
+          onFocus={(e) => e.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" })}
+          className="h-7 shrink-0 rounded-full bg-muted px-3 text-xs font-medium text-foreground hover:bg-accent hover:text-accent-foreground data-pressed:bg-primary data-pressed:text-primary-foreground"
+        >
+          {f === "all" ? t("list.filter.all") : filterName(f)}
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
   );
 }
 
@@ -177,11 +238,12 @@ function Greeting() {
 }
 
 /** Under a display title or the greeting: what's unread here (the filter's status when it's on). */
-function Subtitle({ unreadOnly, search }: { unreadOnly: boolean; search: boolean }) {
+function Subtitle({ filter, search }: { filter: QuickFilter | undefined; search: boolean }) {
+  const design = useDesign();
   const unread = useApp((s) =>
     s.reviewCategoryId !== null ? null : s.categoryId !== null ? (s.counts.categoryUnread[s.categoryId] ?? 0) : s.view === "inbox" ? (s.accountId !== null ? (s.counts.inboxUnreadByAccount[s.accountId] ?? 0) : s.counts.inboxUnread) : null,
   );
-  if (unreadOnly) return <FilterStatus search={search} />;
+  if (filter && design.variants.quickFilters === "menu") return <FilterStatus search={search} filter={filter} />;
   if (unread === null) return null;
   return (
     <p data-testid="list-subtitle" className="type-list-subtitle mt-1 truncate text-muted-foreground tabular">
@@ -199,11 +261,11 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   const searchMs = useList((s) => s.searchMs);
   const more = useList((s) => s.nextCursor !== null);
   const complete = useList((s) => s.complete);
-  const unreadOnly = useApp(isUnreadOnly);
+  const filter = useApp(activeFilter);
   const design = useDesign();
   const searchOpen = useSearchOpen((s) => s.open);
-  // a filtered search counts what matched, not the read rows it kept in place
-  const count = useList((s) => (unreadOnly ? s.items.reduce((n, t) => n + (t.unread ? 1 : 0), 0) : s.items.length));
+  // a filtered search counts what matched, not the rows it kept in place
+  const count = useList((s) => (filter ? s.items.reduce((n, t) => n + (matchesFilter(filter, t) ? 1 : 0), 0) : s.items.length));
   const title = review ? t("list.reviewTitle", { category: review.name }) : (category?.name ?? viewLabel(view));
   // the greeting is the inbox's title (any account); everywhere else a design that greets shows its display title
   const kind = design.variants.listHeader === "greeting" && view === "inbox" && !category && !review ? "greeting" : design.variants.listHeader === "title" ? "title" : "display";
@@ -219,7 +281,7 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   );
   const actions = (
     <>
-      {!review && design.variants.quickFilters === "menu" && <UnreadFilterButton active={unreadOnly} />}
+      {!review && design.variants.quickFilters === "menu" && <UnreadFilterButton filter={filter} />}
       {behindButton && (
         <Tooltip>
           <TooltipTrigger
@@ -261,7 +323,7 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
               {title}
               {accountSuffix}
             </h1>
-            {unreadOnly && <FilterStatus search={query.trim() !== ""} />}
+            {filter && <FilterStatus search={query.trim() !== ""} filter={filter} />}
           </div>
           {stats}
           {actions}
@@ -273,12 +335,13 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
               {kind === "greeting" ? <Greeting /> : title}
               {kind !== "greeting" && accountSuffix}
             </h1>
-            {query && searchMs !== null ? <p className="mt-1">{stats}</p> : <Subtitle unreadOnly={unreadOnly} search={query.trim() !== ""} />}
+            {query && searchMs !== null ? <p className="mt-1">{stats}</p> : <Subtitle filter={filter} search={query.trim() !== ""} />}
           </div>
           <div className="flex shrink-0 items-center gap-0.5 pt-0.5">{actions}</div>
         </div>
       )}
       {showField && <SearchField autoCollapse={behindButton} />}
+      {!review && design.variants.quickFilters === "chips" && <QuickChips filter={filter} />}
     </div>
   );
 }
@@ -295,7 +358,7 @@ function SelectAllBanner() {
   const view = useApp((s) => s.view);
   const category = useApp((s) => s.categories.find((c) => c.id === s.categoryId)?.name);
   const query = useApp((s) => s.query.trim());
-  const unreadOnly = useApp(isUnreadOnly);
+  const filter = useApp(activeFilter);
   const show = scope !== null || (all && more && loaded > 0);
   const [count, setCount] = useState<{ key: string; n: number; capped: boolean } | null>(null);
   const key = show ? listKey() : "";
@@ -310,7 +373,7 @@ function SelectAllBanner() {
     };
   }, [show, key]);
   if (!show || (!scope && !currentScope())) return null;
-  const label = t("list.scope.quoted", { label: scopeLabel(query || (category ?? viewLabel(view)), unreadOnly) });
+  const label = t("list.scope.quoted", { label: scopeLabel(query || (category ?? viewLabel(view)), filter) });
   const n = count?.key === key ? count : null;
   return (
     <div data-testid="select-all-banner" className="hairline-b flex shrink-0 flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 bg-tint px-3 py-1.5 text-center text-xs text-muted-foreground">
@@ -346,21 +409,34 @@ function SelectAllBanner() {
  * inside it (a button isn't an option); after "Clear filter" focus goes to
  * the header's filter button, which stays.
  */
-function UnreadEmptyState() {
+function UnreadEmptyState({ filter }: { filter: QuickFilter }) {
   const search = useApp((s) => s.query.trim() !== "");
+  const [title, body] =
+    filter === "unread"
+      ? search
+        ? [t("list.unreadEmpty.searchTitle"), t("list.unreadEmpty.searchBody")]
+        : [t("list.unreadEmpty.title"), t("list.unreadEmpty.body")]
+      : filter === "attachments"
+        ? search
+          ? [t("list.filterEmpty.searchTitle"), t("list.filterEmpty.attachmentsSearchBody")]
+          : [t("list.filterEmpty.attachmentsTitle"), t("list.filterEmpty.attachmentsBody")]
+        : search
+          ? [t("list.filterEmpty.searchTitle"), t("list.filterEmpty.starredSearchBody")]
+          : [t("list.filterEmpty.starredTitle"), t("list.filterEmpty.starredBody")];
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 px-8 text-center" data-testid="unread-empty">
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 px-8 text-center" data-testid="unread-empty" data-filter={filter}>
       <ListFilter className="mb-2 size-7 stroke-[1.25] text-muted-foreground" aria-hidden />
-      <p className="text-lg font-semibold tracking-tight">{search ? t("list.unreadEmpty.searchTitle") : t("list.unreadEmpty.title")}</p>
-      <p className="text-xs text-muted-foreground">{search ? t("list.unreadEmpty.searchBody") : t("list.unreadEmpty.body")}</p>
+      <p className="text-lg font-semibold tracking-tight">{title}</p>
+      <p className="text-xs text-muted-foreground">{body}</p>
       <Button
         data-testid="unread-empty-clear"
         variant="secondary"
         size="sm"
         className="mt-3"
         onClick={() => {
-          toggleUnreadFilter();
-          unreadFilterButton.current?.focus();
+          setListFilter(undefined);
+          // the filter's control stays: the header button, or Lumen's "All" chip
+          (unreadFilterButton.current ?? document.querySelector<HTMLElement>("[data-testid=quick-filter-all]"))?.focus();
         }}
       >
         {t("list.unreadEmpty.clear")}
@@ -390,7 +466,7 @@ export function ThreadList() {
   const compact = useApp((s) => s.settings?.density === "compact");
   const composing = useApp((s) => s.compose !== null);
   const showAccount = useApp((s) => s.accountId === null && s.accounts.length > 1);
-  const unreadOnly = useApp(isUnreadOnly);
+  const filter = useApp(activeFilter);
   const design = useDesign();
   const height = design.rows[compact ? "compact" : "comfortable"];
   const layout = design.variants.row;
@@ -488,7 +564,7 @@ export function ThreadList() {
     shownKey.current = itemsKey;
     if (!was || !itemsKey || was === itemsKey) return;
     const [a, b] = [JSON.parse(was) as unknown[], JSON.parse(itemsKey) as unknown[]];
-    // [view, account, category, review, unreadOnly, query]: only the filter differs
+    // [view, account, category, review, filter, query]: only the filter differs
     if (a[4] === b[4] || JSON.stringify([...a.slice(0, 4), a[5]]) !== JSON.stringify([...b.slice(0, 4), b[5]])) return;
     const i = useList.getState().index.get(getApp().selectedId ?? -1);
     if (i !== undefined) virtualizer.scrollToIndex(i, { align: "auto" });
@@ -527,7 +603,7 @@ export function ThreadList() {
             ))}
           </div>
         ) : items.length === 0 ? (
-          !unreadOnly && <EmptyState />
+          !filter && <EmptyState />
         ) : (
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
             {virtualItems.map((v) => (
@@ -537,7 +613,7 @@ export function ThreadList() {
         )}
       </div>
       </ThreadMenu>
-      {unreadOnly && !loading && items.length === 0 && itemsKey === listKey() && <UnreadEmptyState />}
+      {filter && !loading && items.length === 0 && itemsKey === listKey() && <UnreadEmptyState filter={filter} />}
       </div>
     </section>
   );

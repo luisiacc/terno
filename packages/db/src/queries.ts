@@ -1,6 +1,8 @@
+import { listFilterOf } from "@terno/core";
 import type {
   AttachmentInfo,
   Counts,
+  ListFilter,
   MessageDetail,
   ThreadDetail,
   ThreadSummary,
@@ -71,16 +73,24 @@ export function pageFrom(rows: SummaryRow[], limit: number): Page {
   return { items, nextCursor: hasMore && last ? { lastDate: last.lastDate, id: last.id } : null };
 }
 
-/** The unread filter's predicate; textually the partial index's (migration v11). */
-const UNREAD_WHERE = "t.unread_count > 0";
+/**
+ * Each quick filter's predicate, textually its partial indexes' (unread:
+ * migration v11; attachments and starred: v12), and those indexes: by date
+ * for pages, by id for scopes.
+ */
+const FILTER: Record<ListFilter, { where: string; byDate: string; byId: string }> = {
+  unread: { where: "t.unread_count > 0", byDate: "threads_unread", byId: "threads_unread_id" },
+  attachments: { where: "t.has_attachments = 1", byDate: "threads_attach", byId: "threads_attach_id" },
+  starred: { where: "t.is_starred = 1", byDate: "threads_starred_f", byId: "threads_starred_f_id" },
+};
 
 /** Keyset-paginated list of a view, optionally scoped to an account and/or category. */
 export function listThreads(db: Db, p: ListParams): Page {
   const q = listSql(p);
   const page = pageFrom(db.all<SummaryRow>(q.sql, ...q.params), p.limit);
-  if (!p.unreadOnly || !p.keepIds?.length) return page;
+  if (!listFilterOf(p) || !p.keepIds?.length) return page;
   // the kept threads, by key, against the view without the filter
-  const k = listSql({ ...p, unreadOnly: false, limit: p.keepIds.length }, p.keepIds);
+  const k = listSql({ ...p, unreadOnly: false, filter: undefined, limit: p.keepIds.length }, p.keepIds);
   return keepInPage(page, db.all<SummaryRow>(k.sql, ...k.params).map(toSummary));
 }
 
@@ -90,8 +100,9 @@ export function listSql(p: ListParams, only?: readonly number[]): { sql: string;
   const params: Param[] = [];
   // unread: pinned to the unread index, which tests view and account in the index (the planner
   // picks a view's date index instead and reads a row per thread, or sorts a category: measured in plan 12)
-  const threads = p.unreadOnly ? "threads t INDEXED BY threads_unread" : "threads t";
-  if (p.unreadOnly) where.push(UNREAD_WHERE);
+  const filter = listFilterOf(p);
+  const threads = filter ? `threads t INDEXED BY ${FILTER[filter].byDate}` : "threads t";
+  if (filter) where.push(FILTER[filter].where);
   let from = threads;
   if (p.categoryId !== undefined) {
     from = `thread_categories tc JOIN ${threads} ON t.id = tc.thread_id`;
@@ -127,7 +138,8 @@ function scopeFrom(p: ScopeParams, paged = false): { from: string; where: string
   // (category_id, thread_id); pinned, so the planner never picks a date index and sorts
   // (a count lets the planner pick: a view's partial index counts fastest; an unread count walks the unread
   // index, testing in it, where a view's index reads a row per thread; a category's counts its memberships)
-  let from = p.unreadOnly ? "threads t INDEXED BY threads_unread_id" : !paged ? "threads t" : p.accountId !== undefined ? "threads t INDEXED BY threads_account_id" : "threads t NOT INDEXED";
+  const filter = listFilterOf(p);
+  let from = filter ? `threads t INDEXED BY ${FILTER[filter].byId}` : !paged ? "threads t" : p.accountId !== undefined ? "threads t INDEXED BY threads_account_id" : "threads t NOT INDEXED";
   if (p.categoryId !== undefined) {
     // CROSS JOIN keeps the memberships outer (SQLite never reorders it)
     from = paged ? "thread_categories tc INDEXED BY thread_categories_c CROSS JOIN threads t ON t.id = tc.thread_id" : "thread_categories tc JOIN threads t ON t.id = tc.thread_id";
@@ -138,7 +150,7 @@ function scopeFrom(p: ScopeParams, paged = false): { from: string; where: string
     where.push("t.account_id = ?");
     params.push(p.accountId);
   }
-  if (p.unreadOnly) where.push(UNREAD_WHERE);
+  if (filter) where.push(FILTER[filter].where);
   return { from, where: where.join(" AND "), params };
 }
 
