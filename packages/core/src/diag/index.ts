@@ -10,6 +10,7 @@ export * from "./consent";
 export * from "./diag";
 export * from "./error";
 export * from "./fields";
+export * from "./records";
 export * from "./report";
 export * from "./ring";
 export * from "./rotating";

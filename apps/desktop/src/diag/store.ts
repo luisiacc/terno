@@ -11,11 +11,10 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { appendFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { ERROR_REPORTS, sanitizeCrumbs, sanitizeRecord, type Crumb, type ErrorRecord, type ErrorReports, type RotatingFs } from "@terno/core/diag";
+import { ERROR_REPORTS, RecordStore as CoreRecordStore, sanitizeCrumbs, type Crumb, type RecordFs, type RotatingFs } from "@terno/core/diag";
+import type { ErrorReports } from "@terno/core/diag";
 
-export const RECORD_MAX_BYTES = 64 * 1024;
-export const RECORDS_MAX = 20;
-export const RECORD_MAX_AGE_MS = 30 * 86_400_000;
+export { fitRecord, RECORD_MAX_BYTES, RECORDS_MAX, RECORD_MAX_AGE_MS } from "@terno/core/diag";
 const MODE = 0o600;
 
 export interface DiagPaths {
@@ -50,83 +49,22 @@ function writeAtomicSync(path: string, data: string): void {
   renameSync(tmp, path);
 }
 
-async function writeAtomic(path: string, data: string): Promise<void> {
-  const tmp = `${path}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`;
-  await writeFile(tmp, data, { mode: MODE });
-  await rename(tmp, path);
-}
 
-/** The record as at most 64 KB of JSON: older crumbs go first, then deeper frames. */
-export function fitRecord(r: ErrorRecord): string {
-  let rec = r;
-  let json = JSON.stringify(rec);
-  while (json.length > RECORD_MAX_BYTES && rec.crumbs.length) {
-    rec = { ...rec, crumbs: rec.crumbs.slice(Math.ceil(rec.crumbs.length / 2)) };
-    json = JSON.stringify(rec);
-  }
-  if (json.length > RECORD_MAX_BYTES && rec.error) {
-    rec = { ...rec, error: { ...rec.error, frames: rec.error.frames.slice(0, 10) } };
-    json = JSON.stringify(rec);
-  }
-  return json;
-}
+/** Node's file system for the shared record store (records are 0600). */
+const nodeRecordFs: RecordFs = {
+  writeFileSync: (path, data) => writeFileSync(path, data, { mode: MODE }),
+  renameSync: (from, to) => renameSync(from, to),
+  readdirSync: (dir) => readdirSync(dir),
+  readFileSync: (path) => readFileSync(path, "utf8"),
+  rmSync: (path) => rmSync(path, { force: true }),
+  writeFile: (path, data) => writeFile(path, data, { mode: MODE }),
+  rename: (from, to) => rename(from, to),
+};
 
-const recordFile = (r: ErrorRecord) => `${r.ts}-${r.proc}-${r.id}.json`;
-
-export class RecordStore {
-  constructor(private readonly dir: string) {}
-
-  /** Synchronous: a fatal error may be the last thing this process does. */
-  writeSync(r: ErrorRecord): void {
-    try {
-      writeAtomicSync(join(this.dir, recordFile(r)), fitRecord(r));
-      this.prune();
-    } catch {
-      // a full disk loses the record, never the app
-    }
-  }
-
-  async write(r: ErrorRecord): Promise<void> {
-    try {
-      await writeAtomic(join(this.dir, recordFile(r)), fitRecord(r));
-      this.prune();
-    } catch {
-      // same
-    }
-  }
-
-  /** Newest first; anything unreadable or forged is skipped. */
-  list(): ErrorRecord[] {
-    const out: ErrorRecord[] = [];
-    for (const name of this.files()) {
-      try {
-        const r = sanitizeRecord(JSON.parse(readFileSync(join(this.dir, name), "utf8")));
-        if (r) out.push(r);
-      } catch {
-        // half-written or foreign
-      }
-    }
-    return out.sort((a, b) => b.ts - a.ts);
-  }
-
-  get(id: string): ErrorRecord | null {
-    return this.list().find((r) => r.id === id) ?? null;
-  }
-
-  private files(): string[] {
-    try {
-      return readdirSync(this.dir).filter((n) => /^\d+-[a-z]+-[0-9a-f]{32}\.json$/.test(n));
-    } catch {
-      return [];
-    }
-  }
-
-  /** At most 20, none older than 30 days: oldest go first. */
-  prune(now = Date.now()): void {
-    const files = this.files().sort((a, b) => Number(b.split("-")[0]) - Number(a.split("-")[0]));
-    files.forEach((name, i) => {
-      if (i >= RECORDS_MAX || now - Number(name.split("-")[0]) > RECORD_MAX_AGE_MS) rmSync(join(this.dir, name), { force: true });
-    });
+/** Main's crash records (the MCP sidecar writes into the same folder through the same store). */
+export class RecordStore extends CoreRecordStore {
+  constructor(dir: string) {
+    super(dir, nodeRecordFs, `main${process.pid}`);
   }
 }
 

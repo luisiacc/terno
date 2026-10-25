@@ -4,17 +4,33 @@
  * crash records beside the app's own, where main finds them on its next
  * start (main is the only process that reports).
  */
-import { randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { appendFile, rename, rm, stat } from "node:fs/promises";
 import { homedir, totalmem } from "node:os";
 import { join } from "node:path";
-import { captureError, installDiag, RotatingLog, type DiagEntry, type ErrorRecord } from "@terno/core/diag";
+import { captureError, installDiag, RecordStore, RotatingLog, type DiagEntry, type ErrorRecord } from "@terno/core/diag";
 
 const MODE = 0o600;
 
 function profileDir(): string {
   return process.env.TERNO_USER_DATA ?? join(homedir(), "Library", "Application Support", "Terno");
+}
+
+/** A crash record in the profile's crashes/, pruned like main's own. */
+export function writeMcpRecord(profile: string, r: ErrorRecord): void {
+  const dir = join(profile, "crashes");
+  if (!existsSync(dir)) return;
+  new RecordStore(
+    dir,
+    {
+      writeFileSync: (path, data) => writeFileSync(path, data, { mode: MODE }),
+      renameSync: (a, b) => renameSync(a, b),
+      readdirSync: (d) => readdirSync(d),
+      readFileSync: (path) => readFileSync(path, "utf8"),
+      rmSync: (path) => rmSync(path, { force: true }),
+    },
+    `mcp${process.pid}`,
+  ).writeSync(r);
 }
 
 export function installMcpDiag(version: string): void {
@@ -33,15 +49,7 @@ export function installMcpDiag(version: string): void {
       })
     : null;
   const record = (r: ErrorRecord) => {
-    if (!here || !existsSync(join(profile, "crashes"))) return;
-    try {
-      const path = join(profile, "crashes", `${r.ts}-mcp-${r.id}.json`);
-      const tmp = `${path}.${randomUUID().slice(0, 8)}.tmp`;
-      writeFileSync(tmp, JSON.stringify(r).slice(0, 64 * 1024), { mode: MODE });
-      renameSync(tmp, path);
-    } catch {
-      // a record that can't be written is still on stderr
-    }
+    if (here) writeMcpRecord(profile, r);
   };
   installDiag({
     proc: "mcp",
