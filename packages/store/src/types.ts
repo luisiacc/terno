@@ -213,6 +213,8 @@ export interface DraftRow {
   subject: string;
   subject_edited: number;
   body_text: string;
+  /** plan 16: the written part as mail HTML ('' = a plain draft) */
+  body_html: string;
   quoted_text: string;
   include_quote: number;
   in_reply_to_message_id: number | null;
@@ -238,6 +240,8 @@ export interface DraftInput {
   subject: string;
   subjectEdited?: boolean;
   bodyText: string;
+  /** omitted: '' (a plain draft; the body is rewritten on every save) */
+  bodyHtml?: string;
   quotedText?: string;
   includeQuote?: boolean;
   inReplyToMessageId?: number | null;

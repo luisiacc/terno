@@ -1,6 +1,7 @@
 import { decodeText, type Condition, type FilterAction, type FilterRule } from "@terno/core";
 import { draftAddressSchema, exportCategorySchema, exportDraftSchema, exportFilterSchema, settingsPatchSchema, type ExportCategory, type ExportDraftItem, type ExportFilter, type DraftAddress, type ExportedDraft, type ExportFile, type ImportResult, type MailboxExport, type SettingsPatch } from "@terno/core/rpc";
 import type { DraftInput, DraftRow } from "@terno/store";
+import { GAP, textToHtml } from "@terno/richtext/quote";
 import type { BackendCore as Backend } from "./core";
 import { pinKeyOrigins, readSettings, SettingsError, updateSettings } from "./settings";
 
@@ -66,6 +67,7 @@ export async function exportMailbox(b: Backend): Promise<MailboxExport> {
       subject: d.subject,
       subjectEdited: d.subject_edited === 1,
       bodyText: d.body_text,
+      bodyHtml: d.body_html,
       quotedText: d.quoted_text,
       includeQuote: d.include_quote === 1,
       inReplyTo: await ref(d.in_reply_to_message_id),
@@ -191,9 +193,9 @@ export async function restorePending(b: Backend, final: number | false = false):
 function draftKey(d: DraftInput | DraftRow): string {
   const norm = (list: unknown) => (list as DraftAddress[]).map((a) => [a.name, a.email, a.auto === true]);
   if ("account_id" in d) {
-    return JSON.stringify([d.account_id, d.mode, d.subject, d.body_text, d.quoted_text, norm(JSON.parse(d.to_json)), norm(JSON.parse(d.cc_json)), norm(JSON.parse(d.bcc_json))]);
+    return JSON.stringify([d.account_id, d.mode, d.subject, d.body_text, d.body_html, d.quoted_text, norm(JSON.parse(d.to_json)), norm(JSON.parse(d.cc_json)), norm(JSON.parse(d.bcc_json))]);
   }
-  return JSON.stringify([d.accountId, d.mode, d.subject, d.bodyText, d.quotedText ?? "", norm(d.to), norm(d.cc), norm(d.bcc ?? [])]);
+  return JSON.stringify([d.accountId, d.mode, d.subject, d.bodyText, d.bodyHtml ?? "", d.quotedText ?? "", norm(d.to), norm(d.cc), norm(d.bcc ?? [])]);
 }
 
 /**
@@ -216,14 +218,18 @@ async function draftFrom(b: Backend, accountId: number, d: ExportDraft): Promise
       mode: d.mode,
       threadId: original.threadId,
       bodyText: d.bodyText,
+      bodyHtml: d.bodyHtml,
       quotedText: d.quotedText,
       includeQuote: d.includeQuote,
       inReplyToMessageId: d.mode === "forward" ? null : original.id,
       forwardOfMessageId: d.mode === "forward" ? original.id : null,
     };
   }
-  const body = d.includeQuote && d.quotedText ? [d.bodyText.replace(/\s+$/, ""), d.quotedText].filter(Boolean).join("\n\n") : d.bodyText;
-  return { ...base, mode: "new", threadId: null, bodyText: body, quotedText: "", includeQuote: false, inReplyToMessageId: null, forwardOfMessageId: null };
+  const keepQuote = d.includeQuote && d.quotedText;
+  const body = keepQuote ? [d.bodyText.replace(/\s+$/, ""), d.quotedText].filter(Boolean).join("\n\n") : d.bodyText;
+  // a rich draft gets its quote in the HTML too (as lines and nested quotes), so what it would have sent stays
+  const html = d.bodyHtml && keepQuote ? `${d.bodyHtml}${GAP}${textToHtml(d.quotedText)}` : d.bodyHtml;
+  return { ...base, mode: "new", threadId: null, bodyText: body, bodyHtml: html, quotedText: "", includeQuote: false, inReplyToMessageId: null, forwardOfMessageId: null };
 }
 
 /** The items of a list that are valid, read in time slices (a large file must not hold the event loop); `bad` gets what isn't. */

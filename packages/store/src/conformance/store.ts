@@ -539,6 +539,21 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect(after.threads.find((t) => t.id === threads[0])!.inInbox).toBe(true);
       });
 
+      it("plan 16: a rich send queues its HTML with the text, and the sent copy reads as HTML at once", async () => {
+        const store = await fresh();
+        const [a] = await withAccounts(store);
+        const html = "<!DOCTYPE html><html><body><div><b>Hola</b></div></body></html>";
+        const send = await store.compose.queueSend({ accountId: a!, to: [{ name: "", email: "x@y.com" }], cc: [], bcc: [], subject: "rico", bodyText: "Hola", bodyHtml: html, recordReply: false, now: 0 });
+        const [op] = await store.ops.claimReady(0, 20);
+        expect(JSON.parse(op!.payload_json)).toMatchObject({ text: "Hola", html });
+        const detail = (await store.threads.get(send.threadId))!;
+        expect(detail.messages.at(-1)).toMatchObject({ bodyText: "Hola", bodyHtml: html });
+        // a plain send stays plain: no html in the payload
+        await store.compose.queueSend({ accountId: a!, to: [{ name: "", email: "x@y.com" }], cc: [], bcc: [], subject: "plano", bodyText: "texto", recordReply: false, now: 0 });
+        const [plain] = await store.ops.claimReady(0, 20);
+        expect(JSON.parse(plain!.payload_json)).not.toHaveProperty("html");
+      });
+
       it("op completion adopts the provider's ids for a sent message (and its thread)", async () => {
         const store = await fresh();
         const [a] = await withAccounts(store);
@@ -1297,6 +1312,19 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect(stale.id).not.toBe(d.id);
         expect(stale).toMatchObject({ revision: 1, format: 2, body_text: "versión vieja" });
         expect((await store.drafts.list()).find((x) => x.id === d.id)!.body_text).toBe("uno dos");
+      });
+
+      it("plan 16: a rich body is kept beside its text; a save without one (an agent's, plain) leaves no stale HTML behind", async () => {
+        const store = await fresh();
+        const [a] = await withAccounts(store);
+        const html = '<div><b>Hola</b> <span style="color:#b3261e">Ana</span></div>';
+        const d = (await store.drafts.save({ accountId: a!, to, cc: [], subject: "Rico", bodyText: "Hola Ana", bodyHtml: html }, NOW))!;
+        expect(d).toMatchObject({ body_text: "Hola Ana", body_html: html });
+        expect((await store.drafts.list()).find((x) => x.id === d.id)).toMatchObject({ body_text: "Hola Ana", body_html: html });
+        const plain = (await store.drafts.save({ id: d.id, baseRevision: d.revision, accountId: a!, to, cc: [], subject: "Rico", bodyText: "Otro texto" }, NOW + 1))!;
+        expect(plain).toMatchObject({ body_text: "Otro texto", body_html: "" });
+        const legacy = (await store.drafts.save({ accountId: a!, to, cc: [], subject: "Viejo", bodyText: "texto" }, NOW))!;
+        expect(legacy.body_html).toBe("");
       });
 
       it("a save for a draft that is gone (sent or discarded) says so instead of bringing it back", async () => {

@@ -797,7 +797,7 @@ export class IdbMailStore implements MailStore {
           if (original.account_id === p.accountId) providerThreadId = T(this.c, "threads").get(original.thread_id)!.provider_thread_id;
         }
         const messageId = `${this.c.uuid()}@${account.email.split("@")[1] || "terno.local"}`;
-        const payload = { from, to: p.to, cc: p.cc, bcc: p.bcc, subject: p.subject, text: p.bodyText, messageId, inReplyTo, references, providerThreadId };
+        const payload = { from, to: p.to, cc: p.cc, bcc: p.bcc, subject: p.subject, text: p.bodyText, ...(p.bodyHtml ? { html: p.bodyHtml } : {}), messageId, inReplyTo, references, providerThreadId };
         const ingest = ingestMessages(
           this.c,
           [
@@ -816,7 +816,8 @@ export class IdbMailStore implements MailStore {
               date: p.now,
               snippet: "",
               bodyText: p.bodyText,
-              bodyHtml: null,
+              // the sent copy reads as written (the reader sanitizes it like any mail)
+              bodyHtml: p.bodyHtml || null,
               bodyState: "full",
               listId: null,
               isRead: true,
@@ -827,7 +828,7 @@ export class IdbMailStore implements MailStore {
               isTrash: false,
               isSpam: false,
               hasAttachments: false,
-              size: p.bodyText.length,
+              size: p.bodyText.length + (p.bodyHtml?.length ?? 0),
             },
           ],
           p.now,

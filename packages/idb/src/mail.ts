@@ -1283,6 +1283,8 @@ const draftRow = (r: R): DraftRow => ({
   subject: r.subject,
   subject_edited: r.subject_edited ?? 0,
   body_text: r.body_text,
+  // drafts stored before plan 16 have none: plain
+  body_html: r.body_html ?? "",
   quoted_text: r.quoted_text ?? "",
   include_quote: r.include_quote ?? 0,
   in_reply_to_message_id: r.in_reply_to_message_id ?? null,
@@ -1309,6 +1311,7 @@ export function saveDraft(c: Ctx, d: DraftInput, now: number): DraftRow | null {
     subject: d.subject,
     subject_edited: d.subjectEdited !== undefined ? Number(d.subjectEdited) : (row?.subject_edited ?? 0),
     body_text: d.bodyText,
+    body_html: d.bodyHtml ?? "",
     quoted_text: d.quotedText ?? row?.quoted_text ?? "",
     include_quote: d.includeQuote !== undefined ? Number(d.includeQuote) : (row?.include_quote ?? 0),
     in_reply_to_message_id: inReplyTo,

@@ -735,6 +735,14 @@ CREATE INDEX threads_starred_f ON threads(last_date DESC, id DESC, account_id, i
 CREATE INDEX threads_starred_f_id ON threads(id, account_id, in_inbox, in_trash, in_spam, has_sent) WHERE is_starred = 1;
 `;
 
+/**
+ * v13: rich drafts (plan 16). The written part as mail HTML beside its
+ * plain-text alternative; existing drafts are plain ('') and open as their text.
+ */
+const RICH_DRAFTS_V13 = `
+ALTER TABLE drafts ADD COLUMN body_html TEXT NOT NULL DEFAULT '';
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "initial schema", sql: SCHEMA_V1 },
   { version: 2, name: "op target index", sql: OP_TARGETS_V2 },
@@ -748,6 +756,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 10, name: "ops sequence and account id indexes", sql: OPS_SEQ_V10 },
   { version: 11, name: "unread threads index", sql: UNREAD_V11 },
   { version: 12, name: "quick filter indexes", sql: FILTERS_V12 },
+  { version: 13, name: "rich drafts", sql: RICH_DRAFTS_V13 },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

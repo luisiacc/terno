@@ -11,6 +11,8 @@ export interface SendPayload {
   bcc: Address[];
   subject: string;
   text: string;
+  /** plan 16: the text/html alternative (a rich draft); absent: a single text/plain part, as before */
+  html?: string;
   /** RFC Message-ID we generated, without angle brackets */
   messageId: string;
   inReplyTo: string | null;

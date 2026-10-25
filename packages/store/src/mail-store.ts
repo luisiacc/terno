@@ -147,6 +147,8 @@ export interface SendCommand {
   bcc: Address[];
   subject: string;
   bodyText: string;
+  /** plan 16: the text/html alternative (the renderer's own, built from a document) */
+  bodyHtml?: string;
   inReplyToMessageId?: number;
   draftId?: number;
   /** explicit user replies feed learned filters; agents' don't */

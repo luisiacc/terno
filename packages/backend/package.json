@@ -19,6 +19,7 @@
     "@terno/i18n": "workspace:*",
     "@terno/mail": "workspace:*",
     "@terno/mock-data": "workspace:*",
+    "@terno/richtext": "workspace:*",
     "@terno/store": "workspace:*",
     "ws": "^8.22.0"
   },

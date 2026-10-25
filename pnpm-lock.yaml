@@ -446,6 +446,9 @@ importers:
       '@terno/mock-data':
         specifier: workspace:*
         version: link:../mock-data
+      '@terno/richtext':
+        specifier: workspace:*
+        version: link:../richtext
       '@terno/store':
         specifier: workspace:*
         version: link:../store

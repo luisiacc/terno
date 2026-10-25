@@ -13,6 +13,8 @@ export async function buildRaw(p: SendPayload, options: { keepBcc?: boolean; now
     bcc: p.bcc.length ? p.bcc.map(fmt) : undefined,
     subject: p.subject,
     text: p.text,
+    // with html, MailComposer writes multipart/alternative: the text first, the HTML last (the preferred one)
+    ...(p.html ? { html: p.html } : {}),
     messageId: `<${p.messageId}>`,
     inReplyTo: p.inReplyTo ? `<${p.inReplyTo}>` : undefined,
     references: p.references.length ? p.references.map((r) => `<${r}>`).join(" ") : undefined,

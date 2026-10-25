@@ -31,3 +31,58 @@ it("no header can be injected through a name, a subject or an id", async () => {
   expect(text).not.toMatch(/^Bcc:/m);
   expect((await parseRaw(raw)).bcc).toEqual([]);
 });
+
+// plan 16: a rich draft sends multipart/alternative, from both builders (web and desktop), and through the web's Gmail path
+
+const html = '<!DOCTYPE html><html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"></head><body><div><b>Hola</b> <span style="color:#b3261e">Ana</span> ñ</div><ul style="margin:0 0 0 24px;padding:0"><li>uno</li></ul></body></html>';
+const text = "Hola Ana ñ\n• uno";
+
+it("with html: multipart/alternative, text first and HTML last, both UTF-8 and decoding to what was given", async () => {
+  const raw = buildRawPortable({ ...base, text, html });
+  const source = new TextDecoder().decode(raw);
+  expect(source).toMatch(/^Content-Type: multipart\/alternative; boundary="([^"]+)"\r$/m);
+  const parts = [...source.matchAll(/Content-Type: (text\/\w+); charset=utf-8/g)].map((m) => m[1]);
+  expect(parts).toEqual(["text/plain", "text/html"]);
+  expect(source.split("\r\n").every((l) => l.length <= 998)).toBe(true);
+  const parsed = await parseRaw(raw);
+  expect(parsed.text?.replace(/\r\n/g, "\n")).toBe(text);
+  expect(parsed.html).toBe(html);
+});
+
+it("nodemailer (desktop) writes the same structure from the same payload", async () => {
+  const { buildRaw } = await import("./compose");
+  const raw = await buildRaw({ ...base, text, html });
+  const source = raw.toString("utf8");
+  expect(source).toMatch(/^Content-Type: multipart\/alternative;/m);
+  expect(source.indexOf("Content-Type: text/plain")).toBeLessThan(source.indexOf("Content-Type: text/html"));
+  const parsed = await parseRaw(raw);
+  expect(parsed.text?.replace(/\r\n/g, "\n")).toBe(text);
+  expect(parsed.html?.trim()).toBe(html);
+  // without html it stays one text/plain part
+  expect((await buildRaw({ ...base, text })).toString("utf8")).not.toMatch(/multipart/);
+  expect(new TextDecoder().decode(buildRawPortable({ ...base, text }))).not.toMatch(/multipart/);
+});
+
+it("the web's Gmail send: the queued payload's HTML goes out through the API, Bcc kept for Gmail, in the conversation's thread", async () => {
+  const { createGmailTokenBroker } = await import("./gmail-web");
+  const sent: { raw: string; threadId?: string }[] = [];
+  const fetch = (async (url: string, init?: RequestInit) => {
+    if (String(url).endsWith("/messages/send")) {
+      sent.push(JSON.parse(String(init!.body)));
+      return new Response(JSON.stringify({ id: "g1", threadId: "t1" }), { status: 200 });
+    }
+    return new Response("{}", { status: 404 });
+  }) as typeof globalThis.fetch;
+  const broker = createGmailTokenBroker({ now: () => 0 });
+  broker.set(7, "token", 10 * 60_000);
+  const provider = broker.provider({ account: { id: 7 }, fetch, store: {} } as never);
+  const payload = { ...base, bcc: [{ name: "", email: "spy@example.com" }], text, html, providerThreadId: "t1" };
+  await expect(provider.execute({ id: "op1", kind: "send", target: {}, payload })).resolves.toEqual({ providerMsgId: "g1", providerThreadId: "t1" });
+  expect(sent).toHaveLength(1);
+  expect(sent[0]!.threadId).toBe("t1");
+  const raw = Uint8Array.from(atob(sent[0]!.raw.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+  const parsed = await parseRaw(raw);
+  expect(parsed.html).toBe(html);
+  expect(parsed.text?.replace(/\r\n/g, "\n")).toBe(text);
+  expect(parsed.bcc).toEqual([{ name: "", email: "spy@example.com" }]);
+});

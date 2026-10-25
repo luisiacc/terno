@@ -360,6 +360,48 @@ describe("drafts in an export (format 2)", () => {
   });
 });
 
+describe("rich drafts (plan 16) in an export and over RPC", () => {
+  it("carry their HTML; an orphaned reply's quote joins the HTML too; two drafts differing only in formatting stay two", async () => {
+    const { client } = setup();
+    const a = await client.call("accounts.addImap", imap("luis@fastmail.com"));
+    const base = { accountEmail: a.email, to: [{ name: "", email: "ana@x.dev" }], cc: [], subject: "Hola", subjectEdited: true, bodyText: "Texto", quotedText: "", includeQuote: false, inReplyTo: null, forwardOf: null, uiState: "open", updatedAt: NOW };
+    const file = {
+      format: "terno-export", version: 2, accounts: [], categories: [], filters: [],
+      drafts: [
+        { ...base, mode: "new", bodyHtml: "<div><b>Texto</b></div>" },
+        { ...base, mode: "new", bodyHtml: "<div><i>Texto</i></div>" },
+        { ...base, mode: "reply", subject: "Re: x", bodyText: "Sí", bodyHtml: "<div><b>Sí</b></div>", quotedText: "El lunes, Ana escribió:\n> hola", includeQuote: true, inReplyTo: "missing@x" },
+      ],
+    };
+    expect((await client.call("app.import", { data: file as never })).drafts).toBe(3);
+    expect((await client.call("app.import", { data: file as never })).drafts).toBe(0);
+    const drafts = await client.call("drafts.list", {});
+    expect(drafts.filter((d) => d.subject === "Hola").map((d) => d.bodyHtml).sort()).toEqual(["<div><b>Texto</b></div>", "<div><i>Texto</i></div>"]);
+    expect(drafts.find((d) => d.subject === "Re: x")).toMatchObject({
+      mode: "new",
+      bodyText: "Sí\n\nEl lunes, Ana escribió:\n> hola",
+      bodyHtml: '<div><b>Sí</b></div><div><br></div><div>El lunes, Ana escribió:</div><blockquote style="margin:0 0 0 0.8ex;border-left:2px solid #ccc;padding-left:1ex"><div>hola</div></blockquote>',
+    });
+    const dump = await client.call("app.export", {});
+    expect(dump.drafts.map((d) => d.bodyHtml).sort()).toEqual(drafts.map((d) => d.bodyHtml).sort());
+  });
+
+  it("an agent saves and sends text only: its HTML is dropped, and its save leaves no stale HTML", async () => {
+    const { client, mcp, backend } = setup();
+    const a = await client.call("accounts.addImap", imap("luis@fastmail.com"));
+    const rich = await client.call("drafts.save", { accountId: a.id, to: [], cc: [], subject: "s", bodyText: "Hola", bodyHtml: "<div><b>Hola</b></div>" });
+    expect(rich!.bodyHtml).toBe("<div><b>Hola</b></div>");
+    const byAgent = await mcp.call("drafts.save", { id: rich!.id, baseRevision: rich!.revision, accountId: a.id, to: [], cc: [], subject: "s", bodyText: "Otro", bodyHtml: "<img src=x onerror=alert(1)>" });
+    expect(byAgent).toMatchObject({ bodyText: "Otro", bodyHtml: "" });
+    await backend.server.invoke("settings.update", { allowAgentSend: true }, { clientId: "setup", origin: "dev" });
+    const sent = await mcp.call("compose.send", { accountId: a.id, to: [{ name: "", email: "ana@x.dev" }], subject: "s", bodyText: "texto", bodyHtml: "<b>no</b>" });
+    const op = sqlDb(backend.store).get<{ payload_json: string }>("SELECT payload_json FROM ops WHERE id = ?", sent.opId)!;
+    expect(JSON.parse(op.payload_json)).not.toHaveProperty("html");
+    const mine = await client.call("compose.send", { accountId: a.id, to: [{ name: "", email: "ana@x.dev" }], subject: "s", bodyText: "texto", bodyHtml: "<div><b>sí</b></div>" });
+    expect(JSON.parse(sqlDb(backend.store).get<{ payload_json: string }>("SELECT payload_json FROM ops WHERE id = ?", mine.opId)!.payload_json)).toMatchObject({ html: "<div><b>sí</b></div>" });
+  });
+});
+
 describe("importing drafts twice", () => {
   it("adds each draft once, and tells every window to show them", async () => {
     const { client } = setup();

@@ -395,6 +395,26 @@ describe("migration v12: the quick filters' indexes", () => {
   });
 });
 
+describe("migration v13: rich drafts", () => {
+  it("every v12 draft stays exactly as it was, plain (no HTML), and saves keep working", async () => {
+    const { saveDraft } = await import("./repos");
+    const dir = mkdtempSync(join(tmpdir(), "terno-mig13-"));
+    dirs.push(dir);
+    const db = new Db(nodeSqliteDriver, join(dir, "v12.db"));
+    dbs.push(db);
+    for (const m of MIGRATIONS.filter((m) => m.version <= 12)) db.exec(m.sql);
+    db.exec("PRAGMA user_version = 12");
+    db.run("INSERT INTO accounts (id, kind, email, display_name, provider_config, created_at) VALUES (1, 'imap', 'yo@x.mx', '', '{}', 0)");
+    const text = "Hola,\n\n> citado\n\ttab  y\u00a0nbsp\n";
+    db.run("INSERT INTO drafts (id, account_id, format, mode, to_json, cc_json, subject, body_text, quoted_text, include_quote, updated_at) VALUES (1, 1, 2, 'new', '[]', '[]', 'Plano', ?, 'cita', 1, 5)", text);
+    const before = db.get<Record<string, unknown>>("SELECT * FROM drafts WHERE id = 1")!;
+    expect(migrate(db)).toEqual({ from: 12, to: SCHEMA_VERSION });
+    expect(db.get<Record<string, unknown>>("SELECT * FROM drafts WHERE id = 1")).toEqual({ ...before, body_html: "" });
+    const saved = saveDraft(db, { id: 1, baseRevision: 1, accountId: 1, to: [], cc: [], subject: "Plano", bodyText: "Hola", bodyHtml: "<div><b>Hola</b></div>" }, 6)!;
+    expect(saved).toMatchObject({ body_text: "Hola", body_html: "<div><b>Hola</b></div>", revision: 2 });
+  });
+});
+
 describe("scope pages walk an index in key order", () => {
   it("every view, account and category scope pages without a temporary sort", async () => {
     const { scopeIdsSql } = await import("./queries");

@@ -177,6 +177,8 @@ export interface ExportedDraft {
   subject: string;
   subjectEdited: boolean;
   bodyText: string;
+  /** plan 16: the written part as mail HTML ('' for a plain draft); bodyText is always its plain-text alternative */
+  bodyHtml?: string;
   quotedText: string;
   includeQuote: boolean;
   inReplyTo: string | null;
@@ -262,6 +264,8 @@ export interface Draft {
   subject: string;
   subjectEdited: boolean;
   bodyText: string;
+  /** plan 16: the written part as mail HTML ('' for a plain draft); bodyText is always its plain-text alternative */
+  bodyHtml: string;
   quotedText: string;
   includeQuote: boolean;
   inReplyToMessageId: number | null;
@@ -340,6 +344,8 @@ export const exportDraftSchema = z.object({
   subject: z.string().max(998),
   subjectEdited: z.boolean().default(false),
   bodyText: z.string().max(5_000_000),
+  // plan 16 (files from before carry none: plain drafts)
+  bodyHtml: z.string().max(20_000_000).default(""),
   quotedText: z.string().max(5_000_000).default(""),
   includeQuote: z.boolean().default(false),
   inReplyTo: z.string().max(1000).nullable().default(null),
@@ -555,7 +561,9 @@ export const contract = {
       cc: z.array(address).max(200).default([]),
       bcc: z.array(address).max(200).default([]),
       subject: z.string().max(998),
-      bodyText: z.string().max(5_000_000),
+      // what was written, the signature and the quote (plan 16: an HTML alternative from the renderer only)
+      bodyText: z.string().max(10_000_000),
+      bodyHtml: z.string().max(25_000_000).optional(),
       inReplyToMessageId: id.optional(),
       forwardOfMessageId: id.optional(),
       draftId: id.optional(),
@@ -575,6 +583,8 @@ export const contract = {
       subject: z.string().max(998).default(""),
       subjectEdited: z.boolean().optional(),
       bodyText: z.string().max(5_000_000).default(""),
+      // plan 16: omitted = a plain draft (every save rewrites the body); only the renderer's is kept
+      bodyHtml: z.string().max(20_000_000).default(""),
       quotedText: z.string().max(5_000_000).optional(),
       includeQuote: z.boolean().optional(),
       inReplyToMessageId: id.nullable().optional(),

@@ -638,6 +638,7 @@ export function saveDraft(db: Db, d: DraftInput, now = Date.now()): DraftRow | n
     subject: d.subject,
     subject_edited: d.subjectEdited !== undefined ? Number(d.subjectEdited) : (row?.subject_edited ?? 0),
     body_text: d.bodyText,
+    body_html: d.bodyHtml ?? "",
     quoted_text: d.quotedText ?? row?.quoted_text ?? "",
     include_quote: d.includeQuote !== undefined ? Number(d.includeQuote) : (row?.include_quote ?? 0),
     in_reply_to_message_id: inReplyTo,

@@ -30,6 +30,7 @@ function toDraft(r: DraftRow): Draft {
     subject: r.subject,
     subjectEdited: r.subject_edited === 1,
     bodyText: r.body_text,
+    bodyHtml: r.body_html,
     quotedText: r.quoted_text,
     includeQuote: r.include_quote === 1,
     inReplyToMessageId: r.in_reply_to_message_id,
@@ -384,6 +385,8 @@ export function createHandlers(b: Backend): Handlers {
         bcc: p.bcc,
         subject: p.subject,
         bodyText: p.bodyText,
+        // HTML only from the renderer, which builds it from a document (agents send text)
+        bodyHtml: ctx.origin === "renderer" && p.bodyHtml ? p.bodyHtml : undefined,
         inReplyToMessageId: p.inReplyToMessageId,
         draftId: p.draftId,
         recordReply: ctx.origin === "renderer",
@@ -395,8 +398,9 @@ export function createHandlers(b: Backend): Handlers {
       return { opId, threadId };
     },
 
-    "drafts.save": async (p) => {
-      const saved = await store.drafts.save(p, b.now());
+    "drafts.save": async (p, ctx) => {
+      // a rich body only from the renderer (an agent's save is plain text, and rewrites the body)
+      const saved = await store.drafts.save(ctx.origin === "renderer" ? p : { ...p, bodyHtml: "" }, b.now());
       return saved ? toDraft(saved) : null;
     },
     "drafts.list": async () => (await store.drafts.list()).map(toDraft),

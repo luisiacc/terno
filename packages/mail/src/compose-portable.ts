@@ -36,10 +36,18 @@ function rfc5322Date(d: Date): string {
   return `${DAYS[d.getUTCDay()]}, ${pad(d.getUTCDate())} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} +0000`;
 }
 
+/** A body as base64 lines of 76 (CRLF line ends in the text first). */
+const base64Body = (text: string) => (base64(text.replace(/\r?\n/g, CRLF)).match(/.{1,76}/g) ?? []).join(CRLF);
+
+/** A boundary no base64 line can contain ("=" and "_" never appear together in one). */
+const boundary = (messageId: string) => `=_terno_${base64(messageId).replace(/[^A-Za-z0-9]/g, "").slice(0, 24)}_=`;
+
 /**
- * The RFC 5322 source of a plain-text message without Node (the web sends
- * Gmail through the API with it; desktop keeps nodemailer). Bcc stays in
- * the headers: the Gmail API reads recipients from them and strips it.
+ * The RFC 5322 source of a message without Node (the web sends Gmail through
+ * the API with it; desktop keeps nodemailer): a single text/plain part, or
+ * with html (plan 16) multipart/alternative, text first and the HTML last
+ * (the preferred one). Bcc stays in the headers: the Gmail API reads
+ * recipients from them and strips it.
  */
 export function buildRawPortable(p: SendPayload, options: { now?: Date } = {}): Uint8Array {
   const headers: string[] = [
@@ -54,9 +62,16 @@ export function buildRawPortable(p: SendPayload, options: { now?: Date } = {}): 
     ...(p.references.length ? [`References: ${p.references.map((r) => `<${oneLine(r)}>`).join(" ")}`] : []),
     "X-Mailer: Terno",
     "MIME-Version: 1.0",
-    "Content-Type: text/plain; charset=utf-8",
-    "Content-Transfer-Encoding: base64",
   ];
-  const body = (base64(p.text.replace(/\r?\n/g, CRLF)).match(/.{1,76}/g) ?? []).join(CRLF);
+  let body: string;
+  if (p.html) {
+    const b = boundary(p.messageId);
+    headers.push(`Content-Type: multipart/alternative; boundary="${b}"`);
+    const part = (type: string, content: string) => [`--${b}`, `Content-Type: ${type}; charset=utf-8`, "Content-Transfer-Encoding: base64", "", base64Body(content)].join(CRLF);
+    body = [part("text/plain", p.text), part("text/html", p.html), `--${b}--`].join(CRLF);
+  } else {
+    headers.push("Content-Type: text/plain; charset=utf-8", "Content-Transfer-Encoding: base64");
+    body = base64Body(p.text);
+  }
   return new TextEncoder().encode(headers.join(CRLF) + CRLF + CRLF + body + CRLF);
 }
