@@ -61,6 +61,7 @@ export function setLocale(id: LocaleId, catalog: Messages): void {
   compiled = new Map();
   plurals = null;
   numbers = null;
+  numberFormats = new Map();
   for (const listener of listeners) listener(id);
 }
 
@@ -76,8 +77,16 @@ export function onLocaleChange(listener: (locale: LocaleId) => void): () => void
   return () => void listeners.delete(listener);
 }
 
+/** Formatters with options, per locale (building one costs ~15 µs; sizes format on every row and print page). */
+let numberFormats = new Map<string, Intl.NumberFormat>();
+
 export function formatNumber(n: number, options?: Intl.NumberFormatOptions): string {
-  if (options) return new Intl.NumberFormat(localeTag(), options).format(n);
+  if (options) {
+    const key = JSON.stringify(options);
+    let f = numberFormats.get(key);
+    if (!f) numberFormats.set(key, (f = new Intl.NumberFormat(localeTag(), options)));
+    return f.format(n);
+  }
   numbers ??= new Intl.NumberFormat(localeTag());
   return numbers.format(n);
 }
