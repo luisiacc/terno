@@ -177,7 +177,7 @@ for (const mb of [5, 10]) {
       await caretAt(page, index);
       // a fresh line under it: room for the ghost on the caret's line
       await page.keyboard.press("Enter");
-      const r = await paired(page, mb === 10 ? 2 : 4);
+      const r = await paired(page, mb === 10 ? 3 : 4);
       const gate = pairedGate(r, `${mb} MB draft, caret at the ${where}`);
       expect(withinGate(r, gate), `${where}: typing with suggestions vs without`).toBe(true);
       // each position is at the end of its line: it asks (a gate that silently asked nothing would pass by doing nothing)

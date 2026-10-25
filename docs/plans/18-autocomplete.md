@@ -313,3 +313,7 @@ Round 1 (`codex-review.sh d3b6e78`, focused on scale, memory, ranking, editor ed
 Round 2 (only the round-1 fixes, 3 findings), fixed with regression tests: the caps also hold while a large commit applies, and merges inside it respect the peak (service test with a 1,000-contact cap and a 12,000-person commit); a phrase snapshot over today's vocabulary limits is refused, and the format is bumped (unit test); the line-end test is deterministic (the editor narrowed so " you have" fits and " you have any" doesn't, in each design's own type: the ghost shows " you have", one line high, and Tab inserts exactly that; it fails without the round-1 fix).
 
 Also fixed while running the suites: the ops worker kept claiming batches after `stop()` gave up waiting for it (a long archive-all-then-undo queue on a loaded machine hit a closed database in e2e teardown); it now stops claiming once the backend is stopping.
+
+## Timing-sensitive gates (for the load-aware policy)
+
+Machine-load sensitive (wall clock): every event-loop stall gate (`contacts.perf` build stall; `phrases.perf` build stall; `autocomplete.perf` in `packages/db` and `packages/idb`: build, cold start), the cold-start and build wall times, and all of `autocomplete-perf.spec.ts` (paired ratios, suggestion latency, recipient paint). CPU-time gates still inflate under heavy contention (cache, frequency): phrase build µs a message, IndexedDB catch-up µs a message. The contact index's lookup, build, memory, snapshot and incremental gates held at a load average of 35 on 12 cores.
