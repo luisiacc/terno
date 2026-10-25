@@ -13,7 +13,7 @@ import type { ReportEvent } from "./report";
 
 export type TransportFactory = (options: BaseTransportOptions) => Transport;
 
-export type SendResult = { sent: true; status?: number } | { sent: false; reason: "policy" | "type" | "error" | "timeout" };
+export type SendResult = { sent: true; status: number } | { sent: false; reason: "policy" | "type" | "error" | "timeout" | "rate" };
 
 export interface ReporterOptions {
   dsn: string;
@@ -61,7 +61,9 @@ export function consentTransport(inner: Transport, allow: (eventId: string) => b
       }
       return inner.send(envelope).then(
         (r) => {
-          onResult(eventId, r.statusCode && r.statusCode >= 400 ? { sent: false, reason: "error" } : { sent: true, status: r.statusCode });
+          // only a 2xx went out: a rate-limited transport resolves {} without sending anything
+          const status = r.statusCode;
+          onResult(eventId, status !== undefined && status >= 200 && status < 300 ? { sent: true, status } : { sent: false, reason: status === undefined || status === 429 ? "rate" : "error" });
           return r;
         },
         (error: unknown) => {

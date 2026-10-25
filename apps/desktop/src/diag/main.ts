@@ -337,7 +337,7 @@ class MainDiag implements DiagSink {
       log.info("report.sent", { count: 1 });
       this.changed();
     } else {
-      log.info("report.dropped", { reason: result.reason === "policy" ? "policy" : "error", count: 1 });
+      log.info("report.dropped", { reason: result.reason === "policy" || result.reason === "rate" ? result.reason : "error", count: 1 });
     }
     return result;
   }
