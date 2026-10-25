@@ -134,7 +134,7 @@ async function leftovers(page: Page) {
     for await (const name of (root as unknown as { keys(): AsyncIterable<string> }).keys()) opfs.push(name);
     return {
       opfs: opfs.sort(),
-      idb: (await indexedDB.databases()).map((d) => d.name).sort(),
+      idb: (await indexedDB.databases()).map((d) => d.name).filter((n) => n !== "terno-diag").sort(),
       keys: Object.keys(localStorage).filter((k) => k.startsWith("unica:") || k.startsWith("terno:storage:")),
       pin: localStorage.getItem("terno:storage:terno"),
     };
@@ -180,7 +180,8 @@ test("a tab closed in the middle of moving Única's IndexedDB mailbox: the next 
   await fixture.goto("/theme.js");
   const probe = (await sealWithKeyStore(fixture, "terno-keys")) as number[];
   await renameToLegacy(fixture);
-  const names = () => fixture.evaluate(async () => (await indexedDB.databases()).map((d) => d.name!).sort());
+  // diagnostics keep their own database (terno-diag): not part of the mailbox's move
+  const names = () => fixture.evaluate(async () => (await indexedDB.databases()).map((d) => d.name!).filter((n) => n !== "terno-diag").sort());
 
   // the copy is held after the mailbox's first batch (demo builds, ?legacyPause=1): closing the tab kills its worker mid-copy
   const cut = await context.newPage();
