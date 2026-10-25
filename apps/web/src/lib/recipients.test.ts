@@ -13,7 +13,7 @@ import { ownText } from "@terno/store/autocomplete";
 import { afterEach, describe, expect, it } from "vitest";
 import { quoteFor } from "./compose-fields";
 import { sendBody } from "./drafts";
-import { acceptAt, emailsIn, highlight, insertPasted, pastedAddresses, tokenAt } from "./recipients";
+import { acceptAt, emailsIn, highlight, insertPasted, pastedAddresses, pasteInto, tokenAt } from "./recipients";
 
 afterEach(() => setLocale("en", en));
 
@@ -68,6 +68,16 @@ describe("pasting a list", () => {
     const r = insertPasted("ana@x.io", 8, 8, [{ name: "Bob", email: "bob@y.io" }, { name: "", email: "ANA@x.io" }, { name: "", email: "carla@z.io" }], ["ana@x.io"]);
     expect(r.text).toBe("ana@x.io, Bob <bob@y.io>, carla@z.io, ");
     expect(r.caret).toBe(r.text.length);
+  });
+});
+
+describe("pasting over a selection (codex review)", () => {
+  it("doesn't drop an address the paste replaces; still skips what stays and the other fields", () => {
+    const text = "Ana <ana@x.io>";
+    expect(pasteInto(text, 0, text.length, pastedAddresses("mailto:ana@x.io")!.concat(), []).text).toBe("ana@x.io, ");
+    expect(pasteInto(text, 0, text.length, [{ name: "", email: "ana@x.io" }, { name: "", email: "bob@y.io" }], ["Bob <bob@y.io>"]).text).toBe("ana@x.io, ");
+    const two = "Ana <ana@x.io>, carla@z.io";
+    expect(pasteInto(two, 0, 14, [{ name: "", email: "CARLA@z.io" }, { name: "", email: "dan@w.io" }], []).text).toBe("dan@w.io, carla@z.io");
   });
 });
 

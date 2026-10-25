@@ -4,7 +4,7 @@ import { fold } from "@terno/store/fold";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { prefetchRecipientInitials, recipientInitials, suggestRecipients, warmAutocomplete } from "~/lib/autocomplete";
-import { acceptAt, emailsIn, highlight, insertPasted, pastedAddresses, tokenAt, type TypedToken } from "~/lib/recipients";
+import { acceptAt, emailsIn, highlight, pastedAddresses, pasteInto, tokenAt, type TypedToken } from "~/lib/recipients";
 import { SenderAvatar } from "./sender-avatar";
 
 /**
@@ -63,11 +63,10 @@ export function RecipientInput({
     const excluded = new Set(exclude);
     const pool = recipientInitials(accountId)?.[fold(tok.query)[0] ?? ""] ?? [];
     const narrowed = narrow(items, pool, query, tok.query).filter((a) => !excluded.has(a.email.toLowerCase())).slice(0, 6);
-    if (narrowed.length) {
-      setQuery(tok.query);
-      setItems(narrowed);
-      setActive(0);
-    }
+    // nothing shown matches what is typed now: the list goes until the answer comes (old suggestions mustn't be acceptable)
+    setQuery(tok.query);
+    setItems(narrowed);
+    setActive(0);
     void suggestRecipients({ query: tok.query, exclude, accountId }).then((r) => {
       if (mine !== seq.current || document.activeElement !== inputRef.current) return;
       // the index is being built the first time: ask again shortly
@@ -87,7 +86,8 @@ export function RecipientInput({
   const accept = (a: Address) => {
     const el = inputRef.current;
     const tok = token.current ?? (el ? tokenAt(value, el.selectionStart ?? value.length) : null);
-    if (!tok) return;
+    // only a suggestion for what is typed now
+    if (!tok || fold(tok.query) !== fold(query)) return close();
     const next = acceptAt(value, tok, a);
     caretAfter.current = next.caret;
     close();
@@ -164,7 +164,7 @@ export function RecipientInput({
     if (!list) return;
     e.preventDefault();
     const el = e.currentTarget;
-    const next = insertPasted(value, el.selectionStart ?? value.length, el.selectionEnd ?? value.length, list, [...emailsIn(value), ...others.flatMap(emailsIn)]);
+    const next = pasteInto(value, el.selectionStart ?? value.length, el.selectionEnd ?? value.length, list, others);
     caretAfter.current = next.caret;
     close();
     onChange(next.text);

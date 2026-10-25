@@ -91,6 +91,16 @@ export function insertPasted(text: string, selStart: number, selEnd: number, lis
 }
 
 /**
+ * A pasted list in place of the selection: duplicates are what stays in this
+ * field (outside the selection) and the other fields, never what the paste
+ * replaces (selecting "Ana <ana@x.io>" and pasting ana@x.io keeps Ana).
+ */
+export function pasteInto(text: string, selStart: number, selEnd: number, list: readonly Address[], others: readonly string[]): { text: string; caret: number } {
+  const kept = emailsIn(text.slice(0, selStart) + ", " + text.slice(selEnd));
+  return insertPasted(text, selStart, selEnd, list, [...kept, ...others.flatMap(emailsIn)]);
+}
+
+/**
  * `text` split into runs, `match` on the runs where a word starts with one of
  * the query's words (case and diacritics ignored): the part of a suggestion
  * that answers what was typed.

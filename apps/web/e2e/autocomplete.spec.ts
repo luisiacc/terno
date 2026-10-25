@@ -139,6 +139,29 @@ test.describe("recipients", { tag: "@design" }, () => {
     await expect(page.getByTestId("compose-to")).toBeFocused();
   });
 
+  test("a suggestion for what was typed before can't be accepted for what is typed now (codex review)", async ({ app: page, server }) => {
+    await seed(server);
+    await newMessage(page);
+    await page.keyboard.type("zul");
+    await expect(options(page).first()).toBeVisible();
+    // the backend answers slowly from here (a huge draft being saved holds it): 3 s, without blocking anything
+    const handlers = (server.backend.server as unknown as { handlers: Record<string, (...a: unknown[]) => Promise<unknown>> }).handlers;
+    const real = handlers["compose.suggestRecipients"]!;
+    handlers["compose.suggestRecipients"] = async (...a: unknown[]) => {
+      await new Promise((r) => setTimeout(r, 3000));
+      return real(...a);
+    };
+    try {
+      await page.keyboard.type("x");
+      // nobody shown matches "zulx": the list goes at once (long before the answer), and Tab doesn't put Zuleika in
+      await expect(list(page)).toHaveCount(0, { timeout: 1000 });
+      await page.keyboard.press("Tab");
+      await expect(page.getByTestId("compose-to")).toHaveValue("zulx", { timeout: 1000 });
+    } finally {
+      handlers["compose.suggestRecipients"] = real;
+    }
+  });
+
   test("a pasted list is parsed into recipients", async ({ app: page, server }) => {
     await seed(server);
     await newMessage(page);
@@ -291,6 +314,46 @@ test.describe("ghost text", { tag: "@design" }, () => {
     await page.keyboard.press("End");
     await page.keyboard.type(" ");
     await expect(ghost(page)).toHaveAttribute("data-ghost", "you have any questions.");
+  });
+
+  test("near the end of a line only the words that fit show, never wrapping over the text below (codex review)", async ({ app: page, server }) => {
+    await seed(server);
+    await newMessage(page);
+    await body(page).click();
+    // a long line ending with the habit's start, a line of text below it
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("Below.");
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("Home");
+    const filler = "thanks again for everything you did for the whole team this week, it really made the difference ".repeat(2);
+    await page.evaluate((t) => document.execCommand("insertText", false, t), filler);
+    await page.keyboard.type("Let me know if", { delay: 20 });
+    await page.waitForTimeout(400);
+    const shown = await page.evaluate(() => {
+      const layer = document.querySelector<HTMLElement>("[data-testid=compose-ghost]:not([hidden])");
+      if (!layer) return null;
+      const p = document.querySelector("[data-testid=compose-body] p")!;
+      return { h: layer.getBoundingClientRect().height, line: parseFloat(getComputedStyle(p).lineHeight), text: layer.dataset.ghost! };
+    });
+    // either nothing fits, or what shows stays on the caret's line, a start of the suggestion
+    if (shown) {
+      expect(shown.h).toBeLessThanOrEqual(shown.line * 1.5);
+      expect(" you have any questions.".startsWith(shown.text)).toBe(true);
+    }
+  });
+
+  test("an IME composition dismisses the ghost: cancelled, Tab inserts nothing unseen (codex review)", async ({ app: page, server }) => {
+    await seed(server);
+    await newMessage(page);
+    await typeBody(page, "Let me know if");
+    await expect(ghost(page)).toBeVisible();
+    await body(page).evaluate((el) => {
+      el.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "" }));
+      el.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "" }));
+    });
+    await expect(ghost(page)).toHaveCount(0);
+    await page.keyboard.press("Tab");
+    await expect(body(page)).toHaveText("Let me know if");
   });
 
   for (const theme of ["light", "dark"] as const) {

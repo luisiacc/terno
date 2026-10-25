@@ -220,6 +220,9 @@ function place(view: EditorView, layer: HTMLElement, g: { text: string; pos: num
   layer.style.lineHeight = style.lineHeight;
   const line = Math.max(glyph, Number.isFinite(lineHeight) ? lineHeight : glyph);
   const parts = pieces(g.text);
+  // measured laid out but unseen (a hidden element measures 0 high: everything would seem to fit)
+  layer.style.visibility = "hidden";
+  layer.hidden = false;
   // the longest run of whole words that stays on the caret's line (a binary search: a few small layouts)
   let lo = 0;
   let hi = parts.length;
@@ -229,6 +232,7 @@ function place(view: EditorView, layer: HTMLElement, g: { text: string; pos: num
     if (layer.getBoundingClientRect().height <= line * 1.5) lo = mid;
     else hi = mid - 1;
   }
+  layer.style.visibility = "";
   if (lo === 0) return null;
   const text = parts.slice(0, lo).join("").trimEnd();
   layer.textContent = text;
@@ -280,9 +284,11 @@ export function ghostPlugin(hooksOf: (view: EditorView) => GhostHooks | undefine
           return false;
         },
         compositionstart: (view) => {
-          // an IME composition goes on undisturbed: the ghost hides at once (it goes with the composed text)
+          // an IME composition goes on undisturbed: the ghost goes at once (a cancelled composition must not leave an
+          // unseen one for Tab to insert); the editor's DOM isn't touched, so this is safe mid-composition
           const layer = layers.get(view);
           if (layer) layer.hidden = true;
+          dismissGhost(view);
           return false;
         },
       },
@@ -318,6 +324,7 @@ export function ghostPlugin(hooksOf: (view: EditorView) => GhostHooks | undefine
         layer.dataset.ghost = text;
         layer.hidden = false;
         visible.set(editor, { text, pos: g.pos });
+        if (import.meta.env.VITE_RENDER_PROBE) probe?.("ghost-placed", performance.now());
       };
       // the window's width changes how the line wraps
       const onResize = () => {
@@ -358,7 +365,12 @@ export function ghostPlugin(hooksOf: (view: EditorView) => GhostHooks | undefine
           if (st.typed !== lastTyped) {
             lastTyped = st.typed;
             // the perf suite's injected regression: work on every typed key while suggestions are on
-            if (import.meta.env.VITE_RENDER_PROBE && (window as unknown as { __ternoInject?: string }).__ternoInject === "ghost-busy" && hooksOf(view)?.enabled()) busy(6);
+            if (import.meta.env.VITE_RENDER_PROBE && hooksOf(view)?.enabled()) {
+              const inject = (window as unknown as { __ternoInject?: string }).__ternoInject;
+              // 6 ms on every key, or 10 ms on one in four (a regression that hits a share of keys)
+              if (inject === "ghost-busy") busy(6);
+              else if (inject === "ghost-busy-sometimes" && st.typed % 4 === 0) busy(10);
+            }
             cancel();
             // typed through the ghost: what is left of it stays, nothing new is asked
             if (st.ghost) return;
