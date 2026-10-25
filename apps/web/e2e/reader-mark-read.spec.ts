@@ -116,26 +116,46 @@ test.describe("reader through the read-after-dwell", { tag: "@design" }, () => {
     await expect.poll(() => body.evaluate((el) => (el instanceof HTMLTextAreaElement ? el.value : el.textContent))).toContain("Hola equipo, nos Xvemos");
   });
 
-  test("a message arriving in the open thread still appears, without a remount", async ({ app: page, server }) => {
+  test("messages arriving in the open thread appear without a remount, and none folds away once read", async ({ app: page, server }) => {
     const id = await ingestConversation(server, { subject: "Entrega final", count: 2, now: E2E_NOW });
     await selectThread(page, id, 'subject:"Entrega final"');
     const messages = page.getByTestId("reader").getByTestId("message");
+    const expanded = (i: number) => messages.nth(i).getByTestId("message-toggle");
     await expect(messages).toHaveCount(2);
-    await messages.nth(1).getByTestId("message-toggle").focus();
+    await expanded(1).focus();
     await probe(page);
-    const renders = () => page.evaluate(() => (window as unknown as { __renders: Record<string, number> }).__renders.Conversation ?? 0);
-    const before = await renders();
 
     // a third message on the same conversation, as a sync would bring it
     await ingestConversation(server, { subject: "Entrega final", count: 3, unread: 1, now: E2E_NOW });
     server.backend.notifyChanged([id]);
-
     await expect(messages).toHaveCount(3);
-    await expect(messages.nth(2).getByTestId("message-toggle")).toHaveAttribute("aria-expanded", "true");
-    // the one that was last stays open; one render for the new answer
-    await expect(messages.nth(1).getByTestId("message-toggle")).toHaveAttribute("aria-expanded", "true");
-    expect(await renders()).toBe(before + 1);
+    await expect(expanded(2)).toHaveAttribute("aria-expanded", "true");
+    // the one that was last stays open
+    await expect(expanded(1)).toHaveAttribute("aria-expanded", "true");
+
+    // read elsewhere, then a fourth arrives: the third keeps how it first showed
+    await ingestConversation(server, { subject: "Entrega final", count: 3, now: E2E_NOW });
+    server.backend.notifyChanged([id]);
+    await expect.poll(() => page.evaluate((id) => (window as unknown as { __terno: { threadDetail(id: number): ThreadDetail | undefined } }).__terno.threadDetail(id)?.messages.every((m) => m.isRead), id)).toBe(true);
+    await ingestConversation(server, { subject: "Entrega final", count: 4, unread: 1, now: E2E_NOW });
+    server.backend.notifyChanged([id]);
+    await expect(messages).toHaveCount(4);
+    for (const i of [1, 2, 3]) await expect(expanded(i)).toHaveAttribute("aria-expanded", "true");
+    await expect(expanded(0)).toHaveAttribute("aria-expanded", "false");
     expect(await unchanged(page)).toEqual({ skeleton: false, focus: true, reader: true, subject: true, message: true, draft: true });
+  });
+
+  test("opening another thread renders its conversation once", async ({ app: page, server }) => {
+    await ingestConversation(server, { subject: "Ronda dos", count: 3, now: E2E_NOW - 600_000 });
+    const first = await ingestConversation(server, { subject: "Ronda uno", count: 3, now: E2E_NOW });
+    await selectThread(page, first, 'subject:"Ronda"');
+    await expect(page.getByTestId("reader-subject")).toHaveText("Ronda uno");
+    await page.evaluate(() => ((window as unknown as { __renders: Record<string, number> }).__renders.Conversation = 0));
+    await page.keyboard.press("j");
+    await expect(page.getByTestId("reader-subject")).toHaveText("Ronda dos");
+    await expect(page.getByTestId("reader").getByTestId("message")).toHaveCount(3);
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    expect(await page.evaluate(() => (window as unknown as { __renders: Record<string, number> }).__renders.Conversation)).toBe(1);
   });
 
   test("a thread deleted on the server while open says so instead of showing what no longer exists", async ({ app: page, server }) => {

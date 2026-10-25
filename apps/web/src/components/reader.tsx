@@ -159,14 +159,19 @@ function Message({ m, expanded, onToggle }: { m: MessageDetail; expanded: boolea
  * The conversation: every message, with runs of 4+ collapsed ones folded into
  * one "N more messages" disclosure. Keyed by thread: each one starts from its
  * defaults (unread messages and the last one open) on mount, so a swap never
- * animates, and keeps them while it is shown: the dwell's mark-read or a newer
- * message never folds one away under the reader.
+ * animates, and keeps each message's while it is shown: the dwell's mark-read
+ * or a newer message never folds one away under the reader.
  */
 function Conversation({ messages }: { messages: MessageDetail[] }) {
   renderProbe("Conversation");
   const last = messages[messages.length - 1];
   const opensAt = (m: MessageDetail) => !m.isRead || m.id === last?.id;
-  const [shown] = useState(() => new Map(messages.map((m) => [m.id, opensAt(m)])));
+  const [shown, setShown] = useState(() => new Map(messages.map((m) => [m.id, opensAt(m)])));
+  // one arriving later keeps how it first showed too (a render more, only then: never on a thread switch)
+  useEffect(() => {
+    const unseen = messages.filter((m) => !shown.has(m.id));
+    if (unseen.length) setShown(new Map([...shown, ...unseen.map((m) => [m.id, opensAt(m)] as const)]));
+  }, [messages]);
   const [own, setState] = useState<{ toggled: Map<number, boolean>; revealed: Set<number> }>({ toggled: new Map(), revealed: new Set() });
   const isOpen = (m: MessageDetail) => own.toggled.get(m.id) ?? shown.get(m.id) ?? opensAt(m);
   const toggle = (id: number, now: boolean) => setState({ ...own, toggled: new Map(own.toggled).set(id, !now) });
