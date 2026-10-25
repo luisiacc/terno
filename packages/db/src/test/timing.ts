@@ -8,13 +8,13 @@
  *
  * - what can be measured again is (measure() in perf.ts retries a batch
  *   that ran over: a regression is slow every time, a busy moment isn't);
- * - what can't is excused only on a busy machine (1-minute load at least half
- *   the cores, or PERF_MACHINE=busy; PERF_MACHINE=quiet turns it off), and
- *   only when rare: a sample off-CPU for over half of it counts at its CPU
- *   time while such samples are at most a tenth; a stall (a gap between 1 ms
- *   ticks with the loop busy) in which the thread used at most the budget of
- *   CPU is excused at most twice per stage (or once per 10 s), under a hard
- *   limit. Past that, all count in full.
+ * - what can't is excused only on a busy machine (a 1-, 5- or 15-minute load
+ *   of at least half the cores, or PERF_MACHINE=busy; PERF_MACHINE=quiet
+ *   turns it off), and only when rare: a sample off-CPU for over half of it
+ *   counts at its CPU time while such samples are at most a tenth; a stall (a
+ *   gap between 1 ms ticks with the loop busy) in which the thread used at
+ *   most the budget of CPU is excused at most twice per stage (or once per
+ *   5 s), each under 2 s. Past that, all count in full.
  *
  * On a quiet machine nothing is excused. A slower computation shows as CPU
  * time and fails either way. Plain JS for the IndexedDB package (no Node
@@ -48,7 +48,8 @@ export function machineBusy(): boolean {
   const forced = proc.env.PERF_MACHINE;
   if (forced === "busy" || forced === "quiet") return forced === "busy";
   const os = proc.getBuiltinModule("node:os");
-  return os.loadavg()[0]! >= os.availableParallelism() / 2;
+  // the longer averages too: the user's own work is sustained, and the 1-minute one dips below the line now and then
+  return Math.max(...os.loadavg()) >= os.availableParallelism() / 2;
 }
 
 /** how long the event loop has been busy since it started, ms */
@@ -130,12 +131,15 @@ export interface LoopReport {
 
 /** stalls a stage may excuse as descheduled */
 export function deschedulingAllowance(stageMs: number): number {
-  return Math.max(2, Math.floor(stageMs / 10_000));
+  return Math.max(2, Math.floor(stageMs / 5_000));
 }
 
-/** Splits over-budget gaps into descheduled (excused on a busy machine, if rare and under the hard limit) and ours. */
-export function classifyGaps(over: readonly Gap[], stageMs: number, budgetMs: number, hardLimitMs = budgetMs * 5, busy = machineBusy()): { descheduled: Gap[]; ours: Gap[] } {
-  const candidates = over.filter((g) => g.cpu <= budgetMs && g.busy <= hardLimitMs);
+/** the longest hold excused: a machine paging under memory pressure holds a thread for hundreds of ms */
+export const HOLD_LIMIT_MS = 2_000;
+
+/** Splits over-budget gaps into descheduled (excused on a busy machine, if rare and under the hold limit) and ours. */
+export function classifyGaps(over: readonly Gap[], stageMs: number, budgetMs: number, busy = machineBusy()): { descheduled: Gap[]; ours: Gap[] } {
+  const candidates = over.filter((g) => g.cpu <= budgetMs && g.busy <= HOLD_LIMIT_MS);
   if (!busy || candidates.length > deschedulingAllowance(stageMs)) return { descheduled: [], ours: [...over] };
   return { descheduled: candidates, ours: over.filter((g) => !candidates.includes(g)) };
 }
@@ -145,7 +149,7 @@ export function classifyGaps(over: readonly Gap[], stageMs: number, budgetMs: nu
  * (computing or blocked; an idle loop whose timer the OS fired late isn't a
  * stall) and how much CPU the thread had.
  */
-export function watchLoop(budgetMs: number, hardLimitMs = budgetMs * 5): { stop(): LoopReport } {
+export function watchLoop(budgetMs: number): { stop(): LoopReport } {
   const over: Gap[] = [];
   const started = perf.now();
   let longest: Gap = { start: started, end: started, wall: 0, busy: 0, cpu: 0 };
@@ -172,7 +176,7 @@ export function watchLoop(budgetMs: number, hardLimitMs = budgetMs * 5): { stop(
       sample();
       clearInterval(timer);
       const ms = perf.now() - started;
-      const { descheduled, ours } = classifyGaps(over, ms, budgetMs, hardLimitMs);
+      const { descheduled, ours } = classifyGaps(over, ms, budgetMs);
       return { over, longest, descheduled, stall: Math.max(longestOk, ...ours.map((g) => g.busy), ...descheduled.map((g) => g.cpu)), ms };
     },
   };

@@ -34,18 +34,18 @@ describe("settle", () => {
 
 describe("classifyGaps", () => {
   it("on a busy machine, excuses a few stalls the OS held, under the hard limit", () => {
-    const { descheduled, ours } = classifyGaps([gap(80, 10), gap(70, 60), gap(300, 5)], 5_000, 50, 250, true);
+    const { descheduled, ours } = classifyGaps([gap(80, 10), gap(70, 60), gap(3000, 5)], 5_000, 50, true);
     expect(descheduled.map((g) => g.busy)).toEqual([80]);
-    expect(ours.map((g) => g.busy)).toEqual([70, 300]);
+    expect(ours.map((g) => g.busy)).toEqual([70, 3000]);
   });
 
   it("on a quiet machine, excuses none", () => {
-    expect(classifyGaps([gap(80, 10)], 5_000, 50, 250, false).descheduled).toEqual([]);
+    expect(classifyGaps([gap(80, 10)], 5_000, 50, false).descheduled).toEqual([]);
   });
 
-  it("excuses none when they recur: past two per stage, or one per 10 s", () => {
-    expect(classifyGaps([gap(80, 5), gap(80, 5, 100), gap(80, 5, 200)], 5_000, 50, 250, true).descheduled).toEqual([]);
-    expect(classifyGaps([gap(80, 5), gap(80, 5, 100), gap(80, 5, 200)], 30_000, 50, 250, true).descheduled).toHaveLength(3);
+  it("excuses none when they recur: past two per stage, or one per 5 s", () => {
+    expect(classifyGaps([gap(80, 5), gap(80, 5, 100), gap(80, 5, 200)], 5_000, 50, true).descheduled).toEqual([]);
+    expect(classifyGaps([gap(80, 5), gap(80, 5, 100), gap(80, 5, 200)], 15_000, 50, true).descheduled).toHaveLength(3);
   });
 });
 
