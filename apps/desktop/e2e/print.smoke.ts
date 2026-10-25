@@ -40,7 +40,7 @@ test.beforeAll(async () => {
   const profile = join(workdir, "profile");
   // a small demo mailbox plus the print fixtures, seeded before the app opens it
   execFileSync("pnpm", ["--filter", "@terno/backend-dev", "exec", "tsx", "src/seed.ts", "--out", profile, "--accounts", "2", "--threads", "300", "--print-fixtures"], { cwd: repo, stdio: "ignore" });
-  const env = { ...process.env, TERNO_DEMO: "1", TERNO_USER_DATA: profile, TERNO_TEST_PDF_DIR: pdfDir };
+  const env = { ...process.env, TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_USER_DATA: profile, TERNO_TEST_PDF_DIR: pdfDir };
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.TERNO_DEV_URL;
   if (DEV) {
@@ -76,7 +76,7 @@ async function savePdf(name: string): Promise<string> {
   await expect.poll(added, { message: "a new PDF in TERNO_TEST_PDF_DIR", timeout: 30_000 }).toBeTruthy();
   // saved: the sheet closes with a toast that can show it in Finder
   await expect(page.getByTestId("print-sheet")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Mostrar en Finder" }).last()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Show in Finder" }).last()).toBeVisible();
   const file = added();
   // atomic: nothing half-written or temporary is left next to it
   expect(readdirSync(pdfDir).filter((f) => f.endsWith(".tmp"))).toEqual([]);
@@ -162,7 +162,7 @@ test("native print without a printer says so and suggests the PDF (only where no
   await expect(page.getByTestId("print-preview")).toHaveAttribute("data-ready", "true");
   await page.getByTestId("print-submit").click();
   // the dock's message (plan 13 also announces it in a screen-reader alert)
-  await expect(page.getByTestId("snack-message").getByText("No hay impresoras configuradas", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("snack-message").getByText("No printers set up", { exact: true })).toBeVisible();
   // the sheet stays: the PDF is one click away
   await expect(page.getByTestId("print-sheet")).toBeVisible();
   await page.keyboard.press("Escape");

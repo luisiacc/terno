@@ -26,7 +26,7 @@ test.beforeAll(async () => {
   workdir = mkdtempSync(join("/tmp", "terno-unread-smoke-"));
   const profile = join(workdir, "profile");
   execFileSync("pnpm", ["--filter", "@terno/backend-dev", "exec", "tsx", "src/seed.ts", "--out", profile, "--accounts", "2", "--threads", "300"], { cwd: repo, stdio: "ignore" });
-  const env = { ...process.env, TERNO_DEMO: "1", TERNO_USER_DATA: profile };
+  const env = { ...process.env, TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_USER_DATA: profile };
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.TERNO_DEV_URL;
   if (DEV) {

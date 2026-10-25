@@ -24,7 +24,7 @@ test.beforeAll(async () => {
   execFileSync("ditto", [SOURCE_APP, appPath]);
   execFileSync("codesign", ["--verify", "--deep", "--strict", appPath]);
   userData = join(workdir, "profile");
-  const env = { ...process.env, TERNO_DEMO: "1", TERNO_USER_DATA: userData };
+  const env = { ...process.env, TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_USER_DATA: userData };
   delete env.ELECTRON_RUN_AS_NODE;
   const started = Date.now();
   app = await electron.launch({ executablePath: join(appPath, "Contents/MacOS/Terno"), env });
@@ -71,7 +71,7 @@ test("the window follows the theme: native theme, vibrancy and background, remem
 test("searches, opens and archives with the keyboard", async () => {
   await page.keyboard.press("/");
   await page.keyboard.type("factura");
-  await expect(page.getByTestId("search-stats")).toContainText("resultados");
+  await expect(page.getByTestId("search-stats")).toContainText("results");
   await page.keyboard.press("Escape"); // leave the input, keep the query
   const first = page.locator("[data-testid=thread-row]").first();
   await first.click();
@@ -149,7 +149,7 @@ test("a release carries no test build's world: no baked feed or profile, GitHub'
 
 test("warm start: relaunching with an existing mailbox shows mail fast", async () => {
   await app.close();
-  const env = { ...process.env, TERNO_DEMO: "1", TERNO_USER_DATA: userData };
+  const env = { ...process.env, TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_USER_DATA: userData };
   delete env.ELECTRON_RUN_AS_NODE;
   const samples: number[] = [];
   for (let i = 0; i < 3; i++) {

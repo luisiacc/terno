@@ -167,7 +167,7 @@ test.afterAll(async () => {
 
 test("a corrupted download is refused (sha512): an integrity error, and the app stays as it was", async () => {
   stage({ tamper: true });
-  await launch({ TERNO_DEMO: "1" });
+  await launch({ TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US" });
   // a new profile is in local mode: nothing was checked on its own
   expect((await state()).localMode).toBe(true);
   expect(requests).toEqual([]);
@@ -185,7 +185,7 @@ test("a corrupted download is refused (sha512): an integrity error, and the app 
 
 test("an update downloads, Squirrel swaps the bundle and relaunches it, the profile is intact and the new version acknowledges", async () => {
   stage({ tamper: false });
-  await launch({ TERNO_DEMO: "1" });
+  await launch({ TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US" });
   const threads = await page.locator("[data-testid=thread-row]").count();
   expect(threads).toBeGreaterThan(5);
   expect((await updates<{ status: string }>("check")).status).toBe("available");

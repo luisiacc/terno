@@ -46,7 +46,7 @@ const hooks = <T,>(fn: (h: Hooks, arg: unknown) => T, arg?: unknown): Promise<Aw
   app.evaluate((_electron, [src, a]) => new Function("h", "a", `return (${src})(h, a)`)((globalThis as unknown as { __ternoDiag: unknown }).__ternoDiag, a), [fn.toString(), arg] as const) as Promise<Awaited<T>>;
 
 async function launch(): Promise<void> {
-  const env = { ...process.env, TERNO_DEMO: "1", TERNO_USER_DATA: userData, TERNO_DIAG_TEST: "1", TERNO_TEST_SENTRY_DSN: dsn, TERNO_TEST_EXPORT_DIR: workdir };
+  const env = { ...process.env, TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_USER_DATA: userData, TERNO_DIAG_TEST: "1", TERNO_TEST_SENTRY_DSN: dsn, TERNO_TEST_EXPORT_DIR: workdir };
   delete env.ELECTRON_RUN_AS_NODE;
   app = await electron.launch({ executablePath: join(appPath, "Contents/MacOS/Terno"), env });
   page = await app.firstWindow();
@@ -198,7 +198,7 @@ test("a renderer crash: a record, a native dump kept locally, the window back, a
   // main reloads the window in a fresh renderer (Playwright's page stays the crashed one: ask the window itself)
   const inWindow = (js: string) => app.evaluate(({ BrowserWindow }, code) => BrowserWindow.getAllWindows().find((w) => w.isVisible())!.webContents.executeJavaScript(code).catch(() => null), js);
   await expect.poll(() => inWindow("document.querySelectorAll('[data-testid=thread-row]').length"), { timeout: 30_000 }).toBeGreaterThan(0);
-  await expect.poll(() => inWindow("document.querySelector('[data-testid=report-row-title]')?.textContent ?? null"), { timeout: 15_000 }).toBe("Terno's window closed because of an error");
+  await expect.poll(() => inWindow("document.querySelector('[data-testid=report-row-title]')?.textContent ?? null"), { timeout: 15_000 }).toBe("Terno’s window closed because of an error");
   const native = join((await hooks((h) => h.paths())).crashes, "native");
   const dumps = (dir: string): string[] => (existsSync(dir) ? readdirSync(dir).flatMap((n) => (statSync(join(dir, n)).isDirectory() ? dumps(join(dir, n)) : n.endsWith(".dmp") ? [n] : [])) : []);
   await expect.poll(() => dumps(native).length, { timeout: 20_000 }).toBeGreaterThan(0);

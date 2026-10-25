@@ -29,7 +29,7 @@ const running: ElectronApplication[] = [];
 
 /** An explicit profile path, or (appData) the default profile under that stand-in for Application Support. */
 function launch(where: { profile: string } | { appData: string }, env: Record<string, string>) {
-  const e: Record<string, string | undefined> = { ...process.env, TERNO_DEMO: "1", ...("profile" in where ? { TERNO_USER_DATA: where.profile } : { TERNO_TEST_APP_DATA: where.appData }), ...env };
+  const e: Record<string, string | undefined> = { ...process.env, TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", ...("profile" in where ? { TERNO_USER_DATA: where.profile } : { TERNO_TEST_APP_DATA: where.appData }), ...env };
   if ("appData" in where) delete e.TERNO_USER_DATA;
   delete e.ELECTRON_RUN_AS_NODE;
   return electron.launch({ executablePath: join(appPath, "Contents/MacOS/Terno"), env: e as Record<string, string> }).then((a) => (running.push(a), a));
@@ -153,7 +153,7 @@ test("without the old keychain item nothing is lost: the blobs stay, the app run
 
   await page.keyboard.press("Meta+Comma");
   await page.getByTestId("tab-ai").click();
-  await expect(page.getByTestId("ai-key-unreadable")).toContainText("Terno no pudo abrir la API key que guardó Única");
+  await expect(page.getByTestId("ai-key-unreadable")).toContainText("Terno couldn’t open the API key that Única saved");
   await app.close();
 });
 
