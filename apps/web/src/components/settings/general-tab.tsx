@@ -215,6 +215,12 @@ export function GeneralTab({ settings, update, onLocalOff }: { settings: AppSett
         </SettingsRow>
       </SettingsGroup>
 
+      <SettingsGroup title={t("settings.general.writing")}>
+        <SettingsRow label={t("settings.general.suggestions")} hint={t("settings.general.suggestions.hint")} testId="suggestions-row">
+          {(a) => <Switch {...a} data-testid="suggestions-switch" checked={settings.composeSuggestions} onCheckedChange={(on) => void update({ composeSuggestions: on })} />}
+        </SettingsRow>
+      </SettingsGroup>
+
       <SettingsGroup title={t("settings.general.keyboard")}>
         <SettingsRow label={t("settings.general.shortcuts")} hint={t("settings.general.shortcuts.hint")}>
           {({ id: _id, "aria-labelledby": _l, ...a }) => (

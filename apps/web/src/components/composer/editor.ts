@@ -8,6 +8,7 @@ import { liftListItem, sinkListItem, splitListItem, wrapInList } from "prosemirr
 import { EditorState, Plugin, Selection, TextSelection, type Command, type Transaction } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import type { FormatCommand, FormatState } from "./controller";
+import { ghostPlugin, type GhostHooks } from "./ghost";
 
 /**
  * The composer's ProseMirror editor (plan 16): plugins, commands, shortcuts,
@@ -386,6 +387,8 @@ export interface EditorHooks {
   onLink(): void;
   /** links in mail open outside the app */
   openLink(href: string): void;
+  /** plan 18: ghost text */
+  ghost?: GhostHooks;
 }
 
 /** Plain text pasted keeps its lines: one paragraph per line, empty lines included (as a plain draft opens). */
@@ -395,6 +398,12 @@ function textSlice(text: string): Slice {
 }
 
 const { Escape: _escape, ...BASE_KEYS } = baseKeymap;
+
+/** Test builds: ghost timings (window.__composer), for the perf suite. */
+function ghostProbe(name: string, value: number) {
+  const w = window as unknown as { __composer?: Record<string, number[]> };
+  ((w.__composer ??= {})[name] ??= []).push(value);
+}
 
 /** Each view's hooks (plugins are shared by kept states across mounts: they look the hooks up by view). */
 const viewHooks = new WeakMap<EditorView, EditorHooks>();
@@ -429,6 +438,8 @@ export function createPlugins(): Plugin[] {
     Backspace: undoInputRule,
   };
   return [
+    // first: its Tab, → and Esc win over the keymaps below while a suggestion shows
+    ghostPlugin((view) => viewHooks.get(view)?.ghost, ghostProbe),
     history(),
     inputRules({
       rules: [

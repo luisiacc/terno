@@ -37,6 +37,10 @@ import type { EditorView } from "prosemirror-view";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { attachBody, useDrafts } from "~/lib/drafts";
+import { suggestText } from "~/lib/autocomplete";
+import { useApp } from "~/state/app";
+import { parseAddressList } from "@terno/core";
+import { dismissGhost, withoutGhost, type GhostHooks } from "./ghost";
 import { exposeForTests } from "~/lib/render-probe";
 import { openLink } from "../mail-body";
 import { takeEarly, takeStandInFocus } from "./lazy";
@@ -117,6 +121,8 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
   const openLinkRef = useRef<() => void>(() => {});
   /** recomputes the toolbar's state (a send starting or ending changes what it may do) */
   const refreshRef = useRef<() => void>(() => {});
+  /** the screen-reader announcement of a new suggestion (written directly: no re-render) */
+  const announceRef = useRef<HTMLSpanElement>(null);
 
   useLayoutEffect(() => {
     stylePalette();
@@ -175,6 +181,10 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
         onUpdate: schedule,
         onLink: () => openLinkRef.current(),
         openLink,
+        ghost: ghostHooks(draftKey, () => !sendingRef.current, (text) => {
+          const el = announceRef.current;
+          if (el) el.textContent = t("compose.suggest.announce", { text: text.trim() });
+        }),
       },
     });
     const view = editor.view;
@@ -231,7 +241,8 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
     const unregister = registerController(draftKey, controller);
     return () => {
       if (frame) cancelAnimationFrame(frame);
-      keepState(draftKey, view.state, versionRef.current);
+      // a suggestion is never brought back by a remount
+      keepState(draftKey, withoutGhost(view.state), versionRef.current);
       bodyRef.current?.dispose();
       bodyRef.current = null;
       unregister();
@@ -256,8 +267,17 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
   // read-only while its send is in flight (edits would be dropped)
   useEffect(() => {
     viewRef.current?.setProps({ editable: () => !sending });
+    if (sending && viewRef.current) dismissGhost(viewRef.current);
     refreshRef.current();
   }, [sending]);
+
+  // a suggestion made for other recipients, another account, or with suggestions turned off goes
+  const toText = useDrafts((s) => s.drafts[draftKey]?.toText ?? "");
+  const accountId = useDrafts((s) => s.drafts[draftKey]?.accountId ?? 0);
+  const suggestionsOn = useApp((s) => s.settings?.composeSuggestions !== false);
+  useEffect(() => {
+    if (viewRef.current) dismissGhost(viewRef.current);
+  }, [toText, accountId, suggestionsOn]);
 
   function updateBubble(view: EditorView) {
     const wrap = wrapRef.current;
@@ -291,6 +311,7 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
   return (
     <div ref={wrapRef} className="relative">
       <div ref={mountRef} />
+      <span ref={announceRef} className="sr-only" aria-live="polite" data-testid="compose-ghost-announce" />
       {link && viewRef.current && <LinkPopover view={viewRef.current} draft={link} onClose={closeLink} />}
       {bubble && !link && viewRef.current && (
         <LinkBubble
@@ -307,6 +328,34 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
       )}
     </div>
   );
+}
+
+/** The draft's recipients' first names and the sender's name, for a learned greeting or sign-off. */
+function ghostContext(draftKey: string): { names: string[]; me: string | undefined; key: string } | null {
+  const d = useDrafts.getState().drafts[draftKey];
+  if (!d) return null;
+  const names = parseAddressList(d.toText)
+    .map((a) => a.name.replace(/^["']|["']$/g, "").trim())
+    .filter(Boolean)
+    .slice(0, 10);
+  const account = useApp.getState().accounts.find((a) => a.id === d.accountId);
+  const me = account?.senderName || account?.displayName || undefined;
+  return { names, me, key: `${d.accountId}|${d.toText}` };
+}
+
+/** What the ghost plugin asks of the draft: whether suggestions are on, and one for the text before the caret. */
+function ghostHooks(draftKey: string, editable: () => boolean, announce: (text: string) => void): GhostHooks {
+  return {
+    enabled: () => editable() && useApp.getState().settings?.composeSuggestions !== false,
+    suggest: async (before) => {
+      const asked = ghostContext(draftKey);
+      if (!asked) return null;
+      const text = await suggestText({ before, names: asked.names, me: asked.me });
+      // the recipients or the account changed while it was asked: the answer was for another draft
+      return ghostContext(draftKey)?.key === asked.key ? text : null;
+    },
+    announce,
+  };
 }
 
 /** Past this many lines a draft is "huge": its lines off screen skip layout (a keystroke at 2 MB went from ~56 to ~7 ms). */
