@@ -44,7 +44,7 @@ export function CommandPalette() {
       {/* CommandDialog (base-nova) doesn't provide the cmdk root itself */}
       <Command>
       <CommandInput placeholder={t("palette.placeholder")} value={value} onValueChange={setValue} data-testid="palette-input" />
-      <CommandList>
+      <CommandList label={t("palette.results")}>
         <CommandEmpty>{t("palette.empty")}</CommandEmpty>
         <CommandGroup heading={t("palette.group.goTo")}>
           <CommandItem onSelect={() => run(() => navigate({ view: "inbox" }))} keywords={english("view.inbox")}><Inbox /> {t("view.inbox")}<CommandShortcut>G I</CommandShortcut></CommandItem>

@@ -1,7 +1,6 @@
 import type { Address } from "@terno/core";
 import { t } from "@terno/i18n";
 import { fold } from "@terno/store/fold";
-import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { prefetchRecipientInitials, recipientInitials, suggestRecipients, warmAutocomplete } from "~/lib/autocomplete";
@@ -186,7 +185,8 @@ export function RecipientInput({
         role="combobox"
         aria-autocomplete="list"
         aria-expanded={open}
-        aria-controls={listId}
+        // the list exists only while it shows (no hidden popup lingering in the page, in a stale language)
+        aria-controls={open ? listId : undefined}
         aria-activedescendant={open ? optionId(active) : undefined}
         onFocus={() => {
           warmAutocomplete();
@@ -201,17 +201,18 @@ export function RecipientInput({
         onBlur={close}
         onMouseDown={() => open && close()}
       />
-      {createPortal(
+      {open &&
+        rect &&
+        createPortal(
         <div
           id={listId}
           role="listbox"
           aria-label={t("compose.suggest.list")}
           data-testid="recipient-suggestions"
-          hidden={!open || !rect}
           // focus stays in the field: a click must not blur it
           onMouseDown={(e) => e.preventDefault()}
-          style={rect ? { top: rect.top, left: rect.left, width: rect.width } : undefined}
-          className={cn("fixed z-50 flex flex-col rounded-xl bg-popover p-1 text-sm text-popover-foreground shadow-popover outline-hidden", open && "animate-in fade-in-0 duration-base")}
+          style={{ top: rect.top, left: rect.left, width: rect.width }}
+          className="fixed z-50 flex flex-col rounded-xl bg-popover p-1 text-sm text-popover-foreground shadow-popover outline-hidden animate-in fade-in-0 duration-base"
         >
           {items.map((a, i) => (
             <div

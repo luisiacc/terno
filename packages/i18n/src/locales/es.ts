@@ -814,6 +814,7 @@ const es = {
   "palette.description": "Busca una acción o un correo",
   "palette.placeholder": "Escribe un comando o busca…",
   "palette.empty": "Sin resultados",
+  "palette.results": "Resultados",
   "palette.group.goTo": "Ir a",
   "palette.group.actions": "Acciones",
   "palette.group.addTo": { one: "Añadir a categoría", other: "Añadir # conversaciones" },
