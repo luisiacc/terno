@@ -3,16 +3,23 @@ import { closeHistory } from "prosemirror-history";
 import type { Node as PMNode } from "prosemirror-model";
 import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from "prosemirror-state";
 import { ReplaceStep } from "prosemirror-transform";
-import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
+import type { EditorView } from "prosemirror-view";
 
 /**
- * Ghost text (plan 18 §4.4): a suggestion shown after the caret as a widget
- * decoration — not in the document, the history, the draft or the mail. It
- * is asked for 60 ms after the user stops typing at the end of a line, from
- * at most 1,000 characters before the caret (read by walking a bounded number
- * of nodes back from the caret, never the whole document), and shown only if
- * nothing changed meanwhile. Typing its next characters consumes it; anything
- * else dismisses it. Tab accepts it, → accepts a word, Esc dismisses.
+ * Ghost text (plan 18 §4.4): a suggestion shown after the caret — not in the
+ * document, the history, the draft or the mail, and not even in the editor's
+ * DOM. It is drawn on a layer beside the editor, wrapped as the line would
+ * continue (`text-indent` at the caret), trimmed to the whole words that fit
+ * on the caret's line (what shows is exactly what Tab inserts), and placed in
+ * the frame's own animation callback. So a suggestion never makes ProseMirror
+ * walk the document or Chromium lay the paragraph out again: in a 10 MB draft
+ * it costs what it costs in an empty one.
+ *
+ * It is asked for 60 ms after the user stops typing at the end of a line,
+ * from at most 1,000 characters before the caret (read by walking a bounded
+ * number of nodes back from the caret, never the whole document), and shown
+ * only if nothing changed meanwhile. Typing its next characters consumes it;
+ * anything else dismisses it. Tab accepts it, → accepts a word, Esc dismisses.
  */
 
 export interface GhostHooks {
@@ -24,7 +31,7 @@ export interface GhostHooks {
 }
 
 interface GhostState {
-  ghost: { text: string; pos: number; deco: DecorationSet } | null;
+  ghost: { text: string; pos: number } | null;
   /** counts the user's typing (not pastes, undo, accepted suggestions): the plugin view asks after each */
   typed: number;
 }
@@ -39,24 +46,9 @@ const AFTER = 256;
 const SIBLINGS = 4;
 export const GHOST_DELAY_MS = 60;
 
-function widget(pos: number, text: string): Decoration {
-  return Decoration.widget(
-    pos,
-    () => {
-      const span = document.createElement("span");
-      span.className = "rt-ghost";
-      // drawn by CSS (::after): not in the editor's text, a copy, or what a find or a test reads
-      span.dataset.ghost = text;
-      span.setAttribute("aria-hidden", "true");
-      span.setAttribute("contenteditable", "false");
-      span.dataset.testid = "compose-ghost";
-      return span;
-    },
-    { side: 1, ignoreSelection: true, key: `ghost:${pos}:${text}` },
-  );
-}
-
-const ghostOf = (doc: PMNode, pos: number, text: string) => ({ text, pos, deco: DecorationSet.create(doc, [widget(pos, text)]) });
+/** What each editor's layer shows now (Tab inserts exactly that), and the layer itself. */
+const visible = new WeakMap<EditorView, { text: string; pos: number }>();
+const layers = new WeakMap<EditorView, HTMLElement>();
 
 /** The user typed `inserted` at the ghost (one step, nothing deleted): what is left of the ghost, or null. */
 function consumed(tr: Transaction, g: NonNullable<GhostState["ghost"]>): string | null {
@@ -81,16 +73,17 @@ function isTyping(tr: Transaction): boolean {
 
 /**
  * The text before the caret for a suggestion, or null where none belongs: a
- * selection, inside a quote, a link or fixed-width text, not at the end of the
- * line, or nothing typed on the line. Bounded: at most WINDOW characters back
- * and AFTER forward, through the caret's own block and a few before it.
+ * selection, inside a quote, a link or fixed-width text, a centered or
+ * right-aligned line, not at the end of the line, or nothing typed on the
+ * line. Bounded: at most WINDOW characters back and AFTER forward, through
+ * the caret's own block and a few before it.
  */
 export function windowAt(state: EditorState): string | null {
   const sel = state.selection;
   if (!(sel instanceof TextSelection) || !sel.empty) return null;
   const $pos = sel.$from;
   const block = $pos.parent;
-  if (!block.isTextblock) return null;
+  if (!block.isTextblock || (block.attrs.align && block.attrs.align !== "left")) return null;
   for (let d = $pos.depth; d > 0; d--) if ($pos.node(d).type === schema.nodes.blockquote) return null;
   const marks = state.storedMarks ?? $pos.marks();
   if (marks.some((m) => m.type === schema.marks.link || (m.type === schema.marks.font && m.attrs.value === "mono"))) return null;
@@ -145,15 +138,22 @@ export function windowAt(state: EditorState): string | null {
   return parts.reverse().join("");
 }
 
-/** Accepts the whole ghost, or its next word: one undo step of its own. */
+/**
+ * Accepts the shown ghost, or its next word: one undo step of its own. A
+ * ghost not on screen yet (it arrived this frame) isn't accepted: Tab does
+ * what it does.
+ */
 export function acceptGhost(view: EditorView, word = false): boolean {
   const g = ghostKey.getState(view.state)?.ghost;
   if (!g) return false;
-  const take = word ? (/^\s*[^\s]+/.exec(g.text)?.[0] ?? g.text) : g.text;
+  const shown = layers.has(view) ? visible.get(view) : g;
+  if (!shown || shown.pos !== g.pos || !g.text.startsWith(shown.text)) return false;
+  const text = shown.text;
+  const take = word ? (/^\s*[^\s]+/.exec(text)?.[0] ?? text) : text;
   const rest = g.text.slice(take.length);
   const tr = view.state.tr.insertText(take, g.pos);
   tr.setSelection(TextSelection.create(tr.doc, g.pos + take.length));
-  tr.setMeta(ghostKey, rest.trim() ? { set: { text: rest, pos: g.pos + take.length } } : { clear: true });
+  tr.setMeta(ghostKey, word && rest.trim() ? { set: { text: rest, pos: g.pos + take.length } } : { clear: true });
   view.dispatch(closeHistory(tr).scrollIntoView());
   // what is typed next is another undo step
   view.dispatch(closeHistory(view.state.tr).setMeta("addToHistory", false));
@@ -175,6 +175,66 @@ const busy = (ms: number) => {
   for (const end = performance.now() + ms; performance.now() < end; );
 };
 
+/** The ghost's leading space and words, each a unit trimming keeps or drops. */
+const pieces = (text: string) => text.match(/\s*\S+\s*/g) ?? [];
+
+/**
+ * Lays the ghost out after the caret: the layer spans the caret's line box
+ * from the block's left edge, indented to the caret, in the caret's own font;
+ * only the words that fit on that line are kept. Called from an animation
+ * frame, where layout is due anyway.
+ */
+function place(view: EditorView, layer: HTMLElement, g: { text: string; pos: number }): string | null {
+  const parent = layer.parentElement;
+  const at = view.domAtPos(g.pos);
+  const el = (at.node.nodeType === 3 ? at.node.parentElement : at.node.nodeType === 1 ? (at.node as Element) : null) as HTMLElement | null;
+  const block = el?.closest<HTMLElement>("p") ?? null;
+  if (!parent || !el || !block || !view.dom.contains(block)) return null;
+  let caret: { left: number; top: number; bottom: number };
+  try {
+    caret = view.coordsAtPos(g.pos, 1);
+  } catch {
+    return null;
+  }
+  const box = block.getBoundingClientRect();
+  const origin = parent.getBoundingClientRect();
+  const style = getComputedStyle(el);
+  const indent = caret.left - box.left;
+  if (indent < 0 || indent >= box.width) return null;
+  // the caret's rect is its glyph box: the line box starts half the leading above it
+  const lineHeight = parseFloat(style.lineHeight);
+  const glyph = caret.bottom - caret.top;
+  const leading = Number.isFinite(lineHeight) && lineHeight > glyph ? (lineHeight - glyph) / 2 : 0;
+  // snapped to the block's own line grid (exact for lines of one size)
+  const top = Number.isFinite(lineHeight) && lineHeight > 0 ? box.top + Math.round((caret.top - leading - box.top) / lineHeight) * lineHeight : caret.top - leading;
+  layer.style.left = `${box.left - origin.left}px`;
+  layer.style.top = `${top - origin.top}px`;
+  layer.style.width = `${box.width}px`;
+  layer.style.textIndent = `${indent}px`;
+  // the caret's own type (marks included: bold, size, serif)
+  layer.style.fontFamily = style.fontFamily;
+  layer.style.fontSize = style.fontSize;
+  layer.style.fontWeight = style.fontWeight;
+  layer.style.fontStyle = style.fontStyle;
+  layer.style.letterSpacing = style.letterSpacing;
+  layer.style.lineHeight = style.lineHeight;
+  const line = Math.max(glyph, Number.isFinite(lineHeight) ? lineHeight : glyph);
+  const parts = pieces(g.text);
+  // the longest run of whole words that stays on the caret's line (a binary search: a few small layouts)
+  let lo = 0;
+  let hi = parts.length;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >>> 1;
+    layer.textContent = parts.slice(0, mid).join("").trimEnd();
+    if (layer.getBoundingClientRect().height <= line * 1.5) lo = mid;
+    else hi = mid - 1;
+  }
+  if (lo === 0) return null;
+  const text = parts.slice(0, lo).join("").trimEnd();
+  layer.textContent = text;
+  return text;
+}
+
 export function ghostPlugin(hooksOf: (view: EditorView) => GhostHooks | undefined, probe?: (name: string, value: number) => void): Plugin<GhostState> {
   return new Plugin<GhostState>({
     key: ghostKey,
@@ -183,14 +243,14 @@ export function ghostPlugin(hooksOf: (view: EditorView) => GhostHooks | undefine
       apply(tr, value, _old, state): GhostState {
         const meta = tr.getMeta(ghostKey) as Meta | undefined;
         const typed = isTyping(tr) ? value.typed + 1 : value.typed;
-        if (meta && "set" in meta) return { ghost: ghostOf(state.doc, meta.set.pos, meta.set.text), typed };
+        if (meta && "set" in meta) return { ghost: { text: meta.set.text, pos: meta.set.pos }, typed };
         if (meta && "clear" in meta) return { ghost: null, typed };
         const g = value.ghost;
         if (!g) return typed === value.typed ? value : { ghost: null, typed };
         if (tr.docChanged) {
           // only typing consumes it (a paste or a composition that happens to match doesn't)
           const rest = isTyping(tr) ? consumed(tr, g) : null;
-          return { ghost: rest ? ghostOf(state.doc, g.pos + (g.text.length - rest.length), rest) : null, typed };
+          return { ghost: rest ? { text: rest, pos: g.pos + (g.text.length - rest.length) } : null, typed };
         }
         // the caret moved off it
         const sel = state.selection;
@@ -199,7 +259,6 @@ export function ghostPlugin(hooksOf: (view: EditorView) => GhostHooks | undefine
       },
     },
     props: {
-      decorations: (state) => ghostKey.getState(state)?.ghost?.deco ?? null,
       handleKeyDown(view, event) {
         const g = ghostKey.getState(view.state)?.ghost;
         if (!g || event.isComposing || event.keyCode === 229) return false;
@@ -221,20 +280,50 @@ export function ghostPlugin(hooksOf: (view: EditorView) => GhostHooks | undefine
           return false;
         },
         compositionstart: (view) => {
-          // nothing changes the DOM during a composition: the ghost hides, and goes with the composed text
-          view.dom.classList.add("rt-composing");
-          return false;
-        },
-        compositionend: (view) => {
-          view.dom.classList.remove("rt-composing");
+          // an IME composition goes on undisturbed: the ghost hides at once (it goes with the composed text)
+          const layer = layers.get(view);
+          if (layer) layer.hidden = true;
           return false;
         },
       },
     },
     view(editor) {
       let timer: ReturnType<typeof setTimeout> | null = null;
+      let frame = 0;
       let seq = 0;
       let lastTyped = ghostKey.getState(editor.state)?.typed ?? 0;
+      const layer = document.createElement("div");
+      layer.className = "rt-ghost-layer";
+      layer.dataset.testid = "compose-ghost";
+      layer.setAttribute("aria-hidden", "true");
+      layer.hidden = true;
+      const parent = editor.dom.parentElement;
+      if (parent) {
+        if (getComputedStyle(parent).position === "static") parent.style.position = "relative";
+        parent.append(layer);
+        layers.set(editor, layer);
+      }
+      const hide = () => {
+        layer.hidden = true;
+        layer.textContent = "";
+        delete layer.dataset.ghost;
+        visible.delete(editor);
+      };
+      const render = () => {
+        frame = 0;
+        const g = ghostKey.getState(editor.state)?.ghost;
+        if (!g || editor.isDestroyed || editor.composing) return hide();
+        const text = place(editor, layer, g);
+        if (!text) return hide();
+        layer.dataset.ghost = text;
+        layer.hidden = false;
+        visible.set(editor, { text, pos: g.pos });
+      };
+      // the window's width changes how the line wraps
+      const onResize = () => {
+        if (!frame) frame = requestAnimationFrame(render);
+      };
+      window.addEventListener("resize", onResize);
       const cancel = () => {
         seq++;
         if (timer) clearTimeout(timer);
@@ -260,17 +349,31 @@ export function ghostPlugin(hooksOf: (view: EditorView) => GhostHooks | undefine
         update(view, prev) {
           const st = ghostKey.getState(view.state);
           if (!st) return;
+          const before = ghostKey.getState(prev)?.ghost ?? null;
+          if (st.ghost !== before) {
+            // gone: at once; shown or moved: laid out in the frame's animation callback (layout is due then anyway)
+            if (!st.ghost) hide();
+            else if (!frame) frame = requestAnimationFrame(render);
+          }
           if (st.typed !== lastTyped) {
             lastTyped = st.typed;
+            // the perf suite's injected regression: work on every typed key while suggestions are on
+            if (import.meta.env.VITE_RENDER_PROBE && (window as unknown as { __ternoInject?: string }).__ternoInject === "ghost-busy" && hooksOf(view)?.enabled()) busy(6);
             cancel();
             // typed through the ghost: what is left of it stays, nothing new is asked
             if (st.ghost) return;
-            if (import.meta.env.VITE_RENDER_PROBE && (window as unknown as { __ternoInject?: string }).__ternoInject === "ghost-busy") busy(6);
             const mine = seq;
             timer = setTimeout(() => void ask(view, mine), GHOST_DELAY_MS);
           } else if (view.state.doc !== prev.doc || !view.state.selection.eq(prev.selection)) cancel();
         },
-        destroy: cancel,
+        destroy() {
+          cancel();
+          if (frame) cancelAnimationFrame(frame);
+          window.removeEventListener("resize", onResize);
+          layer.remove();
+          layers.delete(editor);
+          visible.delete(editor);
+        },
       };
     },
   });

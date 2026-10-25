@@ -87,17 +87,15 @@
   contain-intrinsic-size: auto 1.6em;
 }
 
-/* plan 18: ghost text, the rest of a sentence the user often writes, after the caret. Muted (still AA as text), in the
-   line's own font and marks; never selectable, clickable or caught by an IME composition */
-.rt-ghost {
+/* plan 18: ghost text, the rest of a sentence the user often writes. A layer beside the editor (never in its DOM),
+   wrapped like the caret's line and in its font (set inline); muted, still AA as text; never selectable or clickable */
+.rt-ghost-layer {
+  position: absolute;
+  z-index: 1;
+  margin: 0;
   pointer-events: none;
   user-select: none;
-}
-.rt-ghost::after {
-  content: attr(data-ghost);
-  color: var(--muted-foreground);
   white-space: pre-wrap;
-}
-.rt-composing .rt-ghost {
-  display: none;
+  overflow-wrap: anywhere;
+  color: var(--muted-foreground);
 }

@@ -38,7 +38,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } f
 import { flushSync } from "react-dom";
 import { attachBody, useDrafts } from "~/lib/drafts";
 import { suggestText } from "~/lib/autocomplete";
-import { useApp } from "~/state/app";
+import { setApp, useApp } from "~/state/app";
 import { parseAddressList } from "@terno/core";
 import { dismissGhost, withoutGhost, type GhostHooks } from "./ghost";
 import { exposeForTests } from "~/lib/render-probe";
@@ -93,6 +93,25 @@ function probe(name: string, value: number) {
 const views = new Set<EditorView>();
 exposeForTests({
   composerDoc: () => [...views].find((v) => v.hasFocus())?.state.doc.toJSON() ?? null,
+  // the perf suite: the caret at the end of a top-level line (or `offset` into it), in the editor's own state
+  setComposerCaret: (index: number, offset?: number) => {
+    const view = [...views].at(-1);
+    if (!view) return false;
+    const doc = view.state.doc;
+    const at = index < 0 ? doc.childCount + index : index;
+    let pos = 0;
+    for (let i = 0; i < at; i++) pos += doc.child(i).nodeSize;
+    const block = doc.child(at);
+    const inside = pos + 1 + Math.min(offset ?? block.content.size, block.content.size);
+    view.focus();
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(doc, inside)).scrollIntoView());
+    return true;
+  },
+  // the perf suite's paired measurement: suggestions on and off without a settings round trip
+  setComposeSuggestions: (on: boolean) => {
+    const settings = useApp.getState().settings;
+    if (settings) setApp({ settings: { ...settings, composeSuggestions: on } });
+  },
   parseMailHtml: (html: string) => parseHtml(html).toJSON(),
 });
 

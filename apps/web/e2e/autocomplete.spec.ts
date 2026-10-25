@@ -23,7 +23,8 @@ const body = (page: Page) => page.getByTestId("compose-body");
 // each field has its list; the one showing
 const list = (page: Page) => page.locator("[data-testid=recipient-suggestions]:not([hidden])");
 const options = (page: Page) => list(page).getByTestId("recipient-suggestion");
-const ghost = (page: Page) => body(page).getByTestId("compose-ghost");
+// the ghost is a layer beside the editor (never in its text): the one showing
+const ghost = (page: Page) => page.locator("[data-testid=compose-ghost]:not([hidden])");
 
 // names and a company the demo mailbox doesn't have
 const arjun: Address = { name: "Arjun Patel", email: "arjun.patel@zentrix.dev" };
@@ -195,9 +196,26 @@ test.describe("ghost text", { tag: "@design" }, () => {
     // not part of the text (nothing to copy, nothing a find or a save sees)
     await expect(body(page)).toHaveText("Let me know i");
     // muted: the theme's muted text color, not the text's
-    const [ghostColor, muted] = await ghost(page).evaluate((el) => [getComputedStyle(el, "::after").color, getComputedStyle(document.documentElement).getPropertyValue("--muted-foreground")]);
+    const [ghostColor, muted] = await ghost(page).evaluate((el) => [getComputedStyle(el).color, getComputedStyle(document.documentElement).getPropertyValue("--muted-foreground")]);
     expect(muted.trim()).not.toBe("");
     expect(ghostColor).not.toBe(await body(page).evaluate((el) => getComputedStyle(el).color));
+    // it continues the line exactly: its first glyph where the typed text's last one ends, on the same baseline
+    const geometry = await page.evaluate(() => {
+      const text = document.querySelector("[data-testid=compose-body] p")!.firstChild as Text;
+      const typed = document.createRange();
+      typed.setStart(text, text.length - 1);
+      typed.setEnd(text, text.length);
+      const layer = document.querySelector<HTMLElement>("[data-testid=compose-ghost]:not([hidden])")!;
+      const shown = document.createRange();
+      shown.setStart(layer.firstChild!, 0);
+      shown.setEnd(layer.firstChild!, 1);
+      const a = typed.getBoundingClientRect();
+      const b = shown.getBoundingClientRect();
+      return { dx: b.left - a.right, dy: b.top - a.top, dh: b.height - a.height };
+    });
+    expect(Math.abs(geometry.dx)).toBeLessThanOrEqual(1);
+    expect(Math.abs(geometry.dy)).toBeLessThanOrEqual(1);
+    expect(Math.abs(geometry.dh)).toBeLessThanOrEqual(1);
     // announced once for screen readers
     await expect(page.getByTestId("compose-ghost-announce")).toHaveText(/f you have any questions\./);
     await page.keyboard.press("Tab");
