@@ -40,10 +40,9 @@ import {
 } from "@terno/core/diag";
 import type { Reporter } from "@terno/core/diag/sentry";
 import { BUILD, pendingSink } from "./diag";
+import { ENTRIES_MAX, openDiagDb, readEntries, readRecords, writeBatch } from "./diag-store";
 
 const DSN: string = import.meta.env.VITE_SENTRY_DSN ?? "";
-const DB_NAME = "terno-diag";
-const ENTRIES_MAX = 2000;
 const RECORDS_MAX = 20;
 const STATE_KEY = "terno:diag:state";
 const TAB_PREFIX = "terno:diag:tab:";
@@ -65,29 +64,14 @@ function readState(): LocalState {
   }
 }
 
-function openDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => {
-      req.result.createObjectStore("entries", { autoIncrement: true });
-      req.result.createObjectStore("records", { keyPath: "id" });
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-    req.onblocked = () => reject(new Error("blocked"));
-  });
-}
-
-const done = (tx: IDBTransaction) => new Promise<void>((resolve, reject) => ((tx.oncomplete = () => resolve()), (tx.onerror = () => reject(tx.error)), (tx.onabort = () => reject(tx.error))));
-const all = <T,>(req: IDBRequest<T[]>) => new Promise<T[]>((resolve, reject) => ((req.onsuccess = () => resolve(req.result)), (req.onerror = () => reject(req.error))));
-
-class LocalDiag implements DiagSink {
+export class LocalDiag implements DiagSink {
   private readonly entries = new Ring<DiagEntry>(ENTRIES_MAX);
   records: ErrorRecord[] = [];
   private toWrite: DiagEntry[] = [];
   private recordsToWrite: ErrorRecord[] = [];
   private db: IDBDatabase | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private writes: Promise<void> = Promise.resolve();
   private state = readState();
   private policy: ReportPolicy = { localMode: true, errorReports: "never", dsn: Boolean(DSN) };
   private approved = new Set<string>();
@@ -97,11 +81,10 @@ class LocalDiag implements DiagSink {
   private listeners = new Set<() => void>();
   readonly counters = { allowed: 0, refused: 0, sent: 0 };
 
-  async open(): Promise<void> {
+  async open(factory: IDBFactory = indexedDB): Promise<void> {
     try {
-      this.db = await openDb();
-      const tx = this.db.transaction("records", "readonly");
-      this.records = (await all(tx.objectStore("records").getAll())).map((r) => sanitizeRecord(r)).filter((r): r is ErrorRecord => r !== null).sort((a, b) => b.ts - a.ts);
+      this.db = await openDiagDb(factory);
+      this.records = await readRecords(this.db);
     } catch {
       this.db = null; // memory only
     }
@@ -146,38 +129,16 @@ class LocalDiag implements DiagSink {
     const entries = this.toWrite.splice(0);
     const records = this.recordsToWrite.splice(0);
     if (!this.db || (!entries.length && !records.length)) return;
-    void (async () => {
-      try {
-        const tx = this.db!.transaction(["entries", "records"], "readwrite");
-        const es = tx.objectStore("entries");
-        for (const e of entries) es.add(e);
-        for (const r of records) tx.objectStore("records").put(r);
-        await done(tx);
-        await this.trim();
-      } catch {
-        // a full or broken IndexedDB: memory keeps going
-      }
-    })();
+    const db = this.db;
+    // one write at a time; retention is decided in it, from what every tab wrote
+    this.writes = this.writes.then(() => writeBatch(db, entries, records)).catch(() => {
+      // a full or broken IndexedDB: memory keeps going
+    });
   }
 
-  private async trim(): Promise<void> {
-    const tx = this.db!.transaction(["entries", "records"], "readwrite");
-    const es = tx.objectStore("entries");
-    const count = await new Promise<number>((r) => (es.count().onsuccess = (e) => r((e.target as IDBRequest<number>).result)));
-    if (count > ENTRIES_MAX) {
-      let extra = count - ENTRIES_MAX;
-      es.openCursor().onsuccess = (e) => {
-        const cur = (e.target as IDBRequest<IDBCursorWithValue | null>).result;
-        if (cur && extra-- > 0) {
-          cur.delete();
-          cur.continue();
-        }
-      };
-    }
-    const keep = new Set(this.records.map((r) => r.id));
-    const rs = tx.objectStore("records");
-    for (const key of await all(rs.getAllKeys())) if (!keep.has(String(key))) rs.delete(key);
-    await done(tx);
+  /** Resolves when every write so far has landed (tests, export). */
+  idle(): Promise<void> {
+    return this.writes;
   }
 
   // ───────────────────────────── run markers ─────────────────────────────
@@ -346,11 +307,8 @@ class LocalDiag implements DiagSink {
     this.flush();
     let stored: unknown[] = this.entries.toArray();
     if (this.db) {
-      try {
-        stored = await all(this.db.transaction("entries", "readonly").objectStore("entries").getAll());
-      } catch {
-        // memory it is
-      }
+      await this.writes;
+      stored = await readEntries(this.db).catch(() => stored);
     }
     const entries = stored.map((e) => sanitizeEntry(e, (e as { proc?: "renderer" | "worker" }).proc === "worker" ? "worker" : "renderer")).filter(Boolean);
     return JSON.stringify(
