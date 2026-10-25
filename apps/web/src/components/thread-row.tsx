@@ -103,7 +103,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
             {thread.subject || t("common.noSubject")}
           </span>
           {hasDraft && <span className="shrink-0 font-medium text-draft-foreground">{t("list.draft")}</span>}
-          <span className="min-w-0 truncate text-muted-foreground">{thread.snippet}</span>
+          <span data-testid="row-snippet" className="min-w-0 truncate text-muted-foreground">{thread.snippet}</span>
         </div>
       )}
     </div>
