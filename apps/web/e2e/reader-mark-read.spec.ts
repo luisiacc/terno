@@ -5,6 +5,7 @@
  * skeleton flash, no remount). Fresh content still arrives in the open thread.
  */
 import type { Page } from "@playwright/test";
+import type { ThreadDetail } from "@terno/core";
 import { sqlDb, type DevServer } from "../../backend-dev/src/server";
 import { E2E_NOW } from "./constants";
 import { expect, ingestConversation, selectThread, test } from "./fixtures";
@@ -13,34 +14,18 @@ type Probe = Window & { __probe?: { skeleton: boolean; nodes: Record<string, Ele
 
 /**
  * Holds the backend's thread actions until released, so the dwell's mark-read
- * lands after the test has put focus and scroll where it wants them. Also
- * resolves once the open thread has been fetched again after the release.
+ * lands after the test has put focus and scroll where it wants them.
  */
-function holdActions(server: DevServer, threadId: number) {
+function holdActions(server: DevServer) {
   const threads = server.backend.store.threads;
   const act = threads.act.bind(threads);
-  const get = threads.get.bind(threads);
   let release!: () => void;
   const gate = new Promise<void>((r) => (release = r));
-  let released = false;
-  let refetched!: () => void;
-  const refetch = new Promise<void>((r) => (refetched = r));
   threads.act = async (...args) => {
     await gate;
     return act(...args);
   };
-  threads.get = async (...args) => {
-    const d = await get(...args);
-    if (released && args[0] === threadId) refetched();
-    return d;
-  };
-  return {
-    release: () => {
-      released = true;
-      release();
-    },
-    refetch,
-  };
+  return release;
 }
 
 /** Remembers the reader's nodes and the focused element, and watches for the skeleton from now on. */
@@ -66,19 +51,20 @@ async function unchanged(page: Page) {
 
 const scrollTop = (page: Page) => page.locator("[data-reader-scroller]").evaluate((el) => el.scrollTop);
 
-async function markedRead(server: DevServer, page: Page, threadId: number, hold: ReturnType<typeof holdActions>): Promise<void> {
-  hold.release();
-  await expect.poll(() => sqlDb(server.backend.store).get<{ u: number }>("SELECT unread_count AS u FROM threads WHERE id = ?", threadId)!.u).toBe(0);
-  await hold.refetch;
-  // the refetched detail reaches the page and renders
+async function markedRead(page: Page, threadId: number, release: () => void): Promise<void> {
+  release();
+  // the page holds the refetched thread, every message read (nothing on screen shows it)
+  await expect
+    .poll(() => page.evaluate((id) => (window as unknown as { __terno: { threadDetail(id: number): ThreadDetail | undefined } }).__terno.threadDetail(id)?.messages.every((m) => m.isRead), threadId))
+    .toBe(true);
+  // and has rendered it
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-  await page.waitForTimeout(150);
 }
 
 test.describe("reader through the read-after-dwell", { tag: "@design" }, () => {
   test("a focused message toggle, the scroll and the open messages survive the mark-read", async ({ app: page, server }) => {
     const id = await ingestConversation(server, { subject: "Plan de lanzamiento", count: 6, html: 6, unread: 3, now: E2E_NOW });
-    const hold = holdActions(server, id);
+    const release = holdActions(server);
     await selectThread(page, id, 'subject:"Plan de lanzamiento"');
     const row = page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
     // the dwell ran (the row reads as read at once); the backend holds the action
@@ -96,7 +82,7 @@ test.describe("reader through the read-after-dwell", { tag: "@design" }, () => {
     expect(top).toBe(320);
     await probe(page);
 
-    await markedRead(server, page, id, hold);
+    await markedRead(page, id, release);
 
     expect(await unchanged(page)).toEqual({ skeleton: false, focus: true, reader: true, subject: true, message: true, draft: true });
     await expect(toggles.nth(3)).toBeFocused();
@@ -107,7 +93,7 @@ test.describe("reader through the read-after-dwell", { tag: "@design" }, () => {
 
   test("the inline reply keeps its focus, text and caret through the mark-read", async ({ app: page, server }) => {
     const id = await ingestConversation(server, { subject: "Notas de la reunión", count: 3, unread: 1, now: E2E_NOW });
-    const hold = holdActions(server, id);
+    const release = holdActions(server);
     await selectThread(page, id, 'subject:"Notas de la reunión"');
     await expect(page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`)).not.toHaveAttribute("data-unread");
 
@@ -120,7 +106,7 @@ test.describe("reader through the read-after-dwell", { tag: "@design" }, () => {
     const top = await scrollTop(page);
     await probe(page);
 
-    await markedRead(server, page, id, hold);
+    await markedRead(page, id, release);
 
     expect(await unchanged(page)).toEqual({ skeleton: false, focus: true, reader: true, subject: true, message: true, draft: true });
     await expect(body).toBeFocused();
@@ -137,6 +123,8 @@ test.describe("reader through the read-after-dwell", { tag: "@design" }, () => {
     await expect(messages).toHaveCount(2);
     await messages.nth(1).getByTestId("message-toggle").focus();
     await probe(page);
+    const renders = () => page.evaluate(() => (window as unknown as { __renders: Record<string, number> }).__renders.Conversation ?? 0);
+    const before = await renders();
 
     // a third message on the same conversation, as a sync would bring it
     await ingestConversation(server, { subject: "Entrega final", count: 3, unread: 1, now: E2E_NOW });
@@ -144,6 +132,20 @@ test.describe("reader through the read-after-dwell", { tag: "@design" }, () => {
 
     await expect(messages).toHaveCount(3);
     await expect(messages.nth(2).getByTestId("message-toggle")).toHaveAttribute("aria-expanded", "true");
+    // the one that was last stays open; one render for the new answer
+    await expect(messages.nth(1).getByTestId("message-toggle")).toHaveAttribute("aria-expanded", "true");
+    expect(await renders()).toBe(before + 1);
     expect(await unchanged(page)).toEqual({ skeleton: false, focus: true, reader: true, subject: true, message: true, draft: true });
+  });
+
+  test("a thread deleted on the server while open says so instead of showing what no longer exists", async ({ app: page, server }) => {
+    const id = await ingestConversation(server, { subject: "Borrador viejo", count: 2, now: E2E_NOW });
+    await selectThread(page, id, 'subject:"Borrador viejo"');
+    await expect(page.getByTestId("reader").getByTestId("message")).toHaveCount(2);
+    const ids = sqlDb(server.backend.store).all<{ id: number }>("SELECT id FROM messages WHERE thread_id = ?", id).map((m) => m.id);
+    await server.backend.store.sync.remove(ids);
+    server.backend.notifyChanged([id]);
+    await expect(page.getByTestId("reader-gone")).toHaveText("That conversation no longer exists.");
+    await expect(page.getByTestId("reader").getByTestId("message")).toHaveCount(0);
   });
 });

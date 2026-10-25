@@ -17,13 +17,14 @@ import { t } from "@terno/i18n";
 import { formatBytes, fullDate, listDate } from "~/lib/format";
 import { SenderAvatar } from "./sender-avatar";
 import { setApp, useApp } from "~/state/app";
-import { loadThread, useThread } from "~/state/threads";
+import { loadThread, useThread, useThreadGone } from "~/state/threads";
 import { printCommand } from "~/lib/print-open";
 import { HtmlBody, TextBody } from "./mail-body";
 import { MessageMenu } from "./message-menu";
 import { reasonText } from "~/lib/reasons";
 import { useDesign, variant } from "~/lib/design";
 import { Kbd } from "@terno/ui/components/kbd";
+import { renderProbe } from "~/lib/render-probe";
 
 function ToolButton({ label, keys, onClick, children, testId, active }: { label: string; keys?: string; onClick: () => void; children: React.ReactNode; testId?: string; active?: boolean }) {
   return (
@@ -156,18 +157,18 @@ function Message({ m, expanded, onToggle }: { m: MessageDetail; expanded: boolea
 
 /**
  * The conversation: every message, with runs of 4+ collapsed ones folded into
- * one "N more messages" disclosure. Expansion state belongs to the thread
- * shown; a different thread starts from its defaults (unread messages and the
- * last one open), computed during render so a swap never animates.
+ * one "N more messages" disclosure. Keyed by thread: each one starts from its
+ * defaults (unread messages and the last one open) on mount, so a swap never
+ * animates, and keeps them while it is shown: the dwell's mark-read or a newer
+ * message never folds one away under the reader.
  */
-function Conversation({ messages, threadId }: { messages: MessageDetail[]; threadId: number }) {
-  const [state, setState] = useState<{ thread: number; toggled: Map<number, boolean>; revealed: Set<number>; shown: Map<number, boolean> }>({ thread: threadId, toggled: new Map(), revealed: new Set(), shown: new Map() });
-  const own = state.thread === threadId ? state : { thread: threadId, toggled: new Map<number, boolean>(), revealed: new Set<number>(), shown: new Map<number, boolean>() };
+function Conversation({ messages }: { messages: MessageDetail[] }) {
+  renderProbe("Conversation");
   const last = messages[messages.length - 1];
-  // how each message first showed (open while unread, and the last): the dwell's mark-read or a newer message never folds one away under the reader
-  const unseen = messages.filter((m) => !own.shown.has(m.id));
-  if (unseen.length) setState({ ...own, shown: new Map([...own.shown, ...unseen.map((m) => [m.id, !m.isRead || m.id === last?.id] as const)]) });
-  const isOpen = (m: MessageDetail) => own.toggled.get(m.id) ?? own.shown.get(m.id) ?? (!m.isRead || m.id === last?.id);
+  const opensAt = (m: MessageDetail) => !m.isRead || m.id === last?.id;
+  const [shown] = useState(() => new Map(messages.map((m) => [m.id, opensAt(m)])));
+  const [own, setState] = useState<{ toggled: Map<number, boolean>; revealed: Set<number> }>({ toggled: new Map(), revealed: new Set() });
+  const isOpen = (m: MessageDetail) => own.toggled.get(m.id) ?? shown.get(m.id) ?? opensAt(m);
   const toggle = (id: number, now: boolean) => setState({ ...own, toggled: new Map(own.toggled).set(id, !now) });
   // every message of a revealed run stays unfolded, whatever opens or closes around it later
   const reveal = (ids: number[]) => {
@@ -377,6 +378,7 @@ export function Reader() {
   const selectedId = useApp((s) => s.selectedId);
   const design = useDesign();
   const detail = useThread(selectedId);
+  const gone = useThreadGone(selectedId);
   const categories = useApp((s) => s.categories);
   const accounts = useApp((s) => s.accounts);
   useEffect(() => {
@@ -486,7 +488,11 @@ export function Reader() {
       <div ref={scrollerRef} data-reader-scroller data-keep-scroll="reader" className="relative min-h-0 flex-1 overflow-y-auto">
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
         <div className="mx-auto max-w-(--reader-max) px-(--reader-pad-x) pt-5 pb-16">
-          {!detail ? (
+          {!detail && gone ? (
+            <p data-testid="reader-gone" role="status" className="pt-8 text-center text-sm text-muted-foreground">
+              {t("errors.threadGone")}
+            </p>
+          ) : !detail ? (
             <div className="space-y-3" data-testid="reader-skeleton">
               <div className="h-6 w-2/3 animate-pulse rounded bg-muted" />
               <div className="h-32 animate-pulse rounded-xl bg-muted/70" />
@@ -496,7 +502,7 @@ export function Reader() {
               <ReaderHeader detail={detail} account={account} cats={cats} />
               <MessageMenu threadId={detail.thread.id}>
                 <div>
-                  <Conversation messages={detail.messages} threadId={detail.thread.id} />
+                  <Conversation key={detail.thread.id} messages={detail.messages} />
                 </div>
               </MessageMenu>
               <DraftSlot key={detail.thread.id} threadId={detail.thread.id} draftKey={draftKey} replyTo={replyTo(detail.messages)} account={account} />

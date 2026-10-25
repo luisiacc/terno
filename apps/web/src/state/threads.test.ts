@@ -14,7 +14,7 @@ vi.mock("~/rpc/connection", () => ({
 }));
 
 const { setApp } = await import("~/state/app");
-const { invalidateThreads, loadThread, useThreads } = await import("~/state/threads");
+const { invalidateThreads, loadThread, staleMarksForTests, useThreads } = await import("~/state/threads");
 
 const detail = (id: number, rev: number) => ({ thread: { id }, messages: [], rev }) as unknown as ThreadDetail;
 const shown = (id: number) => useThreads.getState().details.get(id) as (ThreadDetail & { rev: number }) | undefined;
@@ -33,7 +33,7 @@ async function cached(id: number, rev: number): Promise<void> {
 beforeEach(() => {
   calls.length = 0;
   pending.length = 0;
-  useThreads.setState({ details: new Map(), version: 0 });
+  useThreads.setState({ details: new Map(), gone: new Set(), version: 0 });
   setApp({ selectedId: null });
 });
 
@@ -113,4 +113,30 @@ it("a failed refetch keeps what is on screen, and the next load tries again", as
   calls.length = 0;
   void loadThread(1);
   expect(calls).toEqual([1]);
+});
+
+it("a thread gone from the backend stops being shown, and the reader can say so", async () => {
+  const { RpcError } = await import("@terno/core/rpc");
+  await cached(1, 1);
+  setApp({ selectedId: 1 });
+  invalidateThreads([1]);
+  const p = loadThread(1, true);
+  pending.shift()!.reject(new RpcError("NOT_FOUND", "That conversation no longer exists."));
+  expect(await p).toBeNull();
+  expect(shown(1)).toBeUndefined();
+  expect(useThreads.getState().gone.has(1)).toBe(true);
+  // back (an undo, a sync that restored it): shown again
+  await cached(1, 2);
+  expect(useThreads.getState().gone.has(1)).toBe(false);
+});
+
+it("stale marks don't outlive what they mark", async () => {
+  await cached(1, 1);
+  for (let i = 0; i < 50; i++) {
+    setApp({ selectedId: 1 });
+    invalidateThreads([1]);
+    setApp({ selectedId: 2 });
+    invalidateThreads([1]);
+  }
+  expect(staleMarksForTests()).toBe(0);
 });

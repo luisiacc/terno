@@ -6,7 +6,7 @@ import { client, connectBackend } from "~/rpc/connection";
 import { removeFromCategory } from "~/lib/categorize";
 import { getApp, navigate, setApp, setCategories } from "~/state/app";
 import { reloadList, useList } from "~/state/list";
-import { invalidateThreads, loadThread } from "~/state/threads";
+import { invalidateThreads, loadThread, useThreads } from "~/state/threads";
 import { snack } from "~/lib/snack";
 import { applyAppearance, installAppearanceListeners, reconcileSettings, updateAppearance } from "~/lib/appearance";
 import { exposeForTests } from "~/lib/render-probe";
@@ -34,6 +34,8 @@ export async function boot(): Promise<void> {
       updateAppearance,
       getApp,
       loadedIds: () => useList.getState().items.map((t) => t.id),
+      // the reader specs wait on what the cache holds (a refetch that changes nothing on screen)
+      threadDetail: (id: number) => useThreads.getState().details.get(id),
       updatesBridge: setBridgeForTests,
       // the perf gate times the switch itself (no save, no font wait)
       setDesign: (design: DesignId) => {
