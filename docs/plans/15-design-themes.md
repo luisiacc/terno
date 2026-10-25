@@ -21,7 +21,7 @@ Vocabulary used below. A **design** (macOS, Atelier, Lumen) is typography, shape
 | List header | title (+ "Filtered by") + search field | serif title + "90 mensajes · 3 sin leer" + search field with `/` | greeting "Buenas noches, Luis" + "**3 sin leer** · 2 conversaciones esperan tu respuesta", search behind an icon, **filter chips** |
 | Row | dot · from · count · meta · date / subject · snippet, 68 px | **avatar 36 px**, dot left of it, meta before the date | **avatar 44 px**, unread dot *on* the avatar, meta at the end of the snippet line |
 | Category review | "Revisar" sub-row under the category | inline ✨14 badge before the unread count | inline ✨14 gold pill (no unread count) |
-| Reader header | subject, then account · category badges | account + category chips **above** a serif subject | **sender card** (64 px avatar, name, address, chips), then subject, then an **AI summary card** |
+| Reader header | subject, then account · category badges | account + category chips **above** a serif subject | **sender card** (64 px avatar, name, address, chips), then subject |
 | Reply affordance | reply / reply all / forward icons | the same icons | **"Responder R" pill** + forward |
 | Reply surface | `bg-tint` | outlined | card with a soft shadow |
 
@@ -420,7 +420,7 @@ All of this lands after plan 14 merges, on its catalog. Each commit passes typec
   - cancellation and errors;
   - its own privacy review.
 
-  It goes to **plan 16**. When it ships, it ships in every design (Lumen styles it as the gold card). The `sender-card` header leaves no empty slot for it meanwhile.
+  **Dropped by the user (2026-10-25): no AI summary card.** The `sender-card` header has no slot for it.
 - **Photo and logo avatars:** no local source. Fetching them would leak addresses.
 - **A second icon set** (Phosphor for Atelier).
 - **Per-design window chrome** (traffic-light moves, title-bar heights).
@@ -439,7 +439,7 @@ All of this lands after plan 14 merges, on its catalog. Each commit passes typec
 
 ## 9. Open questions for the user
 
-1. **AI summary card and People / "waiting for your reply":** confirm they move to their own plans: 16 (summaries, on demand) and 17 (People filter and reply tracking, with a store migration). Until then, Lumen shows its chips without People and its greeting line without the reply count.
+1. **People / "waiting for your reply":** these move to plan 17 (People filter and reply tracking, with a store migration). The AI summary card was dropped by the user. Until then, Lumen shows its chips without People and its greeting line without the reply count.
 2. **Existing installs switch to Lumen**, as asked for users who never chose. Anyone who explicitly picked a palette keeps those colors, but now under Lumen's layout. Should explicit palette choosers stay on **macOS** instead? The alternative: treat "has a stored palette" as "chose the current look".
 
 ## 10. Revisions after the Codex review
