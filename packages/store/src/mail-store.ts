@@ -252,6 +252,8 @@ export interface MailStore {
     markUnknown(id: string, error: string, now: number): Promise<void>;
     /** the provider needs the user to sign in again: back to the queue without spending the attempt, until resumeAuth */
     awaitAuth(id: string, error: string, now: number): Promise<void>;
+    /** claimed but never started (the app is quitting): back to the queue as it was, ready now, the attempt given back */
+    release(id: string, now: number): Promise<void>;
     /** the account's authorization works again: its waiting ops are ready now (their ids) */
     resumeAuth(accountId: number, now: number): Promise<string[]>;
     recover(now: number): Promise<{ requeued: number; unknown: number }>;

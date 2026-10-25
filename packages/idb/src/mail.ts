@@ -1166,6 +1166,13 @@ export function awaitAuthOp(c: Ctx, id: string, error: string, now: number): voi
   if (op && op.state === "running") ops.update(op, { state: "queued", attempts: Math.max(op.attempts - 1, 0), next_attempt_at: AWAITING_AUTH, last_error: error, updated_at: now });
 }
 
+/** A claimed op that never reached its provider goes back exactly as it was (quit or update before it started). */
+export function releaseOp(c: Ctx, id: string, now: number): void {
+  const ops = T(c, "ops");
+  const op = ops.get(id);
+  if (op && op.state === "running") ops.update(op, { state: "queued", attempts: Math.max(op.attempts - 1, 0), updated_at: now });
+}
+
 export function resumeAuthOps(c: Ctx, accountId: number, now: number): string[] {
   const ops = T(c, "ops");
   const out: string[] = [];

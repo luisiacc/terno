@@ -101,6 +101,11 @@ export class BackendCore {
   private workerRunning = false;
   private workerKicked = false;
   private stopped = false;
+  /** quitting or updating (quiesce): no op starts; claimed ones go back to the queue */
+  private draining = false;
+  /** sends talking to their server right now, and who waits for them to finish */
+  private sendsInFlight = 0;
+  private sendsSettled: (() => void)[] = [];
   private pendingThreadIds = new Set<number>();
   private pendingViews = false;
   private flushScheduled = false;
@@ -206,6 +211,39 @@ export class BackendCore {
       });
     }, this.options.syncIntervalMs);
     this.kickWorker();
+  }
+
+  /**
+   * Before a quit or an update: no op starts from now on (claimed ones go
+   * back to the queue untouched), and a send already talking to its server
+   * gets until `deadlineMs`. "sending" means one still is: the caller either
+   * resumes and asks again once sends settle, or stops anyway (the send is
+   * then recovered as unknown, never resent).
+   */
+  async quiesce(deadlineMs: number): Promise<"idle" | "sending"> {
+    this.draining = true;
+    if (this.workerTimer) clearTimeout(this.workerTimer);
+    this.workerTimer = null;
+    if (this.sendsInFlight === 0) return "idle";
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settled = await Promise.race([
+      this.sendsIdle().then(() => true),
+      new Promise<boolean>((r) => (timer = setTimeout(() => r(false), Math.max(0, deadlineMs)))),
+    ]);
+    clearTimeout(timer);
+    return settled ? "idle" : "sending";
+  }
+
+  /** The quit or update was put off: ops run again. */
+  resume(): void {
+    if (!this.draining) return;
+    this.draining = false;
+    this.kickWorker();
+  }
+
+  /** Resolves once no send is in flight. */
+  sendsIdle(): Promise<void> {
+    return this.sendsInFlight === 0 ? Promise.resolve() : new Promise((r) => this.sendsSettled.push(r));
   }
 
   async stop(): Promise<void> {
@@ -647,7 +685,7 @@ export class BackendCore {
   kickWorker(): void {
     if (this.options.autoSync === false || this.stopped) return;
     this.workerKicked = true;
-    if (this.workerRunning) return;
+    if (this.workerRunning || this.draining) return;
     if (this.workerTimer) clearTimeout(this.workerTimer);
     this.workerTimer = setTimeout(() => void this.runWorker(), 0);
   }
@@ -661,6 +699,7 @@ export class BackendCore {
       do {
         this.workerKicked = false;
         for (;;) {
+          if (this.draining) break;
           const batch = await this.store.ops.claimReady(this.now(), 25);
           if (batch.length === 0) break;
           const byAccount = new Map<number, OpRow[]>();
@@ -681,7 +720,7 @@ export class BackendCore {
           );
           processed += batch.length;
         }
-      } while (this.workerKicked && !this.stopped);
+      } while (this.workerKicked && !this.stopped && !this.draining);
     } finally {
       this.workerRunning = false;
     }
@@ -690,7 +729,7 @@ export class BackendCore {
   }
 
   private async scheduleRetry(): Promise<void> {
-    if (this.stopped || this.options.autoSync === false) return;
+    if (this.stopped || this.draining || this.options.autoSync === false) return;
     const next = await this.store.ops.nextAttemptAt();
     if (next === null || this.stopped) return;
     if (this.workerTimer) clearTimeout(this.workerTimer);
@@ -702,7 +741,12 @@ export class BackendCore {
     // been superseded (deleted), pruned (deleted messages) or narrowed.
     const op = await this.store.ops.get(claimed.id);
     if (!op || op.state !== "running") return;
+    // quitting: an op that hasn't reached its server waits for the next start, as it was
+    if (this.draining) return void (await this.store.ops.release(op.id, this.now()));
     const provider = await this.provider(op.account_id);
+    if (this.draining) return void (await this.store.ops.release(op.id, this.now()));
+    const sending = op.kind === "send";
+    if (sending) this.sendsInFlight++;
     const target = JSON.parse(op.target_json) as { messageIds?: number[] };
     const started = performance.now();
     try {
@@ -723,7 +767,10 @@ export class BackendCore {
       if (error instanceof ProviderAuthError) await this.store.ops.awaitAuth(op.id, message, this.now());
       else if (error instanceof ProviderError && error.ambiguous) await this.store.ops.markUnknown(op.id, message, this.now());
       else await this.store.ops.fail(op.id, message, error instanceof ProviderError ? error.retryable : true, this.now());
+    } finally {
+      if (sending && --this.sendsInFlight === 0) for (const settle of this.sendsSettled.splice(0)) settle();
     }
+    if (this.stopped && !this.store.isOpen) return;
     const after = await this.store.ops.get(op.id);
     if (after) this.server.emit("op", this.opInfo(after)); // a superseded op is simply gone
   }

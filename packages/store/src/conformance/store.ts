@@ -504,6 +504,25 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect((await store.debug.snapshot()).threads.map((t) => t.id)).toEqual(threads);
       });
 
+      it("a claimed op released before it started goes back as it was: queued, its attempt given back, never 'unknown' after a reopen", async () => {
+        const box = await mailbox(1);
+        const { a, act, threads } = box;
+        let store = box.store;
+        const send = await store.compose.queueSend({ accountId: a, to: [{ name: "", email: "x@y.com" }], cc: [], bcc: [], subject: "hi", bodyText: ".", recordReply: false, now: 0 });
+        const archive = (await act(threads[0]!, "archive"))!;
+        expect((await store.ops.claimReady(0, 20)).map((o) => o.id).sort()).toEqual([send.opId, archive].sort());
+        await store.ops.release(send.opId, 5);
+        expect(await store.ops.get(send.opId)).toMatchObject({ state: "queued", attempts: 0 });
+        // a settled op is left alone
+        await store.ops.complete(archive, undefined, 6);
+        await store.ops.release(archive, 7);
+        expect((await store.ops.get(archive))!.state).toBe("succeeded");
+        store = await harness.reopen(store);
+        open.push(store);
+        expect(await store.ops.recover(8)).toEqual({ requeued: 0, unknown: 0 });
+        expect((await store.ops.claimReady(9, 20)).map((o) => o.id)).toEqual([send.opId]);
+      });
+
       it("reports messages with unsettled ops per account, and sync doesn't clobber their optimistic state", async () => {
         const { store, a, threads, act } = await mailbox(2);
         const done = (await act(threads[0]!, "archive"))!;

@@ -74,6 +74,7 @@ import {
   applyThreadAction,
   restoreMessages,
   awaitAuthOp,
+  releaseOp,
   changeOwner,
   claimFilterApplications,
   claimOwner,
@@ -737,6 +738,7 @@ export class IdbMailStore implements MailStore {
     fail: (id, error, retryable, now) => this.command(() => failOp(this.c, id, error, retryable, now)),
     markUnknown: (id, error, now) => this.command(() => markOpUnknown(this.c, id, error, now)),
     awaitAuth: (id, error, now) => this.command(() => awaitAuthOp(this.c, id, error, now), { early: true }),
+    release: (id, now) => this.command(() => releaseOp(this.c, id, now), { early: true }),
     resumeAuth: (accountId, now) => this.command(() => resumeAuthOps(this.c, accountId, now), { early: true }),
     recover: (now) => this.command(() => recoverOps(this.c, now), { early: true }),
     nextAttemptAt: () =>

@@ -492,6 +492,11 @@ export function awaitAuthOp(db: Db, id: string, error: string, now: number): voi
   db.run("UPDATE ops SET state = 'queued', attempts = max(attempts - 1, 0), next_attempt_at = ?, last_error = ?, updated_at = ? WHERE id = ? AND state = 'running'", AWAITING_AUTH, error, now, id);
 }
 
+/** A claimed op that never reached its provider goes back exactly as it was (quit or update before it started). */
+export function releaseOp(db: Db, id: string, now: number): void {
+  db.run("UPDATE ops SET state = 'queued', attempts = max(attempts - 1, 0), updated_at = ? WHERE id = ? AND state = 'running'", now, id);
+}
+
 export function resumeAuthOps(db: Db, accountId: number, now: number): string[] {
   return db
     .all<{ id: string }>("UPDATE ops SET next_attempt_at = 0, updated_at = ? WHERE account_id = ? AND state = 'queued' AND next_attempt_at = ? RETURNING id", now, accountId, AWAITING_AUTH)

@@ -20,6 +20,8 @@ interface ScriptedProvider extends MailProvider {
   executed: ProviderOp[];
   failNext: ProviderError | null;
   beforeExecute?: (op: ProviderOp) => void;
+  /** a provider call that hasn't answered yet (a slow SMTP server) */
+  gate?: Promise<void>;
   sink: SyncSink | null;
 }
 
@@ -37,6 +39,7 @@ function scriptedRegistry() {
         },
         async execute(op) {
           p.beforeExecute?.(op);
+          if (p.gate) await p.gate;
           if (p.failNext) {
             const e = p.failNext;
             p.failNext = null;
@@ -235,6 +238,81 @@ describe("sending", () => {
     const second = setup({ dir: first.dir });
     const [op] = await second.client.call("ops.list", {});
     expect(op).toMatchObject({ kind: "send", state: "unknown" });
+  });
+});
+
+describe("quitting and updating (quiesce)", () => {
+  it("with nothing sending it is idle at once, and an op claimed afterwards goes back untouched", async () => {
+    const { backend, client, providers, accountId } = setup();
+    await backend.ingestSliced([incoming(accountId)]);
+    const [t] = (await client.call("threads.list", { view: "inbox" })).items;
+    await backend.provider(accountId);
+    await client.call("threads.act", { threadIds: [t!.id], action: "archive" });
+    expect(await backend.quiesce(1000)).toBe("idle");
+    // the worker claims nothing while draining
+    expect(await backend.runWorker()).toBe(0);
+    expect(providers.get(accountId)!.executed).toEqual([]);
+    const [op] = await client.call("ops.list", {});
+    expect(op).toMatchObject({ state: "queued", attempts: 0 });
+    backend.resume();
+    expect(await backend.runWorker()).toBe(1);
+    expect(providers.get(accountId)!.executed.map((o) => o.kind)).toEqual(["archive"]);
+  });
+
+  it("waits for a send in flight to be recorded, then reports idle", async () => {
+    const { backend, client, providers, accountId } = setup();
+    await backend.provider(accountId);
+    const p = providers.get(accountId)!;
+    let answer!: () => void;
+    p.gate = new Promise((r) => (answer = r));
+    const sent = await client.call("compose.send", { accountId, to: [{ name: "", email: "x@y.com" }], subject: "s", bodyText: "." });
+    const worker = backend.runWorker();
+    await new Promise((r) => setTimeout(r, 20));
+    const quiet = backend.quiesce(5000);
+    setTimeout(answer, 30);
+    expect(await quiet).toBe("idle");
+    // recorded before quiesce answered: the database can close now
+    expect(getOp(sqlDb(backend.store), sent.opId)!.state).toBe("succeeded");
+    await worker;
+  });
+
+  it("a send still in flight at the deadline is 'sending'; resume lets it finish and sendsIdle tells when", async () => {
+    const { backend, client, providers, accountId } = setup();
+    await backend.provider(accountId);
+    const p = providers.get(accountId)!;
+    let answer!: () => void;
+    p.gate = new Promise((r) => (answer = r));
+    const sent = await client.call("compose.send", { accountId, to: [{ name: "", email: "x@y.com" }], subject: "s", bodyText: "." });
+    const worker = backend.runWorker();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(await backend.quiesce(30)).toBe("sending");
+    backend.resume();
+    const idle = backend.sendsIdle();
+    answer();
+    await idle;
+    expect(getOp(sqlDb(backend.store), sent.opId)!.state).toBe("succeeded");
+    await worker;
+  });
+
+  it("a send claimed in the same batch but not started when quitting begins goes back to the queue, never 'unknown'", async () => {
+    const { backend, client, providers, accountId } = setup();
+    await backend.ingestSliced([incoming(accountId)]);
+    const [t] = (await client.call("threads.list", { view: "inbox" })).items;
+    await backend.provider(accountId);
+    const p = providers.get(accountId)!;
+    let answer!: () => void;
+    p.gate = new Promise((r) => (answer = r));
+    await client.call("threads.act", { threadIds: [t!.id], action: "archive" });
+    const sent = await client.call("compose.send", { accountId, to: [{ name: "", email: "x@y.com" }], subject: "s", bodyText: "." });
+    const worker = backend.runWorker();
+    await new Promise((r) => setTimeout(r, 20));
+    // the archive is at its server; the send waits behind it in the batch
+    const quiet = backend.quiesce(5000);
+    answer();
+    expect(await quiet).toBe("idle");
+    await worker;
+    expect(p.executed.map((o) => o.kind)).toEqual(["archive"]);
+    expect(getOp(sqlDb(backend.store), sent.opId)).toMatchObject({ state: "queued", attempts: 0 });
   });
 });
 
