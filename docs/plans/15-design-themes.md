@@ -534,7 +534,7 @@ Plans 11 (in-app updates) and 14 (i18n) merged before implementation. What chang
 - Base UI radio items stay open on choice: the "Filtered by" menu reopened as closed. `closeOnClick`.
 - The Local pill drew the sidebar's accent as text on the sidebar, a pair never checked (3.7:1 in Terno Light): `sidebar-primary-ink`, proven for every palette.
 - The Reply pill's `aria-label` didn't match its visible "Reply R" (axe: label in name).
-- Pre-existing, not changed here: the dwell's mark-as-read invalidates the open thread's cache, so the reader shows its skeleton for a moment and focus inside the reader is lost (macOS too). Noted for a follow-up.
+- Pre-existing: the dwell's mark-as-read invalidated the open thread's cache, so the reader showed its skeleton for a moment and focus inside it was lost (macOS too). Fixed afterwards, see §14.
 
 ### Measured
 
@@ -570,3 +570,33 @@ Also removed: Lumen baselines that a full non-gate pass (`E2E_DESIGN_ALL=1`) had
 ### Verification (after the fixes)
 
 `pnpm typecheck`, `pnpm lint`, `pnpm test` (1,868 unit + 395 db-wasm), `pnpm test:e2e` (556: the whole suite in macOS, the `@design` flows and designs.spec in Lumen and Atelier), `pnpm test:web` (29), `pnpm test:ui-perf` (26, including j/scroll per design × density and the switch gate), `pnpm test:perf` (112), `pnpm dist:mac` and the packaged smoke (38). Known flake under full parallel load, passing on reruns: `print.spec` "from the toolbar … and the palette" (as in plan 14). Screenshots of every design in light and dark (main window, 980×600, reply, compose, every settings tab, palette, shortcuts, print sheet, filters dialog, add account, selection, the filter on, context menu, the update pill and popover, first run, the web gate): `/tmp/unica-scratch/designs-15/`.
+
+## 14. Follow-up: the read-after-dwell leaves the reader as it is
+
+**Root cause.** `act("markRead")` (the dwell's quiet read) and the backend's `changed` event both called `invalidateThreads`, which deleted the open thread's cached detail. `useThread` returned `undefined`, the reader drew its skeleton, and the conversation and the inline draft unmounted until the refetch came back. Focus, caret and scroll went with them. The same thing happened after any change to the open thread: a sync, a send, a category. The web worker and the desktop utility process both emit through `BackendCore.notifyChanged`, and the renderer handles both in `boot.ts`, so one fix covers both. Separately, `Conversation` decided which messages were open from the live `isRead`, so once the refetch arrived, messages that had been open because they were unread folded away.
+
+**Fix.**
+- `state/threads.ts`: the open thread stays in the cache with a stale mark until a fetch replaces it. Other changed threads still drop.
+- Fetches are numbered. An answer that left before the last change, or one older than a newer fetch, can't pass for current.
+- A `NOT_FOUND` drops the thread, and the reader says "That conversation no longer exists." (`errors.threadGone`, already in both locales) instead of waiting.
+- `Conversation` is keyed by thread. Each message keeps how it first showed (open while unread, and the last one) for as long as the thread stays open, and that includes messages that arrive later.
+
+**Tests.**
+- `state/threads.test.ts` covers keeping the open thread, dropping the rest, fetch ordering, failed and `NOT_FOUND` refetches, and stale marks staying bounded.
+- `e2e/reader-mark-read.spec.ts` runs in all three designs (`@design`):
+  - The backend holds the action until focus and scroll are in place.
+  - No skeleton appears and the reader's nodes are not remounted.
+  - Focus stays on a message toggle and on the inline reply, the caret is kept (typing continues where it was), and scroll and expansion are unchanged.
+  - New messages still arrive in the open thread.
+  - A deleted thread says so.
+  - A thread switch renders the conversation once.
+
+**What the Codex reviews changed** (`/tmp/unica-scratch/review-markread*.txt`):
+- Round 1:
+  - A thread deleted on the server while open stayed on screen; it now shows the "gone" state.
+  - The first version's render-phase update doubled the conversation's renders on every thread switch; the component is now keyed by thread.
+  - Stale marks outlived the details they marked once those were dropped.
+  - The spec waited on time; it now waits on the page's cache.
+- Round 2: a message arriving after the thread opened folded away once read and no longer last; arrivals are now recorded when they render.
+- Round 3: nothing found.
+
