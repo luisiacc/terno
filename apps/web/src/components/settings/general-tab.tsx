@@ -7,7 +7,8 @@ import { Keyboard } from "lucide-react";
 import { Suspense, useRef, useState } from "react";
 import { isLanguageSetting, LOCALE_IDS, LOCALES, resolveLocale, t, type LanguageSetting } from "@terno/i18n";
 import { setApp } from "~/state/app";
-import { applyLanguage } from "~/lib/i18n";
+import { commitLanguage } from "~/lib/i18n";
+import { snack } from "~/lib/snack";
 import { MacSection } from "~/lib/web-parts";
 import { parseSyncWindow, SYNC_WINDOW_MAX, SYNC_WINDOW_MIN } from "~/lib/settings-values";
 import { DiagnosticsSection } from "./diagnostics-section";
@@ -109,26 +110,36 @@ const density = () =>
 
 /** Language: System (what it resolves to now), then each language by its own name. */
 function LanguageRow({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
+  // a choice made in the open list waits for it to finish closing (re-mounting an open popup breaks
+  // Base UI); typing on the closed control (typeahead) applies at once
+  const listOpen = useRef(false);
   const chosen = useRef<LanguageSetting | null>(null);
   const system = LOCALES[resolveLocale("system", navigator.languages?.length ? navigator.languages : [navigator.language])].name;
   const items = [{ value: "system", label: t("language.system", { language: system }) }, ...LOCALE_IDS.map((id) => ({ value: id, label: LOCALES[id].name }))];
+  // switched here first so focus comes back to this control after the app re-renders in the new language
+  const commit = (v: LanguageSetting) =>
+    void commitLanguage(v, settings.language, () => update({ language: v }, { quiet: true }), (error) => snack.error(error instanceof Error ? error.message : String(error)), "language-select");
   return (
     <SettingsRow label={t("language.label")} hint={t("language.hint")} testId="language-row">
       {({ id: _id, ...a }) => (
         <Select
           value={settings.language}
           onValueChange={(v) => {
-            if (isLanguageSetting(v) && v !== settings.language) chosen.current = v;
+            if (!isLanguageSetting(v) || v === settings.language) return;
+            if (listOpen.current) chosen.current = v;
+            else commit(v);
           }}
-          // the app re-mounts in the new language only once the list has closed (re-mounting an open
-          // popup breaks Base UI); switched here first so focus comes back to this control
-          onOpenChangeComplete={(open) => {
-            const v = chosen.current;
-            if (open || !v) return;
+          onOpenChange={(open) => {
+            if (!open) return;
+            listOpen.current = true;
             chosen.current = null;
-            const was = settings.language;
-            void applyLanguage(v, "language-select");
-            void update({ language: v }).catch(() => applyLanguage(was));
+          }}
+          onOpenChangeComplete={(open) => {
+            if (open) return;
+            listOpen.current = false;
+            const v = chosen.current;
+            chosen.current = null;
+            if (v) commit(v);
           }}
           items={items}
         >

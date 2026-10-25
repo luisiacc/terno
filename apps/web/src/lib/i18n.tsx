@@ -29,6 +29,8 @@ function cachedSetting(): LanguageSetting {
 }
 
 let setting: LanguageSetting = "system";
+/** Settings → Language saves in flight (commitLanguage). */
+let committing = 0;
 let seq = 0;
 
 function publish(id: LocaleId): void {
@@ -75,6 +77,8 @@ export async function applyLanguage(next: LanguageSetting, focusAfter?: string):
     const scroll = new Map<string, number>();
     for (const el of document.querySelectorAll<HTMLElement>("[data-keep-scroll]")) scroll.set(el.dataset.keepScroll!, el.scrollTop);
     restore = { scroll, focus: focusAfter ?? null };
+    // set before the re-mount: a dialog picks its initial focus in its own effects, before LocaleRoot's
+    focusAfterSwitch = focusAfter ?? null;
     setLocale(id, catalog);
     publish(id);
     document.documentElement.classList.add("motion-paused");
@@ -84,10 +88,32 @@ export async function applyLanguage(next: LanguageSetting, focusAfter?: string):
   }
 }
 
+/**
+ * A choice made in Settings: the app switches at once, the setting is saved,
+ * and a failed save says so and goes back to `was`, unless a newer choice
+ * was made in the meantime.
+ */
+export async function commitLanguage(next: LanguageSetting, was: LanguageSetting, save: () => Promise<void>, onError: (error: unknown) => void, focusAfter?: string): Promise<void> {
+  const switched = applyLanguage(next, focusAfter);
+  committing++;
+  try {
+    await save();
+  } catch (error) {
+    onError(error);
+    await switched;
+    if (setting === next) await applyLanguage(was);
+    return;
+  } finally {
+    committing--;
+  }
+  await switched;
+}
+
 /** Keeps the language in step with the settings and, while it's "system", with the system. */
 export function installLanguageFollower(subscribe: (listener: (language: LanguageSetting | undefined) => void) => () => void): () => void {
   const off = subscribe((language) => {
-    if (language && language !== setting) void applyLanguage(language);
+    // while this window's own choices are being saved, the answers in between are older than the choice
+    if (language && language !== setting && committing === 0) void applyLanguage(language);
   });
   const onSystem = () => setting === "system" && void applyLanguage("system");
   window.addEventListener("languagechange", onSystem);
@@ -95,6 +121,13 @@ export function installLanguageFollower(subscribe: (listener: (language: Languag
     off();
     window.removeEventListener("languagechange", onSystem);
   };
+}
+
+let focusAfterSwitch: string | null = null;
+
+/** A dialog's initial focus: none while a switch re-mounts the app (restoreAfterSwitch puts it back on the control that made it), else the default. */
+export function switchFocus(): boolean {
+  return focusAfterSwitch === null;
 }
 
 /**
@@ -114,19 +147,35 @@ function restoreAfterSwitch(): void {
       if (el && el.scrollTop !== top) el.scrollTop = top;
     }
   };
+  // focus goes back to the control that made the change, never away from where the user moved it since
+  // (a modal's focus trap moves focus to its first control when the old tree takes the focused
+  // element away: that isn't the user; a click or Tab is)
+  let moved = false;
+  const onPointer = () => (moved = true);
+  const onKey = (e: KeyboardEvent) => (moved ||= e.key === "Tab" || e.key === "Escape" || e.key === "F6");
+  window.addEventListener("pointerdown", onPointer, true);
+  window.addEventListener("keydown", onKey, true);
   const focus = () => {
-    if (r.focus && document.activeElement?.id !== r.focus) document.getElementById(r.focus)?.focus({ preventScroll: true });
+    if (!r.focus || moved || document.activeElement?.id === r.focus) return;
+    document.getElementById(r.focus)?.focus({ preventScroll: true });
   };
   put();
   focus();
-  requestAnimationFrame(() => {
+  let frames = 0;
+  const start = performance.now();
+  const tick = () => {
     put();
-    requestAnimationFrame(() => {
-      put();
-      focus();
-      document.documentElement.classList.remove("motion-paused");
-    });
-  });
+    focus();
+    if (++frames === 2) document.documentElement.classList.remove("motion-paused");
+    // a dialog can take focus well after it mounts (its open transition): keep watching for half a second
+    if (performance.now() - start < 500) requestAnimationFrame(tick);
+    else {
+      focusAfterSwitch = null;
+      window.removeEventListener("pointerdown", onPointer, true);
+      window.removeEventListener("keydown", onKey, true);
+    }
+  };
+  requestAnimationFrame(tick);
 }
 
 /** The app, re-mounted once per locale change. */

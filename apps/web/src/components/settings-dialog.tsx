@@ -17,6 +17,7 @@ import { GeneralTab } from "./settings/general-tab";
 import { SETTINGS_TABS, settingsTabLabel } from "./settings/tabs";
 import { t } from "@terno/i18n";
 import { reconcileSettings } from "~/lib/appearance";
+import { switchFocus } from "~/lib/i18n";
 import type { SettingsUpdate } from "./settings/parts";
 import { PaneBoundary } from "./diag/error-boundary";
 import { ReportPreview } from "./diag/report-preview";
@@ -40,7 +41,7 @@ export function SettingsDialog() {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && setApp({ dialog: null })}>
-      <DialogContent className="h-[min(640px,85vh)] max-w-[min(820px,94vw)] grid-rows-1 gap-0 overflow-hidden p-0 sm:max-w-[min(820px,94vw)]" data-testid="settings-dialog">
+      <DialogContent className="h-[min(640px,85vh)] max-w-[min(820px,94vw)] grid-rows-1 gap-0 overflow-hidden p-0 sm:max-w-[min(820px,94vw)]" data-testid="settings-dialog" initialFocus={switchFocus}>
         <DialogTitle className="sr-only">{t("common.settings")}</DialogTitle>
         <Tabs value={tab} onValueChange={(v) => setApp({ settingsTab: v as SettingsTab })} orientation="vertical" className="flex h-full flex-row gap-0">
           {/* macOS System Settings: a sidebar of sections with accent glyphs */}

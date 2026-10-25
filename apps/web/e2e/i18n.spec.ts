@@ -145,6 +145,19 @@ test.describe("languages", () => {
     await expect(page.getByTestId("list-title")).toHaveText(es["view.inbox"]);
   });
 
+  test("typing on the closed Language control applies the choice too", async ({ app: page }) => {
+    await openSettings(page);
+    await page.getByTestId("language-select").focus();
+    await page.keyboard.type("Esp");
+    await expect(page.locator("html")).toHaveAttribute("lang", "es-MX");
+    await expect(page.getByTestId("tab-general")).toHaveText(es["settings.tab.general"]);
+    await expect.poll(() => page.evaluate(() => { const a = document.activeElement as HTMLElement; return a?.id === "language-select" ? "language-select" : `${a?.tagName} ${a?.getAttribute("role")} ${a?.dataset.testid} ${a?.className.slice(0, 60)}`; })).toBe("language-select");
+    // and it was saved: still Spanish after a reload
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await expect(page.getByTestId("list-title")).toHaveText(es["view.inbox"]);
+  });
+
   test("System follows the browser's language", async ({ app: page }) => {
     await chooseLanguage(page, "es");
     await openSettings(page);
