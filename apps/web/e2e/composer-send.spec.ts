@@ -28,7 +28,7 @@ async function gmail(page: Page, html: string): Promise<{ kept: string; same: st
       const doc = parse();
       for (const el of doc.querySelectorAll("style, script, link, meta, title")) el.remove();
       for (const el of doc.body.querySelectorAll<HTMLElement>("*")) {
-        for (const a of [...el.attributes]) if (!["style", "href", "start"].includes(a.name)) el.removeAttribute(a.name);
+        for (const a of Array.from(el.attributes)) if (!["style", "href", "start"].includes(a.name)) el.removeAttribute(a.name);
         if (el.hasAttribute("style")) {
           const kept: string[] = [];
           for (let i = 0; i < el.style.length; i++) {
