@@ -3,6 +3,8 @@ import { applyTestBuild } from "../test-build";
 import {
   bundleOf,
   Grants,
+  inboundHeaders,
+  outboundHeaders,
   installOutcome,
   mayCheck,
   mayDownload,
@@ -66,6 +68,13 @@ describe("updates: where requests may go", () => {
     ["not a url", false],
   ])("%s → %s", (url, allowed) => {
     expect(updateRequestAllowed(url, null)).toBe(allowed);
+  });
+
+  it("no identifier or credential goes out (electron-updater's x-user-staging-id included), and no cookie comes back", () => {
+    // what electron-updater actually sends on a check (computeFinalHeaders + getUpdateInfoAndProvider)
+    const sent = { accept: "*/*", "User-Agent": "electron-builder", "x-user-staging-id": "6f1c1b2e-0000-4000-8000-000000000000", Cookie: "a=b", Authorization: "token x", "Proxy-Authorization": "Basic y" };
+    expect(outboundHeaders(sent)).toEqual({ accept: "*/*", "User-Agent": "electron-builder" });
+    expect(inboundHeaders({ "Set-Cookie": ["a=b"], "set-cookie2": ["c"], "Content-Type": ["text/yaml"] })).toEqual({ "Content-Type": ["text/yaml"] });
   });
 
   it("a test build reaches its own feed's origin, and only that", () => {

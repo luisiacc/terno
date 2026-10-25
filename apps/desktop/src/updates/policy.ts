@@ -90,6 +90,21 @@ export function updateRequestAllowed(url: string, testFeed: string | null): bool
   return u.protocol === "https:" && u.port === "" && GITHUB_RELEASE_HOSTS.has(u.hostname.toLowerCase());
 }
 
+/**
+ * What may go out with an update request: no cookies or credentials, and not
+ * electron-updater's staged-rollout id (x-user-staging-id, a random id kept
+ * in the profile: a stable identifier GitHub has no business seeing).
+ */
+const DROPPED_HEADERS = /^(cookie|authorization|proxy-authorization|x-user-staging-id)$/i;
+export function outboundHeaders(headers: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(headers).filter(([name]) => !DROPPED_HEADERS.test(name)));
+}
+
+/** Nor may anything set a cookie in the updater's session. */
+export function inboundHeaders(headers: Record<string, string[]>): Record<string, string[]> {
+  return Object.fromEntries(Object.entries(headers).filter(([name]) => !/^set-cookie2?$/i.test(name)));
+}
+
 // ───────────────────────────── which copies can update ─────────────────────────────
 
 export interface LocationProbe {

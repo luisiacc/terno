@@ -18,7 +18,7 @@
 import { autoUpdater as squirrel, session } from "electron";
 import { CancellationToken, MacUpdater } from "electron-updater";
 import type { UpdateChannel } from "@terno/core/updates";
-import type { FeedConfig } from "./policy";
+import { inboundHeaders, outboundHeaders, type FeedConfig } from "./policy";
 
 export const UPDATER_PARTITION = "persist:terno-updater";
 
@@ -49,16 +49,8 @@ export interface Engine {
 export function createEngine(o: { feed: FeedConfig; allowed(url: string): boolean; handlers: EngineHandlers }): Engine {
   const ses = session.fromPartition(UPDATER_PARTITION, { cache: false });
   ses.webRequest.onBeforeRequest((details, callback) => callback({ cancel: !o.allowed(details.url) }));
-  ses.webRequest.onBeforeSendHeaders((details, callback) => {
-    const headers = { ...details.requestHeaders };
-    for (const name of Object.keys(headers)) if (/^(cookie|authorization|proxy-authorization)$/i.test(name)) delete headers[name];
-    callback({ requestHeaders: headers });
-  });
-  ses.webRequest.onHeadersReceived((details, callback) => {
-    const headers = { ...details.responseHeaders };
-    for (const name of Object.keys(headers)) if (/^set-cookie2?$/i.test(name)) delete headers[name];
-    callback({ responseHeaders: headers });
-  });
+  ses.webRequest.onBeforeSendHeaders((details, callback) => callback({ requestHeaders: outboundHeaders(details.requestHeaders) }));
+  ses.webRequest.onHeadersReceived((details, callback) => callback({ responseHeaders: inboundHeaders(details.responseHeaders ?? {}) }));
 
   const updater = new MacUpdater();
   // our session instead of electron-updater's own partition
@@ -69,6 +61,8 @@ export function createEngine(o: { feed: FeedConfig; allowed(url: string): boolea
   updater.autoInstallOnAppQuit = true;
   updater.autoRunAppAfterInstall = true;
   updater.fullChangelog = false;
+  // no staged rollouts: its random per-profile id (.updaterId, sent as x-user-staging-id) is never created
+  (updater as unknown as { getOrCreateStagingUserId(): Promise<string> }).getOrCreateStagingUserId = async () => "00000000-0000-4000-8000-000000000000";
   updater.setFeedURL(o.feed);
   updater.on("download-progress", (p: { percent: number }) => o.handlers.progress(p.percent));
   squirrel.on("update-downloaded", () => o.handlers.ready());
@@ -99,6 +93,8 @@ export function createEngine(o: { feed: FeedConfig; allowed(url: string): boolea
     },
     cancel() {
       token?.cancel();
+      // a check has no token of its own: whatever the session has in flight is cut (its promise rejects)
+      void ses.closeAllConnections();
     },
     quitAndInstall() {
       updater.quitAndInstall();

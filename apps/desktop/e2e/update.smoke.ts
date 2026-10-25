@@ -53,6 +53,8 @@ let work: string;
 let server: Server;
 let feedUrl: string;
 const requests: string[] = [];
+// every header name the feed received (no identifier or credential may ride along)
+const headerNames = new Set<string>();
 let app: ElectronApplication | null = null;
 let page: Page;
 
@@ -130,6 +132,7 @@ test.beforeAll(async () => {
   work = mkdtempSync(join("/tmp", "terno-update-e2e-"));
   server = createServer((req, res) => {
     requests.push(req.url ?? "");
+    for (const name of Object.keys(req.headers)) headerNames.add(name.toLowerCase());
     const file = join(work, "feed", decodeURIComponent((req.url ?? "/").split("?")[0]!).replace(/^\/+/, ""));
     if (!file.startsWith(join(work, "feed")) || !existsSync(file) || statSync(file).isDirectory()) {
       res.writeHead(404).end();
@@ -175,6 +178,9 @@ test("a corrupted download is refused (sha512): an integrity error, and the app 
   expect((await state()).ready).toBeNull();
   expect(bundleVersion()).toBe("0.1.0");
   expect(requests.some((r) => r.includes("Terno-0.1.1-arm64-mac.zip"))).toBe(true);
+  // no staged-rollout id, cookie or credential went out, and no id file was made in the profile
+  for (const name of ["x-user-staging-id", "cookie", "authorization"]) expect(headerNames).not.toContain(name);
+  expect(existsSync(join(profile(), ".updaterId"))).toBe(false);
 });
 
 test("an update downloads, Squirrel swaps the bundle and relaunches it, the profile is intact and the new version acknowledges", async () => {
