@@ -347,6 +347,26 @@ describe("the editor's body (plan 16)", () => {
     expect(state(back)).toMatchObject({ bodyText: "Hola!", bodyHtml: "<div><b>Hola!</b></div>" });
   });
 
+  it("Codex review 2: a send waiting for a save in flight gets what was typed meanwhile, even when that save fails", async () => {
+    const k = draft();
+    const ed = editor(k);
+    ed.type("A");
+    await vi.advanceTimersByTimeAsync(800);
+    expect(calls[0]!.params.bodyText).toBe("A");
+    const sending = draftForSend(k);
+    ed.type("B");
+    await answer(false);
+    expect((await sending)!.bodyText).toBe("AB");
+  });
+
+  it("Codex review 2: a source that isn't the schema's (a stand-in over a stored body) leaves the draft untrusted", () => {
+    const k = draft();
+    const body = attachBody(k, () => ({ html: "<div>stored<img src=x></div><div>more</div>", text: "stored\nmore" }), { canonical: false });
+    body.changed();
+    expect(fieldsOf(state(k)).bodyHtml).toContain("<img");
+    expect(state(k).canonical).toBe(false);
+  });
+
   it("a save refused as invalid (too long) says so and doesn't retry by itself; Retry tries again", async () => {
     const k = draft();
     editDraft(k, { bodyText: "x" });

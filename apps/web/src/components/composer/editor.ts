@@ -1,11 +1,11 @@
-import { emptyDoc, fromPlainText, parseHtml, restoreSlice, cleanPastedHtml, schema, toEmailHtml, toPlainText, urlIn, MAX_INDENT, type Align } from "@terno/richtext";
+import { blockStyle, emptyDoc, fromPlainText, parseHtml, restoreSlice, cleanPastedHtml, schema, toEmailHtml, toPlainText, urlIn, MAX_INDENT, type Align } from "@terno/richtext";
 import { baseKeymap, chainCommands, createParagraphNear, lift, liftEmptyBlock, newlineInCode, splitBlockAs, toggleMark, wrapIn } from "prosemirror-commands";
 import { closeHistory, history, redo, redoDepth, undo, undoDepth } from "prosemirror-history";
 import { InputRule, inputRules, undoInputRule, wrappingInputRule } from "prosemirror-inputrules";
 import { keymap } from "prosemirror-keymap";
 import { Fragment, Slice, type Mark, type MarkType, type Node as PMNode, type ResolvedPos } from "prosemirror-model";
 import { liftListItem, sinkListItem, splitListItem, wrapInList } from "prosemirror-schema-list";
-import { EditorState, Plugin, TextSelection, type Command, type Transaction } from "prosemirror-state";
+import { EditorState, Plugin, Selection, TextSelection, type Command, type Transaction } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import type { FormatCommand, FormatState } from "./controller";
 
@@ -90,25 +90,58 @@ export function setMark(type: MarkType, value: string | null): Command {
   });
 }
 
-/** The textblocks the selection touches. */
-function eachBlock(state: EditorState, fn: (node: PMNode, pos: number) => void): void {
-  const { from, to } = state.selection;
-  state.doc.nodesBetween(from, to, (node, pos) => {
+/**
+ * New attributes for the lines the selection touches (`update` returns null to
+ * leave one as it is), in ONE step: a step per line copies the document each
+ * time (quadratic: seconds for a whole 2 MB draft). The top-level blocks in the
+ * selection are rebuilt once, untouched nodes reused; sizes don't change, so
+ * the selection is put back as it was. False when nothing changed.
+ */
+function updateLines(tr: Transaction, from: number, to: number, update: (node: PMNode) => Record<string, unknown> | null): boolean {
+  const doc = tr.doc;
+  const touches = (pos: number, size: number) => (from === to ? pos < from && pos + size > from : pos < to && pos + size > from);
+  let changed = false;
+  const map = (node: PMNode, pos: number): PMNode => {
     if (node.type === nodes.paragraph) {
-      fn(node, pos);
-      return false;
+      const attrs = touches(pos, node.nodeSize) ? update(node) : null;
+      if (!attrs) return node;
+      changed = true;
+      return node.type.create({ ...node.attrs, ...attrs }, node.content, node.marks);
     }
-    return true;
-  });
+    if (node.isTextblock || node.isLeaf || !touches(pos, node.nodeSize)) return node;
+    const kids: PMNode[] = [];
+    let any = false;
+    node.forEach((child, offset) => {
+      const next = map(child, pos + 1 + offset);
+      if (next !== child) any = true;
+      kids.push(next);
+    });
+    return any ? node.copy(Fragment.from(kids)) : node;
+  };
+  const $from = doc.resolve(from);
+  const $to = doc.resolve(to);
+  const first = $from.index(0);
+  const last = Math.min($to.index(0), doc.childCount - 1);
+  const start = $from.posAtIndex(first, 0);
+  const blocks: PMNode[] = [];
+  let pos = start;
+  for (let i = first; i <= last; i++) {
+    const child = doc.child(i);
+    blocks.push(map(child, pos));
+    pos += child.nodeSize;
+  }
+  if (!changed) return false;
+  const selection = tr.selection;
+  tr.replaceWith(start, pos, Fragment.from(blocks));
+  tr.setSelection(Selection.fromJSON(tr.doc, selection.toJSON()));
+  return true;
 }
 
 export function setAlign(align: Align): Command {
   return step((state, dispatch) => {
     if (dispatch) {
       const tr = state.tr;
-      eachBlock(state, (node, pos) => {
-        if (node.attrs.align !== align) tr.setNodeMarkup(pos, null, { ...node.attrs, align });
-      });
+      updateLines(tr, state.selection.from, state.selection.to, (node) => (node.attrs.align !== align ? { align } : null));
       dispatch(tr);
     }
     return true;
@@ -155,13 +188,8 @@ function paragraphIndent(delta: number): Command {
       });
       return any;
     }
-    let changed = false;
     const tr = state.tr;
-    eachBlock(state, (node, pos) => {
-      if (!can(node)) return;
-      changed = true;
-      tr.setNodeMarkup(pos, null, { ...node.attrs, indent: Math.max(0, Math.min(MAX_INDENT, (node.attrs.indent as number) + delta)) });
-    });
+    const changed = updateLines(tr, state.selection.from, state.selection.to, (node) => (can(node) ? { indent: Math.max(0, Math.min(MAX_INDENT, (node.attrs.indent as number) + delta)) } : null));
     if (changed) dispatch(tr);
     return changed;
   };
@@ -184,9 +212,7 @@ const clearFormatting: Command = (state, dispatch) => {
   const keep = (m: Mark) => m.type === marks.link;
   if (state.selection.empty) tr.setStoredMarks((state.storedMarks ?? state.selection.$from.marks()).filter(keep));
   else for (const { $from, $to } of state.selection.ranges) for (const type of Object.values(marks)) if (type !== marks.link) tr.removeMark($from.pos, $to.pos, type);
-  eachBlock(state, (node, pos) => {
-    if (node.attrs.align !== "left" || node.attrs.indent !== 0) tr.setNodeMarkup(pos, null, { ...node.attrs, align: "left", indent: 0 });
-  });
+  updateLines(tr, state.selection.from, state.selection.to, (node) => (node.attrs.align !== "left" || node.attrs.indent !== 0 ? { align: "left", indent: 0 } : null));
   dispatch(tr);
   return true;
 };
@@ -453,6 +479,31 @@ export function createPlugins(): Plugin[] {
   ];
 }
 
+/**
+ * A line whose alignment or indent changes keeps its element: the style is
+ * updated in place. ProseMirror would otherwise replace it, and replacing
+ * thousands of lines under a whole-draft selection took seconds (each removal
+ * updates the live selection).
+ */
+function paragraphView(initial: PMNode) {
+  const dom = document.createElement("p");
+  const apply = (node: PMNode) => {
+    const style = blockStyle(node.attrs);
+    if (style) dom.setAttribute("style", style);
+    else dom.removeAttribute("style");
+  };
+  apply(initial);
+  return {
+    dom,
+    contentDOM: dom,
+    update(node: PMNode) {
+      if (node.type !== nodes.paragraph) return false;
+      apply(node);
+      return true;
+    },
+  };
+}
+
 export interface RichEditor {
   view: EditorView;
   destroy(): void;
@@ -464,6 +515,7 @@ export function createEditor(
 ): RichEditor {
   const view: EditorView = new EditorView(mount, {
     state: o.state,
+    nodeViews: { paragraph: (node) => paragraphView(node) },
     attributes: o.attributes,
     editable: o.editable,
     dispatchTransaction(tr) {

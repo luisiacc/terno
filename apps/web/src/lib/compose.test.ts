@@ -104,6 +104,16 @@ describe("what sending says", () => {
   });
 });
 
+describe("Codex review 2: the draft is read-only from the moment Send is pressed", () => {
+  it("an edit right after Send (while its save settles) is refused, so nothing typed falls between them", () => {
+    const key = createDraft({ ...newFields(1), toText: "Ana <ana@example.com>", bodyText: "Hola" });
+    void sendDraft(key);
+    expect(useDrafts.getState().drafts[key]!.sending).toBe(true);
+    editDraft(key, { bodyText: "Hola, otra cosa" });
+    expect(useDrafts.getState().drafts[key]!.bodyText).toBe("Hola");
+  });
+});
+
 describe("the body sent (plan 16)", () => {
   it("a plain draft sends text only; a stored rich body is re-read through the schema, so only schema HTML goes out and the text matches it", async () => {
     const { JSDOM } = await import("jsdom");

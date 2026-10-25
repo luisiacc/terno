@@ -187,6 +187,8 @@ export type BodyReader = () => { html: string; text: string };
 interface BodySource {
   read: BodyReader;
   dirty: boolean;
+  /** its HTML comes from the schema (the editor's): a stand-in carrying a stored body isn't, and is re-read before sending */
+  canonical: boolean;
 }
 const sources = new Map<string, BodySource>();
 
@@ -195,8 +197,8 @@ const sources = new Map<string, BodySource>();
  * (an edit: dirty, saved later), `dispose()` when it unmounts (what it has is
  * written to the draft first). A source of a draft that is gone does nothing.
  */
-export function attachBody(key: string, read: BodyReader): { changed(): void; reset(): void; dispose(): void } {
-  const source: BodySource = { read, dirty: false };
+export function attachBody(key: string, read: BodyReader, options: { canonical?: boolean } = {}): { changed(): void; reset(): void; dispose(): void } {
+  const source: BodySource = { read, dirty: false, canonical: options.canonical ?? true };
   sources.set(key, source);
   return {
     changed() {
@@ -228,7 +230,7 @@ export function materialize(key: string): LocalDraft | undefined {
   if (!d || !source?.dirty) return d;
   source.dirty = false;
   const { html, text } = source.read();
-  const next = { ...d, bodyHtml: html, bodyText: text, canonical: true };
+  const next = { ...d, bodyHtml: html, bodyText: text, canonical: source.canonical };
   put(next);
   return next;
 }
@@ -429,12 +431,12 @@ export async function draftsSaved(capMs = 5000): Promise<boolean> {
 
 /** Waits for the save in flight (if any) and stops further saves: the draft is about to be sent or discarded. */
 async function settle(key: string): Promise<LocalDraft | undefined> {
-  materialize(key);
   const w = writers.get(key);
   if (w?.timer) clearTimeout(w.timer);
   if (w) w.timer = null;
   if (w?.inflight) await w.inflight.catch(() => {});
-  return get(key);
+  // after the wait: what was typed while that save was out (and it may have failed) is in what this returns
+  return materialize(key);
 }
 
 /** The draft as it is now, after any save in flight answered, ready to send. */

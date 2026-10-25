@@ -865,7 +865,8 @@ async function typeAndMeasure(page: import("@playwright/test").Page, name: strin
         const done = tx.find((t) => t >= t0);
         if (done === undefined) return void setTimeout(waitTx, 0);
         w.__kt.handled.push(done - t0);
-        requestAnimationFrame(() => w.__kt.frame.push(performance.now() - t0));
+        // after the frame that shows it has painted: the rAF callback runs before its layout and paint, the task after it once they're done
+        requestAnimationFrame(() => setTimeout(() => w.__kt.frame.push(performance.now() - t0), 0));
       };
       setTimeout(waitTx, 0);
     }, { capture: true });
@@ -925,10 +926,24 @@ test("a 2 MB draft of short lines: typing stays within a frame; no serialization
   await page.keyboard.press("ControlOrMeta+a");
   await page.waitForTimeout(300);
   const format = stat("2 MB draft (lines): toolbar state per selection change (incl. select all)", 16, (await composerProbe(page)).format!);
+  // a formatting command over the whole draft: indent every line, one step
+  const indentMs = await page.evaluate(async () => {
+    const w = window as unknown as { __composer?: Probe };
+    const t0 = performance.now();
+    document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "]", code: "BracketRight", metaKey: true, ctrlKey: !/Mac/.test(navigator.platform), bubbles: true, cancelable: true }));
+    await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+    const tx = (w.__composer?.tx ?? []).filter((t) => t >= t0);
+    return tx.length ? performance.now() - t0 : -1;
+  });
+  expect(indentMs).toBeGreaterThan(0);
+  // (one step, lines updated in place: ~1 s, down from ~7; ProseMirror's own per-line position lookups remain)
+  const whole = stat("2 MB draft (lines): indent the whole draft → painted", 1500, [indentMs]);
+  await expect.poll(() => editor.evaluate((el) => (el.lastElementChild as HTMLElement).style.marginLeft)).toBe("40px");
   await page.keyboard.press("ControlOrMeta+End");
   expect(handled.p95).toBeLessThanOrEqual(HUGE_MS * MULT);
   expect(save.p95).toBeLessThanOrEqual(150 * MULT);
   expect(format.p95).toBeLessThanOrEqual(16 * MULT);
+  expect(whole.p95).toBeLessThanOrEqual(1500 * MULT);
   await expect(editor).toBeFocused();
 });
 

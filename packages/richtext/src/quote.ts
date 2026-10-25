@@ -38,19 +38,23 @@ export function encodeSpaces(escaped: string, lineStart: boolean, lineEnd: boole
 
 const URL_RE = /\bhttps?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]]/g;
 
-/** One line of plain text as HTML: escaped, its spaces kept, its http(s) URLs as links. */
-export function lineHtml(line: string): string {
-  if (line === "") return "<br>";
+/** Part of a line as HTML (`start`/`end`: whether it begins or ends the line, for its edge spaces). */
+function partHtml(line: string, start: boolean, end: boolean): string {
   let out = "";
   let at = 0;
   for (const m of line.matchAll(URL_RE)) {
     const url = m[0];
     const i = m.index;
-    out += encodeSpaces(escapeHtml(line.slice(at, i)), at === 0, false);
+    out += encodeSpaces(escapeHtml(line.slice(at, i)), start && at === 0, false);
     out += isSafeHref(url) ? `<a href="${escapeHtml(url)}">${escapeHtml(url)}</a>` : escapeHtml(url);
     at = i + url.length;
   }
-  return out + encodeSpaces(escapeHtml(line.slice(at)), at === 0, true);
+  return out + encodeSpaces(escapeHtml(line.slice(at)), start && at === 0, end);
+}
+
+/** One line of plain text as HTML: escaped, its spaces kept, its http(s) URLs as links. */
+export function lineHtml(line: string): string {
+  return line === "" ? "<br>" : partHtml(line, true, true);
 }
 
 /** Quote levels past this stay as text (a hostile "> > > …" line can't nest without end). */
@@ -69,22 +73,43 @@ function quoteDepth(line: string): [number, string] {
 
 /**
  * Plain lines as the composer's lines (one <div> each), "> " runs as nested
- * blockquotes: iterative, in pieces of `chunk` lines (a caller in a time
- * budget yields between them).
+ * blockquotes: iterative, scanned as it goes, in pieces of about `budget`
+ * characters (a caller in a time budget yields between them; a line longer
+ * than that is cut into parts too).
  */
-export function* textToHtmlChunks(text: string, chunk = 2000): Generator<string> {
-  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+export function* textToHtmlChunks(text: string, budget = 16_384): Generator<string> {
   let open = 0;
   let out: string[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    const [depth, rest] = quoteDepth(lines[i]!);
+  let spent = 0;
+  const flush = function* () {
+    if (spent < budget) return;
+    yield out.join("");
+    out = [];
+    spent = 0;
+  };
+  for (let pos = 0; pos <= text.length; ) {
+    // CRLF and a lone CR end a line too
+    let nl = pos;
+    while (nl < text.length && text[nl] !== "\n" && text[nl] !== "\r") nl++;
+    const line = text.slice(pos, nl);
+    pos = nl + (text[nl] === "\r" && text[nl + 1] === "\n" ? 2 : 1);
+    const [depth, rest] = quoteDepth(line);
     for (; open < depth; open++) out.push(`<blockquote style="${QUOTE_STYLE}">`);
     for (; open > depth; open--) out.push("</blockquote>");
-    out.push(`<div>${lineHtml(rest)}</div>`);
-    if ((i + 1) % chunk === 0) {
-      yield out.join("");
-      out = [];
+    if (rest.length <= budget) {
+      out.push(`<div>${lineHtml(rest)}</div>`);
+      spent += rest.length + 1;
+    } else {
+      out.push("<div>");
+      for (let i = 0; i < rest.length; i += budget) {
+        out.push(partHtml(rest.slice(i, i + budget), i === 0, i + budget >= rest.length));
+        spent += budget;
+        yield* flush();
+      }
+      out.push("</div>");
     }
+    yield* flush();
+    if (nl >= text.length) break;
   }
   for (; open > 0; open--) out.push("</blockquote>");
   yield out.join("");

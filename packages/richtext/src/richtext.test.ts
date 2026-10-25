@@ -266,12 +266,23 @@ describe("quote, signature and the document around them", () => {
     expect(deep.match(/<\/blockquote>/g)).toHaveLength(32);
     expect(deep).toContain(`${"&gt;".repeat(10_000 - 32)}texto`);
     const big = Array.from({ length: 40_000 }, (_, i) => `> línea ${i} de la cita, con algo de texto para pesar`).join("\n");
-    const started = performance.now();
     const pieces = [...textToHtmlChunks(big)];
-    expect(performance.now() - started).toBeLessThan(400);
     expect(pieces.length).toBeGreaterThan(10);
     expect(pieces.join("")).toBe(textToHtml(big));
     expect(pieces.join("").startsWith('<blockquote style="')).toBe(true);
+    // each piece is a short step, also for one 5-million-character line (the backend yields between pieces)
+    for (const text of [big.repeat(3), "x ".repeat(2_500_000)]) {
+      let worst = 0;
+      const it = textToHtmlChunks(text);
+      for (;;) {
+        const t0 = performance.now();
+        const r = it.next();
+        worst = Math.max(worst, performance.now() - t0);
+        if (r.done) break;
+      }
+      expect(worst).toBeLessThan(25);
+    }
+    expect(textToHtml("a\r\nb\rc")).toBe("<div>a</div><div>b</div><div>c</div>");
   });
 
   it("escapes, keeps blank lines, links URLs", () => {

@@ -153,19 +153,24 @@ export function sendDraft(key: string): Promise<boolean> {
 export const isSending = (key: string): boolean => pendingSends.has(key);
 
 async function send(key: string): Promise<boolean> {
+  // read-only from here: nothing typed while the save in flight settles can fall between it and the send
+  markSending(key, true);
   const d = await draftForSend(key);
-  if (!d) return false;
+  if (!d) {
+    markSending(key, false);
+    return false;
+  }
   const to = validRecipients(d.toText);
   const cc = validRecipients(d.ccText);
   const bcc = validRecipients(d.bccText);
   // something typed that isn't an address (or nobody at all): stay, and say so
   const invalid = [d.toText, d.ccText, d.bccText].some((text) => parseAddressList(text).some((a) => !isValidEmail(a.email)));
   if (to.length === 0 || invalid) {
+    markSending(key, false);
     resumeDraft(key);
     snack.error(t("compose.checkRecipients"));
     return false;
   }
-  markSending(key, true);
   breadcrumb("action", "action.send");
   try {
     const body = await bodyParts(d);

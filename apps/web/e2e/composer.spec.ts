@@ -347,6 +347,51 @@ test.describe("before the editor has loaded", () => {
     release();
   });
 
+  test("Codex review 2: one keystroke (or one paste) into the stand-in is saved", async ({ app: page, server }) => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    await page.route(/\/assets\/rich-[^/]+\.js$/, async (route) => {
+      await gate;
+      await route.continue();
+    });
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await openRow(page, 0);
+    await focusList(page);
+    await page.keyboard.press("r");
+    await expect(page.getByTestId("compose-body-loading")).toBeFocused();
+    await page.keyboard.type("x");
+    await expect.poll(() => sqlDb(server.backend.store).get<{ body_text: string }>("SELECT body_text FROM drafts ORDER BY id DESC LIMIT 1")?.body_text, { timeout: 10_000 }).toBe("x");
+    release();
+  });
+
+  test("Codex review 2: collapsed and reopened while loading, the stand-in still has what was typed, and the editor gets all of it", async ({ app: page }) => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    await page.route(/\/assets\/rich-[^/]+\.js$/, async (route) => {
+      await gate;
+      await route.continue();
+    });
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await openRow(page, 0);
+    await focusList(page);
+    await page.keyboard.press("r");
+    const standIn = page.getByTestId("compose-body-loading");
+    await expect(standIn).toBeFocused();
+    await page.keyboard.type("ab");
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("draft-collapsed")).toBeVisible();
+    await page.getByTestId("draft-collapsed").click();
+    await expect(standIn).toHaveText("ab");
+    await standIn.click();
+    await page.keyboard.press("End");
+    await page.keyboard.type("c");
+    await expect(standIn).toHaveText("abc");
+    release();
+    await expect(body(page)).toHaveText("abc");
+  });
+
   test("the editor takes over the stand-in's text, once, and keeps the focus", async ({ app: page }) => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));

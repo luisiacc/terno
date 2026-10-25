@@ -70,7 +70,9 @@ function typedIn(key: string, text: string, focused: boolean) {
   if (!e) {
     const d = useDrafts.getState().drafts[key];
     const base = { text: d?.bodyText ?? "", html: d?.bodyHtml ?? "" };
-    const entry: Early = { base, text, focused, body: attachBody(key, () => withTyped(entry.base, entry.text)) };
+    // a stored body that never went through the schema stays untrusted: the send re-reads it
+    const canonical = !base.html || d?.canonical === true;
+    const entry: Early = { base, text: "", focused, body: attachBody(key, () => withTyped(entry.base, entry.text), { canonical }) };
     early.set(key, (e = entry));
   }
   const changed = e.text !== text;
@@ -78,6 +80,12 @@ function typedIn(key: string, text: string, focused: boolean) {
   e.focused = focused;
   if (changed) e.body.changed();
 }
+
+/** A stand-in mounted again (the draft collapsed and reopened while loading) shows what it already has. */
+const restoreTyped = (key: string) => (el: HTMLDivElement | null) => {
+  const e = early.get(key);
+  if (el && e && el.innerText !== e.text) el.innerText = e.text;
+};
 
 /** For the editor, once: what the stand-in got (its source is the editor's from now on). */
 export function takeEarly(key: string): { base: { text: string; html: string }; text: string; focused: boolean } | null {
@@ -105,6 +113,7 @@ export function ComposerBody({ draftKey, placeholder, className }: { draftKey: s
       suppressContentEditableWarning
       tabIndex={0}
       data-testid="compose-body-loading"
+      ref={restoreTyped(draftKey)}
       onInput={(e) => typedIn(draftKey, e.currentTarget.innerText, true)}
       onBlur={(e) => early.has(draftKey) && typedIn(draftKey, e.currentTarget.innerText, false)}
       className={cn("type-body outline-none whitespace-pre-wrap empty:before:text-muted-foreground empty:before:content-[attr(aria-placeholder)]", className)}
