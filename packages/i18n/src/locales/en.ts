@@ -797,6 +797,40 @@ const en = {
 
   // ── print
   // @print
+  "print.title": "Print",
+  "print.titleMessage": "Print message",
+  "print.scope": "Messages",
+  "print.scope.thread": "Conversation ({count})",
+  "print.scope.message": "This message only",
+  "print.content": "Content",
+  "print.content.headers": "With headers",
+  "print.content.body": "Content only",
+  "print.content.headersHint": "Subject, sender, date, recipients and attachments.",
+  "print.content.bodyHint": "Just the message text: no subject, sender or dates.",
+  "print.quoted": "Quoted text",
+  "print.quoted.hide": "Hide",
+  "print.quoted.show": "Include",
+  "print.paper": "Paper",
+  "print.paper.letter": "Letter",
+  "print.note.fetchFailed": "Couldn’t update the conversation. Printing the saved copy.",
+  "print.note.missing": { one: "One message hasn’t downloaded yet and will print without its content.", other: "# messages haven’t downloaded yet and will print without their content." },
+  "print.note.remoteLocal": "Local mode blocks remote images, so they won’t print.",
+  "print.note.remote": "Remote images you didn’t load in the reader won’t print.",
+  "print.note.web": "For a PDF, choose “Save as PDF” as the destination. Turn off “Headers and footers” for a clean page.",
+  "print.savePdf": "Save PDF…",
+  "print.print": "Print…",
+  "print.preview": "Print preview",
+  "print.saved": "PDF saved",
+  "print.showInFinder": "Show in Finder",
+  "print.noPrinters": "No printers set up",
+  "print.noPrinters.hint": "Use “Save PDF…” to save the email as a PDF.",
+  "print.pdfFailed": "Couldn’t save the PDF",
+  "print.failed": "Couldn’t print",
+  "print.doc.to": "To",
+  "print.doc.cc": "Cc",
+  "print.doc.attachments": "Attachments",
+  "print.doc.notDownloaded": "Content not downloaded yet",
+  "print.fileName": "Email",
 
   // ── diagnostics
   // @diag
@@ -842,6 +876,13 @@ const en = {
 
   // ── desktop (dialogs, save panels)
   // @desktop
+  "desktop.savePdf.title": "Export as PDF",
+  "desktop.savePdf.filter": "PDF document",
+  "desktop.profile.inUse.title": "Única is still open",
+  "desktop.profile.inUse.message": "Quit Única and open Terno again. Your mail moves to Terno as soon as Única stops using it.",
+  "desktop.profile.failed.title": "Couldn’t move your mail from Única to Terno",
+  "desktop.profile.conflict.message": "Next to your Única mail there are files from an earlier attempt that can’t be matched with it:\n\n{files}\n\nNo files were touched. So you don’t lose mail, Terno won’t open until this is resolved: with Única and Terno both closed, move those files to another folder and open Terno again.",
+  "desktop.profile.failed.message": "{error}\n\nNothing was deleted. Quit Única and open Terno again.",
 
   // ── backend and providers (errors shown to the user)
   // @backend

@@ -1,7 +1,9 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { app, dialog } from "electron";
+import { t } from "@terno/i18n";
 import { LegacyProfileConflictError, LegacyProfileInUseError, migrateLegacyProfile, resolveProfile } from "./legacy-profile";
+import { readLanguage, switchLanguage } from "./locale";
 
 export const APP_NAME = process.env.TERNO_TEST_APP_NAME ?? "Terno";
 /** in a profile that came from Única: its renderer localStorage (origin app://unica) still has to move (app.ts) */
@@ -28,20 +30,33 @@ export function prepareProfile(): boolean {
     for (const c of m.conflicts) console.warn(`[profile] left alone (the Terno one exists): ${c}`);
     if (m.movedFrom || m.renamed.length) writeFileSync(join(profile, LEGACY_STORAGE_PENDING), `${new Date().toISOString()}\n`);
   } catch (error) {
-    if (error instanceof LegacyProfileInUseError) {
-      dialog.showErrorBox("Única sigue abierta", "Cierra Única y vuelve a abrir Terno: tu correo pasa a Terno en cuanto Única no lo esté usando.");
-    } else if (error instanceof LegacyProfileConflictError) {
-      dialog.showErrorBox(
-        "No se pudo pasar tu correo de Única a Terno",
-        `Junto a tu correo de Única hay archivos de un intento anterior que no se pueden emparejar con él:\n\n${error.files.join("\n")}\n\nNo se ha tocado ningún archivo. Para no perder correo, Terno no se abre hasta resolverlo: con Única y Terno cerrados, mueve esos archivos a otra carpeta y vuelve a abrir Terno.`,
-      );
-    } else {
-      // whatever else failed (an unreadable database, a full disk), the profile stays as it was and nothing opens empty
-      dialog.showErrorBox("No se pudo pasar tu correo de Única a Terno", `${error instanceof Error ? error.message : String(error)}\n\nNo se ha borrado nada. Cierra Única y vuelve a abrir Terno.`);
-    }
-    app.exit(1);
+    void refuse(profile, error);
     return false;
   }
   app.setPath("userData", profile);
   return true;
+}
+
+/** Why the app won't open, in main's current locale. */
+export function refusal(error: unknown): { title: string; message: string } {
+  if (error instanceof LegacyProfileInUseError) return { title: t("desktop.profile.inUse.title"), message: t("desktop.profile.inUse.message") };
+  if (error instanceof LegacyProfileConflictError) return { title: t("desktop.profile.failed.title"), message: t("desktop.profile.conflict.message", { files: error.files.join("\n") }) };
+  // whatever else failed (an unreadable database, a full disk), the profile stays as it was and nothing opens empty
+  return { title: t("desktop.profile.failed.title"), message: t("desktop.profile.failed.message", { error: error instanceof Error ? error.message : String(error) }) };
+}
+
+/**
+ * Tells the user, then quits. Before `ready` there are no system languages
+ * and userData isn't set: the profile's locale.json names the language, else
+ * English. prepareProfile has already returned false (main opens nothing).
+ */
+async function refuse(profile: string, error: unknown): Promise<void> {
+  try {
+    await switchLanguage(readLanguage(profile), []);
+  } catch {
+    // English, then: the box shows either way
+  }
+  const { title, message } = refusal(error);
+  dialog.showErrorBox(title, message);
+  app.exit(1);
 }

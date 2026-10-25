@@ -10,6 +10,7 @@ import { open, rename, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, session, shell, type IpcMainInvokeEvent, type Session } from "electron";
 import { captureError, log } from "@terno/core/diag";
+import { t } from "@terno/i18n";
 import { footerTemplate, parsePrintJob, PrintTimeoutError, PDF_MARGINS, PDF_PAGE, pageReady, pdfFileName, printCsp, printOutcome, readyOrDestroyed, requestAllowed, tempSibling, withHead, type PrintJob, type PrintResult } from "./print-policy";
 
 const PARTITION = "terno-print";
@@ -71,7 +72,7 @@ async function load(job: PrintJob, deps: PrintDeps): Promise<BrowserWindow> {
   const ses = sessionFor(deps);
   const csp = printCsp(job.remote.length > 0);
   // content only names no subject, not even in the PDF's metadata
-  const doc = withHead(job.html, { csp, title: job.headers ? job.subject.trim() || "Correo" : "Correo" });
+  const doc = withHead(job.html, { csp, title: (job.headers && job.subject.trim()) || t("print.fileName") });
   active = { url: `${SCHEME}://job/${randomUUID()}`, doc: new TextEncoder().encode(doc), csp, remote: new Set(job.remote) };
   const win = new BrowserWindow({
     show: false,
@@ -153,7 +154,7 @@ async function exportPdf(event: IpcMainInvokeEvent, job: PrintJob, deps: PrintDe
   if (!path) {
     // the panel first: nothing renders until the user picked where it goes
     const parent = BrowserWindow.fromWebContents(event.sender);
-    const options = { defaultPath: join(app.getPath("downloads"), name), filters: [{ name: "PDF", extensions: ["pdf"] }], properties: ["createDirectory" as const, "showOverwriteConfirmation" as const] };
+    const options = { title: t("desktop.savePdf.title"), buttonLabel: t("common.save"), defaultPath: join(app.getPath("downloads"), name), filters: [{ name: t("desktop.savePdf.filter"), extensions: ["pdf"] }], properties: ["createDirectory" as const, "showOverwriteConfirmation" as const] };
     const choice = parent ? await dialog.showSaveDialog(parent, options) : await dialog.showSaveDialog(options);
     if (choice.canceled || !choice.filePath) return { status: "cancelled" };
     path = choice.filePath;

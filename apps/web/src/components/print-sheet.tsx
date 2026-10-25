@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@terno/ui
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { cn } from "@terno/ui/lib/utils";
 import { PRINT_INK } from "@terno/ui/themes/print";
+import { t } from "@terno/i18n";
 import { CircleAlert, FileDown, ImageOff, Info, LoaderCircle, Printer } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { snack } from "~/lib/snack";
@@ -124,8 +125,8 @@ function Sheet({ target, onClose }: { target: PrintTarget; onClose: () => void }
     if (settled === inputs) return;
     // the first document (the thread just arrived) builds at once
     if (!settled.detail) return setSettled(inputs);
-    const t = setTimeout(() => setSettled(inputs), 120);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setSettled(inputs), 120);
+    return () => clearTimeout(timer);
   }, [inputs]);
   const shown = useMemo(() => {
     const { detail: d, scope: sc, prefs: p, allowed: al, policy: po } = settled;
@@ -151,17 +152,17 @@ function Sheet({ target, onClose }: { target: PrintTarget; onClose: () => void }
       const result = await host.print!({ html: fitted.html, action: intent, paper: prefs.paper, subject, headers: prefs.content === "headers", remote: fitted.remote });
       if (result.status === "saved") {
         onClose();
-        snack("PDF guardado", { description: result.name, action: { label: "Mostrar en Finder", onClick: () => void host.showSaved?.(result.exportId) } });
+        snack(t("print.saved"), { description: result.name, action: { label: t("print.showInFinder"), onClick: () => void host.showSaved?.(result.exportId) } });
       } else if (result.status === "submitted") onClose();
       else if (result.status === "failed") {
         // main recorded the failure itself; here it is a step on the trail
         log.warn("print.failed", { action: intent, reason: result.reason === "no-printers" ? "other" : "error" });
-        if (result.reason === "no-printers") snack.error("No hay impresoras configuradas", { description: "Usa «Guardar PDF…» para guardar el correo como PDF." });
-        else snack.error(intent === "pdf" ? "No se pudo guardar el PDF" : "No se pudo imprimir");
+        if (result.reason === "no-printers") snack.error(t("print.noPrinters"), { description: t("print.noPrinters.hint") });
+        else snack.error(intent === "pdf" ? t("print.pdfFailed") : t("print.failed"));
       }
     } catch (error) {
       captureUi(error, { code: "print.failed", fields: { action: intent } });
-      snack.error(intent === "pdf" ? "No se pudo guardar el PDF" : "No se pudo imprimir");
+      snack.error(intent === "pdf" ? t("print.pdfFailed") : t("print.failed"));
     } finally {
       setBusy(null);
     }
@@ -214,49 +215,49 @@ function Sheet({ target, onClose }: { target: PrintTarget; onClose: () => void }
       <Preview doc={shown} current={current} onFitted={setFitted} />
       <div className="hairline-t flex w-full shrink-0 flex-col md:w-[340px] md:border-t-0 md:hairline-l">
         <div className="px-5 pt-5 pb-4">
-          <DialogTitle className="text-lg font-semibold tracking-tight">{scope === "message" && count > 1 ? "Imprimir mensaje" : "Imprimir"}</DialogTitle>
+          <DialogTitle className="text-lg font-semibold tracking-tight">{scope === "message" && count > 1 ? t("print.titleMessage") : t("print.title")}</DialogTitle>
           <DialogDescription className="mt-1 truncate text-xs" data-testid="print-subject">
-            {subject || "(sin asunto)"}
+            {subject || t("common.noSubject")}
           </DialogDescription>
         </div>
         <div className="px-5 pb-4 md:min-h-0 md:flex-1 md:overflow-y-auto">
           <SettingsGroup>
             {count > 1 && (
-              <SettingsRow label="Alcance" stacked>
+              <SettingsRow label={t("print.scope")} stacked>
                 {(a) => (
-                  <Segmented a={a} full value={scope} onChange={(v) => setScope(v as Scope)} testId="print-scope" items={[["thread", `Conversación (${count})`], ["message", "Solo este mensaje"]]} />
+                  <Segmented a={a} full value={scope} onChange={(v) => setScope(v as Scope)} testId="print-scope" items={[["thread", t("print.scope.thread", { count })], ["message", t("print.scope.message")]]} />
                 )}
               </SettingsRow>
             )}
-            <SettingsRow label="Contenido" hint={prefs.content === "headers" ? "Asunto, remitente, fecha, destinatarios y adjuntos." : "Solo el texto del correo: sin asunto, remitente ni fechas."} stacked>
-              {(a) => <Segmented a={a} full value={prefs.content} onChange={(v) => update({ content: v as Prefs["content"] })} testId="print-content" items={[["headers", "Con encabezados"], ["body", "Solo el contenido"]]} />}
+            <SettingsRow label={t("print.content")} hint={prefs.content === "headers" ? t("print.content.headersHint") : t("print.content.bodyHint")} stacked>
+              {(a) => <Segmented a={a} full value={prefs.content} onChange={(v) => update({ content: v as Prefs["content"] })} testId="print-content" items={[["headers", t("print.content.headers")], ["body", t("print.content.body")]]} />}
             </SettingsRow>
-            <SettingsRow label="Texto citado">
-              {(a) => <Segmented a={a} value={quoted} onChange={(v) => setPrefs((p) => ({ ...p, quoted: { ...p.quoted, [scope]: v as Quoted } }))} testId="print-quoted" items={[["hide", "Ocultar"], ["show", "Incluir"]]} />}
+            <SettingsRow label={t("print.quoted")}>
+              {(a) => <Segmented a={a} value={quoted} onChange={(v) => setPrefs((p) => ({ ...p, quoted: { ...p.quoted, [scope]: v as Quoted } }))} testId="print-quoted" items={[["hide", t("print.quoted.hide")], ["show", t("print.quoted.show")]]} />}
             </SettingsRow>
-            <SettingsRow label="Papel">
-              {(a) => <Segmented a={a} value={prefs.paper} onChange={(v) => update({ paper: v as Paper })} testId="print-paper" items={[["letter", "Carta"], ["a4", "A4"]]} />}
+            <SettingsRow label={t("print.paper")}>
+              {(a) => <Segmented a={a} value={prefs.paper} onChange={(v) => update({ paper: v as Paper })} testId="print-paper" items={[["letter", t("print.paper.letter")], ["a4", "A4"]]} />}
             </SettingsRow>
           </SettingsGroup>
           <div className="mt-4 space-y-2.5 px-1 text-xs text-muted-foreground">
             {fetchFailed && (
               <Note icon={CircleAlert} testId="print-note-error" tone="warn">
-                No se pudo actualizar la conversación: se imprime la copia guardada.
+                {t("print.note.fetchFailed")}
               </Note>
             )}
             {missing > 0 && (
               <Note icon={CircleAlert} testId="print-note-missing" tone="warn">
-                {missing === 1 ? "Un mensaje aún no se ha descargado: se imprimirá sin contenido." : `${missing} mensajes aún no se han descargado: se imprimirán sin contenido.`}
+                {t("print.note.missing", { count: missing })}
               </Note>
             )}
             {blocked > 0 && (
               <Note icon={ImageOff} testId="print-note-remote">
-                {policy.localMode ? "El modo local bloquea las imágenes remotas: no se imprimirán." : "Las imágenes remotas que no cargaste en el lector no se imprimirán."}
+                {policy.localMode ? t("print.note.remoteLocal") : t("print.note.remote")}
               </Note>
             )}
             {web && (
               <Note icon={Info} testId="print-hint-web">
-                Para un PDF, elige «Guardar como PDF» como destino. Desactiva «Encabezados y pies de página» para una página limpia.
+                {t("print.note.web")}
               </Note>
             )}
           </div>
@@ -272,7 +273,7 @@ function Sheet({ target, onClose }: { target: PrintTarget; onClose: () => void }
             data-testid="print-save-pdf"
           >
             {busy === "pdf" ? <LoaderCircle className="animate-spin" /> : <FileDown />}
-            Guardar PDF…
+            {t("print.savePdf")}
           </Button>
           <Button
             ref={primary === "print" ? primaryRef : undefined}
@@ -283,7 +284,7 @@ function Sheet({ target, onClose }: { target: PrintTarget; onClose: () => void }
             data-testid="print-submit"
           >
             {busy === "print" ? <LoaderCircle className="animate-spin" /> : <Printer />}
-            Imprimir…
+            {t("print.print")}
           </Button>
         </div>
       </div>
@@ -398,7 +399,7 @@ function Preview({ doc, current, onFitted }: { doc: { html: string; paper: Paper
         >
           <iframe
             ref={frame}
-            title="Vista previa de impresión"
+            title={t("print.preview")}
             data-testid="print-preview"
             data-ready={(ready && current) || undefined}
             data-paper={paper}

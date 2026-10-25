@@ -6,6 +6,7 @@
  * exactly what it previewed. Only the print sheet (a lazy chunk) imports it.
  */
 import type { Address } from "@terno/core";
+import { localeTag, t } from "@terno/i18n";
 import { PRINT_INK as INK } from "@terno/ui/themes/print";
 import DOMPurify from "dompurify";
 import { formatBytes, fullDate } from "~/lib/format";
@@ -70,14 +71,14 @@ function capName(s: string): string {
   return out.trim();
 }
 
-/** A file name from the subject: no path or reserved characters, length-capped, "Correo" when nothing is left. */
+/** A file name from the subject: no path or reserved characters, length-capped, "Email" (in the locale) when nothing is left. */
 export function printFileName(subject: string): string {
   const clean = subject
     // oxlint-disable-next-line no-control-regex -- control characters are exactly what a file name can't hold
     .replace(/[\u0000-\u001f\u007f/\\:*?"<>|]+/g, " ")
     .replace(/\s+/g, " ")
     .replace(/^[\s.]+|[\s.]+$/g, "");
-  return capName(clean) || "Correo";
+  return capName(clean) || t("print.fileName");
 }
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -221,11 +222,11 @@ const person = (a: Address) => (a.name && a.name !== a.email ? `${esc(a.name)} <
 
 function messageHtml(m: PrintMessage, o: PrintOptions): string {
   const hide = o.quoted === "hide";
-  const body = m.bodyHtml ? `<div class="body-html"${m.allowRemote ? " data-remote" : ""}>${htmlBody(m.bodyHtml, m.allowRemote, hide)}</div>` : m.bodyText !== null ? textBody(m.bodyText, hide) : `<p class="missing">Contenido aún no descargado</p>`;
+  const body = m.bodyHtml ? `<div class="body-html"${m.allowRemote ? " data-remote" : ""}>${htmlBody(m.bodyHtml, m.allowRemote, hide)}</div>` : m.bodyText !== null ? textBody(m.bodyText, hide) : `<p class="missing">${esc(t("print.doc.notDownloaded"))}</p>`;
   if (o.content === "body") return `<article class="msg">${body}</article>`;
-  const line = (label: string, list: Address[]) => (list.length ? `<div class="line"><span class="k">${label}</span> ${list.map(person).join(", ")}</div>` : "");
-  const head = `<header class="head"><div class="from"><span class="name">${esc(m.from.name || m.from.email)}</span>${m.from.name && m.from.name !== m.from.email ? `<span class="addr">${esc(m.from.email)}</span>` : ""}<span class="date">${esc(fullDate(m.date))}</span></div>${line("Para", m.to)}${line("Cc", m.cc)}</header>`;
-  const atts = m.attachments.length ? `<div class="atts"><span class="k">Adjuntos</span> ${m.attachments.map((a) => `<span class="att">${esc(a.filename)} <span class="size">${esc(formatBytes(a.size))}</span></span>`).join("")}</div>` : "";
+  const line = (label: string, list: Address[]) => (list.length ? `<div class="line"><span class="k">${esc(label)}</span> ${list.map(person).join(", ")}</div>` : "");
+  const head = `<header class="head"><div class="from"><span class="name">${esc(m.from.name || m.from.email)}</span>${m.from.name && m.from.name !== m.from.email ? `<span class="addr">${esc(m.from.email)}</span>` : ""}<span class="date">${esc(fullDate(m.date))}</span></div>${line(t("print.doc.to"), m.to)}${line(t("print.doc.cc"), m.cc)}</header>`;
+  const atts = m.attachments.length ? `<div class="atts"><span class="k">${esc(t("print.doc.attachments"))}</span> ${m.attachments.map((a) => `<span class="att">${esc(a.filename)} <span class="size">${esc(formatBytes(a.size))}</span></span>`).join("")}</div>` : "";
   return `<article class="msg">${head}${body}${atts}</article>`;
 }
 
@@ -280,11 +281,11 @@ function css(paper: Paper): string {
 export function buildPrintDocument(input: { subject: string; messages: PrintMessage[] }, options: PrintOptions): string {
   // test builds count builds (the sheet must not build per keystroke or click)
   renderProbe("buildPrintDocument");
-  const subject = input.subject.trim() || "(sin asunto)";
+  const subject = input.subject.trim() || t("common.noSubject");
   const headers = options.content === "headers";
   const remote = input.messages.some((m) => m.allowRemote && m.bodyHtml);
   const body = (headers ? `<h1 class="subject">${esc(subject)}</h1>` : "") + input.messages.map((m) => messageHtml(m, options)).join("");
-  return `<!doctype html><html lang="es" data-print-doc data-paper="${options.paper}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(remote)}"><title>${esc(subject)}</title><style>${css(options.paper)}</style></head><body class="${headers ? "with-headers" : "body-only"}"><main class="doc">${body}</main></body></html>`;
+  return `<!doctype html><html lang="${localeTag()}" data-print-doc data-paper="${options.paper}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(remote)}"><title>${esc(subject)}</title><style>${css(options.paper)}</style></head><body class="${headers ? "with-headers" : "body-only"}"><main class="doc">${body}</main></body></html>`;
 }
 
 /**

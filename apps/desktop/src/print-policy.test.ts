@@ -1,6 +1,11 @@
 import { EventEmitter } from "node:events";
-import { describe, expect, it, vi } from "vitest";
+import { setLocale } from "@terno/i18n";
+import en from "@terno/i18n/locales/en";
+import es from "@terno/i18n/locales/es";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { footerTemplate, pageReady, readyOrDestroyed, tempSibling, type PageEvents, isTrustedSender, MAX_HTML_BYTES, parsePrintJob, pdfFileName, printCsp, printOutcome, requestAllowed, testPdfDir, withHead } from "./print-policy";
+
+afterEach(() => setLocale("en", en));
 
 const job = { html: "<!doctype html><html><head></head><body>x</body></html>", action: "pdf", paper: "letter", subject: "Factura", headers: true, remote: [] as unknown[] };
 
@@ -85,13 +90,21 @@ describe("main: the document and the PDF", () => {
     expect(f).toContain("…");
     expect(f).toContain('<span class="pageNumber"></span> / <span class="totalPages"></span>');
     expect(f).toContain("font:8pt");
-    expect(footerTemplate("  ")).toContain("(sin asunto)");
+    expect(footerTemplate("  ")).toContain("(no subject)");
   });
 
   it("names the file like the renderer, safe for any path", () => {
     expect(pdfFileName("../../Library/x")).toBe("Library x");
     expect(pdfFileName("Re: Junta 3/11")).toBe("Re Junta 3 11");
-    expect(pdfFileName("")).toBe("Correo");
+    expect(pdfFileName("")).toBe("Email");
+  });
+
+  it("the footer's and file name's fallbacks follow main's locale, read at call time", () => {
+    setLocale("es", es);
+    expect(footerTemplate("")).toContain("(sin asunto)");
+    expect(pdfFileName("...")).toBe("Correo");
+    setLocale("en", en);
+    expect(footerTemplate("")).toContain("(no subject)");
   });
 
   it("caps the name by UTF-8 bytes between graphemes, so long CJK or emoji subjects still save", () => {

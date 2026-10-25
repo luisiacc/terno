@@ -790,6 +790,40 @@ const es = {
 
   // ── print
   // @print
+  "print.title": "Imprimir",
+  "print.titleMessage": "Imprimir mensaje",
+  "print.scope": "Alcance",
+  "print.scope.thread": "Conversación ({count})",
+  "print.scope.message": "Solo este mensaje",
+  "print.content": "Contenido",
+  "print.content.headers": "Con encabezados",
+  "print.content.body": "Solo el contenido",
+  "print.content.headersHint": "Asunto, remitente, fecha, destinatarios y adjuntos.",
+  "print.content.bodyHint": "Solo el texto del correo: sin asunto, remitente ni fechas.",
+  "print.quoted": "Texto citado",
+  "print.quoted.hide": "Ocultar",
+  "print.quoted.show": "Incluir",
+  "print.paper": "Papel",
+  "print.paper.letter": "Carta",
+  "print.note.fetchFailed": "No se pudo actualizar la conversación: se imprime la copia guardada.",
+  "print.note.missing": { one: "Un mensaje aún no se ha descargado: se imprimirá sin contenido.", other: "# mensajes aún no se han descargado: se imprimirán sin contenido." },
+  "print.note.remoteLocal": "El modo local bloquea las imágenes remotas: no se imprimirán.",
+  "print.note.remote": "Las imágenes remotas que no cargaste en el lector no se imprimirán.",
+  "print.note.web": "Para un PDF, elige «Guardar como PDF» como destino. Desactiva «Encabezados y pies de página» para una página limpia.",
+  "print.savePdf": "Guardar PDF…",
+  "print.print": "Imprimir…",
+  "print.preview": "Vista previa de impresión",
+  "print.saved": "PDF guardado",
+  "print.showInFinder": "Mostrar en Finder",
+  "print.noPrinters": "No hay impresoras configuradas",
+  "print.noPrinters.hint": "Usa «Guardar PDF…» para guardar el correo como PDF.",
+  "print.pdfFailed": "No se pudo guardar el PDF",
+  "print.failed": "No se pudo imprimir",
+  "print.doc.to": "Para",
+  "print.doc.cc": "Cc",
+  "print.doc.attachments": "Adjuntos",
+  "print.doc.notDownloaded": "Contenido aún no descargado",
+  "print.fileName": "Correo",
 
   // ── diagnostics
   // @diag
@@ -835,6 +869,13 @@ const es = {
 
   // ── desktop (dialogs, save panels)
   // @desktop
+  "desktop.savePdf.title": "Exportar como PDF",
+  "desktop.savePdf.filter": "Documento PDF",
+  "desktop.profile.inUse.title": "Única sigue abierta",
+  "desktop.profile.inUse.message": "Cierra Única y vuelve a abrir Terno: tu correo pasa a Terno en cuanto Única no lo esté usando.",
+  "desktop.profile.failed.title": "No se pudo pasar tu correo de Única a Terno",
+  "desktop.profile.conflict.message": "Junto a tu correo de Única hay archivos de un intento anterior que no se pueden emparejar con él:\n\n{files}\n\nNo se ha tocado ningún archivo. Para no perder correo, Terno no se abre hasta resolverlo: con Única y Terno cerrados, mueve esos archivos a otra carpeta y vuelve a abrir Terno.",
+  "desktop.profile.failed.message": "{error}\n\nNo se ha borrado nada. Cierra Única y vuelve a abrir Terno.",
 
   // ── backend and providers (errors shown to the user)
   // @backend

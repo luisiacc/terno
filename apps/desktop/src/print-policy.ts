@@ -4,6 +4,7 @@
  * page geometry and footer.
  */
 import { join } from "node:path";
+import { t } from "@terno/i18n";
 export { PRINT_COMMANDS, type PrintCommand } from "./print-commands";
 
 export interface PrintJob {
@@ -13,7 +14,7 @@ export interface PrintJob {
   paper: "letter" | "a4";
   /** the conversation's subject: the PDF's file name, and with headers its title and footer */
   subject: string;
-  /** printed with headers; content only gets no footer, and "Correo" as its PDF title */
+  /** printed with headers; content only gets no footer, and the generic file name as its PDF title */
   headers: boolean;
   /** remote images the renderer kept (approved messages only): the print window may load these, nothing else */
   remote: string[];
@@ -96,14 +97,14 @@ function capName(s: string): string {
   return out.trim();
 }
 
-/** The same rule as the renderer's: no path or reserved characters, capped, "Correo" when nothing is left. */
+/** The same rule as the renderer's: no path or reserved characters, capped, a generic name ("Email", in main's locale) when nothing is left. */
 export function pdfFileName(subject: string): string {
   const clean = subject
     // oxlint-disable-next-line no-control-regex -- control characters are exactly what a file name can't hold
     .replace(/[\u0000-\u001f\u007f/\\:*?"<>|]+/g, " ")
     .replace(/\s+/g, " ")
     .replace(/^[\s.]+|[\s.]+$/g, "");
-  return capName(clean) || "Correo";
+  return capName(clean) || t("print.fileName");
 }
 
 /** The export's temp file: beside the target (same volume, so the rename is atomic), short and random whatever the name. */
@@ -118,7 +119,7 @@ export const PDF_PAGE = { letter: "Letter", a4: "A4" } as const;
 
 /** "Subject … N / M" in 8pt grey, aligned with the page's text; the subject escaped and cut short. */
 export function footerTemplate(subject: string): string {
-  const chars = [...(subject.trim() || "(sin asunto)")];
+  const chars = [...(subject.trim() || t("common.noSubject"))];
   const s = chars.length > 90 ? `${chars.slice(0, 89).join("").trimEnd()}…` : chars.join("");
   return `<div style="box-sizing:border-box;width:100%;padding:0 16mm;display:flex;gap:12pt;justify-content:space-between;font:8pt -apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;color:#86868b"><span style="overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${esc(s)}</span><span style="white-space:nowrap;font-variant-numeric:tabular-nums"><span class="pageNumber"></span> / <span class="totalPages"></span></span></div>`;
 }

@@ -1,5 +1,8 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from "vitest";
+import { setLocale } from "@terno/i18n";
+import en from "@terno/i18n/locales/en";
+import es from "@terno/i18n/locales/es";
+import { afterEach, describe, expect, it } from "vitest";
 import { fullDate } from "./format";
 import { buildPrintDocument, defaultPaper, printableWidth, printFileName, remoteUrls, type PrintMessage, type PrintOptions } from "./print";
 
@@ -14,15 +17,17 @@ const build = (messages: PrintMessage[], o: Partial<PrintOptions> = {}, subject 
 const parse = (html: string) => new DOMParser().parseFromString(html, "text/html");
 const shown = (html: string) => parse(html).querySelector("main")!;
 
+afterEach(() => setLocale("en", en));
+
 describe("the print document", () => {
-  it("with headers: the subject once, then sender, address, full date, Para, Cc and attachments per message", () => {
+  it("with headers: the subject once, then sender, address, full date, To, Cc and attachments per message", () => {
     const html = build([msg({ cc: [{ name: "", email: "ana@x.mx" }], attachments: [{ filename: "contrato.pdf", size: 245_000 }] }), msg({ id: 2, from: luis, to: [yuki] })]);
     const main = shown(html);
     expect(main.querySelectorAll(".subject")).toHaveLength(1);
     expect(main.querySelector(".subject")!.textContent).toBe("Propuesta de campaña");
     expect(main.querySelectorAll(".msg")).toHaveLength(2);
     const head = main.querySelector(".head")!.textContent!;
-    for (const s of ["Yuki Gutiérrez", "yuki@acme.studio", fullDate(DATE), "Para", "Luis Cordero", "Cc", "ana@x.mx"]) expect(head).toContain(s);
+    for (const s of ["Yuki Gutiérrez", "yuki@acme.studio", fullDate(DATE), "To", "Luis Cordero", "Cc", "ana@x.mx"]) expect(head).toContain(s);
     expect(main.querySelector(".atts")!.textContent).toContain("contrato.pdf");
     expect(main.querySelector(".atts")!.textContent).toContain("239 KB");
     expect(parse(html).title).toBe("Propuesta de campaña");
@@ -33,7 +38,7 @@ describe("the print document", () => {
     const text = shown(html).textContent!;
     expect(text).toContain("Hola, ¿cómo vas?");
     expect(text).toContain("Segundo");
-    for (const s of ["Propuesta de campaña", "Yuki", "yuki@acme.studio", "luis@terno.mx", "Para", "Cc", "Adjuntos", "contrato.pdf", fullDate(DATE)]) expect(text).not.toContain(s);
+    for (const s of ["Propuesta de campaña", "Yuki", "yuki@acme.studio", "luis@terno.mx", "To", "Cc", "Attachments", "contrato.pdf", fullDate(DATE)]) expect(text).not.toContain(s);
     expect(shown(html).querySelectorAll(".head, .subject, .atts")).toHaveLength(0);
     expect(parse(html).body.className).toBe("body-only");
   });
@@ -125,7 +130,24 @@ describe("the print document", () => {
   });
 
   it("says a body that isn't downloaded yet is missing, instead of printing nothing", () => {
-    expect(shown(build([msg({ bodyText: null })])).querySelector(".missing")!.textContent).toBe("Contenido aún no descargado");
+    expect(shown(build([msg({ bodyText: null })])).querySelector(".missing")!.textContent).toBe("Content not downloaded yet");
+  });
+
+  it("speaks the active language: <html lang>, labels, the missing body and the subject fallback", () => {
+    const sample = () => [msg({ cc: [luis], attachments: [{ filename: "a.pdf", size: 1 }] }), msg({ id: 2, bodyText: null })];
+    const english = parse(build(sample(), {}, "  "));
+    expect(english.documentElement.lang).toBe("en-US");
+    expect([...english.querySelectorAll(".k")].map((k) => k.textContent)).toEqual(["To", "Cc", "Attachments", "To"]);
+    expect(english.title).toBe("(no subject)");
+    expect(english.querySelector(".subject")!.textContent).toBe("(no subject)");
+    setLocale("es", es);
+    const doc = parse(build(sample(), {}, "  "));
+    expect(doc.documentElement.lang).toBe("es-MX");
+    expect([...doc.querySelectorAll(".k")].map((k) => k.textContent)).toEqual(["Para", "Cc", "Adjuntos", "Para"]);
+    expect(doc.querySelector(".missing")!.textContent).toBe("Contenido aún no descargado");
+    expect(doc.title).toBe("(sin asunto)");
+    expect(doc.querySelector(".date")!.textContent).toBe(fullDate(DATE));
+    expect(printFileName("")).toBe("Correo");
   });
 
   it("sets the page size and a printable width per paper", () => {
@@ -208,8 +230,8 @@ describe("paper and file name", () => {
     expect(printFileName("Re: Factura 03/2026 — ¿pagada?")).toBe("Re Factura 03 2026 — ¿pagada");
     expect(printFileName('../../etc/passwd')).toBe("etc passwd");
     expect(printFileName('a<b>c:"d"|e*f?\u0000g\\h')).toBe("a b c d e f g h");
-    expect(printFileName("   ...  ")).toBe("Correo");
-    expect(printFileName("")).toBe("Correo");
+    expect(printFileName("   ...  ")).toBe("Email");
+    expect(printFileName("")).toBe("Email");
     expect([...printFileName("é".repeat(200))]).toHaveLength(80);
     expect(new TextEncoder().encode(printFileName("報".repeat(80))).length).toBeLessThanOrEqual(200);
     expect(printFileName("😀".repeat(80))).toBe("😀".repeat(50));
