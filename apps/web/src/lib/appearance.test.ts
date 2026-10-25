@@ -126,6 +126,17 @@ describe("designs (plan 15)", () => {
     expect(server.design).toBe("lumen");
   });
 
+  it("going back to the current design cancels a switch still waiting for its faces (Codex review #2)", async () => {
+    void updateAppearance({ design: "atelier" });
+    void updateAppearance({ design: "macos" });
+    await tick();
+    await tick();
+    expect(fake.calls.map((c) => c.patch)).toEqual([{ design: "macos" }]);
+    expect(fake.html.dataset.design).toBe("macos");
+    await answer();
+    expect(server.design).toBe("macos");
+  });
+
   it("the sidebar's vibrancy also needs a design that allows it", async () => {
     void updateAppearance({ design: "macos" });
     await tick();

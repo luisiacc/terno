@@ -207,9 +207,10 @@ let designSeq = 0;
 export const DESIGN_FONT_WAIT_MS = 300;
 
 export async function updateAppearance(patch: AppearancePatch): Promise<AppSettings | null> {
-  if (patch.design !== undefined && patch.design !== getApp().settings?.design) {
+  if (patch.design !== undefined) {
+    // every choice counts, back to the current design included: it cancels one still waiting for its faces
     const seq = ++designSeq;
-    await loadDesignFaces(designById(patch.design), DESIGN_FONT_WAIT_MS);
+    if (patch.design !== getApp().settings?.design) await loadDesignFaces(designById(patch.design), DESIGN_FONT_WAIT_MS);
     if (seq !== designSeq) return null;
   }
   return commitAppearance(patch);
