@@ -9,6 +9,8 @@ interface Pending {
 
 export interface RpcClientOptions {
   defaultTimeoutMs?: number;
+  /** every call's outcome (diagnostics: a breadcrumb per failed or slow call) */
+  observe?: (method: string, ms: number, error?: unknown) => void;
 }
 
 export class RpcClient {
@@ -18,10 +20,12 @@ export class RpcClient {
   private transport: Transport | null = null;
   private detach: (() => void)[] = [];
   private readonly defaultTimeoutMs: number;
+  private readonly observe?: RpcClientOptions["observe"];
   private readonly closeListeners = new Set<() => void>();
 
   constructor(transport?: Transport, options: RpcClientOptions = {}) {
     this.defaultTimeoutMs = options.defaultTimeoutMs ?? 30_000;
+    this.observe = options.observe;
     if (transport) this.attach(transport);
   }
 
@@ -59,7 +63,7 @@ export class RpcClient {
     if (!transport) return Promise.reject(new RpcError("UNAVAILABLE", "Backend not connected"));
     const id = this.nextId++;
     const timeoutMs = contract[method].timeoutMs ?? this.defaultTimeoutMs;
-    return new Promise<ResultOf<M>>((resolve, reject) => {
+    const call = new Promise<ResultOf<M>>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new RpcError("TIMEOUT", `${method} timed out after ${timeoutMs}ms`));
@@ -67,6 +71,14 @@ export class RpcClient {
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer });
       transport.send({ v: RPC_VERSION, t: "req", id, m: method, p: params });
     });
+    const observe = this.observe;
+    if (!observe) return call;
+    const started = performance.now();
+    call.then(
+      () => observe(method, performance.now() - started),
+      (error: unknown) => observe(method, performance.now() - started, error),
+    );
+    return call;
   }
 
   on<E extends EventName>(event: E, listener: (payload: Events[E]) => void): () => void {

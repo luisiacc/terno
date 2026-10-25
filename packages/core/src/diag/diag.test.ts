@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { breadcrumb, breadcrumbs, captureError, installDiag, log, sanitizeFields, type DiagSink } from "./diag";
 import { appRelative, isExpected, normalizeError, parseStack, UserFacingError } from "./error";
 import { mayReport, reportOffer, reportsAutomatically, type ErrorReports } from "./consent";
@@ -58,7 +58,7 @@ describe("fields", () => {
     expect(sanitizeField("count", "12")).toBeUndefined();
     expect(sanitizeField("retryable", "yes")).toBeUndefined();
     expect(sanitizeField("method", "threads.list")).toBe("threads.list");
-    expect(sanitizeField("method", "drop table")).toBe("other");
+    expect(sanitizeField("method", "drop table")).toBe(REDACTED);
   });
 
   it("drop keys the code didn't declare, at runtime as at compile time", () => {
@@ -168,6 +168,21 @@ describe("log, breadcrumb, captureError", () => {
     installDiag({ proc: "renderer", version: "1", build: "1", channel: "test", sink: m.sink, mirrorEveryMs: 1e9 });
     for (let i = 0; i < 45; i++) breadcrumb("nav", "nav.thread", { threadId: i });
     expect(m.mirrors.length).toBe(2);
+  });
+
+  it("a quiet process mirrors its last crumbs once, then holds no timer (idle is idle)", () => {
+    vi.useFakeTimers();
+    try {
+      const m = memorySink();
+      installDiag({ proc: "backend", version: "1", build: "1", channel: "test", sink: m.sink, now: () => Date.now() });
+      breadcrumb("sync", "sync.done", { accountKind: "imap" });
+      expect(m.mirrors).toHaveLength(0);
+      vi.advanceTimersByTime(2000);
+      expect(m.mirrors).toHaveLength(1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("a sink that throws never reaches the caller", () => {

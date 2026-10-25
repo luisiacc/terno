@@ -4,7 +4,6 @@
  * replaced with "<redacted>" (strings) or dropped, so a subject, an address
  * or a file name can never ride along by accident.
  */
-import { contract } from "../rpc/contract";
 import { VIEWS } from "../types";
 
 export type FieldType =
@@ -49,7 +48,8 @@ export const FIELD_TYPES = {
   expected: bool,
   fatalCode: enumOf("SCHEMA_NEWER", "OPEN_FAILED", "UNAVAILABLE", "BUILD_MISMATCH", "CRASHED", "other"),
   kind: enumOf("error", "crash", "unclean_exit", "renderer_gone", "backend_exit", "child_gone", "other"),
-  method: enumOf(...(Object.keys(contract) as (keyof typeof contract)[]), "other"),
+  // an RPC method name (threads.list): an id, so main's bundle doesn't need the contract (and zod) to check it
+  method: id,
   ok: bool,
   op: enumOf("encrypt", "decrypt", "legacy", "sync", "send", "move", "import", "export", "persist", "rebuild", "restore", "generate", "test", "classify", "other"),
   opKind: enumOf(...THREAD_ACTIONS, "send", "move", "other"),

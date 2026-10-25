@@ -135,7 +135,7 @@ export class BackendCore {
       onError: (error, method, payload) => {
         // the original failure, captured once here (an RpcError wrapping it carries it as its cause)
         const original = error instanceof Error && error.cause !== undefined ? error.cause : error;
-        captureError(original, { code: "rpc.handler_threw", fields: { method: method as FieldValueOf<"method">, rpcCode: payload.code }, expected: false });
+        captureError(original, { code: "rpc.handler_threw", fields: { method, rpcCode: payload.code }, expected: false });
         this.log("error", `rpc ${method} failed`, original instanceof Error ? original.stack : original);
       },
       authorize: async (method, ctx) => {

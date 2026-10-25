@@ -72,6 +72,8 @@ interface State {
   early: DiagEntry[];
   mirroredAt: number;
   mirroredPushes: number;
+  /** a trailing mirror, armed only while crumbs wait (an idle process has no timer) */
+  mirrorTimer: ReturnType<typeof setTimeout> | null;
   started: number;
   /** fingerprint → last capture time: the same failure in a loop is one record, counted */
   seen: Map<string, { at: number; record: ErrorRecord }>;
@@ -88,6 +90,7 @@ function makeState(o: DiagOptions): State {
     early: [],
     mirroredAt: now(),
     mirroredPushes: 0,
+    mirrorTimer: null,
     started: now(),
     seen: new Map(),
     capturesThisMinute: { minute: 0, n: 0 },
@@ -99,10 +102,13 @@ function makeState(o: DiagOptions): State {
  * load, early boot) are kept in the ring and handed over now.
  */
 export function installDiag(options: DiagOptions): void {
+  if (state.mirrorTimer) clearTimeout(state.mirrorTimer);
   const early = state.early;
   const crumbs = state.ring.toArray();
   state = makeState(options);
   for (const c of crumbs) state.ring.push(c);
+  // what was carried over isn't news: only crumbs from here on call for a mirror
+  state.mirroredPushes = state.ring.pushed;
   for (const e of early) safe(() => options.sink?.write({ ...e, session: state.o.session, version: options.version, build: options.build, proc: options.proc }));
 }
 
@@ -146,9 +152,15 @@ function pushCrumb(s: State, crumb: Crumb): void {
   const sink = s.o.sink;
   if (!sink?.mirror) return;
   if (s.ring.pushed - s.mirroredPushes >= s.o.mirrorEvery || crumb.ts - s.mirroredAt >= s.o.mirrorEveryMs) mirrorNow(s);
+  else s.mirrorTimer ??= unref(setTimeout(() => safe(() => mirrorNow(s)), s.o.mirrorEveryMs));
 }
 
+/** Node: a pending mirror never keeps a process alive. */
+const unref = <T,>(t: T): T => ((t as { unref?: () => void }).unref?.(), t);
+
 function mirrorNow(s: State): void {
+  if (s.mirrorTimer) clearTimeout(s.mirrorTimer);
+  s.mirrorTimer = null;
   s.mirroredAt = s.o.now();
   s.mirroredPushes = s.ring.pushed;
   s.o.sink?.mirror?.(s.ring.toArray());
@@ -180,7 +192,7 @@ export function breadcrumbs(): Crumb[] {
   return state.ring.toArray();
 }
 
-/** The process's mirror timer calls this (a quiet process still mirrors what it has). */
+/** Mirrors now whatever hasn't been (a process about to stop). */
 export function mirrorBreadcrumbs(): void {
   safe(() => {
     if (state.ring.pushed !== state.mirroredPushes) mirrorNow(state);

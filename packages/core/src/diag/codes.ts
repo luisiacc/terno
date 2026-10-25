@@ -36,8 +36,10 @@ export const CODES = {
   "report.sent": c("count"),
   "report.dropped": c("reason", "count"),
 
+  // a free-form line from code that predates codes (the store, the search engine): kept locally, scrubbed
+  "log.message": c("source"),
+
   // backend
-  "backend.message": c("source"),
   "rpc.handler_threw": c("method", "rpcCode", "errorClass"),
   "rpc.call": c("method", "durationMs", "ok", "rpcCode"),
   "sync.done": c("accountKind", "durationMs"),
@@ -67,6 +69,7 @@ export const CODES = {
   "nav.thread": c("threadId"),
   "action.thread": c("action", "count"),
   "action.send": c(),
+  "action.failed": c("action", "count", "rpcCode", "errorClass"),
   "compose.send_failed": c("errorClass", "rpcCode", "expected"),
   "print.failed": c("action", "errorClass", "reason"),
   "print.load_timeout": c("action"),

@@ -1,4 +1,5 @@
 import type { DiagCode } from "./codes";
+import type { ReportPolicy } from "./consent";
 import type { NormalizedError } from "./error";
 import type { Fields } from "./fields";
 
@@ -77,4 +78,30 @@ export interface ErrorRecord {
   debugIds?: Record<string, string>;
   /** the same failure again in this run (folded into one record) */
   count?: number;
+}
+
+/** A record the user hasn't acted on (sent or dismissed). */
+export interface PendingReport {
+  id: string;
+  ts: number;
+  kind: RecordKind;
+  proc: Proc;
+  code: string;
+  fatal: boolean;
+  sent: boolean;
+  /** from an earlier run (a crash or an unclean exit found at start) */
+  previousRun: boolean;
+}
+
+/** What the Diagnostics surfaces read: the build, the reporting policy, pending reports, the engine. */
+export interface DiagView {
+  build: { version: string; sha: string; channel: Channel; id: string };
+  session: string;
+  reporting: ReportPolicy & { offer: "ask" | "sent" | "local" };
+  /** newest first */
+  pending: PendingReport[];
+  engine: "running" | "restarting" | "stopped";
+  installId: string;
+  /** a logs folder the user can open (desktop) */
+  logs: boolean;
 }
