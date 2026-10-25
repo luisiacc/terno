@@ -16,13 +16,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, expect, it } from "vitest";
 import { openDatabase } from "./index";
-import { nodeSqliteDriver } from "./node-driver";
 import { seedDataset } from "./seed";
 import { SqlMailStore } from "./sql-store";
-import { Db } from "./sqlite";
 import { writeLegacyCopy } from "./test/legacy";
 import { BUDGET_MULTIPLIER, report, type Stat } from "./test/perf";
-import { ingestMessages as referenceIngest } from "./test/reference-ingest";
+import { Db as ReferenceDb, ingestMessages as referenceIngest } from "./test/reference-ingest";
 import { threadCpuMs } from "./test/timing";
 
 const TOLERANCE = 0.97;
@@ -50,7 +48,7 @@ it(`ingests within ${Math.round((1 - TOLERANCE) * 100)}% of the pre-storage-work
   writeLegacyCopy(db, join(dir, "reference.db"), REFERENCE_SCHEMA);
   db.exec("VACUUM");
   const store = new SqlMailStore(db);
-  const ref = new Db(nodeSqliteDriver, join(dir, "reference.db"));
+  const ref = new ReferenceDb(join(dir, "reference.db"));
   const rounds: { wall: number; cpu: number; today: number; reference: number }[] = [];
   let turn = 0;
   // one warm-up round, not counted

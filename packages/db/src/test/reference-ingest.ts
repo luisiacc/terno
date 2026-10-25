@@ -5,12 +5,90 @@
  * beside today's store command on a copy of the same mailbox in 75223cb's
  * schema (v5, triggers and all), slice for slice, so the gate compares the
  * two in one process and load can't tell them apart. Don't edit it: it is
- * the baseline. (The SQLite wrapper and driver are today's: a regression
- * there slows both, and the store gates catch it.)
+ * the baseline. Its SQLite wrapper (statement cache, pragmas, transactions)
+ * is 75223cb's too: only node:sqlite itself is shared with today's side.
  */
+import { DatabaseSync, type SQLInputValue, type StatementSync } from "node:sqlite";
 import { featuresFromBlob, type Address } from "@terno/core";
 import type { IncomingMessage, ModelDelta } from "@terno/store";
-import { placeholders, type Db } from "../sqlite";
+
+// packages/db/src/sqlite.ts at 75223cb: the connection, its pragmas and statement cache (the parts ingestion uses)
+type Param = SQLInputValue;
+type Row = Record<string, unknown>;
+export class Db {
+  readonly raw: DatabaseSync;
+  private readonly cache = new Map<string, StatementSync>();
+  private readonly cacheSize = 400;
+  private txDepth = 0;
+
+  constructor(path: string) {
+    this.raw = new DatabaseSync(path, { readOnly: false, enableForeignKeyConstraints: true });
+    const pragmas = ["busy_timeout = 2000", "temp_store = MEMORY", "cache_size = -65536", "mmap_size = 268435456", "foreign_keys = ON"];
+    if (path !== ":memory:") {
+      pragmas.unshift("journal_mode = WAL");
+      pragmas.push("synchronous = NORMAL", "checkpoint_fullfsync = ON", "journal_size_limit = 67108864");
+    }
+    for (const p of pragmas) this.raw.exec(`PRAGMA ${p}`);
+  }
+
+  prepare(sql: string): StatementSync {
+    const hit = this.cache.get(sql);
+    if (hit) {
+      // refresh LRU position
+      this.cache.delete(sql);
+      this.cache.set(sql, hit);
+      return hit;
+    }
+    const stmt = this.raw.prepare(sql);
+    this.cache.set(sql, stmt);
+    if (this.cache.size > this.cacheSize) {
+      const oldest = this.cache.keys().next().value as string;
+      this.cache.delete(oldest);
+    }
+    return stmt;
+  }
+
+  all<T = Row>(sql: string, ...params: Param[]): T[] {
+    return this.prepare(sql).all(...params) as T[];
+  }
+
+  get<T = Row>(sql: string, ...params: Param[]): T | undefined {
+    return this.prepare(sql).get(...params) as T | undefined;
+  }
+
+  run(sql: string, ...params: Param[]): { changes: number; lastInsertRowid: number } {
+    const r = this.prepare(sql).run(...params);
+    return { changes: Number(r.changes), lastInsertRowid: Number(r.lastInsertRowid) };
+  }
+
+  /** Runs fn in a transaction (IMMEDIATE at top level, savepoint when nested). */
+  tx<T>(fn: () => T): T {
+    const depth = this.txDepth;
+    const savepoint = `sp${depth}`;
+    this.raw.exec(depth === 0 ? "BEGIN IMMEDIATE" : `SAVEPOINT ${savepoint}`);
+    this.txDepth++;
+    try {
+      const result = fn();
+      if (result instanceof Promise) throw new Error("Db.tx callbacks must be synchronous");
+      this.raw.exec(depth === 0 ? "COMMIT" : `RELEASE ${savepoint}`);
+      return result;
+    } catch (error) {
+      this.raw.exec(depth === 0 ? "ROLLBACK" : `ROLLBACK TO ${savepoint}; RELEASE ${savepoint}`);
+      throw error;
+    } finally {
+      this.txDepth--;
+    }
+  }
+
+  close(): void {
+    this.cache.clear();
+    this.raw.close();
+  }
+}
+
+function placeholders(n: number): string {
+  return n === 0 ? "NULL" : Array.from({ length: n }, () => "?").join(",");
+}
 
 // @unica/core at 75223cb: text.ts and rules/evaluate.ts
 const COMBINING_MARKS = /[\u0300-\u036f]/g;
