@@ -25,7 +25,7 @@ test.describe("categories", () => {
     expect(await page.getByTestId("account-mark").first().evaluate((el) => getComputedStyle(el).backgroundColor)).toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
   });
 
-  test("⌘K «Añadir a» files the selection with the same snackbar and undo", async ({ app: page, server }) => {
+  test("⌘K “Add to” files the selection with the same snackbar and undo", async ({ app: page, server }) => {
     const viajes = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id;
     const row = page.locator(`[data-testid=thread-row]:not(:has([data-slot=category-dot]))`).first();
     const id = (await row.getAttribute("data-thread-id"))!;
@@ -33,10 +33,10 @@ test.describe("categories", () => {
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     const before = Number((await page.getByTestId(`nav-category-${viajes}`).locator("[data-slot=nav-count]").textContent()) || 0);
     await page.keyboard.press("Meta+k");
-    await page.getByTestId("palette-input").fill("añadir a viajes");
-    await expect(page.getByRole("option", { selected: true })).toContainText("Añadir a «Viajes»");
+    await page.getByTestId("palette-input").fill("add to viajes");
+    await expect(page.getByRole("option", { selected: true })).toContainText("Add to “Viajes”");
     await page.keyboard.press("Enter");
-    await expect(page.getByTestId("snackbar-title")).toHaveText("Añadido a Viajes");
+    await expect(page.getByTestId("snackbar-title")).toHaveText("Added to Viajes");
     const target = page.locator(`[data-thread-id="${id}"]`);
     await expect(target.locator("[data-slot=category-dot]")).toHaveCount(1);
     const unread = (await target.getAttribute("data-unread")) !== null;

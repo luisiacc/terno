@@ -52,14 +52,14 @@ test.describe("categorization snackbar", () => {
     await fileWithPicker(page, facturas);
 
     const snack = page.getByTestId("category-snackbar");
-    await expect(snack.getByTestId("snackbar-title")).toHaveText("Añadido a Facturas");
-    await expect(snack.getByTestId("snackbar-sender")).toContainText("Todo de Uber Receipts");
+    await expect(snack.getByTestId("snackbar-title")).toHaveText("Added to Facturas");
+    await expect(snack.getByTestId("snackbar-sender")).toContainText("Everything from Uber Receipts");
     await expect(snack.getByTestId("snackbar-sender-count")).toHaveText(`· ${rest}`);
     await expect(page.getByTestId("reader").locator("[data-slot=category-badge]", { hasText: "Facturas" })).toBeVisible();
 
     await page.keyboard.press("1");
     await expect(snack).toHaveCount(0);
-    const done = toast(page, `${rest} añadidas a Facturas`);
+    const done = toast(page, `${rest} added to Facturas`);
     await expect(done).toBeVisible();
     await expect.poll(outside).toBe(0);
     await done.getByTestId("snack-action").click();
@@ -92,10 +92,10 @@ test.describe("categorization snackbar", () => {
     await fileWithPicker(page, facturas);
     await expect(page.getByTestId("snackbar-filter")).toBeVisible();
     await page.keyboard.press("5");
-    await expect(toast(page, "Filtro creado")).toBeVisible();
+    await expect(toast(page, "Filter created")).toBeVisible();
     const rule = JSON.parse(db.get<{ rule_json: string }>("SELECT rule_json FROM filters ORDER BY id DESC LIMIT 1")!.rule_json);
     expect(rule).toEqual({ match: "all", conditions: [{ field: "from", op: "equals", value: "uber.receipts@uber.com" }], actions: [{ type: "addCategory", categoryId: facturas }] });
-    await toast(page, "Filtro creado").getByTestId("snack-action").click();
+    await toast(page, "Filter created").getByTestId("snack-action").click();
     await expect(page.getByTestId("filters-dialog")).toBeVisible();
   });
 
@@ -112,8 +112,8 @@ test.describe("categorization snackbar", () => {
     await selectRows(page, [a!.id, b!.id]);
     await fileWithPicker(page, lecturas);
     const snack = page.getByTestId("category-snackbar");
-    await expect(snack.getByTestId("snackbar-title")).toHaveText("2 conversaciones añadidas a Lecturas");
-    await expect(snack.getByTestId("snackbar-sender")).toContainText("Todo de GitHub");
+    await expect(snack.getByTestId("snackbar-title")).toHaveText("2 conversations added to Lecturas");
+    await expect(snack.getByTestId("snackbar-sender")).toContainText("Everything from GitHub");
     // @github.com has no mail beyond this sender: no second chip saying the same
     await expect(snack.getByTestId("snackbar-sender-count")).toBeVisible();
     await expect(snack.getByTestId("snackbar-domain")).toHaveCount(0);
@@ -130,7 +130,7 @@ test.describe("categorization snackbar", () => {
 });
 
 test.describe("everything about X and Y", () => {
-  test("topic chips recount as they toggle, Ver previews the query, 4 files it", async ({ app: page, server }) => {
+  test("topic chips recount as they toggle, View previews the query, 4 files it", async ({ app: page, server }) => {
     const { db, facturas, target } = uberSetup(server);
     await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
     await fileWithPicker(page, facturas);
@@ -163,10 +163,10 @@ test.describe("everything about X and Y", () => {
     await expect(page.getByTestId("snackbar-topic-count")).toBeVisible();
     await expect(page.getByTestId("snackbar-topic-count")).not.toHaveText("·");
     await page.keyboard.press("4");
-    await expect(toast(page, /añadidas? a Viajes/)).toBeVisible();
+    await expect(toast(page, /\d+ added to Viajes/)).toBeVisible();
   });
 
-  test("Ver shows the same set bulk apply would file: no account or review scope carried over", async ({ app: page, server }) => {
+  test("View shows the same set bulk apply would file: no account or review scope carried over", async ({ app: page, server }) => {
     const { facturas, target } = uberSetup(server);
     const account = sqlDb(server.backend.store).get<{ account_id: number }>("SELECT account_id FROM threads WHERE id = ?", target)!.account_id;
     await page.getByTestId(`nav-account-${account}`).click();
@@ -177,10 +177,10 @@ test.describe("everything about X and Y", () => {
     const count = Number((await snack.getByTestId("snackbar-topic-count").textContent())!.replace(/\D/g, ""));
     await snack.getByTestId("snackbar-view").click();
     await expect(page.getByTestId("nav-account-all")).toHaveAttribute("data-active", "true");
-    if (count < 100) await expect(page.getByTestId("search-stats")).toContainText(`${count} resultados`);
+    if (count < 100) await expect(page.getByTestId("search-stats")).toContainText(`${count} results`);
   });
 
-  test("typing in Más… keeps the snackbar up even after the pointer leaves", async ({ app: page, server }) => {
+  test("typing in More… keeps the snackbar up even after the pointer leaves", async ({ app: page, server }) => {
     test.setTimeout(30_000);
     const { facturas, target } = uberSetup(server);
     await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
@@ -194,7 +194,7 @@ test.describe("everything about X and Y", () => {
     await expect(snack.getByTestId("snackbar-query")).toBeFocused();
   });
 
-  test("Más… takes the search language", async ({ app: page, server }) => {
+  test("More… takes the search language", async ({ app: page, server }) => {
     const { facturas, target } = uberSetup(server);
     await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
     await fileWithPicker(page, facturas);
@@ -208,7 +208,7 @@ test.describe("everything about X and Y", () => {
     await expect(snack.getByTestId("snackbar-topic-count")).toHaveText(`· ${expected}`);
     // typing doesn't trigger the snackbar's keys
     await field.press("Enter");
-    await expect(toast(page, `${expected} ${expected === 1 ? "añadida" : "añadidas"} a Facturas`)).toBeVisible();
+    await expect(toast(page, `${expected} added to Facturas`)).toBeVisible();
     await expect.poll(() => countOf(server, facturas, "recibo from:recibos@rappi.com")).toBe(0);
   });
 });
@@ -230,7 +230,7 @@ test.describe("the engine's suggestions and auto adds in the UI", () => {
         "INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'suggest', 0.91, ?, ?)",
         t,
         facturas,
-        JSON.stringify(["mismo remitente que 12 conversaciones en Facturas", "incluye un importe"]),
+        JSON.stringify([{ k: "reason.sameSender", p: { count: 12, category: "Facturas" } }, { k: "reason.intent.amount" }]),
         Date.now(),
       );
     }
@@ -239,20 +239,20 @@ test.describe("the engine's suggestions and auto adds in the UI", () => {
     return { db, facturas, threads };
   }
 
-  test("Revisar lists the suggestions; y accepts (with the snackbar), n rejects", async ({ app: page, server }) => {
+  test("Review lists the suggestions; y accepts (with the snackbar), n rejects", async ({ app: page, server }) => {
     const { db, facturas, threads } = await withSuggestions(page, server);
     const review = page.getByTestId(`nav-review-${facturas}`);
     await expect(review).toContainText("2");
     await review.click();
-    await expect(page.getByTestId("list-title")).toHaveText("Revisar · Facturas");
+    await expect(page.getByTestId("list-title")).toHaveText("Review · Facturas");
     await expect(page.getByTestId("thread-row")).toHaveCount(2);
 
     await page.locator(`[data-thread-id="${threads[0]}"]`).dispatchEvent("mousedown");
     const chip = page.getByTestId("reader").getByTestId("suggestion-chip");
-    await expect(chip).toContainText("¿Facturas?");
+    await expect(chip).toContainText("Facturas?");
     await settled(server, threads[0]!);
     await chip.getByTestId("suggestion-accept").hover();
-    await expect(page.getByTestId("category-reasons")).toContainText("mismo remitente que 12 conversaciones en Facturas");
+    await expect(page.getByTestId("category-reasons")).toContainText("same sender as 12 conversations in Facturas · includes an amount");
     await focusList(page);
     await page.keyboard.press("y");
     await expect(page.getByTestId("category-snackbar")).toBeVisible();
@@ -269,7 +269,7 @@ test.describe("the engine's suggestions and auto adds in the UI", () => {
     await expect(page.getByTestId(`nav-review-${facturas}`)).toHaveCount(0);
   });
 
-  test("an auto add says so and why; 'No es Facturas' reverts it and teaches the engine", async ({ app: page, server }) => {
+  test("an auto add says so and why; 'Not Facturas' reverts it and teaches the engine", async ({ app: page, server }) => {
     const db = sqlDb(server.backend.store);
     const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
     const t = db.get<{ id: number }>(
@@ -277,29 +277,29 @@ test.describe("the engine's suggestions and auto adds in the UI", () => {
        AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id) ORDER BY t.last_date DESC LIMIT 1`,
     )!.id;
     db.run("INSERT INTO thread_categories (thread_id, category_id, added_by, added_at) VALUES (?, ?, 'auto', ?)", t, facturas, Date.now());
-    db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'auto', 0.99, ?, ?)", t, facturas, JSON.stringify(["mismo remitente que 12 conversaciones en Facturas"]), Date.now());
+    db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'auto', 0.99, ?, ?)", t, facturas, JSON.stringify([{ k: "reason.sameSender", p: { count: 12, category: "Facturas" } }]), Date.now());
     await selectThread(page, t, "in:inbox from:recibos@rappi.com");
     const badge = page.getByTestId("reader").locator("[data-slot=category-badge]", { hasText: "Facturas" });
     await expect(badge.getByTestId("auto-mark")).toHaveText("auto");
     await settled(server, t);
     // keyboard and assistive tech reach the explanation too
-    const mark = badge.getByRole("button", { name: /Terno la añadió a Facturas: mismo remitente que 12 conversaciones en Facturas/ });
+    const mark = badge.getByRole("button", { name: /Terno added it to Facturas: same sender as 12 conversations in Facturas/ });
     await mark.focus();
-    await expect(page.getByTestId("category-reasons")).toContainText("Terno la añadió a Facturas");
-    await badge.getByRole("button", { name: "No es Facturas" }).click();
+    await expect(page.getByTestId("category-reasons")).toContainText("Terno added it to Facturas");
+    await badge.getByRole("button", { name: "Not Facturas" }).click();
     await expect(badge).toHaveCount(0);
     await expect.poll(() => db.get("SELECT outcome FROM cls_decisions WHERE thread_id = ?", t)).toEqual({ outcome: "reverted" });
     expect(db.get("SELECT label, weight FROM cls_examples WHERE thread_id = ?", t)).toEqual({ label: -1, weight: 3 });
   });
 
-  test("Settings → Categorías: the global switch, per-category auto, and stats", async ({ app: page, server }) => {
+  test("Settings → Categories: the global switch, per-category auto, and stats", async ({ app: page, server }) => {
     const db = sqlDb(server.backend.store);
     const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
     await page.getByTestId("open-settings").click();
     await page.getByTestId("tab-categories").click();
     const row = page.getByTestId(`category-stats-${facturas}`);
     const examples = db.get<{ n: number }>("SELECT count(*) AS n FROM cls_examples WHERE category_id = ? AND label = 1 AND weight > 0", facturas)!.n;
-    await expect(row).toContainText(`${examples} ejemplos`);
+    await expect(row).toContainText(`${examples} examples`);
     await page.getByTestId(`category-auto-${facturas}`).click();
     await expect.poll(() => db.get("SELECT auto_apply FROM categories WHERE id = ?", facturas)).toEqual({ auto_apply: 0 });
     await page.getByTestId("auto-categorize-select").click();

@@ -57,7 +57,7 @@ test.describe("drag and drop to a category", () => {
     await page.mouse.up();
 
     await expect(page.getByTestId("category-snackbar")).toBeVisible();
-    await expect(page.getByTestId("snackbar-title")).toHaveText("Movido a Viajes");
+    await expect(page.getByTestId("snackbar-title")).toHaveText("Moved to Viajes");
     const dropped = page.locator(`[data-thread-id="${id}"]`);
     await expect(dropped.locator(`[data-cat-dot="${viajes}"]`)).toHaveCount(1);
     await expect(dropped.locator("[data-cat-dot]")).toHaveCount(1);
@@ -84,7 +84,7 @@ test.describe("drag and drop to a category", () => {
     // the dragged rows are dimmed by a keyed rule, not by re-rendering them
     expect(await page.locator(`[data-thread-id="${ids[0]}"]`).evaluate((e) => getComputedStyle(e).opacity)).toBe("0.5");
     await page.mouse.up();
-    await expect(page.getByTestId("snackbar-title")).toHaveText("3 conversaciones movidas a Viajes");
+    await expect(page.getByTestId("snackbar-title")).toHaveText("3 conversations moved to Viajes");
     for (const id of ids) await expect(page.locator(`[data-thread-id="${id}"] [data-cat-dot="${viajes}"]`)).toHaveCount(1);
     for (const id of ids) await expect(page.locator(`[data-thread-id="${id}"] [data-cat-dot]`)).toHaveCount(1);
   });
@@ -95,7 +95,7 @@ test.describe("drag and drop to a category", () => {
     const target = page.getByTestId(`nav-category-${lecturas}`);
     await dragTo(page, row, target);
     await expect(target).toHaveAttribute("data-drop-state", "already");
-    await expect(target.getByLabel("Ya está aquí")).toBeVisible();
+    await expect(target.getByLabel("Already here")).toBeVisible();
     await page.mouse.up();
     await expect(page.getByTestId("drag-ghost")).toBeHidden();
     await page.waitForTimeout(200);
@@ -143,7 +143,7 @@ test.describe("drag and drop to a category", () => {
     const id = Number(await row.getAttribute("data-thread-id"));
     await dragTo(page, row, page.getByTestId(`nav-category-${viajes}`));
     await page.mouse.up();
-    await expect(page.getByTestId("snackbar-title")).toHaveText("Movido a Viajes");
+    await expect(page.getByTestId("snackbar-title")).toHaveText("Moved to Viajes");
     await expect(page.locator(`[data-thread-id="${id}"]`)).toHaveCount(0);
     const inCat = (cat: number) => !!sqlDb(server.backend.store).get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", id, cat);
     await expect.poll(() => [inCat(viajes), inCat(lecturas)]).toEqual([true, false]);
@@ -163,7 +163,7 @@ test.describe("drag and drop to a category", () => {
     const before = cats();
     await dragTo(page, dropped, page.getByTestId(`nav-category-${viajes}`));
     await page.mouse.up();
-    await expect(page.getByTestId("snackbar-title")).toHaveText("Movido a Viajes");
+    await expect(page.getByTestId("snackbar-title")).toHaveText("Moved to Viajes");
     // the same frame shows the target alone; the backend agrees
     await expect(dropped.locator("[data-cat-dot]")).toHaveCount(1);
     await expect(dropped.locator(`[data-cat-dot="${viajes}"]`)).toHaveCount(1);
@@ -184,7 +184,7 @@ test.describe("drag and drop to a category", () => {
     await dragTo(page, dropped, target);
     await expect(target).toHaveAttribute("data-drop-state", "over");
     await page.mouse.up();
-    await expect(page.getByTestId("snackbar-title")).toHaveText("Movido a Lecturas");
+    await expect(page.getByTestId("snackbar-title")).toHaveText("Moved to Lecturas");
     await expect(dropped.locator("[data-cat-dot]")).toHaveCount(1);
     await expect.poll(() => sqlDb(server.backend.store).all("SELECT category_id FROM thread_categories WHERE thread_id = ?", id)).toEqual([{ category_id: lecturas }]);
   });
@@ -200,14 +200,14 @@ test.describe("drag and drop to a category", () => {
     const before = sqlDb(server.backend.store).get("SELECT added_by, added_at, batch_id FROM thread_categories WHERE thread_id = ? AND category_id = ?", id, lecturas);
     await dragTo(page, row, page.getByTestId(`nav-category-${viajes}`));
     await page.mouse.up();
-    await expect(page.getByTestId("snackbar-title")).toHaveText("Movido a Viajes");
+    await expect(page.getByTestId("snackbar-title")).toHaveText("Moved to Viajes");
     await expect.poll(() => [inCat(viajes), inCat(lecturas)]).toEqual([true, false]);
 
     // the backend refuses the restore: the destination must keep the thread, the snackbar turns into the error with a retry
-    sqlDb(server.backend.store).exec("CREATE TRIGGER e2e_fail_restore BEFORE INSERT ON thread_categories BEGIN SELECT RAISE(ABORT, 'disco lleno'); END");
+    sqlDb(server.backend.store).exec("CREATE TRIGGER e2e_fail_restore BEFORE INSERT ON thread_categories BEGIN SELECT RAISE(ABORT, 'disk full'); END");
     await page.getByTestId("snackbar-undo").click();
-    await expect(page.getByTestId("snackbar-title")).toContainText("No se pudo deshacer");
-    await expect(page.getByTestId("snack-alert")).toContainText("No se pudo deshacer");
+    await expect(page.getByTestId("snackbar-title")).toContainText("Couldn’t undo");
+    await expect(page.getByTestId("snack-alert")).toContainText("Couldn’t undo");
     await expect(page.getByTestId("snackbar-undo")).toHaveText(/Retry/);
     expect([inCat(viajes), inCat(lecturas)]).toEqual([true, false]);
 
@@ -251,7 +251,7 @@ test.describe("drag and drop to a category", () => {
     await focusList(page);
     await page.keyboard.press("l");
     await page.getByTestId(`pick-category-${viajes}`).click();
-    await expect(page.getByTestId("snackbar-title")).toHaveText("Añadido a Viajes");
+    await expect(page.getByTestId("snackbar-title")).toHaveText("Added to Viajes");
   });
 });
 

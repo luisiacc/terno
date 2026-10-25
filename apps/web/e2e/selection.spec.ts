@@ -58,7 +58,7 @@ test.describe("context menu on one thread", () => {
     await item(page, "menu-archive").click();
     await expect(row(page, id)).toHaveCount(0);
     await expect.poll(() => flags(server, id).in_inbox).toBe(0);
-    await toast(page, "Archivado").getByTestId("snack-action").click();
+    await toast(page, "Archived").getByTestId("snack-action").click();
     await expect(row(page, id)).toHaveCount(1);
   });
 
@@ -96,28 +96,28 @@ test.describe("context menu on one thread", () => {
     const target = rows(page).nth(1);
     const id = (await target.getAttribute("data-thread-id"))!;
     await rightClick(page, target);
-    await expect(item(page, "menu-sender-file")).toContainText("Todo de");
+    await expect(item(page, "menu-sender-file")).toContainText("Everything from");
     await item(page, "menu-copy").click();
     const copied = await page.evaluate(() => navigator.clipboard.readText());
     expect(copied).toMatch(/@/);
     await rightClick(page, row(page, id));
     await item(page, "menu-search-sender").click();
     await expect(page.getByTestId("search-input")).toHaveValue(`from:${copied}`);
-    await expect(page.getByTestId("list-title")).toHaveText("Todo el correo");
+    await expect(page.getByTestId("list-title")).toHaveText("All Mail");
     await rightClick(page, rows(page).first());
     await item(page, "menu-filter").click();
     await expect(page.getByTestId("filters-dialog")).toBeVisible();
     await expect(page.getByTestId("condition-value").first()).toHaveValue(copied);
   });
 
-  test("Papelera and Spam: what can't apply there is disabled, the way back is offered", async ({ app: page }) => {
+  test("Trash and Spam: what can't apply there is disabled, the way back is offered", async ({ app: page }) => {
     await page.getByTestId("nav-trash").click();
-    await expect(page.getByTestId("list-title")).toHaveText("Papelera");
+    await expect(page.getByTestId("list-title")).toHaveText("Trash");
     await viewLoaded(page, "trash");
     await rightClick(page, rows(page).first());
     await expect(item(page, "menu-trash")).toHaveAttribute("data-disabled", "");
     await expect(item(page, "menu-archive")).toHaveAttribute("data-disabled", "");
-    await expect(item(page, "menu-inbox")).toHaveText(/Restaurar a Entrada/);
+    await expect(item(page, "menu-inbox")).toHaveText(/Restore to Inbox/);
     await expect(item(page, "menu-spam")).not.toHaveAttribute("data-disabled");
     await page.keyboard.press("Escape");
     await expect(menu(page)).toBeHidden();
@@ -147,15 +147,15 @@ test.describe("context menu on one thread", () => {
       await page.keyboard.press("ArrowDown");
       // read without waiting: between two keys there may be no highlighted item yet
       const now = await page.evaluate(() => document.querySelector("[data-testid=thread-menu] [data-highlighted]")?.textContent ?? "");
-      if (now.startsWith("Archivar")) break;
+      if (now.startsWith("Archive")) break;
     }
-    await expect(menu(page).locator("[data-highlighted]")).toContainText("Archivar");
+    await expect(menu(page).locator("[data-highlighted]")).toContainText("Archive");
     await page.keyboard.press("Enter");
     await expect(row(page, id)).toHaveCount(0);
     await expect.poll(() => flags(server, id).in_inbox).toBe(0);
   });
 
-  test("its category toggles can file a thread in two categories; Mover a… leaves it in one", async ({ app: page, server }) => {
+  test("its category toggles can file a thread in two categories; Move to… leaves it in one", async ({ app: page, server }) => {
     const [lecturas, clientes, viajes] = ["Lecturas", "Clientes", "Viajes"].map((n) => db(server).get<{ id: number }>("SELECT id FROM categories WHERE name = ?", n)!.id) as [number, number, number];
     const target = page.locator("[data-testid=thread-row]:not(:has([data-cat-dot]))").first();
     const id = Number(await target.getAttribute("data-thread-id"));
@@ -179,13 +179,13 @@ test.describe("context menu on one thread", () => {
     await rightClick(page, row(page, id));
     await item(page, "menu-move").hover();
     await sub(page, `menu-move-${viajes}`).click();
-    await expect(page.getByTestId("snackbar-title")).toHaveText("Movido a Viajes");
+    await expect(page.getByTestId("snackbar-title")).toHaveText("Moved to Viajes");
     await expect.poll(cats).toEqual([viajes]);
   });
 });
 
 test.describe("category picker modes", () => {
-  test("after v (Mover a…) is dismissed, the reader's Categoría button toggles again: picking C keeps A and B", async ({ app: page, server }) => {
+  test("after v (Move to…) is dismissed, the reader's Category button toggles again: picking C keeps A and B", async ({ app: page, server }) => {
     const [lecturas, clientes, viajes] = ["Lecturas", "Clientes", "Viajes"].map((n) => db(server).get<{ id: number }>("SELECT id FROM categories WHERE name = ?", n)!.id) as [number, number, number];
     const id = Number(await page.locator("[data-testid=thread-row]:not(:has([data-cat-dot]))").first().getAttribute("data-thread-id"));
     for (const cat of [lecturas, clientes]) await server.backend.server.invoke("categories.addThreads", { categoryId: cat, threadIds: [id], source: "picker" }, ctx);
@@ -199,7 +199,7 @@ test.describe("category picker modes", () => {
     await page.getByTestId("action-category").click();
     await expect(page.getByTestId("category-picker")).toHaveAttribute("data-mode", "toggle");
     await page.getByTestId(`pick-category-${viajes}`).click();
-    await expect(page.getByTestId("snackbar-title")).toHaveText("Añadido a Viajes");
+    await expect(page.getByTestId("snackbar-title")).toHaveText("Added to Viajes");
     const cats = () => db(server).all<{ category_id: number }>("SELECT category_id FROM thread_categories WHERE thread_id = ? ORDER BY category_id", id).map((r) => r.category_id);
     await expect.poll(cats).toEqual([lecturas, clientes, viajes].sort((a, b) => a - b));
   });
@@ -212,7 +212,7 @@ test.describe("multi-selection", () => {
     await row(page, ids[5]!).click({ modifiers: ["Shift"] });
     await expect(checked(page)).toHaveCount(5);
     expect(await idsOf(checked(page))).toEqual(ids.slice(1, 6));
-    await expect(page.getByTestId("selection-bar")).toContainText("5 conversaciones seleccionadas");
+    await expect(page.getByTestId("selection-bar")).toContainText("5 conversations selected");
     await row(page, ids[3]!).click({ modifiers: ["ControlOrMeta"] });
     await expect(checked(page)).toHaveCount(4);
     await focusList(page);
@@ -239,10 +239,10 @@ test.describe("multi-selection", () => {
     const ids = await loadedIds(page);
     expect(ids.length).toBeGreaterThan(30);
     await page.keyboard.press("ControlOrMeta+a");
-    await expect(page.getByTestId("selection-bar")).toContainText(`${ids.length} conversaciones seleccionadas`);
+    await expect(page.getByTestId("selection-bar")).toContainText(`${ids.length} conversations selected`);
 
     await rightClick(page, rows(page).nth(1));
-    await expect(item(page, "menu-count")).toHaveText(`${ids.length} conversaciones`);
+    await expect(item(page, "menu-count")).toHaveText(`${ids.length} conversations`);
     await expect(item(page, "menu-reply")).toHaveCount(0);
     await item(page, "menu-read").click();
     await expect.poll(() => ids.every((id) => flags(server, id).unread_count === 0)).toBe(true);
@@ -254,7 +254,7 @@ test.describe("multi-selection", () => {
     await expect.poll(() => ids.every((id) => flags(server, id).in_inbox === 0)).toBe(true);
     // the search is in:inbox: none of them is listed any more
     await expect.poll(async () => (await loadedIds(page)).filter((id) => ids.includes(id)).length).toBe(0);
-    await toast(page, `Archivado · ${ids.length} conversaciones`).getByTestId("snack-action").click();
+    await toast(page, `Archived · ${ids.length} conversations`).getByTestId("snack-action").click();
     await expect.poll(() => ids.every((id) => flags(server, id).in_inbox === 1)).toBe(true);
     await expect.poll(async () => (await loadedIds(page)).filter((id) => ids.includes(id)).length).toBe(ids.length);
 
@@ -303,7 +303,7 @@ test.describe("multi-selection", () => {
     await focusList(page);
     await page.keyboard.press("Shift+F10");
     await expect(menu(page)).toBeVisible();
-    await expect(item(page, "menu-count")).toHaveText("2 conversaciones");
+    await expect(item(page, "menu-count")).toHaveText("2 conversations");
   });
 
   test("⌫ trashes the selection", async ({ app: page, server }) => {
@@ -312,7 +312,7 @@ test.describe("multi-selection", () => {
     await page.keyboard.press("Backspace");
     for (const id of ids) await expect(row(page, id)).toHaveCount(0);
     await expect.poll(() => ids.every((id) => flags(server, id).in_trash === 1)).toBe(true);
-    await expect(toast(page, "3 conversaciones")).toBeVisible();
+    await expect(toast(page, "3 conversations")).toBeVisible();
   });
 
   test("⌘A inside the search box selects its text, not the rows", async ({ app: page }) => {
@@ -333,41 +333,41 @@ test.describe("multi-selection", () => {
     await focusList(page);
     await page.keyboard.press("ControlOrMeta+a");
     const banner = page.getByTestId("select-all-banner");
-    await expect(banner).toContainText("100 conversaciones cargadas");
-    await expect(page.getByTestId("select-all-scope-button")).toHaveText(`Seleccionar las ${total.toLocaleString("es-MX")} conversaciones de «Entrada»`);
+    await expect(banner).toContainText("100 loaded conversations");
+    await expect(page.getByTestId("select-all-scope-button")).toHaveText(`Select all ${total.toLocaleString("en-US")} conversations in “Inbox”`);
     await page.getByTestId("select-all-scope-button").click();
-    await expect(page.getByTestId("select-all-scope")).toContainText(`Las ${total.toLocaleString("es-MX")} conversaciones de Entrada`);
-    await expect(page.getByTestId("selection-bar")).toContainText(`Las ${total.toLocaleString("es-MX")} conversaciones de Entrada`);
+    await expect(page.getByTestId("select-all-scope")).toContainText(`All ${total.toLocaleString("en-US")} conversations in Inbox`);
+    await expect(page.getByTestId("selection-bar")).toContainText(`All ${total.toLocaleString("en-US")} conversations in Inbox`);
     // the progress toast shows while the backend works through the slices
     await page.evaluate(() => {
       const w = window as unknown as { __progress: string[] };
       w.__progress = [];
       new MutationObserver(() => {
-        for (const t of document.querySelectorAll("[data-testid=snack]")) if (t.textContent?.includes("Archivando")) w.__progress.push(t.textContent);
+        for (const t of document.querySelectorAll("[data-testid=snack]")) if (t.textContent?.includes("Archiving")) w.__progress.push(t.textContent);
       }).observe(document.body, { subtree: true, childList: true, characterData: true });
     });
     await focusList(page);
     await page.keyboard.press("e");
-    await expect(toast(page, `Archivado · ${total.toLocaleString("es-MX")} conversaciones`)).toBeVisible();
-    expect((await page.evaluate(() => (window as unknown as { __progress: string[] }).__progress)).some((t) => t.includes(`Archivando ${total.toLocaleString("es-MX")} conversaciones`))).toBe(true);
+    await expect(toast(page, `Archived · ${total.toLocaleString("en-US")} conversations`)).toBeVisible();
+    expect((await page.evaluate(() => (window as unknown as { __progress: string[] }).__progress)).some((t) => t.includes(`Archiving ${total.toLocaleString("en-US")} conversations`))).toBe(true);
     expect(inboxCount()).toBe(0);
     await expect(page.getByTestId("list-empty")).toBeVisible();
     // no learned-filter signal from a sweep
     expect(db(server).get<{ c: number }>("SELECT count(*) AS c FROM user_actions")!.c).toBe(signalsBefore);
-    await toast(page, "Archivado").getByTestId("snack-action").click();
-    await expect(toast(page, /Deshecho/)).toBeVisible();
+    await toast(page, "Archived").getByTestId("snack-action").click();
+    await expect(toast(page, /Undone/)).toBeVisible();
     await expect.poll(inboxCount).toBe(total);
     await expect(rows(page).first()).toBeVisible();
   });
 });
 
 test.describe("undo is exact", () => {
-  test("all of Archivo to Papelera, then Deshacer: they're back in Archivo, none in Entrada", async ({ app: page, server }) => {
+  test("all of Archive to Trash, then Undo: they're back in Archive, none in Inbox", async ({ app: page, server }) => {
     const count = (where: string) => db(server).get<{ c: number }>(`SELECT count(*) AS c FROM threads WHERE ${where}`)!.c;
     const archived = count("in_inbox = 0 AND in_trash = 0 AND in_spam = 0");
     const inbox = count("in_inbox = 1");
     await page.getByTestId("nav-archive").click();
-    await expect(page.getByTestId("list-title")).toHaveText("Archivo");
+    await expect(page.getByTestId("list-title")).toHaveText("Archive");
     await viewLoaded(page, "archive");
     await focusList(page);
     await page.keyboard.press("ControlOrMeta+a");
@@ -375,7 +375,7 @@ test.describe("undo is exact", () => {
     await expect(page.getByTestId("select-all-scope")).toBeVisible();
     await page.keyboard.press("Backspace");
     await expect.poll(() => count("in_inbox = 0 AND in_trash = 0 AND in_spam = 0")).toBe(0);
-    await toast(page, "Movido a la papelera").getByTestId("snack-action").click();
+    await toast(page, "Moved to Trash").getByTestId("snack-action").click();
     await expect.poll(() => count("in_inbox = 0 AND in_trash = 0 AND in_spam = 0")).toBe(archived);
     expect(count("in_inbox = 1")).toBe(inbox);
     await expect(rows(page).first()).toBeVisible();
@@ -399,7 +399,7 @@ test.describe("select all N and dragging", () => {
     const viajes = db(server).get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id;
     await focusList(page);
     await page.keyboard.press("ControlOrMeta+a");
-    await expect(page.getByTestId("select-all-scope-button")).toHaveText(/Seleccionar las/);
+    await expect(page.getByTestId("select-all-scope-button")).toHaveText(/Select all/);
     await page.getByTestId("select-all-scope-button").click();
     await expect(page.getByTestId("select-all-scope")).toBeVisible();
     const before = db(server).get<{ c: number }>("SELECT count(*) AS c FROM thread_categories WHERE category_id = ?", viajes)!.c;
@@ -419,7 +419,7 @@ test.describe("select all N and dragging", () => {
 
 test.describe("accessibility", () => {
   test("the listbox is multi-selectable: aria-selected follows the real selection, the open thread is the active descendant", async ({ app: page }) => {
-    const list = page.getByRole("listbox", { name: "Conversaciones" });
+    const list = page.getByRole("listbox", { name: "Conversations" });
     const selectedOptions = page.locator("[role=option][aria-selected=true]");
     await expect(list).toHaveAttribute("aria-multiselectable", "true");
     // nothing checked: the open thread is the selection
