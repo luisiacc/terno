@@ -9,8 +9,10 @@ import { defineConfig, devices } from "@playwright/test";
  * - web-conformance: the MailStore and engine suites inside a Chromium worker
  * - web-perf: budgets at 10k and 50k messages (persistent profile, real OPFS)
  */
-const WEB = 5181;
-const CONFORMANCE = 5182;
+// WEB_PORT lets a second checkout run this suite alongside (the conformance server takes the next port)
+const WEB = Number(process.env.WEB_PORT ?? 5181);
+const CONFORMANCE = WEB + 1;
+const OUT = process.env.WEB_PORT ? `dist-web-e2e-${WEB}` : "dist-web-e2e";
 
 export default defineConfig({
   testDir: "e2e-web",
@@ -25,7 +27,7 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${WEB}`,
     ...devices["Desktop Chrome"],
     viewport: { width: 1440, height: 900 },
-    locale: "es-MX",
+    locale: "en-US",
     timezoneId: "America/Mexico_City",
     colorScheme: "light",
     reducedMotion: "reduce",
@@ -40,7 +42,7 @@ export default defineConfig({
   webServer: [
     {
       // a demo build (seeds an empty mailbox from the mock generator; ?demo=<threads>, ?mailbox=<name>)
-      command: `VITE_TARGET=web VITE_WEB_DEMO=1 pnpm vite build --outDir dist-web-e2e && pnpm vite preview --outDir dist-web-e2e --port ${WEB} --strictPort --host 127.0.0.1`,
+      command: `VITE_TARGET=web VITE_WEB_DEMO=1 pnpm vite build --outDir ${OUT} && pnpm vite preview --outDir ${OUT} --port ${WEB} --strictPort --host 127.0.0.1`,
       url: `http://127.0.0.1:${WEB}`,
       // never reuse: the command builds this checkout, a running server may be serving an older build
       reuseExistingServer: false,
