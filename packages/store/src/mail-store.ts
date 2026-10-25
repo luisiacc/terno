@@ -1,3 +1,4 @@
+import type { AutocompleteSource } from "./autocomplete-source";
 import type {
   AccountPatch,
   Account,
@@ -212,6 +213,8 @@ export interface MailStore {
 
   /** every committed change to what search indexes, as revisioned batches (the transactional outbox) */
   readonly feed: SearchFeed;
+  /** headers and sent text for autocomplete's in-memory models (plan 18), from the same log */
+  readonly autocomplete: AutocompleteSource;
 
   threads: MailStoreSearch & {
     list(p: ListParams): Promise<Page>;

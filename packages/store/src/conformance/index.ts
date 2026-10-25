@@ -4,3 +4,4 @@ export * from "./fixtures";
 export * from "./store";
 export * from "./replica";
 export * from "./engine";
+export * from "./autocomplete";

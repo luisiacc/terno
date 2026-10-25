@@ -8,7 +8,8 @@
     ".": "./src/index.ts",
     "./instant": "./src/instant/index.ts",
     "./list": "./src/list.ts",
-    "./conformance": "./src/conformance/index.ts"
+    "./conformance": "./src/conformance/index.ts",
+    "./autocomplete": "./src/autocomplete/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

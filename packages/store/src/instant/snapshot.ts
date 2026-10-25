@@ -135,6 +135,7 @@ export async function sealSnapshot(packed: Uint8Array, clock: SliceClock): Promi
 
 export interface SectionReader {
   u8(name: string): Uint8Array<ArrayBuffer>;
+  u16(name: string): Uint16Array<ArrayBuffer>;
   u32(name: string): Uint32Array<ArrayBuffer>;
   i32(name: string): Int32Array<ArrayBuffer>;
   f64(name: string): Float64Array<ArrayBuffer>;
@@ -178,6 +179,7 @@ export async function readSnapshot(
   };
   const sections: SectionReader = {
     u8: (n) => get(n, "u8"),
+    u16: (n) => get(n, "u16"),
     u32: (n) => get(n, "u32"),
     i32: (n) => get(n, "i32"),
     f64: (n) => get(n, "f64"),

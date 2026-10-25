@@ -16,6 +16,7 @@ import {
   type Revision,
   type SearchCursor,
   type SearchFeed,
+  type AutocompleteSource,
   type SearchRequest,
   type StoreCapabilities,
   type StoreSnapshot,
@@ -122,6 +123,7 @@ import { Fts5SearchEngine } from "./search-engine";
 import { messageDocs, threadDocs } from "./search-docs";
 import { seedDataset } from "./seed";
 import { SqlProviderStore } from "./sql-provider-store";
+import { sqlAutocompleteSource } from "./autocomplete";
 import type { Db } from "./sqlite";
 
 /** Ids read per slice when the feed serves a large commit (500 thread docs read in ~1 ms). */
@@ -172,6 +174,7 @@ export class SqlMailStore implements MailStore {
 
   /** the in-memory index searches use when it is current (instantSearch option) */
   readonly instant: InstantSearch | null;
+  readonly autocomplete: AutocompleteSource;
 
   private readonly yieldTo: () => Promise<void>;
 
@@ -198,6 +201,7 @@ export class SqlMailStore implements MailStore {
       db.onCommit(() => this.instant?.notify());
       this.instant.start();
     } else this.instant = null;
+    this.autocomplete = sqlAutocompleteSource(db, this.yieldTo, `sqlite-${SEARCH_SCHEMA_VERSION}`);
     this.capabilities = {
       engine: `sqlite-${db.driver.id}`,
       search: this.instant ? `instant+${this.fts.id}` : this.fts.id,

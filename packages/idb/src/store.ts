@@ -133,7 +133,8 @@ import {
 import type { Key, MemDb } from "./mem";
 import { IdbProviderStore } from "./provider-store";
 import { createMemDb, EARLY_TABLES, idbExists, LATE_TABLES, LOGICAL_SCHEMA, loadAll, SEARCH_SCHEMA, openIdb, persist, readAll, readLazy, writeMeta } from "./schema";
-import { sameRevision, SearchCancelledError } from "@terno/store";
+import { sameRevision, SearchCancelledError, type AutocompleteSource, type ContactBatch, type ContactMessage, type SentText } from "@terno/store";
+import { contactOf, isLearnable, sentOf } from "./autocomplete";
 import { appendOutbox, checkCursor, columnsOf, materializeChanges, pageOf, planScan, scanPage, searchChangeIds, searchHead } from "./search";
 
 const PENDING_BODIES_CAP = 1000;
@@ -220,6 +221,7 @@ export class IdbMailStore implements MailStore {
       });
       this.instant.start();
     } else this.instant = null;
+    this.autocomplete = this.autocompleteSource();
     this.capabilities = { engine: "indexeddb", search: this.instant ? "instant+scan" : "scan", bulkRuleScan: "scan", imapLocations: true, externalReaders: false, durability: "browser" };
   }
 
@@ -376,6 +378,132 @@ export class IdbMailStore implements MailStore {
   /** the roots' bodies, for anything that derives categorization features */
   private prefetchRoots(threadIds: Iterable<number>): Promise<void> {
     return this.readBodies(rootRefs(this.c, threadIds).map((r) => r.messageId));
+  }
+
+  // ───────────────────────────── autocomplete (plan 18) ─────────────────────────────
+
+  /** Headers from the in-memory rows, sent text through the lazy bodies (8 per exclusive unit, so commands interleave). */
+  readonly autocomplete: AutocompleteSource;
+
+  private autocompleteSource(): AutocompleteSource {
+    let sentIds: Int32Array | null = null;
+    return {
+      snapshotBase: this.o.platform.files ? `/${this.o.name}.idb` : null,
+      identity: `idb-${SEARCH_SCHEMA}`,
+      head: async () => this.early(() => this.revision()),
+      changes: async (after, through, maxCommits) => {
+        const ids = await this.read(() => searchChangeIds(this.c, after, through, maxCommits));
+        const out: ContactBatch[] = [];
+        for (const b of ids) {
+          const messages: ContactMessage[] = [];
+          const removed: number[] = [];
+          const spamSenders = new Set<string>();
+          for (let i = 0; i < Math.max(b.messageIds.length, b.threadIds.length); i += SLICE) {
+            const mIds = b.messageIds.slice(i, i + SLICE);
+            const tIds = b.threadIds.slice(i, i + SLICE);
+            await this.read(() => {
+              const rows = this.db.table<R>("messages");
+              for (const id of mIds) {
+                const m = rows.get(id);
+                if (m) messages.push(contactOf(m));
+                else removed.push(id);
+              }
+              const threads = this.db.table<R>("threads");
+              for (const t of tIds) {
+                if (threads.get(t)?.in_spam !== 1) continue;
+                for (const m of rows.by("fk_thread_id", t)) if (m.is_sent !== 1) spamSenders.add(m.from_email as string);
+              }
+            });
+            await this.o.platform.yield();
+          }
+          out.push({ from: b.from, to: b.to, messages, removed, spamSenders: [...spamSenders] });
+        }
+        return out;
+      },
+      beginBuild: async () => {
+        const { from, lease, messageIds } = await this.exclusive(async () => {
+          const from = this.revision();
+          const row: R = { id: undefined, from_seq: from.seq, created_at: Date.now() };
+          this.db.tx(() => this.db.table("search_leases").insert(row));
+          this.db.takeCommit();
+          this.db.confirm();
+          return { from, lease: row.id as number, messageIds: Int32Array.from(this.db.table("messages").rows.keys() as Iterable<number>).sort() };
+        });
+        const page = (at: number) =>
+          this.read(() => {
+            const rows = this.db.table<R>("messages");
+            const docs: ContactMessage[] = [];
+            const end = Math.min(messageIds.length, at + SLICE);
+            for (let i = at; i < end; i++) {
+              const m = rows.get(messageIds[i]!);
+              if (m) docs.push(contactOf(m));
+            }
+            return { docs, next: end };
+          });
+        const release = async () => {
+          if (!this.open) return;
+          await this.exclusive(async () => {
+            this.db.tx(() => this.db.table("search_leases").delete(lease));
+            this.db.takeCommit();
+            this.db.confirm();
+          });
+        };
+        return {
+          from,
+          async *messages() {
+            for (let at = 0; at < messageIds.length; ) {
+              const p = await page(at);
+              at = p.next;
+              if (p.docs.length) yield p.docs;
+            }
+          },
+          release,
+        };
+      },
+      sentAfter: async (afterId, limit) => {
+        // the learnable ids in order, collected once per build (a page per call would rescan the mailbox each time);
+        // mail sent after that comes through the log
+        if (afterId === 0 || !sentIds) {
+          sentIds = await this.read(() => {
+            const out: number[] = [];
+            for (const [k, m] of this.db.table<R>("messages").rows) if (isLearnable(m)) out.push(k as number);
+            return Int32Array.from(out).sort();
+          });
+        }
+        const all = sentIds;
+        let lo = 0;
+        let hi = all.length;
+        while (lo < hi) {
+          const mid = (lo + hi) >>> 1;
+          if (all[mid]! <= afterId) lo = mid + 1;
+          else hi = mid;
+        }
+        return this.autocomplete.sentTexts(Array.from(all.subarray(lo, lo + limit)));
+      },
+      sentTexts: async (ids) => {
+        const out: SentText[] = [];
+        for (let i = 0; i < ids.length; i += 8) {
+          const chunk = ids.slice(i, i + 8);
+          out.push(
+            ...(await this.exclusive(async () => {
+              const rows = this.db.table<R>("messages");
+              const learnable = chunk.filter((id) => {
+                const m = rows.get(id);
+                return m !== undefined && isLearnable(m);
+              });
+              await this.readBodies(learnable);
+              const texts: SentText[] = [];
+              for (const id of learnable) {
+                const body = this.c.body(id)?.body_text;
+                if (body) texts.push(sentOf(rows.get(id)!, body));
+              }
+              return texts;
+            })),
+          );
+        }
+        return out;
+      },
+    };
   }
 
   // ───────────────────────────── search ─────────────────────────────
