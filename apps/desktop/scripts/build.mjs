@@ -1,5 +1,9 @@
 // Bundles every process into self-contained CommonJS so the packaged app needs
 // no node_modules at all (no native modules either: SQLite is node:sqlite).
+// Every bundle (main, backend, preload, MCP and the renderer) gets an external
+// source map and a debug id; the maps then move to .maps/<version>-<sha>/,
+// outside dist/ and release/, before anything is packaged or signed.
+import { execFileSync } from "node:child_process";
 import { build } from "esbuild";
 import { cpSync, mkdirSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -10,6 +14,21 @@ const root = join(here, "..");
 const out = join(root, "dist");
 const repo = join(root, "..", "..");
 const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
+const { archiveMaps, assertNoMaps, injectDebugIds, resetArchive } = await import(join(repo, "scripts/sourcemaps.mjs"));
+
+/** The commit this build is from (and whether the tree had changes on top). */
+function buildSha() {
+  try {
+    const sha = execFileSync("git", ["rev-parse", "--short=10", "HEAD"], { cwd: repo }).toString().trim();
+    const dirty = execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: repo }).toString().trim() !== "";
+    return dirty ? `${sha}-dirty` : sha;
+  } catch {
+    return "unknown";
+  }
+}
+const sha = process.env.TERNO_BUILD_SHA || buildSha();
+// public by design (it can only submit events); without it the reporter is never loaded
+const dsn = process.env.TERNO_SENTRY_DSN ?? "";
 
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
@@ -19,13 +38,13 @@ const common = {
   platform: "node",
   format: "cjs",
   target: "node24",
-  sourcemap: false,
+  sourcemap: "external",
   minify: true,
   legalComments: "none",
   logLevel: "warning",
   // every node builtin (incl. node:sqlite, which esbuild may not know) stays external
   external: ["electron", "node:*"],
-  define: { "process.env.TERNO_BUILD_VERSION": JSON.stringify(version) },
+  define: { "process.env.TERNO_BUILD_VERSION": JSON.stringify(version), "process.env.TERNO_BUILD_SHA": JSON.stringify(sha), "process.env.TERNO_SENTRY_DSN": JSON.stringify(dsn) },
   // ESM deps that read import.meta.url get a CJS-compatible value
   banner: { js: "const __importMetaUrl = require('url').pathToFileURL(__filename).href;" },
 };
@@ -34,6 +53,8 @@ const entries = [
   { in: join(root, "src/main.ts"), out: "main" },
   { in: join(root, "src/backend-entry.ts"), out: "backend" },
   { in: join(root, "src/preload.ts"), out: "preload" },
+  // the Sentry pipe, required by main only when a report is about to go
+  { in: join(root, "src/diag/reporter.ts"), out: "reporter" },
   { in: join(repo, "packages/mcp/src/bin.ts"), out: "mcp/terno-mcp" },
 ];
 
@@ -74,4 +95,11 @@ if (!process.argv.includes("--no-renderer")) {
   cpSync(web, join(out, "renderer"), { recursive: true });
 }
 cpSync(join(repo, "packages/mcp/SKILL.md"), join(out, "mcp/SKILL.md"));
-console.log(`built desktop bundles → ${out}`);
+
+// debug ids in, maps out: what ships has none, the archive has them all (with each minified file beside its map)
+const archive = join(root, ".maps", `${version}-${sha}`);
+resetArchive(archive);
+const tagged = injectDebugIds(out);
+const moved = archiveMaps(out, archive, "dist");
+assertNoMaps(out);
+console.log(`built desktop bundles → ${out} (${version}+${sha}${dsn ? ", reports on" : ""}); ${moved} source maps (${tagged.length} tagged) → ${archive}`);

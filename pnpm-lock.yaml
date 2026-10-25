@@ -184,6 +184,9 @@ importers:
 
   .:
     devDependencies:
+      '@jridgewell/trace-mapping':
+        specifier: 'catalog:'
+        version: 0.3.31
       '@types/jsdom':
         specifier: ^30.0.0
         version: 30.0.0
@@ -246,9 +249,6 @@ importers:
         specifier: workspace:*
         version: link:../../packages/mcp
     devDependencies:
-      '@jridgewell/trace-mapping':
-        specifier: 'catalog:'
-        version: 0.3.31
       '@playwright/test':
         specifier: 'catalog:'
         version: 1.64.1

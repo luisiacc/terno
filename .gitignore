@@ -22,3 +22,7 @@ apps/backend-dev/.data/
 apps/desktop/.stage/
 apps/desktop/release/
 tags
+
+# archived source maps (pnpm diag:symbolicate, sentry-cli upload): never shipped, never committed
+apps/desktop/.maps/
+apps/web/.maps/

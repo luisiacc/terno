@@ -16,12 +16,16 @@ import {
   utilityProcess,
   type UtilityProcess,
 } from "electron";
+import { diagSession, log as diagLog } from "@terno/core/diag";
 import { parseAppearance, windowVibrancy, type Appearance } from "./appearance";
+import { BUILD_ID } from "./diag/build-info";
+import { mainDiag } from "./diag/main";
+import { RestartPolicy } from "./diag/supervisor";
 import type { BackendToMain, MainToBackend } from "./ipc";
 import { readLegacySecrets } from "./keychain-helper";
 import { DB_FILE } from "./legacy-profile";
 import { printLocalModeChanged, registerPrint } from "./print";
-import { fileMenu, isTrustedSender, testPdfDir, type PrintCommand } from "./print-policy";
+import { fileMenu, helpMenu, isTrustedSender, testPdfDir, type PrintCommand } from "./print-policy";
 import { LEGACY_STORAGE_PENDING } from "./profile";
 
 // V8 compile cache for the main bundle (t3code trick): faster subsequent boots.
@@ -117,7 +121,10 @@ function installNetworkBackstop() {
 
 let backend: UtilityProcess | null = null;
 let backendReady: Promise<void> = Promise.resolve();
+let releaseReadyWaiters: () => void = () => {};
 let clientSeq = 0;
+let backendInstance = 0;
+const restarts = new RestartPolicy();
 const windows = new Set<BrowserWindow>();
 
 function agentPaths() {
@@ -129,33 +136,43 @@ function resourcesDir() {
   return app.isPackaged ? process.resourcesPath : join(__dirname, "..", "resources");
 }
 
-function log(level: string, message: string) {
-  const line = `[${new Date().toISOString()}] [backend:${level}] ${message}\n`;
-  if (level === "error") process.stderr.write(line);
-  else process.stdout.write(line);
+/** Main's free-form lines (legacy storage, print): kept locally, scrubbed, under one code. */
+function log(level: "info" | "warn" | "error", message: string) {
+  diagLog[level]("log.message", { source: "main" }, message);
 }
 
 function startBackend() {
   const userData = app.getPath("userData");
   mkdirSync(userData, { recursive: true });
+  const instance = ++backendInstance;
+  const startedAt = Date.now();
   const child = utilityProcess.fork(join(__dirname, "backend.cjs"), [], { serviceName: "Terno Mail Engine", stdio: "inherit" });
   backend = child;
+  restarts.started(startedAt);
+  diagLog.info("backend.started", { attempt: restarts.attempt });
   let resolveReady!: () => void;
   backendReady = new Promise((r) => (resolveReady = r));
+  releaseReadyWaiters = () => resolveReady();
   child.on("message", (msg: BackendToMain) => {
     switch (msg.type) {
       case "ready":
         resolveReady();
+        mainDiag.setEngine("running");
+        diagLog.info("backend.ready", { attempt: restarts.attempt, durationMs: Date.now() - startedAt });
         break;
-      case "fatal":
-        log("error", msg.message);
+      case "diag":
+        mainDiag.backendEntries(instance, msg.entries);
         break;
-      case "log":
-        log(msg.level, msg.message);
+      case "diag-ring":
+        mainDiag.backendRing(instance, msg.crumbs);
+        break;
+      case "diag-record":
+        mainDiag.backendRecord(instance, msg.record);
         break;
       case "policy":
         localMode = msg.localMode;
         printLocalModeChanged(localMode);
+        mainDiag.setPolicy(msg);
         break;
       case "open-external":
         if (/^https:\/\//i.test(msg.url)) void shell.openExternal(msg.url);
@@ -166,6 +183,7 @@ function startBackend() {
           const value = msg.op === "encrypt" ? [...safeStorage.encryptString(msg.plain)] : safeStorage.decryptString(Buffer.from(msg.blob));
           child.postMessage({ type: "secret-result", id: msg.id, ok: true, value } satisfies MainToBackend);
         } catch (error) {
+          diagLog.warn("keychain.secret_failed", { op: msg.op, errorClass: error instanceof Error ? error.name : "Error" });
           child.postMessage({ type: "secret-result", id: msg.id, ok: false, error: String(error) } satisfies MainToBackend);
         }
         break;
@@ -179,13 +197,25 @@ function startBackend() {
     }
   });
   child.on("exit", (code) => {
+    // a deliberate stop (quit, restart) cleared `backend` first: nothing to record
     if (backend !== child) return;
-    log("error", `backend exited (${code}); restarting`);
     backend = null;
+    // windows waiting for this backend stop waiting (they reconnect to the next one)
+    releaseReadyWaiters();
+    mainDiag.backendExited(instance, code, restarts.attempt);
+    const delay = restarts.exited(Date.now());
+    if (delay === null) {
+      diagLog.error("backend.stopped", { attempt: restarts.attempt });
+      mainDiag.setEngine("stopped");
+      return;
+    }
+    mainDiag.setEngine("restarting");
+    diagLog.info("backend.restart_scheduled", { attempt: restarts.attempt, delayMs: delay });
     setTimeout(() => {
+      if (backend) return;
       startBackend();
       for (const w of windows) void connectWindow(w);
-    }, 500);
+    }, delay);
   });
   child.postMessage({
     type: "init",
@@ -194,7 +224,17 @@ function startBackend() {
     dev: isDev,
     ...agentPaths(),
     version: app.getVersion(),
+    diag: { session: diagSession(), build: BUILD_ID, channel: mainDiag.channel },
   } satisfies MainToBackend);
+}
+
+/** "Reintentar" after the engine stopped: a fresh series of attempts. */
+function restartEngine() {
+  restarts.reset();
+  if (backend) return;
+  diagLog.info("engine.restarted");
+  startBackend();
+  for (const w of windows) void connectWindow(w);
 }
 
 /** Gives the window's renderer a direct MessagePort to the backend. */
@@ -236,7 +276,7 @@ async function carryLegacyLocalStorage(): Promise<void> {
     }
     done();
   } catch (error) {
-    log("warn", `localStorage from ${LEGACY_ORIGIN} not moved (retried next launch): ${error}`);
+    diagLog.warn("legacy.storage_failed", { errorClass: error instanceof Error ? error.name : "Error" }, error);
   } finally {
     win.destroy();
   }
@@ -288,7 +328,7 @@ ipcMain.on("terno:appearance", (event, value: unknown) => {
     try {
       writeFileSync(appearancePath(), JSON.stringify(appearance));
     } catch (error) {
-      log("warn", `could not save appearance: ${error}`);
+      diagLog.warn("appearance.save_failed", { errno: (error as { code?: string }).code });
     }
   }, 300);
 });
@@ -368,6 +408,7 @@ function buildMenu() {
       submenu: [{ role: "reload" }, { role: "toggleDevTools", visible: isDev }, { type: "separator" }, { role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" }, { type: "separator" }, { role: "togglefullscreen" }],
     },
     { role: "windowMenu" },
+    helpMenu({ exportDiagnostics: () => void mainDiag.exportInteractive(BrowserWindow.getFocusedWindow()), showLogs: () => mainDiag.showLogs() }),
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
@@ -383,9 +424,18 @@ ipcMain.handle("terno:agent-info", () => {
   return { mcpCommand: join(res, "bin", "terno-mcp"), socketPath: agentPaths().socketPath, skillPath: join(res, "mcp", "SKILL.md") };
 });
 
+/** Only the app's own page, in one of Terno's windows, top frame (printing and diagnostics alike). */
+function trusted(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const frame = event.senderFrame;
+  return Boolean(win && windows.has(win) && frame) && isTrustedSender(frame!.url, frame === event.sender.mainFrame, isDev ? process.env.TERNO_DEV_URL! : null);
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
+  // the run marker and crash dumps belong to the instance that holds the lock
+  mainDiag.open(app.getPath("userData"), { trusted, windows: () => windows, demo, restartEngine });
   app.on("second-instance", () => {
     const w = [...windows][0];
     if (w) {
@@ -397,14 +447,9 @@ if (!app.requestSingleInstanceLock()) {
     registerAppProtocol();
     installNetworkBackstop();
     registerPrint({
-      trusted: (event) => {
-        const win = BrowserWindow.fromWebContents(event.sender);
-        const frame = event.senderFrame;
-        return Boolean(win && windows.has(win) && frame) && isTrustedSender(frame!.url, frame === event.sender.mainFrame, isDev ? process.env.TERNO_DEV_URL! : null);
-      },
+      trusted,
       localMode: () => localMode,
       testPdfDir: testPdfDir(process.env, app.isPackaged, demo),
-      log,
     });
     buildMenu();
     startBackend();

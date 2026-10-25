@@ -4,6 +4,7 @@
  * mail data never hops through the main process.
  */
 import { Backend, seedDemo, startAgentSocket, type LegacySecretReader, type SecretCipher } from "@terno/backend";
+import { captureError, installDiag, log, type DiagEntry, type DiagOptions } from "@terno/core/diag";
 import { isRpcMessage, type RpcMessage, type Transport } from "@terno/core/rpc";
 import { createRegistry } from "@terno/mail/registry";
 import type { BackendToMain, MainToBackend } from "./ipc";
@@ -18,6 +19,53 @@ type PortMain = {
 const parentPort = (process as unknown as { parentPort: { on(e: "message", l: (e: { data: MainToBackend; ports: PortMain[] }) => void): void; postMessage(m: BackendToMain): void } }).parentPort;
 
 const send = (m: BackendToMain) => parentPort.postMessage(m);
+
+// ───────────────────────────── diagnostics: batched to main over the parent port ─────────────────────────────
+
+let batch: DiagEntry[] = [];
+let batchTimer: ReturnType<typeof setTimeout> | null = null;
+const flushDiag = () => {
+  if (batchTimer) clearTimeout(batchTimer);
+  batchTimer = null;
+  if (batch.length) send({ type: "diag", entries: batch });
+  batch = [];
+};
+let accounts = { imap: 0, gmail: 0 };
+const diagOptions = (o: Partial<DiagOptions> = {}): DiagOptions => ({
+  proc: "backend",
+  version: "0",
+  build: "0",
+  channel: "dev",
+  ...o,
+  context: () => ({ os: process.platform === "darwin" ? "darwin" : "other", arch: process.arch === "arm64" ? "arm64" : process.arch === "x64" ? "x64" : "other", runtime: `node-${process.versions.node}`, engine: "node-sqlite", accounts }),
+  sink: {
+    // every 500 ms or 100 entries
+    write: (e) => {
+      batch.push(e);
+      if (batch.length >= 100) flushDiag();
+      else batchTimer ??= setTimeout(flushDiag, 500);
+    },
+    capture: (record) => {
+      flushDiag();
+      send({ type: "diag-record", record });
+    },
+    mirror: (crumbs) => send({ type: "diag-ring", crumbs }),
+    flush: flushDiag,
+  },
+});
+installDiag(diagOptions());
+
+/**
+ * Node can't be trusted after an uncaught exception: record it, give the
+ * parent port a moment to carry the record, and exit. Main restarts the
+ * backend with a bounded backoff (a send in flight stays "unknown").
+ */
+function die(error: unknown, code: "process.uncaught" | "process.unhandled_rejection" | "backend.init_failed"): void {
+  captureError(error, { code, fields: { source: "backend" }, fatal: true, expected: false });
+  flushDiag();
+  setTimeout(() => process.exit(70), 100);
+}
+
 let nextSecret = 1;
 const pendingSecrets = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
 
@@ -81,6 +129,7 @@ parentPort.on("message", async (event) => {
     return;
   }
   if (msg.type === "init") {
+    installDiag(diagOptions({ version: msg.version, build: msg.diag.build, channel: msg.diag.channel, session: msg.diag.session }));
     try {
       backend = new Backend({
         dbPath: msg.dbPath,
@@ -92,22 +141,34 @@ parentPort.on("message", async (event) => {
         demoAi: msg.demo || msg.dev,
         demo: msg.demo,
         onPolicy: (policy) => send({ type: "policy", ...policy }),
-        log: (level, message, extra) => send({ type: "log", level, message: extra ? `${message} ${typeof extra === "string" ? extra : JSON.stringify(extra)}` : message }),
+        // free-form lines (the store, the search engine): kept locally, scrubbed, under one code
+        log: (level, message, extra) => log[level]("log.message", { source: "backend" }, extra === undefined ? message : `${message} ${typeof extra === "string" ? extra : JSON.stringify(extra)}`),
       });
       if (msg.demo && (await seedDemo(backend.store, { threads: 3000, accounts: 4 }))) {
         await backend.store.settings.set("app", { ai: { provider: "fake" } });
       }
       await backend.publishPolicy();
       await backend.start();
-      await startAgentSocket(backend, msg.socketPath, msg.tokenPath).catch((e) =>
-        send({ type: "log", level: "warn", message: `agent socket unavailable: ${e instanceof Error ? e.message : e}` }),
-      );
+      await startAgentSocket(backend, msg.socketPath, msg.tokenPath).catch((e) => log.warn("agents.socket_failed", { errno: (e as { code?: string }).code }, e));
+      const b = backend;
+      const countAccounts = async () => {
+        const list = await b.store.accounts.list().catch(() => []);
+        accounts = { imap: list.filter((a) => a.kind === "imap").length, gmail: list.filter((a) => a.kind === "gmail").length };
+      };
+      void countAccounts();
+      // recounted when the accounts change (they're announced then), never on a timer
+      const emitAccounts = b.emitAccounts.bind(b);
+      b.emitAccounts = async () => {
+        await emitAccounts();
+        await countAccounts();
+      };
       send({ type: "ready" });
     } catch (error) {
-      send({ type: "fatal", message: error instanceof Error ? (error.stack ?? error.message) : String(error) });
+      // a backend that can't open its mailbox is no backend: main restarts it, then shows that it stopped
+      die(error, "backend.init_failed");
     }
   }
 });
 
-process.on("uncaughtException", (e) => send({ type: "log", level: "error", message: `uncaught: ${e.stack ?? e.message}` }));
-process.on("unhandledRejection", (e) => send({ type: "log", level: "error", message: `unhandled: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}` }));
+process.on("uncaughtException", (e) => die(e, "process.uncaught"));
+process.on("unhandledRejection", (e) => die(e, "process.unhandled_rejection"));

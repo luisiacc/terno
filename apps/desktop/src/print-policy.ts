@@ -149,6 +149,25 @@ export function fileMenu(send: (command: PrintCommand) => void): MenuItemConstru
   };
 }
 
+/** Help: diagnostics for a problem report (macOS puts the menu's search field here too). */
+export function helpMenu(o: { exportDiagnostics: () => void; showLogs: () => void }): MenuItemConstructorOptions {
+  return {
+    role: "help",
+    label: "Help",
+    submenu: [
+      { id: "export-diagnostics", label: "Export Diagnostics…", click: o.exportDiagnostics },
+      { id: "show-logs", label: "Show Logs", click: o.showLogs },
+    ],
+  };
+}
+
+export class PrintTimeoutError extends Error {
+  constructor() {
+    super("the print document didn't load in time");
+    this.name = "PrintTimeoutError";
+  }
+}
+
 /** What pageReady listens to: a webContents, or a stand-in in tests. */
 export interface PageEvents {
   once(event: "did-finish-load" | "dom-ready", listener: () => void): unknown;
@@ -171,7 +190,7 @@ export function pageReady(page: PageEvents, o: { loadMs: number; graceMs: number
       if (error) reject(error);
       else resolve();
     };
-    const timer = setTimeout(() => done(new Error("the print document didn't load in time")), o.loadMs);
+    const timer = setTimeout(() => done(new PrintTimeoutError()), o.loadMs);
     page.once("did-finish-load", () => done());
     page.once("dom-ready", () => {
       grace = setTimeout(() => {

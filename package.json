@@ -25,9 +25,11 @@
     "build:web": "pnpm --filter @terno/web build:web",
     "test:web": "pnpm --filter @terno/web test:web",
     "test:web-perf": "pnpm --filter @terno/web test:web-perf",
-    "test:ui-perf": "pnpm --filter @terno/web test:ui-perf"
+    "test:ui-perf": "pnpm --filter @terno/web test:ui-perf",
+    "diag:symbolicate": "node scripts/symbolicate.mjs"
   },
   "devDependencies": {
+    "@jridgewell/trace-mapping": "catalog:",
     "@types/jsdom": "^30.0.0",
     "@types/node": "catalog:",
     "jsdom": "30.1.3",

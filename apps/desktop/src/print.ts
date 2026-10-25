@@ -9,7 +9,8 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { open, rename, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, session, shell, type IpcMainInvokeEvent, type Session } from "electron";
-import { footerTemplate, parsePrintJob, PDF_MARGINS, PDF_PAGE, pageReady, pdfFileName, printCsp, printOutcome, readyOrDestroyed, requestAllowed, tempSibling, withHead, type PrintJob, type PrintResult } from "./print-policy";
+import { captureError, log } from "@terno/core/diag";
+import { footerTemplate, parsePrintJob, PrintTimeoutError, PDF_MARGINS, PDF_PAGE, pageReady, pdfFileName, printCsp, printOutcome, readyOrDestroyed, requestAllowed, tempSibling, withHead, type PrintJob, type PrintResult } from "./print-policy";
 
 const PARTITION = "terno-print";
 const SCHEME = "terno-print";
@@ -25,7 +26,6 @@ export interface PrintDeps {
   localMode(): boolean;
   /** the packaged smoke's export directory (testPdfDir), else null */
   testPdfDir: string | null;
-  log(level: "info" | "warn" | "error", message: string): void;
 }
 
 /** The job being rendered: immutable, looked up by its random URL. */
@@ -58,6 +58,12 @@ function sessionFor(deps: PrintDeps): Session {
   ses.on("will-download", (event) => event.preventDefault());
   printSession = ses;
   return ses;
+}
+
+/** A document that didn't load in time is a warning; anything else is a bug worth a record. */
+function printFailed(error: unknown, action: "print" | "pdf"): void {
+  if (error instanceof PrintTimeoutError) log.warn("print.load_timeout", { action });
+  else captureError(error, { code: "print.failed", fields: { action } });
 }
 
 /** Loads the job into a fresh hidden window; listeners go on before it navigates. */
@@ -99,7 +105,7 @@ async function printJob(job: PrintJob, deps: PrintDeps): Promise<PrintResult> {
     // the system dialog keeps its own paper choice (the page asks for ours through @page)
     return await new Promise<PrintResult>((resolve) => wc.print({ silent: false, printBackground: true }, (ok, reason) => resolve(printOutcome(ok, reason))));
   } catch (error) {
-    deps.log("warn", `print failed: ${error}`);
+    printFailed(error, "print");
     return { status: "failed", reason: "error" };
   } finally {
     await finish(win);
@@ -157,7 +163,7 @@ async function exportPdf(event: IpcMainInvokeEvent, job: PrintJob, deps: PrintDe
     try {
       await writeAtomically(target, await renderPdf(job, deps));
     } catch (error) {
-      deps.log("warn", `PDF export failed: ${error}`);
+      printFailed(error, "pdf");
       return { status: "failed", reason: "error" } as const;
     }
     const exportId = randomUUID();
