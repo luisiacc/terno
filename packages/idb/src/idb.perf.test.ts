@@ -2,11 +2,15 @@ import "fake-indexeddb/auto";
 import { generateDataset } from "@terno/mock-data";
 import type { Platform } from "@terno/store";
 import { afterAll, beforeAll, expect, it } from "vitest";
+import { sampleAsync, watchLoop } from "../../db/src/test/timing";
 import { IdbMailStore } from "./store";
 
 /**
  * IndexedDB adapter gates at ~50k messages (fake-indexeddb in Node: the
  * adapter's own CPU and event-loop stalls; browser timings are web-perf's).
+ * Everything here runs as JS on this thread, never blocked in a system call:
+ * time the loop was busy while the thread was off a CPU is other processes',
+ * so timings leave it out (timing.ts) and stalls excuse it while it's rare.
  */
 const env = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env ?? {};
 const MULT = Number(env.PERF_BUDGET_MULTIPLIER ?? "1");
@@ -16,22 +20,32 @@ const platform: Pick<Platform, "uuid" | "yield"> = { uuid: () => crypto.randomUU
 const name = `perf-${Date.now()}`;
 let messages = 0;
 
-/** the longest the event loop went without running a 1 ms timer while `fn` ran */
-async function stalls<T>(fn: () => Promise<T>): Promise<{ result: T; maxStall: number; ms: number }> {
-  let last = performance.now();
-  let maxStall = 0;
-  const timer = setInterval(() => {
-    const now = performance.now();
-    maxStall = Math.max(maxStall, now - last);
-    last = now;
-  }, 1);
+/** the longest the event loop was busy without running a 1 ms timer while `fn` ran (the OS's own holds excused while rare) */
+async function stalls<T>(budgetMs: number, fn: () => Promise<T>): Promise<{ result: T; maxStall: number; ms: number; descheduled: number }> {
+  const loop = watchLoop(budgetMs);
   const started = performance.now();
+  let stopped = false;
   try {
     const result = await fn();
-    return { result, maxStall: Math.max(maxStall, performance.now() - last), ms: performance.now() - started };
+    const r = loop.stop();
+    stopped = true;
+    return { result, maxStall: r.stall, ms: performance.now() - started, descheduled: r.descheduled.length };
   } finally {
-    clearInterval(timer);
+    if (!stopped) loop.stop();
   }
+}
+
+/** how long `fn` took, less the time the OS held the thread while it ran */
+async function timed<T>(fn: () => Promise<T>): Promise<{ result: T; ms: number }> {
+  const s = await sampleAsync(fn);
+  return { result: s.result, ms: s.cpu };
+}
+
+/** a warm read timed three times, at its median: what the code costs every time, not a collection that landed in one of them */
+async function warm<T>(fn: () => Promise<T>): Promise<{ result: T; ms: number; first: number }> {
+  const runs = [await timed(fn), await timed(fn), await timed(fn)];
+  const ms = runs.map((r) => r.ms).sort((a, b) => a - b)[1]!;
+  return { result: runs[0]!.result, ms, first: runs[0]!.ms };
 }
 
 /** the best of a few runs: a stall from our code repeats every time, preemption by other processes doesn't */
@@ -58,12 +72,10 @@ it("the exact scan never stalls the event loop and lets commands through (field-
   for (const query of ["subject:zzqxjv", "from:nadie-de-aqui", "presupuesto zzqxjv"]) {
     const r = await bestOf(3, async () => {
       let commandMs = Infinity;
-      const run = await stalls(async () => {
+      const run = await stalls(FRAME * MULT, async () => {
         const search = store.threads.searchText({ query, limit: 100, now: NOW });
         // a command issued while the scan runs answers without waiting for all of it
-        const t = performance.now();
-        await store.settings.set("probe", t);
-        commandMs = performance.now() - t;
+        commandMs = (await timed(() => store.settings.set("probe", performance.now()))).ms;
         return search;
       });
       return { ...run, commandMs };
@@ -80,15 +92,15 @@ it("an index rebuild reads the store once in order: bounded CPU, no stall", asyn
   await store.close();
   const cpuUsage = (globalThis as unknown as { process: { cpuUsage(prev?: { user: number; system: number }): { user: number; system: number } } }).process.cpuUsage;
   // opening: memory is built in slices (fake-indexeddb's own getAll clones synchronously; Chromium does it off the main thread)
-  const opened = await stalls(async () => {
+  const opened = await stalls(FRAME * 2 * MULT, async () => {
     store = await IdbMailStore.open({ name, factory: indexedDB, platform, instantSearch: { sliceMs: 4 } });
     await store.whenLoaded();
   });
   const cpu = cpuUsage();
-  const r = await stalls(async () => expect(await store.instant!.settled(900_000)).toBe(true));
+  const r = await stalls(FRAME * 2 * MULT, async () => expect(await store.instant!.settled(900_000)).toBe(true));
   const used = cpuUsage(cpu);
   const cpuMs = (used.user + used.system) / 1000;
-  console.log(`open at ${messages} messages: ${Math.round(opened.ms)} ms, max stall ${opened.maxStall.toFixed(1)} ms; rebuild: ${Math.round(r.ms)} ms wall, ${Math.round(cpuMs)} ms CPU, max stall ${r.maxStall.toFixed(1)} ms`);
+  console.log(`open at ${messages} messages: ${Math.round(opened.ms)} ms, max stall ${opened.maxStall.toFixed(1)} ms; rebuild: ${Math.round(r.ms)} ms wall, ${Math.round(cpuMs)} ms CPU, max stall ${r.maxStall.toFixed(1)} ms (${r.descheduled} descheduled)`);
   expect(r.maxStall, "rebuild max stall").toBeLessThanOrEqual(FRAME * 2 * MULT);
   // linear in the mailbox: one ordered enumeration, ~0.05 ms of CPU per message measured (the per-page key sort made it quadratic)
   expect(cpuMs / messages, "rebuild CPU per message").toBeLessThanOrEqual(0.1 * MULT);
@@ -108,9 +120,8 @@ it("select all N pages seek, never rescan: a 28,000-thread view, account and cat
       const pages: number[] = [];
       const seen: number[] = [];
       for (let after = 0; ; ) {
-        const t = performance.now();
-        const page = await store.threads.scopeIds({ ...scope, after, limit });
-        pages.push(performance.now() - t);
+        const { result: page, ms } = await timed(() => store.threads.scopeIds({ ...scope, after, limit }));
+        pages.push(ms);
         seen.push(...page);
         if (page.length < limit) break;
         after = page[page.length - 1]!;
@@ -132,11 +143,6 @@ it("the unread filter pages from its own order: a cold build, every page, and 5,
   const all = (await store.debug.snapshot()).threads;
   const unread = all.filter((t) => t.unreadCount > 0);
   console.log(`unread filter: ${unread.length} unread of ${all.length} threads`);
-  const timed = async <T>(fn: () => Promise<T>) => {
-    const t = performance.now();
-    const result = await fn();
-    return { result, ms: performance.now() - t };
-  };
   // the first filtered page builds the order (a pass over the threads and a sort of the unread ones)
   const cold = await timed(() => store.threads.list({ view: "inbox", unreadOnly: true, limit: 100 }));
   console.log(`unread order, cold first page: ${cold.ms.toFixed(2)} ms`);
@@ -171,11 +177,6 @@ it("the unread filter pages from its own order: a cold build, every page, and 5,
 }, 900_000);
 
 it("the unread filter's counts and select-all walks read the unread threads only: none in the view, a few, or a read crossing at a time", async () => {
-  const timed = async <T>(fn: () => Promise<T>) => {
-    const t = performance.now();
-    const result = await fn();
-    return { result, ms: performance.now() - t };
-  };
   const count = (view: "inbox" | "archive" | "trash" | "all") => timed(() => store.threads.scopeCount({ view, unreadOnly: true, limit: 100_001 }));
   // first use builds the ascending unread ids once
   const cold = await count("trash");
@@ -192,16 +193,18 @@ it("the unread filter's counts and select-all walks read the unread threads only
   console.log(`trash count: every id ${whole.toFixed(2)} ms, the unread ids ${filtered.toFixed(2)} ms`);
   expect(filtered, "an empty unread count walks the unread ids, not the mailbox").toBeLessThanOrEqual(whole / 2);
   for (const view of ["trash", "archive", "inbox", "all"] as const) {
-    const r = await count(view);
-    let walked = 0;
-    const walk = await timed(async () => {
+    // warm: the cold count built the ids above
+    const r = await warm(() => store.threads.scopeCount({ view, unreadOnly: true, limit: 100_001 }));
+    const walk = await warm(async () => {
+      let walked = 0;
       for (let after = 0; ; ) {
         const page = await store.threads.scopeIds({ view, unreadOnly: true, after, limit: 500 });
         walked += page.length;
-        if (page.length < 500) return;
+        if (page.length < 500) return walked;
         after = page[page.length - 1]!;
       }
     });
+    const walked = walk.result;
     console.log(`unread scope ${view}: ${r.result} counted in ${r.ms.toFixed(2)} ms, walked in ${walk.ms.toFixed(2)} ms`);
     expect(walked).toBe(r.result);
     // a pass over the unread threads, not the 28,400 of the mailbox (that was ~3 ms per count)
@@ -222,11 +225,6 @@ it("the unread filter's counts and select-all walks read the unread threads only
 }, 900_000);
 
 it("the quick filters (plan 15) page from their own orders: with attachments and starred, cold, every page, counts and walks within a frame; 5,000 stars at once", async () => {
-  const timed = async <T>(fn: () => Promise<T>) => {
-    const t = performance.now();
-    const result = await fn();
-    return { result, ms: performance.now() - t };
-  };
   const all = (await store.debug.snapshot()).threads;
   for (const filter of ["attachments", "starred"] as const) {
     const keeps = all.filter((t) => (filter === "attachments" ? t.hasAttachments : t.isStarred)).length;
@@ -248,18 +246,20 @@ it("the quick filters (plan 15) page from their own orders: with attachments and
         cursor = r.result.nextCursor ?? undefined;
       } while (cursor);
       expect(worst, `${filter} ${label}: one page`).toBeLessThanOrEqual(FRAME * MULT);
-      const count = await timed(() => store.threads.scopeCount({ ...p, filter, limit: 100_001 }));
-      let walked = 0;
-      const walk = await timed(async () => {
+      const count = await warm(() => store.threads.scopeCount({ ...p, filter, limit: 100_001 }));
+      const walk = await warm(async () => {
+        let walked = 0;
         for (let after = 0; ; ) {
           const page = await store.threads.scopeIds({ ...p, filter, after, limit: 500 });
           walked += page.length;
-          if (page.length < 500) return;
+          if (page.length < 500) return walked;
           after = page[page.length - 1]!;
         }
       });
-      expect(walked).toBe(count.result);
-      // a count walks the filter's own ascending ids (a few thousand at most here), never the whole mailbox
+      expect(walk.result).toBe(count.result);
+      // a count walks the filter's own ascending ids (a few thousand at most here), never the whole mailbox; the first
+      // one of a filter (inbox) builds those ids, and is held to the same budget on its own
+      if (label === "inbox") expect(count.first, `${filter}: first count (builds the ids)`).toBeLessThanOrEqual(3 * MULT);
       expect(count.ms, `${filter} ${label}: count`).toBeLessThanOrEqual(3 * MULT);
       expect(walk.ms, `${filter} ${label}: whole walk`).toBeLessThanOrEqual(FRAME * MULT);
     }
@@ -276,20 +276,26 @@ it("the quick filters (plan 15) page from their own orders: with attachments and
       expect(next.ms, `search "${query}" with attachments: next page`).toBeLessThanOrEqual(25 * MULT);
     }
   }
-  // dense and empty: every thread starred, then none
+  // dense and empty: every thread starred, then none; three times over, each measure at its median (each is the first
+  // read after a bulk change, so it can only be repeated with the change)
   const everyone = all.map((t) => t.id);
-  await store.threads.act({ threadIds: everyone, action: "star", signal: null, now: NOW });
-  const dense = await timed(() => store.threads.list({ view: "all", filter: "starred", limit: 100 }));
-  const denseCount = await timed(() => store.threads.scopeCount({ view: "all", filter: "starred", limit: 100_001 }));
+  const runs: { dense: number; denseCount: number; empty: number; emptyCount: number }[] = [];
+  for (let k = 0; k < 3; k++) {
+    await store.threads.act({ threadIds: everyone, action: "star", signal: null, now: NOW });
+    const dense = await timed(() => store.threads.list({ view: "all", filter: "starred", limit: 100 }));
+    const denseCount = await timed(() => store.threads.scopeCount({ view: "all", filter: "starred", limit: 100_001 }));
+    await store.threads.act({ threadIds: everyone, action: "unstar", signal: null, now: NOW });
+    const empty = await timed(() => store.threads.list({ view: "all", filter: "starred", limit: 100 }));
+    const emptyCount = await timed(() => store.threads.scopeCount({ view: "all", filter: "starred", limit: 100_001 }));
+    expect(empty.result.items).toEqual([]);
+    runs.push({ dense: dense.ms, denseCount: denseCount.ms, empty: empty.ms, emptyCount: emptyCount.ms });
+  }
+  const mid = (k: keyof (typeof runs)[number]) => runs.map((r) => r[k]).sort((a, b) => a - b)[1]!;
   // the first page after starring all 28,400 at once pays one re-sort of the whole order
-  expect(dense.ms, "every thread starred: first page").toBeLessThanOrEqual(2 * FRAME * MULT);
-  expect(denseCount.ms, "every thread starred: count").toBeLessThanOrEqual(FRAME * MULT);
-  await store.threads.act({ threadIds: everyone, action: "unstar", signal: null, now: NOW });
-  const empty = await timed(() => store.threads.list({ view: "all", filter: "starred", limit: 100 }));
-  const emptyCount = await timed(() => store.threads.scopeCount({ view: "all", filter: "starred", limit: 100_001 }));
-  expect(empty.result.items).toEqual([]);
-  expect(empty.ms, "nothing starred: first page").toBeLessThanOrEqual(FRAME * MULT);
-  expect(emptyCount.ms, "nothing starred: count").toBeLessThanOrEqual(1.5 * MULT);
+  expect(mid("dense"), "every thread starred: first page").toBeLessThanOrEqual(2 * FRAME * MULT);
+  expect(mid("denseCount"), "every thread starred: count").toBeLessThanOrEqual(FRAME * MULT);
+  expect(mid("empty"), "nothing starred: first page").toBeLessThanOrEqual(FRAME * MULT);
+  expect(mid("emptyCount"), "nothing starred: count").toBeLessThanOrEqual(1.5 * MULT);
   const starredBefore = all.filter((t) => t.isStarred).map((t) => t.id);
   if (starredBefore.length) await store.threads.act({ threadIds: starredBefore, action: "star", signal: null, now: NOW });
   // 5,000 threads starred at once re-sort the starred order once: a dense starred mailbox, the next page pays it

@@ -13,6 +13,7 @@ import { generateDataset } from "@terno/mock-data";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { BUDGET_MULTIPLIER, report, type Stat } from "../../db/src/test/perf";
+import { describeGap, watchLoop } from "../../db/src/test/timing";
 
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
 const stats: Stat[] = [];
@@ -52,13 +53,7 @@ it("importing 5,000 filters, 500 categories and 2,000 drafts: no stall over 50 m
   const drafts = Array.from({ length: 2_000 }, (_, i) => ({ accountEmail: email, mode: "new" as const, to: [{ name: "", email: `p${i}@x.dev` }], cc: [], bcc: [], subject: `Borrador ${i}`, subjectEdited: true, bodyText: `Texto ${i}`, quotedText: "", includeQuote: false, inReplyTo: null, forwardOf: null, uiState: "open" as const, updatedAt: NOW }));
   const data = { format: "terno-export" as const, version: 2 as const, accounts: [], categories, filters, drafts };
 
-  let last = performance.now();
-  let stall = 0;
-  const tick = setInterval(() => {
-    const now = performance.now();
-    stall = Math.max(stall, now - last);
-    last = now;
-  }, 1);
+  const loop = watchLoop(50 * BUDGET_MULTIPLIER);
   const list: number[] = [];
   let done = false;
   const probe = (async () => {
@@ -74,10 +69,10 @@ it("importing 5,000 filters, 500 categories and 2,000 drafts: no stall over 50 m
   const took = performance.now() - started;
   done = true;
   await probe;
-  clearInterval(tick);
+  const { stall, descheduled, longest } = loop.stop();
 
   expect(result).toMatchObject({ categories: { added: 500 }, filters: { added: 5_000 }, drafts: 2_000 });
-  stats.push({ name: `import ${took.toFixed(0)} ms: max event-loop stall ${stall.toFixed(1)} ms, list RPC p95 ${p95(list).toFixed(1)} ms (${list.length})`, budgetMs: 50, p50: stall, p95: stall, max: stall, iterations: list.length });
+  stats.push({ name: `import ${took.toFixed(0)} ms: max event-loop stall ${stall.toFixed(1)} ms (longest gap ${describeGap(longest)}, ${descheduled.length} descheduled), list RPC p95 ${p95(list).toFixed(1)} ms (${list.length})`, budgetMs: 50, p50: stall, p95: stall, max: stall, iterations: list.length });
   expect(stall).toBeLessThanOrEqual(50 * BUDGET_MULTIPLIER);
   expect(p95(list)).toBeLessThanOrEqual(20 * BUDGET_MULTIPLIER);
 }, 300_000);
