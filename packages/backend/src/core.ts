@@ -765,7 +765,8 @@ export class BackendCore {
       do {
         this.workerKicked = false;
         for (;;) {
-          if (this.draining) break;
+          // quitting: nothing more is claimed (the rest stays queued, durably)
+          if (this.draining || this.stopped) break;
           const batch = await this.store.ops.claimReady(this.now(), 25);
           if (batch.length === 0) break;
           for (const op of batch) this.undispatched.add(op.id);
