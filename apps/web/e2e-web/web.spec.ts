@@ -87,7 +87,7 @@ test("an open error never swaps the mailbox for an empty one", async ({ page }) 
   await page.evaluate(() => localStorage.setItem("terno:storage:terno", "no-such-store"));
   await page.reload();
   await expect(page.getByTestId("web-fatal")).toBeVisible();
-  await expect(page.getByTestId("web-fatal")).toContainText("no se creó un buzón nuevo");
+  await expect(page.getByTestId("web-fatal")).toContainText("no new mailbox was created");
   // an explicit ?storage= that isn't available is refused the same way
   await page.evaluate(() => localStorage.removeItem("terno:storage:terno"));
   await page.goto("/?demo=400&storage=nope");
@@ -125,13 +125,13 @@ test("what the browser can't do is said plainly: IMAP and agents locked, honest 
   const settings = page.getByTestId("settings-dialog");
   await expect(settings).toBeVisible();
   await expect(settings.getByTestId("mac-section")).toBeVisible();
-  await expect(settings.getByTestId("local-mode-row")).toContainText("no puede fijar direcciones DNS");
+  await expect(settings.getByTestId("local-mode-row")).toContainText("can’t pin DNS addresses");
   await settings.getByTestId("tab-agents").click();
   await expect(settings.getByTestId("desktop-only-agents")).toBeVisible();
   await expect(settings.getByTestId("mcp-claude")).toHaveCount(0);
   await settings.getByTestId("tab-accounts").click();
-  await expect(settings).toContainText("Aplicación web");
-  await settings.getByRole("button", { name: "Añadir cuenta" }).click();
+  await expect(settings).toContainText("Web application");
+  await settings.getByRole("button", { name: "Add account" }).click();
   const add = page.getByTestId("add-account-dialog");
   await expect(add.getByTestId("desktop-only-imap")).toBeVisible();
   await expect(add.getByTestId("imap-email")).toHaveCount(0);
@@ -143,7 +143,52 @@ test("first run in the browser offers the Mac app once, then the usual steps", a
   await expect(page.getByTestId("first-run")).toBeVisible();
   await expect(page.getByTestId("mac-onboarding")).toBeVisible();
   await expect(page.getByTestId("mac-onboarding").getByTestId("mac-download")).toHaveAttribute("href", /^https:/);
-  await expect(page.getByTestId("first-run-local")).toContainText("Terno solo se conecta con Google");
+  await expect(page.getByTestId("first-run-local")).toContainText("Terno only connects to Google");
+});
+
+test("Español chosen in Settings → General switches live, and after a reload the very first frame is Spanish (cached setting, lazy chunk through the service worker)", async ({ page }) => {
+  // html[lang] at the moment #root first gets children: what the first frame is painted in
+  await page.addInitScript(() => {
+    const w = window as Window & { __firstLang?: string };
+    const seen = new MutationObserver(() => {
+      if (!document.getElementById("root")?.firstChild) return;
+      w.__firstLang = document.documentElement.lang;
+      seen.disconnect();
+    });
+    seen.observe(document, { childList: true, subtree: true });
+  });
+  const firstLang = () => page.evaluate(() => (window as Window & { __firstLang?: string }).__firstLang);
+  const choose = async (language: "es" | "en", tag: string) => {
+    await page.keyboard.press("Meta+Comma");
+    await page.getByTestId("tab-general").click();
+    await expect(page.getByTestId("general-tab")).toBeVisible();
+    await page.getByTestId("language-select").click();
+    await page.getByTestId(`language-${language}`).click();
+    // the app re-mounts in the new language once the list has closed
+    await expect(page.locator("html")).toHaveAttribute("lang", tag);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("settings-dialog")).toHaveCount(0);
+  };
+  await boot(page);
+  expect(await firstLang()).toBe("en-US");
+  await expect(page.getByTestId("list-title")).toHaveText("Inbox");
+  // the reload below goes through this build's service worker
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+    if (!navigator.serviceWorker.controller) await new Promise((r) => navigator.serviceWorker.addEventListener("controllerchange", r, { once: true }));
+  });
+
+  await choose("es", "es-MX");
+  await expect(page.getByTestId("list-title")).toHaveText("Entrada");
+  await page.reload();
+  await rows(page).first().waitFor();
+  expect(await page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
+  expect(await firstLang()).toBe("es-MX");
+  await expect(page.getByTestId("list-title")).toHaveText("Entrada");
+
+  // and back to English, live
+  await choose("en", "en-US");
+  await expect(page.getByTestId("list-title")).toHaveText("Inbox");
 });
 
 /** Google, stubbed: Identity Services answers like its popup, the Gmail and OpenID APIs like Google (two messages). Returns the requests seen. */
@@ -188,9 +233,9 @@ test("Gmail in the browser: Google's token model through the page, the mailbox s
   const clientId = settings.getByRole("textbox", { name: "Google OAuth Client ID" });
   await clientId.fill("123-web.apps.googleusercontent.com");
   await clientId.blur();
-  await settings.getByRole("button", { name: "Añadir cuenta" }).click();
+  await settings.getByRole("button", { name: "Add account" }).click();
   await page.getByTestId("connect-gmail").click();
-  await expect(page.getByTestId("snack-message").getByText("luis@gmail.com conectada")).toBeVisible();
+  await expect(page.getByTestId("snack-message").getByText("luis@gmail.com connected")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(rows(page)).toHaveCount(2);
   await expect(rows(page).first()).toContainText("Desde Gmail");
@@ -244,7 +289,7 @@ test("blocking screens take focus, make the app behind them inert and suspend it
   await boot(page);
   const second = await context.newPage();
   await second.goto(DEMO);
-  const screen = second.getByRole("dialog", { name: "Terno está abierto en otra pestaña" });
+  const screen = second.getByRole("dialog", { name: "Terno is open in another tab" });
   await expect(screen).toBeVisible();
   await expect(screen).toHaveAttribute("aria-modal", "true");
   await expect(second.getByTestId("web-use-here")).toBeFocused();
@@ -264,19 +309,19 @@ test("blocking screens take focus, make the app behind them inert and suspend it
   await second.getByTestId("web-use-here").click();
   await rows(second).first().waitFor();
   expect(await second.evaluate(() => (document.getElementById("root") as HTMLElement & { inert: boolean }).inert)).toBe(false);
-  await expect(page.getByRole("dialog", { name: "Terno se abrió en otra pestaña" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Terno was opened in another tab" })).toBeVisible();
   await expect(page.getByTestId("web-take-back")).toBeFocused();
 });
 
-test("storage: persistence is requested and shown in Ajustes → Datos, and the mailbox's own data exports as JSON", async ({ page }) => {
+test("storage: persistence is requested and shown in Settings → Data, and the mailbox's own data exports as JSON", async ({ page }) => {
   await boot(page);
   await page.getByTestId("open-settings").click();
   await page.getByTestId("tab-data").click();
   const section = page.getByTestId("storage-section");
   await expect(section).toBeVisible();
   await expect(section.getByTestId("storage-persistence")).toHaveAttribute("data-persisted", /^(granted|denied)$/);
-  await expect(section).toContainText(/no borrará|puede borrar/);
-  await expect(page.getByRole("combobox", { name: "Motor" })).toContainText("SQLite (OPFS)");
+  await expect(section).toContainText(/won’t clear your mailbox|may clear your mailbox/);
+  await expect(page.getByRole("combobox", { name: "Engine" })).toContainText("SQLite (OPFS)");
   const download = page.waitForEvent("download");
   await page.getByTestId("data-export").click();
   const file = await download;
@@ -288,7 +333,7 @@ test("storage: persistence is requested and shown in Ajustes → Datos, and the 
   expect(dump.settings).toBeTruthy();
 });
 
-test("Ajustes → Datos: switching the engine to IndexedDB carries settings and categories, stays pinned, and can switch back", async ({ page }) => {
+test("Settings → Data: switching the engine to IndexedDB carries settings and categories, stays pinned, and can switch back", async ({ page }) => {
   await boot(page, "/?demo=200&mailbox=switch");
   expect((await web(page)).storage).toBe("opfs-sqlite");
   await page.evaluate(async () => {
@@ -299,11 +344,11 @@ test("Ajustes → Datos: switching the engine to IndexedDB carries settings and 
   await page.reload();
   await rows(page).first().waitFor({ timeout: 60_000 });
   await page.keyboard.press("Meta+k");
-  await page.getByTestId("palette-input").fill("ajustes datos");
+  await page.getByTestId("palette-input").fill("settings data");
   await page.keyboard.press("Enter");
-  await page.getByRole("combobox", { name: "Motor" }).click();
+  await page.getByRole("combobox", { name: "Engine" }).click();
   await page.getByTestId("storage-engine-idb").click();
-  await expect(page.getByTestId("storage-switch-dialog")).toContainText("se queda donde está");
+  await expect(page.getByTestId("storage-switch-dialog")).toContainText("stays where it is");
   // the page reloads into the other engine
   await Promise.all([page.waitForEvent("load"), page.getByTestId("storage-switch-dialog-confirm").click()]);
   await rows(page).first().waitFor({ timeout: 60_000 });
@@ -319,8 +364,8 @@ test("Ajustes → Datos: switching the engine to IndexedDB carries settings and 
   // and back: the SQLite mailbox was left where it was
   await page.keyboard.press("Meta+Comma");
   await page.getByTestId("tab-data").click();
-  await expect(page.getByRole("combobox", { name: "Motor" })).toContainText("IndexedDB");
-  await page.getByRole("combobox", { name: "Motor" }).click();
+  await expect(page.getByRole("combobox", { name: "Engine" })).toContainText("IndexedDB");
+  await page.getByRole("combobox", { name: "Engine" }).click();
   await page.getByTestId("storage-engine-opfs-sqlite").click();
   await Promise.all([page.waitForEvent("load"), page.getByTestId("storage-switch-dialog-confirm").click()]);
   await rows(page).first().waitFor({ timeout: 60_000 });
@@ -328,7 +373,7 @@ test("Ajustes → Datos: switching the engine to IndexedDB carries settings and 
   await expect(page.locator("[data-testid^=nav-category-]").filter({ hasText: "Mudanza" })).toHaveCount(1);
 });
 
-test("Ajustes → Datos: an export imports into another mailbox (categories by name, settings), and a wrong file says why", async ({ page }) => {
+test("Settings → Data: an export imports into another mailbox (categories by name, settings), and a wrong file says why", async ({ page }) => {
   await boot(page, "/?demo=200&mailbox=import-a");
   const dump = await page.evaluate(async () => {
     const c = window.__ternoWeb!.client;
@@ -340,7 +385,7 @@ test("Ajustes → Datos: an export imports into another mailbox (categories by n
   await page.getByTestId("tab-data").click();
   const input = page.getByTestId("data-import-input");
   await input.setInputFiles({ name: "malo.json", mimeType: "application/json", buffer: Buffer.from("{}") });
-  await expect(page.getByTestId("data-import-error")).toContainText("No es una exportación de Terno");
+  await expect(page.getByTestId("data-import-error")).toContainText("This isn’t a Terno export");
   await input.setInputFiles({ name: "terno.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(dump)) });
   await expect(page.getByTestId("data-import-error")).toHaveCount(0);
   await expect(page.locator("[data-testid^=nav-category-]").filter({ hasText: "Importada" })).toBeVisible();
@@ -359,13 +404,13 @@ test("switching into a fresh, empty engine: drafts and account filters wait for 
   await page.goto("/?demo=0&mailbox=fresh-switch");
   await rows(page).first().waitFor({ timeout: 60_000 });
   await page.keyboard.press("Meta+k");
-  await page.getByTestId("palette-input").fill("ajustes datos");
+  await page.getByTestId("palette-input").fill("settings data");
   await page.keyboard.press("Enter");
-  await page.getByRole("combobox", { name: "Motor" }).click();
+  await page.getByRole("combobox", { name: "Engine" }).click();
   await page.getByTestId("storage-engine-idb").click();
   await Promise.all([page.waitForEvent("load"), page.getByTestId("storage-switch-dialog-confirm").click()]);
   await expect.poll(() => page.evaluate(() => window.__ternoWeb?.storage)).toBe("idb");
-  await expect(page.getByTestId("snack-message").getByText(/vuelven en cuanto las conectes/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("snack-message").getByText(/come back as soon as you connect them/)).toBeVisible({ timeout: 30_000 });
   expect(await page.evaluate(() => window.__ternoWeb!.client.call("drafts.list", {}))).toEqual([]);
 
   // connecting that Gmail account brings its draft and its filter back
@@ -375,9 +420,9 @@ test("switching into a fresh, empty engine: drafts and account filters wait for 
   const clientId = page.getByRole("textbox", { name: "Google OAuth Client ID" });
   await clientId.fill("123-web.apps.googleusercontent.com");
   await clientId.blur();
-  await page.getByRole("button", { name: "Añadir cuenta" }).click();
+  await page.getByRole("button", { name: "Add account" }).click();
   await page.getByTestId("connect-gmail").click();
-  await expect(page.getByTestId("snack-message").getByText("luis.cordero@gmail.com conectada")).toBeVisible();
+  await expect(page.getByTestId("snack-message").getByText("luis.cordero@gmail.com connected")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("strip-item").filter({ hasText: "ana@pendiente.dev" })).toBeVisible();
   const drafts = await page.evaluate(() => window.__ternoWeb!.client.call("drafts.list", {}));
@@ -440,7 +485,7 @@ test("AI with your own key runs from the worker: OpenAI and Anthropic get the re
     );
   }, ollamaURL);
   ollama.close();
-  expect(error).toContain(`permite el origen ${origin} en Ollama: OLLAMA_ORIGINS=${origin}`);
+  expect(error).toContain(`allow the origin ${origin} in Ollama: OLLAMA_ORIGINS=${origin}`);
 });
 
 test("a key is never carried through a redirect: Azure's endpoint answering 307 to another CORS-enabled origin gets a clear error, and that origin sees no key", async ({ page }) => {
@@ -471,7 +516,7 @@ test("a key is never carried through a redirect: Azure's endpoint answering 307 
       );
     }, baseURL);
     expect(target).toEqual([]);
-    expect(error).toContain("Terno no sigue redirecciones de peticiones que llevan tu API key");
+    expect(error).toContain("Terno doesn’t follow redirects for requests that carry your API key");
   } finally {
     endpoint.close();
     thief.close();

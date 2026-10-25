@@ -14,7 +14,8 @@ import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const BUILT = join(here, "..", "dist-web-e2e");
+// the config builds into dist-web-e2e-<WEB_PORT> when a port is given
+const BUILT = join(here, "..", process.env.WEB_PORT ? `dist-web-e2e-${process.env.WEB_PORT}` : "dist-web-e2e");
 const MIME: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".wasm": "application/wasm", ".json": "application/json", ".webmanifest": "application/manifest+json", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2" };
 
 let dirs: { a: string; b: string };
