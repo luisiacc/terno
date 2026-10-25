@@ -26,3 +26,6 @@ tags
 # archived source maps (pnpm diag:symbolicate, sentry-cli upload): never shipped, never committed
 apps/desktop/.maps/
 apps/web/.maps/
+
+# other agents' git worktrees: never part of the repo
+.claude/worktrees/
