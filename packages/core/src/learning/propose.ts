@@ -1,3 +1,4 @@
+import type { TextKey } from "@terno/i18n";
 import type { FilterRule } from "../rules/schema";
 import type { UserActionKind } from "../types";
 
@@ -11,6 +12,9 @@ export interface LearningAction {
 
 export type LearnedScope = "list" | "sender" | "domain";
 export type DestructiveAction = "archive" | "trash" | "spam";
+
+/** A learned filter's name, per action (the renderer names it in the user's language; the backend falls back to English). */
+export const LEARNED_FILTER_NAME = { archive: "filters.learnedName.archive", trash: "filters.learnedName.trash", spam: "filters.learnedName.spam" } as const satisfies Record<DestructiveAction, TextKey>;
 
 export interface LearnedProposal {
   key: string;

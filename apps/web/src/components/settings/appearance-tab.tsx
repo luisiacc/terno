@@ -4,7 +4,7 @@ import { Button } from "@terno/ui/components/button";
 import { Textarea } from "@terno/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { contrastFailures } from "@terno/ui/themes/contrast";
-import { builtinTheme, resolveCustomTheme, themesFor, type Theme } from "@terno/ui/themes/registry";
+import { builtinTheme, resolveCustomTheme, themeName, themesFor, type Theme } from "@terno/ui/themes/registry";
 import { cn } from "@terno/ui/lib/utils";
 import { Check, Copy, Pencil, Trash2, Upload } from "lucide-react";
 import { t } from "@terno/i18n";
@@ -60,7 +60,7 @@ function ThemeCard({ theme, base, selected, onSelect, note }: { theme: Theme; ba
     >
       <ThemePreview theme={theme} base={base} />
       <span className="flex w-[132px] items-center gap-1 text-xs">
-        <span className="truncate font-medium">{theme.name}</span>
+        <span className="truncate font-medium">{themeName(theme)}</span>
         {selected && <Check className="ml-auto size-3.5 shrink-0 text-primary" />}
       </span>
       {note && <span className="w-[132px] text-2xs">{note}</span>}
@@ -161,7 +161,7 @@ function CustomThemeItem({ theme, all }: { theme: CustomTheme; all: readonly Cus
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{theme.name}</p>
           <p className="truncate text-xs text-muted-foreground">
-            {t(theme.mode === "light" ? "settings.appearance.basedOnLight" : "settings.appearance.basedOnDark", { base: builtinTheme(theme.extends)?.name ?? theme.extends })}
+            {t(theme.mode === "light" ? "settings.appearance.basedOnLight" : "settings.appearance.basedOnDark", { base: (() => { const b = builtinTheme(theme.extends); return b ? themeName(b) : theme.extends; })() })}
           </p>
         </div>
         <Button variant="ghost" size="sm" aria-expanded={editing} aria-label={t("settings.appearance.editTheme", { name: theme.name })} data-testid={`theme-edit-${CUSTOM_PREFIX}${theme.id}`} onClick={() => setEditing((e) => !e)}>

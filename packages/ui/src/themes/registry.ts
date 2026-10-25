@@ -1,3 +1,4 @@
+import { t } from "@terno/i18n";
 import { DEFAULT_THEME, THEME_TOKENS, type BuiltinThemeId, type CustomTheme, type ThemeMode, type ThemeToken } from "@terno/core";
 import { contrast, formatOklch, mixOklab, parseColor, withAlpha, type Oklch } from "./color";
 
@@ -193,7 +194,7 @@ const cats = (s: string) => s.split("|").map((x) => x.trim()) as unknown as Cats
 export const THEMES: readonly Theme[] = [
   defineTheme({
     id: "terno-light",
-    name: "Terno claro",
+    name: "Terno Light",
     mode: "light",
     vibrancy: true,
     tokens: {
@@ -380,7 +381,7 @@ export const THEMES: readonly Theme[] = [
   }),
   defineTheme({
     id: "terno-dark",
-    name: "Terno oscuro",
+    name: "Terno Dark",
     mode: "dark",
     vibrancy: true,
     tokens: {
@@ -598,6 +599,13 @@ export const THEMES: readonly Theme[] = [
 ];
 
 const BY_ID = new Map(THEMES.map((t) => [t.id, t]));
+
+/** A theme's name as shown: Terno's own two in the active language, the rest (product names, the user's own) as they are. */
+export function themeName(theme: Pick<Theme, "id" | "name">): string {
+  if (theme.id === "terno-light") return t("ui.theme.ternoLight");
+  if (theme.id === "terno-dark") return t("ui.theme.ternoDark");
+  return theme.name;
+}
 
 export function builtinTheme(id: string): Theme | undefined {
   return BY_ID.get(id);

@@ -435,8 +435,18 @@ describe("learned filters", () => {
     const [proposal] = await client.call("learning.proposals", {});
     expect(proposal).toMatchObject({ scope: "list", value: "daily.morningbrew.com", action: "archive", support: 5 });
     const filter = await client.call("learning.accept", { key: proposal!.key });
-    expect(filter).toMatchObject({ source: "learned", enabled: true });
+    // the backend has no language: without a name from the renderer it names the filter in English
+    expect(filter).toMatchObject({ source: "learned", enabled: true, name: "Archive: daily.morningbrew.com" });
     expect(await client.call("learning.proposals", {})).toEqual([]);
+  });
+
+  it("names the filter in the user's language when the renderer says how", async () => {
+    const { backend, client, accountId } = setup();
+    await backend.ingestSliced(Array.from({ length: 6 }, () => incoming(accountId)));
+    const ids = (await client.call("threads.list", { view: "inbox" })).items.map((t) => t.id);
+    for (const id of ids.slice(0, 5)) await client.call("threads.act", { threadIds: [id], action: "archive" });
+    const [proposal] = await client.call("learning.proposals", {});
+    expect(await client.call("learning.accept", { key: proposal!.key, name: "Archivar: daily.morningbrew.com" })).toMatchObject({ name: "Archivar: daily.morningbrew.com" });
   });
 
   it("repeated or no-op actions don't manufacture support", async () => {
