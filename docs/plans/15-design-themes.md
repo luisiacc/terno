@@ -540,5 +540,33 @@ Plans 11 (in-app updates) and 14 (i18n) merged before implementation. What chang
 
 - `j` at key repeat, every design × density: row renders per move 2.95–2.98 (gate 3.5), frame p95 16.8 ms.
 - 2,000-row scroll, every design × density: frame p95 ≤ 16.8 ms, DOM rows ≤ 80.
-- Design switch with hundreds of rows loaded: median 11.5 ms, longest frame ≤ 50 ms (the first switch lays out a new face).
+- Design switch with hundreds of rows loaded: its frame 16.7 ms (every switch asserted ≤ 50 ms after one pass that fetches the faces).
+- Searches narrowed to conversations with attachments, SQLite at 50k threads: ≤ 10.2 ms a page (broad words, `in:all`, a prefix), ~0.05 ms with none having attachments; the instant index on one 50,000-message conversation with 1,000 date-rejected candidates: 0.19 ms.
 - Fonts (latin): Figtree 20 KB, Instrument Sans 30 KB, Instrument Serif 21 + 22 KB; latin-ext 10–12 KB each, fetched only when text needs them.
+
+## 13. What the Codex code reviews changed
+
+Three rounds (`/tmp/unica-scratch/review-15.txt`, `review-15b.txt`, `review-15c.txt`); every finding fixed, each with a test that fails without the fix.
+
+Round 1 (`2c14ff4..42fa077`, 6 findings):
+1. **"With attachments" in a search** was `has:attachment`, which every engine tests per message: a conversation whose attachment and match were in different messages disappeared (`88b0dcb`, then round 2 #1).
+2. **Going back to the current design** didn't cancel a switch still waiting for its faces (`de4af8e`).
+3. **The list anchor** was restored with the wrong sign, and an open thread under the top edge was "revealed" through the virtualizer's own (stale) scroll (`c57e424`): the live-switch test now asserts the same top row at the same depth.
+4. **The switch perf gate** could read an empty sample as 0 ms and only asserted the median (`e37a0d7`).
+5. **No mailbox-scale gates for the new filters** in either store (`9c83f97`).
+6. **The palette's ⌘L item** said "Show all" while ⌘L switched to Unread (`c7bd461`).
+
+Round 2 (on round 1's fixes, 3 findings):
+1. **Post-filtering a search's pages** for attachments paged and hydrated the whole match set (13 s at 50k threads, nothing kept): every engine now applies `threadAttachments` before paging (SQLite `t.has_attachments`, the IndexedDB scan's thread row, the instant index's thread docs), with a conformance test and gates (`a4b40e2`).
+2. **A page in flight for the last list** held the next list's own paging (`a4beafe`).
+3. **The IndexedDB gate** timed counts without asserting them; dense and empty cases added (`a4b40e2`).
+
+Round 3 (on round 2's fixes, 2 findings):
+1. **The last list's cursor survived navigation**: paging before the new list's first answer continued the old scope (`08e428b`).
+2. **The instant index re-walked a long conversation** per date-rejected candidate (105 ms for one 50,000-message conversation): each thread's answer is kept per query (`083f70c`).
+
+Also removed: Lumen baselines that a full non-gate pass (`E2E_DESIGN_ALL=1`) had written for untagged specs (`0404a51`).
+
+### Verification (after the fixes)
+
+`pnpm typecheck`, `pnpm lint`, `pnpm test` (1,868 unit + 395 db-wasm), `pnpm test:e2e` (556: the whole suite in macOS, the `@design` flows and designs.spec in Lumen and Atelier), `pnpm test:web` (29), `pnpm test:ui-perf` (26, including j/scroll per design × density and the switch gate), `pnpm test:perf` (112), `pnpm dist:mac` and the packaged smoke (38). Known flake under full parallel load, passing on reruns: `print.spec` "from the toolbar … and the palette" (as in plan 14). Screenshots of every design in light and dark (main window, 980×600, reply, compose, every settings tab, palette, shortcuts, print sheet, filters dialog, add account, selection, the filter on, context menu, the update pill and popover, first run, the web gate): `/tmp/unica-scratch/designs-15/`.
