@@ -6,6 +6,7 @@ import { patchRows, reloadList, useList } from "~/state/list";
 import { invalidateThreads, loadThread } from "~/state/threads";
 import { getApp, setApp, type ScopeSelection } from "~/state/app";
 import { trackJob, undoAction } from "~/lib/actions";
+import { scopeRows } from "~/lib/select";
 import { registerUndo, snack } from "~/lib/snack";
 
 export interface Filed {
@@ -120,7 +121,8 @@ export async function moveToCategory(categoryId: number, threadIds: readonly num
  */
 export async function addScopeToCategory(categoryId: number, sel: ScopeSelection): Promise<void> {
   const name = getApp().categories.find((c) => c.id === categoryId)?.name ?? "";
-  const loaded = useList.getState().items.map((t) => t.id);
+  // the scope's loaded rows (with the unread filter, not a read row it kept)
+  const loaded = scopeRows(useList.getState().items, sel.scope).map((t) => t.id);
   patch(loaded, categoryId, true);
   setApp({ checked: new Set(), scope: null });
   const progress = trackJob(`Añadiendo ${sel.count.toLocaleString("es-MX")} conversaciones a ${name}`);

@@ -7,7 +7,7 @@ import { listDate } from "~/lib/format";
 import { renderProbe } from "~/lib/render-probe";
 import { useHasDraft } from "~/lib/drafts";
 import { pressRow, releaseRow } from "~/lib/select";
-import { useApp } from "~/state/app";
+import { useApp, type AppState } from "~/state/app";
 
 /** The account, in "Todas las cuentas": a small ring in its color (category dots are filled). */
 const ACCOUNT_MARK: Record<CategoryColor, string> = {
@@ -41,10 +41,11 @@ export const ThreadRow = memo(function ThreadRow({ thread: t, top, height, compa
   renderProbe("ThreadRow");
   /** the open thread (the cursor; the listbox's active descendant) */
   const selected = useApp((s) => s.selectedId === t.id);
-  // "select all N" checks every row, loaded later or not
-  const checked = useApp((s) => s.scope !== null || s.checked.has(t.id));
+  // "select all N" checks every row, loaded later or not ("all N unread": not a read row the filter kept)
+  const inScope = (s: AppState) => s.scope !== null && (t.unread || !s.scope.scope.unreadOnly);
+  const checked = useApp((s) => inScope(s) || s.checked.has(t.id));
   // what assistive tech hears as selected: the checked rows, or the open thread when nothing is checked
-  const inSelection = useApp((s) => s.scope !== null || s.checked.has(t.id) || (s.selectedId === t.id && s.checked.size === 0));
+  const inSelection = useApp((s) => inScope(s) || s.checked.has(t.id) || (s.selectedId === t.id && s.checked.size === 0));
   const accountColor = useApp((s) => (showAccount ? s.accounts.find((a) => a.id === t.accountId)?.color : undefined)) as CategoryColor | undefined;
   const categories = useApp((s) => s.categories);
   /** a draft with something written in it (one boolean: only this row renders when it changes) */

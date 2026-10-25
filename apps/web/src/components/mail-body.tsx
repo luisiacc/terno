@@ -8,6 +8,7 @@ import { mailColors, useAppearance } from "~/lib/appearance";
 import { csp, hasOwnColors, hasRemoteContent } from "~/lib/mail";
 import { splitTextQuote } from "~/lib/quote";
 import { forwardPrintKey, wantsNativeMenu } from "~/lib/print-open";
+import { forwardUnreadKey } from "~/lib/unread";
 import { allowRemoteFor, remoteAllowed, useRemoteConsent } from "~/lib/remote-consent";
 
 function openLink(href: string) {
@@ -90,10 +91,12 @@ export function HtmlBody({ html, messageId, remoteImages, localMode, appearance 
       d.addEventListener("click", onClick);
       d.addEventListener("contextmenu", onMenu);
       d.addEventListener("keydown", forwardPrintKey);
+      d.addEventListener("keydown", forwardUnreadKey);
       detach = () => {
         d.removeEventListener("click", onClick);
         d.removeEventListener("contextmenu", onMenu);
         d.removeEventListener("keydown", forwardPrintKey);
+        d.removeEventListener("keydown", forwardUnreadKey);
       };
     };
     frame.addEventListener("load", onLoad);

@@ -2,8 +2,9 @@ import { breadcrumb, captureUi } from "~/lib/diag";
 import { parseAddressList, type ThreadAction, type ThreadSummary, type View } from "@terno/core";
 import { reflowRemoval } from "~/lib/flash";
 import { client } from "~/rpc/connection";
-import { currentTargets } from "~/lib/select";
+import { currentTargets, scopeRows } from "~/lib/select";
 import { dismissSnack, registerUndo, snack, type Undo } from "~/lib/snack";
+import { isUnreadOnly } from "~/lib/unread-filter";
 import { getApp, setApp, type ScopeSelection } from "~/state/app";
 import { patchRows, reloadList, useList } from "~/state/list";
 import { invalidateThreads } from "~/state/threads";
@@ -109,17 +110,20 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
   if (targets.length === 0) return;
   breadcrumb("action", "action.thread", { action, count: targets.length });
   const { items, index } = useList.getState();
-  const leaving = s.query ? false : !staysInView(s.view, action);
+  // in a filtered list a read row leaves (a search too), except the open one: it stays put until the selection moves
+  const reading = action === "markRead" && isUnreadOnly(s);
+  const leaving = reading || (s.query ? false : !staysInView(s.view, action));
+  const stays = reading ? s.selectedId : null;
 
-  if (leaving && s.selectedId !== null && targets.includes(s.selectedId)) {
+  if (leaving && !reading && s.selectedId !== null && targets.includes(s.selectedId)) {
     // Superhuman-style: move to the next thread that isn't being removed
     const start = index.get(s.selectedId) ?? 0;
     const removed = new Set(targets);
     const next = items.slice(start + 1).find((t) => !removed.has(t.id)) ?? items.slice(0, start).reverse().find((t) => !removed.has(t.id));
     setApp({ selectedId: next?.id ?? null });
   }
-  if (leaving) reflowRemoval(targets);
-  patchRows(targets, (t): ThreadSummary | null => (leaving ? null : patched(t, action)));
+  if (leaving) reflowRemoval(targets.filter((id) => id !== stays));
+  patchRows(targets, (t): ThreadSummary | null => (leaving && t.id !== stays ? null : patched(t, action)));
   // what the user acted on stops being selected; automatic and undo actions never touch the selection
   const onTargets = !options.quiet && targets.some((id) => s.checked.has(id));
   if (onTargets && (s.checked.size || s.scope)) setApp({ checked: new Set(), scope: null });
@@ -172,14 +176,17 @@ export function trackJob(title: string): { jobId: string; snackId: string; stop(
  */
 async function actScope(action: ThreadAction, sel: ScopeSelection): Promise<void> {
   const s = getApp();
-  const { items } = useList.getState();
-  const loaded = items.map((t) => t.id);
-  const leaving = sel.scope.kind === "search" ? false : !staysInView(s.view, action);
+  // the scope's loaded rows: with the unread filter, not a read row it kept (the open one)
+  const loaded = scopeRows(useList.getState().items, sel.scope).map((t) => t.id);
+  const reading = action === "markRead" && sel.scope.unreadOnly === true;
+  const leaving = reading || (sel.scope.kind === "search" ? false : !staysInView(s.view, action));
+  // the open thread stays open when it isn't leaving: kept outside the scope, or read in place (the filter keeps it)
+  const stays = s.selectedId !== null && (reading || !loaded.includes(s.selectedId)) ? s.selectedId : null;
   if (leaving) {
-    reflowRemoval(loaded);
-    setApp({ selectedId: null });
+    reflowRemoval(loaded.filter((id) => id !== stays));
+    if (stays === null) setApp({ selectedId: null });
   }
-  patchRows(loaded, (t) => (leaving ? null : patched(t, action)));
+  patchRows(loaded, (t) => (leaving && t.id !== stays ? null : patched(t, action)));
   setApp({ checked: new Set(), scope: null });
   const progress = trackJob(`${DOING[action]} ${fmt(sel.count)} conversaciones`);
   const undoId = deferred<{ id: number | null; n: number }>();
@@ -223,7 +230,7 @@ async function undoActions(undoIds: readonly number[], n: number): Promise<void>
 export function targetRows(ids?: readonly number[]): ThreadSummary[] {
   const { items, index } = useList.getState();
   const t = ids ? { ids } : currentTargets();
-  if ("scope" in t) return items;
+  if ("scope" in t) return scopeRows(items, t.scope.scope);
   return t.ids.flatMap((id) => {
     const row = items[index.get(id) ?? -1];
     return row ? [row] : [];

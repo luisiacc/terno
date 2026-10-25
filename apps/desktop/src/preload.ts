@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import { PRINT_COMMANDS, type PrintCommand } from "./print-commands";
+import { MENU_COMMANDS, type MenuCommand } from "./print-commands";
 
 /**
  * Sandboxed preload. Only two things cross into the page: a MessagePort to the
@@ -57,10 +57,10 @@ contextBridge.exposeInMainWorld("ternoDesktop", {
       return () => ipcRenderer.removeListener("terno:diag-event", relay);
     },
   },
-  // the Archivo menu's commands, whitelisted
-  onCommand: (listener: (command: PrintCommand) => void) => {
+  // the Archivo and Ver menus' commands, whitelisted
+  onCommand: (listener: (command: MenuCommand) => void) => {
     const relay = (_e: unknown, command: unknown) => {
-      if (PRINT_COMMANDS.includes(command as PrintCommand)) listener(command as PrintCommand);
+      if (MENU_COMMANDS.includes(command as MenuCommand)) listener(command as MenuCommand);
     };
     ipcRenderer.on("terno:command", relay);
     return () => ipcRenderer.removeListener("terno:command", relay);

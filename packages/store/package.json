@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./instant": "./src/instant/index.ts",
+    "./list": "./src/list.ts",
     "./conformance": "./src/conformance/index.ts"
   },
   "scripts": {

@@ -2,7 +2,10 @@ import { Input } from "@terno/ui/components/input";
 import { Kbd } from "@terno/ui/components/kbd";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Inbox, Search, SquarePen, X } from "lucide-react";
+import { Inbox, ListFilter, Search, SquarePen, X } from "lucide-react";
+import { cn } from "@terno/ui/lib/utils";
+import { isUnreadOnly } from "~/lib/unread-filter";
+import { toggleUnreadFilter } from "~/lib/unread";
 import { Button } from "@terno/ui/components/button";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
@@ -26,6 +29,51 @@ import { DesktopBanner, GmailReconnect } from "~/lib/web-parts";
 export const searchInputRef: { current: HTMLInputElement | null } = { current: null };
 export const listScroller: { scrollToIndex?: (i: number) => void } = {};
 
+/** the header's filter button, where focus goes when the empty state's "Clear filter" disappears */
+export const unreadFilterButton: { current: HTMLButtonElement | null } = { current: null };
+
+/** Mail's message filter: a quiet icon off, the accent on. */
+function UnreadFilterButton({ active }: { active: boolean }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            ref={(el) => {
+              unreadFilterButton.current = el;
+            }}
+            data-testid="unread-filter"
+            data-active={active || undefined}
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Filter by unread"
+            aria-pressed={active}
+            className={cn("no-drag shrink-0 text-muted-foreground hover:text-foreground", active && "text-primary hover:text-primary")}
+            onClick={toggleUnreadFilter}
+          >
+            <ListFilter />
+          </Button>
+        }
+      />
+      <TooltipContent>
+        {active ? "Show all" : "Show unread only"} <Shortcut keys="mod+l" />
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** "Filtered by: Unread · N" under the title (N: the mailbox's unread threads; a search shows its own count). */
+function FilterStatus({ search }: { search: boolean }) {
+  const total = useList((s) => (s.unreadTotal && s.unreadTotal.key === s.key ? s.unreadTotal : null));
+  const n = !search && total && total.n > 0 ? ` · ${total.n.toLocaleString("en-US")}${total.capped ? "+" : ""}` : "";
+  return (
+    <p data-testid="unread-filter-status" className="truncate text-2xs leading-tight text-muted-foreground tabular">
+      Filtered by: <span className="text-foreground/80">Unread</span>
+      {n}
+    </p>
+  );
+}
+
 function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   const view = useApp((s) => s.view);
   const category = useApp((s) => s.categories.find((c) => c.id === s.categoryId));
@@ -33,24 +81,30 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   const account = useApp((s) => s.accounts.find((a) => a.id === s.accountId));
   const query = useApp((s) => s.query);
   const searchMs = useList((s) => s.searchMs);
-  const count = useList((s) => s.items.length);
   const more = useList((s) => s.nextCursor !== null);
   const complete = useList((s) => s.complete);
+  const unreadOnly = useApp(isUnreadOnly);
+  // a filtered search counts what matched, not the read rows it kept in place
+  const count = useList((s) => (unreadOnly ? s.items.reduce((n, t) => n + (t.unread ? 1 : 0), 0) : s.items.length));
   const title = review ? `Revisar · ${review.name}` : (category?.name ?? VIEW_LABEL[view]);
 
   return (
-    <div ref={hairlineRef} className="drag-region scroll-hairline shrink-0 px-3 pb-2">
+    <div ref={hairlineRef} data-testid="list-header" className="drag-region scroll-hairline shrink-0 px-3 pb-2">
       <div className="flex h-[52px] items-center gap-2 pl-1">
-        <h1 className="min-w-0 flex-1 truncate text-md font-semibold tracking-tight" data-testid="list-title">
-          {title}
-          {account && <span className="ml-1.5 text-sm font-normal tracking-normal text-muted-foreground">· {account.displayName}</span>}
-        </h1>
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-md font-semibold tracking-tight" data-testid="list-title">
+            {title}
+            {account && <span className="ml-1.5 text-sm font-normal tracking-normal text-muted-foreground">· {account.displayName}</span>}
+          </h1>
+          {unreadOnly && <FilterStatus search={query.trim() !== ""} />}
+        </div>
         {query && searchMs !== null && (
           <span data-testid="search-stats" className="shrink-0 text-2xs text-muted-foreground tabular">
             {count}
             {more ? "+" : ""} resultados · {searchMs < 1 ? "<1" : Math.round(searchMs)} ms{!complete && " · indexando"}
           </span>
         )}
+        {!review && <UnreadFilterButton active={unreadOnly} />}
         <Tooltip>
           <TooltipTrigger
             render={
@@ -115,6 +169,7 @@ function SelectAllBanner() {
   const view = useApp((s) => s.view);
   const category = useApp((s) => s.categories.find((c) => c.id === s.categoryId)?.name);
   const query = useApp((s) => s.query.trim());
+  const unreadOnly = useApp(isUnreadOnly);
   const show = scope !== null || (all && more && loaded > 0);
   const [count, setCount] = useState<{ key: string; n: number; capped: boolean } | null>(null);
   const key = show ? listKey() : "";
@@ -129,7 +184,7 @@ function SelectAllBanner() {
     };
   }, [show, key]);
   if (!show || (!scope && !currentScope())) return null;
-  const label = query ? `«${query}»` : `«${category ?? VIEW_LABEL[view]}»`;
+  const label = `«${query || (category ?? VIEW_LABEL[view])}${unreadOnly ? " · Unread" : ""}»`;
   const n = count?.key === key ? count : null;
   const fmt = (x: number) => x.toLocaleString("es-MX");
   return (
@@ -161,6 +216,34 @@ function SelectAllBanner() {
   );
 }
 
+/**
+ * A filtered mailbox with nothing unread. Drawn over the empty listbox, not
+ * inside it (a button isn't an option); after "Clear filter" focus goes to
+ * the header's filter button, which stays.
+ */
+function UnreadEmptyState() {
+  const search = useApp((s) => s.query.trim() !== "");
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 px-8 text-center" data-testid="unread-empty">
+      <ListFilter className="mb-2 size-7 stroke-[1.25] text-muted-foreground" aria-hidden />
+      <p className="text-lg font-semibold tracking-tight">{search ? "No unread results" : "No unread conversations"}</p>
+      <p className="text-xs text-muted-foreground">{search ? "Everything that matches has been read." : "You’re all caught up."}</p>
+      <Button
+        data-testid="unread-empty-clear"
+        variant="secondary"
+        size="sm"
+        className="mt-3"
+        onClick={() => {
+          toggleUnreadFilter();
+          unreadFilterButton.current?.focus();
+        }}
+      >
+        Clear filter
+      </Button>
+    </div>
+  );
+}
+
 function EmptyState() {
   const query = useApp((s) => s.query);
   const view = useApp((s) => s.view);
@@ -182,6 +265,7 @@ export function ThreadList() {
   const compact = useApp((s) => s.settings?.density === "compact");
   const composing = useApp((s) => s.compose !== null);
   const showAccount = useApp((s) => s.accountId === null && s.accounts.length > 1);
+  const unreadOnly = useApp(isUnreadOnly);
   const height = compact ? ROW_HEIGHT.compact : ROW_HEIGHT.comfortable;
   const parentRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -234,6 +318,18 @@ export function ThreadList() {
     return useApp.subscribe((s, prev) => s.selectedId !== prev.selectedId && point(s.selectedId));
   }, []);
 
+  // the filter toggled (the same mailbox and query otherwise): the open thread, kept, comes into view
+  const shownKey = useRef(itemsKey);
+  useEffect(() => {
+    const was = shownKey.current;
+    shownKey.current = itemsKey;
+    if (!was || !itemsKey || was === itemsKey) return;
+    const [a, b] = [JSON.parse(was) as unknown[], JSON.parse(itemsKey) as unknown[]];
+    if (JSON.stringify(a.slice(0, -1)) !== JSON.stringify(b.slice(0, -1))) return;
+    const i = useList.getState().index.get(getApp().selectedId ?? -1);
+    if (i !== undefined) virtualizer.scrollToIndex(i, { align: "auto" });
+  }, [itemsKey]);
+
   const virtualItems = virtualizer.getVirtualItems();
   const last = virtualItems[virtualItems.length - 1];
   useEffect(() => {
@@ -253,6 +349,7 @@ export function ThreadList() {
       )}
       <SelectAllBanner />
       <DraftsStrip />
+      <div className="relative flex min-h-0 flex-1 flex-col">
       <ThreadMenu>
       <div ref={parentRef} role="listbox" aria-label="Conversaciones" aria-multiselectable className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain [contain:strict]">
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
@@ -266,7 +363,7 @@ export function ThreadList() {
             ))}
           </div>
         ) : items.length === 0 ? (
-          <EmptyState />
+          !unreadOnly && <EmptyState />
         ) : (
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
             {virtualItems.map((v) => (
@@ -276,6 +373,8 @@ export function ThreadList() {
         )}
       </div>
       </ThreadMenu>
+      {unreadOnly && !loading && items.length === 0 && itemsKey === listKey() && <UnreadEmptyState />}
+      </div>
     </section>
   );
 }

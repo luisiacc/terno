@@ -42,8 +42,8 @@ export interface DesktopBridge {
   print?(job: DesktopPrintJob): Promise<DesktopPrintResult>;
   /** reveals a PDF this session exported, by the id its export returned */
   showSaved?(exportId: string): Promise<boolean>;
-  /** the Archivo menu's commands */
-  onCommand?(listener: (command: "thread.print" | "thread.exportPdf") => void): () => void;
+  /** the menu's commands (Archivo, Ver) */
+  onCommand?(listener: (command: "thread.print" | "thread.exportPdf" | "list.toggleUnread") => void): () => void;
   /** older shells don't have it */
   diag?: DesktopDiag;
 }

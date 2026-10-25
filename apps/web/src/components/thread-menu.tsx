@@ -42,7 +42,7 @@ import { act, openCompose, targetRows } from "~/lib/actions";
 import { addScopeToCategory, addToCategory, isExclusivelyIn, moveToCategory, removeFromCategory } from "~/lib/categorize";
 import { rowSelector, setRule } from "~/lib/flash";
 import { renderProbe } from "~/lib/render-probe";
-import { isMac, selectAll } from "~/lib/select";
+import { isMac, scopeRows, selectAll } from "~/lib/select";
 import { menuTargets } from "~/lib/selection";
 import { openPrint } from "~/lib/print-open";
 import { getApp, setApp, useApp, type ScopeSelection } from "~/state/app";
@@ -194,7 +194,7 @@ function MenuItems() {
   const { ids, scope } = useMenuTarget();
   const categories = useApp((s) => s.categories);
   const view = useApp((s) => (s.query.trim() && /(^|\s)(in|en):/.test(s.query) ? "all" : s.view));
-  const rows = scope ? useList.getState().items : targetRows(ids);
+  const rows = scope ? scopeRows(useList.getState().items, scope.scope) : targetRows(ids);
   const single = !scope && ids.length === 1 ? rows[0] : undefined;
   const run = (action: ThreadAction) => void act(action, scope ? undefined : ids);
   const anyUnread = scope !== null || rows.some((t) => t.unread);

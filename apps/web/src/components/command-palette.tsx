@@ -1,13 +1,15 @@
 import type { CategoryColor } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
-import { Archive, CheckCheck, FileDown, FolderInput, Inbox, Layers, Mail, MailOpen, Moon, OctagonAlert, PenLine, Printer, Search, Send, Sparkles, Star, Sun, Trash2, Undo2 } from "lucide-react";
+import { Archive, CheckCheck, FileDown, FolderInput, Inbox, Layers, ListFilter, Mail, MailOpen, Moon, OctagonAlert, PenLine, Printer, Search, Send, Sparkles, Star, Sun, Trash2, Undo2 } from "lucide-react";
 import { useState } from "react";
 import { act, openCompose, toggleStar, undoLast } from "~/lib/actions";
 import { addScopeToCategory, addToCategory } from "~/lib/categorize";
 import { currentTargets, isMac, selectAll } from "~/lib/select";
 import { updateAppearance } from "~/lib/appearance";
 import { printCommand } from "~/lib/print-open";
+import { toggleUnreadFilter } from "~/lib/unread";
+import { isUnreadOnly } from "~/lib/unread-filter";
 import { navigate, setApp, useApp } from "~/state/app";
 import { SETTINGS_TABS } from "./settings/tabs";
 
@@ -19,6 +21,8 @@ export function CommandPalette() {
   const targets = useApp((s) => (open ? (s.scope ? s.scope.count : s.checked.size ? s.checked.size : s.selectedId !== null ? 1 : 0) : 0));
   // printing takes the conversation the reader shows (one, with no new message in the pane)
   const printable = useApp((s) => open && s.selectedId !== null && !s.scope && s.checked.size < 2 && s.compose === null);
+  // the unread filter applies to a mailbox (not "Revisar")
+  const filter = useApp((s) => (open && s.reviewCategoryId === null ? (isUnreadOnly(s) ? "on" : "off") : null));
   const [value, setValue] = useState("");
   const run = (fn: () => void) => {
     setApp({ dialog: null });
@@ -69,6 +73,11 @@ export function CommandPalette() {
             </>
           )}
           <CommandItem onSelect={() => run(selectAll)}><CheckCheck /> Seleccionar todo<CommandShortcut>⌘A</CommandShortcut></CommandItem>
+          {filter && (
+            <CommandItem data-testid="palette-unread-filter" value={filter === "on" ? "show all unread filter off" : "show unread only filter"} onSelect={() => run(toggleUnreadFilter)}>
+              <ListFilter /> {filter === "on" ? "Show all" : "Show unread only"}<CommandShortcut>{isMac ? "⌘L" : "Ctrl+L"}</CommandShortcut>
+            </CommandItem>
+          )}
           <CommandItem onSelect={() => run(undoLast)}><Undo2 /> Deshacer<CommandShortcut>Z</CommandShortcut></CommandItem>
           <CommandItem onSelect={() => run(() => setApp({ dialog: "filters" }))}><Sparkles /> Crear filtro con IA</CommandItem>
           <CommandItem

@@ -25,7 +25,9 @@ import type { BackendToMain, MainToBackend } from "./ipc";
 import { readLegacySecrets } from "./keychain-helper";
 import { DB_FILE } from "./legacy-profile";
 import { printLocalModeChanged, registerPrint } from "./print";
-import { fileMenu, helpMenu, isTrustedSender, testPdfDir, type PrintCommand } from "./print-policy";
+import { fileMenu, helpMenu, isTrustedSender, testPdfDir } from "./print-policy";
+import { viewMenu } from "./menu";
+import type { MenuCommand } from "./print-commands";
 import { LEGACY_STORAGE_PENDING } from "./profile";
 
 // V8 compile cache for the main bundle (t3code trick): faster subsequent boots.
@@ -394,7 +396,7 @@ function createWindow() {
 }
 
 /** Menu commands go to the focused Terno window's renderer, which applies them like their keys. */
-function sendCommand(command: PrintCommand) {
+function sendCommand(command: MenuCommand) {
   const win = BrowserWindow.getFocusedWindow() ?? [...windows][0];
   if (win && windows.has(win) && !win.isDestroyed()) win.webContents.send("terno:command", command);
 }
@@ -404,10 +406,7 @@ function buildMenu() {
     { role: "appMenu" },
     fileMenu(sendCommand),
     { role: "editMenu" },
-    {
-      label: "Ver",
-      submenu: [{ role: "reload" }, { role: "toggleDevTools", visible: isDev }, { type: "separator" }, { role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" }, { type: "separator" }, { role: "togglefullscreen" }],
-    },
+    viewMenu(sendCommand, isDev),
     { role: "windowMenu" },
     helpMenu({ exportDiagnostics: () => void mainDiag.exportInteractive(BrowserWindow.getFocusedWindow()), showLogs: () => mainDiag.showLogs() }),
   ];

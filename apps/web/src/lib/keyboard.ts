@@ -10,6 +10,12 @@ import { acceptSuggestion, rejectSuggestion } from "~/lib/categorize";
 import { printCommand } from "~/lib/print-open";
 import { listScroller, searchInputRef } from "~/components/thread-list";
 import { snackbarControls } from "~/components/category-snackbar";
+import { toggleUnreadFilter } from "~/lib/unread";
+
+/** Toggles act once per press: no key repeat, and the desktop menu's echo of a key just handled is dropped. */
+const TOGGLES = new Set<Command>(["list.toggleUnread"]);
+const ECHO_MS = 300;
+const lastKey = new Map<Command, number>();
 
 function move(delta: number) {
   const { items, index } = useList.getState();
@@ -20,7 +26,8 @@ function move(delta: number) {
   const id = items[next]!.id;
   if (id === s.selectedId) return;
   setApp({ selectedId: id, readerOpen: true });
-  listScroller.scrollToIndex?.(next);
+  // where it is now: a read row the filter kept may have just left above it
+  listScroller.scrollToIndex?.(useList.getState().index.get(id) ?? next);
   // warm the neighbours so the next keypress renders from cache
   for (const n of [next + delta, next + 2 * delta]) {
     const t = items[n];
@@ -49,6 +56,7 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "list.extendNext": () => extendSelection(1),
   "list.extendPrev": () => extendSelection(-1),
   "list.menu": () => openMenuForSelection(),
+  "list.toggleUnread": toggleUnreadFilter,
   "reader.close": clearSelection,
   "thread.archive": () => void act("archive"),
   "thread.trash": () => void act("trash"),
@@ -138,12 +146,20 @@ export function installKeyboard(): () => void {
     const handler = HANDLERS[result.command];
     if (!handler) return;
     e.preventDefault();
+    if (TOGGLES.has(result.command)) {
+      if (e.repeat) return;
+      lastKey.set(result.command, performance.now());
+    }
     performance.mark(`key:${result.command}`);
     handler();
   };
   document.addEventListener("keydown", onKeyDown);
-  // Archivo → Imprimir… / Exportar como PDF…: the handler decides like it does for ⌘P (the accelerator may have fired from a mail's frame)
-  const offMenu = window.ternoDesktop?.onCommand?.((command) => HANDLERS[command]?.());
+  // Archivo → Imprimir… / Exportar como PDF…, Ver → Filtrar por no leídos: the handler decides like it does for the key
+  // (the accelerator may have fired from a mail's frame); a toggle's menu echo of a key just handled is dropped
+  const offMenu = window.ternoDesktop?.onCommand?.((command) => {
+    if (TOGGLES.has(command) && performance.now() - (lastKey.get(command) ?? -Infinity) < ECHO_MS) return;
+    HANDLERS[command]?.();
+  });
   return () => {
     document.removeEventListener("keydown", onKeyDown);
     offMenu?.();

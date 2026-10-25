@@ -4,6 +4,7 @@
  * on). The rules themselves are the pure functions in lib/selection.ts.
  */
 import { listScroller } from "~/components/thread-list";
+import type { ThreadScope } from "@terno/core/rpc";
 import { getApp, setApp, type AppState } from "~/state/app";
 import { currentScope, listKey, useList } from "~/state/list";
 import { loadThread } from "~/state/threads";
@@ -114,7 +115,15 @@ export function selectScope(count: number): void {
   const s = getApp();
   const category = s.categories.find((c) => c.id === s.categoryId)?.name;
   const label = scope.kind === "search" ? `«${s.query.trim()}»` : (category ?? VIEW_LABEL[s.view] ?? s.view);
-  setApp({ scope: { key: listKey(), scope, label, count }, checked: new Set(useList.getState().items.map((t) => t.id)) });
+  setApp({ scope: { key: listKey(), scope, label: scope.unreadOnly ? `${label} · Unread` : label, count }, checked: new Set(scopeRows(useList.getState().items, scope).map((t) => t.id)) });
+}
+
+/**
+ * A scope's loaded rows: with the unread filter, the unread ones (a read row
+ * the filter kept, the open one, is shown but isn't part of "all N unread").
+ */
+export function scopeRows<T extends { unread: boolean }>(items: readonly T[], scope: ThreadScope): T[] {
+  return scope.unreadOnly ? items.filter((t) => t.unread) : [...items];
 }
 
 /** What an action applies to now: a scope, the checked rows (in list order), or the open thread. */
