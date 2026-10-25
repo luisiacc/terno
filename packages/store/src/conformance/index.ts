@@ -5,3 +5,4 @@ export * from "./store";
 export * from "./replica";
 export * from "./engine";
 export * from "./autocomplete";
+export * from "./perf";

@@ -12,7 +12,7 @@ import type { SliceClock } from "./slices";
  *   [12..12+H) header JSON { tokenizer, format, identity, revision, meta, sections }
  *   pad to 8, then the sections, each 8-byte aligned
  */
-export type Section = Uint8Array | Uint16Array | Uint32Array | Int32Array | Float64Array | { strings: readonly string[] };
+export type Section = Uint8Array | Uint16Array | Uint32Array | Int32Array | Float32Array | Float64Array | { strings: readonly string[] };
 
 export interface SnapshotKind {
   tokenizer: number;
@@ -20,7 +20,7 @@ export interface SnapshotKind {
   identity: string;
 }
 
-type ArrayType = "u8" | "u16" | "u32" | "i32" | "f64";
+type ArrayType = "u8" | "u16" | "u32" | "i32" | "f32" | "f64";
 interface Entry {
   name: string;
   type: ArrayType;
@@ -29,13 +29,14 @@ interface Entry {
 }
 
 const MAGIC = [0x55, 0x49, 0x53, 0x31];
-const CTORS = { u8: Uint8Array, u16: Uint16Array, u32: Uint32Array, i32: Int32Array, f64: Float64Array } as const;
+const CTORS = { u8: Uint8Array, u16: Uint16Array, u32: Uint32Array, i32: Int32Array, f32: Float32Array, f64: Float64Array } as const;
 
 function typeOf(a: Exclude<Section, { strings: readonly string[] }>): ArrayType {
   if (a instanceof Uint8Array) return "u8";
   if (a instanceof Uint16Array) return "u16";
   if (a instanceof Uint32Array) return "u32";
   if (a instanceof Int32Array) return "i32";
+  if (a instanceof Float32Array) return "f32";
   return "f64";
 }
 
@@ -138,6 +139,7 @@ export interface SectionReader {
   u16(name: string): Uint16Array<ArrayBuffer>;
   u32(name: string): Uint32Array<ArrayBuffer>;
   i32(name: string): Int32Array<ArrayBuffer>;
+  f32(name: string): Float32Array<ArrayBuffer>;
   f64(name: string): Float64Array<ArrayBuffer>;
   strings(name: string): string[];
 }
@@ -182,6 +184,7 @@ export async function readSnapshot(
     u16: (n) => get(n, "u16"),
     u32: (n) => get(n, "u32"),
     i32: (n) => get(n, "i32"),
+    f32: (n) => get(n, "f32"),
     f64: (n) => get(n, "f64"),
     strings: (n) => {
       const lens = get(`${n}.len`, "u32");

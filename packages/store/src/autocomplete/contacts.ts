@@ -1,10 +1,9 @@
 import type { Address } from "@terno/core";
 import type { ContactMessage } from "../autocomplete-source";
 import type { Revision } from "../search";
-import { packSnapshot, readSnapshot, sealSnapshot, type SnapshotKind } from "../instant/snapshot";
+import { packSnapshot, readSnapshot, sealSnapshot, type SectionReader, type SnapshotKind } from "../instant/snapshot";
 import { sortSliced, type SliceClock } from "../instant/slices";
 import { Bitset } from "./bitset";
-import { readStrings } from "./strings";
 import { CJK, fold } from "./fold";
 
 /**
@@ -49,13 +48,20 @@ const AUTOMATED_PENALTY = 0.1;
 const CLASS_WEIGHT = [0, 0.3, 0.6, 1];
 const WHOLE_TOKEN = 1.5;
 const SAME_ACCOUNT = 1.25;
+/**
+ * People you wrote to rank above people who only wrote to you: their key is
+ * scaled by 2^500 (exact for doubles), far above any other key (weights stay
+ * within about 2^±160 for any date from 1970 on), so one comparison orders
+ * the tier and the score.
+ */
+const TIER = 2 ** 500;
 const MAX_TOKEN = 32;
 const MAX_NAMES = 3;
+const MAX_NAME_TOKENS = 12;
 const DELTA_MAX = 4096;
 const SHORT_CACHE = 32;
-/** bytes a JS string costs beyond its characters (header, slot in its array) */
-const STRING_OVERHEAD = 40;
-/** a Map entry */
+/** what a JS string costs beyond its characters (header, its slot in an array) */
+const STRING_OVERHEAD = 32;
 const MAP_ENTRY = 64;
 
 const OWN = 1;
@@ -63,7 +69,6 @@ const AUTOMATED = 2;
 const DEAD = 4;
 /** a sender whose mail was marked as spam after it was counted (not suggested unless written to) */
 const SPAM = 8;
-const MAX_NAME_TOKENS = 12;
 
 const AUTOMATED_LOCAL = /^(no-?reply|do-?not-?reply|donotreply|mailer-daemon|postmaster|notifications?|bounces?|bounce[-+.].*|noreply[-+.].*)$/;
 const COMMON_DOMAINS = new Set(["gmail", "googlemail", "outlook", "hotmail", "live", "msn", "yahoo", "ymail", "icloud", "me", "mac", "aol", "proton", "protonmail", "pm", "gmx", "mail", "zoho", "yandex", "fastmail", "hey", "qq", "163", "126", "naver", "web", "orange", "free", "libero"]);
@@ -108,8 +113,8 @@ function addToken(out: Tokens, t: string, cls: number): void {
 
 /** A name's tokens: words (the first strongest), CJK suffixes, initials. */
 export function nameTokens(name: string, out: Tokens = new Map()): Tokens {
-  const words = nameWords(name);
-  words.slice(0, MAX_NAME_TOKENS).forEach((w, i) => {
+  const words = nameWords(name).slice(0, MAX_NAME_TOKENS);
+  words.forEach((w, i) => {
     addToken(out, w, i === 0 ? 3 : 2);
     // names written without spaces: every suffix is a place a given name can start
     if (CJK.test(w)) for (let s = 1; s < w.length && s < 8; s++) addToken(out, w.slice(s), 2);
@@ -137,18 +142,28 @@ export function contactTokens(email: string, names: readonly string[]): Tokens {
 }
 
 /** Message weight: doubles every HALF_LIFE, so sums compare frequency and recency at once without rescaling. */
-const weightAt = (t: number) => Math.pow(2, (t - T0) / HALF_LIFE);
+const weightAt = (t: number) => Math.pow(2, (Math.max(0, t) - T0) / HALF_LIFE);
 
-/** Growable typed arrays. */
-function grow<T extends Float64Array | Uint32Array | Uint8Array | Int32Array>(a: T, n: number): T {
-  if (n <= a.length) return a;
-  const next = new (a.constructor as new (n: number) => T)(Math.max(n, a.length * 2, 64));
-  next.set(a);
-  return next;
+/** A token's first character as a mask bit: a–z, a digit (26), anything else (27). */
+function initialBit(code: number): number {
+  return code >= 97 && code <= 122 ? 1 << (code - 97) : code >= 48 && code <= 57 ? 1 << 26 : 1 << 27;
+}
+const OTHER_BIT = 1 << 27;
+
+/** Bytes a string takes in V8 (one byte a character for Latin-1, two otherwise) plus its overhead. */
+function stringBytes(s: string): number {
+  for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) > 255) return s.length * 2 + STRING_OVERHEAD;
+  return s.length + STRING_OVERHEAD;
 }
 
+/**
+ * The sorted tokens. `chars` holds them encoded as bytes (encodeUnits: one
+ * byte per UTF-16 unit below 0xFF, three otherwise), whose byte order is the
+ * units' order and whose prefixes are the units' prefixes: comparisons work on
+ * bytes, and folded tokens (mostly ASCII) take one byte a character.
+ */
 interface Segment {
-  chars: Uint16Array;
+  chars: Uint8Array;
   start: Uint32Array;
   len: Uint8Array;
   ids: Int32Array;
@@ -156,7 +171,7 @@ interface Segment {
   count: number;
 }
 
-const EMPTY_SEGMENT: Segment = { chars: new Uint16Array(0), start: new Uint32Array(0), len: new Uint8Array(0), ids: new Int32Array(0), cls: new Uint8Array(0), count: 0 };
+const EMPTY_SEGMENT: Segment = { chars: new Uint8Array(0), start: new Uint32Array(0), len: new Uint8Array(0), ids: new Int32Array(0), cls: new Uint8Array(0), count: 0 };
 
 interface Delta {
   tok: string[];
@@ -166,27 +181,34 @@ interface Delta {
 
 const emptyDelta = (): Delta => ({ tok: [], id: [], cls: [] });
 
-/** The main segment's entry i against s, by UTF-16 code units. */
-function cmpEntry(seg: Segment, i: number, s: string): number {
+/** A string in the segment's byte encoding. */
+function encodeString(s: string): Uint8Array {
+  const units = new Uint16Array(s.length);
+  for (let i = 0; i < s.length; i++) units[i] = s.charCodeAt(i);
+  return encodeUnits(units);
+}
+
+/** The main segment's entry i against encoded bytes, bytewise (= by UTF-16 units). */
+function cmpEntry(seg: Segment, i: number, s: Uint8Array): number {
   const start = seg.start[i]!;
   const len = seg.len[i]!;
   const n = Math.min(len, s.length);
   for (let k = 0; k < n; k++) {
-    const d = seg.chars[start + k]! - s.charCodeAt(k);
+    const d = seg.chars[start + k]! - s[k]!;
     if (d !== 0) return d < 0 ? -1 : 1;
   }
   return len === s.length ? 0 : len < s.length ? -1 : 1;
 }
 
-function entryHasPrefix(seg: Segment, i: number, prefix: string): boolean {
+function entryHasPrefix(seg: Segment, i: number, prefix: Uint8Array): boolean {
   if (seg.len[i]! < prefix.length) return false;
   const start = seg.start[i]!;
-  for (let k = 0; k < prefix.length; k++) if (seg.chars[start + k] !== prefix.charCodeAt(k)) return false;
+  for (let k = 0; k < prefix.length; k++) if (seg.chars[start + k] !== prefix[k]) return false;
   return true;
 }
 
-/** [lo, hi) of the entries starting with `prefix`. */
-function segmentRange(seg: Segment, prefix: string): [number, number] {
+/** [lo, hi) of the entries starting with `prefix` (encoded). */
+function segmentRange(seg: Segment, prefix: Uint8Array): [number, number] {
   let lo = 0;
   let hi = seg.count;
   while (lo < hi) {
@@ -222,12 +244,105 @@ function deltaRange(d: Delta, prefix: string): [number, number] {
   return [from, lo];
 }
 
-export const CONTACTS_SNAPSHOT: Omit<SnapshotKind, "identity"> = { tokenizer: 1, format: 1 };
+/** Code units as bytes: one per unit below 0xFF, else 0xFF and the unit's two bytes (half of UTF-16 for mail's mostly Latin text). */
+function encodeUnits(units: Uint16Array): Uint8Array {
+  let size = units.length;
+  for (let i = 0; i < units.length; i++) if (units[i]! >= 0xff) size += 2;
+  const out = new Uint8Array(size);
+  let at = 0;
+  for (let i = 0; i < units.length; i++) {
+    const c = units[i]!;
+    if (c < 0xff) out[at++] = c;
+    else {
+      out[at++] = 0xff;
+      out[at++] = c >> 8;
+      out[at++] = c & 0xff;
+    }
+  }
+  return out;
+}
+
+/** The encoded length of a string (encodeUnits). */
+function encodedLength(s: string): number {
+  let n = s.length;
+  for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) >= 0xff) n += 2;
+  return n;
+}
+
+/** Writes a string encoded at `at`; returns the bytes written. */
+function writeEncoded(s: string, dst: Uint8Array, at: number): number {
+  let k = at;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c < 0xff) dst[k++] = c;
+    else {
+      dst[k++] = 0xff;
+      dst[k++] = c >> 8;
+      dst[k++] = c & 0xff;
+    }
+  }
+  return k - at;
+}
+
+async function decodeUnits(bytes: Uint8Array, count: number, clock: SliceClock): Promise<Uint16Array> {
+  const out = new Uint16Array(count);
+  let k = 0;
+  for (let i = 0; i < bytes.length; ) {
+    if (k >= count) throw new Error("snapshot characters overflow");
+    const b = bytes[i]!;
+    if (b !== 0xff) {
+      out[k++] = b;
+      i++;
+    } else {
+      if (i + 2 >= bytes.length) throw new Error("snapshot characters truncated");
+      out[k++] = (bytes[i + 1]! << 8) | bytes[i + 2]!;
+      i += 3;
+    }
+    if ((k & 262143) === 0) await clock.tick();
+  }
+  if (k !== count) throw new Error("snapshot characters misaligned");
+  return out;
+}
+
+/** Strings as lengths and encoded units (see encodeUnits). */
+function packStrings(list: readonly string[]): { lens: Uint32Array; bytes: Uint8Array } {
+  const lens = new Uint32Array(list.length);
+  let total = 0;
+  for (let i = 0; i < list.length; i++) total += lens[i] = list[i]!.length;
+  const units = new Uint16Array(total);
+  let at = 0;
+  for (const s of list) for (let c = 0; c < s.length; c++) units[at++] = s.charCodeAt(c);
+  return { lens, bytes: encodeUnits(units) };
+}
+
+async function unpackStrings(s: SectionReader, name: string, clock: SliceClock): Promise<string[]> {
+  const lens = s.u32(`${name}.lens`);
+  let total = 0;
+  for (let i = 0; i < lens.length; i++) total += lens[i]!;
+  const units = await decodeUnits(s.u8(`${name}.bytes`), total, clock);
+  const out: string[] = [];
+  let at = 0;
+  for (let i = 0; i < lens.length; i++) {
+    const end = at + lens[i]!;
+    out.push(String.fromCharCode.apply(null, units.subarray(at, end) as unknown as number[]));
+    at = end;
+    if ((i & 4095) === 0) await clock.tick();
+  }
+  return out;
+}
+
+export const CONTACTS_SNAPSHOT: Omit<SnapshotKind, "identity"> = { tokenizer: 1, format: 3 };
 
 export interface ContactIndexOptions {
   caps?: ContactCaps;
   /** clamps dates in the future (a broken Date header must not outrank everything forever) */
   now?: () => number;
+}
+
+let slowForTests = 0;
+/** The perf suite's injected-regression twin for the build: busy work per applied message (ms). */
+export function setContactsSlowdownForTests(ms: number): void {
+  slowForTests = ms;
 }
 
 let scanForTests = false;
@@ -236,19 +351,37 @@ export function setContactsScanForTests(on: boolean): void {
   scanForTests = on;
 }
 
+/** The per-contact typed arrays, grown and compacted together. */
+const F64 = ["sent", "recv", "last", "key", "best"] as const;
+const F32 = ["nameW"] as const;
+const U32 = ["accounts", "m3", "m2", "m1", "mw", "stamp"] as const;
+const U8 = ["flags", "bcls"] as const;
+const PER_CONTACT = F64.length * 8 + F32.length * 4 + U32.length * 4 + U8.length;
+
 export class ContactIndex {
   private n = 0;
   private live = 0;
   private emails: string[] = [];
   private names: string[] = [];
-  private nameW = new Float64Array(0);
   private readonly alts = new Map<number, { name: string; w: number }[]>();
   private sent = new Float64Array(0);
   private recv = new Float64Array(0);
   private last = new Float64Array(0);
-  private count = new Uint32Array(0);
+  /** how much each contact's shown name was used (it only chooses names) */
+  private nameW = new Float32Array(0);
+  /** the ranking key without the query's own factors: tier × (3·sent + recv) × penalty */
+  private key = new Float64Array(0);
+  private best = new Float64Array(0);
   private accounts = new Uint32Array(0);
+  /** first characters of a contact's tokens, by class (3, 2, 1) and of its one-character tokens */
+  private m3 = new Uint32Array(0);
+  private m2 = new Uint32Array(0);
+  private m1 = new Uint32Array(0);
+  private mw = new Uint32Array(0);
+  private stamp = new Uint32Array(0);
   private flags = new Uint8Array(0);
+  /** per query: the best class a contact matched through, +4 when a term was one of its whole tokens */
+  private bcls = new Uint8Array(0);
   private byEmail = new Map<string, number>();
   private readonly accountBits = new Map<number, number>();
   private main: Segment = EMPTY_SEGMENT;
@@ -259,19 +392,15 @@ export class ContactIndex {
   /** tokens collected while building, sorted once at the end */
   private bulk: Delta | null = null;
   private bulkChars = 0;
-  private stamp = new Uint32Array(0);
-  private best = new Float64Array(0);
-  /** per query: the best class a contact matched through, +4 when a term was one of its whole tokens */
-  private bcls = new Uint8Array(0);
   private gen = 0;
   private own = new Set<string>();
   private readonly seen = new Bitset();
-  /** characters held in emails, names and alternates (kept as they change: allocatedBytes is O(1)) */
-  private stringChars = 0;
-  private altCount = 0;
+  /** bytes held in emails, names and alternates (kept as they change: allocatedBytes is O(1)) */
+  private stringsHeld = 0;
   /** bumped by any score change: the short-query cache is valid for one version */
   private version = 0;
   private readonly shortCache = new Map<string, { version: number; ids: number[] }>();
+  private frozen = false;
   readonly caps: ContactCaps;
   private readonly now: () => number;
   revision: Revision | null = null;
@@ -287,7 +416,14 @@ export class ContactIndex {
     return this.live;
   }
 
-  private frozen = false;
+  /** Contacts that were evicted, still holding ids. */
+  get dead(): number {
+    return this.n - this.live;
+  }
+
+  get building(): boolean {
+    return this.bulk !== null;
+  }
 
   /** Past the build's memory peak: known contacts keep counting, new addresses are skipped. */
   freeze(): void {
@@ -298,8 +434,18 @@ export class ContactIndex {
     this.frozen = false;
   }
 
-  get building(): boolean {
-    return this.bulk !== null;
+  /** Every per-contact array at `capacity` (at least `n`), contents kept. */
+  private resize(capacity: number): void {
+    const self = this as unknown as Record<string, Float64Array | Float32Array | Uint32Array | Uint8Array>;
+    for (const names of [F64, F32, U32, U8]) {
+      for (const name of names) {
+        const a = self[name]!;
+        if (a.length === capacity) continue;
+        const next = new (a.constructor as new (n: number) => typeof a)(capacity);
+        next.set(a.length > capacity ? a.subarray(0, capacity) : a);
+        self[name] = next;
+      }
+    }
   }
 
   /** Starts a build: tokens are collected unsorted and sorted once by finishBuild. */
@@ -315,16 +461,30 @@ export class ContactIndex {
     const order = new Int32Array(b.tok.length);
     for (let i = 0; i < order.length; i++) order[i] = i;
     const sorted = await sortSliced(order, (x, y) => b.tok[x]! < b.tok[y]!, clock);
-    this.main = await packSegment(
-      sorted.length,
-      (k) => b.tok[sorted[k]!]!.length,
-      (k, dst, at) => writeString(b.tok[sorted[k]!]!, dst, at),
-      (k) => b.id[sorted[k]!]!,
-      (k) => b.cls[sorted[k]!]!,
-      clock,
-    );
+    const count = sorted.length;
+    let total = 0;
+    // sorted order reads the tokens at random (cache misses): a tick every few thousand
+    for (let k = 0; k < count; k++) {
+      total += encodedLength(b.tok[sorted[k]!]!);
+      if ((k & 4095) === 0) await clock.tick();
+    }
+    const seg: Segment = { chars: new Uint8Array(total), start: new Uint32Array(count), len: new Uint8Array(count), ids: new Int32Array(count), cls: new Uint8Array(count), count };
+    let at = 0;
+    for (let k = 0; k < count; k++) {
+      const x = sorted[k]!;
+      seg.start[k] = at;
+      const n = writeEncoded(b.tok[x]!, seg.chars, at);
+      seg.len[k] = n;
+      at += n;
+      seg.ids[k] = b.id[x]!;
+      seg.cls[k] = b.cls[x]!;
+      if ((k & 4095) === 0) await clock.tick();
+    }
+    this.main = seg;
     this.bulk = null;
     this.bulkChars = 0;
+    // the growth slack goes
+    this.resize(Math.max(this.n, 16));
     this.version++;
   }
 
@@ -376,6 +536,7 @@ export class ContactIndex {
     if (this.seen.has(m.id)) return;
     this.seen.set(m.id);
     this.changes++;
+    if (slowForTests) for (const end = performance.now() + slowForTests; performance.now() < end; );
     if (m.spam || m.draft) return;
     const t = Math.min(m.date, this.now() + DAY);
     const w = weightAt(t);
@@ -384,8 +545,8 @@ export class ContactIndex {
       // whoever sent it is one of us (an alias, an old address)
       const me = normalizeEmail(m.from.email);
       if (me) {
-        const id = this.byEmail.get(me) ?? this.create(me, cleanName(m.from.name, me), 0);
-        this.flags[id]! |= OWN;
+        const id = this.byEmail.get(me) ?? (this.frozen ? undefined : this.create(me, cleanName(m.from.name, me), 0));
+        if (id !== undefined) this.flags[id]! |= OWN;
       }
       for (const list of [m.to, m.cc, m.bcc]) for (const a of list) this.touch(a, w, t, bit, true, 1);
     } else {
@@ -396,6 +557,11 @@ export class ContactIndex {
       this.touch(m.from, w, t, bit, false, 1);
       for (const list of [m.to, m.cc]) for (const a of list) this.touch(a, w, t, bit, false, CO_RECIPIENT);
     }
+  }
+
+  private rekey(id: number): void {
+    const base = (SENT_WEIGHT * this.sent[id]! + this.recv[id]!) * (this.flags[id]! & AUTOMATED ? AUTOMATED_PENALTY : 1);
+    this.key[id] = this.sent[id]! > 0 ? base * TIER : base;
   }
 
   private touch(a: Address, w: number, t: number, bit: number, sent: boolean, share: number): void {
@@ -410,28 +576,18 @@ export class ContactIndex {
     if (sent) this.sent[id]! += w * share;
     else this.recv[id]! += w * share;
     if (t > this.last[id]!) this.last[id] = t;
-    this.count[id]!++;
     this.accounts[id]! |= bit;
+    this.rekey(id);
     this.version++;
   }
 
   private create(email: string, name: string, w: number): number {
     const id = this.n++;
-    const n = this.n;
-    this.sent = grow(this.sent, n);
-    this.recv = grow(this.recv, n);
-    this.last = grow(this.last, n);
-    this.count = grow(this.count, n);
-    this.accounts = grow(this.accounts, n);
-    this.flags = grow(this.flags, n);
-    this.nameW = grow(this.nameW, n);
-    this.stamp = grow(this.stamp, n);
-    this.best = grow(this.best, n);
-    this.bcls = grow(this.bcls, n);
+    if (this.n > this.sent.length) this.resize(Math.max(64, this.sent.length * 2));
     this.emails[id] = email;
     this.names[id] = name;
     this.nameW[id] = name ? w : 0;
-    this.stringChars += email.length + name.length;
+    this.stringsHeld += stringBytes(email) + stringBytes(name);
     this.byEmail.set(email, id);
     this.live++;
     let flags = 0;
@@ -448,9 +604,9 @@ export class ContactIndex {
   private addName(id: number, name: string, w: number): void {
     const shown = this.names[id]!;
     if (!shown) {
+      this.stringsHeld += stringBytes(name) - stringBytes("");
       this.names[id] = name;
       this.nameW[id] = w;
-      this.stringChars += name.length;
       this.indexTokens(id, nameTokens(name));
       return;
     }
@@ -476,12 +632,20 @@ export class ContactIndex {
     if ((alts?.length ?? 0) >= MAX_NAMES - 1) return;
     if (!alts) this.alts.set(id, (alts = []));
     alts.push({ name, w });
-    this.altCount++;
-    this.stringChars += name.length;
+    this.stringsHeld += stringBytes(name) + MAP_ENTRY / 2;
     this.indexTokens(id, nameTokens(name));
   }
 
+  private mask(id: number, tok: string, cls: number): void {
+    const bit = initialBit(tok.charCodeAt(0));
+    if (cls === 3) this.m3[id]! |= bit;
+    else if (cls === 2) this.m2[id]! |= bit;
+    else this.m1[id]! |= bit;
+    if (tok.length === 1) this.mw[id]! |= bit;
+  }
+
   private indexTokens(id: number, tokens: Tokens): void {
+    for (const [tok, cls] of tokens) this.mask(id, tok, cls);
     if (this.bulk) {
       for (const [tok, cls] of tokens) {
         this.bulk.tok.push(tok);
@@ -522,34 +686,101 @@ export class ContactIndex {
     const takenChars = this.deltaChars;
     this.deltaChars = 0;
     try {
-      // the merged order: main entries as i >= 0, delta entries as -(j + 1)
-      const order = new Int32Array(main.count + taking.tok.length);
+      const flags = this.flags;
+      let count = 0;
+      let total = 0;
+      for (let i = 0; i < main.count; i++) {
+        if (flags[main.ids[i]!]! & DEAD) continue;
+        count++;
+        total += main.len[i]!;
+      }
+      const encoded = taking.tok.map(encodeString);
+      for (let j = 0; j < taking.tok.length; j++) {
+        if (flags[taking.id[j]!]! & DEAD) continue;
+        count++;
+        total += encoded[j]!.length;
+      }
+      const out: Segment = { chars: new Uint8Array(total), start: new Uint32Array(count), len: new Uint8Array(count), ids: new Int32Array(count), cls: new Uint8Array(count), count };
       let i = 0;
       let j = 0;
       let k = 0;
+      let at = 0;
+      if (this.live === this.n) {
+        // nobody evicted (the usual case): the main entries between two delta tokens are copied as blocks
+        while (j <= taking.tok.length) {
+          // the run of main entries up to (and with) those equal to the next delta token
+          let r = main.count;
+          if (j < taking.tok.length) {
+            let lo = i;
+            let hi = main.count;
+            const e = encoded[j]!;
+            while (lo < hi) {
+              const mid = (lo + hi) >>> 1;
+              if (cmpEntry(main, mid, e) <= 0) lo = mid + 1;
+              else hi = mid;
+            }
+            r = lo;
+          }
+          if (r > i) {
+            const from = main.start[i]!;
+            const to = main.start[r - 1]! + main.len[r - 1]!;
+            out.chars.set(main.chars.subarray(from, to), at);
+            const shift = at - from;
+            for (let x = i; x < r; x++) out.start[k + x - i] = main.start[x]! + shift;
+            out.len.set(main.len.subarray(i, r), k);
+            out.ids.set(main.ids.subarray(i, r), k);
+            out.cls.set(main.cls.subarray(i, r), k);
+            k += r - i;
+            at += to - from;
+            i = r;
+          }
+          if (j === taking.tok.length) break;
+          const e = encoded[j]!;
+          out.chars.set(e, at);
+          out.start[k] = at;
+          out.len[k] = e.length;
+          out.ids[k] = taking.id[j]!;
+          out.cls[k] = taking.cls[j]!;
+          at += e.length;
+          k++;
+          j++;
+          if ((j & 255) === 0) await clock.tick();
+        }
+        this.main = out;
+        return;
+      }
       while (i < main.count || j < taking.tok.length) {
-        if (j >= taking.tok.length || (i < main.count && cmpEntry(main, i, taking.tok[j]!) <= 0)) {
-          if (!(this.flags[main.ids[i]!]! & DEAD)) order[k++] = i;
+        if (j >= taking.tok.length || (i < main.count && cmpEntry(main, i, encoded[j]!) <= 0)) {
+          const id = main.ids[i]!;
+          if (!(flags[id]! & DEAD)) {
+            const from = main.start[i]!;
+            const len = main.len[i]!;
+            for (let c = 0; c < len; c++) out.chars[at + c] = main.chars[from + c]!;
+            out.start[k] = at;
+            out.len[k] = len;
+            out.ids[k] = id;
+            out.cls[k] = main.cls[i]!;
+            at += len;
+            k++;
+          }
           i++;
         } else {
-          if (!(this.flags[taking.id[j]!]! & DEAD)) order[k++] = -(j + 1);
+          const id = taking.id[j]!;
+          if (!(flags[id]! & DEAD)) {
+            const e = encoded[j]!;
+            out.chars.set(e, at);
+            out.start[k] = at;
+            out.len[k] = e.length;
+            out.ids[k] = id;
+            out.cls[k] = taking.cls[j]!;
+            at += e.length;
+            k++;
+          }
           j++;
         }
-        if (((i + j) & 4095) === 0) await clock.tick();
+        if (((i + j) & 16383) === 0) await clock.tick();
       }
-      this.main = await packSegment(
-        k,
-        (x) => (order[x]! < 0 ? taking.tok[-order[x]! - 1]!.length : main.len[order[x]!]!),
-        (x, dst, at) => {
-          const o = order[x]!;
-          if (o < 0) return writeString(taking.tok[-o - 1]!, dst, at);
-          dst.set(main.chars.subarray(main.start[o]!, main.start[o]! + main.len[o]!), at);
-          return main.len[o]!;
-        },
-        (x) => (order[x]! < 0 ? taking.id[-order[x]! - 1]! : main.ids[order[x]!]!),
-        (x) => (order[x]! < 0 ? taking.cls[-order[x]! - 1]! : main.cls[order[x]!]!),
-        clock,
-      );
+      this.main = out;
     } catch (error) {
       // the delta goes back: nothing is lost
       for (let x = 0; x < taking.tok.length; x++) this.indexTokens(taking.id[x]!, new Map([[taking.tok[x]!, taking.cls[x]!]]));
@@ -602,20 +833,16 @@ export class ContactIndex {
     return { name: this.names[id]!, email: this.emails[id]! };
   }
 
-  /** A candidate's score, matched through a token of class `cls`; `whole`: the term is that whole token. */
+  /** A candidate's score, matched through a token of class `cls`; `whole`: a term is one of its whole tokens. */
   private score(id: number, cls: number, whole: boolean, bit: number): number {
-    let s = (SENT_WEIGHT * this.sent[id]! + this.recv[id]!) * CLASS_WEIGHT[cls]!;
+    let s = this.key[id]! * CLASS_WEIGHT[cls]!;
     if (whole) s *= WHOLE_TOKEN;
     if (bit && this.accounts[id]! & bit) s *= SAME_ACCOUNT;
-    if (this.flags[id]! & AUTOMATED) s *= AUTOMATED_PENALTY;
     return s;
   }
 
-  /** a ranks above b: sent-to first, then score, newest, id */
+  /** a ranks above b: score (the tier is in it), then newest, then id */
   private before(a: number, sa: number, b: number, sb: number): boolean {
-    const ta = this.sent[a]! > 0;
-    const tb = this.sent[b]! > 0;
-    if (ta !== tb) return ta;
     if (sa !== sb) return sa > sb;
     const la = this.last[a]!;
     const lb = this.last[b]!;
@@ -624,35 +851,64 @@ export class ContactIndex {
   }
 
   /**
-   * Every term must prefix one of a contact's tokens. Terms are walked from
-   * the smallest range up; a generation stamp per contact records how many
-   * terms it has matched (`base + k`), so nothing is allocated per candidate.
+   * Every term must prefix one of a contact's tokens. Terms of one letter in
+   * a query of several are checked against each contact's first-letter masks
+   * (walking "l" would visit a sixth of the index); the others are walked
+   * from the smallest range up, a generation stamp per contact recording how
+   * many it matched (`base + k`). In the last walk most entries are rejected
+   * by one multiplication against the worst kept score. Nothing is allocated
+   * per candidate.
    */
   private rank(terms: string[], emailPrefix: string | null, exclude: Set<string>, bit: number, limit: number, typed: string): number[] {
-    const T = terms.length;
+    const masked: number[] = [];
+    let walked = terms;
+    if (terms.length > 1) {
+      walked = [];
+      for (const t of terms) {
+        const b = t.length === 1 ? initialBit(t.charCodeAt(0)) : 0;
+        if (b && b !== OTHER_BIT) masked.push(b);
+        else walked.push(t);
+      }
+      if (walked.length === 0) {
+        walked = [terms[terms.length - 1]!];
+        masked.pop();
+      }
+    }
+    const W = walked.length;
     if (this.gen > 0xffff_0000) {
       this.stamp.fill(0);
       this.gen = 0;
     }
     const base = this.gen + 1;
-    this.gen = base + T + 1;
-    const matched = base + T;
-    const done = base + T + 1;
-    const ranges = terms.map((t) => {
-      const m = segmentRange(this.main, t);
+    this.gen = base + W + 1;
+    const matched = base + W;
+    const done = base + W + 1;
+    const ranges = walked.map((t) => {
+      const bytes = encodeString(t);
+      const m = segmentRange(this.main, bytes);
       const g = this.merging ? deltaRange(this.merging, t) : ([0, 0] as [number, number]);
       const d = deltaRange(this.delta, t);
-      return { t, m, g, d, size: m[1] - m[0] + g[1] - g[0] + d[1] - d[0] };
+      return { t, blen: bytes.length, m, g, d, size: m[1] - m[0] + g[1] - g[0] + d[1] - d[0] };
     });
     ranges.sort((x, y) => x.size - y.size);
     const top: number[] = [];
     const topScore: number[] = [];
-    const flags = this.flags;
-    const stamp = this.stamp;
-    const bcls = this.bcls;
-    const consider = (id: number) => {
-      const st = stamp[id]!;
-      if (st !== matched && st !== done) return;
+    const { flags, stamp, bcls, key, m3, m2, m1, mw } = this;
+    const boost = bit ? SAME_ACCOUNT : 1;
+    let maskCls = 0;
+    // the class and whole-token bonus the masked terms give a contact (0: a masked term doesn't match)
+    const maskedClass = (id: number): number => {
+      let cls = 0;
+      let whole = 0;
+      for (const b of masked) {
+        const c = m3[id]! & b ? 3 : m2[id]! & b ? 2 : m1[id]! & b ? 1 : 0;
+        if (!c) return 0;
+        if (c > cls) cls = c;
+        if (mw[id]! & b) whole = 4;
+      }
+      return cls | whole;
+    };
+    const consider = (id: number, b: number) => {
       const f = flags[id]!;
       if (f & DEAD) return;
       const email = this.emails[id]!;
@@ -660,8 +916,8 @@ export class ContactIndex {
       if (f & SPAM && !(this.sent[id]! > 0)) return;
       if (emailPrefix !== null && !email.startsWith(emailPrefix)) return;
       if (exclude.size && exclude.has(email)) return;
-      const s = this.score(id, bcls[id]! & 3, (bcls[id]! & 4) !== 0, bit);
-      if (st === done) {
+      const s = this.score(id, b & 3, (b & 4) !== 0, bit);
+      if (stamp[id] === done) {
         // matched again through another token: keep the better
         if (s <= this.best[id]!) return;
         const at = top.indexOf(id);
@@ -686,11 +942,14 @@ export class ContactIndex {
       top[k] = id;
       topScore[k] = s;
     };
-    for (let k = 0; k < T; k++) {
+    for (let k = 0; k < W; k++) {
       const r = ranges[k]!;
-      const last = k === T - 1;
+      const last = k === W - 1;
       const want = base + k;
-      const visit = (id: number, cls: number, len: number) => {
+      const tlen = r.t.length;
+      const blen = r.blen;
+      // `whole`: the entry is the term itself (main entries by encoded length, delta entries by string length)
+      const visit = (id: number, cls: number, whole: boolean) => {
         // a stamp from an earlier query: this one starts at "matched no term"
         if (k === 0 && (stamp[id]! < base || stamp[id]! > done)) {
           stamp[id] = base;
@@ -700,18 +959,30 @@ export class ContactIndex {
         if (st === want) stamp[id] = want + 1;
         else if (st !== want + 1 && st !== done) return;
         // the best class over every term's matches, and whether some term was a whole token
-        const b = Math.max(bcls[id]! & 3, cls) | (bcls[id]! & 4) | (len === r.t.length ? 4 : 0);
+        let b = Math.max(bcls[id]! & 3, cls) | (bcls[id]! & 4) | (whole ? 4 : 0);
+        if (last && masked.length) {
+          maskCls = maskedClass(id);
+          if (!maskCls) return;
+          b = Math.max(b & 3, maskCls & 3) | (b & 4) | (maskCls & 4);
+        }
         const changed = b !== bcls[id];
         bcls[id] = b;
-        if (last && (changed || stamp[id] !== done)) consider(id);
+        if (!last) return;
+        // most entries can't make the list: one multiplication against the worst kept score says so
+        if (top.length === limit && stamp[id] !== done && key[id]! * CLASS_WEIGHT[b & 3]! * (b & 4 ? WHOLE_TOKEN : 1) * boost < topScore[limit - 1]!) return;
+        if (changed || stamp[id] !== done) consider(id, b);
       };
       const m = this.main;
-      for (let i = r.m[0]; i < r.m[1]; i++) visit(m.ids[i]!, m.cls[i]!, m.len[i]!);
+      const mIds = m.ids;
+      const mCls = m.cls;
+      const mLen = m.len;
+      for (let i = r.m[0]; i < r.m[1]; i++) visit(mIds[i]!, mCls[i]!, mLen[i] === blen);
       const g = this.merging;
-      if (g) for (let i = r.g[0]; i < r.g[1]; i++) visit(g.id[i]!, g.cls[i]!, g.tok[i]!.length);
+      if (g) for (let i = r.g[0]; i < r.g[1]; i++) visit(g.id[i]!, g.cls[i]!, g.tok[i]!.length === tlen);
       const d = this.delta;
-      for (let i = r.d[0]; i < r.d[1]; i++) visit(d.id[i]!, d.cls[i]!, d.tok[i]!.length);
+      for (let i = r.d[0]; i < r.d[1]; i++) visit(d.id[i]!, d.cls[i]!, d.tok[i]!.length === tlen);
     }
+    void matched;
     return top;
   }
 
@@ -740,7 +1011,7 @@ export class ContactIndex {
     return scored.slice(0, limit).map((x) => this.hit(x.id));
   }
 
-  /** Test oracle: the brute-force answer (terms in the order rank() walks them must not matter for single-term queries). */
+  /** Test oracle: the brute-force answer. */
   suggestByScan(query: string, o: SuggestOptions = {}): ContactHit[] {
     scanForTests = true;
     try {
@@ -750,15 +1021,15 @@ export class ContactIndex {
     }
   }
 
-  /** Bytes held: typed arrays at capacity, strings at 2 bytes a char plus a header, map entries. O(1). */
+  /** Bytes held: typed arrays at capacity, strings as V8 stores them, map entries. O(1). */
   allocatedBytes(): number {
-    let bytes = this.sent.byteLength + this.recv.byteLength + this.last.byteLength + this.count.byteLength + this.accounts.byteLength + this.flags.byteLength + this.nameW.byteLength + this.stamp.byteLength + this.best.byteLength + this.bcls.byteLength;
+    let bytes = this.sent.length * PER_CONTACT;
     const m = this.main;
     bytes += m.chars.byteLength + m.start.byteLength + m.len.byteLength + m.ids.byteLength + m.cls.byteLength;
-    bytes += (this.deltaChars + this.bulkChars) * 2 + (this.delta.tok.length + (this.bulk?.tok.length ?? 0)) * (STRING_OVERHEAD + 16);
+    bytes += this.deltaChars + this.bulkChars + (this.delta.tok.length + (this.bulk?.tok.length ?? 0)) * (STRING_OVERHEAD + 16);
     if (this.merging) bytes += this.merging.tok.length * (STRING_OVERHEAD + 24);
-    bytes += this.stringChars * 2 + (this.emails.length + this.names.length + this.altCount) * STRING_OVERHEAD;
-    bytes += (this.byEmail.size + this.alts.size) * MAP_ENTRY + this.seen.byteLength;
+    bytes += this.stringsHeld + (this.emails.length + this.names.length) * 8;
+    bytes += this.byEmail.size * MAP_ENTRY + this.seen.byteLength;
     return bytes;
   }
 
@@ -771,32 +1042,25 @@ export class ContactIndex {
     if (!this.overCaps()) return 0;
     const ids: number[] = [];
     for (let id = 0; id < this.n; id++) if (!(this.flags[id]! & (DEAD | OWN))) ids.push(id);
-    const scores = new Float64Array(this.n);
-    for (const id of ids) scores[id] = this.score(id, 3, false, 0);
     // lowest first
-    const order = await sortSliced(Int32Array.from(ids), (a, b) => this.before(b, scores[b]!, a, scores[a]!), clock);
+    const order = await sortSliced(Int32Array.from(ids), (a, b) => this.before(b, this.key[b]!, a, this.key[a]!), clock);
     const target = Math.max(Math.ceil(this.live * 0.1), this.live - this.caps.maxContacts);
     let evicted = 0;
     for (let k = 0; k < order.length && evicted < target; k++) {
       const id = order[k]!;
       this.flags[id]! |= DEAD;
       this.byEmail.delete(this.emails[id]!);
-      this.stringChars -= this.emails[id]!.length + this.names[id]!.length;
+      this.stringsHeld -= stringBytes(this.emails[id]!) + stringBytes(this.names[id]!);
       this.emails[id] = "";
       this.names[id] = "";
-      for (const a of this.alts.get(id) ?? []) this.stringChars -= a.name.length;
-      this.altCount -= this.alts.get(id)?.length ?? 0;
+      this.stringsHeld += 2 * stringBytes("");
+      for (const a of this.alts.get(id) ?? []) this.stringsHeld -= stringBytes(a.name) + MAP_ENTRY / 2;
       this.alts.delete(id);
       this.live--;
       evicted++;
     }
     this.version++;
     return evicted;
-  }
-
-  /** Contacts that were evicted, still holding ids. */
-  get dead(): number {
-    return this.n - this.live;
   }
 
   /**
@@ -812,11 +1076,18 @@ export class ContactIndex {
     const remap = new Int32Array(n).fill(-1);
     let live = 0;
     for (let id = 0; id < n; id++) if (!(this.flags[id]! & DEAD)) remap[id] = live++;
-    const pick = <T extends Float64Array | Uint32Array | Uint8Array>(src: T): T => {
-      const out = new (src.constructor as new (n: number) => T)(Math.max(live, 64));
-      for (let id = 0; id < n; id++) if (remap[id]! >= 0) out[remap[id]!] = src[id]!;
-      return out;
-    };
+    const capacity = Math.max(live, 16);
+    const self = this as unknown as Record<string, Float64Array | Float32Array | Uint32Array | Uint8Array>;
+    const arrays: Record<string, Float64Array | Float32Array | Uint32Array | Uint8Array> = {};
+    for (const names of [F64, F32, U32, U8]) {
+      for (const name of names) {
+        const src = self[name]!;
+        const out = new (src.constructor as new (n: number) => typeof src)(capacity);
+        for (let id = 0; id < n; id++) if (remap[id]! >= 0) out[remap[id]!] = src[id]!;
+        arrays[name] = out;
+      }
+      await clock.tick();
+    }
     const emails: string[] = Array.from({ length: live }, () => "");
     const names: string[] = Array.from({ length: live }, () => "");
     const alts = new Map<number, { name: string; w: number }[]>();
@@ -837,34 +1108,22 @@ export class ContactIndex {
       ids[i] = remap[m.ids[i]!]!;
       if ((i & 65535) === 0) await clock.tick();
     }
-    const sent = pick(this.sent);
-    const recv = pick(this.recv);
-    const last = pick(this.last);
-    const count = pick(this.count);
-    const accounts = pick(this.accounts);
-    const flags = pick(this.flags);
-    const nameW = pick(this.nameW);
     // the swap: nothing below yields
     this.main = { ...m, ids };
     this.delta = { tok: this.delta.tok, id: this.delta.id.map((id) => remap[id]!), cls: this.delta.cls };
+    for (const [name, a] of Object.entries(arrays)) self[name] = a;
+    this.stamp.fill(0);
+    this.gen = 0;
     this.emails = emails;
     this.names = names;
     this.alts.clear();
     for (const [k, v] of alts) this.alts.set(k, v);
     this.byEmail = byEmail;
-    this.sent = sent;
-    this.recv = recv;
-    this.last = last;
-    this.count = count;
-    this.accounts = accounts;
-    this.flags = flags;
-    this.nameW = nameW;
-    this.stamp = new Uint32Array(Math.max(live, 64));
-    this.best = new Float64Array(Math.max(live, 64));
-    this.bcls = new Uint8Array(Math.max(live, 64));
-    this.gen = 0;
     this.n = live;
     this.live = live;
+    this.stringsHeld = 0;
+    for (let id = 0; id < live; id++) this.stringsHeld += stringBytes(emails[id]!) + stringBytes(names[id]!);
+    for (const a of alts.values()) for (const x of a) this.stringsHeld += stringBytes(x.name) + MAP_ENTRY / 2;
     this.shortCache.clear();
     this.version++;
   }
@@ -874,12 +1133,11 @@ export class ContactIndex {
     if (!this.revision) throw new Error("the contact index has no revision");
     const revision = this.revision;
     await this.merge(clock);
-    // a write may land while this yields: everything below is read in one go per array (no await in between that
-    // could interleave an add) except the packing, which copies these new arrays
+    // from here to the packing nothing yields: an add() can't land between reads
     const remap = new Int32Array(this.n).fill(-1);
     let live = 0;
     for (let id = 0; id < this.n; id++) if (!(this.flags[id]! & DEAD)) remap[id] = live++;
-    const pick = <T extends Float64Array | Uint32Array | Uint8Array>(src: T): T => {
+    const pick = <T extends Float64Array | Float32Array | Uint32Array | Uint8Array>(src: T): T => {
       const out = new (src.constructor as new (n: number) => T)(live);
       for (let id = 0; id < this.n; id++) if (remap[id]! >= 0) out[remap[id]!] = src[id]!;
       return out;
@@ -899,52 +1157,54 @@ export class ContactIndex {
         altW.push(a.w);
       }
     }
+    // the main segment without dead contacts' entries, ids remapped; starts are implied by the lengths
     const m = this.main;
-    const keep: number[] = [];
+    let keep = 0;
     let total = 0;
     for (let i = 0; i < m.count; i++) {
       if (remap[m.ids[i]!]! < 0) continue;
-      keep.push(i);
+      keep++;
       total += m.len[i]!;
     }
-    const chars = new Uint16Array(total);
-    const start = new Uint32Array(keep.length);
-    const len = new Uint8Array(keep.length);
-    const ids = new Int32Array(keep.length);
-    const cls = new Uint8Array(keep.length);
-    let at = 0;
-    for (let k = 0; k < keep.length; k++) {
-      const i = keep[k]!;
+    const chars = new Uint8Array(total);
+    const len = new Uint8Array(keep);
+    const ids = new Int32Array(keep);
+    const cls = new Uint8Array(keep);
+    for (let i = 0, k = 0, at = 0; i < m.count; i++) {
+      const to = remap[m.ids[i]!]!;
+      if (to < 0) continue;
       chars.set(m.chars.subarray(m.start[i]!, m.start[i]! + m.len[i]!), at);
-      start[k] = at;
       len[k] = m.len[i]!;
-      ids[k] = remap[m.ids[i]!]!;
+      ids[k] = to;
       cls[k] = m.cls[i]!;
       at += m.len[i]!;
+      k++;
     }
     // tokens that arrived during the merge: a small sorted list of their own
     const d = this.delta;
     const dKeep: number[] = [];
     for (let x = 0; x < d.tok.length; x++) if (remap[d.id[x]!]! >= 0) dKeep.push(x);
+    const str = (name: string, list: string[]) => {
+      const p = packStrings(list);
+      return { [`${name}.lens`]: p.lens, [`${name}.bytes`]: p.bytes };
+    };
     const sections = {
-      emails: { strings: emails },
-      names: { strings: names },
+      ...str("emails", emails),
+      ...str("names", names),
+      ...str("altNames", altNames),
+      ...str("dTok", dKeep.map((x) => d.tok[x]!)),
       nameW: pick(this.nameW),
       sent: pick(this.sent),
       recv: pick(this.recv),
       last: pick(this.last),
-      count: pick(this.count),
       accounts: pick(this.accounts),
       flags: pick(this.flags),
       altOwner: Uint32Array.from(altOwner),
-      altNames: { strings: altNames },
       altW: Float64Array.from(altW),
       chars,
-      start,
       len,
       ids,
       cls,
-      dTok: { strings: dKeep.map((x) => d.tok[x]!) },
       dId: Int32Array.from(dKeep.map((x) => remap[d.id[x]!]!)),
       dCls: Uint8Array.from(dKeep.map((x) => d.cls[x]!)),
       seen: this.seen.words(),
@@ -952,7 +1212,7 @@ export class ContactIndex {
       accountBits: Uint32Array.from(this.accountBits.values()),
     };
     const changes = this.changes;
-    const packed = await packSnapshot({ ...CONTACTS_SNAPSHOT, identity }, revision, { contacts: live, entries: keep.length }, sections, clock);
+    const packed = await packSnapshot({ ...CONTACTS_SNAPSHOT, identity }, revision, { contacts: live, entries: keep, bytes: total }, sections, clock);
     this.changes = Math.max(0, this.changes - changes);
     return sealSnapshot(packed, clock);
   }
@@ -963,30 +1223,39 @@ export class ContactIndex {
     if (!r) return false;
     try {
       const s = r.sections;
-      const emails = await readStrings(s, "emails", clock);
-      const names = await readStrings(s, "names", clock);
+      const emails = await unpackStrings(s, "emails", clock);
+      const names = await unpackStrings(s, "names", clock);
       const n = emails.length;
       const sent = Float64Array.from(s.f64("sent"));
       const recv = Float64Array.from(s.f64("recv"));
       const last = Float64Array.from(s.f64("last"));
-      const nameW = Float64Array.from(s.f64("nameW"));
-      const count = Uint32Array.from(s.u32("count"));
+      const nameW = Float32Array.from(s.f32("nameW"));
       const accounts = Uint32Array.from(s.u32("accounts"));
       const flags = Uint8Array.from(s.u8("flags"));
-      if (names.length !== n || [sent, recv, last, nameW, count, accounts, flags].some((a) => a.length !== n)) return false;
-      const main: Segment = { chars: Uint16Array.from(s.u16("chars")), start: Uint32Array.from(s.u32("start")), len: Uint8Array.from(s.u8("len")), ids: Int32Array.from(s.i32("ids")), cls: Uint8Array.from(s.u8("cls")), count: 0 };
-      main.count = main.ids.length;
-      if (main.start.length !== main.count || main.len.length !== main.count || main.cls.length !== main.count) return false;
-      for (let i = 0; i < main.count; i++) {
-        if (main.ids[i]! < 0 || main.ids[i]! >= n || main.start[i]! + main.len[i]! > main.chars.length || main.cls[i]! > 3) return false;
-        if ((i & 65535) === 0) await clock.tick();
+      if (names.length !== n || [sent, recv, last, nameW, accounts, flags].some((a) => a.length !== n)) return false;
+      const len = Uint8Array.from(s.u8("len"));
+      const ids = Int32Array.from(s.i32("ids"));
+      const cls = Uint8Array.from(s.u8("cls"));
+      const entries = ids.length;
+      if (len.length !== entries || cls.length !== entries) return false;
+      let total = 0;
+      for (let i = 0; i < entries; i++) {
+        if (ids[i]! < 0 || ids[i]! >= n || cls[i]! < 1 || cls[i]! > 3 || len[i]! < 1 || len[i]! > MAX_TOKEN * 3) return false;
+        total += len[i]!;
+      }
+      const chars = Uint8Array.from(s.u8("chars"));
+      if (chars.length !== total) return false;
+      const start = new Uint32Array(entries);
+      for (let i = 0, at = 0; i < entries; i++) {
+        start[i] = at;
+        at += len[i]!;
       }
       const altOwner = s.u32("altOwner");
-      const altNames = await readStrings(s, "altNames", clock);
+      const altNames = await unpackStrings(s, "altNames", clock);
       const altW = s.f64("altW");
       if (altNames.length !== altOwner.length || altW.length !== altOwner.length) return false;
       for (let i = 0; i < altOwner.length; i++) if (altOwner[i]! >= n) return false;
-      const dTok = await readStrings(s, "dTok", clock);
+      const dTok = await unpackStrings(s, "dTok", clock);
       const dId = Array.from(s.i32("dId"));
       const dCls = Array.from(s.u8("dCls"));
       if (dTok.length !== dId.length || dCls.length !== dId.length || dId.some((id) => id < 0 || id >= n)) return false;
@@ -994,6 +1263,7 @@ export class ContactIndex {
       const accountIds = s.u32("accountIds");
       const accountBits = s.u32("accountBits");
       if (accountIds.length !== accountBits.length || accountIds.length > 32) return false;
+      // valid: replace everything
       this.n = n;
       this.live = n;
       this.emails = emails;
@@ -1002,32 +1272,49 @@ export class ContactIndex {
       this.recv = recv;
       this.last = last;
       this.nameW = nameW;
-      this.count = count;
       this.accounts = accounts;
       this.flags = flags;
-      this.stamp = new Uint32Array(n);
-      this.best = new Float64Array(n);
-      this.bcls = new Uint8Array(n);
+      const capacity = Math.max(n, 16);
+      this.key = new Float64Array(capacity);
+      this.best = new Float64Array(capacity);
+      this.m3 = new Uint32Array(capacity);
+      this.m2 = new Uint32Array(capacity);
+      this.m1 = new Uint32Array(capacity);
+      this.mw = new Uint32Array(capacity);
+      this.stamp = new Uint32Array(capacity);
+      this.bcls = new Uint8Array(capacity);
+      this.resize(capacity);
       this.gen = 0;
+      for (let id = 0; id < n; id++) this.rekey(id);
+      this.main = { chars, start, len, ids, cls, count: entries };
+      for (let i = 0; i < entries; i++) {
+        const id = ids[i]!;
+        const bit = initialBit(chars[start[i]!]!);
+        const c = cls[i]!;
+        if (c === 3) this.m3[id]! |= bit;
+        else if (c === 2) this.m2[id]! |= bit;
+        else this.m1[id]! |= bit;
+        if (len[i] === 1) this.mw[id]! |= bit;
+        if ((i & 65535) === 0) await clock.tick();
+      }
       this.alts.clear();
-      this.altCount = altOwner.length;
-      this.stringChars = 0;
-      for (let id = 0; id < n; id++) this.stringChars += emails[id]!.length + names[id]!.length;
       for (let i = 0; i < altOwner.length; i++) {
         let list = this.alts.get(altOwner[i]!);
         if (!list) this.alts.set(altOwner[i]!, (list = []));
         list.push({ name: altNames[i]!, w: altW[i]! });
-        this.stringChars += altNames[i]!.length;
       }
-      this.byEmail.clear();
+      this.byEmail = new Map();
       for (let id = 0; id < n; id++) {
         this.byEmail.set(emails[id]!, id);
         if ((id & 16383) === 0) await clock.tick();
       }
-      this.main = main;
+      this.stringsHeld = 0;
+      for (let id = 0; id < n; id++) this.stringsHeld += stringBytes(emails[id]!) + stringBytes(names[id]!);
+      for (const a of altNames) this.stringsHeld += stringBytes(a) + MAP_ENTRY / 2;
       this.merging = null;
       this.delta = { tok: dTok, id: dId, cls: dCls };
       this.deltaChars = dTok.reduce((a, t) => a + t.length, 0);
+      for (let x = 0; x < dTok.length; x++) this.mask(dId[x]!, dTok[x]!, dCls[x]!);
       this.bulk = null;
       this.seen.load(seen);
       this.accountBits.clear();
@@ -1041,33 +1328,4 @@ export class ContactIndex {
       return false;
     }
   }
-}
-
-function writeString(s: string, dst: Uint16Array, at: number): number {
-  for (let c = 0; c < s.length; c++) dst[at + c] = s.charCodeAt(c);
-  return s.length;
-}
-
-/** A sorted segment from `count` entries given in order. */
-async function packSegment(count: number, lenOf: (k: number) => number, write: (k: number, dst: Uint16Array, at: number) => number, id: (k: number) => number, cls: (k: number) => number, clock: SliceClock): Promise<Segment> {
-  let total = 0;
-  for (let k = 0; k < count; k++) {
-    total += lenOf(k);
-    if ((k & 16383) === 0) await clock.tick();
-  }
-  const chars = new Uint16Array(total);
-  const start = new Uint32Array(count);
-  const len = new Uint8Array(count);
-  const ids = new Int32Array(count);
-  const classes = new Uint8Array(count);
-  let at = 0;
-  for (let k = 0; k < count; k++) {
-    start[k] = at;
-    len[k] = write(k, chars, at);
-    at += len[k]!;
-    ids[k] = id(k);
-    classes[k] = cls(k);
-    if ((k & 4095) === 0) await clock.tick();
-  }
-  return { chars, start, len, ids, cls: classes, count };
 }
