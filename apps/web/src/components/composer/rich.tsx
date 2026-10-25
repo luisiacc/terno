@@ -1,5 +1,5 @@
 import "./rich.css";
-import { FONT_CSS, HIGHLIGHT_DARK, HIGHLIGHT_HEX, HIGHLIGHT_INK, HIGHLIGHT_INK_DARK, HIGHLIGHTS, normalizeHref, TEXT_COLORS, TEXT_DARK, TEXT_HEX, schema } from "@terno/richtext";
+import { FONT_CSS, parseHtml, HIGHLIGHT_DARK, HIGHLIGHT_HEX, HIGHLIGHT_INK, HIGHLIGHT_INK_DARK, HIGHLIGHTS, normalizeHref, TEXT_COLORS, TEXT_DARK, TEXT_HEX, schema } from "@terno/richtext";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
@@ -37,6 +37,7 @@ import type { EditorView } from "prosemirror-view";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { attachBody, useDrafts } from "~/lib/drafts";
+import { exposeForTests } from "~/lib/render-probe";
 import { openLink } from "../mail-body";
 import { typedEarly } from "./lazy";
 import { EMPTY_FORMAT, registerController, useController, useFormatState, type Align, type ComposerController, type FormatCommand, type FormatState } from "./controller";
@@ -76,6 +77,13 @@ const swatchWash = (h: string, dark: boolean) => (dark ? HIGHLIGHT_DARK : HIGHLI
 const isDark = () => document.documentElement.classList.contains("dark");
 
 // ── the body
+
+/** Test builds: the focused editor's document, and the parser, so a round trip can compare what was written with what arrived. */
+const views = new Set<EditorView>();
+exposeForTests({
+  composerDoc: () => [...views].find((v) => v.hasFocus())?.state.doc.toJSON() ?? null,
+  parseMailHtml: (html: string) => parseHtml(html).toJSON(),
+});
 
 interface LinkDraft {
   from: number;
@@ -153,6 +161,7 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
     });
     const view = editor.view;
     viewRef.current = view;
+    views.add(view);
     emptyClass(view);
     bodyRef.current = attachBody(draftKey, () => serialize(view.state.doc));
     const focus = (where: "end" | "keep" = "keep") => {
@@ -167,8 +176,8 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
       },
       setFont: (v) => run(setMark(schema.marks.font, v)),
       setSize: (v) => run(setMark(schema.marks.size, v)),
-      setColor: (v) => run(setMark(schema.marks.color, v)),
-      setHighlight: (v) => run(setMark(schema.marks.highlight, v)),
+      setColor: (v, f) => run(setMark(schema.marks.color, v), f),
+      setHighlight: (v, f) => run(setMark(schema.marks.highlight, v), f),
       setAlign: (v: Align) => run(setAlign(v)),
       openLink: () => openLinkRef.current(),
       focus,
@@ -179,9 +188,9 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
         return () => listeners.delete(l);
       },
     };
-    function run(cmd: (s: EditorState, d?: EditorView["dispatch"]) => boolean) {
+    function run(cmd: (s: EditorState, d?: EditorView["dispatch"]) => boolean, focusAfter = true) {
       cmd(view.state, view.dispatch);
-      view.focus();
+      if (focusAfter) view.focus();
     }
     format = formatState(view.state, !sendingRef.current);
     // keys typed into the stand-in while this chunk loaded: kept, at the end, and focus follows
@@ -199,6 +208,7 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
       bodyRef.current = null;
       unregister();
       viewRef.current = null;
+      views.delete(view);
       editor.destroy();
     };
   }, [draftKey]);
@@ -428,7 +438,8 @@ function Tool({ label, keys, pressed, disabled, onRun, testId, children }: { lab
 /** A menu of exclusive values (font, size, alignment): picks apply to the selection, focus goes back to the text. */
 function ValueMenu<V extends string>({ label, name, value, items, onPick, trigger, testId, c }: { label: string; name?: string; value: V; items: { value: V; label: string; className?: string; style?: React.CSSProperties; icon?: ReactNode }[]; onPick: (v: V) => void; trigger: ReactNode; testId: string; c: ComposerController }) {
   return (
-    <DropdownMenu>
+    // closing (a pick, Esc, a click away) puts focus back in the text at once: keys typed right after must not reach the page
+    <DropdownMenu onOpenChange={(open) => !open && c.focus()}>
       <Tip label={label}>
         <ToolbarButton type="button" aria-label={name ?? label} onMouseDown={keepFocus} data-testid={testId} className={tool} render={<DropdownMenuTrigger />}>
           {trigger}
@@ -512,7 +523,7 @@ function ColorTool({ c, s }: { c: ComposerController; s: FormatState }) {
   const dark = isDark();
   const label = t("compose.format.color");
   return (
-    <Popover>
+    <Popover onOpenChange={(open) => !open && c.focus()}>
       <Tip label={label}>
         <ToolbarButton type="button" aria-label={label} onMouseDown={keepFocus} data-testid="format-color" className={tool} render={<PopoverTrigger />}>
           <span className="relative inline-flex flex-col items-center">
@@ -523,8 +534,8 @@ function ColorTool({ c, s }: { c: ComposerController; s: FormatState }) {
         </ToolbarButton>
       </Tip>
       <PopoverContent align="start" className="w-auto gap-3 p-3" finalFocus={{ current: c.dom }} data-testid="format-color-popover">
-        <Swatches label={t("compose.format.colorText")} value={s.color} options={TEXT_COLORS} onPick={(v) => c.setColor(v)} kind="text" />
-        <Swatches label={t("compose.format.colorHighlight")} value={s.highlight} options={HIGHLIGHTS} onPick={(v) => c.setHighlight(v)} kind="highlight" />
+        <Swatches label={t("compose.format.colorText")} value={s.color} options={TEXT_COLORS} onPick={(v) => c.setColor(v, false)} kind="text" />
+        <Swatches label={t("compose.format.colorHighlight")} value={s.highlight} options={HIGHLIGHTS} onPick={(v) => c.setHighlight(v, false)} kind="highlight" />
       </PopoverContent>
     </Popover>
   );
@@ -733,7 +744,7 @@ export function FormatBar({ draftKey, className }: { draftKey: string; className
           <FormatGroup key={g.id} group={g} c={c} s={s} last={i === shown.length - 1 && folded.length === 0} />
         ))}
         {folded.length > 0 && (
-          <Popover>
+          <Popover onOpenChange={(open) => !open && c.focus()}>
             <Tip label={t("compose.format.more")}>
               <ToolbarButton type="button" aria-label={t("compose.format.more")} onMouseDown={keepFocus} data-testid="format-more" className={tool} render={<PopoverTrigger />}>
                 <Ellipsis />

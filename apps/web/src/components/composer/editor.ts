@@ -1,5 +1,5 @@
 import { emptyDoc, fromPlainText, parseHtml, restoreSlice, cleanPastedHtml, schema, toEmailHtml, toPlainText, urlIn, MAX_INDENT, type Align } from "@terno/richtext";
-import { baseKeymap, chainCommands, lift, toggleMark, wrapIn } from "prosemirror-commands";
+import { baseKeymap, chainCommands, createParagraphNear, lift, liftEmptyBlock, newlineInCode, splitBlockAs, toggleMark, wrapIn } from "prosemirror-commands";
 import { closeHistory, history, redo, redoDepth, undo, undoDepth } from "prosemirror-history";
 import { InputRule, inputRules, undoInputRule, wrappingInputRule } from "prosemirror-inputrules";
 import { keymap } from "prosemirror-keymap";
@@ -363,7 +363,8 @@ export function createPlugins(): Plugin[] {
     // in a list, Tab moves the item (elsewhere it leaves the editor, as everywhere in the app)
     Tab: (state, dispatch) => (listAt(state.selection.$from) ? sinkListItem(nodes.list_item)(state, dispatch) || true : false),
     "Shift-Tab": (state, dispatch) => (listAt(state.selection.$from) ? liftListItem(nodes.list_item)(state, dispatch) || true : false),
-    Enter: chainCommands(autolinkOnEnter, splitListItem(nodes.list_item)),
+    // a new line keeps the line's alignment and indent (as Docs and Gmail do)
+    Enter: chainCommands(autolinkOnEnter, splitListItem(nodes.list_item), newlineInCode, createParagraphNear, liftEmptyBlock, splitBlockAs((node) => (node.type === nodes.paragraph ? { type: nodes.paragraph, attrs: node.attrs } : null))),
     "Shift-Enter": (state, dispatch) => {
       if (dispatch) dispatch(state.tr.replaceSelectionWith(nodes.hard_break.create()).scrollIntoView());
       return true;

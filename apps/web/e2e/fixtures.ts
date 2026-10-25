@@ -11,14 +11,62 @@ import { E2E_NOW, TEMPLATE_ENV } from "./constants";
 
 export { expect };
 
+/** A message the backend handed to SMTP (plan 16: the desktop's real send path into an in-process server). */
+export interface CapturedMail {
+  raw: string;
+  rcpt: string[];
+}
+
+/**
+ * The demo provider, except that a send goes through the desktop's real path:
+ * nodemailer builds the MIME (buildRaw) and talks SMTP to an in-process
+ * smtp-server that keeps what it receives.
+ */
+async function smtpRegistry(): Promise<{ registry: import("@terno/mail").ProviderRegistry; received: CapturedMail[]; close(): Promise<void> }> {
+  const { SMTPServer } = await import("smtp-server");
+  const { createDemoProvider, demoRegistry, sendViaSmtp } = await import("@terno/mail");
+  const received: CapturedMail[] = [];
+  const smtp = new SMTPServer({
+    authOptional: true,
+    disabledCommands: ["STARTTLS"],
+    logger: false,
+    onAuth: (_a, _s, cb) => cb(null, { user: "e2e" }),
+    onData(stream, session, cb) {
+      const chunks: Buffer[] = [];
+      stream.on("data", (c: Buffer) => chunks.push(c));
+      stream.on("end", () => {
+        received.push({ raw: Buffer.concat(chunks).toString("utf8"), rcpt: session.envelope.rcptTo.map((r) => r.address) });
+        cb();
+      });
+    },
+  });
+  await new Promise<void>((r) => smtp.listen(0, "127.0.0.1", r));
+  const port = (smtp.server.address() as { port: number }).port;
+  const registry: import("@terno/mail").ProviderRegistry = {
+    ...demoRegistry,
+    create(ctx) {
+      const demo = createDemoProvider(ctx, 5);
+      return {
+        ...demo,
+        async execute(op) {
+          if (op.kind !== "send") return demo.execute(op);
+          await sendViaSmtp({ host: "127.0.0.1", port, secure: false, user: "e2e", password: "e2e", allowInsecure: true }, op.payload as never);
+          return { providerMsgId: `smtp-${op.id}` };
+        },
+      };
+    },
+  };
+  return { registry, received, close: () => new Promise<void>((r) => smtp.close(() => r())) };
+}
+
 interface Fixtures {
   /** freeze Date for deterministic list dates (off for perf: the fake clock coarsens performance.now) */
   fixedClock: boolean;
   /** backend-dev knobs: a fresh install with no mailbox, and owner claims through the demo registry */
-  backendOptions: { empty?: boolean; ownerClaims?: boolean; agentSocket?: boolean };
+  backendOptions: { empty?: boolean; ownerClaims?: boolean; agentSocket?: boolean; smtpCapture?: boolean };
   /** the design the app opens in (plan 15): each Playwright project sets its own; null leaves the install's default (Lumen) */
   design: DesignId | null;
-  server: DevServer;
+  server: DevServer & { smtp: CapturedMail[] };
   /** the app, loaded, connected and showing the inbox */
   app: Page;
 }
@@ -36,12 +84,14 @@ export const test = base.extend<Fixtures>({
       // the template's search snapshot too (written on close), so each backend restores instead of building
       if (existsSync(`${template}.search`)) copyFileSync(`${template}.search`, join(dir, "terno.db.search"));
     }
-    const server = await startDevServer({ port: 0, dataDir: dir, token: "e2e", now: () => E2E_NOW, autoSync: true, seed: !backendOptions.empty, ownerClaims: backendOptions.ownerClaims, agentSocket: backendOptions.agentSocket });
-    await use(server);
+    const capture = backendOptions.smtpCapture ? await smtpRegistry() : null;
+    const server = await startDevServer({ port: 0, dataDir: dir, token: "e2e", now: () => E2E_NOW, autoSync: true, seed: !backendOptions.empty, ownerClaims: backendOptions.ownerClaims, agentSocket: backendOptions.agentSocket, providers: capture?.registry });
+    await use(Object.assign(server, { smtp: capture?.received ?? [] }));
     // Backend.stop() doesn't wait for an in-flight ops batch; let it settle first.
     const b = server.backend as unknown as { workerRunning: boolean };
     for (let i = 0; i < 100 && b.workerRunning; i++) await new Promise((r) => setTimeout(r, 20));
     await server.close();
+    await capture?.close();
     rmSync(dir, { recursive: true, force: true });
   },
   app: async ({ page, server, fixedClock, backendOptions, design }, use) => {

@@ -67,8 +67,9 @@ export interface ComposerController {
   run(command: FormatCommand): void;
   setFont(value: FormatState["font"]): void;
   setSize(value: FormatState["size"]): void;
-  setColor(value: string | null): void;
-  setHighlight(value: string | null): void;
+  /** focus: false keeps focus where it is (a palette staying open while the user picks) */
+  setColor(value: string | null, focus?: boolean): void;
+  setHighlight(value: string | null, focus?: boolean): void;
   setAlign(value: Align): void;
   /** opens the link popover for the selection (⌘K, the Link button) */
   openLink(): void;
