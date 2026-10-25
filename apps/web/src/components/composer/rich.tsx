@@ -10,9 +10,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { cn } from "@terno/ui/lib/utils";
 import {
   ALargeSmall,
-  AlignCenter,
-  AlignLeft,
-  AlignRight,
   Baseline,
   Bold,
   ChevronDown,
@@ -27,6 +24,9 @@ import {
   Redo2,
   RemoveFormatting,
   Strikethrough,
+  TextAlignCenter,
+  TextAlignEnd,
+  TextAlignStart,
   TextQuote,
   Underline,
   Undo2,
@@ -61,8 +61,9 @@ function stylePalette() {
   }
   for (const h of HIGHLIGHTS) {
     rules.push(
-      `.rt-body [data-rt-highlight="${h}"]{background-color:${HIGHLIGHT_HEX[h]}!important;color:${HIGHLIGHT_INK}}`,
-      `.dark .rt-body [data-rt-highlight="${h}"]{background-color:${HIGHLIGHT_DARK[h]}!important;color:${HIGHLIGHT_INK_DARK}}`,
+      // the ink too: the mark's own inline ink is the mail's (dark), which a dark theme's wash can't carry
+      `.rt-body [data-rt-highlight="${h}"]{background-color:${HIGHLIGHT_HEX[h]}!important;color:${HIGHLIGHT_INK}!important}`,
+      `.dark .rt-body [data-rt-highlight="${h}"]{background-color:${HIGHLIGHT_DARK[h]}!important;color:${HIGHLIGHT_INK_DARK}!important}`,
     );
   }
   const style = document.createElement("style");
@@ -564,7 +565,7 @@ function ColorTool({ c, s }: { c: ComposerController; s: FormatState }) {
 
 type Group = { id: string; sep?: boolean; render: (c: ComposerController, s: FormatState) => ReactNode };
 
-const ALIGN_ICON: Record<Align, ReactNode> = { left: <AlignLeft />, center: <AlignCenter />, right: <AlignRight /> };
+const ALIGN_ICON: Record<Align, ReactNode> = { left: <TextAlignStart />, center: <TextAlignCenter />, right: <TextAlignEnd /> };
 
 const GROUPS: Group[] = [
   {

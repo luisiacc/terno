@@ -365,6 +365,20 @@ test.describe("the format bar", { tag: "@design" }, () => {
     await expect(body(page).locator("s")).toHaveText("texto");
   });
 
+  test("a highlighted word reads in a dark theme: its ink follows the theme's wash, not the mail's dark ink", async ({ app: page, server }) => {
+    await server.backend.server.invoke("settings.update", { theme: "dark" }, ctx);
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await reply(page);
+    await select(page, "propuesta");
+    await page.getByTestId("format-color").click();
+    await page.getByTestId("swatch-highlight-yellow").click();
+    await page.keyboard.press("Escape");
+    const mark = body(page).locator("[data-rt-highlight=yellow]");
+    await expect(mark).toHaveCSS("color", "rgb(241, 243, 244)");
+    await expect(mark).toHaveCSS("background-color", "rgb(79, 69, 16)");
+  });
+
   for (const theme of ["light", "dark"] as const) {
     test(`axe: the composer with its bar, the color popover and the link popover (${theme})`, async ({ app: page, server }) => {
       await server.backend.server.invoke("settings.update", { theme }, ctx);
