@@ -355,6 +355,8 @@ test.describe("print sheet", () => {
       const box = (await s.boundingBox())!;
       expect(box.x).toBeGreaterThanOrEqual(0);
       expect(box.x + box.width).toBeLessThanOrEqual(size.width);
+      // the top of the sticky button bar: a control scrolled into view isn't left under it
+      const bar = await page.getByTestId("print-submit").evaluate((el) => el.parentElement!.getBoundingClientRect().top);
       const controls = ["print-scope-thread", "print-scope-message", "print-content-headers", "print-content-body", "print-quoted-hide", "print-quoted-show", "print-paper-letter", "print-paper-a4", "print-save-pdf", "print-submit"];
       for (const id of controls) {
         const c = page.getByTestId(id);
@@ -363,6 +365,7 @@ test.describe("print sheet", () => {
         const b = (await c.boundingBox())!;
         expect(b.x).toBeGreaterThanOrEqual(box.x);
         expect(b.x + b.width).toBeLessThanOrEqual(box.x + box.width + 0.5);
+        if (id !== "print-save-pdf" && id !== "print-submit") expect(b.y + b.height).toBeLessThanOrEqual(bar + 0.5);
       }
       // the buttons stay in view while the sheet scrolls
       await s.evaluate((el) => el.scrollTo(0, 0));

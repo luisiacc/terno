@@ -201,8 +201,9 @@ function Sheet({ target, onClose }: { target: PrintTarget; onClose: () => void }
   return (
     <DialogContent
       initialFocus={primaryRef}
-      // narrow (a small window, or zoomed in): preview above, options below, the sheet scrolls and the buttons stay in view
-      className="flex max-h-[90vh] w-[min(960px,94vw)] max-w-none flex-col gap-0 overflow-x-hidden overflow-y-auto p-0 sm:max-w-[min(960px,94vw)] md:h-[min(660px,90vh)] md:flex-row md:overflow-hidden"
+      // narrow (a small window, or zoomed in): preview above, options below, the sheet scrolls and the buttons stay in view;
+      // the scroll padding keeps a focused control from landing under them
+      className="flex max-h-[90vh] w-[min(960px,94vw)] max-w-none scroll-pb-16 flex-col gap-0 overflow-x-hidden overflow-y-auto p-0 sm:max-w-[min(960px,94vw)] md:h-[min(660px,90vh)] md:scroll-pb-0 md:flex-row md:overflow-hidden"
       data-testid="print-sheet"
       onKeyDown={(e) => {
         // Return prints (or saves, from ⇧⌘P), unless a control has its own use for it
