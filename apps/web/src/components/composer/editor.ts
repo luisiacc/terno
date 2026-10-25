@@ -26,7 +26,7 @@ export function docOf(html: string, text: string): PMNode {
 }
 
 /** An empty body: one empty line (nothing to send as HTML). */
-const isEmpty = (doc: PMNode) => doc.childCount === 1 && doc.firstChild!.type === nodes.paragraph && doc.firstChild!.childCount === 0 && doc.firstChild!.attrs.align === "left" && doc.firstChild!.attrs.indent === 0;
+export const isEmpty = (doc: PMNode) => doc.childCount === 1 && doc.firstChild!.type === nodes.paragraph && doc.firstChild!.childCount === 0 && doc.firstChild!.attrs.align === "left" && doc.firstChild!.attrs.indent === 0;
 
 /** What a draft carries for a document: mail HTML ('' when empty) and its plain text. */
 export function serialize(doc: PMNode): { html: string; text: string } {

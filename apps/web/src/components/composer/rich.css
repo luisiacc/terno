@@ -80,3 +80,9 @@
 .rt-body[contenteditable="false"] {
   opacity: 0.7;
 }
+/* a huge draft (rt-huge: thousands of lines): lines off screen skip style, layout and paint (they keep their place
+   and their text); small drafts never get it, as it changes how the browser edits inside contained blocks */
+.rt-body.rt-huge > * {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 1.6em;
+}

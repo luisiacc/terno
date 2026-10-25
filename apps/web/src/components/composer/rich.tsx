@@ -41,7 +41,7 @@ import { exposeForTests } from "~/lib/render-probe";
 import { openLink } from "../mail-body";
 import { typedEarly } from "./lazy";
 import { EMPTY_FORMAT, registerController, useController, useFormatState, type Align, type ComposerController, type FormatCommand, type FormatState } from "./controller";
-import { applyLink, COMMANDS, createEditor, docOf, formatState, keepState, keptState, linkAt, newState, removeLink, sameFormat, serialize, setAlign, setMark } from "./editor";
+import { applyLink, COMMANDS, createEditor, docOf, formatState, isEmpty, keepState, keptState, linkAt, newState, removeLink, sameFormat, serialize, setAlign, setMark } from "./editor";
 
 /**
  * The rich composer (plan 16), lazy: the editable body of a draft, its format
@@ -77,6 +77,12 @@ const swatchWash = (h: string, dark: boolean) => (dark ? HIGHLIGHT_DARK : HIGHLI
 const isDark = () => document.documentElement.classList.contains("dark");
 
 // ── the body
+
+/** Test builds: timings by name (window.__composer), for the perf suite. */
+function probe(name: string, value: number) {
+  const w = window as unknown as { __composer?: Record<string, number[]> };
+  ((w.__composer ??= {})[name] ??= []).push(value);
+}
 
 /** Test builds: the focused editor's document, and the parser, so a round trip can compare what was written with what arrived. */
 const views = new Set<EditorView>();
@@ -125,7 +131,9 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
       frame = 0;
       const view = viewRef.current;
       if (!view) return;
+      const t0 = performance.now();
       const next = formatState(view.state, !sendingRef.current);
+      if (import.meta.env.VITE_RENDER_PROBE) probe("format", performance.now() - t0);
       if (!sameFormat(next, format)) {
         format = next;
         for (const l of listeners) l();
@@ -135,7 +143,11 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
     const schedule = () => {
       if (!frame) frame = requestAnimationFrame(publish);
     };
-    const emptyClass = (view: EditorView) => view.dom.classList.toggle("is-empty", serializeEmpty(view.state));
+    // the placeholder, and (thousands of lines) skipping layout for lines off screen
+    const emptyClass = (view: EditorView) => {
+      view.dom.classList.toggle("is-empty", serializeEmpty(view.state));
+      view.dom.classList.toggle("rt-huge", view.state.doc.childCount > HUGE_BLOCKS);
+    };
     const editor = createEditor(mount, {
       state,
       editable: () => !sendingRef.current,
@@ -151,6 +163,7 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
       },
       hooks: {
         onChange: () => {
+          if (import.meta.env.VITE_RENDER_PROBE) probe("tx", performance.now());
           bodyRef.current?.changed();
           if (viewRef.current) emptyClass(viewRef.current);
         },
@@ -163,7 +176,13 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
     viewRef.current = view;
     views.add(view);
     emptyClass(view);
-    bodyRef.current = attachBody(draftKey, () => serialize(view.state.doc));
+    bodyRef.current = attachBody(draftKey, () => {
+      // the perf gate counts and times serializations (none per keystroke; one per save)
+      const t0 = performance.now();
+      const out = serialize(view.state.doc);
+      if (import.meta.env.VITE_RENDER_PROBE) probe("serialize", performance.now() - t0);
+      return out;
+    });
     const focus = (where: "end" | "keep" = "keep") => {
       if (where === "end" && !focusedOnce) view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)));
       focusedOnce = true;
@@ -280,9 +299,11 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
   );
 }
 
-function serializeEmpty(state: EditorState): boolean {
-  return serialize(state.doc).html === "" && state.doc.childCount === 1;
-}
+/** Past this many lines a draft is "huge": its lines off screen skip layout (a keystroke at 2 MB went from ~56 to ~7 ms). */
+const HUGE_BLOCKS = 2000;
+
+/** The placeholder shows on an empty body (one empty line): checked in O(1), never by serializing. */
+const serializeEmpty = (state: EditorState): boolean => isEmpty(state.doc);
 
 // ── links
 

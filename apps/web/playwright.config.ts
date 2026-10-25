@@ -46,7 +46,8 @@ export default defineConfig({
       snapshotPathTemplate: `{testDir}/__screenshots__/${design}/{testFilePath}/{arg}{ext}`,
     })),
     // perf runs alone (no CPU contention from parallel workers)
-    { name: "perf", testMatch: /perf\.spec\.ts/, dependencies: ["e2e"], fullyParallel: false, workers: 1, use: { deviceScaleFactor: 1 } },
+    // (no trace: its snapshots walk the whole DOM on every action, on the page's main thread, inside the timings)
+    { name: "perf", testMatch: /perf\.spec\.ts/, dependencies: ["e2e"], fullyParallel: false, workers: 1, use: { deviceScaleFactor: 1, trace: "off" } },
   ],
   webServer: {
     // a test build (render probe on) in its own directory, so it never ships

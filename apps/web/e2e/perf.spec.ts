@@ -825,3 +825,126 @@ test("the unread filter: ⌘L → the other list rendered within 100 ms; moving 
   expect(moved).toBeLessThanOrEqual(mounted * 2);
   expect(s.p95).toBeLessThanOrEqual(100 * MULT);
 });
+
+// ── plan 16: the rich composer with a huge draft
+
+
+type Probe = Record<string, number[]>;
+const composerProbe = (page: import("@playwright/test").Page) => page.evaluate(() => (window as unknown as { __composer?: Probe }).__composer ?? {});
+
+/** A reply draft with a 2 MB body on the newest conversation, then opened (r): the time to an editable editor is reported. */
+async function hugeDraft(page: import("@playwright/test").Page, server: import("../../backend-dev/src/server").DevServer, body: { bodyText: string; bodyHtml?: string }) {
+  const db = sqlDb(server.backend.store);
+  const m = db.get<{ id: number; thread_id: number; account_id: number }>("SELECT m.id, m.thread_id, m.account_id FROM messages m JOIN threads t ON t.id = m.thread_id WHERE t.in_inbox = 1 ORDER BY t.last_date DESC, m.date DESC LIMIT 1")!;
+  await server.backend.store.drafts.save({ accountId: m.account_id, threadId: m.thread_id, mode: "reply", to: [{ name: "", email: "ana@example.com" }], cc: [], subject: "Re: x", inReplyToMessageId: m.id, ...body }, Date.now());
+  await page.reload();
+  await page.locator("[data-ready]").waitFor();
+  await rows(page).first().dispatchEvent("mousedown");
+  await expect(page.getByTestId("reader-subject")).toBeVisible();
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  const t0 = Date.now();
+  await page.keyboard.press("r");
+  const editor = page.getByTestId("compose-body");
+  await expect(editor).toBeFocused({ timeout: 20_000 });
+  const openMs = Date.now() - t0;
+  return { editor, openMs };
+}
+
+async function typeAndMeasure(page: import("@playwright/test").Page, name: string, text: string) {
+  await page.evaluate(() => {
+    const w = window as unknown as { __kt: { t0: number; handled: number[]; frame: number[] }; __composer?: Probe };
+    w.__kt = { t0: 0, handled: [], frame: [] };
+    if (w.__composer) w.__composer.tx = [];
+    document.addEventListener("keydown", (e) => {
+      if (e.key.length !== 1) return;
+      const t0 = performance.now();
+      w.__kt.t0 = t0;
+      // the editor applies the keystroke's transaction, then the next frame paints it
+      const waitTx = () => {
+        const tx = w.__composer?.tx ?? [];
+        const done = tx.find((t) => t >= t0);
+        if (done === undefined) return void setTimeout(waitTx, 0);
+        w.__kt.handled.push(done - t0);
+        requestAnimationFrame(() => w.__kt.frame.push(performance.now() - t0));
+      };
+      setTimeout(waitTx, 0);
+    }, { capture: true });
+  });
+  await page.keyboard.type(text, { delay: 40 });
+  await page.waitForTimeout(300);
+  const r = await page.evaluate(() => (window as unknown as { __kt: { handled: number[]; frame: number[] } }).__kt);
+  expect(r.handled.length).toBeGreaterThanOrEqual(text.length - 1);
+  const handled = stat(`${name}: keystroke → transaction`, HUGE_MS, r.handled);
+  stat(`${name}: keystroke → next frame`, 0, r.frame);
+  return handled;
+}
+
+/**
+ * Multi-MB drafts: Chromium's own editing work for a keystroke grows with the
+ * size of a contenteditable; off-screen lines skip layout (content-visibility),
+ * which brought a 2 MB draft to ~7–12 ms p50 (ProseMirror's share ~1 ms). The
+ * gate holds that line and catches any per-keystroke work of ours (a
+ * serialization per key cost 20 ms more). One giant paragraph is laid out
+ * whole on every key: measured at 250 KB.
+ */
+const HUGE_MS = 30;
+const LINE = "Hola, te paso las notas de la reunión con todos los puntos que vimos hoy.";
+
+test("a 2 MB draft of short lines: typing stays within a frame; no serialization per keystroke, one bounded one per save; the toolbar follows a selection fast", async ({ app: page, server }) => {
+  const lines = Math.ceil(2_000_000 / (LINE.length + 1));
+  const { editor, openMs } = await hugeDraft(page, server, { bodyText: Array.from({ length: lines }, (_, i) => `${i} ${LINE}`).join("\n") });
+  stat("2 MB draft (lines): r → editable", 0, [openMs]);
+  await page.keyboard.press("ControlOrMeta+End");
+  const serializeBefore = (await composerProbe(page)).serialize?.length ?? 0;
+  const handled = await typeAndMeasure(page, "2 MB draft (lines)", "Gracias por todo.");
+  // nothing serialized while typing quickly (the save waits for a pause, at most every 5 s)
+  const during = ((await composerProbe(page)).serialize?.length ?? 0) - serializeBefore;
+  expect(during).toBeLessThanOrEqual(1);
+  // the autosave after the pause serializes once, within budget
+  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved", { timeout: 20_000 });
+  const ser = (await composerProbe(page)).serialize!;
+  const save = stat("2 MB draft (lines): autosave serialization", 150, ser.slice(-1));
+  // a selection change: the toolbar's state is computed within a frame
+  await page.evaluate(() => {
+    const w = window as unknown as { __composer?: Probe };
+    if (w.__composer) w.__composer.format = [];
+  });
+  // what was typed is there, at the end, and Enter starts a new line there
+  await expect(editor).toHaveClass(/rt-huge/);
+  expect(await editor.evaluate((el) => el.lastElementChild!.textContent)).toMatch(/Gracias por todo\.$/);
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("Nueva línea", { delay: 20 });
+  expect(await editor.evaluate((el) => el.lastElementChild!.textContent)).toBe("Nueva línea");
+  for (let i = 0; i < 10; i++) await page.keyboard.press("Shift+ArrowLeft");
+  await page.waitForTimeout(200);
+  const format = stat("2 MB draft (lines): toolbar state per selection change", 16, (await composerProbe(page)).format!);
+  expect(handled.p95).toBeLessThanOrEqual(HUGE_MS * MULT);
+  expect(save.p95).toBeLessThanOrEqual(150 * MULT);
+  expect(format.p95).toBeLessThanOrEqual(16 * MULT);
+  await expect(editor).toBeFocused();
+});
+
+test("a 2 MB draft with dense formatting (a mark on every few words, lists): typing stays within a frame", async ({ app: page, server }) => {
+  const words = LINE.split(" ");
+  const line = (i: number) => words.map((w, j) => ((i + j) % 3 === 0 ? `<b>${w}</b>` : (i + j) % 5 === 0 ? `<span style="color:#b3261e">${w}</span>` : w)).join(" ");
+  const blocks: string[] = [];
+  let size = 0;
+  for (let i = 0; size < 2_000_000; i++) {
+    const b = i % 10 === 0 ? `<ul style="margin:0 0 0 24px;padding:0"><li>${line(i)}</li><li>${line(i + 1)}</li></ul>` : `<div>${line(i)}</div>`;
+    blocks.push(b);
+    size += b.length;
+  }
+  const { openMs } = await hugeDraft(page, server, { bodyText: "x", bodyHtml: blocks.join("") });
+  stat("2 MB draft (marks): r → editable", 0, [openMs]);
+  await page.keyboard.press("ControlOrMeta+End");
+  const handled = await typeAndMeasure(page, "2 MB draft (marks)", "Gracias por todo.");
+  expect(await page.getByTestId("compose-body").evaluate((el) => el.lastElementChild!.textContent)).toMatch(/Gracias por todo\.$/);
+  expect(handled.p95).toBeLessThanOrEqual(HUGE_MS * MULT);
+});
+
+test("a 250 KB single paragraph (a long paste without line breaks): typing in it stays within budget", async ({ app: page, server }) => {
+  const { openMs } = await hugeDraft(page, server, { bodyText: `${LINE} `.repeat(Math.ceil(250_000 / (LINE.length + 1))) });
+  stat("250 KB paragraph: r → editable", 0, [openMs]);
+  const handled = await typeAndMeasure(page, "250 KB paragraph", "Gracias.");
+  expect(handled.p95).toBeLessThanOrEqual(HUGE_MS * MULT);
+});

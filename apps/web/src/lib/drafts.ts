@@ -201,6 +201,9 @@ export function attachBody(key: string, read: BodyReader): { changed(): void; re
     changed() {
       const d = get(key);
       if (!d || d.sending) return;
+      // an unsaved revision is already pending for this body: the save will serialize the latest document, so only
+      // the debounce moves (no store update per keystroke: nothing re-renders while typing)
+      if (source.dirty && d.localRev > d.savedRev) return schedule(key);
       source.dirty = true;
       put({ ...d, localRev: d.localRev + 1, status: d.status === "saving" ? "saving" : "dirty", updatedAt: now(), tooLong: false });
       schedule(key);

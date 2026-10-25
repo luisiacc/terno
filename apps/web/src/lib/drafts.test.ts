@@ -287,9 +287,13 @@ describe("the editor's body (plan 16)", () => {
   it("typing marks the draft dirty without serializing; the save serializes once, from the same document as its revision", async () => {
     const k = draft();
     const ed = editor(k);
-    for (const ch of "Hola") ed.type(ch);
+    ed.type("H");
+    const after = useDrafts.getState().drafts;
+    for (const ch of "ola") ed.type(ch);
     expect(ed.reads.n).toBe(0);
-    expect(state(k)).toMatchObject({ localRev: 4, status: "dirty", bodyText: "" });
+    // one revision covers the keystrokes until the save: the store isn't touched per key (nothing re-renders)
+    expect(useDrafts.getState().drafts).toBe(after);
+    expect(state(k)).toMatchObject({ localRev: 1, status: "dirty", bodyText: "" });
     await vi.advanceTimersByTimeAsync(800);
     expect(ed.reads.n).toBe(1);
     expect(calls[0]!.params).toMatchObject({ bodyText: "Hola", bodyHtml: "<div><b>Hola</b></div>" });
