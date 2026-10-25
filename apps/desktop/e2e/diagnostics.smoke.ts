@@ -43,7 +43,7 @@ type Hooks = {
   flush(): void;
 };
 const hooks = <T,>(fn: (h: Hooks, arg: unknown) => T, arg?: unknown): Promise<Awaited<T>> =>
-  app.evaluate(({}, [src, a]) => new Function("h", "a", `return (${src})(h, a)`)((globalThis as unknown as { __ternoDiag: unknown }).__ternoDiag, a), [fn.toString(), arg] as const) as Promise<Awaited<T>>;
+  app.evaluate((_electron, [src, a]) => new Function("h", "a", `return (${src})(h, a)`)((globalThis as unknown as { __ternoDiag: unknown }).__ternoDiag, a), [fn.toString(), arg] as const) as Promise<Awaited<T>>;
 
 async function launch(): Promise<void> {
   const env = { ...process.env, TERNO_DEMO: "1", TERNO_USER_DATA: userData, TERNO_DIAG_TEST: "1", TERNO_TEST_SENTRY_DSN: dsn, TERNO_TEST_EXPORT_DIR: workdir };

@@ -6,6 +6,8 @@
 import { expect, it } from "vitest";
 import { breadcrumb, installDiag, log } from "./diag";
 
+declare const console: { log(...args: unknown[]): void };
+
 function perCall(n: number, fn: (i: number) => void): number {
   for (let i = 0; i < 5000; i++) fn(i); // warm up
   let best = Infinity;
