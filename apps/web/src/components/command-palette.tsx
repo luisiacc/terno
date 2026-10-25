@@ -9,8 +9,8 @@ import { addScopeToCategory, addToCategory } from "~/lib/categorize";
 import { currentTargets, isMac, selectAll } from "~/lib/select";
 import { updateAppearance } from "~/lib/appearance";
 import { printCommand } from "~/lib/print-open";
-import { setListFilter } from "~/lib/unread";
-import { activeFilter } from "~/lib/unread-filter";
+import { setListFilter, toggleUnreadFilter } from "~/lib/unread";
+import { activeFilter, isUnreadOnly } from "~/lib/unread-filter";
 import { DESIGNS } from "@terno/ui/designs/index";
 import { designName } from "~/lib/design";
 import { checkForUpdates, installUpdate, useHasUpdates, useUpdates } from "~/lib/updates";
@@ -27,7 +27,8 @@ export function CommandPalette() {
   // printing takes the conversation the reader shows (one, with no new message in the pane)
   const printable = useApp((s) => open && s.selectedId !== null && !s.scope && s.checked.size < 2 && s.compose === null);
   // the unread filter applies to a mailbox (not "Review")
-  const filter = useApp((s) => (open && s.reviewCategoryId === null ? (activeFilter(s) ? "on" : "off") : null));
+  // ⌘L's state: Unread on or not (another filter on: ⌘L switches to Unread)
+  const filter = useApp((s) => (open && s.reviewCategoryId === null ? (isUnreadOnly(s) ? "on" : "off") : null));
   const active = useApp((s) => (open ? activeFilter(s) : undefined));
   const design = useApp((s) => (open ? (s.settings?.design ?? null) : null));
   const updatesAvailable = useHasUpdates();
@@ -83,8 +84,13 @@ export function CommandPalette() {
           )}
           <CommandItem onSelect={() => run(selectAll)} keywords={english("palette.selectAll")}><CheckCheck /> {t("palette.selectAll")}<CommandShortcut>⌘A</CommandShortcut></CommandItem>
           {filter && (
-            <CommandItem data-testid="palette-unread-filter" value={`${t(filter === "on" ? "palette.showAll" : "palette.showUnread")} ${t("palette.search.unreadFilter")}`} keywords={[...english(filter === "on" ? "palette.showAll" : "palette.showUnread"), ...english("palette.search.unreadFilter")]} onSelect={() => run(() => setListFilter(filter === "on" ? undefined : "unread"))}>
+            <CommandItem data-testid="palette-unread-filter" value={`${t(filter === "on" ? "palette.showAll" : "palette.showUnread")} ${t("palette.search.unreadFilter")}`} keywords={[...english(filter === "on" ? "palette.showAll" : "palette.showUnread"), ...english("palette.search.unreadFilter")]} onSelect={() => run(toggleUnreadFilter)}>
               <ListFilter /> {t(filter === "on" ? "palette.showAll" : "palette.showUnread")}<CommandShortcut>{isMac ? "⌘L" : "Ctrl+L"}</CommandShortcut>
+            </CommandItem>
+          )}
+          {filter && active && active !== "unread" && (
+            <CommandItem data-testid="palette-filter-all" value={`${t("palette.showAll")} ${t("palette.search.unreadFilter")}`} keywords={[...english("palette.showAll"), ...english("palette.search.unreadFilter")]} onSelect={() => run(() => setListFilter(undefined))}>
+              <ListFilter /> {t("palette.showAll")}
             </CommandItem>
           )}
           {filter && active !== "attachments" && (

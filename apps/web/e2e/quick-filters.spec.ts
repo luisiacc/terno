@@ -80,13 +80,21 @@ test.describe("macOS: the criterion menu", () => {
     await expect(page.getByTestId("unread-filter")).toHaveAttribute("aria-pressed", "false");
   });
 
-  test("the palette offers the other filters and turns them off", async ({ app: page }) => {
+  test("the palette offers the other filters; its ⌘L item does what ⌘L does; Show all turns any filter off", async ({ app: page }) => {
     await page.keyboard.press("ControlOrMeta+k");
     await page.getByTestId("palette-filter-attachments").click();
     await showing(page, "attachments");
     await page.keyboard.press("ControlOrMeta+k");
     await expect(page.getByTestId("palette-filter-attachments")).toHaveCount(0);
+    // with another filter on, ⌘L switches to Unread: so does the item that shows ⌘L (Codex review #6)
+    await expect(page.getByTestId("palette-unread-filter")).toContainText("Show unread only");
     await page.getByTestId("palette-unread-filter").click();
+    await showing(page, "unread");
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.getByTestId("palette-filter-starred").click();
+    await showing(page, "starred");
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.getByTestId("palette-filter-all").click();
     await showing(page, null);
   });
 });
