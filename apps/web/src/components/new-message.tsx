@@ -12,6 +12,7 @@ import { useApp } from "~/state/app";
 import { DraftFieldsForm, focusSoon, SaveState, SignaturePreview } from "./inline-draft";
 import { popupOpen } from "./composer/controller";
 import { ComposerBody, ComposerFormatBar, FormatToggle, LinkButton, preloadComposer } from "./composer/lazy";
+import { warmAutocomplete } from "~/lib/autocomplete";
 
 /** Esc and sending leave the new message; focus goes to its strip item (kept) or back to the list. */
 function leave(key: string, focusStrip: boolean) {
@@ -34,6 +35,8 @@ export function NewMessage() {
   const formatId = useId();
 
   useEffect(preloadComposer, []);
+  // a new message: suggestions get ready (once per session)
+  useEffect(warmAutocomplete, []);
   useEffect(() => {
     if (compose) focusSoon("[data-testid=compose-to]", rootRef.current);
   }, [compose?.seq]);

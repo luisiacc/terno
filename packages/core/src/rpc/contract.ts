@@ -605,6 +605,8 @@ export const contract = {
       accountId: id.optional(),
       limit: z.number().int().min(1).max(10).default(6),
     }),
+    // a suggestion that comes late is no suggestion
+    { timeoutMs: 3000 },
   ),
   /** ghost text after `before` (only its last 1,000 characters are read) */
   "compose.suggestText": m<{ text: string | null }>()(
@@ -613,6 +615,7 @@ export const contract = {
       names: z.array(z.string().max(300)).max(10).default([]),
       me: z.string().max(300).optional(),
     }),
+    { timeoutMs: 2000 },
   ),
   "drafts.list": m<Draft[]>()(empty),
   "drafts.delete": m<{ ok: true }>()(z.object({ id })),

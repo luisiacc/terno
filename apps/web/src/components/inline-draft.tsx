@@ -10,6 +10,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import { openCompose, sendDraft, supersedeCompose } from "~/lib/compose";
 import { discardDraft, editDraft, flushDraft, restoreDiscarded, retryDraft, setDraftUi, signatureBlock, useDrafts, type DraftFields, type LocalDraft } from "~/lib/drafts";
 import { SenderAvatar } from "./sender-avatar";
+import { RecipientInput } from "./recipient-input";
+import { warmAutocomplete } from "~/lib/autocomplete";
 import { richT } from "~/lib/i18n";
 import { keepInView } from "~/lib/reader-scroll";
 import { registerUndo, snack } from "~/lib/snack";
@@ -83,7 +85,7 @@ export function focusSoon(selector: string, root: HTMLElement | null, frames = 1
 function Row({ label, htmlFor, children, hidden }: { label: string; htmlFor?: string; children: React.ReactNode; hidden?: boolean }) {
   if (hidden) return null;
   return (
-    <div className="hairline-b group/row flex min-h-[38px] items-center gap-2.5 px-3.5">
+    <div className="hairline-b group/row flex min-h-[38px] items-center gap-2.5 px-3.5" data-recipient-row>
       <label htmlFor={htmlFor} className="w-14 shrink-0 text-xs text-muted-foreground group-focus-within/row:text-foreground">
         {label}
       </label>
@@ -141,7 +143,7 @@ export function DraftFieldsForm({ d, accounts, showSubject, flat }: { d: LocalDr
         </Row>
       )}
       <Row label={t("compose.to")} htmlFor={`${id}-to`}>
-        <input id={`${id}-to`} data-testid="compose-to" className={input} value={d.toText} onChange={(e) => update({ toText: e.target.value })} placeholder={t("compose.toPlaceholder")} autoComplete="off" />
+        <RecipientInput id={`${id}-to`} testId="compose-to" className={input} value={d.toText} onChange={(v) => update({ toText: v })} placeholder={t("compose.toPlaceholder")} accountId={d.accountId} others={[d.ccText, d.bccText]} />
         <span className="flex shrink-0 gap-0.5">
           {toggle(cc, setCc, t("compose.cc"), "cc", "compose-show-cc")}
           {toggle(bcc, setBcc, t("compose.bcc"), "bcc", "compose-show-bcc")}
@@ -149,10 +151,10 @@ export function DraftFieldsForm({ d, accounts, showSubject, flat }: { d: LocalDr
         </span>
       </Row>
       <Row label={t("compose.cc")} htmlFor={`${id}-cc`} hidden={!cc}>
-        <input id={`${id}-cc`} data-testid="compose-cc" className={input} value={d.ccText} onChange={(e) => (setCc(true), update({ ccText: e.target.value }))} autoComplete="off" />
+        <RecipientInput id={`${id}-cc`} testId="compose-cc" className={input} value={d.ccText} onChange={(v) => (setCc(true), update({ ccText: v }))} accountId={d.accountId} others={[d.toText, d.bccText]} />
       </Row>
       <Row label={t("compose.bcc")} htmlFor={`${id}-bcc`} hidden={!bcc}>
-        <input id={`${id}-bcc`} data-testid="compose-bcc" className={input} value={d.bccText} onChange={(e) => (setBcc(true), update({ bccText: e.target.value }))} autoComplete="off" />
+        <RecipientInput id={`${id}-bcc`} testId="compose-bcc" className={input} value={d.bccText} onChange={(v) => (setBcc(true), update({ bccText: v }))} accountId={d.accountId} others={[d.toText, d.ccText]} />
       </Row>
       <Row label={t("compose.subject")} htmlFor={`${id}-subject`} hidden={!subject}>
         <input id={`${id}-subject`} data-testid="compose-subject" className={input} value={d.subject} onChange={(e) => update({ subject: e.target.value, subjectEdited: true })} />
@@ -274,6 +276,10 @@ export function DraftSlot({ threadId, draftKey, replyTo, account }: { threadId: 
 
   // a conversation is open: its reply may come next, so the editor starts loading (once)
   useEffect(preloadComposer, []);
+  // a draft is open: suggestions get ready (once per session)
+  useEffect(() => {
+    if (state === "open") warmAutocomplete();
+  }, [state]);
 
   // an explicit open (r/a/f, the bar, the menu) asks for focus: honor it once
   useEffect(() => {
