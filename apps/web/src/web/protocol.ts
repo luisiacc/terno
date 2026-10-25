@@ -18,6 +18,8 @@ export interface WorkerInit {
   instantSearch: boolean;
   /** demo builds (tests): hold the legacy IndexedDB copy of a mailbox after its first batch, so a test can close the tab mid-copy */
   pauseLegacyCopy?: boolean;
+  /** the page's diagnostics run, so the worker's entries group with it */
+  diagSession?: string;
 }
 
 export type PageToWorker =
@@ -36,4 +38,6 @@ export type WorkerToPage =
   /** every storage handle is closed: leadership may pass to another tab */
   | { type: "closed" }
   | { type: "cache-status"; status: { hit: number; miss: number; usedBytes: number; cacheBytes: number; hotBytes: number } | null }
-  | { type: "dev-imported"; messages: number; ms: number };
+  | { type: "dev-imported"; messages: number; ms: number }
+  /** the worker's diagnostics (entries batched, records at once); the page validates and keeps them */
+  | { type: "diag"; entries: unknown[]; records: unknown[] };

@@ -7,8 +7,11 @@ import { invalidateThreads, loadThread } from "~/state/threads";
 import { toast } from "sonner";
 import { applyAppearance, installAppearanceListeners, reconcileSettings, updateAppearance } from "~/lib/appearance";
 import { exposeForTests } from "~/lib/render-probe";
+import { captureUi } from "~/lib/diag";
+import { startDiag } from "~/state/diag";
 
 export async function boot(): Promise<void> {
+  startDiag();
   try {
     await connectBackend();
     const b = await client.call("app.bootstrap", {});
@@ -62,6 +65,7 @@ export async function boot(): Promise<void> {
     });
     await reloadList();
   } catch (error) {
+    captureUi(error, { code: "boot.failed" });
     setApp({ fatal: error instanceof Error ? error.message : String(error) });
   }
 }

@@ -19,6 +19,7 @@ import { ThreadMenu } from "./thread-menu";
 import { DraftsStrip } from "./drafts-strip";
 import { ROW_HEIGHT, ThreadRow } from "./thread-row";
 import { LearnedBanner } from "./learned-banner";
+import { ReportRow } from "./diag/report-row";
 import { DesktopBanner, GmailReconnect } from "~/lib/web-parts";
 
 export const searchInputRef: { current: HTMLInputElement | null } = { current: null };
@@ -226,6 +227,7 @@ export function ThreadList() {
   return (
     <section className="flex h-full min-h-0 flex-col bg-pane" data-testid="thread-list" data-results-for={itemsKey} data-composing={composing || undefined}>
       <Header hairlineRef={headerRef} />
+      <ReportRow />
       <LearnedBanner />
       {DesktopBanner && GmailReconnect && (
         <Suspense>

@@ -1,0 +1,57 @@
+import { Button } from "@terno/ui/components/button";
+import { Loader2 } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { exportDiagnostics, restartEngine, useDiag } from "~/state/diag";
+
+/**
+ * Desktop: the backend died five times in a row and main stopped restarting
+ * it. The window can't work without it: say so plainly, keep the mail's
+ * safety in front, and let the user try again (or export what happened).
+ */
+export function EngineStopped() {
+  const engine = useDiag((s) => s.view?.engine ?? "running");
+  const [retrying, setRetrying] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const stopped = engine === "stopped";
+  useEffect(() => {
+    if (!stopped) {
+      setRetrying(false);
+      return;
+    }
+    const root = document.getElementById("root");
+    if (root) root.inert = true;
+    ref.current?.querySelector<HTMLElement>("button")?.focus();
+    return () => {
+      if (root) root.inert = false;
+    };
+  }, [stopped]);
+  if (!stopped) return null;
+  return createPortal(
+    <div ref={ref} role="alertdialog" aria-modal="true" aria-labelledby={titleId} className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-10 text-center backdrop-blur-md" data-testid="engine-stopped">
+      <div className="max-w-sm">
+        <p id={titleId} className="text-md font-semibold tracking-tight">
+          The mail engine stopped
+        </p>
+        <p className="mt-1.5 text-sm text-muted-foreground">Terno tried to restart it several times without success. Your mail is still saved on this Mac.</p>
+        <div className="mt-5 flex justify-center gap-2">
+          <Button
+            data-testid="engine-retry"
+            disabled={retrying}
+            onClick={() => {
+              setRetrying(true);
+              void restartEngine();
+            }}
+          >
+            {retrying && <Loader2 className="animate-spin" />} Try Again
+          </Button>
+          <Button variant="outline" onClick={() => void exportDiagnostics()}>
+            Export Diagnostics…
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}

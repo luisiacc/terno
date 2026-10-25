@@ -7,6 +7,7 @@
  */
 import sqlite3InitModule from "@sqlite.org/sqlite-wasm";
 import { BackendCore } from "@terno/backend/portable";
+import { captureError, installDiag, log, type DiagEntry, type DiagOptions, type ErrorRecord } from "@terno/core/diag";
 import { isRpcMessage, type HostInfo, type RpcMessage, type Transport } from "@terno/core/rpc";
 import { adaptPageCache, cacheBytesFor, databaseBytes, setCacheBytes, sqlDb, SqlMailStore } from "@terno/db/wasm";
 import type { MailStore, Platform } from "@terno/store";
@@ -25,6 +26,37 @@ const BUILD = import.meta.env.VITE_BUILD_ID;
 const RETUNE_GROWTH = 1.1;
 
 const post = (m: WorkerToPage) => self.postMessage(m);
+
+// ───────────────────────────── diagnostics: posted to the page (every 500 ms, records at once) ─────────────────────────────
+
+let diagEntries: DiagEntry[] = [];
+let diagTimer: ReturnType<typeof setTimeout> | null = null;
+const flushDiag = (records: ErrorRecord[] = []) => {
+  if (diagTimer) clearTimeout(diagTimer);
+  diagTimer = null;
+  if (diagEntries.length || records.length) post({ type: "diag", entries: diagEntries, records });
+  diagEntries = [];
+};
+const diagOptions = (session?: string): DiagOptions => ({
+  proc: "worker",
+  version: String(BUILD).replace(/-[a-z0-9]+$/, ""),
+  build: `${String(BUILD).replace(/-[a-z0-9]+$/, "")}+${import.meta.env.VITE_BUILD_SHA ?? "dev"}`,
+  channel: import.meta.env.VITE_WEB_DEMO === "1" ? "demo" : import.meta.env.DEV ? "dev" : "production",
+  session,
+  context: () => ({ os: "web", engine: "wasm-opfs", locale: navigator.language }),
+  sink: {
+    write: (e) => {
+      if (diagEntries.length < 1000) diagEntries.push(e);
+      diagTimer ??= setTimeout(() => flushDiag(), 500);
+    },
+    capture: (r) => flushDiag([r]),
+    flush: () => flushDiag(),
+  },
+});
+installDiag(diagOptions());
+// the page's error listener can't see a rejection in here: the worker catches its own
+self.addEventListener("error", (e) => void captureError(e.error ?? new Error(e.message), { code: "process.uncaught", fields: { source: "worker" } }));
+self.addEventListener("unhandledrejection", (e) => void captureError(e.reason, { code: "process.unhandled_rejection", fields: { source: "worker" } }));
 
 function portTransport(port: MessagePort): Transport {
   const listeners = new Set<(m: RpcMessage) => void>();
@@ -74,6 +106,7 @@ async function tune(store: MailStore, platform: Platform, name: string): Promise
 }
 
 async function start(init: WorkerInit): Promise<void> {
+  if (init.diagSession) installDiag(diagOptions(init.diagSession));
   const timings: Record<string, number> = {};
   const t0 = performance.now();
   const mark = (name: string) => (timings[name] = Math.round((performance.now() - t0) * 10) / 10);
@@ -120,10 +153,13 @@ async function start(init: WorkerInit): Promise<void> {
     return;
   }
   const platform = webPlatform(await opfsFiles().catch(() => undefined));
-  const log = (level: "info" | "warn" | "error", message: string, extra?: unknown) => (level === "error" ? console.error : level === "warn" ? console.warn : console.info)(`[backend] ${message}`, extra ?? "");
+  const logLine = (level: "info" | "warn" | "error", message: string, extra?: unknown) => {
+    (level === "error" ? console.error : level === "warn" ? console.warn : console.info)(`[backend] ${message}`, extra ?? "");
+    log[level]("log.message", { source: "worker" }, extra === undefined ? message : `${message} ${typeof extra === "string" ? extra : JSON.stringify(extra)}`);
+  };
   let store: MailStore;
   try {
-    store = await choice.adapter.open({ name: init.name, platform, log, instantSearch: init.instantSearch });
+    store = await choice.adapter.open({ name: init.name, platform, log: logLine, instantSearch: init.instantSearch });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     // the mailbox stays exactly as it was: no fallback to another (empty) adapter, no repair attempt
@@ -144,7 +180,7 @@ async function start(init: WorkerInit): Promise<void> {
     // a web commit costs 3–7 ms (OPFS, IndexedDB): 20 ms slices keep imports moving, interactions still interleave
     sliceBudgetMs: 20,
     demoAi: init.demo !== null,
-    log,
+    log: logLine,
   });
   let seeded = false;
   if (init.demo) {
@@ -201,7 +237,10 @@ async function close(): Promise<void> {
 self.onmessage = (event: MessageEvent<PageToWorker>) => {
   const m = event.data;
   if (m.type === "init") {
-    void start(m).catch((error) => post({ type: "fatal", code: "OPEN_FAILED", message: error instanceof Error ? error.message : String(error) }));
+    void start(m).catch((error) => {
+      captureError(error, { code: "worker.open_failed", fields: { fatalCode: "OPEN_FAILED", engine: "wasm-opfs" } });
+      post({ type: "fatal", code: "OPEN_FAILED", message: error instanceof Error ? error.message : String(error) });
+    });
   } else if (m.type === "close") {
     void close();
   } else if (m.type === "dev-import") {

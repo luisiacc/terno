@@ -1,3 +1,4 @@
+import { breadcrumb, captureUi } from "~/lib/diag";
 import { isValidEmail, parseAddressList } from "@terno/core";
 import type { DraftMode } from "@terno/core/rpc";
 import { toast } from "sonner";
@@ -135,6 +136,7 @@ async function send(key: string): Promise<boolean> {
     return false;
   }
   markSending(key, true);
+  breadcrumb("action", "action.send");
   try {
     const res = await client.call("compose.send", {
       accountId: d.accountId,
@@ -155,6 +157,7 @@ async function send(key: string): Promise<boolean> {
   } catch (error) {
     markSending(key, false);
     resumeDraft(key);
+    captureUi(error, { code: "compose.send_failed" });
     toast.error(`No se pudo enviar: ${error instanceof Error ? error.message : error}`);
     return false;
   }

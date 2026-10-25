@@ -1,3 +1,4 @@
+import { breadcrumb, captureUi } from "~/lib/diag";
 import { parseAddressList, type ThreadAction, type ThreadSummary, type View } from "@terno/core";
 import { toast } from "sonner";
 import { reflowRemoval } from "~/lib/flash";
@@ -100,6 +101,7 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
   const targets = ids;
   const s = getApp();
   if (targets.length === 0) return;
+  breadcrumb("action", "action.thread", { action, count: targets.length });
   const { items, index } = useList.getState();
   const leaving = s.query ? false : !staysInView(s.view, action);
 
@@ -133,6 +135,7 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
     if (TOAST_ALWAYS.has(action) || targets.length > 1) toast(said(action, targets.length), { action: undo ? { label: "Deshacer", onClick: undo } : undefined });
   } catch (error) {
     undoIds.resolve([]);
+    captureUi(error, { code: "action.failed", fields: { action, count: targets.length } });
     toast.error(`No se pudo completar: ${error instanceof Error ? error.message : error}`);
     void reloadList({ keepSelection: true });
   }

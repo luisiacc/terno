@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import tailwindcss from "@tailwindcss/vite";
@@ -54,6 +55,37 @@ function serviceWorker(buildId: string): Plugin {
   };
 }
 
+/**
+ * Source maps are hidden (no sourceMappingURL). The desktop build keeps them
+ * in dist/ for scripts/build.mjs, which tags and archives them with the app's
+ * own bundles; the web build tags its chunks with debug ids here and moves
+ * the maps to .maps/<build id>/ (outside what is deployed). Test builds just
+ * drop them.
+ */
+function webMaps(outDir: string, buildId: string): Plugin {
+  return {
+    name: "terno:web-maps",
+    apply: "build",
+    async closeBundle() {
+      const { archiveMaps, assertNoMaps, injectDebugIds, resetArchive } = await import(resolve(import.meta.dirname, "../../scripts/sourcemaps.mjs"));
+      const out = resolve(import.meta.dirname, outDir);
+      injectDebugIds(out);
+      const archive = resolve(import.meta.dirname, ".maps", outDir === "dist-web" ? buildId : outDir);
+      resetArchive(archive);
+      archiveMaps(out, archive);
+      assertNoMaps(out);
+    },
+  };
+}
+
+function buildSha(): string {
+  try {
+    return execFileSync("git", ["rev-parse", "--short=10", "HEAD"], { cwd: import.meta.dirname }).toString().trim();
+  } catch {
+    return "unknown";
+  }
+}
+
 /** CSP for the static site (Electron sets its own on app://). */
 const WEB_CSP = [
   "default-src 'self'",
@@ -76,17 +108,21 @@ function webHtml(): Plugin {
   };
 }
 
-export default defineConfig(() => {
+export default defineConfig(({ mode }) => {
   const buildId = `${version}-${Date.now().toString(36)}`;
+  const outDir = process.argv.includes("--outDir") ? process.argv[process.argv.indexOf("--outDir") + 1]! : target === "web" ? "dist-web" : "dist";
   return {
     // relative asset URLs so the bundle works from app://terno/ in Electron (and from any path on a static host)
     base: "./",
-    plugins: [react({ compiler: true }), tailwindcss(), ...(target === "web" ? [serviceWorker(buildId), webHtml()] : [desktopGuard()])],
+    plugins: [react({ compiler: true }), tailwindcss(), ...(target === "web" ? [serviceWorker(buildId), webHtml(), webMaps(outDir, buildId)] : [desktopGuard()])],
     define: {
       "import.meta.env.VITE_TARGET": JSON.stringify(target),
       // desktop builds stay reproducible: no timestamp
       "import.meta.env.VITE_BUILD_ID": JSON.stringify(target === "web" ? buildId : version),
       "import.meta.env.VITE_WEB_DEMO": JSON.stringify(process.env.VITE_WEB_DEMO === "1" ? "1" : ""),
+      "import.meta.env.VITE_BUILD_SHA": JSON.stringify(process.env.TERNO_BUILD_SHA || (mode === "production" ? buildSha() : "dev")),
+      // the web reports from the page (@sentry/browser); the desktop renderer never does (main sends)
+      "import.meta.env.VITE_SENTRY_DSN": JSON.stringify(target === "web" ? (process.env.TERNO_SENTRY_DSN ?? "") : ""),
     },
     resolve: {
       alias: {
@@ -102,7 +138,7 @@ export default defineConfig(() => {
       target: "chrome140",
       outDir: target === "web" ? "dist-web" : "dist",
       emptyOutDir: true,
-      sourcemap: false,
+      sourcemap: "hidden" as const,
       modulePreload: { polyfill: false },
       rollupOptions: {
         output: {

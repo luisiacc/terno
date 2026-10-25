@@ -17,6 +17,8 @@ import { GeneralTab } from "./settings/general-tab";
 import { SETTINGS_TABS } from "./settings/tabs";
 import { reconcileSettings } from "~/lib/appearance";
 import type { SettingsUpdate } from "./settings/parts";
+import { PaneBoundary } from "./diag/error-boundary";
+import { ReportPreview } from "./diag/report-preview";
 
 export function SettingsDialog() {
   const open = useApp((s) => s.dialog === "settings");
@@ -59,39 +61,43 @@ export function SettingsDialog() {
           </nav>
           <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-5 pb-4">
             <h2 className="mb-4 text-lg font-semibold tracking-tight">{SETTINGS_TABS.find((t) => t.value === tab)?.label}</h2>
-            <TabsContent value="general">
-              <GeneralTab settings={settings} update={update} onLocalOff={() => setConfirmLocalOff(true)} />
-            </TabsContent>
+            {/* a section that fails to render stays a section: the sheet and the other tabs keep working */}
+            <PaneBoundary area="settings" resetKey={tab} title="This section couldn't be shown">
+              <TabsContent value="general">
+                <GeneralTab settings={settings} update={update} onLocalOff={() => setConfirmLocalOff(true)} />
+              </TabsContent>
 
-            <TabsContent value="appearance">
-              <AppearanceTab settings={settings} />
-            </TabsContent>
+              <TabsContent value="appearance">
+                <AppearanceTab settings={settings} />
+              </TabsContent>
 
-            <TabsContent value="accounts">
-              <AccountsTab settings={settings} update={update} />
-            </TabsContent>
+              <TabsContent value="accounts">
+                <AccountsTab settings={settings} update={update} />
+              </TabsContent>
 
-            <TabsContent value="categories">
-              <CategoriesTab settings={settings} update={update} />
-            </TabsContent>
+              <TabsContent value="categories">
+                <CategoriesTab settings={settings} update={update} />
+              </TabsContent>
 
-            <TabsContent value="filters">
-              <FiltersTab />
-            </TabsContent>
+              <TabsContent value="filters">
+                <FiltersTab />
+              </TabsContent>
 
-            <TabsContent value="ai">
-              <AiTab settings={settings} update={update} />
-            </TabsContent>
+              <TabsContent value="ai">
+                <AiTab settings={settings} update={update} />
+              </TabsContent>
 
-            <TabsContent value="data">
-              <DataTab />
-            </TabsContent>
+              <TabsContent value="data">
+                <DataTab />
+              </TabsContent>
 
-            <TabsContent value="agents">
-              <AgentsTab settings={settings} update={update} />
-            </TabsContent>
+              <TabsContent value="agents">
+                <AgentsTab settings={settings} update={update} />
+              </TabsContent>
+            </PaneBoundary>
           </div>
         </Tabs>
+        <ReportPreview />
         <AlertDialog open={confirmLocalOff} onOpenChange={setConfirmLocalOff}>
           <AlertDialogContent data-testid="local-mode-confirm">
             <AlertDialogHeader>

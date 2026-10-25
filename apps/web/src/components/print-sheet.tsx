@@ -1,3 +1,4 @@
+import { captureUi, log } from "~/lib/diag";
 import type { ThreadDetail } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@terno/ui/components/dialog";
@@ -153,9 +154,14 @@ function Sheet({ target, onClose }: { target: PrintTarget; onClose: () => void }
         toast("PDF guardado", { description: result.name, action: { label: "Mostrar en Finder", onClick: () => void host.showSaved?.(result.exportId) } });
       } else if (result.status === "submitted") onClose();
       else if (result.status === "failed") {
+        // main recorded the failure itself; here it is a step on the trail
+        log.warn("print.failed", { action: intent, reason: result.reason === "no-printers" ? "other" : "error" });
         if (result.reason === "no-printers") toast.error("No hay impresoras configuradas", { description: "Usa «Guardar PDF…» para guardar el correo como PDF." });
         else toast.error(intent === "pdf" ? "No se pudo guardar el PDF" : "No se pudo imprimir");
       }
+    } catch (error) {
+      captureUi(error, { code: "print.failed", fields: { action: intent } });
+      toast.error(intent === "pdf" ? "No se pudo guardar el PDF" : "No se pudo imprimir");
     } finally {
       setBusy(null);
     }

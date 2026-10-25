@@ -8,6 +8,7 @@ import { Suspense, useState } from "react";
 import { setApp } from "~/state/app";
 import { MacSection } from "~/lib/web-parts";
 import { parseSyncWindow, SYNC_WINDOW_MAX, SYNC_WINDOW_MIN } from "~/lib/settings-values";
+import { DiagnosticsSection } from "./diagnostics-section";
 import { SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
 
 const WEB = import.meta.env.VITE_TARGET === "web";
@@ -163,6 +164,8 @@ export function GeneralTab({ settings, update, onLocalOff }: { settings: AppSett
           )}
         </SettingsRow>
       </SettingsGroup>
+
+      <DiagnosticsSection settings={settings} update={update} />
 
       {MacSection && (
         <Suspense>

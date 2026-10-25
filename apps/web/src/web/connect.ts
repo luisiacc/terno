@@ -3,6 +3,9 @@ import { adoptSettings } from "~/lib/appearance";
 import { flushAllDrafts } from "~/lib/drafts";
 import { setApp } from "~/state/app";
 import { isRpcMessage, type RpcClient, type RpcMessage, type Transport } from "@terno/core/rpc";
+import { diagSession, log } from "@terno/core/diag";
+import { captureUi } from "~/lib/diag";
+import { ingestWorker } from "~/lib/diag-local";
 import { setWeb, type WebLifecycle } from "./lifecycle";
 import type { PageToWorker, WorkerToPage } from "./protocol";
 
@@ -337,7 +340,11 @@ export async function connectWorker(client: RpcClient): Promise<void> {
     tabs.release(null);
     tabs.close();
   };
-  worker.addEventListener("error", (e) => fail("CRASHED", e.message || "El motor de correo se detuvo"));
+  worker.addEventListener("message", (e: MessageEvent<WorkerToPage>) => e.data?.type === "diag" && ingestWorker(e.data));
+  worker.addEventListener("error", (e) => {
+    captureUi(new Error(e.message || "worker error"), { code: "worker.failed", fields: { fatalCode: "CRASHED" } });
+    fail("CRASHED", e.message || "El motor de correo se detuvo");
+  });
   /** another tab asked: close every handle, then hand the lock to that tab by name */
   const handOver = async (to: string) => {
     if (stopped) return tabs.release(to);
@@ -363,10 +370,12 @@ export async function connectWorker(client: RpcClient): Promise<void> {
     build: BUILD,
     instantSearch: !(DEMO_BUILD && params.get("instant") === "0"),
     pauseLegacyCopy: DEMO_BUILD && params.get("legacyPause") === "1",
+    diagSession: diagSession(),
   };
   worker.postMessage(init, [channel.port2]);
   const first = await Promise.race([next(worker, ["ready", "fatal"]), new Promise<null>((r) => worker.addEventListener("error", () => r(null)))]);
   if (!first || first.type === "fatal") {
+    if (first?.type === "fatal") log.warn("worker.open_failed", { fatalCode: first.code, engine: "wasm-opfs" }, first.message);
     const message = first?.type === "fatal" ? first.message : "El motor de correo se detuvo";
     fail(first?.type === "fatal" ? first.code : "CRASHED", message);
     throw new Error(message);

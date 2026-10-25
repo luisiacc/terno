@@ -1,4 +1,5 @@
 import { isRpcMessage, RpcClient, type RpcMessage, type Transport } from "@terno/core/rpc";
+import { observeRpc } from "~/lib/diag";
 
 function portTransport(port: MessagePort): Transport {
   const listeners = new Set<(m: RpcMessage) => void>();
@@ -57,7 +58,7 @@ function nextDesktopPort(): Promise<MessagePort> {
   });
 }
 
-export const client = new RpcClient(undefined, { defaultTimeoutMs: 30_000 });
+export const client = new RpcClient(undefined, { defaultTimeoutMs: 30_000, observe: observeRpc });
 
 export async function connectBackend(): Promise<void> {
   // the web build's backend is a worker in this tab (compile-time constant: desktop never bundles it)

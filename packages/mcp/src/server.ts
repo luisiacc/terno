@@ -1,3 +1,4 @@
+import { captureError } from "@terno/core/diag";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { filterRuleSchema, VIEWS, type ThreadDetail, type ThreadSummary } from "@terno/core";
 import { RpcError, type Bootstrap } from "@terno/core/rpc";
@@ -26,6 +27,8 @@ function text(value: unknown) {
 }
 
 function failure(error: unknown) {
+  // the backend already captured its own bugs, an absent app is expected: only an MCP-side bug becomes a record
+  captureError(error, { code: "mcp.tool_failed", fields: error instanceof RpcError ? { rpcCode: error.code } : {}, ...(error instanceof RpcError ? { expected: true } : {}) });
   const message =
     error instanceof RpcError && error.code === "FORBIDDEN"
       ? "Not allowed: the user has not enabled sending for agents. Create a draft with create_draft instead and ask the user to review and send it in Terno."

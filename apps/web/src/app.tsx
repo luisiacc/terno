@@ -16,6 +16,9 @@ import { Reader } from "./components/reader";
 import { SelectionBar } from "./components/selection-bar";
 import { Sidebar } from "./components/sidebar";
 import { ThreadList } from "./components/thread-list";
+import { EngineStopped } from "./components/diag/engine-stopped";
+import { PaneBoundary } from "./components/diag/error-boundary";
+import { ReportPreview } from "./components/diag/report-preview";
 
 // rarely used, heavier surfaces stay out of the startup bundle
 const FiltersDialog = lazy(() => import("./components/filters-dialog").then((m) => ({ default: m.FiltersDialog })));
@@ -52,6 +55,7 @@ export function App() {
   const fresh = useApp((s) => s.ready && s.accounts.length === 0 && !s.owner && !s.demo);
   const many = useApp((s) => s.scope !== null || s.checked.size >= 2);
   const composing = useApp((s) => s.compose !== null);
+  const selectedId = useApp((s) => s.selectedId);
   useEffect(() => installKeyboard(), []);
   useEffect(() => installComposeFollowsSelection(), []);
   // every way of filing threads offers the snackbar, except its own bulk adds
@@ -70,7 +74,15 @@ export function App() {
       <WebGate />
     </Suspense>
   );
-  if (fatal) return gate ?? <Fatal message={fatal} />;
+  if (fatal)
+    return (
+      gate ?? (
+        <>
+          <Fatal message={fatal} />
+          <EngineStopped />
+        </>
+      )
+    );
   return (
     <TooltipProvider delay={500}>
       {gate}
@@ -80,8 +92,10 @@ export function App() {
           <ThreadList />
         </div>
         <main className="relative min-h-0">
-          {/* the reader pane: a bulk selection, else a new message being written, else the conversation */}
-          {many ? <SelectionBar /> : composing ? <NewMessage /> : <Reader />}
+          {/* the reader pane: a bulk selection, else a new message being written, else the conversation; one that fails to render is that pane only */}
+          <PaneBoundary area="reader" resetKey={selectedId} title="This conversation couldn't be shown">
+            {many ? <SelectionBar /> : composing ? <NewMessage /> : <Reader />}
+          </PaneBoundary>
         </main>
       </div>
       <CommandPalette />
@@ -95,6 +109,9 @@ export function App() {
         {fresh && dialog === null && needsFirstRun() && <FirstRun />}
       </Suspense>
       <CategorySnackbarHost />
+      {/* inside the settings sheet it opens over the sheet (a nested dialog) */}
+      {dialog !== "settings" && <ReportPreview />}
+      <EngineStopped />
       <DragGhost />
       <Toaster position="bottom-left" theme={mode} />
     </TooltipProvider>
