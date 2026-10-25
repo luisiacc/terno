@@ -1,3 +1,4 @@
+import { localized } from "~/lib/i18n";
 import type { CompatiblePreset, ModelInfo, PresetDescriptor, ProviderDescriptor } from "@terno/core";
 import type { AiTestResult, AppSettings } from "@terno/core/rpc";
 import { SettingsGroup, SettingsRow, type RowA11y, type SettingsUpdate } from "./parts";
@@ -384,12 +385,12 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
             </div>
             {test?.warning && (
               <p className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="ai-test-warning">
-                <CircleAlert className="size-3.5 shrink-0" aria-hidden /> {test.warning}
+                <CircleAlert className="size-3.5 shrink-0" aria-hidden /> {localized(test.warning, test.warningI18n)}
               </p>
             )}
             {test && !test.ok && (
               <div role="alert" className="text-xs" data-testid="ai-test-error">
-                <p className="text-destructive-ink">{test.error?.message}</p>
+                <p className="text-destructive-ink">{localized(test.error?.message, test.error?.i18n)}</p>
                 {errorHelp(test.error?.kind, ai) && <p className="mt-0.5 text-muted-foreground">{errorHelp(test.error?.kind, ai)}</p>}
               </div>
             )}

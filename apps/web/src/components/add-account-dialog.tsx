@@ -51,7 +51,8 @@ export function AddAccountDialog() {
       setApp({ dialog: null });
     } catch (error) {
       snack.error(error instanceof Error ? error.message : String(error));
-      if (String(error).includes("client ID")) setApp({ dialog: "settings", settingsTab: "accounts" });
+      // no client ID yet: Settings → Accounts is where it goes
+      if ((error as { i18n?: { key?: string } } | null)?.i18n?.key === "errors.gmailClientIdMissing") setApp({ dialog: "settings", settingsTab: "accounts" });
     } finally {
       setBusy(null);
     }

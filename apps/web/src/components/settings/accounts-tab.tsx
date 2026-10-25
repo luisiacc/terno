@@ -1,3 +1,4 @@
+import { localized } from "~/lib/i18n";
 import type { Account, AccountPatch, CategoryColor } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
 import { Button } from "@terno/ui/components/button";
@@ -19,7 +20,7 @@ const WEB = import.meta.env.VITE_TARGET === "web";
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 function status(a: Account): string {
-  const error = a.syncState.lastError;
+  const error = localized(a.syncState.lastError, a.syncState.lastErrorI18n);
   if (a.syncState.status === "error") return error ? t("account.status.error", { error }) : t("account.status.errorUnknown");
   if (a.syncState.status === "offline") return error ? t("account.status.offlineError", { error }) : t("account.status.offline");
   if (a.syncState.status === "syncing") return t("account.status.syncing");

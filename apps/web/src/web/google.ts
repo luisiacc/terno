@@ -76,7 +76,7 @@ function accessToken(clientId: string, loginHint?: string): Promise<TokenRespons
  */
 export async function connectGmailWeb(loginHint?: string): Promise<Account> {
   const clientId = getApp().settings?.gmailClientId;
-  if (!clientId) throw new Error(t("web.google.noClientId"));
+  if (!clientId) throw Object.assign(new Error(t("errors.gmailClientIdMissing")), { i18n: { key: "errors.gmailClientIdMissing" } });
   await preloadGoogle();
   const token = await accessToken(clientId, loginHint);
   if (!token.scope.split(" ").includes("https://www.googleapis.com/auth/gmail.modify")) throw new Error(t("web.google.noGmailScope"));

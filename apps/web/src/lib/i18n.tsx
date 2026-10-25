@@ -6,7 +6,7 @@
  * components on their inputs, and t() is a plain function, so only a
  * remount reaches every string and date.
  */
-import { isLanguageSetting, LOCALES, getLocale, loadLocale, resolveLocale, rich, setLocale, type LanguageSetting, type LocaleId, type RichKey, type RichParams } from "@terno/i18n";
+import { isLanguageSetting, isLocalized, LOCALES, getLocale, loadLocale, resolveLocale, rich, setLocale, translate, type LanguageSetting, type LocaleId, type RichKey, type RichParams } from "@terno/i18n";
 import { Fragment, useLayoutEffect, type ReactNode } from "react";
 import { create } from "zustand";
 
@@ -123,6 +123,16 @@ export function LocaleRoot({ children }: { children: ReactNode }) {
     });
   }, [epoch]);
   return <Fragment key={epoch}>{children}</Fragment>;
+}
+
+/**
+ * Text the backend sent with its catalog reference (an op's error, an
+ * account's last error, a test warning): the reference in the active
+ * language when this build knows it, else the text as sent.
+ */
+export function localized<T extends string | null | undefined>(text: T, ref: { key: string; params?: Readonly<Record<string, string | number>> } | null | undefined): T | string {
+  if (!ref || !isLocalized(ref)) return text;
+  return translate({ ...ref, message: text ?? undefined });
 }
 
 /** rich() for React: tag renderers return elements, keyed here. */

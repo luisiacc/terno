@@ -1,3 +1,4 @@
+import { localized } from "~/lib/i18n";
 import { t } from "@terno/i18n";
 import { flushAllDrafts, loadDrafts } from "~/lib/drafts";
 import { client, connectBackend } from "~/rpc/connection";
@@ -63,11 +64,11 @@ export async function boot(): Promise<void> {
     });
     client.on("op", (op) => {
       if (op.kind === "send" && op.state === "succeeded") {
-        if (op.lastError) snack.warning(t("actions.send.partial"), { description: op.lastError, duration: 12_000, background: true });
+        if (op.lastError) snack.warning(t("actions.send.partial"), { description: localized(op.lastError, op.lastErrorI18n), duration: 12_000, background: true });
         else snack.success(t("actions.send.sent"), { background: true });
       }
-      if (op.state === "unknown") snack.warning(t("actions.send.unknown", { summary: op.summary }), { description: t("actions.send.unknownHint"), duration: 10_000, background: true });
-      if (op.state === "failed") snack.error(t("actions.send.failed", { summary: op.summary }), { description: op.lastError ?? undefined, background: true });
+      if (op.state === "unknown") snack.warning(t("actions.send.unknown", { summary: localized(op.summary, op.summaryI18n) }), { description: t("actions.send.unknownHint"), duration: 10_000, background: true });
+      if (op.state === "failed") snack.error(t("actions.send.failed", { summary: localized(op.summary, op.summaryI18n) }), { description: localized(op.lastError, op.lastErrorI18n) ?? undefined, background: true });
     });
     await reloadList();
   } catch (error) {

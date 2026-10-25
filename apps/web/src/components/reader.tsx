@@ -1,4 +1,4 @@
-import type { CategoryColor, MessageDetail } from "@terno/core";
+import type { CategoryColor, MessageDetail, Reason } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { CategoryBadge, CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
@@ -20,6 +20,7 @@ import { loadThread, useThread } from "~/state/threads";
 import { printCommand } from "~/lib/print-open";
 import { HtmlBody, TextBody } from "./mail-body";
 import { MessageMenu } from "./message-menu";
+import { reasonText } from "~/lib/reasons";
 
 const AVATAR_BG: Record<string, string> = {
   rose: "bg-cat-rose/15 text-cat-rose-ink",
@@ -51,11 +52,11 @@ function ToolButton({ label, keys, onClick, children, testId, active }: { label:
 }
 
 /** Why the engine did or suggests something: its reasons, in plain words. */
-function Reasons({ title, reasons, hint }: { title: string; reasons: string[]; hint?: string }) {
+function Reasons({ title, reasons, hint }: { title: string; reasons: Reason[]; hint?: string }) {
   return (
     <TooltipContent className="max-w-72 flex-col items-start gap-1 text-left" data-testid="category-reasons">
       <p className="font-medium">{title}</p>
-      {reasons.length > 0 && <p>{reasons.join(" · ")}</p>}
+      {reasons.length > 0 && <p>{reasons.map(reasonText).join(" · ")}</p>}
       {hint && <p className="text-muted-foreground">{hint}</p>}
     </TooltipContent>
   );
@@ -369,7 +370,7 @@ export function Reader() {
                               <button
                                 type="button"
                                 data-testid="auto-mark"
-                                aria-label={t("reader.auto.label", { category: c.name, reasons: auto.reasons.join("; ") })}
+                                aria-label={t("reader.auto.label", { category: c.name, reasons: auto.reasons.map(reasonText).join("; ") })}
                                 className="rounded-sm bg-foreground/10 px-1 text-[10px] font-medium uppercase focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                               >
                                 {t("reader.auto")}
