@@ -16,6 +16,7 @@
     "@terno/ai": "workspace:*",
     "@terno/core": "workspace:*",
     "@terno/db": "workspace:*",
+    "@terno/i18n": "workspace:*",
     "@terno/mail": "workspace:*",
     "@terno/mock-data": "workspace:*",
     "@terno/store": "workspace:*",

@@ -245,6 +245,9 @@ importers:
       '@terno/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@terno/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
       '@terno/mail':
         specifier: workspace:*
         version: link:../../packages/mail
@@ -297,6 +300,9 @@ importers:
       '@terno/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@terno/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
       '@terno/idb':
         specifier: workspace:*
         version: link:../../packages/idb
@@ -376,6 +382,9 @@ importers:
       '@terno/core':
         specifier: workspace:*
         version: link:../core
+      '@terno/i18n':
+        specifier: workspace:*
+        version: link:../i18n
       openai:
         specifier: ^7.43.0
         version: 7.43.0(undici@7.30.1)(ws@8.22.0)(zod@4.6.7)
@@ -398,6 +407,9 @@ importers:
       '@terno/db':
         specifier: workspace:*
         version: link:../db
+      '@terno/i18n':
+        specifier: workspace:*
+        version: link:../i18n
       '@terno/mail':
         specifier: workspace:*
         version: link:../mail
@@ -435,6 +447,9 @@ importers:
       '@sentry/core':
         specifier: 'catalog:'
         version: 11.8.0
+      '@terno/i18n':
+        specifier: workspace:*
+        version: link:../i18n
       zod:
         specifier: 'catalog:'
         version: 4.6.7
@@ -458,6 +473,15 @@ importers:
         specifier: 'catalog:'
         version: 24.19.2
 
+  packages/i18n:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.19.2
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+
   packages/idb:
     dependencies:
       '@terno/core':
@@ -479,6 +503,9 @@ importers:
       '@terno/core':
         specifier: workspace:*
         version: link:../core
+      '@terno/i18n':
+        specifier: workspace:*
+        version: link:../i18n
       '@terno/store':
         specifier: workspace:*
         version: link:../store
@@ -554,6 +581,9 @@ importers:
       '@terno/core':
         specifier: workspace:*
         version: link:../core
+      '@terno/i18n':
+        specifier: workspace:*
+        version: link:../i18n
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1

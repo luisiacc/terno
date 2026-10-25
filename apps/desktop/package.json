@@ -19,6 +19,7 @@
   "dependencies": {
     "@terno/backend": "workspace:*",
     "@terno/core": "workspace:*",
+    "@terno/i18n": "workspace:*",
     "@terno/mail": "workspace:*",
     "@terno/mcp": "workspace:*",
     "electron-updater": "catalog:"

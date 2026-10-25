@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@terno/core": "workspace:*",
+    "@terno/i18n": "workspace:*",
     "@terno/store": "workspace:*",
     "imapflow": "^2.8.0",
     "nodemailer": "^10.2.0",
