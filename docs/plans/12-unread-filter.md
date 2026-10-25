@@ -1,6 +1,6 @@
 # Plan 12: the unread filter
 
-- **Status:** planned.
+- **Status:** shipped (§10).
 - **Builds on:** 2ac66d2.
 - **Request:** "mac has this which i like, which is a filter to only see the unread threads, lets copy that feature" (a screenshot of Mail's list header: the three-line filter button beside "All Inboxes · 23.923 messages").
 
@@ -132,3 +132,45 @@ These override the sections above where they conflict. The review is in `/tmp/un
 8. **Fresh counts.** The header's N is fetched with every reload of a filtered view (each `changed` event), in parallel with the page and dropped if a newer reload started; capped counts show "100 000+". In a search, the result count beside the title counts unread rows only.
 9. **The filter is derived, not set by `navigate`.** App state holds `unreadFilters: ReadonlySet<string>` (the persisted keys); the effective flag is `unreadFilters.has(mailboxKey(state))`, so every way of changing mailbox (the sender search, the snackbar's search, boot) gets it. Storage reads and writes are in try/catch and the stored value is validated (an array of short strings).
 10. **The empty state lives outside the listbox.** It is drawn over the (empty) listbox as a sibling, so "Quitar filtro" isn't inside `role=listbox`; after it, focus goes to the header's filter button. axe runs on it, light and dark.
+
+## 10. As shipped
+
+### Departures from the plan
+
+- **The copy is English.** The product's source language changed to English while this was built (AGENTS.md); Spanish comes back through the translation pass. The new strings: "Filter by unread" (the button's name), "Show unread only" / "Show all" (tooltip and palette), "Filtered by: Unread · N", "Unread only" (shortcuts dialog), "Filter by Unread" (Ver menu), "No unread conversations" / "You’re all caught up.", "No unread results" / "Everything that matches has been read.", "Clear filter", and " · Unread" after a select-all label.
+- **`keepIds`, not `keepId`.** The open thread and the checked ones are kept (revision 3), so the store takes up to 500 ids.
+- **The list key keeps the query last**: `[view, account, category, review, unreadOnly, query]`. The UI perf gate for search reads the query from the end of `data-results-for`.
+- **No "· 0".** With nothing unread, the subtitle reads "Filtered by: Unread" and the empty state says the rest.
+- **A mailbox with nothing unread still shows the open thread.** Turning the filter on keeps the open read thread (revision 3), so the empty state appears once nothing is open, e.g. in a mailbox just navigated to with nothing in it.
+- **IndexedDB keeps the unread ids ascending too** (after the Codex code review): the filtered select-all walk and the header count read only unread threads.
+- **Full-page baselines.** With the default tolerance they still passed with the new icon; the six that show the list header unobscured were regenerated anyway, so the next diff starts from the real header.
+
+### Desktop
+
+A Playwright-driven ⌘L in the Electron dev build toggles once, and Ver → Filter by Unread toggles through the same dispatcher (`unread.smoke.ts`). CDP key events don't reach the native menu, so a menu echo of a real keystroke wasn't observed here; the renderer drops a menu command that arrives within 300 ms of the same command from a key, whichever way Electron routes it. A real OS keystroke needs accessibility permissions this machine's automation doesn't have.
+
+### After the Codex code review (6 findings, all fixed)
+
+1. Reading the open thread in a filtered list, with motion on, threw: the reflow got an empty id list and built an empty selector. Now nothing leaves and nothing slides. Regression: an e2e with motion on.
+2. A refresh asked for while a thread was open could answer after the selection moved, and keep it. Read rows in a filtered answer are checked against who holds them now. Regression: a unit test with a held answer.
+3. IndexedDB unread scopes walked every thread id (an empty view: 28,400 lookups for zero). The unread ids are kept ascending, by binary search per crossing. Gate: an empty view's count is under half the mailbox walk (measured: 0.06 ms against 0.64 ms).
+4. A filtered search that matches nothing returned before stopping the search it superseded. Regression: a backend test with a slow scan.
+5. The list key's new last element broke the search perf gate. The query is last again.
+6. The UI perf budgets were missing. `test:ui-perf` gates ⌘L → list rendered at 100 ms (p95 ~13 ms) and the renders of moving off the kept row (21 for 21 mounted rows).
+
+### Measured
+
+- SQLite (`perf.perf.test.ts`, 29,500 threads, then 50,500): every filtered list, count and deep page between 0.1 and 0.8 ms p95; unread header counts at 50k with everything unread up to 2.7 ms; a whole unread select-all walk of 50k ids 11 ms (budget 15).
+- IndexedDB (`idb.perf.test.ts`, 28,400 threads): a cold unread order 3 ms; the worst filtered page 0.5 ms; a page after 5,000 reads 3 ms; an unread count 0.06 to 0.7 ms.
+- UI: ⌘L → the other list rendered p95 12.7 ms (budget 100).
+
+### Verification
+
+- **Screens**, 1440×900 @2x, light and dark: the header off, on (with its tooltip), and the empty state, inspected (scratch PNGs in `/tmp/unica-scratch/unread-12/`). The header's sidebar count and "Filtered by: Unread · N" agree.
+- **Test runs** (rebased on `aaa789b`):
+  - `pnpm test`: 1,536 + 392 (db-wasm).
+  - `pnpm test:e2e`: 224, of which 15 in `unread-filter.spec.ts` (4 baselines). One unrelated test failed under the full run's load with "database is not open" (the ops worker outliving its fixture) and passes alone.
+  - `pnpm test:web`: 26 of 27; the failure lists the diagnostics feature's `terno-diag` database in the web migration check.
+  - `pnpm test:ui-perf`: 17/17.
+  - `pnpm test:perf`: 106 of 107; `load.perf.test.ts`'s slow-disk case fails on this machine with or without the v11 indexes (checked by building without them).
+  - Desktop: `unread.smoke.ts` on the dev build.
