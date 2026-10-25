@@ -215,6 +215,22 @@ describe("app.import", () => {
   });
 });
 
+describe("app.import: designs (plan 15)", () => {
+  it("carries the design and the colors; a file from before designs only leaves its palettes as previous", async () => {
+    const from = setup();
+    await from.client.call("settings.update", { design: "atelier", lightTheme: "github-light", darkTheme: "design" });
+    const dump = await from.client.call("app.export", {});
+    const to = setup();
+    await to.client.call("app.import", { data: dump });
+    expect((await to.client.call("app.bootstrap", {})).settings).toMatchObject({ design: "atelier", lightTheme: "github-light", darkTheme: "design" });
+
+    const fresh = setup();
+    const { design: _d, previousLightTheme: _pl, previousDarkTheme: _pd, ...legacy } = dump.settings;
+    await fresh.client.call("app.import", { data: { ...dump, settings: { ...legacy, lightTheme: "solarized-light", darkTheme: "nord" } as never } });
+    expect((await fresh.client.call("app.bootstrap", {})).settings).toMatchObject({ design: "lumen", lightTheme: "design", darkTheme: "design", previousLightTheme: "solarized-light", previousDarkTheme: "nord" });
+  });
+});
+
 describe("AI keys are bound to the endpoint they were saved for", () => {
   const exportWith = (ai: object) => ({ format: "terno-export" as const, version: 1 as const, exportedAt: NOW, app: "t", accounts: [], categories: [], filters: [], drafts: [], ops: [], settings: { ai } });
 

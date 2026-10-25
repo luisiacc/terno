@@ -8,7 +8,7 @@ import {
   type Capabilities,
   type CompatiblePreset,
 } from "@terno/ai";
-import { AI_PROVIDER_IDS, builtinMode, canonicalThemeId, COMPATIBLE_PRESETS, CUSTOM_PREFIX, DEFAULT_THEME, textRef, type CustomTheme, type TextRef, type ThemeMode } from "@terno/core";
+import { AI_PROVIDER_IDS, builtinMode, canonicalThemeId, COMPATIBLE_PRESETS, CUSTOM_PREFIX, DEFAULT_DESIGN, DESIGN_PALETTE, isDesignId, textRef, type CustomTheme, type TextRef, type ThemeMode } from "@terno/core";
 import type { AiProfile, AiSettings, AppSettings, SettingsPatch } from "@terno/core/rpc";
 import { isLanguageSetting, L, type Localized } from "@terno/i18n";
 import type { MailStore } from "@terno/store";
@@ -30,14 +30,35 @@ interface StoredSettings extends Partial<General> {
   /** pre-v3 shape, mapped on read */
   aiProvider?: "anthropic" | "fake" | "none";
   aiModel?: string;
+  /** plan 15: 2 once the move to designs happened (see migrateAppearance) */
+  appearanceVersion?: number;
+}
+
+export const APPEARANCE_VERSION = 2;
+
+/**
+ * Plan 15: everyone moves to the full Lumen look (Lumen and its own colors):
+ * the user asked for it to be the default. A palette chosen before is
+ * remembered as "previous", one click away under Colors, but no longer
+ * applied. Pure: reads apply it until the next write persists it.
+ */
+export function migrateAppearance(s: StoredSettings): StoredSettings {
+  if ((s.appearanceVersion ?? 0) >= APPEARANCE_VERSION) return s;
+  const { lightTheme, darkTheme, design: _d, ...rest } = s;
+  const previous = (id: string | undefined) => (id && id !== DESIGN_PALETTE ? canonicalThemeId(id) : null);
+  return { ...rest, previousLightTheme: previous(lightTheme), previousDarkTheme: previous(darkTheme), appearanceVersion: APPEARANCE_VERSION };
 }
 
 export const DEFAULT_SETTINGS: General = {
   // new installs start local; migration v3 writes false for installs that predate it
   localMode: true,
   theme: "system",
-  lightTheme: DEFAULT_THEME.light,
-  darkTheme: DEFAULT_THEME.dark,
+  // plan 15: Lumen, in its own colors
+  design: DEFAULT_DESIGN,
+  lightTheme: DESIGN_PALETTE,
+  darkTheme: DESIGN_PALETTE,
+  previousLightTheme: null,
+  previousDarkTheme: null,
   motionMs: 75,
   htmlMailAppearance: "auto",
   customThemes: [],
@@ -117,8 +138,8 @@ export async function pinKeyOrigins(store: SettingsStore): Promise<void> {
   for (const [name, origin] of missing) await bindKeyOrigin(store, name, origin);
 }
 
-function stored(store: SettingsStore): Promise<StoredSettings> {
-  return store.settings.get<StoredSettings>("app", {});
+async function stored(store: SettingsStore): Promise<StoredSettings> {
+  return migrateAppearance(await store.settings.get<StoredSettings>("app", {}));
 }
 
 export function capabilityKey(provider: AiProviderId, profile: AiProfile): string {
@@ -161,20 +182,34 @@ function themeMode(id: string, custom: readonly CustomTheme[]): ThemeMode | null
   return builtinMode(id);
 }
 
+/** May `id` fill the `mode` slot: "Style colors" fits both, a palette only its own mode. */
+function fitsMode(id: string, mode: ThemeMode, custom: readonly CustomTheme[]): boolean {
+  return id === DESIGN_PALETTE || themeMode(id, custom) === mode;
+}
+
 /**
  * Theme ids saved under their Única names read as their successors; a stored
- * id that no longer resolves (or is of the other mode) falls back to the mode's default.
+ * id that no longer resolves (or is of the other mode) falls back to "Style
+ * colors"; a remembered previous palette that no longer resolves is forgotten.
  */
 function resolveThemes(g: General): General {
   const customThemes = g.customThemes.map((t) => ({ ...t, extends: canonicalThemeId(t.extends) as CustomTheme["extends"] }));
-  const ok = (id: string, mode: ThemeMode) => themeMode(id, customThemes) === mode;
-  const [lightTheme, darkTheme] = [canonicalThemeId(g.lightTheme), canonicalThemeId(g.darkTheme)];
-  return { ...g, customThemes, lightTheme: ok(lightTheme, "light") ? lightTheme : DEFAULT_THEME.light, darkTheme: ok(darkTheme, "dark") ? darkTheme : DEFAULT_THEME.dark };
+  const pick = (id: string, mode: ThemeMode) => (fitsMode(canonicalThemeId(id), mode, customThemes) ? canonicalThemeId(id) : DESIGN_PALETTE);
+  const previous = (id: string | null, mode: ThemeMode) => (id && id !== DESIGN_PALETTE && themeMode(canonicalThemeId(id), customThemes) === mode ? canonicalThemeId(id) : null);
+  return {
+    ...g,
+    customThemes,
+    design: isDesignId(g.design) ? g.design : DEFAULT_DESIGN,
+    lightTheme: pick(g.lightTheme, "light"),
+    darkTheme: pick(g.darkTheme, "dark"),
+    previousLightTheme: previous(g.previousLightTheme, "light"),
+    previousDarkTheme: previous(g.previousDarkTheme, "dark"),
+  };
 }
 
 export async function readSettings(store: SettingsStore): Promise<AppSettings> {
   const s = await stored(store);
-  const { aiProvider: _p, aiModel: _m, ai: _ai, ...general } = s;
+  const { aiProvider: _p, aiModel: _m, ai: _ai, appearanceVersion: _v, ...general } = s;
   const { provider, profiles, capabilities } = aiState(s, s.aiProvider === undefined && !s.ai?.provider && (await store.secrets.has(keySecretName("anthropic"))));
   const profile = profiles[provider] ?? { model: "" };
   const secret = keySecretName(provider, profile.preset);
@@ -217,7 +252,7 @@ export class SettingsError extends Error {
 export async function updateSettings(store: SettingsStore, patch: SettingsPatch, options: { endpointIsLocal?: boolean } = {}): Promise<AppSettings> {
   if (patch.ai) await pinKeyOrigins(store);
   const hasLegacyKey = await store.secrets.has(keySecretName("anthropic"));
-  await store.settings.update<StoredSettings, void>("app", {}, (s) => ({ value: patchedSettings(s, patch, options, hasLegacyKey), result: undefined }));
+  await store.settings.update<StoredSettings, void>("app", {}, (s) => ({ value: patchedSettings(migrateAppearance(s), patch, options, hasLegacyKey), result: undefined }));
   return readSettings(store);
 }
 
@@ -252,7 +287,7 @@ function patchedSettings(s: StoredSettings, patch: SettingsPatch, options: { end
   const custom = (general.customThemes as CustomTheme[] | undefined) ?? s.customThemes ?? [];
   for (const [key, mode] of [["lightTheme", "light"], ["darkTheme", "dark"]] as const) {
     const id = general[key] as string | undefined;
-    if (id !== undefined && themeMode(id, custom) !== mode) throw new SettingsError(L(mode === "light" ? "errors.themeUnknownLight" : "errors.themeUnknownDark", { id }));
+    if (id !== undefined && !fitsMode(id, mode, custom)) throw new SettingsError(L(mode === "light" ? "errors.themeUnknownLight" : "errors.themeUnknownDark", { id }));
   }
   const localMode = (general.localMode as boolean | undefined) ?? s.localMode ?? DEFAULT_SETTINGS.localMode;
   const profile = profiles[provider] ?? { model: "" };
@@ -266,7 +301,8 @@ function patchedSettings(s: StoredSettings, patch: SettingsPatch, options: { end
 }
 
 export async function saveCapabilities(store: SettingsStore, provider: AiProviderId, profile: AiProfile, capabilities: Capabilities): Promise<void> {
-  await store.settings.update<StoredSettings, void>("app", {}, (s) => {
+  await store.settings.update<StoredSettings, void>("app", {}, (raw) => {
+    const s = migrateAppearance(raw);
     const ai = s.ai ?? {};
     return { value: { ...s, ai: { ...ai, capabilities: { ...ai.capabilities, [capabilityKey(provider, profile)]: capabilities } } }, result: undefined };
   });

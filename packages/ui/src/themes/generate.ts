@@ -11,10 +11,11 @@ function block(theme: Theme, selector: string): string {
 /**
  * One `[data-theme="id"]` block per built-in theme. Attribute selectors (not
  * `:root[…]`) so a preview card can nest any theme; `:root` falls back to the
- * first theme (Terno claro) before theme.js has run.
+ * default design's light palette (Lumen) before theme.js has run.
  */
-export function generateThemesCss(themes: readonly Theme[] = THEMES): string {
-  const [first, ...rest] = themes;
+export function generateThemesCss(themes: readonly Theme[] = THEMES, rootId = "lumen-light"): string {
+  const first = themes.find((t) => t.id === rootId) ?? themes[0];
   if (!first) return `${GENERATED_HEADER}\n`;
+  const rest = themes.filter((t) => t !== first);
   return [GENERATED_HEADER, block(first, `:root,\n[data-theme="${first.id}"]`), ...rest.map((t) => block(t, `[data-theme="${t.id}"]`))].join("\n\n") + "\n";
 }

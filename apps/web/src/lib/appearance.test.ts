@@ -20,12 +20,13 @@ const fake = vi.hoisted(() => {
   g.document = { documentElement: html };
   g.window = globalThis;
   g.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
-  g.localStorage = { setItem() {}, getItem: () => null };
+  const stored = new Map<string, string>();
+  g.localStorage = { setItem: (k: string, v: string) => void stored.set(k, v), getItem: (k: string) => stored.get(k) ?? null };
   g.requestAnimationFrame = () => 0;
   g.cancelAnimationFrame = () => {};
   /** settings.update calls, answered by hand in the order the test chooses */
   const calls: { patch: Record<string, unknown>; resolve(v: unknown): void; reject(e: unknown): void }[] = [];
-  return { html, calls };
+  return { html, calls, stored };
 });
 
 vi.mock("~/rpc/connection", () => ({
@@ -35,15 +36,18 @@ vi.mock("~/rpc/connection", () => ({
 }));
 vi.mock("~/lib/snack", () => ({ snack: Object.assign(() => "", { error: vi.fn(), success: () => "" }) }));
 
-const { reconcileSettings, sidebarVibrancy, updateAppearance } = await import("./appearance");
+const { reconcileSettings, resolveTheme, sidebarVibrancy, updateAppearance, useAppearance, APPEARANCE_KEY } = await import("./appearance");
 const { getApp, setApp } = await import("~/state/app");
 const { snack } = await import("~/lib/snack");
 
 const SERVER: AppSettings = {
   localMode: true,
   theme: "dark",
+  design: "macos",
   lightTheme: "terno-light",
   darkTheme: "terno-dark",
+  previousLightTheme: null,
+  previousDarkTheme: null,
   motionMs: 75,
   htmlMailAppearance: "auto",
   customThemes: [],
@@ -88,6 +92,45 @@ describe("sidebar vibrancy", () => {
     expect(sidebarVibrancy(true, true, true)).toBe(false);
     expect(sidebarVibrancy(true, false, false)).toBe(false);
     expect(sidebarVibrancy(false, true, false)).toBe(false);
+  });
+});
+
+describe("designs (plan 15)", () => {
+  it("Style colors are the design's own palette; an unknown or wrong-mode id falls back to them", () => {
+    const a = { design: "lumen" as const, lightTheme: "design", darkTheme: "design", customThemes: [] };
+    expect(resolveTheme(a, "light").id).toBe("lumen-light");
+    expect(resolveTheme(a, "dark").id).toBe("lumen-dark");
+    expect(resolveTheme({ ...a, design: "atelier" }, "dark").id).toBe("atelier-dark");
+    expect(resolveTheme({ ...a, design: "macos" }, "light").id).toBe("terno-light");
+    expect(resolveTheme({ ...a, lightTheme: "dracula" }, "light").id).toBe("lumen-light");
+    expect(resolveTheme({ ...a, lightTheme: "github-light" }, "light").id).toBe("github-light");
+  });
+
+  it("paints the design and its colors, and caches both (v2) for theme.js", async () => {
+    void updateAppearance({ design: "atelier", darkTheme: "design" });
+    await tick();
+    expect(fake.html.dataset.design).toBe("atelier");
+    expect(painted()).toBe("atelier-dark");
+    expect(useAppearance.getState().design).toBe("atelier");
+    expect(JSON.parse(fake.stored.get(APPEARANCE_KEY)!)).toMatchObject({ v: 2, design: "atelier", dark: "atelier-dark", light: "terno-light", vibrancy: { light: false, dark: false } });
+    await answer();
+  });
+
+  it("quick design choices: only the latest is applied and saved (a slower font wait is dropped)", async () => {
+    void updateAppearance({ design: "atelier" });
+    void updateAppearance({ design: "lumen" });
+    await tick();
+    expect(fake.calls.map((c) => c.patch)).toEqual([{ design: "lumen" }]);
+    expect(fake.html.dataset.design).toBe("lumen");
+    await answer();
+    expect(server.design).toBe("lumen");
+  });
+
+  it("the sidebar's vibrancy also needs a design that allows it", async () => {
+    void updateAppearance({ design: "macos" });
+    await tick();
+    expect(JSON.parse(fake.stored.get(APPEARANCE_KEY)!).vibrancy).toEqual({ light: true, dark: true });
+    await answer();
   });
 });
 

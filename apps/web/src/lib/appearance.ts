@@ -1,20 +1,26 @@
-import { CUSTOM_PREFIX, DEFAULT_THEME, type ThemeMode } from "@terno/core";
+import { CUSTOM_PREFIX, DEFAULT_DESIGN, DEFAULT_THEME, DESIGN_PALETTE, isDesignId, type DesignId, type ThemeMode } from "@terno/core";
 import type { AppSettings, SettingsPatch } from "@terno/core/rpc";
 import { applyCustomTheme, clampMotion, motionOff, motionVars, opaqueBackground } from "@terno/ui/themes/apply";
 import { toHex } from "@terno/ui/themes/color";
 import { builtinTheme, resolveCustomTheme, type Theme } from "@terno/ui/themes/registry";
+import { designById } from "@terno/ui/designs/index";
+import { flushSync } from "react-dom";
+import { captureDesignAnchors, loadDesignFaces } from "~/lib/design";
 import { t } from "@terno/i18n";
 import { snack } from "~/lib/snack";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { getApp, setApp } from "~/state/app";
 
-type Appearance = Pick<AppSettings, "theme" | "lightTheme" | "darkTheme" | "motionMs" | "customThemes">;
+type Appearance = Pick<AppSettings, "theme" | "design" | "lightTheme" | "darkTheme" | "motionMs" | "customThemes">;
 
 /** What theme.js reads before React (and before the backend answers) on the next launch. */
 export const APPEARANCE_KEY = "terno:appearance";
 export interface CachedAppearance {
+  /** 2 since designs (plan 15): theme.js moves anything older to Lumen */
+  v: 2;
   mode: AppSettings["theme"];
+  design: DesignId;
   light: string;
   dark: string;
   motion: number;
@@ -25,8 +31,10 @@ export interface CachedAppearance {
 }
 
 /** The resolved mode (anything that needs "light" | "dark"). */
-export const useAppearance = create<{ mode: ThemeMode; reducedMotion: boolean; motionMs: number; themeKey: string }>(() => ({
+export const useAppearance = create<{ mode: ThemeMode; design: DesignId; reducedMotion: boolean; motionMs: number; themeKey: string }>(() => ({
   mode: document.documentElement.classList.contains("dark") ? "dark" : "light",
+  /** what theme.js painted, so the first render matches it */
+  design: isDesignId(document.documentElement.dataset.design) ? document.documentElement.dataset.design : DEFAULT_DESIGN,
   /** changes whenever the painted colors change (theme id or custom tokens) */
   themeKey: "",
   reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches,
@@ -45,9 +53,11 @@ export function resolvedMode(theme: AppSettings["theme"]): ThemeMode {
   return theme === "dark" || (theme === "system" && systemDark()) ? "dark" : "light";
 }
 
-/** The theme for a mode; unknown, deleted or wrong-mode ids fall back to the mode's default. */
-export function resolveTheme(a: Pick<Appearance, "lightTheme" | "darkTheme" | "customThemes">, mode: ThemeMode): Theme {
+/** The palette for a mode: "Style colors" is the design's own; unknown, deleted or wrong-mode ids fall back to it too. */
+export function resolveTheme(a: Pick<Appearance, "design" | "lightTheme" | "darkTheme" | "customThemes">, mode: ThemeMode): Theme {
   const id = mode === "light" ? a.lightTheme : a.darkTheme;
+  const own = builtinTheme(designById(a.design).palette[mode])!;
+  if (id === DESIGN_PALETTE) return own;
   if (id.startsWith(CUSTOM_PREFIX)) {
     const custom = a.customThemes.find((t) => t.id === id.slice(CUSTOM_PREFIX.length));
     if (custom && custom.mode === mode) return resolveCustomTheme(custom);
@@ -55,7 +65,7 @@ export function resolveTheme(a: Pick<Appearance, "lightTheme" | "darkTheme" | "c
     const t = builtinTheme(id);
     if (t && t.mode === mode) return t;
   }
-  return builtinTheme(DEFAULT_THEME[mode])!;
+  return own;
 }
 
 function baseId(theme: Theme, a: Pick<Appearance, "customThemes">): string {
@@ -87,11 +97,18 @@ export function applyAppearance(a: Appearance): void {
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const ms = clampMotion(a.motionMs);
   const custom = theme.id.startsWith(CUSTOM_PREFIX);
-  const vibrancy = sidebarVibrancy(isMacDesktop(), theme.vibrancy, matchMedia(REDUCED_TRANSPARENCY).matches);
-  const key = JSON.stringify([mode, theme.id, custom ? theme.tokens : null, ms, reduced, vibrancy]);
+  const design = designById(a.design);
+  // the design may keep its sidebar opaque (Atelier's and Lumen's paper) whatever the palette allows
+  const vibrancy = sidebarVibrancy(isMacDesktop(), theme.vibrancy && design.vibrancy, matchMedia(REDUCED_TRANSPARENCY).matches);
+  const key = JSON.stringify([mode, design.id, theme.id, custom ? theme.tokens : null, ms, reduced, vibrancy]);
+  const designChanged = useAppearance.getState().design !== design.id || html.dataset.design !== design.id;
   if (key !== applied) {
     applied = key;
+    // what must stay put across a design switch is measured before anything changes (plan 15, R3)
+    const restore = designChanged ? captureDesignAnchors() : null;
     html.setAttribute("data-theme-switching", "");
+    // CSS first, so the structure React commits below is measured with its own tokens
+    html.dataset.design = design.id;
     html.classList.toggle("dark", mode === "dark");
     html.dataset.theme = baseId(theme, a);
     html.style.colorScheme = mode;
@@ -100,6 +117,11 @@ export function applyAppearance(a: Appearance): void {
     html.dataset.motion = motionOff(ms, reduced) ? "off" : "on";
     if (vibrancy) html.setAttribute("data-vibrancy", "");
     else html.removeAttribute("data-vibrancy");
+    if (restore) {
+      // the variants' structure commits in this same task, before paint: one frame, styles and structure in agreement
+      flushSync(() => useAppearance.setState({ design: design.id }));
+      restore();
+    }
     // the first frame paints the new colors with transitions off; the next re-enables them
     cancelAnimationFrame(unswitch);
     unswitch = requestAnimationFrame(() => {
@@ -108,11 +130,11 @@ export function applyAppearance(a: Appearance): void {
   }
 
   // after the DOM: listeners (the mail iframe) read the painted colors
-  useAppearance.setState({ mode, reducedMotion: reduced, motionMs: ms, themeKey: `${theme.id}:${custom ? JSON.stringify(theme.tokens) : ""}` });
+  useAppearance.setState({ mode, design: design.id, reducedMotion: reduced, motionMs: ms, themeKey: `${theme.id}:${custom ? JSON.stringify(theme.tokens) : ""}` });
 
   const light = resolveTheme(a, "light");
   const dark = resolveTheme(a, "dark");
-  const cache: CachedAppearance = { mode: a.theme, light: light.id, dark: dark.id, motion: ms, vibrancy: { light: light.vibrancy, dark: dark.vibrancy } };
+  const cache: CachedAppearance = { v: 2, mode: a.theme, design: design.id, light: light.id, dark: dark.id, motion: ms, vibrancy: { light: light.vibrancy && design.vibrancy, dark: dark.vibrancy && design.vibrancy } };
   for (const t of [light, dark]) {
     if (t.id.startsWith(CUSTOM_PREFIX)) (cache.custom ??= {})[t.mode] = { base: baseId(t, a), tokens: t.tokens };
   }
@@ -145,8 +167,8 @@ export function installAppearanceListeners(): () => void {
   };
 }
 
-type AppearancePatch = Pick<SettingsPatch, "theme" | "lightTheme" | "darkTheme" | "motionMs" | "customThemes" | "htmlMailAppearance">;
-const APPEARANCE_FIELDS = ["theme", "lightTheme", "darkTheme", "motionMs", "customThemes", "htmlMailAppearance"] as const;
+type AppearancePatch = Pick<SettingsPatch, "theme" | "design" | "lightTheme" | "darkTheme" | "motionMs" | "customThemes" | "htmlMailAppearance">;
+const APPEARANCE_FIELDS = ["theme", "design", "lightTheme", "darkTheme", "motionMs", "customThemes", "htmlMailAppearance"] as const;
 
 /** Appearance changes not yet acknowledged, oldest first (each one is sent after the previous answered). */
 const pending: { patch: AppearancePatch }[] = [];
@@ -179,7 +201,21 @@ export function adoptSettings(settings: AppSettings): void {
  * one at a time in order, and each answer (or refusal) is reconciled against
  * the changes still pending. A refusal drops only its own change.
  */
-export function updateAppearance(patch: AppearancePatch): Promise<AppSettings | null> {
+/** The latest design choice: a slower font wait that finishes after a newer choice is dropped (plan 15, R2). */
+let designSeq = 0;
+/** How long a design switch waits for its faces (local files; normally a few ms). */
+export const DESIGN_FONT_WAIT_MS = 300;
+
+export async function updateAppearance(patch: AppearancePatch): Promise<AppSettings | null> {
+  if (patch.design !== undefined && patch.design !== getApp().settings?.design) {
+    const seq = ++designSeq;
+    await loadDesignFaces(designById(patch.design), DESIGN_FONT_WAIT_MS);
+    if (seq !== designSeq) return null;
+  }
+  return commitAppearance(patch);
+}
+
+function commitAppearance(patch: AppearancePatch): Promise<AppSettings | null> {
   const current = getApp().settings;
   if (!current) return Promise.resolve(null);
   const entry = { patch };

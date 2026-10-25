@@ -20,6 +20,8 @@ export interface DesignDefinition {
     display: string;
     /** font-feature-settings for the whole UI */
     features: string;
+    /** the faces to have loaded before this design paints (CSS font shorthands; empty: system fonts) */
+    faces: readonly string[];
   };
   /** the shared dense scale, as [size, line height] (rem): utilities like text-sm read these */
   text: Record<TextStep, readonly [string, string]>;

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { test as base, expect, type Locator, type Page } from "@playwright/test";
 import { sqlDb, startDevServer, type DevServer } from "../../backend-dev/src/server";
 import type { IncomingMessage } from "@terno/store";
+import type { DesignId } from "@terno/core";
 import { seedPrintFixtures } from "@terno/backend";
 import type { PrintFixtureKey } from "@terno/mock-data";
 import { E2E_NOW, TEMPLATE_ENV } from "./constants";
@@ -15,6 +16,8 @@ interface Fixtures {
   fixedClock: boolean;
   /** backend-dev knobs: a fresh install with no mailbox, and owner claims through the demo registry */
   backendOptions: { empty?: boolean; ownerClaims?: boolean; agentSocket?: boolean };
+  /** the design the app opens in (plan 15): each Playwright project sets its own; null leaves the install's default (Lumen) */
+  design: DesignId | null;
   server: DevServer;
   /** the app, loaded, connected and showing the inbox */
   app: Page;
@@ -23,6 +26,7 @@ interface Fixtures {
 export const test = base.extend<Fixtures>({
   fixedClock: [true, { option: true }],
   backendOptions: [{}, { option: true }],
+  design: ["macos", { option: true }],
   server: async ({ backendOptions }, use) => {
     const template = process.env[TEMPLATE_ENV];
     if (!template) throw new Error("global setup did not seed a template database");
@@ -40,8 +44,9 @@ export const test = base.extend<Fixtures>({
     await server.close();
     rmSync(dir, { recursive: true, force: true });
   },
-  app: async ({ page, server, fixedClock, backendOptions }, use) => {
+  app: async ({ page, server, fixedClock, backendOptions, design }, use) => {
     if (fixedClock) await page.clock.setFixedTime(new Date(E2E_NOW));
+    if (design) await server.backend.server.invoke("settings.update", { design }, { clientId: "setup", origin: "dev" as const });
     await page.goto(`/?backend=${encodeURIComponent(server.url)}&token=e2e`);
     await page.locator("[data-ready]").waitFor();
     if (!backendOptions.empty) await rows(page).first().waitFor();

@@ -1,4 +1,4 @@
-import type { DesignId } from "@terno/core";
+import { DEFAULT_DESIGN, type DesignId } from "@terno/core";
 import { DESIGNS } from "./index";
 import { RADIUS_STEPS, TEXT_STEPS, TYPE_ROLES, type DesignDefinition, type TypeRole } from "./types";
 
@@ -68,7 +68,7 @@ function block(d: DesignDefinition, selector: string): string {
  * `:root[…]`) so a Settings preview can nest any design; `:root` takes the
  * fallback design's values before theme.js has run.
  */
-export function generateDesignsCss(designs: readonly DesignDefinition[] = DESIGNS, fallback: DesignId = "macos"): string {
+export function generateDesignsCss(designs: readonly DesignDefinition[] = DESIGNS, fallback: DesignId = DEFAULT_DESIGN): string {
   const first = designs.find((d) => d.id === fallback) ?? designs[0];
   if (!first) return `${GENERATED_HEADER}\n`;
   const rest = designs.filter((d) => d !== first);

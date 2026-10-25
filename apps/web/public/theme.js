@@ -1,5 +1,5 @@
 // Runs before React (external file so the app's strict CSP allows it): paints
-// the right mode, theme and motion before first paint from the appearance the
+// the right mode, design, theme and motion before first paint from the appearance the
 // app cached last time (lib/appearance.ts writes it; a test runs this file).
 (function () {
   // Once: the keys from when the app was called Única ("unica:*") take their
@@ -28,6 +28,7 @@
 
   try {
     var KEY = "terno:appearance";
+    var html = document.documentElement;
     var MODES = ["system", "light", "dark"];
     var ID = /^[a-z0-9-]{1,60}$/;
     // the default themes' ids from when the app was called Única (@terno/core LEGACY_THEME_IDS)
@@ -35,6 +36,9 @@
     // the same numbers-only grammar as @terno/core THEME_COLOR_RE
     var N = "(?:\\d+(?:\\.\\d+)?|\\.\\d+)";
     var COLOR = new RegExp("^(?:#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})|oklch\\(\\s*" + N + "%?\\s+" + N + "\\s+" + N + "(?:deg)?\\s*(?:\\/\\s*" + N + "%?\\s*)?\\))$", "i");
+    // plan 15: designs (@terno/core DESIGN_IDS) and the default's own palettes
+    var DESIGNS = ["macos", "atelier", "lumen"];
+    var LUMEN = { v: 2, design: "lumen", light: "lumen-light", dark: "lumen-dark", vibrancy: { light: false, dark: false } };
     var a = null;
     try {
       a = JSON.parse(localStorage.getItem(KEY) || "null");
@@ -42,14 +46,17 @@
     if (!a || typeof a !== "object") {
       // v1 kept only the mode under unica:theme (terno:theme since the move above): convert it once
       var legacy = localStorage.getItem("terno:theme");
-      a = { mode: MODES.indexOf(legacy) >= 0 ? legacy : "system", light: "terno-light", dark: "terno-dark", motion: 75, vibrancy: { light: true, dark: true } };
+      a = { v: 2, mode: MODES.indexOf(legacy) >= 0 ? legacy : "system", design: LUMEN.design, light: LUMEN.light, dark: LUMEN.dark, motion: 75, vibrancy: LUMEN.vibrancy };
       localStorage.setItem(KEY, JSON.stringify(a));
       localStorage.removeItem("terno:theme");
+    } else if (a.v !== 2) {
+      // a cache from before designs: everyone moves to Lumen in its own colors (the backend does the same; its answer repaints anything else)
+      a = { v: 2, mode: a.mode, design: LUMEN.design, light: LUMEN.light, dark: LUMEN.dark, motion: a.motion, vibrancy: LUMEN.vibrancy };
     }
+    html.setAttribute("data-design", DESIGNS.indexOf(a.design) >= 0 ? a.design : LUMEN.design);
     var mode = MODES.indexOf(a.mode) >= 0 ? a.mode : "system";
     var dark = mode === "dark" || (mode === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
     var m = dark ? "dark" : "light";
-    var html = document.documentElement;
     var c = html.classList;
     if (dark) c.add("dark");
     else c.remove("dark");
@@ -58,7 +65,7 @@
     var custom = a.custom && a.custom[m];
     var id = custom ? custom.base : a[m];
     if (typeof id === "string" && Object.prototype.hasOwnProperty.call(LEGACY_IDS, id)) id = LEGACY_IDS[id];
-    html.setAttribute("data-theme", typeof id === "string" && ID.test(id) ? id : dark ? "terno-dark" : "terno-light");
+    html.setAttribute("data-theme", typeof id === "string" && ID.test(id) ? id : dark ? LUMEN.dark : LUMEN.light);
     if (custom && custom.tokens) {
       for (var k in custom.tokens) {
         var v = custom.tokens[k];

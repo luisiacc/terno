@@ -6,8 +6,11 @@ import { pinKeyOrigins, readSettings, SettingsError, updateSettings } from "./se
 
 const GENERAL_KEYS = [
   "theme",
+  "design",
   "lightTheme",
   "darkTheme",
+  "previousLightTheme",
+  "previousDarkTheme",
   "motionMs",
   "htmlMailAppearance",
   "customThemes",
@@ -29,6 +32,13 @@ function settingsFrom(raw: Record<string, unknown>, current: { localMode: boolea
     if (raw[key] === undefined) continue;
     const r = settingsPatchSchema.safeParse({ [key]: raw[key] });
     if (r.success) general[key] = (r.data as Record<string, unknown>)[key];
+  }
+  // plan 15: a file from before designs carries the palettes then chosen: like this install's own, they become "previous", and Lumen applies
+  if (raw.design === undefined) {
+    for (const [from, to] of [["lightTheme", "previousLightTheme"], ["darkTheme", "previousDarkTheme"]] as const) {
+      if (general[from] !== undefined) general[to] = general[from] === "design" ? null : general[from];
+      delete general[from];
+    }
   }
   // a file never makes this install less private: local mode can come on, agent sending can go off
   if (raw.localMode === true && !current.localMode) general.localMode = true;

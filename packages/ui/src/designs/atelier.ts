@@ -8,7 +8,7 @@ export const atelier: DesignDefinition = {
   id: "atelier",
   palette: { light: "atelier-light", dark: "atelier-dark" },
   vibrancy: false,
-  fonts: { sans: SANS, display: SERIF, features: '"cv11", "ss01"' },
+  fonts: { sans: SANS, display: SERIF, features: '"cv11", "ss01"', faces: ['400 1em "Instrument Sans Variable"', '600 1em "Instrument Sans Variable"', '400 1em "Instrument Serif"', 'italic 400 1em "Instrument Serif"'] },
   text: {
     "2xs": ["0.6875rem", "0.875rem"],
     xs: ["0.75rem", "1rem"],

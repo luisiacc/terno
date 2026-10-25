@@ -29,17 +29,17 @@ const errorOf = (p: Promise<unknown>) => p.then(() => null, (e: RpcError) => e);
 const nord = { id: "mi-nord", name: "Mi Nord", mode: "dark" as const, extends: "nord" as const, tokens: { primary: "#88c0d0" } };
 
 describe("appearance settings", () => {
-  it("new installs get the defaults", async () => {
+  it("new installs get the defaults: Lumen in its own colors", async () => {
     const { client } = setup();
     const s = (await client.call("app.bootstrap", {})).settings;
-    expect(s).toMatchObject({ theme: "system", lightTheme: "terno-light", darkTheme: "terno-dark", motionMs: 75, htmlMailAppearance: "auto", customThemes: [] });
+    expect(s).toMatchObject({ theme: "system", design: "lumen", lightTheme: "design", darkTheme: "design", previousLightTheme: null, previousDarkTheme: null, motionMs: 75, htmlMailAppearance: "auto", customThemes: [] });
   });
 
   it("a legacy blob keeps its mode and gets the new fields' defaults", async () => {
     const { backend, client } = setup();
     setSetting(sqlDb(backend.store), "app", { theme: "dark", density: "compact" });
     const s = (await client.call("app.bootstrap", {})).settings;
-    expect(s).toMatchObject({ theme: "dark", density: "compact", lightTheme: "terno-light", darkTheme: "terno-dark", motionMs: 75, htmlMailAppearance: "auto", customThemes: [] });
+    expect(s).toMatchObject({ theme: "dark", density: "compact", design: "lumen", lightTheme: "design", darkTheme: "design", previousLightTheme: null, motionMs: 75, htmlMailAppearance: "auto", customThemes: [] });
   });
 
   it("every new field round-trips", async () => {
@@ -61,25 +61,60 @@ describe("appearance settings", () => {
     // a light-mode slot can't take a dark custom theme
     expect(await errorOf(client.call("settings.update", { customThemes: [nord], lightTheme: "custom:mi-nord" }))).toMatchObject({ code: "BAD_REQUEST" });
     expect(await errorOf(client.call("settings.update", { customThemes: [{ ...nord, tokens: { primary: "red;}body{display:none" } }] }))).toMatchObject({ code: "BAD_REQUEST" });
-    expect((await client.call("app.bootstrap", {})).settings).toMatchObject({ lightTheme: "terno-light", darkTheme: "terno-dark", customThemes: [] });
+    expect((await client.call("app.bootstrap", {})).settings).toMatchObject({ lightTheme: "design", darkTheme: "design", customThemes: [] });
   });
 
-  it("deleting a custom theme in use falls back to the mode's default", async () => {
+  it("deleting a custom theme in use falls back to Style colors", async () => {
     const { backend, client } = setup();
     await client.call("settings.update", { customThemes: [nord], darkTheme: "custom:mi-nord" });
     const after = await client.call("settings.update", { customThemes: [] });
-    expect(after.darkTheme).toBe("terno-dark");
+    expect(after.darkTheme).toBe("design");
     // and a stored id that names nothing (edited by hand, or a removed built-in) too
-    setSetting(sqlDb(backend.store), "app", { lightTheme: "retired-theme", darkTheme: "github-light" });
-    expect((await client.call("app.bootstrap", {})).settings).toMatchObject({ lightTheme: "terno-light", darkTheme: "terno-dark" });
+    setSetting(sqlDb(backend.store), "app", { appearanceVersion: 2, lightTheme: "retired-theme", darkTheme: "github-light" });
+    expect((await client.call("app.bootstrap", {})).settings).toMatchObject({ lightTheme: "design", darkTheme: "design" });
   });
 
   it("reads themes saved under their Única ids as the Terno ones", async () => {
     const { backend, client } = setup();
-    setSetting(sqlDb(backend.store), "app", { lightTheme: "unica-light", darkTheme: "custom:mi-nord", customThemes: [{ ...nord, extends: "unica-dark" }] });
+    setSetting(sqlDb(backend.store), "app", { appearanceVersion: 2, lightTheme: "unica-light", darkTheme: "custom:mi-nord", customThemes: [{ ...nord, extends: "unica-dark" }] });
     const settings = (await client.call("app.bootstrap", {})).settings;
     expect(settings).toMatchObject({ lightTheme: "terno-light", darkTheme: "custom:mi-nord" });
     expect(settings.customThemes[0]).toMatchObject({ id: "mi-nord", extends: "terno-dark" });
+  });
+});
+
+describe("designs (plan 15)", () => {
+  it("an install from before designs moves to Lumen in its own colors; its palettes are remembered as previous, not applied", async () => {
+    const { backend, client } = setup();
+    setSetting(sqlDb(backend.store), "app", { theme: "dark", lightTheme: "github-light", darkTheme: "custom:mi-nord", customThemes: [nord], density: "compact" });
+    const s = (await client.call("app.bootstrap", {})).settings;
+    expect(s).toMatchObject({ theme: "dark", density: "compact", design: "lumen", lightTheme: "design", darkTheme: "design", previousLightTheme: "github-light", previousDarkTheme: "custom:mi-nord" });
+    // an unrelated change persists the move: choosing a design later never brings the old palette back
+    await client.call("settings.update", { motionMs: 50 });
+    const stored = getSetting<Record<string, unknown>>(sqlDb(backend.store), "app", {});
+    expect(stored).toMatchObject({ appearanceVersion: 2, previousLightTheme: "github-light", motionMs: 50 });
+    expect(stored.lightTheme).toBeUndefined();
+    expect(await client.call("settings.update", { design: "macos" })).toMatchObject({ design: "macos", lightTheme: "design", previousLightTheme: "github-light" });
+  });
+
+  it("the old defaults and Única ids are remembered under their current names; one that no longer exists is forgotten", async () => {
+    const { backend, client } = setup();
+    setSetting(sqlDb(backend.store), "app", { lightTheme: "unica-light", darkTheme: "retired-theme" });
+    expect((await client.call("app.bootstrap", {})).settings).toMatchObject({ lightTheme: "design", previousLightTheme: "terno-light", previousDarkTheme: null });
+  });
+
+  it("a design and Style colors round-trip; an unknown design is refused, a stored one reads as Lumen", async () => {
+    const { backend, client } = setup();
+    expect(await client.call("settings.update", { design: "atelier", lightTheme: "solarized-light" })).toMatchObject({ design: "atelier", lightTheme: "solarized-light" });
+    expect(await client.call("settings.update", { lightTheme: "design", darkTheme: "design" })).toMatchObject({ lightTheme: "design", darkTheme: "design" });
+    expect(await errorOf(client.call("settings.update", { design: "brutalist" as never }))).toMatchObject({ code: "BAD_REQUEST" });
+    setSetting(sqlDb(backend.store), "app", { appearanceVersion: 2, design: "brutalist" });
+    expect((await client.call("app.bootstrap", {})).settings.design).toBe("lumen");
+  });
+
+  it("a remembered palette of the wrong mode is forgotten", async () => {
+    const { client } = setup();
+    expect(await client.call("settings.update", { previousLightTheme: "dracula", previousDarkTheme: "nord" })).toMatchObject({ previousLightTheme: null, previousDarkTheme: "nord" });
   });
 });
 

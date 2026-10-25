@@ -7,7 +7,7 @@ export const lumen: DesignDefinition = {
   id: "lumen",
   palette: { light: "lumen-light", dark: "lumen-dark" },
   vibrancy: false,
-  fonts: { sans: FIGTREE, display: FIGTREE, features: '"cv11", "ss01"' },
+  fonts: { sans: FIGTREE, display: FIGTREE, features: '"cv11", "ss01"', faces: ['400 1em "Figtree Variable"', '600 1em "Figtree Variable"', '700 1em "Figtree Variable"'] },
   text: {
     "2xs": ["0.6875rem", "0.875rem"],
     xs: ["0.75rem", "1rem"],

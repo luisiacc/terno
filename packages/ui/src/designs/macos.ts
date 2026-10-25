@@ -7,7 +7,7 @@ export const macos: DesignDefinition = {
   id: "macos",
   palette: { light: "terno-light", dark: "terno-dark" },
   vibrancy: true,
-  fonts: { sans: SF, display: SF, features: '"cv11", "ss01"' },
+  fonts: { sans: SF, display: SF, features: '"cv11", "ss01"', faces: [] },
   // 11 · 12 · 13 · 14 · 15 · 17 · 20
   text: {
     "2xs": ["0.6875rem", "0.875rem"],

@@ -16,7 +16,7 @@ import type { I18nRef } from "./envelope";
 import type { AutoCategorize } from "../categorize/policy";
 import type { LearnedProposal } from "../learning/propose";
 import { filterRuleSchema, type Filter, type FilterRule } from "../rules/schema";
-import { customThemesSchema, type CustomTheme, type MotionMs } from "../themes";
+import { customThemesSchema, DESIGN_IDS, type CustomTheme, type DesignId, type MotionMs } from "../themes";
 import {
   CATEGORY_COLORS,
   VIEWS,
@@ -85,9 +85,14 @@ export interface AppSettings {
   localMode: boolean;
   /** the MODE (name kept from v1): follow the OS, or always light / dark */
   theme: "system" | "light" | "dark";
-  /** theme used in light mode: a built-in id or `custom:<id>` */
+  /** plan 15: the design (Style): typography, shape, density and component variants */
+  design: DesignId;
+  /** the palette used in light mode: "design" (the design's own, the default), a built-in id or `custom:<id>` */
   lightTheme: string;
   darkTheme: string;
+  /** the palette chosen before designs, offered first under Colors (plan 15); null when there was none */
+  previousLightTheme: string | null;
+  previousDarkTheme: string | null;
   /** every animation's base duration; 0 turns animation off */
   motionMs: MotionMs;
   /** auto: uncolored mail takes the theme's colors, designed mail sits on a light paper card; paper: always the card */
@@ -291,9 +296,12 @@ const aiTarget = z.object({
 const settingsPatch = z.object({
   localMode: z.boolean().optional(),
   theme: z.enum(["system", "light", "dark"]).optional(),
+  design: z.enum(DESIGN_IDS).optional(),
   lightTheme: z.string().trim().min(1).max(60).optional(),
   darkTheme: z.string().trim().min(1).max(60).optional(),
   motionMs: z.union([z.literal(0), z.literal(50), z.literal(75), z.literal(100)]).optional(),
+  previousLightTheme: z.string().trim().min(1).max(60).nullable().optional(),
+  previousDarkTheme: z.string().trim().min(1).max(60).nullable().optional(),
   htmlMailAppearance: z.enum(["auto", "paper"]).optional(),
   customThemes: customThemesSchema.optional(),
   density: z.enum(["comfortable", "compact"]).optional(),
