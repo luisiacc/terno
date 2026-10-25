@@ -59,8 +59,18 @@ test.afterAll(async () => {
   if (workdir) rmSync(workdir, { recursive: true, force: true });
 });
 
+/** The search field; a new profile opens in Lumen (plan 15), whose field "/" opens. */
+async function searchBox() {
+  const input = page.getByTestId("search-input");
+  if (!(await input.isVisible())) {
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.keyboard.press("/");
+  }
+  return input;
+}
+
 async function openThread(key: PrintFixtureKey) {
-  await page.getByTestId("search-input").fill(QUERY[key]);
+  await (await searchBox()).fill(QUERY[key]);
   await expect(page.locator("[data-testid=thread-row]")).toHaveCount(1);
   await page.locator("[data-testid=thread-row]").first().dispatchEvent("mousedown");
   await expect(page.getByTestId("reader-subject")).toHaveText(fixtures.get(key)!.subject);
@@ -116,7 +126,7 @@ for (const key of PRINT_FIXTURE_KEYS) {
 
 test("a realistic demo conversation exports too", async () => {
   // a demo conversation with replies (none of the fixtures)
-  await page.getByTestId("search-input").fill("");
+  await (await searchBox()).fill("");
   await page.getByTestId("nav-inbox").click();
   const fixtureSubjects = new Set([...fixtures.values()].map((f) => f.subject));
   let found = false;

@@ -51,20 +51,21 @@ test.afterAll(async () => {
   if (workdir) rmSync(workdir, { recursive: true, force: true });
 });
 
-const pressed = () => page.getByTestId("unread-filter").getAttribute("aria-pressed");
+/** "true" while the list shows the unread filter: read from the list's key, the same in every design (Lumen has chips, not the header button) */
+const pressed = () => page.getByTestId("thread-list").evaluate((el) => String((JSON.parse(el.getAttribute("data-results-for") ?? "[]") as unknown[])[4] === "unread"));
 const delivered = () => page.evaluate(() => (window as unknown as { __menuCommands: string[] }).__menuCommands.length);
 
 test("⌘L toggles once per press; the Ver menu item toggles too, and its echo of a key is dropped", async () => {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.keyboard.press("Meta+l");
-  await expect(page.getByTestId("unread-filter")).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(pressed).toBe("true");
   await page.waitForTimeout(500);
   expect(await pressed()).toBe("true");
   const echoes = await delivered();
   console.log(`menu commands delivered for one ⌘L press: ${echoes}`);
 
   await app.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById("unread-filter")!.click());
-  await expect(page.getByTestId("unread-filter")).toHaveAttribute("aria-pressed", "false");
+  await expect.poll(pressed).toBe("false");
   expect(await delivered()).toBe(echoes + 1);
 
   // a key and the menu's echo of it within the same moment: one toggle

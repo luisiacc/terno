@@ -47,24 +47,31 @@ test("boots from app:// with the backend in a utility process", async () => {
   console.log(`cold start to first rows (includes seeding 3,000 demo threads): ${coldStartMs} ms`);
 });
 
-test("the window follows the theme: native theme, vibrancy and background, remembered for the next launch", async () => {
+test("the window follows the design and the theme: Lumen by default (opaque, its faces in the bundle), macOS on the vibrancy, remembered", async () => {
   const file = join(userData, "appearance.json");
   const read = () => (existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : null);
-  // Terno claro sits on the native vibrancy
+  // a new profile: Lumen in its own colors, painted by theme.js, its faces loaded from app:// (packed, not fetched)
+  expect(await page.evaluate(() => document.documentElement.dataset.design)).toBe("lumen");
+  expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe("lumen-light");
+  await expect.poll(() => page.evaluate(() => document.fonts.check('700 24px "Figtree Variable"'))).toBe(true);
+  expect(await page.evaluate(() => [...document.fonts].some((f) => f.family.includes("Figtree") && f.status === "loaded"))).toBe(true);
+  // Lumen's paper sidebar is opaque: no native vibrancy behind it
+  await expect.poll(read).toMatchObject({ themeSource: "system", vibrancy: false });
+  expect(await page.evaluate(() => document.documentElement.hasAttribute("data-vibrancy"))).toBe(false);
+  // macOS: Terno Light sits on the native vibrancy
+  await page.getByTestId("open-settings").click();
+  await page.getByTestId("tab-appearance").click();
+  await page.getByTestId("design-card-macos").click();
+  await expect(page.locator("html")).toHaveAttribute("data-design", "macos");
+  await page.keyboard.press("Escape");
   await expect.poll(read).toMatchObject({ themeSource: "system", vibrancy: true });
   expect(await page.evaluate(() => document.documentElement.hasAttribute("data-vibrancy"))).toBe(true);
   // a named palette renders exactly: opaque window in its own background
-  await page.evaluate(() => {
-    localStorage.setItem("terno:appearance", JSON.stringify({ mode: "dark", light: "terno-light", dark: "nord", motion: 75, vibrancy: { light: true, dark: false } }));
-    (window as any).ternoDesktop.setAppearance({ themeSource: "dark", background: "#2e3440", vibrancy: false });
-  });
+  await page.evaluate(() => (window as any).ternoDesktop.setAppearance({ themeSource: "dark", background: "#2e3440", vibrancy: false }));
   await expect.poll(read).toMatchObject({ themeSource: "dark", background: "#2e3440", vibrancy: false });
   expect(await app.evaluate(({ nativeTheme }) => nativeTheme.themeSource)).toBe("dark");
-  // put it back for the rest of the suite
-  await page.evaluate(() => {
-    localStorage.removeItem("terno:appearance");
-    (window as any).ternoDesktop.setAppearance({ themeSource: "system", background: "#fcfcfa", vibrancy: true });
-  });
+  // put it back for the rest of the suite (macOS, light by the system)
+  await page.evaluate(() => (window as any).ternoDesktop.setAppearance({ themeSource: "system", background: "#fcfcfa", vibrancy: true }));
   await expect.poll(read).toMatchObject({ themeSource: "system", vibrancy: true });
 });
 
