@@ -169,3 +169,13 @@ Round 1 (`/tmp/unica-scratch/codex-review.sh 2d97038 …`, 8 findings), each fix
 6. **Medium:** a link with only its address at a caret inserted nothing. It goes in as the address. Test.
 7. **Medium:** ⇧⌘V of a URL over a selection linked the selection. Plain paste is honored. Test.
 8. **Medium:** the huge-draft gates didn't assert the painted frame. They gate its p50 (≤ 50 ms) and the select-all toolbar time.
+
+Round 2 (after `89df3a3`, 7 findings), each fixed with a regression test:
+
+1. **High:** a send waiting for a save in flight took the body before the wait; typing during it (and a failed save) left text out. `settle()` reads after the wait, and the draft is read-only from the moment Send is pressed. Unit tests (a failed save under a pending send; an edit right after Send refused).
+2. **High:** the stand-in's first keystroke wasn't marked dirty. Fixed; e2e with one keystroke.
+3. **High:** a stand-in mounted again (collapse and reopen while loading) came back empty and the next key replaced what was kept. It shows what it has; e2e.
+4. **Medium:** a stand-in over a stored rich body made it "canonical". Sources carry their trust; a stand-in over stored HTML stays untrusted and is re-read through the schema before sending. Unit test.
+5. **Medium:** applying alignment or indent to many lines was still a step per line, and ProseMirror replaced every changed line's element under a whole-draft selection (7 s at 2 MB). One step, and a paragraph node view updates the style in place: ~1 s, gated at 1.5 s.
+6. **Medium:** a single long line in a quote converted in one block. Pieces are bounded by characters, inside lines too; each step < 25 ms on 5 million characters (unit test).
+7. **Medium:** the "painted" sample was taken in the rAF callback, before layout and paint. Now the task after that frame.
