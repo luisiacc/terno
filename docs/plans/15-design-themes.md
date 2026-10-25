@@ -1,6 +1,6 @@
 # Plan 15: designs (macOS, Atelier, Lumen)
 
-- **Status:** planned. Implementation waits for plan 14 (i18n) to merge: it touches every UI component, and every string below goes through its catalog.
+- **Status:** shipped (§12, §13).
 - **Builds on:** `b77b27b` (main), plus plan 14 once merged.
 - **Request (verbatim):** "for the appearance of the app, lets be even more themable, look at these 2 pictures, lets add those as more themes, but these not only change colors but also the UI components, the current theme will be called "MacOS" and will be one of the available themes. i'm also attaching here the code that produced those uis in the pictures, do check that the fonts and weights are different, also they have different font families. so lets make our design system components even more themable at this level, but keeping it easy for changing them later so the maintenance of this is not too heavy for future agents. The default theme will be the one from the 2nd picture. These themes will apply to the entire app, including settings and everything, make sure that this doesn't cause any bugs please, be thorough and have codex do code reviews of your logics and code and fix the findings."
 - **Inputs:** picture 1 (**Atelier**), picture 2 (**Lumen**, the new default), and the code that produced them (a Next.js/v0 showcase: `app/globals.css` tokens per `.theme-atelier` / `.theme-lumen`, `app/layout.tsx` fonts, `components/variants/{atelier,lumen}.tsx`, `components/mail/{primitives,reply-area}.tsx`). The reference code is read as a spec only. Nothing from it is copied, installed or run.
@@ -437,10 +437,11 @@ All of this lands after plan 14 merges, on its catalog. Each commit passes typec
 > - *Add a variant value:* add it to the union in `designs/types.ts`; the compiler then points at every `variant(…)` map that must implement it. Keep roles, names, test ids and shortcuts identical (the parity test checks).
 > - *Rules:* no colors or durations in a design; text only on pairs in `CONTRAST_PAIRS`; sizes, families and radii only from the scale and roles (the source scan); motion within `--motion`.
 
-## 9. Open questions for the user
+## 9. The user's decisions (2026-10-25)
 
-1. **People / "waiting for your reply":** these move to plan 17 (People filter and reply tracking, with a store migration). The AI summary card was dropped by the user. Until then, Lumen shows its chips without People and its greeting line without the reply count.
-2. **Existing installs switch to Lumen**, as asked for users who never chose. Anyone who explicitly picked a palette keeps those colors, but now under Lumen's layout. Should explicit palette choosers stay on **macOS** instead? The alternative: treat "has a stored palette" as "chose the current look".
+1. **The AI summary card is dropped.** People and "waiting for your reply" go to plan 17; Lumen ships without the People chip and without the reply count.
+2. **Everyone moves to the full Lumen look** (Lumen and "Style colors"), since picture 2 is the default. A theme chosen before is remembered and offered first under Colors ("Your previous theme"), one click away, but no longer applied. This replaces §3.8's "a stored palette is honored".
+3. **"macOS"**, Apple's spelling, is the name of the current look.
 
 ## 10. Revisions after the Codex review
 
@@ -487,3 +488,57 @@ Codex (`codex exec -s read-only`) made 12 points against the code. All are accep
     - A shared `search(page, q)` helper opens the search button when the field is collapsed, and the native web suite (`e2e-web/web.spec.ts` fills `search-input` directly, on a fresh install, so in Lumen) uses it.
     - The two Appearance-tab baselines (`themes.spec.ts`) change deliberately (the new Style section). "Unchanged" applies to every other baseline.
     - The perf gate keeps the 3.5 renders-per-move allowance.
+
+## 11. Re-check after plans 11 and 14
+
+Plans 11 (in-app updates) and 14 (i18n) merged before implementation. What changed for this plan:
+
+- **Copy goes through `@terno/i18n`.** Every new string is a key in `en.ts` and `es.ts` (style names and descriptions, the greeting, "N unread", the quick filters and their empty states, the review badge, the palette's Style commands, "Style colors", "Your previous theme"); the source scan catches literals. Design and palette names are catalog strings too (Terno's own themes already were, plan 14).
+- **The language switch remounts the tree** (`localeEpoch`); a design switch doesn't: it re-renders the variants in place (flushSync), so the two never interfere. Both caches are read by `theme.js`/`initLocale` before the first frame, and `main.tsx` now waits for both (the locale chunk, up to 150 ms for the design's faces).
+- **Plan 11's update pill** lives in the sidebar footer: it takes the design's fonts and radii like everything else and was looked at in every design (the popover included); `updates.spec` runs in the three designs.
+- **Backend errors are descriptors** (plan 14 R5): the settings validation's message for "design" needs nothing new.
+
+## 12. As shipped
+
+### Commits
+
+1. `df011f6` palettes: Lumen and Atelier, light and dark; `unread-ink`; badge inks proven on rows, drafts and panes.
+2. `c7e0e6f` fonts: Figtree, Instrument Sans, Instrument Serif from fontsource.
+3. `beb1e62` designs: definitions, generated variables and type roles; Tailwind's scale, radii and fonts on design variables; typography out of palettes.
+4. `1c2bb40` the `design` setting and the move to Lumen; applying in one frame; theme.js cache v2.
+5. `c5cbb75` variants: rows, sidebar, list header, reader header, reply pill.
+6. `049ab6d` quick filters: unread, with attachments, starred (both stores, SQLite v12).
+7. `c738e39` Settings → Appearance: Style, Style colors, the previous theme.
+8. `a4e2692` fixes from looking at every design and from axe.
+9. `c35f8da` e2e: design projects, layout, parity, axe, switching, the move.
+10. `e763b91` perf gates per design and density; the switch gate.
+11. `223196f` the web suite in Lumen; same-origin fonts.
+12. `153cd7e` radii on the ladder; the source scan.
+13. `67e34f1` the packaged smoke in Lumen.
+
+### Departures from the plan
+
+- **Everyone moves to Lumen** (the user's decision, §9): `migrateAppearance` turns a stored settings object without `appearanceVersion` into Lumen with "Style colors", keeping its palettes as `previousLightTheme`/`previousDarkTheme`. It runs on read and is persisted by the next write (unrelated ones too), so choosing a design later never brings the old palette back. An import from before designs is treated the same way.
+- **Fonts moved out of palettes entirely**, instead of redeclaring `--theme-font` under macOS (R1): the Apple palette's font was SF on a Mac either way. Type, radii and fonts stay in `@theme inline`, pointing at `--ds-*` variables, so utilities resolve where they're used and a nested design (the Style cards) draws in its own.
+- **The radius ladder** is per design (`sm` … `4xl`), not one `--radius` multiplied; fixed 10 px corners became `calc(var(--radius-lg) + 2px)` (the same in macOS).
+- **The review badge** sits after the unread count, not before it: the count is inside the category's button (a drop target, and part of its name), the badge is its own control drawn over the row's end.
+- **Lumen's search** stays open on blur (F6 to the snack and back would otherwise lose focus); it closes on Esc in an empty field or when another mailbox opens.
+- **Atelier and Lumen cap their list at 32vw** so the reader keeps its toolbar at 980 px; macOS keeps its fixed width.
+- **The header compose icon is macOS-only** (Atelier has its sidebar button; two buttons with one name were noise).
+- **Stars on rows**: the older palettes' gold sits at 2.4–3:1 on hovered and selected rows (only ever checked on the background); the four new palettes hold 3:1 there (`STAR_ON_ROWS`), the older ones are left as they are.
+
+### Bugs found while building
+
+- `stroke-(--var)` in Tailwind v4 sets the stroke *color*: the reader's toolbar icons vanished in Lumen. An explicit `stroke-width` now.
+- `text-unread-ink` drew nothing until the token got its `--color-*` entry.
+- Base UI radio items stay open on choice: the "Filtered by" menu reopened as closed. `closeOnClick`.
+- The Local pill drew the sidebar's accent as text on the sidebar, a pair never checked (3.7:1 in Terno Light): `sidebar-primary-ink`, proven for every palette.
+- The Reply pill's `aria-label` didn't match its visible "Reply R" (axe: label in name).
+- Pre-existing, not changed here: the dwell's mark-as-read invalidates the open thread's cache, so the reader shows its skeleton for a moment and focus inside the reader is lost (macOS too). Noted for a follow-up.
+
+### Measured
+
+- `j` at key repeat, every design × density: row renders per move 2.95–2.98 (gate 3.5), frame p95 16.8 ms.
+- 2,000-row scroll, every design × density: frame p95 ≤ 16.8 ms, DOM rows ≤ 80.
+- Design switch with hundreds of rows loaded: median 11.5 ms, longest frame ≤ 50 ms (the first switch lays out a new face).
+- Fonts (latin): Figtree 20 KB, Instrument Sans 30 KB, Instrument Serif 21 + 22 KB; latin-ext 10–12 KB each, fetched only when text needs them.

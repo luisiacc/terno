@@ -40,6 +40,15 @@ Terno is a minimalist, fast email client: Electron (macOS first) plus a web buil
 4. **Codex code review: always, for every feature and fix series.** Run `/tmp/unica-scratch/codex-review.sh <base> <name> <plan> <out>`, or the same prompt with `-C <worktree>`. **Fix every finding** with a regression test that fails without the fix. Record what the review changed in the plan.
 5. **Before calling it done,** these all pass: `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm test:e2e`, `pnpm test:web`, `pnpm test:ui-perf`. Desktop changes also need `pnpm dist:mac` plus `pnpm --filter @terno/desktop test:smoke`, and hot paths need `pnpm test:perf`. Report failures honestly.
 
+## Designs (styles)
+
+A design (plan 15) is typography, shape, density and a closed set of structural variants; colors stay in palettes (`packages/ui/src/themes/registry.ts`).
+
+- **Change a design:** edit its file (`packages/ui/src/designs/lumen.ts` …), run `pnpm --filter @terno/ui gen:designs`, update that design's baselines only (`pnpm --filter @terno/web exec playwright test --project=e2e-lumen --update-snapshots`), and look at them in light and dark.
+- **Add a design:** add its id to `DESIGN_IDS` (`packages/core/src/themes.ts`) and `theme.js`'s list, copy the closest definition (its type forces every value and variant), give it a palette pair (new palettes go in the registry and must pass the contrast suite), add its `en`/`es` name and description (`design.<id>`, `design.<id>.description`), add it to `DESIGNS` and a Playwright project.
+- **Add a variant value:** add it to the union in `designs/types.ts`; the compiler then points at every `variant(…)` map that must implement it. Keep roles, names, test ids and shortcuts identical across values (`designs.spec.ts` checks the shared parts in every design).
+- **Rules:** no colors or durations in a design (token references only); text only on pairs in `CONTRAST_PAIRS`; sizes, families and radii only from the scale, the ladder and the type roles (`source-scan.test.ts`); motion within `--motion`. Flows that must hold in every design are tagged `@design`.
+
 ## Conventions
 
 - Read the surrounding code first and match its idiom, naming and comment density (terse comments that explain why).

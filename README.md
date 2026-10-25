@@ -12,7 +12,8 @@ Terno is a minimalist, keyboard-first, extremely fast desktop email client for m
 - Drag one or many conversations onto a category to move them there (out of every other category); the same undoable snackbar as the `l` picker.
 - A right-click menu on a conversation or a selection (read/unread, star, archive, delete, spam, categories with checkmarks, "Move to…", everything from a sender, a filter from them), selection with ⌘A, ⌘/⇧-click and ⇧J/K, the usual triage keys (⌫, ⇧I, ⇧U, ⌘⇧U, ⌃⌘A, z…), and "select all N conversations" that the backend applies to a whole view in slices, with progress and undo ([plan 06](docs/plans/06-context-menu-selection.md)).
 - A quiet, Apple-Mail-like interface: conversations without boxes (hairlines and faint surfaces), replies and new messages written in place (no dialogs), drafts that are never lost (saved as you type, restored after a restart).
-- 13 themes (Terno, Apple, Solarized, Gruvbox, GitHub, Catppuccin, Dracula, Monokai, Tokyo Night, Nord) with a light and a dark choice for system mode, your own themes as JSON, all checked for WCAG AA contrast; animations you can set to 0/50/75/100 ms (Settings → Appearance); reduced transparency respected.
+- Three styles ([plan 15](docs/plans/15-design-themes.md)): **Lumen** (the default: warm and people-first, Figtree, big avatars, a greeting, filter chips), **Atelier** (editorial: Instrument Serif titles, ink and paper) and **macOS** (Apple Mail-like, compact, SF). Each has its own type, shapes, density and layout, and its own colors in light and dark; the 17 color themes (Terno, Apple, Solarized, Gruvbox, GitHub, Catppuccin, Dracula, Monokai, Tokyo Night, Nord, Lumen, Atelier) and your own JSON ones work in any style, all checked for WCAG AA contrast; animations you can set to 0/50/75/100 ms (Settings → Appearance); reduced transparency respected.
+- Quick filters: unread (⌘L), with attachments, starred, per mailbox, from the "Filtered by" menu or Lumen's chips.
 - An MCP server so **Claude Code** and **Codex** get one access point to all your email.
 - Printing and PDF (⌘P, ⇧⌘P, File, the reader's printer button, or a right-click on a conversation or a single message): with headers or just the content, quoted history hidden or kept, Letter or A4, previewed as the exact page that prints; wide mail is fitted to the page and nothing leaves the Mac ([plan 09](docs/plans/09-print.md)).
 - Settings (⌘, or the gear, or "Settings → …" in ⌘K) where everything shown can be changed: per-account name, sender name, color, signature, sync window, reconnect and removal; categories renamed, recolored, reordered and deleted; filters; themes including your own JSON ones; the MCP token; export and import ([plan 08](docs/plans/08-settings-pass.md)).
@@ -183,6 +184,10 @@ Terno's interface is in English, and in Spanish when you choose Español (Settin
 
 The language then appears in Settings → General, "System" picks it on systems in that language, and English remains the fallback for anything missing.
 
+## Styles (designs)
+
+A style is one file in [`packages/ui/src/designs/`](packages/ui/src/designs) (`lumen.ts`, `atelier.ts`, `macos.ts`): fonts, the text scale, the radius ladder, type roles (list title, greeting, section labels, rows, the reader's subject…), icon stroke, layout widths, row heights, avatar sizes, surfaces and a closed set of structural variants (where compose lives, the list header, search, filters, the row, the category review, the reader header, the reply control). Its type has no optional member. `pnpm --filter @terno/ui gen:designs` writes the `[data-design]` CSS; colors stay in the palettes (`themes/registry.ts`), and a style only names the pair "Style colors" uses. See AGENTS.md → "Designs" to change or add one.
+
 ## Diagnostics and error reports
 
 Every process logs structured lines (a dotted code plus typed, allowlisted fields; never free text, not even error messages), leaves breadcrumbs, and records unexpected errors and crashes. Reports go to Sentry only from builds given a DSN, never in local mode, and only as the user chose (Settings → General → Diagnostics: Ask, Always or Never). [Plan 10](docs/plans/10-observability.md) has the design and the privacy rules.
@@ -282,3 +287,5 @@ Terno is **source-available** under the [PolyForm Noncommercial License 1.0.0](L
 - **Not allowed:** any commercial use, such as selling Terno or a fork, offering it as a paid product or service, or using it inside a business for commercial advantage.
 
 To use Terno commercially, contact the author for a separate license.
+
+The bundled fonts (Geist, Geist Mono, Figtree, Instrument Sans and Instrument Serif, from [Fontsource](https://fontsource.org)) are under the [SIL Open Font License 1.1](https://openfontlicense.org); their license texts ship in their packages.
