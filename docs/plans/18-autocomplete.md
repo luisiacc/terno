@@ -293,3 +293,19 @@ Codex (`codex exec -s read-only`, 12 points) against the plan and the code. What
 | 300 suggestion cycles | heap +1.3 MiB | ≤ 2 MiB |
 
 Each gate has an injected-regression twin that must fail it: lookups by scanning (p95 151 ms), 30 µs extra per indexed message, 80 µs extra per learned message, an unbounded suggestion window (17 ms), 6 ms extra per keystroke in the editor (ratio 1.54).
+
+## What the Codex code review changed
+
+Round 1 (`codex-review.sh d3b6e78`, focused on scale, memory, ranking, editor edge cases, the combobox and privacy; 11 findings), each fixed with a regression test that fails without the fix:
+
+1. **High:** a snapshot behind a pruned log was restored again and again (977 restores in 100 ms). The log's reach is checked before a snapshot is used; after a gap the files go and the session builds. Conformance test on all three engines.
+2. **High:** a commit's headers were applied in one go (12,000 new people: one 1.9 s stretch, the delta at ~60,000 tokens). Applied in slices with merges and caps inside. Service test (stretch < 60 ms, delta near its threshold).
+3. **High:** the vocabulary cap counted words, not bytes. Words over 32 characters aren't kept; 1M characters at most. Unit test.
+4. **High:** IndexedDB read whole bodies before cutting them. Sent mail over 512 KB (raw) isn't learned from, in both stores. Conformance test.
+5. **High:** an old list stayed acceptable for a newer word. An unmatched list goes at once; acceptance checks the query. E2E with the backend's answer held 3 s.
+6. **Medium:** pasting over a selection dropped the addresses it replaced. Deduplication looks only at what stays and the other fields. Unit test.
+7. **Medium:** the ghost was fitted while hidden (0 high: every word "fit", wrapping over the next line). Measured laid out but unseen. E2E at a line's end with text below.
+8. **Medium:** a cancelled IME composition left an unseen ghost for Tab. Composition start dismisses it. E2E.
+9. **Medium:** digits shared one mask bit ("ana 1" matched 2@x.io). Digits are walked; the oracle property test covers digit queries.
+10. **Medium:** a page of empty sent bodies ended learning (IndexedDB). `sentAfter` returns its cursor apart from its results. Conformance test.
+11. **Medium:** the UI gates held medians only, and latency was taken before the ghost was placed. Added a paired gate on each round's slowest quarter, with a twin (10 ms on one key in four: medians 1.03, slowest quarter 1.47 against a 1.32 gate); latency now runs to the frame that places the ghost.
