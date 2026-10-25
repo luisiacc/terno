@@ -10,7 +10,7 @@ import { Textarea } from "@terno/ui/components/textarea";
 import { cn } from "@terno/ui/lib/utils";
 import { Archive, Loader2, MailCheck, OctagonAlert, Plus, Sparkles, Star, Tag, Trash2, Wand2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { snack } from "~/lib/snack";
 import { errorHelp, privacyLine } from "~/lib/ai";
 import { listDate } from "~/lib/format";
 import { client } from "~/rpc/connection";
@@ -257,7 +257,7 @@ export function FiltersDialog() {
       const kind = (error as { details?: { aiErrorKind?: Parameters<typeof errorHelp>[0] } }).details?.aiErrorKind;
       if (kind === "cancelled") return;
       const help = ai ? errorHelp(kind, ai) : null;
-      toast.error(error instanceof Error ? error.message : String(error), {
+      snack.error(error instanceof Error ? error.message : String(error), {
         description: help ?? undefined,
         action: kind === "not_configured" || kind === "blocked" ? { label: "Ajustes de IA", onClick: () => setApp({ dialog: "settings", settingsTab: "ai" }) } : undefined,
       });
@@ -273,13 +273,13 @@ export function FiltersDialog() {
       const f = await client.call("filters.save", { id: draft.id, name: draft.name.trim() || describeCondition(rule.conditions[0]!), enabled: draft.enabled, source: draft.source, rule: valid.data });
       if (applyExisting) {
         const r = await client.call("filters.apply", { id: f.id });
-        toast.success(`Filtro aplicado a ${r.affectedThreads} conversaciones`);
+        snack.success(`Filtro aplicado a ${r.affectedThreads} conversaciones`);
         void reloadList({ keepSelection: true });
-      } else toast.success("Filtro guardado");
+      } else snack.success("Filtro guardado");
       setDraft({ ...draft, id: f.id, name: f.name });
       await refresh();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+      snack.error(error instanceof Error ? error.message : String(error));
     } finally {
       setSaving(false);
     }
@@ -340,7 +340,7 @@ export function FiltersDialog() {
                         variant="secondary"
                         onClick={async () => {
                           await client.call("learning.accept", { key: p.key });
-                          toast.success("Filtro creado");
+                          snack.success("Filtro creado");
                           void refresh();
                         }}
                       >

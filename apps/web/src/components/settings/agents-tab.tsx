@@ -3,7 +3,7 @@ import { Button } from "@terno/ui/components/button";
 import { Switch } from "@terno/ui/components/switch";
 import { Check, Copy, KeyRound } from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
-import { toast } from "sonner";
+import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { useApp } from "~/state/app";
 import { DesktopOnly } from "~/lib/web-parts";
@@ -26,7 +26,7 @@ function CopyBlock({ text, label, testId }: { text: string; label: string; testI
               setCopied(true);
               setTimeout(() => setCopied(false), 1200);
             },
-            () => toast.error("No se pudo copiar"),
+            () => snack.error("No se pudo copiar"),
           );
         }}
       >
@@ -52,10 +52,10 @@ function TokenRow() {
     setBusy(true);
     try {
       const r = await client.call("agents.rotateToken", {});
-      toast.success(r.disconnected ? `Token cambiado: ${r.disconnected} ${r.disconnected === 1 ? "agente desconectado" : "agentes desconectados"}` : "Token cambiado");
+      snack.success(r.disconnected ? `Token cambiado: ${r.disconnected} ${r.disconnected === 1 ? "agente desconectado" : "agentes desconectados"}` : "Token cambiado");
       refresh();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      snack.error(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }

@@ -21,7 +21,7 @@ async function aiTabWithOllama(page: Page, ollamaUrl: string) {
   await stabilize(page);
 }
 
-/** The snackbar with its counts loaded, nothing hovered (toasts stay visible). */
+/** The snackbar with its counts loaded, nothing hovered or focused. Screenshots finish animations: the countdown ring is drawn run out (the snack itself expires by its timer, not by that). */
 async function snackbarReady(page: Page) {
   await expect(page.getByTestId("snackbar-sender-count")).toBeVisible();
   await expect(page.getByTestId("snackbar-count-loading")).toHaveCount(0);
@@ -186,7 +186,7 @@ test.describe("light", () => {
     await expect(page).toHaveScreenshot("category-picker.png", { mask: [page.getByTestId("search-stats")] });
     await page.getByTestId(`pick-category-${facturas}`).click();
     await snackbarReady(page);
-    await expect(page.getByTestId("category-snackbar")).toHaveScreenshot("category-snackbar.png");
+    await expect(page.getByTestId("snack")).toHaveScreenshot("category-snackbar.png");
   });
 });
 
@@ -249,7 +249,7 @@ test.describe("dark", () => {
     await page.keyboard.press("l");
     await page.getByTestId(`pick-category-${facturas}`).click();
     await snackbarReady(page);
-    await expect(page.getByTestId("category-snackbar")).toHaveScreenshot("category-snackbar-dark.png");
+    await expect(page.getByTestId("snack")).toHaveScreenshot("category-snackbar-dark.png");
   });
 
   test("inbox with the reader", async ({ app: page }) => {

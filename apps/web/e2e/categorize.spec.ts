@@ -16,7 +16,7 @@ async function settled(server: DevServer, threadId: number) {
   await new Promise((r) => setTimeout(r, 300));
 }
 
-const toast = (page: Page, text: string | RegExp) => page.locator("[data-sonner-toast]").filter({ hasText: text });
+const toast = (page: Page, text: string | RegExp) => page.locator("[data-testid=snack]").filter({ hasText: text });
 
 /** An Uber receipt in the inbox that isn't in Facturas yet, plus a live count of the ones still outside. */
 function uberSetup(server: DevServer) {
@@ -62,7 +62,7 @@ test.describe("categorization snackbar", () => {
     const done = toast(page, `${rest} añadidas a Facturas`);
     await expect(done).toBeVisible();
     await expect.poll(outside).toBe(0);
-    await done.getByRole("button", { name: "Deshacer" }).click();
+    await done.getByTestId("snack-action").click();
     await expect.poll(outside).toBe(rest);
   });
 
@@ -95,7 +95,7 @@ test.describe("categorization snackbar", () => {
     await expect(toast(page, "Filtro creado")).toBeVisible();
     const rule = JSON.parse(db.get<{ rule_json: string }>("SELECT rule_json FROM filters ORDER BY id DESC LIMIT 1")!.rule_json);
     expect(rule).toEqual({ match: "all", conditions: [{ field: "from", op: "equals", value: "uber.receipts@uber.com" }], actions: [{ type: "addCategory", categoryId: facturas }] });
-    await toast(page, "Filtro creado").getByRole("button", { name: "Editar" }).click();
+    await toast(page, "Filtro creado").getByTestId("snack-action").click();
     await expect(page.getByTestId("filters-dialog")).toBeVisible();
   });
 

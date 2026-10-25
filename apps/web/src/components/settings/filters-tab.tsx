@@ -3,7 +3,7 @@ import { Button } from "@terno/ui/components/button";
 import { Switch } from "@terno/ui/components/switch";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
 import { ConfirmDialog, SettingsGroup } from "./parts";
@@ -56,7 +56,7 @@ function FilterItem({ filter, onChange }: { filter: Filter; onChange: () => void
             await client.call("filters.save", { id: filter.id, name: filter.name, enabled, source: filter.source, rule: filter.rule });
             onChange();
           } catch (e) {
-            toast.error(errorText(e));
+            snack.error(errorText(e));
           }
         }}
       />
@@ -76,10 +76,10 @@ function FilterItem({ filter, onChange }: { filter: Filter; onChange: () => void
         onConfirm={async () => {
           try {
             await client.call("filters.delete", { id: filter.id });
-            toast.success(`${name} eliminado`);
+            snack.success(`${name} eliminado`);
             onChange();
           } catch (e) {
-            toast.error(errorText(e));
+            snack.error(errorText(e));
           }
         }}
       />
@@ -90,7 +90,7 @@ function FilterItem({ filter, onChange }: { filter: Filter; onChange: () => void
 /** Ajustes → Filtros: every filter, on or off, edited in the builder, removed with a confirmation. */
 export function FiltersTab() {
   const [filters, setFilters] = useState<Filter[] | null>(null);
-  const refresh = () => void client.call("filters.list", {}).then(setFilters, (e: unknown) => toast.error(errorText(e)));
+  const refresh = () => void client.call("filters.list", {}).then(setFilters, (e: unknown) => snack.error(errorText(e)));
   useEffect(refresh, []);
   return (
     <div data-testid="filters-tab">

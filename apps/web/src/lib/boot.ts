@@ -4,7 +4,7 @@ import { removeFromCategory } from "~/lib/categorize";
 import { getApp, navigate, setApp, setCategories } from "~/state/app";
 import { reloadList, useList } from "~/state/list";
 import { invalidateThreads, loadThread } from "~/state/threads";
-import { toast } from "sonner";
+import { snack } from "~/lib/snack";
 import { applyAppearance, installAppearanceListeners, reconcileSettings, updateAppearance } from "~/lib/appearance";
 import { exposeForTests } from "~/lib/render-probe";
 import { captureUi } from "~/lib/diag";
@@ -47,21 +47,22 @@ export async function boot(): Promise<void> {
       const name = getApp().categories.find((c) => c.id === categoryId)?.name;
       if (!name) return;
       const n = threadIds.length;
-      toast(`Terno añadió ${n} ${n === 1 ? "conversación" : "conversaciones"} a ${name}`, {
+      snack(`Terno añadió ${n} ${n === 1 ? "conversación" : "conversaciones"} a ${name}`, {
         id: `auto-${categoryId}`,
         duration: 8000,
+        background: true,
         // undoing the engine is a correction: it learns from it
-        action: { label: "Deshacer", onClick: () => void removeFromCategory(categoryId, threadIds, "user") },
-        cancel: { label: "Ver", onClick: () => navigate({ categoryId }) },
+        action: { label: "Undo", name: `Undo: Terno added to ${name}`, onClick: () => void removeFromCategory(categoryId, threadIds, "user") },
+        secondary: { label: "View", name: `View ${name}`, onClick: () => navigate({ categoryId }) },
       });
     });
     client.on("op", (op) => {
       if (op.kind === "send" && op.state === "succeeded") {
-        if (op.lastError) toast.warning("Enviado, pero no a todos", { description: op.lastError, duration: 12_000 });
-        else toast.success("Correo enviado");
+        if (op.lastError) snack.warning("Enviado, pero no a todos", { description: op.lastError, duration: 12_000, background: true });
+        else snack.success("Correo enviado", { background: true });
       }
-      if (op.state === "unknown") toast.warning(`No sabemos si se envió: ${op.summary}`, { description: "Revisa Enviados antes de reintentar.", duration: 10_000 });
-      if (op.state === "failed") toast.error(`Falló: ${op.summary}`, { description: op.lastError ?? undefined });
+      if (op.state === "unknown") snack.warning(`No sabemos si se envió: ${op.summary}`, { description: "Revisa Enviados antes de reintentar.", duration: 10_000, background: true });
+      if (op.state === "failed") snack.error(`Falló: ${op.summary}`, { description: op.lastError ?? undefined, background: true });
     });
     await reloadList();
   } catch (error) {

@@ -1,6 +1,6 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { useState } from "react";
-import { toast } from "sonner";
+import { snack } from "~/lib/snack";
 import { ConfirmDialog, SettingsGroup, SettingsRow } from "~/components/settings/parts";
 import { client } from "~/rpc/connection";
 import { switchStorage } from "./connect";
@@ -69,7 +69,7 @@ export function StorageSection() {
           try {
             await switchStorage(client, target);
           } catch (e) {
-            toast.error(e instanceof Error ? e.message : String(e));
+            snack.error(e instanceof Error ? e.message : String(e));
           }
         }}
       />

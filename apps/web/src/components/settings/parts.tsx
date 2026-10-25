@@ -15,7 +15,7 @@ import { useId, useState } from "react";
  * the control receives the ids through `a11y`.
  */
 
-/** Saves a settings patch; errors show as a toast, or are thrown to the caller with `quiet` (a field showing its own). */
+/** Saves a settings patch; errors show as a snack, or are thrown to the caller with `quiet` (a field showing its own). */
 export type SettingsUpdate = (patch: SettingsPatch, options?: { quiet?: boolean }) => Promise<void>;
 
 export interface RowA11y {

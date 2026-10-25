@@ -1,11 +1,10 @@
 import { breadcrumb, captureUi } from "~/lib/diag";
 import { isValidEmail, parseAddressList } from "@terno/core";
 import type { DraftMode } from "@terno/core/rpc";
-import { toast } from "sonner";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";
 import { invalidateThreads, loadThread } from "~/state/threads";
-import { setLastUndo } from "./actions";
+import { registerUndo, snack } from "./snack";
 import { convertFields, newFields, replyFields } from "./compose-fields";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
 import { authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markSending, resumeDraft, validRecipients, sendBody, setDraftUi, shownDraftKey, useDrafts, type LocalDraft } from "./drafts";
@@ -40,7 +39,7 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
   const s = getApp();
   const defaultAccount = s.accountId ?? s.accounts[0]?.id;
   if (!defaultAccount) {
-    toast("Conecta una cuenta para escribir correos");
+    snack("Conecta una cuenta para escribir correos");
     setApp({ dialog: "addAccount" });
     return;
   }
@@ -70,9 +69,8 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
     editDraft(existing.key, convertFields(before, mode, detail, account));
     focusDraft(existing.key, target);
     // back to what it was, still open where the user is looking
-    const undo = () => editDraft(existing.key, { ...before, uiState: "open" });
-    setLastUndo(undo);
-    toast(`Convertido en ${MODE_LABEL[mode]}`, { action: { label: "Deshacer", onClick: undo } });
+    const undo = registerUndo(() => editDraft(existing.key, { ...before, uiState: "open" }));
+    snack(`Convertido en ${MODE_LABEL[mode]}`, { action: { label: "Undo", name: `Undo convert to ${MODE_LABEL[mode]}`, undo } });
     return;
   }
   const key = createDraft(replyFields(mode, detail, account));
@@ -132,7 +130,7 @@ async function send(key: string): Promise<boolean> {
   const invalid = [d.toText, d.ccText, d.bccText].some((t) => parseAddressList(t).some((a) => !isValidEmail(a.email)));
   if (to.length === 0 || invalid) {
     resumeDraft(key);
-    toast.error("Revisa los destinatarios");
+    snack.error("Revisa los destinatarios");
     return false;
   }
   markSending(key, true);
@@ -152,13 +150,13 @@ async function send(key: string): Promise<boolean> {
     forgetDraft(key);
     if (getApp().compose?.key === key) setApp({ compose: null });
     invalidateThreads([res.threadId]);
-    toast.success("Enviando…");
+    snack.success("Enviando…");
     return true;
   } catch (error) {
     markSending(key, false);
     resumeDraft(key);
     captureUi(error, { code: "compose.send_failed" });
-    toast.error(`No se pudo enviar: ${error instanceof Error ? error.message : error}`);
+    snack.error(`No se pudo enviar: ${error instanceof Error ? error.message : error}`);
     return false;
   }
 }

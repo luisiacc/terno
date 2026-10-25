@@ -1,5 +1,6 @@
 import { resolveKey, type Command } from "@terno/core";
 import { act, openCompose, toggleRead, toggleStar, undoLast } from "~/lib/actions";
+import { focusDock } from "~/components/snack-dock";
 import { clearSelection, extendSelection, isMac, selectAll, selectWhere, toggleCurrent } from "~/lib/select";
 import { openMenuForSelection } from "~/components/thread-menu";
 import { getApp, navigate, setApp } from "~/state/app";
@@ -83,6 +84,11 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "snackbar.action5": () => snackbarControls.current?.action(5),
   "snackbar.undo": () => snackbarControls.current?.undo(),
   "snackbar.close": () => snackbarControls.current?.close(),
+  // not from a dialog or menu: the dock is under them
+  "snackbar.focus": () => {
+    const s = getApp();
+    if (s.dialog === null && !s.menuOpen) focusDock();
+  },
 };
 
 const hasTargets = () => {

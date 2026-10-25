@@ -12,7 +12,7 @@ const ctx = { clientId: "setup", origin: "dev" as const };
 const menu = (page: Page) => page.getByTestId("thread-menu");
 const item = (page: Page, id: string) => menu(page).getByTestId(id);
 const checked = (page: Page) => page.locator("[data-testid=thread-row][data-checked]");
-const toast = (page: Page, text: string | RegExp) => page.locator("[data-sonner-toast]").filter({ hasText: text });
+const toast = (page: Page, text: string | RegExp) => page.locator("[data-testid=snack]").filter({ hasText: text });
 const row = (page: Page, id: string | number) => page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
 const db = (server: DevServer) => sqlDb(server.backend.store);
 const flags = (server: DevServer, id: number | string) => db(server).get<{ in_inbox: number; in_trash: number; in_spam: number; unread_count: number; is_starred: number }>("SELECT in_inbox, in_trash, in_spam, unread_count, is_starred FROM threads WHERE id = ?", Number(id))!;
@@ -58,7 +58,7 @@ test.describe("context menu on one thread", () => {
     await item(page, "menu-archive").click();
     await expect(row(page, id)).toHaveCount(0);
     await expect.poll(() => flags(server, id).in_inbox).toBe(0);
-    await toast(page, "Archivado").getByRole("button", { name: "Deshacer" }).click();
+    await toast(page, "Archivado").getByTestId("snack-action").click();
     await expect(row(page, id)).toHaveCount(1);
   });
 
@@ -254,7 +254,7 @@ test.describe("multi-selection", () => {
     await expect.poll(() => ids.every((id) => flags(server, id).in_inbox === 0)).toBe(true);
     // the search is in:inbox: none of them is listed any more
     await expect.poll(async () => (await loadedIds(page)).filter((id) => ids.includes(id)).length).toBe(0);
-    await toast(page, `Archivado · ${ids.length} conversaciones`).getByRole("button", { name: "Deshacer" }).click();
+    await toast(page, `Archivado · ${ids.length} conversaciones`).getByTestId("snack-action").click();
     await expect.poll(() => ids.every((id) => flags(server, id).in_inbox === 1)).toBe(true);
     await expect.poll(async () => (await loadedIds(page)).filter((id) => ids.includes(id)).length).toBe(ids.length);
 
@@ -343,7 +343,7 @@ test.describe("multi-selection", () => {
       const w = window as unknown as { __progress: string[] };
       w.__progress = [];
       new MutationObserver(() => {
-        for (const t of document.querySelectorAll("[data-sonner-toast]")) if (t.textContent?.includes("Archivando")) w.__progress.push(t.textContent);
+        for (const t of document.querySelectorAll("[data-testid=snack]")) if (t.textContent?.includes("Archivando")) w.__progress.push(t.textContent);
       }).observe(document.body, { subtree: true, childList: true, characterData: true });
     });
     await focusList(page);
@@ -354,7 +354,7 @@ test.describe("multi-selection", () => {
     await expect(page.getByTestId("list-empty")).toBeVisible();
     // no learned-filter signal from a sweep
     expect(db(server).get<{ c: number }>("SELECT count(*) AS c FROM user_actions")!.c).toBe(signalsBefore);
-    await toast(page, "Archivado").getByRole("button", { name: "Deshacer" }).click();
+    await toast(page, "Archivado").getByTestId("snack-action").click();
     await expect(toast(page, /Deshecho/)).toBeVisible();
     await expect.poll(inboxCount).toBe(total);
     await expect(rows(page).first()).toBeVisible();
@@ -375,7 +375,7 @@ test.describe("undo is exact", () => {
     await expect(page.getByTestId("select-all-scope")).toBeVisible();
     await page.keyboard.press("Backspace");
     await expect.poll(() => count("in_inbox = 0 AND in_trash = 0 AND in_spam = 0")).toBe(0);
-    await toast(page, "Movido a la papelera").getByRole("button", { name: "Deshacer" }).click();
+    await toast(page, "Movido a la papelera").getByTestId("snack-action").click();
     await expect.poll(() => count("in_inbox = 0 AND in_trash = 0 AND in_spam = 0")).toBe(archived);
     expect(count("in_inbox = 1")).toBe(inbox);
     await expect(rows(page).first()).toBeVisible();

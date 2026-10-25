@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSepa
 import { cn } from "@terno/ui/lib/utils";
 import { CircleAlert, CircleCheck, LaptopMinimalCheck, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
+import { snack } from "~/lib/snack";
 import {
   CHOICE_LABEL,
   choiceOf,
@@ -130,7 +130,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
     const next = await client.call("ai.setKey", { provider: ai.provider, preset: ai.preset ?? undefined, value });
     setApp({ settings: reconcileSettings(next) });
     setKey("");
-    toast.success(value ? "API key guardada en el llavero" : "API key eliminada");
+    snack.success(value ? "API key guardada en el llavero" : "API key eliminada");
   };
   const keyForm = (a: RowA11y) => (
     <form
@@ -161,7 +161,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
         await update({ ai: { provider: value } });
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+      snack.error(error instanceof Error ? error.message : String(error));
     }
   };
 
@@ -290,7 +290,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
                     Tu API key se guardó para {ai.keyOrigin}; el endpoint ahora es {hostOf(ai) ?? "otro"}. No se enviará ahí hasta que lo confirmes o guardes otra.
                   </p>
                   <div className="flex gap-2">
-                    <Button variant="outline" size="xs" data-testid="ai-key-confirm" onClick={() => void client.call("ai.confirmKey", { provider: ai.provider, preset: ai.preset ?? undefined }).then((next) => setApp({ settings: reconcileSettings(next) }), (e: unknown) => toast.error(String(e)))}>
+                    <Button variant="outline" size="xs" data-testid="ai-key-confirm" onClick={() => void client.call("ai.confirmKey", { provider: ai.provider, preset: ai.preset ?? undefined }).then((next) => setApp({ settings: reconcileSettings(next) }), (e: unknown) => snack.error(String(e)))}>
                       Usarla con este endpoint
                     </Button>
                     <Button variant="ghost" size="xs" aria-label={`Quitar la API key de ${providerName(ai)}`} onClick={() => void saveKey("")}>

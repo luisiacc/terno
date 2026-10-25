@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogTitle } from "@terno/ui/components/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@terno/ui/components/tabs";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@terno/ui/components/alert-dialog";
 import { useCallback, useState } from "react";
-import { toast } from "sonner";
+import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { setApp, useApp, type SettingsTab } from "~/state/app";
 import { AiTab } from "./settings/ai-tab";
@@ -30,9 +30,9 @@ export function SettingsDialog() {
     try {
       setApp({ settings: reconcileSettings(await client.call("settings.update", patch)) });
     } catch (error) {
-      // a field that shows its own error asks to hear about it; anything else says so in a toast
+      // a field that shows its own error asks to hear about it; anything else says so in a snack
       if (options?.quiet) throw error;
-      toast.error(error instanceof Error ? error.message : String(error));
+      snack.error(error instanceof Error ? error.message : String(error));
     }
   }, []);
   if (!settings) return null;

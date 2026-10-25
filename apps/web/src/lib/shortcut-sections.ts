@@ -12,6 +12,7 @@ export const SECTIONS: { title: string; rows: [Command, string][] }[] = [
       ["palette.open", "Paleta de comandos"],
       ["help.shortcuts", "Atajos de teclado"],
       ["settings.open", "Ajustes"],
+      ["snackbar.focus", "Go to the notification"],
       ["go.inbox", "Ir a Entrada"],
       ["go.starred", "Ir a Destacados"],
       ["go.sent", "Ir a Enviados"],

@@ -5,7 +5,7 @@ import { Input } from "@terno/ui/components/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { BadgeCheck, Loader2, UserRound } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
+import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { SettingsGroup } from "./parts";
 import { setApp } from "~/state/app";
@@ -33,10 +33,10 @@ function ChangeOwner({ owner, accounts, onDone }: { owner: OwnerIdentity; accoun
     try {
       const next = await client.call("identity.changeOwner", { accountId: target.id, password: target.kind === "imap" ? password : undefined });
       setApp({ owner: next });
-      toast.success(`${next.email} es ahora tu cuenta de Terno`);
+      snack.success(`${next.email} es ahora tu cuenta de Terno`);
       onDone();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+      snack.error(error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(false);
     }

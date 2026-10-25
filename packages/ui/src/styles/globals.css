@@ -246,22 +246,6 @@
     transition: none !important;
   }
 }
-/*
- * sonner injects its own stylesheet (400–500 ms transitions, 200 ms exits)
- * after ours, with selectors up to (0,5,0): toasts run at slow regardless.
- */
-[data-sonner-toaster],
-[data-sonner-toaster] [data-sonner-toast],
-[data-sonner-toaster] [data-sonner-toast] *,
-[data-sonner-toaster] .sonner-loader {
-  transition-duration: var(--motion-slow) !important;
-}
-[data-sonner-toaster] [data-sonner-toast][data-swipe-out="true"],
-[data-sonner-toaster] .sonner-loading-wrapper[data-visible="false"],
-[data-sonner-toaster] [data-sonner-toast][data-promise="true"] [data-icon] > svg {
-  animation-duration: var(--motion-slow) !important;
-}
-
 /* dragging rows onto categories: no hover in the list, a grabbing cursor everywhere */
 :root[data-dragging],
 :root[data-dragging] * {
@@ -349,6 +333,32 @@
   background-color: var(--popover-glass);
   -webkit-backdrop-filter: blur(20px) saturate(1.6);
   backdrop-filter: blur(20px) saturate(1.6);
+  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    background-color: var(--popover);
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    background-color: var(--popover);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+/*
+ * The docked snackbar (plan 13): glass over the list's last rows (lighter
+ * than menus: the list keeps scrolling under it), a hairline, barely lifted.
+ * Its countdown ring: the track in the hairline ink, the time left in primary.
+ */
+@utility snack-surface {
+  --snack-track: var(--border);
+  --snack-ring: var(--primary);
+  /* nearly solid: rows keep moving under it, and text must not ghost through */
+  background-color: color-mix(in oklab, var(--popover) 96%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  backdrop-filter: blur(16px) saturate(1.4);
+  box-shadow:
+    0 0 0 var(--hairline-w) var(--border),
+    0 1px 2px color-mix(in oklab, var(--shadow-color) 60%, transparent),
+    0 8px 20px -14px var(--shadow-color),
+    inset 0 1px var(--highlight);
   @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     background-color: var(--popover);
   }

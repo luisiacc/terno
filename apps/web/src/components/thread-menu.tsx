@@ -36,7 +36,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { useState, type ReactElement, type ReactNode } from "react";
-import { toast } from "sonner";
+import { snack } from "~/lib/snack";
 import { create } from "zustand";
 import { act, openCompose, targetRows } from "~/lib/actions";
 import { addScopeToCategory, addToCategory, isExclusivelyIn, moveToCategory, removeFromCategory } from "~/lib/categorize";
@@ -317,8 +317,8 @@ function MenuItems() {
             testId="menu-copy"
             onClick={() =>
               void navigator.clipboard.writeText(sender.email).then(
-                () => toast(`Copiado: ${sender.email}`, { duration: 2000 }),
-                () => toast.error("No se pudo copiar"),
+                () => snack(`Copiado: ${sender.email}`, { duration: 2000 }),
+                () => snack.error("No se pudo copiar"),
               )
             }
           />

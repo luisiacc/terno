@@ -3,7 +3,7 @@ import type { AppSettings, SettingsPatch } from "@terno/core/rpc";
 import { applyCustomTheme, clampMotion, motionOff, motionVars, opaqueBackground } from "@terno/ui/themes/apply";
 import { toHex } from "@terno/ui/themes/color";
 import { builtinTheme, resolveCustomTheme, type Theme } from "@terno/ui/themes/registry";
-import { toast } from "sonner";
+import { snack } from "~/lib/snack";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { getApp, setApp } from "~/state/app";
@@ -23,7 +23,7 @@ export interface CachedAppearance {
   custom?: Partial<Record<ThemeMode, { base: string; tokens: Record<string, string> }>>;
 }
 
-/** The resolved mode (sonner and anything else that needs "light" | "dark"). */
+/** The resolved mode (anything that needs "light" | "dark"). */
 export const useAppearance = create<{ mode: ThemeMode; reducedMotion: boolean; motionMs: number; themeKey: string }>(() => ({
   mode: document.documentElement.classList.contains("dark") ? "dark" : "light",
   /** changes whenever the painted colors change (theme id or custom tokens) */
@@ -194,7 +194,7 @@ export function updateAppearance(patch: AppearancePatch): Promise<AppSettings | 
       pending.splice(pending.indexOf(entry), 1);
       const base = { ...getApp().settings!, ...confirmed } as AppSettings;
       show(pending.reduce<AppSettings>((s, p) => ({ ...s, ...p.patch }) as AppSettings, base));
-      toast.error(`No se pudo cambiar la apariencia: ${error instanceof Error ? error.message : error}`);
+      snack.error(`No se pudo cambiar la apariencia: ${error instanceof Error ? error.message : error}`);
       return null;
     }
   });

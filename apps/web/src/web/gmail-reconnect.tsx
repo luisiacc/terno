@@ -1,7 +1,7 @@
 import { Button } from "@terno/ui/components/button";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { snack } from "~/lib/snack";
 import { useApp } from "~/state/app";
 import { connectGmailWeb, preloadGoogle } from "./google";
 
@@ -34,7 +34,7 @@ export function GmailReconnect() {
               try {
                 await connectGmailWeb(a.email);
               } catch (error) {
-                toast.error(error instanceof Error ? error.message : String(error));
+                snack.error(error instanceof Error ? error.message : String(error));
               } finally {
                 setBusy(null);
               }

@@ -4,7 +4,7 @@ import { Input } from "@terno/ui/components/input";
 import { Label } from "@terno/ui/components/label";
 import { Loader2, Mail } from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
-import { toast } from "sonner";
+import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
 import { DesktopOnly } from "~/lib/web-parts";
@@ -46,10 +46,10 @@ export function AddAccountDialog() {
     setBusy("gmail");
     try {
       const a = WEB ? await (await import("~/web/google")).connectGmailWeb() : await client.call("accounts.connectGmail", {});
-      toast.success(`${a.email} conectada`);
+      snack.success(`${a.email} conectada`);
       setApp({ dialog: null });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+      snack.error(error instanceof Error ? error.message : String(error));
       if (String(error).includes("client ID")) setApp({ dialog: "settings", settingsTab: "accounts" });
     } finally {
       setBusy(null);
@@ -66,10 +66,10 @@ export function AddAccountDialog() {
         imap: { host: form.imapHost.trim(), port: form.imapPort, secure: form.imapPort === 993, user: form.user.trim() },
         smtp: { host: form.smtpHost.trim(), port: form.smtpPort, secure: form.smtpPort === 465, user: form.user.trim() },
       });
-      toast.success(`${a.email} conectada. Sincronizando…`);
+      snack.success(`${a.email} conectada. Sincronizando…`);
       setApp({ dialog: null });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+      snack.error(error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(null);
     }

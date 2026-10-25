@@ -45,6 +45,7 @@ export type Command =
   | "snackbar.action5"
   | "snackbar.undo"
   | "snackbar.close"
+  | "snackbar.focus"
   | "suggestion.accept"
   | "suggestion.reject";
 
@@ -145,6 +146,8 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "5", command: "snackbar.action5", context: "snackbar" },
   { keys: "z", command: "snackbar.undo", context: "snackbar" },
   { keys: "escape", command: "snackbar.close", context: "snackbar" },
+  // the docked snackbar never takes focus: F6 goes to it, from the list or while typing (the handler skips it under a dialog)
+  { keys: "f6", command: "snackbar.focus", inEditable: true, inDialog: true },
 ];
 
 /** Canonical chord string for a key event: "mod+shift+k", "#", "arrowdown". */

@@ -203,15 +203,16 @@ test.describe("drag and drop to a category", () => {
     await expect(page.getByTestId("snackbar-title")).toHaveText("Movido a Viajes");
     await expect.poll(() => [inCat(viajes), inCat(lecturas)]).toEqual([true, false]);
 
-    // the backend refuses the restore: the destination must keep the thread, the snackbar stays with a retry
+    // the backend refuses the restore: the destination must keep the thread, the snackbar turns into the error with a retry
     sqlDb(server.backend.store).exec("CREATE TRIGGER e2e_fail_restore BEFORE INSERT ON thread_categories BEGIN SELECT RAISE(ABORT, 'disco lleno'); END");
     await page.getByTestId("snackbar-undo").click();
-    await expect(page.locator("[data-sonner-toast]", { hasText: "No se pudo deshacer" })).toBeVisible();
-    await expect(page.getByTestId("category-snackbar")).toBeVisible();
+    await expect(page.getByTestId("snackbar-title")).toContainText("No se pudo deshacer");
+    await expect(page.getByTestId("snack-alert")).toContainText("No se pudo deshacer");
+    await expect(page.getByTestId("snackbar-undo")).toHaveText(/Retry/);
     expect([inCat(viajes), inCat(lecturas)]).toEqual([true, false]);
 
     sqlDb(server.backend.store).exec("DROP TRIGGER e2e_fail_restore");
-    await page.locator("[data-sonner-toast]", { hasText: "No se pudo deshacer" }).getByRole("button", { name: "Reintentar" }).click();
+    await page.getByTestId("snackbar-undo").click();
     await expect(page.getByTestId("category-snackbar")).toHaveCount(0);
     await expect.poll(() => [inCat(viajes), inCat(lecturas)]).toEqual([false, true]);
     // back exactly as it was

@@ -6,7 +6,7 @@ import { Input } from "@terno/ui/components/input";
 import { cn } from "@terno/ui/lib/utils";
 import { ChevronRight, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useId, useState } from "react";
-import { toast } from "sonner";
+import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
 import { DaysField } from "./general-tab";
@@ -44,11 +44,11 @@ function Reconnect({ account }: { account: Account }) {
       } else {
         await client.call("accounts.reconnect", { id: account.id, password: account.kind === "imap" ? password : undefined });
       }
-      toast.success(`${account.email} vuelve a estar conectada`);
+      snack.success(`${account.email} vuelve a estar conectada`);
       setAsking(false);
       setPassword("");
     } catch (e) {
-      toast.error(errorText(e));
+      snack.error(errorText(e));
     } finally {
       setBusy(false);
     }
@@ -95,7 +95,7 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
         {(a) => <CommitInput a11y={a} className="w-56" data-testid="account-sender" value={account.senderName} onCommit={(v) => save({ senderName: v.trim() })} />}
       </SettingsRow>
       <SettingsRow label="Color">
-        {(a) => <ColorPicker a11y={a} name={`account-color-${account.id}`} testId="account-color" value={account.color} onChange={(color) => save({ color }).catch((e: unknown) => { toast.error(errorText(e)); throw e; })} />}
+        {(a) => <ColorPicker a11y={a} name={`account-color-${account.id}`} testId="account-color" value={account.color} onChange={(color) => save({ color }).catch((e: unknown) => { snack.error(errorText(e)); throw e; })} />}
       </SettingsRow>
       <SettingsRow stacked labelFor label="Firma" hint="Se añade debajo de lo que escribes al enviar desde esta cuenta, tras una línea «-- ».">
         {(a) => <CommitInput multiline a11y={a} data-testid="account-signature" value={account.signature} placeholder="Luis Cordero · Acme Studio" maxLength={10_000} onCommit={(v) => save({ signature: v })} />}
@@ -131,9 +131,9 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
               onConfirm={async () => {
                 try {
                   await client.call("accounts.remove", { id: account.id });
-                  toast.success("Cuenta quitada");
+                  snack.success("Cuenta quitada");
                 } catch (e) {
-                  toast.error(errorText(e));
+                  snack.error(errorText(e));
                 }
               }}
             />
@@ -181,9 +181,9 @@ function GoogleClient({ settings, update }: { settings: AppSettings; update: Set
       await client.call("settings.setSecret", { name: "gmailClientSecret", value });
       setApp((s) => (s.settings ? { settings: { ...s.settings, gmailClientSecretSet: value !== "", gmailClientSecretUnreadable: false } } : {}));
       setSecret("");
-      toast.success(value ? "Client secret guardado" : "Client secret quitado");
+      snack.success(value ? "Client secret guardado" : "Client secret quitado");
     } catch (e) {
-      toast.error(errorText(e));
+      snack.error(errorText(e));
     }
   };
   return (

@@ -33,11 +33,11 @@ vi.mock("~/rpc/connection", () => ({
     call: (_method: string, patch: Record<string, unknown>) => new Promise((resolve, reject) => fake.calls.push({ patch, resolve, reject })),
   },
 }));
-vi.mock("sonner", () => ({ toast: Object.assign(() => {}, { error: vi.fn(), success: () => {} }) }));
+vi.mock("~/lib/snack", () => ({ snack: Object.assign(() => "", { error: vi.fn(), success: () => "" }) }));
 
 const { reconcileSettings, sidebarVibrancy, updateAppearance } = await import("./appearance");
 const { getApp, setApp } = await import("~/state/app");
-const { toast } = await import("sonner");
+const { snack } = await import("~/lib/snack");
 
 const SERVER: AppSettings = {
   localMode: true,
@@ -129,7 +129,7 @@ describe("concurrent appearance changes", () => {
     void updateAppearance({ darkTheme: "dracula" });
     void updateAppearance({ motionMs: 50 });
     await answer(false);
-    expect(toast.error).toHaveBeenCalled();
+    expect(snack.error).toHaveBeenCalled();
     expect(painted()).toBe("terno-dark");
     expect(getApp().settings).toMatchObject({ darkTheme: "terno-dark", motionMs: 50 });
     await answer();

@@ -2,7 +2,7 @@ import type { LearnedProposal } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { Sparkles, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { useApp } from "~/state/app";
 
@@ -42,7 +42,7 @@ export function LearnedBanner() {
             data-testid="learned-accept"
             onClick={async () => {
               await client.call("learning.accept", { key: proposal.key });
-              toast.success(`Filtro creado: ${ACTION[proposal.action]}`);
+              snack.success(`Filtro creado: ${ACTION[proposal.action]}`);
               setProposal(null);
             }}
           >

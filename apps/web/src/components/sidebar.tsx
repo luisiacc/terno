@@ -10,7 +10,7 @@ import { VIEW_LABEL } from "~/lib/format";
 import { navigate, setApp, useApp } from "~/state/app";
 import { client } from "~/rpc/connection";
 import { CATEGORY_COLORS } from "@terno/core";
-import { toast } from "sonner";
+import { snack } from "~/lib/snack";
 import { renderProbe } from "~/lib/render-probe";
 import { useDropState } from "~/state/drag";
 import { LocalPill } from "./local-pill";
@@ -101,7 +101,7 @@ export function Sidebar() {
       const c = await client.call("categories.create", { name: name.trim(), color });
       navigate({ categoryId: c.id });
     } catch (e) {
-      toast.error(String(e));
+      snack.error(String(e));
     }
   };
 

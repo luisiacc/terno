@@ -5,7 +5,7 @@
  */
 import { breadcrumb, type DiagView, type FieldValueOf, type ReportEvent } from "@terno/core/diag";
 import { create } from "zustand";
-import { toast } from "sonner";
+import { snack } from "~/lib/snack";
 import { DESKTOP_DIAG } from "~/lib/diag";
 import { localDiag, startLocalDiag } from "~/lib/diag-local";
 import { getApp, useApp } from "~/state/app";
@@ -71,8 +71,8 @@ export async function decideReports(ids: string[], decision: "send" | "dismiss")
   if (!ids.length) return;
   const { sent } = await host.decide(ids, decision);
   if (decision === "send") {
-    if (sent) toast.success(sent === 1 ? "Report sent. Thank you." : `${sent} reports sent. Thank you.`);
-    else toast.error("The report couldn't be sent. It's still saved on this computer.");
+    if (sent) snack.success(sent === 1 ? "Report sent. Thank you." : `${sent} reports sent. Thank you.`);
+    else snack.error("The report couldn't be sent. It's still saved on this computer.");
   }
   await refreshDiag();
 }
@@ -97,8 +97,8 @@ export async function resetInstallId(): Promise<void> {
 export async function exportDiagnostics(): Promise<void> {
   if (DESKTOP_DIAG) {
     const r = await DESKTOP_DIAG.export();
-    if (r.status === "saved") toast.success("Diagnostics exported", { description: r.name });
-    else if (r.status === "failed") toast.error("Diagnostics couldn't be exported");
+    if (r.status === "saved") snack.success("Diagnostics exported", { description: r.name });
+    else if (r.status === "failed") snack.error("Diagnostics couldn't be exported");
     return;
   }
   const json = await localDiag.exportJson();

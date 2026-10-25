@@ -27,7 +27,7 @@ test.describe("AI filters and learned filters", () => {
     await expect(preview).toHaveText(String(uberCount));
 
     await page.getByTestId("filter-save-apply").click();
-    await expect(page.locator("[data-sonner-toast]").filter({ hasText: /Filtro aplicado a \d+ conversaciones/ })).toBeVisible();
+    await expect(page.locator("[data-testid=snack]").filter({ hasText: /Filtro aplicado a \d+ conversaciones/ })).toBeVisible();
     await expect(page.getByTestId("filter-item")).toContainText(["IA"]);
     await expect.poll(inboxUber).toBe(0);
     await page.keyboard.press("Escape");

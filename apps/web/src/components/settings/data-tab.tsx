@@ -1,7 +1,7 @@
 import { Button } from "@terno/ui/components/button";
 import { Download, Upload } from "lucide-react";
 import { Suspense, useRef, useState } from "react";
-import { toast } from "sonner";
+import { snack } from "~/lib/snack";
 import { downloadExport, importFile, importSummary } from "~/lib/backup";
 import { StorageSection } from "~/lib/web-parts";
 import { SettingsGroup, SettingsRow } from "./parts";
@@ -29,7 +29,7 @@ export function DataTab() {
                 try {
                   await downloadExport();
                 } catch (e) {
-                  toast.error(errorText(e));
+                  snack.error(errorText(e));
                 } finally {
                   setBusy(null);
                 }
@@ -60,7 +60,7 @@ export function DataTab() {
                   setBusy("import");
                   setError(null);
                   try {
-                    toast.success(importSummary(await importFile(file)));
+                    snack.success(importSummary(await importFile(file)));
                   } catch (err) {
                     setError(errorText(err));
                   } finally {

@@ -8,8 +8,6 @@ const rpc = vi.hoisted(() => ({ calls: [] as { method: string; resolve(v: unknow
 vi.mock("~/rpc/connection", () => ({
   client: { call: (method: string) => new Promise((resolve, reject) => rpc.calls.push({ method, resolve, reject })) },
 }));
-vi.mock("sonner", () => ({ toast: Object.assign(() => {}, { error: vi.fn(), success: vi.fn() }) }));
-vi.mock("./actions", () => ({ setLastUndo: vi.fn() }));
 vi.mock("~/state/threads", () => ({ invalidateThreads: vi.fn(), loadThread: vi.fn() }));
 
 const { sendDraft } = await import("./compose");

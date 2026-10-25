@@ -184,7 +184,7 @@ test.describe("editable, persisted and in effect", () => {
     await item.getByTestId("account-reconnect").click();
     await item.getByLabel(`Contraseña de ${imap.email}`).fill("app-password");
     await item.getByTestId("account-reconnect-submit").click();
-    await expect(page.getByText(`${imap.email} vuelve a estar conectada`)).toBeVisible();
+    await expect(page.getByTestId("snack-message").getByText(`${imap.email} vuelve a estar conectada`)).toBeVisible();
 
     await reopen(page, "accounts");
     await item.getByTestId("account-toggle").click();
@@ -400,7 +400,7 @@ test.describe("editable, persisted and in effect", () => {
     // its draft shows at once, and importing the same file again doesn't add it twice
     await expect(page.getByTestId("strip-item").filter({ hasText: "copia@x.dev" })).toHaveCount(1);
     await input.setInputFiles({ name: "terno.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(dump)) });
-    await expect(page.getByText(/Importado: 0 categorías nuevas/)).toBeVisible();
+    await expect(page.getByTestId("snack-message").getByText(/Importado: 0 categorías nuevas/)).toBeVisible();
     await expect(page.getByTestId("strip-item").filter({ hasText: "copia@x.dev" })).toHaveCount(1);
     expect((await server.backend.server.invoke("drafts.list", {}, ctx)).filter((d) => d.subject === "Desde la copia")).toHaveLength(1);
     expect((await server.backend.server.invoke("app.bootstrap", {}, ctx)).categories.some((c) => c.name === "Desde el archivo")).toBe(true);

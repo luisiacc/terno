@@ -8,7 +8,7 @@ import { builtinTheme, resolveCustomTheme, themesFor, type Theme } from "@terno/
 import { cn } from "@terno/ui/lib/utils";
 import { Check, Copy, Pencil, Trash2, Upload } from "lucide-react";
 import { useId, useRef, useState } from "react";
-import { toast } from "sonner";
+import { snack } from "~/lib/snack";
 import { resolvedMode, resolveTheme, updateAppearance, useAppearance } from "~/lib/appearance";
 import { ConfirmDialog, SettingsGroup, SettingsRow, type RowA11y } from "./parts";
 
@@ -112,7 +112,7 @@ function ThemeEditor({ theme, all, onDone }: { theme: CustomTheme; all: readonly
     const next = await updateAppearance({ customThemes: all.map((t) => (t.id === theme.id ? result.theme : t)) });
     setBusy(false);
     if (!next) return setError("No se pudo guardar el tema.");
-    toast.success(result.warnings.length ? `«${result.theme.name}» guardado, con ${result.warnings.length} avisos de contraste` : `«${result.theme.name}» guardado`);
+    snack.success(result.warnings.length ? `«${result.theme.name}» guardado, con ${result.warnings.length} avisos de contraste` : `«${result.theme.name}» guardado`);
     onDone();
   };
   return (
@@ -208,8 +208,8 @@ export function AppearanceTab({ settings }: { settings: AppSettings }) {
     const slug = t.id.replace(CUSTOM_PREFIX, "").slice(0, 33);
     const json: CustomTheme = { id: `${slug}-copia`, name: `${t.name} (copia)`.slice(0, 40), mode: t.mode, extends: base as CustomTheme["extends"], tokens: t.tokens };
     void navigator.clipboard.writeText(JSON.stringify(json, null, 2)).then(
-      () => toast.success("Tema copiado como JSON"),
-      () => toast.error("No se pudo copiar"),
+      () => snack.success("Tema copiado como JSON"),
+      () => snack.error("No se pudo copiar"),
     );
   };
 

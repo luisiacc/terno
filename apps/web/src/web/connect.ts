@@ -1,4 +1,4 @@
-import { toast } from "sonner";
+import { snack } from "~/lib/snack";
 import { adoptSettings } from "~/lib/appearance";
 import { flushAllDrafts } from "~/lib/drafts";
 import { setApp } from "~/state/app";
@@ -82,12 +82,13 @@ async function carryOver(client: RpcClient, storage: string): Promise<void> {
     adoptSettings(boot.settings);
     setApp({ categories: boot.categories });
     const waiting = r.pending.drafts + r.pending.filters;
-    toast.success(`Traído de tu otro almacenamiento: ${r.categories.added + r.categories.merged} categorías, ${r.filters.added + r.filters.existing} filtros${r.drafts ? `, ${r.drafts} borradores` : ""} y tus ajustes.`, {
+    snack.success(`Traído de tu otro almacenamiento: ${r.categories.added + r.categories.merged} categorías, ${r.filters.added + r.filters.existing} filtros${r.drafts ? `, ${r.drafts} borradores` : ""} y tus ajustes.`, {
       description: waiting ? `${r.pending.drafts} borradores y ${r.pending.filters} filtros de tus cuentas vuelven en cuanto las conectes.` : undefined,
       duration: waiting ? 12_000 : undefined,
+      background: true,
     });
   } catch (error) {
-    toast.error(`No se pudieron traer tus ajustes: ${error instanceof Error ? error.message : String(error)}. Siguen en el otro almacenamiento.`);
+    snack.error(`No se pudieron traer tus ajustes: ${error instanceof Error ? error.message : String(error)}. Siguen en el otro almacenamiento.`, { background: true });
   }
 }
 

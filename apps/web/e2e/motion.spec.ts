@@ -1,6 +1,8 @@
 /**
  * Motion: nothing runs longer than 100 ms, 0 (or the OS asking for reduced
  * motion) turns every animation off, and list navigation never animates.
+ * One exception, by id: the docked snackbar's countdown ring (plan 13) is
+ * the snack's lifetime, not decoration; with motion off it steps once a second.
  * The config forces reduced motion for every other spec; these opt out.
  */
 import type { Page } from "@playwright/test";
@@ -20,6 +22,7 @@ async function startSampler(page: Page) {
     const seen = new WeakSet<Animation>();
     const tick = () => {
       for (const a of document.getAnimations()) {
+        if (a.id === "snack-countdown") continue;
         const t = a.effect?.getTiming();
         if (!t) continue;
         const el = (a.effect as KeyframeEffect | null)?.target as Element | null;
@@ -94,7 +97,8 @@ async function exercise(page: Page) {
   await focusList(page);
   await rows(page).first().dispatchEvent("mousedown");
   await page.keyboard.press("e");
-  await expect(page.locator("[data-sonner-toast]").first()).toBeVisible();
+  await expect(page.locator("[data-testid=snack]").first()).toBeVisible();
+  await expect(page.getByTestId("snack-ring")).toBeVisible();
   await page.waitForTimeout(150);
 }
 
@@ -166,7 +170,14 @@ test.describe("motion", () => {
     const r = await sampled(page);
     expect({ finite: r.finite, loops: r.loops }, r.names.join(",")).toEqual({ finite: 0, loops: 0 });
     expect(await page.getByTestId("compose-button").evaluate((b) => getComputedStyle(b).transitionDuration)).toBe("0s");
-    expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
+    expect(await page.evaluate(() => document.getAnimations().filter((a) => a.id !== "snack-countdown").length)).toBe(0);
+    // the snack's lifetime still shows, stepping instead of flowing
+    await rows(page).first().dispatchEvent("mousedown");
+    await focusList(page);
+    await page.keyboard.press("e");
+    await expect(page.getByTestId("snack-ring")).toBeVisible();
+    const easing = await page.evaluate(() => document.getAnimations().find((a) => a.id === "snack-countdown")?.effect?.getTiming().easing);
+    expect(easing).toMatch(/^steps\(/);
   });
 
   test("holding j never animates", async ({ app: page }) => {
@@ -195,7 +206,7 @@ test.describe("motion under the OS reduced-motion preference", () => {
     const r = await sampled(page);
     expect({ finite: r.finite, loops: r.loops }, r.names.join(",")).toEqual({ finite: 0, loops: 0 });
     expect(await page.getByTestId("compose-button").evaluate((b) => getComputedStyle(b).transitionDuration)).toBe("0s");
-    expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
+    expect(await page.evaluate(() => document.getAnimations().filter((a) => a.id !== "snack-countdown").length)).toBe(0);
   });
 
   test("turning reduced motion off at runtime brings animations back", async ({ app: page }) => {

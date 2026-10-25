@@ -391,7 +391,8 @@ test.describe("print sheet", () => {
 });
 
 test("the print sheet and document builder stay out of the startup bundle", () => {
-  const dist = join(here, "../dist-e2e");
+  // the build the suite serves (E2E_PORT gives a worktree its own)
+  const dist = join(here, process.env.E2E_PORT ? `../dist-e2e-${process.env.E2E_PORT}` : "../dist-e2e");
   const entry = /<script type="module"[^>]*src="\.\/(assets\/[^"]+\.js)"/.exec(readFileSync(join(dist, "index.html"), "utf8"))![1]!;
   const code = (f: string) => readFileSync(join(dist, f), "utf8");
   expect(code(entry)).not.toContain("data-print-doc");

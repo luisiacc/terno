@@ -8,7 +8,7 @@ import { Switch } from "@terno/ui/components/switch";
 import { cn } from "@terno/ui/lib/utils";
 import { ChevronDown, ChevronRight, ChevronUp, Plus, Trash2 } from "lucide-react";
 import { useEffect, useId, useState } from "react";
-import { toast } from "sonner";
+import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, setCategories, useApp } from "~/state/app";
 import { ColorPicker, CommitInput, ConfirmDialog, SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
@@ -42,7 +42,7 @@ async function move(id: number, by: -1 | 1) {
     setApp({ categories: await client.call("categories.reorder", { ids: next.map((c) => c.id) }) });
   } catch (e) {
     setApp({ categories: list });
-    toast.error(errorText(e));
+    snack.error(errorText(e));
   }
 }
 
@@ -92,7 +92,7 @@ function CategoryItem({ category, stats, index, count, autoMode }: { category: C
           title={autoMode ? "Añadir sola" : "Activa la categorización automática para que pueda añadir sola"}
           checked={category.autoApply}
           disabled={!autoMode}
-          onCheckedChange={(on) => void updateCategory(category.id, { autoApply: on }).catch((e) => toast.error(errorText(e)))}
+          onCheckedChange={(on) => void updateCategory(category.id, { autoApply: on }).catch((e) => snack.error(errorText(e)))}
         />
       </div>
       <div id={panel} hidden={!open}>
@@ -124,7 +124,7 @@ function CategoryItem({ category, stats, index, count, autoMode }: { category: C
               )}
             </SettingsRow>
             <SettingsRow label="Color">
-              {(a) => <ColorPicker a11y={a} name={`category-color-${category.id}`} testId="category-color" value={category.color} onChange={(color) => updateCategory(category.id, { color }).catch((e: unknown) => { toast.error(errorText(e)); throw e; })} />}
+              {(a) => <ColorPicker a11y={a} name={`category-color-${category.id}`} testId="category-color" value={category.color} onChange={(color) => updateCategory(category.id, { color }).catch((e: unknown) => { snack.error(errorText(e)); throw e; })} />}
             </SettingsRow>
             <SettingsRow label="Borrar la categoría" hint="Sus conversaciones no se borran: solo dejan de estar en ella. Lo aprendido para ella se pierde.">
               {({ id: _id, "aria-labelledby": _l, ...a }) => (
@@ -144,9 +144,9 @@ function CategoryItem({ category, stats, index, count, autoMode }: { category: C
                         await client.call("categories.delete", { id: category.id });
                         // its list or its Revisar view, if open, goes back to the inbox
                         setCategories(getApp().categories.filter((c) => c.id !== category.id));
-                        toast.success(`${name} borrada`);
+                        snack.success(`${name} borrada`);
                       } catch (e) {
-                        toast.error(errorText(e));
+                        snack.error(errorText(e));
                       }
                     }}
                   />
@@ -171,9 +171,9 @@ function NewCategory() {
       const c = await client.call("categories.create", { name: value, color: CATEGORY_COLORS[categories.length % CATEGORY_COLORS.length]! });
       setApp((s) => ({ categories: s.categories.some((x) => x.id === c.id) ? s.categories : [...s.categories, c] }));
       setName("");
-      toast.success(`«${c.name}» creada`);
+      snack.success(`«${c.name}» creada`);
     } catch (e) {
-      toast.error(errorText(e));
+      snack.error(errorText(e));
     }
   };
   return (

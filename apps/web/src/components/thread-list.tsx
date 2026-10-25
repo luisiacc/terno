@@ -15,6 +15,7 @@ import { installDragController } from "~/lib/drag-install";
 import { currentScope, listKey, loadMore, useList } from "~/state/list";
 import { clearSelection, selectScope } from "~/lib/select";
 import { client } from "~/rpc/connection";
+import { useSnack } from "~/lib/snack";
 import { ThreadMenu } from "./thread-menu";
 import { DraftsStrip } from "./drafts-strip";
 import { ROW_HEIGHT, ThreadRow } from "./thread-row";
@@ -186,13 +187,28 @@ export function ThreadList() {
   const headerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
+  // the docked snackbar sits over the last rows: the list keeps room below them, and j/k stop above it
+  const dock = useSnack((s) => s.inset);
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => height,
     overscan: 10,
     getItemKey: (i) => items[i]!.id,
+    paddingEnd: dock,
+    scrollPaddingEnd: dock,
   });
+
+  // the dock came up over the open thread's row: it moves up into view, once (after the padded spacer is in)
+  useEffect(() => {
+    const el = parentRef.current;
+    const id = getApp().selectedId;
+    const i = id === null ? undefined : useList.getState().index.get(id);
+    if (!dock || !el || i === undefined) return;
+    const row = virtualizer.measurementsCache[i];
+    const bottom = el.scrollTop + el.clientHeight;
+    if (row && row.end > bottom - dock && row.start < bottom) virtualizer.scrollToIndex(i, { align: "auto" });
+  }, [dock]);
 
   useEffect(() => {
     const [root, sentinel, header] = [parentRef.current, sentinelRef.current, headerRef.current];

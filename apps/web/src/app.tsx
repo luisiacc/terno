@@ -1,19 +1,18 @@
-import { Toaster } from "@terno/ui/components/sonner";
 import { TooltipProvider } from "@terno/ui/components/tooltip";
 import { lazy, Suspense, useEffect } from "react";
-import { useAppearance } from "~/lib/appearance";
-import { setLastUndo } from "~/lib/actions";
 import { onFiled, undoFiled } from "~/lib/categorize";
+import { registerUndo } from "~/lib/snack";
 import { installKeyboard } from "~/lib/keyboard";
 import { useApp } from "~/state/app";
 import { CategoryPicker } from "./components/category-picker";
-import { CategorySnackbarHost, showCategorySnackbar } from "./components/category-snackbar";
+import { showCategorySnackbar } from "./components/category-snackbar";
 import { CommandPalette } from "./components/command-palette";
 import { DragGhost } from "./components/drag-ghost";
 import { NewMessage } from "./components/new-message";
 import { installComposeFollowsSelection } from "~/lib/compose";
 import { Reader } from "./components/reader";
 import { SelectionBar } from "./components/selection-bar";
+import { SnackDock } from "./components/snack-dock";
 import { Sidebar } from "./components/sidebar";
 import { ThreadList } from "./components/thread-list";
 import { EngineStopped } from "./components/diag/engine-stopped";
@@ -51,7 +50,6 @@ export function App() {
   const ready = useApp((s) => s.ready);
   const fatal = useApp((s) => s.fatal);
   const dialog = useApp((s) => s.dialog);
-  const mode = useAppearance((s) => s.mode);
   const fresh = useApp((s) => s.ready && s.accounts.length === 0 && !s.owner && !s.demo);
   const many = useApp((s) => s.scope !== null || s.checked.size >= 2);
   const composing = useApp((s) => s.compose !== null);
@@ -62,9 +60,9 @@ export function App() {
   useEffect(
     () =>
       onFiled((filed, source) => {
-        if (source !== "snackbar") showCategorySnackbar(filed);
-        // z / ⌘Z after the snackbar is gone still takes the filing back
-        setLastUndo(() => void undoFiled(filed).catch(() => {}));
+        // z / ⌘Z, the snackbar's Deshacer and its z: one undo, run once (z still takes it back after the snackbar is gone)
+        const undo = registerUndo(() => undoFiled(filed));
+        if (source !== "snackbar") showCategorySnackbar(filed, undo);
       }),
     [],
   );
@@ -88,8 +86,9 @@ export function App() {
       {gate}
       <div className="grid h-screen grid-cols-[232px_minmax(340px,400px)_minmax(0,1fr)] overflow-hidden" data-ready={ready || undefined}>
         <Sidebar />
-        <div className="hairline-l hairline-r hairline-strong min-h-0">
+        <div className="hairline-l hairline-r hairline-strong relative min-h-0">
           <ThreadList />
+          <SnackDock />
         </div>
         <main className="relative min-h-0">
           {/* the reader pane: a bulk selection, else a new message being written, else the conversation; one that fails to render is that pane only */}
@@ -108,12 +107,10 @@ export function App() {
         {dialog === "print" && <PrintSheet />}
         {fresh && dialog === null && needsFirstRun() && <FirstRun />}
       </Suspense>
-      <CategorySnackbarHost />
       {/* inside the settings sheet it opens over the sheet (a nested dialog) */}
       {dialog !== "settings" && <ReportPreview />}
       <EngineStopped />
       <DragGhost />
-      <Toaster position="bottom-left" theme={mode} />
     </TooltipProvider>
   );
 }

@@ -2,19 +2,16 @@ import { termsQuery, type CategorizeScope, type CategoryColor, type QuickActions
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Kbd } from "@terno/ui/components/kbd";
 import { cn } from "@terno/ui/lib/utils";
-import { Check, Filter, Search, Undo2, X } from "lucide-react";
+import { Check, Filter, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
-import { create } from "zustand";
 import { undoFiled, type Filed } from "~/lib/categorize";
+import { dismissSnack, patchSnack, pause, resume, runUndo, snack, useSnack, type Undo } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";
 import { reloadList } from "~/state/list";
+import { SnackClose, SnackPill } from "./snack-dock";
 
 const LIFETIME_MS = 10_000;
-
-/** At most one snackbar; a new categorization replaces it. */
-const useSnackbar = create<{ filed: Filed | null; seq: number }>(() => ({ filed: null, seq: 0 }));
 
 interface Controls {
   action(n: number): void;
@@ -28,86 +25,127 @@ type Slot = "sender" | "domain" | "list" | "topic";
 type Count = { count: number; capped: boolean } | null;
 
 const formatCount = (c: { count: number; capped: boolean }) => (c.capped ? "1 000+" : c.count.toLocaleString("es-MX"));
+const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-/** After any categorization (picker, accepted suggestion, drag and drop): the bulk actions it makes obvious. */
-export function showCategorySnackbar(filed: Filed): void {
-  useSnackbar.setState((s) => ({ filed, seq: s.seq + 1 }));
+function titleOf(filed: Filed, name: string): string {
+  const n = filed.threadIds.length;
+  if (filed.moved) return n > 1 ? `${n} conversaciones movidas a ${name}` : `Movido a ${name}`;
+  return n > 1 ? `${n} conversaciones añadidas a ${name}` : `Añadido a ${name}`;
 }
 
+let filings = 0;
 /**
- * Its own fixed layer rather than a toast: it grows as counts and words
- * arrive, and a toast stack measures its height once.
+ * After any categorization (picker, accepted suggestion, drag and drop): the
+ * bulk actions it makes obvious, as the dock's snack in two compact rows. Its
+ * Deshacer and its z run `undo`, the same token as the global z.
  */
-export function CategorySnackbarHost() {
-  const { filed, seq } = useSnackbar();
-  if (!filed) return null;
-  return (
-    <div className="pointer-events-none fixed bottom-4 left-4 z-50 flex">
-      <div className="pointer-events-auto animate-in fade-in-0 slide-in-from-bottom-2 duration-slow">
-        <CategorySnackbar key={seq} filed={filed} onClose={() => useSnackbar.setState((s) => (s.seq === seq ? { filed: null } : s))} />
-      </div>
-    </div>
-  );
+export function showCategorySnackbar(filed: Filed, undo: Undo): void {
+  const id = `filed-${++filings}`;
+  const name = getApp().categories.find((c) => c.id === filed.categoryId)?.name ?? "";
+  snack.custom({ id, message: titleOf(filed, name), duration: LIFETIME_MS, render: () => <CategorySnackbar id={id} filed={filed} undo={undo} /> });
 }
 
-/** Files a whole scope, with a progress toast that ends in "N añadidas · Deshacer". */
+/** Files a whole scope, with a progress snack that ends in "N añadidas · Deshacer". */
 export async function applyScope(categoryId: number, scope: CategorizeScope): Promise<void> {
   const name = getApp().categories.find((c) => c.id === categoryId)?.name ?? "";
-  const id = toast.loading(`Añadiendo a ${name}…`);
+  const id = snack.loading(`Añadiendo a ${name}…`);
   try {
     const { added, batchId } = await client.call("categorize.apply", { categoryId, scope });
     void reloadList({ keepSelection: true });
-    toast.success(`${added.toLocaleString("es-MX")} ${added === 1 ? "añadida" : "añadidas"} a ${name}`, {
+    snack.success(`${added.toLocaleString("es-MX")} ${added === 1 ? "añadida" : "añadidas"} a ${name}`, {
       id,
       duration: 8000,
-      action: batchId === null ? undefined : { label: "Deshacer", onClick: () => undoScope(categoryId, batchId, name) },
+      action: batchId === null ? undefined : { label: "Undo", name: `Undo add to ${name}`, onClick: () => undoScope(categoryId, batchId, name) },
     });
   } catch (error) {
-    toast.error(`No se pudo añadir: ${error instanceof Error ? error.message : error}`, { id });
+    snack.error(`No se pudo añadir: ${errorText(error)}`, { id });
   }
 }
 
 /** Undo of a bulk apply; a failure offers a retry (the undo is idempotent). */
 function undoScope(categoryId: number, batchId: number, name: string): void {
   undoFiled({ categoryId, addedIds: [], batchId }).then(
-    (n) => toast(`${n} quitadas de ${name}`),
-    (error: unknown) => toast.error(`No se pudo deshacer: ${error instanceof Error ? error.message : error}`, { action: { label: "Reintentar", onClick: () => undoScope(categoryId, batchId, name) } }),
+    (n) => void snack(`${n} quitadas de ${name}`),
+    (error: unknown) =>
+      void snack.error(`No se pudo deshacer: ${errorText(error)}`, {
+        action: { label: "Retry", name: `Retry removing from ${name}`, onClick: () => undoScope(categoryId, batchId, name) },
+      }),
   );
 }
 
-function Chip({ n, label, count, onClick, testId, children }: { n: number; label: string; count?: Count | "loading"; onClick: () => void; testId: string; children?: React.ReactNode }) {
+const chip = "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full bg-tint pr-2 pl-1 text-xs whitespace-nowrap transition-colors duration-fast hover:bg-muted";
+
+function Chip({ n, label, count, onClick, testId }: { n: number; label: string; count?: Count | "loading"; onClick: () => void; testId: string }) {
   if (count === null) return null;
   return (
-    <span data-testid={testId} className="inline-flex h-7 max-w-full items-center rounded-md bg-background text-xs shadow-raised">
-      <button type="button" onClick={onClick} className="inline-flex h-full min-w-0 items-center gap-1.5 rounded-md px-2 hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
-        <Kbd className="h-4 min-w-4 text-2xs">{n}</Kbd>
-        <span className="truncate">{label}</span>
+    <span data-testid={testId} className="inline-flex shrink-0">
+      <button type="button" onClick={onClick} className={chip}>
+        <Kbd className="h-4 min-w-4 rounded-full bg-background text-2xs shadow-none">{n}</Kbd>
+        <span>{label}</span>
         {count === "loading" ? (
           <span data-testid="snackbar-count-loading" className="h-3 w-5 animate-pulse rounded bg-muted" />
         ) : count ? (
-          <span data-testid={`${testId}-count`} className="font-mono text-2xs whitespace-nowrap text-muted-foreground tabular">
+          <span data-testid={`${testId}-count`} className="font-mono text-2xs text-muted-foreground tabular">
             · {formatCount(count)}
           </span>
         ) : null}
       </button>
-      {children}
     </span>
   );
 }
 
-function CategorySnackbar({ filed, onClose }: { filed: Filed; onClose: () => void }) {
+/** The chips' row: one line that scrolls sideways (the wheel too), fading at the edge that has more. */
+function Strip({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [more, setMore] = useState({ left: false, right: false });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const read = () => setMore((m) => {
+      const left = el.scrollLeft > 1;
+      const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+      return m.left === left && m.right === right ? m : { left, right };
+    });
+    read();
+    el.addEventListener("scroll", read, { passive: true });
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    for (const c of el.children) ro.observe(c);
+    return () => {
+      el.removeEventListener("scroll", read);
+      ro.disconnect();
+    };
+  }, []);
+  const fade = `linear-gradient(to right, ${more.left ? "transparent, black 20px" : "black"}, ${more.right ? "black calc(100% - 20px), transparent" : "black"})`;
+  return (
+    <div
+      ref={ref}
+      data-testid="snackbar-strip"
+      onWheel={(e) => {
+        if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) e.currentTarget.scrollLeft += e.deltaY;
+      }}
+      className="flex items-center gap-1.5 overflow-x-auto px-3 pb-2 [scrollbar-width:none]"
+      style={{ maskImage: fade, WebkitMaskImage: fade }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo: Undo }) {
   const category = useApp((s) => s.categories.find((c) => c.id === filed.categoryId));
   const [qa, setQa] = useState<QuickActions | null>(null);
   const [counts, setCounts] = useState<Partial<Record<Slot, Count | "loading">>>({});
   const [terms, setTerms] = useState<Set<string>>(new Set());
   /** "Más…": anything in the search language ("factura uber from:@uber.com") */
   const [custom, setCustom] = useState<string | null>(null);
-  // hover and focus pause the lifetime independently: typing must not expire when the pointer leaves
-  const [hovered, setHovered] = useState(false);
-  const [focused, setFocused] = useState(false);
-  const paused = hovered || focused;
-  const left = useRef(LIFETIME_MS);
-  const close = onClose;
+  const [undoing, setUndoing] = useState(false);
+  /** the undo failed: the snackbar is that error now, its pill a retry */
+  const [failed, setFailed] = useState<string | null>(null);
+  const close = () => dismissSnack(id);
+  const current = () => useSnack.getState().current?.id === id;
+  /** still the dock's snack (not fading out): only then do 1–5, z and Esc drive it */
+  const live = useSnack((s) => s.current?.id === id);
 
   const scopes = (): Partial<Record<Slot, CategorizeScope>> => {
     if (!qa || !category) return {};
@@ -179,6 +217,13 @@ function CategorySnackbar({ filed, onClose }: { filed: Filed; onClose: () => voi
     };
   }, [topicQuery]);
 
+  // an undo in flight holds the countdown (and lets it go if the snackbar leaves first)
+  useEffect(() => {
+    if (!undoing) return;
+    pause("busy");
+    return () => resume("busy");
+  }, [undoing]);
+
   /** "Ver": the topic as a search, so the user sees exactly what would be added. */
   const view = () => {
     if (!topicQuery || !category) return;
@@ -188,17 +233,6 @@ function CategorySnackbar({ filed, onClose }: { filed: Filed; onClose: () => voi
     setApp({ query, view: "all", categoryId: null, accountId: null, reviewCategoryId: null, selectedId: null });
   };
 
-  // own lifetime: 10 s, paused while hovered or focused
-  useEffect(() => {
-    if (paused) return;
-    const started = performance.now();
-    const t = setTimeout(close, left.current);
-    return () => {
-      clearTimeout(t);
-      left.current -= performance.now() - started;
-    };
-  }, [paused]);
-
   const run = (slot: Slot) => {
     const scope = scopes()[slot];
     const count = counts[slot];
@@ -206,19 +240,26 @@ function CategorySnackbar({ filed, onClose }: { filed: Filed; onClose: () => voi
     close();
     void applyScope(filed.categoryId, scope);
   };
-  const [undoing, setUndoing] = useState(false);
-  /** Closes only once the backend undid it; a failure keeps the snackbar (and offers a retry). */
-  const undo = () => {
-    if (undoing) return;
+  /**
+   * Closes only once the backend undid it; a failure turns the snackbar into
+   * the error, with a retry (the undo is idempotent). A snackbar replaced
+   * meanwhile leaves the newer snack alone.
+   */
+  const doUndo = () => {
+    if (undoing || undo.state !== "ready") return;
     setUndoing(true);
-    undoFiled(filed).then(
+    runUndo(undo).then(
       () => {
+        if (!current()) return;
         close();
-        toast(`Deshecho: ${category?.name ?? ""}`, { duration: 3000 });
+        snack(`Deshecho: ${category?.name ?? ""}`, { duration: 3000 });
       },
       (error: unknown) => {
+        if (!current()) return;
         setUndoing(false);
-        toast.error(`No se pudo deshacer: ${error instanceof Error ? error.message : error}`, { id: `undo-${filed.batchId}`, action: { label: "Reintentar", onClick: undo } });
+        const text = `No se pudo deshacer: ${errorText(error)}`;
+        setFailed(text);
+        patchSnack(id, { message: text, tone: "error" }, true);
       },
     );
   };
@@ -227,14 +268,15 @@ function CategorySnackbar({ filed, onClose }: { filed: Filed; onClose: () => voi
     close();
     void client
       .call("filters.save", { name: `${qa.filterDraft.name} → ${category?.name ?? ""}`.slice(0, 120), enabled: true, source: "manual", rule: qa.filterDraft.rule })
-      .then(() => toast.success("Filtro creado", { action: { label: "Editar", onClick: () => setApp({ dialog: "filters" }) } }))
-      .catch((e: unknown) => toast.error(`No se pudo crear el filtro: ${e instanceof Error ? e.message : e}`));
+      .then(() => void snack.success("Filtro creado", { action: { label: "Edit", name: "Edit the new filter", onClick: () => setApp({ dialog: "filters" }) } }))
+      .catch((e: unknown) => void snack.error(`No se pudo crear el filtro: ${errorText(e)}`));
   };
 
   useEffect(() => {
+    if (!live) return;
     snackbarControls.current = {
       action: (n) => (n === 5 ? always() : run((["sender", "domain", "list", "topic"] as const)[n - 1]!)),
-      undo,
+      undo: doUndo,
       close,
     };
     setApp({ snackbar: true });
@@ -251,60 +293,35 @@ function CategorySnackbar({ filed, onClose }: { filed: Filed; onClose: () => voi
     return !!a && !!b && a !== "loading" && b !== "loading" && a.count === b.count && a.capped === b.capped;
   };
   if (!category) return null;
-  const many = filed.threadIds.length > 1;
+  const title = titleOf(filed, category.name);
+  const offers = qa && (qa.sender || qa.domain || qa.list || qa.filterDraft || qa.terms.length);
   return (
-    <div
-      data-testid="category-snackbar"
-      role="status"
-      aria-live="polite"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onFocusCapture={() => setFocused(true)}
-      onBlurCapture={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(false);
-      }}
-      className="w-[min(560px,calc(100vw-2rem))] rounded-xl bg-popover p-3 text-popover-foreground shadow-popover"
-    >
-      <div className="flex items-center gap-2 text-sm">
+    <div data-testid="category-snackbar" data-failed={failed ? "" : undefined}>
+      <div className="flex h-9 items-center gap-2 pr-1.5 pl-3 text-sm">
         <CategoryDot color={category.color as CategoryColor} />
-        <span className="min-w-0 flex-1 truncate font-medium" data-testid="snackbar-title">
-          {filed.moved
-            ? many
-              ? `${filed.threadIds.length} conversaciones movidas a ${category.name}`
-              : `Movido a ${category.name}`
-            : many
-              ? `${filed.threadIds.length} conversaciones añadidas a ${category.name}`
-              : `Añadido a ${category.name}`}
+        <span className={cn("min-w-0 flex-1 truncate", failed ? "text-destructive-ink" : "font-medium")} data-testid="snackbar-title" title={failed ?? title}>
+          {failed ?? title}
         </span>
         {filed.batchId !== null && (
-          <button type="button" data-testid="snackbar-undo" disabled={undoing} onClick={undo} className="inline-flex h-6 items-center gap-1.5 rounded-md px-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground">
-            <Undo2 className="size-3.5" /> Deshacer <Kbd className="h-4 min-w-4 text-2xs">z</Kbd>
-          </button>
+          <SnackPill
+            testId="snackbar-undo"
+            label={failed ? "Retry" : "Undo"}
+            name={failed ? `Retry undo: ${title}` : `Undo: ${title}`}
+            shortcut="z"
+            disabled={undoing}
+            onClick={doUndo}
+          />
         )}
-        <button type="button" aria-label="Cerrar" onClick={close} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
-          <X className="size-3.5" />
-        </button>
+        <SnackClose onClick={close} />
       </div>
-      {qa && (qa.sender || qa.domain || qa.list || qa.filterDraft) && (
-        <div className="mt-2.5 flex flex-wrap gap-1.5">
+      {offers && (
+        <Strip>
           {qa.sender && <Chip n={1} testId="snackbar-sender" label={`Todo de ${qa.sender.name}`} count={counts.sender} onClick={() => run("sender")} />}
           {qa.domain && !sameAsSender("domain") && <Chip n={2} testId="snackbar-domain" label={`Todo de @${qa.domain}`} count={counts.domain} onClick={() => run("domain")} />}
           {qa.list && !sameAsSender("list") && <Chip n={3} testId="snackbar-list" label={`Lista ${qa.list}`} count={counts.list} onClick={() => run("list")} />}
-          {qa.filterDraft && (
-            <span data-testid="snackbar-filter" className="inline-flex h-7 items-center rounded-md border border-dashed border-border text-xs">
-              <button type="button" onClick={always} className="inline-flex h-full items-center gap-1.5 rounded-md px-2 hover:bg-muted">
-                <Kbd className="h-4 min-w-4 text-2xs">5</Kbd>
-                <Filter className="size-3 text-muted-foreground" /> Siempre → filtro
-              </button>
-            </span>
-          )}
-        </div>
-      )}
-      {qa && (
-        <div className="mt-1.5 flex flex-wrap items-center gap-1.5" data-testid="snackbar-topic">
-          <span className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-background pr-1 pl-2 text-xs">
-            <button type="button" onClick={() => run("topic")} disabled={!topicQuery} className="inline-flex items-center gap-1.5 disabled:opacity-60" data-testid="snackbar-topic-apply">
-              <Kbd className="h-4 min-w-4 text-2xs">4</Kbd>
+          <span className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full bg-tint pr-1 pl-1 text-xs whitespace-nowrap" data-testid="snackbar-topic">
+            <button type="button" onClick={() => run("topic")} disabled={!topicQuery} className="inline-flex items-center gap-1.5 rounded-full pr-0.5 disabled:opacity-60" data-testid="snackbar-topic-apply">
+              <Kbd className="h-4 min-w-4 rounded-full bg-background text-2xs shadow-none">4</Kbd>
               Sobre:
             </button>
             {custom === null ? (
@@ -324,8 +341,8 @@ function CategorySnackbar({ filed, onClose }: { filed: Filed; onClose: () => voi
                       })
                     }
                     className={cn(
-                      "inline-flex h-5 items-center gap-0.5 rounded-full border px-1.5 text-2xs",
-                      terms.has(term) ? "border-primary/40 bg-accent text-accent-foreground" : "border-border text-muted-foreground hover:text-foreground",
+                      "inline-flex h-4.5 items-center gap-0.5 rounded-full px-1.5 text-2xs",
+                      terms.has(term) ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground",
                     )}
                   >
                     {term}
@@ -340,6 +357,7 @@ function CategorySnackbar({ filed, onClose }: { filed: Filed; onClose: () => voi
               <input
                 autoFocus
                 data-testid="snackbar-query"
+                aria-label="Añadir todo lo que hable de…"
                 value={custom}
                 placeholder="Añadir todo lo que hable de…"
                 onChange={(e) => setCustom(e.target.value)}
@@ -348,21 +366,29 @@ function CategorySnackbar({ filed, onClose }: { filed: Filed; onClose: () => voi
                   if (e.key === "Enter") run("topic");
                   if (e.key === "Escape") setCustom(null);
                 }}
-                className="h-5 w-56 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+                className="h-5 w-48 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
               />
             )}
             {topicQuery && counts.topic !== undefined && (
-              <span data-testid="snackbar-topic-count" className="font-mono text-2xs whitespace-nowrap text-muted-foreground tabular">
+              <span data-testid="snackbar-topic-count" className="font-mono text-2xs text-muted-foreground tabular">
                 {counts.topic === "loading" ? "·" : counts.topic ? `· ${formatCount(counts.topic)}` : "· 0"}
               </span>
             )}
             {topicQuery && (
-              <button type="button" data-testid="snackbar-view" onClick={view} className="ml-0.5 inline-flex h-5 items-center gap-1 rounded px-1 text-2xs text-primary hover:bg-muted">
+              <button type="button" data-testid="snackbar-view" onClick={view} className="inline-flex h-4.5 items-center gap-1 rounded-full px-1.5 text-2xs text-primary hover:bg-muted">
                 <Search className="size-3" /> Ver
               </button>
             )}
           </span>
-        </div>
+          {qa.filterDraft && (
+            <span data-testid="snackbar-filter" className="inline-flex shrink-0">
+              <button type="button" onClick={always} className={chip}>
+                <Kbd className="h-4 min-w-4 rounded-full bg-background text-2xs shadow-none">5</Kbd>
+                <Filter className="size-3 text-muted-foreground" /> Siempre → filtro
+              </button>
+            </span>
+          )}
+        </Strip>
       )}
     </div>
   );

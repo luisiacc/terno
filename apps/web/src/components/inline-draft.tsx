@@ -6,12 +6,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { cn } from "@terno/ui/lib/utils";
 import { ChevronDown, Forward, PenLine, ReplyAll, Send, Trash2 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
-import { toast } from "sonner";
 import { openCompose, sendDraft } from "~/lib/compose";
 import { discardDraft, editDraft, flushDraft, restoreDiscarded, retryDraft, setDraftUi, signatureBlock, useDrafts, type DraftFields, type LocalDraft } from "~/lib/drafts";
 import { avatarColor, initials } from "~/lib/format";
 import { keepInView } from "~/lib/reader-scroll";
-import { setLastUndo } from "~/lib/actions";
+import { registerUndo, snack } from "~/lib/snack";
 import { setApp, useApp } from "~/state/app";
 import { Expand } from "./expand";
 
@@ -247,9 +246,8 @@ export function DraftSlot({ threadId, draftKey, replyTo, account }: { threadId: 
     const gone = await discardDraft(d.key);
     focusSoon("[data-testid=quick-reply]", rootRef.current);
     if (!gone) return;
-    const undo = () => restoreDiscarded(gone);
-    setLastUndo(undo);
-    toast("Borrador descartado", { action: { label: "Deshacer", onClick: undo } });
+    const undo = registerUndo(() => restoreDiscarded(gone));
+    snack("Borrador descartado", { action: { label: "Undo", name: "Undo discard draft", undo } });
   };
 
   const me = account?.displayName || account?.email || "";

@@ -10,7 +10,7 @@ import { expect, focusList, openRow, rows, selectThread, test } from "./fixtures
 import { sqlDb } from "../../backend-dev/src/server";
 
 const composer = (page: Page) => page.getByTestId("reader").getByTestId("composer");
-const toast = (page: Page, text: string) => page.locator("[data-sonner-toast]").filter({ hasText: text });
+const toast = (page: Page, text: string) => page.locator("[data-testid=snack]").filter({ hasText: text });
 
 test.describe("inline reply, reply-all, forward", () => {
   test("r opens a reply inline, focused, with the quote apart; ⌘↵ sends and the message appears in the thread", async ({ app: page }) => {
@@ -178,7 +178,7 @@ test.describe("drafts are kept", () => {
     await expect(page.getByTestId("compose-body")).toHaveValue("Mi respuesta.");
     // a forward drops the recipients Terno filled in, keeps the one typed
     await expect(to).toHaveValue("Extra <extra@example.com>");
-    await toast(page, "Convertido en Reenviar").getByRole("button", { name: "Deshacer" }).click();
+    await toast(page, "Convertido en Reenviar").getByTestId("snack-action").click();
     await expect(composer(page)).toHaveAttribute("data-mode", "replyAll");
     await page.keyboard.press("Escape");
     await page.keyboard.press("r");
@@ -223,7 +223,7 @@ test.describe("drafts are kept", () => {
     await expect(composer(page)).toHaveCount(0);
     await expect(page.getByTestId("quick-reply")).toBeFocused();
     await expect.poll(() => sqlDb(server.backend.store).get<{ c: number }>("SELECT count(*) AS c FROM drafts")!.c).toBe(0);
-    await toast(page, "Borrador descartado").getByRole("button", { name: "Deshacer" }).click();
+    await toast(page, "Borrador descartado").getByTestId("snack-action").click();
     await expect(page.getByTestId("compose-body")).toHaveValue("Quizá no.");
     await expect.poll(() => sqlDb(server.backend.store).get<{ c: number }>("SELECT count(*) AS c FROM drafts")!.c).toBe(1);
   });

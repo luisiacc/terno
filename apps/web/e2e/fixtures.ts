@@ -112,7 +112,7 @@ export async function selectThread(page: Page, threadId: number, query: string):
 
 /** Visual tests: hide transient toasts and park the mouse so nothing hovers. */
 export async function stabilize(page: Page): Promise<void> {
-  await page.addStyleTag({ content: "[data-sonner-toaster]{display:none!important} *{caret-color:transparent!important}" });
+  await page.addStyleTag({ content: "[data-testid=snack-dock]:not(:has([data-testid=category-snackbar])){display:none!important} *{caret-color:transparent!important}" });
   await page.mouse.move(0, 0);
 }
 

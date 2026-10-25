@@ -26,7 +26,6 @@ vi.mock("~/rpc/connection", () => ({
     },
   },
 }));
-vi.mock("sonner", () => ({ toast: Object.assign(() => {}, { error: vi.fn() }) }));
 
 const { addToCategory } = await import("./categorize");
 const { getApp, setApp, EMPTY_COUNTS } = await import("~/state/app");

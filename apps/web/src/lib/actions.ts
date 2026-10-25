@@ -1,9 +1,9 @@
 import { breadcrumb, captureUi } from "~/lib/diag";
 import { parseAddressList, type ThreadAction, type ThreadSummary, type View } from "@terno/core";
-import { toast } from "sonner";
 import { reflowRemoval } from "~/lib/flash";
 import { client } from "~/rpc/connection";
 import { currentTargets } from "~/lib/select";
+import { registerUndo, snack, type Undo } from "~/lib/snack";
 import { getApp, setApp, type ScopeSelection } from "~/state/app";
 import { patchRows, reloadList, useList } from "~/state/list";
 import { invalidateThreads } from "~/state/threads";
@@ -28,7 +28,7 @@ function staysInView(view: View, action: ThreadAction): boolean {
   }
 }
 
-/** What a toast says after an action (several threads: "· N conversaciones"). */
+/** What a snack says after an action (several threads: "· N conversaciones"). */
 const DONE: Record<ThreadAction, string> = {
   archive: "Archivado",
   trash: "Movido a la papelera",
@@ -40,7 +40,7 @@ const DONE: Record<ThreadAction, string> = {
   star: "Destacado",
   unstar: "Sin destacar",
 };
-/** In progress, for a scope action's toast. */
+/** In progress, for a scope action's snack. */
 const DOING: Record<ThreadAction, string> = {
   archive: "Archivando",
   trash: "Moviendo a la papelera",
@@ -52,20 +52,26 @@ const DOING: Record<ThreadAction, string> = {
   star: "Destacando",
   unstar: "Quitando destacado",
 };
-/** One thread's undo toast only for these (reads and stars show in the row itself); several threads always get one. */
-const TOAST_ALWAYS = new Set<ThreadAction>(["archive", "trash", "spam", "notSpam", "moveToInbox"]);
+/** What its Deshacer takes back, for a screen reader ("Undo archive"). */
+const UNDO_NAME: Record<ThreadAction, string> = {
+  archive: "Undo archive",
+  trash: "Undo move to trash",
+  spam: "Undo mark as spam",
+  notSpam: "Undo move to inbox",
+  moveToInbox: "Undo move to inbox",
+  markRead: "Undo mark as read",
+  markUnread: "Undo mark as unread",
+  star: "Undo star",
+  unstar: "Undo unstar",
+};
+/** One thread's undo snack only for these (reads and stars show in the row itself); several threads always get one. */
+const SNACK_ALWAYS = new Set<ThreadAction>(["archive", "trash", "spam", "notSpam", "moveToInbox"]);
 
-/** z / ⌘Z: the last undoable action, until another replaces it. */
-let lastUndo: (() => void) | null = null;
-export function undoLast(): void {
-  const undo = lastUndo;
-  lastUndo = null;
-  undo?.();
-}
-/** Category filings register here too (their snackbar's or toast's undo). */
-export function setLastUndo(undo: (() => void) | null): void {
-  lastUndo = undo;
-}
+/** z / ⌘Z (the dock's store keeps it: one undo, run once by z or by a snack's Deshacer). */
+export { undoLast } from "~/lib/snack";
+
+/** A snack's Deshacer for an undo token. */
+export const undoAction = (undo: Undo, name: string) => ({ label: "Undo", name, undo });
 
 const fmt = (n: number) => n.toLocaleString("es-MX");
 const said = (action: ThreadAction, n: number) => (n > 1 ? `${DONE[action]} · ${fmt(n)} conversaciones` : DONE[action]);
@@ -119,7 +125,7 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
   if (onTargets && (s.checked.size || s.scope)) setApp({ checked: new Set(), scope: null });
   // z right after the key: this action is the last one already, its undo waits for the backend's answer
   const undoIds = deferred<number[]>();
-  if (!options.quiet) lastUndo = () => void undoIds.promise.then((ids) => (ids.length ? undoActions(ids, targets.length) : undefined));
+  const undo = options.quiet ? null : registerUndo(() => undoIds.promise.then((ids) => (ids.length ? undoActions(ids, targets.length) : undefined)));
   try {
     // the contract takes ≤ 5,000 ids a call (the backend slices each); each call can be undone exactly
     const ids: number[] = [];
@@ -131,12 +137,13 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
     invalidateThreads(targets);
     // the read-after-dwell: nothing to announce or to undo
     if (options.quiet) return;
-    const undo = ids.length ? () => void undoActions(ids, targets.length) : undefined;
-    if (TOAST_ALWAYS.has(action) || targets.length > 1) toast(said(action, targets.length), { action: undo ? { label: "Deshacer", onClick: undo } : undefined });
+    // undone with z before the answer came: nothing to say
+    if (!undo || undo.state !== "ready") return;
+    if (SNACK_ALWAYS.has(action) || targets.length > 1) snack(said(action, targets.length), { action: ids.length ? undoAction(undo, UNDO_NAME[action]) : undefined });
   } catch (error) {
     undoIds.resolve([]);
     captureUi(error, { code: "action.failed", fields: { action, count: targets.length } });
-    toast.error(`No se pudo completar: ${error instanceof Error ? error.message : error}`);
+    snack.error(`No se pudo completar: ${error instanceof Error ? error.message : error}`);
     void reloadList({ keepSelection: true });
   }
 }
@@ -148,19 +155,19 @@ function deferred<T>(): { promise: Promise<T>; resolve(v: T): void } {
 }
 
 let job = 0;
-/** Progress of a backend job in a loading toast ("Archivando… 1 234 / 5 678"). */
-export function trackJob(title: string): { jobId: string; toastId: string | number; stop(): void } {
+/** Progress of a backend job in a loading snack ("Archivando… 1 234 / 5 678"); its result takes the same id. */
+export function trackJob(title: string): { jobId: string; snackId: string; stop(): void } {
   const jobId = `job-${Date.now()}-${++job}`;
-  const toastId = toast.loading(`${title}…`);
+  const snackId = snack.loading(`${title}…`, { id: jobId });
   const off = client.on("bulkProgress", (p) => {
-    if (p.jobId === jobId && p.done < p.total) toast.loading(`${title}… ${fmt(p.done)} / ${fmt(p.total)}`, { id: toastId });
+    if (p.jobId === jobId && p.done < p.total) snack.progress(snackId, `${title}… ${fmt(p.done)} / ${fmt(p.total)}`);
   });
-  return { jobId, toastId, stop: off };
+  return { jobId, snackId, stop: off };
 }
 
 /**
  * "Select all N" + an action: the loaded rows change at once, the backend
- * applies it to the whole scope in slices with a progress toast, and one
+ * applies it to the whole scope in slices with a progress snack, and one
  * Deshacer takes back exactly what changed.
  */
 async function actScope(action: ThreadAction, sel: ScopeSelection): Promise<void> {
@@ -176,16 +183,16 @@ async function actScope(action: ThreadAction, sel: ScopeSelection): Promise<void
   setApp({ checked: new Set(), scope: null });
   const progress = trackJob(`${DOING[action]} ${fmt(sel.count)} conversaciones`);
   const undoId = deferred<{ id: number | null; n: number }>();
-  lastUndo = () => void undoId.promise.then((u) => (u.id === null ? undefined : undoActions([u.id], u.n)));
+  const undo = registerUndo(() => undoId.promise.then((u) => (u.id === null ? undefined : undoActions([u.id], u.n))));
   try {
     const r = await client.call("threads.actScope", { scope: sel.scope, action, jobId: progress.jobId });
     undoId.resolve({ id: r.undoId, n: r.affected });
     invalidateThreads(loaded);
-    const undo = r.undoId === null ? null : () => void undoActions([r.undoId!], r.affected);
-    toast.success(said(action, r.affected), { id: progress.toastId, duration: 8000, action: undo ? { label: "Deshacer", onClick: undo } : undefined });
+    const offer = r.undoId !== null && undo.state === "ready";
+    snack.success(said(action, r.affected), { id: progress.snackId, duration: 8000, action: offer ? undoAction(undo, UNDO_NAME[action]) : undefined });
   } catch (error) {
     undoId.resolve({ id: null, n: 0 });
-    toast.error(`No se pudo completar: ${error instanceof Error ? error.message : error}`, { id: progress.toastId });
+    snack.error(`No se pudo completar: ${error instanceof Error ? error.message : error}`, { id: progress.snackId });
   } finally {
     progress.stop();
     void reloadList({ keepSelection: true });
@@ -201,9 +208,9 @@ async function undoActions(undoIds: readonly number[], n: number): Promise<void>
   try {
     let restored = 0;
     for (const undoId of undoIds) restored += (await client.call("threads.undo", { undoId, jobId: progress?.jobId })).restored;
-    if (progress) toast.success(`Deshecho · ${fmt(restored)} conversaciones`, { id: progress.toastId, duration: 4000 });
+    if (progress) snack.success(`Deshecho · ${fmt(restored)} conversaciones`, { id: progress.snackId, duration: 4000 });
   } catch (error) {
-    toast.error(`No se pudo deshacer: ${error instanceof Error ? error.message : error}`, progress ? { id: progress.toastId } : undefined);
+    snack.error(`No se pudo deshacer: ${error instanceof Error ? error.message : error}`, progress ? { id: progress.snackId } : undefined);
   } finally {
     progress?.stop();
     void reloadList({ keepSelection: true });

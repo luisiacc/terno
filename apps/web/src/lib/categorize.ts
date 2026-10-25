@@ -1,12 +1,12 @@
 import type { CategorizeSource } from "@terno/core/rpc";
-import { toast } from "sonner";
 import { client } from "~/rpc/connection";
 import { exclusivelyIn } from "~/lib/drag";
 import { reflowRemoval } from "~/lib/flash";
 import { patchRows, reloadList, useList } from "~/state/list";
 import { invalidateThreads, loadThread } from "~/state/threads";
 import { getApp, setApp, type ScopeSelection } from "~/state/app";
-import { setLastUndo, trackJob } from "~/lib/actions";
+import { trackJob, undoAction } from "~/lib/actions";
+import { registerUndo, snack } from "~/lib/snack";
 
 export interface Filed {
   categoryId: number;
@@ -63,7 +63,7 @@ export async function addToCategory(categoryId: number, threadIds: readonly numb
     for (const l of listeners) l(filed, options.source ?? "picker");
     return filed;
   } catch (error) {
-    toast.error(`No se pudo añadir: ${error instanceof Error ? error.message : error}`);
+    snack.error(`No se pudo añadir: ${error instanceof Error ? error.message : error}`);
     if (bumped) void reconcileCounts(bumped);
     void reloadList({ keepSelection: true });
     return null;
@@ -107,7 +107,7 @@ export async function moveToCategory(categoryId: number, threadIds: readonly num
     for (const l of listeners) l(filed, source);
     return filed;
   } catch (error) {
-    toast.error(`No se pudo mover: ${error instanceof Error ? error.message : error}`);
+    snack.error(`No se pudo mover: ${error instanceof Error ? error.message : error}`);
     if (bumped) void reconcileCounts(bumped);
     void reloadList({ keepSelection: true });
     return null;
@@ -116,7 +116,7 @@ export async function moveToCategory(categoryId: number, threadIds: readonly num
 
 /**
  * "Select all N" + a category: the backend files the whole scope in slices
- * (progress toast), then "N añadidas a X · Deshacer" (one batch).
+ * (progress snack), then "N añadidas a X · Deshacer" (one batch).
  */
 export async function addScopeToCategory(categoryId: number, sel: ScopeSelection): Promise<void> {
   const name = getApp().categories.find((c) => c.id === categoryId)?.name ?? "";
@@ -126,11 +126,10 @@ export async function addScopeToCategory(categoryId: number, sel: ScopeSelection
   const progress = trackJob(`Añadiendo ${sel.count.toLocaleString("es-MX")} conversaciones a ${name}`);
   try {
     const { added, batchId } = await client.call("categories.addScope", { categoryId, scope: sel.scope, jobId: progress.jobId });
-    const undo = batchId === null ? undefined : () => void undoFiled({ categoryId, addedIds: [], batchId }).then((n) => toast(`${n.toLocaleString("es-MX")} quitadas de ${name}`));
-    setLastUndo(undo ?? null);
-    toast.success(`${added.toLocaleString("es-MX")} ${added === 1 ? "añadida" : "añadidas"} a ${name}`, { id: progress.toastId, duration: 8000, action: undo ? { label: "Deshacer", onClick: undo } : undefined });
+    const undo = batchId === null ? null : registerUndo(() => undoFiled({ categoryId, addedIds: [], batchId }).then((n) => void snack(`${n.toLocaleString("es-MX")} quitadas de ${name}`)));
+    snack.success(`${added.toLocaleString("es-MX")} ${added === 1 ? "añadida" : "añadidas"} a ${name}`, { id: progress.snackId, duration: 8000, action: undo ? undoAction(undo, `Undo add to ${name}`) : undefined });
   } catch (error) {
-    toast.error(`No se pudo añadir: ${error instanceof Error ? error.message : error}`, { id: progress.toastId });
+    snack.error(`No se pudo añadir: ${error instanceof Error ? error.message : error}`, { id: progress.snackId });
   } finally {
     progress.stop();
     void reloadList({ keepSelection: true });
@@ -187,7 +186,7 @@ export async function removeFromCategory(categoryId: number, threadIds: readonly
     await client.call("categories.removeThreads", { categoryId, threadIds: [...threadIds], reason });
     refreshReader(threadIds);
   } catch (error) {
-    toast.error(`No se pudo quitar: ${error instanceof Error ? error.message : error}`);
+    snack.error(`No se pudo quitar: ${error instanceof Error ? error.message : error}`);
     void reloadList({ keepSelection: true });
   }
 }
@@ -222,6 +221,6 @@ export async function rejectSuggestion(threadId: number, categoryId: number): Pr
     await client.call("categorize.feedback", { threadId, categoryId, verdict: "reject" });
     refreshReader([threadId]);
   } catch (error) {
-    toast.error(`No se pudo guardar: ${error instanceof Error ? error.message : error}`);
+    snack.error(`No se pudo guardar: ${error instanceof Error ? error.message : error}`);
   }
 }

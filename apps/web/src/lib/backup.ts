@@ -36,7 +36,7 @@ export async function importFile(file: File): Promise<ImportResult> {
   return result;
 }
 
-/** One line for a toast. */
+/** One line for a snack. */
 export function importSummary(r: ImportResult): string {
   const parts = [
     `${r.categories.added} ${r.categories.added === 1 ? "categoría nueva" : "categorías nuevas"}`,

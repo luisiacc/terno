@@ -4,7 +4,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Dialog, DialogContent, DialogTitle } from "@terno/ui/components/dialog";
 import { Check, Plus } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
+import { snack } from "~/lib/snack";
 import { addScopeToCategory, addToCategory, isExclusivelyIn, moveToCategory, removeFromCategory } from "~/lib/categorize";
 import { currentTargets } from "~/lib/select";
 import { client } from "~/rpc/connection";
@@ -43,7 +43,7 @@ export function CategoryPicker() {
   const apply = async (categoryId: number, on: boolean) => {
     close();
     if ("scope" in t) {
-      if (mode === "move") toast("Para mover, selecciona conversaciones de la lista (hasta 5 000)");
+      if (mode === "move") snack("Para mover, selecciona conversaciones de la lista (hasta 5 000)");
       else await addScopeToCategory(categoryId, t.scope);
       return;
     }

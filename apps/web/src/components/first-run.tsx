@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@terno/ui
 import { cn } from "@terno/ui/lib/utils";
 import { Cloud, LaptopMinimalCheck } from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
-import { toast } from "sonner";
+import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { setApp } from "~/state/app";
 import { reconcileSettings } from "~/lib/appearance";
@@ -49,7 +49,7 @@ export function FirstRun() {
       setApp({ settings: reconcileSettings(settings) });
       go("account");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+      snack.error(error instanceof Error ? error.message : String(error));
     }
   };
 

@@ -4,8 +4,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { cn } from "@terno/ui/lib/utils";
 import { Send, Trash2 } from "lucide-react";
 import { useEffect, useRef } from "react";
-import { toast } from "sonner";
-import { setLastUndo } from "~/lib/actions";
+import { registerUndo, snack } from "~/lib/snack";
 import { leaveNewDraft, sendDraft, showNewDraft } from "~/lib/compose";
 import { discardDraft, editDraft, restoreDiscarded, useDrafts } from "~/lib/drafts";
 import { useApp } from "~/state/app";
@@ -44,9 +43,8 @@ export function NewMessage() {
     leaveNewDraft();
     const gone = await discardDraft(key);
     if (!gone) return;
-    const undo = () => showNewDraft(restoreDiscarded(gone));
-    setLastUndo(undo);
-    toast("Borrador descartado", { action: { label: "Deshacer", onClick: undo } });
+    const undo = registerUndo(() => showNewDraft(restoreDiscarded(gone)));
+    snack("Borrador descartado", { action: { label: "Undo", name: "Undo discard draft", undo } });
   };
 
   return (

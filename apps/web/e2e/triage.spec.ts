@@ -20,10 +20,10 @@ test.describe("keyboard triage", () => {
     await page.keyboard.press("e");
     await expect(page.locator(`[data-thread-id="${archived}"]`)).toHaveCount(0);
     await expect(selectedRow(page)).toHaveAttribute("data-thread-id", next!);
-    const toast = page.locator("[data-sonner-toast]").filter({ hasText: "Archivado" });
+    const toast = page.locator("[data-testid=snack]").filter({ hasText: "Archivado" });
     await expect(toast).toBeVisible();
     // it really left the inbox on the backend: it shows up in Archivo
-    await toast.getByRole("button", { name: "Deshacer" }).click();
+    await toast.getByTestId("snack-action").click();
     await expect(page.locator(`[data-thread-id="${archived}"]`)).toHaveCount(1);
   });
 
@@ -59,7 +59,7 @@ test.describe("keyboard triage", () => {
     await page.keyboard.press("x");
     await page.keyboard.press("e");
     for (const id of ids) await expect(page.locator(`[data-thread-id="${id}"]`)).toHaveCount(0);
-    await expect(page.locator("[data-sonner-toast]").filter({ hasText: "3 conversaciones" })).toBeVisible();
+    await expect(page.locator("[data-testid=snack]").filter({ hasText: "3 conversaciones" })).toBeVisible();
     await page.getByTestId("nav-archive").click();
     for (const id of ids) await expect(page.locator(`[data-thread-id="${id}"]`)).toHaveCount(1);
   });
