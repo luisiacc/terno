@@ -6,7 +6,7 @@ import type {
   ThreadSummary,
   View,
 } from "@terno/core";
-import type { ListParams, Page, ScopeParams } from "@terno/store";
+import { keepInPage, type ListParams, type Page, type ScopeParams } from "@terno/store";
 import { placeholders, type Db, type Param } from "./sqlite";
 
 export type { Cursor, ListParams, Page } from "@terno/store";
@@ -71,13 +71,31 @@ export function pageFrom(rows: SummaryRow[], limit: number): Page {
   return { items, nextCursor: hasMore && last ? { lastDate: last.lastDate, id: last.id } : null };
 }
 
+/** The unread filter's predicate; textually the partial index's (migration v11). */
+const UNREAD_WHERE = "t.unread_count > 0";
+
 /** Keyset-paginated list of a view, optionally scoped to an account and/or category. */
 export function listThreads(db: Db, p: ListParams): Page {
+  const q = listSql(p);
+  const page = pageFrom(db.all<SummaryRow>(q.sql, ...q.params), p.limit);
+  if (!p.unreadOnly || p.keepId === undefined) return page;
+  // the open thread, by key, against the view without the filter
+  const k = listSql({ ...p, unreadOnly: false, limit: 1 }, p.keepId);
+  const row = db.get<SummaryRow>(k.sql, ...k.params);
+  return keepInPage(page, row ? toSummary(row) : null);
+}
+
+/** The SQL a list page runs (query-plan tests: the unread filter walks threads_unread); `only`: that one thread, if the page's view holds it. */
+export function listSql(p: ListParams, only?: number): { sql: string; params: Param[] } {
   const where = [VIEW_WHERE[p.view]];
   const params: Param[] = [];
-  let from = "threads t";
+  // unread: pinned to the unread index, which tests view and account in the index (the planner
+  // picks a view's date index instead and reads a row per thread, or sorts a category: measured in plan 12)
+  const threads = p.unreadOnly ? "threads t INDEXED BY threads_unread" : "threads t";
+  if (p.unreadOnly) where.push(UNREAD_WHERE);
+  let from = threads;
   if (p.categoryId !== undefined) {
-    from = "thread_categories tc JOIN threads t ON t.id = tc.thread_id";
+    from = `thread_categories tc JOIN ${threads} ON t.id = tc.thread_id`;
     where.unshift("tc.category_id = ?");
     params.push(p.categoryId);
   }
@@ -89,13 +107,16 @@ export function listThreads(db: Db, p: ListParams): Page {
     where.push("(t.last_date, t.id) < (?, ?)");
     params.push(p.cursor.lastDate, p.cursor.id);
   }
+  if (only !== undefined) {
+    where.push("t.id = ?");
+    params.push(only);
+  }
   params.push(p.limit + 1);
-  const rows = db.all<SummaryRow>(
-    `SELECT ${SUMMARY_COLUMNS} FROM ${from} WHERE ${where.join(" AND ")}
+  return {
+    sql: `SELECT ${SUMMARY_COLUMNS} FROM ${from} WHERE ${where.join(" AND ")}
      ORDER BY t.last_date DESC, t.id DESC LIMIT ?`,
-    ...params,
-  );
-  return pageFrom(rows, p.limit);
+    params,
+  };
 }
 
 /** What a view (account/category optional) is, for the id-only scope queries: index-backed, no display columns. */
@@ -103,9 +124,11 @@ function scopeFrom(p: ScopeParams, paged = false): { from: string; where: string
   const where = [VIEW_WHERE[p.view]];
   const params: Param[] = [];
   // pages walk an index in id order and stop at the limit: the threads by key, an account's by (account_id, id),
-  // a category's memberships by (category_id, thread_id); pinned, so the planner never picks a date index and sorts
-  // (a count lets the planner pick: a view's partial index counts fastest)
-  let from = !paged ? "threads t" : p.accountId !== undefined ? "threads t INDEXED BY threads_account_id" : "threads t NOT INDEXED";
+  // the unread ones by threads_unread_id (testing view and account in it), a category's memberships by
+  // (category_id, thread_id); pinned, so the planner never picks a date index and sorts
+  // (a count lets the planner pick: a view's partial index counts fastest; an unread count walks the unread
+  // index, testing in it, where a view's index reads a row per thread; a category's counts its memberships)
+  let from = p.unreadOnly ? "threads t INDEXED BY threads_unread_id" : !paged ? "threads t" : p.accountId !== undefined ? "threads t INDEXED BY threads_account_id" : "threads t NOT INDEXED";
   if (p.categoryId !== undefined) {
     // CROSS JOIN keeps the memberships outer (SQLite never reorders it)
     from = paged ? "thread_categories tc INDEXED BY thread_categories_c CROSS JOIN threads t ON t.id = tc.thread_id" : "thread_categories tc JOIN threads t ON t.id = tc.thread_id";
@@ -116,6 +139,7 @@ function scopeFrom(p: ScopeParams, paged = false): { from: string; where: string
     where.push("t.account_id = ?");
     params.push(p.accountId);
   }
+  if (p.unreadOnly) where.push(UNREAD_WHERE);
   return { from, where: where.join(" AND "), params };
 }
 

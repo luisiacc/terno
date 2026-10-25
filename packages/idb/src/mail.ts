@@ -30,7 +30,7 @@ import {
   withAccountPrefs,
 } from "@terno/core";
 import type { OwnerIdentity } from "@terno/core/rpc";
-import { AWAITING_AUTH, type DraftInput, type DraftRow, type IncomingMessage, type ListParams, type ModelDelta, type OpRow, type OwnerClaim, type MessageState, type Page, type ScopeParams, type SearchMessageDoc, type SearchThreadDoc } from "@terno/store";
+import { AWAITING_AUTH, keepInPage, type DraftInput, type DraftRow, type IncomingMessage, type ListParams, type ModelDelta, type OpRow, type OwnerClaim, type MessageState, type Page, type ScopeParams, type SearchMessageDoc, type SearchThreadDoc } from "@terno/store";
 import type { MemDb, Row, Table } from "./mem";
 
 /**
@@ -46,6 +46,8 @@ export interface Ctx {
   db: MemDb;
   uuid(): string;
   order: ThreadOrder;
+  /** the same order, unread threads only: the unread filter's pages never walk the read ones */
+  unreadOrder: ThreadOrder;
   scopes: ScopeIndex;
   /** a message's stored body: written by this command, read ahead of it, or absent; throws if it wasn't read ahead */
   body(messageId: number): { body_text: string | null; body_html: string | null } | null;
@@ -58,7 +60,9 @@ export const T = (c: Ctx, name: string): Table<R> => c.db.table<R>(name);
 /**
  * Threads by (last_date DESC, id DESC): the order every list and search
  * page walks. Kept current from row changes (undo included): a few changes
- * are placed by binary search, many (an import slice) re-sort once.
+ * are placed by binary search, many (an import slice) re-sort once. With
+ * `keep`, only the threads it accepts (the unread filter's order): a thread
+ * crossing it is placed or taken out like a date change.
  */
 export class ThreadOrder {
   private ids: number[] = [];
@@ -67,11 +71,14 @@ export class ThreadOrder {
   /** rows loaded before this order existed: sort them all once */
   private stale = true;
 
-  constructor(db: MemDb) {
+  constructor(
+    db: MemDb,
+    private readonly keep: (row: R) => boolean = () => true,
+  ) {
     db.onRow((table, row, prev) => {
       if (table !== "threads") return;
       const id = (row ?? prev)!.id as number;
-      if (row && prev && row.last_date === prev.last_date) return;
+      if (row && prev && row.last_date === prev.last_date && keep(row) === keep(prev)) return;
       this.pending.add(id);
     });
   }
@@ -97,6 +104,7 @@ export class ThreadOrder {
       this.lastDate.clear();
       this.ids = [];
       for (const t of threads.all()) {
+        if (!this.keep(t)) continue;
         this.lastDate.set(t.id, t.last_date);
         this.ids.push(t.id);
       }
@@ -110,7 +118,7 @@ export class ThreadOrder {
           this.lastDate.delete(id);
         }
         const row = threads.get(id);
-        if (!row) continue;
+        if (!row || !this.keep(row)) continue;
         this.lastDate.set(id, row.last_date);
         this.ids.splice(this.position(id), 0, id);
       }
@@ -700,11 +708,12 @@ export function toSummary(c: Ctx, t: R): ThreadSummary {
 
 export function listThreads(c: Ctx, p: ListParams): Page {
   const threads = T(c, "threads");
-  const ids = c.order.current(threads);
+  const order = p.unreadOnly ? c.unreadOrder : c.order;
+  const ids = order.current(threads);
   const test = VIEW_TEST[p.view];
   const inCategory = p.categoryId === undefined ? null : T(c, "thread_categories");
   const rows: R[] = [];
-  for (let i = p.cursor ? c.order.after(threads, p.cursor) : 0; i < ids.length && rows.length <= p.limit; i++) {
+  for (let i = p.cursor ? order.after(threads, p.cursor) : 0; i < ids.length && rows.length <= p.limit; i++) {
     const t = threads.get(ids[i]!)!;
     if (!test(t)) continue;
     if (p.accountId !== undefined && t.account_id !== p.accountId) continue;
@@ -714,7 +723,13 @@ export function listThreads(c: Ctx, p: ListParams): Page {
   const hasMore = rows.length > p.limit;
   const items = (hasMore ? rows.slice(0, p.limit) : rows).map((t) => toSummary(c, t));
   const last = items[items.length - 1];
-  return { items, nextCursor: hasMore && last ? { lastDate: last.lastDate, id: last.id } : null };
+  const page = { items, nextCursor: hasMore && last ? { lastDate: last.lastDate, id: last.id } : null };
+  if (!p.unreadOnly || p.keepId === undefined) return page;
+  // the open thread, against the view without the filter (and before the cursor, like the page)
+  const k = threads.get(p.keepId);
+  const before = (t: R) => !p.cursor || t.last_date < p.cursor.lastDate || (t.last_date === p.cursor.lastDate && t.id < p.cursor.id);
+  const kept = k && test(k) && (p.accountId === undefined || k.account_id === p.accountId) && (!inCategory || inCategory.has(k.id, p.categoryId)) && before(k);
+  return keepInPage(page, kept ? toSummary(c, k) : null);
 }
 
 /** A view's thread ids above `after`, ascending, up to `limit`: a category walks its memberships, not the whole mailbox. */
@@ -726,7 +741,7 @@ export function scopeThreadIds(c: Ctx, p: ScopeParams & { after?: number; limit:
   const out: number[] = [];
   for (let i = seekAfter(ids, p.after ?? 0); i < ids.length && out.length < p.limit; i++) {
     const t = threads.get(ids[i]!);
-    if (t && test(t) && (p.accountId === undefined || t.account_id === p.accountId)) out.push(t.id as number);
+    if (t && test(t) && (p.accountId === undefined || t.account_id === p.accountId) && (!p.unreadOnly || t.unread_count > 0)) out.push(t.id as number);
   }
   return out;
 }

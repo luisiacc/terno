@@ -565,18 +565,22 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         const scopes: { accountId?: number; categoryId?: number }[] = [{}, { accountId: snap.accounts[1]!.id }, { categoryId: snap.categories[0]!.id }];
         for (const view of VIEWS) {
           for (const scope of scopes) {
-            const ids: number[] = [];
-            let cursor: Cursor | undefined;
-            do {
-              const page = await store.threads.list({ view, limit: 53, cursor, ...scope });
-              ids.push(...page.items.map((t) => t.id));
-              cursor = page.nextCursor ?? undefined;
-            } while (cursor);
-            const expected = docs
-              .filter((t) => VIEW_TEST[view](t) && (scope.accountId === undefined || t.accountId === scope.accountId) && (scope.categoryId === undefined || t.categoryIds.includes(scope.categoryId)))
-              .sort(byRecency)
-              .map((t) => t.threadId);
-            expect(ids, `${view} ${JSON.stringify(scope)}`).toEqual(expected);
+            // and the unread filter's pages: the same walk, read threads left out
+            for (const unreadOnly of [false, true]) {
+              const ids: number[] = [];
+              let cursor: Cursor | undefined;
+              do {
+                const page = await store.threads.list({ view, limit: 53, cursor, ...scope, unreadOnly });
+                ids.push(...page.items.map((t) => t.id));
+                cursor = page.nextCursor ?? undefined;
+              } while (cursor);
+              const expected = docs
+                .filter((t) => VIEW_TEST[view](t) && (scope.accountId === undefined || t.accountId === scope.accountId) && (scope.categoryId === undefined || t.categoryIds.includes(scope.categoryId)) && (!unreadOnly || t.unreadCount > 0))
+                .sort(byRecency)
+                .map((t) => t.threadId);
+              expect(ids, `${view} ${JSON.stringify(scope)} unreadOnly=${unreadOnly}`).toEqual(expected);
+              if (unreadOnly) expect(await store.threads.scopeCount({ view, ...scope, unreadOnly, limit: 100_000 }), `${view} ${JSON.stringify(scope)} count`).toBe(expected.length);
+            }
           }
         }
       });
@@ -923,6 +927,60 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         }
         expect(walked).toEqual(await listed({ view: "all", categoryId: cat }));
         expect(await store.threads.scopeCount({ view: "all", limit: 2 })).toBe(2);
+      });
+
+      it("the unread filter: lists, scope ids and counts hold the unread threads only, and follow reads, unreads and new mail", async () => {
+        const { store, acct, cat, thread } = await setup();
+        // newest first: t0 (unread), t1 (read), t2 (unread, archived), t3 (unread, in the category), t4 (read, in the category)
+        const ts: number[] = [];
+        for (const [i, isRead] of [false, true, false, false, true].entries()) ts.push(await thread({ isRead, date: NOW - (i + 1) * DAY, subject: `hilo ${i}` }));
+        await store.categories.add({ categoryId: cat, threadIds: [ts[3]!, ts[4]!], addedBy: "user", now: NOW });
+        await store.threads.act({ threadIds: [ts[2]!], action: "archive", signal: null, now: NOW });
+        const list = async (p: { view: "inbox" | "all" | "archive"; accountId?: number; categoryId?: number; keepId?: number }) => {
+          const ids: number[] = [];
+          let cursor: Cursor | undefined;
+          do {
+            const page = await store.threads.list({ ...p, unreadOnly: true, limit: 1, cursor });
+            expect(page.items.every((t) => t.unread || t.id === p.keepId), JSON.stringify(p)).toBe(true);
+            ids.push(...page.items.map((t) => t.id));
+            cursor = page.nextCursor ?? undefined;
+          } while (cursor);
+          return ids;
+        };
+        const scope = async (p: { view: "inbox" | "all" | "archive"; accountId?: number; categoryId?: number }) => {
+          const ids = await store.threads.scopeIds({ ...p, unreadOnly: true, limit: 1000 });
+          expect(await store.threads.scopeCount({ ...p, unreadOnly: true, limit: 1000 }), JSON.stringify(p)).toBe(ids.length);
+          return ids;
+        };
+        expect(await list({ view: "inbox" })).toEqual([ts[0], ts[3]]);
+        expect(await list({ view: "archive" })).toEqual([ts[2]]);
+        expect(await list({ view: "all" })).toEqual([ts[0], ts[2], ts[3]]);
+        expect(await list({ view: "all", categoryId: cat })).toEqual([ts[3]]);
+        expect(await list({ view: "inbox", accountId: acct })).toEqual([ts[0], ts[3]]);
+        expect(await list({ view: "inbox", accountId: acct + 999 })).toEqual([]);
+        expect(await scope({ view: "inbox" })).toEqual([ts[0], ts[3]].sort((a, b) => a! - b!));
+        expect(await scope({ view: "all", categoryId: cat })).toEqual([ts[3]]);
+        expect(await store.threads.scopeCount({ view: "all", unreadOnly: true, limit: 2 })).toBe(2);
+        // a read leaves, an unread enters at its place, new mail comes in at the top
+        await store.threads.act({ threadIds: [ts[0]!], action: "markRead", signal: null, now: NOW });
+        await store.threads.act({ threadIds: [ts[1]!], action: "markUnread", signal: null, now: NOW });
+        const fresh = await thread({ isRead: false, date: NOW, subject: "nuevo" });
+        expect(await list({ view: "inbox" })).toEqual([fresh, ts[1], ts[3]]);
+        expect(await scope({ view: "inbox" })).toEqual([fresh, ts[1]!, ts[3]!].sort((a, b) => a - b));
+        // the open thread stays (read now), once, at its place in whichever page holds that place
+        expect(await list({ view: "inbox", keepId: ts[0] })).toEqual([fresh, ts[0], ts[1], ts[3]]);
+        expect((await store.threads.list({ view: "inbox", unreadOnly: true, keepId: ts[0], limit: 50 })).items.map((t) => [t.id, t.unread])).toEqual([[fresh, true], [ts[0], false], [ts[1], true], [ts[3], true]]);
+        expect(await list({ view: "inbox", keepId: ts[4] })).toEqual([fresh, ts[1], ts[3], ts[4]]);
+        // …but only while it is in the view
+        expect(await list({ view: "all", categoryId: cat, keepId: ts[0] })).toEqual([ts[3]]);
+        expect(await list({ view: "inbox", accountId: acct + 999, keepId: ts[0] })).toEqual([]);
+        await store.threads.act({ threadIds: [ts[0]!], action: "archive", signal: null, now: NOW });
+        expect(await list({ view: "inbox", keepId: ts[0] })).toEqual([fresh, ts[1], ts[3]]);
+        expect(await list({ view: "archive", keepId: ts[0] })).toEqual([ts[0], ts[2]]);
+        await store.threads.act({ threadIds: [ts[0]!], action: "moveToInbox", signal: null, now: NOW });
+        // the unfiltered list is untouched by all this
+        expect((await store.threads.list({ view: "inbox", limit: 50 })).items.map((t) => t.id)).toEqual([fresh, ts[0], ts[1], ts[3], ts[4]]);
+        await store.debug.verify();
       });
 
       it("bulk scopes: sender scope is received mail only, not filed, not removed, outside spam and trash; counts cap at 1 000", async () => {

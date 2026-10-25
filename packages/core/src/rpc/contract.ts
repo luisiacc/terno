@@ -350,10 +350,10 @@ const categorizeScope = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("query"), query: z.string().trim().min(1).max(500) }),
 ]);
 
-/** Every thread of a view (account/category optional) or of a search: "select all N" acts on it on the backend. */
+/** Every thread of a view (account/category optional) or of a search: "select all N" acts on it on the backend. `unreadOnly`: the list's unread filter. */
 const threadScope = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("view"), view: z.enum(VIEWS), accountId: id.optional(), categoryId: id.optional() }),
-  z.object({ kind: z.literal("search"), query: z.string().trim().min(1).max(2000), accountId: id.optional(), categoryId: id.optional() }),
+  z.object({ kind: z.literal("view"), view: z.enum(VIEWS), accountId: id.optional(), categoryId: id.optional(), unreadOnly: z.boolean().optional() }),
+  z.object({ kind: z.literal("search"), query: z.string().trim().min(1).max(2000), accountId: id.optional(), categoryId: id.optional(), unreadOnly: z.boolean().optional() }),
 ]);
 export type ThreadScope = z.output<typeof threadScope>;
 
@@ -393,6 +393,10 @@ export const contract = {
       view: z.enum(VIEWS),
       accountId: id.optional(),
       categoryId: id.optional(),
+      /** the unread filter: threads with something unread only */
+      unreadOnly: z.boolean().optional(),
+      /** with unreadOnly: the open thread too, read or not, while it is in the view (it stays put until the selection moves) */
+      keepId: id.optional(),
       cursor: cursor.optional(),
       limit: z.number().int().min(1).max(500).default(100),
     }),
@@ -402,6 +406,8 @@ export const contract = {
       query: z.string().max(2000),
       accountId: id.optional(),
       categoryId: id.optional(),
+      /** the unread filter, ANDed with the query */
+      unreadOnly: z.boolean().optional(),
       cursor: searchCursor.optional(),
       limit: z.number().int().min(1).max(500).default(100),
     }),

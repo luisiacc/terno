@@ -113,6 +113,40 @@ describe("scope actions", () => {
     expect(db.get<{ c: number }>(`SELECT count(*) AS c FROM threads WHERE id IN (${all.join(",")}) AND unread_count > 0`)!.c).toBe(0);
   });
 
+  it("the unread filter: a filtered view or search scope counts, acts on and undoes the unread threads only", async () => {
+    const { db, client } = setup(400);
+    const unread = ids(db.all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 AND unread_count > 0"));
+    const read = ids(db.all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 AND unread_count = 0"));
+    expect(unread.length).toBeGreaterThan(10);
+    expect(read.length).toBeGreaterThan(10);
+    const scope = { kind: "view" as const, view: "inbox" as const, unreadOnly: true };
+    expect(await client.call("threads.scopeCount", { scope })).toEqual({ count: unread.length, capped: false });
+    const r = await client.call("threads.actScope", { scope, action: "archive" });
+    expect(r.total).toBe(unread.length);
+    // "archive all" in Entrada · No leídos: the read ones stay in the inbox
+    expect(ids(db.all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1"))).toEqual(read);
+    await client.call("threads.undo", { undoId: r.undoId! });
+    expect(ids(db.all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 AND unread_count > 0"))).toEqual(unread);
+
+    // a search: the filter is ANDed with the query, in the list and in the scope alike
+    const search = { query: "in:inbox factura" };
+    const shown = (await client.call("threads.search", { ...search, unreadOnly: true, limit: 500 })).items;
+    expect(shown.length).toBeGreaterThan(0);
+    expect(shown.every((t) => t.unread)).toBe(true);
+    const everything = (await client.call("threads.search", { ...search, limit: 500 })).items;
+    expect(everything.length).toBeGreaterThan(shown.length);
+    expect((await client.call("threads.scopeCount", { scope: { kind: "search", ...search, unreadOnly: true } })).count).toBe(shown.length);
+    const starred = () => ids(db.all<{ id: number }>(`SELECT id FROM threads WHERE is_starred = 1 AND id IN (${everything.map((t) => t.id).join(",")})`));
+    const before = new Set(starred());
+    const marked = await client.call("threads.actScope", { scope: { kind: "search", ...search, unreadOnly: true }, action: "star" });
+    expect(marked.total).toBe(shown.length);
+    expect(starred().filter((id) => !before.has(id))).toEqual(ids(shown.filter((t) => !before.has(t.id))));
+    expect(starred().every((id) => before.has(id) || shown.some((t) => t.id === id))).toBe(true);
+    // a query that asks for read mail matches nothing with the filter on
+    expect((await client.call("threads.search", { query: "is:read factura", unreadOnly: true })).items).toEqual([]);
+    expect(await client.call("threads.scopeCount", { scope: { kind: "search", query: "is:read factura", unreadOnly: true } })).toEqual({ count: 0, capped: false });
+  });
+
   it("a view scope is counted and enumerated from the indexes, never by hydrating list pages", async () => {
     const { backend, db, client } = setup(600);
     const cat = createCategory(db, "Grande", "rose").id;

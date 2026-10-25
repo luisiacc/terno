@@ -7,6 +7,7 @@
  * then goes through runSliced: one store command per slice, each its own
  * transaction with one provider op per account.
  */
+import { withUnreadOnly } from "@terno/core";
 import type { ThreadScope } from "@terno/core/rpc";
 import { StaleCursorError, type MessageState } from "@terno/store";
 import { SliceSizer } from "./slicer";
@@ -18,14 +19,14 @@ const PAGE = 500;
 
 export async function resolveThreadScope(b: BackendCore, scope: ThreadScope, cap = SCOPE_CAP): Promise<{ ids: number[]; capped: boolean }> {
   const ids: number[] = [];
-  const { accountId, categoryId } = scope;
+  const { accountId, categoryId, unreadOnly } = scope;
   if (scope.kind === "view") {
     // keyset pages sized by the time they take (an 18,000-row read in one go is a stall on a busy machine)
     const sizer = new SliceSizer({ targetMs: 15, initial: 500, floor: 100, ceiling: 20_000 });
     for (let after = 0; ids.length <= cap; ) {
       const limit = sizer.size;
       const started = performance.now();
-      const page = await b.store.threads.scopeIds({ view: scope.view, accountId, categoryId, after, limit });
+      const page = await b.store.threads.scopeIds({ view: scope.view, accountId, categoryId, unreadOnly, after, limit });
       sizer.record(Math.max(1, page.length), performance.now() - started);
       for (const id of page) ids.push(id);
       if (page.length < limit) break;
@@ -34,12 +35,15 @@ export async function resolveThreadScope(b: BackendCore, scope: ThreadScope, cap
     }
     return { ids: ids.slice(0, cap), capped: ids.length > cap };
   } else {
+    // the same query the list ran (threads.search): the unread filter is part of it
+    const query = unreadOnly ? withUnreadOnly(scope.query, b.now()) : scope.query;
+    if (query === null) return { ids: [], capped: false };
     // a write landing between pages (sync) invalidates the cursor: start over, a few times
     for (let attempt = 0; ; attempt++) {
       try {
         let cursor: Parameters<BackendCore["store"]["threads"]["searchText"]>[0]["cursor"];
         for (;;) {
-          const page = await b.store.threads.searchText({ query: scope.query, accountId, categoryId, cursor, limit: PAGE, now: b.now() });
+          const page = await b.store.threads.searchText({ query, accountId, categoryId, cursor, limit: PAGE, now: b.now() });
           for (const t of page.items) ids.push(t.id);
           if (!page.nextCursor || ids.length > cap) break;
           cursor = page.nextCursor;
@@ -59,7 +63,7 @@ export async function resolveThreadScope(b: BackendCore, scope: ThreadScope, cap
 /** How many threads a scope holds: a view is counted, a search is resolved. */
 export async function countThreadScope(b: BackendCore, scope: ThreadScope, cap = SCOPE_CAP): Promise<{ count: number; capped: boolean }> {
   if (scope.kind === "view") {
-    const n = await b.store.threads.scopeCount({ view: scope.view, accountId: scope.accountId, categoryId: scope.categoryId, limit: cap + 1 });
+    const n = await b.store.threads.scopeCount({ view: scope.view, accountId: scope.accountId, categoryId: scope.categoryId, unreadOnly: scope.unreadOnly, limit: cap + 1 });
     return { count: Math.min(n, cap), capped: n > cap };
   }
   const { ids, capped } = await resolveThreadScope(b, scope, cap);

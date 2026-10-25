@@ -709,6 +709,19 @@ CREATE INDEX ops_seq ON ops(seq);
 CREATE INDEX threads_account_id ON threads(account_id, id);
 `;
 
+/**
+ * v11: the unread filter (plan 12). The unread threads by date, carrying
+ * every column a view or an account narrows by: a filtered page walks it and
+ * tests those in the index, reading only the rows it returns. A view's date
+ * index read a table row per thread (an archive of read mail: all of them).
+ * And the same by id, for "select all N" pages of a filtered view (they walk
+ * ids in order: the whole mailbox, for a few unread threads).
+ */
+const UNREAD_V11 = `
+CREATE INDEX threads_unread ON threads(last_date DESC, id DESC, account_id, in_inbox, in_trash, in_spam, is_starred, has_sent) WHERE unread_count > 0;
+CREATE INDEX threads_unread_id ON threads(id, account_id, in_inbox, in_trash, in_spam, is_starred, has_sent) WHERE unread_count > 0;
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "initial schema", sql: SCHEMA_V1 },
   { version: 2, name: "op target index", sql: OP_TARGETS_V2 },
@@ -720,6 +733,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 8, name: "exclusive moves", sql: EXCLUSIVE_MOVES_V8 },
   { version: 9, name: "drafts v2", sql: DRAFTS_V9 },
   { version: 10, name: "ops sequence and account id indexes", sql: OPS_SEQ_V10 },
+  { version: 11, name: "unread threads index", sql: UNREAD_V11 },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

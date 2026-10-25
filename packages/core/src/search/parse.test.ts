@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isFullEmail, parseDate, parseSearch } from "./parse";
+import { isFullEmail, parseDate, parseSearch, withUnreadOnly } from "./parse";
 
 const NOW = new Date(2026, 9, 22, 12).getTime();
 
@@ -77,5 +77,21 @@ describe("parseSearch", () => {
     expect(isFullEmail("ana@example.com")).toBe(true);
     expect(isFullEmail("ana@example")).toBe(false);
     expect(isFullEmail("ana")).toBe(false);
+  });
+});
+
+describe("withUnreadOnly", () => {
+  it("narrows to unread in front, so the token being typed stays the prefix one", () => {
+    const q = withUnreadOnly("in:inbox factura marz", NOW)!;
+    expect(q).toBe("is:unread in:inbox factura marz");
+    const parsed = parseSearch(q, NOW);
+    expect(parsed.unread).toBe(true);
+    expect(parsed.view).toBe("inbox");
+    expect(parsed.terms.map((t) => [t.value, t.prefix])).toEqual([["factura", false], ["marz", true]]);
+  });
+
+  it("a query that asks for read threads matches nothing with the filter on", () => {
+    for (const q of ["is:read factura", "-is:unread", "es:leido", "-es:noleido"]) expect(withUnreadOnly(q, NOW), q).toBeNull();
+    expect(withUnreadOnly("is:unread", NOW)).toBe("is:unread is:unread");
   });
 });

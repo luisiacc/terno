@@ -189,11 +189,13 @@ export class IdbMailStore implements MailStore {
   ) {
     this.log = o.log ?? (() => {});
     const order = new ThreadOrder(db);
+    const unreadOrder = new ThreadOrder(db, (t) => t.unread_count > 0);
     const scopes = new ScopeIndex(db);
     const bodies = db.table<R>("message_bodies");
     this.c = {
       db,
       order,
+      unreadOrder,
       scopes,
       uuid: () => o.platform.uuid(),
       body: (id) => {
@@ -1153,6 +1155,10 @@ export class IdbMailStore implements MailStore {
           const b = threads.get(order[i]!)!;
           if (a.last_date < b.last_date || (a.last_date === b.last_date && a.id < b.id)) throw new Error("the recency order is out of order");
         }
+        // the unread order is the recency order's unread threads, exactly
+        const unread = this.c.unreadOrder.current(threads);
+        const expected = order.filter((id) => threads.get(id)!.unread_count > 0);
+        if (unread.length !== expected.length || unread.some((id, i) => id !== expected[i])) throw new Error("the unread order differs from the recency order's unread threads");
       });
     },
   };

@@ -1,5 +1,5 @@
 import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
-import { COUNT_CAP, proposeLearnedFilters, type ThreadAction } from "@terno/core";
+import { COUNT_CAP, proposeLearnedFilters, withUnreadOnly, type ThreadAction } from "@terno/core";
 import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type MessageState } from "@terno/store";
 import type { GmailAccountConfig, ImapAccountConfig } from "@terno/mail";
 import { BackendCore as Backend } from "./core";
@@ -112,18 +112,21 @@ export function createHandlers(b: Backend): Handlers {
 
     "threads.list": (p) => store.threads.list(p),
 
-    "threads.search": async (p, ctx) => {
+    "threads.search": async ({ unreadOnly, ...p }, ctx) => {
       // Latest-wins per client: a query superseded while queued is not executed.
       const seq = (b.searchSeq.get(ctx.clientId) ?? 0) + 1;
       b.searchSeq.set(ctx.clientId, seq);
       await b.platform.yield();
       if (b.searchSeq.get(ctx.clientId) !== seq) throw new RpcError("CANCELLED", "Superseded by a newer search");
       const started = performance.now();
+      // the unread filter is part of the query (cursors and the instant engine see one query); asking for read mail too matches nothing
+      const query = unreadOnly ? withUnreadOnly(p.query, b.now()) : p.query;
+      if (query === null) return { items: [], nextCursor: null, strategy: "none", tookMs: performance.now() - started, complete: true };
       b.searchAborts.get(ctx.clientId)?.abort();
       const abort = new AbortController();
       b.searchAborts.set(ctx.clientId, abort);
       try {
-        const page = await store.threads.searchText({ ...p, now: b.now(), signal: abort.signal });
+        const page = await store.threads.searchText({ ...p, query, now: b.now(), signal: abort.signal });
         return {
           items: page.items,
           nextCursor: page.nextCursor,

@@ -77,12 +77,18 @@ export interface ScopeParams {
   view: View;
   accountId?: number;
   categoryId?: number;
+  /** only threads with something unread (the list's unread filter) */
+  unreadOnly?: boolean;
 }
 
 export interface ListParams {
   view: View;
   accountId?: number;
   categoryId?: number;
+  /** only threads with something unread (the list's unread filter) */
+  unreadOnly?: boolean;
+  /** with unreadOnly: this thread too while it is in the view, read or not (the open one stays put; see keepInPage) */
+  keepId?: number;
   cursor?: Cursor;
   limit: number;
 }

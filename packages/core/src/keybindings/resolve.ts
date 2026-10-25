@@ -11,6 +11,7 @@ export type Command =
   | "list.extendNext"
   | "list.extendPrev"
   | "list.menu"
+  | "list.toggleUnread"
   | "reader.close"
   | "thread.archive"
   | "thread.trash"
@@ -99,6 +100,8 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "shift+arrowup", command: "list.extendPrev" },
   { keys: "shift+f10", command: "list.menu" },
   { keys: "contextmenu", command: "list.menu" },
+  // Apple Mail's message filter; resolves everywhere (else the browser's ⌘L takes the address bar), the handler decides
+  { keys: "mod+l", command: "list.toggleUnread", inEditable: true, inDialog: true },
   { keys: "escape", command: "reader.close" },
   { keys: "e", command: "thread.archive" },
   // Apple Mail's archive

@@ -47,6 +47,17 @@ describe("resolveKey", () => {
     expect(resolveKey(key("p"), ctx, null).command).toBe(null);
   });
 
+  it("⌘L (Mail's message filter) toggles the unread filter from anywhere, never l's category picker or ⇧⌘L's star", () => {
+    for (const c of [ctx, { ...ctx, editable: true }, { ...ctx, dialogOpen: true }, { ...ctx, editable: true, composing: true }]) {
+      expect(resolveKey(key("l", { meta: true }), c, null).command).toBe("list.toggleUnread");
+    }
+    expect(resolveKey(key("l", { ctrl: true }), ctx, null, undefined, false).command).toBe("list.toggleUnread");
+    expect(resolveKey(key("l"), ctx, null).command).toBe("thread.category");
+    expect(resolveKey(key("L", { meta: true, shift: true }), ctx, null).command).toBe("thread.star");
+    // ⌃L on a Mac is not ⌘L
+    expect(resolveKey(key("l", { ctrl: true }), ctx, null).command).toBe(null);
+  });
+
   it("uses ctrl as mod on non-mac platforms", () => {
     expect(resolveKey(key("k", { ctrl: true }), ctx, null, undefined, false).command).toBe("palette.open");
     expect(resolveKey(key("k", { ctrl: true }), ctx, null, undefined, true).command).toBe(null);

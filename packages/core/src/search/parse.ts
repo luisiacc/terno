@@ -214,3 +214,13 @@ export function isEmptyQuery(q: SearchQuery): boolean {
 export function isFullEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
+
+/**
+ * A search narrowed to unread threads (the list's unread filter): the query
+ * with `is:unread` in front, so the token still being typed stays the last
+ * (prefix-matched) one; null when the query itself asks for read threads
+ * (both together match nothing).
+ */
+export function withUnreadOnly(query: string, now: number = Date.now()): string | null {
+  return parseSearch(query, now).unread === false ? null : `is:unread ${query}`;
+}

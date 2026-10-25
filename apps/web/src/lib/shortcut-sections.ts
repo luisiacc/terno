@@ -9,6 +9,7 @@ export const SECTIONS: { title: string; rows: [Command, string][] }[] = [
       ["list.prev", "Conversación anterior"],
       ["list.open", "Abrir"],
       ["search.focus", "Buscar"],
+      ["list.toggleUnread", "Solo no leídos"],
       ["palette.open", "Paleta de comandos"],
       ["help.shortcuts", "Atajos de teclado"],
       ["settings.open", "Ajustes"],
