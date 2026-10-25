@@ -22,10 +22,15 @@
  * types there).
  */
 
+interface GcObserver {
+  observe(o: { entryTypes: string[] }): void;
+  disconnect(): void;
+}
 interface NodeProcess {
   threadCpuUsage(): { user: number; system: number };
   env: Record<string, string | undefined>;
   getBuiltinModule(id: "node:os"): { loadavg(): number[]; availableParallelism(): number };
+  getBuiltinModule(id: "node:perf_hooks"): { PerformanceObserver: new (cb: (list: { getEntries(): { duration: number }[] }) => void) => GcObserver };
 }
 interface NodePerformance {
   now(): number;
@@ -34,6 +39,8 @@ interface NodePerformance {
 
 const proc = (globalThis as unknown as { process: NodeProcess }).process;
 const perf = (globalThis as unknown as { performance: NodePerformance }).performance;
+// the store package's sources have neither DOM nor Node types
+const timers = globalThis as unknown as { setInterval(f: () => void, ms: number): unknown; clearInterval(t: unknown): void };
 
 /** this thread's CPU time, ms */
 export function threadCpuMs(): number {
@@ -126,6 +133,8 @@ export interface LoopReport {
   descheduled: Gap[];
   /** the longest stall that counts: the gate */
   stall: number;
+  /** ms the excused gaps held the thread off a CPU: what a wall time measured over the stage may leave out */
+  held: number;
   /** ms the monitor ran */
   ms: number;
 }
@@ -179,17 +188,34 @@ export function watchLoop(budgetMs: number): { stop(): LoopReport } {
     lastCpu = cpu;
     lastActive = active;
   };
-  const timer = setInterval(sample, 1);
+  const timer = timers.setInterval(sample, 1);
   return {
     stop() {
       // a block that ended just now
       sample();
-      clearInterval(timer);
+      timers.clearInterval(timer);
       const ms = perf.now() - started;
       const { descheduled, ours } = classifyGaps(over, ms, budgetMs);
-      return { over, longest, descheduled, stall: Math.max(longestOk, ...ours.map((g) => g.busy), ...descheduled.map((g) => g.cpu)), ms };
+      const held = descheduled.reduce((a, g) => a + g.busy - g.cpu, 0);
+      return { over, longest, descheduled, stall: Math.max(longestOk, ...ours.map((g) => g.busy), ...descheduled.map((g) => g.cpu)), held, ms };
     },
   };
 }
 
-export const describeGap = (g: Gap) => `${g.busy.toFixed(0)} ms (wall ${g.wall.toFixed(0)}, cpu ${g.cpu.toFixed(0)})`;
+/** The longest garbage-collection pause (Node's gc entries) until stop(): a gate on a big heap that isn't ours may leave it out. */
+export function watchGc(): { stop(): number } {
+  const { PerformanceObserver } = proc.getBuiltinModule("node:perf_hooks");
+  let max = 0;
+  const observer = new PerformanceObserver((list) => {
+    for (const e of list.getEntries()) max = Math.max(max, e.duration);
+  });
+  observer.observe({ entryTypes: ["gc"] });
+  return {
+    stop() {
+      observer.disconnect();
+      return max;
+    },
+  };
+}
+
+export const describeGap =(g: Gap) => `${g.busy.toFixed(0)} ms (wall ${g.wall.toFixed(0)}, cpu ${g.cpu.toFixed(0)})`;
