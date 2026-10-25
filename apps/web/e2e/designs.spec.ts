@@ -219,6 +219,21 @@ test.describe("switching designs", () => {
     expect(await page.evaluate(() => (window as unknown as { __early: string | null }).__early)).toBe("atelier");
   });
 
+  test("every face the app declares is a file of its own build: none from a font service", async ({ app: page }) => {
+    const faces = await page.evaluate(() =>
+      [...document.styleSheets]
+        .flatMap((s) => [...s.cssRules])
+        .filter((r): r is CSSFontFaceRule => r instanceof CSSFontFaceRule)
+        .map((r) => ({ family: r.style.getPropertyValue("font-family"), src: r.style.getPropertyValue("src") })),
+    );
+    for (const family of ["Figtree Variable", "Instrument Sans Variable", "Instrument Serif", "Geist Variable"]) expect(faces.some((f) => f.family.includes(family)), family).toBe(true);
+    const origin = new URL(page.url()).origin;
+    for (const f of faces) {
+      for (const [, url] of f.src.matchAll(/url\("?([^")]+)"?\)/g)) expect(new URL(url!, page.url()).origin, `${f.family}: ${url}`).toBe(origin);
+      expect(f.src).not.toMatch(/googleapis|gstatic/);
+    }
+  });
+
   test("only the design in use loads its faces; a slow face never holds a switch", async ({ app: page }) => {
     // a load that starts in macOS (this window cached it): nothing of Lumen's or Atelier's
     await page.reload();

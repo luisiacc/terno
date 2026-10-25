@@ -6,6 +6,16 @@ import { expect, test, type Page } from "@playwright/test";
 const DEMO = "/?demo=400";
 const rows = (page: Page) => page.getByTestId("thread-row");
 
+/** The search field: new installs open in Lumen (plan 15), which keeps it behind a button that "/" opens. */
+async function searchBox(page: Page) {
+  const input = page.getByTestId("search-input");
+  if (!(await input.isVisible())) {
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.keyboard.press("/");
+  }
+  return input;
+}
+
 async function boot(page: Page, url = DEMO) {
   await page.goto(url);
   await rows(page).first().waitFor({ timeout: 60_000 });
@@ -18,7 +28,7 @@ test("the backend runs in a worker on SQLite-WASM over OPFS: seeds, lists, searc
   const info = await web(page);
   expect(info.storage).toBe("opfs-sqlite");
   expect(await rows(page).count()).toBeGreaterThan(10);
-  await page.getByTestId("search-input").fill("factura");
+  await (await searchBox(page)).fill("factura");
   await expect(page.getByTestId("search-stats")).toBeVisible();
   await rows(page).first().dispatchEvent("mousedown");
   await expect(page.getByTestId("reader-subject")).toBeVisible();
@@ -171,7 +181,7 @@ test("Español chosen in Settings → General switches live, and after a reload 
   };
   await boot(page);
   expect(await firstLang()).toBe("en-US");
-  await expect(page.getByTestId("list-title")).toHaveText("Inbox");
+  await expect(page.getByTestId("nav-inbox")).toContainText("Inbox");
   // the reload below goes through this build's service worker
   await page.evaluate(async () => {
     await navigator.serviceWorker.ready;
@@ -179,16 +189,16 @@ test("Español chosen in Settings → General switches live, and after a reload 
   });
 
   await choose("es", "es-MX");
-  await expect(page.getByTestId("list-title")).toHaveText("Entrada");
+  await expect(page.getByTestId("nav-inbox")).toContainText("Entrada");
   await page.reload();
   await rows(page).first().waitFor();
   expect(await page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
   expect(await firstLang()).toBe("es-MX");
-  await expect(page.getByTestId("list-title")).toHaveText("Entrada");
+  await expect(page.getByTestId("nav-inbox")).toContainText("Entrada");
 
   // and back to English, live
   await choose("en", "en-US");
-  await expect(page.getByTestId("list-title")).toHaveText("Inbox");
+  await expect(page.getByTestId("nav-inbox")).toContainText("Inbox");
 });
 
 /** Google, stubbed: Identity Services answers like its popup, the Gmail and OpenID APIs like Google (two messages). Returns the requests seen. */
@@ -245,7 +255,7 @@ test("Gmail in the browser: Google's token model through the page, the mailbox s
 test("?storage=idb runs the same app on native IndexedDB, and the mailbox stays pinned there", async ({ page }) => {
   await boot(page, "/?demo=400&mailbox=idb&storage=idb");
   expect((await web(page)).storage).toBe("idb");
-  await page.getByTestId("search-input").fill("factura");
+  await (await searchBox(page)).fill("factura");
   await expect(page.getByTestId("search-stats")).toBeVisible();
   await rows(page).first().dispatchEvent("mousedown");
   await expect(page.getByTestId("reader-subject")).toBeVisible();

@@ -145,7 +145,8 @@ async function whileImporting(page: Page, threads: number) {
 
 /** holds j over the list: keydown → the row's selection committed, per press */
 async function holdJ(page: Page, presses: number): Promise<number[]> {
-  await page.getByTestId("search-input").fill("");
+  // Lumen (a new install's design) mounts the field only while search is open
+  if (await page.getByTestId("search-input").isVisible()) await page.getByTestId("search-input").fill("");
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.evaluate(() => {
     const w = window as unknown as { __j: { t0: number; commit: number[] } };
@@ -316,7 +317,11 @@ for (const size of SIZES) {
         ),
       );
 
-      // the renderer: keystroke → results rendered (as the desktop UI perf gate measures it)
+      // the renderer: keystroke → results rendered (as the desktop UI perf gate measures it); "/" opens Lumen's field first
+      if (!(await page.getByTestId("search-input").isVisible())) {
+        await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+        await page.keyboard.press("/");
+      }
       await page.evaluate(() => {
         const w = window as unknown as { __search: { started: Map<string, number>; done: Map<string, number> } };
         w.__search = { started: new Map(), done: new Map() };
