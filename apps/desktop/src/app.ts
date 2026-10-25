@@ -169,8 +169,14 @@ function startBackend() {
         updates?.backendReady();
         break;
       case "shutdown-result":
-        shutdownWaiters.get(msg.id)?.(msg.outcome);
-        shutdownWaiters.delete(msg.id);
+        if (shutdownWaiters.has(msg.id)) {
+          shutdownWaiters.get(msg.id)!(msg.outcome);
+          shutdownWaiters.delete(msg.id);
+        } else if (msg.outcome !== "sending" && quitState === "running") {
+          // it closed after main stopped waiting (an install put off on a timeout): a fresh backend takes over
+          stopBackend();
+          restartEngine();
+        }
         break;
       case "sends-idle":
         for (const cb of sendsIdleWaiters.splice(0)) cb();
@@ -305,7 +311,8 @@ async function shutdown(force: boolean, trigger: "quit" | "restart"): Promise<Sh
   const r = await coordinateShutdown({ flushWindows, shutdownBackend, setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) }, { force });
   if (r.draftsTimedOut) diagLog.warn("shutdown.drafts_timeout", { count: r.draftsTimedOut });
   diagLog.info("shutdown.done", { outcome: r.outcome, durationMs: Date.now() - started, trigger });
-  if (r.outcome !== "sending") stopBackend();
+  // an update's restart never kills a backend that didn't answer (it may be mid-send): the install waits instead
+  if (r.outcome === "closed" || r.outcome === "forced" || (r.outcome === "timeout" && force)) stopBackend();
   return r.outcome;
 }
 
@@ -314,7 +321,7 @@ async function shutdownForInstall(): Promise<ShutdownOutcome> {
   if (quitState !== "running") return "closed";
   quitState = "stopping";
   const outcome = await shutdown(false, "restart");
-  quitState = outcome === "sending" ? "running" : "stopped";
+  quitState = outcome === "closed" ? "stopped" : "running";
   return outcome;
 }
 

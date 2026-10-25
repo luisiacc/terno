@@ -31,6 +31,10 @@ interface FakeEngine extends Engine {
   handlers: EngineHandlers | null;
   allowed: ((url: string) => boolean) | null;
   next: EngineInfo | null | Error;
+  /** a check whose answer hasn't come yet (GitHub is slow): cancel() cuts it like closeAllConnections */
+  slowCheck: boolean;
+  checks: number;
+  pendingCheck: ((e: Error) => void) | null;
   /** a download in flight: resolve or reject it */
   dl: { resolve(): void; reject(e: Error): void } | null;
   cancelled: number;
@@ -44,10 +48,20 @@ function harness(o: { localMode?: boolean; prefs?: Partial<UpdatePrefs>; unsuppo
     handlers: null,
     allowed: null,
     next: null,
+    slowCheck: false,
+    checks: 0,
+    pendingCheck: null,
     dl: null,
     cancelled: 0,
     installs: 0,
     async check() {
+      engine.checks++;
+      if (engine.slowCheck) {
+        await new Promise<void>((resolve, reject) => {
+          engine.pendingCheck = reject;
+          setTimeout(resolve, 10_000);
+        });
+      }
       const n = engine.next;
       if (n instanceof Error) throw n;
       return n;
@@ -58,6 +72,7 @@ function harness(o: { localMode?: boolean; prefs?: Partial<UpdatePrefs>; unsuppo
     cancel() {
       engine.cancelled++;
       engine.dl?.reject(Object.assign(new Error("cancelled"), { name: "CancellationError" }));
+      engine.pendingCheck?.(new Error("net::ERR_ABORTED"));
     },
     quitAndInstall() {
       engine.installs++;
@@ -383,5 +398,68 @@ describe("main: the update controller", () => {
     expect(h.engine.cancelled).toBe(1);
     expect(h.prefs.channel).toBe("nightly");
     expect(h.ctl.view).toMatchObject({ channel: "nightly", status: "downloading", available: { version: "0.3.0-nightly.1" } });
+  });
+  describe("after the code review", () => {
+    it("Squirrel still checking one download: no check or download starts beside it, and readiness is that download's", async () => {
+      const h = harness();
+      h.engine.next = release("0.2.0");
+      h.ctl.start();
+      await vi.advanceTimersByTimeAsync(DELAY);
+      h.engine.dl!.resolve();
+      await flush();
+      expect(h.ctl.view.status).toBe("verifying");
+      const checks = h.engine.checks;
+      h.engine.next = release("0.2.1");
+      expect((await h.ctl.check("manual")).status).toBe("verifying");
+      expect(h.engine.checks).toBe(checks);
+      h.engine.handlers!.ready();
+      expect(h.ctl.view.ready?.version).toBe("0.2.0");
+    });
+
+    it("an update's restart whose backend never answered is put off, never forced", async () => {
+      const h = harness({ shutdown: ["timeout", "closed"] });
+      h.engine.next = release("0.2.0");
+      h.ctl.start();
+      await vi.advanceTimersByTimeAsync(DELAY);
+      h.engine.dl!.resolve();
+      await flush();
+      h.engine.handlers!.ready();
+      await h.ctl.install();
+      expect(h.engine.installs).toBe(0);
+      expect(h.pending).toBeNull();
+      expect(h.ctl.view).toMatchObject({ status: "ready", deferred: "sending" });
+      h.sendsIdle[0]!();
+      await flush();
+      expect(h.engine.installs).toBe(1);
+    });
+
+    it("local mode turning on cuts an automatic check already waiting for GitHub", async () => {
+      const h = harness();
+      h.engine.slowCheck = true;
+      h.engine.next = release("0.2.0");
+      h.ctl.start();
+      await vi.advanceTimersByTimeAsync(DELAY);
+      expect(h.ctl.view.status).toBe("checking");
+      h.ctl.setLocalMode(true);
+      await flush();
+      expect(h.engine.cancelled).toBe(1);
+      expect(h.ctl.view.status).toBe("idle");
+      expect(h.captures).toEqual([]);
+      expect(h.allowed()).toBe(false);
+    });
+
+    it("a staged update holds the channel: nothing is cancelled, and the saved channel is still the old one", async () => {
+      const h = harness();
+      h.engine.next = release("0.2.0");
+      h.ctl.start();
+      await vi.advanceTimersByTimeAsync(DELAY);
+      h.engine.dl!.resolve();
+      await flush();
+      h.engine.handlers!.ready();
+      h.ctl.setPrefs({ mode: "manual", channel: "nightly" });
+      expect(h.prefs).toMatchObject({ mode: "manual", channel: "stable" });
+      expect(h.ctl.view).toMatchObject({ channel: "stable", mode: "manual", status: "ready" });
+      expect(h.engine.cancelled).toBe(0);
+    });
   });
 });

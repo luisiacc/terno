@@ -38,6 +38,8 @@ export interface UpdateState {
   current: string;
   /** the newest version the feed offered */
   available: UpdateInfo | null;
+  /** what the download in flight (or Squirrel's check of it) is for: readiness binds to this, not to a later offer */
+  target: UpdateInfo | null;
   /** downloaded and accepted by Squirrel: installs at the next quit or restart */
   ready: UpdateInfo | null;
   percent: number | null;
@@ -85,6 +87,7 @@ export function initialUpdateState(o: { current: string; mode: UpdateMode; chann
     channel: o.channel,
     current: o.current,
     available: null,
+    target: null,
     ready: null,
     percent: null,
     checkedAt: o.checkedAt ?? null,
@@ -107,10 +110,12 @@ export function reduceUpdate(s: UpdateState, e: UpdateEvent): UpdateState {
   if (s.status === "unsupported" && e.type !== "prefs" && e.type !== "local-mode" && e.type !== "seen") return s;
   switch (e.type) {
     case "unsupported":
-      return { ...s, status: "unsupported", unsupported: e.reason, available: null, ready: null, percent: null, error: null };
+      return { ...s, status: "unsupported", unsupported: e.reason, available: null, target: null, ready: null, percent: null, error: null };
     case "prefs":
-      // another channel: what it offered (not yet staged) no longer applies; a staged update can't be unstaged
-      if (e.channel !== s.channel) return settled({ ...s, mode: e.mode, channel: e.channel, available: s.ready, error: null });
+      // Squirrel can't unstage an update: while one is ready the channel stays (it installs first, then a switch is offered)
+      if (e.channel !== s.channel && s.ready) return { ...s, mode: e.mode };
+      // another channel: what it offered no longer applies
+      if (e.channel !== s.channel) return settled({ ...s, mode: e.mode, channel: e.channel, available: null, target: null, error: null });
       return { ...s, mode: e.mode };
     case "local-mode":
       return { ...s, localMode: e.on };
@@ -124,29 +129,31 @@ export function reduceUpdate(s: UpdateState, e: UpdateEvent): UpdateState {
       if (s.ready) return { ...settled(s), checkedAt: e.at, error: null };
       return { ...s, status: "error", checkedAt: e.at, percent: null, error: { stage: "check", kind: e.kind, canRetry: true } };
     case "available":
+      // a download or Squirrel's check in flight keeps going (it is bound to its own target)
+      if (s.status === "downloading" || s.status === "verifying") return { ...s, available: e.update, checkedAt: e.at };
       if (s.ready?.version === e.update.version) return { ...settled(s), checkedAt: e.at, error: null };
       return { ...s, status: s.ready ? "ready" : "available", available: e.update, checkedAt: e.at, error: null, percent: s.ready ? 100 : null };
     case "not-available":
       if (s.ready) return { ...settled(s), checkedAt: e.at, error: null };
       return { ...s, status: "up-to-date", available: null, checkedAt: e.at, error: null, percent: null };
     case "cancelled":
-      return settled({ ...s, error: null });
+      return settled({ ...s, target: null, error: null });
     case "download-start":
       if (!s.available) return s;
-      return { ...s, status: "downloading", percent: 0, error: null };
+      return { ...s, status: "downloading", target: s.available, percent: 0, error: null };
     case "download-progress":
       if (s.status !== "downloading") return s;
       return { ...s, percent: Math.max(0, Math.min(100, Math.floor(e.percent))) };
     case "download-failed":
-      return { ...settled(s), error: { stage: "download", kind: e.kind, canRetry: s.available !== null } };
+      return { ...settled({ ...s, target: null }), error: { stage: "download", kind: e.kind, canRetry: s.available !== null } };
     case "downloaded":
       if (s.status !== "downloading") return s;
       return { ...s, status: "verifying", percent: 100 };
     case "ready":
-      if (!s.available) return s;
-      return { ...s, status: "ready", ready: s.available, percent: 100, error: null };
+      if (!s.target) return s;
+      return { ...s, status: "ready", ready: s.target, target: null, percent: 100, error: null };
     case "verify-failed":
-      return { ...settled(s), error: { stage: "verify", kind: e.kind, canRetry: s.available !== null } };
+      return { ...settled({ ...s, target: null }), error: { stage: "verify", kind: e.kind, canRetry: s.available !== null } };
     case "install-start":
       if (!s.ready) return s;
       return { ...s, status: "installing", deferred: null, error: null };

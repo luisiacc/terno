@@ -158,7 +158,8 @@ export class UpdateController {
   async check(trigger: Trigger): Promise<UpdateState> {
     if (!(await this.supported())) return this.state;
     if (this.checking) return this.checking;
-    if (this.downloading || this.state.status === "installing") return Promise.resolve(this.state);
+    // one thing at a time, through Squirrel's own check of a finished download
+    if (this.downloading || this.state.status === "verifying" || this.state.status === "installing") return Promise.resolve(this.state);
     if (!mayCheck({ localMode: this.state.localMode, trigger })) return Promise.resolve(this.state);
     const grant = this.takeGrant(trigger);
     if (grant === null) return Promise.resolve(this.state);
@@ -210,7 +211,7 @@ export class UpdateController {
   download(trigger: Trigger): Promise<UpdateState> {
     if (this.downloading) return this.downloading;
     const target = this.state.available;
-    if (!target || target.version === this.state.ready?.version || this.state.status === "installing") return Promise.resolve(this.state);
+    if (!target || target.version === this.state.ready?.version || this.state.status === "verifying" || this.state.status === "installing") return Promise.resolve(this.state);
     if (!mayDownload({ localMode: this.state.localMode, mode: this.state.mode, trigger })) return Promise.resolve(this.state);
     const grant = this.takeGrant(trigger);
     if (grant === null) return Promise.resolve(this.state);
@@ -229,7 +230,7 @@ export class UpdateController {
     try {
       await this.ensureEngine().download();
       this.dispatch({ type: "downloaded" });
-      this.deps.log("update.downloaded", { toVersion: this.state.available?.version, durationMs: this.deps.now() - this.downloadStartedAt });
+      this.deps.log("update.downloaded", { toVersion: this.state.target?.version, durationMs: this.deps.now() - this.downloadStartedAt });
     } catch (error) {
       if (this.revoked.has(grant)) {
         this.dispatch({ type: "cancelled" });
@@ -250,9 +251,10 @@ export class UpdateController {
     if (!ready || this.state.status === "installing") return this.state;
     this.dispatch({ type: "install-start" });
     const outcome = await this.deps.shutdown();
-    if (outcome === "sending") {
+    // only a clean close goes ahead; a send still running, or a backend that didn't answer (it may be mid-send), waits
+    if (outcome !== "closed") {
       this.dispatch({ type: "install-deferred", reason: "sending" });
-      this.deps.log("update.deferred", { reason: "sending" });
+      this.deps.log("update.deferred", { reason: outcome === "sending" ? "sending" : "other" });
       if (!this.waitingForSends) {
         this.waitingForSends = true;
         this.deps.onSendsIdle(() => {
@@ -314,7 +316,8 @@ export class UpdateController {
     this.dispatch({ type: "local-mode", on });
     if (on) {
       // automatic work stops now: its requests are refused from here on, a download is cancelled
-      if (this.downloadGrant !== null && this.automatic.has(this.downloadGrant)) this.engine?.cancel();
+      const cut = [this.downloadGrant, this.checkGrant].some((g) => g !== null && this.automatic.has(g));
+      if (cut) this.engine?.cancel();
       // the grants end; the requests they covered fail as cancellations, not errors
       for (const id of this.automatic) this.revoked.add(id);
       this.automatic.clear();
@@ -338,7 +341,8 @@ export class UpdateController {
   }
 
   setPrefs(p: { mode: UpdateMode; channel: UpdateChannel }): void {
-    const channelChanged = p.channel !== this.state.channel;
+    // Squirrel can't unstage a ready update: the channel waits until it's installed (Settings says so)
+    const channelChanged = p.channel !== this.state.channel && !this.state.ready;
     // what the other channel is answering or downloading no longer applies
     if (channelChanged && this.checkGrant !== null) this.revoked.add(this.checkGrant);
     if (channelChanged && this.downloadGrant !== null) {
@@ -346,7 +350,7 @@ export class UpdateController {
       this.engine?.cancel();
     }
     this.dispatch({ type: "prefs", mode: p.mode, channel: p.channel });
-    this.prefs = { ...this.prefs, mode: p.mode, channel: p.channel };
+    this.prefs = { ...this.prefs, mode: this.state.mode, channel: this.state.channel };
     this.deps.prefs.write(this.prefs);
     if (channelChanged && this.started && this.state.status !== "unsupported" && mayCheck({ localMode: this.state.localMode, trigger: "auto" })) {
       void Promise.allSettled([this.checking, this.downloading]).then(() => this.check("auto"));

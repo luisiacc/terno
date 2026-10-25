@@ -65,6 +65,17 @@ describe("updates: the state machine", () => {
       expect(s.ready?.version).toBe("0.2.1");
     });
 
+    it("Squirrel's verdict belongs to the download it checked, not to a newer offer that came in meanwhile", () => {
+      const verifying = run(start(), { type: "available", at: 1, update: info("0.2.0") }, { type: "download-start" }, { type: "downloaded" });
+      const offered = run(verifying, { type: "available", at: 2, update: info("0.2.1") });
+      expect(offered).toMatchObject({ status: "verifying", available: { version: "0.2.1" } });
+      expect(run(offered, { type: "ready" })).toMatchObject({ status: "ready", ready: { version: "0.2.0" } });
+      // and the same while downloading
+      const downloading = run(start(), { type: "available", at: 1, update: info("0.2.0") }, { type: "download-start" }, { type: "available", at: 2, update: info("0.2.1") });
+      expect(downloading.status).toBe("downloading");
+      expect(run(downloading, { type: "downloaded" }, { type: "ready" }).ready?.version).toBe("0.2.0");
+    });
+
     it("a check never interrupts a download, a verification or an install", () => {
       for (const s of [
         run(start(), { type: "available", at: 1, update: info("0.2.0") }, { type: "download-start" }),
@@ -88,11 +99,11 @@ describe("updates: the state machine", () => {
     expect(run(start(), { type: "check-start" }, { type: "cancelled" }).status).toBe("idle");
   });
 
-  it("switching channel drops the other channel's offer; a staged update can't be unstaged and stays ready", () => {
+  it("switching channel drops the other channel's offer; while an update is staged (Squirrel can't unstage it) the channel stays", () => {
     const offered = run(start(), { type: "available", at: 1, update: info("0.3.0-nightly.1") });
     expect(run(offered, { type: "prefs", mode: "auto", channel: "nightly" })).toMatchObject({ status: "idle", available: null, channel: "nightly" });
     const staged = run(offered, { type: "download-start" }, { type: "downloaded" }, { type: "ready" });
-    expect(run(staged, { type: "prefs", mode: "auto", channel: "nightly" })).toMatchObject({ status: "ready", ready: { version: "0.3.0-nightly.1" } });
+    expect(run(staged, { type: "prefs", mode: "manual", channel: "nightly" })).toMatchObject({ status: "ready", channel: "stable", mode: "manual", ready: { version: "0.3.0-nightly.1" } });
     // the same channel: only the mode changes
     expect(run(offered, { type: "prefs", mode: "manual", channel: "stable" })).toMatchObject({ status: "available", mode: "manual" });
   });

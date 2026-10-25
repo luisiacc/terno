@@ -19,6 +19,7 @@ const base: UpdateState = {
   channel: "stable",
   current: "0.1.0",
   available: null,
+  target: null,
   ready: null,
   percent: null,
   checkedAt: null,
@@ -197,6 +198,13 @@ test.describe("updates: Settings and ⌘K", () => {
       const r = await new AxeBuilder({ page }).include("[data-testid=updates-section]").analyze();
       expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 160)).join(", ")}`)).toEqual([]);
     }
+  });
+
+  test("with an update staged the channel waits (Squirrel can't unstage it) and says why", async ({ app: page }) => {
+    await fakeMain(page, { status: "ready", available: release, ready: release, percent: 100, channel: "nightly" });
+    await page.getByTestId("open-settings").click();
+    await expect(page.getByTestId("updates-channel-select")).toBeDisabled();
+    await expect(page.getByTestId("updates-channel-hint")).toHaveText("Terno 0.2.0 is ready to install. Restart to finish updating, then you can switch channels.");
   });
 
   test("an unsupported copy says why in plain words and offers nothing it can't do", async ({ app: page }) => {

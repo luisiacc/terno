@@ -35,6 +35,12 @@ function statusLine(state: UpdateState): string {
   return state.status === "up-to-date" ? `Terno is up to date. ${checked}` : checked;
 }
 
+function channelHint(state: UpdateState): string {
+  // Squirrel can't unstage an update: it installs first, on the channel it came from
+  if (state.ready) return `Terno ${state.ready.version} is ready to install. Restart to finish updating, then you can switch channels.`;
+  return state.channel === "nightly" ? "Nightly builds get changes first and can be rough. Back on Stable, Terno waits for the next stable release instead of going back." : "Tested releases.";
+}
+
 /** Settings → General → Updates (desktop): how updates come, from which channel, and a check now. */
 export function UpdatesSection() {
   const state = useUpdates((s) => s.state);
@@ -68,9 +74,9 @@ export function UpdatesSection() {
           />
         )}
       </SettingsRow>
-      <SettingsRow label="Channel" hint={state.channel === "nightly" ? "Nightly builds get changes first and can be rough. Back on Stable, Terno waits for the next stable release instead of going back." : "Tested releases."}>
+      <SettingsRow label="Channel" hint={<span data-testid="updates-channel-hint">{channelHint(state)}</span>}>
         {({ id: _id, ...a }) => (
-          <Select value={state.channel} disabled={unsupported} onValueChange={(v) => void setUpdatePrefs({ mode: state.mode, channel: v as UpdateChannel })} items={CHANNELS.map((c) => ({ ...c }))}>
+          <Select value={state.channel} disabled={unsupported || state.ready !== null} onValueChange={(v) => void setUpdatePrefs({ mode: state.mode, channel: v as UpdateChannel })} items={CHANNELS.map((c) => ({ ...c }))}>
             <SelectTrigger {...a} size="sm" className="w-32" data-testid="updates-channel-select">
               <SelectValue />
             </SelectTrigger>
