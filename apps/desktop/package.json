@@ -29,8 +29,10 @@
     "@sentry/cli": "catalog:",
     "@terno/mock-data": "workspace:*",
     "@types/node": "catalog:",
+    "@types/smtp-server": "^3.5.13",
     "electron": "catalog:",
     "electron-builder": "catalog:",
-    "esbuild": "catalog:"
+    "esbuild": "catalog:",
+    "smtp-server": "^3.21.0"
   }
 }

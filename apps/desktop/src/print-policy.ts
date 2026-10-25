@@ -137,6 +137,16 @@ export function testPdfDir(env: Record<string, string | undefined>, packaged: bo
   return dir && (!packaged || demo) ? dir : null;
 }
 
+/**
+ * Plan 16: the packaged smoke sends a formatted message through the real
+ * SMTP path into its own server on this machine. Honored only by a dev build
+ * or the demo mailbox (never real mail in a release), and only a port.
+ */
+export function testSmtpPort(env: Record<string, string | undefined>, packaged: boolean, demo: boolean): number | null {
+  const port = Number(env.TERNO_TEST_SMTP_PORT);
+  return Number.isInteger(port) && port > 0 && port < 65536 && (!packaged || demo) ? port : null;
+}
+
 export class PrintTimeoutError extends Error {
   constructor() {
     super("the print document didn't load in time");

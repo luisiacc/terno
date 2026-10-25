@@ -140,7 +140,8 @@ parentPort.on("message", async (event) => {
         version: msg.version,
         cipher,
         legacySecrets,
-        providers: createRegistry(),
+        // the demo mailbox's sends go to the packaged smoke's SMTP server when it asks (main checked it may)
+        providers: createRegistry(msg.demo && msg.testSmtpPort ? { demoSmtpPort: msg.testSmtpPort } : {}),
         openExternal: async (url) => send({ type: "open-external", url }),
         demoAi: msg.demo || msg.dev,
         demo: msg.demo,

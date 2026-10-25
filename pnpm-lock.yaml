@@ -270,6 +270,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 24.19.2
+      '@types/smtp-server':
+        specifier: ^3.5.13
+        version: 3.5.13
       electron:
         specifier: 'catalog:'
         version: 45.0.0(supports-color@7.2.0)
@@ -279,6 +282,9 @@ importers:
       esbuild:
         specifier: 'catalog:'
         version: 0.28.2
+      smtp-server:
+        specifier: ^3.21.0
+        version: 3.21.0
 
   apps/web:
     dependencies:

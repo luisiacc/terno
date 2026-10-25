@@ -3,7 +3,7 @@ import { setLocale } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { footerTemplate, pageReady, readyOrDestroyed, tempSibling, type PageEvents, isTrustedSender, MAX_HTML_BYTES, parsePrintJob, pdfFileName, printCsp, printOutcome, requestAllowed, testPdfDir, withHead } from "./print-policy";
+import { footerTemplate, pageReady, readyOrDestroyed, tempSibling, type PageEvents, isTrustedSender, MAX_HTML_BYTES, parsePrintJob, pdfFileName, printCsp, printOutcome, requestAllowed, testPdfDir, testSmtpPort, withHead } from "./print-policy";
 
 afterEach(() => setLocale("en", en));
 
@@ -139,6 +139,11 @@ describe("main: the document and the PDF", () => {
     expect(testPdfDir({ TERNO_TEST_PDF_DIR: "/tmp/x" }, true, true)).toBe("/tmp/x");
     expect(testPdfDir({ TERNO_TEST_PDF_DIR: "/tmp/x" }, true, false)).toBeNull();
     expect(testPdfDir({}, false, true)).toBeNull();
+    // plan 16: the smoke's SMTP port, under the same rule, and only a port
+    expect(testSmtpPort({ TERNO_TEST_SMTP_PORT: "2525" }, true, true)).toBe(2525);
+    expect(testSmtpPort({ TERNO_TEST_SMTP_PORT: "2525" }, true, false)).toBeNull();
+    expect(testSmtpPort({ TERNO_TEST_SMTP_PORT: "smtp.evil.example:25" }, false, false)).toBeNull();
+    expect(testSmtpPort({}, false, true)).toBeNull();
   });
 });
 

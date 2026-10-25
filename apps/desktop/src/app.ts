@@ -26,7 +26,7 @@ import type { BackendToMain, MainToBackend } from "./ipc";
 import { readLegacySecrets } from "./keychain-helper";
 import { DB_FILE } from "./legacy-profile";
 import { printLocalModeChanged, registerPrint } from "./print";
-import { isTrustedSender, testPdfDir } from "./print-policy";
+import { isTrustedSender, testPdfDir, testSmtpPort } from "./print-policy";
 import { menuTemplate } from "./menu";
 import { readLanguage, switchLanguage, writeLanguage } from "./locale";
 import type { MenuCommand } from "./print-commands";
@@ -254,6 +254,7 @@ function startBackend() {
     ...agentPaths(),
     version: app.getVersion(),
     diag: { session: diagSession(), build: BUILD_ID, channel: mainDiag.channel },
+    testSmtpPort: testSmtpPort(process.env, app.isPackaged, demo) ?? undefined,
   } satisfies MainToBackend);
 }
 

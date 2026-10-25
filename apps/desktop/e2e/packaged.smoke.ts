@@ -7,6 +7,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
+import { parseRaw } from "@terno/mail";
+import { SMTPServer } from "smtp-server";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SOURCE_APP = join(here, "../release/mac-arm64/Terno.app");
@@ -16,6 +18,9 @@ let page: Page;
 let appPath: string;
 let userData: string;
 let coldStartMs = 0;
+/** plan 16: what the demo mailbox sent, through the real SMTP path, to this test's own server */
+const smtpReceived: string[] = [];
+let smtp: SMTPServer | null = null;
 
 test.beforeAll(async () => {
   test.skip(!existsSync(SOURCE_APP), "run `pnpm dist:mac` first");
@@ -24,7 +29,20 @@ test.beforeAll(async () => {
   execFileSync("ditto", [SOURCE_APP, appPath]);
   execFileSync("codesign", ["--verify", "--deep", "--strict", appPath]);
   userData = join(workdir, "profile");
-  const env = { ...process.env, TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_USER_DATA: userData };
+  smtp = new SMTPServer({
+    authOptional: true,
+    disabledCommands: ["STARTTLS"],
+    logger: false,
+    onAuth: (_a, _s, cb) => cb(null, { user: "smoke" }),
+    onData(stream, _session, cb) {
+      const chunks: Buffer[] = [];
+      stream.on("data", (c: Buffer) => chunks.push(c));
+      stream.on("end", () => (smtpReceived.push(Buffer.concat(chunks).toString("utf8")), cb()));
+    },
+  });
+  await new Promise<void>((r) => smtp!.listen(0, "127.0.0.1", r));
+  const smtpPort = (smtp.server.address() as { port: number }).port;
+  const env = { ...process.env, TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_USER_DATA: userData, TERNO_TEST_SMTP_PORT: String(smtpPort) };
   delete env.ELECTRON_RUN_AS_NODE;
   const started = Date.now();
   app = await electron.launch({ executablePath: join(appPath, "Contents/MacOS/Terno"), env });
@@ -35,6 +53,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await app?.close();
+  await new Promise<void>((r) => (smtp ? smtp.close(() => r()) : r()));
   if (workdir) rmSync(workdir, { recursive: true, force: true });
 });
 
@@ -93,6 +112,30 @@ test("searches, opens and archives with the keyboard", async () => {
   await expect(page.locator(`[data-thread-id="${inboxId}"]`)).toHaveCount(0);
   expect(id).toBeTruthy();
   await page.screenshot({ path: join(here, "../../../test-results/desktop-smoke/packaged-app.png") });
+});
+
+test("plan 16: a formatted reply is sent as multipart/alternative through the packaged app's SMTP path", async () => {
+  await page.getByTestId("nav-inbox").click();
+  await page.locator("[data-testid=thread-row]").first().click();
+  await expect(page.getByTestId("reader-subject")).toBeVisible();
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("r");
+  const body = page.getByTestId("compose-body");
+  await expect(body).toBeFocused({ timeout: 15_000 });
+  await page.keyboard.type("Desde el empaquetado: ");
+  await page.keyboard.press("Meta+b");
+  await page.keyboard.type("negrita");
+  await page.keyboard.press("Meta+b");
+  await page.getByTestId("format-bulleted").click();
+  await expect(body.locator("ul li b")).toHaveText("negrita");
+  await page.keyboard.press("Meta+Enter");
+  await expect.poll(() => smtpReceived.length, { timeout: 20_000 }).toBe(1);
+  const raw = smtpReceived[0]!;
+  expect(raw).toMatch(/^Content-Type: multipart\/alternative;/m);
+  const mail = await parseRaw(raw);
+  expect(mail.html).toContain("<b>negrita</b>");
+  expect(mail.html).not.toMatch(/<style|class=/);
+  expect(mail.text).toContain("• Desde el empaquetado: negrita");
 });
 
 test("local mode (the default for a new profile): main cancels the renderer's remote requests", async () => {

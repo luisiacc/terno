@@ -1,6 +1,6 @@
 /** Messages between main and the backend utility process (parent port). */
 export type MainToBackend =
-  | { type: "init"; dbPath: string; demo: boolean; dev: boolean; socketPath: string; tokenPath: string; version: string; diag: { session: string; build: string; channel: "production" | "dev" | "test" | "demo" } }
+  | { type: "init"; dbPath: string; demo: boolean; dev: boolean; socketPath: string; tokenPath: string; version: string; diag: { session: string; build: string; channel: "production" | "dev" | "test" | "demo" }; testSmtpPort?: number }
   | { type: "port"; clientId: string }
   /**
    * Quitting or updating: stop starting ops, give a send in flight until the
