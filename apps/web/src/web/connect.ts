@@ -7,6 +7,7 @@ import { diagSession, log } from "@terno/core/diag";
 import { captureUi } from "~/lib/diag";
 import { ingestWorker } from "~/lib/diag-local";
 import { setWeb, type WebLifecycle } from "./lifecycle";
+import { whenDraftsSaved } from "./reload";
 import type { PageToWorker, WorkerToPage } from "./protocol";
 
 const LOCK = "terno-backend";
@@ -323,7 +324,7 @@ async function registerServiceWorker(): Promise<void> {
   const hadController = navigator.serviceWorker.controller !== null;
   const reg = await navigator.serviceWorker.register("./sw.js");
   // "Reload": this tab's drafts are saved, then the new build takes over (every tab reloads, each saving its own first)
-  const offer = () => setWeb({ update: { apply: () => void flushAllDrafts().then(() => reg.waiting?.postMessage("skip-waiting")) } });
+  const offer = () => setWeb({ update: { apply: () => void whenDraftsSaved(() => reg.waiting?.postMessage("skip-waiting")) } });
   if (reg.waiting && hadController) offer();
   reg.addEventListener("updatefound", () => {
     const installing = reg.installing;
@@ -337,7 +338,7 @@ async function registerServiceWorker(): Promise<void> {
   navigator.serviceWorker.addEventListener("controllerchange", () => {
     if (!hadController || reloading) return;
     reloading = true;
-    void flushAllDrafts().then(() => location.reload());
+    void whenDraftsSaved(() => location.reload());
   });
   watchDeployments(reg);
 }

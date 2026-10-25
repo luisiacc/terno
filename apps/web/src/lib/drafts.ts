@@ -311,6 +311,16 @@ export async function flushAllDrafts(capMs = 1000): Promise<void> {
   await Promise.race([all, new Promise((r) => setTimeout(r, capMs))]);
 }
 
+/**
+ * Before something that would drop the page (a new build taking over): every
+ * draft flushed, and true only if each is saved as written. A save that is
+ * slow past `capMs` or failed says false, and the caller doesn't go ahead.
+ */
+export async function draftsSaved(capMs = 5000): Promise<boolean> {
+  await flushAllDrafts(capMs);
+  return Object.values(useDrafts.getState().drafts).every((d) => !authored(d) || (d.savedRev === d.localRev && d.status !== "error"));
+}
+
 /** Waits for the save in flight (if any) and stops further saves: the draft is about to be sent or discarded. */
 async function settle(key: string): Promise<LocalDraft | undefined> {
   const w = writers.get(key);
