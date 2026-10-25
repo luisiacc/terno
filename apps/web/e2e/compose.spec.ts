@@ -21,7 +21,7 @@ test.describe("inline reply, reply-all, forward", () => {
     await page.keyboard.press("r");
     await expect(composer(page)).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(0);
-    await expect(composer(page)).toHaveAccessibleName(/^Responder a /);
+    await expect(composer(page)).toHaveAccessibleName(/^Reply to /);
     await expect(page.getByTestId("compose-to")).toHaveValue(/^.+ <[^>]+@[^>]+>$/);
     // a reply's subject is there, behind its button
     await expect(page.getByTestId("compose-subject")).toHaveCount(0);
@@ -30,7 +30,7 @@ test.describe("inline reply, reply-all, forward", () => {
     // the text is the user's alone; the quote is apart
     await expect(page.getByTestId("compose-body")).toHaveValue("");
     await page.getByTestId("compose-quote").click();
-    await expect(composer(page)).toContainText("escribió:");
+    await expect(composer(page)).toContainText("wrote:");
     await page.getByTestId("compose-body").focus();
     await page.keyboard.type("¡Nos vemos ahí!");
     await page.keyboard.press("Meta+Enter");
@@ -38,7 +38,7 @@ test.describe("inline reply, reply-all, forward", () => {
     await expect(page.getByTestId("quick-reply")).toBeFocused();
     await expect(page.getByTestId("message")).toHaveCount(before + 1);
     await expect(page.getByTestId("message").last()).toContainText("¡Nos vemos ahí!");
-    await expect(toast(page, "Correo enviado")).toBeVisible();
+    await expect(toast(page, "Message sent")).toBeVisible();
   });
 
   test("the reply opens focused and in view at the end of a long conversation", async ({ app: page }) => {
@@ -71,15 +71,15 @@ test.describe("inline reply, reply-all, forward", () => {
     const subject = (await page.getByTestId("reader-subject").textContent())!;
     await focusList(page);
     await page.keyboard.press("f");
-    await expect(composer(page)).toHaveAccessibleName(/^Reenviar/);
+    await expect(composer(page)).toHaveAccessibleName(/^Forward/);
     await expect(page.getByTestId("compose-subject")).toHaveValue(`Fwd: ${subject}`);
     await expect(page.getByTestId("compose-to")).toHaveValue("");
     await expect(page.getByTestId("compose-to")).toBeFocused();
     await page.getByTestId("compose-quote").click();
-    await expect(composer(page)).toContainText("Mensaje reenviado");
+    await expect(composer(page)).toContainText("Forwarded message");
     await page.getByTestId("compose-to").fill("esto no es un correo");
     await page.getByTestId("compose-send").click();
-    await expect(toast(page, "Revisa los destinatarios")).toBeVisible();
+    await expect(toast(page, "Check the recipients")).toBeVisible();
     await expect(composer(page)).toBeVisible();
   });
 
@@ -109,7 +109,7 @@ test.describe("drafts are kept", () => {
     await expect(collapsed).toBeFocused();
     await expect(collapsed).toContainText("Lo pienso y te digo.");
     // the row says it has a draft
-    await expect(page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`)).toContainText("Borrador");
+    await expect(page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`)).toContainText("Draft");
     await page.keyboard.press("j");
     await expect(page.locator("[data-cursor]")).not.toHaveAttribute("data-thread-id", id);
     await page.keyboard.press("k");
@@ -128,7 +128,7 @@ test.describe("drafts are kept", () => {
     await page.keyboard.press("r");
     await page.getByTestId("compose-body").focus();
     await page.keyboard.type("No lo pierdas.");
-    await expect(page.getByTestId("draft-status")).toHaveText("Borrador guardado");
+    await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
     await page.reload();
     await page.locator("[data-ready]").waitFor();
     await page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`).dispatchEvent("mousedown");
@@ -143,7 +143,7 @@ test.describe("drafts are kept", () => {
     await focusList(page);
     await page.keyboard.press("f");
     await page.getByTestId("compose-to").fill("alice@example.com, bob@");
-    await expect(page.getByTestId("draft-status")).toHaveText("Borrador guardado");
+    await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
     await page.reload();
     await page.locator("[data-ready]").waitFor();
     await page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`).dispatchEvent("mousedown");
@@ -153,10 +153,10 @@ test.describe("drafts are kept", () => {
     await expect(page.getByTestId("compose-to")).toHaveValue("alice@example.com, bob@");
     // and it isn't sent like that
     await page.getByTestId("compose-send").click();
-    await expect(toast(page, "Revisa los destinatarios")).toBeVisible();
+    await expect(toast(page, "Check the recipients")).toBeVisible();
   });
 
-  test("r, then a, then f, then r: what was written and typed recipients survive every conversion, even with a save pending; Deshacer goes back", async ({ app: page }) => {
+  test("r, then a, then f, then r: what was written and typed recipients survive every conversion, even with a save pending; Undo goes back", async ({ app: page }) => {
     await openRow(page, 0);
     await focusList(page);
     await page.keyboard.press("r");
@@ -168,7 +168,7 @@ test.describe("drafts are kept", () => {
     // collapse and convert at once: the autosave hasn't run yet
     await page.keyboard.press("Escape");
     await page.keyboard.press("a");
-    await expect(toast(page, "Convertido en Responder a todos")).toBeVisible();
+    await expect(toast(page, "Converted to reply all")).toBeVisible();
     await expect(composer(page)).toHaveAttribute("data-mode", "replyAll");
     await expect(page.getByTestId("compose-body")).toHaveValue("Mi respuesta.");
     await expect(to).toHaveValue(/extra@example\.com/);
@@ -178,7 +178,7 @@ test.describe("drafts are kept", () => {
     await expect(page.getByTestId("compose-body")).toHaveValue("Mi respuesta.");
     // a forward drops the recipients Terno filled in, keeps the one typed
     await expect(to).toHaveValue("Extra <extra@example.com>");
-    await toast(page, "Convertido en Reenviar").getByTestId("snack-action").click();
+    await toast(page, "Converted to a forward").getByTestId("snack-action").click();
     await expect(composer(page)).toHaveAttribute("data-mode", "replyAll");
     await page.keyboard.press("Escape");
     await page.keyboard.press("r");
@@ -189,7 +189,7 @@ test.describe("drafts are kept", () => {
     await expect(to).toHaveValue(/extra@example\.com/);
   });
 
-  test("converting while the draft is open shows what the new mode fills in: Cc after reply-all, Asunto after forward", async ({ app: page, server }) => {
+  test("converting while the draft is open shows what the new mode fills in: Cc after reply-all, Subject after forward", async ({ app: page, server }) => {
     const row = sqlDb(server.backend.store).get<{ thread_id: number; subject: string }>(
       `SELECT m.thread_id, t.subject FROM messages m JOIN threads t ON t.id = m.thread_id
        WHERE t.in_inbox = 1 AND m.is_sent = 0 AND json_array_length(m.to_json) >= 3
@@ -212,29 +212,29 @@ test.describe("drafts are kept", () => {
     await expect(page.getByTestId("compose-subject")).toHaveValue(/^Fwd: /);
   });
 
-  test("Descartar deletes the draft; Deshacer brings it back", async ({ app: page, server }) => {
+  test("Discard deletes the draft; Undo brings it back", async ({ app: page, server }) => {
     await openRow(page, 0);
     await focusList(page);
     await page.keyboard.press("r");
     await page.getByTestId("compose-body").focus();
     await page.keyboard.type("Quizá no.");
-    await expect(page.getByTestId("draft-status")).toHaveText("Borrador guardado");
+    await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
     await page.getByTestId("compose-discard").click();
     await expect(composer(page)).toHaveCount(0);
     await expect(page.getByTestId("quick-reply")).toBeFocused();
     await expect.poll(() => sqlDb(server.backend.store).get<{ c: number }>("SELECT count(*) AS c FROM drafts")!.c).toBe(0);
-    await toast(page, "Borrador descartado").getByTestId("snack-action").click();
+    await toast(page, "Draft discarded").getByTestId("snack-action").click();
     await expect(page.getByTestId("compose-body")).toHaveValue("Quizá no.");
     await expect.poll(() => sqlDb(server.backend.store).get<{ c: number }>("SELECT count(*) AS c FROM drafts")!.c).toBe(1);
   });
 });
 
 test.describe("new message, in the reader pane", () => {
-  test("c writes a new message in the reader (no dialog), with the drafts strip; it lands in Enviados", async ({ app: page }) => {
+  test("c writes a new message in the reader (no dialog), with the drafts strip; it lands in Sent", async ({ app: page }) => {
     await openRow(page, 0);
     await focusList(page);
     await page.keyboard.press("c");
-    const form = page.getByRole("form", { name: "Mensaje nuevo" });
+    const form = page.getByRole("form", { name: "New message" });
     await expect(form).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(page.getByTestId("reader")).toHaveCount(0);
@@ -263,7 +263,7 @@ test.describe("new message, in the reader pane", () => {
     await expect(page.locator("[data-cursor]")).toHaveAttribute("data-thread-id", id);
     const item = page.getByTestId("strip-item").first();
     await expect(item).toBeFocused();
-    await expect(item).toContainText("Para ana@example.com");
+    await expect(item).toContainText("To ana@example.com");
     await item.click();
     await expect(page.getByTestId("compose-body")).toHaveValue("Borrador nuevo");
     // opening a conversation steps the new message aside, kept
@@ -374,7 +374,7 @@ test.describe("new message, in the reader pane", () => {
     await page.keyboard.press("c");
     await page.getByTestId("compose-to").fill("ana@example.com");
     await page.getByTestId("compose-body").fill("Para después");
-    await expect(page.getByTestId("draft-status")).toHaveText("Borrador guardado");
+    await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
     await page.reload();
     await page.locator("[data-ready]").waitFor();
     await page.getByTestId("strip-item").first().click();

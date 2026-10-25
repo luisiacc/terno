@@ -1,7 +1,7 @@
 /**
  * The reader as a conversation: flat messages, native disclosure buttons
  * (Enter and Space, aria-expanded/aria-controls), bodies mounted only while
- * open, and runs of collapsed messages folded into "N mensajes más".
+ * open, and runs of collapsed messages folded into "N more messages".
  */
 import { E2E_NOW } from "./constants";
 import { expect, focusList, ingestConversation, openRow, search, selectThread, test } from "./fixtures";
@@ -35,11 +35,11 @@ test.describe("reader conversation", () => {
     await expect(page.locator(`#${region}`)).toBeEmpty();
   });
 
-  test("4 or more collapsed messages in a row fold into «N mensajes más»", async ({ app: page, server }) => {
+  test("4 or more collapsed messages in a row fold into «N more messages»", async ({ app: page, server }) => {
     const id = await ingestConversation(server, { subject: "Sprint de diseño", count: 7, now: E2E_NOW });
     await selectThread(page, id, 'subject:"Sprint de diseño"');
     const more = page.getByTestId("more-messages");
-    await expect(more).toHaveText("6 mensajes más");
+    await expect(more).toHaveText("6 more messages");
     await expect(more).toHaveAttribute("aria-expanded", "false");
     await expect(page.getByTestId("message")).toHaveCount(1);
     await more.focus();
@@ -63,7 +63,7 @@ test.describe("reader conversation", () => {
   });
 
   test("attachments are view-only tiles: name, type and size, no download control", async ({ app: page }) => {
-    await search(page, "has:adjunto");
+    await search(page, "has:attachment");
     await openRow(page, 0);
     const tile = page.getByTestId("attachment").first();
     await expect(tile).toBeVisible();
@@ -74,7 +74,7 @@ test.describe("reader conversation", () => {
   test("the reply bar after the last message starts a reply to who wrote last", async ({ app: page }) => {
     await openRow(page, 0);
     const subject = (await page.getByTestId("reader-subject").textContent())!;
-    await expect(page.getByTestId("quick-reply")).toContainText(/Responder a \S+…$/);
+    await expect(page.getByTestId("quick-reply")).toContainText(/Reply to \S+…$/);
     await page.getByTestId("quick-reply").click();
     await expect(page.getByTestId("reader").getByTestId("composer")).toBeVisible();
     await page.getByTestId("compose-show-subject").click();

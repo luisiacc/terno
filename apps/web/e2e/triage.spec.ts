@@ -13,21 +13,21 @@ test.describe("keyboard triage", () => {
     await expect(selectedRow(page)).toHaveAttribute("data-thread-id", ids[1]!);
   });
 
-  test("e archives, advances to the next thread, and Deshacer restores it", async ({ app: page }) => {
+  test("e archives, advances to the next thread, and Undo restores it", async ({ app: page }) => {
     const archived = await openRow(page, 1);
     const next = await rows(page).nth(2).getAttribute("data-thread-id");
     await focusList(page);
     await page.keyboard.press("e");
     await expect(page.locator(`[data-thread-id="${archived}"]`)).toHaveCount(0);
     await expect(selectedRow(page)).toHaveAttribute("data-thread-id", next!);
-    const toast = page.locator("[data-testid=snack]").filter({ hasText: "Archivado" });
+    const toast = page.locator("[data-testid=snack]").filter({ hasText: "Archived" });
     await expect(toast).toBeVisible();
-    // it really left the inbox on the backend: it shows up in Archivo
+    // it really left the inbox on the backend: it shows up in Archive
     await toast.getByTestId("snack-action").click();
     await expect(page.locator(`[data-thread-id="${archived}"]`)).toHaveCount(1);
   });
 
-  test("# trashes into Papelera, s stars into Destacados", async ({ app: page }) => {
+  test("# trashes into Trash, s stars into Starred", async ({ app: page }) => {
     const trashed = await openRow(page, 0);
     await page.keyboard.press("#");
     await expect(page.locator(`[data-thread-id="${trashed}"]`)).toHaveCount(0);
@@ -38,7 +38,7 @@ test.describe("keyboard triage", () => {
     await page.getByTestId("nav-trash").click();
     await expect(page.locator(`[data-thread-id="${trashed}"]`)).toHaveCount(1);
     await page.getByTestId("nav-starred").click();
-    await expect(page.getByTestId("list-title")).toHaveText("Destacados");
+    await expect(page.getByTestId("list-title")).toHaveText("Starred");
     await expect(page.locator(`[data-thread-id="${starred}"]`)).toHaveCount(1);
   });
 
@@ -59,7 +59,7 @@ test.describe("keyboard triage", () => {
     await page.keyboard.press("x");
     await page.keyboard.press("e");
     for (const id of ids) await expect(page.locator(`[data-thread-id="${id}"]`)).toHaveCount(0);
-    await expect(page.locator("[data-testid=snack]").filter({ hasText: "3 conversaciones" })).toBeVisible();
+    await expect(page.locator("[data-testid=snack]").filter({ hasText: "3 conversations" })).toBeVisible();
     await page.getByTestId("nav-archive").click();
     for (const id of ids) await expect(page.locator(`[data-thread-id="${id}"]`)).toHaveCount(1);
   });

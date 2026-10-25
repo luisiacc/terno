@@ -1,6 +1,6 @@
 /**
  * The docked snackbar (plan 13): one snack at a time, embedded at the bottom
- * of the thread list; its Deshacer's border is the countdown, which waits
+ * of the thread list; its Undo's border is the countdown, which waits
  * while hovered, focused or covered by a dialog. The list keeps room for it.
  */
 import AxeBuilder from "@axe-core/playwright";
@@ -17,7 +17,7 @@ async function archiveOne(page: Page, index = 1) {
   await openRow(page, index);
   await focusList(page);
   await page.keyboard.press("e");
-  await expect(dock(page)).toContainText("Archivado");
+  await expect(dock(page)).toContainText("Archived");
 }
 
 function handlers(server: { backend: { server: unknown } }) {
@@ -41,7 +41,7 @@ test.describe("the docked snackbar", () => {
     const undo = dock(page).getByTestId("snack-action");
     await expect(undo).toHaveAccessibleName("Undo archive");
     await expect(undo).toHaveAttribute("aria-keyshortcuts", "z");
-    await expect(page.getByTestId("snack-live")).toHaveText("Archivado");
+    await expect(page.getByTestId("snack-live")).toHaveText("Archived");
   });
 
   test("the ring drains over the lifetime and holds while hovered; it goes when it's over", async ({ app: page }) => {
@@ -67,7 +67,7 @@ test.describe("the docked snackbar", () => {
     await expect(dock(page)).toHaveCount(0, { timeout: 7000 });
   });
 
-  test("Deshacer restores the row; z does too and takes the bar with it", async ({ app: page }) => {
+  test("Undo restores the row; z does too and takes the bar with it", async ({ app: page }) => {
     const first = await openRow(page, 1);
     await focusList(page);
     await page.keyboard.press("e");
@@ -79,7 +79,7 @@ test.describe("the docked snackbar", () => {
     const second = await openRow(page, 2);
     await focusList(page);
     await page.keyboard.press("e");
-    await expect(dock(page)).toContainText("Archivado");
+    await expect(dock(page)).toContainText("Archived");
     await page.keyboard.press("z");
     await expect(page.locator(`[data-thread-id="${second}"]`)).toHaveCount(1);
     await expect(dock(page)).toHaveCount(0);
@@ -91,7 +91,7 @@ test.describe("the docked snackbar", () => {
   test("a new snack replaces the current one: one bar, the newest", async ({ app: page }) => {
     await archiveOne(page, 1);
     await page.keyboard.press("#");
-    await expect(dock(page)).toContainText("Movido a la papelera");
+    await expect(dock(page)).toContainText("Moved to Trash");
     await expect(page.getByTestId("snack-dock").getByTestId("snack-message")).toHaveCount(1);
   });
 
@@ -106,7 +106,7 @@ test.describe("the docked snackbar", () => {
     await dock(page).hover();
     const top = (await dock(page).boundingBox())!.y;
     // scrolled to the end, the last row ends above the bar
-    const list = page.getByRole("listbox", { name: "Conversaciones" });
+    const list = page.getByRole("listbox", { name: "Conversations" });
     let height = -1;
     for (let i = 0; i < 20 && height !== (await list.evaluate((el) => el.scrollHeight)); i++) {
       height = await list.evaluate((el) => el.scrollHeight);
@@ -130,7 +130,7 @@ test.describe("the docked snackbar", () => {
     expect(sel.y + sel.height).toBeLessThanOrEqual(top + 0.5);
   });
 
-  test("F6 goes to Deshacer without the bar ever taking focus; Esc closes it and focus goes back", async ({ app: page }) => {
+  test("F6 goes to Undo without the bar ever taking focus; Esc closes it and focus goes back", async ({ app: page }) => {
     await page.mouse.move(1300, 100);
     await archiveOne(page);
     // showing it took nothing: focus is where it was
@@ -157,7 +157,7 @@ test.describe("the docked snackbar", () => {
     expect(Math.abs((await drained(page)) - held)).toBeLessThan(0.5);
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("settings-dialog")).toHaveCount(0);
-    await expect(dock(page)).toContainText("Archivado");
+    await expect(dock(page)).toContainText("Archived");
   });
 
   test("any modal holds it, not only the app's dialogs: Base UI's aria-hidden on the bar is the signal; F6 waits too", async ({ app: page }) => {
@@ -198,7 +198,7 @@ test.describe("the docked snackbar", () => {
     await expect(page.getByTestId("snackbar-sender-count")).toBeVisible();
     await focusList(page);
     await page.keyboard.press("1");
-    await expect(dock(page)).toContainText("añadidas a Facturas");
+    await expect(dock(page)).toContainText("added to Facturas");
     // the bulk undo is slow; meanwhile the user archives something
     const h = handlers(server);
     const original = h["categorize.undo"]!;
@@ -213,12 +213,12 @@ test.describe("the docked snackbar", () => {
       await openRow(page, 1);
       await focusList(page);
       await page.keyboard.press("e");
-      await expect(dock(page)).toContainText("Archivado");
+      await expect(dock(page)).toContainText("Archived");
       release();
       await page.waitForTimeout(500);
-      await expect(dock(page)).toContainText("Archivado");
+      await expect(dock(page)).toContainText("Archived");
       await dock(page).getByTestId("snack-close").click();
-      await expect(dock(page)).toContainText("quitadas de Facturas");
+      await expect(dock(page)).toContainText("removed from Facturas");
     } finally {
       release();
       h["categorize.undo"] = original;
@@ -229,14 +229,14 @@ test.describe("the docked snackbar", () => {
     const h = handlers(server);
     const original = h["threads.act"]!;
     h["threads.act"] = async () => {
-      throw new Error("sin conexión");
+      throw new Error("no connection");
     };
     try {
       await openRow(page, 1);
       await focusList(page);
       await page.keyboard.press("e");
       await expect(dock(page)).toHaveAttribute("data-tone", "error");
-      await expect(page.getByTestId("snack-alert")).toContainText("No se pudo completar: sin conexión");
+      await expect(page.getByTestId("snack-alert")).toContainText("Couldn’t complete: no connection");
       await expect(page.getByTestId("snack-live")).toHaveText("");
     } finally {
       h["threads.act"] = original;
@@ -258,10 +258,10 @@ test.describe("the docked snackbar", () => {
     const list = (await page.getByTestId("thread-list").boundingBox())!;
     expect(box.height).toBeLessThanOrEqual(84);
     expect(box.x + box.width).toBeLessThan(list.x + list.width);
-    await expect(snack.getByTestId("snackbar-undo")).toHaveAccessibleName(/^Undo: Añadido a Facturas/);
+    await expect(snack.getByTestId("snackbar-undo")).toHaveAccessibleName(/^Undo: Added to Facturas/);
     await page.keyboard.press("z");
     await expect(snack).toHaveCount(0);
-    await expect(dock(page)).toContainText("Deshecho: Facturas");
+    await expect(dock(page)).toContainText("Undone: Facturas");
     await expect.poll(() => db.get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", id, facturas)).toBeUndefined();
   });
 
@@ -280,7 +280,7 @@ test.describe("the docked snackbar", () => {
       const h = handlers(server);
       const original = h["threads.act"]!;
       h["threads.act"] = async () => {
-        throw new Error("sin conexión");
+        throw new Error("no connection");
       };
       await openRow(page, 2);
       await focusList(page);
