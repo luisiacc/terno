@@ -19,6 +19,7 @@ import { renderProbe } from "~/lib/render-probe";
 import { useDropState } from "~/state/drag";
 import { LocalPill } from "./local-pill";
 import { UpdatePill } from "./update-pill";
+import { preloadComposer } from "./composer/lazy";
 
 const VIEWS: { view: View; icon: typeof Inbox; keys?: string }[] = [
   { view: "inbox", icon: Inbox, keys: "g i" },
@@ -99,7 +100,7 @@ function SectionTitle({ children, action }: { children: React.ReactNode; action?
 function ComposeOutline() {
   return (
     <div className="shrink-0 px-2 pb-3">
-      <button type="button" data-testid="compose-button" onClick={() => openCompose("new")} className="type-compose flex h-9 w-full items-center gap-2.5 rounded-lg bg-card px-3 text-left text-foreground shadow-raised transition-[background-color,box-shadow] hover:bg-muted">
+      <button type="button" data-testid="compose-button" onPointerEnter={preloadComposer} onFocus={preloadComposer} onClick={() => openCompose("new")} className="type-compose flex h-9 w-full items-center gap-2.5 rounded-lg bg-card px-3 text-left text-foreground shadow-raised transition-[background-color,box-shadow] hover:bg-muted">
         <SquarePen className="size-4 text-primary" />
         <span className="min-w-0 flex-1 truncate">{t("compose.newMessage")}</span>
         <Kbd>C</Kbd>
@@ -115,7 +116,7 @@ function ComposePill() {
       <Tooltip>
         <TooltipTrigger
           render={
-            <button type="button" data-testid="compose-button" onClick={() => openCompose("new")} className="type-compose flex h-10 w-full items-center justify-center gap-2 rounded-full bg-primary px-4 text-primary-foreground shadow-[inset_0_1px_var(--highlight),0_1px_2px_var(--shadow-color)] transition-colors hover:bg-[color-mix(in_oklab,var(--primary)_88%,var(--background))]">
+            <button type="button" data-testid="compose-button" onPointerEnter={preloadComposer} onFocus={preloadComposer} onClick={() => openCompose("new")} className="type-compose flex h-10 w-full items-center justify-center gap-2 rounded-full bg-primary px-4 text-primary-foreground shadow-[inset_0_1px_var(--highlight),0_1px_2px_var(--shadow-color)] transition-colors hover:bg-[color-mix(in_oklab,var(--primary)_88%,var(--background))]">
               <SquarePen className="size-4" />
               {t("list.compose")}
             </button>

@@ -1,0 +1,82 @@
+/* The composer's body (plan 16). ProseMirror's own rules first, then the document as mail shows it. */
+.ProseMirror {
+  position: relative;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  white-space: break-spaces;
+  font-variant-ligatures: none;
+}
+.ProseMirror-hideselection *::selection {
+  background: transparent;
+}
+.ProseMirror-hideselection {
+  caret-color: transparent;
+}
+.ProseMirror [draggable][contenteditable="false"] {
+  user-select: text;
+}
+.ProseMirror li {
+  position: relative;
+}
+
+.rt-body {
+  outline: none;
+  overflow-wrap: anywhere;
+}
+/* lines without margins: Enter starts the next one, an empty line is the gap (as mail shows it) */
+.rt-body p {
+  margin: 0;
+}
+/* the same box as in mail: 24 px for the markers, no padding */
+.rt-body ul,
+.rt-body ol {
+  margin: 0 0 0 24px;
+  padding: 0;
+}
+.rt-body ul {
+  list-style: disc;
+}
+.rt-body ul ul {
+  list-style: circle;
+}
+.rt-body ul ul ul {
+  list-style: square;
+}
+.rt-body ol {
+  list-style: decimal;
+}
+.rt-body ol ol {
+  list-style: lower-alpha;
+}
+.rt-body ol ol ol {
+  list-style: lower-roman;
+}
+.rt-body li::marker {
+  color: var(--muted-foreground);
+}
+.rt-body blockquote {
+  margin: 0 0 0 0.8ex;
+  padding-left: 1ex;
+  border-left: 2px solid color-mix(in oklab, var(--muted-foreground) 45%, transparent);
+}
+.rt-body a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  cursor: text;
+}
+.rt-body s u,
+.rt-body u s {
+  text-decoration: underline line-through;
+}
+/* the placeholder of an empty body (the first line's place, never typed into) */
+.rt-body.is-empty::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  pointer-events: none;
+  color: var(--muted-foreground);
+}
+.rt-body[contenteditable="false"] {
+  opacity: 0.7;
+}

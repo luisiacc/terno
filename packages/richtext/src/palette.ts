@@ -32,6 +32,30 @@ export const HIGHLIGHT_HEX: Record<Highlight, string> = {
   gray: "#e8eaed",
 };
 
+/**
+ * What the editor shows in dark themes (light themes show the mail's own
+ * values): light inks, deep washes with a light ink. Every pairing holds
+ * 4.5:1 on every palette's draft surfaces (packages/ui composer-colors.test).
+ */
+export const TEXT_DARK: Record<TextColor, string> = {
+  gray: "#b4b8bd",
+  red: "#f6a39b",
+  orange: "#f5b26b",
+  green: "#7fd6a0",
+  blue: "#9ec3ff",
+  purple: "#d3b0ff",
+  pink: "#f7a6c8",
+};
+export const HIGHLIGHT_DARK: Record<Highlight, string> = {
+  yellow: "#4f4510",
+  green: "#1c4429",
+  blue: "#1c355c",
+  pink: "#52203c",
+  orange: "#553011",
+  gray: "#383b3f",
+};
+export const HIGHLIGHT_INK_DARK = "#f1f3f4";
+
 /** a highlighted run always says its text color, so a dark mode that lightens default text can't put it on a light wash */
 export const HIGHLIGHT_INK = "#202124";
 

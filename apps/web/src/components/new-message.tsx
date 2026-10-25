@@ -4,12 +4,13 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { Send, Trash2 } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import { registerUndo, snack } from "~/lib/snack";
 import { leaveNewDraft, sendDraft, showNewDraft } from "~/lib/compose";
-import { discardDraft, editDraft, restoreDiscarded, useDrafts } from "~/lib/drafts";
+import { discardDraft, restoreDiscarded, useDrafts } from "~/lib/drafts";
 import { useApp } from "~/state/app";
 import { DraftFieldsForm, focusSoon, SaveState, SignaturePreview } from "./inline-draft";
+import { ComposerBody, ComposerFormatBar, FormatToggle, LinkButton, preloadComposer } from "./composer/lazy";
 
 /** Esc and sending leave the new message; focus goes to its strip item (kept) or back to the list. */
 function leave(key: string, focusStrip: boolean) {
@@ -29,7 +30,9 @@ export function NewMessage() {
   const d = useDrafts((s) => (compose ? s.drafts[compose.key] : undefined));
   const accounts = useApp((s) => s.accounts);
   const rootRef = useRef<HTMLFormElement>(null);
+  const formatId = useId();
 
+  useEffect(preloadComposer, []);
   useEffect(() => {
     if (compose) focusSoon("[data-testid=compose-to]", rootRef.current);
   }, [compose?.seq]);
@@ -60,6 +63,8 @@ export function NewMessage() {
         void send();
       }}
       onKeyDown={(e) => {
+        // what a popover or menu (portaled, or inside) already handled isn't the composer's
+        if (e.defaultPrevented || !e.currentTarget.contains(e.target as Node) || e.nativeEvent.isComposing) return;
         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
           e.preventDefault();
           void send();
@@ -94,17 +99,20 @@ export function NewMessage() {
           <div className="-mx-3.5">
             <DraftFieldsForm d={d} accounts={accounts} showSubject flat />
           </div>
-          <textarea
-            data-testid="compose-body"
-            aria-label={t("compose.body")}
-            value={d.bodyText}
-            onChange={(e) => editDraft(key, { bodyText: e.target.value })}
-            placeholder={t("compose.bodyPlaceholder.new")}
-            className="block min-h-[260px] w-full flex-1 resize-none bg-transparent pt-4 text-base outline-none placeholder:text-muted-foreground"
-          />
+          <ComposerBody draftKey={key} placeholder={t("compose.bodyPlaceholder.new")} className="block min-h-[260px] w-full flex-1 pt-4 text-base" />
           <SignaturePreview accountId={d.accountId} className="pt-2" />
-          <div className="pt-2">
-            <SaveState d={d} />
+        </div>
+      </div>
+      {/* the format bar and its toggle stay at hand at the pane's foot while the text scrolls */}
+      <div className="shrink-0 px-(--reader-pad-x) pt-2 pb-3">
+        <div className="mx-auto flex max-w-(--reader-max) flex-col gap-1.5">
+          <ComposerFormatBar draftKey={key} id={formatId} className="-mx-1" />
+          <div className="-ml-1.5 flex items-center gap-1">
+            <FormatToggle controls={formatId} />
+            <LinkButton draftKey={key} disabled={d.sending} />
+            <span className="ml-1.5">
+              <SaveState d={d} />
+            </span>
           </div>
         </div>
       </div>

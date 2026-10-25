@@ -12,7 +12,7 @@ import { forwardPrintKey, wantsNativeMenu } from "~/lib/print-open";
 import { forwardUnreadKey } from "~/lib/unread";
 import { allowRemoteFor, remoteAllowed, useRemoteConsent } from "~/lib/remote-consent";
 
-function openLink(href: string) {
+export function openLink(href: string) {
   if (!/^(https?:|mailto:)/i.test(href)) return;
   if (window.ternoDesktop) window.ternoDesktop.openExternal(href);
   else window.open(href, "_blank", "noopener,noreferrer");

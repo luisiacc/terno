@@ -669,6 +669,9 @@ importers:
         specifier: ^1.4.0
         version: 1.4.0
     devDependencies:
+      '@terno/richtext':
+        specifier: workspace:*
+        version: link:../richtext
       '@types/react':
         specifier: 'catalog:'
         version: 19.3.0

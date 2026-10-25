@@ -1,0 +1,440 @@
+import { emptyDoc, fromPlainText, parseHtml, restoreSlice, cleanPastedHtml, schema, toEmailHtml, toPlainText, urlIn, MAX_INDENT, type Align } from "@terno/richtext";
+import { baseKeymap, chainCommands, lift, toggleMark, wrapIn } from "prosemirror-commands";
+import { history, redo, redoDepth, undo, undoDepth } from "prosemirror-history";
+import { InputRule, inputRules, undoInputRule, wrappingInputRule } from "prosemirror-inputrules";
+import { keymap } from "prosemirror-keymap";
+import { Fragment, Slice, type Mark, type MarkType, type Node as PMNode, type ResolvedPos } from "prosemirror-model";
+import { liftListItem, sinkListItem, splitListItem, wrapInList } from "prosemirror-schema-list";
+import { EditorState, Plugin, TextSelection, type Command, type Transaction } from "prosemirror-state";
+import { EditorView } from "prosemirror-view";
+import type { FormatCommand, FormatState } from "./controller";
+
+/**
+ * The composer's ProseMirror editor (plan 16): plugins, commands, shortcuts,
+ * paste and the toolbar's state. Lazy (the composer chunk); nothing here
+ * runs before a draft opens.
+ */
+
+const { marks, nodes } = schema;
+
+// ── the document an editor starts from, and the states kept between mounts
+
+/** A draft's body as a document: its HTML when it has one, else its text (every draft before plan 16). */
+export function docOf(html: string, text: string): PMNode {
+  if (html) return parseHtml(html);
+  return text ? fromPlainText(text) : emptyDoc();
+}
+
+/** An empty body: one empty line (nothing to send as HTML). */
+const isEmpty = (doc: PMNode) => doc.childCount === 1 && doc.firstChild!.type === nodes.paragraph && doc.firstChild!.childCount === 0 && doc.firstChild!.attrs.align === "left" && doc.firstChild!.attrs.indent === 0;
+
+/** What a draft carries for a document: mail HTML ('' when empty) and its plain text. */
+export function serialize(doc: PMNode): { html: string; text: string } {
+  if (isEmpty(doc)) return { html: "", text: "" };
+  return { html: toEmailHtml(doc), text: toPlainText(doc) };
+}
+
+/** The last editor states by draft (undo history, selection, stored marks), so collapsing and coming back loses none. */
+const kept = new Map<string, { state: EditorState; version: number }>();
+const KEPT_MAX = 8;
+export function keepState(key: string, state: EditorState, version: number): void {
+  kept.delete(key);
+  kept.set(key, { state, version });
+  if (kept.size > KEPT_MAX) kept.delete(kept.keys().next().value!);
+}
+export function keptState(key: string, version: number): EditorState | null {
+  const k = kept.get(key);
+  return k && k.version === version ? k.state : null;
+}
+export const forgetState = (key: string) => kept.delete(key);
+
+// ── commands
+
+const markApplies: Command = (state) => !state.selection.empty || state.selection.$from.parent.inlineContent;
+
+/** Bold, italic, underline, strike: on the whole selection unless all of it already has it (Word, Docs, Gmail). */
+const toggle = (type: MarkType): Command => toggleMark(type, null, { removeWhenPresent: false });
+
+/** A valued mark (font, size, color, highlight): set to a value, or removed (null) — for the selection or what's typed next. */
+export function setMark(type: MarkType, value: string | null): Command {
+  return (state, dispatch) => {
+    if (!markApplies(state)) return false;
+    if (!dispatch) return true;
+    const tr = state.tr;
+    const { empty, ranges } = state.selection;
+    if (empty) {
+      tr.removeStoredMark(type);
+      if (value) tr.addStoredMark(type.create({ value }));
+    } else {
+      for (const { $from, $to } of ranges) {
+        tr.removeMark($from.pos, $to.pos, type);
+        if (value) tr.addMark($from.pos, $to.pos, type.create({ value }));
+      }
+    }
+    dispatch(tr.scrollIntoView());
+    return true;
+  };
+}
+
+/** The textblocks the selection touches. */
+function eachBlock(state: EditorState, fn: (node: PMNode, pos: number) => void): void {
+  const { from, to } = state.selection;
+  state.doc.nodesBetween(from, to, (node, pos) => {
+    if (node.type === nodes.paragraph) {
+      fn(node, pos);
+      return false;
+    }
+    return true;
+  });
+}
+
+export function setAlign(align: Align): Command {
+  return (state, dispatch) => {
+    if (dispatch) {
+      const tr = state.tr;
+      eachBlock(state, (node, pos) => {
+        if (node.attrs.align !== align) tr.setNodeMarkup(pos, null, { ...node.attrs, align });
+      });
+      dispatch(tr);
+    }
+    return true;
+  };
+}
+
+/** The nearest list around the selection's start: its node, depth and type. */
+function listAt($pos: ResolvedPos): { node: PMNode; depth: number } | null {
+  for (let d = $pos.depth; d > 0; d--) {
+    const n = $pos.node(d);
+    if (n.type === nodes.bullet_list || n.type === nodes.ordered_list) return { node: n, depth: d };
+  }
+  return null;
+}
+
+/** A list button: off when already that list (one level out), switches a list of the other kind, else wraps. */
+function toggleList(type: typeof nodes.bullet_list): Command {
+  return (state, dispatch) => {
+    const list = listAt(state.selection.$from);
+    if (list && list.node.type === type) return liftListItem(nodes.list_item)(state, dispatch);
+    if (list) {
+      if (dispatch) dispatch(state.tr.setNodeMarkup(state.selection.$from.before(list.depth), type));
+      return true;
+    }
+    return wrapInList(type)(state, dispatch);
+  };
+}
+
+function paragraphIndent(delta: number): Command {
+  return (state, dispatch) => {
+    let can = false;
+    const tr = state.tr;
+    eachBlock(state, (node, pos) => {
+      const indent = Math.max(0, Math.min(MAX_INDENT, (node.attrs.indent as number) + delta));
+      if (indent === node.attrs.indent) return;
+      can = true;
+      tr.setNodeMarkup(pos, null, { ...node.attrs, indent });
+    });
+    if (can && dispatch) dispatch(tr);
+    return can;
+  };
+}
+
+/** Indent: a list item goes one level in; a line moves right. */
+const indent: Command = (state, dispatch) => (listAt(state.selection.$from) ? sinkListItem(nodes.list_item)(state, dispatch) : paragraphIndent(1)(state, dispatch));
+const outdent: Command = (state, dispatch) => (listAt(state.selection.$from) ? liftListItem(nodes.list_item)(state, dispatch) : paragraphIndent(-1)(state, dispatch));
+
+const inQuote = ($pos: ResolvedPos) => {
+  for (let d = $pos.depth; d > 0; d--) if ($pos.node(d).type === nodes.blockquote) return true;
+  return false;
+};
+const toggleQuote: Command = (state, dispatch) => (inQuote(state.selection.$from) ? lift(state, dispatch) : wrapIn(nodes.blockquote)(state, dispatch));
+
+/** Remove formatting: every mark but links, for the selection (or what's typed next), and the lines' alignment and indent. */
+const clearFormatting: Command = (state, dispatch) => {
+  if (!dispatch) return true;
+  const tr = state.tr;
+  const keep = (m: Mark) => m.type === marks.link;
+  if (state.selection.empty) tr.setStoredMarks((state.storedMarks ?? state.selection.$from.marks()).filter(keep));
+  else for (const { $from, $to } of state.selection.ranges) for (const type of Object.values(marks)) if (type !== marks.link) tr.removeMark($from.pos, $to.pos, type);
+  eachBlock(state, (node, pos) => {
+    if (node.attrs.align !== "left" || node.attrs.indent !== 0) tr.setNodeMarkup(pos, null, { ...node.attrs, align: "left", indent: 0 });
+  });
+  dispatch(tr);
+  return true;
+};
+
+export const COMMANDS: Record<FormatCommand, Command> = {
+  undo,
+  redo,
+  bold: toggle(marks.bold),
+  italic: toggle(marks.italic),
+  underline: toggle(marks.underline),
+  strike: toggle(marks.strike),
+  orderedList: toggleList(nodes.ordered_list),
+  bulletList: toggleList(nodes.bullet_list),
+  indent,
+  outdent,
+  quote: toggleQuote,
+  clear: clearFormatting,
+};
+
+// ── links
+
+interface LinkRun {
+  from: number;
+  to: number;
+  mark: Mark;
+}
+
+/** The link the caret is inside (or the selection lies within): its range and href. */
+export function linkAt(state: EditorState): { from: number; to: number; href: string } | null {
+  const { $from, $to, empty } = state.selection;
+  const parent = $from.parent;
+  if (!parent.inlineContent || (!empty && $to.parent !== parent)) return null;
+  const at = $from.parentOffset;
+  const end = $to.parentOffset;
+  // runs of children carrying the same link, in order
+  const runs: LinkRun[] = [];
+  let offset = 0;
+  for (let i = 0; i < parent.childCount; i++) {
+    const child = parent.child(i);
+    const m = child.marks.find((x) => x.type === marks.link);
+    const last = runs[runs.length - 1];
+    if (m && last && last.to === offset && last.mark.eq(m)) last.to = offset + child.nodeSize;
+    else if (m) runs.push({ from: offset, to: offset + child.nodeSize, mark: m });
+    offset += child.nodeSize;
+  }
+  // collapsed: strictly inside (a caret just after a link types outside it); a selection: within it
+  const hit = runs.find((r) => (empty ? at > r.from && at < r.to : at >= r.from && end <= r.to));
+  if (!hit) return null;
+  const start = $from.start();
+  return { from: start + hit.from, to: start + hit.to, href: hit.mark.attrs.href as string };
+}
+
+/** Links (or relinks) a range; with `text`, the range's text becomes it (keeping the marks at its start). */
+export function applyLink(view: EditorView, range: { from: number; to: number }, href: string, text?: string): void {
+  const { state } = view;
+  const link = marks.link.create({ href });
+  let tr = state.tr;
+  let { from, to } = range;
+  if (text !== undefined && text !== state.doc.textBetween(from, to)) {
+    const at = state.doc.resolve(from);
+    const kept = (from === to ? (state.storedMarks ?? at.marks()) : (at.nodeAfter?.marks ?? at.marks())).filter((m) => m.type !== marks.link);
+    const value = text || href.replace(/^mailto:/, "");
+    tr = tr.replaceWith(from, to, schema.text(value, link.addToSet(kept)));
+    to = from + value.length;
+  } else {
+    tr = tr.removeMark(from, to, marks.link).addMark(from, to, link);
+  }
+  // the caret after the link, typing outside it (links aren't inclusive)
+  tr.setSelection(TextSelection.create(tr.doc, to)).setStoredMarks(null);
+  view.dispatch(tr.scrollIntoView());
+}
+
+export function removeLink(view: EditorView, range: { from: number; to: number }): void {
+  view.dispatch(view.state.tr.removeMark(range.from, range.to, marks.link));
+}
+
+/** A URL just typed, before the caret, becomes a link (on space or Enter). */
+function linkTypedUrl(state: EditorState, end: number, tr: Transaction): boolean {
+  const $end = state.doc.resolve(end);
+  const before = $end.parent.textBetween(Math.max(0, $end.parentOffset - 500), $end.parentOffset, undefined, "￼");
+  const m = /(?:^|\s)((?:https?:\/\/|www\.)\S+)$/.exec(before);
+  if (!m) return false;
+  // trailing punctuation stays outside the link ("see https://x.example.")
+  const url = m[1]!.replace(/[.,;:!?)\]]+$/, "");
+  const href = urlIn(url);
+  if (!href) return false;
+  const from = end - m[1]!.length;
+  const to = from + url.length;
+  if (state.doc.rangeHasMark(from, to, marks.link)) return false;
+  tr.addMark(from, to, marks.link.create({ href }));
+  return true;
+}
+
+/** A space after a URL links it (and types the space, outside the link). */
+const autolink = new InputRule(/\s$/, (state, match, start, end) => {
+  const tr = state.tr;
+  if (!linkTypedUrl(state, start, tr)) return null;
+  return tr.insertText(match[0], start, end);
+});
+
+const autolinkOnEnter: Command = (state, dispatch) => {
+  if (!state.selection.empty) return false;
+  const tr = state.tr;
+  if (linkTypedUrl(state, state.selection.from, tr) && dispatch) dispatch(tr);
+  return false;
+};
+
+// ── the toolbar's state
+
+/** The marks shared by everything in the selection (or what's typed next at a caret); stops as soon as nothing is shared. */
+function sharedMarks(state: EditorState): readonly Mark[] {
+  const { empty, $from, from, to } = state.selection;
+  if (empty) return state.storedMarks ?? $from.marks();
+  let shared: readonly Mark[] | null = null;
+  state.doc.nodesBetween(from, to, (node) => {
+    if (shared && shared.length === 0) return false;
+    if (!node.isText) return true;
+    shared = shared === null ? node.marks : shared.filter((m) => m.isInSet(node.marks));
+    return false;
+  });
+  return shared ?? $from.marks();
+}
+
+export function formatState(state: EditorState, editable: boolean): FormatState {
+  const shared = sharedMarks(state);
+  const value = (type: MarkType) => (shared.find((m) => m.type === type)?.attrs.value as string | undefined) ?? null;
+  const $from = state.selection.$from;
+  const list = listAt($from);
+  return {
+    bold: marks.bold.isInSet(shared) !== undefined,
+    italic: marks.italic.isInSet(shared) !== undefined,
+    underline: marks.underline.isInSet(shared) !== undefined,
+    strike: marks.strike.isInSet(shared) !== undefined,
+    font: value(marks.font) as FormatState["font"],
+    size: value(marks.size) as FormatState["size"],
+    color: value(marks.color),
+    highlight: value(marks.highlight),
+    align: ($from.parent.type === nodes.paragraph ? $from.parent.attrs.align : "left") as Align,
+    list: list ? (list.node.type === nodes.ordered_list ? "ordered" : "bullet") : null,
+    quote: inQuote($from),
+    link: linkAt(state) !== null,
+    canUndo: undoDepth(state) > 0,
+    canRedo: redoDepth(state) > 0,
+    canIndent: indent(state),
+    canOutdent: outdent(state),
+    editable,
+  };
+}
+
+export function sameFormat(a: FormatState, b: FormatState): boolean {
+  for (const k of Object.keys(a) as (keyof FormatState)[]) if (a[k] !== b[k]) return false;
+  return true;
+}
+
+// ── the editor
+
+export interface EditorHooks {
+  /** a document change (the user's): the draft becomes dirty */
+  onChange(): void;
+  /** any state change (selection too): the toolbar and the link bubble follow */
+  onUpdate(): void;
+  /** ⌘K */
+  onLink(): void;
+  /** links in mail open outside the app */
+  openLink(href: string): void;
+}
+
+/** Plain text pasted keeps its lines: one paragraph per line, empty lines included (as a plain draft opens). */
+function textSlice(text: string): Slice {
+  const lines = text.replace(/\r\n?/g, "\n").replace(/ /g, " ").split("\n");
+  return Slice.maxOpen(Fragment.from(lines.map((l) => nodes.paragraph.create(null, l ? schema.text(l) : null))));
+}
+
+/** Each view's hooks (plugins are shared by kept states across mounts: they look the hooks up by view). */
+const viewHooks = new WeakMap<EditorView, EditorHooks>();
+
+export function createPlugins(): Plugin[] {
+  const mod: Record<string, Command> = {
+    "Mod-b": COMMANDS.bold,
+    "Mod-i": COMMANDS.italic,
+    "Mod-u": COMMANDS.underline,
+    "Mod-Shift-x": COMMANDS.strike,
+    "Mod-Shift-7": COMMANDS.orderedList,
+    "Mod-Shift-8": COMMANDS.bulletList,
+    "Mod-]": indent,
+    "Mod-[": outdent,
+    "Mod-\\": clearFormatting,
+    "Mod-z": undo,
+    "Mod-Shift-z": redo,
+    "Mod-y": redo,
+    "Mod-k": (_state, _dispatch, view) => {
+      if (view) viewHooks.get(view)?.onLink();
+      return true;
+    },
+    // in a list, Tab moves the item (elsewhere it leaves the editor, as everywhere in the app)
+    Tab: (state, dispatch) => (listAt(state.selection.$from) ? sinkListItem(nodes.list_item)(state, dispatch) || true : false),
+    "Shift-Tab": (state, dispatch) => (listAt(state.selection.$from) ? liftListItem(nodes.list_item)(state, dispatch) || true : false),
+    Enter: chainCommands(autolinkOnEnter, splitListItem(nodes.list_item)),
+    "Shift-Enter": (state, dispatch) => {
+      if (dispatch) dispatch(state.tr.replaceSelectionWith(nodes.hard_break.create()).scrollIntoView());
+      return true;
+    },
+    Backspace: undoInputRule,
+  };
+  return [
+    history(),
+    inputRules({
+      rules: [
+        wrappingInputRule(/^\s*([-*])\s$/, nodes.bullet_list),
+        wrappingInputRule(/^(\d+)\.\s$/, nodes.ordered_list, (m) => ({ start: Number(m[1]) }), (m, node) => node.childCount + (node.attrs.start as number) === Number(m[1])),
+        autolink,
+      ],
+    }),
+    keymap(mod),
+    keymap(baseKeymap),
+    new Plugin({
+      props: {
+        // NBSP typed (⌥Space) reads as a space: mail encodes runs of spaces with it, and a draft's text stays plain
+        handleTextInput(view, from, to, text) {
+          if (!text.includes(" ")) return false;
+          view.dispatch(view.state.tr.insertText(text.replace(/ /g, " "), from, to));
+          return true;
+        },
+        transformPastedHTML: (html) => cleanPastedHtml(html),
+        transformPasted: (slice) => restoreSlice(slice),
+        clipboardTextParser: (text) => textSlice(text),
+        handlePaste(view, event) {
+          const text = event.clipboardData?.getData("text/plain") ?? "";
+          const href = urlIn(text);
+          if (!href) return false;
+          const { state } = view;
+          const { from, to, empty } = state.selection;
+          // a URL pasted over a selection links it; alone, it goes in as a link
+          if (!empty && state.doc.resolve(from).parent === state.doc.resolve(to).parent) applyLink(view, { from, to }, href);
+          else applyLink(view, { from, to }, href, text.trim());
+          return true;
+        },
+        handleDOMEvents: {
+          click(view, event) {
+            const a = (event.target as HTMLElement).closest?.("a[href]");
+            if (!a || !(event.metaKey || event.ctrlKey)) return false;
+            event.preventDefault();
+            viewHooks.get(view)?.openLink(a.getAttribute("href")!);
+            return true;
+          },
+        },
+      },
+    }),
+  ];
+}
+
+export interface RichEditor {
+  view: EditorView;
+  destroy(): void;
+}
+
+export function createEditor(
+  mount: HTMLElement,
+  o: { state: EditorState; attributes: Record<string, string>; editable: () => boolean; hooks: EditorHooks },
+): RichEditor {
+  const view: EditorView = new EditorView(mount, {
+    state: o.state,
+    attributes: o.attributes,
+    editable: o.editable,
+    dispatchTransaction(tr) {
+      const next = view.state.apply(tr);
+      view.updateState(next);
+      if (tr.docChanged) o.hooks.onChange();
+      o.hooks.onUpdate();
+    },
+  });
+  viewHooks.set(view, o.hooks);
+  return { view, destroy: () => view.destroy() };
+}
+
+/** A fresh state for a document (the plugins are the editor's own). */
+export function newState(doc: PMNode): EditorState {
+  return EditorState.create({ doc, plugins: PLUGINS, selection: TextSelection.atEnd(doc) });
+}
+const PLUGINS = createPlugins();

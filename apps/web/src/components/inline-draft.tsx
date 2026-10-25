@@ -15,12 +15,19 @@ import { keepInView } from "~/lib/reader-scroll";
 import { registerUndo, snack } from "~/lib/snack";
 import { setApp, useApp } from "~/state/app";
 import { Expand } from "./expand";
+import { ComposerBody, ComposerFormatBar, FormatToggle, LinkButton, preloadComposer } from "./composer/lazy";
 
-/** Puts focus on an element of the draft area once it is rendered and no longer inert (an opening part is inert for a frame). */
-export function focusSoon(selector: string, root: HTMLElement | null, frames = 12) {
+/**
+ * Puts focus on an element of the draft area once it is rendered and no longer
+ * inert (an opening part is inert for a frame). While the editor's chunk is
+ * still loading it keeps waiting (up to ~10 s), so a fast "r" never loses focus.
+ */
+export function focusSoon(selector: string, root: HTMLElement | null, frames = 12, loading = 600) {
   requestAnimationFrame(() => {
     const el = (root ?? document).querySelector<HTMLElement>(selector);
-    if ((!el || el.closest("[inert]")) && frames > 0) return focusSoon(selector, root, frames - 1);
+    const waiting = !el && loading > 0 && (root ?? document).querySelector("[data-testid=compose-body-loading]") !== null;
+    if (waiting) return focusSoon(selector, root, frames, loading - 1);
+    if ((!el || el.closest("[inert]")) && frames > 0) return focusSoon(selector, root, frames - 1, loading);
     el?.focus({ preventScroll: true });
     if (el instanceof HTMLTextAreaElement) el.setSelectionRange(el.value.length, el.value.length);
   });
@@ -114,7 +121,7 @@ export function SaveState({ d }: { d: LocalDraft }) {
     <span aria-live="polite" className="text-xs text-muted-foreground" data-testid="draft-status">
       {d.status === "saved" && <span className="animate-in fade-in-0 duration-base">{t("compose.status.saved")}</span>}
       {d.status === "error" &&
-        richT("compose.status.failed", {
+        richT(d.tooLong ? "compose.status.tooLong" : "compose.status.failed", {
           retry: (text) => (
             <button type="button" className="font-medium text-primary hover:underline" onClick={() => retryDraft(d.key)}>
               {text}
@@ -216,7 +223,11 @@ export function DraftSlot({ threadId, draftKey, replyTo, account }: { threadId: 
   const accounts = useApp((s) => s.accounts);
   const focus = useApp((s) => (draftKey && s.draftFocus?.key === draftKey ? s.draftFocus : null));
   const rootRef = useRef<HTMLDivElement>(null);
+  const formatId = useId();
   const state: "bar" | "open" | "collapsed" = !d ? "bar" : d.uiState;
+
+  // a conversation is open: its reply may come next, so the editor starts loading (once)
+  useEffect(preloadComposer, []);
 
   // an explicit open (r/a/f, the bar, the menu) asks for focus: honor it once
   useEffect(() => {
@@ -293,6 +304,8 @@ export function DraftSlot({ threadId, draftKey, replyTo, account }: { threadId: 
               void send();
             }}
             onKeyDown={(e) => {
+              // what a popover or menu (portaled, or inside) already handled isn't the composer's
+              if (e.defaultPrevented || !e.currentTarget.contains(e.target as Node) || e.nativeEvent.isComposing) return;
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
                 void send();
@@ -304,21 +317,19 @@ export function DraftSlot({ threadId, draftKey, replyTo, account }: { threadId: 
             }}
           >
             <DraftFieldsForm d={d} accounts={accounts} showSubject={d.mode === "forward"} />
-            <textarea
-              data-testid="compose-body"
-              aria-label={t("compose.body")}
-              value={d.bodyText}
-              onChange={(e) => editDraft(d.key, { bodyText: e.target.value })}
-              placeholder={d.mode === "forward" ? t("compose.bodyPlaceholder.forward") : t("compose.bodyPlaceholder.reply")}
-              className="block min-h-[132px] w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-base outline-none [field-sizing:content] placeholder:text-muted-foreground"
-            />
+            <ComposerBody draftKey={d.key} placeholder={d.mode === "forward" ? t("compose.bodyPlaceholder.forward") : t("compose.bodyPlaceholder.reply")} className="block min-h-[132px] w-full px-3.5 pt-3 pb-1 text-base" />
             <SignaturePreview accountId={d.accountId} className="px-3.5 pb-2" />
             <Quote d={d} />
-            <div className="flex items-center gap-2.5 px-2.5 pt-2 pb-2.5">
-              <Button type="submit" size="sm" data-testid="compose-send" aria-busy={d.sending} disabled={d.sending} className="gap-2">
+            <ComposerFormatBar draftKey={d.key} id={formatId} className="px-2 pt-1.5" />
+            <div className="flex items-center gap-1 px-2.5 pt-2 pb-2.5">
+              <Button type="submit" size="sm" data-testid="compose-send" aria-busy={d.sending} disabled={d.sending} className="mr-1.5 gap-2">
                 <Send /> {t("common.send")} <Shortcut keys="mod+enter" className="[&_kbd]:bg-primary-foreground/15 [&_kbd]:text-primary-foreground [&_kbd]:shadow-none" />
               </Button>
-              <SaveState d={d} />
+              <FormatToggle controls={formatId} />
+              <LinkButton draftKey={d.key} disabled={d.sending} />
+              <span className="ml-1.5">
+                <SaveState d={d} />
+              </span>
               <span className="ml-auto flex gap-0.5">
                 <ToolIcon label={t("compose.discard")} onClick={() => void discard()} testId="compose-discard" disabled={d.sending}>
                   <Trash2 />

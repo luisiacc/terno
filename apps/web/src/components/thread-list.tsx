@@ -33,6 +33,7 @@ import { registerDesignAnchor, useDesign } from "~/lib/design";
 import { LearnedBanner } from "./learned-banner";
 import { ReportRow } from "./diag/report-row";
 import { DesktopBanner, GmailReconnect } from "~/lib/web-parts";
+import { preloadComposer } from "./composer/lazy";
 
 export const searchInputRef: { current: HTMLInputElement | null } = { current: null };
 export const listScroller: { scrollToIndex?: (i: number) => void } = {};
@@ -312,7 +313,7 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
         <Tooltip>
           <TooltipTrigger
             render={
-              <Button data-testid="compose-button" variant="ghost" size="icon-sm" aria-label={t("list.compose")} className="no-drag shrink-0 text-muted-foreground hover:text-foreground" onClick={() => openCompose("new")}>
+              <Button data-testid="compose-button" onPointerEnter={preloadComposer} onFocus={preloadComposer} variant="ghost" size="icon-sm" aria-label={t("list.compose")} className="no-drag shrink-0 text-muted-foreground hover:text-foreground" onClick={() => openCompose("new")}>
                 <SquarePen />
               </Button>
             }
