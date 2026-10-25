@@ -133,7 +133,8 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
   if (!sameView) {
     // another list: a page still on its way for the last one is no longer anyone's, and the next one may start
     pageSeq++;
-    useList.setState({ key, loading: true, error: null, loadingMore: false });
+    // and its cursor goes with it: a page asked for before the new list's first answer would continue the old one
+    useList.setState({ key, loading: true, error: null, loadingMore: false, nextCursor: null });
   }
   // keep as many rows as are loaded so a background refresh doesn't shrink the list
   const limit = sameView ? Math.min(Math.max(PAGE, current.items.length + (options.grow ? PAGE : 0)), 500) : PAGE;
@@ -187,7 +188,8 @@ let pageSeq = 0;
 
 export async function loadMore(): Promise<void> {
   const st = useList.getState();
-  if (!st.nextCursor || st.loadingMore) return;
+  // nothing to continue until the list on screen is the one asked for (its first page is in)
+  if (!st.nextCursor || st.loadingMore || st.loading || st.itemsKey !== st.key) return;
   const key = st.key;
   const mine = pageSeq;
   const editsAtStart = edits;

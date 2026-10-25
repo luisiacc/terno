@@ -154,3 +154,26 @@ it("a page still on its way for the last search doesn't hold the next one (Codex
   expect(useList.getState().loadingMore).toBe(false);
   setApp({ query: "", listFilters: new Map() });
 });
+
+it("scrolling while the next list's first page is on its way doesn't continue the last list's cursor (Codex review round 3)", async () => {
+  answer = async (p) => ({ items: rows(100, 3), nextCursor: cursor(102), strategy: "fts", tookMs: 1, complete: true, ...(p.query ? {} : {}) });
+  setApp({ view: "inbox", query: "gamma", listFilters: new Map() });
+  await vi.waitFor(() => expect(useList.getState().items.map((t) => t.id)).toEqual([100, 101, 102]));
+  // the next search's first page is held
+  let releaseB!: () => void;
+  const heldB = new Promise<void>((r) => (releaseB = r));
+  answer = async (p) => {
+    if (p.cursor) return { items: rows(50, 2), nextCursor: null, strategy: "fts", tookMs: 1, complete: true };
+    await heldB;
+    return { items: rows(300, 3), nextCursor: cursor(302), strategy: "fts", tookMs: 1, complete: true };
+  };
+  calls.length = 0;
+  setApp({ query: "delta" });
+  await vi.waitFor(() => expect(useList.getState().loading).toBe(true));
+  await loadMore();
+  expect(calls.filter((c) => c.params.cursor)).toEqual([]);
+  releaseB();
+  await vi.waitFor(() => expect(useList.getState().items.map((t) => t.id)).toEqual([300, 301, 302]));
+  expect(useList.getState().nextCursor).toEqual(cursor(302));
+  setApp({ query: "" });
+});
