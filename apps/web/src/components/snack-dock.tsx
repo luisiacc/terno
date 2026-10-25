@@ -1,3 +1,4 @@
+import { t } from "@terno/i18n";
 import { Kbd } from "@terno/ui/components/kbd";
 import { cn } from "@terno/ui/lib/utils";
 import { motionOff } from "@terno/ui/themes/apply";
@@ -119,7 +120,7 @@ const TONE_ICON = {
 };
 
 /** "Undo" alone says nothing to a screen reader: it names what it takes back. */
-const nameOf = (a: SnackAction, s: Snack) => a.name ?? (a.label === "Undo" ? `Undo: ${s.message}` : undefined);
+const nameOf = (a: SnackAction, s: Snack) => a.name ?? (a.label === t("common.undo") ? t("snack.undoName", { message: s.message }) : undefined);
 
 /** A close button for any snack body (a 24 px target around a small glyph). */
 export function SnackClose({ onClick = () => dismissSnack() }: { onClick?: () => void }) {
@@ -127,7 +128,7 @@ export function SnackClose({ onClick = () => dismissSnack() }: { onClick?: () =>
     <button
       type="button"
       data-testid="snack-close"
-      aria-label="Dismiss"
+      aria-label={t("snack.dismiss")}
       onClick={onClick}
       className="inline-flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors duration-fast hover:bg-tint hover:text-foreground"
     >
@@ -266,7 +267,7 @@ export function SnackDock() {
   const spoken = current && !inert && hushed !== current.heard ? current.spoken : "";
   const alert = current?.tone === "error";
   return (
-    <section aria-label="Notifications" data-testid="snack-dock" className="pointer-events-none absolute inset-x-2 bottom-2 z-10 flex flex-col justify-end">
+    <section aria-label={t("snack.dock")} data-testid="snack-dock" className="pointer-events-none absolute inset-x-2 bottom-2 z-10 flex flex-col justify-end">
       <div role="status" aria-live="polite" aria-atomic className="sr-only" data-testid="snack-live">
         {!alert && spoken && <span key={current?.heard}>{spoken}</span>}
       </div>

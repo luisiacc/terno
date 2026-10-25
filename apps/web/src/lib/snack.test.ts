@@ -1,8 +1,11 @@
 /**
  * The docked snackbar's store against fake timers: lifetimes, every pause
  * reason, replacement and in-place updates, background news and late job
- * results, and the undo token z and Deshacer share.
+ * results, and the undo token z and Undo share.
  */
+import { setLocale } from "@terno/i18n";
+import en from "@terno/i18n/locales/en";
+import es from "@terno/i18n/locales/es";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ACTION_MS, clock, DEFAULT_MS, dismissSnack, elapsedAt, pause, registerUndo, remaining, resetSnacks, resume, runAction, runUndo, snack, undoLast, useSnack, zHolds } from "./snack";
 
@@ -16,6 +19,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.useRealTimers();
+  setLocale("en", en);
 });
 
 describe("lifetime", () => {
@@ -251,7 +255,8 @@ describe("the undo token", () => {
     runAction("action");
     await vi.advanceTimersByTimeAsync(0);
     expect(current()?.tone).toBe("error");
-    expect(message()).toBe("No se pudo deshacer: sin conexión");
+    expect(message()).toBe("Couldn’t undo: sin conexión");
+    expect(current()?.action).toMatchObject({ label: "Retry", name: "Retry undo" });
     expect(current()?.action?.undo).toBe(undo);
     expect(useSnack.getState().undo).toBe(undo);
     fail = false;
@@ -260,6 +265,16 @@ describe("the undo token", () => {
     expect(run).toHaveBeenCalledTimes(2);
     expect(undo.state).toBe("done");
     expect(useSnack.getState().undo).toBeNull();
+  });
+
+  it("says the failure in the active language", async () => {
+    setLocale("es", es);
+    const undo = registerUndo(() => Promise.reject(new Error("sin conexión")));
+    snack("Archivado", { action: { label: "Deshacer", undo } });
+    runAction("action");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(message()).toBe("No se pudo deshacer: sin conexión");
+    expect(current()?.action).toMatchObject({ label: "Reintentar", name: "Reintentar deshacer" });
   });
 
   it("a failed undo doesn't take z back from a newer one", async () => {

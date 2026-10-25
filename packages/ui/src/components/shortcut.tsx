@@ -1,4 +1,5 @@
 import { cn } from "cn"
+import { t } from "@terno/i18n"
 import { Kbd } from "@terno/ui/components/kbd"
 
 const SYMBOLS: Record<string, string> = {
@@ -21,7 +22,7 @@ function Shortcut({ keys, className }: { keys: string; className?: string }) {
     <span data-slot="shortcut" className={cn("inline-flex items-center gap-0.5", className)}>
       {keys.split(" ").map((chord, i) => (
         <span key={i} className="inline-flex items-center gap-0.5">
-          {i > 0 && <span className="px-0.5 text-2xs text-muted-foreground">then</span>}
+          {i > 0 && <span className="px-0.5 text-2xs text-muted-foreground">{t("ui.shortcut.then")}</span>}
           {chord.split("+").map((k) => (
             <Kbd key={k}>{SYMBOLS[k] ?? k.toUpperCase()}</Kbd>
           ))}

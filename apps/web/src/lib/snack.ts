@@ -1,3 +1,4 @@
+import { t } from "@terno/i18n";
 import type { ReactNode } from "react";
 import { create } from "zustand";
 
@@ -13,7 +14,7 @@ import { create } from "zustand";
 export type SnackTone = "neutral" | "success" | "warning" | "error" | "loading";
 
 /**
- * z / ⌘Z and a snack's Deshacer run the same token, once: `running` while it
+ * z / ⌘Z and a snack's Undo run the same token, once: `running` while it
  * works, `done` after; a failure makes it `ready` again (the undos are idempotent).
  */
 export interface Undo {
@@ -25,7 +26,7 @@ export interface SnackAction {
   label: string;
   /** not needed with `undo` */
   onClick?: () => void;
-  /** the accessible name when the label alone is ambiguous ("Deshacer archivar") */
+  /** the accessible name when the label alone is ambiguous ("Undo archive") */
   name?: string;
   /** the undo it runs: its z keycap shows while z would run the same one */
   undo?: Undo;
@@ -39,7 +40,7 @@ export interface SnackInput {
   description?: string;
   /** the primary action: a pill whose border is the countdown */
   action?: SnackAction;
-  /** a quiet text button before it ("Ver") */
+  /** a quiet text button before it ("View") */
   secondary?: SnackAction;
   /** ms; loading snacks never expire */
   duration?: number;
@@ -259,7 +260,7 @@ export async function runUndo(undo: Undo): Promise<void> {
 
 /** An undo that failed says so, with a retry of the same undo (they're idempotent). */
 function undoFailed(error: unknown, undo: Undo): void {
-  snack.error(`No se pudo deshacer: ${error instanceof Error ? error.message : error}`, { action: { label: "Retry", name: "Retry undo", undo } });
+  snack.error(t("snack.undoFailed", { error: error instanceof Error ? error.message : String(error) }), { action: { label: t("common.retry"), name: t("snack.retryUndo"), undo } });
 }
 
 /** z: the last undo, if it's still there. */

@@ -1,66 +1,70 @@
 import { DEFAULT_BINDINGS, type Command } from "@terno/core";
+import type { ParamsArg, TextKey } from "@terno/i18n";
 
-/** Every command the help lists, by section; each row shows all of its keys. */
-export const SECTIONS: { title: string; rows: [Command, string][] }[] = [
+/** A catalog key t() renders with no parameters. */
+type Label = { [K in TextKey]: ParamsArg<K> extends [] ? K : never }[TextKey];
+
+/** Every command the help lists, by section; each row shows all of its keys. Titles and labels are catalog keys (t() at render). */
+export const SECTIONS: { title: Label; rows: [Command, Label][] }[] = [
   {
-    title: "Moverse",
+    title: "shortcuts.section.navigate",
     rows: [
-      ["list.next", "Siguiente conversación"],
-      ["list.prev", "Conversación anterior"],
-      ["list.open", "Abrir"],
-      ["search.focus", "Buscar"],
-      ["list.toggleUnread", "Unread only"],
-      ["palette.open", "Paleta de comandos"],
-      ["help.shortcuts", "Atajos de teclado"],
-      ["settings.open", "Ajustes"],
-      ["snackbar.focus", "Go to the notification"],
-      ["go.inbox", "Ir a Entrada"],
-      ["go.starred", "Ir a Destacados"],
-      ["go.sent", "Ir a Enviados"],
-      ["go.archive", "Ir a Archivo"],
-      ["go.trash", "Ir a Papelera"],
+      ["list.next", "shortcuts.next"],
+      ["list.prev", "shortcuts.prev"],
+      ["list.open", "common.open"],
+      ["search.focus", "common.search"],
+      ["list.toggleUnread", "shortcuts.unreadOnly"],
+      ["palette.open", "shortcuts.palette"],
+      ["help.shortcuts", "shortcuts.title"],
+      ["settings.open", "common.settings"],
+      ["snackbar.focus", "shortcuts.focusSnack"],
+      ["go.inbox", "shortcuts.goInbox"],
+      ["go.starred", "shortcuts.goStarred"],
+      ["go.sent", "shortcuts.goSent"],
+      ["go.archive", "shortcuts.goArchive"],
+      ["go.trash", "shortcuts.goTrash"],
     ],
   },
   {
-    title: "Seleccionar",
+    title: "shortcuts.section.select",
     rows: [
-      ["list.toggleSelect", "Seleccionar o quitar"],
-      ["list.selectAll", "Seleccionar todo"],
-      ["list.extendNext", "Ampliar hacia abajo"],
-      ["list.extendPrev", "Ampliar hacia arriba"],
-      ["list.selectRead", "Seleccionar leídos"],
-      ["list.selectUnread", "Seleccionar no leídos"],
-      ["list.selectStarred", "Seleccionar destacados"],
-      ["list.selectNone", "Deseleccionar"],
-      ["reader.close", "Deseleccionar"],
-      ["list.menu", "Menú de la conversación"],
+      ["list.toggleSelect", "shortcuts.toggleSelect"],
+      ["list.selectAll", "shortcuts.selectAll"],
+      ["list.extendNext", "shortcuts.extendNext"],
+      ["list.extendPrev", "shortcuts.extendPrev"],
+      ["list.selectRead", "shortcuts.selectRead"],
+      ["list.selectUnread", "shortcuts.selectUnread"],
+      ["list.selectStarred", "shortcuts.selectStarred"],
+      ["list.selectNone", "shortcuts.deselect"],
+      ["reader.close", "shortcuts.deselect"],
+      ["list.menu", "shortcuts.menu"],
     ],
   },
   {
-    title: "Acciones",
+    title: "shortcuts.section.actions",
     rows: [
-      ["thread.archive", "Archivar"],
-      ["thread.trash", "Eliminar"],
-      ["thread.spam", "Spam"],
-      ["thread.markRead", "Marcar como leído"],
-      ["thread.markUnread", "Marcar como no leído"],
-      ["thread.toggleRead", "Leído / no leído"],
-      ["thread.star", "Destacar"],
-      ["thread.category", "Categorías"],
-      ["thread.move", "Mover a…"],
-      ["action.undo", "Deshacer"],
-      ["thread.print", "Imprimir"],
-      ["thread.exportPdf", "Exportar como PDF"],
+      ["thread.archive", "shortcuts.archive"],
+      ["thread.trash", "shortcuts.trash"],
+      ["thread.spam", "shortcuts.spam"],
+      ["thread.markRead", "shortcuts.markRead"],
+      ["thread.markUnread", "shortcuts.markUnread"],
+      ["thread.toggleRead", "shortcuts.toggleRead"],
+      ["thread.star", "shortcuts.star"],
+      ["thread.category", "shortcuts.categories"],
+      ["thread.move", "shortcuts.move"],
+      ["action.undo", "common.undo"],
+      ["thread.print", "shortcuts.print"],
+      ["thread.exportPdf", "shortcuts.exportPdf"],
     ],
   },
   {
-    title: "Escribir",
+    title: "shortcuts.section.compose",
     rows: [
-      ["compose.new", "Escribir"],
-      ["compose.reply", "Responder"],
-      ["compose.replyAll", "Responder a todos"],
-      ["compose.forward", "Reenviar"],
-      ["compose.send", "Enviar"],
+      ["compose.new", "shortcuts.compose"],
+      ["compose.reply", "shortcuts.reply"],
+      ["compose.replyAll", "shortcuts.replyAll"],
+      ["compose.forward", "shortcuts.forward"],
+      ["compose.send", "common.send"],
     ],
   },
 ];
@@ -71,4 +75,3 @@ export const UNLISTED: ReadonlySet<Command> = new Set<Command>(["snackbar.action
 /** Every bound command is either listed or deliberately not. */
 export const LISTED: ReadonlySet<Command> = new Set(SECTIONS.flatMap((s) => s.rows.map(([c]) => c)));
 export const unlistedBindings = () => DEFAULT_BINDINGS.filter((b) => !LISTED.has(b.command) && !UNLISTED.has(b.command)).map((b) => b.command);
-
