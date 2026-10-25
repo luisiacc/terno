@@ -47,7 +47,7 @@ export function ReportPreview() {
           </DialogDescription>
         </DialogHeader>
         <pre
-          className="min-h-0 overflow-auto rounded-[10px] bg-tint px-3.5 py-3 font-mono text-[11px] leading-relaxed text-foreground select-text"
+          className="min-h-0 overflow-auto rounded-[calc(var(--radius-lg)+2px)] bg-tint px-3.5 py-3 font-mono text-[11px] leading-relaxed text-foreground select-text"
           data-testid="report-preview-json"
           tabIndex={0}
           aria-label={t("diag.preview.json")}

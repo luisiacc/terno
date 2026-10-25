@@ -35,7 +35,7 @@ export function SettingsGroup({ title, footer, children, testId, className }: { 
           {title}
         </h3>
       )}
-      <div className="hairline-divide rounded-[10px] bg-tint px-4">{children}</div>
+      <div className="hairline-divide rounded-[calc(var(--radius-lg)+2px)] bg-tint px-4">{children}</div>
       {footer && <div className="mt-1.5 px-1 text-xs text-muted-foreground">{footer}</div>}
     </section>
   );

@@ -53,7 +53,7 @@ export function ReportRow() {
   };
 
   return (
-    <div data-testid="report-row" data-offer={offer} role="status" className="mx-3 mt-1 mb-1 flex items-start gap-2.5 rounded-[10px] bg-tint p-2.5 text-xs">
+    <div data-testid="report-row" data-offer={offer} role="status" className="mx-3 mt-1 mb-1 flex items-start gap-2.5 rounded-[calc(var(--radius-lg)+2px)] bg-tint p-2.5 text-xs">
       <LifeBuoy className="mt-0.5 size-3.5 shrink-0 text-primary" aria-hidden />
       <div className="min-w-0 flex-1">
         <p className="font-medium text-foreground" data-testid="report-row-title">

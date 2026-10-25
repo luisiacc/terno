@@ -135,7 +135,7 @@ function Message({ m, expanded, onToggle }: { m: MessageDetail; expanded: boolea
               // view-only tiles: opening and saving attachments needs content Terno doesn't fetch yet
               <ul aria-label={t("reader.attachments")} className="mt-4 flex flex-wrap gap-2">
                 {m.attachments.map((a) => (
-                  <li key={a.id} data-testid="attachment" className="flex h-14 w-[260px] items-center gap-3 rounded-[10px] bg-tint px-2.5">
+                  <li key={a.id} data-testid="attachment" className="flex h-14 w-[260px] items-center gap-3 rounded-[calc(var(--radius-lg)+2px)] bg-tint px-2.5">
                     <span className="relative flex h-[34px] w-[27px] shrink-0 items-end justify-center rounded-[3px] rounded-tr-lg bg-card pb-1 shadow-hairline">
                       <span className="text-[7px] leading-none font-bold tracking-wide text-muted-foreground uppercase">{fileType(a.filename)}</span>
                     </span>

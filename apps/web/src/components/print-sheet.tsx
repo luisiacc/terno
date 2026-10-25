@@ -302,7 +302,7 @@ function Segmented({ a, value, onChange, items, testId, full }: { a: { "aria-lab
       spacing={0}
       value={[value]}
       onValueChange={(v: string[]) => v[0] && onChange(v[0])}
-      className={cn("gap-0 rounded-[9px] bg-foreground/[0.07] p-0.5", full && "w-full")}
+      className={cn("gap-0 rounded-[calc(var(--radius-lg)+1px)] bg-foreground/[0.07] p-0.5", full && "w-full")}
       data-testid={testId}
     >
       {items.map(([v, label]) => (
@@ -311,7 +311,7 @@ function Segmented({ a, value, onChange, items, testId, full }: { a: { "aria-lab
           value={v}
           data-testid={`${testId}-${v}`}
           className={cn(
-            "min-h-6 h-auto min-w-0 rounded-[7px]! px-3 py-0.5 text-[12.5px] leading-tight font-medium whitespace-normal text-muted-foreground transition-[background-color,color,box-shadow] hover:bg-transparent hover:text-foreground aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-raised dark:aria-pressed:bg-foreground/[0.14]",
+            "min-h-6 h-auto min-w-0 rounded-[calc(var(--radius-md)+1px)]! px-3 py-0.5 text-[12.5px] leading-tight font-medium whitespace-normal text-muted-foreground transition-[background-color,color,box-shadow] hover:bg-transparent hover:text-foreground aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-raised dark:aria-pressed:bg-foreground/[0.14]",
             full && "flex-1",
           )}
         >

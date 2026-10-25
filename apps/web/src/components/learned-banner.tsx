@@ -31,7 +31,7 @@ export function LearnedBanner() {
   const who = proposal.scope === "list" ? t("list.learned.list", { value: proposal.value }) : proposal.scope === "domain" ? t("list.learned.domain", { value: proposal.value }) : proposal.value;
   const action = t(ACTION[proposal.action]);
   return (
-    <div data-testid="learned-banner" className="mx-3 mt-1 mb-1 flex items-start gap-2.5 rounded-[10px] bg-tint p-2.5 text-xs">
+    <div data-testid="learned-banner" className="mx-3 mt-1 mb-1 flex items-start gap-2.5 rounded-[calc(var(--radius-lg)+2px)] bg-tint p-2.5 text-xs">
       <Sparkles className="mt-0.5 size-3.5 shrink-0 text-primary" />
       <div className="min-w-0 flex-1">
         <p className="text-foreground">

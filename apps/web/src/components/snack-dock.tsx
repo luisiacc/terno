@@ -308,7 +308,7 @@ export function SnackDock() {
           dismissSnack(current.id);
         }}
         className={cn(
-          "snack-surface relative overflow-hidden rounded-[10px] transition-[opacity,translate,visibility] duration-slow ease-motion",
+          "snack-surface relative overflow-hidden rounded-[calc(var(--radius-lg)+2px)] transition-[opacity,translate,visibility] duration-slow ease-motion",
           open ? "pointer-events-auto visible translate-y-0 opacity-100" : "invisible translate-y-1 opacity-0",
         )}
       >
