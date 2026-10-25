@@ -174,7 +174,7 @@ describe("the repo walk", () => {
   });
 
   // enabled once the extraction lands (plan 14)
-  it.skip("no hard-coded user-facing strings in apps/*/src and packages/*/src", () => {
+  it("no hard-coded user-facing strings in apps/*/src and packages/*/src", () => {
     // file:line kind text, one per line; fix by moving the text into the catalog (t()/L()), or `// i18n-ignore: <reason>`
     expect(formatFindings(scanRepo(ROOT))).toBe("");
   });
