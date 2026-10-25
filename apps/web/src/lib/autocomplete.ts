@@ -26,6 +26,23 @@ export async function suggestRecipients(p: { query: string; exclude: string[]; a
   }
 }
 
+/** The best few people per first letter, per account, fetched when a recipient field gets focus (at most every 30 s). */
+const initialsCache = new Map<number, { at: number; byInitial: Record<string, Address[]> }>();
+
+export function recipientInitials(accountId: number): Record<string, Address[]> | null {
+  return initialsCache.get(accountId)?.byInitial ?? null;
+}
+
+export function prefetchRecipientInitials(accountId: number): void {
+  const cached = initialsCache.get(accountId);
+  if (cached && performance.now() - cached.at < 30_000) return;
+  initialsCache.set(accountId, { at: performance.now(), byInitial: cached?.byInitial ?? {} });
+  void client.call("compose.recipientInitials", { accountId }).then(
+    (byInitial) => initialsCache.set(accountId, { at: performance.now(), byInitial }),
+    () => initialsCache.delete(accountId),
+  );
+}
+
 export async function suggestText(p: { before: string; names: string[]; me?: string }): Promise<string | null> {
   try {
     return (await client.call("compose.suggestText", p)).text;

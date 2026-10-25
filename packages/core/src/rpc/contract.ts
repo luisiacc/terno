@@ -608,6 +608,8 @@ export const contract = {
     // a suggestion that comes late is no suggestion
     { timeoutMs: 3000 },
   ),
+  /** the best few people per first letter and digit, so a first keystroke shows suggestions at once (a recipient field focused) */
+  "compose.recipientInitials": m<Record<string, { name: string; email: string }[]>>()(z.object({ accountId: id.optional() }), { timeoutMs: 5000 }),
   /** ghost text after `before` (only its last 1,000 characters are read) */
   "compose.suggestText": m<{ text: string | null }>()(
     z.object({

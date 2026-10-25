@@ -420,6 +420,11 @@ export function createHandlers(b: Backend): Handlers {
       }
       return r;
     },
+    "compose.recipientInitials": async ({ accountId }) => {
+      await b.warmAutocomplete();
+      // enough per letter that the next few letters can narrow them on the client
+      return b.autocomplete.initials({ accountId, limit: 20 });
+    },
     "compose.suggestText": async ({ before, names, me }) => {
       if (!b.autocomplete.warmed) void b.warmAutocomplete();
       return { text: b.autocomplete.suggestText({ before, names, me }) };

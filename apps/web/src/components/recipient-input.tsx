@@ -4,7 +4,7 @@ import { fold } from "@terno/store/fold";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { suggestRecipients, warmAutocomplete } from "~/lib/autocomplete";
+import { prefetchRecipientInitials, recipientInitials, suggestRecipients, warmAutocomplete } from "~/lib/autocomplete";
 import { acceptAt, emailsIn, highlight, insertPasted, pastedAddresses, tokenAt, type TypedToken } from "~/lib/recipients";
 import { SenderAvatar } from "./sender-avatar";
 
@@ -59,6 +59,16 @@ export function RecipientInput({
     const mine = ++seq.current;
     if (!tok.query) return setItems([]);
     const exclude = [...emailsIn(text.slice(0, tok.start) + text.slice(tok.end)), ...others.flatMap(emailsIn)];
+    // shown at once (the same frame), the backend's answer follows and replaces it: a first letter from the people
+    // prefetched per initial, a longer word by narrowing what is shown
+    const excluded = new Set(exclude);
+    const pool = recipientInitials(accountId)?.[fold(tok.query)[0] ?? ""] ?? [];
+    const narrowed = narrow(items, pool, query, tok.query).filter((a) => !excluded.has(a.email.toLowerCase())).slice(0, 6);
+    if (narrowed.length) {
+      setQuery(tok.query);
+      setItems(narrowed);
+      setActive(0);
+    }
     void suggestRecipients({ query: tok.query, exclude, accountId }).then((r) => {
       if (mine !== seq.current || document.activeElement !== inputRef.current) return;
       // the index is being built the first time: ask again shortly
@@ -178,7 +188,10 @@ export function RecipientInput({
         aria-expanded={open}
         aria-controls={listId}
         aria-activedescendant={open ? optionId(active) : undefined}
-        onFocus={warmAutocomplete}
+        onFocus={() => {
+          warmAutocomplete();
+          prefetchRecipientInitials(accountId);
+        }}
         onChange={(e) => {
           onChange(e.target.value);
           lookup(e.target.value, e.target.selectionStart ?? e.target.value.length);
@@ -212,7 +225,7 @@ export function RecipientInput({
               onClick={() => accept(a)}
               className="flex h-11 cursor-default items-center gap-2.5 rounded-md px-2 data-active:bg-accent data-active:text-accent-foreground"
             >
-              <SenderAvatar name={a.name} email={a.email} className="size-[26px] text-[10px]" />
+              <SenderAvatar name={a.name} email={a.email} className="size-[26px] text-2xs" />
               <span className="flex min-w-0 flex-col leading-tight">
                 <span className="truncate">{a.name ? <Highlighted text={a.name} query={query} /> : <Highlighted text={a.email} query={query} />}</span>
                 {a.name && (
@@ -228,6 +241,28 @@ export function RecipientInput({
       )}
     </>
   );
+}
+
+/**
+ * Suggestions for `query` from what the client already has: what is shown
+ * (when the query extends what it was shown for), then the people prefetched
+ * for its first letter, keeping those where every word typed starts a word of
+ * the name or address. The backend's answer replaces them a frame later.
+ */
+function narrow(items: readonly Address[], pool: readonly Address[], shownFor: string, query: string): Address[] {
+  const q = fold(query);
+  const terms = q.split(/[\s,;<>"()'.+_@-]+/).filter(Boolean);
+  if (!terms.length) return [];
+  const extends_ = !!shownFor && q.startsWith(fold(shownFor)) && q.length > fold(shownFor).length;
+  const seen = new Set<string>();
+  const out: Address[] = [];
+  for (const a of [...(extends_ ? items : []), ...pool]) {
+    if (seen.has(a.email)) continue;
+    seen.add(a.email);
+    const words = fold(`${a.name} ${a.email}`).split(/[^\p{L}\p{N}]+/u);
+    if (terms.every((t) => words.some((w) => w.startsWith(t)))) out.push(a);
+  }
+  return out;
 }
 
 function Highlighted({ text, query }: { text: string; query: string }) {

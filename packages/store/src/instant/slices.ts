@@ -36,6 +36,11 @@ export class SliceClock {
     if (this.due) await this.pause();
   }
 
+  /** Starts a new slice now (after waiting on something else: that time wasn't spent running). */
+  restart(): void {
+    this.started = this.now();
+  }
+
   async pause(): Promise<void> {
     const ran = this.now() - this.started;
     if (ran > this.longestMs) this.longestMs = ran;

@@ -124,6 +124,24 @@ export class Autocomplete {
     return { items: c.suggest(query, o), ready: true };
   }
 
+  /**
+   * The best few people for each first letter and digit: a recipient field
+   * shows them the moment a first letter is typed, before its lookup answers.
+   * A letter at a time, yielding between (cold, each is a range scan).
+   */
+  async initials(o: SuggestOptions = {}): Promise<Record<string, ContactHit[]>> {
+    const out: Record<string, ContactHit[]> = {};
+    if (!this.contacts) return out;
+    for (const ch of "abcdefghijklmnopqrstuvwxyz0123456789") {
+      const c = this.contacts;
+      if (!c) break;
+      const hits = c.suggest(ch, { ...o, limit: o.limit ?? 6 });
+      if (hits.length) out[ch] = hits;
+      await this.o.platform.yield();
+    }
+    return out;
+  }
+
   suggestText(input: PhraseSuggestInput): string | null {
     if (!this.phrasesOn) return null;
     return this.phrases?.suggest(input) ?? null;
@@ -302,11 +320,12 @@ export class Autocomplete {
         const c = this.contacts;
         if (c.overCaps()) {
           const evicted = await c.enforceCaps(this.clock);
-          if (this.peakAllows(c.allocatedBytes())) await c.compact(this.clock);
+          // a compaction holds a copy of the arrays and segment beside the originals
+          if (this.peakAllows(c.allocatedBytes() * 0.6)) await c.compact(this.clock);
           this.event("evicted", { model: "contacts", count: evicted });
           continue;
         }
-        if (c.needsMerge() && this.peakAllows(c.allocatedBytes())) {
+        if (c.needsMerge() && this.peakAllows(c.allocatedBytes() * 0.5)) {
           await c.merge(this.clock);
           continue;
         }
@@ -330,6 +349,7 @@ export class Autocomplete {
         this.update("ready");
         await this.sleep(until);
         this.resting = false;
+        this.clock.restart();
       } catch (error) {
         if (this.stopped) return;
         this.resting = false;
@@ -358,6 +378,7 @@ export class Autocomplete {
       this.settling = true;
       await this.sleep(wait);
       this.settling = false;
+      this.clock.restart();
       return true;
     }
     this.pending = false;
@@ -559,9 +580,9 @@ export class Autocomplete {
     return this.unsaved() >= every.changes || this.now() - this.unsavedSince >= every.ms;
   }
 
-  /** Both models together, plus a transient copy of `bytes`, fit under the peak. */
-  private peakAllows(bytes: number): boolean {
-    return (this.contacts?.allocatedBytes() ?? 0) + (this.phrases?.allocatedBytes() ?? 0) + bytes * 1.5 <= this.peak;
+  /** Both models together, plus `transient` bytes of copies (a snapshot, a merge, a compaction), fit under the peak. */
+  private peakAllows(transient: number): boolean {
+    return (this.contacts?.allocatedBytes() ?? 0) + (this.phrases?.allocatedBytes() ?? 0) + transient <= this.peak;
   }
 
   private async persist(all: boolean): Promise<void> {
@@ -571,9 +592,8 @@ export class Autocomplete {
       const m = model === "contacts" ? this.contacts : this.phrasesOn ? this.phrases : null;
       void all;
       if (!m || !m.revision || m.changes === 0) continue;
-      const bytesHeld = m.allocatedBytes();
-      // packing copies about what the model holds: only when that fits under the peak
-      if (!this.peakAllows(bytesHeld)) {
+      // the sections and the packed file: about what the model holds, together
+      if (!this.peakAllows(m.allocatedBytes())) {
         m.changes = 0;
         continue;
       }
