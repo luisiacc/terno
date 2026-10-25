@@ -61,8 +61,8 @@ export interface AutocompleteSource {
   /** batches in (after, through], oldest first; a gap or another epoch throws RevisionError (rebuild) */
   changes(after: Revision, through: Revision, maxCommits: number): Promise<ContactBatch[]>;
   beginBuild(): Promise<ContactBuild>;
-  /** sent mail with a body after a message id, in id order (the phrase model's build) */
-  sentAfter(afterId: number, limit: number): Promise<SentText[]>;
+  /** sent mail with a body after a message id, in id order (the phrase model's build); `next`: where the next page starts, null at the end */
+  sentAfter(afterId: number, limit: number): Promise<{ texts: SentText[]; next: number | null }>;
   /** sent mail with a body among these ids */
   sentTexts(ids: readonly number[]): Promise<SentText[]>;
 }
@@ -81,5 +81,7 @@ export function addressesOf(json: string | null | undefined): Address[] {
   }
 }
 
-/** Bytes of sent text served per message: the phrase model keeps the first 4 KB of what the user wrote. */
+/** Characters of sent text served per message: the phrase model keeps the first 4 KB of what the user wrote. */
 export const SENT_TEXT_MAX = 65_536;
+/** Sent messages larger than this (raw size, attachments included) aren't learned from: a forward or a file, and a body never read whole. */
+export const SENT_SIZE_MAX = 512 * 1024;

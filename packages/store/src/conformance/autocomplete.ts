@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { Autocomplete } from "../autocomplete/service";
-import { SENT_TEXT_MAX } from "../autocomplete-source";
+import { SENT_SIZE_MAX, SENT_TEXT_MAX } from "../autocomplete-source";
+import { RevisionError } from "../search";
 import type { MailStore } from "../mail-store";
 import type { PlatformFiles } from "../platform";
 import { ingest, msg, withAccounts } from "./fixtures";
@@ -73,12 +74,12 @@ export function defineAutocompleteConformance(name: string, harness: Autocomplet
       expect(r1.cc).toEqual([ana]);
       expect(all.find((m) => m.from.email === "win@prize.biz")!.spam).toBe(true);
       expect(all.filter((m) => m.draft)).toHaveLength(1);
-      const sent = await store.autocomplete.sentAfter(0, 10);
+      const sent = (await store.autocomplete.sentAfter(0, 10)).texts;
       // drafts and received mail aren't the user's sent text; huge bodies come cut
       expect(sent.map((s) => s.text.slice(0, 10))).toEqual(["Let me kno", "xxxxxxxxxx"]);
       expect(sent[1]!.text.length).toBe(SENT_TEXT_MAX);
       expect(sent[0]!.to).toEqual([ana]);
-      expect(await store.autocomplete.sentAfter(sent[0]!.id, 10)).toHaveLength(1);
+      expect((await store.autocomplete.sentAfter(sent[0]!.id, 10)).texts).toHaveLength(1);
       expect((await store.autocomplete.sentTexts([r1.id, sent[1]!.id])).map((s) => s.id)).toEqual([sent[1]!.id]);
     });
 
@@ -176,6 +177,64 @@ export function defineAutocompleteConformance(name: string, harness: Autocomplet
       await again.warm();
       expect(again.report.contacts.build).toBeDefined();
       expect(again.suggestRecipients("bob").items).toEqual([bob]);
+    });
+
+    it("a page of empty sent bodies isn't the end; oversized sent mail isn't read (codex review)", async () => {
+      const store = await fresh();
+      const [a] = await withAccounts(store, 1);
+      const me = { name: "Me", email: "me0@example.com" };
+      await ingest(store, [
+        // more than a page (16) of sent mail with nothing written, then the habit
+        ...Array.from({ length: 20 }, (_, i) => msg({ accountId: a!, providerMsgId: `e${i}`, from: me, to: [ana], isSent: true, inInbox: false, bodyText: "", date: NOW - 9000 + i })),
+        ...[1, 2, 3, 4].map((i) => msg({ accountId: a!, providerMsgId: `s${i}`, from: me, to: [ana], isSent: true, inInbox: false, bodyText: "Let me know if you have any questions.", date: NOW - 4000 + i })),
+        // a forward with a big attachment: never learned from (nor its body read whole)
+        msg({ accountId: a!, providerMsgId: "big", from: me, to: [bob], isSent: true, inInbox: false, bodyText: "Quarterly figures enclosed as promised.", size: SENT_SIZE_MAX + 1, date: NOW - 100 }),
+      ]);
+      let all: string[] = [];
+      for (let after = 0; ; ) {
+        const page = await store.autocomplete.sentAfter(after, 16);
+        if (page.next === null) break;
+        all = all.concat(page.texts.map((t) => t.text));
+        after = page.next;
+      }
+      expect(all.filter((t) => t.startsWith("Let me know"))).toHaveLength(4);
+      expect(all.some((t) => t.startsWith("Quarterly"))).toBe(false);
+      const ac = service(store, memoryFiles());
+      await ac.warm();
+      await ac.idle();
+      expect(ac.suggestText({ before: "Let me know if" })).toBe(" you have any questions.");
+    });
+
+    it("a snapshot the log no longer reaches is dropped and rebuilt, once (codex review)", async () => {
+      const files = memoryFiles();
+      const store = await fresh();
+      const [a] = await withAccounts(store, 1);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "r1", from: bob })]);
+      const first = service(store, files);
+      await first.warm();
+      await first.close();
+      const snapshotAt = await store.autocomplete.head();
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "r2", from: ana })]);
+      // the log pruned past the snapshot: any replay from it is a gap
+      let restoresTried = 0;
+      const source = {
+        ...store.autocomplete,
+        snapshotBase: store.autocomplete.snapshotBase,
+        identity: store.autocomplete.identity,
+        changes: async (after: typeof snapshotAt, through: typeof snapshotAt, max: number) => {
+          if (after.seq <= snapshotAt.seq) {
+            restoresTried++;
+            throw new RevisionError("gap", "pruned");
+          }
+          return store.autocomplete.changes(after, through, max);
+        },
+      };
+      const ac = new Autocomplete({ source, platform: { yield: yieldNow, files }, settleMs: 0, now: () => NOW });
+      services.push(ac);
+      await ac.warm();
+      expect(ac.report.contacts.build).toBeDefined();
+      expect(ac.suggestRecipients("ana").items).toEqual([ana]);
+      expect(restoresTried).toBeLessThanOrEqual(2);
     });
 
     it("nothing runs before the first warm", async () => {

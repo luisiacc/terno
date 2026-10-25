@@ -1,4 +1,4 @@
-import { addressesOf, RevisionError, SENT_TEXT_MAX, type AutocompleteSource, type ContactBatch, type ContactBuild, type ContactMessage, type SentText } from "@terno/store";
+import { addressesOf, RevisionError, SENT_SIZE_MAX, SENT_TEXT_MAX, type AutocompleteSource, type ContactBatch, type ContactBuild, type ContactMessage, type SentText } from "@terno/store";
 import { searchChangeIds, searchHead } from "./outbox";
 import type { Db } from "./sqlite";
 
@@ -12,7 +12,7 @@ import type { Db } from "./sqlite";
 const CONTACT = `SELECT m.id, m.account_id, m.date, m.is_sent, m.is_spam, m.is_draft, m.from_name, m.from_email, m.to_json, m.cc_json, m.bcc_json, m.body_state FROM messages m`;
 const SENT = `SELECT m.id, m.account_id, m.date, m.from_name, m.to_json, substr(b.body_text, 1, ${SENT_TEXT_MAX}) AS text
   FROM messages m JOIN message_bodies b ON b.message_id = m.id
-  WHERE m.is_sent = 1 AND m.is_spam = 0 AND m.is_draft = 0 AND b.body_text IS NOT NULL`;
+  WHERE m.is_sent = 1 AND m.is_spam = 0 AND m.is_draft = 0 AND m.size <= ${SENT_SIZE_MAX} AND b.body_text IS NOT NULL`;
 
 interface ContactRow {
   id: number;
@@ -79,8 +79,9 @@ export function sentTexts(db: Db, ids: readonly number[]): SentText[] {
   return db.all<SentRow>(`${SENT} AND m.id IN (SELECT value FROM json_each(?)) ORDER BY m.id`, JSON.stringify(ids)).map(toSent);
 }
 
-export function sentAfter(db: Db, afterId: number, limit: number): SentText[] {
-  return db.all<SentRow>(`${SENT} AND m.id > ? ORDER BY m.id LIMIT ?`, afterId, limit).map(toSent);
+export function sentAfter(db: Db, afterId: number, limit: number): { texts: SentText[]; next: number | null } {
+  const texts = db.all<SentRow>(`${SENT} AND m.id > ? ORDER BY m.id LIMIT ?`, afterId, limit).map(toSent);
+  return { texts, next: texts.length ? texts[texts.length - 1]!.id : null };
 }
 
 /** Ids per read when serving a large commit (500 headers read in ~1 ms). */

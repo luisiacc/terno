@@ -149,6 +149,7 @@ function initialBit(code: number): number {
   return code >= 97 && code <= 122 ? 1 << (code - 97) : code >= 48 && code <= 57 ? 1 << 26 : 1 << 27;
 }
 const OTHER_BIT = 1 << 27;
+const DIGIT_BIT = 1 << 26;
 
 /** Bytes a string takes in V8 (one byte a character for Latin-1, two otherwise) plus its overhead. */
 function stringBytes(s: string): number {
@@ -426,6 +427,11 @@ export class ContactIndex {
   /** Contacts that were evicted, still holding ids. */
   get dead(): number {
     return this.n - this.live;
+  }
+
+  /** tokens waiting in the delta (tests: it stays near its merge threshold) */
+  get deltaSize(): number {
+    return this.delta.tok.length;
   }
 
   get building(): boolean {
@@ -873,7 +879,8 @@ export class ContactIndex {
       walked = [];
       for (const t of terms) {
         const b = t.length === 1 ? initialBit(t.charCodeAt(0)) : 0;
-        if (b && b !== OTHER_BIT) masked.push(b);
+        // letters only: every digit shares one bit, so a digit is walked like any longer word
+        if (b && b !== OTHER_BIT && b !== DIGIT_BIT) masked.push(b);
         else walked.push(t);
       }
       if (walked.length === 0) {

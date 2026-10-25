@@ -72,6 +72,8 @@ export class Autocomplete {
   private phrasesOn: boolean;
   private own: string[] = [];
   private resetWaiters: (() => void)[] | null = null;
+  /** a snapshot turned out unreachable by the log: this session builds */
+  private noRestore = false;
   private readyWaiters: (() => void)[] = [];
   private readonly clock: SliceClock;
   private readonly contactCaps: ContactCaps;
@@ -354,9 +356,14 @@ export class Autocomplete {
         if (this.stopped) return;
         this.resting = false;
         const errorClass = error instanceof Error ? error.name : "Error";
-        // the log no longer reaches a model (pruned, another database): both rebuild
+        // the log no longer reaches a model (pruned, another database): both rebuild, never from those snapshots again
         this.contacts = null;
         this.phrases = null;
+        if (error instanceof RevisionError) {
+          this.noRestore = true;
+          await this.removeFile("contacts");
+          await this.removeFile("phrases");
+        }
         this.report.rebuilds++;
         this.event("rebuild", { model: "contacts", errorClass });
         if (!(error instanceof RevisionError) && ++this.failures > 3) {
@@ -408,7 +415,7 @@ export class Autocomplete {
     if (batches.length === 0 && head.epoch === at.epoch && head.seq > at.seq) throw new RevisionError("gap", "the log served nothing");
     for (const b of batches) {
       if (this.stopped || this.resetWaiters) return;
-      if (c) this.applyContacts(c, b);
+      if (c) await this.applyContacts(c, b);
       if (p) await this.applyPhrases(p, b.messages, b.to);
       if (c) c.revision = b.to;
       // a large catch-up (a sync while it was asleep) must not grow the sorted delta without bound
@@ -417,11 +424,23 @@ export class Autocomplete {
     }
   }
 
-  private applyContacts(c: ContactIndex, b: ContactBatch): void {
+  /** One commit's headers, in slices: a commit can carry thousands of new people (a sync while asleep). */
+  private async applyContacts(c: ContactIndex, b: ContactBatch): Promise<void> {
     if (b.messages.length && !this.unsaved()) this.unsavedSince = this.now();
-    for (const m of b.messages) c.add(m);
+    for (let i = 0; i < b.messages.length; i++) {
+      c.add(b.messages[i]!);
+      if ((i & 63) === 63) {
+        // the sorted delta stays small, and the caps hold, while it applies
+        if (c.needsMerge()) await c.merge(this.clock);
+        await this.clock.tick();
+      }
+    }
     for (const id of b.removed) c.forget(id);
     if (b.spamSenders.length) c.markSpam(b.spamSenders);
+    if (c.overCaps()) {
+      await c.enforceCaps(this.clock);
+      if (this.peakAllows(c.allocatedBytes() * 0.6)) await c.compact(this.clock);
+    }
   }
 
   /** Learns the sent messages among `messages` that have a body and weren't learned, 32 bodies per read (≤ 64 KB each). */
@@ -438,6 +457,7 @@ export class Autocomplete {
   }
 
   private async restoreContacts(): Promise<ContactIndex | null> {
+    if (this.noRestore) return null;
     const bytes = await this.read("contacts");
     if (!bytes) return null;
     const started = performance.now();
@@ -449,6 +469,7 @@ export class Autocomplete {
   }
 
   private async restorePhrases(): Promise<PhraseModel | null> {
+    if (this.noRestore) return null;
     const bytes = await this.read("phrases");
     if (!bytes) return null;
     const started = performance.now();
@@ -473,10 +494,18 @@ export class Autocomplete {
     }
   }
 
-  /** A restored model's revision belongs to this database and isn't ahead of it. */
+  /** A restored model's revision belongs to this database, isn't ahead of it, and the log still reaches it. */
   private async usable(at: Revision): Promise<boolean> {
     const head = await this.o.source.head();
-    return at.epoch === head.epoch && at.seq <= head.seq;
+    if (at.epoch !== head.epoch || at.seq > head.seq) return false;
+    if (at.seq === head.seq) return true;
+    try {
+      await this.o.source.changes(at, head, 1);
+      return true;
+    } catch (error) {
+      if (error instanceof RevisionError) return false;
+      throw error;
+    }
   }
 
   private async buildContacts(): Promise<ContactIndex | null> {
@@ -534,13 +563,14 @@ export class Autocomplete {
       for (;;) {
         if (this.stopped || this.resetWaiters || !this.phrasesOn) return null;
         const page = await this.o.source.sentAfter(after, 16);
-        if (page.length === 0) break;
+        // the end is the cursor's, not an empty page (a page of empty bodies isn't the end)
+        if (page.next === null) break;
         await this.clock.pause();
-        for (const t of page) {
+        for (const t of page.texts) {
           p.learn(t);
           await this.clock.tick();
         }
-        after = page[page.length - 1]!.id;
+        after = page.next;
         if (p.needsPrune()) await p.prune(this.clock);
       }
       while (!sameRevision(p.revision, await this.o.source.head())) {

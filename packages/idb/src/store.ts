@@ -489,7 +489,9 @@ export class IdbMailStore implements MailStore {
           if (all[mid]! <= afterId) lo = mid + 1;
           else hi = mid;
         }
-        return this.autocomplete.sentTexts(Array.from(all.subarray(lo, lo + limit)));
+        const ids = Array.from(all.subarray(lo, lo + limit));
+        // the cursor is the last id looked at: a page whose bodies are all empty isn't the end
+        return { texts: await this.autocomplete.sentTexts(ids), next: ids.length ? ids[ids.length - 1]! : null };
       },
       sentTexts: async (ids) => {
         const out: SentText[] = [];

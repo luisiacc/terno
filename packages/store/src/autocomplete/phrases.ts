@@ -31,6 +31,10 @@ const MAX_OWN_TEXT = 4096;
 const MAX_WINDOW = 1000;
 const MAX_TOKENS_OUT = 8;
 const MIN_COUNT = 3;
+/** a longer "word" (a URL, a token, a run of digits) is never a habit worth keeping */
+const MAX_WORD = 32;
+/** every word kept, together: the vocabulary's bytes are bounded, not just its count */
+const MAX_VOCAB_CHARS = 1_000_000;
 const LOAD = 0.7;
 const MAX_PROBE = 64;
 
@@ -189,7 +193,7 @@ export class PhraseModel {
     const key = word.toLowerCase();
     let id = this.vocab.get(key);
     if (id !== undefined) return id;
-    if (!add || this.words.length >= this.caps.words + RESERVED.length) return UNK;
+    if (!add || key.length > MAX_WORD || this.wordChars + key.length > MAX_VOCAB_CHARS || this.words.length >= this.caps.words + RESERVED.length) return UNK;
     id = this.words.length;
     this.words.push(key);
     this.vocab.set(key, id);

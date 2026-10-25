@@ -227,7 +227,7 @@ describe("the index agrees with a brute-force oracle", () => {
     });
     const c = await built(msgs.slice(0, 3000));
     for (const m of msgs.slice(3000)) c.add(m);
-    const queries = ["a", "an", "ana", "and", "ar", "pat", "gar", "jose", "maria", "mat", "nu", "o'b", "ob", "w", "王", "小明", "민", "zz", "acme", "orbita", "ana g", "lo", "l", "ap", "s", "so", "sof", "tomas", "yu", "x"];
+    const queries = ["ana 1", "a 2", "jose 3", "1", "12", "ana.g 4", "a", "an", "ana", "and", "ar", "pat", "gar", "jose", "maria", "mat", "nu", "o'b", "ob", "w", "王", "小明", "민", "zz", "acme", "orbita", "ana g", "lo", "l", "ap", "s", "so", "sof", "tomas", "yu", "x"];
     const check = () => {
       for (const q of queries) for (const accountId of [undefined, 1, 2]) expect(c.suggest(q, { accountId }), `${q} @${accountId}`).toEqual(c.suggestByScan(q, { accountId }));
     };

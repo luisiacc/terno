@@ -134,6 +134,16 @@ describe("suggestions", () => {
     expect(m.allocatedBytes() - before).toBeLessThan(3000 * 4 * 200);
   });
 
+  it("the vocabulary's bytes are capped, not just its count: long tokens aren't kept (codex review)", () => {
+    const m = new PhraseModel({ slots: 1 << 12, words: 60_000 });
+    const before = m.allocatedBytes();
+    for (let i = 0; i < 3000; i++) m.learn(msg(`${"x".repeat(4000)}${i} and ${"é".repeat(3000)}${i}`));
+    expect(m.allocatedBytes() - before).toBeLessThan(1024 * 1024);
+    const big = new PhraseModel({ slots: 1 << 12, words: 60_000 });
+    for (let i = 0; i < 200_000; i++) big.learn(msg(`w${i}abcdefghijklmnopqrstu`));
+    expect((big as unknown as { wordChars: number }).wordChars).toBeLessThanOrEqual(1_000_000);
+  });
+
   it("the vocabulary is capped", () => {
     const m = new PhraseModel({ slots: 1 << 12, words: 100 });
     for (let i = 0; i < 500; i++) m.learn(msg(`word${i} word${i + 1}`));
