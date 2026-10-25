@@ -2,7 +2,10 @@
  * Sending a draft: one send per draft at a time, whatever remounts or
  * double-submits in between; nothing can be edited under a send in flight.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { setLocale } from "@terno/i18n";
+import en from "@terno/i18n/locales/en";
+import es from "@terno/i18n/locales/es";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const rpc = vi.hoisted(() => ({ calls: [] as { method: string; resolve(v: unknown): void; reject(e: unknown): void }[] }));
 vi.mock("~/rpc/connection", () => ({
@@ -13,6 +16,7 @@ vi.mock("~/state/threads", () => ({ invalidateThreads: vi.fn(), loadThread: vi.f
 const { sendDraft } = await import("./compose");
 const { createDraft, discardDraft, editDraft, useDrafts } = await import("./drafts");
 const { newFields } = await import("./compose-fields");
+const { useSnack } = await import("./snack");
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
@@ -71,5 +75,31 @@ describe("sending a draft", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("what sending says", () => {
+  afterEach(() => setLocale("en", en));
+
+  it("refused, failed and sent, in the active language", async () => {
+    const refused = createDraft({ ...newFields(1), toText: "ana@" });
+    expect(await sendDraft(refused)).toBe(false);
+    expect(useSnack.getState().current?.message).toBe("Check the recipients");
+
+    const failing = createDraft({ ...newFields(1), toText: "ana@example.com" });
+    const p = sendDraft(failing);
+    await tick();
+    rpc.calls.find((c) => c.method === "compose.send")!.reject(new Error("offline"));
+    await p;
+    expect(useSnack.getState().current?.message).toBe("Couldn’t send: offline");
+
+    rpc.calls.length = 0;
+    setLocale("es", es);
+    const sent = createDraft({ ...newFields(1), toText: "ana@example.com" });
+    const q = sendDraft(sent);
+    await tick();
+    rpc.calls.find((c) => c.method === "compose.send")!.resolve({ opId: "o", threadId: 1 });
+    await q;
+    expect(useSnack.getState().current?.message).toBe("Enviando…");
   });
 });

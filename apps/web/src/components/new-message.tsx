@@ -1,3 +1,4 @@
+import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
@@ -18,8 +19,8 @@ function leave(key: string, focusStrip: boolean) {
 }
 
 /**
- * A new message, written in the reader pane: the toolbar becomes Descartar ·
- * Enviar, a title mirrors the subject, the fields are borderless hairline
+ * A new message, written in the reader pane: the toolbar becomes Discard ·
+ * Send, a title mirrors the subject, the fields are borderless hairline
  * rows and the body fills the pane. The draft stays in the strip above the
  * list while another conversation is read.
  */
@@ -44,13 +45,13 @@ export function NewMessage() {
     const gone = await discardDraft(key);
     if (!gone) return;
     const undo = registerUndo(() => showNewDraft(restoreDiscarded(gone)));
-    snack("Borrador descartado", { action: { label: "Undo", name: "Undo discard draft", undo } });
+    snack(t("compose.discarded"), { action: { label: t("common.undo"), name: t("compose.undoDiscard"), undo } });
   };
 
   return (
     <form
       ref={rootRef}
-      aria-label="Mensaje nuevo"
+      aria-label={t("compose.newMessage")}
       data-testid="composer"
       data-mode="new"
       className="flex h-full min-h-0 flex-col bg-background animate-in fade-in-0 slide-in-from-bottom-1 duration-base"
@@ -73,32 +74,32 @@ export function NewMessage() {
         <Tooltip>
           <TooltipTrigger
             render={
-              <Button type="button" variant="ghost" size="icon-sm" aria-label="Descartar borrador" disabled={d.sending} onClick={() => void discard()} className="no-drag text-muted-foreground hover:text-foreground" data-testid="compose-discard">
+              <Button type="button" variant="ghost" size="icon-sm" aria-label={t("compose.discard")} disabled={d.sending} onClick={() => void discard()} className="no-drag text-muted-foreground hover:text-foreground" data-testid="compose-discard">
                 <Trash2 />
               </Button>
             }
           />
-          <TooltipContent>Descartar borrador</TooltipContent>
+          <TooltipContent>{t("compose.discard")}</TooltipContent>
         </Tooltip>
-        <span className="text-sm text-muted-foreground">Mensaje nuevo</span>
+        <span className="text-sm text-muted-foreground">{t("compose.newMessage")}</span>
         <Button type="submit" size="sm" className="no-drag ml-auto gap-2" data-testid="compose-send" aria-busy={d.sending} disabled={d.sending}>
-          <Send /> Enviar <Shortcut keys="mod+enter" className="[&_kbd]:bg-primary-foreground/15 [&_kbd]:text-primary-foreground [&_kbd]:shadow-none" />
+          <Send /> {t("common.send")} <Shortcut keys="mod+enter" className="[&_kbd]:bg-primary-foreground/15 [&_kbd]:text-primary-foreground [&_kbd]:shadow-none" />
         </Button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex min-h-full max-w-[860px] flex-col px-7 pt-5 pb-10">
           <h2 className={cn("mb-4 text-xl font-semibold tracking-display text-balance", !d.subject && "text-muted-foreground")} data-testid="compose-title">
-            {d.subject || "Nuevo mensaje"}
+            {d.subject || t("compose.untitled")}
           </h2>
           <div className="-mx-3.5">
             <DraftFieldsForm d={d} accounts={accounts} showSubject flat />
           </div>
           <textarea
             data-testid="compose-body"
-            aria-label="Mensaje"
+            aria-label={t("compose.body")}
             value={d.bodyText}
             onChange={(e) => editDraft(key, { bodyText: e.target.value })}
-            placeholder="Escribe tu mensaje…"
+            placeholder={t("compose.bodyPlaceholder.new")}
             className="block min-h-[260px] w-full flex-1 resize-none bg-transparent pt-4 text-base outline-none placeholder:text-muted-foreground"
           />
           <SignaturePreview accountId={d.accountId} className="pt-2" />

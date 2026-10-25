@@ -1,4 +1,5 @@
 import type { Account } from "@terno/core";
+import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Shortcut } from "@terno/ui/components/shortcut";
@@ -9,6 +10,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { openCompose, sendDraft } from "~/lib/compose";
 import { discardDraft, editDraft, flushDraft, restoreDiscarded, retryDraft, setDraftUi, signatureBlock, useDrafts, type DraftFields, type LocalDraft } from "~/lib/drafts";
 import { avatarColor, initials } from "~/lib/format";
+import { richT } from "~/lib/i18n";
 import { keepInView } from "~/lib/reader-scroll";
 import { registerUndo, snack } from "~/lib/snack";
 import { setApp, useApp } from "~/state/app";
@@ -81,9 +83,9 @@ export function DraftFieldsForm({ d, accounts, showSubject, flat }: { d: LocalDr
   return (
     <div className={cn(flat && "hairline-t")}>
       {accounts.length > 1 && (
-        <Row label="De">
+        <Row label={t("compose.from")}>
           <Select value={String(d.accountId)} onValueChange={(v) => update({ accountId: Number(v) })} items={accounts.map((a) => ({ value: String(a.id), label: `${a.displayName} · ${a.email}` }))}>
-            <SelectTrigger size="sm" aria-label="De" className="-ml-2 h-7 border-0 bg-transparent shadow-none dark:bg-transparent" data-testid="compose-from">
+            <SelectTrigger size="sm" aria-label={t("compose.from")}className="-ml-2 h-7 border-0 bg-transparent shadow-none dark:bg-transparent" data-testid="compose-from">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -96,50 +98,50 @@ export function DraftFieldsForm({ d, accounts, showSubject, flat }: { d: LocalDr
           </Select>
         </Row>
       )}
-      <Row label="Para" htmlFor={`${id}-to`}>
-        <input id={`${id}-to`} data-testid="compose-to" className={input} value={d.toText} onChange={(e) => update({ toText: e.target.value })} placeholder="nombre@ejemplo.com" autoComplete="off" />
+      <Row label={t("compose.to")} htmlFor={`${id}-to`}>
+        <input id={`${id}-to`} data-testid="compose-to" className={input} value={d.toText} onChange={(e) => update({ toText: e.target.value })} placeholder={t("compose.toPlaceholder")} autoComplete="off" />
         <span className="flex shrink-0 gap-0.5">
-          {toggle(cc, setCc, "Cc", "cc", "compose-show-cc")}
-          {toggle(bcc, setBcc, "Cco", "bcc", "compose-show-bcc")}
-          {toggle(subject, setSubject, "Asunto", "subject", "compose-show-subject")}
+          {toggle(cc, setCc, t("compose.cc"), "cc", "compose-show-cc")}
+          {toggle(bcc, setBcc, t("compose.bcc"), "bcc", "compose-show-bcc")}
+          {toggle(subject, setSubject, t("compose.subject"), "subject", "compose-show-subject")}
         </span>
       </Row>
-      <Row label="Cc" htmlFor={`${id}-cc`} hidden={!cc}>
+      <Row label={t("compose.cc")} htmlFor={`${id}-cc`} hidden={!cc}>
         <input id={`${id}-cc`} data-testid="compose-cc" className={input} value={d.ccText} onChange={(e) => (setCc(true), update({ ccText: e.target.value }))} autoComplete="off" />
       </Row>
-      <Row label="Cco" htmlFor={`${id}-bcc`} hidden={!bcc}>
+      <Row label={t("compose.bcc")} htmlFor={`${id}-bcc`} hidden={!bcc}>
         <input id={`${id}-bcc`} data-testid="compose-bcc" className={input} value={d.bccText} onChange={(e) => (setBcc(true), update({ bccText: e.target.value }))} autoComplete="off" />
       </Row>
-      <Row label="Asunto" htmlFor={`${id}-subject`} hidden={!subject}>
+      <Row label={t("compose.subject")} htmlFor={`${id}-subject`} hidden={!subject}>
         <input id={`${id}-subject`} data-testid="compose-subject" className={input} value={d.subject} onChange={(e) => update({ subject: e.target.value, subjectEdited: true })} />
       </Row>
     </div>
   );
 }
 
-/** What the draft's save state says, for screen readers too: «guardado» only for an acknowledged revision. */
+/** What the draft's save state says, for screen readers too: "saved" only for an acknowledged revision. */
 export function SaveState({ d }: { d: LocalDraft }) {
   return (
     <span aria-live="polite" className="text-xs text-muted-foreground" data-testid="draft-status">
-      {d.status === "saved" && <span className="animate-in fade-in-0 duration-base">Borrador guardado</span>}
-      {d.status === "error" && (
-        <>
-          No se pudo guardar ·{" "}
-          <button type="button" className="font-medium text-primary hover:underline" onClick={() => retryDraft(d.key)}>
-            Reintentar
-          </button>
-        </>
-      )}
+      {d.status === "saved" && <span className="animate-in fade-in-0 duration-base">{t("compose.status.saved")}</span>}
+      {d.status === "error" &&
+        richT("compose.status.failed", {
+          retry: (text) => (
+            <button type="button" className="font-medium text-primary hover:underline" onClick={() => retryDraft(d.key)}>
+              {text}
+            </button>
+          ),
+        })}
     </span>
   );
 }
 
-/** The From account's signature, as it will be sent below the text (edited in Ajustes → Cuentas). */
+/** The From account's signature, as it will be sent below the text (edited in Settings → Accounts). */
 export function SignaturePreview({ accountId, className }: { accountId: number; className?: string }) {
   const signature = useApp((s) => s.accounts.find((a) => a.id === accountId)?.signature ?? "");
   if (!signature.trim()) return null;
   return (
-    <div className={cn("text-sm whitespace-pre-wrap text-muted-foreground", className)} data-testid="compose-signature" aria-label="Firma">
+    <div className={cn("text-sm whitespace-pre-wrap text-muted-foreground", className)} data-testid="compose-signature" aria-label={t("compose.signature")}>
       {signatureBlock(signature)}
     </div>
   );
@@ -153,10 +155,13 @@ function Quote({ d }: { d: LocalDraft }) {
   if (!d.includeQuote) {
     return (
       <div className="px-3.5 pb-1 text-xs text-muted-foreground">
-        Sin el mensaje citado ·{" "}
-        <button type="button" className="font-medium text-primary hover:underline" onClick={() => editDraft(d.key, { includeQuote: true })}>
-          Incluirlo
-        </button>
+        {richT("compose.quote.removed", {
+          include: (text) => (
+            <button type="button" className="font-medium text-primary hover:underline" onClick={() => editDraft(d.key, { includeQuote: true })}>
+              {text}
+            </button>
+          ),
+        })}
       </div>
     );
   }
@@ -166,7 +171,7 @@ function Quote({ d }: { d: LocalDraft }) {
         type="button"
         aria-expanded={show}
         aria-controls={id}
-        aria-label={show ? "Ocultar el mensaje citado" : "Mostrar el mensaje citado"}
+        aria-label={show ? t("compose.quote.hide") : t("compose.quote.show")}
         data-testid="compose-quote"
         onClick={() => setShow((v) => !v)}
         className="h-4 rounded-sm bg-muted px-1.5 text-[10px] leading-4 tracking-[0.15em] text-muted-foreground hover:text-foreground"
@@ -178,7 +183,7 @@ function Quote({ d }: { d: LocalDraft }) {
           <div className="mt-2 border-l-2 border-hairline pl-3 text-sm whitespace-pre-wrap text-muted-foreground">
             {d.quotedText}
             <button type="button" className="mt-2 block text-xs font-medium text-primary hover:underline" onClick={() => editDraft(d.key, { includeQuote: false })} data-testid="compose-quote-remove">
-              Quitar la cita
+              {t("compose.quote.remove")}
             </button>
           </div>
         )}
@@ -203,6 +208,12 @@ function ToolIcon({ label, keys, onClick, children, testId, disabled }: { label:
       </TooltipContent>
     </Tooltip>
   );
+}
+
+/** The inline draft's accessible name: "Reply to Ana", "Forward" (nobody yet). Reply-all reads as a reply. */
+function formLabel(forward: boolean, who: string): string {
+  if (forward) return who ? t("compose.form.forward", { name: who }) : t("compose.form.forwardEmpty");
+  return who ? t("compose.form.reply", { name: who }) : t("compose.form.replyEmpty");
 }
 
 /**
@@ -247,12 +258,12 @@ export function DraftSlot({ threadId, draftKey, replyTo, account }: { threadId: 
     focusSoon("[data-testid=quick-reply]", rootRef.current);
     if (!gone) return;
     const undo = registerUndo(() => restoreDiscarded(gone));
-    snack("Borrador descartado", { action: { label: "Undo", name: "Undo discard draft", undo } });
+    snack(t("compose.discarded"), { action: { label: t("common.undo"), name: t("compose.undoDiscard"), undo } });
   };
 
   const me = account?.displayName || account?.email || "";
   const who = d ? d.toText.split(",")[0]?.replace(/<.*$/, "").replace(/"/g, "").trim() || d.toText : "";
-  const label = d && d.mode !== "new" ? `${d.mode === "forward" ? "Reenviar" : "Responder"}${who ? ` a ${who}` : ""}` : "";
+  const label = !d || d.mode === "new" ? "" : formLabel(d.mode === "forward", who);
 
   return (
     <div ref={rootRef} className="mt-5 rounded-xl bg-tint" data-testid="draft-slot" data-state={state} data-thread={threadId}>
@@ -260,13 +271,13 @@ export function DraftSlot({ threadId, draftKey, replyTo, account }: { threadId: 
         <div className="flex h-10 items-center gap-0.5 pr-1.5 pl-2.5" data-testid="reply-bar">
           <button type="button" onClick={() => void openCompose("reply", threadId)} data-testid="quick-reply" className="flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-lg text-left text-sm text-muted-foreground">
             <span className={cn("flex size-[22px] shrink-0 items-center justify-center rounded-full text-[9.5px] font-semibold", AVATAR_BG[avatarColor(account?.email ?? me)])}>{initials(me)}</span>
-            <span className="truncate">Responder a {replyTo}…</span>
+            <span className="truncate">{t("compose.bar.reply", { name: replyTo })}</span>
           </button>
           <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" onClick={() => void openCompose("replyAll", threadId)} data-testid="quick-reply-all">
-            <ReplyAll /> Responder a todos
+            <ReplyAll /> {t("compose.bar.replyAll")}
           </Button>
           <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" onClick={() => void openCompose("forward", threadId)} data-testid="quick-forward">
-            <Forward /> Reenviar
+            <Forward /> {t("compose.bar.forward")}
           </Button>
         </div>
       </Expand>
@@ -274,9 +285,9 @@ export function DraftSlot({ threadId, draftKey, replyTo, account }: { threadId: 
         {d && (
           <button type="button" onClick={reopen} data-testid="draft-collapsed" aria-expanded="false" className="flex h-10 w-full items-center gap-2 rounded-xl pr-3 pl-3 text-left text-sm">
             <PenLine className="size-4 shrink-0 text-primary" />
-            <span className="shrink-0 font-medium">Borrador</span>
+            <span className="shrink-0 font-medium">{t("compose.draft")}</span>
             <span className="min-w-0 flex-1 truncate text-muted-foreground">
-              · {d.mode === "forward" ? "Reenviar" : "Para"} {d.toText || "—"} — {d.bodyText.split("\n").find((l) => l.trim()) ?? ""}
+              {t(d.mode === "forward" ? "compose.collapsed.forward" : "compose.collapsed.to", { to: d.toText || "—", preview: d.bodyText.split("\n").find((l) => l.trim()) ?? "" })}
             </span>
             <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
           </button>
@@ -306,24 +317,24 @@ export function DraftSlot({ threadId, draftKey, replyTo, account }: { threadId: 
             <DraftFieldsForm d={d} accounts={accounts} showSubject={d.mode === "forward"} />
             <textarea
               data-testid="compose-body"
-              aria-label="Mensaje"
+              aria-label={t("compose.body")}
               value={d.bodyText}
               onChange={(e) => editDraft(d.key, { bodyText: e.target.value })}
-              placeholder={d.mode === "forward" ? "Añade un mensaje…" : "Escribe tu respuesta…"}
+              placeholder={d.mode === "forward" ? t("compose.bodyPlaceholder.forward") : t("compose.bodyPlaceholder.reply")}
               className="block min-h-[132px] w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-base outline-none [field-sizing:content] placeholder:text-muted-foreground"
             />
             <SignaturePreview accountId={d.accountId} className="px-3.5 pb-2" />
             <Quote d={d} />
             <div className="flex items-center gap-2.5 px-2.5 pt-2 pb-2.5">
               <Button type="submit" size="sm" data-testid="compose-send" aria-busy={d.sending} disabled={d.sending} className="gap-2">
-                <Send /> Enviar <Shortcut keys="mod+enter" className="[&_kbd]:bg-primary-foreground/15 [&_kbd]:text-primary-foreground [&_kbd]:shadow-none" />
+                <Send /> {t("common.send")} <Shortcut keys="mod+enter" className="[&_kbd]:bg-primary-foreground/15 [&_kbd]:text-primary-foreground [&_kbd]:shadow-none" />
               </Button>
               <SaveState d={d} />
               <span className="ml-auto flex gap-0.5">
-                <ToolIcon label="Descartar borrador" onClick={() => void discard()} testId="compose-discard" disabled={d.sending}>
+                <ToolIcon label={t("compose.discard")} onClick={() => void discard()} testId="compose-discard" disabled={d.sending}>
                   <Trash2 />
                 </ToolIcon>
-                <ToolIcon label="Contraer" keys="escape" onClick={collapse} testId="compose-collapse">
+                <ToolIcon label={t("compose.collapse")} keys="escape" onClick={collapse} testId="compose-collapse">
                   <ChevronDown />
                 </ToolIcon>
               </span>

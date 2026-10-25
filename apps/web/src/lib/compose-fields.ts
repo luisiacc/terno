@@ -1,27 +1,32 @@
 import { formatAddressList, parseAddressList, type Account, type Address, type ThreadDetail } from "@terno/core";
 import type { DraftMode } from "@terno/core/rpc";
+import { t } from "@terno/i18n";
 import type { DraftFields } from "./drafts";
+import { fullDate } from "./format";
 
 /**
  * The fields of a reply, reply-all, forward or new message, and converting a
  * draft between modes. Pure (no DOM, no backend): unit-tested on its own.
  */
 
-const date = (ms: number) => new Date(ms).toLocaleString("es", { dateStyle: "medium", timeStyle: "short" });
-
 /** The message a reply answers: the last one someone else sent (or the last one). */
 export function answered(detail: ThreadDetail) {
   return [...detail.messages].reverse().find((m) => !m.isSent) ?? detail.messages[detail.messages.length - 1]!;
 }
 
-/** The quote a reply carries, or the block a forward carries. */
+/**
+ * The quote a reply carries, or the block a forward carries. Its header is
+ * written in the language of the moment, date included; from then on it is
+ * the draft's text and never changes.
+ */
 export function quoteFor(mode: Exclude<DraftMode, "new">, detail: ThreadDetail): string {
   const last = answered(detail);
   const text = last.bodyText ?? last.snippet;
+  const date = fullDate(last.date);
   if (mode === "forward") {
-    return `---------- Mensaje reenviado ----------\nDe: ${formatAddressList([last.from])}\nFecha: ${date(last.date)}\nAsunto: ${last.subject}\nPara: ${formatAddressList(last.to)}\n\n${text}`;
+    return `${t("compose.quote.forwarded", { from: formatAddressList([last.from]), date, subject: last.subject, to: formatAddressList(last.to) })}\n\n${text}`;
   }
-  return `El ${date(last.date)}, ${last.from.name || last.from.email} escribió:\n${text.split("\n").map((l) => `> ${l}`).join("\n")}`;
+  return `${t("compose.quote.attribution", { date, name: last.from.name || last.from.email })}\n${text.split("\n").map((l) => `> ${l}`).join("\n")}`;
 }
 
 /** Who a reply goes to (auto: Terno filled them in): the sender, plus everyone else on reply-all, never me. */
@@ -30,14 +35,19 @@ export function autoRecipients(mode: Exclude<DraftMode, "new">, detail: ThreadDe
   const last = answered(detail);
   const mine = me.toLowerCase();
   const to = last.isSent ? last.to : [last.from];
-  const cc = mode === "replyAll" ? [...last.to, ...last.cc].filter((a) => a.email.toLowerCase() !== mine && !to.some((t) => t.email.toLowerCase() === a.email.toLowerCase())) : [];
+  const cc = mode === "replyAll" ? [...last.to, ...last.cc].filter((a) => a.email.toLowerCase() !== mine && !to.some((r) => r.email.toLowerCase() === a.email.toLowerCase())) : [];
   return { to, cc };
 }
 
+/** A prefix already on the subject, from any language ("RE:", "Fw:", Outlook's Spanish "RV:"): kept, never doubled. */
+const FORWARDED = /^(fwd?|rv|reenv):/i;
+const REPLIED = /^re:/i;
+
+/** A reply's or a forward's subject; the prefix Terno adds follows the language ("Re:", "Fwd:"). */
 export function subjectFor(mode: DraftMode, subject: string): string {
-  if (mode === "forward") return /^fwd?:/i.test(subject) ? subject : `Fwd: ${subject}`;
+  if (mode === "forward") return FORWARDED.test(subject) ? subject : t("compose.prefix.forward", { subject });
   if (mode === "new") return "";
-  return /^re:/i.test(subject) ? subject : `Re: ${subject}`;
+  return REPLIED.test(subject) ? subject : t("compose.prefix.reply", { subject });
 }
 
 /** A fresh reply/forward draft for a conversation. */

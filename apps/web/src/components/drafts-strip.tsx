@@ -1,3 +1,4 @@
+import { t } from "@terno/i18n";
 import { cn } from "@terno/ui/lib/utils";
 import { PenLine } from "lucide-react";
 import { useState } from "react";
@@ -13,10 +14,10 @@ const SHOWN = 3;
 /** Who a draft goes to, for its one line. */
 function recipientsLine(d: LocalDraft): string {
   const first = d.toText.split(",")[0]?.trim();
-  if (!first) return "sin destinatarios";
+  if (!first) return t("compose.strip.noRecipients");
   const name = first.replace(/<.*$/, "").replace(/"/g, "").trim() || first.replace(/[<>]/g, "");
   const more = d.toText.split(",").length - 1;
-  return more > 0 ? `${name} y ${more} más` : name;
+  return more > 0 ? t("compose.strip.andMore", { name, count: more }) : name;
 }
 
 /**
@@ -56,7 +57,7 @@ export function DraftsStrip() {
   };
 
   return (
-    <div className="hairline-b shrink-0 py-1" data-testid="drafts-strip" role="group" aria-label="Borradores">
+    <div className="hairline-b shrink-0 py-1" data-testid="drafts-strip" role="group" aria-label={t("compose.strip.label")}>
       {visible.map((d) => (
         <button
           key={d.key}
@@ -72,13 +73,13 @@ export function DraftsStrip() {
           )}
         >
           <PenLine className="relative size-3.5 shrink-0 text-primary" />
-          <span className="relative min-w-0 shrink-0 truncate font-medium">{d.mode === "new" ? d.subject || "Nuevo mensaje" : d.subject || "(sin asunto)"}</span>
-          <span className="relative min-w-0 truncate text-muted-foreground">— Para {recipientsLine(d)}</span>
+          <span className="relative min-w-0 shrink-0 truncate font-medium">{d.subject || t(d.mode === "new" ? "compose.untitled" : "common.noSubject")}</span>
+          <span className="relative min-w-0 truncate text-muted-foreground">{t("compose.strip.to", { recipients: recipientsLine(d) })}</span>
         </button>
       ))}
       {!expanded && items.length > SHOWN && (
         <button type="button" onClick={() => setExpanded(true)} className="h-7 w-full px-5 text-left text-xs font-medium text-muted-foreground hover:text-foreground" data-testid="strip-more">
-          +{items.length - SHOWN} borradores
+          {t("compose.strip.more", { count: items.length - SHOWN })}
         </button>
       )}
     </div>

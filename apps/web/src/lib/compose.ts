@@ -1,6 +1,7 @@
 import { breadcrumb, captureUi } from "~/lib/diag";
 import { isValidEmail, parseAddressList } from "@terno/core";
 import type { DraftMode } from "@terno/core/rpc";
+import { t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";
 import { invalidateThreads, loadThread } from "~/state/threads";
@@ -15,7 +16,12 @@ import { authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, f
  * on, the open thread for the keyboard), never read later from the selection.
  */
 
-const MODE_LABEL: Record<DraftMode, string> = { new: "Mensaje nuevo", reply: "Responder", replyAll: "Responder a todos", forward: "Reenviar" };
+/** What a conversion to each mode says, and its undo's accessible name. */
+const CONVERTED = {
+  reply: ["compose.converted.reply", "compose.undoConvert.reply"],
+  replyAll: ["compose.converted.replyAll", "compose.undoConvert.replyAll"],
+  forward: ["compose.converted.forward", "compose.undoConvert.forward"],
+} as const;
 
 let seq = 0;
 
@@ -39,7 +45,7 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
   const s = getApp();
   const defaultAccount = s.accountId ?? s.accounts[0]?.id;
   if (!defaultAccount) {
-    snack("Conecta una cuenta para escribir correos");
+    snack(t("compose.noAccount"));
     setApp({ dialog: "addAccount" });
     return;
   }
@@ -70,7 +76,8 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
     focusDraft(existing.key, target);
     // back to what it was, still open where the user is looking
     const undo = registerUndo(() => editDraft(existing.key, { ...before, uiState: "open" }));
-    snack(`Convertido en ${MODE_LABEL[mode]}`, { action: { label: "Undo", name: `Undo convert to ${MODE_LABEL[mode]}`, undo } });
+    const [message, name] = CONVERTED[mode];
+    snack(t(message), { action: { label: t("common.undo"), name: t(name), undo } });
     return;
   }
   const key = createDraft(replyFields(mode, detail, account));
@@ -127,10 +134,10 @@ async function send(key: string): Promise<boolean> {
   const cc = validRecipients(d.ccText);
   const bcc = validRecipients(d.bccText);
   // something typed that isn't an address (or nobody at all): stay, and say so
-  const invalid = [d.toText, d.ccText, d.bccText].some((t) => parseAddressList(t).some((a) => !isValidEmail(a.email)));
+  const invalid = [d.toText, d.ccText, d.bccText].some((text) => parseAddressList(text).some((a) => !isValidEmail(a.email)));
   if (to.length === 0 || invalid) {
     resumeDraft(key);
-    snack.error("Revisa los destinatarios");
+    snack.error(t("compose.checkRecipients"));
     return false;
   }
   markSending(key, true);
@@ -150,13 +157,13 @@ async function send(key: string): Promise<boolean> {
     forgetDraft(key);
     if (getApp().compose?.key === key) setApp({ compose: null });
     invalidateThreads([res.threadId]);
-    snack.success("Enviando…");
+    snack.success(t("compose.sending"));
     return true;
   } catch (error) {
     markSending(key, false);
     resumeDraft(key);
     captureUi(error, { code: "compose.send_failed" });
-    snack.error(`No se pudo enviar: ${error instanceof Error ? error.message : error}`);
+    snack.error(t("compose.sendFailed", { error: error instanceof Error ? error.message : String(error) }));
     return false;
   }
 }

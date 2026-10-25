@@ -243,7 +243,7 @@ describe("converting a draft to another mode keeps what the user wrote", () => {
     expect(all.toText).toBe("");
     expect(all.ccText).toBe("");
     expect(all).toMatchObject({ mode: "forward", inReplyToMessageId: null, forwardOfMessageId: 3 });
-    expect(all.quotedText).toContain("Mensaje reenviado");
+    expect(all.quotedText).toContain("Forwarded message");
   });
 
   it("a recipient the user typed is theirs in that field: reply → add Lucas to Para → reply-all → forward keeps Lucas", () => {

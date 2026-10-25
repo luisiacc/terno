@@ -12,7 +12,7 @@ import { client } from "~/rpc/connection";
  *   out 800 ms after the last edit, and at least every 5 s while typing.
  * - At most one save is in flight per draft; its answer applies to the draft
  *   (key) it was sent for, never to "the current draft".
- * - "Borrador guardado" means the acknowledged revision is the local one.
+ * - "Draft saved" means the acknowledged revision is the local one.
  * - A failed save says so and retries (1, 2, 5 s); the text stays in memory.
  * - Send, discard and flush first cancel the debounce and wait for the save
  *   in flight. The server's revision travels with every save: an edit made on
@@ -283,7 +283,7 @@ function save(key: string): Promise<void> {
   return w.inflight;
 }
 
-/** "Reintentar" after an error: now. */
+/** "Retry" after an error: now. */
 export function retryDraft(key: string): void {
   const w = writer(key);
   if (w.timer) clearTimeout(w.timer);
@@ -355,7 +355,7 @@ export function forgetDraft(key: string): void {
   drop(key);
 }
 
-/** Deletes a draft; returns what it was, for "Deshacer". */
+/** Deletes a draft; returns what it was, for "Undo". */
 export async function discardDraft(key: string): Promise<LocalDraft | undefined> {
   // a send in flight decides: sent, it is gone; failed, it stays for another try
   if (get(key)?.sending) return undefined;
@@ -366,7 +366,7 @@ export async function discardDraft(key: string): Promise<LocalDraft | undefined>
   return d;
 }
 
-/** "Deshacer" a discard: the same content as a new draft (saved at once). */
+/** "Undo" a discard: the same content as a new draft (saved at once). */
 export function restoreDiscarded(d: LocalDraft): string {
   const key = createDraft({ ...fieldsOf(d), uiState: "open" });
   editDraft(key, {});
