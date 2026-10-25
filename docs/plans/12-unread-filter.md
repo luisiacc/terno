@@ -167,10 +167,10 @@ A Playwright-driven ⌘L in the Electron dev build toggles once, and Ver → Fil
 ### Verification
 
 - **Screens**, 1440×900 @2x, light and dark: the header off, on (with its tooltip), and the empty state, inspected (scratch PNGs in `/tmp/unica-scratch/unread-12/`). The header's sidebar count and "Filtered by: Unread · N" agree.
-- **Test runs** (rebased on `aaa789b`):
-  - `pnpm test`: 1,536 + 392 (db-wasm).
-  - `pnpm test:e2e`: 224, of which 15 in `unread-filter.spec.ts` (4 baselines). One unrelated test failed under the full run's load with "database is not open" (the ops worker outliving its fixture) and passes alone.
-  - `pnpm test:web`: 26 of 27; the failure lists the diagnostics feature's `terno-diag` database in the web migration check.
+- **Test runs** (rebased on `65be600`):
+  - `pnpm test`: 1,561 + 392 (db-wasm).
+  - `pnpm test:e2e`: 237, of which 15 in `unread-filter.spec.ts` (4 baselines). Under the full run's load, two `settings-pass` "reachable" cases (and, in earlier runs, a `selection` undo case whose ops worker outlived its fixture) failed; each passes alone.
+  - `pnpm test:web`: 27/27.
   - `pnpm test:ui-perf`: 17/17.
-  - `pnpm test:perf`: 106 of 107; `load.perf.test.ts`'s slow-disk case fails on this machine with or without the v11 indexes (checked by building without them).
+  - `pnpm test:perf` (on `aaa789b`): 106 of 107; `load.perf.test.ts`'s slow-disk case fails on this machine with or without the v11 indexes (checked by building without them).
   - Desktop: `unread.smoke.ts` on the dev build.
