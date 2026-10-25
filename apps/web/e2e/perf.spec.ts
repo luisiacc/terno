@@ -930,7 +930,8 @@ test("a 2 MB draft of short lines: typing stays within a frame; no serialization
   const indentMs = await page.evaluate(async () => {
     const w = window as unknown as { __composer?: Probe };
     const t0 = performance.now();
-    document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "]", code: "BracketRight", metaKey: true, ctrlKey: !/Mac/.test(navigator.platform), bubbles: true, cancelable: true }));
+    const mac = /Mac/.test(navigator.platform);
+    document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "]", code: "BracketRight", metaKey: mac, ctrlKey: !mac, bubbles: true, cancelable: true }));
     await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
     const tx = (w.__composer?.tx ?? []).filter((t) => t >= t0);
     return tx.length ? performance.now() - t0 : -1;

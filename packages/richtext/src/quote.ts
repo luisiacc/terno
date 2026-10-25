@@ -72,6 +72,19 @@ function quoteDepth(line: string): [number, string] {
 }
 
 /**
+ * Where a part of a long line ends: right after a lone space (a link never
+ * spans one, and a lone space needs no &nbsp; whichever side it lands on),
+ * looking back from the budget; a single token longer than half of it is cut
+ * where it must.
+ */
+function cut(line: string, from: number, budget: number): number {
+  const end = from + budget;
+  if (end >= line.length) return line.length;
+  for (let k = end; k > from + budget / 2; k--) if (line[k - 1] === " " && line[k - 2] !== " " && line[k] !== " ") return k;
+  return end;
+}
+
+/**
  * Plain lines as the composer's lines (one <div> each), "> " runs as nested
  * blockquotes: iterative, scanned as it goes, in pieces of about `budget`
  * characters (a caller in a time budget yields between them; a line longer
@@ -101,9 +114,11 @@ export function* textToHtmlChunks(text: string, budget = 16_384): Generator<stri
       spent += rest.length + 1;
     } else {
       out.push("<div>");
-      for (let i = 0; i < rest.length; i += budget) {
-        out.push(partHtml(rest.slice(i, i + budget), i === 0, i + budget >= rest.length));
-        spent += budget;
+      for (let i = 0; i < rest.length; ) {
+        const end = cut(rest, i, budget);
+        out.push(partHtml(rest.slice(i, end), i === 0, end >= rest.length));
+        spent += end - i;
+        i = end;
         yield* flush();
       }
       out.push("</div>");

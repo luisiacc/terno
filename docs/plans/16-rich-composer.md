@@ -179,3 +179,5 @@ Round 2 (after `89df3a3`, 7 findings), each fixed with a regression test:
 5. **Medium:** applying alignment or indent to many lines was still a step per line, and ProseMirror replaced every changed line's element under a whole-draft selection (7 s at 2 MB). One step, and a paragraph node view updates the style in place: ~1 s, gated at 1.5 s.
 6. **Medium:** a single long line in a quote converted in one block. Pieces are bounded by characters, inside lines too; each step < 25 ms on 5 million characters (unit test).
 7. **Medium:** the "painted" sample was taken in the rAF callback, before layout and paint. Now the task after that frame.
+
+Round 3 (only the round-2 fixes, 3 findings), fixed with regression tests: the loading stand-in is read-only under a send in flight too (e2e with the send held); a long quoted line is cut right after a lone space, so links and double spaces stay whole across parts (unit test sweeping the boundary); the whole-draft indent gate sends only the platform's modifier (it never ran off macOS).

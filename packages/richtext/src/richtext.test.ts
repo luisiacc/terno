@@ -283,6 +283,13 @@ describe("quote, signature and the document around them", () => {
       expect(worst).toBeLessThan(25);
     }
     expect(textToHtml("a\r\nb\rc")).toBe("<div>a</div><div>b</div><div>c</div>");
+    // a long line cut into parts keeps its links and its double spaces whole, wherever the boundary falls
+    for (let pad = 16_340; pad < 16_400; pad++) {
+      const line = `${"x ".repeat(pad / 2)}  ver https://example.com/path  fin`;
+      const html = textToHtml(line);
+      expect(html, String(pad)).toContain('<a href="https://example.com/path">https://example.com/path</a>');
+      expect(html.match(/&nbsp;/g)?.length, String(pad)).toBe(2);
+    }
   });
 
   it("escapes, keeps blank lines, links URLs", () => {

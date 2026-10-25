@@ -392,6 +392,30 @@ test.describe("before the editor has loaded", () => {
     await expect(body(page)).toHaveText("abc");
   });
 
+  test("Codex review 3: under a send in flight the stand-in is read-only too (nothing typed then is lost)", async ({ app: page }) => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    await page.route(/\/assets\/rich-[^/]+\.js$/, async (route) => {
+      await gate;
+      await route.continue();
+    });
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await openRow(page, 0);
+    await focusList(page);
+    await page.keyboard.press("r");
+    const standIn = page.getByTestId("compose-body-loading");
+    await expect(standIn).toBeFocused();
+    await page.keyboard.type("A");
+    await page.evaluate(() => (window as unknown as { __terno: { holdSending(v: boolean): void } }).__terno.holdSending(true));
+    await expect(standIn).toHaveAttribute("contenteditable", "false");
+    await page.keyboard.type("B");
+    await expect(standIn).toHaveText("A");
+    await page.evaluate(() => (window as unknown as { __terno: { holdSending(v: boolean): void } }).__terno.holdSending(false));
+    await expect(standIn).toHaveAttribute("contenteditable", "plaintext-only");
+    release();
+  });
+
   test("the editor takes over the stand-in's text, once, and keeps the focus", async ({ app: page }) => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
