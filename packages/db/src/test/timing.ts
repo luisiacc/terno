@@ -22,15 +22,20 @@
  * types there).
  */
 
+interface GcEntry {
+  startTime: number;
+  duration: number;
+}
 interface GcObserver {
   observe(o: { entryTypes: string[] }): void;
+  takeRecords(): GcEntry[];
   disconnect(): void;
 }
 interface NodeProcess {
   threadCpuUsage(): { user: number; system: number };
   env: Record<string, string | undefined>;
   getBuiltinModule(id: "node:os"): { loadavg(): number[]; availableParallelism(): number };
-  getBuiltinModule(id: "node:perf_hooks"): { PerformanceObserver: new (cb: (list: { getEntries(): { startTime: number; duration: number }[] }) => void) => GcObserver };
+  getBuiltinModule(id: "node:perf_hooks"): { PerformanceObserver: new (cb: (list: { getEntries(): GcEntry[] }) => void) => GcObserver };
 }
 interface NodePerformance {
   now(): number;
@@ -40,7 +45,7 @@ interface NodePerformance {
 const proc = (globalThis as unknown as { process: NodeProcess }).process;
 const perf = (globalThis as unknown as { performance: NodePerformance }).performance;
 // the store package's sources have neither DOM nor Node types
-const timers = globalThis as unknown as { setInterval(f: () => void, ms: number): unknown; clearInterval(t: unknown): void; setTimeout(f: () => void, ms: number): unknown };
+const timers = globalThis as unknown as { setInterval(f: () => void, ms: number): unknown; clearInterval(t: unknown): void; setTimeout(f: () => void, ms: number): unknown; setImmediate(f: () => void): unknown };
 
 /** this thread's CPU time, ms */
 export function threadCpuMs(): number {
@@ -210,19 +215,24 @@ export interface Pause {
 }
 
 /**
- * Garbage-collection pauses (Node's gc entries) until stop(), which waits a
- * macrotask: the entries of a collection are delivered after it.
+ * Garbage-collection pauses (Node's gc entries) until stop(). A collection's
+ * entry is queued after it and delivered later still, so stop() waits for
+ * the queue (a timer, then the check phase) and takes what is still
+ * undelivered: a collection missed would count as a stall of ours.
  */
 export function watchGc(): { stop(): Promise<Pause[]> } {
   const { PerformanceObserver } = proc.getBuiltinModule("node:perf_hooks");
   const pauses: Pause[] = [];
-  const observer = new PerformanceObserver((list) => {
-    for (const e of list.getEntries()) pauses.push({ start: e.startTime, end: e.startTime + e.duration });
-  });
+  const add = (entries: GcEntry[]) => {
+    for (const e of entries) pauses.push({ start: e.startTime, end: e.startTime + e.duration });
+  };
+  const observer = new PerformanceObserver((list) => add(list.getEntries()));
   observer.observe({ entryTypes: ["gc"] });
   return {
     async stop() {
       await new Promise<void>((r) => timers.setTimeout(r, 0));
+      await new Promise<void>((r) => timers.setImmediate(r));
+      add(observer.takeRecords());
       observer.disconnect();
       return pauses;
     },

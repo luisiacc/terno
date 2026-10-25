@@ -1,5 +1,7 @@
+import { setFlagsFromString } from "node:v8";
+import { runInNewContext } from "node:vm";
 import { afterEach, describe, expect, it } from "vitest";
-import { classifyGaps, holdsExcusable, machineBusy, pausedIn, settle, stallLessGc, type Gap, type LoopReport } from "./timing";
+import { classifyGaps, holdsExcusable, machineBusy, pausedIn, settle, stallLessGc, watchGc, type Gap, type LoopReport } from "./timing";
 
 const gap = (busy: number, cpu: number, at = 0): Gap => ({ start: at, end: at + busy, wall: busy, busy, cpu });
 const rare = () => [...Array.from({ length: 19 }, () => ({ wall: 2, cpu: 1.9 })), { wall: 9, cpu: 2 }];
@@ -81,6 +83,19 @@ describe("stallLessGc", () => {
     expect(stallLessGc(report([brief], 12, [brief]), [])).toBe(12);
     const held = gap(80, 30, 1_000);
     expect(stallLessGc(report([held], 12, [held]), [])).toBe(30);
+  });
+
+  it("watchGc reports a collection that ends the stage (a missed one would count as a stall of ours)", async () => {
+    setFlagsFromString("--expose-gc");
+    const gc = runInNewContext("gc") as () => void;
+    for (let i = 0; i < 50; i++) {
+      const w = watchGc();
+      const t0 = performance.now();
+      gc();
+      const t1 = performance.now();
+      const pauses = await w.stop();
+      expect(pausedIn({ start: t0, end: t1 }, pauses), `stage ${i}`).toBeGreaterThan(0);
+    }
   });
 
   it("measures only the overlap", () => {

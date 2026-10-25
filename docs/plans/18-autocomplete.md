@@ -344,3 +344,5 @@ The timing-sensitive gates above now follow plan 04's policy (§11, `packages/db
 | IndexedDB catch-up (300 µs) | 324.1 ✗ | — | — |
 
 Off-CPU waits add no CPU, so the CPU gates take only the spun injection.
+
+**Codex review** (`codex-review.sh 76f512b autocomplete-perf-policy`, 1 finding). Medium: `watchGc().stop()` disconnected after one timer, so a collection whose entry Node hadn't delivered yet could be dropped and then count as a stall of ours. That errs strict, never lenient. Its reproduction missed 3 of 300 entries, but it counted collections that began after `stop()`. Counting only the collections inside the stage, the old helper missed none of 5,000 here. `stop()` now also waits for the check phase and takes the undelivered records (`takeRecords()`). A unit test forces a collection at the end of each of 50 stages, with real GC, and expects it reported. It passes on the old helper too: it guards the drain rather than reproducing a miss.
