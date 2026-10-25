@@ -58,6 +58,15 @@ const es = {
 
   // ── app shell
   // @app
+  "app.fatal.title": "No se pudo conectar con el motor de correo",
+  "app.boundary.title": "Algo salió mal",
+  "app.boundary.body": "Terno encontró un error y no puede mostrar esta ventana. Tu correo está a salvo.",
+  "app.boundary.reload": "Recargar",
+  "app.boundary.reader": "No se pudo mostrar esta conversación",
+  "app.boundary.settings": "No se pudo mostrar esta sección",
+  "app.boundary.saved": "Terno guardó los detalles del error en este equipo.",
+  "app.boundary.reference": "Referencia {id}",
+  "app.tryAgain": "Reintentar",
 
   // ── settings
   // @settings
@@ -827,6 +836,82 @@ const es = {
 
   // ── diagnostics
   // @diag
+  "diag.exportButton": "Exportar diagnóstico…",
+  "diag.whatGetsSent": "Qué se envía",
+  "diag.whatWasSent": "Qué se envió",
+  "diag.engine.title": "El motor de correo se detuvo",
+  "diag.engine.body": "Terno intentó reiniciarlo varias veces sin éxito. Tu correo sigue guardado en este Mac.",
+  "diag.row.uncleanExit": "Terno se cerró inesperadamente",
+  "diag.row.crash": "Terno se cerró por un error",
+  "diag.row.rendererGone": "La ventana de Terno se cerró por un error",
+  "diag.row.backendExit": "El motor de correo se reinició tras un error",
+  "diag.row.problem": "Terno tuvo un problema",
+  "diag.row.problems": { one: "Terno tuvo un problema", other: "Terno tuvo # problemas" },
+  "diag.row.ask": "¿Enviar un informe anónimo? Nunca incluye tu correo.",
+  "diag.row.sent": "Se envió un informe anónimo, sin el contenido de tus correos.",
+  "diag.row.local": "Los detalles se guardaron en este equipo; puedes exportarlos para soporte.",
+  "diag.row.notNow": "Ahora no",
+  "diag.row.details": "Ver detalles",
+  "diag.preview.sampleTitle": "Así es un informe de error",
+  "diag.preview.detailsTitle": "Detalles del informe",
+  "diag.preview.sample": "Un ejemplo construido igual que los reales.",
+  "diag.preview.sent": "El informe exacto que se envió.",
+  "diag.preview.goes": "El informe exacto, tal como saldría.",
+  "diag.preview.localMode": "En modo local nada sale de este equipo; esto es lo que contendría un informe.",
+  "diag.preview.noDsn": "Esta versión de Terno no envía informes; esto es lo que contendría uno.",
+  "diag.preview.off": "Los informes están desactivados; esto es lo que contendría uno.",
+  "diag.preview.carries": "Solo lleva el tipo de error, dónde ocurrió en el código de Terno y tus últimas acciones como códigos: nunca tus correos, direcciones, asuntos, nombres de archivo ni claves.",
+  "diag.preview.destination": "Destino: {host}.",
+  "diag.preview.json": "Informe en formato JSON",
+  "diag.preview.installId": "Identificador de instalación <code>{id}…</code> · aleatorio, no está ligado a tu correo.",
+  "diag.settings.title": "Diagnóstico",
+  "diag.settings.reports": "Informes de errores",
+  "diag.settings.hint.localMac": "El modo local no envía nada fuera de este Mac: los errores se guardan aquí y puedes exportarlos.",
+  "diag.settings.hint.localWeb": "El modo local no envía nada fuera de este navegador: los errores se guardan aquí y puedes exportarlos.",
+  "diag.settings.hint.noDsn": "Esta versión de Terno no envía informes: los errores se guardan en este equipo y puedes exportarlos.",
+  "diag.settings.hint.always": "Se envían solos y son anónimos: el tipo de error y dónde ocurrió, nunca tu correo.",
+  "diag.settings.hint.never": "Nunca se envían. Los errores se guardan en este equipo.",
+  "diag.settings.hint.ask": "Terno te pregunta antes de enviar cada uno. Son anónimos y nunca incluyen tu correo.",
+  "diag.settings.contains": "Qué incluye un informe",
+  "diag.settings.containsHint": "El tipo de error, dónde ocurrió en el código de Terno y tus últimas acciones, como códigos.",
+  "diag.settings.viewExample": "Ver ejemplo",
+  "diag.settings.logs": "Registros",
+  "diag.settings.logsHint": "Para revisar un problema o enviarlo a soporte. Depurados: sin el contenido de tus correos ni tus claves.",
+  "diag.settings.copyVersion": "Copiar versión",
+  "diag.channel.dev": "desarrollo",
+  "diag.channel.test": "pruebas",
+  "diag.channel.demo": "demo",
+  "diag.sent": { one: "Informe enviado. Gracias.", other: "# informes enviados. Gracias." },
+  "diag.sendFailed": "No se pudo enviar el informe. Sigue guardado en este equipo.",
+  "diag.exported": "Diagnóstico exportado",
+  "diag.exportFailed": "No se pudo exportar el diagnóstico",
+  "diag.export.title": "Exportar diagnóstico",
+  "diag.export.detail": "Se guardan los registros y los informes de errores de Terno, depurados: sin el contenido de tus correos, direcciones ni claves. Puedes revisarlo antes de enviarlo a nadie.",
+  "diag.export.native": "Incluir volcados nativos (pueden contener fragmentos de tus correos)",
+  "diag.export.button": "Exportar…",
+  "diag.export.fileName": "Terno-diagnostico-{date}",
+  "diag.export.webReadme":
+    "Diagnóstico de Terno: registros (códigos de eventos con datos tipados) e informes de errores de esta pestaña, depurados (sin direcciones, asuntos, contraseñas ni tokens). No contiene tu correo, tus contactos ni tus claves. Nadie lo recibe salvo que tú lo envíes.",
+  "diag.export.readme": `Diagnóstico de Terno
+====================
+
+Este archivo lo creaste tú desde Terno (Ajustes → General → Diagnóstico, o Ayuda →
+Exportar diagnóstico). Nadie lo recibe salvo que tú lo envíes.
+
+Contiene:
+- logs/: los registros de cada proceso (main, motor de correo, ventana). Cada línea
+  es un código de evento con datos tipados (cuentas por tipo, duraciones, códigos de
+  error). Los mensajes de error se guardan depurados: sin direcciones, asuntos,
+  contraseñas, tokens ni rutas con tu nombre de usuario.
+- crashes/: un registro por error inesperado o cierre: el tipo de error, la pila de
+  llamadas del código de Terno y las últimas acciones (solo códigos e identificadores
+  numéricos, nunca contenido).
+- system.json: versión y compilación de Terno, sistema, arquitectura e idioma.
+- native/ (solo si lo marcaste): volcados de memoria de fallos nativos. Pueden
+  contener fragmentos de tus correos.
+
+No contiene tu correo, tus contactos, tus ajustes ni tus claves.
+`,
 
   // ── desktop menus (title case in English, macOS HIG)
   "menu.about": "Acerca de {app}",

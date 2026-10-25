@@ -1,4 +1,5 @@
 import type { AppSettings } from "@terno/core/rpc";
+import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Check, Copy } from "lucide-react";
@@ -8,26 +9,26 @@ import { exportDiagnostics, openPreview, refreshDiag, showLogs, useDiag } from "
 import { SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
 
 const REPORTS = [
-  { value: "ask", label: "Ask" },
-  { value: "always", label: "Always" },
-  { value: "never", label: "Never" },
+  { value: "ask", label: "common.ask" },
+  { value: "always", label: "common.always" },
+  { value: "never", label: "common.never" },
 ] as const;
 
-const CHANNEL = { production: "", dev: "development", test: "test", demo: "demo" } as const;
-const HERE = WEB ? "this browser" : "this Mac";
+const CHANNEL = { production: null, dev: "diag.channel.dev", test: "diag.channel.test", demo: "diag.channel.demo" } as const;
 
 function reportsHint(settings: AppSettings, dsn: boolean): string {
-  if (settings.localMode) return `Local mode sends nothing outside ${HERE}: errors are kept here, and you can export them.`;
-  if (!dsn) return "This build of Terno doesn't send reports: errors are kept on this computer, and you can export them.";
-  if (settings.errorReports === "always") return "Sent automatically and anonymously: the kind of error and where it happened, never your mail.";
-  if (settings.errorReports === "never") return "Never sent. Errors are kept on this computer.";
-  return "Terno asks before sending each one. Reports are anonymous and never include your mail.";
+  if (settings.localMode) return t(WEB ? "diag.settings.hint.localWeb" : "diag.settings.hint.localMac");
+  if (!dsn) return t("diag.settings.hint.noDsn");
+  if (settings.errorReports === "always") return t("diag.settings.hint.always");
+  if (settings.errorReports === "never") return t("diag.settings.hint.never");
+  return t("diag.settings.hint.ask");
 }
 
 /** The build line: version, commit and channel, the way support asks for it. */
 function BuildLine() {
   const [copied, setCopied] = useState(false);
-  const channel = CHANNEL[BUILD.channel];
+  const key = CHANNEL[BUILD.channel];
+  const channel = key ? t(key) : "";
   const text = `Terno ${BUILD.version} (${BUILD.sha}${channel ? `, ${channel}` : ""})`;
   return (
     <span className="flex items-center gap-1.5" data-testid="build-line">
@@ -38,7 +39,7 @@ function BuildLine() {
       <button
         type="button"
         className="inline-flex size-5 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        aria-label="Copy version"
+        aria-label={t("diag.settings.copyVersion")}
         data-testid="build-copy"
         onClick={() =>
           void navigator.clipboard.writeText(text).then(() => {
@@ -59,40 +60,40 @@ export function DiagnosticsSection({ settings, update }: { settings: AppSettings
   useEffect(() => void refreshDiag(), []);
   const locked = settings.localMode || !dsn;
   return (
-    <SettingsGroup title="Diagnostics" testId="diagnostics-section" footer={<BuildLine />}>
-      <SettingsRow label="Error reports" hint={reportsHint(settings, dsn)} testId="error-reports-row">
+    <SettingsGroup title={t("diag.settings.title")} testId="diagnostics-section" footer={<BuildLine />}>
+      <SettingsRow label={t("diag.settings.reports")} hint={reportsHint(settings, dsn)} testId="error-reports-row">
         {({ id: _id, ...a }) => (
-          <Select value={locked ? "never" : settings.errorReports} disabled={locked} onValueChange={(v) => void update({ errorReports: v as AppSettings["errorReports"] })} items={REPORTS.map((r) => ({ ...r }))}>
+          <Select value={locked ? "never" : settings.errorReports} disabled={locked} onValueChange={(v) => void update({ errorReports: v as AppSettings["errorReports"] })} items={REPORTS.map((r) => ({ value: r.value, label: t(r.label) }))}>
             <SelectTrigger {...a} size="sm" className="w-32" data-testid="error-reports-select">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               {REPORTS.map((r) => (
                 <SelectItem key={r.value} value={r.value} data-testid={`error-reports-${r.value}`}>
-                  {r.label}
+                  {t(r.label)}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         )}
       </SettingsRow>
-      <SettingsRow label="What a report contains" hint="The kind of error, where it happened in Terno's code and your last actions, as codes.">
+      <SettingsRow label={t("diag.settings.contains")} hint={t("diag.settings.containsHint")}>
         {({ id: _id, "aria-labelledby": _l, ...a }) => (
           <Button {...a} variant="outline" size="sm" data-testid="report-sample" onClick={() => void openPreview("sample")}>
-            View Example
+            {t("diag.settings.viewExample")}
           </Button>
         )}
       </SettingsRow>
-      <SettingsRow label="Logs" hint="To look into a problem or send it to support. Scrubbed: none of your mail and none of your keys.">
+      <SettingsRow label={t("diag.settings.logs")} hint={t("diag.settings.logsHint")}>
         {({ id: _id, "aria-labelledby": _l, ...a }) => (
           <>
             {DESKTOP_DIAG && (
               <Button variant="ghost" size="sm" data-testid="show-logs" onClick={showLogs}>
-                Show
+                {t("common.show")}
               </Button>
             )}
             <Button {...a} variant="outline" size="sm" data-testid="export-diagnostics" onClick={() => void exportDiagnostics()}>
-              Export…
+              {t("diag.export.button")}
             </Button>
           </>
         )}

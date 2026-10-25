@@ -64,6 +64,15 @@ const en = {
 
   // ── app shell
   // @app
+  "app.fatal.title": "Couldn’t connect to the mail engine",
+  "app.boundary.title": "Something went wrong",
+  "app.boundary.body": "Terno hit an error and can’t show this window. Your mail is safe.",
+  "app.boundary.reload": "Reload",
+  "app.boundary.reader": "This conversation couldn’t be shown",
+  "app.boundary.settings": "This section couldn’t be shown",
+  "app.boundary.saved": "Terno saved the details of the error on this computer.",
+  "app.boundary.reference": "Reference {id}",
+  "app.tryAgain": "Try again",
 
   // ── settings
   // @settings
@@ -834,6 +843,82 @@ const en = {
 
   // ── diagnostics
   // @diag
+  "diag.exportButton": "Export diagnostics…",
+  "diag.whatGetsSent": "What gets sent",
+  "diag.whatWasSent": "What was sent",
+  "diag.engine.title": "The mail engine stopped",
+  "diag.engine.body": "Terno tried to restart it several times without success. Your mail is still saved on this Mac.",
+  "diag.row.uncleanExit": "Terno quit unexpectedly",
+  "diag.row.crash": "Terno quit because of an error",
+  "diag.row.rendererGone": "Terno’s window closed because of an error",
+  "diag.row.backendExit": "The mail engine restarted after an error",
+  "diag.row.problem": "Terno ran into a problem",
+  "diag.row.problems": { one: "Terno ran into a problem", other: "Terno ran into # problems" },
+  "diag.row.ask": "Send an anonymous report? It never includes your mail.",
+  "diag.row.sent": "An anonymous report was sent, without any of your mail.",
+  "diag.row.local": "The details were saved on this computer. You can export them for support.",
+  "diag.row.notNow": "Not now",
+  "diag.row.details": "Details",
+  "diag.preview.sampleTitle": "What an error report looks like",
+  "diag.preview.detailsTitle": "Report details",
+  "diag.preview.sample": "An example, built exactly like real ones.",
+  "diag.preview.sent": "The exact report that was sent.",
+  "diag.preview.goes": "The exact report, as it would leave.",
+  "diag.preview.localMode": "Nothing leaves this computer in local mode; this is what a report would contain.",
+  "diag.preview.noDsn": "This build of Terno doesn’t send reports; this is what one would contain.",
+  "diag.preview.off": "Reports are off; this is what one would contain.",
+  "diag.preview.carries": "It only carries the kind of error, where it happened in Terno’s code and your last actions as codes: never your mail, addresses, subjects, file names or keys.",
+  "diag.preview.destination": "Destination: {host}.",
+  "diag.preview.json": "Report as JSON",
+  "diag.preview.installId": "Install ID <code>{id}…</code> · random, never tied to your email.",
+  "diag.settings.title": "Diagnostics",
+  "diag.settings.reports": "Error reports",
+  "diag.settings.hint.localMac": "Local mode sends nothing outside this Mac: errors are kept here, and you can export them.",
+  "diag.settings.hint.localWeb": "Local mode sends nothing outside this browser: errors are kept here, and you can export them.",
+  "diag.settings.hint.noDsn": "This build of Terno doesn’t send reports: errors are kept on this computer, and you can export them.",
+  "diag.settings.hint.always": "Sent automatically and anonymously: the kind of error and where it happened, never your mail.",
+  "diag.settings.hint.never": "Never sent. Errors are kept on this computer.",
+  "diag.settings.hint.ask": "Terno asks before sending each one. Reports are anonymous and never include your mail.",
+  "diag.settings.contains": "What a report contains",
+  "diag.settings.containsHint": "The kind of error, where it happened in Terno’s code and your last actions, as codes.",
+  "diag.settings.viewExample": "View example",
+  "diag.settings.logs": "Logs",
+  "diag.settings.logsHint": "To look into a problem or send it to support. Scrubbed: none of your mail and none of your keys.",
+  "diag.settings.copyVersion": "Copy version",
+  "diag.channel.dev": "development",
+  "diag.channel.test": "test",
+  "diag.channel.demo": "demo",
+  "diag.sent": { one: "Report sent. Thank you.", other: "# reports sent. Thank you." },
+  "diag.sendFailed": "The report couldn’t be sent. It’s still saved on this computer.",
+  "diag.exported": "Diagnostics exported",
+  "diag.exportFailed": "Diagnostics couldn’t be exported",
+  "diag.export.title": "Export Diagnostics",
+  "diag.export.detail": "Saves Terno’s logs and error reports, scrubbed: none of your mail, addresses or keys. You can look through it before sending it to anyone.",
+  "diag.export.native": "Include native crash dumps (they can contain fragments of your mail)",
+  "diag.export.button": "Export…",
+  "diag.export.fileName": "Terno-diagnostics-{date}",
+  "diag.export.webReadme":
+    "Terno diagnostics: this tab’s logs (event codes with typed fields) and error reports, scrubbed (no addresses, subjects, passwords or tokens). It contains none of your mail, contacts or keys. Nobody receives it unless you send it.",
+  "diag.export.readme": `Terno diagnostics
+=================
+
+You created this file in Terno (Settings → General → Diagnostics, or Help →
+Export Diagnostics). Nobody receives it unless you send it.
+
+It contains:
+- logs/: each process’s log (main, mail engine, window). Every line is an event
+  code with typed fields (accounts by kind, durations, error codes). Error
+  messages are kept scrubbed: no addresses, subjects, passwords, tokens or paths
+  with your user name.
+- crashes/: one record per unexpected error or crash: the kind of error, the
+  call stack in Terno’s code and the last actions (codes and numeric ids only,
+  never content).
+- system.json: Terno’s version and build, the system, architecture and language.
+- native/ (only if you ticked it): memory dumps of native crashes. They can
+  contain fragments of your mail.
+
+It contains none of your mail, contacts, settings or keys.
+`,
 
   // ── desktop menus (title case in English, macOS HIG)
   "menu.about": "About {app}",

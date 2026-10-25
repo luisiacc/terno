@@ -4,6 +4,7 @@
  * refetched whenever the host says something changed.
  */
 import { breadcrumb, type DiagView, type FieldValueOf, type ReportEvent } from "@terno/core/diag";
+import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { snack } from "~/lib/snack";
 import { DESKTOP_DIAG } from "~/lib/diag";
@@ -71,8 +72,8 @@ export async function decideReports(ids: string[], decision: "send" | "dismiss")
   if (!ids.length) return;
   const { sent } = await host.decide(ids, decision);
   if (decision === "send") {
-    if (sent) snack.success(sent === 1 ? "Report sent. Thank you." : `${sent} reports sent. Thank you.`);
-    else snack.error("The report couldn't be sent. It's still saved on this computer.");
+    if (sent) snack.success(t("diag.sent", { count: sent }));
+    else snack.error(t("diag.sendFailed"));
   }
   await refreshDiag();
 }
@@ -97,15 +98,15 @@ export async function resetInstallId(): Promise<void> {
 export async function exportDiagnostics(): Promise<void> {
   if (DESKTOP_DIAG) {
     const r = await DESKTOP_DIAG.export();
-    if (r.status === "saved") snack.success("Diagnostics exported", { description: r.name });
-    else if (r.status === "failed") snack.error("Diagnostics couldn't be exported");
+    if (r.status === "saved") snack.success(t("diag.exported"), { description: r.name });
+    else if (r.status === "failed") snack.error(t("diag.exportFailed"));
     return;
   }
   const json = await localDiag.exportJson();
   const url = URL.createObjectURL(new Blob([json], { type: "application/json" }));
   const a = document.createElement("a");
   a.href = url;
-  a.download = `Terno-diagnostics-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = `${t("diag.export.fileName", { date: new Date().toISOString().slice(0, 10) })}.json`;
   document.body.append(a);
   a.click();
   a.remove();

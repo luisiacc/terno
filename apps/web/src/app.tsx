@@ -1,3 +1,4 @@
+import { t } from "@terno/i18n";
 import { TooltipProvider } from "@terno/ui/components/tooltip";
 import { lazy, Suspense, useEffect } from "react";
 import { onFiled, undoFiled } from "~/lib/categorize";
@@ -39,7 +40,7 @@ function Fatal({ message }: { message: string }) {
   return (
     <div className="flex h-screen items-center justify-center bg-background p-10 text-center">
       <div>
-        <p className="font-semibold">No se pudo conectar con el motor de correo</p>
+        <p className="font-semibold">{t("app.fatal.title")}</p>
         <p className="mt-1 text-sm text-muted-foreground">{message}</p>
       </div>
     </div>
@@ -92,7 +93,7 @@ export function App() {
         </div>
         <main className="relative min-h-0">
           {/* the reader pane: a bulk selection, else a new message being written, else the conversation; one that fails to render is that pane only */}
-          <PaneBoundary area="reader" resetKey={selectedId} title="This conversation couldn't be shown">
+          <PaneBoundary area="reader" resetKey={selectedId}>
             {many ? <SelectionBar /> : composing ? <NewMessage /> : <Reader />}
           </PaneBoundary>
         </main>

@@ -1,4 +1,5 @@
 import type { PendingReport } from "@terno/core/diag";
+import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { LifeBuoy, X } from "lucide-react";
 import { useState } from "react";
@@ -7,14 +8,14 @@ import { setApp } from "~/state/app";
 import { decideReports, exportDiagnostics, openPreview, useDiag } from "~/state/diag";
 import { reconcileSettings } from "~/lib/appearance";
 
-const TITLE: Record<PendingReport["kind"], string> = {
-  unclean_exit: "Terno quit unexpectedly",
-  crash: "Terno quit because of an error",
-  renderer_gone: "Terno's window closed because of an error",
-  backend_exit: "The mail engine restarted after an error",
-  child_gone: "Terno ran into a problem",
-  error: "Terno ran into a problem",
-};
+const TITLE = {
+  unclean_exit: "diag.row.uncleanExit",
+  crash: "diag.row.crash",
+  renderer_gone: "diag.row.rendererGone",
+  backend_exit: "diag.row.backendExit",
+  child_gone: "diag.row.problem",
+  error: "diag.row.problem",
+} as const satisfies Record<PendingReport["kind"], string>;
 
 /**
  * The one quiet place a problem shows up: after a crash or an unclean exit
@@ -35,7 +36,7 @@ export function ReportRow() {
   const first = shown[0]!;
   const ids = shown.map((p) => p.id);
   const many = shown.length > 1;
-  const title = many ? `Terno ran into ${shown.length} problems` : TITLE[first.kind];
+  const title = many ? t("diag.row.problems", { count: shown.length }) : t(TITLE[first.kind]);
   const dismiss = () => void decideReports(ids, "dismiss");
   const send = async () => {
     setBusy(true);
@@ -59,43 +60,43 @@ export function ReportRow() {
           {title}
         </p>
         <p className="mt-0.5 text-muted-foreground">
-          {offer === "ask" ? "Send an anonymous report? It never includes your mail." : offer === "sent" ? "An anonymous report was sent, without any of your mail." : "The details were saved on this computer. You can export them for support."}
+          {t(offer === "ask" ? "diag.row.ask" : offer === "sent" ? "diag.row.sent" : "diag.row.local")}
         </p>
         <div className="mt-2 flex flex-wrap gap-1.5">
           {offer === "ask" && (
             <>
               <Button size="xs" variant="outline" disabled={busy} data-testid="report-send" onClick={() => void send()}>
-                Send
+                {t("common.send")}
               </Button>
               <Button size="xs" variant="ghost" disabled={busy} data-testid="report-always" onClick={() => void always()}>
-                Always
+                {t("common.always")}
               </Button>
               <Button size="xs" variant="ghost" data-testid="report-preview" onClick={() => void openPreview(first.id)}>
-                What gets sent
+                {t("diag.whatGetsSent")}
               </Button>
               <Button size="xs" variant="ghost" data-testid="report-later" onClick={dismiss}>
-                Not now
+                {t("diag.row.notNow")}
               </Button>
             </>
           )}
           {offer === "sent" && (
             <Button size="xs" variant="ghost" data-testid="report-preview" onClick={() => void openPreview(first.id)}>
-              What was sent
+              {t("diag.whatWasSent")}
             </Button>
           )}
           {offer === "local" && (
             <>
               <Button size="xs" variant="outline" data-testid="report-export" onClick={() => void exportDiagnostics()}>
-                Export Diagnostics…
+                {t("diag.exportButton")}
               </Button>
               <Button size="xs" variant="ghost" data-testid="report-preview" onClick={() => void openPreview(first.id)}>
-                Details
+                {t("diag.row.details")}
               </Button>
             </>
           )}
         </div>
       </div>
-      <button type="button" aria-label="Dismiss" data-testid="report-close" className="text-muted-foreground hover:text-foreground" onClick={dismiss}>
+      <button type="button" aria-label={t("common.dismiss")} data-testid="report-close" className="text-muted-foreground hover:text-foreground" onClick={dismiss}>
         <X className="size-3.5" />
       </button>
     </div>

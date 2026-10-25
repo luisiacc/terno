@@ -12,6 +12,7 @@ import { join, relative } from "node:path";
 import { promisify } from "node:util";
 import { crc32, deflateRaw } from "node:zlib";
 import { sanitizeCrumbs, sanitizeEntry, sanitizeRecord, PROCS, type Proc } from "@terno/core/diag";
+import { t } from "@terno/i18n";
 import type { DiagPaths } from "./store";
 
 const MAX_FILE_BYTES = 16 * 1024 * 1024;
@@ -112,26 +113,8 @@ async function cleanLog(text: string): Promise<string> {
   return out.length ? `${out.join("\n")}\n` : "";
 }
 
-export const README = `Terno diagnostics
-=================
-
-You created this file in Terno (Settings → General → Diagnostics, or Help →
-Export Diagnostics). Nobody receives it unless you send it.
-
-It contains:
-- logs/: each process's log (main, mail engine, window). Every line is an event
-  code with typed fields (accounts by kind, durations, error codes). Error
-  messages are kept scrubbed: no addresses, subjects, passwords, tokens or paths
-  with your user name.
-- crashes/: one record per unexpected error or crash: the kind of error, the
-  call stack in Terno's code and the last actions (codes and numeric ids only,
-  never content).
-- system.json: Terno's version and build, the system, architecture and language.
-- native/ (only if you ticked it): memory dumps of native crashes. They can
-  contain fragments of your mail.
-
-It contains none of your mail, contacts, settings or keys.
-`;
+/** What is inside, in main's language at the time of the export (entry names stay fixed). */
+export const readme = (): string => t("diag.export.readme");
 
 export interface ExportInput {
   paths: DiagPaths;
@@ -143,7 +126,7 @@ export interface ExportInput {
 /** The archive's entries, every one validated again; bounded in total. */
 export async function collectExport(input: ExportInput): Promise<ZipEntry[]> {
   const entries: ZipEntry[] = [
-    { name: "README.txt", data: Buffer.from(README) },
+    { name: "README.txt", data: Buffer.from(readme()) },
     { name: "system.json", data: Buffer.from(JSON.stringify(input.system, null, 2)) },
   ];
   let total = 0;

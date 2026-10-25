@@ -39,6 +39,7 @@ import {
   type ReportPolicy,
 } from "@terno/core/diag";
 import type { Reporter } from "@terno/core/diag/sentry";
+import { t } from "@terno/i18n";
 import { BUILD, pendingSink } from "./diag";
 import { ENTRIES_MAX, mergeRecords, openDiagDb, readEntries, readRecords, writeBatch } from "./diag-store";
 
@@ -319,8 +320,8 @@ export class LocalDiag implements DiagSink {
     const entries = stored.map((e) => sanitizeEntry(e, (e as { proc?: "renderer" | "worker" }).proc === "worker" ? "worker" : "renderer")).filter(Boolean);
     return JSON.stringify(
       {
-        readme:
-          "Terno diagnostics: this tab's logs (event codes with typed fields) and error reports, scrubbed (no addresses, subjects, passwords or tokens). It contains none of your mail, contacts or keys. Nobody receives it unless you send it.",
+        // in the user's language at export time; the field names stay fixed
+        readme: t("diag.export.webReadme"),
         system: { terno: BUILD, ...diagContext(), userAgent: navigator.userAgent.replace(/\([^)]*\)/g, "(…)"), exportedAt: new Date().toISOString() },
         entries,
         records: this.records.map((r) => sanitizeRecord(r)).filter(Boolean),

@@ -49,6 +49,7 @@ import {
   type ReportPolicy,
 } from "@terno/core/diag";
 import type { Reporter, SendResult } from "@terno/core/diag/sentry";
+import { t } from "@terno/i18n";
 import { BUILD_DSN, BUILD_ID, BUILD_SHA, BUILD_VERSION, channelOf } from "./build-info";
 import { collectExport, zip } from "./export";
 import { diagPaths, ensureDirs, nodeRotatingFs, RecordStore, Rings, runMarker, StateFile, type DiagPaths } from "./store";
@@ -566,11 +567,11 @@ class MainDiag implements DiagSink {
     } else {
       const opts: Electron.MessageBoxOptions = {
         type: "none",
-        message: "Export Diagnostics",
-        detail: "Saves Terno's logs and error reports, scrubbed: none of your mail, addresses or keys. You can look through it before sending it to anyone.",
-        checkboxLabel: "Include native crash dumps (they can contain fragments of your mail)",
+        message: t("diag.export.title"),
+        detail: t("diag.export.detail"),
+        checkboxLabel: t("diag.export.native"),
         checkboxChecked: false,
-        buttons: ["Export…", "Cancel"],
+        buttons: [t("diag.export.button"), t("common.cancel")],
         defaultId: 0,
         cancelId: 1,
       };
@@ -578,7 +579,7 @@ class MainDiag implements DiagSink {
       if (ask.response !== 0) return { status: "cancelled" };
       includeNative = ask.checkboxChecked;
       const day = new Date().toISOString().slice(0, 10);
-      const save: Electron.SaveDialogOptions = { defaultPath: join(app.getPath("downloads"), `Terno-diagnostics-${day}.zip`), filters: [{ name: "Zip", extensions: ["zip"] }], properties: ["createDirectory", "showOverwriteConfirmation"] };
+      const save: Electron.SaveDialogOptions = { defaultPath: join(app.getPath("downloads"), `${t("diag.export.fileName", { date: day })}.zip`), filters: [{ name: "Zip", extensions: ["zip"] }], properties: ["createDirectory", "showOverwriteConfirmation"] };
       const choice = parent ? await dialog.showSaveDialog(parent, save) : await dialog.showSaveDialog(save);
       if (choice.canceled || !choice.filePath) return { status: "cancelled" };
       path = choice.filePath;

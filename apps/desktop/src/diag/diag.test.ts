@@ -4,6 +4,9 @@ import { join } from "node:path";
 import { inflateRawSync } from "node:zlib";
 import { appendFileSync } from "node:fs";
 import { captureError, installDiag, type ErrorRecord } from "@terno/core/diag";
+import { setLocale, t } from "@terno/i18n";
+import en from "@terno/i18n/locales/en";
+import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { collectExport, zip } from "./export";
 import { diagPaths, ensureDirs, fitRecord, RECORD_MAX_BYTES, RecordStore, Rings, runMarker, StateFile } from "./store";
@@ -207,6 +210,32 @@ describe("export", () => {
     // native dumps only when asked for
     const withNative = unzip(await zip(await collectExport({ paths, system: {}, nativeDir: join(paths.crashes, "native") })));
     expect(withNative.has("native/a.dmp")).toBe(true);
+  });
+});
+
+describe("the export in main's language", () => {
+  afterEach(() => setLocale("en", en));
+
+  it("the README is written when the export runs, in the language main has then; entry names stay fixed", async () => {
+    const paths = diagPaths(tmp());
+    ensureDirs(paths);
+    writeFileSync(join(paths.logs, "main.jsonl"), `${JSON.stringify({ ts: 1, level: "info", proc: "main", code: "sync.done", fields: { accountKind: "imap" }, session: "s", version: "1", build: "1" })}\n`);
+    const english = unzip(await zip(await collectExport({ paths, system: {} })));
+    setLocale("es", es);
+    const spanish = unzip(await zip(await collectExport({ paths, system: {} })));
+    expect([...english.keys()].sort()).toEqual(["README.txt", "logs/main.jsonl", "system.json"]);
+    expect([...spanish.keys()].sort()).toEqual([...english.keys()].sort());
+    expect(english.get("README.txt")!.toString("utf8")).toMatch(/^Terno diagnostics\n=+\n[\s\S]*Settings → General → Diagnostics[\s\S]*logs\/[\s\S]*system\.json/);
+    expect(spanish.get("README.txt")!.toString("utf8")).toMatch(/^Diagnóstico de Terno\n=+\n[\s\S]*Ajustes → General → Diagnóstico[\s\S]*logs\/[\s\S]*system\.json/);
+  });
+
+  it("the dialog's copy and the offered file name follow the locale", () => {
+    expect(t("diag.export.title")).toBe("Export Diagnostics");
+    expect(t("diag.export.fileName", { date: "2026-10-24" })).toBe("Terno-diagnostics-2026-10-24");
+    setLocale("es", es);
+    expect(t("diag.export.title")).toBe("Exportar diagnóstico");
+    expect(t("diag.export.button")).toBe("Exportar…");
+    expect(t("diag.export.fileName", { date: "2026-10-24" })).toBe("Terno-diagnostico-2026-10-24");
   });
 });
 

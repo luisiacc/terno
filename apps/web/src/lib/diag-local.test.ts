@@ -4,8 +4,11 @@
  * capture made while a tab is still opening its store isn't lost.
  */
 import type { ErrorRecord } from "@terno/core/diag";
+import { setLocale, t } from "@terno/i18n";
+import en from "@terno/i18n/locales/en";
+import es from "@terno/i18n/locales/es";
 import { IDBFactory } from "fake-indexeddb";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { openDiagDb, readRecords, writeBatch } from "./diag-store";
 
 const g = globalThis as Record<string, unknown>;
@@ -60,6 +63,31 @@ describe("LocalDiag", () => {
     expect(tab.records.map((r) => r.id)).toEqual([meanwhile.id, earlier.id]);
     await tab.idle();
     expect((await readRecords(await openDiagDb(factory))).map((r) => r.id)).toEqual([meanwhile.id, earlier.id]);
+  });
+});
+
+describe("diagnostics copy", () => {
+  afterEach(() => setLocale("en", en));
+
+  it("the web export's readme is in the language of the moment it's made; its fields stay fixed", async () => {
+    const tab = new LocalDiag();
+    const english = JSON.parse(await tab.exportJson()) as Record<string, unknown>;
+    setLocale("es", es);
+    const spanish = JSON.parse(await tab.exportJson()) as Record<string, unknown>;
+    expect(Object.keys(spanish)).toEqual(["readme", "system", "entries", "records"]);
+    expect(Object.keys(english)).toEqual(Object.keys(spanish));
+    expect(english.readme).toMatch(/^Terno diagnostics: this tab’s logs/);
+    expect(spanish.readme).toMatch(/^Diagnóstico de Terno: registros/);
+  });
+
+  it("counts are plural messages in both languages", () => {
+    expect(t("diag.row.problems", { count: 3 })).toBe("Terno ran into 3 problems");
+    expect(t("diag.sent", { count: 1 })).toBe("Report sent. Thank you.");
+    expect(t("diag.sent", { count: 2 })).toBe("2 reports sent. Thank you.");
+    setLocale("es", es);
+    expect(t("diag.row.problems", { count: 3 })).toBe("Terno tuvo 3 problemas");
+    expect(t("diag.sent", { count: 1 })).toBe("Informe enviado. Gracias.");
+    expect(t("diag.sent", { count: 2 })).toBe("2 informes enviados. Gracias.");
   });
 });
 
