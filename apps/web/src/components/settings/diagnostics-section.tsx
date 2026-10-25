@@ -31,7 +31,7 @@ function BuildLine() {
   const text = `Terno ${BUILD.version} (${BUILD.sha}${channel ? `, ${channel}` : ""})`;
   return (
     <span className="flex items-center gap-1.5" data-testid="build-line">
-      <span className="font-mono tabular-nums select-text">
+      <span className="tabular-nums select-text">
         Terno {BUILD.version} · {BUILD.sha}
         {channel && ` · ${channel}`}
       </span>

@@ -18,14 +18,28 @@ export function ReportPreview() {
   const pending = view?.pending.find((p) => p.id === preview.target);
   const canSend = pending && !pending.sent && view?.reporting.offer === "ask";
   const sample = preview.target === "sample";
+  // only call it "sent" when it can be: local mode, "never" or a build without a DSN keep everything here
+  const goes = Boolean(preview.host) && view?.reporting.offer !== "local";
+  const title = sample ? "What an error report looks like" : pending?.sent ? "What was sent" : goes ? "What gets sent" : "Report details";
+  const lead = sample
+    ? "An example, built exactly like real ones."
+    : pending?.sent
+      ? "The exact report that was sent."
+      : goes
+        ? "The exact report, as it would leave."
+        : view?.reporting.localMode
+          ? "Nothing leaves this computer in local mode; this is what a report would contain."
+          : !preview.host
+            ? "This build of Terno doesn't send reports; this is what one would contain."
+            : "Reports are off; this is what one would contain.";
   return (
     <Dialog open onOpenChange={(o) => !o && closePreview()}>
       <DialogContent className="max-h-[min(720px,90vh)] grid-rows-[auto_minmax(0,1fr)_auto_auto] sm:max-w-[640px]" data-testid="report-preview-dialog">
         <DialogHeader>
-          <DialogTitle>{sample ? "What an error report looks like" : pending?.sent ? "What was sent" : "What gets sent"}</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            {sample ? "An example, built exactly like real ones." : "The exact report, as it leaves."} It only carries the kind of error, where it happened in Terno's code and your last actions as codes: never your mail, addresses, subjects, file names or keys.
-            {preview.host ? ` Destination: ${preview.host}.` : " This build of Terno doesn't send reports."}
+            {lead} It only carries the kind of error, where it happened in Terno's code and your last actions as codes: never your mail, addresses, subjects, file names or keys.
+            {goes ? ` Destination: ${preview.host}.` : ""}
           </DialogDescription>
         </DialogHeader>
         <pre

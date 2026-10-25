@@ -27,7 +27,9 @@ class Boundary extends Component<Props, { failed: boolean; id: string | null }> 
   }
 
   override componentDidCatch(error: unknown): void {
-    this.setState({ id: captureUi(error, { code: "ui.boundary", fields: { area: this.props.area } }) });
+    // React retries a failed render once: the second capture folds into the first and returns its id
+    const id = captureUi(error, { code: "ui.boundary", fields: { area: this.props.area } });
+    if (id) this.setState({ id });
   }
 
   override componentDidUpdate(prev: Props): void {
@@ -74,7 +76,7 @@ export function AppBoundary({ children }: { children: ReactNode }) {
                 Export Diagnostics…
               </Button>
             </div>
-            {id && <p className="mt-6 font-mono text-[11px] text-muted-foreground tabular-nums select-text">ui.boundary · {shortId(id)}</p>}
+            {id && <p className="mt-6 text-xs text-muted-foreground tabular-nums select-text">Reference {shortId(id)}</p>}
           </div>
         </div>
       )}
@@ -99,7 +101,7 @@ export function PaneBoundary({ area, resetKey, title, children }: { area: "reade
             <Button size="sm" variant="outline" className="mt-3.5" data-testid={`${area}-boundary-retry`} onClick={reset}>
               Try Again
             </Button>
-            {id && <p className="mt-4 font-mono text-[11px] text-muted-foreground tabular-nums select-text">{shortId(id)}</p>}
+            {id && <p className="mt-4 text-xs text-muted-foreground tabular-nums select-text">Reference {shortId(id)}</p>}
           </div>
         </div>
       )}

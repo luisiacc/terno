@@ -222,7 +222,8 @@ const MAX_PER_MINUTE = 20;
 /**
  * Logs an error with its code; an unexpected one becomes a record (with the
  * breadcrumbs and context) that the host keeps and may report. Returns the
- * record's id, or null when it was expected or folded into an earlier one.
+ * record's id (a repeat folded into an earlier record returns that one's),
+ * or null when it was expected.
  */
 export function captureError<C extends DiagCode>(error: unknown, o: CaptureOptions<C>): string | null {
   let id: string | null = null;
@@ -239,6 +240,7 @@ export function captureError<C extends DiagCode>(error: unknown, o: CaptureOptio
     const prev = s.seen.get(fingerprint);
     if (!o.fatal && prev && now - prev.at < REPEAT_MS) {
       prev.record.count = (prev.record.count ?? 1) + 1;
+      id = prev.record.id;
       return;
     }
     const minute = Math.floor(now / 60_000);

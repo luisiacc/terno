@@ -153,7 +153,7 @@ describe("log, breadcrumb, captureError", () => {
     breadcrumb("action", "action.thread", { action: "archive", count: 3 });
     const boom = () => captureError(new TypeError("x is undefined"), { code: "ui.boundary", fields: { area: "reader" } });
     const id = boom();
-    boom();
+    expect(boom()).toBe(id);
     expect(id).toMatch(/^[0-9a-f]{32}$/);
     expect(m.records).toHaveLength(1);
     expect(m.records[0]).toMatchObject({ id, kind: "error", proc: "renderer", code: "ui.boundary", fatal: false, fields: { area: "reader", errorClass: "TypeError" }, count: 2, context: { os: "darwin", arch: "arm64", version: "1" } });
