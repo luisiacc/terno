@@ -17,7 +17,7 @@ describe("generated theme CSS", () => {
     const css = generateThemesCss();
     for (const t of THEMES) expect(css).toContain(`[data-theme="${t.id}"] {`);
     expect(css).toMatch(/^:root,\n\[data-theme="terno-light"\] \{/m);
-    expect(css.match(/color-scheme: dark;/g)).toHaveLength(7);
+    expect(css.match(/color-scheme: dark;/g)).toHaveLength(9);
   });
 
   it("stays small: ≤ 8 KB gzip", () => {

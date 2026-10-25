@@ -1,6 +1,6 @@
 import { t } from "@terno/i18n";
 import { DEFAULT_THEME, THEME_TOKENS, type BuiltinThemeId, type CustomTheme, type ThemeMode, type ThemeToken } from "@terno/core";
-import { contrast, formatOklch, mixOklab, parseColor, withAlpha, type Oklch } from "./color";
+import { composite, contrast, formatOklch, mixOklab, oklchToRgb, parseColor, rgbToOklch, withAlpha, type Oklch } from "./color";
 
 /**
  * The theme registry: the source of truth for every color in the app.
@@ -172,9 +172,14 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   const inkSurfaces = ["background", "tint", "popover"].map((k) => formatOklch(o(k as ThemeToken)));
   def("destructive-ink", () => stepUntil(o("destructive"), inkSurfaces, 4.5, bg, o("foreground"), light));
   def("success-ink", () => stepUntil(o("success"), inkSurfaces, 4.5, bg, o("foreground"), light));
+  // plan 15: unread counts and "N unread" as text, on every surface they're drawn on
+  def("unread-ink", () => stepUntil(o("unread"), ["background", "pane", "sidebar", "sidebar-accent"].map((k) => formatOklch(o(k as ThemeToken))), 4.5, bg, o("foreground"), light));
   def("sidebar-glyph", () => stepUntil(o("sidebar-primary"), [formatOklch(o("sidebar")), formatOklch(o("sidebar-accent"))], 3, bg, o("muted-foreground"), light));
   def("popover-glass", () => withAlpha(o("popover"), glassAlpha(o("popover"), GLASS_TEXT.map((k) => o(k)))));
-  const surfaces = [bg, formatOklch(o("card")), formatOklch(o("popover"))];
+  // badges and avatars: the reader and menus, and (plan 15) rows hovered, selected and checked, drafts and panes
+  // (translucent surfaces as painted: over the background)
+  const opaque = (c: Oklch) => (c.alpha < 1 ? rgbToOklch(composite(oklchToRgb(c), { ...oklchToRgb(o("background")), alpha: 1 })) : c);
+  const surfaces = (["background", "card", "popover", "pane", "tint", "row-hover", "row-selected", "accent"] as const).map((k) => formatOklch(opaque(o(k))));
   for (const name of CAT_NAMES) def(`cat-${name}-ink`, () => inkFor(o(`cat-${name}`), o("ink-anchor"), surfaces));
 
   return Object.fromEntries(THEME_TOKENS.map((k) => [k, formatOklch(o(k))])) as Record<ThemeToken, string>;
@@ -378,6 +383,71 @@ export const THEMES: readonly Theme[] = [
       "sidebar-accent": "0.906 0.012 265",
     },
     cats: cats(".55 .216 20 | .657 .204 42 | .644 .149 68 | .62 .177 140 | .627 .145 235 | .559 .226 262 | .555 .25 297 | .601 .03 279"),
+  }),
+  defineTheme({
+    id: "lumen-light",
+    name: "Lumen",
+    mode: "light",
+    vibrancy: false,
+    // plan 15: warm paper, a near-black ink for primary controls, gold for what's new
+    tokens: {
+      background: "1 0 0",
+      foreground: "0.211 0.005 68",
+      pane: "1 0 0",
+      card: "1 0 0",
+      popover: "1 0 0",
+      sidebar: "0.986 0.002 68",
+      muted: "0.967 0.003 85",
+      "muted-foreground": "0.515 0.012 72",
+      accent: "0.96 0.016 83",
+      "accent-foreground": "0.5 0.1 74",
+      border: "0.3 0.01 70 / 10%",
+      input: "0.3 0.01 70 / 15%",
+      primary: "0.211 0.005 68",
+      "primary-foreground": "1 0 0",
+      destructive: "0.56 0.19 30",
+      success: "0.53 0.11 150",
+      unread: "0.64 0.13 76",
+      star: "0.61 0.135 74",
+      "row-hover": "0.975 0.004 80",
+      "row-selected": "0.955 0.022 83",
+      "row-selected-foreground": "0.211 0.005 68",
+      "sidebar-accent": "0.953 0.006 75",
+    },
+    cats: cats(".6 .14 25 | .64 .12 78 | .62 .11 125 | .58 .095 149 | .589 .079 208 | .55 .1 265 | .589 .109 306 | .58 .015 70"),
+    overrides: { ring: "0.6 0.12 76" },
+  }),
+  defineTheme({
+    id: "atelier-light",
+    name: "Atelier",
+    mode: "light",
+    vibrancy: false,
+    // plan 15: quiet paper and ink navy
+    tokens: {
+      background: "1 0 0",
+      foreground: "0.227 0.004 85",
+      pane: "1 0 0",
+      card: "1 0 0",
+      popover: "1 0 0",
+      sidebar: "0.97 0.004 91",
+      muted: "0.961 0.004 91",
+      "muted-foreground": "0.515 0.013 90",
+      accent: "0.954 0.006 255",
+      "accent-foreground": "0.326 0.061 256",
+      border: "0.227 0.004 85 / 10%",
+      input: "0.227 0.004 85 / 15%",
+      primary: "0.326 0.061 256",
+      "primary-foreground": "1 0 0",
+      destructive: "0.55 0.17 30",
+      success: "0.52 0.08 145",
+      unread: "0.326 0.061 256",
+      star: "0.588 0.119 47",
+      "row-hover": "0.975 0.003 91",
+      "row-selected": "0.945 0.011 255",
+      "row-selected-foreground": "0.227 0.004 85",
+      "sidebar-accent": "0.934 0.007 89",
+    },
+    cats: cats(".57 .12 15 | .6 .11 65 | .58 .08 125 | .559 .069 144 | .554 .055 209 | .496 .079 258 | .557 .065 306 | .56 .012 90"),
   }),
   defineTheme({
     id: "terno-dark",
@@ -595,6 +665,69 @@ export const THEMES: readonly Theme[] = [
       "sidebar-accent": "0.324 0.032 282",
     },
     cats: cats(".756 .13 3 | .824 .101 53 | .919 .07 87 | .858 .109 143 | .847 .083 210 | .766 .111 260 | .787 .119 305 | .687 .037 275"),
+  }),
+  defineTheme({
+    id: "lumen-dark",
+    name: "Lumen",
+    mode: "dark",
+    vibrancy: false,
+    tokens: {
+      background: "0.19 0.006 70",
+      foreground: "0.95 0.005 85",
+      pane: "0.19 0.006 70",
+      card: "0.215 0.006 70",
+      popover: "0.235 0.007 70",
+      sidebar: "0.215 0.006 70",
+      muted: "0.26 0.007 70",
+      "muted-foreground": "0.72 0.012 75",
+      accent: "0.29 0.035 80",
+      "accent-foreground": "0.87 0.09 85",
+      border: "1 0 0 / 8%",
+      input: "1 0 0 / 12%",
+      primary: "0.94 0.006 85",
+      "primary-foreground": "0.19 0.006 70",
+      destructive: "0.68 0.19 22",
+      success: "0.72 0.13 160",
+      unread: "0.8 0.13 82",
+      star: "0.82 0.14 82",
+      "row-hover": "1 0 0 / 4%",
+      "row-selected": "0.29 0.035 80",
+      "row-selected-foreground": "0.96 0.01 85",
+      "sidebar-accent": "1 0 0 / 7%",
+    },
+    cats: cats(".72 .13 30 | .8 .12 82 | .78 .12 130 | .74 .1 150 | .76 .08 208 | .72 .1 265 | .74 .1 306 | .72 .015 75"),
+    overrides: { ring: "0.8 0.13 82 / 80%" },
+  }),
+  defineTheme({
+    id: "atelier-dark",
+    name: "Atelier",
+    mode: "dark",
+    vibrancy: false,
+    tokens: {
+      background: "0.2 0.012 255",
+      foreground: "0.94 0.006 85",
+      pane: "0.2 0.012 255",
+      card: "0.225 0.013 255",
+      popover: "0.245 0.014 255",
+      sidebar: "0.18 0.011 255",
+      muted: "0.265 0.014 255",
+      "muted-foreground": "0.72 0.012 85",
+      accent: "0.29 0.03 255",
+      "accent-foreground": "0.9 0.03 255",
+      border: "1 0 0 / 8%",
+      input: "1 0 0 / 12%",
+      primary: "0.76 0.07 255",
+      "primary-foreground": "0.2 0.03 255",
+      destructive: "0.68 0.16 30",
+      success: "0.72 0.1 145",
+      unread: "0.76 0.07 255",
+      star: "0.74 0.12 50",
+      "row-hover": "1 0 0 / 4%",
+      "row-selected": "0.3 0.035 255",
+      "row-selected-foreground": "0.96 0.006 85",
+      "sidebar-accent": "1 0 0 / 7%",
+    },
+    cats: cats(".72 .11 15 | .76 .1 70 | .76 .08 125 | .74 .07 144 | .75 .06 209 | .72 .08 258 | .74 .07 306 | .7 .012 90"),
   }),
 ];
 

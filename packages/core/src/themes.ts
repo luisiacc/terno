@@ -75,6 +75,8 @@ export const THEME_TOKENS = [
   // plan 08: error and "saved" text that reads on tint groups too
   "destructive-ink",
   "success-ink",
+  // plan 15: "N unread" text and unread counts drawn as text
+  "unread-ink",
   // chrome
   "overlay",
   "shadow-color",
@@ -98,6 +100,8 @@ export const BUILTIN_THEMES = [
   { id: "gruvbox-light", mode: "light" },
   { id: "github-light", mode: "light" },
   { id: "catppuccin-latte", mode: "light" },
+  { id: "lumen-light", mode: "light" },
+  { id: "atelier-light", mode: "light" },
   { id: "terno-dark", mode: "dark" },
   { id: "dracula", mode: "dark" },
   { id: "monokai", mode: "dark" },
@@ -105,6 +109,8 @@ export const BUILTIN_THEMES = [
   { id: "gruvbox-dark", mode: "dark" },
   { id: "nord", mode: "dark" },
   { id: "catppuccin-mocha", mode: "dark" },
+  { id: "lumen-dark", mode: "dark" },
+  { id: "atelier-dark", mode: "dark" },
 ] as const satisfies readonly { id: string; mode: ThemeMode }[];
 export type BuiltinThemeId = (typeof BUILTIN_THEMES)[number]["id"];
 export const BUILTIN_THEME_IDS = BUILTIN_THEMES.map((t) => t.id) as BuiltinThemeId[];
