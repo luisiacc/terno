@@ -43,9 +43,9 @@ describe("classifyGaps", () => {
     expect(classifyGaps([gap(80, 10)], 5_000, 50, false).descheduled).toEqual([]);
   });
 
-  it("excuses none when they recur: past two per stage, or one per 5 s", () => {
-    expect(classifyGaps([gap(80, 5), gap(80, 5, 100), gap(80, 5, 200)], 5_000, 50, true).descheduled).toEqual([]);
-    expect(classifyGaps([gap(80, 5), gap(80, 5, 100), gap(80, 5, 200)], 15_000, 50, true).descheduled).toHaveLength(3);
+  it("excuses none when they recur: past two per stage, or one a second", () => {
+    expect(classifyGaps([gap(80, 5), gap(80, 5, 100), gap(80, 5, 200)], 2_000, 50, true).descheduled).toEqual([]);
+    expect(classifyGaps([gap(80, 5), gap(80, 5, 100), gap(80, 5, 200)], 3_000, 50, true).descheduled).toHaveLength(3);
   });
 });
 

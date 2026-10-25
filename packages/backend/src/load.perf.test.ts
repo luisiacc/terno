@@ -17,7 +17,7 @@
  * A slicer that didn't adapt would run over on every slice and fail. The
  * other excuse is the machine's, and only on a busy machine (timing.ts): a
  * gap in which this thread was on a CPU for at most the budget, the OS
- * holding it for the rest, rarely (two per stage, or one per 5 s of it).
+ * holding it for the rest, rarely (two per stage, or one a second of it).
  * Slices the OS held are excused the same way, and list calls lose the time
  * such a gap held them. The injected slowness is spun, on the CPU, so a
  * slicer that stopped adapting is never excused.

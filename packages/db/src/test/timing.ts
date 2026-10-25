@@ -13,8 +13,9 @@
  *   turns it off), and only when rare: a sample off-CPU for over half of it
  *   counts at its CPU time while such samples are at most a tenth; a stall (a
  *   gap between 1 ms ticks with the loop busy) in which the thread used at
- *   most the budget of CPU is excused at most twice per stage (or once per
- *   5 s), each under 2 s. Past that, all count in full.
+ *   most the budget of CPU is excused at most twice per stage (or once a
+ *   second: work that waits in every slice holds it hundreds of times), each
+ *   under 2 s. Past that, all count in full.
  *
  * On a quiet machine nothing is excused. A slower computation shows as CPU
  * time and fails either way. Plain JS for the IndexedDB package (no Node
@@ -131,7 +132,7 @@ export interface LoopReport {
 
 /** stalls a stage may excuse as descheduled */
 export function deschedulingAllowance(stageMs: number): number {
-  return Math.max(2, Math.floor(stageMs / 5_000));
+  return Math.max(2, Math.floor(stageMs / 1_000));
 }
 
 /** the longest hold excused: a machine paging under memory pressure holds a thread for hundreds of ms */
