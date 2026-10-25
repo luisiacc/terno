@@ -39,7 +39,7 @@ async function ready(page: Page, { banner = true } = {}) {
 
 test.describe("chrome", () => {
   test("toolbar hairlines appear only once content scrolls under them", async ({ app: page }) => {
-    const header = page.getByTestId("list-title").locator("xpath=../..");
+    const header = page.getByTestId("list-header");
     await expect(header).not.toHaveAttribute("data-scrolled");
     await page.getByRole("listbox").evaluate((el) => el.scrollTo(0, 400));
     await expect(header).toHaveAttribute("data-scrolled", "");
