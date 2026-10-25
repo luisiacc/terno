@@ -13,6 +13,7 @@
     "dev:desktop": "pnpm --filter @terno/desktop dev",
     "build": "pnpm --filter @terno/web build && pnpm --filter @terno/desktop build",
     "dist:mac": "pnpm build && pnpm --filter @terno/desktop dist:mac",
+    "release:mac": "node apps/desktop/scripts/release.mjs",
     "typecheck": "pnpm -r --parallel typecheck",
     "lint": "oxlint --deny-warnings apps packages",
     "test": "vitest run --project unit && vitest run --project db-wasm",

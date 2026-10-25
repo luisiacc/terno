@@ -1,6 +1,18 @@
 import type { MenuItemConstructorOptions } from "electron";
 import { describe, expect, it } from "vitest";
-import { viewMenu } from "./menu";
+import { appMenu, viewMenu } from "./menu";
+
+describe("main: the app menu", () => {
+  it("has Check for Updates… right under About, and keeps Quit", () => {
+    let checked = 0;
+    const items = appMenu("Terno", () => checked++).submenu as MenuItemConstructorOptions[];
+    expect(items[0]!.role).toBe("about");
+    expect(items[1]!.label).toBe("Check for Updates…");
+    (items[1]!.click as () => void)();
+    expect(checked).toBe(1);
+    expect(items.at(-1)!.role).toBe("quit");
+  });
+});
 import { MENU_COMMANDS } from "./print-commands";
 
 describe("main: the Ver menu", () => {

@@ -22,6 +22,8 @@ export async function boot(): Promise<void> {
     void loadDrafts().catch((error) => console.warn("[drafts] could not load", error));
     // best effort when the page goes away (the autosave pause may not have ended)
     window.addEventListener("pagehide", () => void flushAllDrafts());
+    // desktop: before any quit or update, main waits (5 s at most) until what is written is saved
+    window.ternoDesktop?.onFlushDrafts?.(() => flushAllDrafts(4000));
     exposeForTests({ updateAppearance, getApp, loadedIds: () => useList.getState().items.map((t) => t.id) });
 
     let refreshQueued = false;

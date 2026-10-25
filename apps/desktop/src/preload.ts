@@ -57,6 +57,32 @@ contextBridge.exposeInMainWorld("ternoDesktop", {
       return () => ipcRenderer.removeListener("terno:diag-event", relay);
     },
   },
+  // in-app updates: main owns the state, the policy and the install; the page draws and asks
+  updates: {
+    state: () => ipcRenderer.invoke("terno:updates-state"),
+    check: () => ipcRenderer.invoke("terno:updates-check"),
+    download: () => ipcRenderer.invoke("terno:updates-download"),
+    install: () => ipcRenderer.invoke("terno:updates-install"),
+    setPrefs: (p: { mode: string; channel: string }) => ipcRenderer.invoke("terno:updates-prefs", { mode: String(p?.mode), channel: String(p?.channel) }),
+    seen: () => ipcRenderer.send("terno:updates-seen"),
+    onState: (listener: (state: unknown) => void) => {
+      const relay = (_e: unknown, state: unknown) => listener(state);
+      ipcRenderer.on("terno:updates-event", relay);
+      return () => ipcRenderer.removeListener("terno:updates-event", relay);
+    },
+  },
+  // before any quit or update: main asks, the page saves every draft and answers (main waits 5 s at most)
+  onFlushDrafts: (flush: () => Promise<void>) => {
+    const relay = (_e: unknown, id: unknown) => {
+      void Promise.resolve()
+        .then(flush)
+        .catch(() => {})
+        .then(() => ipcRenderer.send("terno:flush-done", id));
+    };
+    ipcRenderer.on("terno:flush-drafts", relay);
+    ipcRenderer.send("terno:flush-ready");
+    return () => ipcRenderer.removeListener("terno:flush-drafts", relay);
+  },
   // the Archivo and Ver menus' commands, whitelisted
   onCommand: (listener: (command: MenuCommand) => void) => {
     const relay = (_e: unknown, command: unknown) => {

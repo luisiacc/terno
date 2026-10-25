@@ -8,6 +8,7 @@ import { useList } from "~/state/list";
 import { loadThread, useThreads } from "~/state/threads";
 import { acceptSuggestion, rejectSuggestion } from "~/lib/categorize";
 import { printCommand } from "~/lib/print-open";
+import { checkForUpdates } from "~/lib/updates";
 import { listScroller, searchInputRef } from "~/components/thread-list";
 import { snackbarControls } from "~/components/category-snackbar";
 import { toggleUnreadFilter } from "~/lib/unread";
@@ -157,6 +158,8 @@ export function installKeyboard(): () => void {
   // Archivo → Imprimir… / Exportar como PDF…, Ver → Filtrar por no leídos: the handler decides like it does for the key
   // (the accelerator may have fired from a mail's frame); a toggle's menu echo of a key just handled is dropped
   const offMenu = window.ternoDesktop?.onCommand?.((command) => {
+    // Terno → Check for Updates…: not a key, answered with a snack
+    if (command === "updates.check") return void checkForUpdates();
     if (TOGGLES.has(command) && performance.now() - (lastKey.get(command) ?? -Infinity) < ECHO_MS) return;
     HANDLERS[command]?.();
   });

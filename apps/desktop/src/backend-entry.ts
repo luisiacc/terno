@@ -123,6 +123,10 @@ parentPort.on("message", async (event) => {
     else p.reject(new Error(msg.error ?? "secret storage failed"));
     return;
   }
+  if (msg.type === "shutdown") {
+    void shutdown(msg);
+    return;
+  }
   if (msg.type === "port") {
     const port = event.ports[0];
     if (port && backend) backend.connect(portTransport(port), { clientId: msg.clientId, origin: "renderer" });
@@ -173,6 +177,29 @@ parentPort.on("message", async (event) => {
     }
   }
 });
+
+let closing: Promise<void> | null = null;
+
+/** See MainToBackend "shutdown": a send in flight is never cut short unless main says so. */
+async function shutdown(msg: Extract<MainToBackend, { type: "shutdown" }>): Promise<void> {
+  const b = backend;
+  if (!b || closing) {
+    await closing;
+    return send({ type: "shutdown-result", id: msg.id, outcome: "closed" });
+  }
+  const outcome = await b.quiesce(msg.deadlineMs);
+  if (outcome === "sending" && !msg.force) {
+    b.resume();
+    send({ type: "shutdown-result", id: msg.id, outcome: "sending" });
+    void b.sendsIdle().then(() => send({ type: "sends-idle" }));
+    return;
+  }
+  if (closing) await closing;
+  else closing = b.stop().catch((error: unknown) => void captureError(error, { code: "backend.fatal", expected: false }));
+  await closing;
+  flushDiag();
+  send({ type: "shutdown-result", id: msg.id, outcome: outcome === "sending" ? "forced" : "closed" });
+}
 
 process.on("uncaughtException", (e) => die(e, "process.uncaught"));
 process.on("unhandledRejection", (e) => die(e, "process.unhandled_rejection"));

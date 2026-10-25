@@ -2,7 +2,7 @@
  * Smoke test of the PACKAGED arm64 app, copied outside the repo so nothing can
  * resolve from the workspace. Demo mode seeds a mock mailbox in a temp profile.
  */
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -127,6 +127,24 @@ test("the bundled terno-mcp wrapper answers MCP requests against the running app
   const reply = lines.map((l) => JSON.parse(l)).find((m) => m.id === 2);
   const payload = JSON.parse(reply.result.content[0].text);
   expect(payload.accounts).toHaveLength(4);
+});
+
+test("a release carries no test build's world: no baked feed or profile, GitHub's feed, a stable signature for Squirrel", async () => {
+  // app.asar: a pickled JSON header (size at byte 12, from byte 16), then the files
+  const asar = readFileSync(join(appPath, "Contents/Resources/app.asar"));
+  const headerSize = asar.readUInt32LE(12);
+  const header = JSON.parse(asar.subarray(16, 16 + headerSize).toString("utf8")) as { files: Record<string, { files?: Record<string, { offset: string; size: number }> }> };
+  const dist = header.files.dist!.files!;
+  expect(Object.keys(dist)).not.toContain("test-build.json");
+  expect(Object.keys(dist)).toContain("updater.cjs");
+  const base = 8 + asar.readUInt32LE(4);
+  const main = dist["main.cjs"]!;
+  const code = asar.subarray(base + Number(main.offset), base + Number(main.offset) + main.size).toString("utf8");
+  // the define was never applied: TEST_BUILD is undefined at runtime, whatever the environment says
+  expect(code).toContain("__TERNO_TEST_BUILD__");
+  expect(readFileSync(join(appPath, "Contents/Resources/app-update.yml"), "utf8")).toMatch(/^owner: luisiacc\nrepo: terno\nprovider: github\n/);
+  const signature = spawnSync("codesign", ["-dv", "--verbose=2", appPath], { encoding: "utf8" }).stderr;
+  if (!/Signature=adhoc/.test(signature)) expect(execFileSync("codesign", ["-d", "-r-", appPath], { encoding: "utf8" })).toContain('identifier "dev.terno.mail"');
 });
 
 test("warm start: relaunching with an existing mailbox shows mail fast", async () => {

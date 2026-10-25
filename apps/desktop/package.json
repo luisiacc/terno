@@ -10,6 +10,7 @@
     "dev": "node scripts/dev.mjs",
     "start": "env -u ELECTRON_RUN_AS_NODE electron dist/main.cjs",
     "dist:mac": "node scripts/package.mjs",
+    "release:mac": "node scripts/release.mjs",
     "test:smoke": "playwright test -c playwright.smoke.config.ts",
     "typecheck": "tsc -p tsconfig.json",
     "dev:demo": "node scripts/dev.mjs --demo",
@@ -19,7 +20,8 @@
     "@terno/backend": "workspace:*",
     "@terno/core": "workspace:*",
     "@terno/mail": "workspace:*",
-    "@terno/mcp": "workspace:*"
+    "@terno/mcp": "workspace:*",
+    "electron-updater": "catalog:"
   },
   "devDependencies": {
     "@playwright/test": "catalog:",

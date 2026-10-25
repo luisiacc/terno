@@ -11,9 +11,21 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
-const out = join(root, "dist");
+// TERNO_BUILD_OUT: a test build goes elsewhere, so dist/ (what dist:mac packages) is never a test build
+const out = process.env.TERNO_BUILD_OUT || join(root, "dist");
 const repo = join(root, "..", "..");
-const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
+// TERNO_VERSION: a test build's own version (the update test builds two from one tree)
+const version = process.env.TERNO_VERSION || JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
+/**
+ * A test build's own world (its update feed, profile and app name), baked in
+ * because Squirrel relaunches an updated app without our environment. JSON
+ * in TERNO_TEST_BUILD; a release is built without it (release.mjs refuses).
+ */
+const testBuild = process.env.TERNO_TEST_BUILD ? JSON.parse(process.env.TERNO_TEST_BUILD) : undefined;
+if (testBuild && !(typeof testBuild.feed === "string" && typeof testBuild.userData === "string" && typeof testBuild.appData === "string" && typeof testBuild.appName === "string")) {
+  throw new Error("TERNO_TEST_BUILD needs feed, userData, appData and appName");
+}
+if (testBuild && !process.env.TERNO_BUILD_OUT) throw new Error("a test build needs TERNO_BUILD_OUT: dist/ is what dist:mac packages");
 const { archiveMaps, assertNoMaps, injectDebugIds, resetArchive } = await import(join(repo, "scripts/sourcemaps.mjs"));
 
 /** The commit this build is from (and whether the tree had changes on top). */
@@ -44,7 +56,12 @@ const common = {
   logLevel: "warning",
   // every node builtin (incl. node:sqlite, which esbuild may not know) stays external
   external: ["electron", "node:*"],
-  define: { "process.env.TERNO_BUILD_VERSION": JSON.stringify(version), "process.env.TERNO_BUILD_SHA": JSON.stringify(sha), "process.env.TERNO_SENTRY_DSN": JSON.stringify(dsn) },
+  define: {
+    "process.env.TERNO_BUILD_VERSION": JSON.stringify(version),
+    "process.env.TERNO_BUILD_SHA": JSON.stringify(sha),
+    "process.env.TERNO_SENTRY_DSN": JSON.stringify(dsn),
+    ...(testBuild ? { __TERNO_TEST_BUILD__: JSON.stringify(testBuild) } : {}),
+  },
   // ESM deps that read import.meta.url get a CJS-compatible value
   banner: { js: "const __importMetaUrl = require('url').pathToFileURL(__filename).href;" },
 };
@@ -55,6 +72,8 @@ const entries = [
   { in: join(root, "src/preload.ts"), out: "preload" },
   // the Sentry pipe, required by main only when a report is about to go
   { in: join(root, "src/diag/reporter.ts"), out: "reporter" },
+  // electron-updater, required by main only once the updater has work to do
+  { in: join(root, "src/updates/engine.ts"), out: "updater" },
   { in: join(repo, "packages/mcp/src/bin.ts"), out: "mcp/terno-mcp" },
 ];
 
@@ -95,13 +114,15 @@ if (!process.argv.includes("--no-renderer")) {
   cpSync(web, join(out, "renderer"), { recursive: true });
 }
 cpSync(join(repo, "packages/mcp/SKILL.md"), join(out, "mcp/SKILL.md"));
+// package.mjs refuses to package a test build as a release, or the other way round
+if (testBuild) writeFileSync(join(out, "test-build.json"), JSON.stringify(testBuild));
 
 // debug ids in, maps out: what ships has none, the archive has them all (with each minified file beside its map)
-const archive = join(root, ".maps", `${version}-${sha}`);
+const archive = testBuild ? `${out}.maps` : join(root, ".maps", `${version}-${sha}`);
 resetArchive(archive);
 const tagged = injectDebugIds(out);
 const moved = archiveMaps(out, archive, "dist");
 assertNoMaps(out);
 // what dist:mac uploads (when a Sentry token is set): this build's archive and release name
-writeFileSync(join(root, ".maps", "LATEST"), JSON.stringify({ release: `terno@${version}+${sha}`, archive }));
+if (!testBuild) writeFileSync(join(root, ".maps", "LATEST"), JSON.stringify({ release: `terno@${version}+${sha}`, archive }));
 console.log(`built desktop bundles → ${out} (${version}+${sha}${dsn ? ", reports on" : ""}); ${moved} source maps (${tagged.length} tagged) → ${archive}`);

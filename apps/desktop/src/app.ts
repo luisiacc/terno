@@ -26,9 +26,12 @@ import { readLegacySecrets } from "./keychain-helper";
 import { DB_FILE } from "./legacy-profile";
 import { printLocalModeChanged, registerPrint } from "./print";
 import { fileMenu, helpMenu, isTrustedSender, testPdfDir } from "./print-policy";
-import { viewMenu } from "./menu";
+import { appMenu, viewMenu } from "./menu";
 import type { MenuCommand } from "./print-commands";
 import { LEGACY_STORAGE_PENDING } from "./profile";
+import { coordinateShutdown, type BackendOutcome, type ShutdownOutcome } from "./shutdown";
+import type { UpdateController } from "./updates/controller";
+import { startUpdates } from "./updates/main";
 
 // V8 compile cache for the main bundle (t3code trick): faster subsequent boots.
 try {
@@ -162,6 +165,15 @@ function startBackend() {
         resolveReady();
         mainDiag.setEngine("running");
         diagLog.info("backend.ready", { attempt: restarts.attempt, durationMs: Date.now() - startedAt });
+        // migrations are done and the mailbox opened: an install that just happened counts as applied now
+        updates?.backendReady();
+        break;
+      case "shutdown-result":
+        shutdownWaiters.get(msg.id)?.(msg.outcome);
+        shutdownWaiters.delete(msg.id);
+        break;
+      case "sends-idle":
+        for (const cb of sendsIdleWaiters.splice(0)) cb();
         break;
       case "diag":
         mainDiag.backendEntries(instance, msg.entries);
@@ -176,6 +188,7 @@ function startBackend() {
         localMode = msg.localMode;
         printLocalModeChanged(localMode);
         mainDiag.setPolicy(msg);
+        updates?.setLocalMode(localMode);
         break;
       case "open-external":
         if (/^https:\/\//i.test(msg.url)) void shell.openExternal(msg.url);
@@ -200,6 +213,10 @@ function startBackend() {
     }
   });
   child.on("exit", (code) => {
+    // nothing is sending any more, and a shutdown it didn't answer won't be
+    for (const resolve of shutdownWaiters.values()) resolve("forced");
+    shutdownWaiters.clear();
+    for (const cb of sendsIdleWaiters.splice(0)) cb();
     // a deliberate stop (quit, restart) cleared `backend` first: nothing to record
     if (backend !== child) return;
     backend = null;
@@ -229,6 +246,76 @@ function startBackend() {
     version: app.getVersion(),
     diag: { session: diagSession(), build: BUILD_ID, channel: mainDiag.channel },
   } satisfies MainToBackend);
+}
+
+// ───────────────────────────── quitting: drafts, then the backend (shutdown.ts) ─────────────────────────────
+
+/** running → stopping (the coordinated shutdown) → stopped (the backend closed; quitting goes through) */
+let quitState: "running" | "stopping" | "stopped" = "running";
+let shutdownSeq = 0;
+const shutdownWaiters = new Map<number, (outcome: BackendOutcome) => void>();
+const sendsIdleWaiters: (() => void)[] = [];
+/** renderers that flush their drafts when asked (they say so once their page is up) */
+const flushers = new Set<number>();
+let flushSeq = 0;
+const flushWaiters = new Map<string, () => void>();
+let updates: UpdateController | null = null;
+
+ipcMain.on("terno:flush-ready", (e) => {
+  if (trusted(e)) flushers.add(e.sender.id);
+});
+ipcMain.on("terno:flush-done", (e, id: unknown) => {
+  const key = `${e.sender.id}:${String(id)}`;
+  flushWaiters.get(key)?.();
+  flushWaiters.delete(key);
+});
+
+function flushWindows(): Promise<void>[] {
+  return [...windows]
+    .filter((w) => !w.isDestroyed() && flushers.has(w.webContents.id))
+    .map(
+      (w) =>
+        new Promise<void>((resolve) => {
+          const id = ++flushSeq;
+          flushWaiters.set(`${w.webContents.id}:${id}`, resolve);
+          w.webContents.send("terno:flush-drafts", id);
+        }),
+    );
+}
+
+function shutdownBackend(o: { deadlineMs: number; force: boolean }): Promise<BackendOutcome> | null {
+  const child = backend;
+  if (!child) return null;
+  const id = ++shutdownSeq;
+  return new Promise((resolve) => {
+    shutdownWaiters.set(id, resolve);
+    child.postMessage({ type: "shutdown", id, deadlineMs: o.deadlineMs, force: o.force } satisfies MainToBackend);
+  });
+}
+
+/** The backend is done (closed, or given up on): it goes, deliberately (its exit is nothing to record). */
+function stopBackend() {
+  const child = backend;
+  backend = null;
+  child?.kill();
+}
+
+async function shutdown(force: boolean, trigger: "quit" | "restart"): Promise<ShutdownOutcome> {
+  const started = Date.now();
+  const r = await coordinateShutdown({ flushWindows, shutdownBackend, setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) }, { force });
+  if (r.draftsTimedOut) diagLog.warn("shutdown.drafts_timeout", { count: r.draftsTimedOut });
+  diagLog.info("shutdown.done", { outcome: r.outcome, durationMs: Date.now() - started, trigger });
+  if (r.outcome !== "sending") stopBackend();
+  return r.outcome;
+}
+
+/** "Restart now": the shutdown not forced (a send in flight answers "sending" and the backend keeps running). */
+async function shutdownForInstall(): Promise<ShutdownOutcome> {
+  if (quitState !== "running") return "closed";
+  quitState = "stopping";
+  const outcome = await shutdown(false, "restart");
+  quitState = outcome === "sending" ? "running" : "stopped";
+  return outcome;
 }
 
 /** "Reintentar" after the engine stopped: a fresh series of attempts. */
@@ -377,10 +464,15 @@ function createWindow() {
     win.webContents.setBackgroundThrottling(true);
   });
 
-  // Every (re)load gets a fresh port: the previous one died with the old document.
+  // Every (re)load gets a fresh port: the previous one died with the old document (and its draft flusher with it).
+  const contentsId = win.webContents.id;
   win.webContents.on("did-start-navigation", (_e, _url, isInPlace, isMainFrame) => {
-    if (isMainFrame && !isInPlace) void connectWindow(win);
+    if (isMainFrame && !isInPlace) {
+      flushers.delete(contentsId);
+      void connectWindow(win);
+    }
   });
+  win.on("closed", () => flushers.delete(contentsId));
 
   // Links never navigate the app window; vetted schemes open in the system browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -402,8 +494,14 @@ function sendCommand(command: MenuCommand) {
 }
 
 function buildMenu() {
+  // the window answers with its own snack (up to date, found, why not); with none open, the check just runs
+  const checkForUpdates = () => {
+    const win = BrowserWindow.getFocusedWindow() ?? [...windows][0];
+    if (win && windows.has(win) && !win.isDestroyed()) sendCommand("updates.check");
+    else void updates?.check("manual");
+  };
   const template: Electron.MenuItemConstructorOptions[] = [
-    { role: "appMenu" },
+    appMenu(app.getName(), checkForUpdates),
     fileMenu(sendCommand),
     { role: "editMenu" },
     viewMenu(sendCommand, isDev),
@@ -453,6 +551,18 @@ if (!app.requestSingleInstanceLock()) {
     });
     buildMenu();
     startBackend();
+    // nothing runs before its startup delay (no engine loaded, no request)
+    updates = startUpdates({
+      trusted,
+      windows: () => windows,
+      localMode: () => localMode,
+      shutdown: shutdownForInstall,
+      onSendsIdle: (cb) => void sendsIdleWaiters.push(cb),
+      recover: () => {
+        quitState = "running";
+        restartEngine();
+      },
+    });
     await carryLegacyLocalStorage();
     createWindow();
     app.on("activate", () => {
@@ -462,10 +572,20 @@ if (!app.requestSingleInstanceLock()) {
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") app.quit();
   });
-  app.on("before-quit", () => {
-    const child = backend;
-    backend = null;
-    child?.kill();
+  // Every quit: drafts flushed, the backend closed cleanly (WAL checkpointed), then out. The windows go
+  // at once; a send in flight may hold the process for up to SEND_DEADLINE_MS. With an update ready,
+  // Squirrel installs it as the app exits (updates.quitting records it for the next run's check).
+  app.on("before-quit", (event) => {
+    if (quitState === "stopped") return;
+    event.preventDefault();
+    if (quitState === "stopping") return;
+    quitState = "stopping";
+    for (const w of windows) if (!w.isDestroyed()) w.hide();
+    void shutdown(true, "quit").finally(() => {
+      updates?.quitting();
+      quitState = "stopped";
+      app.quit();
+    });
   });
 }
 
