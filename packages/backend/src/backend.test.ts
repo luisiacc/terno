@@ -314,6 +314,27 @@ describe("quitting and updating (quiesce)", () => {
     expect(p.executed.map((o) => o.kind)).toEqual(["archive"]);
     expect(getOp(sqlDb(backend.store), sent.opId)).toMatchObject({ state: "queued", attempts: 0 });
   });
+
+  it("a send waiting behind a slow op is back in the queue the moment quiesce answers, before that op ever finishes", async () => {
+    const { backend, client, providers, accountId } = setup();
+    await backend.ingestSliced([incoming(accountId)]);
+    const [t] = (await client.call("threads.list", { view: "inbox" })).items;
+    await backend.provider(accountId);
+    const p = providers.get(accountId)!;
+    let answer!: () => void;
+    p.gate = new Promise((r) => (answer = r));
+    await client.call("threads.act", { threadIds: [t!.id], action: "archive" });
+    const sent = await client.call("compose.send", { accountId, to: [{ name: "", email: "x@y.com" }], subject: "s", bodyText: "." });
+    const worker = backend.runWorker();
+    await new Promise((r) => setTimeout(r, 20));
+    // the archive hangs at its server (a slow Gmail): nothing is sending, so quiesce answers at once
+    expect(await backend.quiesce(5000)).toBe("idle");
+    // and the send behind it is already safe: the database may close right now
+    expect(getOp(sqlDb(backend.store), sent.opId)).toMatchObject({ state: "queued", attempts: 0 });
+    answer();
+    await worker;
+    expect(p.executed.map((o) => o.kind)).toEqual(["archive"]);
+  });
 });
 
 describe("filters on incoming mail", () => {

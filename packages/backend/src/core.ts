@@ -105,6 +105,8 @@ export class BackendCore {
   private draining = false;
   /** sends talking to their server right now, and who waits for them to finish */
   private sendsInFlight = 0;
+  /** claimed by the worker, not yet at their provider: quiesce gives them back at once */
+  private readonly undispatched = new Set<string>();
   private sendsSettled: (() => void)[] = [];
   private pendingThreadIds = new Set<number>();
   private pendingViews = false;
@@ -224,6 +226,12 @@ export class BackendCore {
     this.draining = true;
     if (this.workerTimer) clearTimeout(this.workerTimer);
     this.workerTimer = null;
+    // the rest of a claimed batch (behind a slow op of the same account) goes back now, before any answer:
+    // a send waiting there must never be left "running" for recovery to call unknown
+    for (const id of this.undispatched) {
+      this.undispatched.delete(id);
+      await this.store.ops.release(id, this.now());
+    }
     if (this.sendsInFlight === 0) return "idle";
     let timer: ReturnType<typeof setTimeout> | undefined;
     const settled = await Promise.race([
@@ -702,6 +710,7 @@ export class BackendCore {
           if (this.draining) break;
           const batch = await this.store.ops.claimReady(this.now(), 25);
           if (batch.length === 0) break;
+          for (const op of batch) this.undispatched.add(op.id);
           const byAccount = new Map<number, OpRow[]>();
           for (const op of batch) byAccount.set(op.account_id, [...(byAccount.get(op.account_id) ?? []), op]);
           await Promise.all(
@@ -740,11 +749,13 @@ export class BackendCore {
     // Re-read right before dispatch: while earlier ops of the batch ran, this one may have
     // been superseded (deleted), pruned (deleted messages) or narrowed.
     const op = await this.store.ops.get(claimed.id);
-    if (!op || op.state !== "running") return;
+    if (!op || op.state !== "running") return void this.undispatched.delete(claimed.id);
     // quitting: an op that hasn't reached its server waits for the next start, as it was
-    if (this.draining) return void (await this.store.ops.release(op.id, this.now()));
+    if (this.draining) return void (this.undispatched.delete(op.id), await this.store.ops.release(op.id, this.now()));
     const provider = await this.provider(op.account_id);
-    if (this.draining) return void (await this.store.ops.release(op.id, this.now()));
+    if (this.draining) return void (this.undispatched.delete(op.id), await this.store.ops.release(op.id, this.now()));
+    // from here it is on its way (synchronously after the last check: quiesce can't release it now)
+    this.undispatched.delete(op.id);
     const sending = op.kind === "send";
     if (sending) this.sendsInFlight++;
     const target = JSON.parse(op.target_json) as { messageIds?: number[] };
