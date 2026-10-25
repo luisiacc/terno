@@ -115,7 +115,7 @@ function parts(key: string, values: Readonly<Record<string, unknown>> | undefine
 export function t<K extends TextKey>(key: K, ...args: ParamsArg<K>): string {
   const values = args[0] as Readonly<Record<string, unknown>> | undefined;
   const p = parts(key, values);
-  return typeof p === "string" ? p : renderText(p, values ?? {}, formatCount);
+  return typeof p === "string" ? p : renderText(p, refs(values, messages), formatCount);
 }
 
 /**
@@ -136,8 +136,39 @@ export function L<K extends TextKey>(key: K, ...args: ParamsArg<K>): Localized {
   const params = args[0] as Readonly<Record<string, string | number>> | undefined;
   const m: Message = english[key] ?? key;
   const text = typeof m === "object" ? pluralText(m, params?.count, () => (englishRules ??= new Intl.PluralRules(LOCALES.en.tag))) : m;
-  const message = renderText(compile(text, typeof m === "object"), params ?? {}, (n) => englishNumbers.format(n));
+  const message = renderText(compile(text, typeof m === "object"), refs(params, english), (n) => englishNumbers.format(n));
   return params ? { key, params, message } : { key, message };
+}
+
+const REF = /^([\w.-]+)$/;
+
+/**
+ * A placeholder value that is itself a message ("Custom", "Offline demo"
+ * inside an error the backend phrases): rendered in the language of the
+ * message it fills, so a descriptor's params translate too.
+ */
+export function keyRef(key: TextKey): string {
+  return `${key}`;
+}
+
+/** The value as plain English text (a keyRef resolved), for messages that aren't descriptors. */
+export function plainText(value: string): string {
+  const m = REF.exec(value);
+  const ref = m && english[m[1]!];
+  return typeof ref === "string" ? ref : value;
+}
+
+function refs(values: Readonly<Record<string, unknown>> | undefined, catalog: Messages): Readonly<Record<string, unknown>> {
+  if (!values) return {};
+  let out: Record<string, unknown> | null = null;
+  for (const [k, v] of Object.entries(values)) {
+    const m = typeof v === "string" ? REF.exec(v) : null;
+    if (!m) continue;
+    const ref = catalog[m[1]!] ?? english[m[1]!];
+    out ??= { ...values };
+    out[k] = typeof ref === "string" ? ref : m[1];
+  }
+  return out ?? values;
 }
 
 /** Whether a value is a descriptor (from the wire or storage: checked, never trusted). */
@@ -152,7 +183,7 @@ export function isLocalized(value: unknown): value is Localized {
 export function translate(d: { key: string; params?: Readonly<Record<string, string | number>>; message?: string }): string {
   if (!hasKey(d.key)) return d.message ?? d.key;
   const p = parts(d.key, d.params);
-  return typeof p === "string" ? p : renderText(p, d.params ?? {}, formatCount);
+  return typeof p === "string" ? p : renderText(p, refs(d.params, messages), formatCount);
 }
 
 /** A message with rich text: each `<tag>` goes through its renderer. Text runs are merged. */

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { compile, renderRich, renderText } from "./format";
-import { formatList, formatNumber, getLocale, hasKey, isLocalized, L, loadLocale, LOCALES, onLocaleChange, resolveLocale, rich, setLocale, t, translate, type LocaleCheck, type Messages } from "./index";
+import { formatList, formatNumber, getLocale, hasKey, isLocalized, keyRef, L, loadLocale, plainText, LOCALES, onLocaleChange, resolveLocale, rich, setLocale, t, translate, type LocaleCheck, type Messages } from "./index";
 import en from "./locales/en";
 import es from "./locales/es";
 
@@ -63,6 +63,16 @@ describe("descriptors", () => {
     setLocale("es", es);
     expect(translate(L("language.system", { language: "X" }))).toBe("Sistema (X)");
     expect(translate({ key: "gone.key", message: "Something" })).toBe("Something");
+  });
+
+  it("a keyRef param is rendered in the language of the message it fills", () => {
+    const d = L("language.system", { language: keyRef("view.inbox") });
+    expect(d.message).toBe("System (Inbox)");
+    expect(plainText(keyRef("view.inbox"))).toBe("Inbox");
+    expect(plainText("Plain")).toBe("Plain");
+    setLocale("es", es);
+    expect(translate(d)).toBe("Sistema (Entrada)");
+    expect(t("language.system", { language: keyRef("view.trash") })).toBe("Sistema (Papelera)");
   });
 
   it("isLocalized() checks shape, never trusts it", () => {
@@ -134,6 +144,15 @@ describe("locales", () => {
         expect(placeholders(other), `${id} ${key}`).toEqual(placeholders(message));
         if (typeof other === "object") expect(other.other, `${id} ${key}`).toBeTruthy();
         else expect(other.trim(), `${id} ${key}`).not.toBe("");
+      }
+    }
+  });
+
+  it("errors that name a button quote its exact label, in both languages", () => {
+    for (const catalog of [en, es] as Record<string, unknown>[]) {
+      for (const kind of ["keychain", "legacy"]) {
+        expect(catalog[`errors.secret.${kind}.password`]).toContain(`(${catalog["account.changePassword"]})`);
+        expect(catalog[`errors.secret.${kind}.googleSession`]).toContain(`(${catalog["account.connectGoogle"]})`);
       }
     }
   });

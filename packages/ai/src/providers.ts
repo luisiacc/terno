@@ -1,3 +1,4 @@
+import { keyRef } from "@terno/i18n";
 import type { AiProviderId, CompatiblePreset, PresetDescriptor, ProviderConfig, ProviderDescriptor } from "./types";
 
 export const DEFAULT_ANTHROPIC_MODEL = "claude-opus-5-5";
@@ -49,8 +50,8 @@ export const PROVIDERS: readonly ProviderDescriptor[] = [
     declared: { output: "json_schema", embeddings: true },
     discovery: "lmstudio",
   },
-  { id: "fake", label: "Demo sin conexión", locality: "local", needsKey: false, declared: { output: "json_schema", embeddings: false }, discovery: "none" },
-  { id: "none", label: "Desactivada", locality: "local", needsKey: false, declared: { output: "text", embeddings: false }, discovery: "none" },
+  { id: "fake", label: keyRef("ai.choice.fake"), locality: "local", needsKey: false, declared: { output: "json_schema", embeddings: false }, discovery: "none" },
+  { id: "none", label: keyRef("ai.choice.none"), locality: "local", needsKey: false, declared: { output: "text", embeddings: false }, discovery: "none" },
 ];
 
 export const PRESETS: Record<CompatiblePreset, PresetDescriptor> = {
@@ -58,7 +59,7 @@ export const PRESETS: Record<CompatiblePreset, PresetDescriptor> = {
   groq: { id: "groq", label: "Groq", baseURL: "https://api.groq.com/openai/v1", needsKey: true },
   together: { id: "together", label: "Together", baseURL: "https://api.together.xyz/v1", needsKey: true },
   azure: { id: "azure", label: "Azure OpenAI", needsKey: true },
-  custom: { id: "custom", label: "Personalizado", needsKey: false },
+  custom: { id: "custom", label: keyRef("ai.preset.custom"), needsKey: false },
 };
 
 export function describeProvider(id: AiProviderId): ProviderDescriptor {

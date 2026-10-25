@@ -70,6 +70,9 @@ const es = {
 
   // ── settings
   // @settings
+  "filters.learnedName.archive": "Archivar: {value}",
+  "filters.learnedName.trash": "Borrar: {value}",
+  "filters.learnedName.spam": "Spam: {value}",
   "settings.sectionError": "No se pudo mostrar esta sección",
   "settings.days": "días",
   "settings.tab.general": "General",
@@ -1153,7 +1156,6 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "web.google.loadFailed": "No se pudo cargar el inicio de sesión de Google (¿sin conexión?)",
   "web.google.popupClosed": "Se cerró la ventana de Google",
   "web.google.popupBlocked": "El navegador bloqueó la ventana de Google",
-  "web.google.noClientId": "Añade tu Google OAuth Client ID en Ajustes → Cuentas primero (client ID).",
   "web.google.noGmailScope": "Google no concedió el permiso de Gmail: vuelve a intentarlo y márcalo.",
   "web.reconnect.waiting": "<b>{email}</b> espera que vuelvas a conectar Gmail",
   "web.reconnect.action": "Reconectar Gmail",
@@ -1177,6 +1179,8 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
 
   // ── ui components
   // @ui
+  "ui.theme.ternoLight": "Terno claro",
+  "ui.theme.ternoDark": "Terno oscuro",
   "ui.command.title": "Paleta de comandos",
   "ui.command.description": "Busca un comando para ejecutar…",
   "ui.shortcut.then": "luego",

@@ -76,6 +76,9 @@ const en = {
 
   // ── settings
   // @settings
+  "filters.learnedName.archive": "Archive: {value}",
+  "filters.learnedName.trash": "Delete: {value}",
+  "filters.learnedName.spam": "Spam: {value}",
   "settings.sectionError": "This section couldn’t be shown",
   "settings.days": "days",
   "settings.tab.general": "General",
@@ -1160,7 +1163,6 @@ It contains none of your mail, contacts, settings or keys.
   "web.google.loadFailed": "Couldn’t load Google sign-in (are you offline?)",
   "web.google.popupClosed": "The Google window was closed",
   "web.google.popupBlocked": "The browser blocked the Google window",
-  "web.google.noClientId": "Add your Google OAuth client ID in Settings → Accounts first.",
   "web.google.noGmailScope": "Google didn’t grant access to Gmail. Try again and allow it.",
   "web.reconnect.waiting": "<b>{email}</b> is waiting for you to reconnect Gmail",
   "web.reconnect.action": "Reconnect Gmail",
@@ -1184,6 +1186,8 @@ It contains none of your mail, contacts, settings or keys.
 
   // ── ui components
   // @ui
+  "ui.theme.ternoLight": "Terno Light",
+  "ui.theme.ternoDark": "Terno Dark",
   "ui.command.title": "Command palette",
   "ui.command.description": "Search for a command to run…",
   "ui.shortcut.then": "then",

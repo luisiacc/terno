@@ -1,5 +1,5 @@
 import { messageOf } from "@terno/core";
-import { L } from "@terno/i18n";
+import { L, plainText } from "@terno/i18n";
 import { AiError, type AiProviderId } from "./types";
 
 /** The error classes both Stainless-generated SDKs (Anthropic, OpenAI) export. */
@@ -78,7 +78,7 @@ export function mapSdkError(error: unknown, sdk: SdkErrors, info: ErrorInfo): Ai
     if (status === 429) return new AiError(L("errors.ai.rateLimited", { provider: info.label }), "rate_limited");
     if ((status === 400 || status === 422) && UNSUPPORTED_OUTPUT.test(error.message)) return new AiError(`${info.label}: ${error.message}`, "unsupported");
     if (status === 404) return new AiError(L("errors.ai.notFound", { provider: info.label, detail: error.message }), "unavailable");
-    return new AiError(`${info.label}: ${error.message}`, "unavailable");
+    return new AiError(`${plainText(info.label)}: ${error.message}`, "unavailable");
   }
-  return new AiError(`${info.label}: ${error instanceof Error ? error.message : String(error)}`, "unavailable");
+  return new AiError(`${plainText(info.label)}: ${error instanceof Error ? error.message : String(error)}`, "unavailable");
 }
