@@ -154,7 +154,7 @@ for (const density of ["comfortable", "compact"] as const) {
     await server.backend.server.invoke("drafts.save", { accountId: target.account_id, to: [{ name: "", email: "ana@example.com" }], cc: [], subject: "Nuevo", bodyText: "Para después" }, ctx);
     await setDensity(page, server, density);
     await expect(page.getByTestId("strip-item")).toHaveCount(1);
-    await expect(page.locator(`[data-testid=thread-row][data-thread-id="${target.thread_id}"]`)).toContainText("Borrador");
+    await expect(page.locator(`[data-testid=thread-row][data-thread-id="${target.thread_id}"]`)).toContainText("Draft");
     const rendersBefore = await renders(page, "ThreadRow");
     await expect(page.locator(`[data-testid=thread-row]`).first()).toHaveCSS("height", density === "compact" ? "40px" : "68px");
     await page.evaluate(() => {
@@ -194,7 +194,7 @@ for (const density of ["comfortable", "compact"] as const) {
   test(`continuous scrolling across 2,000 threads (${density}): frames stay smooth, the DOM stays bounded`, async ({ app: page, server }) => {
     await setDensity(page, server, density);
     await page.getByTestId("nav-all").click();
-    await expect(page.getByTestId("list-title")).toHaveText("Todo el correo");
+    await expect(page.getByTestId("list-title")).toHaveText("All Mail");
     const rowH = density === "compact" ? 40 : 68;
     await expect(rows(page).first()).toHaveCSS("height", `${rowH}px`);
     await startFrames(page);
@@ -390,7 +390,7 @@ test("typing a search: each keystroke renders its results fast", async ({ app: p
 
 test("scrolling 2,000 threads deep: pages load quickly and the DOM stays bounded", async ({ app: page }) => {
   await page.getByTestId("nav-all").click();
-  await expect(page.getByTestId("list-title")).toHaveText("Todo el correo");
+  await expect(page.getByTestId("list-title")).toHaveText("All Mail");
   await expect(rows(page).first()).toBeVisible();
   const result = await page.evaluate(async () => {
     const scroller = document.querySelector("[role=listbox]") as HTMLElement;
@@ -624,7 +624,7 @@ test("context menu: right-click → menu painted within 50 ms, no row renders", 
 
 test("selection: toggling one row renders one row; ⌘A over 500 loaded rows commits within a frame and renders only rows that changed", async ({ app: page }) => {
   await page.getByTestId("nav-all").click();
-  await expect(page.getByTestId("list-title")).toHaveText("Todo el correo");
+  await expect(page.getByTestId("list-title")).toHaveText("All Mail");
   await expect(rows(page).first()).toBeVisible();
   // load five pages (500 rows), then come back to the top
   await page.evaluate(async () => {
