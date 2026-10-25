@@ -339,7 +339,7 @@ export function Reader() {
           </ToolButton>
         </div>
       </div>
-      <div ref={scrollerRef} data-reader-scroller className="relative min-h-0 flex-1 overflow-y-auto">
+      <div ref={scrollerRef} data-reader-scroller data-keep-scroll="reader" className="relative min-h-0 flex-1 overflow-y-auto">
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
         <div className="mx-auto max-w-[860px] px-7 pt-5 pb-16">
           {!detail ? (

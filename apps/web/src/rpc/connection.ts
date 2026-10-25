@@ -1,4 +1,5 @@
 import { isRpcMessage, RpcClient, type RpcMessage, type Transport } from "@terno/core/rpc";
+import { translate } from "@terno/i18n";
 import { observeRpc } from "~/lib/diag";
 
 function portTransport(port: MessagePort): Transport {
@@ -58,7 +59,8 @@ function nextDesktopPort(): Promise<MessagePort> {
   });
 }
 
-export const client = new RpcClient(undefined, { defaultTimeoutMs: 30_000, observe: observeRpc });
+// errors the backend phrased as catalog messages arrive in the user's language
+export const client = new RpcClient(undefined, { defaultTimeoutMs: 30_000, observe: observeRpc, translate });
 
 export async function connectBackend(): Promise<void> {
   // the web build's backend is a worker in this tab (compile-time constant: desktop never bundles it)

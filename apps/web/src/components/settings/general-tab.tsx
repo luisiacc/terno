@@ -5,7 +5,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@terno/ui/components/switch";
 import { Keyboard } from "lucide-react";
 import { Suspense, useState } from "react";
+import { isLanguageSetting, LOCALE_IDS, LOCALES, resolveLocale, t } from "@terno/i18n";
 import { setApp } from "~/state/app";
+import { applyLanguage } from "~/lib/i18n";
 import { MacSection } from "~/lib/web-parts";
 import { parseSyncWindow, SYNC_WINDOW_MAX, SYNC_WINDOW_MIN } from "~/lib/settings-values";
 import { DiagnosticsSection } from "./diagnostics-section";
@@ -104,6 +106,38 @@ const DENSITY = [
   { value: "compact", label: "Compacta" },
 ] as const;
 
+/** Language: System (what it resolves to now), then each language by its own name. */
+function LanguageRow({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
+  const system = LOCALES[resolveLocale("system", navigator.languages?.length ? navigator.languages : [navigator.language])].name;
+  const items = [{ value: "system", label: t("language.system", { language: system }) }, ...LOCALE_IDS.map((id) => ({ value: id, label: LOCALES[id].name }))];
+  return (
+    <SettingsRow label={t("language.label")} hint={t("language.hint")} testId="language-row">
+      {({ id: _id, ...a }) => (
+        <Select
+          value={settings.language}
+          onValueChange={(v) => {
+            if (!isLanguageSetting(v)) return;
+            // switched here first so focus comes back to this control after the app re-renders in the new language
+            void update({ language: v }).then(() => applyLanguage(v, "language-select"));
+          }}
+          items={items}
+        >
+          <SelectTrigger {...a} id="language-select" size="sm" className="w-44" data-testid="language-select">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {items.map((item) => (
+              <SelectItem key={item.value} value={item.value} data-testid={`language-${item.value}`} lang={item.value === "system" ? undefined : LOCALES[item.value as keyof typeof LOCALES].tag}>
+                {item.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+    </SettingsRow>
+  );
+}
+
 export function GeneralTab({ settings, update, onLocalOff }: { settings: AppSettings; update: SettingsUpdate; onLocalOff: () => void }) {
   const updates = useHasUpdates();
   return (
@@ -131,6 +165,10 @@ export function GeneralTab({ settings, update, onLocalOff }: { settings: AppSett
             />
           )}
         </SettingsRow>
+      </SettingsGroup>
+
+      <SettingsGroup>
+        <LanguageRow settings={settings} update={update} />
       </SettingsGroup>
 
       <SettingsGroup title="Lista">

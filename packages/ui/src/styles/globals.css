@@ -232,9 +232,13 @@
  * Motion off (setting 0, or the OS asks for reduced motion): nothing animates,
  * loops included. Base UI then unmounts popups at once (no running animations).
  */
+/* and for the two frames a language switch re-mounts the app (nothing re-enters) */
 :root[data-motion="off"] *,
 :root[data-motion="off"] *::before,
-:root[data-motion="off"] *::after {
+:root[data-motion="off"] *::after,
+:root.motion-paused *,
+:root.motion-paused *::before,
+:root.motion-paused *::after {
   animation: none !important;
   transition: none !important;
 }

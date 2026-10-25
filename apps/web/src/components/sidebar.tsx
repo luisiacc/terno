@@ -6,7 +6,7 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { Archive, Check, Inbox, Layers, OctagonAlert, Plus, Send, Settings2, Sparkles, Star, Trash2 } from "lucide-react";
-import { VIEW_LABEL } from "~/lib/format";
+import { viewLabel } from "~/lib/format";
 import { navigate, setApp, useApp } from "~/state/app";
 import { client } from "~/rpc/connection";
 import { CATEGORY_COLORS } from "@terno/core";
@@ -119,7 +119,7 @@ export function Sidebar() {
                   active={categoryId === null && view === v}
                   onClick={() => navigate({ view: v })}
                   icon={<Icon className="size-4" />}
-                  label={VIEW_LABEL[v]!}
+                  label={viewLabel(v)}
                   count={v === "inbox" ? (accountId ? counts.inboxUnreadByAccount[accountId] : counts.inboxUnread) : undefined}
                 />
               }

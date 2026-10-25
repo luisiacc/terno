@@ -8,7 +8,7 @@ import type { ThreadScope } from "@terno/core/rpc";
 import { getApp, setApp, type AppState } from "~/state/app";
 import { currentScope, listKey, useList } from "~/state/list";
 import { loadThread } from "~/state/threads";
-import { VIEW_LABEL } from "~/lib/format";
+import { viewLabel } from "~/lib/format";
 import { addRange, extend, pick, targetsOf, toggle, type Order } from "~/lib/selection";
 
 export const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
@@ -114,7 +114,7 @@ export function selectScope(count: number): void {
   if (!scope) return;
   const s = getApp();
   const category = s.categories.find((c) => c.id === s.categoryId)?.name;
-  const label = scope.kind === "search" ? `«${s.query.trim()}»` : (category ?? VIEW_LABEL[s.view] ?? s.view);
+  const label = scope.kind === "search" ? `«${s.query.trim()}»` : (category ?? viewLabel(s.view));
   setApp({ scope: { key: listKey(), scope, label: scope.unreadOnly ? `${label} · Unread` : label, count }, checked: new Set(scopeRows(useList.getState().items, scope).map((t) => t.id)) });
 }
 

@@ -12,7 +12,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { openCompose } from "~/lib/actions";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { Suspense, useEffect, useRef, useState } from "react";
-import { VIEW_LABEL } from "~/lib/format";
+import { viewLabel } from "~/lib/format";
 import { getApp, setApp, useApp } from "~/state/app";
 import { installDragController } from "~/lib/drag-install";
 import { currentScope, listKey, loadMore, useList } from "~/state/list";
@@ -86,7 +86,7 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   const unreadOnly = useApp(isUnreadOnly);
   // a filtered search counts what matched, not the read rows it kept in place
   const count = useList((s) => (unreadOnly ? s.items.reduce((n, t) => n + (t.unread ? 1 : 0), 0) : s.items.length));
-  const title = review ? `Revisar · ${review.name}` : (category?.name ?? VIEW_LABEL[view]);
+  const title = review ? `Revisar · ${review.name}` : (category?.name ?? viewLabel(view));
 
   return (
     <div ref={hairlineRef} data-testid="list-header" className="drag-region scroll-hairline shrink-0 px-3 pb-2">
@@ -184,7 +184,7 @@ function SelectAllBanner() {
     };
   }, [show, key]);
   if (!show || (!scope && !currentScope())) return null;
-  const label = `«${query || (category ?? VIEW_LABEL[view])}${unreadOnly ? " · Unread" : ""}»`;
+  const label = `«${query || (category ?? viewLabel(view))}${unreadOnly ? " · Unread" : ""}»`;
   const n = count?.key === key ? count : null;
   const fmt = (x: number) => x.toLocaleString("es-MX");
   return (
@@ -352,7 +352,7 @@ export function ThreadList() {
       <DraftsStrip />
       <div className="relative flex min-h-0 flex-1 flex-col">
       <ThreadMenu>
-      <div ref={parentRef} role="listbox" aria-label="Conversaciones" aria-multiselectable className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain [contain:strict]">
+      <div ref={parentRef} data-keep-scroll="list" role="listbox" aria-label="Conversaciones" aria-multiselectable className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain [contain:strict]">
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
         {loading && items.length === 0 ? (
           <div className="space-y-3 p-4">
