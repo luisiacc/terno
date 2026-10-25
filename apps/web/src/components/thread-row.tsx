@@ -94,7 +94,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
           {thread.hasAttachments && <Paperclip className="size-3 text-muted-foreground" />}
           {thread.starred && <Star className="size-3 fill-star text-star" />}
           {accountColor && <span data-testid="account-mark" className={cn("size-1.5 shrink-0 rounded-full border-[1.5px]", ACCOUNT_MARK[accountColor])} />}
-          <span className={cn("text-xs tabular", thread.unread ? "text-foreground" : "text-muted-foreground")}>{listDate(thread.lastDate)}</span>
+          <span data-testid="row-date" className={cn("text-xs tabular", thread.unread ? "text-foreground" : "text-muted-foreground")}>{listDate(thread.lastDate)}</span>
         </span>
       </div>
       {!compact && (
