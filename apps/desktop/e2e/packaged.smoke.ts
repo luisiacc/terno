@@ -138,6 +138,23 @@ test("plan 16: a formatted reply is sent as multipart/alternative through the pa
   expect(mail.text).toContain("• Desde el empaquetado: negrita");
 });
 
+test("plan 18: the packaged backend suggests recipients from its index", async () => {
+  await page.getByTestId("nav-inbox").click();
+  const sender = (await page.locator("[data-testid=thread-row] [data-testid=row-from]").first().textContent())!.trim();
+  const word = sender.split(/\s+/)[0]!;
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("c");
+  const to = page.getByTestId("compose-to");
+  await expect(to).toBeFocused({ timeout: 15_000 });
+  await page.keyboard.type(word.slice(0, 3), { delay: 40 });
+  const list = page.locator("[data-testid=recipient-suggestions]");
+  await expect(list).toBeVisible({ timeout: 15_000 });
+  await expect(list.getByTestId("recipient-suggestion").first()).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(to).toHaveValue(/<[^>]+@[^>]+>, $/);
+  await page.keyboard.press("Escape");
+});
+
 test("local mode (the default for a new profile): main cancels the renderer's remote requests", async () => {
   await expect(page.getByTestId("local-pill")).toHaveText("Local");
   // observe cancellations in main itself, so a failure for any other reason (offline, CSP) doesn't count
