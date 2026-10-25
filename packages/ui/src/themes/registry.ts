@@ -45,8 +45,6 @@ export interface ThemeInput {
   mode: ThemeMode;
   /** the macOS sidebar shows the window's native vibrancy through a translucent sidebar */
   vibrancy: boolean;
-  /** overrides the UI font stack */
-  font?: string;
   tokens: BaseInput;
   /** rose, amber, lime, emerald, cyan, indigo, violet, slate */
   cats: readonly [string, string, string, string, string, string, string, string];
@@ -59,7 +57,6 @@ export interface Theme {
   name: string;
   mode: ThemeMode;
   vibrancy: boolean;
-  font?: string;
   /** every token, as a CSS color */
   tokens: Record<ThemeToken, string>;
 }
@@ -190,7 +187,7 @@ const BUILTIN_INPUTS = new Map<string, ThemeInput>();
 
 export function defineTheme(input: ThemeInput): Theme {
   BUILTIN_INPUTS.set(input.id, input);
-  return { id: input.id, name: input.name, mode: input.mode, vibrancy: input.vibrancy, font: input.font, tokens: derive(input) };
+  return { id: input.id, name: input.name, mode: input.mode, vibrancy: input.vibrancy, tokens: derive(input) };
 }
 
 type Cats = ThemeInput["cats"];
@@ -233,7 +230,6 @@ export const THEMES: readonly Theme[] = [
     name: "Apple",
     mode: "light",
     vibrancy: true,
-    font: '-apple-system, BlinkMacSystemFont, system-ui, sans-serif',
     tokens: {
       background: "1 0 0",
       foreground: "0.232 0.004 286",
@@ -761,5 +757,5 @@ export function resolveCustomTheme(custom: CustomTheme): Theme {
   }
   const catList = CAT_NAMES.map((n, i) => own[`cat-${n}`] ?? input.cats[i]!) as unknown as Cats;
   // custom colors render exactly: no native vibrancy behind them
-  return { id: `custom:${custom.id}`, name: custom.name, mode: custom.mode, vibrancy: false, font: base.font, tokens: derive({ mode: custom.mode, tokens, cats: catList, overrides }) };
+  return { id: `custom:${custom.id}`, name: custom.name, mode: custom.mode, vibrancy: false, tokens: derive({ mode: custom.mode, tokens, cats: catList, overrides }) };
 }

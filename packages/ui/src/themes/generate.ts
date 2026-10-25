@@ -4,7 +4,7 @@ import { THEMES, type Theme } from "./registry";
 export const GENERATED_HEADER = "/* Generated from packages/ui/src/themes/registry.ts by `pnpm --filter @terno/ui gen:themes`. Do not edit. */";
 
 function block(theme: Theme, selector: string): string {
-  const lines = [`  color-scheme: ${theme.mode};`, `  --theme-font: ${theme.font ?? "initial"};`, ...THEME_TOKENS.map((k) => `  --${k}: ${theme.tokens[k]};`)];
+  const lines = [`  color-scheme: ${theme.mode};`, ...THEME_TOKENS.map((k) => `  --${k}: ${theme.tokens[k]};`)];
   return `${selector} {\n${lines.join("\n")}\n}`;
 }
 

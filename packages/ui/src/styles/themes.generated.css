@@ -3,7 +3,6 @@
 :root,
 [data-theme="terno-light"] {
   color-scheme: light;
-  --theme-font: initial;
   --background: oklch(0.99 0.002 85);
   --foreground: oklch(0.22 0.01 265);
   --card: oklch(1 0 0);
@@ -79,7 +78,6 @@
 
 [data-theme="apple-light"] {
   color-scheme: light;
-  --theme-font: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --background: oklch(1 0 0);
   --foreground: oklch(0.232 0.004 286);
   --card: oklch(1 0 0);
@@ -155,7 +153,6 @@
 
 [data-theme="solarized-light"] {
   color-scheme: light;
-  --theme-font: initial;
   --background: oklch(0.974 0.026 90);
   --foreground: oklch(0.309 0.052 220);
   --card: oklch(0.974 0.026 90);
@@ -231,7 +228,6 @@
 
 [data-theme="gruvbox-light"] {
   color-scheme: light;
-  --theme-font: initial;
   --background: oklch(0.956 0.055 96);
   --foreground: oklch(0.344 0.007 49);
   --card: oklch(0.965 0.039 101);
@@ -307,7 +303,6 @@
 
 [data-theme="github-light"] {
   color-scheme: light;
-  --theme-font: initial;
   --background: oklch(1 0 0);
   --foreground: oklch(0.254 0.011 254);
   --card: oklch(1 0 0);
@@ -383,7 +378,6 @@
 
 [data-theme="catppuccin-latte"] {
   color-scheme: light;
-  --theme-font: initial;
   --background: oklch(0.958 0.006 265);
   --foreground: oklch(0.435 0.043 279);
   --card: oklch(0.958 0.006 265);
@@ -459,7 +453,6 @@
 
 [data-theme="lumen-light"] {
   color-scheme: light;
-  --theme-font: initial;
   --background: oklch(1 0 0);
   --foreground: oklch(0.211 0.005 68);
   --card: oklch(1 0 0);
@@ -535,7 +528,6 @@
 
 [data-theme="atelier-light"] {
   color-scheme: light;
-  --theme-font: initial;
   --background: oklch(1 0 0);
   --foreground: oklch(0.227 0.004 85);
   --card: oklch(1 0 0);
@@ -611,7 +603,6 @@
 
 [data-theme="terno-dark"] {
   color-scheme: dark;
-  --theme-font: initial;
   --background: oklch(0.165 0.005 265);
   --foreground: oklch(0.95 0.004 85);
   --card: oklch(0.195 0.006 265);
@@ -687,7 +678,6 @@
 
 [data-theme="dracula"] {
   color-scheme: dark;
-  --theme-font: initial;
   --background: oklch(0.288 0.022 278);
   --foreground: oklch(0.977 0.008 107);
   --card: oklch(0.319 0.03 279);
@@ -763,7 +753,6 @@
 
 [data-theme="monokai"] {
   color-scheme: dark;
-  --theme-font: initial;
   --background: oklch(0.274 0.011 115);
   --foreground: oklch(0.977 0.008 107);
   --card: oklch(0.302 0.011 115);
@@ -839,7 +828,6 @@
 
 [data-theme="tokyo-night"] {
   color-scheme: dark;
-  --theme-font: initial;
   --background: oklch(0.226 0.021 280);
   --foreground: oklch(0.846 0.061 275);
   --card: oklch(0.261 0.034 274);
@@ -915,7 +903,6 @@
 
 [data-theme="gruvbox-dark"] {
   color-scheme: dark;
-  --theme-font: initial;
   --background: oklch(0.277 0 0);
   --foreground: oklch(0.894 0.057 89);
   --card: oklch(0.311 0.003 49);
@@ -991,7 +978,6 @@
 
 [data-theme="nord"] {
   color-scheme: dark;
-  --theme-font: initial;
   --background: oklch(0.324 0.023 264);
   --foreground: oklch(0.933 0.01 262);
   --card: oklch(0.379 0.029 266);
@@ -1067,7 +1053,6 @@
 
 [data-theme="catppuccin-mocha"] {
   color-scheme: dark;
-  --theme-font: initial;
   --background: oklch(0.243 0.03 284);
   --foreground: oklch(0.879 0.043 272);
   --card: oklch(0.279 0.035 277);
@@ -1143,7 +1128,6 @@
 
 [data-theme="lumen-dark"] {
   color-scheme: dark;
-  --theme-font: initial;
   --background: oklch(0.19 0.006 70);
   --foreground: oklch(0.95 0.005 85);
   --card: oklch(0.215 0.006 70);
@@ -1219,7 +1203,6 @@
 
 [data-theme="atelier-dark"] {
   color-scheme: dark;
-  --theme-font: initial;
   --background: oklch(0.2 0.012 255);
   --foreground: oklch(0.94 0.006 85);
   --card: oklch(0.225 0.013 255);

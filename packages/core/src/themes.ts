@@ -171,5 +171,19 @@ export const customThemesSchema = z
   .refine((list) => new Set(list.map((theme) => theme.id)).size === list.length, { error: () => t("errors.theme.duplicateIds") })
   .refine((list) => utf8Bytes(JSON.stringify(list)) <= MAX_CUSTOM_THEMES_BYTES, { error: () => t("errors.theme.tooBig") });
 
+/**
+ * Designs (plan 15): typography, shape, density and component variants; the
+ * values live in @terno/ui/designs (a test keeps both lists in sync).
+ */
+export const DESIGN_IDS = ["macos", "atelier", "lumen"] as const;
+export type DesignId = (typeof DESIGN_IDS)[number];
+export const DEFAULT_DESIGN: DesignId = "lumen";
+/** lightTheme/darkTheme: "the design's own palette" ("Style colors"), the default */
+export const DESIGN_PALETTE = "design";
+
+export function isDesignId(v: unknown): v is DesignId {
+  return typeof v === "string" && (DESIGN_IDS as readonly string[]).includes(v);
+}
+
 export const MOTION_STEPS = [0, 50, 75, 100] as const;
 export type MotionMs = (typeof MOTION_STEPS)[number];

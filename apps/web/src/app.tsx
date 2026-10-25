@@ -85,7 +85,7 @@ export function App() {
   return (
     <TooltipProvider delay={500}>
       {gate}
-      <div className="grid h-screen grid-cols-[232px_minmax(340px,400px)_minmax(0,1fr)] overflow-hidden" data-ready={ready || undefined}>
+      <div className="grid h-screen grid-cols-[var(--sidebar-w)_minmax(var(--list-min),var(--list-max))_minmax(0,1fr)] overflow-hidden" data-ready={ready || undefined}>
         <Sidebar />
         <div className="hairline-l hairline-r hairline-strong relative min-h-0">
           <ThreadList />

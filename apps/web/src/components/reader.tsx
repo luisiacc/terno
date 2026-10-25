@@ -38,7 +38,7 @@ function ToolButton({ label, keys, onClick, children, testId, active }: { label:
     <Tooltip>
       <TooltipTrigger
         render={
-          <Button variant="ghost" size="icon-sm" aria-label={label} data-testid={testId} onClick={onClick} className={cn("no-drag rounded-md text-muted-foreground hover:text-foreground [&_svg]:stroke-[1.75]", active && "text-star hover:text-star")}>
+          <Button variant="ghost" size="icon-sm" aria-label={label} data-testid={testId} onClick={onClick} className={cn("no-drag rounded-md text-muted-foreground hover:text-foreground [&_svg]:stroke-(--icon-stroke-toolbar)", active && "text-star hover:text-star")}>
             {children}
           </Button>
         }

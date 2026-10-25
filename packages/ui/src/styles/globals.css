@@ -15,6 +15,10 @@
 @import "@fontsource/instrument-serif/400-italic.css";
 /* every theme's token values (generated from src/themes/registry.ts) */
 @import "./themes.generated.css";
+/* every design's type, shape and density (generated from src/designs/*.ts) */
+@import "./designs.generated.css";
+/* the type-<role> utilities those variables feed (generated with them) */
+@import "./type-roles.generated.css";
 
 @source "../../../../apps/web/src";
 @source "../components";
@@ -22,29 +26,34 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-heading: var(--font-sans);
-  /* SF on macOS (desktop and web), Geist elsewhere; a theme may bring its own UI font */
-  --font-sans: var(--theme-font, -apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif);
+  /*
+   * Plan 15: type, radius and fonts come from the design (designs/*.ts →
+   * designs.generated.css, one [data-design] block each). `inline` keeps
+   * utilities pointing at the design variables, resolved where they're used,
+   * so a nested [data-design] (a Settings preview) draws in its own design.
+   */
+  --font-sans: var(--ds-font-sans);
+  --font-heading: var(--ds-font-sans);
+  --font-title: var(--ds-font-display);
   --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", monospace;
 
-  /* dense type scale for a mail client (plan 07): 11 · 12 · 13 · 14 · 15 · 17 · 20 */
-  --text-2xs: 0.6875rem; /* 11px: counts, captions */
-  --text-2xs--line-height: 0.875rem;
-  --text-xs: 0.75rem; /* 12px: metadata, dates */
-  --text-xs--line-height: 1rem;
-  --text-sm: 0.8125rem; /* 13px: UI and list */
-  --text-sm--line-height: 1.125rem;
-  --text-base: 0.875rem; /* 14px: reader body */
-  --text-base--line-height: 1.375rem;
-  --text-md: 0.9375rem; /* 15px: titles */
-  --text-md--line-height: 1.25rem;
-  --text-lg: 1.0625rem; /* 17px: empty states */
-  --text-lg--line-height: 1.375rem;
-  --text-xl: 1.25rem; /* 20px: reader subject */
-  --text-xl--line-height: 1.625rem;
-  /* SF already tracks by size; these tighten titles a little more (and Geist off macOS) */
-  --tracking-tight: -0.011em;
-  --tracking-display: -0.018em;
+  /* the dense scale (macOS: 11 · 12 · 13 · 14 · 15 · 17 · 20); each design sets its own values */
+  --text-2xs: var(--ds-text-2xs);
+  --text-2xs--line-height: var(--ds-text-2xs-leading);
+  --text-xs: var(--ds-text-xs);
+  --text-xs--line-height: var(--ds-text-xs-leading);
+  --text-sm: var(--ds-text-sm);
+  --text-sm--line-height: var(--ds-text-sm-leading);
+  --text-base: var(--ds-text-base);
+  --text-base--line-height: var(--ds-text-base-leading);
+  --text-md: var(--ds-text-md);
+  --text-md--line-height: var(--ds-text-md-leading);
+  --text-lg: var(--ds-text-lg);
+  --text-lg--line-height: var(--ds-text-lg-leading);
+  --text-xl: var(--ds-text-xl);
+  --text-xl--line-height: var(--ds-text-xl-leading);
+  --tracking-tight: var(--ds-tracking-tight);
+  --tracking-display: var(--ds-tracking-display);
 
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -141,19 +150,17 @@
   --ease-spring: var(--motion-ease-spring);
   --ease-exit: var(--motion-ease-in);
 
-  /* 4 · 6 controls and rows · 8 menus and tiles · 12 draft and toasts · 16 dialogs and palette */
-  --radius-sm: calc(var(--radius) * 0.5);
-  --radius-md: calc(var(--radius) * 0.75);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.5);
-  --radius-2xl: calc(var(--radius) * 2);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  /* the radius ladder (macOS: 4 · 6 controls and rows · 8 menus and tiles · 12 draft and toasts · 16 dialogs and palette) */
+  --radius-sm: var(--ds-radius-sm);
+  --radius-md: var(--ds-radius-md);
+  --radius-lg: var(--ds-radius-lg);
+  --radius-xl: var(--ds-radius-xl);
+  --radius-2xl: var(--ds-radius-2xl);
+  --radius-3xl: var(--ds-radius-3xl);
+  --radius-4xl: var(--ds-radius-4xl);
 }
 
 :root {
-  --radius: 0.5rem;
-
   /* motion at the default 75 ms; theme.js and applyAppearance set the user's value */
   --motion: 75ms;
   --motion-fast: 50ms;
@@ -192,7 +199,7 @@
   }
   html {
     @apply font-sans antialiased;
-    font-feature-settings: "cv11", "ss01";
+    font-feature-settings: var(--ds-font-features);
     text-rendering: optimizeLegibility;
   }
   body {
@@ -398,3 +405,13 @@
 @utility tabular {
   font-variant-numeric: tabular-nums;
 }
+
+/*
+ * Plan 15: lucide's stroke from the design. :where() keeps it below any
+ * utility (stroke-[1.25] on an empty state still wins) yet above the SVG's
+ * presentation attribute.
+ */
+:where(svg.lucide) {
+  stroke-width: var(--icon-stroke);
+}
+
