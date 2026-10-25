@@ -212,3 +212,44 @@ describe("the unread filter (plan 12)", () => {
     gates("50k all unread");
   });
 });
+
+// after the unread filter's: the mailbox is 50k+ threads by now
+describe("the quick filters (plan 15): with attachments and starred", () => {
+  const largest = () => db.get<{ category_id: number }>("SELECT category_id FROM thread_categories GROUP BY 1 ORDER BY count(*) DESC LIMIT 1")!.category_id;
+  /** a filter's lists, deep page, kept thread, counts and a whole "select all N" walk, like the unread filter's */
+  function gates(label: string, filter: "attachments" | "starred") {
+    const cat = largest();
+    const acct = db.all<{ id: number }>("SELECT id FROM accounts").map((a) => a.id);
+    for (const view of ["inbox", "archive", "all", "trash", "spam"] as const) gate(`${label}: ${view}, first page`, 5, () => listThreads(db, { view, filter, limit: 100 }));
+    gate(`${label}: archive per account`, 5, (i) => listThreads(db, { view: "archive", accountId: acct[i % acct.length]!, filter, limit: 100 }));
+    gate(`${label}: largest category`, 5, () => listThreads(db, { view: "all", categoryId: cat, filter, limit: 100 }));
+    const where = filter === "attachments" ? "has_attachments = 1" : "is_starred = 1";
+    const deep = db.get<{ last_date: number; id: number }>(`SELECT last_date, id FROM threads WHERE ${where} AND in_trash = 0 AND in_spam = 0 ORDER BY last_date DESC, id DESC LIMIT 1 OFFSET 1000`);
+    if (deep) gate(`${label}: all mail, page at #1,000`, 5, () => listThreads(db, { view: "all", filter, limit: 100, cursor: { lastDate: deep.last_date, id: deep.id } }));
+    const open = db.get<{ id: number }>(`SELECT id FROM threads WHERE in_inbox = 1 AND NOT (${where}) ORDER BY last_date DESC LIMIT 1`);
+    if (open) gate(`${label}: inbox keeping the open thread`, 5, () => listThreads(db, { view: "inbox", filter, keepIds: [open.id], limit: 100 }));
+    for (const view of ["inbox", "archive", "trash"] as const) gate(`${label}: count ${view}`, 5, () => countScopeThreads(db, { view, filter, limit: 100_001 }));
+    gate(`${label}: archive, all scope pages`, 15, () => {
+      for (let after = 0; ; ) {
+        const page = scopeThreadIds(db, { view: "archive", filter, after, limit: 500 });
+        if (page.length < 500) return;
+        after = page[page.length - 1]!;
+      }
+    }, 20);
+  }
+
+  it("hold at 50k+ threads: as they are, every thread starred, none with attachments", () => {
+    const n = db.get<{ c: number; a: number; s: number }>("SELECT count(*) AS c, sum(has_attachments) AS a, sum(is_starred) AS s FROM threads")!;
+    expect(n.c).toBeGreaterThanOrEqual(50_000);
+    meta.attachmentThreads = n.a;
+    meta.starredThreads = n.s;
+    gates("50k attachments", "attachments");
+    gates("50k starred", "starred");
+    db.exec("UPDATE threads SET is_starred = 1");
+    db.exec("UPDATE threads SET has_attachments = 0");
+    db.exec("ANALYZE");
+    gates("50k all starred", "starred");
+    gates("50k no attachments", "attachments");
+  });
+});
+

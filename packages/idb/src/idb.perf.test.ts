@@ -220,3 +220,54 @@ it("the unread filter's counts and select-all walks read the unread threads only
   await store.threads.act({ threadIds: unread, action: "markUnread", signal: null, now: NOW });
   await store.debug.verify();
 }, 900_000);
+
+it("the quick filters (plan 15) page from their own orders: with attachments and starred, cold, every page, counts and walks within a frame; 5,000 stars at once", async () => {
+  const timed = async <T>(fn: () => Promise<T>) => {
+    const t = performance.now();
+    const result = await fn();
+    return { result, ms: performance.now() - t };
+  };
+  const all = (await store.debug.snapshot()).threads;
+  for (const filter of ["attachments", "starred"] as const) {
+    const keeps = all.filter((t) => (filter === "attachments" ? t.hasAttachments : t.isStarred)).length;
+    // the first filtered page builds the filter's order (a pass over the threads and a sort of the ones it keeps)
+    const cold = await timed(() => store.threads.list({ view: "inbox", filter, limit: 100 }));
+    console.log(`${filter}: ${keeps} of ${all.length} threads; cold first page ${cold.ms.toFixed(2)} ms`);
+    expect(cold.ms, `${filter}: cold first page`).toBeLessThanOrEqual(FRAME * MULT);
+    for (const [label, p] of [
+      ["inbox", { view: "inbox" as const }],
+      ["archive", { view: "archive" as const }],
+      ["trash", { view: "trash" as const }],
+      ["account", { view: "all" as const, accountId: all[0]!.accountId }],
+    ] as const) {
+      let worst = 0;
+      let cursor: { lastDate: number; id: number } | undefined;
+      do {
+        const r = await timed(() => store.threads.list({ ...p, filter, limit: 100, cursor }));
+        worst = Math.max(worst, r.ms);
+        cursor = r.result.nextCursor ?? undefined;
+      } while (cursor);
+      expect(worst, `${filter} ${label}: one page`).toBeLessThanOrEqual(FRAME * MULT);
+      const count = await timed(() => store.threads.scopeCount({ ...p, filter, limit: 100_001 }));
+      let walked = 0;
+      const walk = await timed(async () => {
+        for (let after = 0; ; ) {
+          const page = await store.threads.scopeIds({ ...p, filter, after, limit: 500 });
+          walked += page.length;
+          if (page.length < 500) return;
+          after = page[page.length - 1]!;
+        }
+      });
+      expect(walked).toBe(count.result);
+      expect(walk.ms, `${filter} ${label}: whole walk`).toBeLessThanOrEqual(FRAME * MULT);
+    }
+  }
+  // 5,000 threads starred at once re-sort the starred order once: a dense starred mailbox, the next page pays it
+  const ids = all.filter((t) => !t.isStarred).slice(0, 5000).map((t) => t.id);
+  await store.threads.act({ threadIds: ids, action: "star", signal: null, now: NOW });
+  const after = await timed(() => store.threads.list({ view: "all", filter: "starred", limit: 100 }));
+  expect(after.ms, "page after a bulk star").toBeLessThanOrEqual(FRAME * MULT);
+  expect(after.result.items.every((t) => t.starred)).toBe(true);
+  await store.threads.act({ threadIds: ids, action: "unstar", signal: null, now: NOW });
+  await store.debug.verify();
+}, 900_000);
