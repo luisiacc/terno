@@ -1,21 +1,21 @@
 # Terno
 
-> **Tu correo, hecho a la medida.**
+> **Your mail, made to measure.**
 
 Terno is a minimalist, keyboard-first, extremely fast desktop email client for macOS (Apple Silicon first), with a web version that runs the same backend in your browser. Features:
 
 - Unlimited accounts: Gmail via OAuth, plus any IMAP/SMTP server.
-- Categories that span accounts, with smart categorization: Terno learns from how you file (sender, list, domain and content, all on this Mac, no AI needed), files new mail on its own only when it is sure and says why, suggests the rest, and after every filing offers "todo de este remitente / sobre estos temas" in one keystroke, all undoable.
+- Categories that span accounts, with smart categorization: Terno learns from how you file (sender, list, domain and content, all on this Mac, no AI needed), files new mail on its own only when it is sure and says why, suggests the rest, and after every filing offers "everything from this sender / about these topics" in one keystroke, all undoable.
 - Filters built with AI from a plain-language description, then refined in a visual editor. The AI can run on this Mac (Ollama, LM Studio, any local OpenAI-compatible server) or in the cloud with your own key (Claude, OpenAI, OpenRouter, Groq, Together, Azure).
 - **Local mode** (on for new installs): nothing leaves the Mac except mail with your own servers.
 - Filters learned from what you archive.
 - Drag one or many conversations onto a category to move them there (out of every other category); the same undoable snackbar as the `l` picker.
-- A right-click menu on a conversation or a selection (read/unread, star, archive, delete, spam, categories with checkmarks, "Mover a…", everything from a sender, a filter from them), selection with ⌘A, ⌘/⇧-click and ⇧J/K, the usual triage keys (⌫, ⇧I, ⇧U, ⌘⇧U, ⌃⌘A, z…), and "select all N conversations" that the backend applies to a whole view in slices, with progress and undo ([plan 06](docs/plans/06-context-menu-selection.md)).
+- A right-click menu on a conversation or a selection (read/unread, star, archive, delete, spam, categories with checkmarks, "Move to…", everything from a sender, a filter from them), selection with ⌘A, ⌘/⇧-click and ⇧J/K, the usual triage keys (⌫, ⇧I, ⇧U, ⌘⇧U, ⌃⌘A, z…), and "select all N conversations" that the backend applies to a whole view in slices, with progress and undo ([plan 06](docs/plans/06-context-menu-selection.md)).
 - A quiet, Apple-Mail-like interface: conversations without boxes (hairlines and faint surfaces), replies and new messages written in place (no dialogs), drafts that are never lost (saved as you type, restored after a restart).
-- 13 themes (Terno, Apple, Solarized, Gruvbox, GitHub, Catppuccin, Dracula, Monokai, Tokyo Night, Nord) with a light and a dark choice for system mode, your own themes as JSON, all checked for WCAG AA contrast; animations you can set to 0/50/75/100 ms (Ajustes → Apariencia); reduced transparency respected.
+- 13 themes (Terno, Apple, Solarized, Gruvbox, GitHub, Catppuccin, Dracula, Monokai, Tokyo Night, Nord) with a light and a dark choice for system mode, your own themes as JSON, all checked for WCAG AA contrast; animations you can set to 0/50/75/100 ms (Settings → Appearance); reduced transparency respected.
 - An MCP server so **Claude Code** and **Codex** get one access point to all your email.
-- Printing and PDF (⌘P, ⇧⌘P, Archivo, the reader's printer button, or a right-click on a conversation or a single message): with headers or just the content, quoted history hidden or kept, Letter or A4, previewed as the exact page that prints; wide mail is fitted to the page and nothing leaves the Mac ([plan 09](docs/plans/09-print.md)).
-- Settings (⌘, or the gear, or "Ajustes → …" in ⌘K) where everything shown can be changed: per-account name, sender name, color, signature, sync window, reconnect and removal; categories renamed, recolored, reordered and deleted; filters; themes including your own JSON ones; the MCP token; export and import ([plan 08](docs/plans/08-settings-pass.md)).
+- Printing and PDF (⌘P, ⇧⌘P, File, the reader's printer button, or a right-click on a conversation or a single message): with headers or just the content, quoted history hidden or kept, Letter or A4, previewed as the exact page that prints; wide mail is fitted to the page and nothing leaves the Mac ([plan 09](docs/plans/09-print.md)).
+- Settings (⌘, or the gear, or "Settings → …" in ⌘K) where everything shown can be changed: per-account name, sender name, color, signature, sync window, reconnect and removal; categories renamed, recolored, reordered and deleted; filters; themes including your own JSON ones; the MCP token; export and import ([plan 08](docs/plans/08-settings-pass.md)).
 
 The technical plan, and the design review held with Codex before implementation, live in [`docs/PLAN.md`](docs/PLAN.md).
 
@@ -35,7 +35,7 @@ pnpm build:web           # → apps/web/dist-web, a static site (any static host
 ```
 
 - **Demo mode:** launch the packaged app with a demo mailbox: `TERNO_DEMO=1 open apps/desktop/release/mac-arm64/Terno.app`. The data is a deterministic set of ~3,000 Spanish/English conversations across 4 accounts.
-- **Gmail:** create a Google Cloud OAuth client of type *Desktop app* with the Gmail API enabled. Paste its client ID in Ajustes → Cuentas, then use "Continuar con Google". On the web, use a client of type *Web application* with the site's origin as an authorized JavaScript origin.
+- **Gmail:** create a Google Cloud OAuth client of type *Desktop app* with the Gmail API enabled. Paste its client ID in Settings → Accounts, then use "Continue with Google". On the web, use a client of type *Web application* with the site's origin as an authorized JavaScript origin.
 
 ## Terno on the web
 
@@ -44,19 +44,19 @@ The same renderer, built as a static site: the backend (the same code as the Mac
 - **One tab owns the mailbox** (Web Lock). Another tab waits and can take over: the mailbox goes to the tab that asked, after the owner closed every storage handle; a tab that fails to start gives it up. Those screens are modal (focus, the app behind them inert, shortcuts suspended). A newer build in another tab, or a mailbox already migrated by one, asks to reload instead of touching the data. An error opening the mailbox is shown as such: Terno never starts an empty mailbox in its place.
 - **Storage adapters** are plug-and-play ([`docs/STORAGE.md`](docs/STORAGE.md)): SQLite on OPFS by default, a native IndexedDB store (`?storage=idb`, and automatically where OPFS isn't available).
 - **Gmail** signs in with Google's browser flow and your own client ID. Without a server there is no refresh token: access lasts an hour and isn't stored, so after a reload or an hour Terno asks you to reconnect with one click. Queued actions and sends wait for it however long it takes, without spending their retries, and go out as soon as you reconnect (the same applies on the Mac when Google revokes a sign-in).
-- **Storage:** Terno asks the browser to keep its storage persistent and says in Ajustes → Datos whether it did. If not, the browser may evict the mailbox under pressure (or after Safari's 7 days): mail re-syncs, but categories, filters, settings and unsent work don't, so the same tab exports them as JSON and imports them back. It also switches the engine (SQLite on OPFS or IndexedDB), carrying settings, categories, filters and drafts across; the other engine's mailbox stays where it was.
-- **What needs the Mac app:** IMAP/SMTP accounts (a browser can't open those connections), the MCP server for Claude Code and Codex, and sync with the window closed. The app says so where it matters, and suggests the Mac app once (first run, one dismissible line above the list, Ajustes → General).
+- **Storage:** Terno asks the browser to keep its storage persistent and says in Settings → Data whether it did. If not, the browser may evict the mailbox under pressure (or after Safari's 7 days): mail re-syncs, but categories, filters, settings and unsent work don't, so the same tab exports them as JSON and imports them back. It also switches the engine (SQLite on OPFS or IndexedDB), carrying settings, categories, filters and drafts across; the other engine's mailbox stays where it was.
+- **What needs the Mac app:** IMAP/SMTP accounts (a browser can't open those connections), the MCP server for Claude Code and Codex, and sync with the window closed. The app says so where it matters, and suggests the Mac app once (first run, one dismissible line above the list, Settings → General).
 - **Local mode in the browser** allows only Google (your mail) and AI on this computer (literal localhost), refuses redirects for those requests, and can't pin DNS or control other tabs and extensions; the settings say exactly that.
 - **AI with your own key** runs from the tab's worker, through the same network policy: the SDKs are told they may run in a browser (the key is yours and stays on this device), and Claude gets the `anthropic-dangerous-direct-browser-access` header its API requires from a page. OpenAI, OpenRouter, Groq, Together and Azure OpenAI answer browser requests (CORS); Ollama and LM Studio only answer origins you allow, so Terno says how (`OLLAMA_ORIGINS=<this site>`, LM Studio's «Enable CORS»). A request carrying your key never follows a redirect (a browser would re-send a header like Azure's `api-key` to wherever it points).
-- **Secrets** (Gmail sessions, AI keys) are sealed with AES-GCM under a non-extractable WebCrypto key kept in IndexedDB. A service worker serves the shell, worker and WASM of one build, so reloads work offline and an update is a single "Recargar".
+- **Secrets** (Gmail sessions, AI keys) are sealed with AES-GCM under a non-extractable WebCrypto key kept in IndexedDB. A service worker serves the shell, worker and WASM of one build, so reloads work offline and an update is a single "Reload".
 
 ## AI providers and local mode
 
-- **Ajustes → IA** picks the provider. Local servers are discovered automatically (model, size, context, loaded state); *Probar conexión* checks latency and whether the model supports structured output, JSON mode or only text, and the app adapts.
+- **Settings → AI** picks the provider. Local servers are discovered automatically (model, size, context, loaded state); *Test connection* checks latency and whether the model supports structured output, JSON mode or only text, and the app adapts.
 - API keys are encrypted with the macOS Keychain and never reach the renderer (it only sees the last 4 characters).
 - For filters, the AI receives your description, account emails and names, category names and today's date — never message content.
-- **Local mode** (Ajustes → General, first row; "Local" pill in the sidebar): the backend's network policy allows only mail with your servers and AI on loopback (resolved and pinned), main blocks the renderer's remote requests, and remote images stay off. Turning it off asks first. Existing installs keep local mode off until you turn it on.
-- **Tu cuenta de Terno**: the first verified mailbox becomes the owner of this install (shown in Ajustes → Cuentas). Removing that mailbox keeps it; changing it requires verifying the new mailbox again.
+- **Local mode** (Settings → General, first row; "Local" pill in the sidebar): the backend's network policy allows only mail with your servers and AI on loopback (resolved and pinned), main blocks the renderer's remote requests, and remote images stay off. Turning it off asks first. Existing installs keep local mode off until you turn it on.
+- **Your Terno account**: the first verified mailbox becomes the owner of this install (shown in Settings → Accounts). Removing that mailbox keeps it; changing it requires verifying the new mailbox again.
 
 ## Architecture (short version)
 
@@ -240,7 +240,7 @@ Available tools:
 - `update_threads`
 - `categorize`
 - `create_draft`
-- `send_email`: only works when the user enables it in Ajustes → Agentes (where "Cambiar token" also cuts off every connected agent).
+- `send_email`: only works when the user enables it in Settings → Agents (where "Change token" also cuts off every connected agent).
 - `list_filters`
 - `create_filter`: supports a dry run.
 
@@ -250,10 +250,10 @@ Available tools:
 
 Terno was called Única. The first launch of Terno carries everything over by itself ([PLAN §14](docs/PLAN.md#14-rename-única--terno)):
 
-- **Mac:** `~/Library/Application Support/Unica` becomes `…/Terno` (renamed, never copied; quit Única first) and `unica.db` becomes `terno.db`. Passwords, tokens and API keys sealed in the Keychain as "Única Safe Storage" are sealed again under Terno's item (macOS may ask once whether Terno may use the old item). Anything that can't be opened stays where it was and Ajustes asks you to enter it again. The dev profiles `Unica-dev-seeded`/`Unica-dev-demo` are renamed on their next `pnpm dev:desktop:*`.
+- **Mac:** `~/Library/Application Support/Unica` becomes `…/Terno` (renamed, never copied; quit Única first) and `unica.db` becomes `terno.db`. Passwords, tokens and API keys sealed in the Keychain as "Única Safe Storage" are sealed again under Terno's item (macOS may ask once whether Terno may use the old item). Anything that can't be opened stays where it was and Settings asks you to enter it again. The dev profiles `Unica-dev-seeded`/`Unica-dev-demo` are renamed on their next `pnpm dev:desktop:*`.
 - **Web:** the mailbox, its key store, caches and settings move from Única's storage names to Terno's in the browser, and a tab still running the old build hands the mailbox over.
 - **Variables:** `UNICA_*` still work for one release (with a warning); use `TERNO_*`.
-- **Agents:** re-add the MCP server with the commands above (or in Ajustes → Agentes) and copy the skill to `~/.claude/skills/terno`.
+- **Agents:** re-add the MCP server with the commands above (or in Settings → Agents) and copy the skill to `~/.claude/skills/terno`.
 
 ## Layout
 

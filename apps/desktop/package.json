@@ -4,7 +4,7 @@
   "license": "PolyForm-Noncommercial-1.0.0",
   "private": true,
   "type": "module",
-  "description": "Terno: tu correo, hecho a la medida",
+  "description": "Terno: your mail, made to measure",
   "scripts": {
     "build": "node scripts/build.mjs",
     "dev": "node scripts/dev.mjs",
