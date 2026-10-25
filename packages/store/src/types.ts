@@ -87,8 +87,8 @@ export interface ListParams {
   categoryId?: number;
   /** only threads with something unread (the list's unread filter) */
   unreadOnly?: boolean;
-  /** with unreadOnly: this thread too while it is in the view, read or not (the open one stays put; see keepInPage) */
-  keepId?: number;
+  /** with unreadOnly: these threads too while they are in the view, read or not (the open and checked ones stay put; see keepInPage) */
+  keepIds?: readonly number[];
   cursor?: Cursor;
   limit: number;
 }

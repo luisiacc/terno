@@ -78,15 +78,14 @@ const UNREAD_WHERE = "t.unread_count > 0";
 export function listThreads(db: Db, p: ListParams): Page {
   const q = listSql(p);
   const page = pageFrom(db.all<SummaryRow>(q.sql, ...q.params), p.limit);
-  if (!p.unreadOnly || p.keepId === undefined) return page;
-  // the open thread, by key, against the view without the filter
-  const k = listSql({ ...p, unreadOnly: false, limit: 1 }, p.keepId);
-  const row = db.get<SummaryRow>(k.sql, ...k.params);
-  return keepInPage(page, row ? toSummary(row) : null);
+  if (!p.unreadOnly || !p.keepIds?.length) return page;
+  // the kept threads, by key, against the view without the filter
+  const k = listSql({ ...p, unreadOnly: false, limit: p.keepIds.length }, p.keepIds);
+  return keepInPage(page, db.all<SummaryRow>(k.sql, ...k.params).map(toSummary));
 }
 
-/** The SQL a list page runs (query-plan tests: the unread filter walks threads_unread); `only`: that one thread, if the page's view holds it. */
-export function listSql(p: ListParams, only?: number): { sql: string; params: Param[] } {
+/** The SQL a list page runs (query-plan tests: the unread filter walks threads_unread); `only`: those threads, the ones the page's view holds. */
+export function listSql(p: ListParams, only?: readonly number[]): { sql: string; params: Param[] } {
   const where = [VIEW_WHERE[p.view]];
   const params: Param[] = [];
   // unread: pinned to the unread index, which tests view and account in the index (the planner
@@ -108,8 +107,8 @@ export function listSql(p: ListParams, only?: number): { sql: string; params: Pa
     params.push(p.cursor.lastDate, p.cursor.id);
   }
   if (only !== undefined) {
-    where.push("t.id = ?");
-    params.push(only);
+    where.push(`t.id IN (${placeholders(only.length)})`);
+    params.push(...only);
   }
   params.push(p.limit + 1);
   return {

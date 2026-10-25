@@ -936,12 +936,12 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         for (const [i, isRead] of [false, true, false, false, true].entries()) ts.push(await thread({ isRead, date: NOW - (i + 1) * DAY, subject: `hilo ${i}` }));
         await store.categories.add({ categoryId: cat, threadIds: [ts[3]!, ts[4]!], addedBy: "user", now: NOW });
         await store.threads.act({ threadIds: [ts[2]!], action: "archive", signal: null, now: NOW });
-        const list = async (p: { view: "inbox" | "all" | "archive"; accountId?: number; categoryId?: number; keepId?: number }) => {
+        const list = async (p: { view: "inbox" | "all" | "archive"; accountId?: number; categoryId?: number; keepIds?: number[] }) => {
           const ids: number[] = [];
           let cursor: Cursor | undefined;
           do {
             const page = await store.threads.list({ ...p, unreadOnly: true, limit: 1, cursor });
-            expect(page.items.every((t) => t.unread || t.id === p.keepId), JSON.stringify(p)).toBe(true);
+            expect(page.items.every((t) => t.unread || p.keepIds?.includes(t.id)), JSON.stringify(p)).toBe(true);
             ids.push(...page.items.map((t) => t.id));
             cursor = page.nextCursor ?? undefined;
           } while (cursor);
@@ -968,15 +968,17 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect(await list({ view: "inbox" })).toEqual([fresh, ts[1], ts[3]]);
         expect(await scope({ view: "inbox" })).toEqual([fresh, ts[1]!, ts[3]!].sort((a, b) => a - b));
         // the open thread stays (read now), once, at its place in whichever page holds that place
-        expect(await list({ view: "inbox", keepId: ts[0] })).toEqual([fresh, ts[0], ts[1], ts[3]]);
-        expect((await store.threads.list({ view: "inbox", unreadOnly: true, keepId: ts[0], limit: 50 })).items.map((t) => [t.id, t.unread])).toEqual([[fresh, true], [ts[0], false], [ts[1], true], [ts[3], true]]);
-        expect(await list({ view: "inbox", keepId: ts[4] })).toEqual([fresh, ts[1], ts[3], ts[4]]);
+        expect(await list({ view: "inbox", keepIds: [ts[0]!] })).toEqual([fresh, ts[0], ts[1], ts[3]]);
+        expect((await store.threads.list({ view: "inbox", unreadOnly: true, keepIds: [ts[0]!], limit: 50 })).items.map((t) => [t.id, t.unread])).toEqual([[fresh, true], [ts[0], false], [ts[1], true], [ts[3], true]]);
+        expect(await list({ view: "inbox", keepIds: [ts[4]!] })).toEqual([fresh, ts[1], ts[3], ts[4]]);
+        // several (the open and the checked ones), each once, an unread one among them changing nothing
+        expect(await list({ view: "inbox", keepIds: [ts[4]!, ts[0]!, ts[1]!, ts[0]!] })).toEqual([fresh, ts[0], ts[1], ts[3], ts[4]]);
         // …but only while it is in the view
-        expect(await list({ view: "all", categoryId: cat, keepId: ts[0] })).toEqual([ts[3]]);
-        expect(await list({ view: "inbox", accountId: acct + 999, keepId: ts[0] })).toEqual([]);
+        expect(await list({ view: "all", categoryId: cat, keepIds: [ts[0]!] })).toEqual([ts[3]]);
+        expect(await list({ view: "inbox", accountId: acct + 999, keepIds: [ts[0]!] })).toEqual([]);
         await store.threads.act({ threadIds: [ts[0]!], action: "archive", signal: null, now: NOW });
-        expect(await list({ view: "inbox", keepId: ts[0] })).toEqual([fresh, ts[1], ts[3]]);
-        expect(await list({ view: "archive", keepId: ts[0] })).toEqual([ts[0], ts[2]]);
+        expect(await list({ view: "inbox", keepIds: [ts[0]!] })).toEqual([fresh, ts[1], ts[3]]);
+        expect(await list({ view: "archive", keepIds: [ts[0]!] })).toEqual([ts[0], ts[2]]);
         await store.threads.act({ threadIds: [ts[0]!], action: "moveToInbox", signal: null, now: NOW });
         // the unfiltered list is untouched by all this
         expect((await store.threads.list({ view: "inbox", limit: 50 })).items.map((t) => t.id)).toEqual([fresh, ts[0], ts[1], ts[3], ts[4]]);

@@ -724,12 +724,13 @@ export function listThreads(c: Ctx, p: ListParams): Page {
   const items = (hasMore ? rows.slice(0, p.limit) : rows).map((t) => toSummary(c, t));
   const last = items[items.length - 1];
   const page = { items, nextCursor: hasMore && last ? { lastDate: last.lastDate, id: last.id } : null };
-  if (!p.unreadOnly || p.keepId === undefined) return page;
-  // the open thread, against the view without the filter (and before the cursor, like the page)
-  const k = threads.get(p.keepId);
-  const before = (t: R) => !p.cursor || t.last_date < p.cursor.lastDate || (t.last_date === p.cursor.lastDate && t.id < p.cursor.id);
-  const kept = k && test(k) && (p.accountId === undefined || k.account_id === p.accountId) && (!inCategory || inCategory.has(k.id, p.categoryId)) && before(k);
-  return keepInPage(page, kept ? toSummary(c, k) : null);
+  if (!p.unreadOnly || !p.keepIds?.length) return page;
+  // the kept threads, against the view without the filter (and after the cursor, like the page)
+  const after = (t: R) => !p.cursor || t.last_date < p.cursor.lastDate || (t.last_date === p.cursor.lastDate && t.id < p.cursor.id);
+  const kept = [...new Set(p.keepIds)]
+    .map((id) => threads.get(id))
+    .filter((k): k is R => !!k && test(k) && (p.accountId === undefined || k.account_id === p.accountId) && (!inCategory || inCategory.has(k.id, p.categoryId)) && after(k));
+  return keepInPage(page, kept.map((k) => toSummary(c, k)));
 }
 
 /** A view's thread ids above `after`, ascending, up to `limit`: a category walks its memberships, not the whole mailbox. */

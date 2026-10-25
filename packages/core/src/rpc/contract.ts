@@ -395,8 +395,8 @@ export const contract = {
       categoryId: id.optional(),
       /** the unread filter: threads with something unread only */
       unreadOnly: z.boolean().optional(),
-      /** with unreadOnly: the open thread too, read or not, while it is in the view (it stays put until the selection moves) */
-      keepId: id.optional(),
+      /** with unreadOnly: the open and checked threads too, read or not, while they are in the view (they stay put until the selection moves) */
+      keepIds: z.array(id).max(500).optional(),
       cursor: cursor.optional(),
       limit: z.number().int().min(1).max(500).default(100),
     }),

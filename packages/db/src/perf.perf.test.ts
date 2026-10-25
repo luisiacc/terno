@@ -175,7 +175,7 @@ describe("the unread filter (plan 12)", () => {
     if (deep) gate(`${label}: unread all mail, page at unread #1,000`, 5, () => listThreads(db, { view: "all", unreadOnly: true, limit: 100, cursor: { lastDate: deep.last_date, id: deep.id } }));
     // the open (read) thread kept in the page: one more lookup by key
     const open = db.get<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 AND unread_count = 0 ORDER BY last_date DESC LIMIT 1");
-    if (open) gate(`${label}: unread inbox keeping the open thread`, 5, () => listThreads(db, { view: "inbox", unreadOnly: true, keepId: open.id, limit: 100 }));
+    if (open) gate(`${label}: unread inbox keeping the open thread`, 5, () => listThreads(db, { view: "inbox", unreadOnly: true, keepIds: [open.id], limit: 100 }));
     for (const view of ["inbox", "archive", "trash"] as const) gate(`${label}: unread count ${view} (header)`, 5, () => countScopeThreads(db, { view, unreadOnly: true, limit: 100_001 }));
     gate(`${label}: unread count largest category`, 5, () => countScopeThreads(db, { view: "all", categoryId: cat, unreadOnly: true, limit: 100_001 }));
     // select all N: every page of 500 ids of the filtered archive, walked whole
