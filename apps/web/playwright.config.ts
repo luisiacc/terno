@@ -5,7 +5,9 @@ import { defineConfig, devices } from "@playwright/test";
  * (vite preview) so perf numbers reflect what ships (React Compiler, prod React);
  * every test talks to a real backend over WebSocket (see e2e/fixtures.ts).
  */
-const PORT = 5180;
+// E2E_PORT lets a second checkout (a worktree) run its own suite alongside
+const PORT = Number(process.env.E2E_PORT ?? 5180);
+const OUT = process.env.E2E_PORT ? `dist-e2e-${PORT}` : "dist-e2e";
 
 export default defineConfig({
   testDir: "e2e",
@@ -39,7 +41,7 @@ export default defineConfig({
   ],
   webServer: {
     // a test build (render probe on) in its own directory, so it never ships
-    command: `VITE_RENDER_PROBE=1 pnpm vite build --outDir dist-e2e && pnpm vite preview --outDir dist-e2e --port ${PORT} --strictPort --host 127.0.0.1`,
+    command: `VITE_RENDER_PROBE=1 pnpm vite build --outDir ${OUT} && pnpm vite preview --outDir ${OUT} --port ${PORT} --strictPort --host 127.0.0.1`,
     url: `http://127.0.0.1:${PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

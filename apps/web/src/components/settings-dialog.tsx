@@ -37,7 +37,7 @@ export function SettingsDialog() {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && setApp({ dialog: null })}>
-      <DialogContent className="h-[min(640px,85vh)] max-w-[min(820px,94vw)] gap-0 overflow-hidden p-0 sm:max-w-[min(820px,94vw)]" data-testid="settings-dialog">
+      <DialogContent className="h-[min(640px,85vh)] max-w-[min(820px,94vw)] grid-rows-1 gap-0 overflow-hidden p-0 sm:max-w-[min(820px,94vw)]" data-testid="settings-dialog">
         <DialogTitle className="sr-only">Ajustes</DialogTitle>
         <Tabs value={tab} onValueChange={(v) => setApp({ settingsTab: v as SettingsTab })} orientation="vertical" className="flex h-full flex-row gap-0">
           {/* macOS System Settings: a sidebar of sections with accent glyphs */}

@@ -477,6 +477,33 @@ test.describe("at the minimum window size (980×600)", () => {
   });
 });
 
+// the dialog is a grid: without a bounded row, the tabs grew to their content and the pane never scrolled
+for (const viewport of [{ width: 1440, height: 900 }, { width: 980, height: 600 }]) {
+  test.describe(`scrolling at ${viewport.width}×${viewport.height}`, () => {
+    test.use({ viewport });
+    test("every tab's pane stays inside the dialog and scrolls with the wheel to its last control", async ({ app: page }) => {
+      await page.getByTestId("open-settings").click();
+      const box = (await dialog(page).boundingBox())!;
+      const scrolled: Tab[] = [];
+      for (const [tab] of TABS) {
+        await show(page, tab);
+        // the leaving panel lingers for a moment and would add its height
+        await expect(dialog(page).getByRole("tabpanel")).toHaveCount(1);
+        const scroller = panel(page).locator("xpath=..");
+        const sizes = await scroller.evaluate((el) => ({ top: el.getBoundingClientRect().top, bottom: el.getBoundingClientRect().bottom, client: el.clientHeight, scroll: el.scrollHeight }));
+        expect(sizes.bottom, tab).toBeLessThanOrEqual(box.y + box.height + 1);
+        if (sizes.scroll <= sizes.client + 1) continue;
+        await scroller.hover();
+        await page.mouse.wheel(0, sizes.scroll);
+        await expect.poll(() => scroller.evaluate((el) => el.scrollTop > 0 && Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight), { message: tab }).toBe(true);
+        scrolled.push(tab);
+      }
+      // Apariencia (13 themes) always overflows: the wheel really had something to scroll
+      expect(scrolled).toContain("appearance");
+    });
+  });
+}
+
 test.describe("motion", () => {
   test.use({ reducedMotion: "no-preference" });
   test("the dialog opens on --motion (≤ 100 ms) and not at all at 0", async ({ app: page, server }) => {
