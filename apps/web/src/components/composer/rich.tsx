@@ -39,7 +39,7 @@ import { flushSync } from "react-dom";
 import { attachBody, useDrafts } from "~/lib/drafts";
 import { exposeForTests } from "~/lib/render-probe";
 import { openLink } from "../mail-body";
-import { takeEarly } from "./lazy";
+import { takeEarly, takeStandInFocus } from "./lazy";
 import { EMPTY_FORMAT, registerController, useController, useFormatState, type Align, type ComposerController, type FormatCommand, type FormatState } from "./controller";
 import { appendTyped, applyLink, COMMANDS, createEditor, docOf, formatState, isEmpty, keepState, keptState, linkAt, newState, removeLink, sameFormat, serialize, setAlign, setMark } from "./editor";
 
@@ -221,11 +221,13 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
     }
     format = formatState(view.state, !sendingRef.current);
     refreshRef.current = schedule;
+    // the stand-in had focus (typed into or not): the editor that replaces it takes it
+    const standInFocused = takeStandInFocus(draftKey);
     if (early) {
       // the editor's document now holds what the stand-in saved and would send: it is the source from here
       if (early.text) bodyRef.current?.changed();
-      if (early.focused) focus("end");
     }
+    if (early?.focused || standInFocused) focus("end");
     const unregister = registerController(draftKey, controller);
     return () => {
       if (frame) cancelAnimationFrame(frame);

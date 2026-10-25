@@ -87,6 +87,10 @@ const restoreTyped = (key: string) => (el: HTMLDivElement | null) => {
   if (el && e && el.innerText !== e.text) el.innerText = e.text;
 };
 
+/** Stand-ins that have focus: the editor replacing one takes it (typed into or not). */
+const focusedStandIns = new Set<string>();
+export const takeStandInFocus = (key: string): boolean => focusedStandIns.delete(key);
+
 /** For the editor, once: what the stand-in got (its source is the editor's from now on). */
 export function takeEarly(key: string): { base: { text: string; html: string }; text: string; focused: boolean } | null {
   const e = early.get(key);
@@ -117,7 +121,13 @@ export function ComposerBody({ draftKey, placeholder, className }: { draftKey: s
       data-testid="compose-body-loading"
       ref={restoreTyped(draftKey)}
       onInput={(e) => typedIn(draftKey, e.currentTarget.innerText, true)}
-      onBlur={(e) => early.has(draftKey) && typedIn(draftKey, e.currentTarget.innerText, false)}
+      onFocus={() => focusedStandIns.add(draftKey)}
+      onBlur={(e) => {
+        // an unmount (the editor arriving) blurs too: that focus is the editor's to take
+        if (!e.currentTarget.isConnected) return;
+        focusedStandIns.delete(draftKey);
+        if (early.has(draftKey)) typedIn(draftKey, e.currentTarget.innerText, false);
+      }}
       className={cn("type-body outline-none whitespace-pre-wrap empty:before:text-muted-foreground empty:before:content-[attr(aria-placeholder)]", className)}
     />
   );

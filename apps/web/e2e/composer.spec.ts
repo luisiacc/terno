@@ -416,6 +416,23 @@ test.describe("before the editor has loaded", () => {
     release();
   });
 
+  test("the editor arriving under a focused, untouched stand-in takes the focus", async ({ app: page }) => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    await page.route(/\/assets\/rich-[^/]+\.js$/, async (route) => {
+      await gate;
+      await route.continue();
+    });
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await openRow(page, 0);
+    await focusList(page);
+    await page.keyboard.press("r");
+    await expect(page.getByTestId("compose-body-loading")).toBeFocused();
+    release();
+    await expect(body(page)).toBeFocused();
+  });
+
   test("the editor takes over the stand-in's text, once, and keeps the focus", async ({ app: page }) => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
