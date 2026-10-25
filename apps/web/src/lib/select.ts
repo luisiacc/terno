@@ -5,11 +5,12 @@
  */
 import { listScroller } from "~/components/thread-list";
 import type { ThreadScope } from "@terno/core/rpc";
+import { t } from "@terno/i18n";
 import { getApp, setApp, type AppState } from "~/state/app";
 import { currentScope, listKey, useList } from "~/state/list";
 import { loadThread } from "~/state/threads";
 import { viewLabel } from "~/lib/format";
-import { addRange, extend, pick, targetsOf, toggle, type Order } from "~/lib/selection";
+import { addRange, extend, pick, scopeLabel, targetsOf, toggle, type Order } from "~/lib/selection";
 
 export const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
@@ -108,14 +109,14 @@ export function extendSelection(delta: number): void {
   }
 }
 
-/** "Seleccionar las N conversaciones de «…»": the whole view or search, by scope. */
+/** "Select all N conversations in “…”": the whole view or search, by scope. */
 export function selectScope(count: number): void {
   const scope = currentScope();
   if (!scope) return;
   const s = getApp();
   const category = s.categories.find((c) => c.id === s.categoryId)?.name;
-  const label = scope.kind === "search" ? `«${s.query.trim()}»` : (category ?? viewLabel(s.view));
-  setApp({ scope: { key: listKey(), scope, label: scope.unreadOnly ? `${label} · Unread` : label, count }, checked: new Set(scopeRows(useList.getState().items, scope).map((t) => t.id)) });
+  const label = scope.kind === "search" ? t("list.scope.quoted", { label: s.query.trim() }) : (category ?? viewLabel(s.view));
+  setApp({ scope: { key: listKey(), scope, label: scopeLabel(label, scope.unreadOnly), count }, checked: new Set(scopeRows(useList.getState().items, scope).map((t) => t.id)) });
 }
 
 /**

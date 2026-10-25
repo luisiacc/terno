@@ -6,6 +6,7 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { Archive, Check, Inbox, Layers, OctagonAlert, Plus, Send, Settings2, Sparkles, Star, Trash2 } from "lucide-react";
+import { formatNumber, t } from "@terno/i18n";
 import { viewLabel } from "~/lib/format";
 import { navigate, setApp, useApp } from "~/state/app";
 import { client } from "~/rpc/connection";
@@ -65,10 +66,10 @@ function NavItem({
     >
       <span className="flex size-4 items-center justify-center text-sidebar-glyph transition-transform group-data-[drop-state=over]:scale-125">{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      {drop === "already" && <Check aria-label="Ya está aquí" className="size-3.5 text-muted-foreground" />}
+      {drop === "already" && <Check aria-label={t("sidebar.alreadyHere")} className="size-3.5 text-muted-foreground" />}
       {count ? (
         <span data-slot="nav-count" className="inline-block text-xs tabular text-muted-foreground">
-          {count}
+          {formatNumber(count)}
         </span>
       ) : null}
     </button>
@@ -134,12 +135,12 @@ export function Sidebar() {
 
         <SectionTitle
           action={
-            <button type="button" data-testid="new-category" aria-label="Nueva categoría" onClick={() => setCreating(true)} className="rounded p-0.5 text-muted-foreground opacity-0 group-hover/section:opacity-100 hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:opacity-100">
+            <button type="button" data-testid="new-category" aria-label={t("sidebar.newCategory")} onClick={() => setCreating(true)} className="rounded p-0.5 text-muted-foreground opacity-0 group-hover/section:opacity-100 hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:opacity-100">
               <Plus className="size-3.5" />
             </button>
           }
         >
-          Categorías
+          {t("sidebar.categories")}
         </SectionTitle>
         {categories.map((c) => (
           <div key={c.id}>
@@ -161,8 +162,8 @@ export function Sidebar() {
                 className="flex h-6 w-full items-center gap-2 rounded-md pr-2 pl-8 text-left text-xs text-muted-foreground tabular hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
               >
                 <Sparkles className="size-3 text-sidebar-glyph" />
-                <span className="flex-1">Revisar</span>
-                <span className="text-xs tabular">{counts.categorySuggestions[c.id]}</span>
+                <span className="flex-1">{t("sidebar.review")}</span>
+                <span className="text-xs tabular">{formatNumber(counts.categorySuggestions[c.id]!)}</span>
               </button>
             )}
           </div>
@@ -171,7 +172,7 @@ export function Sidebar() {
           <input
             autoFocus
             data-testid="new-category-input"
-            placeholder="Nombre de la categoría"
+            placeholder={t("sidebar.categoryName")}
             className="mt-0.5 h-7 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
             onBlur={(e) => void createCategory(e.currentTarget.value)}
             onKeyDown={(e) => {
@@ -180,15 +181,15 @@ export function Sidebar() {
             }}
           />
         )}
-        {categories.length === 0 && !creating && <p className="px-2 py-1 text-xs text-muted-foreground">Agrupa correos de todas tus cuentas.</p>}
+        {categories.length === 0 && !creating && <p className="px-2 py-1 text-xs text-muted-foreground">{t("sidebar.categoriesEmpty")}</p>}
 
-        <SectionTitle>Cuentas</SectionTitle>
+        <SectionTitle>{t("sidebar.accounts")}</SectionTitle>
         <NavItem
           testId="nav-account-all"
           active={accountId === null}
           onClick={() => navigate({ accountId: null, view })}
           icon={<Layers className="size-3.5" />}
-          label="Todas las cuentas"
+          label={t("sidebar.allAccounts")}
         />
         {accounts.map((a) => (
           <NavItem
@@ -211,24 +212,24 @@ export function Sidebar() {
           onClick={() => setApp({ dialog: "addAccount" })}
           className="mt-0.5 flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
         >
-          <Plus className="size-4" /> Añadir cuenta
+          <Plus className="size-4" /> {t("sidebar.addAccount")}
         </button>
       </nav>
       <UpdatePill />
       <div className="hairline-t hairline-strong flex shrink-0 items-center gap-1 px-2 py-2">
         <Button data-testid="open-filters" variant="ghost" size="sm" className="flex-1 justify-start gap-2 text-sidebar-foreground" onClick={() => setApp({ dialog: "filters" })}>
-          <Sparkles className="text-sidebar-glyph" /> Filtros
+          <Sparkles className="text-sidebar-glyph" /> {t("sidebar.filters")}
         </Button>
         <LocalPill />
         <Tooltip>
           <TooltipTrigger
             render={
-              <Button data-testid="open-settings" variant="ghost" size="icon-sm" aria-label="Ajustes" onClick={() => setApp({ dialog: "settings", settingsTab: "general" })}>
+              <Button data-testid="open-settings" variant="ghost" size="icon-sm" aria-label={t("common.settings")} onClick={() => setApp({ dialog: "settings", settingsTab: "general" })}>
                 <Settings2 />
               </Button>
             }
           />
-          <TooltipContent>Ajustes</TooltipContent>
+          <TooltipContent>{t("common.settings")}</TooltipContent>
         </Tooltip>
       </div>
     </aside>

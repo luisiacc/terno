@@ -12,11 +12,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { openCompose } from "~/lib/actions";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { Suspense, useEffect, useRef, useState } from "react";
+import { formatNumber, t } from "@terno/i18n";
 import { viewLabel } from "~/lib/format";
+import { richT } from "~/lib/i18n";
 import { getApp, setApp, useApp } from "~/state/app";
 import { installDragController } from "~/lib/drag-install";
 import { currentScope, listKey, loadMore, useList } from "~/state/list";
 import { clearSelection, selectScope } from "~/lib/select";
+import { scopeLabel } from "~/lib/selection";
 import { client } from "~/rpc/connection";
 import { useSnack } from "~/lib/snack";
 import { ThreadMenu } from "./thread-menu";
@@ -46,7 +49,7 @@ function UnreadFilterButton({ active }: { active: boolean }) {
             data-active={active || undefined}
             variant="ghost"
             size="icon-sm"
-            aria-label="Filter by unread"
+            aria-label={t("list.unreadFilter.label")}
             aria-pressed={active}
             className={cn("no-drag shrink-0 text-muted-foreground hover:text-foreground", active && "text-primary hover:text-primary")}
             onClick={toggleUnreadFilter}
@@ -56,7 +59,7 @@ function UnreadFilterButton({ active }: { active: boolean }) {
         }
       />
       <TooltipContent>
-        {active ? "Show all" : "Show unread only"} <Shortcut keys="mod+l" />
+        {active ? t("list.unreadFilter.showAll") : t("list.unreadFilter.showUnread")} <Shortcut keys="mod+l" />
       </TooltipContent>
     </Tooltip>
   );
@@ -65,11 +68,10 @@ function UnreadFilterButton({ active }: { active: boolean }) {
 /** "Filtered by: Unread · N" under the title (N: the mailbox's unread threads; a search shows its own count). */
 function FilterStatus({ search }: { search: boolean }) {
   const total = useList((s) => (s.unreadTotal && s.unreadTotal.key === s.key ? s.unreadTotal : null));
-  const n = !search && total && total.n > 0 ? ` · ${total.n.toLocaleString("en-US")}${total.capped ? "+" : ""}` : "";
+  const b = (text: string) => <span className="text-foreground">{text}</span>;
   return (
     <p data-testid="unread-filter-status" className="truncate text-2xs leading-tight text-muted-foreground tabular">
-      Filtered by: <span className="text-foreground">Unread</span>
-      {n}
+      {!search && total && total.n > 0 ? richT("list.unreadFilter.statusCount", { n: `${formatNumber(total.n)}${total.capped ? "+" : ""}`, b }) : richT("list.unreadFilter.status", { b })}
     </p>
   );
 }
@@ -86,7 +88,7 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   const unreadOnly = useApp(isUnreadOnly);
   // a filtered search counts what matched, not the read rows it kept in place
   const count = useList((s) => (unreadOnly ? s.items.reduce((n, t) => n + (t.unread ? 1 : 0), 0) : s.items.length));
-  const title = review ? `Revisar · ${review.name}` : (category?.name ?? viewLabel(view));
+  const title = review ? t("list.reviewTitle", { category: review.name }) : (category?.name ?? viewLabel(view));
 
   return (
     <div ref={hairlineRef} data-testid="list-header" className="drag-region scroll-hairline shrink-0 px-3 pb-2">
@@ -100,21 +102,23 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
         </div>
         {query && searchMs !== null && (
           <span data-testid="search-stats" className="shrink-0 text-2xs text-muted-foreground tabular">
-            {count}
-            {more ? "+" : ""} resultados · {searchMs < 1 ? "<1" : Math.round(searchMs)} ms{!complete && " · indexando"}
+            {t(complete ? "list.search.stats" : "list.search.statsIndexing", {
+              results: more ? t("list.search.resultsMore", { count }) : t("list.search.results", { count }),
+              ms: searchMs < 1 ? "<1" : Math.round(searchMs),
+            })}
           </span>
         )}
         {!review && <UnreadFilterButton active={unreadOnly} />}
         <Tooltip>
           <TooltipTrigger
             render={
-              <Button data-testid="compose-button" variant="ghost" size="icon-sm" aria-label="Escribir" className="no-drag shrink-0 text-muted-foreground hover:text-foreground" onClick={() => openCompose("new")}>
+              <Button data-testid="compose-button" variant="ghost" size="icon-sm" aria-label={t("list.compose")} className="no-drag shrink-0 text-muted-foreground hover:text-foreground" onClick={() => openCompose("new")}>
                 <SquarePen />
               </Button>
             }
           />
           <TooltipContent>
-            Escribir <Shortcut keys="c" />
+            {t("list.compose")} <Shortcut keys="c" />
           </TooltipContent>
         </Tooltip>
       </div>
@@ -126,7 +130,7 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
           }}
           data-testid="search-input"
           value={query}
-          placeholder="Buscar en todas tus cuentas"
+          placeholder={t("list.search.placeholder")}
           className="h-[30px] rounded-lg border-0 bg-tint pr-14 pl-8 text-sm shadow-none dark:bg-tint"
           onChange={(e) => {
             setApp({ query: e.target.value });
@@ -143,7 +147,7 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
         {query ? (
           <button
             type="button"
-            aria-label="Limpiar búsqueda"
+            aria-label={t("list.search.clear")}
             className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
             onClick={() => setApp({ query: "" })}
           >
@@ -184,23 +188,22 @@ function SelectAllBanner() {
     };
   }, [show, key]);
   if (!show || (!scope && !currentScope())) return null;
-  const label = `«${query || (category ?? viewLabel(view))}${unreadOnly ? " · Unread" : ""}»`;
+  const label = t("list.scope.quoted", { label: scopeLabel(query || (category ?? viewLabel(view)), unreadOnly) });
   const n = count?.key === key ? count : null;
-  const fmt = (x: number) => x.toLocaleString("es-MX");
   return (
     <div data-testid="select-all-banner" className="hairline-b flex shrink-0 flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 bg-tint px-3 py-1.5 text-center text-xs text-muted-foreground">
       {scope ? (
         <>
           <span data-testid="select-all-scope">
-            Las {fmt(scope.count)} conversaciones de {scope.label} están seleccionadas.
+            {t("list.selectAll.scopeSelected", { count: scope.count, label: scope.label })}
           </span>
           <button type="button" data-testid="select-all-clear" className="font-medium text-primary hover:underline" onClick={clearSelection}>
-            Deshacer la selección
+            {t("list.selectAll.clear")}
           </button>
         </>
       ) : (
         <>
-          <span>Las {fmt(loaded)} conversaciones cargadas están seleccionadas.</span>
+          <span>{t("list.selectAll.loadedSelected", { count: loaded })}</span>
           <button
             type="button"
             data-testid="select-all-scope-button"
@@ -208,7 +211,7 @@ function SelectAllBanner() {
             className="font-medium text-primary hover:underline disabled:opacity-60"
             onClick={() => n && selectScope(n.n)}
           >
-            {n ? (n.capped ? `Más de ${fmt(n.n)} en ${label}: acota la búsqueda` : `Seleccionar las ${fmt(n.n)} conversaciones de ${label}`) : `Seleccionar todas las de ${label}…`}
+            {n ? (n.capped ? t("list.selectAll.capped", { count: n.n, label }) : t("list.selectAll.select", { count: n.n, label })) : t("list.selectAll.pending", { label })}
           </button>
         </>
       )}
@@ -226,8 +229,8 @@ function UnreadEmptyState() {
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 px-8 text-center" data-testid="unread-empty">
       <ListFilter className="mb-2 size-7 stroke-[1.25] text-muted-foreground" aria-hidden />
-      <p className="text-lg font-semibold tracking-tight">{search ? "No unread results" : "No unread conversations"}</p>
-      <p className="text-xs text-muted-foreground">{search ? "Everything that matches has been read." : "You’re all caught up."}</p>
+      <p className="text-lg font-semibold tracking-tight">{search ? t("list.unreadEmpty.searchTitle") : t("list.unreadEmpty.title")}</p>
+      <p className="text-xs text-muted-foreground">{search ? t("list.unreadEmpty.searchBody") : t("list.unreadEmpty.body")}</p>
       <Button
         data-testid="unread-empty-clear"
         variant="secondary"
@@ -238,7 +241,7 @@ function UnreadEmptyState() {
           unreadFilterButton.current?.focus();
         }}
       >
-        Clear filter
+        {t("list.unreadEmpty.clear")}
       </Button>
     </div>
   );
@@ -250,9 +253,9 @@ function EmptyState() {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center" data-testid="list-empty">
       <Inbox className="mb-2 size-7 stroke-[1.25] text-muted-foreground" aria-hidden />
-      <p className="text-lg font-semibold tracking-tight">{query ? "Sin resultados" : view === "inbox" ? "Bandeja vacía" : "Nada por aquí"}</p>
+      <p className="text-lg font-semibold tracking-tight">{query ? t("list.empty.searchTitle") : view === "inbox" ? t("list.empty.inboxTitle") : t("list.empty.title")}</p>
       <p className="text-xs text-muted-foreground">
-        {query ? "Prueba con from:, subject:, has:adjunto o quita filtros." : view === "inbox" ? "Disfruta el silencio." : "Los correos aparecerán aquí."}
+        {query ? t("list.empty.searchBody") : view === "inbox" ? t("list.empty.inboxBody") : t("list.empty.body")}
       </p>
     </div>
   );
@@ -352,7 +355,7 @@ export function ThreadList() {
       <DraftsStrip />
       <div className="relative flex min-h-0 flex-1 flex-col">
       <ThreadMenu>
-      <div ref={parentRef} data-keep-scroll="list" role="listbox" aria-label="Conversaciones" aria-multiselectable className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain [contain:strict]">
+      <div ref={parentRef} data-keep-scroll="list" role="listbox" aria-label={t("list.label")} aria-multiselectable className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain [contain:strict]">
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
         {loading && items.length === 0 ? (
           <div className="space-y-3 p-4">

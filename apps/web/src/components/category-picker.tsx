@@ -2,6 +2,7 @@ import { CATEGORY_COLORS, normalizeText, type CategoryColor } from "@terno/core"
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@terno/ui/components/command";
 import { Dialog, DialogContent, DialogTitle } from "@terno/ui/components/dialog";
+import { t } from "@terno/i18n";
 import { Check, Plus } from "lucide-react";
 import { useState } from "react";
 import { snack } from "~/lib/snack";
@@ -21,7 +22,7 @@ export async function createCategory(name: string): Promise<number> {
 
 /**
  * "l": toggle categories on the selection (adding one offers the snackbar's
- * bulk actions). "v" / "Mover a…": move the selection to one category,
+ * bulk actions). "v" / "Move to…": move the selection to one category,
  * exclusively, like a drop. On a "select all N" scope, toggling adds the
  * whole scope (moves stay per thread).
  */
@@ -30,21 +31,21 @@ export function CategoryPicker() {
   const mode = useApp((s) => s.pickerMode);
   const categories = useApp((s) => s.categories);
   const [search, setSearch] = useState("");
-  const t = currentTargets();
-  const targets = "ids" in t ? t.ids : [];
+  const target = currentTargets();
+  const targets = "ids" in target ? target.ids : [];
   const rows = useList.getState();
   const current = new Set(targets.flatMap((id) => rows.items[rows.index.get(id) ?? -1]?.categoryIds ?? []));
   const close = () => {
     setSearch("");
-    // a move is asked for each time (v, "Mover a…"): whatever opens the picker next toggles unless it says otherwise
+    // a move is asked for each time (v, "Move to…"): whatever opens the picker next toggles unless it says otherwise
     setApp({ dialog: null, pickerMode: "toggle" });
   };
 
   const apply = async (categoryId: number, on: boolean) => {
     close();
-    if ("scope" in t) {
-      if (mode === "move") snack("Para mover, selecciona conversaciones de la lista (hasta 5 000)");
-      else await addScopeToCategory(categoryId, t.scope);
+    if ("scope" in target) {
+      if (mode === "move") snack(t("category.picker.moveScope", { max: 5000 }));
+      else await addScopeToCategory(categoryId, target.scope);
       return;
     }
     if (mode === "move") await moveToCategory(categoryId, targets, { source: "picker" });
@@ -62,11 +63,11 @@ export function CategoryPicker() {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && close()}>
       <DialogContent className="top-[20%] translate-y-0 overflow-hidden p-0 sm:max-w-sm" showCloseButton={false} data-testid="category-picker" data-mode={mode}>
-        <DialogTitle className="sr-only">{mode === "move" ? "Mover a" : "Categorías"}</DialogTitle>
+        <DialogTitle className="sr-only">{mode === "move" ? t("category.picker.moveTitle") : t("category.picker.title")}</DialogTitle>
         <Command>
-          <CommandInput placeholder={mode === "move" ? "Mover a…" : "Categoría…"} value={search} onValueChange={setSearch} />
+          <CommandInput placeholder={mode === "move" ? t("actions.moveTo") : t("category.picker.placeholder")} value={search} onValueChange={setSearch} />
           <CommandList>
-            <CommandEmpty>Sin coincidencias</CommandEmpty>
+            <CommandEmpty>{t("category.picker.empty")}</CommandEmpty>
             <CommandGroup>
               {categories.map((c) => (
                 <CommandItem
@@ -83,7 +84,7 @@ export function CategoryPicker() {
               ))}
               {search.trim() && !exact && (
                 <CommandItem value={`__create ${search}`} onSelect={create} data-testid="create-category">
-                  <Plus className="size-4" /> {mode === "move" ? `Crear «${search.trim()}» y mover` : `Crear «${search.trim()}»`}
+                  <Plus className="size-4" /> {mode === "move" ? t("category.picker.createAndMove", { name: search.trim() }) : t("category.picker.create", { name: search.trim() })}
                 </CommandItem>
               )}
             </CommandGroup>

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ImageOff } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { Button } from "@terno/ui/components/button";
+import { t } from "@terno/i18n";
 import { setApp } from "~/state/app";
 import { mailColors, useAppearance } from "~/lib/appearance";
 import { csp, hasOwnColors, hasRemoteContent } from "~/lib/mail";
@@ -114,7 +115,7 @@ export function HtmlBody({ html, messageId, remoteImages, localMode, appearance 
       <div className={paper ? "overflow-hidden rounded-lg bg-[var(--mail-paper)]" : undefined}>
         <iframe
           ref={ref}
-          title="Contenido del correo"
+          title={t("reader.mailContent")}
           sandbox="allow-same-origin allow-popups"
           srcDoc={doc}
           style={{ height }}
@@ -135,20 +136,20 @@ function RemoteBlocked({ localMode, onLoad }: { localMode: boolean; onLoad: () =
   return (
     <div className="mb-3 flex h-9 items-center gap-2.5 rounded-lg bg-tint pr-1.5 pl-3 text-xs text-muted-foreground" data-testid="remote-blocked">
       <ImageOff className="size-3.5 shrink-0" />
-      <span className="min-w-0 truncate">{localMode ? "Contenido remoto bloqueado por el modo local." : "Contenido remoto bloqueado para proteger tu privacidad."}</span>
+      <span className="min-w-0 truncate">{localMode ? t("reader.remote.blockedLocal") : t("reader.remote.blocked")}</span>
       {localMode ? (
         <Popover>
-          <PopoverTrigger render={<button type="button" className={pill} data-testid="remote-why" />}>Cargar contenido…</PopoverTrigger>
+          <PopoverTrigger render={<button type="button" className={pill} data-testid="remote-why" />}>{t("reader.remote.loadMore")}</PopoverTrigger>
           <PopoverContent align="end" className="w-72 gap-3 text-xs" data-testid="remote-why-popover">
-            <p className="text-sm text-popover-foreground">El modo local no permite cargar contenido remoto: solo se conecta con tus servidores de correo.</p>
+            <p className="text-sm text-popover-foreground">{t("reader.remote.why")}</p>
             <Button size="sm" variant="outline" className="self-end" onClick={() => setApp({ dialog: "settings", settingsTab: "general" })}>
-              Abrir Ajustes
+              {t("reader.remote.openSettings")}
             </Button>
           </PopoverContent>
         </Popover>
       ) : (
         <button type="button" className={pill} onClick={onLoad} data-testid="remote-load">
-          Cargar contenido
+          {t("reader.remote.load")}
         </button>
       )}
     </div>
@@ -176,7 +177,7 @@ export function TextBody({ text }: { text: string }) {
       {render(main)}
       {quoted && (
         <>
-          <button type="button" onClick={() => setShowQuoted((v) => !v)} className="mt-2 block rounded bg-muted px-1.5 text-xs leading-5 text-muted-foreground hover:text-foreground" aria-label={showQuoted ? "Ocultar texto citado" : "Mostrar texto citado"} aria-expanded={showQuoted}>
+          <button type="button" onClick={() => setShowQuoted((v) => !v)} className="mt-2 block rounded bg-muted px-1.5 text-xs leading-5 text-muted-foreground hover:text-foreground" aria-label={showQuoted ? t("reader.quote.hide") : t("reader.quote.show")} aria-expanded={showQuoted}>
             •••
           </button>
           {showQuoted && <div className="mt-2 border-l-2 border-border pl-3 text-muted-foreground">{render(quoted)}</div>}

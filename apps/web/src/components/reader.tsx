@@ -13,6 +13,7 @@ import { DraftSlot } from "./inline-draft";
 import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { act, cancelMarkRead, openCompose, scheduleMarkRead, toggleStar } from "~/lib/actions";
 import { acceptSuggestion, rejectSuggestion, removeFromCategory } from "~/lib/categorize";
+import { t } from "@terno/i18n";
 import { avatarColor, formatBytes, fullDate, initials, listDate } from "~/lib/format";
 import { setApp, useApp } from "~/state/app";
 import { loadThread, useThread } from "~/state/threads";
@@ -106,11 +107,11 @@ function Message({ m, expanded, onToggle }: { m: MessageDetail; expanded: boolea
                   <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular">{listDate(m.date)}</span>
                 </span>
                 <span className="mt-px block truncate text-xs text-muted-foreground">
-                  <span className="font-medium text-foreground">Para:</span> {people(m.to)}
+                  <span className="font-medium text-foreground">{t("reader.to")}</span> {people(m.to)}
                   {m.cc.length > 0 && (
                     <>
                       {" · "}
-                      <span className="font-medium text-foreground">Cc:</span> {people(m.cc)}
+                      <span className="font-medium text-foreground">{t("reader.cc")}</span> {people(m.cc)}
                     </>
                   )}
                 </span>
@@ -136,11 +137,11 @@ function Message({ m, expanded, onToggle }: { m: MessageDetail; expanded: boolea
             ) : m.bodyText !== null ? (
               <TextBody text={m.bodyText} />
             ) : (
-              <p className="text-sm text-muted-foreground italic">Descargando el contenido…</p>
+              <p className="text-sm text-muted-foreground italic">{t("reader.downloading")}</p>
             )}
             {m.attachments.length > 0 && (
               // view-only tiles: opening and saving attachments needs content Terno doesn't fetch yet
-              <ul aria-label="Adjuntos" className="mt-4 flex flex-wrap gap-2">
+              <ul aria-label={t("reader.attachments")} className="mt-4 flex flex-wrap gap-2">
                 {m.attachments.map((a) => (
                   <li key={a.id} data-testid="attachment" className="flex h-14 w-[260px] items-center gap-3 rounded-[10px] bg-tint px-2.5">
                     <span className="relative flex h-[34px] w-[27px] shrink-0 items-end justify-center rounded-[3px] rounded-tr-lg bg-card pb-1 shadow-hairline">
@@ -163,7 +164,7 @@ function Message({ m, expanded, onToggle }: { m: MessageDetail; expanded: boolea
 
 /**
  * The conversation: every message, with runs of 4+ collapsed ones folded into
- * one "N mensajes más" disclosure. Expansion state belongs to the thread
+ * one "N more messages" disclosure. Expansion state belongs to the thread
  * shown; a different thread starts from its defaults (unread messages and the
  * last one open), computed during render so a swap never animates.
  */
@@ -212,7 +213,7 @@ function Conversation({ messages, threadId }: { messages: MessageDetail[]; threa
               className="-mx-2 my-0.5 flex h-9 w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-tint hover:text-foreground"
             >
               <Layers className="size-3.5" />
-              {it.ids.length} mensajes más
+              {t("reader.moreMessages", { count: it.ids.length })}
             </button>
             <div id={`more-${it.ids[0]}`} />
           </div>
@@ -228,20 +229,22 @@ function Welcome() {
       <div>
         <div className="mx-auto mb-4 flex size-10 items-center justify-center rounded-xl bg-tint text-lg font-semibold text-muted-foreground">T</div>
         <p className="text-lg font-semibold tracking-tight">Terno</p>
-        <p className="mt-1 text-sm text-muted-foreground">Tu correo, hecho a la medida</p>
+        <p className="mt-1 text-sm text-muted-foreground">{t("reader.welcome.tagline")}</p>
       </div>
       <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs text-muted-foreground">
-        {[
-          ["j k", "Moverse"],
-          ["e", "Archivar"],
-          ["/", "Buscar"],
-          ["mod+k", "Comandos"],
-          ["c", "Escribir"],
-          ["?", "Atajos"],
-        ].map(([k, l]) => (
+        {(
+          [
+            ["j k", "reader.welcome.navigate"],
+            ["e", "reader.welcome.archive"],
+            ["/", "reader.welcome.search"],
+            ["mod+k", "reader.welcome.commands"],
+            ["c", "reader.welcome.compose"],
+            ["?", "reader.welcome.shortcuts"],
+          ] as const
+        ).map(([k, label]) => (
           <div key={k} className="flex items-center justify-between gap-4">
-            <span>{l}</span>
-            <Shortcut keys={k!} />
+            <span>{t(label)}</span>
+            <Shortcut keys={k} />
           </div>
         ))}
       </div>
@@ -286,55 +289,55 @@ export function Reader() {
   }, [open]);
 
   if (selectedId === null) return <Welcome />;
-  const t = detail?.thread;
-  const cats = t ? categories.filter((c) => t.categoryIds.includes(c.id)) : [];
-  const account = t ? accounts.find((a) => a.id === t.accountId) : undefined;
+  const thread = detail?.thread;
+  const cats = thread ? categories.filter((c) => thread.categoryIds.includes(c.id)) : [];
+  const account = thread ? accounts.find((a) => a.id === thread.accountId) : undefined;
 
   return (
     <section className="flex h-full min-h-0 flex-col bg-background" data-testid="reader">
       <div ref={toolbarRef} className="drag-region scroll-hairline flex h-[52px] shrink-0 items-center gap-3 px-3.5">
-        <div className="flex items-center gap-0.5" role="group" aria-label="Organizar">
-        {t?.inTrash || t?.inSpam ? (
-          <ToolButton label="Mover a Entrada" onClick={() => act(t.inSpam ? "notSpam" : "moveToInbox")} testId="action-inbox">
+        <div className="flex items-center gap-0.5" role="group" aria-label={t("reader.group.organize")}>
+        {thread?.inTrash || thread?.inSpam ? (
+          <ToolButton label={t("actions.moveToInbox")} onClick={() => act(thread.inSpam ? "notSpam" : "moveToInbox")} testId="action-inbox">
             <Inbox />
           </ToolButton>
         ) : (
-          <ToolButton label="Archivar" keys="e" onClick={() => act("archive")} testId="action-archive">
+          <ToolButton label={t("actions.archive")} keys="e" onClick={() => act("archive")} testId="action-archive">
             <Archive />
           </ToolButton>
         )}
-        <ToolButton label="Eliminar" keys="#" onClick={() => act("trash")} testId="action-trash">
+        <ToolButton label={t("actions.trash")} keys="#" onClick={() => act("trash")} testId="action-trash">
           <Trash2 />
         </ToolButton>
-        <ToolButton label="Spam" keys="!" onClick={() => act("spam")} testId="action-spam">
+        <ToolButton label={t("actions.spam")} keys="!" onClick={() => act("spam")} testId="action-spam">
           <OctagonAlert />
         </ToolButton>
         </div>
-        <div className="flex items-center gap-0.5" role="group" aria-label="Marcar">
-        <ToolButton label="Categoría" keys="l" onClick={() => setApp({ dialog: "categoryPicker", pickerMode: "toggle" })} testId="action-category">
+        <div className="flex items-center gap-0.5" role="group" aria-label={t("reader.group.mark")}>
+        <ToolButton label={t("actions.category")} keys="l" onClick={() => setApp({ dialog: "categoryPicker", pickerMode: "toggle" })} testId="action-category">
           <Tag />
         </ToolButton>
-        <ToolButton label="Marcar como no leído" keys="u" onClick={() => act("markUnread")} testId="action-unread">
+        <ToolButton label={t("actions.markUnread")} keys="u" onClick={() => act("markUnread")} testId="action-unread">
           <MailOpen />
         </ToolButton>
         {/* keyed by thread: moving to a starred thread swaps the button instead of fading its color (navigation never animates) */}
-        <ToolButton key={t?.id ?? "none"} label={t?.starred ? "Quitar destacado" : "Destacar"} keys="s" onClick={() => toggleStar()} testId="action-star" active={t?.starred}>
-          <Star className={cn(t?.starred && "fill-star")} />
+        <ToolButton key={thread?.id ?? "none"} label={thread?.starred ? t("actions.unstar") : t("actions.star")} keys="s" onClick={() => toggleStar()} testId="action-star" active={thread?.starred}>
+          <Star className={cn(thread?.starred && "fill-star")} />
         </ToolButton>
         </div>
-        <div className="ml-auto flex items-center gap-0.5" role="group" aria-label="Responder">
-          <ToolButton label="Responder" keys="r" onClick={() => openCompose("reply")} testId="action-reply">
+        <div className="ml-auto flex items-center gap-0.5" role="group" aria-label={t("reader.group.respond")}>
+          <ToolButton label={t("actions.reply")} keys="r" onClick={() => openCompose("reply")} testId="action-reply">
             <Reply />
           </ToolButton>
-          <ToolButton label="Responder a todos" keys="a" onClick={() => openCompose("replyAll")} testId="action-reply-all">
+          <ToolButton label={t("actions.replyAll")} keys="a" onClick={() => openCompose("replyAll")} testId="action-reply-all">
             <ReplyAll />
           </ToolButton>
-          <ToolButton label="Reenviar" keys="f" onClick={() => openCompose("forward")} testId="action-forward">
+          <ToolButton label={t("actions.forward")} keys="f" onClick={() => openCompose("forward")} testId="action-forward">
             <Forward />
           </ToolButton>
         </div>
-        <div className="flex items-center" role="group" aria-label="Imprimir">
-          <ToolButton label="Imprimir" keys="mod+p" onClick={() => printCommand("print")} testId="action-print">
+        <div className="flex items-center" role="group" aria-label={t("reader.group.print")}>
+          <ToolButton label={t("actions.print")} keys="mod+p" onClick={() => printCommand("print")} testId="action-print">
             <Printer />
           </ToolButton>
         </div>
@@ -350,7 +353,7 @@ export function Reader() {
           ) : (
             <>
               <h2 data-testid="reader-subject" className="text-xl font-semibold tracking-display text-balance">
-                {t!.subject || "(sin asunto)"}
+                {thread!.subject || t("common.noSubject")}
               </h2>
               <div className="mt-2 mb-5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                 {account && <span>{account.email}</span>}
@@ -366,17 +369,17 @@ export function Reader() {
                               <button
                                 type="button"
                                 data-testid="auto-mark"
-                                aria-label={`Terno la añadió a ${c.name}: ${auto.reasons.join("; ")}`}
+                                aria-label={t("reader.auto.label", { category: c.name, reasons: auto.reasons.join("; ") })}
                                 className="rounded-sm bg-foreground/10 px-1 text-[10px] font-medium uppercase focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                               >
-                                auto
+                                {t("reader.auto")}
                               </button>
                             }
                           />
-                          <Reasons title={`Terno la añadió a ${c.name}`} reasons={auto.reasons} hint={`¿No es de ${c.name}? Quítala y aprenderá.`} />
+                          <Reasons title={t("reader.auto.title", { category: c.name })} reasons={auto.reasons} hint={t("reader.auto.hint", { category: c.name })} />
                         </Tooltip>
                       )}
-                      <button type="button" aria-label={auto ? `No es ${c.name}` : `Quitar ${c.name}`} className="text-muted-foreground hover:text-foreground" onClick={() => void removeFromCategory(c.id, [t!.id])}>
+                      <button type="button" aria-label={auto ? t("reader.category.notIt", { category: c.name }) : t("reader.category.remove", { category: c.name })} className="text-muted-foreground hover:text-foreground" onClick={() => void removeFromCategory(c.id, [thread!.id])}>
                         <X className="size-3" />
                       </button>
                     </CategoryBadge>
@@ -390,14 +393,14 @@ export function Reader() {
                       <Tooltip>
                         <TooltipTrigger
                           render={
-                            <button type="button" data-testid="suggestion-accept" onClick={() => void acceptSuggestion(t!.id, c.id)} className="inline-flex h-full items-center gap-1 rounded-l-full pr-1 pl-1.5 hover:bg-accent">
-                              <CategoryDot color={c.color as CategoryColor} />¿{c.name}?{i === 0 && <Shortcut keys="y" className="ml-0.5 [&_kbd]:h-3.5 [&_kbd]:min-w-3.5 [&_kbd]:text-[10px]" />}
+                            <button type="button" data-testid="suggestion-accept" onClick={() => void acceptSuggestion(thread!.id, c.id)} className="inline-flex h-full items-center gap-1 rounded-l-full pr-1 pl-1.5 hover:bg-accent">
+                              <CategoryDot color={c.color as CategoryColor} />{t("reader.suggestion", { category: c.name })}{i === 0 && <Shortcut keys="y" className="ml-0.5 [&_kbd]:h-3.5 [&_kbd]:min-w-3.5 [&_kbd]:text-[10px]" />}
                             </button>
                           }
                         />
-                        <Reasons title={`Parece de ${c.name} (${Math.round(sg.p * 100)}%)`} reasons={sg.reasons} hint={i === 0 ? "y: añadir · n: no es" : undefined} />
+                        <Reasons title={t("reader.suggestion.title", { category: c.name, percent: Math.round(sg.p * 100) })} reasons={sg.reasons} hint={i === 0 ? t("reader.suggestion.hint") : undefined} />
                       </Tooltip>
-                      <button type="button" aria-label={`No es ${c.name}`} data-testid="suggestion-reject" onClick={() => void rejectSuggestion(t!.id, c.id)} className="inline-flex h-full items-center rounded-r-full px-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+                      <button type="button" aria-label={t("reader.category.notIt", { category: c.name })} data-testid="suggestion-reject" onClick={() => void rejectSuggestion(thread!.id, c.id)} className="inline-flex h-full items-center rounded-r-full px-1 text-muted-foreground hover:bg-accent hover:text-foreground">
                         <X className="size-3" />
                       </button>
                     </span>

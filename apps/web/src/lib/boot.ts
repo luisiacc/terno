@@ -1,3 +1,4 @@
+import { t } from "@terno/i18n";
 import { flushAllDrafts, loadDrafts } from "~/lib/drafts";
 import { client, connectBackend } from "~/rpc/connection";
 import { removeFromCategory } from "~/lib/categorize";
@@ -51,23 +52,22 @@ export async function boot(): Promise<void> {
     client.on("categorized", ({ categoryId, threadIds }) => {
       const name = getApp().categories.find((c) => c.id === categoryId)?.name;
       if (!name) return;
-      const n = threadIds.length;
-      snack(`Terno añadió ${n} ${n === 1 ? "conversación" : "conversaciones"} a ${name}`, {
+      snack(t("category.auto", { count: threadIds.length, category: name }), {
         id: `auto-${categoryId}`,
         duration: 8000,
         background: true,
         // undoing the engine is a correction: it learns from it
-        action: { label: "Undo", name: `Undo: Terno added to ${name}`, onClick: () => void removeFromCategory(categoryId, threadIds, "user") },
-        secondary: { label: "View", name: `View ${name}`, onClick: () => navigate({ categoryId }) },
+        action: { label: t("common.undo"), name: t("category.autoUndo", { category: name }), onClick: () => void removeFromCategory(categoryId, threadIds, "user") },
+        secondary: { label: t("common.view"), name: t("category.view", { category: name }), onClick: () => navigate({ categoryId }) },
       });
     });
     client.on("op", (op) => {
       if (op.kind === "send" && op.state === "succeeded") {
-        if (op.lastError) snack.warning("Enviado, pero no a todos", { description: op.lastError, duration: 12_000, background: true });
-        else snack.success("Correo enviado", { background: true });
+        if (op.lastError) snack.warning(t("actions.send.partial"), { description: op.lastError, duration: 12_000, background: true });
+        else snack.success(t("actions.send.sent"), { background: true });
       }
-      if (op.state === "unknown") snack.warning(`No sabemos si se envió: ${op.summary}`, { description: "Revisa Enviados antes de reintentar.", duration: 10_000, background: true });
-      if (op.state === "failed") snack.error(`Falló: ${op.summary}`, { description: op.lastError ?? undefined, background: true });
+      if (op.state === "unknown") snack.warning(t("actions.send.unknown", { summary: op.summary }), { description: t("actions.send.unknownHint"), duration: 10_000, background: true });
+      if (op.state === "failed") snack.error(t("actions.send.failed", { summary: op.summary }), { description: op.lastError ?? undefined, background: true });
     });
     await reloadList();
   } catch (error) {

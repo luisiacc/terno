@@ -3,6 +3,7 @@ import { CategoryDot } from "@terno/ui/components/category-dot";
 import { cn } from "@terno/ui/lib/utils";
 import { Paperclip, Star } from "lucide-react";
 import { memo } from "react";
+import { formatNumber, t } from "@terno/i18n";
 import { listDate } from "~/lib/format";
 import { renderProbe } from "~/lib/render-probe";
 import { useHasDraft } from "~/lib/drafts";
@@ -37,34 +38,34 @@ interface Props {
  * per-row selector so moving the selection re-renders exactly two rows and
  * checking one re-renders one.
  */
-export const ThreadRow = memo(function ThreadRow({ thread: t, top, height, compact, showAccount }: Props) {
+export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, showAccount }: Props) {
   renderProbe("ThreadRow");
   /** the open thread (the cursor; the listbox's active descendant) */
-  const selected = useApp((s) => s.selectedId === t.id);
+  const selected = useApp((s) => s.selectedId === thread.id);
   // "select all N" checks every row, loaded later or not ("all N unread": not a read row the filter kept)
-  const inScope = (s: AppState) => s.scope !== null && (t.unread || !s.scope.scope.unreadOnly);
-  const checked = useApp((s) => inScope(s) || s.checked.has(t.id));
+  const inScope = (s: AppState) => s.scope !== null && (thread.unread || !s.scope.scope.unreadOnly);
+  const checked = useApp((s) => inScope(s) || s.checked.has(thread.id));
   // what assistive tech hears as selected: the checked rows, or the open thread when nothing is checked
-  const inSelection = useApp((s) => inScope(s) || s.checked.has(t.id) || (s.selectedId === t.id && s.checked.size === 0));
-  const accountColor = useApp((s) => (showAccount ? s.accounts.find((a) => a.id === t.accountId)?.color : undefined)) as CategoryColor | undefined;
+  const inSelection = useApp((s) => inScope(s) || s.checked.has(thread.id) || (s.selectedId === thread.id && s.checked.size === 0));
+  const accountColor = useApp((s) => (showAccount ? s.accounts.find((a) => a.id === thread.accountId)?.color : undefined)) as CategoryColor | undefined;
   const categories = useApp((s) => s.categories);
   /** a draft with something written in it (one boolean: only this row renders when it changes) */
-  const hasDraft = useHasDraft(t.id);
-  const cats = t.categoryIds.length ? categories.filter((c) => t.categoryIds.includes(c.id)) : [];
+  const hasDraft = useHasDraft(thread.id);
+  const cats = thread.categoryIds.length ? categories.filter((c) => thread.categoryIds.includes(c.id)) : [];
 
   return (
     <div
       role="option"
-      id={`thread-${t.id}`}
+      id={`thread-${thread.id}`}
       aria-selected={inSelection}
       data-cursor={selected || undefined}
       data-testid="thread-row"
-      data-thread-id={t.id}
-      data-unread={t.unread || undefined}
-      data-messages={t.messageCount > 1 ? t.messageCount : undefined}
+      data-thread-id={thread.id}
+      data-unread={thread.unread || undefined}
+      data-messages={thread.messageCount > 1 ? thread.messageCount : undefined}
       data-checked={checked || undefined}
-      onMouseDown={(e) => e.button === 0 && pressRow(t.id, { meta: e.metaKey, ctrl: e.ctrlKey, shift: e.shiftKey })}
-      onClick={(e) => !e.metaKey && !e.ctrlKey && !e.shiftKey && releaseRow(t.id)}
+      onMouseDown={(e) => e.button === 0 && pressRow(thread.id, { meta: e.metaKey, ctrl: e.ctrlKey, shift: e.shiftKey })}
+      onClick={(e) => !e.metaKey && !e.ctrlKey && !e.shiftKey && releaseRow(thread.id)}
       className={cn(
         "group/row absolute left-0 w-full cursor-default px-5 select-none",
         "flex flex-col justify-center",
@@ -77,32 +78,32 @@ export const ThreadRow = memo(function ThreadRow({ thread: t, top, height, compa
       )}
       style={{ transform: `translateY(${top}px)`, height }}
     >
-      <span className={cn("absolute top-1/2 left-[11px] size-1.5 -translate-y-1/2 rounded-full bg-unread", !t.unread && "invisible")} />
+      <span className={cn("absolute top-1/2 left-[11px] size-1.5 -translate-y-1/2 rounded-full bg-unread", !thread.unread && "invisible")} />
       <div className="relative flex min-w-0 items-center gap-2">
-        <span data-testid="row-from" className={cn("min-w-0 truncate text-sm", t.unread ? "font-semibold" : "font-normal text-foreground")}>{t.fromName}</span>
-        {t.messageCount > 1 && <span className="text-xs text-muted-foreground tabular">{t.messageCount}</span>}
+        <span data-testid="row-from" className={cn("min-w-0 truncate text-sm", thread.unread ? "font-semibold" : "font-normal text-foreground")}>{thread.fromName}</span>
+        {thread.messageCount > 1 && <span className="text-xs text-muted-foreground tabular">{formatNumber(thread.messageCount)}</span>}
         {compact && (
-          <span className={cn("min-w-0 flex-1 truncate text-sm", t.unread ? "text-foreground" : "text-muted-foreground")}>
-            {t.subject} {hasDraft && <span className="font-medium text-draft-foreground">Borrador</span>} <span className="text-muted-foreground">— {t.snippet}</span>
+          <span className={cn("min-w-0 flex-1 truncate text-sm", thread.unread ? "text-foreground" : "text-muted-foreground")}>
+            {thread.subject} {hasDraft && <span className="font-medium text-draft-foreground">{t("list.draft")}</span>} <span className="text-muted-foreground">— {thread.snippet}</span>
           </span>
         )}
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
           {cats.map((c) => (
             <CategoryDot key={c.id} data-cat-dot={c.id} color={c.color as CategoryColor} />
           ))}
-          {t.hasAttachments && <Paperclip className="size-3 text-muted-foreground" />}
-          {t.starred && <Star className="size-3 fill-star text-star" />}
+          {thread.hasAttachments && <Paperclip className="size-3 text-muted-foreground" />}
+          {thread.starred && <Star className="size-3 fill-star text-star" />}
           {accountColor && <span data-testid="account-mark" className={cn("size-1.5 shrink-0 rounded-full border-[1.5px]", ACCOUNT_MARK[accountColor])} />}
-          <span className={cn("text-xs tabular", t.unread ? "text-foreground" : "text-muted-foreground")}>{listDate(t.lastDate)}</span>
+          <span className={cn("text-xs tabular", thread.unread ? "text-foreground" : "text-muted-foreground")}>{listDate(thread.lastDate)}</span>
         </span>
       </div>
       {!compact && (
         <div className="relative mt-0.5 flex min-w-0 items-baseline gap-1.5 text-sm">
-          <span data-testid="row-subject" className={cn("shrink-0 truncate", t.unread ? "font-medium text-foreground" : "text-foreground")} style={{ maxWidth: "60%" }}>
-            {t.subject || "(sin asunto)"}
+          <span data-testid="row-subject" className={cn("shrink-0 truncate", thread.unread ? "font-medium text-foreground" : "text-foreground")} style={{ maxWidth: "60%" }}>
+            {thread.subject || t("common.noSubject")}
           </span>
-          {hasDraft && <span className="shrink-0 font-medium text-draft-foreground">Borrador</span>}
-          <span className="min-w-0 truncate text-muted-foreground">{t.snippet}</span>
+          {hasDraft && <span className="shrink-0 font-medium text-draft-foreground">{t("list.draft")}</span>}
+          <span className="min-w-0 truncate text-muted-foreground">{thread.snippet}</span>
         </div>
       )}
     </div>

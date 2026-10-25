@@ -4,6 +4,9 @@
  * client mocked and a minimal fake <html>.
  */
 import type { ThreadSummary } from "@terno/core";
+import { setLocale } from "@terno/i18n";
+import en from "@terno/i18n/locales/en";
+import es from "@terno/i18n/locales/es";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const fake = vi.hoisted(() => {
@@ -30,6 +33,7 @@ vi.mock("~/rpc/connection", () => ({
 const { addToCategory } = await import("./categorize");
 const { getApp, setApp, EMPTY_COUNTS } = await import("~/state/app");
 const { useList } = await import("~/state/list");
+const { useSnack } = await import("~/lib/snack");
 
 const CAT = 7;
 const row = (id: number, unread: boolean): ThreadSummary => ({ id, unread, categoryIds: [] }) as unknown as ThreadSummary;
@@ -80,5 +84,20 @@ describe("addToCategory: unread counts", () => {
     await addToCategory(CAT, [1]);
     await new Promise((r) => setTimeout(r, 0));
     expect(getApp().counts.categoryUnread[CAT]).toBe(4);
+  });
+
+  it("a rejected add says so in the active language, with the reason", async () => {
+    fake.handlers["categories.addThreads"] = async () => {
+      throw new Error("refused");
+    };
+    await addToCategory(CAT, [1]);
+    expect(useSnack.getState().current?.message).toBe("Couldn’t add: refused");
+    setLocale("es", es);
+    try {
+      await addToCategory(CAT, [2]);
+      expect(useSnack.getState().current?.message).toBe("No se pudo añadir: refused");
+    } finally {
+      setLocale("en", en);
+    }
   });
 });

@@ -2,6 +2,7 @@ import { termsQuery, type CategorizeScope, type CategoryColor, type QuickActions
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Kbd } from "@terno/ui/components/kbd";
 import { cn } from "@terno/ui/lib/utils";
+import { formatNumber, t } from "@terno/i18n";
 import { Check, Filter, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { undoFiled, type Filed } from "~/lib/categorize";
@@ -24,20 +25,18 @@ export const snackbarControls: { current: Controls | null } = { current: null };
 type Slot = "sender" | "domain" | "list" | "topic";
 type Count = { count: number; capped: boolean } | null;
 
-const formatCount = (c: { count: number; capped: boolean }) => (c.capped ? "1 000+" : c.count.toLocaleString("es-MX"));
+const formatCount = (c: { count: number; capped: boolean }) => (c.capped ? `${formatNumber(1000)}+` : formatNumber(c.count));
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 function titleOf(filed: Filed, name: string): string {
-  const n = filed.threadIds.length;
-  if (filed.moved) return n > 1 ? `${n} conversaciones movidas a ${name}` : `Movido a ${name}`;
-  return n > 1 ? `${n} conversaciones añadidas a ${name}` : `Añadido a ${name}`;
+  return t(filed.moved ? "category.filed.moved" : "category.filed.added", { count: filed.threadIds.length, category: name });
 }
 
 let filings = 0;
 /**
  * After any categorization (picker, accepted suggestion, drag and drop): the
  * bulk actions it makes obvious, as the dock's snack in two compact rows. Its
- * Deshacer and its z run `undo`, the same token as the global z.
+ * Undo and its z run `undo`, the same token as the global z.
  */
 export function showCategorySnackbar(filed: Filed, undo: Undo): void {
   const id = `filed-${++filings}`;
@@ -45,20 +44,20 @@ export function showCategorySnackbar(filed: Filed, undo: Undo): void {
   snack.custom({ id, message: titleOf(filed, name), duration: LIFETIME_MS, render: () => <CategorySnackbar id={id} filed={filed} undo={undo} /> });
 }
 
-/** Files a whole scope, with a progress snack that ends in "N añadidas · Deshacer". */
+/** Files a whole scope, with a progress snack that ends in "N added · Undo". */
 export async function applyScope(categoryId: number, scope: CategorizeScope): Promise<void> {
   const name = getApp().categories.find((c) => c.id === categoryId)?.name ?? "";
-  const id = snack.loading(`Añadiendo a ${name}…`);
+  const id = snack.loading(t("category.adding", { category: name }));
   try {
     const { added, batchId } = await client.call("categorize.apply", { categoryId, scope });
     void reloadList({ keepSelection: true });
-    snack.success(`${added.toLocaleString("es-MX")} ${added === 1 ? "añadida" : "añadidas"} a ${name}`, {
+    snack.success(t("category.added", { count: added, category: name }), {
       id,
       duration: 8000,
-      action: batchId === null ? undefined : { label: "Undo", name: `Undo add to ${name}`, onClick: () => undoScope(categoryId, batchId, name) },
+      action: batchId === null ? undefined : { label: t("common.undo"), name: t("category.undoAdd", { category: name }), onClick: () => undoScope(categoryId, batchId, name) },
     });
   } catch (error) {
-    snack.error(`No se pudo añadir: ${errorText(error)}`, { id });
+    snack.error(t("category.addFailed", { error: errorText(error) }), { id });
   }
 }
 
@@ -68,11 +67,11 @@ export async function applyScope(categoryId: number, scope: CategorizeScope): Pr
  */
 function undoScope(categoryId: number, batchId: number, name: string): void {
   undoFiled({ categoryId, addedIds: [], batchId }).then(
-    (n) => void snack(`${n} quitadas de ${name}`, { background: true }),
+    (n) => void snack(t("category.removed", { count: n, category: name }), { background: true }),
     (error: unknown) =>
-      void snack.error(`No se pudo deshacer: ${errorText(error)}`, {
+      void snack.error(t("category.undoFailed", { error: errorText(error) }), {
         background: true,
-        action: { label: "Retry", name: `Retry removing from ${name}`, onClick: () => undoScope(categoryId, batchId, name) },
+        action: { label: t("common.retry"), name: t("category.retryRemove", { category: name }), onClick: () => undoScope(categoryId, batchId, name) },
       }),
   );
 }
@@ -141,7 +140,7 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
   const [qa, setQa] = useState<QuickActions | null>(null);
   const [counts, setCounts] = useState<Partial<Record<Slot, Count | "loading">>>({});
   const [terms, setTerms] = useState<Set<string>>(new Set());
-  /** "Más…": anything in the search language ("factura uber from:@uber.com") */
+  /** "More…": anything in the search language ("factura uber from:@uber.com") */
   const [custom, setCustom] = useState<string | null>(null);
   const [undoing, setUndoing] = useState(false);
   /** the undo failed: the snackbar is that error now, its pill a retry */
@@ -228,7 +227,7 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
     return () => resume("busy");
   }, [undoing]);
 
-  /** "Ver": the topic as a search, so the user sees exactly what would be added. */
+  /** "View": the topic as a search, so the user sees exactly what would be added. */
   const view = () => {
     if (!topicQuery || !category) return;
     close();
@@ -256,12 +255,12 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
       () => {
         if (!current()) return;
         close();
-        snack(`Deshecho: ${category?.name ?? ""}`, { duration: 3000 });
+        snack(t("category.undone", { category: category?.name ?? "" }), { duration: 3000 });
       },
       (error: unknown) => {
         if (!current()) return;
         setUndoing(false);
-        const text = `No se pudo deshacer: ${errorText(error)}`;
+        const text = t("category.undoFailed", { error: errorText(error) });
         setFailed(text);
         patchSnack(id, { message: text, tone: "error" }, true);
       },
@@ -272,8 +271,8 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
     close();
     void client
       .call("filters.save", { name: `${qa.filterDraft.name} → ${category?.name ?? ""}`.slice(0, 120), enabled: true, source: "manual", rule: qa.filterDraft.rule })
-      .then(() => void snack.success("Filtro creado", { action: { label: "Edit", name: "Edit the new filter", onClick: () => setApp({ dialog: "filters" }) } }))
-      .catch((e: unknown) => void snack.error(`No se pudo crear el filtro: ${errorText(e)}`));
+      .then(() => void snack.success(t("category.filterCreated"), { action: { label: t("common.edit"), name: t("category.editFilter"), onClick: () => setApp({ dialog: "filters" }) } }))
+      .catch((e: unknown) => void snack.error(t("category.filterFailed", { error: errorText(e) })));
   };
 
   useEffect(() => {
@@ -309,8 +308,8 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
         {filed.batchId !== null && (
           <SnackPill
             testId="snackbar-undo"
-            label={failed ? "Retry" : "Undo"}
-            name={failed ? `Retry undo: ${title}` : `Undo: ${title}`}
+            label={failed ? t("common.retry") : t("common.undo")}
+            name={failed ? t("category.retryUndo", { title }) : t("category.undoTitle", { title })}
             shortcut="z"
             disabled={undoing}
             onClick={doUndo}
@@ -320,13 +319,13 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
       </div>
       {offers && (
         <Strip>
-          {qa.sender && <Chip n={1} testId="snackbar-sender" label={`Todo de ${qa.sender.name}`} count={counts.sender} onClick={() => run("sender")} />}
-          {qa.domain && !sameAsSender("domain") && <Chip n={2} testId="snackbar-domain" label={`Todo de @${qa.domain}`} count={counts.domain} onClick={() => run("domain")} />}
-          {qa.list && !sameAsSender("list") && <Chip n={3} testId="snackbar-list" label={`Lista ${qa.list}`} count={counts.list} onClick={() => run("list")} />}
+          {qa.sender && <Chip n={1} testId="snackbar-sender" label={t("threadMenu.allFrom", { name: qa.sender.name })} count={counts.sender} onClick={() => run("sender")} />}
+          {qa.domain && !sameAsSender("domain") && <Chip n={2} testId="snackbar-domain" label={t("category.chip.domain", { domain: qa.domain })} count={counts.domain} onClick={() => run("domain")} />}
+          {qa.list && !sameAsSender("list") && <Chip n={3} testId="snackbar-list" label={t("category.chip.list", { list: qa.list })} count={counts.list} onClick={() => run("list")} />}
           <span className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full bg-tint pr-1 pl-1 text-xs whitespace-nowrap" data-testid="snackbar-topic">
             <button type="button" onClick={() => run("topic")} disabled={!topicQuery} className="inline-flex items-center gap-1.5 rounded-full pr-0.5 disabled:opacity-60" data-testid="snackbar-topic-apply">
               <Kbd className="h-4 min-w-4 rounded-full bg-background text-2xs shadow-none">4</Kbd>
-              Sobre:
+              {t("category.topic")}
             </button>
             {custom === null ? (
               <>
@@ -354,16 +353,16 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
                   </button>
                 ))}
                 <button type="button" data-testid="snackbar-more" onClick={() => setCustom("")} className="px-1 text-2xs text-muted-foreground hover:text-foreground">
-                  Más…
+                  {t("category.more")}
                 </button>
               </>
             ) : (
               <input
                 autoFocus
                 data-testid="snackbar-query"
-                aria-label="Añadir todo lo que hable de…"
+                aria-label={t("category.topicPlaceholder")}
                 value={custom}
-                placeholder="Añadir todo lo que hable de…"
+                placeholder={t("category.topicPlaceholder")}
                 onChange={(e) => setCustom(e.target.value)}
                 onKeyDown={(e) => {
                   e.stopPropagation();
@@ -380,7 +379,7 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
             )}
             {topicQuery && (
               <button type="button" data-testid="snackbar-view" onClick={view} className="inline-flex h-4.5 items-center gap-1 rounded-full px-1.5 text-2xs text-primary hover:bg-muted">
-                <Search className="size-3" /> Ver
+                <Search className="size-3" /> {t("common.view")}
               </button>
             )}
           </span>
@@ -388,7 +387,7 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
             <span data-testid="snackbar-filter" className="inline-flex shrink-0">
               <button type="button" onClick={always} className={chip}>
                 <Kbd className="h-4 min-w-4 rounded-full bg-background text-2xs shadow-none">5</Kbd>
-                <Filter className="size-3 text-muted-foreground" /> Siempre → filtro
+                <Filter className="size-3 text-muted-foreground" /> {t("category.alwaysFilter")}
               </button>
             </span>
           )}

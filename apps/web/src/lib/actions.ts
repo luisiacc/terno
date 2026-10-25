@@ -1,5 +1,6 @@
 import { breadcrumb, captureUi } from "~/lib/diag";
 import { parseAddressList, type ThreadAction, type ThreadSummary, type View } from "@terno/core";
+import { t } from "@terno/i18n";
 import { reflowRemoval } from "~/lib/flash";
 import { client } from "~/rpc/connection";
 import { currentTargets, scopeRows } from "~/lib/select";
@@ -29,53 +30,57 @@ function staysInView(view: View, action: ThreadAction): boolean {
   }
 }
 
-/** What a snack says after an action (several threads: "· N conversaciones"). */
-const DONE: Record<ThreadAction, string> = {
-  archive: "Archivado",
-  trash: "Movido a la papelera",
-  spam: "Marcado como spam",
-  notSpam: "Movido a Entrada",
-  moveToInbox: "Movido a Entrada",
-  markRead: "Marcado como leído",
-  markUnread: "Marcado como no leído",
-  star: "Destacado",
-  unstar: "Sin destacar",
-};
-/** In progress, for a scope action's snack. */
-const DOING: Record<ThreadAction, string> = {
-  archive: "Archivando",
-  trash: "Moviendo a la papelera",
-  spam: "Marcando como spam",
-  notSpam: "Moviendo a Entrada",
-  moveToInbox: "Moviendo a Entrada",
-  markRead: "Marcando como leídas",
-  markUnread: "Marcando como no leídas",
-  star: "Destacando",
-  unstar: "Quitando destacado",
-};
-/** What its Deshacer takes back, for a screen reader ("Undo archive"). */
-const UNDO_NAME: Record<ThreadAction, string> = {
-  archive: "Undo archive",
-  trash: "Undo move to trash",
-  spam: "Undo mark as spam",
-  notSpam: "Undo move to inbox",
-  moveToInbox: "Undo move to inbox",
-  markRead: "Undo mark as read",
-  markUnread: "Undo mark as unread",
-  star: "Undo star",
-  unstar: "Undo unstar",
-};
+/** What a snack says after an action (several threads: "· N conversations"). */
+const DONE = {
+  archive: "actions.done.archive",
+  trash: "actions.done.trash",
+  spam: "actions.done.spam",
+  notSpam: "actions.done.inbox",
+  moveToInbox: "actions.done.inbox",
+  markRead: "actions.done.markRead",
+  markUnread: "actions.done.markUnread",
+  star: "actions.done.star",
+  unstar: "actions.done.unstar",
+} as const satisfies Record<ThreadAction, string>;
+/** In progress, for a scope action's snack ("Archiving 1,234 conversations"). */
+const DOING = {
+  archive: "actions.doing.archive",
+  trash: "actions.doing.trash",
+  spam: "actions.doing.spam",
+  notSpam: "actions.doing.inbox",
+  moveToInbox: "actions.doing.inbox",
+  markRead: "actions.doing.markRead",
+  markUnread: "actions.doing.markUnread",
+  star: "actions.doing.star",
+  unstar: "actions.doing.unstar",
+} as const satisfies Record<ThreadAction, string>;
+/** What its Undo takes back, for a screen reader ("Undo archive"). */
+const UNDO_NAME = {
+  archive: "actions.undo.archive",
+  trash: "actions.undo.trash",
+  spam: "actions.undo.spam",
+  notSpam: "actions.undo.inbox",
+  moveToInbox: "actions.undo.inbox",
+  markRead: "actions.undo.markRead",
+  markUnread: "actions.undo.markUnread",
+  star: "actions.undo.star",
+  unstar: "actions.undo.unstar",
+} as const satisfies Record<ThreadAction, string>;
 /** One thread's undo snack only for these (reads and stars show in the row itself); several threads always get one. */
 const SNACK_ALWAYS = new Set<ThreadAction>(["archive", "trash", "spam", "notSpam", "moveToInbox"]);
 
-/** z / ⌘Z (the dock's store keeps it: one undo, run once by z or by a snack's Deshacer). */
+/** z / ⌘Z (the dock's store keeps it: one undo, run once by z or by a snack's Undo). */
 export { undoLast } from "~/lib/snack";
 
-/** A snack's Deshacer for an undo token. */
-export const undoAction = (undo: Undo, name: string) => ({ label: "Undo", name, undo });
+/** A snack's Undo for an undo token. */
+export const undoAction = (undo: Undo, name: string) => ({ label: t("common.undo"), name, undo });
 
-const fmt = (n: number) => n.toLocaleString("es-MX");
-const said = (action: ThreadAction, n: number) => (n > 1 ? `${DONE[action]} · ${fmt(n)} conversaciones` : DONE[action]);
+/** The snack after an action: "Archived", or "Archived · 3 conversations" for several. */
+export function said(action: ThreadAction, n: number): string {
+  return n > 1 ? t("actions.doneCount", { action: t(DONE[action]), count: n }) : t(DONE[action]);
+}
+
+const failed = (error: unknown) => t("actions.failed", { error: error instanceof Error ? error.message : String(error) });
 
 /** The optimistic row for an action that keeps it in the view. */
 function patched(t: ThreadSummary, action: ThreadAction): ThreadSummary {
@@ -101,9 +106,9 @@ function patched(t: ThreadSummary, action: ThreadAction): ThreadSummary {
  */
 export async function act(action: ThreadAction, ids?: number[], options: { quiet?: boolean } = {}): Promise<void> {
   if (!ids) {
-    const t = currentTargets();
-    if ("scope" in t) return actScope(action, t.scope);
-    ids = t.ids;
+    const target = currentTargets();
+    if ("scope" in target) return actScope(action, target.scope);
+    ids = target.ids;
   }
   const targets = ids;
   const s = getApp();
@@ -143,11 +148,11 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
     if (options.quiet) return;
     // undone with z before the answer came: nothing to say
     if (!undo || undo.state !== "ready") return;
-    if (SNACK_ALWAYS.has(action) || targets.length > 1) snack(said(action, targets.length), { action: ids.length ? undoAction(undo, UNDO_NAME[action]) : undefined });
+    if (SNACK_ALWAYS.has(action) || targets.length > 1) snack(said(action, targets.length), { action: ids.length ? undoAction(undo, t(UNDO_NAME[action])) : undefined });
   } catch (error) {
     undoIds.resolve([]);
     captureUi(error, { code: "action.failed", fields: { action, count: targets.length } });
-    snack.error(`No se pudo completar: ${error instanceof Error ? error.message : error}`);
+    snack.error(failed(error));
     void reloadList({ keepSelection: true });
   }
 }
@@ -159,12 +164,12 @@ function deferred<T>(): { promise: Promise<T>; resolve(v: T): void } {
 }
 
 let job = 0;
-/** Progress of a backend job in a loading snack ("Archivando… 1 234 / 5 678"); its result takes the same id. */
+/** Progress of a backend job in a loading snack ("Archiving… 1,234 / 5,678"); its result takes the same id. */
 export function trackJob(title: string): { jobId: string; snackId: string; stop(): void } {
   const jobId = `job-${Date.now()}-${++job}`;
-  const snackId = snack.loading(`${title}…`, { id: jobId });
+  const snackId = snack.loading(t("actions.job", { title }), { id: jobId });
   const off = client.on("bulkProgress", (p) => {
-    if (p.jobId === jobId && p.done < p.total) snack.progress(snackId, `${title}… ${fmt(p.done)} / ${fmt(p.total)}`);
+    if (p.jobId === jobId && p.done < p.total) snack.progress(snackId, t("actions.jobProgress", { title, done: p.done, total: p.total }));
   });
   return { jobId, snackId, stop: off };
 }
@@ -172,7 +177,7 @@ export function trackJob(title: string): { jobId: string; snackId: string; stop(
 /**
  * "Select all N" + an action: the loaded rows change at once, the backend
  * applies it to the whole scope in slices with a progress snack, and one
- * Deshacer takes back exactly what changed.
+ * Undo takes back exactly what changed.
  */
 async function actScope(action: ThreadAction, sel: ScopeSelection): Promise<void> {
   const s = getApp();
@@ -188,7 +193,7 @@ async function actScope(action: ThreadAction, sel: ScopeSelection): Promise<void
   }
   patchRows(loaded, (t) => (leaving && t.id !== stays ? null : patched(t, action)));
   setApp({ checked: new Set(), scope: null });
-  const progress = trackJob(`${DOING[action]} ${fmt(sel.count)} conversaciones`);
+  const progress = trackJob(t(DOING[action], { count: sel.count }));
   const undoId = deferred<{ id: number | null; n: number }>();
   const undo = registerUndo(() => undoId.promise.then((u) => (u.id === null ? undefined : undoActions([u.id], u.n))));
   try {
@@ -196,10 +201,10 @@ async function actScope(action: ThreadAction, sel: ScopeSelection): Promise<void
     undoId.resolve({ id: r.undoId, n: r.affected });
     invalidateThreads(loaded);
     const offer = r.undoId !== null && undo.state === "ready";
-    snack.success(said(action, r.affected), { id: progress.snackId, duration: 8000, action: offer ? undoAction(undo, UNDO_NAME[action]) : undefined });
+    snack.success(said(action, r.affected), { id: progress.snackId, duration: 8000, action: offer ? undoAction(undo, t(UNDO_NAME[action])) : undefined });
   } catch (error) {
     undoId.resolve({ id: null, n: 0 });
-    snack.error(`No se pudo completar: ${error instanceof Error ? error.message : error}`, { id: progress.snackId });
+    snack.error(failed(error), { id: progress.snackId });
   } finally {
     progress.stop();
     void reloadList({ keepSelection: true });
@@ -207,15 +212,15 @@ async function actScope(action: ThreadAction, sel: ScopeSelection): Promise<void
 }
 
 /**
- * Deshacer: the backend puts back each message the action changed, exactly
+ * Undo: the backend puts back each message the action changed, exactly
  * as it was (read, star, place). Large ones show their progress.
  */
 async function undoActions(undoIds: readonly number[], n: number): Promise<void> {
-  const progress = n > 200 ? trackJob(`Deshaciendo ${fmt(n)} conversaciones`) : null;
+  const progress = n > 200 ? trackJob(t("actions.undoing", { count: n })) : null;
   try {
     let restored = 0;
     for (const undoId of undoIds) restored += (await client.call("threads.undo", { undoId, jobId: progress?.jobId })).restored;
-    if (progress) snack.success(`Deshecho · ${fmt(restored)} conversaciones`, { id: progress.snackId, duration: 4000 });
+    if (progress) snack.success(t("actions.undone", { count: restored }), { id: progress.snackId, duration: 4000 });
   } catch (error) {
     // the undo token says so, with a retry (z points back at it too)
     if (progress) dismissSnack(progress.snackId);
@@ -229,9 +234,9 @@ async function undoActions(undoIds: readonly number[], n: number): Promise<void>
 /** The rows an action would apply to now, loaded (a scope's are its loaded rows). */
 export function targetRows(ids?: readonly number[]): ThreadSummary[] {
   const { items, index } = useList.getState();
-  const t = ids ? { ids } : currentTargets();
-  if ("scope" in t) return scopeRows(items, t.scope.scope);
-  return t.ids.flatMap((id) => {
+  const target = ids ? { ids } : currentTargets();
+  if ("scope" in target) return scopeRows(items, target.scope.scope);
+  return target.ids.flatMap((id) => {
     const row = items[index.get(id) ?? -1];
     return row ? [row] : [];
   });

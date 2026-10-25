@@ -3,6 +3,7 @@ import { Button } from "@terno/ui/components/button";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { Archive, CheckCheck, FolderInput, Inbox, Mail, MailOpen, OctagonAlert, ShieldCheck, Star, Tag, Trash2, X } from "lucide-react";
+import { formatNumber, t } from "@terno/i18n";
 import { act } from "~/lib/actions";
 import { clearSelection, isMac, selectAll } from "~/lib/select";
 import { setApp, useApp } from "~/state/app";
@@ -39,56 +40,55 @@ export function SelectionBar() {
   const view = useApp((s) => s.view);
   const loaded = useList((s) => s.items.length);
   const run = (a: ThreadAction) => () => void act(a);
-  const fmt = (n: number) => n.toLocaleString("es-MX");
   return (
     <section data-testid="selection-bar" className="flex h-full min-h-0 flex-col items-center justify-center gap-6 bg-background p-10 text-center">
       <div>
         <div className="mb-3 inline-flex h-10 min-w-10 items-center justify-center rounded-xl bg-tint px-2.5 text-xl font-semibold tracking-display text-foreground tabular" data-testid="selection-count">
-          {count > 999 ? "999+" : count}
+          {count > 999 ? `${formatNumber(999)}+` : formatNumber(count)}
         </div>
-        <p className="text-lg font-semibold tracking-tight">{scope ? `Las ${fmt(count)} conversaciones de ${scope.label}` : `${fmt(count)} conversaciones seleccionadas`}</p>
-        <p className="mt-1 text-sm text-muted-foreground">Lo que hagas se aplica a todas · clic derecho para más</p>
+        <p className="text-lg font-semibold tracking-tight">{scope ? t("selection.scope", { count, label: scope.label }) : t("selection.count", { count })}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{t("selection.hint")}</p>
       </div>
       <div className="grid w-full max-w-md grid-cols-2 gap-2">
         {view === "trash" || view === "spam" || view === "archive" ? (
-          <BarButton label={view === "spam" ? "No es spam" : "Mover a Entrada"} onClick={run(view === "spam" ? "notSpam" : "moveToInbox")} testId="bar-inbox">
+          <BarButton label={view === "spam" ? t("actions.notSpam") : t("actions.moveToInbox")} onClick={run(view === "spam" ? "notSpam" : "moveToInbox")} testId="bar-inbox">
             {view === "spam" ? <ShieldCheck /> : <Inbox />}
           </BarButton>
         ) : (
-          <BarButton label="Archivar" command="thread.archive" onClick={run("archive")} testId="bar-archive">
+          <BarButton label={t("actions.archive")} command="thread.archive" onClick={run("archive")} testId="bar-archive">
             <Archive />
           </BarButton>
         )}
-        <BarButton label="Eliminar" command="thread.trash" onClick={run("trash")} testId="bar-trash" disabled={view === "trash"}>
+        <BarButton label={t("actions.trash")} command="thread.trash" onClick={run("trash")} testId="bar-trash" disabled={view === "trash"}>
           <Trash2 />
         </BarButton>
-        <BarButton label="Marcar como leído" command="thread.markRead" onClick={run("markRead")} testId="bar-read">
+        <BarButton label={t("actions.markRead")} command="thread.markRead" onClick={run("markRead")} testId="bar-read">
           <MailOpen />
         </BarButton>
-        <BarButton label="Marcar como no leído" command="thread.markUnread" onClick={run("markUnread")} testId="bar-unread">
+        <BarButton label={t("actions.markUnread")} command="thread.markUnread" onClick={run("markUnread")} testId="bar-unread">
           <Mail />
         </BarButton>
-        <BarButton label="Destacar" command="thread.star" onClick={run("star")} testId="bar-star">
+        <BarButton label={t("actions.star")} command="thread.star" onClick={run("star")} testId="bar-star">
           <Star />
         </BarButton>
-        <BarButton label="Spam" command="thread.spam" onClick={run("spam")} testId="bar-spam" disabled={view === "spam"}>
+        <BarButton label={t("actions.spam")} command="thread.spam" onClick={run("spam")} testId="bar-spam" disabled={view === "spam"}>
           <OctagonAlert />
         </BarButton>
-        <BarButton label="Categoría" command="thread.category" onClick={() => setApp({ dialog: "categoryPicker", pickerMode: "toggle" })} testId="bar-category">
+        <BarButton label={t("actions.category")} command="thread.category" onClick={() => setApp({ dialog: "categoryPicker", pickerMode: "toggle" })} testId="bar-category">
           <Tag />
         </BarButton>
-        <BarButton label="Mover a…" command="thread.move" onClick={() => setApp({ dialog: "categoryPicker", pickerMode: "move" })} testId="bar-move" disabled={scope !== null}>
+        <BarButton label={t("actions.moveTo")} command="thread.move" onClick={() => setApp({ dialog: "categoryPicker", pickerMode: "move" })} testId="bar-move" disabled={scope !== null}>
           <FolderInput />
         </BarButton>
       </div>
       <div className="flex items-center gap-2">
         {!scope && count < loaded && (
           <Button variant="ghost" size="sm" data-testid="bar-select-all" onClick={selectAll}>
-            <CheckCheck /> Seleccionar todo <Shortcut keys="mod+a" className="ml-1" />
+            <CheckCheck /> {t("actions.selectAll")} <Shortcut keys="mod+a" className="ml-1" />
           </Button>
         )}
         <Button variant="ghost" size="sm" data-testid="bar-clear" onClick={clearSelection}>
-          <X /> Deseleccionar <Shortcut keys="escape" className="ml-1" />
+          <X /> {t("selection.deselect")} <Shortcut keys="escape" className="ml-1" />
         </Button>
       </div>
     </section>

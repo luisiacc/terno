@@ -35,6 +35,7 @@ import {
   Trash2,
   UserRound,
 } from "lucide-react";
+import { t } from "@terno/i18n";
 import { useState, type ReactElement, type ReactNode } from "react";
 import { snack } from "~/lib/snack";
 import { create } from "zustand";
@@ -169,23 +170,23 @@ function sharedSender(rows: readonly ThreadSummary[]): { email: string; name: st
   return rows.every((t) => t.fromEmail.toLowerCase() === email) ? { email, name: first.fromName || first.fromEmail } : null;
 }
 
-/** The view decides the third group: what "out of here" means in Archivo, Papelera and Spam. */
+/** The view decides the third group: what "out of here" means in Archive, Trash and Spam. */
 function placeItems(view: View, run: (a: ThreadAction) => void) {
-  const archive = { icon: <Archive />, label: "Archivar", command: "thread.archive" as Command, onClick: () => run("archive"), testId: "menu-archive" };
-  const trash = { icon: <Trash2 />, label: "Eliminar", command: "thread.trash" as Command, onClick: () => run("trash"), testId: "menu-trash", variant: "destructive" as const };
-  const spam = { icon: <OctagonAlert />, label: "Marcar como spam", command: "thread.spam" as Command, onClick: () => run("spam"), testId: "menu-spam" };
+  const archive = { icon: <Archive />, label: t("actions.archive"), command: "thread.archive" as Command, onClick: () => run("archive"), testId: "menu-archive" };
+  const trash = { icon: <Trash2 />, label: t("actions.trash"), command: "thread.trash" as Command, onClick: () => run("trash"), testId: "menu-trash", variant: "destructive" as const };
+  const spam = { icon: <OctagonAlert />, label: t("actions.markSpam"), command: "thread.spam" as Command, onClick: () => run("spam"), testId: "menu-spam" };
   const toInbox = (label: string) => ({ icon: <Inbox />, label, onClick: () => run("moveToInbox"), testId: "menu-inbox" });
   switch (view) {
     case "trash":
-      return [toInbox("Restaurar a Entrada"), { ...archive, disabled: true }, { ...trash, disabled: true }, spam];
+      return [toInbox(t("actions.restoreToInbox")), { ...archive, disabled: true }, { ...trash, disabled: true }, spam];
     case "spam":
-      return [{ icon: <ShieldCheck />, label: "No es spam", onClick: () => run("notSpam"), testId: "menu-not-spam" }, { ...archive, disabled: true }, trash, { ...spam, disabled: true }];
+      return [{ icon: <ShieldCheck />, label: t("actions.notSpam"), onClick: () => run("notSpam"), testId: "menu-not-spam" }, { ...archive, disabled: true }, trash, { ...spam, disabled: true }];
     case "archive":
-      return [toInbox("Mover a Entrada"), { ...archive, disabled: true }, trash, spam];
+      return [toInbox(t("actions.moveToInbox")), { ...archive, disabled: true }, trash, spam];
     case "inbox":
       return [archive, trash, spam];
     default:
-      return [archive, trash, spam, toInbox("Mover a Entrada")];
+      return [archive, trash, spam, toInbox(t("actions.moveToInbox"))];
   }
 }
 
@@ -225,23 +226,23 @@ function MenuItems() {
     <>
       {count > 1 && (
         <div className="px-1.5 py-1 text-xs font-medium text-muted-foreground" data-testid="menu-count">
-          {scope ? `Las ${count.toLocaleString("es-MX")} conversaciones de ${scope.label}` : `${count} conversaciones`}
+          {scope ? t("selection.scope", { count, label: scope.label }) : t("common.conversations", { count })}
         </div>
       )}
       {single && (
         <>
-          <Item icon={<Reply />} label="Responder" command="compose.reply" onClick={() => reply("reply")} testId="menu-reply" />
-          <Item icon={<ReplyAll />} label="Responder a todos" command="compose.replyAll" onClick={() => reply("replyAll")} testId="menu-reply-all" />
-          <Item icon={<Forward />} label="Reenviar" command="compose.forward" onClick={() => reply("forward")} testId="menu-forward" />
+          <Item icon={<Reply />} label={t("actions.reply")} command="compose.reply" onClick={() => reply("reply")} testId="menu-reply" />
+          <Item icon={<ReplyAll />} label={t("actions.replyAll")} command="compose.replyAll" onClick={() => reply("replyAll")} testId="menu-reply-all" />
+          <Item icon={<Forward />} label={t("actions.forward")} command="compose.forward" onClick={() => reply("forward")} testId="menu-forward" />
           {/* one conversation only: printing several at once isn't a thing */}
-          <Item icon={<Printer />} label="Imprimir…" command="thread.print" onClick={() => openPrint({ threadId: single.id, messageId: null, intent: "print" })} testId="menu-print" />
+          <Item icon={<Printer />} label={t("actions.printMore")} command="thread.print" onClick={() => openPrint({ threadId: single.id, messageId: null, intent: "print" })} testId="menu-print" />
           <ContextMenuSeparator />
         </>
       )}
-      {anyUnread && <Item icon={<MailOpen />} label="Marcar como leído" command="thread.markRead" onClick={() => run("markRead")} testId="menu-read" />}
-      {anyRead && <Item icon={<Mail />} label="Marcar como no leído" command="thread.markUnread" onClick={() => run("markUnread")} testId="menu-unread" />}
-      {anyPlain && <Item icon={<Star />} label="Destacar" command="thread.star" onClick={() => run("star")} testId="menu-star" />}
-      {anyStarred && <Item icon={<StarOff />} label="Quitar destacado" command={anyPlain ? undefined : "thread.star"} onClick={() => run("unstar")} testId="menu-unstar" />}
+      {anyUnread && <Item icon={<MailOpen />} label={t("actions.markRead")} command="thread.markRead" onClick={() => run("markRead")} testId="menu-read" />}
+      {anyRead && <Item icon={<Mail />} label={t("actions.markUnread")} command="thread.markUnread" onClick={() => run("markUnread")} testId="menu-unread" />}
+      {anyPlain && <Item icon={<Star />} label={t("actions.star")} command="thread.star" onClick={() => run("star")} testId="menu-star" />}
+      {anyStarred && <Item icon={<StarOff />} label={t("actions.unstar")} command={anyPlain ? undefined : "thread.star"} onClick={() => run("unstar")} testId="menu-unstar" />}
       <ContextMenuSeparator />
       {placeItems(view, run).map((it) => (
         <Item key={it.testId} {...it} />
@@ -250,7 +251,7 @@ function MenuItems() {
       <ContextMenuSub>
         <ContextMenuSubTrigger data-testid="menu-categories">
           <Tag />
-          <span className="flex-1">Categorías</span>
+          <span className="flex-1">{t("threadMenu.categories")}</span>
           {hint("thread.category")}
         </ContextMenuSubTrigger>
         <ContextMenuSubContent className="w-56" data-testid="menu-categories-list">
@@ -262,14 +263,14 @@ function MenuItems() {
           ))}
           {categories.length > 0 && <ContextMenuSeparator />}
           <ContextMenuItem data-testid="menu-category-new" onClick={() => picker("toggle")}>
-            <Plus /> Nueva categoría…
+            <Plus /> {t("threadMenu.newCategory")}
           </ContextMenuItem>
         </ContextMenuSubContent>
       </ContextMenuSub>
       <ContextMenuSub>
         <ContextMenuSubTrigger data-testid="menu-move" disabled={scope !== null}>
           <FolderInput />
-          <span className="flex-1">Mover a…</span>
+          <span className="flex-1">{t("actions.moveTo")}</span>
           {hint("thread.move")}
         </ContextMenuSubTrigger>
         <ContextMenuSubContent className="w-56" data-testid="menu-move-list">
@@ -281,7 +282,7 @@ function MenuItems() {
           ))}
           {categories.length > 0 && <ContextMenuSeparator />}
           <ContextMenuItem data-testid="menu-move-new" onClick={() => picker("move")}>
-            <Plus /> Nueva categoría…
+            <Plus /> {t("threadMenu.newCategory")}
           </ContextMenuItem>
         </ContextMenuSubContent>
       </ContextMenuSub>
@@ -292,13 +293,13 @@ function MenuItems() {
             <ContextMenuSub>
               <ContextMenuSubTrigger data-testid="menu-sender-file">
                 <UserRound />
-                <span className="min-w-0 flex-1 truncate">Todo de {sender.name}</span>
+                <span className="min-w-0 flex-1 truncate">{t("threadMenu.allFrom", { name: sender.name })}</span>
               </ContextMenuSubTrigger>
               <ContextMenuSubContent className="w-56" data-testid="menu-sender-file-list">
                 {categories.map((c) => (
                   <ContextMenuItem key={c.id} data-testid={`menu-sender-file-${c.id}`} onClick={() => void applyScope(c.id, { kind: "sender", email: sender.email })}>
                     <CategoryDot color={c.color as CategoryColor} />
-                    <span className="truncate">A {c.name}</span>
+                    <span className="truncate">{t("threadMenu.toCategory", { category: c.name })}</span>
                   </ContextMenuItem>
                 ))}
               </ContextMenuSubContent>
@@ -306,26 +307,26 @@ function MenuItems() {
           )}
           <Item
             icon={<Filter />}
-            label="Crear filtro desde este remitente…"
+            label={t("threadMenu.createFilter")}
             testId="menu-filter"
-            onClick={() => setApp({ dialog: "filters", filterPrefill: { name: `De ${sender.name}`, rule: { match: "all", conditions: [{ field: "from", op: "equals", value: sender.email }], actions: [{ type: "archive" }] } } })}
+            onClick={() => setApp({ dialog: "filters", filterPrefill: { name: t("threadMenu.filterName", { name: sender.name }), rule: { match: "all", conditions: [{ field: "from", op: "equals", value: sender.email }], actions: [{ type: "archive" }] } } })}
           />
-          <Item icon={<Search />} label={`Buscar correos de ${sender.name}`} testId="menu-search-sender" onClick={() => setApp({ query: `from:${sender.email}`, view: "all", categoryId: null, reviewCategoryId: null, checked: new Set(), scope: null })} />
+          <Item icon={<Search />} label={t("threadMenu.searchSender", { name: sender.name })} testId="menu-search-sender" onClick={() => setApp({ query: `from:${sender.email}`, view: "all", categoryId: null, reviewCategoryId: null, checked: new Set(), scope: null })} />
           <Item
             icon={<Copy />}
-            label="Copiar dirección"
+            label={t("threadMenu.copyAddress")}
             testId="menu-copy"
             onClick={() =>
               void navigator.clipboard.writeText(sender.email).then(
-                () => snack(`Copiado: ${sender.email}`, { duration: 2000 }),
-                () => snack.error("No se pudo copiar"),
+                () => snack(t("threadMenu.copied", { email: sender.email }), { duration: 2000 }),
+                () => snack.error(t("threadMenu.copyFailed")),
               )
             }
           />
         </>
       )}
       <ContextMenuSeparator />
-      <Item icon={<CheckCheck />} label="Seleccionar todo" command="list.selectAll" onClick={selectAll} testId="menu-select-all" />
+      <Item icon={<CheckCheck />} label={t("actions.selectAll")} command="list.selectAll" onClick={selectAll} testId="menu-select-all" />
     </>
   );
 }

@@ -1,4 +1,5 @@
 import type { CategorizeSource } from "@terno/core/rpc";
+import { t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
 import { exclusivelyIn } from "~/lib/drag";
 import { reflowRemoval } from "~/lib/flash";
@@ -9,6 +10,8 @@ import { trackJob, undoAction } from "~/lib/actions";
 import { scopeRows } from "~/lib/select";
 import { registerUndo, snack } from "~/lib/snack";
 
+const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
 export interface Filed {
   categoryId: number;
   /** the threads the user acted on (quick actions are computed from these) */
@@ -16,7 +19,7 @@ export interface Filed {
   /** the ones that were not in the category before: undo removes exactly these */
   addedIds: number[];
   batchId: number | null;
-  /** an exclusive move (drag and drop, "Mover a…"): the threads also left every other category; undo puts them back */
+  /** an exclusive move (drag and drop, "Move to…"): the threads also left every other category; undo puts them back */
   moved?: boolean;
 }
 
@@ -64,7 +67,7 @@ export async function addToCategory(categoryId: number, threadIds: readonly numb
     for (const l of listeners) l(filed, options.source ?? "picker");
     return filed;
   } catch (error) {
-    snack.error(`No se pudo añadir: ${error instanceof Error ? error.message : error}`);
+    snack.error(t("category.addFailed", { error: errorText(error) }));
     if (bumped) void reconcileCounts(bumped);
     void reloadList({ keepSelection: true });
     return null;
@@ -78,7 +81,7 @@ export function isExclusivelyIn(categoryId: number, threadIds: readonly number[]
 }
 
 /**
- * Drag and drop and "Mover a…": an exclusive move. Afterwards every thread
+ * Drag and drop and "Move to…": an exclusive move. Afterwards every thread
  * is in `categoryId` and nowhere else. Rows show it in the same frame; in a
  * category view the rows that left it leave the list (as with archive); the
  * sidebar's unread counts move from the sources to the target. One undo
@@ -108,7 +111,7 @@ export async function moveToCategory(categoryId: number, threadIds: readonly num
     for (const l of listeners) l(filed, source);
     return filed;
   } catch (error) {
-    snack.error(`No se pudo mover: ${error instanceof Error ? error.message : error}`);
+    snack.error(t("category.moveFailed", { error: errorText(error) }));
     if (bumped) void reconcileCounts(bumped);
     void reloadList({ keepSelection: true });
     return null;
@@ -117,7 +120,7 @@ export async function moveToCategory(categoryId: number, threadIds: readonly num
 
 /**
  * "Select all N" + a category: the backend files the whole scope in slices
- * (progress snack), then "N añadidas a X · Deshacer" (one batch).
+ * (progress snack), then "N added to X · Undo" (one batch).
  */
 export async function addScopeToCategory(categoryId: number, sel: ScopeSelection): Promise<void> {
   const name = getApp().categories.find((c) => c.id === categoryId)?.name ?? "";
@@ -125,13 +128,13 @@ export async function addScopeToCategory(categoryId: number, sel: ScopeSelection
   const loaded = scopeRows(useList.getState().items, sel.scope).map((t) => t.id);
   patch(loaded, categoryId, true);
   setApp({ checked: new Set(), scope: null });
-  const progress = trackJob(`Añadiendo ${sel.count.toLocaleString("es-MX")} conversaciones a ${name}`);
+  const progress = trackJob(t("category.addingScope", { count: sel.count, category: name }));
   try {
     const { added, batchId } = await client.call("categories.addScope", { categoryId, scope: sel.scope, jobId: progress.jobId });
-    const undo = batchId === null ? null : registerUndo(() => undoFiled({ categoryId, addedIds: [], batchId }).then((n) => void snack(`${n.toLocaleString("es-MX")} quitadas de ${name}`, { background: true })));
-    snack.success(`${added.toLocaleString("es-MX")} ${added === 1 ? "añadida" : "añadidas"} a ${name}`, { id: progress.snackId, duration: 8000, action: undo ? undoAction(undo, `Undo add to ${name}`) : undefined });
+    const undo = batchId === null ? null : registerUndo(() => undoFiled({ categoryId, addedIds: [], batchId }).then((n) => void snack(t("category.removed", { count: n, category: name }), { background: true })));
+    snack.success(t("category.added", { count: added, category: name }), { id: progress.snackId, duration: 8000, action: undo ? undoAction(undo, t("category.undoAdd", { category: name })) : undefined });
   } catch (error) {
-    snack.error(`No se pudo añadir: ${error instanceof Error ? error.message : error}`, { id: progress.snackId });
+    snack.error(t("category.addFailed", { error: errorText(error) }), { id: progress.snackId });
   } finally {
     progress.stop();
     void reloadList({ keepSelection: true });
@@ -188,7 +191,7 @@ export async function removeFromCategory(categoryId: number, threadIds: readonly
     await client.call("categories.removeThreads", { categoryId, threadIds: [...threadIds], reason });
     refreshReader(threadIds);
   } catch (error) {
-    snack.error(`No se pudo quitar: ${error instanceof Error ? error.message : error}`);
+    snack.error(t("category.removeFailed", { error: errorText(error) }));
     void reloadList({ keepSelection: true });
   }
 }
@@ -212,7 +215,7 @@ export async function undoFiled(filed: Pick<Filed, "categoryId" | "addedIds" | "
   }
 }
 
-/** "Sí, es de Facturas": filed as an accepted suggestion (full weight), with the snackbar like any other add. */
+/** "Yes, it’s Invoices": filed as an accepted suggestion (full weight), with the snackbar like any other add. */
 export function acceptSuggestion(threadId: number, categoryId: number): Promise<Filed | null> {
   return addToCategory(categoryId, [threadId], { source: "suggestion" });
 }
@@ -223,6 +226,6 @@ export async function rejectSuggestion(threadId: number, categoryId: number): Pr
     await client.call("categorize.feedback", { threadId, categoryId, verdict: "reject" });
     refreshReader([threadId]);
   } catch (error) {
-    snack.error(`No se pudo guardar: ${error instanceof Error ? error.message : error}`);
+    snack.error(t("category.saveFailed", { error: errorText(error) }));
   }
 }

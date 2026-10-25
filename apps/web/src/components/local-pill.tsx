@@ -1,5 +1,6 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { Cloud, LaptopMinimalCheck } from "lucide-react";
+import { t } from "@terno/i18n";
 import { providerName } from "~/lib/ai";
 import { setApp, useApp } from "~/state/app";
 
@@ -9,12 +10,12 @@ export function LocalPill() {
   const ai = useApp((s) => s.settings?.ai);
   const cloudAi = !localMode && ai && ai.provider !== "none" && !ai.local ? ai : null;
   if (!localMode && !cloudAi) return null;
-  const label = localMode ? "Local" : `IA: ${providerName(cloudAi!)} (nube)`;
+  const label = localMode ? t("sidebar.local") : t("sidebar.cloudAi", { provider: providerName(cloudAi!) });
   const tip = localMode
     ? import.meta.env.VITE_TARGET === "web"
-      ? "Terno solo se conecta con Google (tu correo) y con IA de este equipo"
-      : "Nada sale de este Mac salvo el correo con tus servidores"
-    : "La IA usa un servicio en la nube. Ajustes → General para activar el modo local.";
+      ? t("sidebar.localTip.web")
+      : t("sidebar.localTip.desktop")
+    : t("sidebar.cloudTip");
   return (
     <Tooltip>
       <TooltipTrigger
@@ -23,7 +24,7 @@ export function LocalPill() {
             type="button"
             data-testid="local-pill"
             data-local={localMode || undefined}
-            aria-label={`${label}. ${tip}`}
+            aria-label={t("sidebar.pillLabel", { label, tip })}
             onClick={() => setApp({ dialog: "settings", settingsTab: "general" })}
             className="flex h-6 max-w-28 shrink-0 items-center gap-1 rounded-full border border-sidebar-border px-2 text-2xs font-medium text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground data-local:border-sidebar-primary/30 data-local:text-sidebar-primary"
           >

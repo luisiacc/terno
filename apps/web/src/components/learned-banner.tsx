@@ -1,13 +1,15 @@
 import type { LearnedProposal } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { Sparkles, X } from "lucide-react";
+import { t } from "@terno/i18n";
 import { useEffect, useState } from "react";
+import { richT } from "~/lib/i18n";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { useApp } from "~/state/app";
 
-const VERB = { archive: "archivas", trash: "borras", spam: "marcas como spam" } as const;
-const ACTION = { archive: "Archivar automáticamente", trash: "Borrar automáticamente", spam: "Mandar a spam" } as const;
+const SENTENCE = { archive: "list.learned.archive", trash: "list.learned.trash", spam: "list.learned.spam" } as const;
+const ACTION = { archive: "list.learned.action.archive", trash: "list.learned.action.trash", spam: "list.learned.action.spam" } as const;
 
 /** Surfaces one learned-filter proposal at the top of the inbox. */
 export function LearnedBanner() {
@@ -26,13 +28,14 @@ export function LearnedBanner() {
   }, [view, query, counts]);
 
   if (!proposal || view !== "inbox" || query) return null;
-  const who = proposal.scope === "list" ? `la lista ${proposal.value}` : proposal.scope === "domain" ? `todo ${proposal.value}` : proposal.value;
+  const who = proposal.scope === "list" ? t("list.learned.list", { value: proposal.value }) : proposal.scope === "domain" ? t("list.learned.domain", { value: proposal.value }) : proposal.value;
+  const action = t(ACTION[proposal.action]);
   return (
     <div data-testid="learned-banner" className="mx-3 mt-1 mb-1 flex items-start gap-2.5 rounded-[10px] bg-tint p-2.5 text-xs">
       <Sparkles className="mt-0.5 size-3.5 shrink-0 text-primary" />
       <div className="min-w-0 flex-1">
         <p className="text-foreground">
-          Siempre {VERB[proposal.action]} los correos de <span className="font-medium">{who}</span> ({proposal.support} veces).
+          {richT(SENTENCE[proposal.action], { who, count: proposal.support, b: (text) => <span className="font-medium">{text}</span> })}
         </p>
         <div className="mt-1.5 flex gap-1.5">
           {/* a suggestion, not the screen's main action: a quiet raised button */}
@@ -42,11 +45,11 @@ export function LearnedBanner() {
             data-testid="learned-accept"
             onClick={async () => {
               await client.call("learning.accept", { key: proposal.key });
-              snack.success(`Filtro creado: ${ACTION[proposal.action]}`);
+              snack.success(t("list.learned.created", { action }));
               setProposal(null);
             }}
           >
-            {ACTION[proposal.action]}
+            {action}
           </Button>
           <Button
             size="xs"
@@ -56,11 +59,11 @@ export function LearnedBanner() {
               setProposal(null);
             }}
           >
-            Ahora no
+            {t("list.learned.notNow")}
           </Button>
         </div>
       </div>
-      <button type="button" aria-label="Cerrar" className="text-muted-foreground hover:text-foreground" onClick={() => setProposal(null)}>
+      <button type="button" aria-label={t("common.close")} className="text-muted-foreground hover:text-foreground" onClick={() => setProposal(null)}>
         <X className="size-3.5" />
       </button>
     </div>

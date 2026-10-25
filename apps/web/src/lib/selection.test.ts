@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { addRange, extend, menuTargets, pick, prune, range, targetsOf, toggle, type Order } from "./selection";
+import { setLocale, t } from "@terno/i18n";
+import en from "@terno/i18n/locales/en";
+import es from "@terno/i18n/locales/es";
+import { afterEach, describe, expect, it } from "vitest";
+import { addRange, extend, menuTargets, pick, prune, range, scopeLabel, targetsOf, toggle, type Order } from "./selection";
 
 /** 1,000 loaded rows: ids 101…1100; only a window of ~30 would be in the DOM. */
 const order = (ids: number[]): Order => ({ ids, index: new Map(ids.map((id, i) => [id, i])) });
@@ -89,5 +92,26 @@ describe("selection model", () => {
     expect(menuTargets(102, set(101, 102, 103), ROWS)).toEqual([101, 102, 103]);
     expect(menuTargets(500, set(101, 102, 103), ROWS)).toEqual([500]);
     expect(menuTargets(500, set(), ROWS)).toEqual([500]);
+  });
+});
+
+describe("scope labels", () => {
+  afterEach(() => setLocale("en", en));
+
+  it("adds the unread filter to the name in the active language, and quotes a search by the locale's marks", () => {
+    expect(scopeLabel("Inbox", false)).toBe("Inbox");
+    expect(scopeLabel("Inbox", true)).toBe("Inbox · Unread");
+    expect(t("list.scope.quoted", { label: scopeLabel("uber", true) })).toBe("“uber · Unread”");
+    setLocale("es", es);
+    expect(scopeLabel("Entrada", true)).toBe("Entrada · No leídos");
+    expect(t("list.scope.quoted", { label: "uber" })).toBe("«uber»");
+  });
+
+  it("“all N” reads as one sentence with the count formatted for the locale", () => {
+    expect(t("selection.scope", { count: 1234, label: "Inbox" })).toBe("All 1,234 conversations in Inbox");
+    expect(t("list.selectAll.select", { count: 1, label: "Inbox" })).toBe("Select 1 conversation in Inbox");
+    setLocale("es", es);
+    expect(t("selection.scope", { count: 1234, label: "«uber»" })).toBe("Las 1,234 conversaciones de «uber»");
+    expect(t("selection.count", { count: 1 })).toBe("1 conversación seleccionada");
   });
 });

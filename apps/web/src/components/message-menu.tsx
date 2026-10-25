@@ -1,4 +1,5 @@
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@terno/ui/components/context-menu";
+import { t } from "@terno/i18n";
 import { FileDown, Printer } from "lucide-react";
 import { useState, type ReactElement } from "react";
 import { openPrint, wantsNativeMenu, type PrintIntent } from "~/lib/print-open";
@@ -28,11 +29,11 @@ export function MessageMenu({ threadId, children }: { threadId: number; children
       <ContextMenuContent className="w-60" data-testid="message-menu">
         <ContextMenuItem data-testid="message-menu-print" onClick={() => print("print")}>
           <Printer />
-          <span className="flex-1">Imprimir este mensaje…</span>
+          <span className="flex-1">{t("threadMenu.printMessage")}</span>
         </ContextMenuItem>
         <ContextMenuItem data-testid="message-menu-pdf" onClick={() => print("pdf")}>
           <FileDown />
-          <span className="flex-1">Exportar mensaje como PDF…</span>
+          <span className="flex-1">{t("threadMenu.exportMessagePdf")}</span>
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

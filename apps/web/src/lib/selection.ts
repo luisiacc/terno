@@ -5,6 +5,7 @@
  * spans rows the virtualizer has unmounted. lib/select.ts binds it to the
  * app state.
  */
+import { t } from "@terno/i18n";
 
 export interface Order {
   /** loaded thread ids in list order */
@@ -78,4 +79,9 @@ export function targetsOf(checked: ReadonlySet<number>, selectedId: number | nul
 /** The context menu's target: the selection when the clicked row is part of it, else that row alone. */
 export function menuTargets(row: number, checked: ReadonlySet<number>, order?: Order): number[] {
   return checked.has(row) && checked.size > 1 ? targetsOf(checked, null, order) : [row];
+}
+
+/** A scope's name (a mailbox, a category, a quoted search), with "· Unread" when the filter is on. */
+export function scopeLabel(label: string, unreadOnly: boolean | undefined): string {
+  return unreadOnly ? t("list.scope.unread", { label }) : label;
 }

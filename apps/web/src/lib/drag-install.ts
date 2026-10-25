@@ -7,6 +7,7 @@
  * drag no row renders: the dimming is a keyed CSS rule (lib/flash.ts) and only
  * the two NavItems whose state changes re-render.
  */
+import { formatNumber, t } from "@terno/i18n";
 import { motionMs } from "~/lib/appearance";
 import { isExclusivelyIn, moveToCategory } from "~/lib/categorize";
 import { DragController, newIds, payloadFor, type PointerLike, type TargetRect } from "~/lib/drag";
@@ -52,8 +53,8 @@ function placeGhost(p: PointerLike) {
 function showGhost(ids: readonly number[], at: PointerLike) {
   if (!ghost) return;
   const first = row(ids[0]!);
-  ghost.querySelector("[data-ghost-subject]")!.textContent = first?.subject || "(sin asunto)";
-  ghost.querySelector("[data-ghost-count]")!.textContent = String(ids.length);
+  ghost.querySelector("[data-ghost-subject]")!.textContent = first?.subject || t("common.noSubject");
+  ghost.querySelector("[data-ghost-count]")!.textContent = formatNumber(ids.length);
   ghost.querySelectorAll<HTMLElement>("[data-ghost-stack]").forEach((s) => s.classList.toggle("hidden", ids.length < 2));
   const body = ghost.querySelector<HTMLElement>("[data-ghost-body]")!;
   body.removeAttribute("data-leaving");
