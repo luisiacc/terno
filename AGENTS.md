@@ -48,4 +48,5 @@ Terno is a minimalist, fast email client: Electron (macOS first) plus a web buil
   - Dragging threads onto a category *moves* them; multi-category only through the right-click menu.
   - Composing is inline, never a modal.
   - HTML mail frames never scroll inside.
-- **Parallel checkouts.** Run e2e with `E2E_PORT=<free port>` (it builds to `dist-e2e-<port>`) so two checkouts never share a server. On macOS there is no `timeout`. In zsh, quote globs.
+- **Strings:** `t()` in the UI and main, `L()` in the backend; a new language is `packages/i18n/src/locales/xx.ts` plus one line in `locales/index.ts` (README → Adding a language).
+- **Parallel checkouts.** Run e2e with `E2E_PORT=<free port>` (it builds to `dist-e2e-<port>`) and `pnpm test:web` with `WEB_PORT=<free port>` (it also takes the next one) so two checkouts never share a server. On macOS there is no `timeout`. In zsh, quote globs.

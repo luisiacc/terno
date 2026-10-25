@@ -144,7 +144,8 @@ Cold first visit to an interactive shell: ~0.3–0.5 s. Seeding the 50k demo mai
 ## Tests
 
 ```bash
-pnpm test               # correctness: unit + integration (project unit) and the db suite on SQLite-WASM (db-wasm)
+pnpm test               # correctness: unit + integration (project unit) and the db suite on SQLite-WASM (db-wasm);
+                        # includes the i18n guard (no hard-coded UI strings outside the catalog)
 pnpm test:perf          # performance gates alone (project perf, one file at a time): never run them beside other suites
 pnpm test:e2e           # Playwright flows + visual regression (apps/web, against backend-dev)
 pnpm test:ui-perf       # renderer perf in Chromium (j-key, keystroke → results, scroll, theme, drag)
@@ -169,6 +170,18 @@ What the tests cover:
 - Gmail against a fake Google that verifies PKCE.
 - The MCP server end to end.
 - Printing from real PDFs: every print fixture (long quoted threads, inline replies, a newsletter, a 1000px table, CJK and emoji, long URLs, images, a hostile subject) exported through Chromium on the web and through Electron's `printToPDF` in the packaged app, read back with pdfjs-dist (page size, text present and absent, footer, nothing outside the printable box) and compared against rendered-page baselines.
+
+## Languages
+
+Terno's interface is in English, and in Spanish when you choose Español (Settings → General → Language) or your system is in Spanish ("System", the default). The switch is immediate, menus included. Every string lives in [`packages/i18n`](packages/i18n): `locales/en.ts` is the source of truth, and `t("key", params)` (UI, desktop main) and `L("key", params)` (the backend: errors and reasons travel as keys, the renderer translates them) are typed against it, so a wrong key or a missing placeholder doesn't compile. Messages are plain strings with `{name}` placeholders, plural objects (`{ one: "# conversation", other: "# conversations" }`, chosen with `Intl.PluralRules`) and `<b>…</b>`-style tags for rich text. Dates and numbers come from `Intl` in the active locale. Only the active language is loaded (English is bundled; others load when chosen).
+
+### Adding a language
+
+1. Copy `packages/i18n/src/locales/es.ts` to `locales/xx.ts` (`xx` = the language code) and translate the values. Keep every key, every `{placeholder}`, every `<tag>`, and the plural objects (add the forms your language needs: `zero`, `one`, `two`, `few`, `many`, `other`).
+2. Add one line to `packages/i18n/src/locales/index.ts`: `xx: { name: "<the language's own name>", tag: "xx-YY", load: async () => (await import("./xx")).default },`.
+3. `pnpm typecheck` lists anything missing, extra or mismatched (`xx.ts` ends with `satisfies LocaleCheck<typeof xx>`), and `pnpm test` checks it again at runtime. Optionally give it its own date formats in `apps/web/src/lib/format.ts` (otherwise the locale's defaults apply).
+
+The language then appears in Settings → General, "System" picks it on systems in that language, and English remains the fallback for anything missing.
 
 ## Diagnostics and error reports
 
