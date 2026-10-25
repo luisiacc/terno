@@ -14,8 +14,8 @@
  *   counts at its CPU time while such samples are at most a tenth; a stall (a
  *   gap between 1 ms ticks with the loop busy) in which the thread used at
  *   most the budget of CPU is excused at most twice per stage (or once a
- *   second: work that waits in every slice holds it hundreds of times), each
- *   under 2 s. Past that, all count in full.
+ *   second of it, all of them at most a fifth of it), each under 2 s. Past
+ *   that, all count in full.
  *
  * On a quiet machine nothing is excused. A slower computation shows as CPU
  * time and fails either way. Plain JS for the IndexedDB package (no Node
@@ -130,18 +130,27 @@ export interface LoopReport {
   ms: number;
 }
 
-/** stalls a stage may excuse as descheduled */
-export function deschedulingAllowance(stageMs: number): number {
-  return Math.max(2, Math.floor(stageMs / 1_000));
-}
-
 /** the longest hold excused: a machine paging under memory pressure holds a thread for hundreds of ms */
 export const HOLD_LIMIT_MS = 2_000;
+/** of a stage's time, at most this much may be excused holds */
+export const HOLD_SHARE = 0.2;
+
+/**
+ * Whether a stage's holds (each `off` ms off a CPU) are rare enough to be
+ * the machine's: at most two, or one a second of the time the stage spent
+ * outside them, and together at most a fifth of it. A wait of ours in every
+ * slice holds hundreds of times or for most of the stage; long waits can't
+ * buy their own allowance, since their time doesn't count towards it.
+ */
+export function holdsExcusable(offMs: readonly number[], stageMs: number): boolean {
+  const held = offMs.reduce((a, b) => a + b, 0);
+  return offMs.length <= Math.max(2, Math.floor((stageMs - held) / 1_000)) && held <= stageMs * HOLD_SHARE;
+}
 
 /** Splits over-budget gaps into descheduled (excused on a busy machine, if rare and under the hold limit) and ours. */
 export function classifyGaps(over: readonly Gap[], stageMs: number, budgetMs: number, busy = machineBusy()): { descheduled: Gap[]; ours: Gap[] } {
   const candidates = over.filter((g) => g.cpu <= budgetMs && g.busy <= HOLD_LIMIT_MS);
-  if (!busy || candidates.length > deschedulingAllowance(stageMs)) return { descheduled: [], ours: [...over] };
+  if (!busy || !holdsExcusable(candidates.map((g) => g.busy - g.cpu), stageMs)) return { descheduled: [], ours: [...over] };
   return { descheduled: candidates, ours: over.filter((g) => !candidates.includes(g)) };
 }
 

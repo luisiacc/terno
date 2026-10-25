@@ -16,7 +16,7 @@ import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { BUDGET_MULTIPLIER, report, type Stat } from "../../db/src/test/perf";
-import { machineBusy, sampleAsync, settle, watchLoop, type LoopReport, type Sample } from "../../db/src/test/timing";
+import { sampleAsync, sampleSync, settle, watchLoop, type LoopReport, type Sample } from "../../db/src/test/timing";
 
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
 const stats: Stat[] = [];
@@ -157,23 +157,19 @@ it("a 20-category, 100k-feature model stays ≤ 30 MB and loads from its snapsho
   // regression is slow in every batch, a busy moment of the machine isn't (timing.ts)
   let load: Stat | null = null;
   for (let batch = 1; batch <= 3 && !(load && load.p95 <= 30 * BUDGET_MULTIPLIER); batch++) {
-    const loads: number[] = [];
+    const loads: Sample[] = [];
     for (let i = 0; i < 22; i++) {
       // startup loads into a quiet heap: don't bill the previous iteration's garbage to this one
       gc();
       const blob = bytes.slice();
-      const t = performance.now();
-      CategorizerModel.deserialize(blob);
-      loads.push(performance.now() - t);
+      loads.push(sampleSync(() => CategorizerModel.deserialize(blob)));
     }
-    const s = loads.slice(2).sort((a, b) => a - b);
+    // on a busy machine, a load the OS held counts at its CPU time while such loads are rare (timing.ts)
+    const s = settle(loads.slice(2)).ms.sort((a, b) => a - b);
     const p95 = s[Math.ceil(0.95 * s.length) - 1]!;
     if (!load || p95 < load.p95) load = { name: `load the model from its snapshot, ms${batch > 1 ? ` (batch ${batch})` : ""}`, budgetMs: 30, p50: s[Math.ceil(0.5 * s.length) - 1]!, p95, max: s.at(-1)!, iterations: s.length };
   }
   stats.push(load!);
-  // a busy machine runs us on slower cores for whole batches: there, decoding being deterministic work on a collected
-  // heap, its median is the code's cost
-  const gated = machineBusy() ? load!.p50 : load!.p95;
   // filing-rate terms settle on the first read after loading
   const loaded = CategorizerModel.deserialize(bytes.slice())!;
   const t = performance.now();
@@ -182,7 +178,7 @@ it("a 20-category, 100k-feature model stays ≤ 30 MB and loads from its snapsho
   stats.push({ name: `first score after loading: ${first.toFixed(2)} ms`, budgetMs: 10, p50: first, p95: first, max: first, iterations: 1 });
   expect(first).toBeLessThanOrEqual(10 * BUDGET_MULTIPLIER);
   expect(mb).toBeLessThanOrEqual(30);
-  expect(gated, `snapshot load (p50 ${load!.p50.toFixed(1)}, p95 ${load!.p95.toFixed(1)} ms; busy machine: ${machineBusy()})`).toBeLessThanOrEqual(30 * BUDGET_MULTIPLIER);
+  expect(load!.p95, `snapshot load p95 (p50 ${load!.p50.toFixed(1)} ms)`).toBeLessThanOrEqual(30 * BUDGET_MULTIPLIER);
 });
 
 it("snackbar counts: sender/domain/list ≤ 5 ms, topic ≤ 25 ms (capped at 1 000), quick actions ≤ 2 ms", async () => {

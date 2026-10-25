@@ -17,7 +17,9 @@ export const BUDGET_MULTIPLIER = Number(process.env.PERF_BUDGET_MULTIPLIER ?? "1
 /**
  * A batch that ran over budget is measured again, up to this many times in
  * all, and the best batch counts: a regression is slow in every one, a busy
- * moment of the machine (timing.ts) isn't. Nothing is excused.
+ * moment of the machine (timing.ts) isn't. Nothing is excused. Each batch
+ * goes on with the next indexes (60–119, …), so a write measured again
+ * writes other rows instead of repeating what is already done.
  */
 const ATTEMPTS = 3;
 
@@ -29,7 +31,7 @@ export function measure(name: string, budgetMs: number, fn: (i: number) => unkno
     const samples: number[] = [];
     for (let i = 0; i < iterations; i++) {
       const start = performance.now();
-      fn(i);
+      fn((attempt - 1) * iterations + i);
       samples.push(performance.now() - start);
     }
     const s = stat(name, budgetMs, samples, attempt);
@@ -68,7 +70,7 @@ export async function measureAsync(name: string, budgetMs: number, fn: (i: numbe
     const samples: number[] = [];
     for (let i = 0; i < iterations; i++) {
       const start = performance.now();
-      await fn(i);
+      await fn((attempt - 1) * iterations + i);
       samples.push(performance.now() - start);
     }
     const s = stat(name, budgetMs, samples, attempt);

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { classifyGaps, machineBusy, settle, type Gap } from "./timing";
+import { classifyGaps, holdsExcusable, machineBusy, settle, type Gap } from "./timing";
 
 const gap = (busy: number, cpu: number, at = 0): Gap => ({ start: at, end: at + busy, wall: busy, busy, cpu });
 const rare = () => [...Array.from({ length: 19 }, () => ({ wall: 2, cpu: 1.9 })), { wall: 9, cpu: 2 }];
@@ -45,7 +45,22 @@ describe("classifyGaps", () => {
 
   it("excuses none when they recur: past two per stage, or one a second", () => {
     expect(classifyGaps([gap(80, 5), gap(80, 5, 100), gap(80, 5, 200)], 2_000, 50, true).descheduled).toEqual([]);
-    expect(classifyGaps([gap(80, 5), gap(80, 5, 100), gap(80, 5, 200)], 3_000, 50, true).descheduled).toHaveLength(3);
+    expect(classifyGaps([gap(80, 5), gap(80, 5, 100), gap(80, 5, 200)], 3_500, 50, true).descheduled).toHaveLength(3);
+  });
+});
+
+describe("holdsExcusable", () => {
+  it("lets the machine's few holds through", () => {
+    expect(holdsExcusable([60, 300, 40, 90], 6_000)).toBe(true);
+  });
+
+  it("a long wait in every slice can't buy its own allowance with the time it adds", () => {
+    // 100 waits of 1.1 s: a 110 s stage, but its time outside them is under a second
+    expect(holdsExcusable(Array.from({ length: 100 }, () => 1_100), 110_500)).toBe(false);
+  });
+
+  it("holds over a fifth of the stage are ours, however few", () => {
+    expect(holdsExcusable([700, 600], 5_000)).toBe(false);
   });
 });
 

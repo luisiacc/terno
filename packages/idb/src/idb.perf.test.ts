@@ -2,18 +2,20 @@ import "fake-indexeddb/auto";
 import { generateDataset } from "@terno/mock-data";
 import type { Platform } from "@terno/store";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { machineBusy, sampleAsync, watchLoop } from "../../db/src/test/timing";
+import { machineBusy, sampleAsync, settle, watchLoop, type Sample } from "../../db/src/test/timing";
 import { IdbMailStore } from "./store";
 
 /**
  * IndexedDB adapter gates at ~50k messages (fake-indexeddb in Node: the
  * adapter's own CPU and event-loop stalls; browser timings are web-perf's).
  * On a quiet machine every timing is wall clock and every count, walk and
- * bulk change is timed once, as ever. On a busy one (timing.ts) a timing
- * leaves out the time the loop was busy with the thread off a CPU (all the
- * work here is JS on this thread, never a blocking system call), warm reads
- * are the median of three, the dense/empty case runs three times, and rare
- * stalls the OS held are excused.
+ * bulk change is timed once, as ever. On a busy one (timing.ts) pages the
+ * OS held count at their CPU time while that is rare in a walk; a single
+ * timing leaves out the time the loop was busy with the thread off a CPU
+ * (this store has no synchronous waits to hide: a browser's main thread
+ * can't block, and fake-indexeddb is JS on this thread); warm reads are the
+ * median of three, the dense/empty case runs three times, and rare stalls
+ * the OS held are excused.
  */
 const env = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env ?? {};
 const MULT = Number(env.PERF_BUDGET_MULTIPLIER ?? "1");
@@ -121,15 +123,16 @@ it("select all N pages seek, never rescan: a 28,000-thread view, account and cat
     ["category", { view: "all" as const, categoryId: cat }],
   ] as const) {
     for (const limit of [500, 100]) {
-      const pages: number[] = [];
+      const samples: Sample[] = [];
       const seen: number[] = [];
       for (let after = 0; ; ) {
-        const { result: page, ms } = await timed(() => store.threads.scopeIds({ ...scope, after, limit }));
-        pages.push(ms);
-        seen.push(...page);
-        if (page.length < limit) break;
-        after = page[page.length - 1]!;
+        const s = await sampleAsync(() => store.threads.scopeIds({ ...scope, after, limit }));
+        samples.push(s);
+        seen.push(...s.result);
+        if (s.result.length < limit) break;
+        after = s.result[s.result.length - 1]!;
       }
+      const pages = settle(samples).ms;
       const sorted = [...pages].sort((a, b) => a - b);
       const total = pages.reduce((a, b) => a + b, 0);
       console.log(`scope ${label}, pages of ${limit}: ${seen.length} ids in ${pages.length} pages, ${total.toFixed(1)} ms in all, max ${sorted.at(-1)!.toFixed(2)} ms`);
@@ -157,15 +160,16 @@ it("the unread filter pages from its own order: a cold build, every page, and 5,
     ["trash", { view: "trash" as const }],
     ["account", { view: "all" as const, accountId: all[0]!.accountId }],
   ] as const) {
-    let worst = 0;
+    const samples: Sample[] = [];
     let seen = 0;
     let cursor: { lastDate: number; id: number } | undefined;
     do {
-      const r = await timed(() => store.threads.list({ ...p, unreadOnly: true, limit: 100, cursor }));
-      worst = Math.max(worst, r.ms);
+      const r = await sampleAsync(() => store.threads.list({ ...p, unreadOnly: true, limit: 100, cursor }));
+      samples.push(r);
       seen += r.result.items.length;
       cursor = r.result.nextCursor ?? undefined;
     } while (cursor);
+    const worst = Math.max(...settle(samples).ms);
     console.log(`unread ${label}: ${seen} threads, worst page ${worst.toFixed(2)} ms`);
     expect(worst, `unread ${label}: one page`).toBeLessThanOrEqual(FRAME * MULT);
   }
@@ -242,13 +246,14 @@ it("the quick filters (plan 15) page from their own orders: with attachments and
       ["trash", { view: "trash" as const }],
       ["account", { view: "all" as const, accountId: all[0]!.accountId }],
     ] as const) {
-      let worst = 0;
+      const samples: Sample[] = [];
       let cursor: { lastDate: number; id: number } | undefined;
       do {
-        const r = await timed(() => store.threads.list({ ...p, filter, limit: 100, cursor }));
-        worst = Math.max(worst, r.ms);
+        const r = await sampleAsync(() => store.threads.list({ ...p, filter, limit: 100, cursor }));
+        samples.push(r);
         cursor = r.result.nextCursor ?? undefined;
       } while (cursor);
+      const worst = Math.max(...settle(samples).ms);
       expect(worst, `${filter} ${label}: one page`).toBeLessThanOrEqual(FRAME * MULT);
       const count = await warm(() => store.threads.scopeCount({ ...p, filter, limit: 100_001 }));
       const walk = await warm(async () => {

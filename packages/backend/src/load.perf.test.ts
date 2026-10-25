@@ -17,7 +17,8 @@
  * A slicer that didn't adapt would run over on every slice and fail. The
  * other excuse is the machine's, and only on a busy machine (timing.ts): a
  * gap in which this thread was on a CPU for at most the budget, the OS
- * holding it for the rest, rarely (two per stage, or one a second of it).
+ * holding it for the rest, rarely (two per stage, or one a second of it, at
+ * most a fifth of it in all).
  * Slices the OS held are excused the same way, and list calls lose the time
  * such a gap held them. The injected slowness is spun, on the CPU, so a
  * slicer that stopped adapting is never excused.
@@ -34,7 +35,7 @@ import { generateDataset } from "@terno/mock-data";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { BUDGET_MULTIPLIER, report, type Stat } from "../../db/src/test/perf";
-import { deschedulingAllowance, describeGap, machineBusy, sampleAsync, settle, threadCpuMs, watchLoop, type Gap } from "../../db/src/test/timing";
+import { describeGap, HOLD_LIMIT_MS, holdsExcusable, loopActiveMs, machineBusy, sampleAsync, settle, threadCpuMs, watchLoop, type Gap } from "../../db/src/test/timing";
 
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
 /** each slowed command burns this many times its own CPU time (I/O waits aren't multiplied)… */
@@ -58,6 +59,8 @@ interface CommandRun {
   cpu: number;
   /** the thread's CPU time over the whole run, the injected slowness included */
   spent: number;
+  /** the time the event loop was busy over the run (the rest it waited, idle, on timers or I/O) */
+  active: number;
 }
 let commands: CommandRun[] = [];
 /** the longest garbage collection pause of the stage */
@@ -79,6 +82,7 @@ function slowDown(target: Record<string, unknown>, names: string[]) {
     target[name] = async (...args: unknown[]) => {
       const start = performance.now();
       const startCpu = threadCpuMs();
+      const startActive = loopActiveMs();
       const cpu = process.threadCpuUsage();
       const r = await orig.apply(target, args);
       const used = process.threadCpuUsage(cpu);
@@ -95,7 +99,7 @@ function slowDown(target: Record<string, unknown>, names: string[]) {
           /* the disk is slow */
         }
       }
-      commands.push({ name, n, start, end: performance.now(), cpu: (used.user + used.system) / 1000, spent: threadCpuMs() - startCpu });
+      commands.push({ name, n, start, end: performance.now(), cpu: (used.user + used.system) / 1000, spent: threadCpuMs() - startCpu, active: loopActiveMs() - startActive });
       return r;
     };
   }
@@ -197,7 +201,8 @@ async function underLoad(name: string, fn: () => Promise<unknown>) {
   const listsHeld = m.lists
     .filter((l) => !excusedSpans.some((g) => overlap(l, g) > 0))
     .map((l) => {
-      const held = m.descheduled.reduce((a, g) => a + Math.min(overlap(l, g), g.busy - g.cpu), 0);
+      // never more than the call itself spent busy off a CPU: overlapping a hold isn't being held by it
+      const held = Math.min(l.ms - l.ours, m.descheduled.reduce((a, g) => a + Math.min(overlap(l, g), g.busy - g.cpu), 0));
       return { ...l, ms: l.ms - held, ours: Math.min(l.ours, l.ms - held) };
     });
   const listMax = Math.max(0, ...listTimes(listsHeld));
@@ -283,7 +288,9 @@ it("a disk that turns slow mid-job: one slice runs over, the next ones shrink ba
     const over = m.gaps.filter((g) => g.end > switchedAt);
     const after = m.commands.filter((r) => r.name === "act" && r.start >= switchedAt);
     // a slice the OS held: off a CPU for most of it (the injected slowness is spun, so it never is)
-    const held = (r: CommandRun) => r.end - r.start - r.spent > (r.end - r.start) / 2;
+    // busy off a CPU (not idle on a timer or I/O) for most of it, with at most the budget of CPU, under the hold limit
+    const offCpu = (r: CommandRun) => r.active - r.spent;
+    const held = (r: CommandRun) => offCpu(r) > (r.end - r.start) / 2 && r.spent <= BUDGET && r.end - r.start <= HOLD_LIMIT_MS;
     stats.push({
       name: `slow disk mid-job: switched at a slice of ${after[0]?.n ?? "?"} items; stalls over budget after it: ${over.map((g) => `${describeGap(g)}${m.descheduled.includes(g) ? " descheduled" : ""}${m.commands.some((r) => r.start < g.end && r.end > g.start) ? "" : ", no command"}`).join(", ") || "none"}; slices after: ${after.slice(0, 8).map((r) => `${r.n}→${(r.end - r.start).toFixed(0)} ms`).join(", ")}; longest GC ${longestGc.toFixed(0)} ms`,
       budgetMs: 50,
@@ -303,7 +310,7 @@ it("a disk that turns slow mid-job: one slice runs over, the next ones shrink ba
     const slow = after.slice(1).filter((r) => r.end - r.start > BUDGET);
     // on a busy machine, slices the OS held are excused while they are rare, as stalls are
     const heldSlow = slow.filter(held);
-    const counted = machineBusy() && heldSlow.length <= deschedulingAllowance(m.took) ? slow.filter((r) => !held(r)) : slow;
+    const counted = machineBusy() && holdsExcusable(heldSlow.map(offCpu), m.took) ? slow.filter((r) => !held(r)) : slow;
     expect(counted.length, `slices over budget after the overrun: ${slow.map(runName).join("; ")}`).toBeLessThanOrEqual(MAX_EXCUSED);
   } finally {
     blockPerItemMs = 0;
