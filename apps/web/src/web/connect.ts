@@ -4,11 +4,13 @@ import { flushAllDrafts } from "~/lib/drafts";
 import { setApp } from "~/state/app";
 import { isRpcMessage, type RpcClient, type RpcMessage, type Transport } from "@terno/core/rpc";
 import { diagSession, log } from "@terno/core/diag";
+import { L, t } from "@terno/i18n";
 import { captureUi } from "~/lib/diag";
 import { ingestWorker } from "~/lib/diag-local";
+import { carriedText } from "./carry";
 import { setWeb, type WebLifecycle } from "./lifecycle";
 import { whenDraftsSaved } from "./reload";
-import type { PageToWorker, WorkerToPage } from "./protocol";
+import type { PageToWorker, WorkerText, WorkerToPage } from "./protocol";
 
 const LOCK = "terno-backend";
 const TABS = "terno-tabs";
@@ -62,7 +64,7 @@ export async function switchStorage(client: RpcClient, target: string): Promise<
   try {
     sessionStorage.setItem(CARRY, JSON.stringify({ to: target, dump }));
   } catch {
-    throw new Error("No cabe lo que hay que llevar al otro almacenamiento: exporta tus datos, cambia y luego impórtalos.");
+    throw new Error(t("web.storage.carryTooBig"));
   }
   localStorage.setItem(pinKey(mailboxName()), target);
   const url = new URL(location.href);
@@ -82,14 +84,10 @@ async function carryOver(client: RpcClient, storage: string): Promise<void> {
     const boot = await client.call("app.bootstrap", {});
     adoptSettings(boot.settings);
     setApp({ categories: boot.categories });
-    const waiting = r.pending.drafts + r.pending.filters;
-    snack.success(`Traído de tu otro almacenamiento: ${r.categories.added + r.categories.merged} categorías, ${r.filters.added + r.filters.existing} filtros${r.drafts ? `, ${r.drafts} borradores` : ""} y tus ajustes.`, {
-      description: waiting ? `${r.pending.drafts} borradores y ${r.pending.filters} filtros de tus cuentas vuelven en cuanto las conectes.` : undefined,
-      duration: waiting ? 12_000 : undefined,
-      background: true,
-    });
+    const { message, description } = carriedText(r);
+    snack.success(message, { description, duration: description ? 12_000 : undefined, background: true });
   } catch (error) {
-    snack.error(`No se pudieron traer tus ajustes: ${error instanceof Error ? error.message : String(error)}. Siguen en el otro almacenamiento.`, { background: true });
+    snack.error(t("web.carry.failed", { error: error instanceof Error ? error.message : String(error) }), { background: true });
   }
 }
 
@@ -221,7 +219,7 @@ class Leadership {
     await granted;
   }
 
-  /** "Usar aquí": ask the owner to close its mailbox and hand the lock to this tab. */
+  /** "Use here": ask the owner to close its mailbox and hand the lock to this tab. */
   requestTakeover(): void {
     setWeb({ phase: "taking-over" });
     this.post({ type: "takeover", from: this.id });
@@ -375,7 +373,7 @@ export async function connectWorker(client: RpcClient): Promise<void> {
   const worker = new Worker(new URL("./worker/backend.worker.ts", import.meta.url), { type: "module", name: "terno-backend-worker" });
   let stopped = false;
   /** the mailbox can't be used here: stop the worker and let another tab have it (nothing is handed over by name) */
-  const fail = (code: NonNullable<WebLifecycle["code"]>, message: string) => {
+  const fail = (code: NonNullable<WebLifecycle["code"]>, message: WorkerText) => {
     if (stopped) return;
     stopped = true;
     worker.terminate();
@@ -386,7 +384,7 @@ export async function connectWorker(client: RpcClient): Promise<void> {
   worker.addEventListener("message", (e: MessageEvent<WorkerToPage>) => e.data?.type === "diag" && ingestWorker(e.data));
   worker.addEventListener("error", (e) => {
     captureUi(new Error(e.message || "worker error"), { code: "worker.failed", fields: { fatalCode: "CRASHED" } });
-    fail("CRASHED", e.message || "El motor de correo se detuvo");
+    fail("CRASHED", e.message || L("web.gate.crashed.title"));
   });
   /** another tab asked: close every handle, then hand the lock to that tab by name */
   const handOver = async (to: string) => {
@@ -419,9 +417,9 @@ export async function connectWorker(client: RpcClient): Promise<void> {
   const first = await Promise.race([next(worker, ["ready", "fatal"]), new Promise<null>((r) => worker.addEventListener("error", () => r(null)))]);
   if (!first || first.type === "fatal") {
     if (first?.type === "fatal") log.warn("worker.open_failed", { fatalCode: first.code, engine: "wasm-opfs" });
-    const message = first?.type === "fatal" ? first.message : "El motor de correo se detuvo";
+    const message = first?.type === "fatal" ? first.message : L("web.gate.crashed.title");
     fail(first?.type === "fatal" ? first.code : "CRASHED", message);
-    throw new Error(message);
+    throw new Error(typeof message === "string" ? message : message.message);
   }
   if (first.type !== "ready") throw new Error("unexpected worker message");
   // the mailbox now lives in this adapter: later opens must find it there or fail, never start empty elsewhere

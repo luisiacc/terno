@@ -1,4 +1,5 @@
 import type { Account } from "@terno/core";
+import { t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
 import { getApp } from "~/state/app";
 
@@ -47,7 +48,7 @@ export function preloadGoogle(): Promise<void> {
     script.onload = () => resolve();
     script.onerror = () => {
       loading = null;
-      reject(new Error("No se pudo cargar el inicio de sesión de Google (¿sin conexión?)"));
+      reject(new Error(t("web.google.loadFailed")));
     };
     document.head.append(script);
   });
@@ -62,7 +63,7 @@ function accessToken(clientId: string, loginHint?: string): Promise<TokenRespons
       login_hint: loginHint,
       include_granted_scopes: true,
       callback: (r) => (r.error ? reject(new Error(r.error_description || r.error)) : resolve(r)),
-      error_callback: (e) => reject(new Error(e.type === "popup_closed" ? "Se cerró la ventana de Google" : e.type === "popup_failed_to_open" ? "El navegador bloqueó la ventana de Google" : (e.message ?? e.type))),
+      error_callback: (e) => reject(new Error(e.type === "popup_closed" ? t("web.google.popupClosed") : e.type === "popup_failed_to_open" ? t("web.google.popupBlocked") : (e.message ?? e.type))),
     });
     tokens.requestAccessToken({ prompt: loginHint ? "" : "consent" });
   });
@@ -75,9 +76,9 @@ function accessToken(clientId: string, loginHint?: string): Promise<TokenRespons
  */
 export async function connectGmailWeb(loginHint?: string): Promise<Account> {
   const clientId = getApp().settings?.gmailClientId;
-  if (!clientId) throw new Error("Añade tu Google OAuth Client ID en Ajustes → Cuentas primero (client ID).");
+  if (!clientId) throw new Error(t("web.google.noClientId"));
   await preloadGoogle();
   const token = await accessToken(clientId, loginHint);
-  if (!token.scope.split(" ").includes("https://www.googleapis.com/auth/gmail.modify")) throw new Error("Google no concedió el permiso de Gmail: vuelve a intentarlo y márcalo.");
+  if (!token.scope.split(" ").includes("https://www.googleapis.com/auth/gmail.modify")) throw new Error(t("web.google.noGmailScope"));
   return client.call("accounts.connectGmailToken", { accessToken: token.access_token, expiresIn: Number(token.expires_in) || 3600 });
 }

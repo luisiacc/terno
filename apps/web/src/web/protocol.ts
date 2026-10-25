@@ -1,4 +1,12 @@
 /** Messages between a tab and its backend worker (RPC itself flows over a dedicated MessagePort). */
+import type { Localized } from "@terno/i18n";
+
+/**
+ * Text from the worker that the page shows. The worker has no locale: its
+ * own wording travels as a catalog descriptor (L()) the page translates; a
+ * raw error (a storage engine's, the browser's) is a string, shown as is.
+ */
+export type WorkerText = Localized | string;
 
 export interface WorkerInit {
   type: "init";
@@ -32,9 +40,9 @@ export type PageToWorker =
 export type FatalCode = "SCHEMA_NEWER" | "OPEN_FAILED" | "UNAVAILABLE" | "BUILD_MISMATCH";
 
 export type WorkerToPage =
-  | { type: "progress"; message: string }
+  | { type: "progress"; message: Localized }
   | { type: "ready"; storage: string; reason: string; build: string; seeded: boolean; timings: Record<string, number> }
-  | { type: "fatal"; code: FatalCode; message: string }
+  | { type: "fatal"; code: FatalCode; message: WorkerText }
   /** every storage handle is closed: leadership may pass to another tab */
   | { type: "closed" }
   | { type: "cache-status"; status: { hit: number; miss: number; usedBytes: number; cacheBytes: number; hotBytes: number } | null }

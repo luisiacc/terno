@@ -1,6 +1,9 @@
+import { L, type Localized } from "@terno/i18n";
 import { createDemoProvider, createGmailTokenBroker, ProviderError, type ProviderRegistry } from "@terno/mail/portable";
 
-const DESKTOP_ONLY = "IMAP/SMTP necesita la app de escritorio: un navegador no puede abrir conexiones IMAP ni SMTP.";
+/** A provider error in the catalog: its message is English, `i18n` lets the renderer show it in the user's language. */
+const providerError = (text: Localized) => Object.assign(new ProviderError(text.message, false), { i18n: text });
+const desktopOnly = () => providerError(L("web.provider.desktopOnly"));
 
 /**
  * Providers a browser can run: the demo mailbox and Gmail over REST (CORS),
@@ -16,22 +19,22 @@ export function webRegistry(): ProviderRegistry {
       if (ctx.account.kind === "gmail") return gmail.provider(ctx);
       return {
         async verify() {
-          throw new ProviderError(DESKTOP_ONLY, false);
+          throw desktopOnly();
         },
         async sync() {
-          throw new ProviderError(DESKTOP_ONLY, false);
+          throw desktopOnly();
         },
         async execute() {
-          throw new ProviderError(DESKTOP_ONLY, false);
+          throw desktopOnly();
         },
         async close() {},
       };
     },
     async verifyImap() {
-      throw new ProviderError(DESKTOP_ONLY, false);
+      throw desktopOnly();
     },
     async connectGmail() {
-      throw new ProviderError("En el navegador, Gmail se conecta con el inicio de sesión de Google de esta página.", false);
+      throw providerError(L("web.provider.gmailInPage"));
     },
   };
 }

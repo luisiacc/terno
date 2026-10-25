@@ -1,10 +1,11 @@
 import { flushAllDrafts } from "~/lib/drafts";
+import { t, type TextKey } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Loader2 } from "lucide-react";
 import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { requestTakeover, takeBack } from "./connect";
-import { useWeb } from "./lifecycle";
+import { showText, useWeb, type WebLifecycle } from "./lifecycle";
 
 /**
  * A blocking screen: a modal dialog over the whole page. It takes focus (its
@@ -51,13 +52,13 @@ function Screen({ title, body, children, testId }: { title: string; body?: React
   );
 }
 
-const FATAL_TITLE: Record<string, string> = {
-  SCHEMA_NEWER: "Esta pestaña tiene una versión anterior de Terno",
-  BUILD_MISMATCH: "Esta pestaña tiene una versión anterior de Terno",
-  UNAVAILABLE: "Este navegador no puede guardar tu correo",
-  OPEN_FAILED: "No se pudo abrir tu buzón",
-  CRASHED: "El motor de correo se detuvo",
-};
+const FATAL_TITLE = {
+  SCHEMA_NEWER: "web.gate.stale.title",
+  BUILD_MISMATCH: "web.gate.stale.title",
+  UNAVAILABLE: "web.gate.unavailable.title",
+  OPEN_FAILED: "web.gate.openFailed.title",
+  CRASHED: "web.gate.crashed.title",
+} as const satisfies Record<NonNullable<WebLifecycle["code"]>, TextKey>;
 
 /**
  * The web's lifecycle over the app: one tab owns the mailbox at a time, a
@@ -68,25 +69,25 @@ export function WebGate() {
   const { phase, progress, code, message } = useWeb();
   if (phase === "starting" && progress) {
     return (
-      <Screen testId="web-starting" title={progress}>
+      <Screen testId="web-starting" title={showText(progress)}>
         <Loader2 className="size-4 animate-spin text-muted-foreground" />
       </Screen>
     );
   }
   if (phase === "elsewhere" || phase === "taking-over") {
     return (
-      <Screen testId="web-elsewhere" title="Terno está abierto en otra pestaña" body="Tu buzón solo puede estar abierto en una pestaña a la vez.">
+      <Screen testId="web-elsewhere" title={t("web.gate.elsewhere.title")} body={t("web.gate.elsewhere.body")}>
         <Button data-testid="web-use-here" disabled={phase === "taking-over"} onClick={() => requestTakeover()}>
-          {phase === "taking-over" && <Loader2 className="animate-spin" />} Usar aquí
+          {phase === "taking-over" && <Loader2 className="animate-spin" />} {t("web.gate.useHere")}
         </Button>
       </Screen>
     );
   }
   if (phase === "taken") {
     return (
-      <Screen testId="web-taken" title="Terno se abrió en otra pestaña" body="Esta pestaña ya no tiene tu buzón abierto.">
+      <Screen testId="web-taken" title={t("web.gate.taken.title")} body={t("web.gate.taken.body")}>
         <Button data-testid="web-take-back" onClick={takeBack}>
-          Usar aquí
+          {t("web.gate.useHere")}
         </Button>
       </Screen>
     );
@@ -96,16 +97,16 @@ export function WebGate() {
     return (
       <Screen
         testId="web-fatal"
-        title={FATAL_TITLE[code ?? "OPEN_FAILED"] ?? FATAL_TITLE.OPEN_FAILED!}
+        title={t(FATAL_TITLE[code ?? "OPEN_FAILED"])}
         body={
           <>
-            <p>{stale ? "Tu buzón ya usa una versión más nueva. Recarga para actualizar; no se ha cambiado nada." : "Tu correo sigue guardado tal como estaba; no se creó un buzón nuevo."}</p>
-            {message && !stale && <p className="mt-2 font-mono text-xs break-words">{message}</p>}
+            <p>{stale ? t("web.gate.stale.body") : t("web.gate.kept")}</p>
+            {message && !stale && <p className="mt-2 font-mono text-xs break-words">{showText(message)}</p>}
           </>
         }
       >
         <Button data-testid="web-reload" onClick={() => void flushAllDrafts().then(() => location.reload())}>
-          {stale ? "Recargar" : "Reintentar"}
+          {stale ? t("web.gate.reload") : t("common.retry")}
         </Button>
       </Screen>
     );

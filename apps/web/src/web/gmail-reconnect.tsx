@@ -1,6 +1,8 @@
+import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
+import { richT } from "~/lib/i18n";
 import { snack } from "~/lib/snack";
 import { useApp } from "~/state/app";
 import { connectGmailWeb, preloadGoogle } from "./google";
@@ -23,9 +25,7 @@ export function GmailReconnect() {
       {waiting.map((a) => (
         <div key={a.id} className="flex items-center gap-2">
           <RefreshCw className="size-3.5 shrink-0 text-primary" />
-          <p className="min-w-0 flex-1 truncate text-accent-foreground">
-            <span className="font-medium">{a.email}</span> espera que vuelvas a conectar Gmail
-          </p>
+          <p className="min-w-0 flex-1 truncate text-accent-foreground">{richT("web.reconnect.waiting", { email: a.email, b: (text) => <span className="font-medium">{text}</span> })}</p>
           <Button
             size="xs"
             disabled={busy !== null}
@@ -40,7 +40,7 @@ export function GmailReconnect() {
               }
             }}
           >
-            {busy === a.id && <Loader2 className="animate-spin" />} Reconectar Gmail
+            {busy === a.id && <Loader2 className="animate-spin" />} {t("web.reconnect.action")}
           </Button>
         </div>
       ))}

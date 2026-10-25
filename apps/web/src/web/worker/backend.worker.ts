@@ -10,6 +10,7 @@ import { BackendCore } from "@terno/backend/portable";
 import { captureError, installDiag, log, type DiagEntry, type DiagOptions, type ErrorRecord } from "@terno/core/diag";
 import { isRpcMessage, type HostInfo, type RpcMessage, type Transport } from "@terno/core/rpc";
 import { adaptPageCache, cacheBytesFor, databaseBytes, setCacheBytes, sqlDb, SqlMailStore } from "@terno/db/wasm";
+import { L } from "@terno/i18n";
 import type { MailStore, Platform } from "@terno/store";
 import type { PageToWorker, WorkerInit, WorkerToPage } from "../protocol";
 import { webCipher } from "./cipher";
@@ -116,7 +117,7 @@ async function start(init: WorkerInit): Promise<void> {
   }
   // Única's storage takes its Terno names first (this tab holds both Web Locks); a failure deletes nothing and opens nothing
   const migrationFailed = (error: unknown) =>
-    post({ type: "fatal", code: "OPEN_FAILED", message: `No se pudo pasar tu correo de Única a Terno (${error instanceof Error ? error.message : String(error)}). No se ha borrado nada: recarga para volver a intentarlo.` });
+    post({ type: "fatal", code: "OPEN_FAILED", message: L("web.worker.migrationFailed", { error: error instanceof Error ? error.message : String(error) }) });
   const moved: string[] = [];
   const note = (message: string) => console.warn(`[storage] ${message}`);
   try {
@@ -185,7 +186,7 @@ async function start(init: WorkerInit): Promise<void> {
   });
   let seeded = false;
   if (init.demo) {
-    post({ type: "progress", message: "Creando el buzón de demostración…" });
+    post({ type: "progress", message: L("web.worker.seedingDemo") });
     // the mock generator is its own chunk: release builds never load it
     const { seedDemo } = await import("@terno/backend/demo");
     if (await seedDemo(store, init.demo)) {

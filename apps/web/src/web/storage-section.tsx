@@ -1,3 +1,4 @@
+import { t } from "@terno/i18n";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { useState } from "react";
 import { snack } from "~/lib/snack";
@@ -6,7 +7,7 @@ import { client } from "~/rpc/connection";
 import { switchStorage } from "./connect";
 import { useWeb } from "./lifecycle";
 
-const mib = (n: number | null) => (n === null ? "?" : `${Math.round(n / 2 ** 20)} MB`);
+const mib = (n: number | null) => (n === null ? "?" : t("web.storage.megabytes", { n: Math.round(n / 2 ** 20) }));
 
 const ENGINES = [
   { value: "opfs-sqlite", label: "SQLite (OPFS)" },
@@ -17,31 +18,27 @@ const engineLabel = (id: string | null) => ENGINES.find((e) => e.value === id)?.
 /** OPFS (its sync handles exist only inside the worker; the page can see the directory API); IndexedDB is everywhere. */
 const opfsAvailable = () => typeof navigator.storage?.getDirectory === "function";
 
-/** Ajustes → Datos on the web: whether the browser may evict the mailbox, and which engine holds it. */
+/** Settings → Data on the web: whether the browser may evict the mailbox, and which engine holds it. */
 export function StorageSection() {
   const persistence = useWeb((s) => s.persistence);
   const storage = useWeb((s) => s.storage);
   const [target, setTarget] = useState<string | null>(null);
   const state = persistence?.state ?? "unsupported";
   return (
-    <SettingsGroup title="Almacenamiento en este navegador" testId="storage-section">
+    <SettingsGroup title={t("web.storage.title")} testId="storage-section">
       <div data-persisted={persistence?.state} data-testid="storage-persistence">
         <SettingsRow
-          label={state === "granted" ? "Persistente" : "Puede borrarse"}
-          hint={
-            state === "granted"
-              ? "El navegador no borrará tu buzón para liberar espacio."
-              : "El navegador puede borrar tu buzón si le falta espacio (o, en Safari, tras 7 días sin abrir Terno). El correo se vuelve a descargar; tus categorías, filtros, ajustes y envíos pendientes no: expórtalos de vez en cuando."
-          }
+          label={state === "granted" ? t("web.storage.persistent") : t("web.storage.evictable")}
+          hint={state === "granted" ? t("web.storage.persistentHint") : t("web.storage.evictableHint")}
         >
           {() => (
             <span className="text-xs text-muted-foreground tabular-nums" data-testid="storage-usage">
-              {mib(persistence?.usage ?? null)} de {mib(persistence?.quota ?? null)}
+              {t("web.storage.usage", { used: mib(persistence?.usage ?? null), quota: mib(persistence?.quota ?? null) })}
             </span>
           )}
         </SettingsRow>
       </div>
-      <SettingsRow label="Motor" hint="Dónde guarda Terno tu buzón en este navegador. Al cambiar, tus ajustes, categorías, filtros y borradores van contigo; el correo se descarga de nuevo.">
+      <SettingsRow label={t("web.storage.engine")} hint={t("web.storage.engineHint")}>
         {({ id: _id, ...a }) => (
           <Select value={storage ?? undefined} onValueChange={(v) => v !== storage && setTarget(v as string)} items={ENGINES.map((e) => ({ ...e }))}>
             <SelectTrigger {...a} size="sm" className="w-40" data-testid="storage-engine">
@@ -61,9 +58,9 @@ export function StorageSection() {
         open={target !== null}
         onOpenChange={(o) => !o && setTarget(null)}
         testId="storage-switch-dialog"
-        title={`¿Pasar a ${engineLabel(target)}?`}
-        description={`Terno se recarga y abre tu buzón en ${engineLabel(target)}: la primera vez, vacío; vuelve a conectar Gmail y el correo se descarga. Tus ajustes, categorías y filtros van contigo. El buzón de ${engineLabel(storage)} se queda donde está: puedes volver cuando quieras.`}
-        confirm={`Pasar a ${engineLabel(target)}`}
+        title={t("web.storage.switchTitle", { engine: engineLabel(target) })}
+        description={t("web.storage.switchBody", { engine: engineLabel(target), current: engineLabel(storage) })}
+        confirm={t("web.storage.switchConfirm", { engine: engineLabel(target) })}
         onConfirm={async () => {
           if (!target) return;
           try {
