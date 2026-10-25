@@ -97,31 +97,42 @@ export function installLanguageFollower(subscribe: (listener: (language: Languag
   };
 }
 
-/** The app, re-mounted once per locale change; scroll offsets and focus come back, motion resumes two frames later. */
-export function LocaleRoot({ children }: { children: ReactNode }) {
-  const epoch = useLocaleEpoch((s) => s.epoch);
-  useLayoutEffect(() => {
-    if (!restore) return;
-    const r = restore;
-    restore = null;
-    // the list's rows and the reader's messages mount over a frame or two: put the offsets back as they appear
-    const put = () => {
-      for (const [key, top] of r.scroll) {
-        const el = document.querySelector<HTMLElement>(`[data-keep-scroll="${key}"]`);
-        if (el && el.scrollTop !== top) el.scrollTop = top;
-      }
-    };
+/**
+ * After a switch's re-mount: the scroll offsets and focus come back (the
+ * list's rows and the reader's messages mount over a frame or two, so the
+ * offsets are put back as they appear), and motion resumes two frames
+ * later. Outside the component: the React Compiler would read `restore`
+ * after it is cleared.
+ */
+function restoreAfterSwitch(): void {
+  const r = restore;
+  if (!r) return;
+  restore = null;
+  const put = () => {
+    for (const [key, top] of r.scroll) {
+      const el = document.querySelector<HTMLElement>(`[data-keep-scroll="${key}"]`);
+      if (el && el.scrollTop !== top) el.scrollTop = top;
+    }
+  };
+  const focus = () => {
+    if (r.focus && document.activeElement?.id !== r.focus) document.getElementById(r.focus)?.focus({ preventScroll: true });
+  };
+  put();
+  focus();
+  requestAnimationFrame(() => {
     put();
-    if (r.focus) document.getElementById(r.focus)?.focus({ preventScroll: true });
     requestAnimationFrame(() => {
       put();
-      requestAnimationFrame(() => {
-        put();
-        if (r.focus && document.activeElement?.id !== r.focus) document.getElementById(r.focus)?.focus({ preventScroll: true });
-        document.documentElement.classList.remove("motion-paused");
-      });
+      focus();
+      document.documentElement.classList.remove("motion-paused");
     });
-  }, [epoch]);
+  });
+}
+
+/** The app, re-mounted once per locale change. */
+export function LocaleRoot({ children }: { children: ReactNode }) {
+  const epoch = useLocaleEpoch((s) => s.epoch);
+  useLayoutEffect(() => restoreAfterSwitch(), [epoch]);
   return <Fragment key={epoch}>{children}</Fragment>;
 }
 

@@ -4,8 +4,8 @@ import { Input } from "@terno/ui/components/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Switch } from "@terno/ui/components/switch";
 import { Keyboard } from "lucide-react";
-import { Suspense, useState } from "react";
-import { isLanguageSetting, LOCALE_IDS, LOCALES, resolveLocale, t } from "@terno/i18n";
+import { Suspense, useRef, useState } from "react";
+import { isLanguageSetting, LOCALE_IDS, LOCALES, resolveLocale, t, type LanguageSetting } from "@terno/i18n";
 import { setApp } from "~/state/app";
 import { applyLanguage } from "~/lib/i18n";
 import { MacSection } from "~/lib/web-parts";
@@ -109,6 +109,7 @@ const density = () =>
 
 /** Language: System (what it resolves to now), then each language by its own name. */
 function LanguageRow({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
+  const chosen = useRef<LanguageSetting | null>(null);
   const system = LOCALES[resolveLocale("system", navigator.languages?.length ? navigator.languages : [navigator.language])].name;
   const items = [{ value: "system", label: t("language.system", { language: system }) }, ...LOCALE_IDS.map((id) => ({ value: id, label: LOCALES[id].name }))];
   return (
@@ -117,9 +118,17 @@ function LanguageRow({ settings, update }: { settings: AppSettings; update: Sett
         <Select
           value={settings.language}
           onValueChange={(v) => {
-            if (!isLanguageSetting(v)) return;
-            // switched here first so focus comes back to this control after the app re-renders in the new language
-            void update({ language: v }).then(() => applyLanguage(v, "language-select"));
+            if (isLanguageSetting(v) && v !== settings.language) chosen.current = v;
+          }}
+          // the app re-mounts in the new language only once the list has closed (re-mounting an open
+          // popup breaks Base UI); switched here first so focus comes back to this control
+          onOpenChangeComplete={(open) => {
+            const v = chosen.current;
+            if (open || !v) return;
+            chosen.current = null;
+            const was = settings.language;
+            void applyLanguage(v, "language-select");
+            void update({ language: v }).catch(() => applyLanguage(was));
           }}
           items={items}
         >
