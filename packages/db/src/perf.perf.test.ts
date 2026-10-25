@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { applyThreadAction } from "./actions";
 import { openDatabase } from "./index";
-import { getCounts, getThread, listThreads } from "./queries";
+import { countScopeThreads, getCounts, getThread, listThreads, scopeThreadIds } from "./queries";
 import { countScope } from "./categorize-bulk";
 import { addThreadsToCategory } from "./repos";
 import { findRuleMatches } from "./rules";
@@ -157,5 +157,58 @@ describe("filters & suggestions", () => {
     addThreadsToCategory(db, category, [thread], "user");
     const sender = db.get<{ from_email: string }>("SELECT from_email FROM messages WHERE thread_id = ? AND is_sent = 0 LIMIT 1", thread)!.from_email;
     gate("bulk count: same sender, capped (snackbar chip)", 5, () => countScope(db, category, { kind: "sender", email: sender }, NOW));
+  });
+});
+
+// last: it grows the mailbox to 50k+ threads and reshapes who is unread
+describe("the unread filter (plan 12)", () => {
+  const largest = () => db.get<{ category_id: number }>("SELECT category_id FROM thread_categories GROUP BY 1 ORDER BY count(*) DESC LIMIT 1")!.category_id;
+  const accounts = () => db.all<{ id: number }>("SELECT id FROM accounts").map((a) => a.id);
+  /** every list, the header's count and a whole "select all N" walk of the filtered views */
+  function gates(label: string) {
+    const cat = largest();
+    const acct = accounts();
+    for (const view of ["inbox", "archive", "all", "starred", "trash"] as const) gate(`${label}: unread ${view}, first page`, 5, () => listThreads(db, { view, unreadOnly: true, limit: 100 }));
+    gate(`${label}: unread archive per account`, 5, (i) => listThreads(db, { view: "archive", accountId: acct[i % acct.length]!, unreadOnly: true, limit: 100 }));
+    gate(`${label}: unread largest category`, 5, () => listThreads(db, { view: "all", categoryId: cat, unreadOnly: true, limit: 100 }));
+    const deep = db.get<{ last_date: number; id: number }>("SELECT last_date, id FROM threads WHERE unread_count > 0 AND in_trash = 0 AND in_spam = 0 ORDER BY last_date DESC, id DESC LIMIT 1 OFFSET 1000");
+    if (deep) gate(`${label}: unread all mail, page at unread #1,000`, 5, () => listThreads(db, { view: "all", unreadOnly: true, limit: 100, cursor: { lastDate: deep.last_date, id: deep.id } }));
+    // the open (read) thread kept in the page: one more lookup by key
+    const open = db.get<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 AND unread_count = 0 ORDER BY last_date DESC LIMIT 1");
+    if (open) gate(`${label}: unread inbox keeping the open thread`, 5, () => listThreads(db, { view: "inbox", unreadOnly: true, keepId: open.id, limit: 100 }));
+    for (const view of ["inbox", "archive", "trash"] as const) gate(`${label}: unread count ${view} (header)`, 5, () => countScopeThreads(db, { view, unreadOnly: true, limit: 100_001 }));
+    gate(`${label}: unread count largest category`, 5, () => countScopeThreads(db, { view: "all", categoryId: cat, unreadOnly: true, limit: 100_001 }));
+    // select all N: every page of 500 ids of the filtered archive, walked whole
+    gate(`${label}: unread archive, all scope pages`, 15, () => {
+      for (let after = 0; ; ) {
+        const page = scopeThreadIds(db, { view: "archive", unreadOnly: true, after, limit: 500 });
+        if (page.length < 500) return;
+        after = page[page.length - 1]!;
+      }
+    }, 20);
+  }
+
+  it("lists, counts and pages unread threads on the perf mailbox", () => {
+    meta.unreadThreads = db.get<{ c: number }>("SELECT count(*) AS c FROM threads WHERE unread_count > 0")!.c;
+    gates("mailbox");
+  });
+
+  it("holds at 50k+ threads, with the unread far from the view (thousands unread in the inbox, a few in an archive of read mail)", () => {
+    // copies of the mailbox's threads, older, archived and read (list pages read threads and their memberships only)
+    db.exec(`INSERT INTO threads (account_id, provider_thread_id, subject, snippet, last_date, last_from_name, last_from_email, message_count, unread_count, has_attachments, is_starred, in_inbox, has_sent, in_trash, in_spam)
+      SELECT account_id, provider_thread_id || ':copy', subject, snippet, last_date - 400 * 86400000, last_from_name, last_from_email, message_count, 0, has_attachments, is_starred, 0, has_sent, 0, 0 FROM threads LIMIT 21000`);
+    db.exec("UPDATE threads SET unread_count = 0 WHERE in_inbox = 0");
+    db.exec("UPDATE threads SET unread_count = 1 WHERE in_inbox = 1");
+    db.exec("UPDATE threads SET unread_count = 1 WHERE id IN (SELECT id FROM threads WHERE in_inbox = 0 AND in_trash = 0 AND in_spam = 0 ORDER BY last_date LIMIT 20)");
+    db.exec("ANALYZE");
+    const n = db.get<{ c: number; u: number }>("SELECT count(*) AS c, sum(unread_count > 0) AS u FROM threads")!;
+    meta.threadsUnreadGate = n.c;
+    expect(n.c).toBeGreaterThanOrEqual(50_000);
+    expect(n.u).toBeGreaterThan(2_000);
+    gates("50k sparse");
+    // and every thread unread: the filter keeps nothing out
+    db.exec("UPDATE threads SET unread_count = 1");
+    db.exec("ANALYZE");
+    gates("50k all unread");
   });
 });

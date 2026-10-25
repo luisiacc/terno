@@ -127,3 +127,45 @@ it("select all N pages seek, never rescan: a 28,000-thread view, account and cat
   }
   await store.categories.delete(cat);
 }, 900_000);
+
+it("the unread filter pages from its own order: a cold build, every page, and 5,000 reads at once each within a frame", async () => {
+  const all = (await store.debug.snapshot()).threads;
+  const unread = all.filter((t) => t.unreadCount > 0);
+  console.log(`unread filter: ${unread.length} unread of ${all.length} threads`);
+  const timed = async <T>(fn: () => Promise<T>) => {
+    const t = performance.now();
+    const result = await fn();
+    return { result, ms: performance.now() - t };
+  };
+  // the first filtered page builds the order (a pass over the threads and a sort of the unread ones)
+  const cold = await timed(() => store.threads.list({ view: "inbox", unreadOnly: true, limit: 100 }));
+  console.log(`unread order, cold first page: ${cold.ms.toFixed(2)} ms`);
+  expect(cold.ms, "cold first page").toBeLessThanOrEqual(FRAME * MULT);
+  for (const [label, p] of [
+    ["inbox", { view: "inbox" as const }],
+    ["archive", { view: "archive" as const }],
+    ["trash", { view: "trash" as const }],
+    ["account", { view: "all" as const, accountId: all[0]!.accountId }],
+  ] as const) {
+    let worst = 0;
+    let seen = 0;
+    let cursor: { lastDate: number; id: number } | undefined;
+    do {
+      const r = await timed(() => store.threads.list({ ...p, unreadOnly: true, limit: 100, cursor }));
+      worst = Math.max(worst, r.ms);
+      seen += r.result.items.length;
+      cursor = r.result.nextCursor ?? undefined;
+    } while (cursor);
+    console.log(`unread ${label}: ${seen} threads, worst page ${worst.toFixed(2)} ms`);
+    expect(worst, `unread ${label}: one page`).toBeLessThanOrEqual(FRAME * MULT);
+  }
+  // 5,000 threads read at once re-sort the order once; the next page pays it
+  const inbox = all.filter((t) => t.inInbox).slice(0, 5000).map((t) => t.id);
+  await store.threads.act({ threadIds: inbox, action: "markRead", signal: null, now: NOW });
+  const after = await timed(() => store.threads.list({ view: "all", unreadOnly: true, limit: 100 }));
+  console.log(`unread page after 5,000 reads: ${after.ms.toFixed(2)} ms`);
+  expect(after.ms, "page after a bulk read").toBeLessThanOrEqual(FRAME * MULT);
+  expect(after.result.items.every((t) => t.unread && !inbox.includes(t.id))).toBe(true);
+  await store.threads.act({ threadIds: inbox, action: "markUnread", signal: null, now: NOW });
+  await store.debug.verify();
+}, 900_000);
