@@ -1,5 +1,5 @@
 import { contract, type EventName, type Events, type MethodName, type ParamsOf, type ResultOf } from "./contract";
-import { RPC_VERSION, RpcError, type RpcMessage, type Transport } from "./envelope";
+import { i18nOf, RPC_VERSION, RpcError, type I18nRef, type RpcMessage, type Transport } from "./envelope";
 
 interface Pending {
   resolve: (value: unknown) => void;
@@ -11,6 +11,8 @@ export interface RpcClientOptions {
   defaultTimeoutMs?: number;
   /** every call's outcome (diagnostics: a breadcrumb per failed or slow call) */
   observe?: (method: string, ms: number, error?: unknown) => void;
+  /** renders an error's catalog message in this side's language (the renderer: @terno/i18n translate) */
+  translate?: (message: I18nRef & { message: string }) => string;
 }
 
 export class RpcClient {
@@ -21,11 +23,13 @@ export class RpcClient {
   private detach: (() => void)[] = [];
   private readonly defaultTimeoutMs: number;
   private readonly observe?: RpcClientOptions["observe"];
+  private readonly translate?: RpcClientOptions["translate"];
   private readonly closeListeners = new Set<() => void>();
 
   constructor(transport?: Transport, options: RpcClientOptions = {}) {
     this.defaultTimeoutMs = options.defaultTimeoutMs ?? 30_000;
     this.observe = options.observe;
+    this.translate = options.translate;
     if (transport) this.attach(transport);
   }
 
@@ -95,7 +99,12 @@ export class RpcClient {
       this.pending.delete(msg.id);
       clearTimeout(p.timer);
       if (msg.ok) p.resolve(msg.r);
-      else p.reject(new RpcError(msg.e.code, msg.e.message, msg.e.details, { expected: msg.e.expected !== false, diag: msg.e.diag }));
+      else {
+        // a catalog message is shown in this side's language (the renderer passes translate; agents keep the English text)
+        const i18n = i18nOf(msg.e);
+        const message = i18n && this.translate ? this.translate({ ...i18n, message: msg.e.message }) : msg.e.message;
+        p.reject(new RpcError(msg.e.code, message, msg.e.details, { expected: msg.e.expected !== false, diag: msg.e.diag, i18n }));
+      }
     } else if (msg.t === "evt") {
       const set = this.listeners.get(msg.e);
       if (set) for (const l of set) l(msg.p);

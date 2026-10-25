@@ -17,6 +17,7 @@ const GENERAL_KEYS = [
   "syncWindowDays",
   "autoCategorize",
   "aiCategorize",
+  "language",
 ] as const;
 
 const addresses = draftAddressSchema.array().max(200);
@@ -308,7 +309,7 @@ export async function importMailbox(b: Backend, file: ExportFile): Promise<Impor
       settings = true;
     }
     const after = await readSettings(store);
-    if (after.localMode !== before.localMode || after.errorReports !== before.errorReports) await b.publishPolicy();
+    if (after.localMode !== before.localMode || after.errorReports !== before.errorReports || after.language !== before.language) await b.publishPolicy();
   }
   return {
     categories: { added, merged: data.categories.length - added },

@@ -10,6 +10,7 @@ import {
 } from "@terno/ai";
 import { AI_PROVIDER_IDS, builtinMode, canonicalThemeId, COMPATIBLE_PRESETS, CUSTOM_PREFIX, DEFAULT_THEME, type CustomTheme, type ThemeMode } from "@terno/core";
 import type { AiProfile, AiSettings, AppSettings, SettingsPatch } from "@terno/core/rpc";
+import { isLanguageSetting } from "@terno/i18n";
 import type { MailStore } from "@terno/store";
 import { unreadableSecrets } from "./keychain";
 
@@ -48,6 +49,8 @@ export const DEFAULT_SETTINGS: General = {
   autoCategorize: "auto",
   aiCategorize: false,
   errorReports: "ask",
+  // new installs follow the system: English unless it's a language Terno ships
+  language: "system",
 };
 
 const DEFAULT_PROVIDER: AiProviderId = "none";
@@ -142,9 +145,14 @@ export async function readLocalMode(store: SettingsStore): Promise<boolean> {
 }
 
 /** What the host enforces outside the backend: the network fence and whether error reports may go. */
-export async function readPolicy(store: SettingsStore): Promise<{ localMode: boolean; errorReports: AppSettings["errorReports"] }> {
+export async function readPolicy(store: SettingsStore): Promise<{ localMode: boolean; errorReports: AppSettings["errorReports"]; language: AppSettings["language"] }> {
   const s = await stored(store);
-  return { localMode: s.localMode ?? DEFAULT_SETTINGS.localMode, errorReports: s.errorReports ?? DEFAULT_SETTINGS.errorReports };
+  return { localMode: s.localMode ?? DEFAULT_SETTINGS.localMode, errorReports: s.errorReports ?? DEFAULT_SETTINGS.errorReports, language: languageOf(s) };
+}
+
+/** A stored language Terno no longer ships (or garbage) reads as "system". */
+function languageOf(s: StoredSettings): AppSettings["language"] {
+  return isLanguageSetting(s.language) ? s.language : DEFAULT_SETTINGS.language;
 }
 
 /** The mode a theme id belongs to, or null when it names nothing (unknown or deleted custom theme). */
@@ -187,7 +195,7 @@ export async function readSettings(store: SettingsStore): Promise<AppSettings> {
     capabilities: capabilities[capabilityKey(provider, profile)] ?? null,
     profiles,
   };
-  return { ...resolveThemes({ ...DEFAULT_SETTINGS, ...general }), gmailClientSecretSet: await store.secrets.has("gmailClientSecret"), gmailClientSecretUnreadable: unreadable.has("gmailClientSecret"), ai };
+  return { ...resolveThemes({ ...DEFAULT_SETTINGS, ...general, language: languageOf(s) }), gmailClientSecretSet: await store.secrets.has("gmailClientSecret"), gmailClientSecretUnreadable: unreadable.has("gmailClientSecret"), ai };
 }
 
 export class SettingsError extends Error {

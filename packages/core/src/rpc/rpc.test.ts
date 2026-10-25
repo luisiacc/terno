@@ -1,3 +1,4 @@
+import { L } from "@terno/i18n";
 import { describe, expect, it, vi } from "vitest";
 import { RpcClient } from "./client";
 import { RpcError, type Transport } from "./envelope";
@@ -38,6 +39,32 @@ describe("rpc", () => {
   it("propagates typed handler errors", async () => {
     const { client } = setup();
     await expect(client.call("threads.get", { threadId: 9 })).rejects.toMatchObject({ code: "NOT_FOUND", message: "thread 9 not found" });
+  });
+
+  it("carries a catalog message across the wire; the client renders it in its own language", async () => {
+    const handlers = {
+      "threads.get": () => {
+        throw new RpcError("NOT_FOUND", L("language.system", { language: "X" }));
+      },
+      "counts.get": () => {
+        throw Object.assign(new Error("System (Y)"), { expected: true, i18n: L("language.system", { language: "Y" }) });
+      },
+      "threads.list": () => {
+        throw Object.assign(new Error("plain"), { expected: true, i18n: { key: 1 } });
+      },
+    } as unknown as Handlers;
+    const server = new RpcServer(handlers);
+    const [clientSide, serverSide] = createMemoryTransportPair();
+    server.connect(serverSide, { clientId: "t", origin: "renderer" });
+    const english = new RpcClient(clientSide);
+    await expect(english.call("threads.get", { threadId: 1 })).rejects.toMatchObject({ message: "System (X)", i18n: { key: "language.system", params: { language: "X" } } });
+    const [c2, s2] = createMemoryTransportPair();
+    server.connect(s2, { clientId: "u", origin: "renderer" });
+    const translated = new RpcClient(c2, { translate: (m) => `${m.key}|${m.params?.language}|${m.message}` });
+    await expect(translated.call("threads.get", { threadId: 1 })).rejects.toMatchObject({ message: "language.system|X|System (X)" });
+    await expect(translated.call("counts.get", {})).rejects.toMatchObject({ message: "language.system|Y|System (Y)" });
+    // a malformed reference is ignored: the message stays as sent
+    await expect(translated.call("threads.list", { view: "inbox" })).rejects.toMatchObject({ message: "plain", i18n: undefined });
   });
 
   it("keeps the expected/unexpected verdict across the wire; only bugs reach onError", async () => {

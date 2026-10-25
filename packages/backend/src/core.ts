@@ -1,7 +1,7 @@
 import type { AiTasks } from "@terno/ai";
 import type { Account, AccountSyncState, ThreadAction } from "@terno/core";
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
-import { RpcServer, type CallContext, type HostInfo, type MethodName, type OpInfo, type Transport } from "@terno/core/rpc";
+import { RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type Transport } from "@terno/core/rpc";
 import type { ClassifierInput, IncomingMessage, MailStore, OpRow, Platform } from "@terno/store";
 import { ProviderAuthError, ProviderError, type MailProvider, type ProviderRegistry, type SyncSink } from "@terno/mail/portable";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
@@ -48,7 +48,7 @@ export interface BackendCoreOptions {
   /** backend-dev E2E only: let the demo registry's no-op verification establish an owner */
   allowDemoOwnerClaims?: boolean;
   /** the host enforces the policy outside the backend too (Electron main fences the renderer) */
-  onPolicy?: (policy: { localMode: boolean; errorReports: "ask" | "always" | "never" }) => void;
+  onPolicy?: (policy: { localMode: boolean; errorReports: "ask" | "always" | "never"; language: AppSettings["language"] }) => void;
   openExternal?: (url: string) => Promise<void>;
   now?: () => number;
   log?: (level: "info" | "warn" | "error", message: string, extra?: unknown) => void;

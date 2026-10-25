@@ -534,7 +534,7 @@ export function createHandlers(b: Backend): Handlers {
       try {
         const was = await readSettings(store);
         const next = await updateSettings(store, patch, { endpointIsLocal });
-        if (next.localMode !== was.localMode || next.errorReports !== was.errorReports) await b.publishPolicy();
+        if (next.localMode !== was.localMode || next.errorReports !== was.errorReports || next.language !== was.language) await b.publishPolicy();
         return next;
       } catch (error) {
         if (error instanceof SettingsError) throw new RpcError("BAD_REQUEST", error.message);

@@ -1,4 +1,12 @@
+import { isLocalized, type Localized } from "@terno/i18n";
+
 export const RPC_VERSION = 1 as const;
+
+/** A user-facing message the renderer translates (@terno/i18n L()); message stays the English text. */
+export interface I18nRef {
+  key: string;
+  params?: Readonly<Record<string, string | number>>;
+}
 
 export interface RpcRequest {
   v: typeof RPC_VERSION;
@@ -16,6 +24,8 @@ export interface RpcErrorPayload {
   expected?: boolean;
   /** the diagnostic code the backend logged it under */
   diag?: string;
+  /** what the message says, as a catalog key: the renderer shows it in the user's language */
+  i18n?: I18nRef;
 }
 
 export type RpcResponse =
@@ -39,20 +49,31 @@ export interface Transport {
   close(): void;
 }
 
+/** The catalog reference an error carries (set from an L() message), checked: it comes from another process. */
+export function i18nOf(error: unknown): I18nRef | undefined {
+  const ref = (error as { i18n?: unknown } | null)?.i18n;
+  if (!isLocalized(ref)) return undefined;
+  return ref.params ? { key: ref.key, params: ref.params } : { key: ref.key };
+}
+
 export class RpcError extends Error {
   /** thrown on purpose by a handler (not found, invalid input…) unless said otherwise */
   readonly expected: boolean;
   readonly diag?: string;
+  /** set when the message is a catalog message (L()): the renderer translates it */
+  readonly i18n?: I18nRef;
   constructor(
     readonly code: RpcErrorPayload["code"],
-    message: string,
+    message: string | Localized,
     readonly details?: unknown,
-    o: { expected?: boolean; diag?: string; cause?: unknown } = {},
+    o: { expected?: boolean; diag?: string; cause?: unknown; i18n?: I18nRef } = {},
   ) {
-    super(message, o.cause === undefined ? undefined : { cause: o.cause });
+    super(typeof message === "string" ? message : message.message, o.cause === undefined ? undefined : { cause: o.cause });
     this.name = "RpcError";
     this.expected = o.expected ?? true;
     if (o.diag) this.diag = o.diag;
+    const i18n = typeof message === "string" ? o.i18n : i18nOf({ i18n: message });
+    if (i18n) this.i18n = i18n;
   }
 }
 

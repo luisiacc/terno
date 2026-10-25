@@ -1,3 +1,4 @@
+import { LANGUAGE_SETTINGS, type LanguageSetting } from "@terno/i18n";
 import { z } from "zod";
 import {
   AI_PROVIDER_IDS,
@@ -107,6 +108,8 @@ export interface AppSettings {
   aiCategorize: boolean;
   /** anonymous error reports (builds with a DSN, outside local mode): ask each time, send, or never */
   errorReports: "ask" | "always" | "never";
+  /** the UI language: follow the system, or a locale Terno ships (@terno/i18n LOCALES) */
+  language: LanguageSetting;
 }
 
 /** The person this install belongs to (the future Terno account). Verification evidence stays in the backend. */
@@ -302,6 +305,7 @@ const settingsPatch = z.object({
   autoCategorize: z.enum(["off", "suggest", "auto"]).optional(),
   aiCategorize: z.boolean().optional(),
   errorReports: z.enum(["ask", "always", "never"]).optional(),
+  language: z.enum(LANGUAGE_SETTINGS).optional(),
 });
 export type SettingsPatch = z.output<typeof settingsPatch>;
 export { settingsPatch as settingsPatchSchema, draftAddress as draftAddressSchema };

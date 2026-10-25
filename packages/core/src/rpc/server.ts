@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { isExpected } from "../diag/error";
 import { contract, type EventName, type Events, type MethodName, type ParsedParamsOf, type ResultOf } from "./contract";
-import { RPC_VERSION, RpcError, type RpcErrorPayload, type RpcRequest, type Transport } from "./envelope";
+import { i18nOf, RPC_VERSION, RpcError, type RpcErrorPayload, type RpcRequest, type Transport } from "./envelope";
 
 export interface CallContext {
   /** identifies the connection (renderer, mcp, ws) for per-client coalescing and permissions */
@@ -27,12 +27,13 @@ export interface RpcServerOptions {
  * SettingsError, AiError…).
  */
 export function toErrorPayload(error: unknown): RpcErrorPayload {
-  if (error instanceof RpcError) return { code: error.code, message: error.message, details: error.details, expected: error.expected, ...(error.diag ? { diag: error.diag } : {}) };
+  const i18n = i18nOf(error);
+  if (error instanceof RpcError) return { code: error.code, message: error.message, details: error.details, expected: error.expected, ...(error.diag ? { diag: error.diag } : {}), ...(i18n ? { i18n } : {}) };
   if (error instanceof z.ZodError) {
     return { code: "BAD_REQUEST", message: z.prettifyError(error), details: error.issues, expected: false, diag: "rpc.handler_threw" };
   }
   const expected = isExpected(error);
-  return { code: "INTERNAL", message: error instanceof Error ? error.message : String(error), expected, ...(expected ? {} : { diag: "rpc.handler_threw" }) };
+  return { code: "INTERNAL", message: error instanceof Error ? error.message : String(error), expected, ...(expected ? {} : { diag: "rpc.handler_threw" }), ...(i18n ? { i18n } : {}) };
 }
 
 export class RpcServer {

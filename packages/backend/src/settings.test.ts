@@ -82,3 +82,34 @@ describe("appearance settings", () => {
     expect(settings.customThemes[0]).toMatchObject({ id: "mi-nord", extends: "terno-dark" });
   });
 });
+
+describe("language", () => {
+  it("new installs follow the system; a choice round-trips; anything else is refused or reads as system", async () => {
+    const { backend, client } = setup();
+    expect((await client.call("app.bootstrap", {})).settings.language).toBe("system");
+    expect((await client.call("settings.update", { language: "es" })).language).toBe("es");
+    expect((await client.call("app.bootstrap", {})).settings.language).toBe("es");
+    expect(await errorOf(client.call("settings.update", { language: "fr" as never }))).toMatchObject({ code: "BAD_REQUEST" });
+    // a stored language Terno no longer ships (or garbage) reads as system
+    setSetting(sqlDb(backend.store), "app", { language: "klingon" });
+    expect((await client.call("app.bootstrap", {})).settings.language).toBe("system");
+  });
+
+  it("tells the host (main's menus) when it changes, and only then", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "terno-settings-"));
+    const seen: string[] = [];
+    const backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, onPolicy: (p) => seen.push(p.language) });
+    const [c, s] = createMemoryTransportPair();
+    backend.connect(s, { clientId: "renderer", origin: "renderer" });
+    cleanups.push(async () => {
+      await backend.stop();
+      rmSync(dir, { recursive: true, force: true });
+    });
+    const client = new RpcClient(c);
+    await client.call("settings.update", { theme: "dark" });
+    await client.call("settings.update", { language: "es" });
+    await client.call("settings.update", { language: "es" });
+    await client.call("settings.update", { language: "system" });
+    expect(seen).toEqual(["es", "system"]);
+  });
+});

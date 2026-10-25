@@ -200,6 +200,19 @@ describe("app.import", () => {
     await expect(to.client.call("app.import", { data: { ...dump, format: "otra" } as never })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(to.mcp.call("app.import", { data: dump })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
+
+  it("carries the language; an old export without one, or with one Terno doesn't ship, leaves it alone", async () => {
+    const from = setup();
+    await from.client.call("settings.update", { language: "es" });
+    const dump = await from.client.call("app.export", {});
+    const to = setup();
+    await to.client.call("app.import", { data: dump });
+    expect((await to.client.call("app.bootstrap", {})).settings.language).toBe("es");
+    const { language: _, ...old } = dump.settings;
+    await to.client.call("app.import", { data: { ...dump, settings: old as never } });
+    await to.client.call("app.import", { data: { ...dump, settings: { ...dump.settings, language: "fr" } as never } });
+    expect((await to.client.call("app.bootstrap", {})).settings.language).toBe("es");
+  });
 });
 
 describe("AI keys are bound to the endpoint they were saved for", () => {
