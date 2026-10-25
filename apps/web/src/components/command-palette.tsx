@@ -1,7 +1,7 @@
 import type { CategoryColor } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
-import { Archive, CheckCheck, FileDown, FolderInput, Inbox, Layers, ListFilter, Mail, MailOpen, Moon, OctagonAlert, PenLine, Printer, Search, Send, Sparkles, Star, Sun, Trash2, Undo2 } from "lucide-react";
+import { Archive, CheckCheck, FileDown, FolderInput, Inbox, Layers, ListFilter, Mail, MailOpen, Moon, OctagonAlert, PenLine, Printer, RefreshCw, RotateCw, Search, Send, Sparkles, Star, Sun, Trash2, Undo2 } from "lucide-react";
 import { useState } from "react";
 import { act, openCompose, toggleStar, undoLast } from "~/lib/actions";
 import { addScopeToCategory, addToCategory } from "~/lib/categorize";
@@ -10,6 +10,7 @@ import { updateAppearance } from "~/lib/appearance";
 import { printCommand } from "~/lib/print-open";
 import { toggleUnreadFilter } from "~/lib/unread";
 import { isUnreadOnly } from "~/lib/unread-filter";
+import { checkForUpdates, installUpdate, useHasUpdates, useUpdates } from "~/lib/updates";
 import { navigate, setApp, useApp } from "~/state/app";
 import { SETTINGS_TABS } from "./settings/tabs";
 
@@ -23,6 +24,8 @@ export function CommandPalette() {
   const printable = useApp((s) => open && s.selectedId !== null && !s.scope && s.checked.size < 2 && s.compose === null);
   // the unread filter applies to a mailbox (not "Revisar")
   const filter = useApp((s) => (open && s.reviewCategoryId === null ? (isUnreadOnly(s) ? "on" : "off") : null));
+  const updatesAvailable = useHasUpdates();
+  const readyVersion = useUpdates((s) => (open && s.state?.ready && s.state.status !== "installing" ? s.state.ready.version : null));
   const [value, setValue] = useState("");
   const run = (fn: () => void) => {
     setApp({ dialog: null });
@@ -90,6 +93,16 @@ export function CommandPalette() {
             <Moon className="dark:hidden" />
             <Sun className="hidden dark:block" /> Cambiar tema
           </CommandItem>
+          {updatesAvailable && (
+            <CommandItem data-testid="palette-check-updates" value="check for updates update" onSelect={() => run(() => void checkForUpdates())}>
+              <RefreshCw /> Check for Updates…
+            </CommandItem>
+          )}
+          {readyVersion && (
+            <CommandItem data-testid="palette-restart-update" value={`restart to update ${readyVersion}`} onSelect={() => run(() => void installUpdate())}>
+              <RotateCw /> Restart to Update
+            </CommandItem>
+          )}
         </CommandGroup>
         <CommandGroup heading="Ajustes">
           {SETTINGS_TABS.map(({ value, label, icon: Icon }) => (

@@ -9,6 +9,8 @@ import { setApp } from "~/state/app";
 import { MacSection } from "~/lib/web-parts";
 import { parseSyncWindow, SYNC_WINDOW_MAX, SYNC_WINDOW_MIN } from "~/lib/settings-values";
 import { DiagnosticsSection } from "./diagnostics-section";
+import { useHasUpdates } from "~/lib/updates";
+import { UpdatesSection } from "./updates-section";
 import { SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
 
 const WEB = import.meta.env.VITE_TARGET === "web";
@@ -103,6 +105,7 @@ const DENSITY = [
 ] as const;
 
 export function GeneralTab({ settings, update, onLocalOff }: { settings: AppSettings; update: SettingsUpdate; onLocalOff: () => void }) {
+  const updates = useHasUpdates();
   return (
     <div data-testid="general-tab">
       <SettingsGroup>
@@ -164,6 +167,8 @@ export function GeneralTab({ settings, update, onLocalOff }: { settings: AppSett
           )}
         </SettingsRow>
       </SettingsGroup>
+
+      {updates && <UpdatesSection />}
 
       <DiagnosticsSection settings={settings} update={update} />
 

@@ -14,6 +14,7 @@ import { snack } from "~/lib/snack";
 import { renderProbe } from "~/lib/render-probe";
 import { useDropState } from "~/state/drag";
 import { LocalPill } from "./local-pill";
+import { UpdatePill } from "./update-pill";
 
 const VIEWS: { view: View; icon: typeof Inbox; keys?: string }[] = [
   { view: "inbox", icon: Inbox, keys: "g i" },
@@ -213,6 +214,7 @@ export function Sidebar() {
           <Plus className="size-4" /> Añadir cuenta
         </button>
       </nav>
+      <UpdatePill />
       <div className="hairline-t hairline-strong flex shrink-0 items-center gap-1 px-2 py-2">
         <Button data-testid="open-filters" variant="ghost" size="sm" className="flex-1 justify-start gap-2 text-sidebar-foreground" onClick={() => setApp({ dialog: "filters" })}>
           <Sparkles className="text-sidebar-glyph" /> Filtros

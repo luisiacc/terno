@@ -10,15 +10,17 @@ import { useWeb } from "~/web/lifecycle";
  * feeds the same pill. Nothing here polls: main pushes, the page listens.
  */
 
-const bridge = typeof window === "undefined" ? undefined : window.ternoDesktop?.updates;
+let bridge = typeof window === "undefined" ? undefined : window.ternoDesktop?.updates;
 
 interface UpdatesStore {
   state: UpdateState | null;
   /** "Later": the accent goes quiet until the next launch (the pill stays) */
   later: boolean;
+  /** this shell has the updater (state, not a call: the React Compiler caches pure-looking calls) */
+  available: boolean;
 }
 
-export const useUpdates = create<UpdatesStore>(() => ({ state: null, later: false }));
+export const useUpdates = create<UpdatesStore>(() => ({ state: null, later: false, available: Boolean(bridge) }));
 
 let started = false;
 
@@ -160,4 +162,13 @@ export async function setUpdatePrefs(prefs: { mode: UpdateMode; channel: UpdateC
   if (state) useUpdates.setState({ state });
 }
 
-export const UPDATES_AVAILABLE = Boolean(bridge);
+/** Desktop shells with the updater (the web has its own pill, an older shell none). */
+export const useHasUpdates = (): boolean => useUpdates((s) => s.available);
+
+/** e2e (render-probe builds): a stand-in for main, so the pill and Settings can be driven through every state. */
+export function setBridgeForTests(fake: NonNullable<typeof bridge>): void {
+  bridge = fake;
+  started = false;
+  useUpdates.setState({ available: true });
+  startUpdates();
+}

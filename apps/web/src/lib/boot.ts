@@ -9,6 +9,7 @@ import { applyAppearance, installAppearanceListeners, reconcileSettings, updateA
 import { exposeForTests } from "~/lib/render-probe";
 import { captureUi } from "~/lib/diag";
 import { startDiag } from "~/state/diag";
+import { setBridgeForTests, startUpdates } from "~/lib/updates";
 
 export async function boot(): Promise<void> {
   startDiag();
@@ -24,7 +25,9 @@ export async function boot(): Promise<void> {
     window.addEventListener("pagehide", () => void flushAllDrafts());
     // desktop: before any quit or update, main waits (5 s at most) until what is written is saved
     window.ternoDesktop?.onFlushDrafts?.(() => flushAllDrafts(4000));
-    exposeForTests({ updateAppearance, getApp, loadedIds: () => useList.getState().items.map((t) => t.id) });
+    // desktop: main pushes the update state (nothing is checked here)
+    startUpdates();
+    exposeForTests({ updateAppearance, getApp, loadedIds: () => useList.getState().items.map((t) => t.id), updatesBridge: setBridgeForTests });
 
     let refreshQueued = false;
     client.on("changed", ({ threadIds }) => {

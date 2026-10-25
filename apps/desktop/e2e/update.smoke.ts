@@ -183,12 +183,20 @@ test("an update downloads, Squirrel swaps the bundle and relaunches it, the prof
   const threads = await page.locator("[data-testid=thread-row]").count();
   expect(threads).toBeGreaterThan(5);
   expect((await updates<{ status: string }>("check")).status).toBe("available");
-  await updates("download");
+  // local mode: the pill offers it, and downloading is the user's second yes
+  await expect(page.getByTestId("update-pill")).toHaveText("Update 0.1.1");
+  await page.getByTestId("update-pill").click();
+  await page.getByTestId("update-download").click();
+  await page.keyboard.press("Escape");
   // ready only once Squirrel validated the bundle's signature
   await expect.poll(async () => (await state()).status, { timeout: 180_000 }).toBe("ready");
   expect((await state()).ready?.version).toBe("0.1.1");
+  // the user's way: the sidebar's accent pill, then Restart Now in its popover
+  await expect(page.getByTestId("update-pill")).toHaveText("Restart to Update");
+  await page.getByTestId("update-pill").click();
+  await expect(page.getByTestId("update-popover")).toContainText("Terno 0.1.1");
   const closed = new Promise<void>((r) => app!.once("close", () => r()));
-  void updates("install").catch(() => {});
+  await page.getByTestId("update-restart").click();
   await closed;
   app = null;
 
