@@ -218,7 +218,7 @@ class LocalDiag implements DiagSink {
         // unreadable: dropped below
       }
       localStorage.removeItem(key);
-      if (typeof m.session !== "string" || this.records.some((r) => r.context.session === m.session && (r.fatal || r.kind !== "error"))) continue;
+      if (typeof m.session !== "string" || this.records.some((r) => r.context.session === m.session && r.proc === "renderer" && r.kind === "crash")) continue;
       const ctx = diagContext();
       const record = sanitizeRecord({
         id: newId(),

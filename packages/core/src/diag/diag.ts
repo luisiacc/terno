@@ -188,6 +188,12 @@ export function breadcrumb<C extends DiagCode>(cat: CrumbCategory, code: C, fiel
   });
 }
 
+/** Forgets which failures were seen this minute (tests that capture the same failure on purpose). */
+export function resetRepeats(): void {
+  state.seen.clear();
+  state.capturesThisMinute = { minute: 0, n: 0 };
+}
+
 export function breadcrumbs(): Crumb[] {
   return state.ring.toArray();
 }

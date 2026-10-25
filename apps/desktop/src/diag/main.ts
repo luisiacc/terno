@@ -29,6 +29,7 @@ import {
   RotatingLog,
   releaseName,
   reportOffer,
+  resetRepeats,
   reportsAutomatically,
   mayReport,
   sanitizeCrumbs,
@@ -102,6 +103,7 @@ class MainDiag implements DiagSink {
   /** at the transport: what the policy let through and what it refused (the smoke test reads these) */
   readonly counters = { allowed: 0, refused: 0, sent: 0, failed: 0 };
   private sessionStartedAt = Date.now();
+  private recent = new Map<string, ErrorRecord>();
   private ringsTimer: NodeJS.Timeout | null = null;
   private testHooks = false;
   readonly channel: Channel;
@@ -245,7 +247,8 @@ class MainDiag implements DiagSink {
     const marker = runMarker.read(this.paths!.diag);
     if (!marker) return;
     const previous = this.rings!.readPrevious();
-    const explained = this.records!.list().some((r) => r.context.session === marker.session && (r.fatal || r.kind !== "error"));
+    // only main's own fatal record explains main's end (a backend or renderer crash it survived doesn't)
+    const explained = this.records!.list().some((r) => r.context.session === marker.session && r.proc === "main" && r.kind === "crash");
     if (explained) return;
     const crumbs = previous.session === marker.session ? Object.values(previous.rings).flat().sort((a, b) => a.ts - b.ts).slice(-100) : [];
     const ctx = diagContext();
@@ -268,11 +271,19 @@ class MainDiag implements DiagSink {
 
   private onRecord(record: ErrorRecord): void {
     if (!this.records) return; // too early to keep it on disk: it was logged all the same
-    if (record.fatal || record.kind !== "error") this.records.writeSync(record);
-    else void this.records.write(record);
-    this.rings?.persistSync(diagSession());
+    this.recent.set(record.id, record);
+    if (this.recent.size > 50) this.recent.delete(this.recent.keys().next().value!);
     if (reportsAutomatically(this.policy)) void this.send(record);
-    this.changed();
+    if (record.fatal || record.kind !== "error") {
+      this.records.writeSync(record);
+      this.rings?.persistSync(diagSession());
+      this.changed();
+    } else void this.records.write(record).then(() => this.changed());
+  }
+
+  /** This run's records are answered from memory (a write may still be on its way); older ones from disk. */
+  private record(id: string): ErrorRecord | null {
+    return this.recent.get(id) ?? this.records?.get(id) ?? null;
   }
 
   /** The backend's policy (it owns the settings): kept, so a backend that can't start still has one. */
@@ -350,7 +361,7 @@ class MainDiag implements DiagSink {
   async decide(ids: string[], decision: "send" | "dismiss"): Promise<{ sent: number }> {
     let sent = 0;
     for (const id of ids.slice(0, 20)) {
-      const record = this.records?.get(id);
+      const record = this.record(id);
       if (!record) continue;
       if (decision === "send") {
         // one-time approval of this report; the transport still checks local mode, the setting and the DSN
@@ -365,7 +376,7 @@ class MainDiag implements DiagSink {
 
   /** The exact event a record would send (or, for "sample", a synthetic one built the same way). */
   preview(target: string): PreviewResult | null {
-    let record = target === "sample" ? null : this.records?.get(target);
+    let record = target === "sample" ? null : this.record(target);
     if (target === "sample") {
       record = { id: newId(), ts: Date.now(), kind: "error", proc: "main", code: "diag.selftest", fields: { source: "main" }, fatal: false, crumbs: [], context: diagContext() };
       record.error = { name: "Error", message: "", frames: [] };
@@ -460,7 +471,8 @@ class MainDiag implements DiagSink {
     this.rings?.delete(`renderer#${id}`);
     // the window comes back on its own, a few times a minute at most (a page that crashes on load must not loop)
     const win = BrowserWindow.fromWebContents(wc);
-    if (!win || win.isDestroyed() || reason === "killed") return;
+    // killed too (memory pressure, Activity Monitor): a dead blank window helps nobody
+    if (!win || win.isDestroyed()) return;
     const now = Date.now();
     const recent = (this.reloads.get(id) ?? []).filter((t) => now - t < 60_000);
     if (recent.length >= RELOADS_PER_MINUTE) return;
@@ -618,6 +630,7 @@ class MainDiag implements DiagSink {
       flush: () => this.flush(),
       /** a known exception from a known line of this file: the symbolication test resolves it through the archived maps */
       throwKnown: () => {
+        resetRepeats();
         try {
           knownFailure();
         } catch (error) {
