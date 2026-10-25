@@ -68,7 +68,7 @@ function FilterStatus({ search }: { search: boolean }) {
   const n = !search && total && total.n > 0 ? ` · ${total.n.toLocaleString("en-US")}${total.capped ? "+" : ""}` : "";
   return (
     <p data-testid="unread-filter-status" className="truncate text-2xs leading-tight text-muted-foreground tabular">
-      Filtered by: <span className="text-foreground/80">Unread</span>
+      Filtered by: <span className="text-foreground">Unread</span>
       {n}
     </p>
   );
@@ -325,7 +325,8 @@ export function ThreadList() {
     shownKey.current = itemsKey;
     if (!was || !itemsKey || was === itemsKey) return;
     const [a, b] = [JSON.parse(was) as unknown[], JSON.parse(itemsKey) as unknown[]];
-    if (JSON.stringify(a.slice(0, -1)) !== JSON.stringify(b.slice(0, -1))) return;
+    // [view, account, category, review, unreadOnly, query]: only the filter differs
+    if (a[4] === b[4] || JSON.stringify([...a.slice(0, 4), a[5]]) !== JSON.stringify([...b.slice(0, 4), b[5]])) return;
     const i = useList.getState().index.get(getApp().selectedId ?? -1);
     if (i !== undefined) virtualizer.scrollToIndex(i, { align: "auto" });
   }, [itemsKey]);

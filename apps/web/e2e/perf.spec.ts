@@ -743,3 +743,45 @@ test("printing: the print document for a 100-message conversation builds in unde
   const s = stat("print document: 100 messages built", 30, samples);
   expect(s.p95).toBeLessThanOrEqual(30 * MULT);
 });
+
+test("the unread filter: ⌘L → the other list rendered within 100 ms; moving off the kept read row renders only rows on screen", async ({ app: page }) => {
+  await expect(rows(page).first()).toBeVisible();
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  const samples: number[] = [];
+  for (let i = 0; i < 16; i++) {
+    const ms = await page.evaluate(async (want) => {
+      const list = document.querySelector("[data-testid=thread-list]")!;
+      // [view, account, category, review, unreadOnly, query]
+      const shows = () => (JSON.parse(list.getAttribute("data-results-for") ?? "[]") as unknown[])[4] === want;
+      const t0 = performance.now();
+      const mac = navigator.platform.includes("Mac");
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "l", metaKey: mac, ctrlKey: !mac, cancelable: true }));
+      await new Promise<void>((resolve) => {
+        if (shows()) return resolve();
+        const mo = new MutationObserver(() => {
+          if (!shows()) return;
+          mo.disconnect();
+          resolve();
+        });
+        mo.observe(list, { attributes: true, attributeFilter: ["data-results-for"] });
+      });
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      return performance.now() - t0;
+    }, i % 2 === 0);
+    samples.push(ms);
+  }
+  const s = stat("unread filter: ⌘L → list rendered (+1 frame)", 100, samples.slice(2));
+  // off again after 16 toggles; on, with the open thread read and kept: j moves off it and it leaves
+  await page.keyboard.press("ControlOrMeta+l");
+  await expect(page.locator("[data-testid=thread-row]:not([data-unread])")).toHaveCount(1);
+  const mounted = await rows(page).count();
+  const before = await renders(page, "ThreadRow");
+  await page.keyboard.press("j");
+  await expect(page.locator("[data-testid=thread-row]:not([data-unread])")).toHaveCount(0);
+  await page.waitForTimeout(200);
+  const moved = (await renders(page, "ThreadRow")) - before;
+  stats.push({ name: `ThreadRow renders moving off the kept row: ${moved} (rows mounted ${mounted})`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+  // the rows below it slide up a place (a mounted row renders for its new place, the cursor's two for the move), nothing past the DOM window
+  expect(moved).toBeLessThanOrEqual(mounted * 2);
+  expect(s.p95).toBeLessThanOrEqual(100 * MULT);
+});
