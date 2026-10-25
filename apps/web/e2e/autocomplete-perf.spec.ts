@@ -4,11 +4,13 @@
  * caret at the start, the middle and the end: typing with suggestions on is
  * measured against the same typing with them off, interleaved (a paired
  * measurement: whatever else the machine does affects both), and must stay
- * within 1.15× + 2 ms; a suggestion appears within its budget after typing
- * stops; positions that may ask actually ask (counted), others don't; the
- * editor's DOM changes only by the ghost; a long session doesn't grow the
- * heap; the recipient list paints within a frame of a keystroke. An injected
- * 6 ms of work per keystroke must fail the paired gate.
+ * within 1.10× + 1 ms at the median and 1.20× + 2 ms in the slowest quarter
+ * (each the median of the rounds' ratios); a suggestion appears within its
+ * budget after typing stops; positions that may ask actually ask (counted),
+ * others don't; the editor's DOM changes only by the ghost; a long session
+ * doesn't grow the heap; the recipient list paints within a frame of a
+ * keystroke. An injected 6 ms of work per keystroke must fail the paired
+ * gate.
  */
 import type { CDPSession, Page } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
