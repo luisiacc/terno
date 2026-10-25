@@ -443,7 +443,7 @@ for (const scheme of ["light", "dark"] as const) {
   });
 }
 
-test("contrast: axe's color-contrast rule passes on every tab in all 13 themes", async ({ app: page, server }) => {
+test("contrast: axe's color-contrast rule passes on every tab in every built-in theme", async ({ app: page, server }) => {
   test.setTimeout(240_000);
   for (const theme of THEMES) {
     await setMode(server, page, theme.mode === "light" ? { theme: "light", lightTheme: theme.id } : { theme: "dark", darkTheme: theme.id });

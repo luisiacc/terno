@@ -1,4 +1,4 @@
-import { CUSTOM_PREFIX, customThemeSchema, MAX_CUSTOM_THEMES, THEME_TOKENS, type CustomTheme, type ThemeMode } from "@terno/core";
+import { CUSTOM_PREFIX, DESIGN_PALETTE, customThemeSchema, MAX_CUSTOM_THEMES, THEME_TOKENS, type CustomTheme, type ThemeMode } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
 import { Button } from "@terno/ui/components/button";
 import { Textarea } from "@terno/ui/components/textarea";
@@ -10,6 +10,9 @@ import { Check, Copy, Pencil, Trash2, Upload } from "lucide-react";
 import { t } from "@terno/i18n";
 import { useId, useRef, useState } from "react";
 import { snack } from "~/lib/snack";
+import { DESIGNS, designById, type DesignDefinition } from "@terno/ui/designs/index";
+import { designDescription, designName } from "~/lib/design";
+import { viewLabel } from "~/lib/format";
 import { resolvedMode, resolveTheme, updateAppearance, useAppearance } from "~/lib/appearance";
 import { ConfirmDialog, SettingsGroup, SettingsRow, type RowA11y } from "./parts";
 
@@ -49,21 +52,93 @@ function ThemePreview({ theme, base }: { theme: Theme; base: string }) {
   );
 }
 
-function ThemeCard({ theme, base, selected, onSelect, note }: { theme: Theme; base: string; selected: boolean; onSelect: () => void; note?: string }) {
+function ThemeCard({ theme, base, selected, onSelect, note, name, testId }: { theme: Theme; base: string; selected: boolean; onSelect: () => void; note?: string; name?: string; testId?: string }) {
   return (
     <button
       type="button"
-      data-testid={`theme-card-${theme.id}`}
+      data-testid={testId ?? `theme-card-${theme.id}`}
       aria-pressed={selected}
       onClick={onSelect}
       className={cn("flex flex-col gap-1.5 rounded-lg p-1.5 text-left hover:bg-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none", selected && "bg-accent text-accent-foreground hover:bg-accent")}
     >
       <ThemePreview theme={theme} base={base} />
       <span className="flex w-[132px] items-center gap-1 text-xs">
-        <span className="truncate font-medium">{themeName(theme)}</span>
+        <span className="truncate font-medium">{name ?? themeName(theme)}</span>
         {selected && <Check className="ml-auto size-3.5 shrink-0 text-primary" />}
       </span>
       {note && <span className="w-[132px] text-2xs">{note}</span>}
+    </button>
+  );
+}
+
+/**
+ * A design's live mini-mock (plan 15): its own fonts, radii and variants in
+ * its own colors (the current mode), nested in its own [data-design] and
+ * [data-theme], so every style shows next to the others whatever is applied.
+ */
+function DesignPreview({ design, mode }: { design: DesignDefinition; mode: ThemeMode }) {
+  const v = design.variants;
+  const title = { fontFamily: "var(--type-list-title-family)", fontWeight: "var(--type-list-title-weight)", fontStyle: "var(--type-list-title-style)", letterSpacing: "var(--type-list-title-tracking)" } as const;
+  const section = { fontFamily: "var(--type-section-label-family)", fontWeight: "var(--type-section-label-weight)", fontStyle: "var(--type-section-label-style)" } as const;
+  return (
+    <div data-design={design.id} data-theme={design.palette[mode]} aria-hidden className="flex h-[104px] w-[168px] overflow-hidden rounded-lg border border-border bg-background font-sans text-foreground">
+      <div className="flex w-[48px] shrink-0 flex-col gap-1 bg-sidebar p-1.5">
+        {v.compose === "sidebar-pill" && <span className="h-3 rounded-full bg-primary" />}
+        {v.compose === "sidebar-outline" && <span className="h-3 rounded-[3px] bg-card shadow-hairline" />}
+        <span className="mt-0.5 h-2 rounded-[calc(var(--nav-radius)*0.4)] bg-sidebar-accent" />
+        <span className="h-1 w-8 rounded-full bg-muted-foreground" />
+        <span className="h-1 w-6 rounded-full bg-muted-foreground" />
+        <span className="mt-1 text-[8px] leading-none text-muted-foreground" style={section}>
+          {t("sidebar.categories")}
+        </span>
+        <span className="size-1.5 rounded-full bg-cat-amber" />
+        <span className="size-1.5 rounded-full bg-cat-emerald" />
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-1 bg-pane p-2">
+        <div className="flex items-center justify-between">
+          <span className="truncate text-[13px] leading-none" style={title}>
+            {viewLabel("inbox")}
+          </span>
+          {v.compose === "list-header" && <span className="size-2 rounded-[2px] border border-muted-foreground" />}
+        </div>
+        {v.quickFilters === "chips" && (
+          <div className="flex gap-0.5">
+            <span className="h-2 w-4 rounded-full bg-primary" />
+            <span className="h-2 w-5 rounded-full bg-muted" />
+            <span className="h-2 w-5 rounded-full bg-muted" />
+          </div>
+        )}
+        {[0, 1, 2].map((i) => (
+          <div key={i} className={cn("relative flex shrink-0 items-center gap-1.5 rounded-[calc(var(--row-radius)*0.5)] px-1", design.avatar.row ? "h-[22px]" : "h-[16px]", i === 1 && "bg-row-selected")}>
+            {design.avatar.row > 0 && <span className={cn("shrink-0 rounded-full", design.avatar.row > 40 ? "size-4" : "size-3.5", ["bg-cat-rose/30", "bg-cat-indigo/30", "bg-cat-emerald/30"][i])} />}
+            {!design.avatar.row && i === 0 && <span className="absolute left-0 size-1 rounded-full bg-unread" />}
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className={cn("h-1 rounded-full", i === 1 ? "w-12 bg-row-selected-foreground" : "w-10 bg-foreground")} />
+              <span className="h-0.5 w-16 rounded-full bg-muted-foreground" />
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StyleCard({ design, mode, selected, onSelect }: { design: DesignDefinition; mode: ThemeMode; selected: boolean; onSelect: () => void }) {
+  return (
+    <button
+      type="button"
+      data-testid={`design-card-${design.id}`}
+      aria-pressed={selected}
+      onClick={onSelect}
+      className={cn("flex w-[180px] flex-col gap-1.5 rounded-xl p-1.5 text-left hover:bg-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none", selected && "bg-accent text-accent-foreground hover:bg-accent")}
+    >
+      <DesignPreview design={design} mode={mode} />
+      <span className="flex items-center gap-1 px-0.5 text-sm">
+        <span className="truncate font-medium">{designName(design.id)}</span>
+        {selected && <Check className="ml-auto size-3.5 shrink-0 text-primary" />}
+      </span>
+      {/* on the accent wash, its own ink (muted text isn't held to AA there) */}
+      <span className={cn("px-0.5 text-xs", selected ? "text-accent-foreground" : "text-muted-foreground")}>{designDescription(design.id)}</span>
     </button>
   );
 }
@@ -215,15 +290,29 @@ export function AppearanceTab({ settings }: { settings: AppSettings }) {
   };
 
   const grid = (m: ThemeMode, a: RowA11y) => {
-    const selected = resolveTheme(settings, m).id;
+    const chosen = m === "light" ? settings.lightTheme : settings.darkTheme;
+    // "Style colors" is its own choice: the design's palette listed below isn't selected along with it
+    const selected = chosen === DESIGN_PALETTE ? DESIGN_PALETTE : resolveTheme(settings, m).id;
     const custom = settings.customThemes.filter((c) => c.mode === m);
     const note = m !== active ? t(APPLIES_IN[m]) : undefined;
+    const own = builtinTheme(designById(settings.design).palette[m])!;
+    // the palette chosen before designs: offered first, one click away (never applied by itself)
+    const prevId = m === "light" ? settings.previousLightTheme : settings.previousDarkTheme;
+    const prevCustom = prevId?.startsWith(CUSTOM_PREFIX) ? settings.customThemes.find((c) => `${CUSTOM_PREFIX}${c.id}` === prevId && c.mode === m) : undefined;
+    const prevTheme = !prevId || prevId === own.id ? undefined : prevCustom ? resolveCustomTheme(prevCustom) : builtinTheme(prevId);
+    const prevBase = prevCustom ? (builtinTheme(prevCustom.extends)?.id ?? prevCustom.extends) : prevTheme?.id;
     return (
       <div role="group" aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} className="-mx-1.5 flex flex-wrap gap-1" data-testid={`theme-grid-${m}`}>
-        {themesFor(m).map((theme) => (
-          <ThemeCard key={theme.id} theme={theme} base={theme.id} selected={selected === theme.id} onSelect={() => pick(m, theme.id)} note={selected === theme.id ? note : undefined} />
-        ))}
-        {custom.map((c) => {
+        <ThemeCard theme={own} base={own.id} name={t("settings.appearance.styleColors")} testId={`theme-card-design-${m}`} selected={selected === DESIGN_PALETTE} onSelect={() => pick(m, DESIGN_PALETTE)} note={selected === DESIGN_PALETTE ? note : undefined} />
+        {prevTheme && prevBase && (
+          <ThemeCard key={`previous-${prevTheme.id}`} theme={prevTheme} base={prevBase} testId={`theme-card-previous-${m}`} selected={selected === prevTheme.id} onSelect={() => pick(m, prevTheme.id)} note={t("settings.appearance.previous")} />
+        )}
+        {themesFor(m)
+          .filter((theme) => theme.id !== prevTheme?.id)
+          .map((theme) => (
+            <ThemeCard key={theme.id} theme={theme} base={theme.id} selected={selected === theme.id} onSelect={() => pick(m, theme.id)} note={selected === theme.id ? note : undefined} />
+          ))}
+        {custom.filter((c) => `${CUSTOM_PREFIX}${c.id}` !== prevTheme?.id).map((c) => {
           const theme = resolveCustomTheme(c);
           return <ThemeCard key={theme.id} theme={theme} base={builtinTheme(c.extends)?.id ?? c.extends} selected={selected === theme.id} onSelect={() => pick(m, theme.id)} note={selected === theme.id ? note : undefined} />;
         })}
@@ -233,6 +322,17 @@ export function AppearanceTab({ settings }: { settings: AppSettings }) {
 
   return (
     <div data-testid="appearance-tab">
+      <SettingsGroup>
+        <SettingsRow stacked label={t("settings.appearance.style")} hint={t("settings.appearance.style.hint")}>
+          {(a) => (
+            <div role="group" aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} className="-mx-1.5 flex flex-wrap gap-1" data-testid="design-grid">
+              {DESIGNS.map((d) => (
+                <StyleCard key={d.id} design={d} mode={mode} selected={settings.design === d.id} onSelect={() => void updateAppearance({ design: d.id })} />
+              ))}
+            </div>
+          )}
+        </SettingsRow>
+      </SettingsGroup>
       <SettingsGroup>
         <SettingsRow label={t("settings.appearance.mode")} hint={t("settings.appearance.mode.hint")}>
           {(a) => (
