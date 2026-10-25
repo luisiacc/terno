@@ -1,4 +1,4 @@
-import type { CategoryColor, MessageDetail, Reason } from "@terno/core";
+import type { Account, Category, CategoryColor, MessageDetail, Reason, ThreadDetail } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { CategoryBadge, CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
@@ -14,31 +14,23 @@ import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { act, cancelMarkRead, openCompose, scheduleMarkRead, toggleStar } from "~/lib/actions";
 import { acceptSuggestion, rejectSuggestion, removeFromCategory } from "~/lib/categorize";
 import { t } from "@terno/i18n";
-import { avatarColor, formatBytes, fullDate, initials, listDate } from "~/lib/format";
+import { formatBytes, fullDate, listDate } from "~/lib/format";
+import { SenderAvatar } from "./sender-avatar";
 import { setApp, useApp } from "~/state/app";
 import { loadThread, useThread } from "~/state/threads";
 import { printCommand } from "~/lib/print-open";
 import { HtmlBody, TextBody } from "./mail-body";
 import { MessageMenu } from "./message-menu";
 import { reasonText } from "~/lib/reasons";
-
-const AVATAR_BG: Record<string, string> = {
-  rose: "bg-cat-rose/15 text-cat-rose-ink",
-  amber: "bg-cat-amber/15 text-cat-amber-ink",
-  lime: "bg-cat-lime/15 text-cat-lime-ink",
-  emerald: "bg-cat-emerald/15 text-cat-emerald-ink",
-  cyan: "bg-cat-cyan/15 text-cat-cyan-ink",
-  indigo: "bg-cat-indigo/15 text-cat-indigo-ink",
-  violet: "bg-cat-violet/15 text-cat-violet-ink",
-  slate: "bg-cat-slate/15 text-cat-slate-ink",
-};
+import { useDesign, variant } from "~/lib/design";
+import { Kbd } from "@terno/ui/components/kbd";
 
 function ToolButton({ label, keys, onClick, children, testId, active }: { label: string; keys?: string; onClick: () => void; children: React.ReactNode; testId?: string; active?: boolean }) {
   return (
     <Tooltip>
       <TooltipTrigger
         render={
-          <Button variant="ghost" size="icon-sm" aria-label={label} data-testid={testId} onClick={onClick} className={cn("no-drag rounded-md text-muted-foreground hover:text-foreground [&_svg]:stroke-(--icon-stroke-toolbar)", active && "text-star hover:text-star")}>
+          <Button variant="ghost" size="icon-sm" aria-label={label} data-testid={testId} onClick={onClick} className={cn("no-drag rounded-md text-muted-foreground hover:text-foreground [&_svg]:[stroke-width:var(--icon-stroke-toolbar)]", active && "text-star hover:text-star")}>
             {children}
           </Button>
         }
@@ -78,7 +70,6 @@ function Message({ m, expanded, onToggle }: { m: MessageDetail; expanded: boolea
   const remoteImages = useApp((s) => s.settings?.remoteImages ?? "ask");
   const localMode = useApp((s) => s.settings?.localMode ?? true);
   const mailAppearance = useApp((s) => s.settings?.htmlMailAppearance ?? "auto");
-  const color = avatarColor(m.from.email);
   const name = m.from.name || m.from.email;
   const bodyId = `msg-body-${m.id}`;
   const people = (list: typeof m.to) => list.map((a) => a.name || a.email).join(", ");
@@ -100,10 +91,10 @@ function Message({ m, expanded, onToggle }: { m: MessageDetail; expanded: boolea
         >
           {expanded ? (
             <>
-              <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold", AVATAR_BG[color])}>{initials(name)}</span>
+              <SenderAvatar name={name} email={m.from.email} className="size-(--avatar-message) text-xs" />
               <span className="min-w-0 flex-1">
                 <span className="flex items-baseline gap-2">
-                  <span className="truncate text-base font-semibold">{name}</span>
+                  <span className="type-sender-name truncate">{name}</span>
                   {m.from.name && <span className="truncate text-xs text-muted-foreground opacity-0 group-hover/mh:opacity-100 group-focus-visible/mh:opacity-100">{m.from.email}</span>}
                   <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular">{listDate(m.date)}</span>
                 </span>
@@ -120,7 +111,7 @@ function Message({ m, expanded, onToggle }: { m: MessageDetail; expanded: boolea
             </>
           ) : (
             <>
-              <span className={cn("flex size-6 shrink-0 items-center justify-center rounded-full text-2xs font-semibold", AVATAR_BG[color])}>{initials(name)}</span>
+              <SenderAvatar name={name} email={m.from.email} className="size-(--avatar-collapsed) text-2xs" />
               <span className="shrink-0 font-medium">{name}</span>
               <span className="min-w-0 flex-1 truncate text-muted-foreground">{m.snippet}</span>
               <span className="shrink-0 text-xs text-muted-foreground tabular">{listDate(m.date)}</span>
@@ -131,7 +122,7 @@ function Message({ m, expanded, onToggle }: { m: MessageDetail; expanded: boolea
       {/* the region is always there (aria-controls); its content is mounted only while open */}
       <div id={bodyId}>
         <Expand open={expanded} onOpening={(el) => keepInView(el.closest("article") ?? el)}>
-          <div className="hairline-t ml-12" />
+          <div className="hairline-t ml-[calc(var(--avatar-message)+0.75rem)]" />
           <div className="pt-3.5 pb-5">
             {m.bodyHtml ? (
               <HtmlBody html={m.bodyHtml} messageId={m.id} remoteImages={remoteImages} localMode={localMode} appearance={mailAppearance} />
@@ -261,8 +252,127 @@ function Welcome() {
   );
 }
 
+/** The account a conversation is in, as a chip: its color and its address (or name). */
+function AccountChip({ account, full }: { account: Account; full: boolean }) {
+  return (
+    <span data-testid="reader-account" className="inline-flex h-6 items-center gap-1.5 rounded-full bg-muted px-2.5 text-xs text-muted-foreground">
+      <CategoryDot color={account.color as CategoryColor} />
+      {full ? account.email : account.displayName}
+    </span>
+  );
+}
+
+/** The account, the categories (with why and how to undo) and the engine's suggestions (y / n): the same in every design. */
+function ThreadChips({ detail, account, cats, accountChip, className }: { detail: ThreadDetail; account: Account | undefined; cats: Category[]; accountChip: false | "address" | "name"; className?: string }) {
+  const categories = useApp((s) => s.categories);
+  const thread = detail.thread;
+  return (
+    <div data-testid="thread-chips" className={cn("flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground", className)}>
+      {account && (accountChip ? <AccountChip account={account} full={accountChip === "address"} /> : <span>{account.email}</span>)}
+      {cats.map((c) => {
+        const auto = detail.categorization?.auto.find((a) => a.categoryId === c.id);
+        return (
+          <CategoryBadge key={c.id} color={c.color as CategoryColor}>
+            {c.name}
+            {auto && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      data-testid="auto-mark"
+                      aria-label={t("reader.auto.label", { category: c.name, reasons: auto.reasons.map(reasonText).join("; ") })}
+                      className="rounded-sm bg-foreground/10 px-1 text-[10px] font-medium uppercase focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                    >
+                      {t("reader.auto")}
+                    </button>
+                  }
+                />
+                <Reasons title={t("reader.auto.title", { category: c.name })} reasons={auto.reasons} hint={t("reader.auto.hint", { category: c.name })} />
+              </Tooltip>
+            )}
+            <button type="button" aria-label={auto ? t("reader.category.notIt", { category: c.name }) : t("reader.category.remove", { category: c.name })} className="text-muted-foreground hover:text-foreground" onClick={() => void removeFromCategory(c.id, [thread.id])}>
+              <X className="size-3" />
+            </button>
+          </CategoryBadge>
+        );
+      })}
+      {detail.categorization?.suggestions.map((sg, i) => {
+        const c = categories.find((x) => x.id === sg.categoryId);
+        if (!c) return null;
+        return (
+          <span key={sg.categoryId} data-testid="suggestion-chip" className="inline-flex h-5 items-center rounded-full border border-dashed border-primary/40 text-xs text-foreground">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button type="button" data-testid="suggestion-accept" onClick={() => void acceptSuggestion(thread.id, c.id)} className="inline-flex h-full items-center gap-1 rounded-l-full pr-1 pl-1.5 hover:bg-accent">
+                    <CategoryDot color={c.color as CategoryColor} />{t("reader.suggestion", { category: c.name })}{i === 0 && <Shortcut keys="y" className="ml-0.5 [&_kbd]:h-3.5 [&_kbd]:min-w-3.5 [&_kbd]:text-[10px]" />}
+                  </button>
+                }
+              />
+              <Reasons title={t("reader.suggestion.title", { category: c.name, percent: Math.round(sg.p * 100) })} reasons={sg.reasons} hint={i === 0 ? t("reader.suggestion.hint") : undefined} />
+            </Tooltip>
+            <button type="button" aria-label={t("reader.category.notIt", { category: c.name })} data-testid="suggestion-reject" onClick={() => void rejectSuggestion(thread.id, c.id)} className="inline-flex h-full items-center rounded-r-full px-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+              <X className="size-3" />
+            </button>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Who the conversation is with: the last person who wrote who isn't you (or its sender when every message is yours). */
+function senderOf(detail: ThreadDetail): { name: string; email: string } {
+  const last = [...detail.messages].reverse().find((m) => !m.isSent);
+  return last ? { name: last.from.name || last.from.email, email: last.from.email } : { name: detail.thread.fromName || detail.thread.fromEmail, email: detail.thread.fromEmail };
+}
+
+/** The subject, chips and (Lumen) sender above the conversation: the design arranges the same parts. */
+function ReaderHeader({ detail, account, cats }: { detail: ThreadDetail; account: Account | undefined; cats: Category[] }) {
+  const design = useDesign();
+  const subject = detail.thread.subject || t("common.noSubject");
+  return variant(design.variants.readerHeader, {
+    classic: (
+      <>
+        <h2 data-testid="reader-subject" className="text-xl font-semibold tracking-display text-balance">
+          {subject}
+        </h2>
+        <ThreadChips detail={detail} account={account} cats={cats} accountChip={false} className="mt-2 mb-5" />
+      </>
+    ),
+    "chips-display": (
+      <>
+        <ThreadChips detail={detail} account={account} cats={cats} accountChip="address" className="mt-4" />
+        <h2 data-testid="reader-subject" className="type-reader-subject mt-4 mb-8 text-balance">
+          {subject}
+        </h2>
+      </>
+    ),
+    "sender-card": (() => {
+      const who = senderOf(detail);
+      return (
+        <>
+          <div data-testid="sender-card" className="mt-2 flex items-center gap-4">
+            <SenderAvatar name={who.name} email={who.email} className="size-(--avatar-sender) text-lg" />
+            <div className="flex min-w-0 flex-col">
+              <span className="type-sender-name truncate">{who.name}</span>
+              {who.name !== who.email && <span className="truncate text-sm text-muted-foreground">{who.email}</span>}
+              <ThreadChips detail={detail} account={account} cats={cats} accountChip="name" className="mt-1.5" />
+            </div>
+          </div>
+          <h2 data-testid="reader-subject" className="type-reader-subject mt-8 mb-6 text-balance">
+            {subject}
+          </h2>
+        </>
+      );
+    })(),
+  });
+}
+
 export function Reader() {
   const selectedId = useApp((s) => s.selectedId);
+  const design = useDesign();
   const detail = useThread(selectedId);
   const categories = useApp((s) => s.categories);
   const accounts = useApp((s) => s.accounts);
@@ -303,7 +413,7 @@ export function Reader() {
   const account = thread ? accounts.find((a) => a.id === thread.accountId) : undefined;
 
   return (
-    <section className="flex h-full min-h-0 flex-col bg-background" data-testid="reader">
+    <section className="@container flex h-full min-h-0 flex-col bg-background" data-testid="reader">
       <div ref={toolbarRef} className="drag-region scroll-hairline flex h-[52px] shrink-0 items-center gap-3 px-3.5">
         <div className="flex items-center gap-0.5" role="group" aria-label={t("reader.group.organize")}>
         {thread?.inTrash || thread?.inSpam ? (
@@ -335,9 +445,27 @@ export function Reader() {
         </ToolButton>
         </div>
         <div className="ml-auto flex items-center gap-0.5" role="group" aria-label={t("reader.group.respond")}>
-          <ToolButton label={t("actions.reply")} keys="r" onClick={() => openCompose("reply")} testId="action-reply">
-            <Reply />
-          </ToolButton>
+          {design.variants.replyAction === "pill" ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button variant="outline" size="sm" aria-label={t("actions.reply")} data-testid="action-reply" onClick={() => openCompose("reply")} className="no-drag mr-1 h-8 gap-2 rounded-full px-3.5 font-semibold shadow-none @max-[560px]:w-8 @max-[560px]:px-0 [&_svg]:[stroke-width:var(--icon-stroke-toolbar)]">
+                    <Reply />
+                    <span className="@max-[560px]:hidden">{t("actions.reply")}</span>
+                    <Kbd className="@max-[560px]:hidden">R</Kbd>
+                  </Button>
+                }
+              />
+              <TooltipContent className="flex items-center gap-2">
+                {t("actions.reply")}
+                <Shortcut keys="r" />
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <ToolButton label={t("actions.reply")} keys="r" onClick={() => openCompose("reply")} testId="action-reply">
+              <Reply />
+            </ToolButton>
+          )}
           <ToolButton label={t("actions.replyAll")} keys="a" onClick={() => openCompose("replyAll")} testId="action-reply-all">
             <ReplyAll />
           </ToolButton>
@@ -353,7 +481,7 @@ export function Reader() {
       </div>
       <div ref={scrollerRef} data-reader-scroller data-keep-scroll="reader" className="relative min-h-0 flex-1 overflow-y-auto">
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
-        <div className="mx-auto max-w-[860px] px-7 pt-5 pb-16">
+        <div className="mx-auto max-w-(--reader-max) px-(--reader-pad-x) pt-5 pb-16">
           {!detail ? (
             <div className="space-y-3">
               <div className="h-6 w-2/3 animate-pulse rounded bg-muted" />
@@ -361,61 +489,7 @@ export function Reader() {
             </div>
           ) : (
             <>
-              <h2 data-testid="reader-subject" className="text-xl font-semibold tracking-display text-balance">
-                {thread!.subject || t("common.noSubject")}
-              </h2>
-              <div className="mt-2 mb-5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                {account && <span>{account.email}</span>}
-                {cats.map((c) => {
-                  const auto = detail.categorization?.auto.find((a) => a.categoryId === c.id);
-                  return (
-                    <CategoryBadge key={c.id} color={c.color as CategoryColor}>
-                      {c.name}
-                      {auto && (
-                        <Tooltip>
-                          <TooltipTrigger
-                            render={
-                              <button
-                                type="button"
-                                data-testid="auto-mark"
-                                aria-label={t("reader.auto.label", { category: c.name, reasons: auto.reasons.map(reasonText).join("; ") })}
-                                className="rounded-sm bg-foreground/10 px-1 text-[10px] font-medium uppercase focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                              >
-                                {t("reader.auto")}
-                              </button>
-                            }
-                          />
-                          <Reasons title={t("reader.auto.title", { category: c.name })} reasons={auto.reasons} hint={t("reader.auto.hint", { category: c.name })} />
-                        </Tooltip>
-                      )}
-                      <button type="button" aria-label={auto ? t("reader.category.notIt", { category: c.name }) : t("reader.category.remove", { category: c.name })} className="text-muted-foreground hover:text-foreground" onClick={() => void removeFromCategory(c.id, [thread!.id])}>
-                        <X className="size-3" />
-                      </button>
-                    </CategoryBadge>
-                  );
-                })}
-                {detail.categorization?.suggestions.map((sg, i) => {
-                  const c = categories.find((x) => x.id === sg.categoryId);
-                  if (!c) return null;
-                  return (
-                    <span key={sg.categoryId} data-testid="suggestion-chip" className="inline-flex h-5 items-center rounded-full border border-dashed border-primary/40 text-xs text-foreground">
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={
-                            <button type="button" data-testid="suggestion-accept" onClick={() => void acceptSuggestion(thread!.id, c.id)} className="inline-flex h-full items-center gap-1 rounded-l-full pr-1 pl-1.5 hover:bg-accent">
-                              <CategoryDot color={c.color as CategoryColor} />{t("reader.suggestion", { category: c.name })}{i === 0 && <Shortcut keys="y" className="ml-0.5 [&_kbd]:h-3.5 [&_kbd]:min-w-3.5 [&_kbd]:text-[10px]" />}
-                            </button>
-                          }
-                        />
-                        <Reasons title={t("reader.suggestion.title", { category: c.name, percent: Math.round(sg.p * 100) })} reasons={sg.reasons} hint={i === 0 ? t("reader.suggestion.hint") : undefined} />
-                      </Tooltip>
-                      <button type="button" aria-label={t("reader.category.notIt", { category: c.name })} data-testid="suggestion-reject" onClick={() => void rejectSuggestion(thread!.id, c.id)} className="inline-flex h-full items-center rounded-r-full px-1 text-muted-foreground hover:bg-accent hover:text-foreground">
-                        <X className="size-3" />
-                      </button>
-                    </span>
-                  );
-                })}
-              </div>
+              <ReaderHeader detail={detail} account={account} cats={cats} />
               <MessageMenu threadId={detail.thread.id}>
                 <div>
                   <Conversation messages={detail.messages} threadId={detail.thread.id} />

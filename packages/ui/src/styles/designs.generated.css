@@ -130,6 +130,11 @@
   --avatar-message: 32px;
   --avatar-collapsed: 32px;
   --avatar-sender: 64px;
+  --review-badge-bg: var(--accent);
+  --review-badge-fg: var(--accent-foreground);
+  --draft-bg: var(--card);
+  --draft-ring: var(--border);
+  --draft-shadow: 0 1px 2px color-mix(in oklab, var(--shadow-color) 40%, transparent), 0 8px 24px -12px var(--shadow-color);
 }
 
 [data-design="atelier"] {
@@ -261,6 +266,11 @@
   --avatar-message: 40px;
   --avatar-collapsed: 28px;
   --avatar-sender: 0px;
+  --review-badge-bg: transparent;
+  --review-badge-fg: var(--muted-foreground);
+  --draft-bg: var(--background);
+  --draft-ring: var(--border);
+  --draft-shadow: 0 0 transparent;
 }
 
 [data-design="macos"] {
@@ -392,4 +402,9 @@
   --avatar-message: 36px;
   --avatar-collapsed: 24px;
   --avatar-sender: 0px;
+  --review-badge-bg: transparent;
+  --review-badge-fg: var(--muted-foreground);
+  --draft-bg: var(--tint);
+  --draft-ring: transparent;
+  --draft-shadow: 0 0 transparent;
 }

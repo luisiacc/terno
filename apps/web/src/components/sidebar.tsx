@@ -5,7 +5,10 @@ import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, Check, Inbox, Layers, OctagonAlert, Plus, Send, Settings2, Sparkles, Star, Trash2 } from "lucide-react";
+import { Archive, Check, Inbox, Layers, OctagonAlert, Plus, Send, Settings2, Sparkles, SquarePen, Star, Trash2 } from "lucide-react";
+import { Kbd } from "@terno/ui/components/kbd";
+import { openCompose } from "~/lib/actions";
+import { useDesign, variant } from "~/lib/design";
 import { formatNumber, t } from "@terno/i18n";
 import { viewLabel } from "~/lib/format";
 import { navigate, setApp, useApp } from "~/state/app";
@@ -33,17 +36,23 @@ function NavItem({
   icon,
   label,
   count,
+  countTone = "muted",
   testId,
   dropTarget,
+  reserveEnd,
 }: {
   active: boolean;
   onClick: () => void;
   icon: React.ReactNode;
   label: string;
   count?: number;
+  /** the inbox's count in the unread color (the design decides) */
+  countTone?: "muted" | "unread";
   testId?: string;
   /** a category: rows can be dropped on it */
   dropTarget?: number;
+  /** room at the end for a control drawn over the row (a review badge) */
+  reserveEnd?: boolean;
 }) {
   renderProbe("NavItem");
   // only the item under the pointer (and the one it left) re-renders during a drag
@@ -57,9 +66,10 @@ function NavItem({
       data-drop-state={drop ?? undefined}
       onClick={onClick}
       className={cn(
-        "group flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-left text-sm text-sidebar-foreground transition-colors",
+        "group type-nav flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-left text-sidebar-foreground transition-colors",
+        reserveEnd && "pr-14",
         "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-        "data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground",
+        "data-active:type-nav-strong data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground",
         "data-[drop-state=over]:bg-drop-target data-[drop-state=over]:text-sidebar-accent-foreground data-[drop-state=over]:ring-1 data-[drop-state=over]:ring-primary data-[drop-state=over]:ring-inset",
         "data-[drop-state=already]:bg-sidebar-accent data-[drop-state=already]:text-muted-foreground",
       )}
@@ -68,7 +78,7 @@ function NavItem({
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {drop === "already" && <Check aria-label={t("sidebar.alreadyHere")} className="size-3.5 text-muted-foreground" />}
       {count ? (
-        <span data-slot="nav-count" className="inline-block text-xs tabular text-muted-foreground">
+        <span data-slot="nav-count" className={cn("inline-block text-xs tabular", countTone === "unread" ? "font-semibold text-unread-ink" : "text-muted-foreground")}>
           {formatNumber(count)}
         </span>
       ) : null}
@@ -78,10 +88,62 @@ function NavItem({
 
 function SectionTitle({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <div className="group/section mt-4 mb-0.5 flex h-5 items-center justify-between px-2">
-      <span className="text-2xs font-semibold text-muted-foreground">{children}</span>
+    <div className="group/section mt-4 mb-0.5 flex min-h-5 items-center justify-between px-2">
+      <span className="type-section-label text-muted-foreground">{children}</span>
       {action}
     </div>
+  );
+}
+
+/** Atelier: "New message" as an outlined button at the top of the sidebar, its key beside it. */
+function ComposeOutline() {
+  return (
+    <div className="shrink-0 px-2 pb-3">
+      <button type="button" data-testid="compose-button" onClick={() => openCompose("new")} className="type-compose flex h-9 w-full items-center gap-2.5 rounded-lg bg-card px-3 text-left text-foreground shadow-raised transition-[background-color,box-shadow] hover:bg-muted">
+        <SquarePen className="size-4 text-primary" />
+        <span className="min-w-0 flex-1 truncate">{t("compose.newMessage")}</span>
+        <Kbd>C</Kbd>
+      </button>
+    </div>
+  );
+}
+
+/** Lumen: "Compose" as the one solid pill in the window. */
+function ComposePill() {
+  return (
+    <div className="shrink-0 px-2.5 pb-4">
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button type="button" data-testid="compose-button" onClick={() => openCompose("new")} className="type-compose flex h-10 w-full items-center justify-center gap-2 rounded-full bg-primary px-4 text-primary-foreground shadow-[inset_0_1px_var(--highlight),0_1px_2px_var(--shadow-color)] transition-colors hover:bg-[color-mix(in_oklab,var(--primary)_88%,var(--background))]">
+              <SquarePen className="size-4" />
+              {t("list.compose")}
+            </button>
+          }
+        />
+        <TooltipContent>
+          {t("list.compose")} <Shortcut keys="c" />
+        </TooltipContent>
+      </Tooltip>
+    </div>
+  );
+}
+
+/** A category's pending suggestions as a badge in its row (Atelier, Lumen): its own control, drawn over the row's end. */
+function ReviewBadge({ id, name, n, active }: { id: number; name: string; n: number; active: boolean }) {
+  return (
+    <button
+      type="button"
+      data-testid={`nav-review-${id}`}
+      data-active={active || undefined}
+      aria-label={t("sidebar.reviewBadge", { count: n, name })}
+      title={t("sidebar.reviewBadge", { count: n, name })}
+      onClick={() => navigate({ view: "all", reviewCategoryId: id })}
+      className="absolute top-1/2 right-1.5 flex h-5 -translate-y-1/2 items-center gap-0.5 rounded-full bg-(--review-badge-bg) px-1.5 text-2xs font-semibold text-(--review-badge-fg) tabular transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
+    >
+      <Sparkles className="size-3" />
+      {formatNumber(n)}
+    </button>
   );
 }
 
@@ -93,6 +155,8 @@ export function Sidebar() {
   const accounts = useApp((s) => s.accounts);
   const categories = useApp((s) => s.categories);
   const counts = useApp((s) => s.counts);
+  const design = useDesign();
+  const inlineReview = design.variants.categoryReview === "inline-badge";
 
   const [creating, setCreating] = useState(false);
   const createCategory = async (name: string) => {
@@ -110,6 +174,7 @@ export function Sidebar() {
   return (
     <aside data-testid="sidebar" className="flex h-full min-h-0 w-full flex-col bg-sidebar text-sidebar-foreground">
       <div className="drag-region h-[52px] shrink-0" />
+      {variant(design.variants.compose, { "list-header": null, "sidebar-outline": <ComposeOutline />, "sidebar-pill": <ComposePill /> })}
       <nav data-drop-scroll className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {VIEWS.map(({ view: v, icon: Icon, keys }) => (
           <Tooltip key={v}>
@@ -122,6 +187,7 @@ export function Sidebar() {
                   icon={<Icon className="size-4" />}
                   label={viewLabel(v)}
                   count={v === "inbox" ? (accountId ? counts.inboxUnreadByAccount[accountId] : counts.inboxUnread) : undefined}
+                  countTone={v === "inbox" ? design.surfaces.inboxCount : "muted"}
                 />
               }
             />
@@ -143,7 +209,7 @@ export function Sidebar() {
           {t("sidebar.categories")}
         </SectionTitle>
         {categories.map((c) => (
-          <div key={c.id}>
+          <div key={c.id} className="relative">
             <NavItem
               testId={`nav-category-${c.id}`}
               dropTarget={c.id}
@@ -152,8 +218,12 @@ export function Sidebar() {
               icon={<CategoryDot color={c.color as CategoryColor} />}
               label={c.name}
               count={counts.categoryUnread[c.id] || undefined}
+              reserveEnd={inlineReview && (counts.categorySuggestions[c.id] ?? 0) > 0}
             />
-            {(counts.categorySuggestions[c.id] ?? 0) > 0 && (
+            {inlineReview && (counts.categorySuggestions[c.id] ?? 0) > 0 && (
+              <ReviewBadge id={c.id} name={c.name} n={counts.categorySuggestions[c.id]!} active={reviewCategoryId === c.id} />
+            )}
+            {!inlineReview && (counts.categorySuggestions[c.id] ?? 0) > 0 && (
               <button
                 type="button"
                 data-testid={`nav-review-${c.id}`}

@@ -173,7 +173,7 @@ export function TextBody({ text }: { text: string }) {
       ),
     );
   return (
-    <div className="text-base leading-relaxed whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]">
+    <div className="type-body whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]">
       {render(main)}
       {quoted && (
         <>

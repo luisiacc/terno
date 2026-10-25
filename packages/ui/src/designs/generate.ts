@@ -53,6 +53,12 @@ export function designVars(d: DesignDefinition): [string, string][] {
     ["--avatar-message", `${d.avatar.message}px`],
     ["--avatar-collapsed", `${d.avatar.collapsed}px`],
     ["--avatar-sender", `${d.avatar.senderCard}px`],
+    // token references only: the colors stay the palette's (and their pairs are in CONTRAST_PAIRS)
+    ["--review-badge-bg", d.surfaces.reviewBadge === "tinted" ? "var(--accent)" : "transparent"],
+    ["--review-badge-fg", d.surfaces.reviewBadge === "tinted" ? "var(--accent-foreground)" : "var(--muted-foreground)"],
+    ["--draft-bg", d.surfaces.draft === "tint" ? "var(--tint)" : d.surfaces.draft === "outline" ? "var(--background)" : "var(--card)"],
+    ["--draft-ring", d.surfaces.draft === "tint" ? "transparent" : "var(--border)"],
+    ["--draft-shadow", d.surfaces.draft === "card" ? "0 1px 2px color-mix(in oklab, var(--shadow-color) 40%, transparent), 0 8px 24px -12px var(--shadow-color)" : "0 0 transparent"],
   );
   return out;
 }

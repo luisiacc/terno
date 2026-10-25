@@ -11,7 +11,9 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { openCompose } from "~/lib/actions";
 import { installScrollHairline } from "~/lib/scroll-hairline";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
+import { create } from "zustand";
 import { formatNumber, t } from "@terno/i18n";
 import { viewLabel } from "~/lib/format";
 import { richT } from "~/lib/i18n";
@@ -24,7 +26,8 @@ import { client } from "~/rpc/connection";
 import { useSnack } from "~/lib/snack";
 import { ThreadMenu } from "./thread-menu";
 import { DraftsStrip } from "./drafts-strip";
-import { ROW_HEIGHT, ThreadRow } from "./thread-row";
+import { ThreadRow } from "./thread-row";
+import { registerDesignAnchor, useDesign } from "~/lib/design";
 import { LearnedBanner } from "./learned-banner";
 import { ReportRow } from "./diag/report-row";
 import { DesktopBanner, GmailReconnect } from "~/lib/web-parts";
@@ -76,6 +79,117 @@ function FilterStatus({ search }: { search: boolean }) {
   );
 }
 
+/** Search behind a button (Lumen): open while asked for or while there's a query. */
+const useSearchOpen = create<{ open: boolean }>(() => ({ open: false }));
+
+/** "/" and ⌘F: the search field, opened first where the design keeps it behind a button. */
+export function focusSearch(): void {
+  if (!searchInputRef.current) flushSync(() => useSearchOpen.setState({ open: true }));
+  searchInputRef.current?.focus();
+}
+
+function SearchField({ autoCollapse }: { autoCollapse: boolean }) {
+  const query = useApp((s) => s.query);
+  return (
+    <div className="no-drag relative">
+      <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+      <Input
+        ref={(el) => {
+          searchInputRef.current = el;
+        }}
+        data-testid="search-input"
+        value={query}
+        placeholder={t("list.search.placeholder")}
+        className="h-[30px] rounded-lg border-0 bg-tint pr-14 pl-8 text-sm shadow-none dark:bg-tint"
+        onChange={(e) => {
+          setApp({ query: e.target.value });
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            if (getApp().query) setApp({ query: "" });
+            else if (autoCollapse) {
+              // an empty field behind a button closes, and focus goes back to the button
+              useSearchOpen.setState({ open: false });
+              requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-testid=search-button]")?.focus());
+            }
+            e.currentTarget.blur();
+          } else if (e.key === "Enter" || e.key === "ArrowDown") {
+            e.currentTarget.blur();
+          }
+        }}
+        onBlur={() => autoCollapse && !getApp().query && useSearchOpen.setState({ open: false })}
+      />
+      {query ? (
+        <button
+          type="button"
+          aria-label={t("list.search.clear")}
+          className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+          onClick={() => setApp({ query: "" })}
+        >
+          <X className="size-3.5" />
+        </button>
+      ) : (
+        <Kbd className="absolute top-1/2 right-2 -translate-y-1/2">/</Kbd>
+      )}
+    </div>
+  );
+}
+
+/** The part of the day a greeting names, re-read at its next boundary and when the window comes back (no polling). */
+type DayPart = "morning" | "afternoon" | "evening";
+function useDayPart(): DayPart {
+  const part = (): DayPart => {
+    const h = new Date().getHours();
+    return h >= 5 && h < 12 ? "morning" : h >= 12 && h < 19 ? "afternoon" : "evening";
+  };
+  const [now, setNow] = useState(part);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = () => {
+      clearTimeout(timer);
+      if (document.visibilityState !== "visible") return;
+      const d = new Date();
+      const next = [5, 12, 19, 29].map((h) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0).getTime() + h * 3_600_000).find((t) => t > d.getTime())!;
+      timer = setTimeout(() => {
+        setNow(part());
+        schedule();
+      }, next - d.getTime() + 1000);
+    };
+    const onVisible = () => {
+      setNow(part());
+      schedule();
+    };
+    schedule();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
+  return now;
+}
+
+function Greeting() {
+  const part = useDayPart();
+  const first = useApp((s) => s.owner?.displayName.trim().split(/\s+/)[0] ?? "");
+  const key = part === "morning" ? "list.greeting.morning" : part === "afternoon" ? "list.greeting.afternoon" : "list.greeting.evening";
+  return <>{first ? t(key, { name: first }) : t(`${key}Plain` as const)}</>;
+}
+
+/** Under a display title or the greeting: what's unread here (the filter's status when it's on). */
+function Subtitle({ unreadOnly, search }: { unreadOnly: boolean; search: boolean }) {
+  const unread = useApp((s) =>
+    s.reviewCategoryId !== null ? null : s.categoryId !== null ? (s.counts.categoryUnread[s.categoryId] ?? 0) : s.view === "inbox" ? (s.accountId !== null ? (s.counts.inboxUnreadByAccount[s.accountId] ?? 0) : s.counts.inboxUnread) : null,
+  );
+  if (unreadOnly) return <FilterStatus search={search} />;
+  if (unread === null) return null;
+  return (
+    <p data-testid="list-subtitle" className="type-list-subtitle mt-1 truncate text-muted-foreground tabular">
+      {unread > 0 ? <span className="type-list-subtitle-strong text-unread-ink">{t("list.unreadCount", { count: unread })}</span> : t("list.caughtUp")}
+    </p>
+  );
+}
+
 function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   const view = useApp((s) => s.view);
   const category = useApp((s) => s.categories.find((c) => c.id === s.categoryId));
@@ -86,29 +200,41 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   const more = useList((s) => s.nextCursor !== null);
   const complete = useList((s) => s.complete);
   const unreadOnly = useApp(isUnreadOnly);
+  const design = useDesign();
+  const searchOpen = useSearchOpen((s) => s.open);
   // a filtered search counts what matched, not the read rows it kept in place
   const count = useList((s) => (unreadOnly ? s.items.reduce((n, t) => n + (t.unread ? 1 : 0), 0) : s.items.length));
   const title = review ? t("list.reviewTitle", { category: review.name }) : (category?.name ?? viewLabel(view));
-
-  return (
-    <div ref={hairlineRef} data-testid="list-header" className="drag-region scroll-hairline shrink-0 px-3 pb-2">
-      <div className="flex h-[52px] items-center gap-2 pl-1">
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-md font-semibold tracking-tight" data-testid="list-title">
-            {title}
-            {account && <span className="ml-1.5 text-sm font-normal tracking-normal text-muted-foreground">· {account.displayName}</span>}
-          </h1>
-          {unreadOnly && <FilterStatus search={query.trim() !== ""} />}
-        </div>
-        {query && searchMs !== null && (
-          <span data-testid="search-stats" className="shrink-0 text-2xs text-muted-foreground tabular">
-            {t(complete ? "list.search.stats" : "list.search.statsIndexing", {
-              results: more ? t("list.search.resultsMore", { count }) : t("list.search.results", { count }),
-              ms: searchMs < 1 ? "<1" : Math.round(searchMs),
-            })}
-          </span>
-        )}
-        {!review && <UnreadFilterButton active={unreadOnly} />}
+  // the greeting is the inbox's title (any account); everywhere else a design that greets shows its display title
+  const kind = design.variants.listHeader === "greeting" && view === "inbox" && !category && !review ? "greeting" : design.variants.listHeader === "title" ? "title" : "display";
+  const behindButton = design.variants.search === "button";
+  const showField = !behindButton || searchOpen || query !== "";
+  const stats = query && searchMs !== null && (
+    <span data-testid="search-stats" className="shrink-0 text-2xs text-muted-foreground tabular">
+      {t(complete ? "list.search.stats" : "list.search.statsIndexing", {
+        results: more ? t("list.search.resultsMore", { count }) : t("list.search.results", { count }),
+        ms: searchMs < 1 ? "<1" : Math.round(searchMs),
+      })}
+    </span>
+  );
+  const actions = (
+    <>
+      {!review && design.variants.quickFilters === "menu" && <UnreadFilterButton active={unreadOnly} />}
+      {behindButton && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button data-testid="search-button" variant="ghost" size="icon-sm" aria-label={t("common.search")} aria-expanded={showField} className="no-drag shrink-0 rounded-full text-muted-foreground hover:text-foreground" onClick={focusSearch}>
+                <Search />
+              </Button>
+            }
+          />
+          <TooltipContent>
+            {t("common.search")} <Shortcut keys="/" />
+          </TooltipContent>
+        </Tooltip>
+      )}
+      {design.variants.compose === "list-header" && (
         <Tooltip>
           <TooltipTrigger
             render={
@@ -121,42 +247,38 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
             {t("list.compose")} <Shortcut keys="c" />
           </TooltipContent>
         </Tooltip>
-      </div>
-      <div className="no-drag relative">
-        <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          ref={(el) => {
-            searchInputRef.current = el;
-          }}
-          data-testid="search-input"
-          value={query}
-          placeholder={t("list.search.placeholder")}
-          className="h-[30px] rounded-lg border-0 bg-tint pr-14 pl-8 text-sm shadow-none dark:bg-tint"
-          onChange={(e) => {
-            setApp({ query: e.target.value });
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              if (getApp().query) setApp({ query: "" });
-              e.currentTarget.blur();
-            } else if (e.key === "Enter" || e.key === "ArrowDown") {
-              e.currentTarget.blur();
-            }
-          }}
-        />
-        {query ? (
-          <button
-            type="button"
-            aria-label={t("list.search.clear")}
-            className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
-            onClick={() => setApp({ query: "" })}
-          >
-            <X className="size-3.5" />
-          </button>
-        ) : (
-          <Kbd className="absolute top-1/2 right-2 -translate-y-1/2">/</Kbd>
-        )}
-      </div>
+      )}
+    </>
+  );
+  const accountSuffix = account && <span className="ml-1.5 text-sm font-normal tracking-normal text-muted-foreground not-italic">· {account.displayName}</span>;
+
+  return (
+    <div ref={hairlineRef} data-testid="list-header" data-kind={kind} className="drag-region scroll-hairline shrink-0 px-3 pb-2">
+      {kind === "title" ? (
+        <div className="flex h-[52px] items-center gap-2 pl-1">
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-md font-semibold tracking-tight" data-testid="list-title">
+              {title}
+              {accountSuffix}
+            </h1>
+            {unreadOnly && <FilterStatus search={query.trim() !== ""} />}
+          </div>
+          {stats}
+          {actions}
+        </div>
+      ) : (
+        <div className="flex items-start gap-2 pt-5 pb-3 pl-2">
+          <div className="min-w-0 flex-1">
+            <h1 className={cn("truncate", kind === "greeting" ? "type-greeting" : "type-list-title")} data-testid="list-title">
+              {kind === "greeting" ? <Greeting /> : title}
+              {kind !== "greeting" && accountSuffix}
+            </h1>
+            {query && searchMs !== null ? <p className="mt-1">{stats}</p> : <Subtitle unreadOnly={unreadOnly} search={query.trim() !== ""} />}
+          </div>
+          <div className="flex shrink-0 items-center gap-0.5 pt-0.5">{actions}</div>
+        </div>
+      )}
+      {showField && <SearchField autoCollapse={behindButton} />}
     </div>
   );
 }
@@ -269,7 +391,9 @@ export function ThreadList() {
   const composing = useApp((s) => s.compose !== null);
   const showAccount = useApp((s) => s.accountId === null && s.accounts.length > 1);
   const unreadOnly = useApp(isUnreadOnly);
-  const height = compact ? ROW_HEIGHT.compact : ROW_HEIGHT.comfortable;
+  const design = useDesign();
+  const height = design.rows[compact ? "compact" : "comfortable"];
+  const layout = design.variants.row;
   const parentRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -285,6 +409,42 @@ export function ThreadList() {
     paddingEnd: dock,
     scrollPaddingEnd: dock,
   });
+
+  // a new row height (design or density): every position is recomputed before paint
+  const measuredHeight = useRef(height);
+  useLayoutEffect(() => {
+    if (measuredHeight.current === height) return;
+    measuredHeight.current = height;
+    virtualizer.measure();
+  }, [height]);
+
+  // a design switch keeps the first visible row where it was on screen, and the open thread in view if it was (plan 15, R3)
+  useEffect(
+    () =>
+      registerDesignAnchor(() => {
+        const el = parentRef.current;
+        const rows = useList.getState().items;
+        if (!el || rows.length === 0) return;
+        const oldH = measuredHeight.current;
+        const first = Math.min(rows.length - 1, Math.floor(el.scrollTop / oldH));
+        const delta = first * oldH - el.scrollTop;
+        const id = getApp().selectedId;
+        const sel = id === null ? undefined : useList.getState().index.get(id);
+        const selVisible = sel !== undefined && sel * oldH < el.scrollTop + el.clientHeight && (sel + 1) * oldH > el.scrollTop;
+        const anchorId = rows[first]!.id;
+        return () => {
+          const i = useList.getState().index.get(anchorId);
+          if (i === undefined) return;
+          const h = measuredHeight.current;
+          el.scrollTop = Math.max(0, i * h + delta * (h / oldH));
+          if (selVisible && sel !== undefined) {
+            const top = sel * h;
+            if (top < el.scrollTop || top + h > el.scrollTop + el.clientHeight - useSnack.getState().inset) virtualizer.scrollToIndex(sel, { align: "auto" });
+          }
+        };
+      }),
+    [virtualizer],
+  );
 
   // the dock came up over the open thread's row: it moves up into view, once (after the padded spacer is in)
   useEffect(() => {
@@ -371,7 +531,7 @@ export function ThreadList() {
         ) : (
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
             {virtualItems.map((v) => (
-              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} showAccount={showAccount} />
+              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} showAccount={showAccount} layout={layout} />
             ))}
           </div>
         )}

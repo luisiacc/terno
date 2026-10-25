@@ -9,23 +9,12 @@ import { ChevronDown, Forward, PenLine, ReplyAll, Send, Trash2 } from "lucide-re
 import { useEffect, useId, useRef, useState } from "react";
 import { openCompose, sendDraft } from "~/lib/compose";
 import { discardDraft, editDraft, flushDraft, restoreDiscarded, retryDraft, setDraftUi, signatureBlock, useDrafts, type DraftFields, type LocalDraft } from "~/lib/drafts";
-import { avatarColor, initials } from "~/lib/format";
+import { SenderAvatar } from "./sender-avatar";
 import { richT } from "~/lib/i18n";
 import { keepInView } from "~/lib/reader-scroll";
 import { registerUndo, snack } from "~/lib/snack";
 import { setApp, useApp } from "~/state/app";
 import { Expand } from "./expand";
-
-export const AVATAR_BG: Record<string, string> = {
-  rose: "bg-cat-rose/15 text-cat-rose-ink",
-  amber: "bg-cat-amber/15 text-cat-amber-ink",
-  lime: "bg-cat-lime/15 text-cat-lime-ink",
-  emerald: "bg-cat-emerald/15 text-cat-emerald-ink",
-  cyan: "bg-cat-cyan/15 text-cat-cyan-ink",
-  indigo: "bg-cat-indigo/15 text-cat-indigo-ink",
-  violet: "bg-cat-violet/15 text-cat-violet-ink",
-  slate: "bg-cat-slate/15 text-cat-slate-ink",
-};
 
 /** Puts focus on an element of the draft area once it is rendered and no longer inert (an opening part is inert for a frame). */
 export function focusSoon(selector: string, root: HTMLElement | null, frames = 12) {
@@ -266,11 +255,11 @@ export function DraftSlot({ threadId, draftKey, replyTo, account }: { threadId: 
   const label = !d || d.mode === "new" ? "" : formLabel(d.mode === "forward", who);
 
   return (
-    <div ref={rootRef} className="mt-5 rounded-xl bg-tint" data-testid="draft-slot" data-state={state} data-thread={threadId}>
+    <div ref={rootRef} className="mt-5 rounded-xl bg-(--draft-bg) [box-shadow:0_0_0_var(--hairline-w)_var(--draft-ring),var(--draft-shadow)]" data-testid="draft-slot" data-state={state} data-thread={threadId}>
       <Expand open={state === "bar"}>
         <div className="flex h-10 items-center gap-0.5 pr-1.5 pl-2.5" data-testid="reply-bar">
           <button type="button" onClick={() => void openCompose("reply", threadId)} data-testid="quick-reply" className="flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-lg text-left text-sm text-muted-foreground">
-            <span className={cn("flex size-[22px] shrink-0 items-center justify-center rounded-full text-[9.5px] font-semibold", AVATAR_BG[avatarColor(account?.email ?? me)])}>{initials(me)}</span>
+            <SenderAvatar name={me} email={account?.email ?? me} className="size-[22px] text-[9.5px]" />
             <span className="truncate">{t("compose.bar.reply", { name: replyTo })}</span>
           </button>
           <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" onClick={() => void openCompose("replyAll", threadId)} data-testid="quick-reply-all">

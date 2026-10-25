@@ -39,7 +39,7 @@ export const macos: DesignDefinition = {
   layout: { sidebar: "232px", listMin: "340px", listMax: "400px", readerMax: "860px", readerPadX: "1.75rem", rowRadius: "0.375rem", navRadius: "0.375rem", navHeight: "1.75rem" },
   rows: { comfortable: 68, compact: 40 },
   avatar: { row: 0, rowCompact: 0, message: 36, collapsed: 24, senderCard: 0 },
-  surfaces: { draft: "tint" },
+  surfaces: { draft: "tint", reviewBadge: "plain", inboxCount: "muted" },
   variants: {
     compose: "list-header",
     listHeader: "title",

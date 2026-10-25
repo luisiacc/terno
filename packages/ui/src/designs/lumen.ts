@@ -37,7 +37,7 @@ export const lumen: DesignDefinition = {
   layout: { sidebar: "248px", listMin: "340px", listMax: "400px", readerMax: "760px", readerPadX: "2.5rem", rowRadius: "1rem", navRadius: "0.75rem", navHeight: "2.125rem" },
   rows: { comfortable: 84, compact: 48 },
   avatar: { row: 44, rowCompact: 24, message: 32, collapsed: 32, senderCard: 64 },
-  surfaces: { draft: "card" },
+  surfaces: { draft: "card", reviewBadge: "tinted", inboxCount: "unread" },
   variants: {
     compose: "sidebar-pill",
     listHeader: "greeting",

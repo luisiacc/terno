@@ -9,7 +9,7 @@ import { loadThread, useThreads } from "~/state/threads";
 import { acceptSuggestion, rejectSuggestion } from "~/lib/categorize";
 import { printCommand } from "~/lib/print-open";
 import { checkForUpdates } from "~/lib/updates";
-import { listScroller, searchInputRef } from "~/components/thread-list";
+import { focusSearch, listScroller } from "~/components/thread-list";
 import { snackbarControls } from "~/components/category-snackbar";
 import { toggleUnreadFilter } from "~/lib/unread";
 
@@ -75,7 +75,7 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "compose.reply": () => openCompose("reply"),
   "compose.replyAll": () => openCompose("replyAll"),
   "compose.forward": () => openCompose("forward"),
-  "search.focus": () => searchInputRef.current?.focus(),
+  "search.focus": () => focusSearch(),
   "palette.open": () => setApp({ dialog: getApp().dialog === "palette" ? null : "palette" }),
   "go.inbox": () => navigate({ view: "inbox" }),
   "go.starred": () => navigate({ view: "starred" }),

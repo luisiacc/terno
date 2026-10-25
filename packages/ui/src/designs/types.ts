@@ -57,6 +57,10 @@ export interface DesignDefinition {
   surfaces: {
     /** the inline draft's surface */
     draft: "tint" | "outline" | "card";
+    /** a category's review badge (inline-badge): plain text, or on the accent wash */
+    reviewBadge: "plain" | "tinted";
+    /** the inbox's unread count in the sidebar: quiet, or in the unread color */
+    inboxCount: "muted" | "unread";
   };
   variants: DesignVariants;
 }
