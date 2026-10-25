@@ -475,6 +475,9 @@ importers:
 
   packages/i18n:
     devDependencies:
+      '@babel/parser':
+        specifier: 7.29.9
+        version: 7.29.9
       '@types/node':
         specifier: 'catalog:'
         version: 24.19.2

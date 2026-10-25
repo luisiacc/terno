@@ -12,6 +12,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
+    "@babel/parser": "7.29.9",
     "@types/node": "catalog:",
     "typescript": "catalog:"
   }
