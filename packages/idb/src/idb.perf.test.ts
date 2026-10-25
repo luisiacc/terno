@@ -169,3 +169,54 @@ it("the unread filter pages from its own order: a cold build, every page, and 5,
   await store.threads.act({ threadIds: inbox, action: "markUnread", signal: null, now: NOW });
   await store.debug.verify();
 }, 900_000);
+
+it("the unread filter's counts and select-all walks read the unread threads only: none in the view, a few, or a read crossing at a time", async () => {
+  const timed = async <T>(fn: () => Promise<T>) => {
+    const t = performance.now();
+    const result = await fn();
+    return { result, ms: performance.now() - t };
+  };
+  const count = (view: "inbox" | "archive" | "trash" | "all") => timed(() => store.threads.scopeCount({ view, unreadOnly: true, limit: 100_001 }));
+  // first use builds the ascending unread ids once
+  const cold = await count("trash");
+  console.log(`unread scope, cold count (trash): ${cold.ms.toFixed(2)} ms`);
+  expect(cold.ms, "cold count").toBeLessThanOrEqual(FRAME * MULT);
+  // against the walk of every thread id (what an unread count of an empty view did before it had its own ids)
+  const best = async (fn: () => Promise<unknown>) => {
+    let min = Infinity;
+    for (let i = 0; i < 7; i++) min = Math.min(min, (await timed(fn)).ms);
+    return min;
+  };
+  const whole = await best(() => store.threads.scopeCount({ view: "trash", limit: 100_001 }));
+  const filtered = await best(() => store.threads.scopeCount({ view: "trash", unreadOnly: true, limit: 100_001 }));
+  console.log(`trash count: every id ${whole.toFixed(2)} ms, the unread ids ${filtered.toFixed(2)} ms`);
+  expect(filtered, "an empty unread count walks the unread ids, not the mailbox").toBeLessThanOrEqual(whole / 2);
+  for (const view of ["trash", "archive", "inbox", "all"] as const) {
+    const r = await count(view);
+    let walked = 0;
+    const walk = await timed(async () => {
+      for (let after = 0; ; ) {
+        const page = await store.threads.scopeIds({ view, unreadOnly: true, after, limit: 500 });
+        walked += page.length;
+        if (page.length < 500) return;
+        after = page[page.length - 1]!;
+      }
+    });
+    console.log(`unread scope ${view}: ${r.result} counted in ${r.ms.toFixed(2)} ms, walked in ${walk.ms.toFixed(2)} ms`);
+    expect(walked).toBe(r.result);
+    // a pass over the unread threads, not the 28,400 of the mailbox (that was ~3 ms per count)
+    expect(r.ms, `${view}: count`).toBeLessThanOrEqual(1.5 * MULT);
+    expect(walk.ms, `${view}: whole walk`).toBeLessThanOrEqual(FRAME * MULT);
+  }
+  // reads one at a time (the dwell) keep the ids by binary search: the next count stays cheap
+  const unread = (await store.threads.scopeIds({ view: "all", unreadOnly: true, limit: 20 }));
+  const worst: number[] = [];
+  for (const id of unread) {
+    await store.threads.act({ threadIds: [id], action: "markRead", signal: null, now: NOW });
+    worst.push((await count("all")).ms);
+  }
+  console.log(`unread scope count after a single read: worst ${Math.max(...worst).toFixed(2)} ms`);
+  expect(Math.max(...worst), "count after a read").toBeLessThanOrEqual(1.5 * MULT);
+  await store.threads.act({ threadIds: unread, action: "markUnread", signal: null, now: NOW });
+  await store.debug.verify();
+}, 900_000);

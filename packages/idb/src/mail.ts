@@ -155,11 +155,15 @@ export class ThreadOrder {
 export class ScopeIndex {
   private threadIds: number[] | null = null;
   private readonly members = new Map<number, number[]>();
+  /** the unread ones, ascending (the unread filter's "select all N" and its count): kept by the threads that cross */
+  private unreadIds: number[] | null = null;
+  private readonly crossed = new Set<number>();
 
   constructor(db: MemDb) {
     db.onRow((table, row, prev) => {
       if (table === "threads") {
         if (!row || !prev) this.threadIds = null;
+        if (((row?.unread_count as number | undefined) ?? 0) > 0 !== ((prev?.unread_count as number | undefined) ?? 0) > 0) this.crossed.add((row ?? prev)!.id as number);
       } else if (table === "thread_categories") {
         const was = prev?.category_id as number | undefined;
         const is = row?.category_id as number | undefined;
@@ -177,6 +181,27 @@ export class ScopeIndex {
       this.threadIds = ids.sort((x, y) => x - y);
     }
     return this.threadIds;
+  }
+
+  /** every unread thread id, ascending: a few crossings are placed by binary search, many (a bulk read) rebuild once */
+  unread(c: Ctx): readonly number[] {
+    const threads = T(c, "threads");
+    if (this.unreadIds && this.crossed.size > 64) this.unreadIds = null;
+    if (!this.unreadIds) {
+      const ids: number[] = [];
+      for (const t of threads.all()) if (t.unread_count > 0) ids.push(t.id as number);
+      this.unreadIds = ids.sort((x, y) => x - y);
+    } else {
+      for (const id of this.crossed) {
+        const at = seekAfter(this.unreadIds, id - 1);
+        const listed = this.unreadIds[at] === id;
+        const unread = (threads.get(id)?.unread_count ?? 0) > 0;
+        if (listed && !unread) this.unreadIds.splice(at, 1);
+        else if (!listed && unread) this.unreadIds.splice(at, 0, id);
+      }
+    }
+    this.crossed.clear();
+    return this.unreadIds;
   }
 
   /** a category's member thread ids, ascending */
@@ -738,7 +763,8 @@ export function scopeThreadIds(c: Ctx, p: ScopeParams & { after?: number; limit:
   const threads = T(c, "threads");
   const test = VIEW_TEST[p.view];
   // ascending ids, seeked past the last page and walked until this one is full
-  const ids = p.categoryId !== undefined ? c.scopes.category(c, p.categoryId) : c.scopes.threads(c);
+  // (the unread filter: only the unread ids, so a scope of few or none never walks the read mailbox)
+  const ids = p.categoryId !== undefined ? c.scopes.category(c, p.categoryId) : p.unreadOnly ? c.scopes.unread(c) : c.scopes.threads(c);
   const out: number[] = [];
   for (let i = seekAfter(ids, p.after ?? 0); i < ids.length && out.length < p.limit; i++) {
     const t = threads.get(ids[i]!);

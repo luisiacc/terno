@@ -147,6 +147,23 @@ describe("scope actions", () => {
     expect(await client.call("threads.scopeCount", { scope: { kind: "search", query: "is:read factura", unreadOnly: true } })).toEqual({ count: 0, capped: false });
   });
 
+  it("a filtered search that matches nothing (is:read) still stops the search it supersedes", async () => {
+    const { backend, client } = setup(100);
+    const signals: { readonly aborted: boolean }[] = [];
+    const search = backend.store.threads.searchText.bind(backend.store.threads);
+    backend.store.threads.searchText = async (p) => {
+      signals.push(p.signal!);
+      // a slow scan: it runs until it's told to stop
+      for (let i = 0; i < 200 && !p.signal?.aborted; i++) await new Promise((r) => setTimeout(r, 5));
+      return search(p);
+    };
+    const first = client.call("threads.search", { query: "presupuesto zzqxjv" }).catch(() => null);
+    await expect.poll(() => signals.length).toBe(1);
+    expect((await client.call("threads.search", { query: "is:read factura", unreadOnly: true })).items).toEqual([]);
+    expect(signals[0]!.aborted).toBe(true);
+    await first;
+  });
+
   it("a view scope is counted and enumerated from the indexes, never by hydrating list pages", async () => {
     const { backend, db, client } = setup(600);
     const cat = createCategory(db, "Grande", "rose").id;

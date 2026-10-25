@@ -1159,6 +1159,10 @@ export class IdbMailStore implements MailStore {
         const unread = this.c.unreadOrder.current(threads);
         const expected = order.filter((id) => threads.get(id)!.unread_count > 0);
         if (unread.length !== expected.length || unread.some((id, i) => id !== expected[i])) throw new Error("the unread order differs from the recency order's unread threads");
+        // and the unread scope ids are those threads, ascending
+        const scoped = this.c.scopes.unread(this.c);
+        const ascending = [...expected].sort((a, b) => a - b);
+        if (scoped.length !== ascending.length || scoped.some((id, i) => id !== ascending[i])) throw new Error("the unread scope ids differ from the unread threads");
       });
     },
   };

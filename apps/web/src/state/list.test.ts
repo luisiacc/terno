@@ -73,6 +73,27 @@ it("the unread filter: a filtered mailbox asks for unread threads, keeping the o
   setApp({ unreadFilters: new Set(), query: "" });
 });
 
+it("a filtered answer asked for while a thread was open doesn't keep it once the selection moved off it", async () => {
+  answer = async () => ({ items: [row(20, true), row(21, true), row(22, true)], nextCursor: null });
+  setApp({ view: "starred", query: "", unreadFilters: new Set(["starred||"]), selectedId: null, checked: new Set() });
+  await vi.waitFor(() => expect(useList.getState().items.map((t) => t.id)).toEqual([20, 21, 22]));
+  setApp({ selectedId: 20 });
+  // 20 was read elsewhere; the refresh asks to keep it (open), and answers after the user moved to 21
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  answer = async (p) => {
+    expect(p.keepIds).toEqual([20]);
+    await held;
+    return { items: [row(20, false), row(21, true), row(22, true)], nextCursor: null };
+  };
+  const refresh = reloadList({ keepSelection: true });
+  setApp({ selectedId: 21 });
+  release();
+  await refresh;
+  expect(useList.getState().items.map((t) => t.id)).toEqual([21, 22]);
+  setApp({ unreadFilters: new Set() });
+});
+
 it("an optimistic edit wins over a reload that was already on its way: the answer is dropped and asked again", async () => {
   answer = async () => ({ items: [row(10, true), row(11, true)], nextCursor: null });
   setApp({ view: "archive", query: "" });

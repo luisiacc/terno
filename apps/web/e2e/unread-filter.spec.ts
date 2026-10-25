@@ -19,7 +19,7 @@ const readInbox = (server: DevServer) => db(server).all<{ id: number }>("SELECT 
 const loadedIds = (page: Page) => page.evaluate(() => (window as unknown as { __terno: { loadedIds(): number[] } }).__terno.loadedIds());
 const row = (page: Page, id: number) => page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
 /** the list shows the rows of that list key (the header changes before they arrive) */
-const showing = (page: Page, unreadOnly: boolean) => expect(page.getByTestId("thread-list")).toHaveAttribute("data-results-for", new RegExp(`,${unreadOnly}\\]$`));
+const showing = (page: Page, unreadOnly: boolean) => expect(page.getByTestId("thread-list")).toHaveAttribute("data-results-for", new RegExp(`,${unreadOnly},"[^"]*"\\]$`));
 const toast = (page: Page, text: string | RegExp) => page.locator("[data-sonner-toast]").filter({ hasText: text });
 
 /** a category with nothing in it, opened: nothing is open in it either */
@@ -172,6 +172,30 @@ test.describe("the open thread stays while it is open", () => {
     await expect(row(page, otherId)).toHaveCount(0);
     await expect.poll(() => db(server).get<{ u: number }>("SELECT unread_count AS u FROM threads WHERE id = ?", otherId)!.u).toBe(0);
     await expect(row(page, id)).toBeVisible();
+  });
+});
+
+test.describe("with motion on", () => {
+  test.use({ reducedMotion: "no-preference" });
+
+  test("reading the open thread (dwell, ⇧I) keeps it without an error, and moving off it slides the rest up", async ({ app: page, server }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await filterOn(page);
+    const unread = new Set(unreadInbox(server));
+    const [a, b] = (await loadedIds(page)).filter((id) => unread.has(id));
+    await row(page, a!).dispatchEvent("mousedown", { button: 0 });
+    await expect.poll(() => db(server).get<{ u: number }>("SELECT unread_count AS u FROM threads WHERE id = ?", a)!.u).toBe(0);
+    await expect(row(page, a!)).not.toHaveAttribute("data-unread");
+    await focusList(page);
+    await page.keyboard.press("j");
+    await expect(selectedRow(page)).toHaveAttribute("data-thread-id", String(b));
+    await expect(row(page, a!)).toHaveCount(0);
+    // ⇧I on the open one: read in place, still here
+    await page.keyboard.press("Shift+I");
+    await expect.poll(() => db(server).get<{ u: number }>("SELECT unread_count AS u FROM threads WHERE id = ?", b)!.u).toBe(0);
+    await expect(row(page, b!)).toBeVisible();
+    expect(errors).toEqual([]);
   });
 });
 

@@ -119,10 +119,11 @@ export function createHandlers(b: Backend): Handlers {
       await b.platform.yield();
       if (b.searchSeq.get(ctx.clientId) !== seq) throw new RpcError("CANCELLED", "Superseded by a newer search");
       const started = performance.now();
+      // this query supersedes the one still running, whatever it turns out to be
+      b.searchAborts.get(ctx.clientId)?.abort();
       // the unread filter is part of the query (cursors and the instant engine see one query); asking for read mail too matches nothing
       const query = unreadOnly ? withUnreadOnly(p.query, b.now()) : p.query;
       if (query === null) return { items: [], nextCursor: null, strategy: "none", tookMs: performance.now() - started, complete: true };
-      b.searchAborts.get(ctx.clientId)?.abort();
       const abort = new AbortController();
       b.searchAborts.set(ctx.clientId, abort);
       try {

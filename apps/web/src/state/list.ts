@@ -45,7 +45,8 @@ function indexOf(items: ThreadSummary[]): Map<number, number> {
 
 export function listKey(): string {
   const s = getApp();
-  return JSON.stringify([s.view, s.accountId, s.categoryId, s.reviewCategoryId, s.query.trim(), isUnreadOnly(s)]);
+  // the query stays last (the UI perf gate reads it from data-results-for)
+  return JSON.stringify([s.view, s.accountId, s.categoryId, s.reviewCategoryId, isUnreadOnly(s), s.query.trim()]);
 }
 
 let seq = 0;
@@ -76,6 +77,16 @@ async function fetchPage(cursor?: { lastDate: number; id: number }, limit = PAGE
   if (scope.kind === "search") return client.call("threads.search", { query: scope.query, cursor, limit, accountId: scope.accountId, categoryId: scope.categoryId, unreadOnly: scope.unreadOnly });
   const keepIds = scope.unreadOnly ? keptIds(s) : [];
   return client.call("threads.list", { view: scope.view, cursor, limit, accountId: scope.accountId, categoryId: scope.categoryId, unreadOnly: scope.unreadOnly, keepIds: keepIds.length ? keepIds : undefined });
+}
+
+/**
+ * A filtered answer's read rows, against who holds them now: asked for while
+ * a thread was open, it may arrive after the selection moved off it.
+ */
+function heldOnly(items: ThreadSummary[]): ThreadSummary[] {
+  if (items.every((t) => t.unread)) return items;
+  const held = new Set(keptIds());
+  return items.filter((t) => t.unread || held.has(t.id));
 }
 
 /**
@@ -132,6 +143,7 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
       if (sameView) return;
     }
     if (scope?.kind === "search" && scope.unreadOnly && (sameView || options.keepSelection)) page = keepSearchRows(page, current.items);
+    if (scope?.unreadOnly) page = { ...page, items: heldOnly(page.items) };
     useList.setState({
       key,
       itemsKey: key,
@@ -176,7 +188,8 @@ export async function loadMore(): Promise<void> {
       return void loadMore();
     }
     const seen = new Set(useList.getState().items.map((t) => t.id));
-    const items = [...useList.getState().items, ...page.items.filter((t) => !seen.has(t.id))];
+    const fresh = page.items.filter((t) => !seen.has(t.id));
+    const items = [...useList.getState().items, ...(isUnreadOnly(getApp()) ? heldOnly(fresh) : fresh)];
     useList.setState({ items, index: indexOf(items), nextCursor: page.nextCursor, loadingMore: false });
   } catch (error) {
     useList.setState({ loadingMore: false });

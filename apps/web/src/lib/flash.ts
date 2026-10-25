@@ -62,7 +62,8 @@ let reflowTimer: ReturnType<typeof setTimeout> | null = null;
 export function reflowRemoval(ids: readonly number[]): void {
   const ms = motionMs();
   const list = document.querySelector<HTMLElement>("[role=listbox]");
-  if (!list || ms === 0) return;
+  // nothing leaving (the filter kept the only target, the open thread): no rule to build, nothing to slide
+  if (!list || ms === 0 || ids.length === 0) return;
   for (const row of list.querySelectorAll<HTMLElement>(rowSelector(ids))) {
     const ghost = row.cloneNode(true) as HTMLElement;
     ghost.removeAttribute("data-thread-id");
