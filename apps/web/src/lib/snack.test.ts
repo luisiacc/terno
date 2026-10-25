@@ -135,22 +135,48 @@ describe("one at a time", () => {
     expect(message()).toBe("Archivado · 20 conversaciones");
   });
 
-  it("background news waits behind a snack that offers something, a custom one, an error or a hovered one", () => {
+  it("background news waits behind the user's own snacks, and behind any news that offers something or is hovered", () => {
     snack("Archivado", { action: { label: "Deshacer", onClick: () => {} } });
     snack.success("Correo enviado", { background: true });
     expect(message()).toBe("Archivado");
     vi.advanceTimersByTime(ACTION_MS);
     expect(message()).toBe("Correo enviado");
 
-    snack("Copiado");
-    pause("hover");
-    snack.success("Correo enviado", { background: true });
-    expect(message()).toBe("Copiado");
-    resume("hover");
+    // a plain confirmation of what the user just did is read first (it was replaced 17 ms later by a sync error)
+    snack.success("luis@gmail.com conectada");
+    snack.error("Falló: star", { background: true });
+    expect(message()).toBe("luis@gmail.com conectada");
+    vi.advanceTimersByTime(DEFAULT_MS);
+    expect(message()).toBe("Falló: star");
+    dismissSnack();
 
-    snack("Copiado");
+    snack.success("Correo enviado", { background: true });
+    pause("hover");
+    snack("Terno añadió 2 conversaciones a Facturas", { background: true });
+    expect(message()).toBe("Correo enviado");
+    resume("hover");
+    dismissSnack();
+
+    // news replaces plain news; a job's progress doesn't hold against it
+    snack.success("Correo enviado", { background: true });
+    snack.success("Enviado otra vez", { background: true });
+    expect(message()).toBe("Enviado otra vez");
+    snack.loading("Archivando…");
     snack.success("Correo enviado", { background: true });
     expect(message()).toBe("Correo enviado");
+  });
+
+  it("a queued result whose undo already ran with z is dropped, not offered", async () => {
+    const run = vi.fn();
+    const undo = registerUndo(run);
+    const job = snack.loading("Archivando…");
+    snack("Borrador descartado", { action: { label: "Undo", onClick: () => {} } });
+    snack.success("Archivado · 20 conversaciones", { id: job, action: { label: "Undo", undo } });
+    undoLast();
+    await vi.runAllTimersAsync();
+    expect(run).toHaveBeenCalledTimes(1);
+    dismissSnack();
+    expect(current()).toBeNull();
   });
 
   it("the queue keeps the newest three", () => {
@@ -215,6 +241,33 @@ describe("the undo token", () => {
     fail = false;
     await runUndo(undo);
     expect(undo.state).toBe("done");
+  });
+
+  it("a failed Undo click says so with a Retry of the same undo, and z points back at it", async () => {
+    let fail = true;
+    const run = vi.fn(() => (fail ? Promise.reject(new Error("sin conexión")) : undefined));
+    const undo = registerUndo(run);
+    snack("Archivado", { action: { label: "Undo", undo } });
+    runAction("action");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(current()?.tone).toBe("error");
+    expect(message()).toBe("No se pudo deshacer: sin conexión");
+    expect(current()?.action?.undo).toBe(undo);
+    expect(useSnack.getState().undo).toBe(undo);
+    fail = false;
+    runAction("action");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(undo.state).toBe("done");
+    expect(useSnack.getState().undo).toBeNull();
+  });
+
+  it("a failed undo doesn't take z back from a newer one", async () => {
+    const undo = registerUndo(() => Promise.reject(new Error("sin conexión")));
+    const pending = runUndo(undo);
+    const newer = registerUndo(() => {});
+    await expect(pending).rejects.toThrow();
+    expect(useSnack.getState().undo).toBe(newer);
   });
 
   it("expiring or replacing its snack keeps z", () => {

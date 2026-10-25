@@ -21,7 +21,7 @@ function giveFocusBack(): void {
 /** F6: the dock's primary action (else its close button) while a snack is up; the dock never takes focus by itself. */
 export function focusDock(): void {
   const el = dockRef.current;
-  if (!useSnack.getState().current || !el) return;
+  if (!useSnack.getState().current || !el || covered(el)) return;
   (el.querySelector<HTMLElement>("[data-snack-primary]:not(:disabled)") ?? el.querySelector<HTMLElement>("button:not(:disabled)"))?.focus();
 }
 
@@ -169,29 +169,40 @@ function Row({ snack }: { snack: Snack }) {
   );
 }
 
+/** Is the dock out of reach: the web's blocking screen (#root inert), or a modal (Base UI hides everything outside it but live regions)? */
+function covered(card: HTMLElement | null): boolean {
+  return !!document.getElementById("root")?.inert || card?.getAttribute("aria-hidden") === "true";
+}
+
 /**
- * The countdown waits while nobody can see the dock: the window hidden, a
- * dialog over the app, or the web's blocking screen (which makes #root inert).
- * Returns whether the app is blocked (announcements wait for it too).
+ * The countdown waits while nobody can see or reach the dock: the window
+ * hidden, a dialog over the app (the app's own, the first run, a report
+ * preview: any modal marks the card aria-hidden), or the web's blocking
+ * screen. Returns whether the app is behind that screen (announcements wait for it).
  */
-function useWatchers(): boolean {
+function useWatchers(card: React.RefObject<HTMLDivElement | null>): boolean {
   const dialog = useApp((s) => s.dialog !== null);
   const [inert, setInert] = useState(false);
+  const [modal, setModal] = useState(false);
   useEffect(() => {
     const visibility = () => (document.visibilityState === "hidden" ? pause("hidden") : resume("hidden"));
     visibility();
     document.addEventListener("visibilitychange", visibility);
     const root = document.getElementById("root");
-    const read = () => setInert(!!root?.inert);
+    const read = () => {
+      setInert(!!root?.inert);
+      setModal(card.current?.getAttribute("aria-hidden") === "true");
+    };
     read();
-    const mo = root ? new MutationObserver(read) : null;
-    mo?.observe(root!, { attributes: true, attributeFilter: ["inert"] });
+    const mo = new MutationObserver(read);
+    if (root) mo.observe(root, { attributes: true, attributeFilter: ["inert"] });
+    if (card.current) mo.observe(card.current, { attributes: true, attributeFilter: ["aria-hidden"] });
     return () => {
       document.removeEventListener("visibilitychange", visibility);
-      mo?.disconnect();
+      mo.disconnect();
     };
   }, []);
-  const blocked = dialog || inert;
+  const blocked = dialog || inert || modal;
   useEffect(() => (blocked ? pause("blocked") : resume("blocked")), [blocked]);
   return inert;
 }
@@ -210,7 +221,7 @@ export function SnackDock() {
   const focused = useRef(false);
   /** the snack focus came into */
   const focusedSeq = useRef<number | undefined>(undefined);
-  const inert = useWatchers();
+  const inert = useWatchers(cardRef);
 
   // the list keeps room for the dock below its last row
   const open = current !== null;

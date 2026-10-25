@@ -111,3 +111,31 @@ Codex read the plan against the code (`/tmp/unica-scratch/plan-13-codex.txt`, 10
 8. **F6.** Resolves while typing and composing too, not under a dialog or menu. It focuses the primary action, else the close button. Focus goes back only if it was inside content that went away, and only to an element that is still connected and not inert. Local Escape handlers (the "Más…" field) keep precedence.
 9. **Long text.** One line is the simple case. A description goes on a second line; errors and warnings wrap to up to three lines. The close button's hit area is 24 px. An explicit `duration` always wins over the 6 s rule.
 10. **Performance.** The elapsed time never goes through React per frame (the store changes on pause and resume only); the list subscribes to the inset alone; an e2e checks that rows don't re-render while a snack counts down. The glass is kept but lighter (blur 12 px over a near-opaque `--popover-glass`); `test:ui-perf` is the judge.
+
+## 6. As built
+
+- **Status:** shipped on branch `worktree-agent-ab377dd823943b4bc`.
+- **Copy.** New strings are English (AGENTS.md): the pill reads "Undo" / "Retry", and every action has an English accessible name ("Undo archive"). Existing messages keep their Spanish wording until the i18n pass. The `z` keycap is generated content with `aria-keyshortcuts`, so the button's text stays its label (axe `label-content-name-mismatch`).
+- **Embedded look.** After the first screenshots the surface became nearly solid (`--popover` at 96%, blur 16 px), because rows ghosted through `--popover-glass` in dark themes. A pane-colored fade behind the dock dissolves the last rows into it, so it reads as part of the list. The gap in the ring sweeps clockwise from the top centre.
+- **Under a modal** the dock stays where it is, dimmed, and waits (§5.1). F6 does nothing while it's covered.
+- **Visual baselines** finish animations, so the ring is drawn run out. That's deterministic, and nothing is masked.
+- **Live text** is said once and leaves the live region after 1.5 s, so browsing finds the visible copy alone.
+
+### After the Codex code review (4 findings, `/tmp/unica-scratch/review-13.out`)
+
+1. **A failed Undo click lost its retry.** `undoActions` swallowed the failure, so the token became `done`. Now a failure propagates: the token is `ready` again, z points back at it unless a newer undo replaced it, and the error snack offers "Retry" running the same token. Unit-tested.
+2. **A slow bulk undo's outcome overwrote newer snacks.** `undoScope` and the scope filing's undo now publish their outcomes as background news. An e2e holds `categorize.undo`, archives meanwhile, and checks that "Archivado" stays until it leaves.
+3. **A queued result could offer an undo that z had already run.** Dequeuing now drops results whose undo is no longer ready. Unit-tested.
+4. **Modals outside `useApp.dialog`** (the first run, a standalone report preview) didn't hold the countdown. The dock now also watches its card's `aria-hidden`, which Base UI's modal sweep sets for any modal, and F6 checks the same mark. An e2e checks that the app's own dialog sets it, and that the mark alone holds the ring and blocks F6.
+
+Each regression test fails without its fix.
+
+Also found while running `test:web`: a background sync error ("Falló: star…") replaced the "… conectada" confirmation 17 ms after it showed. Background news now waits behind any of the user's own snacks, and replaces only other news or a job's progress. Unit-tested; `web.spec` covers it end to end.
+
+### Verification
+
+- `pnpm test`: 1,540 + 390 (db-wasm).
+- `pnpm test:e2e` (E2E_PORT=5193): 222, including 13 in `snack.spec.ts`.
+- `pnpm test:web`: 26 of 27. `migration-web.spec.ts:176` fails on the `terno-diag` IndexedDB added by the diagnostics feature on main. It isn't touched here.
+- `pnpm test:ui-perf`: 16 of 16.
+- Screenshots of archive (start, mid-countdown, hovered and paused), draft discarded, error and categorization, in Terno light, Terno dark, Solarized light and Dracula: `/tmp/unica-scratch/snack-13/`.

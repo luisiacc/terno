@@ -190,7 +190,7 @@ test("Gmail in the browser: Google's token model through the page, the mailbox s
   await clientId.blur();
   await settings.getByRole("button", { name: "Añadir cuenta" }).click();
   await page.getByTestId("connect-gmail").click();
-  await expect(page.getByText("luis@gmail.com conectada")).toBeVisible();
+  await expect(page.getByTestId("snack-message").getByText("luis@gmail.com conectada")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(rows(page)).toHaveCount(2);
   await expect(rows(page).first()).toContainText("Desde Gmail");
@@ -365,7 +365,7 @@ test("switching into a fresh, empty engine: drafts and account filters wait for 
   await page.getByTestId("storage-engine-idb").click();
   await Promise.all([page.waitForEvent("load"), page.getByTestId("storage-switch-dialog-confirm").click()]);
   await expect.poll(() => page.evaluate(() => window.__ternoWeb?.storage)).toBe("idb");
-  await expect(page.getByText(/vuelven en cuanto las conectes/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("snack-message").getByText(/vuelven en cuanto las conectes/)).toBeVisible({ timeout: 30_000 });
   expect(await page.evaluate(() => window.__ternoWeb!.client.call("drafts.list", {}))).toEqual([]);
 
   // connecting that Gmail account brings its draft and its filter back
@@ -377,7 +377,7 @@ test("switching into a fresh, empty engine: drafts and account filters wait for 
   await clientId.blur();
   await page.getByRole("button", { name: "Añadir cuenta" }).click();
   await page.getByTestId("connect-gmail").click();
-  await expect(page.getByText("luis.cordero@gmail.com conectada")).toBeVisible();
+  await expect(page.getByTestId("snack-message").getByText("luis.cordero@gmail.com conectada")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("strip-item").filter({ hasText: "ana@pendiente.dev" })).toBeVisible();
   const drafts = await page.evaluate(() => window.__ternoWeb!.client.call("drafts.list", {}));

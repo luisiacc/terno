@@ -5,7 +5,7 @@ import { create } from "zustand";
  * The docked snackbar's state (plan 13): one snack at a time, docked at the
  * bottom of the thread list. A user's snack replaces the current one; a
  * snack with the current one's id updates it in place; background news waits
- * behind one that offers something. Its lifetime is a countdown that pauses
+ * behind the user's own snacks. Its lifetime is a countdown that pauses
  * while the dock is hovered or focused, the window is hidden, or a dialog or
  * blocking screen covers the app. No React here: anything can call it.
  */
@@ -60,6 +60,8 @@ export interface Snack extends Omit<SnackInput, "id" | "duration" | "tone" | "ba
   heard: number;
   /** a custom body (the categorization snackbar) in the dock's surface */
   render?: () => ReactNode;
+  /** background news (or a late job result): other news may replace it, the user's own snacks hold against it */
+  news?: boolean;
 }
 
 export type PauseReason = "hover" | "focus" | "hidden" | "blocked" | "busy";
@@ -131,7 +133,9 @@ function durationOf(input: SnackInput): number {
 function holds(s: SnackState): boolean {
   const c = s.current;
   if (!c) return false;
-  return !!(c.render || c.action || c.tone === "error" || s.paused.includes("hover") || s.paused.includes("focus"));
+  if (c.render || c.action || c.tone === "error" || s.paused.includes("hover") || s.paused.includes("focus")) return true;
+  // what the user just did is read before anything they didn't ask for (a job's progress isn't something to read)
+  return !c.news && c.tone !== "loading";
 }
 
 function show(input: SnackInput & { render?: () => ReactNode }): string {
@@ -147,12 +151,13 @@ function show(input: SnackInput & { render?: () => ReactNode }): string {
   }
   const id = input.id ?? `snack-${++ids}`;
   const late = input.id !== undefined && displaced.delete(input.id);
-  if ((background || late) && holds(s)) {
-    queue = [...queue.filter((q) => q.id !== id), { ...input, id, background: false }].slice(-QUEUE_MAX);
+  const news = !!background || late;
+  if (news && holds(s)) {
+    queue = [...queue.filter((q) => q.id !== id), { ...input, id, background: true }].slice(-QUEUE_MAX);
     return id;
   }
   if (s.current?.tone === "loading") displaced.add(s.current.id);
-  const current: Snack = { ...rest, id, seq: ++seq, tone, duration: durationOf(input), spoken: spokenOf(input), heard: ++heard };
+  const current: Snack = { ...rest, id, seq: ++seq, tone, duration: durationOf(input), spoken: spokenOf(input), heard: ++heard, news };
   useSnack.setState({ current, last: current, countdown: fresh(s.paused) });
   schedule();
   return id;
@@ -190,7 +195,9 @@ export function dismissSnack(id?: string): void {
   timer = null;
   displaced.delete(s.current.id);
   useSnack.setState({ current: null, countdown: { elapsed: 0, since: null } });
-  const next = queue.shift();
+  // a queued result whose undo already ran (z meanwhile) has nothing left to say
+  let next = queue.shift();
+  while (next?.action?.undo && next.action.undo.state !== "ready") next = queue.shift();
   if (next) show(next);
 }
 
@@ -200,7 +207,8 @@ export function runAction(which: "action" | "secondary"): void {
   const action = current?.[which];
   if (!current || !action) return;
   dismissSnack(current.id);
-  if (action.undo) runUndo(action.undo).catch(undoFailed);
+  const undo = action.undo;
+  if (undo) runUndo(undo).catch((e: unknown) => undoFailed(e, undo));
   else action.onClick?.();
 }
 
@@ -230,7 +238,8 @@ export function registerUndo(run: () => unknown): Undo {
 
 /**
  * Runs an undo once, from z or a button: the snack offering it goes, z stops
- * pointing at it. A failure (thrown or rejected) makes it ready again and rethrows.
+ * pointing at it. A failure (thrown or rejected) makes it ready again, z
+ * points back at it unless a newer undo took its place, and it rethrows.
  */
 export async function runUndo(undo: Undo): Promise<void> {
   if (undo.state !== "ready") return;
@@ -243,16 +252,20 @@ export async function runUndo(undo: Undo): Promise<void> {
     undo.state = "done";
   } catch (error) {
     undo.state = "ready";
+    if (useSnack.getState().undo === null) useSnack.setState({ undo });
     throw error;
   }
 }
 
-const undoFailed = (error: unknown) => void snack.error(`No se pudo deshacer: ${error instanceof Error ? error.message : error}`);
+/** An undo that failed says so, with a retry of the same undo (they're idempotent). */
+function undoFailed(error: unknown, undo: Undo): void {
+  snack.error(`No se pudo deshacer: ${error instanceof Error ? error.message : error}`, { action: { label: "Retry", name: "Retry undo", undo } });
+}
 
 /** z: the last undo, if it's still there. */
 export function undoLast(): void {
   const undo = useSnack.getState().undo;
-  if (undo) runUndo(undo).catch(undoFailed);
+  if (undo) runUndo(undo).catch((e: unknown) => undoFailed(e, undo));
 }
 
 /** Does z still run this undo? */

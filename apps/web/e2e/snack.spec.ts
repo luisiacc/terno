@@ -160,6 +160,71 @@ test.describe("the docked snackbar", () => {
     await expect(dock(page)).toContainText("Archivado");
   });
 
+  test("any modal holds it, not only the app's dialogs: Base UI's aria-hidden on the bar is the signal; F6 waits too", async ({ app: page }) => {
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await page.mouse.move(1300, 100);
+    await archiveOne(page);
+    // a modal marks the bar hidden (the first run and a report preview aren't app dialogs)
+    await page.getByTestId("open-settings").click();
+    await expect(dock(page)).toHaveAttribute("aria-hidden", "true");
+    await page.keyboard.press("Escape");
+    await expect(dock(page)).not.toHaveAttribute("aria-hidden", "true");
+    // the same mark without an app dialog behind it holds the countdown and keeps F6 out
+    await dock(page).evaluate((el) => el.setAttribute("aria-hidden", "true"));
+    await page.waitForTimeout(100);
+    const held = await drained(page);
+    await page.waitForTimeout(1200);
+    expect(Math.abs((await drained(page)) - held)).toBeLessThan(0.5);
+    await page.keyboard.press("F6");
+    await expect(dock(page).getByTestId("snack-action")).not.toBeFocused();
+    await dock(page).evaluate((el) => el.removeAttribute("aria-hidden"));
+    await page.waitForTimeout(600);
+    expect(await drained(page)).toBeGreaterThan(held + 3);
+  });
+
+  test("a slow bulk undo's outcome waits behind what the user did meanwhile", async ({ app: page, server }) => {
+    const db = sqlDb(server.backend.store);
+    const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
+    const target = db.get<{ id: number }>(
+      `SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND t.last_from_email = 'uber.receipts@uber.com'
+       AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id AND category_id = ?) ORDER BY t.last_date DESC LIMIT 1`,
+      facturas,
+    )!.id;
+    await search(page, "in:inbox from:uber.receipts@uber.com");
+    await page.locator(`[data-thread-id="${target}"]`).dispatchEvent("mousedown");
+    await focusList(page);
+    await page.keyboard.press("l");
+    await page.getByTestId(`pick-category-${facturas}`).click();
+    await expect(page.getByTestId("snackbar-sender-count")).toBeVisible();
+    await focusList(page);
+    await page.keyboard.press("1");
+    await expect(dock(page)).toContainText("añadidas a Facturas");
+    // the bulk undo is slow; meanwhile the user archives something
+    const h = handlers(server);
+    const original = h["categorize.undo"]!;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    h["categorize.undo"] = async (...args: unknown[]) => {
+      await gate;
+      return original(...args);
+    };
+    try {
+      await dock(page).getByTestId("snack-action").click();
+      await openRow(page, 1);
+      await focusList(page);
+      await page.keyboard.press("e");
+      await expect(dock(page)).toContainText("Archivado");
+      release();
+      await page.waitForTimeout(500);
+      await expect(dock(page)).toContainText("Archivado");
+      await dock(page).getByTestId("snack-close").click();
+      await expect(dock(page)).toContainText("quitadas de Facturas");
+    } finally {
+      release();
+      h["categorize.undo"] = original;
+    }
+  });
+
   test("an error says so assertively, in the destructive ink", async ({ app: page, server }) => {
     const h = handlers(server);
     const original = h["threads.act"]!;

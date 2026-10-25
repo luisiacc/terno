@@ -3,7 +3,7 @@ import { parseAddressList, type ThreadAction, type ThreadSummary, type View } fr
 import { reflowRemoval } from "~/lib/flash";
 import { client } from "~/rpc/connection";
 import { currentTargets } from "~/lib/select";
-import { registerUndo, snack, type Undo } from "~/lib/snack";
+import { dismissSnack, registerUndo, snack, type Undo } from "~/lib/snack";
 import { getApp, setApp, type ScopeSelection } from "~/state/app";
 import { patchRows, reloadList, useList } from "~/state/list";
 import { invalidateThreads } from "~/state/threads";
@@ -210,7 +210,9 @@ async function undoActions(undoIds: readonly number[], n: number): Promise<void>
     for (const undoId of undoIds) restored += (await client.call("threads.undo", { undoId, jobId: progress?.jobId })).restored;
     if (progress) snack.success(`Deshecho · ${fmt(restored)} conversaciones`, { id: progress.snackId, duration: 4000 });
   } catch (error) {
-    snack.error(`No se pudo deshacer: ${error instanceof Error ? error.message : error}`, progress ? { id: progress.snackId } : undefined);
+    // the undo token says so, with a retry (z points back at it too)
+    if (progress) dismissSnack(progress.snackId);
+    throw error;
   } finally {
     progress?.stop();
     void reloadList({ keepSelection: true });

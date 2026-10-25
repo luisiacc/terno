@@ -62,12 +62,16 @@ export async function applyScope(categoryId: number, scope: CategorizeScope): Pr
   }
 }
 
-/** Undo of a bulk apply; a failure offers a retry (the undo is idempotent). */
+/**
+ * Undo of a bulk apply; a failure offers a retry (the undo is idempotent).
+ * It can take a while: its outcome waits behind whatever the user did meanwhile.
+ */
 function undoScope(categoryId: number, batchId: number, name: string): void {
   undoFiled({ categoryId, addedIds: [], batchId }).then(
-    (n) => void snack(`${n} quitadas de ${name}`),
+    (n) => void snack(`${n} quitadas de ${name}`, { background: true }),
     (error: unknown) =>
       void snack.error(`No se pudo deshacer: ${errorText(error)}`, {
+        background: true,
         action: { label: "Retry", name: `Retry removing from ${name}`, onClick: () => undoScope(categoryId, batchId, name) },
       }),
   );

@@ -126,7 +126,7 @@ export async function addScopeToCategory(categoryId: number, sel: ScopeSelection
   const progress = trackJob(`Añadiendo ${sel.count.toLocaleString("es-MX")} conversaciones a ${name}`);
   try {
     const { added, batchId } = await client.call("categories.addScope", { categoryId, scope: sel.scope, jobId: progress.jobId });
-    const undo = batchId === null ? null : registerUndo(() => undoFiled({ categoryId, addedIds: [], batchId }).then((n) => void snack(`${n.toLocaleString("es-MX")} quitadas de ${name}`)));
+    const undo = batchId === null ? null : registerUndo(() => undoFiled({ categoryId, addedIds: [], batchId }).then((n) => void snack(`${n.toLocaleString("es-MX")} quitadas de ${name}`, { background: true })));
     snack.success(`${added.toLocaleString("es-MX")} ${added === 1 ? "añadida" : "añadidas"} a ${name}`, { id: progress.snackId, duration: 8000, action: undo ? undoAction(undo, `Undo add to ${name}`) : undefined });
   } catch (error) {
     snack.error(`No se pudo añadir: ${error instanceof Error ? error.message : error}`, { id: progress.snackId });
