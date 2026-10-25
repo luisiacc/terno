@@ -551,7 +551,10 @@ export class PhraseModel {
         if (table.k1[i] !== 0) table.used++;
         if ((i & 65535) === 0) await clock.tick();
       }
-      for (let i = 0; i < table.nid.length; i++) if (table.ncnt[i] !== 0 && table.nid[i]! >= n) return false;
+      for (let i = 0; i < table.nid.length; i++) {
+        if (table.ncnt[i] !== 0 && table.nid[i]! >= n) return false;
+        if ((i & 262143) === 0) await clock.tick();
+      }
       const size = Math.max(64, n);
       const widen = (a: Uint32Array): Uint32Array<ArrayBuffer> => {
         const b = new Uint32Array(size);

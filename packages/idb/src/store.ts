@@ -382,7 +382,7 @@ export class IdbMailStore implements MailStore {
 
   // ───────────────────────────── autocomplete (plan 18) ─────────────────────────────
 
-  /** Headers from the in-memory rows, sent text through the lazy bodies (8 per exclusive unit, so commands interleave). */
+  /** Headers from the in-memory rows, sent text through the lazy bodies (32 per exclusive unit, so commands interleave). */
   readonly autocomplete: AutocompleteSource;
 
   private autocompleteSource(): AutocompleteSource {
@@ -464,11 +464,22 @@ export class IdbMailStore implements MailStore {
         // the learnable ids in order, collected once per build (a page per call would rescan the mailbox each time);
         // mail sent after that comes through the log
         if (afterId === 0 || !sentIds) {
-          sentIds = await this.read(() => {
-            const out: number[] = [];
-            for (const [k, m] of this.db.table<R>("messages").rows) if (isLearnable(m)) out.push(k as number);
-            return Int32Array.from(out).sort();
-          });
+          // in slices of 20,000 rows: one pass over a 300,000-message mailbox would stall the worker
+          const keys = await this.read(() => Int32Array.from(this.db.table<R>("messages").rows.keys() as Iterable<number>));
+          const out: number[] = [];
+          for (let i = 0; i < keys.length; i += 20_000) {
+            await this.o.platform.yield();
+            await this.read(() => {
+              const rows = this.db.table<R>("messages");
+              const end = Math.min(keys.length, i + 20_000);
+              for (let k = i; k < end; k++) {
+                const m = rows.get(keys[k]!);
+                if (m && isLearnable(m)) out.push(keys[k]!);
+              }
+            });
+          }
+          await this.o.platform.yield();
+          sentIds = Int32Array.from(out).sort();
         }
         const all = sentIds;
         let lo = 0;
@@ -482,6 +493,7 @@ export class IdbMailStore implements MailStore {
       },
       sentTexts: async (ids) => {
         const out: SentText[] = [];
+        // 8 bodies per exclusive unit: commands interleave between units, and what stays is cut to 64 KB each
         for (let i = 0; i < ids.length; i += 8) {
           const chunk = ids.slice(i, i + 8);
           out.push(

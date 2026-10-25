@@ -69,3 +69,41 @@ export function memoryBytes(): number {
   const m = proc.memoryUsage();
   return m.heapUsed + m.arrayBuffers;
 }
+
+/**
+ * The longest the event loop went without running a 1 ms timer while `fn`
+ * ran (every source of blocking counts), and the longest garbage-collection
+ * pause meanwhile (Node's gc entries): a stall of ours is `maxStall - maxGc`
+ * at worst when a big heap that isn't ours (an IndexedDB mirror of 300,000
+ * rows) is collected.
+ */
+export async function eventLoopStalls<T>(fn: () => Promise<T>): Promise<{ result: T; maxStall: number; maxGc: number; ms: number }> {
+  const timers = globalThis as unknown as { setInterval(f: () => void, ms: number): unknown; clearInterval(t: unknown): void };
+  type Observer = { observe(o: { entryTypes: string[] }): void; disconnect(): void };
+  let maxGc = 0;
+  let observer: Observer | null = null;
+  try {
+    const hooks = (await import(/* @vite-ignore */ "node:perf_hooks" as string)) as { PerformanceObserver: new (cb: (list: { getEntries(): { duration: number }[] }) => void) => Observer };
+    observer = new hooks.PerformanceObserver((list) => {
+      for (const e of list.getEntries()) maxGc = Math.max(maxGc, e.duration);
+    });
+    observer.observe({ entryTypes: ["gc"] });
+  } catch {
+    // not Node: no gc entries
+  }
+  let last = performance.now();
+  let maxStall = 0;
+  const timer = timers.setInterval(() => {
+    const now = performance.now();
+    maxStall = Math.max(maxStall, now - last);
+    last = now;
+  }, 1);
+  const started = performance.now();
+  try {
+    const result = await fn();
+    return { result, maxStall: Math.max(maxStall, performance.now() - last), maxGc, ms: performance.now() - started };
+  } finally {
+    timers.clearInterval(timer);
+    observer?.disconnect();
+  }
+}

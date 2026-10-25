@@ -424,12 +424,12 @@ export class Autocomplete {
     if (b.spamSenders.length) c.markSpam(b.spamSenders);
   }
 
-  /** Learns the sent messages among `messages` that have a body and weren't learned, 8 bodies per read. */
+  /** Learns the sent messages among `messages` that have a body and weren't learned, 32 bodies per read (≤ 64 KB each). */
   private async applyPhrases(p: PhraseModel, messages: readonly ContactMessage[], to: Revision | null): Promise<void> {
     const ids = messages.filter((m) => m.sent && m.hasBody && !m.spam && !m.draft && !p.hasLearned(m.id)).map((m) => m.id);
-    for (let i = 0; i < ids.length; i += 8) {
+    for (let i = 0; i < ids.length; i += 32) {
       if (this.stopped || this.resetWaiters) return;
-      for (const t of await this.o.source.sentTexts(ids.slice(i, i + 8))) {
+      for (const t of await this.o.source.sentTexts(ids.slice(i, i + 32))) {
         p.learn(t);
         await this.clock.tick();
       }

@@ -304,15 +304,22 @@ async function decodeUnits(bytes: Uint8Array, count: number, clock: SliceClock):
   return out;
 }
 
-/** Strings as lengths and encoded units (see encodeUnits). */
-function packStrings(list: readonly string[]): { lens: Uint32Array; bytes: Uint8Array } {
+/** Strings as lengths and encoded bytes (see encodeUnits), in slices. */
+async function packStrings(list: readonly string[], clock: SliceClock): Promise<{ lens: Uint32Array; bytes: Uint8Array }> {
   const lens = new Uint32Array(list.length);
   let total = 0;
-  for (let i = 0; i < list.length; i++) total += lens[i] = list[i]!.length;
-  const units = new Uint16Array(total);
+  for (let i = 0; i < list.length; i++) {
+    const s = list[i]!;
+    lens[i] = s.length;
+    total += encodedLength(s);
+  }
+  const bytes = new Uint8Array(total);
   let at = 0;
-  for (const s of list) for (let c = 0; c < s.length; c++) units[at++] = s.charCodeAt(c);
-  return { lens, bytes: encodeUnits(units) };
+  for (let i = 0; i < list.length; i++) {
+    at += writeEncoded(list[i]!, bytes, at);
+    if ((i & 8191) === 0) await clock.tick();
+  }
+  return { lens, bytes };
 }
 
 async function unpackStrings(s: SectionReader, name: string, clock: SliceClock): Promise<string[]> {
@@ -1133,7 +1140,7 @@ export class ContactIndex {
     if (!this.revision) throw new Error("the contact index has no revision");
     const revision = this.revision;
     await this.merge(clock);
-    // from here to the packing nothing yields: an add() can't land between reads
+    // the service never adds while this runs (one loop does both); lookups may, and only read
     const remap = new Int32Array(this.n).fill(-1);
     let live = 0;
     for (let id = 0; id < this.n; id++) if (!(this.flags[id]! & DEAD)) remap[id] = live++;
@@ -1156,6 +1163,7 @@ export class ContactIndex {
         altNames.push(a.name);
         altW.push(a.w);
       }
+      if ((id & 16383) === 0) await clock.tick();
     }
     // the main segment without dead contacts' entries, ids remapped; starts are implied by the lengths
     const m = this.main;
@@ -1179,20 +1187,21 @@ export class ContactIndex {
       cls[k] = m.cls[i]!;
       at += m.len[i]!;
       k++;
+      if ((i & 16383) === 0) await clock.tick();
     }
     // tokens that arrived during the merge: a small sorted list of their own
     const d = this.delta;
     const dKeep: number[] = [];
     for (let x = 0; x < d.tok.length; x++) if (remap[d.id[x]!]! >= 0) dKeep.push(x);
-    const str = (name: string, list: string[]) => {
-      const p = packStrings(list);
+    const str = async (name: string, list: string[]) => {
+      const p = await packStrings(list, clock);
       return { [`${name}.lens`]: p.lens, [`${name}.bytes`]: p.bytes };
     };
     const sections = {
-      ...str("emails", emails),
-      ...str("names", names),
-      ...str("altNames", altNames),
-      ...str("dTok", dKeep.map((x) => d.tok[x]!)),
+      ...(await str("emails", emails)),
+      ...(await str("names", names)),
+      ...(await str("altNames", altNames)),
+      ...(await str("dTok", dKeep.map((x) => d.tok[x]!))),
       nameW: pick(this.nameW),
       sent: pick(this.sent),
       recv: pick(this.recv),
@@ -1242,6 +1251,7 @@ export class ContactIndex {
       for (let i = 0; i < entries; i++) {
         if (ids[i]! < 0 || ids[i]! >= n || cls[i]! < 1 || cls[i]! > 3 || len[i]! < 1 || len[i]! > MAX_TOKEN * 3) return false;
         total += len[i]!;
+        if ((i & 65535) === 0) await clock.tick();
       }
       const chars = Uint8Array.from(s.u8("chars"));
       if (chars.length !== total) return false;
@@ -1249,6 +1259,7 @@ export class ContactIndex {
       for (let i = 0, at = 0; i < entries; i++) {
         start[i] = at;
         at += len[i]!;
+        if ((i & 262143) === 0) await clock.tick();
       }
       const altOwner = s.u32("altOwner");
       const altNames = await unpackStrings(s, "altNames", clock);
@@ -1285,7 +1296,10 @@ export class ContactIndex {
       this.bcls = new Uint8Array(capacity);
       this.resize(capacity);
       this.gen = 0;
-      for (let id = 0; id < n; id++) this.rekey(id);
+      for (let id = 0; id < n; id++) {
+        this.rekey(id);
+        if ((id & 65535) === 0) await clock.tick();
+      }
       this.main = { chars, start, len, ids, cls, count: entries };
       for (let i = 0; i < entries; i++) {
         const id = ids[i]!;
