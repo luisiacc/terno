@@ -6,6 +6,8 @@ export interface SearchParams {
   query: string;
   accountId?: number;
   categoryId?: number;
+  /** only conversations with attachments (the list's quick filter, plan 15) */
+  threadAttachments?: boolean;
   cursor?: Cursor;
   limit: number;
   now?: number;
@@ -134,6 +136,7 @@ export function compileSearch(r: ResolvedSearch): Compiled {
   }
   if (q.unread !== undefined) c.threadWhere.push(q.unread ? "t.unread_count > 0" : "t.unread_count = 0");
   if (q.starred !== undefined) c.threadWhere.push(`t.is_starred = ${q.starred ? 1 : 0}`);
+  if (q.threadAttachments) c.threadWhere.push("t.has_attachments = 1");
   // Negative words alongside other message predicates apply to the SAME message
   // (from:ana -factura = a message from Ana that doesn't mention factura).
   // Only a purely negative query falls back to excluding whole threads.
@@ -146,7 +149,7 @@ export function compileSearch(r: ResolvedSearch): Compiled {
 }
 
 /** Parses and scopes a query the way every engine sees it. */
-export function resolveQuery(db: Db, params: { query: string; accountId?: number; categoryId?: number; now?: number }): ResolvedSearch {
+export function resolveQuery(db: Db, params: { query: string; accountId?: number; categoryId?: number; threadAttachments?: boolean; now?: number }): ResolvedSearch {
   return resolveSearch(parseSearch(params.query, params.now), params.query, params, loadScope(db));
 }
 

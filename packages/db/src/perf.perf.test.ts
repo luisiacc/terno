@@ -238,6 +238,16 @@ describe("the quick filters (plan 15): with attachments and starred", () => {
     }, 20);
   }
 
+  /** a search narrowed to conversations with attachments: the engine keeps them before paging, a page and the next one */
+  function searches(label: string) {
+    for (const query of ["hola", "factura", "in:all", "pro"]) {
+      let first: ReturnType<typeof searchThreads> | undefined;
+      gate(`${label}: search "${query}" with attachments, first page`, 25, () => (first = searchThreads(db, { query, threadAttachments: true, limit: 100, now: NOW })));
+      const cursor = first?.nextCursor;
+      if (cursor) gate(`${label}: search "${query}" with attachments, next page`, 25, () => searchThreads(db, { query, threadAttachments: true, limit: 100, now: NOW, cursor }));
+    }
+  }
+
   it("hold at 50k+ threads: as they are, every thread starred, none with attachments", () => {
     const n = db.get<{ c: number; a: number; s: number }>("SELECT count(*) AS c, sum(has_attachments) AS a, sum(is_starred) AS s FROM threads")!;
     expect(n.c).toBeGreaterThanOrEqual(50_000);
@@ -245,11 +255,14 @@ describe("the quick filters (plan 15): with attachments and starred", () => {
     meta.starredThreads = n.s;
     gates("50k attachments", "attachments");
     gates("50k starred", "starred");
+    searches("50k attachments");
     db.exec("UPDATE threads SET is_starred = 1");
     db.exec("UPDATE threads SET has_attachments = 0");
     db.exec("ANALYZE");
     gates("50k all starred", "starred");
     gates("50k no attachments", "attachments");
+    // the worst case for a search narrowed to conversations with attachments: none has any (a whole match set, nothing kept)
+    searches("50k no attachments");
   });
 });
 

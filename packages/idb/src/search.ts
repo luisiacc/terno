@@ -177,6 +177,7 @@ export function planScan(c: Ctx, r: ResolvedSearch): ScanPlan {
       for (const id of r.excludeCategoryIds) if (memberships.has(t.id, id)) return false;
       if (q.unread !== undefined && t.unread_count > 0 !== q.unread) return false;
       if (q.starred !== undefined && (t.is_starred === 1) !== q.starred) return false;
+      if (q.threadAttachments && t.has_attachments !== 1) return false;
       return true;
     },
   };

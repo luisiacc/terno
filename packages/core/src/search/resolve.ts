@@ -41,9 +41,11 @@ export function searchKey(text: string, scope: { accountId?: number; categoryId?
 export function resolveSearch(
   query: SearchQuery,
   text: string,
-  scope: { accountId?: number; categoryId?: number },
+  scope: { accountId?: number; categoryId?: number; threadAttachments?: boolean },
   lookup: ScopeLookup,
 ): ResolvedSearch {
+  // the list's attachments filter (plan 15): thread-level, applied by the engines, a part of the query's identity
+  if (scope.threadAttachments) query = { ...query, threadAttachments: true };
   let impossible = false;
   const accountIds = new Set<number>();
   if (scope.accountId !== undefined) accountIds.add(scope.accountId);
@@ -79,6 +81,6 @@ export function resolveSearch(
     categoryIds: [...categoryIds],
     excludeCategoryIds: [...excludeCategoryIds],
     impossible,
-    key: searchKey(text, scope),
+    key: searchKey(text, scope) + (scope.threadAttachments ? "\u0000attachments" : ""),
   };
 }

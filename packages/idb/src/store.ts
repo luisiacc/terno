@@ -550,7 +550,7 @@ export class IdbMailStore implements MailStore {
     return { items: page.items, nextCursor: page.nextCursor, revision, strategy: page.strategy, complete: true, pendingBodies };
   }
 
-  private resolve(p: { query: string; accountId?: number; categoryId?: number; now?: number }) {
+  private resolve(p: { query: string; accountId?: number; categoryId?: number; threadAttachments?: boolean; now?: number }) {
     const lookup = {
       accounts: [...T(this.c, "accounts").all()].map((a) => ({ id: a.id as number, email: a.email as string, display_name: a.display_name as string })),
       categories: [...T(this.c, "categories").all()].map((x) => ({ id: x.id as number, name: x.name as string })),

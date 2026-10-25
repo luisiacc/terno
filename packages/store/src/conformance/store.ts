@@ -578,6 +578,26 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         { strategies: harness.strategies },
       );
 
+      it("a search narrowed to conversations with attachments (plan 15) keeps exactly those threads, page by page, the same in both stores", async () => {
+        const docs = snap.search.threads;
+        const attach = new Set(snap.threads.filter((t) => t.hasAttachments).map((t) => t.id));
+        for (const [query, keep] of [
+          ["in:all", (t: (typeof docs)[number]) => !t.inTrash && !t.inSpam],
+          ["in:inbox", (t: (typeof docs)[number]) => t.inInbox],
+        ] as const) {
+          const ids: number[] = [];
+          let cursor: Parameters<typeof store.threads.searchText>[0]["cursor"];
+          do {
+            const page = await store.threads.searchText({ query, threadAttachments: true, limit: 97, cursor, now: NOW });
+            ids.push(...page.items.map((t) => t.id));
+            expect(page.items.every((t) => t.hasAttachments), query).toBe(true);
+            cursor = page.nextCursor ?? undefined;
+          } while (cursor);
+          const expected = docs.filter((t) => keep(t) && attach.has(t.threadId)).sort(byRecency).map((t) => t.threadId);
+          expect(ids, query).toEqual(expected);
+        }
+      });
+
       it("keyset pagination returns every thread exactly once, in order, for every view, account and category", async () => {
         const docs = snap.search.threads;
         expect(new Set(docs.map((t) => t.lastDate)).size).toBeLessThan(docs.length); // the fixture has ties

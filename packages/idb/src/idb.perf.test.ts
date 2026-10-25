@@ -259,9 +259,39 @@ it("the quick filters (plan 15) page from their own orders: with attachments and
         }
       });
       expect(walked).toBe(count.result);
+      // a count walks the filter's own ascending ids (a few thousand at most here), never the whole mailbox
+      expect(count.ms, `${filter} ${label}: count`).toBeLessThanOrEqual(3 * MULT);
       expect(walk.ms, `${filter} ${label}: whole walk`).toBeLessThanOrEqual(FRAME * MULT);
     }
   }
+  // a search narrowed to conversations with attachments: the instant index keeps them before paging (codex review, plan 15)
+  expect(await store.instant!.settled(120_000)).toBe(true);
+  for (const query of ["hola", "factura", "in:all"]) {
+    const first = await timed(() => store.threads.searchText({ query, threadAttachments: true, limit: 100, now: NOW }));
+    expect(first.result.strategy).not.toBe("scan");
+    expect(first.result.items.every((t) => t.hasAttachments)).toBe(true);
+    expect(first.ms, `search "${query}" with attachments: first page`).toBeLessThanOrEqual(25 * MULT);
+    if (first.result.nextCursor) {
+      const next = await timed(() => store.threads.searchText({ query, threadAttachments: true, limit: 100, now: NOW, cursor: first.result.nextCursor! }));
+      expect(next.ms, `search "${query}" with attachments: next page`).toBeLessThanOrEqual(25 * MULT);
+    }
+  }
+  // dense and empty: every thread starred, then none
+  const everyone = all.map((t) => t.id);
+  await store.threads.act({ threadIds: everyone, action: "star", signal: null, now: NOW });
+  const dense = await timed(() => store.threads.list({ view: "all", filter: "starred", limit: 100 }));
+  const denseCount = await timed(() => store.threads.scopeCount({ view: "all", filter: "starred", limit: 100_001 }));
+  // the first page after starring all 28,400 at once pays one re-sort of the whole order
+  expect(dense.ms, "every thread starred: first page").toBeLessThanOrEqual(2 * FRAME * MULT);
+  expect(denseCount.ms, "every thread starred: count").toBeLessThanOrEqual(FRAME * MULT);
+  await store.threads.act({ threadIds: everyone, action: "unstar", signal: null, now: NOW });
+  const empty = await timed(() => store.threads.list({ view: "all", filter: "starred", limit: 100 }));
+  const emptyCount = await timed(() => store.threads.scopeCount({ view: "all", filter: "starred", limit: 100_001 }));
+  expect(empty.result.items).toEqual([]);
+  expect(empty.ms, "nothing starred: first page").toBeLessThanOrEqual(FRAME * MULT);
+  expect(emptyCount.ms, "nothing starred: count").toBeLessThanOrEqual(1.5 * MULT);
+  const starredBefore = all.filter((t) => t.isStarred).map((t) => t.id);
+  if (starredBefore.length) await store.threads.act({ threadIds: starredBefore, action: "star", signal: null, now: NOW });
   // 5,000 threads starred at once re-sort the starred order once: a dense starred mailbox, the next page pays it
   const ids = all.filter((t) => !t.isStarred).slice(0, 5000).map((t) => t.id);
   await store.threads.act({ threadIds: ids, action: "star", signal: null, now: NOW });

@@ -44,8 +44,8 @@ export async function resolveThreadScope(b: BackendCore, scope: ThreadScope, cap
       try {
         let cursor: Parameters<BackendCore["store"]["threads"]["searchText"]>[0]["cursor"];
         for (;;) {
-          const page = await b.store.threads.searchText({ query, accountId, categoryId, cursor, limit: PAGE, now: b.now() });
-          for (const t of page.items) if (!threadLevel || t.hasAttachments) ids.push(t.id);
+          const page = await b.store.threads.searchText({ query, accountId, categoryId, threadAttachments: threadLevel || undefined, cursor, limit: PAGE, now: b.now() });
+          for (const t of page.items) ids.push(t.id);
           if (!page.nextCursor || ids.length > cap) break;
           cursor = page.nextCursor;
           await b.platform.yield();

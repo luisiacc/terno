@@ -130,20 +130,10 @@ export function createHandlers(b: Backend): Handlers {
       const abort = new AbortController();
       b.searchAborts.set(ctx.clientId, abort);
       try {
-        let page = await store.threads.searchText({ ...p, query, now: b.now(), signal: abort.signal });
-        let items = page.items;
-        if (threadLevel) {
-          // "with attachments" is the conversation's: its threads among the results, reading on while a page comes up short
-          // (bounded in time; an empty page with a cursor makes the renderer ask for the next one)
-          items = items.filter((t) => t.hasAttachments);
-          while (items.length < p.limit && page.nextCursor && performance.now() - started < 150) {
-            await b.platform.yield();
-            page = await store.threads.searchText({ ...p, query, cursor: page.nextCursor, now: b.now(), signal: abort.signal });
-            items = [...items, ...page.items.filter((t) => t.hasAttachments)];
-          }
-        }
+        // "with attachments" is the conversation's: the engine keeps those threads before paging (threadLevel)
+        const page = await store.threads.searchText({ ...p, query, threadAttachments: threadLevel || undefined, now: b.now(), signal: abort.signal });
         return {
-          items,
+          items: page.items,
           nextCursor: page.nextCursor,
           strategy: page.strategy,
           tookMs: performance.now() - started,

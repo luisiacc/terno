@@ -106,6 +106,8 @@ interface ThreadFilter {
   excludeAccounts: ReadonlySet<number> | null;
   inCats: Uint32Array[];
   outCats: Uint32Array[];
+  /** the conversation has attachments (plan 15's quick filter): one of its live messages has */
+  attachments: boolean;
 }
 
 interface Phrase {
@@ -982,6 +984,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
       excludeAccounts: r.excludeAccountIds.length ? new Set(r.excludeAccountIds) : null,
       inCats,
       outCats,
+      attachments: q.threadAttachments === true,
     };
   }
 
@@ -991,7 +994,14 @@ export class InstantSearchEngine implements CachedSearchEngine {
     if (f.excludeAccounts && f.excludeAccounts.has(this.thrAccount[t]!)) return false;
     for (const s of f.inCats) if (!has(s, t)) return false;
     for (const s of f.outCats) if (has(s, t)) return false;
+    if (f.attachments && !this.threadHasAttachment(t)) return false;
     return true;
+  }
+
+  /** a live message of the thread has attachments: its doc list is a few entries (checked last, after the cheap flags) */
+  private threadHasAttachment(t: number): boolean {
+    for (let d = this.thrHead[t]!; d >= 0; d = this.docNext[d]!) if (this.docAtt[d] === 1 && has(this.alive, d)) return true;
+    return false;
   }
 
   /** The query as message and thread predicates (same rules as the FTS5 planner and the oracle); null: nothing can match. */

@@ -223,7 +223,8 @@ export interface MailStore {
     /** resolves account:/category: and searches within one unit of work */
     /** an RPC cursor without revision/key (older renderers) continues this query */
     /** `signal`: the caller no longer wants the answer (a newer search); a slow path may stop and reject with SearchCancelledError */
-    searchText(p: { query: string; accountId?: number; categoryId?: number; cursor?: Cursor & Partial<Pick<SearchCursor, "revision" | "queryKey">>; limit: number; now: number; signal?: { readonly aborted: boolean } }): Promise<StoreSearchPage>;
+    /** `threadAttachments`: only conversations with attachments (the list's quick filter), applied by the engine before paging */
+    searchText(p: { query: string; accountId?: number; categoryId?: number; threadAttachments?: boolean; cursor?: Cursor & Partial<Pick<SearchCursor, "revision" | "queryKey">>; limit: number; now: number; signal?: { readonly aborted: boolean } }): Promise<StoreSearchPage>;
     /** local optimistic change + learning signal + provider ops, atomically; `before`: each changed message as it was */
     act(c: { threadIds: readonly number[]; action: ThreadAction; signal: UserActionKind | null; now: number }): Promise<{ threadIds: number[]; opIds: string[]; before: MessageState[] }>;
     /**

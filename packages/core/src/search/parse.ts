@@ -14,6 +14,8 @@ export interface MessageTerm {
 export interface SearchQuery {
   terms: MessageTerm[];
   hasAttachment?: boolean;
+  /** the conversation has attachments (the list's quick filter, plan 15): never typed, set by the caller; thread-level unlike `hasAttachment` */
+  threadAttachments?: boolean;
   unread?: boolean;
   starred?: boolean;
   view?: View;
