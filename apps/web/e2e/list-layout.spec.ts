@@ -8,7 +8,8 @@ import AxeBuilder from "@axe-core/playwright";
 import type { Locator, Page } from "@playwright/test";
 import type { DevServer } from "../../backend-dev/src/server";
 import { sqlDb } from "../../backend-dev/src/server";
-import { expect, focusList, navTo, rows, selectedRow, stabilize, test } from "./fixtures";
+import { E2E_NOW } from "./constants";
+import { expect, focusList, ingestConversation, navTo, rows, selectedRow, stabilize, test } from "./fixtures";
 
 test.use({ layout: "list" });
 
@@ -203,6 +204,22 @@ test.describe("the List layout: what stays put", () => {
     await page.keyboard.press("Enter");
     await expect(listPage(page)).toBeVisible();
     await expect.poll(() => calls.filter((c) => c === "threads.get").length).toBeGreaterThan(before);
+  });
+
+  test("mail arriving while a conversation is open: Back finds the rows where they were, the cursor's row unmoved (Codex review)", async ({ app: page, server }) => {
+    const first = rows(page).first();
+    const h = (await first.boundingBox())!.height;
+    const id = await openRow(page, first);
+    expect(await scrollTop(page)).toBe(0);
+    // a new thread lands above every row while the list is covered: its refresh waits for Back
+    await ingestConversation(server, { subject: "Llegó mientras leías", count: 1, now: E2E_NOW + 3 * 3_600_000 });
+    await page.waitForTimeout(600);
+    await page.keyboard.press("Escape");
+    await expect(page.locator("[data-thread-id]").first()).not.toHaveAttribute("data-thread-id", id);
+    // the first row on screen is still the one that was there (the new one is just above, out of view)
+    await expect.poll(() => scrollTop(page)).toBe(Math.round(h));
+    await expect(selectedRow(page)).toHaveAttribute("data-thread-id", id);
+    await expect(selectedRow(page)).toBeInViewport();
   });
 
   test("a drag released over the rows doesn't open a row (R8)", async ({ app: page }) => {

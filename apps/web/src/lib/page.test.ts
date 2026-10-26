@@ -28,8 +28,9 @@ vi.mock("~/rpc/connection", () => ({
 
 const { useAppearance } = await import("~/lib/appearance");
 const { closePage, currentPage, openThread, pageOf } = await import("./page");
-const { act } = await import("./actions");
-const { pressRow, releaseRow } = await import("./select");
+const { act, scheduleMarkRead, toggleStar } = await import("./actions");
+const { extendSelection, pressRow, releaseRow, selectAll, selectWhere, toggleCurrent } = await import("./select");
+const { useThreads } = await import("~/state/threads");
 const { getApp, navigate, setApp } = await import("~/state/app");
 const { flushDeferredRefresh, listKey, refreshList, useList } = await import("~/state/list");
 
@@ -122,6 +123,68 @@ describe("the page (plan 24)", () => {
     closePage();
     expect(getApp().compose).toBeNull();
     expect(currentPage()).toBe("list");
+  });
+});
+
+describe("what the Codex code review found", () => {
+  it("no selection can be made under a page (the reader's actions would act on it, unseen): ⌘A, x, ⇧J, * r", () => {
+    setApp({ selectedId: 2, readerOpen: true });
+    selectAll();
+    toggleCurrent();
+    extendSelection(1);
+    selectWhere(() => true);
+    expect(getApp().checked.size).toBe(0);
+    // on the list they work as ever
+    closePage();
+    selectAll();
+    expect(getApp().checked.size).toBe(4);
+  });
+
+  it("a conversation the list doesn't hold (a reload on one): its star toggles from what the reader shows, and the dwell reads it", async () => {
+    const acts: string[] = [];
+    fake.handlers["threads.act"] = async (p) => (acts.push((p as { action: string }).action), { undoId: null });
+    useThreads.setState({ details: new Map([[99, { thread: { ...row(99), starred: true, unread: true }, messages: [] } as never]]) });
+    setApp({ selectedId: 99, readerOpen: true });
+    toggleStar();
+    await vi.waitFor(() => expect(acts).toEqual(["unstar"]));
+    vi.useFakeTimers();
+    scheduleMarkRead(99);
+    vi.advanceTimersByTime(500);
+    vi.useRealTimers();
+    await vi.waitFor(() => expect(acts).toEqual(["unstar", "markRead"]));
+  });
+
+  it("Split → List lands on the list, the cursor kept (Split's open thread isn't a page)", () => {
+    layout("split");
+    setApp({ selectedId: 3, readerOpen: true });
+    layout("list");
+    expect(currentPage()).toBe("list");
+    expect(getApp().selectedId).toBe(3);
+  });
+
+  it("a search under a page (the palette's, a sender's): the list shows with its results", () => {
+    setApp({ selectedId: 2, readerOpen: true });
+    setApp({ query: "factura" });
+    expect(currentPage()).toBe("list");
+  });
+
+  it("List keeps a deep window through an ordinary refresh too (an archive 600 rows down returns to the same list)", async () => {
+    const many = Array.from({ length: 1200 }, (_, i) => row(i + 1));
+    useList.setState({ items: many, index: new Map(many.map((t, i) => [t.id, i])) });
+    const limits: number[] = [];
+    fake.handlers["threads.list"] = async (p) => {
+      const { limit, cursor } = p as { limit: number; cursor?: { id: number } };
+      limits.push(limit);
+      const start = cursor ? cursor.id : 0;
+      return { items: many.slice(start, start + limit), nextCursor: { lastDate: 0, id: start + limit } };
+    };
+    refreshList(false, true);
+    await vi.waitFor(() => expect(limits).toEqual([500, 500, 200]));
+    // Split: today's single capped page
+    limits.length = 0;
+    await vi.waitFor(() => expect(useList.getState().items).toHaveLength(1200));
+    refreshList(false, false);
+    await vi.waitFor(() => expect(limits).toEqual([500]));
   });
 });
 

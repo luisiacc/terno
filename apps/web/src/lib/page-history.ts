@@ -116,14 +116,15 @@ export function createPageHistory(deps: PageHistoryDeps): PageHistory {
   }
 
   function apply(next: Shown) {
+    if (traversal) {
+      // the back() hasn't landed: what's on top is still the entry it is leaving. The latest wish waits, whatever it is
+      // (back on the list included: a page opened and closed meanwhile leaves nothing to push)
+      queued = next;
+      return;
+    }
     const prev = shown;
     if (prev.page === next.page && prev.id === next.id) {
       shown = next;
-      return;
-    }
-    if (traversal) {
-      // the back() hasn't landed: what's on top is still the entry it is leaving
-      queued = next;
       return;
     }
     shown = next;

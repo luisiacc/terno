@@ -71,6 +71,15 @@ function focusList() {
 
 let history: PageHistory | null = null;
 
+// A search changes the list under a page (the palette's, a sender's "more from"): the list shows, with its results.
+useApp.subscribe((s, p) => {
+  if (s.query !== p.query && s.readerOpen && listLayout()) setApp({ readerOpen: false });
+});
+// Split → List lands on the list (the cursor kept): Split's open thread is its cursor, not a page.
+useAppearance.subscribe((s, p) => {
+  if (s.layout === "list" && p.layout !== "list" && getApp().readerOpen) setApp({ readerOpen: false });
+});
+
 /** ⌘[ / the menu's Back / the mouse's back button. */
 export function goBack(): void {
   if (!listLayout()) return;

@@ -249,12 +249,13 @@ let deferred = false;
  * or, while a page covers it, once the list shows again (plan 24, R4: no
  * work for a list nobody sees, and its window and anchor survive).
  */
-export function refreshList(covered: boolean): void {
+export function refreshList(covered: boolean, keepWindow = false): void {
   if (covered) {
     deferred = true;
     return;
   }
-  void reloadList({ keepSelection: true });
+  // List keeps a deep window (an archive from a page 600 rows down must not shrink the list it returns to); Split as before
+  void reloadList({ keepSelection: true, window: keepWindow && useList.getState().items.length > WINDOW_PAGE });
 }
 
 /** The list shows again: the refresh it missed, over its whole loaded window. */

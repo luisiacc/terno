@@ -158,6 +158,21 @@ describe("DragController", () => {
   });
 });
 
+describe("targets that move during a drag (Codex review)", () => {
+  it("the drop is tested against targets measured at the drop, not at the start", () => {
+    let rects = RECTS;
+    const drops: number[] = [];
+    const { ctl } = setup({ targets: () => rects, drop: (id) => drops.push(id) });
+    ctl.down(11, { x: 300, y: 300 });
+    ctl.move({ x: 300, y: 310 });
+    ctl.move({ x: 50, y: 110 });
+    // a count widened the targets above: category 3 is under the pointer now
+    rects = [{ id: 3, left: 0, right: 200, top: 100, bottom: 128 }];
+    ctl.up({ x: 50, y: 110 });
+    expect(drops).toEqual([3]);
+  });
+});
+
 describe("a category that is a target twice (plan 24: its sidebar item and its List tab)", () => {
   // category 1 in the sidebar (at 0) and as a tab (at 1), side by side
   const TWICE: TargetRect[] = [

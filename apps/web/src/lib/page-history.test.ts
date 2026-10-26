@@ -128,6 +128,18 @@ describe("page history (plan 24)", () => {
     expect(t.at).toBe(1);
   });
 
+  it("open → close → open → close, all before the first popstate: nothing is pushed once it lands (Codex review)", () => {
+    const t = harness();
+    t.h.sync(thread(1));
+    t.h.sync(list());
+    t.h.sync(thread(2));
+    t.h.sync(list());
+    t.deliver();
+    expect(t.calls).toEqual(["push #/thread/1", "back"]);
+    expect(t.entries[t.at]!.state).toBeNull();
+    expect(t.h.inspect()).toMatchObject({ traversing: false, shown: { page: "list" } });
+  });
+
   it("a back() with nothing to go back to (its popstate never comes) is over after the fallback", () => {
     const t = harness();
     // a reload left only our entry (the base below it lost): the machine believes it's on a page

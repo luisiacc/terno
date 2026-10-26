@@ -9,7 +9,7 @@ import { activeFilter } from "~/lib/unread-filter";
 import type { ListFilter } from "@terno/core";
 import { getApp, setApp, type ScopeSelection } from "~/state/app";
 import { patchRows, reloadList, useList } from "~/state/list";
-import { invalidateThreads } from "~/state/threads";
+import { invalidateThreads, useThreads } from "~/state/threads";
 import { closePage, currentPage, listLayout } from "~/lib/page";
 
 /** Does a thread still belong in the current view after an action? */
@@ -252,7 +252,8 @@ export function targetRows(ids?: readonly number[]): ThreadSummary[] {
   const target = ids ? { ids } : currentTargets();
   if ("scope" in target) return scopeRows(items, target.scope.scope);
   return target.ids.flatMap((id) => {
-    const row = items[index.get(id) ?? -1];
+    // a conversation the list doesn't hold (List's reload on one, a draft's): what the reader shows of it
+    const row = items[index.get(id) ?? -1] ?? useThreads.getState().details.get(id)?.thread;
     return row ? [row] : [];
   });
 }
@@ -280,7 +281,7 @@ export function scheduleMarkRead(id: number): void {
   if (readTimer) clearTimeout(readTimer);
   readTimer = setTimeout(() => {
     const st = useList.getState();
-    const row = st.items[st.index.get(id) ?? -1];
+    const row = st.items[st.index.get(id) ?? -1] ?? useThreads.getState().details.get(id)?.thread;
     if (row?.unread && getApp().selectedId === id) void act("markRead", [id], { quiet: true });
   }, 450);
 }

@@ -6,7 +6,7 @@ import { client, connectBackend } from "~/rpc/connection";
 import { removeFromCategory } from "~/lib/categorize";
 import { getApp, navigate, setApp, setCategories } from "~/state/app";
 import { refreshList, reloadList, useList } from "~/state/list";
-import { bootPage, installPage, listCovered, readerShown } from "~/lib/page";
+import { bootPage, installPage, listCovered, listLayout, readerShown } from "~/lib/page";
 import { invalidateThreads, loadThread, useThreads } from "~/state/threads";
 import { snack } from "~/lib/snack";
 import { applyAppearance, installAppearanceListeners, reconcileSettings, updateAppearance } from "~/lib/appearance";
@@ -59,7 +59,7 @@ export async function boot(): Promise<void> {
       requestAnimationFrame(() => {
         refreshQueued = false;
         // a page covering the list: one refresh when it shows again (plan 24, R4)
-        refreshList(listCovered());
+        refreshList(listCovered(), listLayout());
       });
     });
     client.on("counts", (counts) => setApp({ counts }));

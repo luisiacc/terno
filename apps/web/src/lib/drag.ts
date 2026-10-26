@@ -146,7 +146,8 @@ export class DragController {
     const p = this.phase;
     this.phase = { kind: "idle" };
     if (p.kind !== "dragging") return;
-    const hit = hitRect(p.rects, e.x, e.y);
+    // measured again for the drop itself: a target may have moved since the drag started (a tab widened by a new count, into More)
+    const hit = hitRect(this.env.targets(), e.x, e.y);
     if (hit && !this.env.isAlready(hit.id, p.ids)) this.env.drop(hit.id, p.ids, hit.at);
     else this.env.cancel();
   }

@@ -1119,7 +1119,8 @@ async function pageCycles(page: import("@playwright/test").Page, n: number): Pro
     for (let i = 0; i < count; i++) {
       let t0 = performance.now();
       press("Enter");
-      await until(() => !!document.querySelector("[data-testid=list-page]"));
+      // the conversation itself on screen (its subject: the detail, warmed by deepInList's open), not just the page around it
+      await until(() => !!document.querySelector("[data-testid=list-page] [data-testid=reader-subject]"));
       await frame();
       out.open.push(performance.now() - t0);
       // under the dwell that marks it read (450 ms): the round trip is the page alone
@@ -1161,10 +1162,10 @@ async function deepInList(page: import("@playwright/test").Page, server: import(
       await new Promise((r) => setTimeout(r, 25));
     }
   }, 1500 * h);
-  // a row in view becomes the cursor (a click there opens it; Esc comes back)
+  // a row in view becomes the cursor (a click there opens it, which loads its conversation into the cache; Esc comes back)
   const box = (await page.locator("[data-testid=thread-list] [role=listbox]").boundingBox())!;
   await page.mouse.click(box.x + box.width / 2, box.y + 3.5 * h);
-  await expect(page.getByTestId("list-page")).toBeVisible();
+  await expect(page.getByTestId("list-page").getByTestId("reader-subject")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("list-page")).toHaveCount(0);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());

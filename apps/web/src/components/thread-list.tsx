@@ -564,6 +564,8 @@ export function ThreadList() {
           if (i === undefined) return;
           const h = measuredHeight.current;
           el.scrollTop = Math.max(0, i * h + into * (h / oldH));
+          // where the open thread is now (rows may have arrived above it since the capture)
+          const sel = id === null ? undefined : useList.getState().index.get(id);
           // the open thread was on screen: if the new heights carried it out of view, it comes back (set directly: the
           // virtualizer's own scroll would land on positions measured before this switch)
           if (selVisible && sel !== undefined) {

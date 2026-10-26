@@ -22,8 +22,11 @@ const lastKey = new Map<Command, number>();
 
 /** a next page asked for by j at the end of the loaded rows (one at a time) */
 let stepping = false;
+/** every move: a page that answers after the user moved again (or left the page) doesn't move for them */
+let moves = 0;
 
 export function move(delta: number) {
+  const mine = ++moves;
   const { items, index, nextCursor } = useList.getState();
   if (items.length === 0) return;
   const s = getApp();
@@ -37,7 +40,8 @@ export function move(delta: number) {
     stepping = true;
     void loadMore().finally(() => {
       stepping = false;
-      if (useList.getState().items.length > items.length) move(delta);
+      const still = mine === moves && getApp().selectedId === s.selectedId && listLayout() && currentPage() === "thread";
+      if (still && useList.getState().items.length > items.length) move(delta);
     });
     return;
   }

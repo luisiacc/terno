@@ -12,7 +12,7 @@ import { currentScope, listKey, useList } from "~/state/list";
 import { loadThread } from "~/state/threads";
 import { viewLabel } from "~/lib/format";
 import { addRange, extend, pick, scopeLabel, targetsOf, toggle, type Order } from "~/lib/selection";
-import { listLayout, openThread } from "~/lib/page";
+import { listCovered, listLayout, openThread } from "~/lib/page";
 
 export const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
@@ -89,25 +89,28 @@ export function releaseRow(id: number): void {
 /** x */
 export function toggleCurrent(): void {
   const s = getApp();
-  if (s.selectedId === null) return;
+  // a page covers the list (List): a selection made there would be invisible, and the reader's actions would act on it
+  if (s.selectedId === null || listCovered()) return;
   setApp({ checked: toggle(s.checked, s.selectedId), anchorId: s.selectedId, scope: null });
 }
 
 /** ⌘A / `* a`: every loaded row (more may exist: the banner offers the whole view). */
 export function selectAll(): void {
   const { items } = useList.getState();
-  if (items.length === 0) return;
+  if (items.length === 0 || listCovered()) return;
   const s = getApp();
   setApp({ checked: pick(items), anchorId: s.anchorId ?? items[0]!.id, scope: null });
 }
 
 /** `* r` / `* u` / `* s` */
 export function selectWhere(keep: (t: { unread: boolean; starred: boolean }) => boolean): void {
+  if (listCovered()) return;
   setApp({ checked: pick(useList.getState().items, keep), scope: null });
 }
 
 /** ⇧J / ⇧K: the cursor moves and the anchor→cursor range is selected. */
 export function extendSelection(delta: number): void {
+  if (listCovered()) return;
   const s = getApp();
   const order = listOrder();
   const r = extend(s.checked, order, s.anchorId ?? s.selectedId, s.selectedId, delta);
@@ -124,7 +127,7 @@ export function extendSelection(delta: number): void {
 /** "Select all N conversations in “…”": the whole view or search, by scope. */
 export function selectScope(count: number): void {
   const scope = currentScope();
-  if (!scope) return;
+  if (!scope || listCovered()) return;
   const s = getApp();
   const category = s.categories.find((c) => c.id === s.categoryId)?.name;
   const label = scope.kind === "search" ? t("list.scope.quoted", { label: s.query.trim() }) : (category ?? viewLabel(s.view));
