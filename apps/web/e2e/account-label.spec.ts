@@ -125,6 +125,22 @@ test.describe("the receiving account on rows", { tag: "@design" }, () => {
     await setDensity(page, server, "comfortable");
   });
 
+  test("an address whose domain alone is wider than the label truncates inside it, in both densities (Codex review)", async ({ app: page, server }) => {
+    const [personal, acme] = await server.backend.store.accounts.list();
+    sqlDb(server.backend.store).run("UPDATE accounts SET email = ? WHERE id = ?", "ana@this-is-a-very-long-corporate-domain.example.com", acme!.id);
+    await server.backend.server.invoke("accounts.update", { id: personal!.id, displayName: "Shared" }, ctx);
+    await server.backend.server.invoke("accounts.update", { id: acme!.id, displayName: "Shared" }, ctx);
+    for (const density of ["comfortable", "compact"] as const) {
+      await setDensity(page, server, density);
+      const long = page.locator("[data-testid=account-label]", { hasText: "corporate-domain" }).first();
+      await expect(long).toBeVisible();
+      await expectContained(page);
+      // the label itself holds its parts (the domain ends in an ellipsis, it doesn't spill)
+      expect(await long.evaluate((el) => [...el.children].every((c) => c.getBoundingClientRect().right <= el.getBoundingClientRect().right + 0.5))).toBe(true);
+    }
+    await setDensity(page, server, "comfortable");
+  });
+
   test("search results and a category across accounts name each row's account too", async ({ app: page, server }) => {
     await search(page, "in:all factura");
     await expectLabelsMatch(page, server);

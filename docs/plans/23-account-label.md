@@ -50,13 +50,21 @@ Codex (plan critique, 10 points) checked the plan against the row code. What cha
 1. **Width budget (classic, Atelier, Lumen).** Line 2's subject, draft and snippet now sit in one `min-w-0 flex-1` group and the label is its sibling, `shrink-0`, capped at `min(9rem, 45%)` of the line (`min(7rem, 32%)` in compact), so a long subject and a long label share the line instead of overflowing. The classic subject's 60 % cap is now of that group.
 2. **Right-aligned under the date in every comfortable layout** (`ml-auto` on the label, which is outside the subject group).
 3. **Compact:** the label left the right-hand `shrink-0` group (marks and date): it sits between the subject (which shrinks) and that group, with its own cap.
-4. **Address truncation:** the local part shrinks first (`min-w-[1ch]`); the `@domain` shrinks only once the local part is at its minimum (`shrink-[0.01]`), so a very long domain still ends in an ellipsis inside the cap instead of overflowing.
+4. **Address truncation:** the local part shrinks first (`min-w-[1ch]`), then the `@domain`, so a very long domain still ends in an ellipsis inside the cap instead of overflowing (see the code review below for how).
 5. **Same-domain addresses sharing a long prefix:** not changed. The ring's color and the `title` (the full address) tell them apart, and naming the accounts in Settings → Accounts is the fix; a computed middle truncation was judged not worth its cost for a rare case.
 6. **Checked rows** (accent background): the label uses `accent-foreground` there (`muted-foreground` on `accent` isn't a certified pair); the cursor row and the rest keep `muted-foreground`.
 7. **Screen readers:** the visible label is `aria-hidden`; one visually hidden ", to {account}" (`list.accountLabel.sr`, en/es) is the row's last child, so the option's name ends with it in every layout (asserted with `toHaveAccessibleName`).
 8. **Stable label objects across new `accounts` arrays:** labels are reused by value equality, so sync-state events re-render no row (unit test, and an e2e that counts `ThreadRow` renders: zero for metadata-only events, exactly that account's visible rows for a rename).
 9. **Overflow the height checks can't see:** the e2e asserts that nothing a row draws (outside what an ancestor clips) leaves the row's box, in all three designs and both densities, with a long name and address labels.
 10. **Fixtures:** the e2e renames accounts to create a shared name (both fall back to addresses), a long name, and checks the label-to-account mapping in the inbox, a search and a category, in both densities.
+
+## What the Codex code review changed
+
+One finding (medium), fixed with a regression test that failed before the fix:
+
+1. **A domain wider than the label spilled out of it.** The domain had `flex-shrink: 0.01`; once the local part reached its minimum, the domain was the only shrinking item and a factor under 1 resolves only that fraction of the overflow (CSS Flexbox §9.7), so the rest overflowed the row (comfortable) or over the marks and date (compact). Now the local part has `shrink-[100]` and the domain the default 1: the local part still gives way first, and the domain ends in an ellipsis. Test: "an address whose domain alone is wider than the label truncates inside it" (all designs, both densities).
+
+Codex found no performance regression (render counts, frame times and DOM size are asserted by the existing gates and the new render-count e2e).
 
 ## Implementation notes
 

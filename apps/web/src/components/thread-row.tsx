@@ -78,7 +78,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
     </>
   );
   // Apple Mail's "to which account" (plan 23): muted, under the date (before it in compact), within a share of the line so the
-  // subject always keeps the rest; an address truncates its local part before its @domain. Screen readers get it once, at the end.
+  // subject always keeps the rest; an address truncates its local part first (shrink 100 to 1: a factor under 1 leaves overflow unresolved), then its @domain. Screen readers get it once, at the end.
   const accountTag = account && (
     <span
       aria-hidden
@@ -94,8 +94,8 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       <span data-testid="account-mark" className={cn("size-1.5 shrink-0 rounded-full border-[1.5px]", ACCOUNT_MARK[account.color])} />
       {account.local !== undefined ? (
         <>
-          <span className="min-w-[1ch] truncate">{account.local}</span>
-          <span className="min-w-0 shrink-[0.01] truncate">{account.domain}</span>
+          <span className="min-w-[1ch] shrink-[100] truncate">{account.local}</span>
+          <span className="min-w-0 truncate">{account.domain}</span>
         </>
       ) : (
         <span className="min-w-0 truncate">{account.text}</span>
