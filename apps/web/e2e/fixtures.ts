@@ -174,6 +174,21 @@ export const test = base.extend<Fixtures>({
 });
 
 export const rows = (page: Page): Locator => page.getByTestId("thread-row");
+
+/** A recipient field's chips (plan 26): `field` is the input's test id ("compose-to"). */
+export const chipsOf = (page: Page, field: string): Locator => page.getByTestId(`${field}-field`).getByTestId("recipient-chip");
+
+/** Every address in a recipient field, in order (focused first: a long field shows them all only then). */
+export async function recipientEmails(page: Page, field: string): Promise<string[]> {
+  if ((await page.getByTestId(`${field}-field`).getAttribute("data-collapsed")) !== null) await page.getByTestId(field).focus();
+  return chipsOf(page, field).evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.email ?? ""));
+}
+
+/** Types recipients into a field and commits them (Enter), as a person would. */
+export async function addRecipients(page: Page, field: string, text: string): Promise<void> {
+  await page.getByTestId(field).fill(text);
+  await page.getByTestId(field).press("Enter");
+}
 /** the open thread (the list's cursor) */
 export const selectedRow = (page: Page): Locator => page.locator("[data-testid=thread-row][data-cursor]");
 

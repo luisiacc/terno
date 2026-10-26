@@ -288,6 +288,20 @@ export function RecipientInput({
 
   useEffect(() => () => void seq.current++, []);
 
+  // the Edit menu's Undo / Redo (Electron's role items) arrive as native beforeinput events (React's onBeforeInput
+  // is a text-input polyfill that never sees them): this field's own history
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    const on = (e: InputEvent) => {
+      if (e.inputType !== "historyUndo" && e.inputType !== "historyRedo") return;
+      e.preventDefault();
+      step(e.inputType === "historyUndo" ? "undo" : "redo");
+    };
+    el.addEventListener("beforeinput", on);
+    return () => el.removeEventListener("beforeinput", on);
+  });
+
   const undoKey = (e: React.KeyboardEvent): "undo" | "redo" | null => {
     if (!mod(e) || e.altKey) return null;
     const k = e.key.toLowerCase();
@@ -518,7 +532,8 @@ export function RecipientInput({
         <button
           type="button"
           data-testid="recipient-more"
-          aria-label={t("compose.recipients.showAll", { count: field.chips.length })}
+          // the name is what it says ("and 14 more"); what it does is its description
+          aria-describedby={`${descId}-all`}
           onMouseDown={(e) => {
             e.preventDefault();
             focusInput(0);
@@ -528,6 +543,11 @@ export function RecipientInput({
         >
           {t("compose.recipients.more", { count: field.chips.length - shown.length })}
         </button>
+      )}
+      {collapsed && (
+        <span id={`${descId}-all`} hidden>
+          {t("compose.recipients.showAll", { count: field.chips.length })}
+        </span>
       )}
       <input
         ref={inputRef}
@@ -552,14 +572,6 @@ export function RecipientInput({
         onChange={(e) => {
           apply({ ...field, text: e.target.value }, { typing: true });
           lookup(e.target.value, e.target.selectionStart ?? e.target.value.length);
-        }}
-        onBeforeInput={(e) => {
-          // the Edit menu's Undo / Redo (Electron's role menu items) come as these: this field's own history
-          const type = (e.nativeEvent as InputEvent).inputType;
-          if (type === "historyUndo" || type === "historyRedo") {
-            e.preventDefault();
-            step(type === "historyUndo" ? "undo" : "redo");
-          }
         }}
         onKeyDown={onKeyDown}
         onPaste={onPaste}
@@ -645,7 +657,7 @@ const RecipientChip = memo(function RecipientChip({ chip: c, selected, ids }: { 
       data-email={c.address.email}
       data-invalid={!c.valid || undefined}
       className={cn(
-        "group/chip inline-flex h-[22px] max-w-64 min-w-0 cursor-default items-center gap-0.5 rounded-md bg-muted pr-0.5 pl-1.5 text-sm text-foreground outline-none select-none animate-in fade-in-0 duration-base hover:bg-accent hover:text-accent-foreground",
+        "group/chip inline-flex h-[22px] max-w-64 min-w-0 cursor-default items-center gap-0.5 rounded-md bg-muted px-1.5 text-sm text-foreground outline-none select-none animate-in fade-in-0 duration-base hover:bg-accent hover:text-accent-foreground",
         "aria-selected:bg-primary aria-selected:text-primary-foreground",
         // an invalid one keeps its fill (its mark is drawn for the fill: destructive on muted, CONTRAST_PAIRS)
         !c.valid && "hover:bg-muted hover:text-foreground",
@@ -653,9 +665,12 @@ const RecipientChip = memo(function RecipientChip({ chip: c, selected, ids }: { 
     >
       {!c.valid && <CircleAlert aria-hidden="true" className="size-3 shrink-0 text-destructive group-aria-selected/chip:text-primary-foreground" />}
       <span className={cn("truncate", !c.valid && "underline decoration-destructive decoration-dotted decoration-2 underline-offset-[3px] group-aria-selected/chip:decoration-primary-foreground")}>{chipLabel(c)}</span>
-      <span aria-hidden="true" data-chip-remove className="grid size-4 shrink-0 place-items-center rounded-sm opacity-0 group-hover/chip:opacity-60 group-aria-selected/chip:opacity-80 hover:opacity-100!">
-        <X className="size-3" />
-      </span>
+      {/* on the selected chip only: no space held at rest (the chips stay balanced), nothing shifts under a moving pointer */}
+      {selected && (
+        <span aria-hidden="true" data-chip-remove className="-mr-0.5 grid size-4 shrink-0 place-items-center rounded-sm opacity-80 hover:opacity-100">
+          <X className="size-3" />
+        </span>
+      )}
     </span>
   );
 });

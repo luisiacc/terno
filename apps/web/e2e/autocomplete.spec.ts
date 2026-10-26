@@ -13,7 +13,7 @@ import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import type { Address } from "@terno/core";
 import { msg } from "@terno/store/conformance";
-import { expect, focusList, openRow, test, type CapturedMail } from "./fixtures";
+import { chipsOf, expect, focusList, openRow, recipientEmails, test, type CapturedMail } from "./fixtures";
 import type { DevServer } from "../../backend-dev/src/server";
 
 const SHOTS = "/tmp/unica-scratch/autocomplete-18";
@@ -85,7 +85,10 @@ test.describe("recipients", { tag: "@design" }, () => {
     await page.keyboard.press("ArrowUp");
     await expect(options(page).first()).toHaveAttribute("aria-selected", "true");
     await page.keyboard.press("Enter");
-    await expect(to).toHaveValue("Zuleika Ñúñez <zuleika.nunez@acme.studio>, ");
+    // a chip (plan 26), the input empty for the next one
+    await expect(chipsOf(page, "compose-to")).toHaveText(["Zuleika Ñúñez"]);
+    await expect(chipsOf(page, "compose-to")).toHaveAttribute("data-email", "zuleika.nunez@acme.studio");
+    await expect(to).toHaveValue("");
     await expect(list(page)).toBeHidden();
     // still in the field, ready for the next one; Enter didn't send
     await expect(to).toBeFocused();
@@ -101,21 +104,24 @@ test.describe("recipients", { tag: "@design" }, () => {
     // the matched parts are set apart
     await expect(options(page).first().locator("[data-match]").nth(1)).toHaveText("Ñúñ");
     await page.keyboard.press("Tab");
-    await expect(to).toHaveValue("Zuleika Ñúñez <zuleika.nunez@acme.studio>, ");
+    await expect(chipsOf(page, "compose-to")).toHaveText(["Zuleika Ñúñez"]);
+    await expect(to).toBeFocused();
     await page.keyboard.type("arjun p");
     await expect(options(page).first()).toContainText("Arjun Patel");
     await page.keyboard.press(",");
-    await expect(to).toHaveValue("Zuleika Ñúñez <zuleika.nunez@acme.studio>, Arjun Patel <arjun.patel@zentrix.dev>, ");
+    expect(await recipientEmails(page, "compose-to")).toEqual(["zuleika.nunez@acme.studio", "arjun.patel@zentrix.dev"]);
+    await expect(to).toHaveValue("");
     // Zuleika is in the field already: not again
     await page.keyboard.type("zul");
     await expect(options(page).first()).toContainText("Zuleima Ríos");
     await expect(options(page).filter({ hasText: "zuleika.nunez@acme.studio" })).toHaveCount(0);
     await page.keyboard.press("Escape");
     await expect(list(page)).toBeHidden();
-    // a complete address and a comma: the comma is typed, nothing replaced
+    // a complete address and a comma: that address, not a suggestion
     await to.fill("someone@new.io");
     await page.keyboard.type(",");
-    await expect(to).toHaveValue("someone@new.io,");
+    expect(await recipientEmails(page, "compose-to")).toEqual(["zuleika.nunez@acme.studio", "arjun.patel@zentrix.dev", "someone@new.io"]);
+    await expect(to).toHaveValue("");
     // my own address isn't suggested from a prefix
     await to.fill(me.email.slice(0, 4));
     await page.waitForTimeout(150);
@@ -135,7 +141,7 @@ test.describe("recipients", { tag: "@design" }, () => {
     await options(page).first().hover();
     await expect(options(page).first()).toHaveAttribute("aria-selected", "true");
     await options(page).first().click();
-    await expect(page.getByTestId("compose-to")).toHaveValue("Arjun Patel <arjun.patel@zentrix.dev>, ");
+    expect(await recipientEmails(page, "compose-to")).toEqual(["arjun.patel@zentrix.dev"]);
     await expect(page.getByTestId("compose-to")).toBeFocused();
   });
 
@@ -156,7 +162,9 @@ test.describe("recipients", { tag: "@design" }, () => {
       // nobody shown matches "zulx": the list goes at once (long before the answer), and Tab doesn't put Zuleika in
       await expect(list(page)).toHaveCount(0, { timeout: 1000 });
       await page.keyboard.press("Tab");
-      await expect(page.getByTestId("compose-to")).toHaveValue("zulx", { timeout: 1000 });
+      // what was typed is the chip (an invalid one), never Zuleika
+      await expect(chipsOf(page, "compose-to")).toHaveAttribute("data-email", "zulx", { timeout: 1000 });
+      await expect(chipsOf(page, "compose-to")).toHaveAttribute("aria-invalid", "true");
     } finally {
       handlers["compose.suggestRecipients"] = real;
     }
@@ -171,7 +179,8 @@ test.describe("recipients", { tag: "@design" }, () => {
       data.setData("text/plain", "ana@x.io; Bob Stone <bob@stone.io>\nmailto:carla@ruiz.mx");
       el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
     });
-    await expect(page.getByTestId("compose-to")).toHaveValue("ana@x.io, Bob Stone <bob@stone.io>, carla@ruiz.mx, ");
+    expect(await recipientEmails(page, "compose-to")).toEqual(["ana@x.io", "bob@stone.io", "carla@ruiz.mx"]);
+    await expect(page.getByTestId("compose-to")).toHaveValue("");
   });
 
   test("in a reply, Esc closes the list first and the draft only on the next Esc", async ({ app: page, server }) => {

@@ -6,7 +6,7 @@
  * can be undone.
  */
 import type { Page } from "@playwright/test";
-import { expect, navTo, focusList, openRow, rows, selectThread, test } from "./fixtures";
+import { addRecipients, chipsOf, expect, navTo, focusList, openRow, recipientEmails, rows, selectThread, test } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
 const composer = (page: Page) => page.getByTestId("reader").getByTestId("composer");
@@ -22,7 +22,10 @@ test.describe("inline reply, reply-all, forward", { tag: "@design" }, () => {
     await expect(composer(page)).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(composer(page)).toHaveAccessibleName(/^Reply to /);
-    await expect(page.getByTestId("compose-to")).toHaveValue(/^.+ <[^>]+@[^>]+>$/);
+    // the sender, as a chip (plan 26)
+    await expect(chipsOf(page, "compose-to")).toHaveCount(1);
+    await expect(chipsOf(page, "compose-to")).toHaveAttribute("data-email", /@/);
+    await expect(page.getByTestId("compose-to")).toHaveValue("");
     // a reply's subject is there, behind its button
     await expect(page.getByTestId("compose-subject")).toHaveCount(0);
     await page.getByTestId("compose-show-subject").click();
@@ -61,10 +64,11 @@ test.describe("inline reply, reply-all, forward", { tag: "@design" }, () => {
     await page.keyboard.press("a");
     const cc = page.getByTestId("compose-cc");
     await expect(cc).toBeVisible();
-    const value = await cc.inputValue();
-    expect(value.split(",").length).toBeGreaterThanOrEqual(1);
-    expect(value).not.toContain(row.email);
-    expect(value).not.toContain((await page.getByTestId("compose-to").inputValue()).replace(/.*</, "").replace(">", ""));
+    const ccs = await recipientEmails(page, "compose-cc");
+    const to = await recipientEmails(page, "compose-to");
+    expect(ccs.length).toBeGreaterThanOrEqual(1);
+    expect(ccs).not.toContain(row.email);
+    expect(ccs).not.toContain(to[0]);
   });
 
   test("f forwards with Fwd: and an empty To (focused); invalid recipients keep the draft open", async ({ app: page }) => {
@@ -80,8 +84,11 @@ test.describe("inline reply, reply-all, forward", { tag: "@design" }, () => {
     await expect(composer(page)).toContainText("Forwarded message");
     await page.getByTestId("compose-to").fill("esto no es un correo");
     await page.getByTestId("compose-send").click();
-    await expect(toast(page, "Check the recipients")).toBeVisible();
+    // Send says which entry isn't an address, and shows it: its chip selected (plan 26)
+    await expect(toast(page, "“esto no es un correo” isn’t an email address. Fix or remove it, then send.")).toBeVisible();
     await expect(composer(page)).toBeVisible();
+    await expect(chipsOf(page, "compose-to").first()).toBeFocused();
+    await expect(chipsOf(page, "compose-to").first()).toHaveAttribute("aria-invalid", "true");
   });
 
   test("text keys stay text inside the draft: j, k, e, #, r and ⌫ don't navigate, archive or reply", async ({ app: page }) => {
@@ -151,10 +158,12 @@ test.describe("drafts are kept", { tag: "@design" }, () => {
     await expect(page.getByTestId("reader-subject")).toBeVisible();
     await focusList(page);
     await page.keyboard.press("f");
-    await expect(page.getByTestId("compose-to")).toHaveValue("alice@example.com, bob@");
+    // two chips, Bob's marked (plan 26)
+    expect(await recipientEmails(page, "compose-to")).toEqual(["alice@example.com", "bob@"]);
+    await expect(chipsOf(page, "compose-to").nth(1)).toHaveAttribute("aria-invalid", "true");
     // and it isn't sent like that
     await page.getByTestId("compose-send").click();
-    await expect(toast(page, "Check the recipients")).toBeVisible();
+    await expect(toast(page, "“bob@” isn’t an email address. Fix or remove it, then send.")).toBeVisible();
   });
 
   test("r, then a, then f, then r: what was written and typed recipients survive every conversion, even with a save pending; Undo goes back", async ({ app: page }) => {
@@ -164,21 +173,21 @@ test.describe("drafts are kept", { tag: "@design" }, () => {
     await page.getByTestId("compose-body").focus();
     await page.keyboard.type("Mi respuesta.");
     const to = page.getByTestId("compose-to");
-    const auto = await to.inputValue();
-    await to.fill(`${auto}, Extra <extra@example.com>`);
+    await addRecipients(page, "compose-to", "Extra <extra@example.com>");
     // collapse and convert at once: the autosave hasn't run yet
     await page.keyboard.press("Escape");
     await page.keyboard.press("a");
     await expect(toast(page, "Converted to reply all")).toBeVisible();
     await expect(composer(page)).toHaveAttribute("data-mode", "replyAll");
     await expect(page.getByTestId("compose-body")).toHaveText("Mi respuesta.");
-    await expect(to).toHaveValue(/extra@example\.com/);
+    expect(await recipientEmails(page, "compose-to")).toContain("extra@example.com");
     await page.keyboard.press("Escape");
     await page.keyboard.press("f");
     await expect(composer(page)).toHaveAttribute("data-mode", "forward");
     await expect(page.getByTestId("compose-body")).toHaveText("Mi respuesta.");
     // a forward drops the recipients Terno filled in, keeps the one typed
-    await expect(to).toHaveValue("Extra <extra@example.com>");
+    await expect.poll(() => recipientEmails(page, "compose-to")).toEqual(["extra@example.com"]);
+    await expect(to).toHaveValue("");
     await toast(page, "Converted to a forward").getByTestId("snack-action").click();
     await expect(composer(page)).toHaveAttribute("data-mode", "replyAll");
     await page.keyboard.press("Escape");
@@ -187,7 +196,7 @@ test.describe("drafts are kept", { tag: "@design" }, () => {
     await page.keyboard.press("r");
     await expect(composer(page)).toHaveAttribute("data-mode", "reply");
     await expect(page.getByTestId("compose-body")).toHaveText("Mi respuesta.");
-    await expect(to).toHaveValue(/extra@example\.com/);
+    expect(await recipientEmails(page, "compose-to")).toContain("extra@example.com");
   });
 
   test("converting while the draft is open shows what the new mode fills in: Cc after reply-all, Subject after forward", async ({ app: page, server }) => {
@@ -206,7 +215,7 @@ test.describe("drafts are kept", { tag: "@design" }, () => {
     await page.getByTestId("action-reply-all").click();
     await expect(composer(page)).toHaveAttribute("data-mode", "replyAll");
     await expect(page.getByTestId("compose-cc")).toBeVisible();
-    await expect(page.getByTestId("compose-cc")).not.toHaveValue("");
+    expect((await recipientEmails(page, "compose-cc")).length).toBeGreaterThan(0);
     await page.getByTestId("action-forward").click();
     await expect(composer(page)).toHaveAttribute("data-mode", "forward");
     await expect(page.getByTestId("compose-subject")).toBeVisible();
