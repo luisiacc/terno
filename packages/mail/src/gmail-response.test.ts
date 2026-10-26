@@ -7,6 +7,13 @@ import { ProviderError, type FlagUpdate, type ProviderContext, type SyncSink } f
 const raw = toBase64url(new TextEncoder().encode("From: Sender <sender@example.com>\r\nTo: me@example.com\r\nSubject: Original\r\n\r\nOriginal body"));
 const message = { id: "m1", threadId: "t1", raw, labelIds: ["INBOX", "UNREAD"] };
 
+function oversizedRaw() {
+  let headers = "From: Sender <sender@example.com>\r\nSubject: Oversized\r\nMessage-ID: <oversized@example.com>\r\n\r\n";
+  while (new TextEncoder().encode(headers).length % 3) headers += " ";
+  const prefix = toBase64url(new TextEncoder().encode(headers));
+  return prefix + "A".repeat(Math.ceil((MAX_INCOMING_MIME_BYTES + 3) / 3) * 4 - prefix.length);
+}
+
 function mailbox(options: { cursor?: unknown; cached?: boolean | number; respond?: (url: URL) => unknown | Promise<unknown>; onIngest?: () => void } = {}) {
   let cursor: unknown = options.cursor ?? null;
   const checkpoints: unknown[] = [];
@@ -264,10 +271,7 @@ describe("Gmail successful response validation", () => {
   });
 
   it("retains an oversized message's bounded headers and unavailable state while a neighbor is captured", async () => {
-    let headers = "From: Sender <sender@example.com>\r\nSubject: Oversized\r\nMessage-ID: <oversized@example.com>\r\n\r\n";
-    while (new TextEncoder().encode(headers).length % 3) headers += " ";
-    const prefix = toBase64url(new TextEncoder().encode(headers));
-    const source = prefix + "A".repeat(Math.ceil((MAX_INCOMING_MIME_BYTES + 3) / 3) * 4 - prefix.length);
+    const source = oversizedRaw();
     const box = mailbox({ respond: (url) => {
       if (url.pathname.endsWith("/messages")) return { messages: [{ id: "m1" }, { id: "large" }] };
       if (url.pathname.endsWith("/messages/large")) {
@@ -281,5 +285,18 @@ describe("Gmail successful response validation", () => {
     expect(box.ingested.find((m) => m.providerMsgId === "large")?.attachments).toBeUndefined();
     expect(box.ingested.find((m) => m.providerMsgId === "m1")?.bodyText).toContain("Original body");
     expect(box.checkpoints).toEqual([{ historyId: "10" }]);
+  });
+
+  it("refuses invalid trailing padding even when oversized raw capture decodes only headers", async () => {
+    const source = oversizedRaw() + "==";
+    const box = mailbox({ respond: (url) => {
+      if (url.searchParams.get("format") !== "raw") return;
+      const response = new Response();
+      Object.defineProperty(response, "json", { value: async () => ({ ...message, raw: source }) });
+      return response;
+    } });
+    await rejectedRead(box);
+    expect(box.ingested).toEqual([]);
+    expect(box.flags).toEqual([]);
   });
 });

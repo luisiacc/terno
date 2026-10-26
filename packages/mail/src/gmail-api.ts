@@ -87,7 +87,7 @@ function readMessage(value: unknown, id: string, raw = false): GmailMessage {
 async function validateRaw(raw: string): Promise<void> {
   const chunkSize = 256 * 1024;
   const end = raw.length - (raw.endsWith("==") ? 2 : raw.endsWith("=") ? 1 : 0);
-  if (!end || end % 4 === 1) throw invalidResponse();
+  if (!end || end % 4 === 1 || (end !== raw.length && raw.length % 4 !== 0)) throw invalidResponse();
   for (let offset = 0; offset < end; offset += chunkSize) {
     if (offset) await new Promise<void>((resolve) => setTimeout(resolve, 0));
     if (!/^[A-Za-z0-9_-]+$/.test(raw.slice(offset, Math.min(end, offset + chunkSize)))) throw invalidResponse();

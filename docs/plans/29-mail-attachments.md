@@ -97,3 +97,25 @@ The public RPC-handler performance fixture separates backend validation from tra
 Six additional red cases exposed two related edges: two individually supported 10 MiB incoming parts exceeded the combined local capture budget and rejected the whole message; moving a known part later in a partial capture could lose offline access at quota. Staging now verifies existing candidates first (including duplicate-name/order changes, with exact byte checks), reserves that verified revision before new captures, and enforces combined decoded-byte and captured-part limits before allocation. Excess parts remain explicit unavailable metadata while the body and supported parts commit. Verification compares at most twice the local attachment byte budget, with chunk yields; it never accepts metadata-only equality. All 36 attachment conformance cases now pass across SQL and both IDB configurations. Integrated typecheck/lint pass.
 
 Implementation is ready for the parent-owned distinct whole-T02 Codex review. Parent integrations and full release gates remain required; no final reviewer was spawned by this implementation worker. Outlook, whole Gmail HTTP/decode/batch memory admission, raw-import repair, SMTP acceptance/Sent repair and undo-send work retain their explicit dispositions above.
+
+## Independent whole-series Codex review — round1
+
+Pinned head `a9eec79` with eight exact manifest commits and parent integrations; required script exit0/DONE. Reviewer ran36SQL/IDB,12WASM,88renderer/MIME/export/IMAP tests, two50kpending-index regressions and65archived-parent integration tests. Existing tests passed but nine new substantiated cases require correction:
+
+1. High: long-prefix same-name9MiB collision/reordering at quota exhausts comparison budget and drops a verified prior link.
+2. High: allowed18MiB outgoing checker is synchronous for1.3seconds despite chunk allocations.
+3. High:10kprior unavailable parts cause quadratic1.4second matching before first create/yield.
+4. Medium: saved attachment-only reply reload+mode conversion loses authored refs without Undo.
+5. Medium: successful-send operation pins survive message deletion and prevent reclamation indefinitely.
+6. Medium: oversized Gmail prefix path accepts malformed trailing base64 padding and promotes checkpoint.
+7. Medium: repeated invalid CID images do not spend the cumulative read budget or cache failure, causing80MiBreads.
+8. Medium: duplicate attached-draft import allocates before identity check and requires spare quota.
+9. Medium: asset creation scans account-wide reservations/orphans;100kpinned rows take34msCPU/50mswall.
+
+Two explicitly owned correction workers handle storage/import and outgoing/UI/CID; parent owns Gmail padding. Every correction requires red/green evidence and an atomic commit. Whole-series fresh Codex round2 follows all fixes. Full release/package/perf gates remain unapproved; retained Gmail whole-pipeline W03/W10/W11 work remains separately active.
+
+### Parent correction for finding6 — complete padding validation
+
+The new oversized public-provider case failed: an illegal padded raw value was ingested as unavailable headers and checkpointed. validateRaw now checks provided padding's complete quartet structure before selecting full versus prefix decoding. Legitimate padded/unpadded cases remain in the existing matrix. Validation is constant work before bounded byte scans; no full decode is needed to reject an invalid tail. Targeted suite results are recorded after execution; no cursor/body effects are permitted for rejected encoding.
+
+Finding6 validation: the new malformed oversized-tail case failed before the one-line canonical padding check. All162targeted Gmail response/network/backend integration tests now pass, as do mail typecheck and owned lint. No malformed ingestion or checkpoint write occurs; valid padded/unpadded paths remain covered. Independent round2 still follows all nine corrections.
