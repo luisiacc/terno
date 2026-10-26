@@ -111,3 +111,23 @@ Reviewed `a7c784a..88f9094` with the required script in a Codex subagent: no sub
 ### Slice 3 — critique, reproduction and validation
 
 Five critique points accepted: exact reason fields/status precedence; malformed-shape handling; status-driven token 429 including contradictory invalid_grant; definitive quota send rejection versus 5xx/unreadable-success ambiguity; and no hidden retry/invalidation machinery. Ten provider-boundary regressions failed before implementation. Both documented quota reasons now preserve retryability, permission/policy/daily-limit/disabled-service controls remain permanent, and token HTTP 429 keeps its status even with malformed/null/contradictory bodies. A genuine HTTP 400 invalid_grant still requests sign-in. Sixty-seven provider/integration tests plus typecheck/lint pass. Code review pending. Durable Retry-After/account admission remains open.
+
+## Slice 4: T05 — Gmail restore is a bounded label transition
+
+### Investigation and specification
+
+Current moveToInbox calls untrash once per message, swallows every failure, then submits all captured IDs in one batchModify without its 1,000-ID bound. A failed untrash can therefore be reported as success while TRASH still hides the message; large restores exceed the documented limit.
+
+The provider's [label contract](https://developers.google.com/workspace/gmail/api/guides/labels) permits manual INBOX/SPAM/TRASH changes, and [batchModify](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/batchModify) supports add/remove label IDs with at most 1,000 message IDs. Implement restore as add INBOX + remove SPAM/TRASH through the existing chunked label path, preserving unrelated flags/custom labels. This is idempotent for already-restored messages and partial-chunk replay. No swallowed untrash request or per-message probe is needed; N+ceil(N/1000) requests become ceil(N/1000). Keep captured IDs fixed, including when another message arrives.
+
+BatchModify has an empty success body. Accept either HTTP 200 with no body or HTTP 204 for this explicit void response, while retaining JSON/ambiguity validation for sends and resource reads. A failed chunk propagates the actual provider error and never settles the operation as success; subsequent chunks wait for a later replay. Replaying this set-to-state transition does not create messages or copy mail. Future delivered-intent observation fencing (X01/W02) remains open.
+
+Tests use a synthetic HTTP mail server state model through createGmailApiProvider.execute: mixed Trash/Spam/Archive restoration, preserving unrelated labels, already-inbox no-op semantics, 1,001 captured IDs, a later uncaptured arrival, chunk2 failure/replay, empty 200 and 204 responses, and permanent/transient refusal. The oracle is final remote label membership plus bounded network count. Fake-server/backend integration additionally restores a trashed message then syncs to verify list membership. No live mail or new background work; no UI/string changes.
+
+### Slice 3 — Codex finding and error-provenance correction
+
+Codex reviewed `88f9094..c11d93f` and found one medium issue: newly exposed OAuth status 404 could be mistaken for a missing Gmail message (or expired history) after a resource 401. Four regressions reproduced the issue in cached full sync, cached delta, new raw fetch and history enumeration. A dedicated Gmail-resource error type now carries resource statuses; only that type's 404 can delete/skip a message or trigger history expiry. OAuth errors retain their public status without acquiring resource-deletion authority. Seventy-one Gmail/network tests and typecheck/lint pass. A second code review is pending.
+
+### Slice 4 — critique and red cases
+
+Six critique points accepted: use the shared label path, compare exact captured provider IDs, test a remotely applied chunk whose response is lost, propagate all refusal outcomes, select void success only for batchModify (never send), and retain sequential bounded bodies/requests with the existing O(N) provider-ID list. Five initial restore regressions fail: TRASH remains after swallowed untrash failure, empty 200 is rejected, and 1,001 IDs exceed the request bound. Additional late-arrival/lost-response tests are added before implementation.

@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { createGmailProvider } from "./gmail";
 import { createGmailApiProvider } from "./gmail-api";
-import { ProviderAuthError, ProviderError, type MailProvider, type ProviderContext } from "./types";
+import { ProviderAuthError, ProviderError, type MailProvider, type ProviderContext, type SyncSink } from "./types";
 
 interface Call {
   url: string;
@@ -42,6 +42,40 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
 describe("Gmail requests and the network (plan 20)", () => {
+  it.each(["cached full", "cached delta", "new raw", "history"] as const)("an OAuth refresh 404 during %s cannot delete mail or advance its checkpoint", async (phase) => {
+    const removed: number[] = [];
+    const saved: unknown[] = [];
+    let refreshes = 0;
+    const ctx = {
+      account: { id: 1, email: "me@gmail.com" }, config: {},
+      getSecret: async () => "refresh-token", getAppSecret: async () => null,
+      store: {
+        setting: async () => ({ gmailClientId: "client" }),
+        syncedMessages: async () => [{ id: 7, providerMsgId: "g7" }],
+        messageByProviderId: async () => phase === "new raw" ? null : { id: 7 },
+      },
+      loadCursor: async () => phase === "cached full" ? null : { historyId: "10" },
+      saveCursor: async (cursor: unknown) => { saved.push(cursor); },
+      fetch: async (input: string | URL) => {
+        const path = new URL(String(input)).pathname;
+        if (path.endsWith("/token")) return ++refreshes === 1 ? json({ access_token: "token", expires_in: 3600 }) : json({ error: "not_found" }, 404);
+        if (path.endsWith("/profile")) return json({ historyId: "11" });
+        if (path.endsWith("/messages")) return json({ messages: [] });
+        if (path.endsWith("/history")) return phase === "history" ? json({}, 401) : json({ historyId: "11", history: [{ [phase === "new raw" ? "messagesAdded" : "labelsAdded"]: [{ message: { id: "g7" } }] }] });
+        if (path.endsWith("/messages/g7")) return json({}, 401);
+        throw new Error(`unexpected request ${path}`);
+      },
+    } as unknown as ProviderContext;
+    const sink: SyncSink = {
+      signal: new AbortController().signal, windowStart: 0,
+      ingest: async () => {}, setBody: async () => {}, updateFlags: async () => {}, setSyncState: async () => {}, pendingMessageIds: async () => new Set(),
+      removeMessages: async (ids) => { removed.push(...ids); },
+    };
+    await expect(createGmailProvider(ctx).sync(sink)).rejects.toMatchObject({ status: 404 });
+    expect(removed).toEqual([]);
+    expect(saved).toEqual([]);
+  });
+
   it.each([
     ["userRateLimitExceeded", true],
     ["rateLimitExceeded", true],

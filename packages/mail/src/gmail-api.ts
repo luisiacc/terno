@@ -53,6 +53,12 @@ interface Cursor {
 
 class ExpiredHistory extends Error {}
 
+class GmailApiError extends ProviderError {
+  constructor(readonly status: number, detail: string, retryable: boolean, ambiguous: boolean) {
+    super(`Gmail API ${status}: ${detail.slice(0, 200)}`, retryable, ambiguous);
+  }
+}
+
 function isRateLimit(text: string): boolean {
   try {
     const body: unknown = JSON.parse(text);
@@ -180,9 +186,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       if (!res.ok) {
         const text = await res.text().catch(() => "");
         const retryable = res.status === 429 || res.status >= 500 || (res.status === 403 && isRateLimit(text));
-        const err = new ProviderError(`Gmail API ${res.status}: ${text.slice(0, 200)}`, retryable, Boolean(sending && res.status >= 500));
-        (err as ProviderError & { status: number }).status = res.status;
-        throw err;
+        throw new GmailApiError(res.status, text, retryable, Boolean(sending && res.status >= 500));
       }
       if (res.status === 204) return undefined as T;
       try {
@@ -208,7 +212,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
           m = await api<GmailMessage>(`/messages/${id}?format=raw`);
         } catch (error) {
           // Enumeration isn't a snapshot: a message may disappear before its download.
-          if ((error as { status?: number }).status === 404) continue;
+          if (error instanceof GmailApiError && error.status === 404) continue;
           throw error;
         }
         const parsed = await parseRaw(fromBase64url(m.raw ?? ""));
@@ -286,7 +290,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
             const full = await api<GmailMessage>(`/messages/${m.providerMsgId}?format=minimal`);
             updates.push({ messageId: m.id, flags: labelState(full.labelIds ?? []), gmailLabels: full.labelIds ?? [] });
           } catch (e) {
-            if ((e as { status?: number }).status === 404) gone.push(m.id);
+            if (e instanceof GmailApiError && e.status === 404) gone.push(m.id);
             else throw e;
           }
         }
@@ -308,7 +312,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       for (const t of ["messageAdded", "messageDeleted", "labelAdded", "labelRemoved"]) q.append("historyTypes", t);
       if (pageToken) q.set("pageToken", pageToken);
       const page = await api<{ history?: { messagesAdded?: { message: GmailMessage }[]; messagesDeleted?: { message: GmailMessage }[]; labelsAdded?: { message: GmailMessage }[]; labelsRemoved?: { message: GmailMessage }[] }[]; historyId: string; nextPageToken?: string }>(`/history?${q}`).catch((error: unknown) => {
-        if ((error as { status?: number }).status === 404) throw new ExpiredHistory();
+        if (error instanceof GmailApiError && error.status === 404) throw new ExpiredHistory();
         throw error;
       });
       for (const h of page.history ?? []) {
@@ -334,7 +338,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         const m = await api<GmailMessage>(`/messages/${gid}?format=minimal`);
         updates.push({ messageId: local, flags: labelState(m.labelIds ?? []), gmailLabels: m.labelIds ?? [] });
       } catch (e) {
-        if ((e as { status?: number }).status === 404) deleted.add(gid);
+        if (e instanceof GmailApiError && e.status === 404) deleted.add(gid);
         else throw e;
       }
     }
