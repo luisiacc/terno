@@ -810,6 +810,14 @@ export class SqlMailStore implements MailStore {
     get: async (name) => getSecret(this.db, name),
     has: async (name) => getSecret(this.db, name) !== null,
     put: async (name, blob) => putSecret(this.db, name, blob),
+    replace: async (name, expected, next, stamp) => this.db.tx(() => {
+      const predicate = "name = ? AND blob = ?" + (stamp ? " AND EXISTS (SELECT 1 FROM accounts WHERE id = ? AND email = ? AND created_at = ?)" : "");
+      const params = stamp ? [name, expected, stamp.id, stamp.email, stamp.createdAt] : [name, expected];
+      if (expected.length === next.length && expected.every((b, i) => b === next[i])) {
+        return this.db.get(`SELECT name FROM secrets WHERE ${predicate}`, ...params) !== undefined;
+      }
+      return this.db.run(`UPDATE secrets SET blob = ? WHERE ${predicate}`, next, ...params).changes === 1;
+    }),
     delete: async (name) => deleteSecret(this.db, name),
   };
 

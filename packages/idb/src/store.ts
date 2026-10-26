@@ -1240,7 +1240,7 @@ export class IdbMailStore implements MailStore {
     get: (id) => this.early(() => getAccount(this.c, id)),
     config: <V,>(id: number) => this.early(() => getAccountConfig<V>(this.c, id)),
     stamp: (id) =>
-      this.read(() => {
+      this.early(() => {
         const r = T(this.c, "accounts").get(id);
         return r ? { id, email: r.email as string, createdAt: r.created_at as number } : null;
       }),
@@ -1328,6 +1328,21 @@ export class IdbMailStore implements MailStore {
     get: (name) => this.early(() => (T(this.c, "secrets").get(name)?.blob as Uint8Array | undefined) ?? null),
     has: (name) => this.early(() => T(this.c, "secrets").has(name)),
     put: (name, blob) => this.command(() => void T(this.c, "secrets").put({ name, blob })),
+    replace: (name, expectedBlob, nextBlob, accountStamp) => {
+      const expected = Uint8Array.from(expectedBlob), next = Uint8Array.from(nextBlob);
+      const stamp = accountStamp ? { ...accountStamp } : undefined;
+      return this.command(() => {
+        if (stamp) {
+          const account = T(this.c, "accounts").get(stamp.id);
+          if (!account || account.email !== stamp.email || account.created_at !== stamp.createdAt) return false;
+        }
+        const secrets = T(this.c, "secrets");
+        const blob = secrets.get(name)?.blob as Uint8Array | undefined;
+        if (!blob || blob.length !== expected.length || !blob.every((b, i) => b === expected[i])) return false;
+        if (expected.length !== next.length || !expected.every((b, i) => b === next[i])) secrets.put({ name, blob: next });
+        return true;
+      }, { early: true });
+    },
     delete: (name) => this.command(() => void T(this.c, "secrets").delete(name)),
   };
 

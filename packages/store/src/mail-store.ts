@@ -437,6 +437,8 @@ export interface MailStore {
     get(name: string): Promise<Uint8Array | null>;
     has(name: string): Promise<boolean>;
     put(name: string, blob: Uint8Array): Promise<void>;
+    /** Exact byte CAS, never an upsert. Optional mailbox stamp is checked atomically; equal bytes assert ownership without rewriting. */
+    replace(name: string, expectedBlob: Uint8Array, nextBlob: Uint8Array, accountStamp?: { id: number; email: string; createdAt: number }): Promise<boolean>;
     delete(name: string): Promise<void>;
   };
 

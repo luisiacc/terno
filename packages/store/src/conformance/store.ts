@@ -1537,6 +1537,36 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
     });
 
     describe("secrets", () => {
+      it("CAS compares byte contents and views, never upserts, and checks the mailbox stamp atomically", async () => {
+        let store = await fresh();
+        const [id] = await withAccounts(store);
+        const stamp = (await store.accounts.stamp(id!))!;
+        const name = `account:${id}:refreshToken`;
+        const expected = Uint8Array.of(99, 1, 2, 99).subarray(1, 3);
+        const next = Uint8Array.of(99, 3, 4, 99).subarray(1, 3);
+        expect(await store.secrets.replace(name, expected, next, stamp)).toBe(false);
+        expect(await store.secrets.has(name)).toBe(false);
+        await store.secrets.put(name, Uint8Array.of(1, 2));
+        for (const stale of [{ ...stamp, email: "other@example.test" }, { ...stamp, createdAt: stamp.createdAt + 1 }, { ...stamp, id: 99999 }]) {
+          expect(await store.secrets.replace(name, expected, next, stale)).toBe(false);
+        }
+        for (const stale of [Uint8Array.of(1), Uint8Array.of(1, 2, 3), Uint8Array.of(1, 3)]) {
+          expect(await store.secrets.replace(name, stale, next, stamp)).toBe(false);
+        }
+        expect(await store.secrets.get(name)).toEqual(Uint8Array.of(1, 2));
+        expect(await store.secrets.replace(name, expected, Uint8Array.of(1, 2), stamp)).toBe(true);
+        const results = await Promise.all([store.secrets.replace(name, expected, next, stamp), store.secrets.replace(name, expected, Uint8Array.of(5), stamp)]);
+        expect(results).toEqual([true, false]);
+        store = await harness.reopen(store);
+        open.push(store);
+        expect(await store.secrets.get(name)).toEqual(Uint8Array.of(3, 4));
+        await store.accounts.remove(id!);
+        expect(await store.secrets.replace(name, next, expected, stamp)).toBe(false);
+        expect(await store.secrets.has(name)).toBe(false);
+        await store.secrets.put("app", Uint8Array.of(7));
+        expect(await store.secrets.replace("app", Uint8Array.of(7), Uint8Array.of(8))).toBe(true);
+      });
+
       it("lists, replaces and deletes sealed blobs by name, and they survive a reopen", async () => {
         let store = await fresh();
         expect(await store.secrets.names()).toEqual([]);
