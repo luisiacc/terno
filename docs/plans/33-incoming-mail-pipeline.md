@@ -1,6 +1,6 @@
 # Plan 33: bounded incoming mail processing and durable repair
 
-Status: design, before critique or implementation. Scope: W03/W10/W11, X03 and the incoming resource portions of T02/T06. Outlook remains user-deferred. Plan32 owns credentials; plan29's outgoing fixes and resource semantics remain intact.
+Status: critique complete; phased implementation pending. Scope: W03/W10/W11, X03 and the incoming resource portions of T02/T06. Outlook remains user-deferred. Plan32 owns credentials; plan29's outgoing fixes and resource semantics remain intact.
 
 ## Request (verbatim)
 
@@ -77,4 +77,16 @@ Each coherent phase is committed atomically on main under the shared lock and re
 
 ## Revisions after the Codex review
 
-Pending read-only critique. No implementation or passing gate is claimed by this plan.
+The read-only critique completed successfully with11concrete points (`/tmp/terno-provider-hardening.x0emTS/incoming-plan-review.txt`). All are accepted; no implementation or passing gate is claimed by the critique.
+
+1. Separate bounded producer enqueue admission from durable acknowledgement. One serialized flusher owns staged batches, flushes on count/bytes/end and makes capacity available without all six producers waiting for an unfillable50-result batch. Checkpointing waits a separate durable completion barrier. This also prevents concurrent pre-transaction attachment staging of the same message revision.
+2. Account for complete backing buffers and outstanding reads, not subarray lengths. A delivered chunk can exceed the prefix threshold. Explicit overshoot policy must either refuse a chunk exceeding the qualified per-read backing-buffer allowance before retaining it or admit/transfer its full allocation under separate bounded ownership. Test six simultaneous chunks between the prefix and total-response cap; do not claim a six-prefix bound while retaining six whole backing buffers.
+3. Preserve typed endpoint/status overflow through API classification. Use response field projection and smaller pages for over-budget collections; an indivisible oversized history entry transitions to bounded authoritative reconciliation with the original checkpoint floor retained. Never retry the same oversized successful page forever or convert it into empty success. Raw metadata fallback applies to message resources only.
+4. Include IMAP source materialization in the same backend-wide admission and parser routing, acquired before BODY fetch and retained through setBody acknowledgement. Preserve folder/UIDVALIDITY identity. Until this is implemented and qualified, W11 remains unresolved for IMAP even if Gmail passes.
+5. Body-dependent rules are ineligible while body capture is incomplete. Both stores must defer claims, including negated body predicates and mixed conditions, until complete eligible content arrives. Test initial partial insert, repair, restart and exactly-once application; null body is not proof of a negative body condition.
+6. Unavailable setBody replacement must preserve previous complete text/HTML and index data, matching preserving upsert semantics. Add a state-only unavailable transition or guard the body setter; preserve assets too. Test both stores and restart rather than relying only on ingestion fallback.
+7. Repair and legacy pending-capture eligibility transition atomically under one authoritative owner. Blocked poison cannot remain in the first50 automatic capture rows and starve a healthy51st message. Explicit retry and removal update both repair and capture ownership; qualify across restart.
+8. Replay ingestion must preserve unsettled local flag intentions inside its atomic command, as updateFlags already does. Test crash after ingestion/filter action before cursor, then replay while archive/read/star work remains unsettled. A later slice also retains version fencing after accepted operation settlement; an unsettled-only guard does not close X01 by itself.
+9. Bind durable enumeration to the requested window and generation. Compare persisted coverage floor, invalidate incompatible continuation when the window expands, schedule bounded backfill and retain outstanding repair. A valid old history cursor alone cannot certify newly requested older coverage.
+10. Worker failures use a plain structured protocol with allowlisted stable codes and explicit RFC822 depth-fallback semantics. structuredClone(Error) drops custom code, so never depend on transporting the Error object. Unexpected faults remain bugs; raw parser messages never enter user errors or diagnostics.
+11. Emit/inject the real Node worker for direct-source tests and backend-dev as well as desktop packaging. Reusable build setup must precede source-host worker use, and tests must exercise that emitted entry. Portable exports remain free of Node imports; copied packaged execution remains separately required.
