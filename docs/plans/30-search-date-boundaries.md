@@ -1,6 +1,6 @@
 # Plan 30: Local search date boundaries (S57 / W11)
 
-Status: implementation and targeted qualification complete; parent-assigned code review and full integration gates pending, 2026-10-26.
+Status: round-1 review finding corrected and targeted qualification complete; parent-assigned review round 2 and full integration gates pending, 2026-10-26.
 
 ## Request and evidence
 
@@ -80,3 +80,22 @@ Initial fixture failures caused by concurrently incomplete attachment ingestion 
 Production changes add only bounded date construction/component checks and one finite-number check during parsing. They introduce no query scans, per-message JS date filtering, timers, provider traffic or storage changes. Fallback strategies (`walk`, `date-index`, `fts`, `sender-index`, IDB `scan`) and explicitly settled `instant:` routes are asserted through their public result metadata.
 
 The parent will assign a distinct Codex code review of the exact commits. No final reviewer was spawned by this implementation agent. Full repository/e2e/web/UI performance and desktop packaging gates remain parent integration responsibility; no UI or desktop-only path changed.
+
+## Correction after independent Codex review, round 1
+
+The review of implementation `b92eaacce1e4fd9d0de6d44c6e86417f579ae171` and qualification `d14daaac04f112b1b887bc0ab7a9efa4cc2e9801` found one **Low** issue at `packages/core/src/search/parse.ts:142` (source: `/tmp/terno-provider-hardening.x0emTS/search-dates-review.txt`). In `America/Sao_Paulo`, `0099-10-03` inherited 01:00 from the constructor's implicit year 1999, whose midnight was skipped by DST. Changing only the year retained that hour: the boundary was `0099-10-03T04:06:28Z` instead of local midnight `0099-10-03T03:06:28Z`, so `after:` excluded the first hour and `before:` included it incorrectly.
+
+The parser now sets the literal year/month/day on a date initialized at epoch zero, then explicitly establishes local midnight. Final calendar-component validation still rejects rollover and wholly skipped dates; real skipped midnights may still normalize within their calendar day. Relative arithmetic and its finite-number guards are unchanged. Parsing remains constant work with no store/query-path changes.
+
+The existing process-isolated São Paulo fixture now also covers October 3–4 in year 0099 with independently specified UTC instants (start epoch **-59019224012000**, end **-59019137612000**). Public `parseSearch` assertions cover both bounds at the same midnight, their negations and Spanish aliases. Public query-result oracles cover `after:` inclusion, `before:` exclusion, the day range, complements, text conjunction, recency/deduplication and pagination in SQL and IndexedDB fallback/instant routes and real RPC. Soft assertions expose both sides of the regression in one failing run. The existing 2018 São Paulo midnight gap and Apia skipped-date fixtures remain in the matrix, alongside the earliest-year/leap-day and non-finite relative parser guards.
+
+### Red → green evidence
+
+- Before the parser change: `TZ=America/Sao_Paulo pnpm exec vitest run --project unit packages/db/src/search-dates.test.ts packages/idb/src/search-dates.test.ts packages/backend/src/search-dates.int.test.ts` → **20 failed, 40 passed**, with exact epoch and incorrect query-result failures in all five harnesses. Transcript: `/tmp/terno-s57-round1-fix-red.txt`.
+- After the parser change: the same command plus `packages/core/src/search/parse.test.ts` → **4 files, 83 passed**. Transcript: `/tmp/terno-s57-round1-fix-green-sao.txt`.
+- Full focused unit qualification: `pnpm exec vitest run --project unit packages/core/src/search/parse.test.ts packages/db/src/date-timezones.test.ts packages/db/src/search-dates.test.ts packages/idb/src/search-dates.test.ts packages/backend/src/search-dates.int.test.ts` → **5 files, 61 outer tests passed**, including eight isolated-zone rounds asserting **360 child tests passed**. Transcript: `/tmp/terno-s57-round1-fix-unit.txt`.
+- SQLite-WASM qualification: `pnpm exec vitest run --project db-wasm packages/db/src/date-timezones.test.ts packages/db/src/search-dates.test.ts` → **2 files, 20 outer tests passed**, including eight isolated-zone rounds asserting **144 child tests passed**. Transcript: `/tmp/terno-s57-round1-fix-wasm.txt`.
+- `pnpm -r --parallel --filter @terno/core --filter @terno/db --filter @terno/idb --filter @terno/backend typecheck` → **core, DB and IDB pass; backend fails** because its current shared dependency graph reaches IndexedDB sources without DOM types (`IDBFactory`, `IDBRequest`, `IDBDatabase` and related cascading errors). No errors point to the four correction files; shared files were left with their owners. Transcript: `/tmp/terno-s57-round1-fix-typecheck.txt`.
+- `pnpm exec oxlint --deny-warnings` on the parser, parser tests and all five date-qualification TypeScript files → **passes**.
+
+No new plan critique or final reviewer was spawned for this concrete correction: the parent assigns a new, distinct Codex review round 2 after the fix commit. Broad performance gates were deliberately not rerun concurrently; the previous budget failures and all full integration gates above remain pending.

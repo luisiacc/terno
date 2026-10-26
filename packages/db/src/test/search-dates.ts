@@ -24,7 +24,10 @@ const DAYS: Record<DateZone, readonly Day[]> = {
     ["2026-04-05", "2026-04-06", "2026-04-04T13:00:00Z", "2026-04-05T13:30:00Z"],
     ["2026-10-04", "2026-10-05", "2026-10-03T13:30:00Z", "2026-10-04T13:00:00Z"],
   ],
-  "America/Sao_Paulo": [["2018-11-04", "2018-11-05", "2018-11-04T03:00:00Z", "2018-11-05T02:00:00Z"]],
+  "America/Sao_Paulo": [
+    ["2018-11-04", "2018-11-05", "2018-11-04T03:00:00Z", "2018-11-05T02:00:00Z"],
+    ["0099-10-03", "0099-10-04", "0099-10-03T03:06:28Z", "0099-10-04T03:06:28Z"],
+  ],
   "Pacific/Apia": [["2011-12-29", "2011-12-31", "2011-12-29T10:00:00Z", "2011-12-30T10:00:00Z"]],
 };
 
@@ -88,8 +91,10 @@ export function defineDateSearch(name: string, open: (now: number) => Promise<Da
         };
 
         it("parses local midnight to the specified exact epoch bounds", () => {
-          expect(parseSearch(range, end)).toMatchObject({ after: start, before: end, terms: [] });
-          expect(parseSearch(`después:${date.replaceAll("-", "/")} antes:${nextDate}`, end)).toMatchObject({ after: start, before: end, terms: [] });
+          expect.soft(parseSearch(range, end)).toMatchObject({ after: start, before: end, terms: [] });
+          expect.soft(parseSearch(`before:${date} after:${date}`, end)).toMatchObject({ after: start, before: start, terms: [] });
+          expect.soft(parseSearch(`-after:${date} -before:${date}`, end)).toMatchObject({ after: start, before: start, terms: [] });
+          expect.soft(parseSearch(`después:${date.replaceAll("-", "/")} antes:${nextDate}`, end)).toMatchObject({ after: start, before: end, terms: [] });
           expect(parseSearch(`on:${date}`, end).terms[0]?.value).toBe(`on:${date}`);
           if (zone === "Pacific/Apia") {
             const skipped = parseSearch("before:2011-12-30", end);
@@ -107,11 +112,12 @@ export function defineDateSearch(name: string, open: (now: number) => Promise<Da
         });
 
         it("includes the start millisecond, excludes the end, and orders/deduplicates matching conversations", async () => {
-          expect(await subjects(range, "walk")).toEqual(expected);
-          expect(await subjects(`-before:${date} -after:${nextDate}`)).toEqual(expected);
-          expect(await subjects(`before:${date}`, "date-index")).toEqual(["split", "before-start"]);
-          expect(await subjects(`-after:${date}`)).toEqual(["split", "before-start"]);
-          expect(await subjects(`after:${nextDate}`)).toEqual(["mixed", "after-end", "split", "at-end"]);
+          expect.soft(await subjects(range, "walk")).toEqual(expected);
+          expect.soft(await subjects(`-before:${date} -after:${nextDate}`)).toEqual(expected);
+          expect.soft(await subjects(`before:${date}`, "date-index")).toEqual(["split", "before-start"]);
+          expect.soft(await subjects(`-after:${date}`)).toEqual(["split", "before-start"]);
+          expect.soft(await subjects(`after:${date}`)).toEqual(["mixed", "after-end", "split", "at-end", "last", "dedup", "start-tie", "at-start"]);
+          expect.soft(await subjects(`after:${nextDate}`)).toEqual(["mixed", "after-end", "split", "at-end"]);
         });
 
         it("applies both dates and text to the same message, even when the thread's newest message is outside the day", async () => {

@@ -15,7 +15,7 @@ describe("local date boundaries in isolated timezone processes", () => {
     const { stdout } = await run(process.execPath, ["node_modules/vitest/vitest.mjs", "run", "--project", project, ...files], {
       cwd: root, env: { ...process.env, TZ: zone }, timeout: 45_000, maxBuffer: 2_000_000,
     });
-    const days = ["America/New_York", "Europe/Berlin", "Australia/Lord_Howe"].includes(zone) ? 2 : 1;
+    const days = ["America/New_York", "Europe/Berlin", "Australia/Lord_Howe", "America/Sao_Paulo"].includes(zone) ? 2 : 1;
     expect(stdout).toMatch(new RegExp(`Tests\\s+${days * (project === "unit" ? 30 : 12)} passed`));
   }, 60_000);
 });
