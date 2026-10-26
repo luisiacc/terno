@@ -6,6 +6,7 @@ export * from "./learning";
 export * from "./categorize";
 export * from "./keybindings";
 export * from "./address";
+export { decodeEncodedWords } from "./encoded-words";
 export * from "./ai";
 export * from "./themes";
 export * from "./list-filter";
