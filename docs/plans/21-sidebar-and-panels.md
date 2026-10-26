@@ -263,3 +263,41 @@ Codex (`codex exec -s read-only`) made ten points against the plan and the code.
 - **The list's minimum is 300 and the sidebar's is 200, everywhere.** Screenshots at both minimums in all three designs (`b-*-minimums.png`) show every row layout keeping its date and the sidebar footer intact.
 - **More's placement:** (a), as planned. In the screenshots of (b) (`a-macos-*-variantb-*.png`), More floats alone under a hole.
 - **The ui-perf gate failed on the injected regression.** The injection committed the width to `usePanes` on every move, with `ThreadList` subscribed to it. The gate failed with `ThreadList renders 208` against the required 0. With the regression reverted it passes: 0 renders, frame p95 of 16.7 ms on both edges, no long animation frames.
+
+## What the Codex code review changed
+
+`codex exec -s read-only` reviewed `402470a..HEAD` (the prompt from `codex-review.sh`, with `-C` pointed at this worktree). It found nothing in Part A and two things in Part B. Both are fixed, each with a test that fails without its fix.
+
+1. **Medium: the perf gate resized a one-row list, and stopped recording before the commit.** `selectThread()` leaves an exact-subject search active.
+   - Now the search is cleared with the conversation still open, and the gate waits for a screen of rows (at least 10) before dragging.
+   - Frames are recorded through the release and 300 ms of settling.
+   - Without the fix, the row-count assertion fails (`Received: 1`).
+2. **Low: another pointer could end the drag.** A second finger's up event committed and ended the first finger's drag.
+   - Now only the primary pointer starts a drag, and only that pointer's up, cancel or lost capture ends it.
+   - `setPointerCapture` is guarded.
+   - The new e2e ("one pointer drives a drag") fires a touch sequence with two pointer ids. It fails without the fix with "the second finger didn't end the drag".
+
+## Found along the way
+
+**The list stopped paging when a new folder's first page arrived while the old list sat at its end.**
+
+- **How it surfaced:** the "scrolling 2,000 threads deep" perf gate failed intermittently. It never failed on the base commit. The extra click on More shifted its timing: the test scrolled the inbox to its end while All Mail's first page was in flight.
+- **Cause:** that page has the same length (100) and the same last visible index (99), so `ThreadList`'s pagination effect (deps `[last.index, items.length]`) never ran again. The list stayed at 100 rows until the user scrolled.
+- **Fix:** `itemsKey` joins the deps.
+- **Test:** the e2e "keeps paging" holds `threads.list` to reproduce it every time. It failed 3 out of 3 runs before the fix and passes after.
+
+## Suite results (this machine, under the user's other load)
+
+- **Passing:**
+  - `pnpm typecheck` and `pnpm lint`;
+  - `pnpm test`: 2030 + 405 tests;
+  - `pnpm test:e2e`: 742, in all three designs;
+  - `pnpm test:web`: 29;
+  - `pnpm dist:mac` plus the packaged smoke: 41, including the new restart check.
+- **`pnpm test:ui-perf`:**
+  - The new resize gate passes: frame p95 16.8 ms, no long frames, 0 `ThreadList` and 0 `ThreadRow` renders.
+  - Across the full runs, these gates failed once each, all timing gates outside this plan:
+    - autocomplete's 5 MB draft (621 ms against 120 ms; plan 18 lists it as timing-sensitive);
+    - the design switch: one 383 ms frame, then 16.7 ms on 30 of 30 switches when repeated;
+    - the 2 MB draft (60 ms against 50 ms).
+  - The 2 MB draft gate fails 3 out of 3 runs on the base commit too, on this machine right now.
