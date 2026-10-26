@@ -11,7 +11,7 @@ Every report entry remains open until investigation establishes its Terno dispos
 | T03 | Mailbox coverage and Microsoft support (P1, established limitation) | Pending investigation | — |
 | T04 | Gmail retry decisions (P1 observed classification gap) | Pending investigation | — |
 | T05 | Partial mutations and swallowed errors (P1 observed handling; remote outcomes need fixtures) | Pending investigation | — |
-| T06 | Backfill and disappearing messages (P1 validation) | Pending investigation | — |
+| T06 | Backfill and disappearing messages (P1 validation) | Partial: concurrent deletion fixed/reviewed; backfill/reset crash work open | `88f9094`; slice 2; baseline W03/W06 retains remaining scenarios. |
 | T07 | Sent copies and partial recipients (P1 gap) | Pending investigation | — |
 | T08 | Scope, identity and timeout qualification (P1 validation) | Pending investigation | — |
 | T09 | Resource and UI contracts (P2) | Pending investigation | — |
@@ -108,7 +108,7 @@ Every report entry remains open until investigation establishes its Terno dispos
 | S07 | An initial backfill races with a new arrival, archive, delete and read change; the next incremental pass catches every concurrent mutation. | Pending: W03; E+R | Baseline audit records existing tests and required new oracles. |
 | S08 | One malformed message or missing body is isolated without silently skipping it; a durable repair record survives restart if the cursor advances. | Pending: W10/W03; R | Baseline audit records existing tests and required new oracles. |
 | S09 | A recent-window full listing omits an older cached message; the message is not tombstoned on that evidence. | Pending: W03; E+R | Baseline audit records existing tests and required new oracles. |
-| S10 | A message is deleted between list and get; the run completes with the correct per-message outcome and no account-wide auth error. | Pending: W03; R | Baseline audit records existing tests and required new oracles. |
+| S10 | A message is deleted between list and get; the run completes with the correct per-message outcome and no account-wide auth error. | Implemented and Codex-reviewed; release gates pending | `88f9094`; plan 26 slice 2; 41 Gmail tests; Codex review clear. |
 | S11 | A folder move yields a removal and later addition; local message content, selection and operation targeting survive. | Pending: W06/W07/W12; E+C+R | Baseline audit records existing tests and required new oracles. |
 | S12 | IMAP UIDVALIDITY changes with a reused UID; an old queued delete cannot touch the new message. | Pending: W06/W03; E+R | Baseline audit records existing tests and required new oracles. |
 | S13 | An IMAP EXPUNGE renumbers messages while fetching; durable identity never uses the sequence number. | Pending: W06; E+R | Baseline audit records existing tests and required new oracles. |

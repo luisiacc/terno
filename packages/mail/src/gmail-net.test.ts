@@ -27,10 +27,10 @@ function manualFetch() {
   return { fetch, calls };
 }
 
-function provider(fetch: typeof globalThis.fetch, o: { readTimeoutMs?: number; sendTimeoutMs?: number; tokens?: () => Promise<string> } = {}): MailProvider {
+function provider(fetch: typeof globalThis.fetch, o: { readTimeoutMs?: number; sendTimeoutMs?: number; tokens?: () => Promise<string>; invalidate?: (token: string) => void } = {}): MailProvider {
   const ctx = { account: { id: 1, email: "me@gmail.com" }, store: {}, config: {}, fetch } as unknown as ProviderContext;
   return createGmailApiProvider(ctx, {
-    tokens: { get: o.tokens ?? (async () => "token"), invalidate() {} },
+    tokens: { get: o.tokens ?? (async () => "token"), invalidate: o.invalidate ?? (() => {}) },
     buildRaw: async () => new TextEncoder().encode("raw"),
     readTimeoutMs: o.readTimeoutMs,
     sendTimeoutMs: o.sendTimeoutMs,
@@ -42,6 +42,74 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
 describe("Gmail requests and the network (plan 20)", () => {
+  it.each([
+    ["userRateLimitExceeded", true],
+    ["rateLimitExceeded", true],
+    ["insufficientPermissions", false],
+    ["domainPolicy", false],
+    ["dailyLimitExceeded", false],
+    ["failedPrecondition", false],
+  ] as const)("Gmail 403 reason %s has the appropriate recovery policy", async (reason, retryable) => {
+    const fetch = (async () => json({ error: { code: 403, errors: [{ reason }] } }, 403)) as typeof globalThis.fetch;
+    const error = await provider(fetch).verify().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ProviderError);
+    expect(error).not.toBeInstanceOf(ProviderAuthError);
+    expect(error).toMatchObject({ status: 403, retryable, ambiguous: false, network: false });
+  });
+
+  it.each([[403, "userRateLimitExceeded"], [403, "rateLimitExceeded"], [429, "unknown"]] as const)("a quota-rejected send (%i, %s) is safely retryable, never uncertain", async (status, reason) => {
+    let submissions = 0;
+    let tokens = 0;
+    let invalidations = 0;
+    const fetch = (async () => {
+      submissions++;
+      return json({ error: { code: status, errors: [{ reason }] } }, status);
+    }) as typeof globalThis.fetch;
+    const error = await provider(fetch, { tokens: async () => { tokens++; return "token"; }, invalidate: () => { invalidations++; } }).execute(sendOp).catch((e: unknown) => e);
+    expect(error).toMatchObject({ retryable: true, ambiguous: false, network: false });
+    expect(submissions).toBe(1);
+    expect(tokens).toBe(1);
+    expect(invalidations).toBe(0);
+  });
+
+  it.each(["null", "42", '"rateLimitExceeded"', "not JSON: rateLimitExceeded", '{"error":{"message":"rateLimitExceeded"}}', '{"error":{"errors":[null,{},"rateLimitExceeded",{"reason":4}]}}', '{"error":{"errors":{"reason":"rateLimitExceeded"}}}'])("unstructured forbidden responses remain action-required: %s", async (body) => {
+    const fetch = (async () => new Response(body, { status: 403 })) as typeof globalThis.fetch;
+    expect(await provider(fetch).verify().catch((e: unknown) => e)).toMatchObject({ retryable: false, ambiguous: false });
+  });
+
+  it("a valid quota reason after malformed entries is still recognized, and body code never overrides HTTP status", async () => {
+    const body = { error: { code: 403, errors: [null, {}, { reason: "rateLimitExceeded" }] } };
+    const throttled = (async () => json(body, 403)) as typeof globalThis.fetch;
+    expect(await provider(throttled).verify().catch((e: unknown) => e)).toMatchObject({ retryable: true });
+    const badRequest = (async () => json(body, 400)) as typeof globalThis.fetch;
+    expect(await provider(badRequest).verify().catch((e: unknown) => e)).toMatchObject({ retryable: false, status: 400 });
+  });
+
+  it.each(['{"error":"temporarily_unavailable"}', '{"error":"invalid_grant"}', "null", "", "{broken"])("a throttled token endpoint remains retryable for body %s", async (body) => {
+    let requests = 0;
+    const ctx = {
+      account: { id: 1, email: "me@gmail.com" }, config: {},
+      fetch: async () => { requests++; return new Response(body, { status: 429 }); },
+      getSecret: async () => "refresh-token", getAppSecret: async () => null,
+      store: { setting: async () => ({ gmailClientId: "client" }) },
+    } as unknown as ProviderContext;
+    const error = await createGmailProvider(ctx).verify().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ProviderError);
+    expect(error).toMatchObject({ retryable: true, ambiguous: false, network: false, status: 429 });
+    expect(error).not.toBeInstanceOf(ProviderAuthError);
+    expect(requests).toBe(1);
+  });
+
+  it.each([500, 200])("a send's uncertain HTTP %i response cannot become a safe quota retry", async (status) => {
+    let requests = 0;
+    const fetch = (async () => {
+      requests++;
+      return status === 200 ? new Response("{truncated", { status }) : json({ error: { errors: [{ reason: "rateLimitExceeded" }] } }, status);
+    }) as typeof globalThis.fetch;
+    expect(await provider(fetch).execute(sendOp).catch((e: unknown) => e)).toMatchObject({ ambiguous: true });
+    expect(requests).toBe(1);
+  });
+
   it("reset() fails a read in flight at once, as a network failure (the sync goes again on fresh sockets)", async () => {
     const { fetch, calls } = manualFetch();
     const p = provider(fetch);

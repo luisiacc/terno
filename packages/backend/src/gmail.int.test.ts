@@ -46,6 +46,7 @@ class FakeGoogle {
   validTokens = new Set<string>();
   calls: { method: string; path: string; body: unknown }[] = [];
   rateLimitNext = 0;
+  quotaReasonNext: string | null = null;
   failMinimalOnce = false;
   historyExpired = false;
   listSnapshot: string[] | null = null;
@@ -143,6 +144,11 @@ class FakeGoogle {
     if (this.rateLimitNext > 0) {
       this.rateLimitNext--;
       return json(429, { error: { code: 429, message: "rate limited" } });
+    }
+    if (this.quotaReasonNext) {
+      const reason = this.quotaReasonNext;
+      this.quotaReasonNext = null;
+      return json(403, { error: { code: 403, errors: [{ reason }] } });
     }
     const path = url.pathname.replace(/^\/gmail/, "");
     if (path === "/profile") return json(200, { emailAddress: this.email, historyId: String(this.historyId) });
@@ -285,6 +291,13 @@ function seed(google: FakeGoogle) {
   google.add({ id: "g5", threadId: "t4", labelIds: ["SENT"], raw: rawMail({ subject: "Hola mamá", id: "e@x", from: "Luis <luis@gmail.com>" }) }, false);
 }
 
+async function freshMailbox() {
+  const ctx = await setup();
+  ctx.google.refreshTokens.add("mailbox-fixture");
+  const { account } = await ctx.backend.store.accounts.create({ kind: "gmail", email: ctx.google.email, displayName: "Mail", color: "indigo", providerConfig: {}, secret: { key: "refreshToken", blob: await plaintextCipher.encrypt("mailbox-fixture") }, now: Date.now() });
+  return { ...ctx, account };
+}
+
 describe("Gmail OAuth (installed app)", () => {
   it("completes PKCE + state, ignores a forged redirect, and stores the refresh token", async () => {
     const { client, backend } = await setup("forge-then-approve");
@@ -334,13 +347,6 @@ describe("Gmail and the owner identity", () => {
 });
 
 describe("Gmail sync", () => {
-  async function freshMailbox() {
-    const ctx = await setup();
-    ctx.google.refreshTokens.add("mailbox-fixture");
-    const { account } = await ctx.backend.store.accounts.create({ kind: "gmail", email: ctx.google.email, displayName: "Mail", color: "indigo", providerConfig: {}, secret: { key: "refreshToken", blob: await plaintextCipher.encrypt("mailbox-fixture") }, now: Date.now() });
-    return { ...ctx, account };
-  }
-
   it("initial enumeration tolerates a message deleted before raw download and retains its initial watermark", async () => {
     const { google, backend, client, account } = await freshMailbox();
     for (let i = 0; i < 9; i++) google.add({ id: `race-${i}`, threadId: `race-${i}`, labelIds: ["INBOX"], raw: rawMail({ subject: `Race ${i}`, id: `race-${i}@example.com` }) }, false);
@@ -483,6 +489,19 @@ describe("Gmail sync", () => {
 });
 
 describe("Gmail operations", () => {
+  it.each(["rateLimitExceeded", "userRateLimitExceeded"])("a %s response leaves an operation retryable without disconnecting its account", async (reason) => {
+    const { google, backend, client, account } = await freshMailbox();
+    seed(google);
+    await backend.syncAccount(account.id);
+    const thread = (await client.call("threads.list", { view: "inbox" })).items.find((t) => t.subject === "Factura octubre")!;
+    await client.call("threads.act", { threadIds: [thread.id], action: "archive" });
+    google.quotaReasonNext = reason;
+    await backend.runWorker();
+    expect((await client.call("ops.list", {}))[0]).toMatchObject({ state: "queued" });
+    expect((await backend.store.accounts.get(account.id))?.syncState.authRequired).not.toBe(true);
+    expect(google.messages.get("g3")?.labelIds).toContain("INBOX");
+  });
+
   async function connected() {
     const ctx = await setup();
     seed(ctx.google);

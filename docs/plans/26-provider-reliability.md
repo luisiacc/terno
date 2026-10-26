@@ -93,3 +93,21 @@ Codex reviewed `6331fbd..a7c784a` with the original fix context using the reposi
 ### Slice 2 — reproduction and initial validation
 
 Two new regressions failed before the change: initial sync ended in error on a vanished raw message; incremental sync made seven unnecessary profile/list calls. The raw-download catch now skips only its own confirmed 404, and an internal marker scopes expiry to history requests. Forty-one Gmail integration/network tests pass, including raw 403/503 checkpoint retention and history expiry on a continuation page. New fixtures use an unstarted synthetic mailbox to avoid an OAuth connection's trailing sync changing the watermark under assertion; full listings are pinned during deletion so the fake's offset paging does not skip unrelated messages. Existing provider auth, send uncertainty and real history-expiry behavior remain covered. Typecheck/lint passed before the final continuation fixture; code review pending.
+
+## Slice 3: T04 — structured Gmail quota errors and token throttling
+
+### Investigation and specification
+
+Gmail REST currently treats only 429/5xx as retryable, so documented 403 `userRateLimitExceeded` and `rateLimitExceeded` become permanent failures. Desktop token refresh also treats HTTP 429 as permanent. Permission, administrator-policy and disabled-service errors must remain action-required; do not make every 403 retryable or delete credentials on a quota error. A rejected quota send has a definitive response and is not ambiguous; send 5xx/network uncertainty retains existing handling.
+
+At the provider boundary, classify the structured reason array for those two quota reasons, accepting only actual reason fields rather than substring matches over free text. Preserve HTTP status provenance. Token refresh retries 429 along with existing 5xx while invalid_grant retains sign-in recovery. Parse only on the error path; no extra requests/timers/dependency or retry loop. The following W05 slice must carry Retry-After to durable account/operation scheduling and prevent local cooldowns from extending themselves; this classification slice alone does not close T04/A09/A10.
+
+Tests exercise real provider verify/send and desktop refresh over a synthetic fetch boundary: both quota reasons, unrelated permission/policy/daily-limit reasons, malformed bodies, a definitive quota-rejected send, HTTP 429 token failure, and preservation of existing ambiguous-send/auth tests. Add a real-backend fake-Google case showing a quota response leaves the operation retryable rather than terminal. No UI copy changes in this slice; richer action-specific recovery copy belongs to the auth/capability workgroup.
+
+### Slice 2 — Codex code review
+
+Reviewed `a7c784a..88f9094` with the required script in a Codex subagent: no substantiated findings. The review's test attempt was blocked by read-only temporary-file creation; parent executed the 41 passing tests. T06's disappearing-message slice and S10 are implemented/reviewed; window expansion, interruption recovery and other W03 scenarios remain open.
+
+### Slice 3 — critique, reproduction and validation
+
+Five critique points accepted: exact reason fields/status precedence; malformed-shape handling; status-driven token 429 including contradictory invalid_grant; definitive quota send rejection versus 5xx/unreadable-success ambiguity; and no hidden retry/invalidation machinery. Ten provider-boundary regressions failed before implementation. Both documented quota reasons now preserve retryability, permission/policy/daily-limit/disabled-service controls remain permanent, and token HTTP 429 keeps its status even with malformed/null/contradictory bodies. A genuine HTTP 400 invalid_grant still requests sign-in. Sixty-seven provider/integration tests plus typecheck/lint pass. Code review pending. Durable Retry-After/account admission remains open.

@@ -53,6 +53,18 @@ interface Cursor {
 
 class ExpiredHistory extends Error {}
 
+function isRateLimit(text: string): boolean {
+  try {
+    const body: unknown = JSON.parse(text);
+    if (!body || typeof body !== "object" || !("error" in body)) return false;
+    const error = body.error;
+    if (!error || typeof error !== "object" || !("errors" in error) || !Array.isArray(error.errors)) return false;
+    return error.errors.some((detail: unknown) => detail !== null && typeof detail === "object" && "reason" in detail && (detail.reason === "userRateLimitExceeded" || detail.reason === "rateLimitExceeded"));
+  } catch {
+    return false;
+  }
+}
+
 function labelState(labels: string[]): FlagUpdate["flags"] {
   const has = (l: string) => labels.includes(l);
   return {
@@ -167,7 +179,8 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       }
       if (!res.ok) {
         const text = await res.text().catch(() => "");
-        const err = new ProviderError(`Gmail API ${res.status}: ${text.slice(0, 200)}`, res.status === 429 || res.status >= 500, Boolean(sending && res.status >= 500));
+        const retryable = res.status === 429 || res.status >= 500 || (res.status === 403 && isRateLimit(text));
+        const err = new ProviderError(`Gmail API ${res.status}: ${text.slice(0, 200)}`, retryable, Boolean(sending && res.status >= 500));
         (err as ProviderError & { status: number }).status = res.status;
         throw err;
       }

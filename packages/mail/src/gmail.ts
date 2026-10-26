@@ -151,14 +151,15 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
         }
         let json: { access_token?: string; expires_in?: number; error?: string };
         try {
-          json = (await res.json()) as typeof json;
+          const value: unknown = await res.json();
+          json = value !== null && typeof value === "object" && !Array.isArray(value) ? value as typeof json : {};
         } catch (e) {
           // an answer whose body never arrived (the deadline, a dead socket) is the network, never a refusal
           if (isFetchNetworkFailure(e)) throw ProviderError.network(L("errors.gmail.refreshOffline", { detail: e instanceof Error ? e.message : String(e) }));
           json = {};
         }
-        if (json.error === "invalid_grant") throw new ProviderAuthError(L("errors.gmail.revoked"));
-        if (!res.ok || !json.access_token) throw new ProviderError(L("errors.gmail.refreshFailed", { status: res.status }), res.status >= 500);
+        if (res.status === 400 && json.error === "invalid_grant") throw new ProviderAuthError(L("errors.gmail.revoked"));
+        if (!res.ok || !json.access_token) throw Object.assign(new ProviderError(L("errors.gmail.refreshFailed", { status: res.status }), res.status === 429 || res.status >= 500), { status: res.status });
         access = { token: json.access_token, expiresAt: Date.now() + (json.expires_in ?? 3600) * 1000 - 60_000 };
         return json.access_token;
       } finally {
