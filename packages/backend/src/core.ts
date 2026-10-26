@@ -516,9 +516,9 @@ export class BackendCore {
     if ((await readKeychainState(this.store))?.pending[name] === blobFingerprint(blob)) throw new SecretUnreadableError(name, true);
     try {
       return await this.options.cipher.decrypt(blob);
-    } catch (error) {
+    } catch {
       log.warn("secret.unreadable", { op: "decrypt" });
-      this.log("warn", `secret ${name} couldn't be opened`, error instanceof Error ? error.message : error);
+      this.log("warn", "saved secret couldn't be opened", { op: "decrypt" });
       throw new SecretUnreadableError(name, false);
     }
   }

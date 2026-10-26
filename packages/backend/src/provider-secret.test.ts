@@ -9,7 +9,7 @@ import { ProviderAuthError, ProviderError, type ProviderContext, type ProviderRe
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as schema from "../../idb/src/schema";
 import { Backend, plaintextCipher, type SecretCipher } from "./backend";
-import { blobFingerprint, KEYCHAIN_STATE_KEY } from "./keychain";
+import { blobFingerprint, KEYCHAIN_STATE_KEY, SecretUnreadableError } from "./keychain";
 
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn(); vi.restoreAllMocks(); });
@@ -239,6 +239,34 @@ describe.each(["SQL", "IndexedDB"] as const)("%s public provider secret replacem
     expect(String(persisted)).not.toContain(marker);
     expect(JSON.stringify(t.logs)).not.toContain(marker);
     expect(await t.backend.getSecret(t.name)).toBe("old");
+  });
+
+  it("getSecret and getAppSecret never log raw keychain token/address/subject detail and preserve pending auth behavior", async () => {
+    const t = await setup(kind);
+    const markers = ["synthetic-private-refresh", "private-address@example.test", "Synthetic private subject"];
+    const detail = markers.join(" / ");
+    const appName = "gmailClientSecret";
+    await t.backend.setSecret(appName, "synthetic-app");
+    const cipher = vi.spyOn(t.cipher, "decrypt").mockRejectedValue(new Error(detail));
+    const accountError = await t.ctx.getSecret("password").catch((error: unknown) => error);
+    const appError = await t.ctx.getAppSecret(appName).catch((error: unknown) => error);
+    expect(accountError).toBeInstanceOf(ProviderAuthError);
+    expect(String(accountError)).toContain("keychain");
+    expect(appError).toBeInstanceOf(SecretUnreadableError);
+    expect(String(appError)).toContain("keychain");
+    const exposed = JSON.stringify({ logs: t.logs, accountError: String(accountError), appError: String(appError) });
+    for (const marker of markers) expect(exposed).not.toContain(marker);
+    expect(t.logs.some((entry) => JSON.stringify(entry).includes("decrypt"))).toBe(true);
+    cipher.mockClear();
+    await t.backend.store.settings.set(KEYCHAIN_STATE_KEY, { generation: "terno", pending: {
+      [t.name]: blobFingerprint((await t.backend.store.secrets.get(t.name))!),
+      [appName]: blobFingerprint((await t.backend.store.secrets.get(appName))!),
+    } });
+    const count = t.logs.length;
+    await expect(t.ctx.getSecret("password")).rejects.toBeInstanceOf(ProviderAuthError);
+    await expect(t.ctx.getAppSecret(appName)).rejects.toMatchObject({ name: "SecretUnreadableError", legacy: true });
+    expect(cipher).not.toHaveBeenCalled();
+    expect(t.logs).toHaveLength(count);
   });
 
   it("aftercommit failure is confirmable via new-to-new without restoring old bytes", async () => {
