@@ -8,7 +8,6 @@ import { flushSync } from "react-dom";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "./app";
-import { useAppearance } from "~/lib/appearance";
 
 interface ListState {
   key: string;
@@ -35,6 +34,8 @@ const WINDOW_PAGE = 500;
  * sets it): `capture` measures, the function it returns puts the row back.
  */
 export const listAnchor: { capture?: () => (() => void) | void; firstVisible?: () => number | null; scrolled?: () => boolean } = {};
+/** Does a same-list refresh keep the whole loaded window? List says yes (lib/page sets it); Split keeps its cap. */
+export const refreshPolicy: { keepWindow: () => boolean } = { keepWindow: () => false };
 /** how far past the loaded count a window refresh may read to find the rows that were on screen (new mail above them) */
 const REACH = 1000;
 
@@ -161,7 +162,7 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
     if (mine !== seq) return;
     // plan 24, R4: the whole loaded window, however deep, in pieces (a refresh that waited behind a page must not shrink the list
     // under the cursor). In List every refresh of the same list does it (an undo, a bulk result, new mail); Split keeps its cap.
-    const windowed = sameView && (options.window || useAppearance.getState().layout === "list");
+    const windowed = sameView && (options.window || refreshPolicy.keepWindow());
     if (windowed) {
       const want = current.items.length + (options.grow ? PAGE : 0);
       // the first row on screen and the cursor must be in it: mail that arrived above them pushed them further down

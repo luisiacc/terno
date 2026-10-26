@@ -9,7 +9,7 @@ import { useAppearance } from "~/lib/appearance";
 import { leaveNewDraft, supersedeCompose } from "~/lib/compose";
 import { createPageHistory, type Page, type PageHistory } from "~/lib/page-history";
 import { getApp, setApp, useApp, type AppState } from "~/state/app";
-import { flushDeferredRefresh, listKey } from "~/state/list";
+import { flushDeferredRefresh, listKey, refreshPolicy } from "~/state/list";
 
 export type { Page };
 
@@ -74,6 +74,9 @@ function focusList() {
 }
 
 let history: PageHistory | null = null;
+
+// List's same-list refreshes keep the whole loaded window (an undo, a bulk result, new mail); Split keeps its cap
+refreshPolicy.keepWindow = listLayout;
 
 // Another list under a page (a search from the palette, a sender's "more from", a folder or category while writing):
 // the list shows, with its rows; a new message is left the way Esc leaves it (kept if written).
