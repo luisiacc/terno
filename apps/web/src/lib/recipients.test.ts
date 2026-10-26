@@ -4,7 +4,7 @@
  * and the highlight of what was typed. Plus what the phrase model learns
  * from what Terno itself sends: only what the user wrote, in both languages.
  */
-import { parseAddressList, type Account, type ThreadDetail } from "@terno/core";
+import type { Account, ThreadDetail } from "@terno/core";
 import { setLocale } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
@@ -13,7 +13,9 @@ import { ownText } from "@terno/store/autocomplete";
 import { afterEach, describe, expect, it } from "vitest";
 import { quoteFor } from "./compose-fields";
 import { sendBody } from "./drafts";
-import { acceptAt, emailsIn, highlight, insertPasted, pastedAddresses, pasteInto, tokenAt } from "./recipients";
+import { validRecipients } from "./drafts";
+import { chipLabel, chipName, chipNoReply, commit, derive, edit, EMPTY, firstInvalid, insert, remove, serialize, type FieldState } from "./recipient-field";
+import { emailsIn, highlight, pastedAddresses, tokenAt } from "./recipients";
 
 afterEach(() => setLocale("en", en));
 
@@ -28,56 +30,107 @@ describe("the token at the caret", () => {
   });
 });
 
-describe("accepting a suggestion", () => {
-  it("replaces the token, quotes names that need it, and leaves the caret after a separator", () => {
-    const r = acceptAt("ana@x.io, pe", tokenAt("ana@x.io, pe", 12), { name: "Pérez, Luis", email: "l@y.com" });
-    expect(r.text).toBe('ana@x.io, "Pérez, Luis" <l@y.com>, ');
-    expect(r.caret).toBe(r.text.length);
-    // it parses back as two recipients, the comma in the name included
-    expect(parseAddressList(r.text)).toEqual([
-      { name: "", email: "ana@x.io" },
-      { name: "Pérez, Luis", email: "l@y.com" },
-    ]);
-  });
-
-  it("in the middle of the field, keeps what follows", () => {
-    const text = "bo, carla@x.io";
-    const r = acceptAt(text, tokenAt(text, 2), { name: "Bob Stone", email: "bob@stone.io" });
-    expect(r.text).toBe("Bob Stone <bob@stone.io>, carla@x.io");
-    expect(r.caret).toBe("Bob Stone <bob@stone.io>, ".length);
-  });
-
+describe("the field's text", () => {
   it("emailsIn lists the addresses of a field, lowercased", () => {
     expect(emailsIn('Ana <ANA@x.io>, "B, C" <b@y.io>, unfinished')).toEqual(["ana@x.io", "b@y.io"]);
   });
 });
 
 describe("pasting a list", () => {
-  it("parses separators, newlines and mailto:, and leaves an ordinary paste alone", () => {
+  it("parses separators, newlines, mailto: and Name <addr>, and leaves an ordinary paste alone", () => {
     expect(pastedAddresses("ana@x.io; Bob <bob@y.io>\nmailto:carla@z.io")).toEqual([
       { name: "", email: "ana@x.io" },
       { name: "Bob", email: "bob@y.io" },
       { name: "", email: "carla@z.io" },
     ]);
+    expect(pastedAddresses("Bob Stone <bob@stone.io>")).toEqual([{ name: "Bob Stone", email: "bob@stone.io" }]);
     expect(pastedAddresses("Ana López")).toBeNull();
     expect(pastedAddresses("ana@x.io")).toBeNull();
     expect(pastedAddresses("not, addresses")).toBeNull();
   });
 
-  it("inserts formatted, skipping addresses already in the draft", () => {
-    const r = insertPasted("ana@x.io", 8, 8, [{ name: "Bob", email: "bob@y.io" }, { name: "", email: "ANA@x.io" }, { name: "", email: "carla@z.io" }], ["ana@x.io"]);
-    expect(r.text).toBe("ana@x.io, Bob <bob@y.io>, carla@z.io, ");
-    expect(r.caret).toBe(r.text.length);
+  it("keeps what isn't an address beside what is (Codex review 8): two recipients, Bob's to fix", () => {
+    expect(pastedAddresses("ana@example.com; bob@")).toEqual([
+      { name: "", email: "ana@example.com" },
+      { name: "", email: "bob@" },
+    ]);
   });
 });
 
-describe("pasting over a selection (codex review)", () => {
-  it("doesn't drop an address the paste replaces; still skips what stays and the other fields", () => {
-    const text = "Ana <ana@x.io>";
-    expect(pasteInto(text, 0, text.length, pastedAddresses("mailto:ana@x.io")!.concat(), []).text).toBe("ana@x.io, ");
-    expect(pasteInto(text, 0, text.length, [{ name: "", email: "ana@x.io" }, { name: "", email: "bob@y.io" }], ["Bob <bob@y.io>"]).text).toBe("ana@x.io, ");
-    const two = "Ana <ana@x.io>, carla@z.io";
-    expect(pasteInto(two, 0, 14, [{ name: "", email: "CARLA@z.io" }, { name: "", email: "dan@w.io" }], []).text).toBe("dan@w.io, carla@z.io");
+/** The field's text after a state, read back as a reload would (unfocused). */
+const reread = (s: FieldState) => derive(serialize(s), false);
+const emailsOf = (s: FieldState) => s.chips.map((c) => c.address.email);
+
+describe("chips (plan 26)", () => {
+  it("reads a field's text: unfocused everything is a chip; focused, an entry with no separator after it is still being typed", () => {
+    const value = 'Ana <ana@x.io>, "Pérez, Luis" <l@y.com>, bo';
+    expect(emailsOf(derive(value, false))).toEqual(["ana@x.io", "l@y.com", "bo"]);
+    const typing = derive(value, true);
+    expect(emailsOf(typing)).toEqual(["ana@x.io", "l@y.com"]);
+    expect(typing.text).toBe("bo");
+    expect(serialize(typing)).toBe(value);
+    expect(derive("", true)).toEqual({ chips: [], text: "", at: 0 });
+  });
+
+  it("commits what was typed: several at once, cleaned like a paste, a duplicate not twice, what isn't an address kept", () => {
+    let s = derive("Ana <ana@x.io>", true);
+    s = commit({ ...s, text: "bob@y.io carla@z.io" }).state;
+    expect(emailsOf(s)).toEqual(["ana@x.io", "bob@y.io", "carla@z.io"]);
+    const dup = commit({ ...s, text: "ANA@x.io" });
+    expect(dup.added).toEqual([]);
+    expect(emailsOf(dup.state)).toEqual(["ana@x.io", "bob@y.io", "carla@z.io"]);
+    const smart = commit({ ...s, text: "“Dan” <dan@w.io>" }).state;
+    expect(smart.chips.at(-1)!.address).toEqual({ name: "Dan", email: "dan@w.io" });
+    const bad = commit({ ...s, text: "esto no es un correo" }).state;
+    expect(bad.chips.at(-1)!.valid).toBe(false);
+    expect(firstInvalid(serialize(bad))).toBe("esto no es un correo");
+  });
+
+  it("an invalid chip round-trips as itself through the draft's text, never as something sendable (Codex review 2)", () => {
+    const s = commit({ ...EMPTY, text: '"a@x.com, b@x.com"' }).state;
+    expect(s.chips).toHaveLength(1);
+    expect(s.chips[0]!.valid).toBe(false);
+    const back = reread(insert(s, [{ name: "Ana", email: "ana@x.io" }]).state);
+    expect(back.chips.map((c) => [c.address.email, c.valid])).toEqual([
+      ["a@x.com, b@x.com", false],
+      ["ana@x.io", true],
+    ]);
+    expect(validRecipients(serialize(back)).map((a) => a.email)).toEqual(["ana@x.io"]);
+  });
+
+  it("insert: at the commit place, without what this field or the others have", () => {
+    const s = derive("a@x.io, c@x.io", false);
+    const r = insert({ ...s, at: 1 }, [{ name: "B", email: "b@x.io" }, { name: "", email: "A@X.IO" }, { name: "", email: "d@x.io" }], ["d@x.io"]);
+    expect(emailsOf(r.state)).toEqual(["a@x.io", "b@x.io", "c@x.io"]);
+    expect(r.added.map((a) => a.email)).toEqual(["b@x.io"]);
+  });
+
+  it("remove and edit: an edited chip turns into text and goes back to its place", () => {
+    const s = derive("a@x.io, Bob <b@x.io>, c@x.io", false);
+    const [a, b] = s.chips;
+    expect(emailsOf(remove(s, new Set([a!.key])))).toEqual(["b@x.io", "c@x.io"]);
+    const editing = edit(s, b!.key);
+    expect(editing).toMatchObject({ text: "Bob <b@x.io>", at: 1 });
+    expect(emailsOf(editing)).toEqual(["a@x.io", "c@x.io"]);
+    const back = commit({ ...editing, text: "Bobby <b@x.io>" }).state;
+    expect(back.chips.map((c) => c.address.name || c.address.email)).toEqual(["a@x.io", "Bobby", "c@x.io"]);
+    expect(back.at).toBe(3);
+  });
+
+  it("labels, names for screen readers, the no-reply hint", () => {
+    const [named, bare, noreply] = derive("Björn Peña <bjorn.pena@acme.studio>, ana@x.io, no-reply@shop.com", false).chips;
+    expect([chipLabel(named!), chipName(named!)]).toEqual(["Björn Peña", "Björn Peña, bjorn.pena@acme.studio"]);
+    expect([chipLabel(bare!), chipName(bare!)]).toEqual(["ana@x.io", "ana@x.io"]);
+    expect([chipNoReply(named!), chipNoReply(noreply!)]).toEqual([false, true]);
+  });
+
+  it("200 recipients read, commit and write in linear time", () => {
+    const value = Array.from({ length: 2000 }, (_, i) => `Persona ${i} <p${i}@x.io>`).join(", ");
+    const started = performance.now();
+    const s = derive(value, true);
+    const next = commit({ ...s, text: "new@x.io" }).state;
+    expect(serialize(next).length).toBeGreaterThan(value.length);
+    expect(performance.now() - started).toBeLessThan(250);
   });
 });
 

@@ -1,9 +1,9 @@
-import { formatAddress, formatAddressList, isValidEmail, parseAddressList, type Address } from "@terno/core";
+import { isValidEmail, parseAddressList, type Address } from "@terno/core";
 
 /**
- * Recipient fields (plan 18): the address being typed at the caret, putting
- * a chosen suggestion in its place, and pasted lists. Pure (no DOM, no
- * backend), the field's text stays the draft's model.
+ * Recipient fields (plans 18 and 26): the address being typed at the caret,
+ * pasted lists, and what a suggestion highlights. Pure (no DOM, no backend);
+ * the chips themselves are recipient-field.ts.
  */
 
 export interface TypedToken {
@@ -43,15 +43,6 @@ export function tokenAt(text: string, caret: number): TypedToken {
   return { start, end, query };
 }
 
-/** The field with `a` in place of the token, a separator after it, and where the caret goes. */
-export function acceptAt(text: string, token: TypedToken, a: Address): { text: string; caret: number } {
-  let before = text.slice(0, token.start);
-  if (before && !/\s$/.test(before)) before += " ";
-  const after = text.slice(token.end).replace(/^\s*[,;]?\s*/, "");
-  const inserted = `${formatAddress(a)}, `;
-  return { text: before + inserted + after, caret: before.length + inserted.length };
-}
-
 /** The addresses already in a field, lowercased. */
 export function emailsIn(text: string): string[] {
   return parseAddressList(text)
@@ -60,44 +51,18 @@ export function emailsIn(text: string): string[] {
 }
 
 /**
- * A pasted text that is a list of addresses (a separator, `mailto:`, or more
- * than one address), parsed; null for anything else (an ordinary paste).
+ * A pasted text that is a list of addresses (a separator, `mailto:`, more
+ * than one address, or one written `Name <addr>`), parsed; null for anything
+ * else (an ordinary paste). Entries that aren't addresses are kept (plan 26,
+ * Codex review 8): "ana@x.com; bob@" is two recipients, Bob's to fix.
  */
 export function pastedAddresses(pasted: string): Address[] | null {
   const text = pasted.replace(/mailto:/gi, "").trim();
   if (!text) return null;
-  const many = /[,;\n]/.test(text) || (text.match(/@/g)?.length ?? 0) > 1 || /mailto:/i.test(pasted);
+  const many = /[,;\n]/.test(text) || (text.match(/@/g)?.length ?? 0) > 1 || /mailto:/i.test(pasted) || /<[^<>]+@[^<>]+>/.test(text);
   if (!many) return null;
-  const list = parseAddressList(text).filter((a) => isValidEmail(a.email));
-  return list.length ? list : null;
-}
-
-/** The field with a pasted list in place of the selection, without addresses already in the draft. */
-export function insertPasted(text: string, selStart: number, selEnd: number, list: readonly Address[], existing: Iterable<string>): { text: string; caret: number } {
-  const seen = new Set([...existing].map((e) => e.toLowerCase()));
-  const fresh: Address[] = [];
-  for (const a of list) {
-    const key = a.email.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    fresh.push(a);
-  }
-  let before = text.slice(0, selStart).replace(/\s+$/, "");
-  if (before && !/[,;]$/.test(before)) before += ",";
-  if (before) before += " ";
-  const after = text.slice(selEnd).replace(/^\s*[,;]?\s*/, "");
-  const inserted = fresh.length ? `${formatAddressList(fresh)}, ` : "";
-  return { text: before + inserted + after, caret: before.length + inserted.length };
-}
-
-/**
- * A pasted list in place of the selection: duplicates are what stays in this
- * field (outside the selection) and the other fields, never what the paste
- * replaces (selecting "Ana <ana@x.io>" and pasting ana@x.io keeps Ana).
- */
-export function pasteInto(text: string, selStart: number, selEnd: number, list: readonly Address[], others: readonly string[]): { text: string; caret: number } {
-  const kept = emailsIn(text.slice(0, selStart) + ", " + text.slice(selEnd));
-  return insertPasted(text, selStart, selEnd, list, [...kept, ...others.flatMap(emailsIn)]);
+  const list = parseAddressList(text);
+  return list.some((a) => isValidEmail(a.email)) ? list : null;
 }
 
 /**

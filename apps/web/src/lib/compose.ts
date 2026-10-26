@@ -1,6 +1,6 @@
 import { attachmentUploading } from "./attachments";
 import { breadcrumb, captureUi } from "~/lib/diag";
-import { isValidEmail, parseAddressList } from "@terno/core";
+import { firstInvalid, SELECT_INVALID } from "./recipient-field";
 import type { DraftMode } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
@@ -157,6 +157,14 @@ export function sendDraft(key: string): Promise<boolean> {
 
 export const isSending = (key: string): boolean => pendingSends.has(key);
 
+/** Focus moves to the field Send found wrong, its first invalid chip selected (once the draft shows again). */
+function showRecipient(key: string, field: "to" | "cc" | "bcc") {
+  if (typeof requestAnimationFrame === "undefined") return;
+  requestAnimationFrame(() =>
+    document.querySelector(`[data-draft-key="${CSS.escape(key)}"] [data-recipient-field="compose-${field}"]`)?.dispatchEvent(new CustomEvent(SELECT_INVALID)),
+  );
+}
+
 async function send(key: string): Promise<boolean> {
   if (attachmentUploading(key)) { snack.error(t("attachments.adding")); return false; }
   // read-only from here: nothing typed while the save in flight settles can fall between it and the send
@@ -169,12 +177,13 @@ async function send(key: string): Promise<boolean> {
   const to = validRecipients(d.toText);
   const cc = validRecipients(d.ccText);
   const bcc = validRecipients(d.bccText);
-  // something typed that isn't an address (or nobody at all): stay, and say so
-  const invalid = [d.toText, d.ccText, d.bccText].some((text) => parseAddressList(text).some((a) => !isValidEmail(a.email)));
-  if (to.length === 0 || invalid) {
+  // something typed that isn't an address (or nobody at all): stay, say what is wrong, and show it (plan 26 §2.6)
+  const bad = (["to", "cc", "bcc"] as const).map((field) => ({ field, entry: firstInvalid(d[`${field}Text`]) })).find((b) => b.entry !== null);
+  if (to.length === 0 || bad) {
     markSending(key, false);
     resumeDraft(key);
-    snack.error(t("compose.checkRecipients"));
+    snack.error(bad ? t("compose.invalidRecipient", { entry: bad.entry! }) : t("compose.noRecipient"));
+    showRecipient(key, bad?.field ?? "to");
     return false;
   }
   breadcrumb("action", "action.send");
