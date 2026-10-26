@@ -1,7 +1,7 @@
 import { attachmentFingerprint, portableAttachmentFingerprint, exportAttachment, importAttachments, validateExportedAttachments } from "./attachments";
 import { RpcError, type ExportedAttachment } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
-import { decodeText, type Condition, type FilterAction, type FilterRule } from "@terno/core";
+import { attachmentFilename, attachmentMime, attachmentCid, decodeText, type Condition, type FilterAction, type FilterRule } from "@terno/core";
 import { draftAddressSchema, exportCategorySchema, exportDraftSchema, exportFilterSchema, settingsPatchSchema, type ExportCategory, type ExportDraftItem, type ExportFilter, type DraftAddress, type ExportedDraft, type ExportFile, type ImportResult, type MailboxExport, type SettingsPatch } from "@terno/core/rpc";
 import type { DraftInput, DraftRow } from "@terno/store";
 import { GAP, textToHtmlChunks } from "@terno/richtext/quote";
@@ -198,7 +198,7 @@ async function restoreInto(b: Backend, items: Pending, options: { final: boolean
         continue;
       }
       const keys = [];
-      for (const part of d.attachments ?? []) keys.push([part.filename, part.mime, part.size, part.contentId ?? null, await portableAttachmentFingerprint(part, () => b.yieldTurn())]);
+      for (const part of d.attachments ?? []) keys.push([attachmentFilename(part.filename), attachmentMime(part.mime), part.size, attachmentCid(part.contentId), await portableAttachmentFingerprint(part, () => b.yieldTurn())]);
       const key = await draftKey(b, draft, keys);
       if (present.has(key)) {
         continue;

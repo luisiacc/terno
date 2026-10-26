@@ -101,6 +101,10 @@ it.each(["", "AP+A"])("repeated attached-draft import at full quota is a reserva
   const assets = db.all("SELECT * FROM attachment_assets ORDER BY id");
   const create = vi.spyOn(backend.store.attachments, "create");
   expect((await client.call("app.import", { data: dump })).drafts).toBe(0);
+  const canonical = structuredClone(dump);
+  canonical.drafts[0]!.attachments![0]!.filename = "../same.bin";
+  canonical.drafts[0]!.attachments![0]!.mime = "APPLICATION/OCTET-STREAM";
+  expect((await client.call("app.import", { data: canonical })).drafts).toBe(0);
   expect(create).not.toHaveBeenCalled();
   expect(await backend.store.drafts.list()).toEqual(before);
   expect(db.all("SELECT * FROM attachment_assets ORDER BY id")).toEqual(assets);
