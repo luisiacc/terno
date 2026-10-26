@@ -6,7 +6,7 @@ import type { IncomingMessage } from "@terno/store";
 import { parseListId, parseRaw, splitIds } from "./mime";
 import { isNetworkError } from "./net-errors";
 import { sendViaSmtp } from "./smtp";
-import { ProviderError, type FlagUpdate, type ImapAccountConfig, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
+import { ProviderAuthError, ProviderError, type FlagUpdate, type ImapAccountConfig, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
 
 type Role = "inbox" | "sent" | "archive" | "all" | "junk" | "trash" | "drafts";
 
@@ -75,9 +75,10 @@ const NAME_HINTS: Record<Exclude<Role, "inbox" | "all">, RegExp> = {
 
 export function toProviderError(error: unknown): ProviderError {
   if (error instanceof ProviderError) return error;
-  const e = error as { authenticationFailed?: boolean; code?: string; responseStatus?: string; message?: string };
+  const e = error as { authenticationFailed?: boolean; serverResponseCode?: string; code?: string; responseStatus?: string; message?: string };
   const message = e?.message ?? String(error);
-  if (e.authenticationFailed) return new ProviderError(L("errors.imap.loginFailed", { detail: message }), false);
+  // the server refused the login: a sign-in to redo (plan 25), unless it says the refusal is temporary (RFC 5530)
+  if (e.authenticationFailed) return e.serverResponseCode === "UNAVAILABLE" ? new ProviderError(L("errors.imap.loginFailed", { detail: message }), true) : new ProviderAuthError(L("errors.imap.loginFailed", { detail: message }));
   if (e.responseStatus === "NO" || e.responseStatus === "BAD") return new ProviderError(`IMAP: ${message}`, false);
   // the server couldn't be reached or the connection died (plan 20): waits for the network
   if (isNetworkError(error)) return ProviderError.network(`IMAP: ${message}`);
@@ -112,7 +113,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
 
   const makeClient = async (forIdle = false) => {
     const password = await ctx.getSecret("password");
-    if (!password) throw new ProviderError(L("errors.imap.noPassword"), false);
+    if (!password) throw new ProviderAuthError(L("errors.imap.noPassword"));
     return new ImapFlow({
       host: config.imap.host,
       port: config.imap.port,
@@ -493,7 +494,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
 
   async function send(payload: SendPayload): Promise<{ providerMsgId: string; warning?: Localized }> {
     const password = await ctx.getSecret("password");
-    if (!password) throw new ProviderError(L("errors.imap.noPassword"), false);
+    if (!password) throw new ProviderAuthError(L("errors.imap.noPassword"));
     // its own connection, made for this send: a network change never touches it (an outcome after DATA stays ambiguous)
     const { raw, rejected } = await sendViaSmtp({ ...config.smtp, password, allowInsecure: options.allowInsecure, socketTimeoutMs: timeouts.smtpSocketMs }, payload);
     if (config.appendToSent) {
@@ -692,7 +693,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             // whatever arrived while push was down
             onChange();
           }
-        } catch {
+        } catch (error) {
           if (pending === c) pending = null;
           c?.close();
           connecting = false;
@@ -700,6 +701,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           // a reset abandoned this attempt: the next one goes now, not after a backoff
           if (again || gen !== generation) return void connect();
           markLost();
+          // plan 25: a refused sign-in isn't knocked on every minute (servers lock accounts out for that); a
+          // network change tries once more, and signing in again starts a new provider
+          if (toProviderError(error) instanceof ProviderAuthError) return;
           schedule();
         }
       };

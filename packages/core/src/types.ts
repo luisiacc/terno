@@ -74,6 +74,11 @@ export interface AccountSyncState {
   connection?: { state: "offline" | "reconnecting"; retryAt: number | null } | null;
   /** the provider wants the user to sign in again (a revoked or expired grant); cleared by a success */
   authRequired?: boolean;
+  /**
+   * Plan 25: what the refused sign-in covers. "send": only sending (an IMAP account's SMTP refused it while IMAP
+   * works: a sync doesn't prove it, so only signing in again clears it). Absent: the whole account.
+   */
+  authScope?: "send" | null;
 }
 
 export const VIEWS = ["inbox", "starred", "sent", "archive", "spam", "trash", "all"] as const;

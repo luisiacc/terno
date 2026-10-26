@@ -32,7 +32,7 @@ import { ThreadRow } from "./thread-row";
 import { registerDesignAnchor, useDesign } from "~/lib/design";
 import { LearnedBanner } from "./learned-banner";
 import { ReportRow } from "./diag/report-row";
-import { DesktopBanner, GmailReconnect } from "~/lib/web-parts";
+import { DesktopBanner } from "~/lib/web-parts";
 import { preloadComposer } from "./composer/lazy";
 import { iconsAllowed, iconsAllowedForList } from "~/lib/sender-icons";
 import { useAppearance } from "~/lib/appearance";
@@ -727,9 +727,8 @@ export function ThreadList() {
       <Header hairlineRef={headerRef} />
       <ReportRow />
       <LearnedBanner />
-      {DesktopBanner && GmailReconnect && (
+      {DesktopBanner && (
         <Suspense>
-          <GmailReconnect />
           <DesktopBanner />
         </Suspense>
       )}

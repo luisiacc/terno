@@ -78,8 +78,11 @@ const LABEL_OPS: Record<string, { add?: string[]; remove?: string[] }> = {
 export interface GmailTokenSource {
   /** a valid access token, renewed as the platform can (throws ProviderError when the user must reconnect) */
   get(): Promise<string>;
-  /** the API refused it (401): forget it so the next get() renews */
-  invalidate(): void;
+  /**
+   * the API refused `token` (401): forget it so the next get() renews. Only that one (plan 25, Codex review #5):
+   * a request that left before a renew mustn't drop the token the renew just brought.
+   */
+  invalidate(token: string): void;
 }
 
 export interface GmailApiOptions {
@@ -155,7 +158,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       }
       if (res.status === 401) {
         await res.body?.cancel().catch(() => {});
-        tokens.invalidate();
+        tokens.invalidate(token);
         // a fresh token refused as well: the grant is gone, the user signs in again (ops wait for it)
         if (retried) throw new ProviderAuthError(L("errors.gmail.revoked"));
         return await api<T>(path, init, true);

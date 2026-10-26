@@ -15,6 +15,7 @@ import { captureUi } from "~/lib/diag";
 import { startDiag } from "~/state/diag";
 import { setBridgeForTests, startUpdates } from "~/lib/updates";
 import { supportedFilters } from "~/lib/unread-filter";
+import { accountsChanged, announceParkedSend } from "~/lib/sign-in";
 
 export async function boot(): Promise<void> {
   startDiag();
@@ -65,7 +66,11 @@ export async function boot(): Promise<void> {
       });
     });
     client.on("counts", (counts) => setApp({ counts }));
-    client.on("accounts", (accounts) => setApp({ accounts }));
+    client.on("accounts", (accounts) => {
+      setApp({ accounts });
+      // plan 25: an account that works again ends what was said about its sign-in
+      accountsChanged(accounts);
+    });
     client.on("categories", (categories) => setCategories(categories));
     client.on("owner", (owner) => setApp({ owner }));
     // drafts added elsewhere (an import, in this window or another): merged in as they are
@@ -83,6 +88,11 @@ export async function boot(): Promise<void> {
       });
     });
     client.on("op", (op) => {
+      // plan 25: a send waiting for its account's sign-in says so (once per account, until it signs in)
+      if (op.kind === "send" && op.awaitingAuth) {
+        const account = getApp().accounts.find((a) => a.id === op.accountId);
+        if (account) announceParkedSend(account);
+      }
       if (op.kind === "send" && op.state === "succeeded") {
         if (op.lastError) snack.warning(t("actions.send.partial"), { description: localized(op.lastError, op.lastErrorI18n), duration: 12_000, background: true });
         else snack.success(t("actions.send.sent"), { background: true });

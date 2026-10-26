@@ -41,7 +41,9 @@ export function createGmailTokenBroker(o: { endpoints?: Partial<GmailEndpoints>;
             if (!t || t.expiresAt - 60_000 <= now()) throw new ProviderAuthError(gmailReconnect());
             return t.token;
           },
-          invalidate: () => void tokens.delete(id),
+          invalidate: (token) => {
+            if (tokens.get(id)?.token === token) tokens.delete(id);
+          },
         },
         buildRaw: async (payload) => buildRawPortable(payload),
       });

@@ -274,6 +274,8 @@ export interface OpInfo {
   /** English (agents, logs); the renderer shows summaryI18n */
   summary: string;
   summaryI18n?: I18nRef;
+  /** plan 25: queued until its account signs in again */
+  awaitingAuth?: true;
 }
 
 export const DRAFT_MODES = ["new", "reply", "replyAll", "forward"] as const;
@@ -670,8 +672,11 @@ export const contract = {
     { timeoutMs: 60_000 },
   ),
   "accounts.connectGmail": m<Account>()(empty, { timeoutMs: 300_000 }),
-  /** web: an access token from Google's token model (the page signs in); connects the mailbox or renews its token */
-  "accounts.connectGmailToken": m<Account>()(z.object({ accessToken: z.string().min(1).max(4096), expiresIn: z.number().int().min(60).max(86_400) }), { timeoutMs: 60_000 }),
+  /**
+   * web: an access token from Google's token model (the page signs in); connects the mailbox or renews its token.
+   * With `accountId` (plan 25: signing that account in again) the token must be that account's, else nothing changes.
+   */
+  "accounts.connectGmailToken": m<Account>()(z.object({ accessToken: z.string().min(1).max(4096), expiresIn: z.number().int().min(60).max(86_400), accountId: id.optional() }), { timeoutMs: 60_000 }),
   "accounts.update": m<Account>()(
     z.object({
       id,

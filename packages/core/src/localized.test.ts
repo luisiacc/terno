@@ -27,7 +27,7 @@ describe("catalog messages from the backend", () => {
     const m = L("errors.smtp.notDeliveredTo", { recipients: "a@b.mx" });
     const stored = encodeText(m);
     expect(decodeText(stored)).toEqual({ message: "Not delivered to: a@b.mx", i18n: { key: "errors.smtp.notDeliveredTo", params: { recipients: "a@b.mx" } } });
-    expect(decodeText(encodeText(L("errors.gmail.revoked")))).toEqual({ message: "Gmail access was revoked; reconnect the account.", i18n: { key: "errors.gmail.revoked" } });
+    expect(decodeText(encodeText(L("errors.gmail.revoked")))).toEqual({ message: "Google’s sign-in for this account expired or was revoked.", i18n: { key: "errors.gmail.revoked" } });
     expect(encodeText("IMAP: Mailbox is full")).toBe("IMAP: Mailbox is full");
     expect(decodeText("IMAP: Mailbox is full")).toEqual({ message: "IMAP: Mailbox is full" });
     expect(decodeText('{"key": broken')).toEqual({ message: '{"key": broken' });

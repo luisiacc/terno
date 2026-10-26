@@ -511,7 +511,7 @@ export function createHandlers(b: Backend): Handlers {
       return account;
     },
 
-    "accounts.connectGmailToken": async ({ accessToken, expiresIn }) => {
+    "accounts.connectGmailToken": async ({ accessToken, expiresIn, accountId }) => {
       const tokens = b.options.providers.gmailTokens;
       // i18n-ignore: a wiring mistake (only the web build calls this, and it has the broker), for developers
       if (!tokens) throw new RpcError("UNAVAILABLE", "This host connects Gmail with accounts.connectGmail.");
@@ -519,12 +519,19 @@ export function createHandlers(b: Backend): Handlers {
         throw new RpcError("BAD_REQUEST", messageOf(error));
       });
       const expiresAt = b.now() + expiresIn * 1000;
+      if (accountId !== undefined) {
+        // plan 25: signing this account in again: another Google account picked in the popup changes nothing
+        const expected = await store.accounts.get(accountId);
+        if (!expected || expected.kind !== "gmail") throw new RpcError("NOT_FOUND", L("errors.accountGone"));
+        if (expected.email.toLowerCase() !== who.email.toLowerCase()) throw new RpcError("BAD_REQUEST", L("errors.googleConnectedOther", { got: who.email, expected: expected.email }));
+      }
       const existing = (await store.accounts.list()).find((a) => a.email === who.email.toLowerCase());
       if (existing) {
         if (existing.kind !== "gmail") throw new RpcError("BAD_REQUEST", L("errors.alreadyConnectedImap", { email: who.email }));
         // reconnect: the same mailbox gets a fresh token and syncs what it missed
         tokens.set(existing.id, accessToken, expiresAt);
-        await b.resumeAuth(existing.id);
+        // plan 25: Google just proved the token (its profile answered): the account stops asking now, and what waited goes
+        await b.signedIn(existing.id);
         void b.syncAccount(existing.id);
         return existing;
       }

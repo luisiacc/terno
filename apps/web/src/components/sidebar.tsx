@@ -18,6 +18,7 @@ import { renderProbe } from "~/lib/render-probe";
 import { useDropState } from "~/state/drag";
 import { LocalPill } from "./local-pill";
 import { ConnectionPill } from "./connection-pill";
+import { SignInMarker, SignInNotice } from "./sign-in-notice";
 import { UpdatePill } from "./update-pill";
 import { preloadComposer } from "./composer/lazy";
 
@@ -82,8 +83,8 @@ function NavItem({
   testId?: string;
   /** a category: rows can be dropped on it */
   dropTarget?: number;
-  /** room at the end for a control drawn over the row (a review badge) */
-  reserveEnd?: boolean;
+  /** room at the end for a control drawn over the row (a review badge; "icon": the sign-in key, plan 25) */
+  reserveEnd?: boolean | "icon";
 }) {
   renderProbe("NavItem");
   // only the item under the pointer (and the one it left) re-renders during a drag
@@ -99,7 +100,7 @@ function NavItem({
       className={cn(
         "group type-nav flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-left text-sidebar-foreground transition-colors",
         ROW_SEAM,
-        reserveEnd && "pr-14",
+        reserveEnd === "icon" ? "pr-8" : reserveEnd && "pr-14",
         "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
         "data-active:type-nav-strong data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground",
         "data-[drop-state=over]:bg-drop-target data-[drop-state=over]:text-sidebar-accent-foreground data-[drop-state=over]:ring-1 data-[drop-state=over]:ring-primary data-[drop-state=over]:ring-inset",
@@ -345,20 +346,24 @@ export function Sidebar() {
           label={t("sidebar.allAccounts")}
         />
         {accounts.map((a) => (
-          <NavItem
-            key={a.id}
-            testId={`nav-account-${a.id}`}
-            active={accountId === a.id}
-            onClick={() => navigate({ accountId: a.id, view: categoryId ? "inbox" : view })}
-            icon={
-              <span className="relative">
-                <CategoryDot color={a.color as CategoryColor} />
-                {a.syncState.status === "syncing" && <span className="absolute -inset-0.5 animate-ping rounded-full bg-sidebar-primary/40" />}
-              </span>
-            }
-            label={a.displayName}
-            count={counts.inboxUnreadByAccount[a.id] || undefined}
-          />
+          <div key={a.id} className="relative">
+            <NavItem
+              testId={`nav-account-${a.id}`}
+              active={accountId === a.id}
+              onClick={() => navigate({ accountId: a.id, view: categoryId ? "inbox" : view })}
+              icon={
+                <span className="relative">
+                  <CategoryDot color={a.color as CategoryColor} />
+                  {a.syncState.status === "syncing" && <span className="absolute -inset-0.5 animate-ping rounded-full bg-sidebar-primary/40" />}
+                </span>
+              }
+              label={a.displayName}
+              count={counts.inboxUnreadByAccount[a.id] || undefined}
+              reserveEnd={a.syncState.authRequired ? "icon" : undefined}
+            />
+            {/* plan 25: a sibling of the row (the row still navigates) */}
+            {a.syncState.authRequired && <SignInMarker account={a} />}
+          </div>
         ))}
         <button
           type="button"
@@ -368,6 +373,7 @@ export function Sidebar() {
           <Plus className="size-4" /> {t("sidebar.addAccount")}
         </button>
       </nav>
+      <SignInNotice />
       <ConnectionPill />
       <UpdatePill />
       <div className="hairline-t hairline-strong flex shrink-0 items-center gap-1 px-2 py-2">

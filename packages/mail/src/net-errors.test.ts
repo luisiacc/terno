@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { toProviderError } from "./imap";
+import { ProviderAuthError } from "./types";
 import { failedBeforeRequest, isFetchNetworkFailure, isNetworkError } from "./net-errors";
 import { classifySmtpError } from "./smtp";
 
@@ -62,5 +63,28 @@ describe("plan 20: what counts as 'couldn't reach the server'", () => {
     expect(classifySmtpError(err({ code: "EMESSAGE", responseCode: 554 }))).toMatchObject({ retryable: false, network: false });
     expect(classifySmtpError(err({ code: "ESOCKET", originalCode: "CERT_HAS_EXPIRED" }))).toMatchObject({ network: false });
     expect(classifySmtpError(err({ code: "EAUTH" }))).toMatchObject({ retryable: false, network: false });
+  });
+});
+
+describe("plan 25: a refused sign-in is the user's to redo (and only a refusal is)", () => {
+  it("IMAP: a refused login asks for a sign-in; a temporary refusal (UNAVAILABLE) is retried; NO/BAD stay what they were", () => {
+    expect(toProviderError(err({ authenticationFailed: true, serverResponseCode: "AUTHENTICATIONFAILED" }))).toBeInstanceOf(ProviderAuthError);
+    expect(toProviderError(err({ authenticationFailed: true }))).toBeInstanceOf(ProviderAuthError);
+    const temporary = toProviderError(err({ authenticationFailed: true, serverResponseCode: "UNAVAILABLE" }));
+    expect(temporary).not.toBeInstanceOf(ProviderAuthError);
+    expect(temporary).toMatchObject({ retryable: true });
+    expect(toProviderError(err({ responseStatus: "NO" }))).not.toBeInstanceOf(ProviderAuthError);
+    expect(toProviderError(err({ code: "ECONNREFUSED" }))).not.toBeInstanceOf(ProviderAuthError);
+  });
+
+  it("SMTP (Codex review #1): EAUTH with 535 or no code asks for a sign-in; 454 is retried; after DATA stays ambiguous", () => {
+    expect(classifySmtpError(err({ code: "EAUTH", responseCode: 535 }))).toBeInstanceOf(ProviderAuthError);
+    expect(classifySmtpError(err({ code: "EAUTH" }))).toBeInstanceOf(ProviderAuthError);
+    const temporary = classifySmtpError(err({ code: "EAUTH", responseCode: 454 }));
+    expect(temporary).not.toBeInstanceOf(ProviderAuthError);
+    expect(temporary).toMatchObject({ retryable: true, ambiguous: false });
+    // a 5xx that isn't the login stays a permanent refusal
+    expect(classifySmtpError(err({ code: "EENVELOPE", responseCode: 550 }))).not.toBeInstanceOf(ProviderAuthError);
+    expect(classifySmtpError(err({ code: "ECONNECTION" }), true)).toMatchObject({ ambiguous: true });
   });
 });

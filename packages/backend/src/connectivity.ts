@@ -54,6 +54,8 @@ interface AccountRetry {
   failures: number;
   timer: Timer | null;
   at: number | null;
+  /** plan 25: refused its sign-in: no probe or "Retry now" knocks again (a start, a change and signing in do) */
+  signIn?: boolean;
 }
 
 export class Connectivity {
@@ -106,6 +108,18 @@ export class Connectivity {
     const a = this.accounts.get(accountId);
     if (a?.timer) this.clearTimer(a.timer);
     this.accounts.delete(accountId);
+  }
+
+  /** Plan 25: the account waits for the user to sign in again (or no longer does): no probes meanwhile. */
+  waitForSignIn(accountId: number, waiting: boolean): void {
+    const a = this.accounts.get(accountId);
+    if (!a) return;
+    a.signIn = waiting;
+    if (waiting && a.timer) {
+      this.clearTimer(a.timer);
+      a.timer = null;
+      a.at = null;
+    }
   }
 
   tracked(accountId: number): boolean {
@@ -163,7 +177,7 @@ export class Connectivity {
    */
   probeLater(accountId: number): number | null {
     const a = this.accounts.get(accountId);
-    if (!a || this.stopped) return null;
+    if (!a || this.stopped || a.signIn) return null;
     this.schedule(accountId, a, this.offlineRetryMs);
     return a.at;
   }
@@ -179,7 +193,7 @@ export class Connectivity {
       this.online = false;
       this.lastChangeAt = this.now();
       // one probe per account at the cap, however soon its retry was (the OS can be wrong about offline)
-      for (const [id, a] of this.accounts) this.schedule(id, a, this.offlineRetryMs);
+      for (const [id, a] of this.accounts) if (!a.signIn) this.schedule(id, a, this.offlineRetryMs);
       this.hooks.offline();
       return;
     }
@@ -203,7 +217,8 @@ export class Connectivity {
       for (const id of failing) this.restart(id);
       return failing;
     }
-    const ids = accountId === null ? [...this.accounts.keys()] : this.accounts.has(accountId) ? [accountId] : [];
+    // a refused sign-in isn't the network's: signing in again is its retry
+    const ids = (accountId === null ? [...this.accounts.keys()] : this.accounts.has(accountId) ? [accountId] : []).filter((id) => !this.accounts.get(id)!.signIn);
     for (const id of ids) this.restart(id);
     return ids;
   }

@@ -29,6 +29,8 @@ export interface DevServerOptions {
   connectivity?: BackendOptions["connectivity"];
   /** plan 22: how website icons are fetched (default: the real one; E2E passes a stub that never touches the internet) */
   iconTransport?: BackendOptions["iconTransport"];
+  /** E2E (plan 25): where Google's sign-in page would open (a test's fake Google never needs a browser) */
+  openExternal?: BackendOptions["openExternal"];
 }
 
 export interface DevServer {
@@ -61,6 +63,7 @@ export async function startDevServer(o: DevServerOptions): Promise<DevServer> {
     autoSync: o.autoSync ?? true,
     connectivity: o.connectivity,
     iconTransport: o.iconTransport,
+    openExternal: o.openExternal,
     log: (level, message, extra) => (level === "error" ? console.error : console.log)(`[backend] ${message}`, extra ?? ""),
   });
   if (o.seed !== false && (await seedDemo(backend.store, { threads: o.threads, accounts: o.accounts }))) {
