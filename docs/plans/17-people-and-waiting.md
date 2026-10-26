@@ -189,15 +189,15 @@ IndexedDB mirrors this with its in-memory rows: phase 1 walks the id range with 
 
 | Gate | Where | Budget |
 |---|---|---|
-| People and Waiting pages: inbox, archive, trash, an account; every page; cold first page; scope count and whole id walk; dense and empty cases | `store.perf` (SQLite, 50k threads) and `idb.perf` | plan 12/15's: a page ≤ 5 ms (SQLite p95) / a frame (IndexedDB), counts ≤ 3 ms |
-| `counts(now)` with waiting | both | ≤ 5 ms (the sidebar's) |
+| People and Waiting pages: inbox, archive, trash, an account; every page; cold first page; scope count and whole id walk; dense and empty cases | `store.perf` (SQLite, 29.5k threads), `perf.perf` (SQLite, 50k+ threads: as computed, twenty far from every view, everyone, no one) and `idb.perf` (28.4k threads, the adapter's usual mailbox) | plan 12/15's: a page ≤ 5 ms (SQLite p95) / a frame (IndexedDB), counts ≤ 3 ms |
+| `counts(now)` with waiting; the waiting count alone | both; the count alone in `perf.perf` at 50k+ | ≤ 5 ms (the sidebar's); ≤ 1 ms |
 | A search narrowed to People / Waiting, first and next page, instant engine | `idb.perf`, instant on SQLite | ≤ 25 ms |
-| The backfill at **300k messages** (~120k threads): longest event-loop stall less GC (load-aware, `watchLoop` + `stallLessGc`) | `facts.perf` in `packages/db` and `packages/idb` | ≤ 32 ms (two frames), throughput reported |
+| The backfill at **300k messages** (~120k threads): longest event-loop stall less GC (load-aware, `watchLoop` + `stallLessGc`) | `facts.perf` in `packages/backend` (SQLite, through the runner) and `packages/idb` | ≤ 32 ms SQLite (two frames), ≤ 48 ms fake-indexeddb in Node; throughput reported |
 | A kill mid-backfill: SQLite in a child process killed with SIGKILL after ~40% of the threads; IndexedDB by dropping the store without closing it | `facts.perf` | the resumed backfill finishes, and every thread equals a fresh recompute |
 | Migration v14 on a v13 database of 50k threads | `migrations` perf case | ≤ 1 s, reported |
 | Ingest | `ingest.perf` (unchanged) | ≥ 0.97× the frozen reference (today ≈ 1.04×) |
 
-- Each new gate is run once with an injected regression (a pinned index removed → a full scan; the backfill's limit ignored → one long slice; a per-thread unindexed lookup in recompute) and is recorded failing in §11.
+- Each new gate is run once with an injected regression (a pinned index removed → a full scan; the backfill's limit ignored → one long slice; a per-thread unindexed lookup in recompute) and is recorded failing in §12.
 - **Memory**: IndexedDB adds two orders and two id lists (ints, bounded by the thread count) and one pending list during the backfill. SQLite adds nothing in memory.
 - **Disk**: five indexes; the two "people" ones hold roughly the people share of threads, the waiting ones a few percent, the pending one nothing after the backfill. Sizes reported at 50k threads.
 - **Idle**: no timer; the runner sleeps until a change.
@@ -298,4 +298,30 @@ Also: the greeting's count got its own covering index (`threads_waiting_inbox`),
 - Round 4 (2 findings, `23e7789`): skipping to the committed position after a reverted slice could skip a key an update had moved to the set's end (599 of 600), and the skip was unbounded (250,001 steps for a one-message slice). A walk that disagrees with what committed now walks its address again from the start, in the same bounded slices. Test: a reverted slice after an update; the next slice takes at most `limit + 1` steps (205 before).
 - Round 5 (1 finding, `b390fc3`): a replay that was itself reverted could match the committed position again. The job commits a slice counter that only moves forward; a walk made for another value starts over. Test: two reverted slices in a row (599 of 600 before).
 - Round 6: nothing found ("rollback/replay, reindexed rows, replaced key sets, restart, same-address requeue and +tag transitions" checked).
+
+## 12. As shipped: measured, and the gates against injected regressions
+
+Measured on a machine loaded by other work; budgets as in §6.
+
+- **Migration v14** at 50,000 threads: 43–74 ms (≤ 1 s); the first 40 cold slices ≤ 1 ms each.
+- **Backfill at 314,152 messages / 145,002 threads**, a 50,000-message thread and a 10,000-message trashed one included. SQLite through the runner: 5.7–6.0 s (about 25k threads/s), longest stall 27–28 ms (≤ 32). Killed with SIGKILL at about 41%, the resumed backfill ends equal to ingest's facts. IndexedDB: 4.9–5.4 s, longest stall less GC 19–26 ms (≤ 48). Dropped without closing at about 40%, it resumes and ends equal.
+- **Pages at 50k+ threads (SQLite)**: People and Waiting first pages 0.3 ms, the largest category 3.4 ms, archive counts ≤ 2.4 ms (everyone a person), the whole archive id walk ≤ 11 ms (everyone); the waiting count alone 0.21 ms (0.53 ms when every thread waits), counts with it 3.2–3.6 ms. IndexedDB (28.4k threads): every page ≤ 0.25 ms, cold first page 6–9 ms.
+- **Ingest**: 0.985–1.006× the frozen reference (≥ 0.97); without v14's indexes 1.022×.
+
+Each new gate, run with a regression injected (then reverted):
+
+| Injected | Gate | Result |
+|---|---|---|
+| People's predicate made non-sargable (`t.person + 0 = 1`, unpinned) | `perf.perf` 50k, sparse | archive first page 12.9 ms > 5: **fails** |
+| The waiting count by table scan (`NOT INDEXED`) | `perf.perf` 50k | counts 6.7 ms > 5: **fails** (at 29.5k threads `store.perf` let it pass at 4.6 ms, so the 50k gates were added) |
+| IndexedDB People walking the whole recency order | `idb.perf` | cold first page 20.6 ms > 16, twice (clean: 9 ms, twice): **fails** |
+| The runner's slice target 8 → 80 ms | `backend/facts.perf` (SQLite) | stall 151 ms > 32: **fails** |
+| The IndexedDB slice ignoring its limit | `idb/facts.perf` | stall 905 ms > 48: **fails**. (A target of 80 ms passed here: a slice is a store command whose time includes the asynchronous commit, so its synchronous part stays under 48 ms; the sizer adapts to per-thread costs, so the limit is what the gate guards.) |
+| Facts computed eagerly at open (the backfill run to the end inside the migration) | `facts-migration.perf` | 8.1 s > 1 s: **fails** |
+| A senders slice ignoring its id window | `facts-migration.perf` | first slices 82.6 ms > 32: **fails** |
+| The facts context rebuilt per thread instead of per batch | `ingest.perf` | 0.9698× < 0.97: **fails**, at the edge. Re-reading each thread's messages from the database instead passed (0.989×): this gate's resolution is about 3%, and the facts are a small part of an ingest. |
+
+The query-plan tests (`migrations.test.ts`) catch a lost index exactly, whatever the timing.
+
+**`autocomplete-perf.spec.ts`'s 10 MB draft** failed on this branch three times under load (opening the draft timed out at 8 s twice, and suggestions took 753 ms once) and passed on the base three times. A scratch spec that times opening the 10 MB draft three times on each tree found the same multi-minute stalls on both: base 115 s for a reload and 114–119 s to open, this branch 117 s. That's load, not this feature.
 
