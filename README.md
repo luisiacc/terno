@@ -287,6 +287,10 @@ packages/ui       Design system: shadcn (Base UI) re-themed with Terno tokens
 packages/mock-data Deterministic mock mailbox generator
 ```
 
+## Contributing
+
+Terno has one maintainer, so pull requests need to be focused and come with evidence. Read [CONTRIBUTING.md](CONTRIBUTING.md) before you start: it says what is likely to be accepted, when to open an issue first, and how to show that a change works. Bugs and ideas go in [issues](https://github.com/luisiacc/terno/issues).
+
 ## License
 
 Terno is **source-available** under the [GNU AGPL-3.0 with additional conditions](LICENSE): the Commons Clause and a business-use limit.
