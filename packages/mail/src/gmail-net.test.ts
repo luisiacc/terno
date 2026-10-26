@@ -266,7 +266,7 @@ describe("Gmail requests and the network (plan 20)", () => {
     const p = provider(fetch, { readTimeoutMs: 50 });
     const read = p.verify();
     await settle();
-    calls[0]!.respond(json({ emailAddress: "me@gmail.com" }));
+    calls[0]!.respond(json({ emailAddress: "me@gmail.com", historyId: "10" }));
     await read;
     // past the deadline: the answered request's timer would have aborted something (no unhandled rejection, no abort)
     await new Promise((r) => setTimeout(r, 80));

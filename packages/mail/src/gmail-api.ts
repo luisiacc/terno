@@ -51,7 +51,94 @@ interface Cursor {
   historyId: string;
 }
 
+interface MessageRef { id: string }
+interface MessagePage { messages?: MessageRef[]; nextPageToken?: string }
+interface HistoryEntry {
+  messagesAdded?: { message: MessageRef }[];
+  messagesDeleted?: { message: MessageRef }[];
+  labelsAdded?: { message: MessageRef }[];
+  labelsRemoved?: { message: MessageRef }[];
+}
+interface HistoryPage { history?: HistoryEntry[]; historyId: string; nextPageToken?: string }
+
 class ExpiredHistory extends Error {}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function nonempty(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function invalidResponse(sending = false): ProviderError {
+  return new ProviderError(L("errors.gmail.invalidResponse"), !sending, sending);
+}
+
+function readMessage(value: unknown, id: string, raw = false): GmailMessage {
+  if (!isRecord(value) || value.id !== id || (value.labelIds !== undefined && (!Array.isArray(value.labelIds) || !value.labelIds.every(nonempty)))) throw invalidResponse();
+  if (raw && (!nonempty(value.threadId) || typeof value.raw !== "string" || !/^[A-Za-z0-9_-]+={0,2}$/.test(value.raw) || value.raw.replace(/=+$/, "").length % 4 === 1)) throw invalidResponse();
+  if (raw && value.internalDate !== undefined && (typeof value.internalDate !== "string" || !/^-?\d+$/.test(value.internalDate) || !Number.isFinite(new Date(Number(value.internalDate)).getTime()))) throw invalidResponse();
+  if (raw && value.sizeEstimate !== undefined && (typeof value.sizeEstimate !== "number" || !Number.isSafeInteger(value.sizeEstimate) || value.sizeEstimate < 0)) throw invalidResponse();
+  return value as unknown as GmailMessage;
+}
+
+function historyId(value: unknown): value is string {
+  return typeof value === "string" && /^\d+$/.test(value);
+}
+
+function earlierHistory(next: string, previous: string): boolean {
+  const a = next.replace(/^0+/, ""), b = previous.replace(/^0+/, "");
+  return a.length < b.length || (a.length === b.length && a < b);
+}
+
+function readBaseline(value: unknown): string {
+  if (!isRecord(value) || !historyId(value.historyId)) throw invalidResponse();
+  return value.historyId;
+}
+
+function optionalArray(value: unknown, valid: (item: unknown) => boolean): boolean {
+  return value === undefined || (Array.isArray(value) && value.every(valid));
+}
+
+function messageRef(value: unknown): boolean {
+  return isRecord(value) && nonempty(value.id);
+}
+
+function readList(value: unknown): MessagePage {
+  if (!isRecord(value) || !optionalArray(value.messages, messageRef)) throw invalidResponse();
+  return value as MessagePage;
+}
+
+function readHistory(value: unknown): HistoryPage {
+  const change = (item: unknown) => isRecord(item) && messageRef(item.message);
+  const entry = (item: unknown) => isRecord(item) && [item.messagesAdded, item.messagesDeleted, item.labelsAdded, item.labelsRemoved].every((changes) => optionalArray(changes, change));
+  if (!isRecord(value) || !historyId(value.historyId) || !optionalArray(value.history, entry)) throw invalidResponse();
+  return value as unknown as HistoryPage;
+}
+
+function continuation(value: unknown, seen: Set<string>): string | undefined {
+  if (value === undefined) return;
+  if (!nonempty(value) || seen.has(value)) throw invalidResponse();
+  seen.add(value);
+  return value;
+}
+
+async function download<T>(items: T[], work: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  let failure: { error: unknown } | undefined;
+  await Promise.all(Array.from({ length: Math.min(6, items.length) }, async () => {
+    while (!failure && next < items.length) {
+      const item = items[next++]!;
+      try {
+        await work(item);
+      } catch (error) {
+        failure ??= { error };
+      }
+    }
+  }));
+  if (failure) throw failure.error;
+}
 
 class GmailApiError extends ProviderError {
   constructor(readonly status: number, detail: string, retryable: boolean, ambiguous: boolean) {
@@ -209,67 +296,71 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
 
   async function fetchFull(ids: string[]): Promise<IncomingMessage[]> {
     const out: IncomingMessage[] = [];
-    const queue = [...ids];
-    const worker = async () => {
-      for (let id = queue.shift(); id; id = queue.shift()) {
-        let m: GmailMessage;
-        try {
-          m = await api<GmailMessage>(`/messages/${id}?format=raw`);
-        } catch (error) {
-          // Enumeration isn't a snapshot: a message may disappear before its download.
-          if (error instanceof GmailApiError && error.status === 404) continue;
-          throw error;
-        }
-        const parsed = await parseRaw(fromBase64url(m.raw ?? ""));
-        const labels = m.labelIds ?? [];
-        const st = labelState(labels);
-        out.push({
-          accountId,
-          providerMsgId: m.id,
-          providerThreadId: m.threadId,
-          rfcMessageId: parsed.rfcMessageId,
-          inReplyTo: parsed.inReplyTo,
-          references: parsed.references,
-          from: parsed.from,
-          replyTo: parsed.replyTo,
-          to: parsed.to,
-          cc: parsed.cc,
-          bcc: parsed.bcc,
-          subject: parsed.subject,
-          date: Number(m.internalDate ?? parsed.date ?? Date.now()),
-          snippet: "",
-          bodyText: parsed.text,
-          bodyHtml: parsed.html,
-          bodyState: "full",
-          listId: parsed.listId,
-          bulk: parsed.bulk,
-          isRead: st.isRead!,
-          isStarred: st.isStarred!,
-          inInbox: st.inInbox!,
-          isSent: st.isSent!,
-          isDraft: st.isDraft!,
-          isTrash: st.isTrash!,
-          isSpam: st.isSpam!,
-          hasAttachments: parsed.attachments.length > 0,
-          gmailLabels: labels,
-          size: m.sizeEstimate ?? 0,
-          attachments: parsed.attachments,
-        });
+    await download(ids, async (id) => {
+      let m: GmailMessage;
+      try {
+        m = readMessage(await api<unknown>(`/messages/${id}?format=raw`), id, true);
+      } catch (error) {
+        // Enumeration isn't a snapshot: a message may disappear before its download.
+        if (error instanceof GmailApiError && error.status === 404) return;
+        throw error;
       }
-    };
-    await Promise.all(Array.from({ length: 6 }, worker));
+      let bytes: Uint8Array;
+      try {
+        bytes = fromBase64url(m.raw!);
+      } catch {
+        throw invalidResponse();
+      }
+      const parsed = await parseRaw(bytes);
+      const labels = m.labelIds ?? [];
+      const st = labelState(labels);
+      out.push({
+        accountId,
+        providerMsgId: m.id,
+        providerThreadId: m.threadId,
+        rfcMessageId: parsed.rfcMessageId,
+        inReplyTo: parsed.inReplyTo,
+        references: parsed.references,
+        from: parsed.from,
+        replyTo: parsed.replyTo,
+        to: parsed.to,
+        cc: parsed.cc,
+        bcc: parsed.bcc,
+        subject: parsed.subject,
+        date: Number(m.internalDate ?? parsed.date ?? Date.now()),
+        snippet: "",
+        bodyText: parsed.text,
+        bodyHtml: parsed.html,
+        bodyState: "full",
+        listId: parsed.listId,
+        bulk: parsed.bulk,
+        isRead: st.isRead!,
+        isStarred: st.isStarred!,
+        inInbox: st.inInbox!,
+        isSent: st.isSent!,
+        isDraft: st.isDraft!,
+        isTrash: st.isTrash!,
+        isSpam: st.isSpam!,
+        hasAttachments: parsed.attachments.length > 0,
+        gmailLabels: labels,
+        size: m.sizeEstimate ?? 0,
+        attachments: parsed.attachments,
+      });
+    });
     return out;
   }
 
   async function fullSync(sink: SyncSink) {
-    const profile = await api<{ historyId: string }>("/profile");
+    const baseline = readBaseline(await api<unknown>("/profile"));
     const after = Math.floor(sink.windowStart / 1000);
     const freshlyIngested = new Set<string>();
     let pageToken: string | undefined;
+    const pages = new Set<string>();
     do {
       const q = new URLSearchParams({ q: `after:${after}`, maxResults: "500", includeSpamTrash: "true" });
       if (pageToken) q.set("pageToken", pageToken);
-      const page = await api<{ messages?: { id: string }[]; nextPageToken?: string }>(`/messages?${q}`);
+      const page = readList(await api<unknown>(`/messages?${q}`));
+      pageToken = continuation(page.nextPageToken, pages);
       const pageIds = (page.messages ?? []).map((m) => m.id);
       const ids: string[] = [];
       for (const id of pageIds) if (!(await store.messageByProviderId(id))) ids.push(id);
@@ -279,7 +370,6 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         await sink.ingest(await fetchFull(batch));
         for (const id of batch) freshlyIngested.add(id);
       }
-      pageToken = page.nextPageToken;
     } while (pageToken);
     // A resync (history expired) must also refresh what we already had: labels may have
     // changed and messages may have been deleted during the gap.
@@ -288,23 +378,18 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     // deletions; any other failure aborts before the cursor advances, so nothing is skipped.
     const updates: FlagUpdate[] = [];
     const gone: number[] = [];
-    const queue = cached.filter((m) => !freshlyIngested.has(m.providerMsgId));
-    await Promise.all(
-      Array.from({ length: 6 }, async () => {
-        for (let m = queue.shift(); m; m = queue.shift()) {
-          try {
-            const full = await api<GmailMessage>(`/messages/${m.providerMsgId}?format=minimal`);
-            updates.push({ messageId: m.id, flags: labelState(full.labelIds ?? []), gmailLabels: full.labelIds ?? [] });
-          } catch (e) {
-            if (e instanceof GmailApiError && e.status === 404) gone.push(m.id);
-            else throw e;
-          }
-        }
-      }),
-    );
+    await download(cached.filter((m) => !freshlyIngested.has(m.providerMsgId)), async (m) => {
+      try {
+        const full = readMessage(await api<unknown>(`/messages/${m.providerMsgId}?format=minimal`), m.providerMsgId);
+        updates.push({ messageId: m.id, flags: labelState(full.labelIds ?? []), gmailLabels: full.labelIds ?? [] });
+      } catch (e) {
+        if (e instanceof GmailApiError && e.status === 404) gone.push(m.id);
+        else throw e;
+      }
+    });
     if (updates.length) await sink.updateFlags(updates);
     if (gone.length) await sink.removeMessages(gone);
-    await ctx.saveCursor({ historyId: profile.historyId } satisfies Cursor);
+    await ctx.saveCursor({ historyId: baseline } satisfies Cursor);
   }
 
   async function incremental(sink: SyncSink, cursor: Cursor) {
@@ -312,22 +397,24 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     const changed = new Set<string>();
     const deleted = new Set<string>();
     let pageToken: string | undefined;
+    const pages = new Set<string>();
     let latest = cursor.historyId;
     do {
       const q = new URLSearchParams({ startHistoryId: cursor.historyId, maxResults: "500" });
       for (const t of ["messageAdded", "messageDeleted", "labelAdded", "labelRemoved"]) q.append("historyTypes", t);
       if (pageToken) q.set("pageToken", pageToken);
-      const page = await api<{ history?: { messagesAdded?: { message: GmailMessage }[]; messagesDeleted?: { message: GmailMessage }[]; labelsAdded?: { message: GmailMessage }[]; labelsRemoved?: { message: GmailMessage }[] }[]; historyId: string; nextPageToken?: string }>(`/history?${q}`).catch((error: unknown) => {
+      const page = readHistory(await api<unknown>(`/history?${q}`).catch((error: unknown) => {
         if (error instanceof GmailApiError && error.status === 404) throw new ExpiredHistory();
         throw error;
-      });
+      }));
+      pageToken = continuation(page.nextPageToken, pages);
+      if (earlierHistory(page.historyId, latest)) throw invalidResponse();
       for (const h of page.history ?? []) {
         for (const a of h.messagesAdded ?? []) added.add(a.message.id);
         for (const d of h.messagesDeleted ?? []) deleted.add(d.message.id);
         for (const l of [...(h.labelsAdded ?? []), ...(h.labelsRemoved ?? [])]) changed.add(l.message.id);
       }
       latest = page.historyId;
-      pageToken = page.nextPageToken;
     } while (pageToken);
 
     const known = async (id: string) => (await store.messageByProviderId(id))?.id;
@@ -341,7 +428,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       const local = await known(gid);
       if (!local) continue;
       try {
-        const m = await api<GmailMessage>(`/messages/${gid}?format=minimal`);
+        const m = readMessage(await api<unknown>(`/messages/${gid}?format=minimal`), gid);
         updates.push({ messageId: local, flags: labelState(m.labelIds ?? []), gmailLabels: m.labelIds ?? [] });
       } catch (e) {
         if (e instanceof GmailApiError && e.status === 404) deleted.add(gid);
@@ -360,7 +447,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
 
   return {
     async verify() {
-      await api("/profile");
+      readBaseline(await api<unknown>("/profile"));
     },
 
     photos(want, signal) {
@@ -369,7 +456,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
 
     async sync(sink) {
       const cursor = await ctx.loadCursor<Cursor>();
-      if (!cursor) return fullSync(sink);
+      if (!isRecord(cursor) || !historyId(cursor.historyId)) return fullSync(sink);
       try {
         await incremental(sink, cursor);
       } catch (e) {
@@ -386,11 +473,12 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       if (op.kind === "send") {
         const payload = op.payload as SendPayload;
         const raw = await options.buildRaw(payload);
-        const res = await api<{ id: string; threadId?: string }>("/messages/send", {
+        const res = await api<unknown>("/messages/send", {
           method: "POST",
           body: JSON.stringify({ raw: toBase64url(raw), threadId: payload.providerThreadId ?? undefined }),
           ambiguousOnFailure: true,
         });
+        if (!isRecord(res) || !nonempty(res.id) || (res.threadId !== undefined && !nonempty(res.threadId))) throw invalidResponse(true);
         return { providerMsgId: res.id, providerThreadId: res.threadId };
       }
       const ids = op.target.messageIds ?? [];
