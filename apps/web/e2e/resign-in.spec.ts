@@ -104,6 +104,25 @@ test.describe("signing in again", { tag: "@design" }, () => {
     await expect(marker(page, personal)).toBeVisible();
   });
 
+  test("Codex code review #3: another account failing or coming back while you type a password keeps what you typed", async ({ app: page, server }) => {
+    const { personal, freelance } = await accounts(server);
+    await refuse(server, freelance);
+    await page.getByTestId("sign-in-open").click();
+    const field = popover(page).getByLabel(`Password for ${freelance.email}`);
+    await field.fill("half-typ");
+    // one account becomes two: the panel lists both, and the field is the same field
+    await refuse(server, personal);
+    await expect(popover(page).getByTestId("sign-in-section")).toHaveCount(2);
+    await expect(field).toHaveValue("half-typ");
+    await expect(field).toBeFocused();
+    // and back to one
+    server.net.refused.delete(personal.email);
+    await server.backend.syncAccount(personal.id);
+    await expect(popover(page).getByTestId("sign-in-section")).toHaveCount(1);
+    await expect(field).toHaveValue("half-typ");
+    await expect(field).toBeFocused();
+  });
+
   test("Later puts the line off, never the row's key; the account working and failing again brings it back", async ({ app: page, server }) => {
     const { freelance } = await accounts(server);
     await refuse(server, freelance);

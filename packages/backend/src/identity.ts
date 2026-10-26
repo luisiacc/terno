@@ -48,6 +48,33 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
   const stamp = await store.accounts.stamp(accountId);
   if (!account || !stamp) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
   const config = (await store.accounts.config<Record<string, unknown>>(accountId))!.config;
+  // plan 25: one sign-in per account at a time, until its credentials are written: a newer one ("Open again", a
+  // second password) aborts this one (Google's page listener closes), and this one stops at every step after an
+  // await, so an older attempt never writes over a newer one (Codex review #4, code review #2)
+  b.signIns.get(accountId)?.abort();
+  const flow = new AbortController();
+  b.signIns.set(accountId, flow);
+  const superseded = () => {
+    if (flow.signal.aborted) throw new RpcError("BAD_REQUEST", L("errors.google.cancelled"));
+  };
+  try {
+    return await signIn(b, account, stamp, config, password, flow.signal, superseded);
+  } finally {
+    if (b.signIns.get(accountId) === flow) b.signIns.delete(accountId);
+  }
+}
+
+async function signIn(
+  b: Backend,
+  account: Account,
+  stamp: NonNullable<Awaited<ReturnType<Backend["store"]["accounts"]["stamp"]>>>,
+  config: Record<string, unknown>,
+  password: string | undefined,
+  signal: AbortSignal,
+  superseded: () => void,
+): Promise<Account> {
+  const store = b.store;
+  const accountId = account.id;
   let secret: { name: string; value: string };
   if (account.kind === "imap") {
     if (!b.host.capabilities.imap) throw new RpcError("UNAVAILABLE", L("errors.imapNeedsDesktop"));
@@ -57,6 +84,7 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
     } catch (error) {
       throw loginFailed("errors.couldNotConnectAccount", account.email, error);
     }
+    superseded();
     secret = { name: "password", value: password };
   } else {
     if (b.options.providers.gmailTokens) throw new RpcError("UNAVAILABLE", L("errors.gmailReconnectInBrowser"));
@@ -64,27 +92,20 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
     if (!settings.gmailClientId) throw new RpcError("BAD_REQUEST", L("errors.gmailClientIdMissing"));
     if (!b.options.openExternal) throw new RpcError("UNAVAILABLE", L("errors.googleConnectNeedsDesktop"));
     let result: GmailConnectResult;
-    // plan 25 (Codex review #4): one Google sign-in per account: "Open again" aborts the one before (its page
-    // listener closes), so two flows never race to store a token
-    b.signIns.get(accountId)?.abort();
-    const flow = new AbortController();
-    b.signIns.set(accountId, flow);
     try {
       result = await b.options.providers.connectGmail({
         clientId: settings.gmailClientId,
         clientSecret: await b.getSecret("gmailClientSecret"),
         openExternal: b.options.openExternal,
-        signal: AbortSignal.any([b.abort.signal, flow.signal]),
+        signal: AbortSignal.any([b.abort.signal, signal]),
         fetch: b.net.fetchFor("mail"),
         loginHint: account.email,
       });
     } catch (error) {
       throw new RpcError("BAD_REQUEST", messageOf(error));
-    } finally {
-      if (b.signIns.get(accountId) === flow) b.signIns.delete(accountId);
     }
     // a newer sign-in took over while Google answered this one: that one decides
-    if (flow.signal.aborted) throw new RpcError("BAD_REQUEST", L("errors.google.cancelled"));
+    superseded();
     if (result.email.toLowerCase() !== account.email.toLowerCase()) {
       throw new RpcError("BAD_REQUEST", L("errors.googleConnectedOther", { got: result.email, expected: account.email }));
     }
@@ -93,7 +114,10 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
   // signing in took a while: the secret goes only to the same mailbox (not one removed and added again meanwhile)
   const now = await store.accounts.stamp(accountId);
   if (!now || now.createdAt !== stamp.createdAt || now.email !== stamp.email) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
+  superseded();
   await b.dropAccount(accountId);
+  // the drop waited for a sync: a newer sign-in may have started meanwhile (no await from here to the write)
+  superseded();
   await b.setSecret(`account:${accountId}:${secret.name}`, secret.value);
   // plan 25: proven just now (a live login, Google's answer): it stops asking at once, and what waited goes
   await b.signedIn(accountId);

@@ -281,6 +281,7 @@ test("plan 25: after a reload Gmail asks for a sign-in quietly (the sidebar's li
   await page.getByTestId("sign-in-open").click();
   const popover = page.getByTestId("sign-in-popover");
   await expect(popover).toContainText("In the browser, Google’s access lasts an hour and isn’t saved.");
+  await expect(popover.getByRole("button", { name: "Continue with Google" })).not.toHaveAttribute("aria-disabled", "true");
   // the user picks another Google account in the popup
   await stubGoogle(context, "other@gmail.com");
   const google = popover.getByRole("button", { name: "Continue with Google" });
@@ -293,6 +294,41 @@ test("plan 25: after a reload Gmail asks for a sign-in quietly (the sidebar's li
   await google.click();
   await expect(page.getByTestId("snack-message").getByText("luis@gmail.com is connected again")).toBeVisible();
   await expect(page.getByTestId("sign-in-notice")).toHaveCount(0);
+});
+
+test("plan 25 (Codex code review #4): Google's script failing to load says so, and the button tries again", async ({ context, page }) => {
+  await stubGoogle(context);
+  await page.goto("/?demo=0&mailbox=gmail-signin-offline");
+  await page.getByTestId("first-run").waitFor();
+  await page.keyboard.press("Escape");
+  await page.getByTestId("open-settings").click();
+  const settings = page.getByTestId("settings-dialog");
+  await settings.getByTestId("tab-accounts").click();
+  const clientId = settings.getByRole("textbox", { name: "Google OAuth Client ID" });
+  await clientId.fill("123-web.apps.googleusercontent.com");
+  await clientId.blur();
+  await settings.getByRole("button", { name: "Add account" }).click();
+  await page.getByTestId("connect-gmail").click();
+  await expect(page.getByTestId("snack-message").getByText("luis@gmail.com connected")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(rows(page)).toHaveCount(2);
+  // after a reload Google can't be reached (the page is offline for it)
+  await context.unroute("https://accounts.google.com/gsi/client");
+  await context.route("https://accounts.google.com/gsi/client", (route) => route.abort());
+  await page.reload();
+  await rows(page).first().waitFor();
+  await page.getByTestId("sign-in-open").click();
+  const popover = page.getByTestId("sign-in-popover");
+  await expect(popover.getByRole("alert")).toHaveText("Couldn’t load Google sign-in (are you offline?)");
+  const google = popover.getByRole("button", { name: "Continue with Google" });
+  await expect(google).not.toHaveAttribute("aria-disabled", "true");
+  // reachable again: the button loads it, then signs in
+  await context.unroute("https://accounts.google.com/gsi/client");
+  await stubGoogle(context);
+  await google.click();
+  await expect(popover.getByRole("alert")).toHaveCount(0);
+  await google.click();
+  await expect(page.getByTestId("snack-message").getByText("luis@gmail.com is connected again")).toBeVisible();
 });
 
 test("?storage=idb runs the same app on native IndexedDB, and the mailbox stays pinned there", async ({ page }) => {

@@ -837,6 +837,8 @@ export class BackendCore {
       await this.emitAccounts();
     };
     const run = (async () => {
+      // before the provider: a provider made from older credentials never passes for the new ones (Codex code review #1)
+      const credentials = this.credentialsOf(accountId);
       const provider = await this.provider(accountId);
       if (!provider || this.stopped) return;
       // an account that syncs is one whose failures are counted (dropAccount untracks it)
@@ -873,7 +875,6 @@ export class BackendCore {
       // once the account is offline it says so until a pass works: a retry reads "reconnecting", never healthy
       const wasDown = Boolean(before?.syncState.connection);
       const epoch = this.connectivity.epoch;
-      const credentials = this.credentialsOf(accountId);
       const startedOffline = !this.connectivity.online;
       await setState({ status: "syncing", ...(wasDown && { connection: { state: "reconnecting", retryAt: null } }) });
       const started = performance.now();
@@ -1028,6 +1029,8 @@ export class BackendCore {
     // quitting (or offline, plan 20): an op that hasn't reached its server waits, as it was (the attempt given back)
     const hold = () => this.draining || this.stopped || !this.connectivity.online;
     if (hold()) return void (this.undispatched.delete(op.id), await this.store.ops.release(op.id, this.now()));
+    // before the provider and the account: a sign-in after this point makes whatever they say stale (Codex code review #1)
+    const credentials = this.credentialsOf(op.account_id);
     const provider = await this.provider(op.account_id);
     const account = await this.store.accounts.get(op.account_id);
     if (hold()) return void (this.undispatched.delete(op.id), await this.store.ops.release(op.id, this.now()));
@@ -1035,12 +1038,12 @@ export class BackendCore {
     // plan 25: the account waits for a sign-in: so does the op, without knocking with the refused credentials
     if (account && heldBySignIn(account.syncState, op.kind)) {
       await this.store.ops.awaitAuth(op.id, encodeText(L("errors.waitingForSignIn")), this.now());
+      await this.parkedAcrossSignIn(op.account_id, credentials);
       const after = await this.store.ops.get(op.id);
       if (after) this.server.emit("op", this.opInfo(after));
       return;
     }
     // from here it is on its way (synchronously after the last check: quiesce can't release it now)
-    const credentials = this.credentialsOf(op.account_id);
     const sending = op.kind === "send";
     if (sending) this.sendsInFlight++;
     const target = JSON.parse(op.target_json) as { messageIds?: number[] };
@@ -1069,7 +1072,7 @@ export class BackendCore {
         this.kickWorker();
       } else if (error instanceof ProviderAuthError) {
         await this.store.ops.awaitAuth(op.id, message, this.now());
-        await this.needsSignIn(op.account_id, op.kind, error);
+        if (!(await this.parkedAcrossSignIn(op.account_id, credentials))) await this.needsSignIn(op.account_id, op.kind, error, credentials);
       } else if (error instanceof ProviderError && error.ambiguous) await this.store.ops.markUnknown(op.id, message, this.now());
       // the server couldn't be reached: wait for the network (plan 20); an outage gives the attempt back
       else if (error instanceof ProviderError && error.network) state = await this.store.ops.fail(op.id, message, true, this.now(), { network: true, keepAttempt: this.connectivity.inOutage(op.account_id) });
@@ -1089,9 +1092,10 @@ export class BackendCore {
    * Plan 25: an action was refused for a sign-in (an SMTP login, an expired grant): the account says so now, even
    * if no sync has run into it yet. Once: an account that already says so isn't written or announced again.
    */
-  private async needsSignIn(accountId: number, opKind: string, error: ProviderAuthError): Promise<void> {
+  private async needsSignIn(accountId: number, opKind: string, error: ProviderAuthError, credentials: number): Promise<void> {
     const account = await this.store.accounts.get(accountId);
-    if (!account || !this.store.isOpen) return;
+    // a sign-in landed meanwhile: this refusal was of the credentials it replaced
+    if (!account || !this.store.isOpen || credentials !== this.credentialsOf(accountId)) return;
     // an IMAP account's send goes through SMTP: refused there, it's only its sending (Codex review #2)
     const scope = account.kind === "imap" && opKind === "send" ? "send" : null;
     // already asking (as a whole, or for this): nothing new to say
@@ -1101,6 +1105,16 @@ export class BackendCore {
     // a refused send leaves the account's sync as it was (it works)
     await this.store.accounts.setSyncState(accountId, { ...(scope === null && { status: "error" as const, connection: null }), lastError: error.message, lastErrorI18n, authRequired: true, authScope: scope });
     await this.emitAccounts();
+  }
+
+  /**
+   * Plan 25 (Codex code review #1): an op parked for a sign-in while one landed (its resume ran before this
+   * park): it goes again now instead of waiting for a sign-in already done. True when that happened.
+   */
+  private async parkedAcrossSignIn(accountId: number, credentials: number): Promise<boolean> {
+    if (credentials === this.credentialsOf(accountId)) return false;
+    await this.resumeAuth(accountId);
+    return true;
   }
 
   opInfo(op: OpRow): OpInfo {

@@ -215,6 +215,30 @@ describe("plan 25: an account that needs a sign-in", () => {
     expect(t.state(id).authRequired).toBe(false);
   });
 
+  it("Codex code review #1: a sign-in landing while an old refusal is being parked: the op still runs, the account stays signed in", async () => {
+    const t = setup();
+    const [id] = t.ids as [number];
+    t.script.set(id, { refuseOps: new Set(["send"]) });
+    await t.backend.start();
+    await expect.poll(() => t.state(id).status).toBe("idle");
+    // the sign-in completes (its resume runs) in the middle of the park
+    const ops = t.backend.store.ops;
+    const park = ops.awaitAuth.bind(ops);
+    let once = true;
+    ops.awaitAuth = async (...args) => {
+      if (once) {
+        once = false;
+        t.script.set(id, {});
+        await t.client.call("accounts.reconnect", { id, password: "new-password" });
+      }
+      return park(...args);
+    };
+    const send = t.op(id, "send");
+    await t.backend.runWorker();
+    await expect.poll(() => t.opRow(send).state).toBe("succeeded");
+    expect(t.state(id)).toMatchObject({ authRequired: false, authScope: null });
+  });
+
   it("Codex review #2: IMAP works and SMTP refuses: only sends wait, a sync doesn't clear it, the poll keeps syncing", async () => {
     const t = setup({ syncIntervalMs: 60 });
     const [id] = t.ids as [number];

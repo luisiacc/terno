@@ -4,6 +4,7 @@ import { Button } from "@terno/ui/components/button";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Input } from "@terno/ui/components/input";
 import { PopoverDescription, PopoverTitle } from "@terno/ui/components/popover";
+import { cn } from "@terno/ui/lib/utils";
 import { Loader2 } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { canStart, clearAttemptError, prepareGoogle, sendOnly, signInAgain, useSignIn, type Attempt } from "~/lib/sign-in";
@@ -38,17 +39,15 @@ export default function SignInPanel({ accounts, onLater }: { accounts: Account[]
         <PopoverDescription className="text-xs leading-relaxed">{one && sendOnly(one) ? t("signIn.reassureSend") : t("signIn.reassure")}</PopoverDescription>
         {webGmail && <p className="text-xs leading-relaxed text-muted-foreground">{t("signIn.webGmail")}</p>}
       </div>
-      {one ? (
-        <AccountSignIn account={one} expanded />
-      ) : (
-        <ul className="hairline-divide hairline-t flex flex-col">
-          {accounts.map((a) => (
-            <li key={a.id} className="flex flex-col gap-2 py-2.5" data-testid="sign-in-section" data-account-id={a.id}>
-              <AccountSignIn account={a} />
-            </li>
-          ))}
-        </ul>
-      )}
+      {/* one list, keyed by account, however many there are: another account failing or coming back while you
+          type a password never remounts (and empties) your field (Codex code review #3) */}
+      <ul className={cn("flex flex-col", !one && "hairline-divide hairline-t")}>
+        {accounts.map((a) => (
+          <li key={a.id} className={cn("flex flex-col gap-2", !one && "py-2.5")} data-testid="sign-in-section" data-account-id={a.id}>
+            <AccountSignIn account={a} expanded={Boolean(one)} />
+          </li>
+        ))}
+      </ul>
       <div className="flex justify-end">
         <Button size="sm" variant="ghost" onClick={onLater} data-testid="sign-in-later">
           {t("signIn.later")}
@@ -77,6 +76,8 @@ function AccountSignIn({ account, expanded = false }: { account: Account; expand
   const attempt = useSignIn((s) => s.attempts.get(account.id) ?? null);
   const google = useSignIn((s) => s.google);
   const [asking, setAsking] = useState(expanded);
+  // alone in the panel its field is just there; among several it waits for "Enter password" (and stays once shown)
+  const form = account.kind === "imap" && (asking || expanded);
   return (
     <>
       {!expanded && (
@@ -86,17 +87,21 @@ function AccountSignIn({ account, expanded = false }: { account: Account; expand
             <p className="truncate text-sm font-medium">{account.displayName}</p>
             <p className="truncate text-xs text-muted-foreground">{account.email}</p>
           </div>
-          {!(account.kind === "imap" && asking) && (
-            <Action account={account} attempt={attempt} google={google} onAsk={() => setAsking(true)} />
-          )}
+          {!form && <Action account={account} attempt={attempt} google={google} onAsk={() => setAsking(true)} />}
         </div>
       )}
-      {account.kind === "imap" && asking ? (
+      {form ? (
         <PasswordForm account={account} attempt={attempt} autoFocus={!expanded} />
       ) : (
         expanded && <Action account={account} attempt={attempt} google={google} onAsk={() => setAsking(true)} />
       )}
       <AttemptError attempt={attempt} />
+      {/* the web's Google script didn't load (offline?): say so; the button tries again (Codex code review #4) */}
+      {WEB && account.kind === "gmail" && google === "failed" && (
+        <p role="alert" className="text-xs leading-relaxed text-destructive-ink" data-testid="sign-in-google-failed">
+          {t("web.google.loadFailed")}
+        </p>
+      )}
     </>
   );
 }
@@ -125,13 +130,15 @@ function Action({ account, attempt, google, onAsk }: { account: Account; attempt
     );
   }
   const ready = canStart(account, google);
+  const failed = google === "failed";
   const busy = Boolean(attempt?.busy);
   return (
     <Button
       size="sm"
-      aria-disabled={!ready || busy || undefined}
+      aria-disabled={(!ready && !failed) || busy || undefined}
       onClick={() => {
-        if (ready && !busy) void run(account);
+        if (!ready && failed) prepareGoogle();
+        else if (ready && !busy) void run(account);
       }}
       data-testid="sign-in-google"
       {...common}

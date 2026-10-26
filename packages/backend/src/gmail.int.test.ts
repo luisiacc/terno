@@ -55,6 +55,9 @@ class FakeGoogle {
   loginHints: (string | null)[] = [];
   /** while set, API requests with that token wait for it, then are checked against the tokens valid then */
   gate: { token: string; until: Promise<void> } | null = null;
+  /** requests the gate held */
+  held = 0;
+  refreshTokens = new Set<string>();
   /** consent screens a "manual" browser opened and hasn't approved yet: approve(i) sends the user back */
   consents: { approve(): Promise<void> }[] = [];
   private tokenSeq = 0;
@@ -111,18 +114,24 @@ class FakeGoogle {
         const verifier = p.get("code_verifier") ?? "";
         const computed = createHash("sha256").update(verifier).digest("base64url");
         if (!challenge || computed !== challenge) return json(400, { error: "invalid_grant" });
-        return json(200, { access_token: this.issue(), refresh_token: "refresh-1", expires_in: 3600 });
+        // each consent grants its own refresh token (refresh-1, refresh-2 …); every one stays valid, as with Google
+        const refresh = `refresh-${this.refreshTokens.size + 1}`;
+        this.refreshTokens.add(refresh);
+        return json(200, { access_token: this.issue(), refresh_token: refresh, expires_in: 3600 });
       }
       if (p.get("grant_type") === "refresh_token") {
         this.refreshCalls++;
         await new Promise((r) => setTimeout(r, 30)); // make concurrent refreshes overlap
-        if (p.get("refresh_token") !== "refresh-1") return json(400, { error: "invalid_grant" });
+        if (!this.refreshTokens.has(p.get("refresh_token") ?? "")) return json(400, { error: "invalid_grant" });
         return json(200, { access_token: this.issue(), expires_in: 3600 });
       }
       return json(400, { error: "unsupported_grant_type" });
     }
     const token = (req.headers.authorization ?? "").replace("Bearer ", "");
-    if (this.gate?.token === token) await this.gate.until;
+    if (this.gate?.token === token) {
+      this.held++;
+      await this.gate.until;
+    }
     if (!this.validTokens.has(token)) return json(401, { error: { code: 401 } });
     if (url.pathname === "/userinfo") return json(200, { name: "Luis Cordero", sub: `sub-${this.email}`, email: this.email, email_verified: true });
     this.calls.push({ method: req.method!, path: url.pathname, body: body ? JSON.parse(body) : null });
@@ -633,8 +642,10 @@ describe("plan 25: signing a Gmail account in again (desktop)", () => {
 
     google.email = "luis@gmail.com";
     await client.call("accounts.reconnect", { id: account.id });
-    expect(await secret()).toBe("refresh-1");
-    expect(await state()).toMatchObject({ status: "idle", authRequired: false, lastError: null });
+    expect(await secret()).toBe("refresh-3");
+    // it stops asking at once (the sync the sign-in started may still be running)
+    expect(await state()).toMatchObject({ authRequired: false, lastError: null });
+    await expect.poll(async () => (await state()).status).toBe("idle");
     await backend.runWorker();
     expect(sqlDb(backend.store).get("SELECT state FROM ops WHERE kind = 'star'")).toEqual({ state: "succeeded" });
   });
@@ -652,7 +663,39 @@ describe("plan 25: signing a Gmail account in again (desktop)", () => {
     expect(await secret()).toBe("expired");
     await google.consents.shift()!.approve();
     await second;
-    expect(await secret()).toBe("refresh-1");
+    expect(await secret()).toBe("refresh-2");
     expect(await state()).toMatchObject({ authRequired: false });
+  });
+
+  it("Codex code review #2: two flows Google answered, both waiting on a sync: the older stops, the newer's token is the one kept", async () => {
+    const ctx = await setup("manual");
+    seed(ctx.google);
+    const connecting = ctx.client.call("accounts.connectGmail", {});
+    await expect.poll(() => ctx.google.consents.length).toBe(1);
+    await ctx.google.consents.shift()!.approve();
+    const account = await connecting;
+    await ctx.backend.syncAccount(account.id);
+    // a sync is held at Google: a sign-in's drop of the account waits for it
+    const [token] = [...ctx.google.validTokens].slice(-1);
+    let release!: () => void;
+    ctx.google.gate = { token: token!, until: new Promise<void>((r) => (release = r)) };
+    const pass = ctx.backend.syncAccount(account.id);
+    await expect.poll(() => ctx.google.held).toBe(1);
+    const first = ctx.client.call("accounts.reconnect", { id: account.id });
+    const firstDone = first.then(() => "resolved", (e: Error) => e.message);
+    await expect.poll(() => ctx.google.consents.length).toBe(1);
+    await ctx.google.consents.shift()!.approve();
+    // Google answered the first: it now waits on the sync, past the point where Open again could abort Google's page
+    await expect.poll(() => ctx.google.refreshTokens.size).toBe(2);
+    const second = ctx.client.call("accounts.reconnect", { id: account.id });
+    await expect.poll(() => ctx.google.consents.length).toBe(1);
+    await ctx.google.consents.shift()!.approve();
+    await expect.poll(() => ctx.google.refreshTokens.size).toBe(3);
+    ctx.google.gate = null;
+    release();
+    await pass;
+    expect(await firstDone).toBe("Sign-in cancelled.");
+    await second;
+    expect(await ctx.backend.getSecret(`account:${account.id}:refreshToken`)).toBe("refresh-3");
   });
 });

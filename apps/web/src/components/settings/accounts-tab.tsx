@@ -121,6 +121,7 @@ function Reconnect({ account }: { account: Account }) {
     );
   }
   const ready = canStart(account, google);
+  const failed = !ready && google === "failed";
   const label = needsSignIn(account) ? t("account.signInAgain") : account.kind === "gmail" ? t("account.connectGoogle") : t("account.changePassword");
   return (
     <div className="flex flex-col items-end gap-1.5">
@@ -128,16 +129,23 @@ function Reconnect({ account }: { account: Account }) {
         variant="outline"
         size="sm"
         disabled={busy}
-        aria-disabled={!ready || undefined}
+        aria-disabled={(!ready && !failed) || undefined}
         data-testid="account-reconnect"
         onClick={() => {
           if (account.kind === "imap") setAsking(true);
+          // Google's script didn't load (offline?): this click tries again (Codex code review #4)
+          else if (failed) prepareGoogle();
           else if (ready) void run();
         }}
       >
         {busy || (google === "loading" && !ready) ? <Loader2 className="animate-spin" /> : <RefreshCw />} {label}
       </Button>
       {error}
+      {failed && (
+        <p role="alert" className="text-xs text-destructive-ink" data-testid="account-reconnect-google-failed">
+          {t("web.google.loadFailed")}
+        </p>
+      )}
     </div>
   );
 }
