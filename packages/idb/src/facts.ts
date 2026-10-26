@@ -266,11 +266,11 @@ function sendersLike(db: MemDb, key: string): string[] {
  * committed with each slice). Within one, a live walk of the `from` index's
  * keys (memory only, Codex review 2, #2): each slice reads the next `n`,
  * never the sender's whole history. The walk is trusted only while it agrees
- * with what committed (Codex review 3, #1): after a rolled-back slice its
- * position is ahead, so it is made again and skips `pos`; if the index let
- * the address's key set go (all its mail went, even in a reverted command),
- * the address is walked again from its start. A restart does the same
- * (recomputing is idempotent).
+ * with what committed (Codex reviews 3 and 4): after a rolled-back slice (its
+ * position is ahead), a key set the index let go (all the address's mail
+ * went, even in a reverted command) or a restart, the address is walked
+ * again from its start in the same bounded slices (recomputing is
+ * idempotent; an update moving a key to the set's end is visited again).
  */
 interface SenderJob {
   email: string;
@@ -325,11 +325,10 @@ function senderSlice(db: MemDb, n: number): number {
   const set = messages.bucket("from", sender);
   let walk = mine.get(job.email);
   if (!walk || walk.set !== set || walk.pos !== job.pos) {
-    // a new walk: the same key set behind what committed (a rollback) skips to `pos`; another set starts over
-    const keys = messages.keysBy("from", sender);
-    const pos = walk && walk.set === set ? job.pos : 0;
-    for (let s = 0; s < pos && !keys.next().done; s++);
-    mine.set(job.email, (walk = { set, keys, pos }));
+    // the walk disagrees with what committed (a rollback, a key set the index let go, a restart): the address
+    // again from its start, in the same bounded slices (Codex review 4: skipping to `pos` could skip a key an
+    // update moved, and would be unbounded); recomputing what was done is idempotent
+    mine.set(job.email, (walk = { set, keys: messages.keysBy("from", sender), pos: 0 }));
   }
   const threads = new Set<number>();
   let read = 0;

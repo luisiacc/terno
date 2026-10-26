@@ -113,6 +113,36 @@ describe("the facts backfill's bounds on IndexedDB (Codex review 2)", () => {
     }
   });
 
+  it("after a reverted slice the address is walked again from its start, in bounded slices: an update that moved a key loses nothing (Codex review 4)", async () => {
+    const store = await IdbMailStore.open({ name: `facts-replay-${Date.now()}`, factory: indexedDB, platform, instantSearch: false });
+    const { account } = await store.accounts.create({ kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo", now: 0 });
+    await store.sync.ingest(Array.from({ length: 600 }, (_, i) => message(account.id, i, { from: { name: "", email: "support@shop.com" } })), { applyFilters: false, now: NOW, classifier: null });
+    await store.sync.ingest([message(account.id, 9999, { from: { name: "", email: "me@example.com" }, to: [{ name: "", email: "support@shop.com" }], isSent: true, inInbox: false })], { applyFilters: false, now: NOW, classifier: null });
+    for (let i = 0; i < 4; i++) await store.facts.backfill({ limit: 50 });
+    // an update moves the first message's key to the end of the sender's set; then a slice is reverted
+    const first = (await store.debug.snapshot()).messages.find((m) => m.providerMsgId === "m0")!;
+    await store.threads.act({ threadIds: [first.threadId], action: "markRead", signal: null, now: NOW });
+    const inner = store as unknown as { db: MemDb; c: { facts: FactsQueue; order: RecencyOrder } };
+    inner.db.tx(() => backfillSlice(inner.db, inner.c.facts, inner.c.order, 50));
+    inner.db.takeCommit();
+    inner.db.revert();
+    // the next slice replays from the start, reading `limit` keys, never skipping hundreds
+    const messages = inner.db.table("messages");
+    const keysBy = messages.keysBy.bind(messages);
+    let steps = 0;
+    const spy = vi.spyOn(messages, "keysBy").mockImplementation((...args) => {
+      const keys = keysBy(...args);
+      return { next: () => (steps++, keys.next()), [Symbol.iterator]() { return this; } } as IterableIterator<unknown> as never;
+    });
+    const r = await store.facts.backfill({ limit: 5 });
+    expect(r.processed).toBeLessThanOrEqual(5);
+    expect(steps).toBeLessThanOrEqual(6);
+    spy.mockRestore();
+    for (;;) if (!(await store.facts.backfill({ limit: 50 })).more) break;
+    expect((await store.debug.snapshot()).threads.filter((t) => t.person === true).length).toBe(600);
+    await store.close();
+  });
+
   it(`a conversation longer than ${BIG_THREAD} messages is read in chunks, one a slice, to the facts of its newest 200 (#3)`, async () => {
     const store = await IdbMailStore.open({ name: `facts-big-${Date.now()}`, factory: indexedDB, platform, instantSearch: false });
     const { account } = await store.accounts.create({ kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo", now: 0 });
