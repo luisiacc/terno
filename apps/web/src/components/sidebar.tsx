@@ -43,6 +43,13 @@ function readMore(): boolean {
     return false;
   }
 }
+/**
+ * Stacked rows share no margin, so a hovered row's fill would touch the selected one's: each fill
+ * stops half a pixel short at the top and bottom (a transparent border it isn't painted under),
+ * leaving a hairline between neighbors while the rows keep their height and pitch.
+ */
+const ROW_SEAM = "border-y-[0.5px] border-transparent bg-clip-padding";
+
 export const useSidebarMore = create<{ open: boolean }>(() => ({ open: readMore() }));
 function toggleMore(): void {
   const open = !useSidebarMore.getState().open;
@@ -91,6 +98,7 @@ function NavItem({
       onClick={onClick}
       className={cn(
         "group type-nav flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-left text-sidebar-foreground transition-colors",
+        ROW_SEAM,
         reserveEnd && "pr-14",
         "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
         "data-active:type-nav-strong data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground",
@@ -194,7 +202,7 @@ function MoreFolders({ view, folder }: { view: View | null; folder: (f: (typeof 
         aria-expanded={open}
         aria-controls="sidebar-more-folders"
         onClick={toggleMore}
-        className="group/more type-nav flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-left text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+        className={cn("group/more type-nav flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-left text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground", ROW_SEAM)}
       >
         <span className="flex size-4 items-center justify-center">
           <ChevronDown className={cn("size-3.5 transition-transform duration-base ease-motion", !open && "-rotate-90")} />
@@ -304,7 +312,7 @@ export function Sidebar() {
                 data-testid={`nav-review-${c.id}`}
                 data-active={reviewCategoryId === c.id || undefined}
                 onClick={() => navigate({ view: "all", reviewCategoryId: c.id })}
-                className="flex h-6 w-full items-center gap-2 rounded-md pr-2 pl-8 text-left text-xs text-muted-foreground tabular hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
+                className={cn("flex h-6 w-full items-center gap-2 rounded-md pr-2 pl-8 text-left text-xs text-muted-foreground tabular hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground", ROW_SEAM)}
               >
                 <Sparkles className="size-3 text-sidebar-glyph" />
                 <span className="flex-1">{t("sidebar.review")}</span>

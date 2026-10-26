@@ -341,6 +341,28 @@ test.describe("Part B: resizable panes", { tag: "@design" }, () => {
   });
 });
 
+test("a hovered row next to the selected one: a hairline between their fills, the rows' pitch unchanged", { tag: "@design" }, async ({ app: page }) => {
+  const rows = page.locator('[data-testid^="nav-account-"]:not([data-testid="nav-account-all"])');
+  const [selected, hovered] = [rows.nth(0), rows.nth(1)];
+  await selected.click();
+  await expect(selected).toHaveAttribute("data-active", "true");
+  await hovered.hover();
+  const fill = (l: Locator) =>
+    l.evaluate((el) => {
+      const s = getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+      // the background paints the padding box: inside the borders
+      return { top: r.top, height: r.height, paintTop: r.top + parseFloat(s.borderTopWidth), paintBottom: r.bottom - parseFloat(s.borderBottomWidth), clip: s.backgroundClip, bg: s.backgroundColor, navH: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--nav-h")) * parseFloat(getComputedStyle(document.documentElement).fontSize) };
+    });
+  const [a, b] = [await fill(selected), await fill(hovered)];
+  expect(b.bg).toBe(a.bg); // both filled: the case the seam is for
+  expect(a.clip).toBe("padding-box");
+  expect(b.paintTop - a.paintBottom).toBeGreaterThanOrEqual(1);
+  // the spacing stays: rows still touch, at the design's height
+  expect(b.top - a.top).toBeCloseTo(a.height, 1);
+  expect(a.height).toBeCloseTo(a.navH, 1);
+});
+
 test.describe("found along the way", () => {
   test("a folder whose first page arrives while the list is scrolled to its end keeps paging (the same row count, the same last row)", async ({ app: page, server }) => {
     // hold the next list's first page, so the old list is scrolled to its end meanwhile
