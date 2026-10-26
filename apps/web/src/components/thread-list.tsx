@@ -34,6 +34,7 @@ import { LearnedBanner } from "./learned-banner";
 import { ReportRow } from "./diag/report-row";
 import { DesktopBanner, GmailReconnect } from "~/lib/web-parts";
 import { preloadComposer } from "./composer/lazy";
+import { renderProbe } from "~/lib/render-probe";
 
 export const searchInputRef: { current: HTMLInputElement | null } = { current: null };
 export const listScroller: { scrollToIndex?: (i: number) => void } = {};
@@ -473,6 +474,7 @@ function EmptyState() {
 }
 
 export function ThreadList() {
+  renderProbe("ThreadList");
   const items = useList((s) => s.items);
   const loading = useList((s) => s.loading);
   const itemsKey = useList((s) => s.itemsKey);

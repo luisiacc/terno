@@ -7,7 +7,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, ingestConversation, rows, selectThread, test } from "./fixtures";
+import { expect, navTo, ingestConversation, rows, selectThread, test } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 import { DESIGNS } from "../../../packages/ui/src/designs/index";
 
@@ -196,7 +196,7 @@ for (const design of DESIGNS) for (const density of ["comfortable", "compact"] a
 
   test(`continuous scrolling across 2,000 threads (${design.id}, ${density}): frames stay smooth, the DOM stays bounded`, async ({ app: page, server }) => {
     await setDensity(page, server, density);
-    await page.getByTestId("nav-all").click();
+    await navTo(page, "all");
     await expect(page.getByTestId("list-title")).toHaveText("All Mail");
     const rowH = design.rows[density];
     await expect(rows(page).first()).toHaveCSS("height", `${rowH}px`);
@@ -228,7 +228,7 @@ for (const design of DESIGNS) for (const density of ["comfortable", "compact"] a
 }
 
 test("switching design with hundreds of rows loaded is one frame of work: every switch's frame ≤ 50 ms, data-design and the rows in step", async ({ app: page }) => {
-  await page.getByTestId("nav-all").click();
+  await navTo(page, "all");
   await expect(page.getByTestId("list-title")).toHaveText("All Mail");
   // a few pages loaded, the list scrolled into them
   await page.getByRole("listbox").evaluate((el) => el.scrollTo(0, 20_000));
@@ -429,7 +429,7 @@ test("typing a search: each keystroke renders its results fast", async ({ app: p
 });
 
 test("scrolling 2,000 threads deep: pages load quickly and the DOM stays bounded", async ({ app: page }) => {
-  await page.getByTestId("nav-all").click();
+  await navTo(page, "all");
   await expect(page.getByTestId("list-title")).toHaveText("All Mail");
   await expect(rows(page).first()).toBeVisible();
   const result = await page.evaluate(async () => {
@@ -494,6 +494,49 @@ test("switching theme: painted within 50 ms, no row re-renders", async ({ app: p
   stats.push({ name: `ThreadRow renders during 32 theme switches: ${after - before}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
   expect(after - before).toBe(0);
   expect(s.p95).toBeLessThanOrEqual(50 * MULT);
+});
+
+test("resizing panes (plan 21): dragging either edge keeps frames smooth with five HTML mails open; the list and its rows never render", async ({ app: page, server }) => {
+  const id = await ingestConversation(server, { subject: "Presupuesto con cinco boletines", count: 6, html: 5, now: Date.now() });
+  await selectThread(page, id, 'subject:"Presupuesto con cinco boletines"');
+  const reader = page.getByTestId("reader");
+  await reader.getByTestId("more-messages").click();
+  // every message open: the toggles that are still collapsed, from the top
+  for (let i = 0; i < 6; i++) {
+    const toggle = reader.getByTestId("message").nth(i).getByTestId("message-toggle");
+    if ((await toggle.getAttribute("aria-expanded")) === "false") await toggle.click();
+  }
+  await expect(reader.locator("iframe")).toHaveCount(5);
+  await page.waitForTimeout(300);
+  const MOVES = 120;
+  let rowRenders = 0;
+  let listRenders = 0;
+  for (const pane of ["sidebar", "list"] as const) {
+    const box = (await page.getByTestId(`pane-handle-${pane}`).boundingBox())!;
+    const x = box.x + box.width / 2;
+    const y = box.y + 400;
+    const width = () => page.evaluate((p) => document.getElementById(p === "sidebar" ? "app-sidebar" : "app-list")!.getBoundingClientRect().width, pane);
+    const before = await width();
+    const r0 = await renders(page, "ThreadRow");
+    const l0 = await renders(page, "ThreadList");
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await startFrames(page);
+    // out and back, 2 px a move (a hand on a trackpad), as fast as input arrives
+    for (let i = 1; i <= MOVES; i++) await page.mouse.move(x + 2 * (i <= MOVES / 2 ? i : MOVES - i) + 40, y);
+    const f = await stopFrames(page);
+    const mid = await width();
+    await page.mouse.up();
+    // the commit, the handles' observers, the mail frames settling
+    await page.waitForTimeout(300);
+    rowRenders += (await renders(page, "ThreadRow")) - r0;
+    listRenders += (await renders(page, "ThreadList")) - l0;
+    expect(Math.round(mid - before), `${pane}: the pane followed the pointer`).toBe(40);
+    frameGate(`resizing the ${pane}`, f);
+  }
+  stats.push({ name: `resizing panes: ThreadList renders ${listRenders}, ThreadRow renders ${rowRenders} over ${2 * MOVES} moves`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+  expect(listRenders).toBe(0);
+  expect(rowRenders).toBe(0);
 });
 
 test("dragging rows to the sidebar: starts within a frame, no row renders, two NavItems per target change", async ({ app: page, server }) => {
@@ -663,7 +706,7 @@ test("context menu: right-click → menu painted within 50 ms, no row renders", 
 });
 
 test("selection: toggling one row renders one row; ⌘A over 500 loaded rows commits within a frame and renders only rows that changed", async ({ app: page }) => {
-  await page.getByTestId("nav-all").click();
+  await navTo(page, "all");
   await expect(page.getByTestId("list-title")).toHaveText("All Mail");
   await expect(rows(page).first()).toBeVisible();
   // load five pages (500 rows), then come back to the top
