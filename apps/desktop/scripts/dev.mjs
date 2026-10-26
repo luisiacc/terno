@@ -11,6 +11,7 @@ import { dirname, join } from "node:path";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { DEFAULT_DEV_PORT, devPort } from "../src/dev-port.ts";
 import { DB_FILE, LegacyProfileConflictError, LegacyProfileInUseError, migrateLegacyProfile, resolveProfile } from "../src/legacy-profile.ts";
 
 // For one release UNICA_* variables still work (the same rule as @terno/core/legacy-env).
@@ -28,7 +29,8 @@ const root = join(here, "..");
 const repo = join(root, "..", "..");
 const demo = process.argv.includes("--demo");
 const seeded = process.argv.includes("--seeded");
-const port = Number(process.env.TERNO_VITE_PORT ?? 5173);
+const { port, fellBack } = await devPort(process.env);
+if (fellBack) console.log(`[dev] port ${DEFAULT_DEV_PORT} is in use; using ${port}`);
 const url = `http://localhost:${port}`;
 
 /**

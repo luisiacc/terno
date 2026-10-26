@@ -37,6 +37,7 @@ pnpm brand              # every icon (app, Tahoe, DMG, favicons, the in-app mark
 pnpm dev:desktop         # Electron + Vite HMR on your real profile
 pnpm dev:desktop:demo    # separate profile with the ~3k-thread demo mailbox
 pnpm dev:desktop:seeded  # 8 accounts / ~21k messages, seeded once (--reseed to regenerate)
+                         # (the renderer runs on localhost:5847, or the next free port; TERNO_VITE_PORT picks one)
 
 pnpm dev:web             # the web build with a demo mailbox seeded into OPFS on first load: http://127.0.0.1:5175
 pnpm build:web           # → apps/web/dist-web, a static site (any static host)
