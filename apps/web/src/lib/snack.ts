@@ -202,6 +202,13 @@ export function dismissSnack(id?: string): void {
   if (next) show(next);
 }
 
+/** What `id` said no longer holds (plan 25: the account signed in): gone from the dock, and from the queue if it waits there. */
+export function withdrawSnack(id: string): void {
+  queue = queue.filter((q) => q.id !== id);
+  displaced.delete(id);
+  dismissSnack(id);
+}
+
 /** A click on an action: the snack closes first, so whatever the action shows next stays. */
 export function runAction(which: "action" | "secondary"): void {
   const current = useSnack.getState().current;

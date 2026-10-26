@@ -65,10 +65,27 @@ export interface TestNetwork {
   down: boolean;
   /** while set, a sync waits for it (to see "Reconnecting…") */
   hold: Promise<void> | null;
+  /**
+   * plan 25: addresses whose server refuses the saved sign-in (sync and actions) until the account signs in
+   * again: with the password `SIGN_IN_PASSWORD`, or through the fake Google (which signs in as `google`, else
+   * as the address it was asked for)
+   */
+  refused: Set<string>;
+  google: string | null;
 }
 
+/** plan 25: the password the fake IMAP server accepts */
+export const SIGN_IN_PASSWORD = "right-password";
+const SIGNED_IN = "signed-in-again";
+
 async function networkRegistry(net: TestNetwork): Promise<import("@terno/mail").ProviderRegistry> {
-  const { createDemoProvider, demoRegistry, ProviderError } = await import("@terno/mail");
+  const { createDemoProvider, demoRegistry, ProviderAuthError, ProviderError } = await import("@terno/mail");
+  const { L } = await import("@terno/i18n");
+  // a sign-in done in this test stores a secret the fake server accepts (demo accounts have none)
+  const refusing = async (ctx: import("@terno/mail").ProviderContext) =>
+    net.refused.has(ctx.account.email) && (await ctx.getSecret(ctx.account.kind === "imap" ? "password" : "refreshToken")) !== (ctx.account.kind === "imap" ? SIGN_IN_PASSWORD : SIGNED_IN);
+  const refusal = (ctx: import("@terno/mail").ProviderContext) =>
+    new ProviderAuthError(ctx.account.kind === "imap" ? L("errors.imap.loginFailed", { detail: "Invalid credentials (Failure)" }) : L("errors.gmail.revoked"));
   return {
     ...demoRegistry,
     create(ctx) {
@@ -78,12 +95,28 @@ async function networkRegistry(net: TestNetwork): Promise<import("@terno/mail").
         async sync(sink) {
           if (net.hold) await net.hold;
           if (net.down) throw ProviderError.network("IMAP: connect ECONNREFUSED");
+          if (await refusing(ctx)) throw refusal(ctx);
           return demo.sync(sink);
+        },
+        async execute(op) {
+          if (await refusing(ctx)) throw refusal(ctx);
+          return demo.execute(op);
         },
       };
     },
+    async verifyImap(_config, password) {
+      if (password !== SIGN_IN_PASSWORD) throw new ProviderAuthError(L("errors.imap.loginFailed", { detail: "Invalid credentials (Failure)" }));
+    },
+    async connectGmail(o) {
+      await o.openExternal("https://accounts.google.com/o/oauth2/v2/auth?e2e");
+      const email = net.google ?? o.loginHint ?? "someone@gmail.com";
+      return { email, name: "Luis Cordero", refreshToken: SIGNED_IN, sub: `sub-${email}`, emailVerified: true };
+    },
   };
 }
+
+/** the `server` fixture: the dev backend and the test's knobs */
+export type DevServerFixture = Fixtures["server"];
 
 interface Fixtures {
   /** freeze Date for deterministic list dates (off for perf: the fake clock coarsens performance.now) */
@@ -114,13 +147,13 @@ export const test = base.extend<Fixtures>({
       if (existsSync(`${template}.search`)) copyFileSync(`${template}.search`, join(dir, "terno.db.search"));
     }
     const capture = backendOptions.smtpCapture ? await smtpRegistry() : null;
-    const net: TestNetwork = { down: false, hold: null };
+    const net: TestNetwork = { down: false, hold: null, refused: new Set(), google: null };
     const providers = backendOptions.network ? await networkRegistry(net) : capture?.registry;
     // plan 20: the retry after a first failure comes in a second, then a minute (time enough to look)
     const connectivity = backendOptions.network ? { delays: [1000, 60_000] } : undefined;
     // plan 22: website icons never reach the internet from a test (a few seeded sites have icons, the rest 404)
     const icons = iconStub();
-    const server = await startDevServer({ port: 0, dataDir: dir, token: "e2e", now: () => E2E_NOW, autoSync: true, seed: !backendOptions.empty, ownerClaims: backendOptions.ownerClaims, agentSocket: backendOptions.agentSocket, providers, connectivity, iconTransport: icons });
+    const server = await startDevServer({ port: 0, dataDir: dir, token: "e2e", now: () => E2E_NOW, autoSync: true, seed: !backendOptions.empty, ownerClaims: backendOptions.ownerClaims, agentSocket: backendOptions.agentSocket, providers, connectivity, iconTransport: icons, openExternal: backendOptions.network ? async () => {} : undefined });
     await use(Object.assign(server, { smtp: capture?.received ?? [], net, icons }));
     // Backend.stop() doesn't wait for an in-flight ops batch; let it settle first.
     const b = server.backend as unknown as { workerRunning: boolean };

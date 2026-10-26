@@ -73,14 +73,16 @@ function accessToken(clientId: string, loginHint?: string): Promise<TokenRespons
  * Connects Gmail (or renews an account's hour-long access) with the user's
  * own OAuth client ID of type "Web application". There is no refresh token
  * without a server: the token goes to the worker's memory and is never stored.
+ * With `accountId` (signing that account in again, plan 25) the token must be
+ * that account's: another Google account picked in the popup changes nothing.
  */
-export async function connectGmailWeb(loginHint?: string): Promise<Account> {
+export async function connectGmailWeb(loginHint?: string, accountId?: number): Promise<Account> {
   const clientId = getApp().settings?.gmailClientId;
   if (!clientId) throw Object.assign(new Error(t("errors.gmailClientIdMissing")), { i18n: { key: "errors.gmailClientIdMissing" } });
   await preloadGoogle();
   const token = await accessToken(clientId, loginHint);
   if (!token.scope.split(" ").includes("https://www.googleapis.com/auth/gmail.modify")) throw new Error(t("web.google.noGmailScope"));
-  return client.call("accounts.connectGmailToken", { accessToken: token.access_token, expiresIn: Number(token.expires_in) || 3600 });
+  return client.call("accounts.connectGmailToken", { accessToken: token.access_token, expiresIn: Number(token.expires_in) || 3600, ...(accountId !== undefined && { accountId }) });
 }
 
 /** plan 22: the two contacts scopes (@terno/mail's CONTACTS_SCOPE, OTHER_CONTACTS_SCOPE) */

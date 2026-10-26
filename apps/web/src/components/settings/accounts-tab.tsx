@@ -7,8 +7,9 @@ import { Input } from "@terno/ui/components/input";
 import { cn } from "@terno/ui/lib/utils";
 import { ChevronRight, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { t } from "@terno/i18n";
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { snack } from "~/lib/snack";
+import { canStart, clearAttemptError, needsSignIn, prepareGoogle, signInAgain, useSignIn } from "~/lib/sign-in";
 import { retryIn } from "../connection-pill";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
@@ -21,6 +22,8 @@ const WEB = import.meta.env.VITE_TARGET === "web";
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 function status(a: Account): string {
+  // plan 25: an expired or refused sign-in isn't an error the user made: it asks, calmly
+  if (needsSignIn(a)) return t("account.status.signIn");
   const error = localized(a.syncState.lastError, a.syncState.lastErrorI18n);
   if (a.syncState.status === "error") return error ? t("account.status.error", { error }) : t("account.status.errorUnknown");
   // plan 20: can't reach its server; when it tries again (the sidebar's pill counts down, this is a snapshot)
@@ -40,57 +43,102 @@ async function updateAccount(id: number, patch: AccountPatch): Promise<void> {
   setApp((s) => ({ accounts: s.accounts.map((a) => (a.id === next.id ? next : a)) }));
 }
 
-/** Gmail signs in again with Google (in the browser, Google's own window); IMAP with the password, checked by a live login. */
+/**
+ * Gmail signs in again with Google (in the browser, Google's own window); IMAP with the password, checked by a live
+ * login. The same attempt as the sidebar's sign-in panel (plan 25): its error shows here, under the button.
+ */
 function Reconnect({ account }: { account: Account }) {
   const [asking, setAsking] = useState(false);
   const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
+  const attempt = useSignIn((s) => s.attempts.get(account.id) ?? null);
+  const google = useSignIn((s) => s.google);
+  const busy = Boolean(attempt?.busy);
   const passwordId = useId();
+  // the web's Google popup needs its script before the click (Codex review #9)
+  useEffect(() => {
+    if (WEB && account.kind === "gmail") prepareGoogle();
+  }, [account.kind]);
   const run = async () => {
-    setBusy(true);
-    try {
-      if (account.kind === "gmail" && WEB) {
-        const { connectGmailWeb } = await import("~/web/google");
-        await connectGmailWeb(account.email);
-      } else {
-        await client.call("accounts.reconnect", { id: account.id, password: account.kind === "imap" ? password : undefined });
-      }
-      snack.success(t("account.reconnected", { email: account.email }));
+    if (await signInAgain(account, account.kind === "imap" ? password : undefined)) {
       setAsking(false);
       setPassword("");
-    } catch (e) {
-      snack.error(errorText(e));
-    } finally {
-      setBusy(false);
     }
   };
+  const error = attempt?.error ? (
+    <div role="alert" className="text-xs leading-relaxed" data-testid="account-reconnect-error">
+      <p className="text-destructive-ink">{attempt.error.message}</p>
+      {attempt.error.detail && <p className="text-muted-foreground">{attempt.error.detail}</p>}
+    </div>
+  ) : null;
   if (account.kind === "imap" && asking) {
     return (
-      <form
-        className="flex w-full items-center gap-2"
-        data-testid="account-reconnect-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (password) void run();
-        }}
-      >
+      <div className="flex w-full flex-col gap-1.5">
+        <form
+          className="flex w-full items-center gap-2"
+          data-testid="account-reconnect-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (password && !busy) void run();
+          }}
+        >
         <label htmlFor={passwordId} className="sr-only">
           {t("account.passwordFor", { email: account.email })}
         </label>
-        <Input id={passwordId} type="password" autoComplete="off" autoFocus required disabled={busy} className="h-7 flex-1 bg-background dark:bg-input/30" placeholder={t("account.password")} value={password} onChange={(e) => setPassword(e.target.value)} data-testid="account-reconnect-password" />
-        <Button type="button" variant="ghost" size="sm" onClick={() => setAsking(false)}>
-          {t("common.cancel")}
-        </Button>
-        <Button type="submit" size="sm" disabled={busy || !password} data-testid="account-reconnect-submit">
-          {busy && <Loader2 className="animate-spin" />} {t("account.verifySave")}
-        </Button>
-      </form>
+          <Input
+            id={passwordId}
+            type="password"
+            autoComplete="off"
+            autoFocus
+            required
+            disabled={busy}
+            aria-invalid={attempt?.error ? true : undefined}
+            className="h-7 flex-1 bg-background dark:bg-input/30"
+            placeholder={t("account.password")}
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              clearAttemptError(account.id);
+            }}
+            data-testid="account-reconnect-password"
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setAsking(false);
+              clearAttemptError(account.id);
+            }}
+          >
+            {t("common.cancel")}
+          </Button>
+          <Button type="submit" size="sm" disabled={busy || !password} data-testid="account-reconnect-submit">
+            {busy && <Loader2 className="animate-spin" />} {t("account.verifySave")}
+          </Button>
+        </form>
+        {error}
+      </div>
     );
   }
+  const ready = canStart(account, google);
+  const label = needsSignIn(account) ? t("account.signInAgain") : account.kind === "gmail" ? t("account.connectGoogle") : t("account.changePassword");
   return (
-    <Button variant="outline" size="sm" disabled={busy} data-testid="account-reconnect" onClick={() => (account.kind === "imap" ? setAsking(true) : void run())}>
-      {busy ? <Loader2 className="animate-spin" /> : <RefreshCw />} {account.kind === "gmail" ? t("account.connectGoogle") : t("account.changePassword")}
-    </Button>
+    <div className="flex flex-col items-end gap-1.5">
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={busy}
+        aria-disabled={!ready || undefined}
+        data-testid="account-reconnect"
+        onClick={() => {
+          if (account.kind === "imap") setAsking(true);
+          else if (ready) void run();
+        }}
+      >
+        {busy || (google === "loading" && !ready) ? <Loader2 className="animate-spin" /> : <RefreshCw />} {label}
+      </Button>
+      {error}
+    </div>
   );
 }
 
@@ -158,7 +206,8 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
 function AccountItem({ account, generalWindow, isOwner }: { account: Account; generalWindow: number; isOwner: boolean }) {
   const [open, setOpen] = useState(false);
   const panel = useId();
-  const attention = account.syncState.status === "error" || account.syncState.status === "offline";
+  // a sign-in to redo reads calmly (plan 25); a real error or an outage in the error ink
+  const attention = !needsSignIn(account) && (account.syncState.status === "error" || account.syncState.status === "offline");
   return (
     <div data-testid="settings-account" data-account-id={account.id}>
       <button
