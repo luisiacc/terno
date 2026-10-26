@@ -40,7 +40,7 @@ import {
 import type { OwnerIdentity } from "@terno/core/rpc";
 import { AWAITING_AUTH, AWAITING_NETWORK, keepInPage, type OpPark, type DraftInput, type DraftRow, type IncomingMessage, type ListParams, type ModelDelta, type OpRow, type OwnerClaim, type MessageState, type Page, type ScopeParams, type SearchMessageDoc, type SearchThreadDoc } from "@terno/store";
 import type { MemDb, Row, Table } from "./mem";
-import { answeredThreads, factsReady, noteSentMail, ownAddresses, recomputeContext, referencesOfOwn, type FactsQueue } from "./facts";
+import { answeredThreads, factsReady, noteSentMail, ownAddresses, ownMailChanged, recomputeContext, referencesOfOwn, type FactsQueue } from "./facts";
 
 /**
  * The store commands' building blocks, ported from packages/db (same names,
@@ -454,6 +454,11 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
       if (existing) {
         const before = existing.body_state;
         updateExisting(c, existing, msg);
+        // plan 17 (Codex review 1, #4): a draft that comes back sent (or the reverse) is your mail appearing or going
+        if (existing.is_sent !== b(msg.isSent) || existing.is_draft !== b(msg.isDraft)) {
+          own = null;
+          for (const t of ownMailChanged(c.db, existing.id)) result.touchedThreads.add(t);
+        }
         if (before !== "full" && msg.bodyState === "full") result.bodyCompleted.push(existing.id);
         let threadId = messages.get(existing.id)!.thread_id as number;
         if (msg.providerThreadId) threadId = adoptProviderThread(c, threadId, msg.accountId, msg.providerThreadId, result);

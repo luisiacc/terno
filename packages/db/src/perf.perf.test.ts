@@ -245,6 +245,13 @@ describe("the quick filters (plan 15): with attachments and starred", () => {
       gate(`${label}: search "${query}" with attachments, first page`, 25, () => (first = searchThreads(db, { query, threadAttachments: true, limit: 100, now: NOW })));
       const cursor = first?.nextCursor;
       if (cursor) gate(`${label}: search "${query}" with attachments, next page`, 25, () => searchThreads(db, { query, threadAttachments: true, limit: 100, now: NOW, cursor }));
+      // plan 17's thread filters, the same way (Codex review 1, #9)
+      for (const threadFilter of ["people", "waiting"] as const) {
+        let page: ReturnType<typeof searchThreads> | undefined;
+        gate(`${label}: search "${query}" from ${threadFilter}, first page`, 25, () => (page = searchThreads(db, { query, threadFilter, limit: 100, now: NOW })));
+        const next = page?.nextCursor;
+        if (next) gate(`${label}: search "${query}" from ${threadFilter}, next page`, 25, () => searchThreads(db, { query, threadFilter, limit: 100, now: NOW, cursor: next }));
+      }
     }
   }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BULK_LOCAL } from "./categorize/features";
-import { addressKey, automatedLevel, bulkHeaders, ROLE_WORDS, senderIsPerson, threadFacts, threadFactsNewestFirst, waitingCutoff, WAITING_WINDOW_MS, type FactContext, type FactRow } from "./people";
+import { addressKey, automatedLevel, bulkHeaders, FACTS_WINDOW, ROLE_WORDS, senderIsPerson, threadFacts, threadFactsNewestFirst, waitingCutoff, WAITING_WINDOW_MS, type FactContext, type FactRow } from "./people";
 
 const sender = (from_email: string, o: Partial<FactRow> = {}) => ({ from_email, list_id: null, is_bulk: 0, gmail_labels: null, is_spam: 0, ...o });
 
@@ -229,6 +229,9 @@ describe("threadFactsNewestFirst (Codex R10)", () => {
       const ordered = newestFirst(rows);
       let i = 0;
       expect(threadFactsNewestFirst(() => ordered[i++], c), JSON.stringify(rows)).toEqual(threadFacts(rows, c));
+      // and with a window shorter than the thread (Codex review 1, #1): both read the same newest messages
+      let j = 0;
+      expect(threadFactsNewestFirst(() => ordered[j++], c, 3), `window 3: ${JSON.stringify(rows)}`).toEqual(threadFacts(rows, c, 3));
     }
   });
 
@@ -238,5 +241,20 @@ describe("threadFactsNewestFirst (Codex R10)", () => {
     expect(threadFactsNewestFirst(() => (read++, rows[read - 1]), ctx())).toEqual({ person: 1, waitingSince: null });
     // the newest is yours (999 is odd), the next one is Carlos's
     expect(read).toBe(2);
+  });
+
+  it("never reads past the window: a 50,000-message conversation of yours, or one entirely in the Trash, costs 200 messages (Codex review 1, #1)", () => {
+    const yours = newestFirst([msg({ date: 0, from: "carlos@acme.com" }), ...Array.from({ length: 50_000 }, (_, i) => msg({ date: i + 1, from: ME, is_sent: 1, to: ["carlos@acme.com"] }))]);
+    let read = 0;
+    expect(threadFactsNewestFirst(() => (read++, yours[read - 1]), ctx())).toEqual({ person: 0, waitingSince: null });
+    expect(read).toBe(FACTS_WINDOW);
+    expect(threadFacts(yours, ctx())).toEqual({ person: 0, waitingSince: null });
+    // Carlos's message is inside a wider window: from a person again
+    expect(threadFacts(yours, ctx(), 50_001)).toEqual({ person: 1, waitingSince: null });
+    const trashed = newestFirst(Array.from({ length: 50_000 }, (_, i) => msg({ date: i, from: i === 49_999 - 150 ? "carlos@acme.com" : ME, is_sent: i === 49_999 - 150 ? 0 : 1, is_trash: 1 })));
+    read = 0;
+    expect(threadFactsNewestFirst(() => (read++, trashed[read - 1]), ctx())).toEqual({ person: 1, waitingSince: null });
+    expect(read).toBeLessThanOrEqual(FACTS_WINDOW);
+    expect(threadFacts(trashed, ctx())).toEqual({ person: 1, waitingSince: null });
   });
 });

@@ -1,4 +1,4 @@
-import { addressKey, threadFactsNewestFirst, weakAddress, type Address, type FactContext, type FactRow, type ThreadFacts } from "@terno/core";
+import { addressKey, automatedLevel, threadFactsNewestFirst, type Address, type FactContext, type FactRow, type ThreadFacts } from "@terno/core";
 import type { Db } from "./sqlite";
 
 /**
@@ -44,7 +44,7 @@ const hasPending = (db: Db) => db.get("SELECT 1 FROM threads INDEXED BY threads_
 
 /** Every thread's facts are current: the counts may say how many wait. */
 export function factsReady(db: Db): boolean {
-  return factsPhase(db).phase === "done" && !hasPending(db);
+  return factsPhase(db).phase === "done" && !hasPending(db) && senderJobs(db).length === 0;
 }
 
 /** Your addresses (plan 17 §2.1): every account's, and every address your sent mail came from. */
@@ -66,6 +66,7 @@ export function factContext(db: Db, own: ReadonlySet<string>): FactContext {
     own: (key) => own.has(key),
     written: (key) => db.get<{ written: number }>("SELECT written FROM correspondents WHERE email = ?", key)?.written === 1,
     failedSend: (id) => failedSend(db, id),
+    details: (id) => db.get<{ to_json: string; cc_json: string; rfc_message_id: string | null }>("SELECT to_json, cc_json, rfc_message_id FROM messages WHERE id = ?", id) ?? { to_json: "[]", cc_json: "[]", rfc_message_id: null },
     answered: (rfcMessageId) => {
       // message_refs is keyed by (account_id, ref): a probe per account in one statement, the thread's own account
       // included (a Gmail thread id can put a reply in another thread of the same account)
@@ -82,8 +83,19 @@ export function factContext(db: Db, own: ReadonlySet<string>): FactContext {
   };
 }
 
-/** The message columns the facts read, as recomputeThreads selects them beside its own. */
-export const FACT_COLUMNS = "is_draft, is_bulk, list_id, gmail_labels, to_json, cc_json, rfc_message_id, provider_msg_id";
+/**
+ * The message columns the facts read, as recomputeThreads selects them beside
+ * its own, kept short: every message of a touched thread goes through them on
+ * each ingest. Gmail's labels come as the one category that decides (the same
+ * lists as core's automatedLevel; the conformance oracle reads the raw
+ * labels), a local copy as its prefix; To, Cc and the Message-ID are read
+ * for the newest message only (`details`).
+ */
+export const FACT_COLUMNS = `is_draft, is_bulk, list_id,
+  CASE WHEN gmail_labels IS NULL THEN NULL
+       WHEN instr(gmail_labels, 'CATEGORY_PROMOTIONS') OR instr(gmail_labels, 'CATEGORY_SOCIAL') OR instr(gmail_labels, 'CATEGORY_FORUMS') THEN 'CATEGORY_PROMOTIONS'
+       WHEN instr(gmail_labels, 'CATEGORY_UPDATES') THEN 'CATEGORY_UPDATES' END AS gmail_labels,
+  CASE WHEN provider_msg_id LIKE 'local:%' THEN 'local:' END AS provider_msg_id`;
 
 /** The context for a recompute: null while the backfill still collects your addresses (facts stay NULL meanwhile). */
 export function recomputeContext(db: Db): FactContext | null {
@@ -114,34 +126,79 @@ function writeFacts(db: Db, threadId: number, f: ThreadFacts | null): boolean {
 }
 
 /** Threads holding inbound mail from this address or its +tagged forms (messages_from: one seek and one range). */
-function threadsFrom(db: Db, key: string): number[] {
+/**
+ * The messages from an address and its +tagged forms, in (from_email, id)
+ * order past a cursor: one range of messages_from per stage (0: the address,
+ * 1: `local+…` with its domain), at most `limit` rows.
+ */
+function messagesFrom(db: Db, key: string, stage: 0 | 1, after: { from: string; id: number }, limit: number): { id: number; thread_id: number; from_email: string }[] {
+  if (stage === 0) return db.all("SELECT id, thread_id, from_email FROM messages WHERE from_email = ? AND id > ? ORDER BY id LIMIT ?", key, after.id, limit);
   const at = key.lastIndexOf("@");
-  const out = new Set<number>();
-  for (const r of db.all<{ thread_id: number }>("SELECT DISTINCT thread_id FROM messages WHERE from_email = ?", key)) out.add(r.thread_id);
-  if (at > 0) {
-    const local = key.slice(0, at);
-    for (const r of db.all<{ thread_id: number }>("SELECT DISTINCT thread_id FROM messages WHERE from_email > ? AND from_email < ? AND substr(from_email, -?) = ?", `${local}+`, `${local},`, key.length - at, key.slice(at))) out.add(r.thread_id);
-  }
-  return [...out];
+  if (at <= 0) return [];
+  const local = key.slice(0, at);
+  const from = after.from > `${local}+` ? after.from : `${local}+`;
+  return db
+    .all<{ id: number; thread_id: number; from_email: string }>("SELECT id, thread_id, from_email FROM messages WHERE (from_email, id) > (?, ?) AND from_email < ? ORDER BY from_email, id LIMIT ?", from, after.from === from ? after.id : 0, `${local},`, limit);
+}
+
+/** A sender's threads to recompute, persisted: bounded slices of its messages (Codex review 1, #2). */
+interface SenderJob {
+  email: string;
+  stage: 0 | 1;
+  from: string;
+  id: number;
+}
+
+const SENDERS_KEY = "facts_senders";
+
+function senderJobs(db: Db): SenderJob[] {
+  const r = db.get<{ value_json: string }>("SELECT value_json FROM settings WHERE key = ?", SENDERS_KEY);
+  return r ? (JSON.parse(r.value_json) as SenderJob[]) : [];
+}
+
+function setSenderJobs(db: Db, jobs: SenderJob[]): void {
+  if (jobs.length) db.run("INSERT OR REPLACE INTO settings (key, value_json) VALUES (?, ?)", SENDERS_KEY, JSON.stringify(jobs));
+  else db.run("DELETE FROM settings WHERE key = ?", SENDERS_KEY);
 }
 
 /**
- * What you know about an address changed (you wrote to it, and it looked
- * automated): its threads' facts are recomputed now when they are few, or go
- * back to the queue for the backfill. Returns whether any went to the queue.
+ * What you know about an address changed (you wrote to it): its threads'
+ * facts are recomputed now when they are few (a bounded look tells), or by
+ * the backfill, a slice of its messages at a time. Their facts stay as they
+ * were meanwhile, and the waiting count reads unknown. Returns whether a job
+ * was queued.
  */
 export function requeueSender(db: Db, key: string): boolean {
-  const phase = factsPhase(db).phase;
-  if (phase === "senders") return false; // every thread is still pending: nothing computed to correct
-  const ids = threadsFrom(db, key);
-  if (ids.length === 0) return false;
-  if (ids.length <= INLINE_REQUEUE) {
+  if (factsPhase(db).phase === "senders") return false; // nothing is computed yet: nothing to correct
+  const exact = messagesFrom(db, key, 0, { from: "", id: 0 }, INLINE_REQUEUE + 1);
+  // the +tagged range may hold other domains' rows too: its raw length decides, the domain filters after
+  const tagged = exact.length > INLINE_REQUEUE ? [] : messagesFrom(db, key, 1, { from: "", id: 0 }, INLINE_REQUEUE + 1);
+  if (exact.length + tagged.length <= INLINE_REQUEUE) {
+    const domain = key.slice(key.lastIndexOf("@"));
+    const ids = new Set([...exact, ...tagged.filter((m) => m.from_email.endsWith(domain))].map((m) => m.thread_id));
+    if (ids.size === 0) return false;
     const ctx = factContext(db, ownAddresses(db));
     for (const id of ids) writeFacts(db, id, factsOf(db, id, ctx));
     return false;
   }
-  for (const id of ids) writeFacts(db, id, null);
+  setSenderJobs(db, [...senderJobs(db).filter((j) => j.email !== key), { email: key, stage: 0, from: "", id: 0 }]);
   return true;
+}
+
+/** One slice of the first sender job: up to `n` of its messages' threads recomputed; the job moves on or ends. */
+function senderSlice(db: Db, n: number): number {
+  const jobs = senderJobs(db);
+  const job = jobs[0]!;
+  const rows = messagesFrom(db, job.email, job.stage, { from: job.from, id: job.id }, n);
+  const ctx = factContext(db, ownAddresses(db));
+  const at = job.email.lastIndexOf("@");
+  for (const id of new Set(rows.filter((m) => job.stage === 0 || m.from_email.endsWith(job.email.slice(at))).map((m) => m.thread_id))) writeFacts(db, id, factsOf(db, id, ctx));
+  const last = rows[rows.length - 1];
+  if (rows.length === n && last) jobs[0] = { ...job, from: last.from_email, id: last.id };
+  else if (job.stage === 0) jobs[0] = { ...job, stage: 1, from: "", id: 0 };
+  else jobs.shift();
+  setSenderJobs(db, jobs);
+  return Math.max(1, rows.length);
 }
 
 /** Something changed what counts as yours (an alias, an account): every thread's facts are checked again, in slices. */
@@ -174,8 +231,8 @@ export function noteSentMail(db: Db, from: string, recipients: readonly Address[
     const to = addressKey(a.email);
     if (!to.includes("@")) continue;
     if (db.run("INSERT INTO correspondents (email, written) VALUES (?, 1) ON CONFLICT (email) DO UPDATE SET written = 1 WHERE written = 0", to).changes === 0) continue;
-    // only an address that looked automated by itself changes anything
-    if (weakAddress(to) && requeueSender(db, to)) queued = true;
+    // writing to it can change who it is (a role address, or one Gmail filed under Updates: Codex review 1, #5); a no-reply address stays one
+    if (automatedLevel({ from_email: to, list_id: null, is_bulk: 0, gmail_labels: null, is_spam: 0 }) !== 2 && requeueSender(db, to)) queued = true;
   }
   return queued;
 }
@@ -273,6 +330,7 @@ export function backfillSlice(db: Db, limit: number): SliceResult {
     setPhase(db, to >= max ? { phase: "threads" } : { ...state, after: to });
     return { phase: "senders", processed: Math.max(1, to - state.after), more: true, next: to >= max ? "threads" : "senders" };
   }
+  if (senderJobs(db).length) return { phase: state.phase, processed: senderSlice(db, n), more: true };
   const pending = db.all<{ id: number }>("SELECT id FROM threads INDEXED BY threads_facts_pending WHERE person IS NULL ORDER BY last_date DESC, id DESC LIMIT ?", n).map((r) => r.id);
   if (pending.length) {
     const ctx = factContext(db, ownAddresses(db));
@@ -305,6 +363,7 @@ export function resetFacts(db: Db): void {
     db.run("INSERT OR IGNORE INTO search_dirty (kind, id) SELECT 1, id FROM threads WHERE person IS NOT NULL OR waiting_since IS NOT NULL");
     db.run("UPDATE threads SET person = NULL, waiting_since = NULL");
     db.run("DELETE FROM correspondents");
+    setSenderJobs(db, []);
     setPhase(db, db.get("SELECT 1 FROM threads LIMIT 1") ? { phase: "senders", after: 0 } : { phase: "done" });
   });
 }

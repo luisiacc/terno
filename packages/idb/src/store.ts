@@ -842,11 +842,15 @@ export class IdbMailStore implements MailStore {
           const threads = new Set<number>();
           for (const u of updates) {
             if (pending.has(u.messageId)) continue;
-            const sets = Object.entries(u.flags).filter(([k]) => FLAG_COLUMNS[k]);
+            const sets: [string, number | string][] = Object.entries(u.flags)
+              .filter(([k]) => FLAG_COLUMNS[k])
+              .map(([k, v]) => [FLAG_COLUMNS[k]!, v ? 1 : 0]);
+            // plan 17 (Codex review 1, #8): Gmail's category moves change who a message is from
+            if (u.gmailLabels) sets.push(["gmail_labels", JSON.stringify(u.gmailLabels)]);
             if (!sets.length) continue;
             const m = messages.get(u.messageId);
             if (!m || m.account_id !== accountId) continue;
-            const after = messages.update(m, Object.fromEntries(sets.map(([k, v]) => [FLAG_COLUMNS[k]!, v ? 1 : 0])));
+            const after = messages.update(m, Object.fromEntries(sets));
             threads.add(m.thread_id);
             // plan 17 (Codex R4): a message becoming sent, or a draft, is your mail appearing or going
             if (after.is_sent !== m.is_sent || after.is_draft !== m.is_draft) for (const t of ownMailChanged(this.db, m.id)) threads.add(t);
@@ -1338,7 +1342,7 @@ export class IdbMailStore implements MailStore {
 
   /** Backfill slices are commands on the late tables: they wait for messages to load (R10), like every unit that reads them. */
   readonly facts: MailStore["facts"] = {
-    backfill: ({ limit }) => this.command(() => backfillSlice(this.db, this.c.facts, limit), { durability: "relaxed" }),
+    backfill: ({ limit }) => this.command(() => backfillSlice(this.db, this.c.facts, this.c.order, limit), { durability: "relaxed" }),
     idle: () => this.early(() => factsReady(this.db, this.c.facts)),
   };
 

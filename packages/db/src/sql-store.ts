@@ -411,14 +411,18 @@ export class SqlMailStore implements MailStore {
         for (const u of updates) {
           // optimistic local state wins until its op settles
           if (pending.has(u.messageId)) continue;
-          const sets = Object.entries(u.flags).filter(([k]) => FLAG_COLUMNS[k]);
+          const sets: [string, number | string][] = Object.entries(u.flags)
+            .filter(([k]) => FLAG_COLUMNS[k])
+            .map(([k, v]) => [FLAG_COLUMNS[k]!, v ? 1 : 0]);
+          // plan 17 (Codex review 1, #8): Gmail's category moves (Promotions ↔ Primary) change who a message is from
+          if (u.gmailLabels) sets.push(["gmail_labels", JSON.stringify(u.gmailLabels)]);
           if (!sets.length) continue;
           // plan 17 (Codex R4): a message becoming sent, or a draft, is your mail appearing or going
           const sentOrDraft = "isSent" in u.flags || "isDraft" in u.flags;
           const before = sentOrDraft ? this.db.get<{ is_sent: number; is_draft: number }>("SELECT is_sent, is_draft FROM messages WHERE id = ? AND account_id = ?", u.messageId, accountId) : undefined;
           const r = this.db.get<{ thread_id: number; is_sent: number; is_draft: number }>(
-            `UPDATE messages SET ${sets.map(([k]) => `${FLAG_COLUMNS[k]} = ?`).join(", ")} WHERE id = ? AND account_id = ? RETURNING thread_id, is_sent, is_draft`,
-            ...sets.map(([, v]) => (v ? 1 : 0)),
+            `UPDATE messages SET ${sets.map(([c]) => `${c} = ?`).join(", ")} WHERE id = ? AND account_id = ? RETURNING thread_id, is_sent, is_draft`,
+            ...sets.map(([, v]) => v),
             u.messageId,
             accountId,
           );

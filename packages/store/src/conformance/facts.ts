@@ -119,6 +119,55 @@ export function defineFactsConformance(fresh: () => Promise<MailStore>, reopen: 
       expect((await facts(store, "q")).waitingSince).toBe(NOW - DAY);
     });
 
+    it("a sender with many conversations is recomputed by the backfill in slices, never in the ingest that taught it (Codex review 1, #2)", async () => {
+      const store = await fresh();
+      const [a] = await withAccounts(store);
+      await ingest(store, Array.from({ length: 205 }, (_, i) => msg({ accountId: a!, providerMsgId: `s${i}`, from: addr(i % 2 ? "support+t1@shop.com" : "support@shop.com"), ...to("me0@example.com"), date: NOW - DAY - i })));
+      expect(await facts(store, "s0")).toEqual({ person: false, waitingSince: null });
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "wrote", from: addr("me0@example.com"), to: [addr("support@shop.com")], isSent: true, inInbox: false, date: NOW - 2 * DAY })]);
+      // the ingest left them as they were; the count says it doesn't know yet
+      const snap = await store.debug.snapshot();
+      expect(snap.threads.filter((t) => t.person === null)).toEqual([]);
+      expect((await facts(store, "s0")).person).toBe(false);
+      expect(await store.facts.idle()).toBe(false);
+      expect((await store.threads.counts(NOW)).inboxWaiting).toBeNull();
+      const slices = await backfillFacts(store, 50);
+      expect(slices).toBeGreaterThan(3);
+      expect(await facts(store, "s0")).toEqual({ person: true, waitingSince: NOW - DAY });
+      expect(await facts(store, "s1")).toEqual({ person: true, waitingSince: NOW - DAY - 1 });
+      expect((await store.threads.counts(NOW)).inboxWaiting).toBe(205);
+    });
+
+    it("a draft that comes back sent answers what it replies to, in another thread too (Codex review 1, #4)", async () => {
+      const store = await fresh();
+      const [a] = await withAccounts(store);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "q", providerThreadId: "tq", rfcMessageId: "q@x", from: addr("carlos@acme.com"), ...to("me0@example.com"), date: NOW - DAY })]);
+      const draft = { accountId: a!, providerMsgId: "d", providerThreadId: "td", rfcMessageId: "d@x", inReplyTo: "q@x", references: ["q@x"], from: addr("me0@example.com"), to: [addr("carlos@acme.com")], inInbox: false, date: NOW - 3600_000 };
+      await ingest(store, [msg({ ...draft, isDraft: true })]);
+      expect((await facts(store, "q")).waitingSince).toBe(NOW - DAY);
+      await ingest(store, [msg({ ...draft, isDraft: false, isSent: true })]);
+      expect((await facts(store, "q")).waitingSince).toBeNull();
+    });
+
+    it("writing to someone Gmail filed under Updates makes them a person (Codex review 1, #5); Gmail's category moves count (#8)", async () => {
+      const store = await fresh();
+      const [a] = await withAccounts(store);
+      await ingest(store, [
+        msg({ accountId: a!, providerMsgId: "upd", from: addr("ana@friends.com"), gmailLabels: ["INBOX", "CATEGORY_UPDATES"], ...to("me0@example.com"), date: NOW - DAY }),
+        msg({ accountId: a!, providerMsgId: "promo", from: addr("luis@tienda.mx"), gmailLabels: ["INBOX", "CATEGORY_PROMOTIONS"], ...to("me0@example.com"), date: NOW - DAY }),
+      ]);
+      expect((await facts(store, "upd")).person).toBe(false);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "wrote", from: addr("me0@example.com"), to: [addr("ana@friends.com")], isSent: true, inInbox: false })]);
+      expect((await facts(store, "upd")).person).toBe(true);
+      // moved to Primary in Gmail, and back
+      const promo = (await store.debug.snapshot()).messages.find((m) => m.providerMsgId === "promo")!.id;
+      expect((await facts(store, "promo")).person).toBe(false);
+      await store.sync.updateFlags(a!, [{ messageId: promo, flags: {}, gmailLabels: ["INBOX", "CATEGORY_PERSONAL"] }]);
+      expect((await facts(store, "promo")).person).toBe(true);
+      await store.sync.updateFlags(a!, [{ messageId: promo, flags: { isRead: true }, gmailLabels: ["CATEGORY_PROMOTIONS"] }]);
+      expect((await facts(store, "promo")).person).toBe(false);
+    });
+
     it("trash and spam: a trashed conversation never waits but keeps who it's from; spam is no one", async () => {
       const store = await fresh();
       const [a] = await withAccounts(store);

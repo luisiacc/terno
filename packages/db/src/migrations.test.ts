@@ -408,6 +408,55 @@ describe("migration v13: rich drafts", () => {
   });
 });
 
+describe("migration v14: people and waiting for your reply (plan 17)", () => {
+  const planOf = (db: Db, sql: string, ...params: (number | string | null)[]) => db.all<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`, ...params).map((r) => r.detail).join(" | ");
+
+  it("rewrites no row: the facts are NULL until the backfill, which starts from its first phase; an empty mailbox has nothing to do", () => {
+    const { db } = legacyMail(13, { threads: 30, seed: 4 });
+    const before = db.all<Record<string, unknown>>("SELECT * FROM threads ORDER BY id");
+    expect(migrate(db)).toEqual({ from: 13, to: SCHEMA_VERSION });
+    const after = db.all<Record<string, unknown>>("SELECT * FROM threads ORDER BY id");
+    expect(after).toEqual(before.map((t) => ({ ...t, person: null, waiting_since: null })));
+    expect(db.get<{ c: number }>("SELECT count(*) AS c FROM messages WHERE is_bulk != 0")!.c).toBe(0);
+    expect(db.get<{ c: number }>("SELECT count(*) AS c FROM correspondents")!.c).toBe(0);
+    expect(JSON.parse(db.get<{ value_json: string }>("SELECT value_json FROM settings WHERE key = 'facts_backfill'")!.value_json)).toEqual({ phase: "senders", after: 0 });
+    const empty = v2();
+    migrate(empty);
+    expect(JSON.parse(empty.get<{ value_json: string }>("SELECT value_json FROM settings WHERE key = 'facts_backfill'")!.value_json)).toEqual({ phase: "done" });
+  });
+
+  it("People and Waiting pages, counts and scopes, the queue, a failed send's lookup and a sender's messages all walk an index (no table scan, no sort of the mailbox)", async () => {
+    const { listSql, scopeIdsSql, waitingSql } = await import("./queries");
+    const { db } = legacyMail(13, { threads: 200, seed: 5 });
+    migrate(db);
+    db.exec("ANALYZE");
+    for (const filter of ["people", "waiting"] as const) {
+      for (const p of [{ view: "inbox" as const }, { view: "all" as const, accountId: 1 }, { view: "trash" as const }]) {
+        const page = listSql({ ...p, filter, now: Date.UTC(2026, 9, 22), limit: 100 });
+        const plan = planOf(db, page.sql, ...(page.params as number[]));
+        expect(plan, `${filter} ${JSON.stringify(p)} page`).toMatch(filter === "people" ? /threads_people\b/ : /threads_waiting\b/);
+        expect(plan, `${filter} page`).not.toMatch(/TEMP B-TREE/);
+        const scope = scopeIdsSql({ ...p, filter, now: Date.UTC(2026, 9, 22), limit: 500 });
+        const scopePlan = planOf(db, scope.sql, ...(scope.params as number[]));
+        // people: its id index in key order; waiting: the window's range of its date index (a sort of what waits, Codex R9)
+        expect(scopePlan, `${filter} scope`).toMatch(filter === "people" ? /threads_people_id/ : /threads_waiting \(last_date>\?\)/);
+        if (filter === "people") expect(scopePlan).not.toMatch(/TEMP B-TREE/);
+      }
+    }
+    const w = waitingSql(Date.UTC(2026, 9, 22));
+    expect(planOf(db, `SELECT t.account_id, count(*) FROM threads t INDEXED BY ${w.byDate} WHERE ${w.where} AND t.in_inbox = 1 GROUP BY t.account_id`, ...(w.params as number[]))).toMatch(/threads_waiting \(last_date>\?\)/);
+    expect(planOf(db, "SELECT id FROM threads INDEXED BY threads_facts_pending WHERE person IS NULL ORDER BY last_date DESC, id DESC LIMIT 5")).toMatch(/threads_facts_pending/);
+    // Codex review 1, #3: a local copy's failed send, without reading every op ever run
+    expect(planOf(db, "SELECT 1 FROM ops WHERE kind = 'send' AND state = 'failed' AND json_extract(target_json, '$.messageIds[0]') = ? LIMIT 1", 7)).toMatch(/SEARCH ops USING INDEX ops_failed_sends/);
+    // a sender's messages, and their +tagged forms, by ranges of messages_from
+    expect(planOf(db, "SELECT id, thread_id, from_email FROM messages WHERE from_email = ? AND id > ? ORDER BY id LIMIT ?", "a@x", 0, 10)).toMatch(/messages_from \(from_email=\? AND rowid>\?\)/);
+    expect(planOf(db, "SELECT id, thread_id, from_email FROM messages WHERE (from_email, id) > (?, ?) AND from_email < ? ORDER BY from_email, id LIMIT ?", "a+", 0, "a,", 10)).toMatch(/messages_from/);
+    expect(planOf(db, "SELECT id, thread_id, from_email FROM messages WHERE (from_email, id) > (?, ?) AND from_email < ? ORDER BY from_email, id LIMIT ?", "a+", 0, "a,", 10)).not.toMatch(/TEMP B-TREE/);
+    // "answered": message_refs probed per account, in one statement
+    expect(planOf(db, "SELECT m.id FROM message_refs r JOIN messages m ON m.id = r.message_id WHERE r.account_id IN (SELECT id FROM accounts) AND r.ref = ?", "q@x")).toMatch(/SEARCH r USING PRIMARY KEY \(account_id=\? AND ref=\?\)/);
+  });
+});
+
 describe("scope pages walk an index in key order", () => {
   it("every view, account and category scope pages without a temporary sort", async () => {
     const { scopeIdsSql } = await import("./queries");

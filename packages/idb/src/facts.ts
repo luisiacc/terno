@@ -1,4 +1,4 @@
-import { addressKey, threadFacts, weakAddress, type Address, type FactContext, type FactRow, type ThreadFacts } from "@terno/core";
+import { addressKey, automatedLevel, threadFacts, type Address, type FactContext, type FactRow, type ThreadFacts } from "@terno/core";
 import type { MemDb, Row, Table } from "./mem";
 
 /**
@@ -31,8 +31,8 @@ export const pendingRow = (row: Record<string, unknown> | null | undefined): boo
  */
 export class FactsQueue {
   private pending: Set<number> | null = null;
-  private order: number[] = [];
-  private pos = 0;
+  /** where the walk of the recency order stopped (the first backfill) */
+  private cursor: { lastDate: number; id: number } | null = null;
 
   constructor(private readonly db: MemDb) {
     db.onRow((table, row, prev) => {
@@ -55,23 +55,35 @@ export class FactsQueue {
     return this.set().size;
   }
 
-  /** up to `n` pending threads, newest first */
-  next(n: number): number[] {
+  /**
+   * Up to `n` pending threads, newest first. Few pending (a requeue): sorted
+   * on the spot. Many (the first backfill): the store's recency order walked
+   * from where the last slice stopped (a keyset cursor), a bounded number of
+   * steps a slice; sorting 145,000 ids by date in one slice would stall.
+   */
+  next(n: number, recency: RecencyOrder): number[] {
     const pending = this.set();
+    if (pending.size === 0) return [];
     const threads = t(this.db, "threads");
+    if (pending.size <= SORT_UNDER) return [...pending].sort((a, b) => threads.get(b)!.last_date - threads.get(a)!.last_date || b - a).slice(0, n);
+    const ids = recency.current(threads);
     const out: number[] = [];
-    for (let pass = 0; pass < 2 && out.length < n && pending.size > 0; pass++) {
-      if (this.pos >= this.order.length) {
-        this.order = [...pending].sort((a, b) => threads.get(b)!.last_date - threads.get(a)!.last_date || b - a);
-        this.pos = 0;
-      }
-      while (this.pos < this.order.length && out.length < n) {
-        const id = this.order[this.pos++]!;
-        if (pending.has(id)) out.push(id);
-      }
-    }
+    let i = this.cursor ? recency.after(threads, this.cursor) : 0;
+    for (let steps = 0; i < ids.length && out.length < n && steps < n * 64; i++, steps++) if (pending.has(ids[i]!)) out.push(ids[i]!);
+    const last = i < ids.length && i > 0 ? threads.get(ids[i - 1]!) : undefined;
+    // past the end: from the top again (threads that came in above the cursor)
+    this.cursor = last ? { lastDate: last.last_date as number, id: last.id as number } : null;
     return out;
   }
+}
+
+/** Under this many pending threads the queue sorts them; above, it walks the recency order. */
+const SORT_UNDER = 4096;
+
+/** The store's recency order of every thread (mail.ts's ThreadOrder), kept current from row changes. */
+export interface RecencyOrder {
+  current(threads: Table<R>): readonly number[];
+  after(threads: Table<R>, cursor: { lastDate: number; id: number }): number;
 }
 
 /** The backfill's progress; absent (a database that never needed one) is done. */
@@ -85,7 +97,7 @@ function setPhase(db: MemDb, p: FactsPhase): void {
 }
 
 export function factsReady(db: MemDb, queue: FactsQueue): boolean {
-  return factsPhase(db).phase === "done" && queue.size === 0;
+  return factsPhase(db).phase === "done" && queue.size === 0 && senderJobs(db).length === 0;
 }
 
 /** Your addresses: every account's, and every address your sent mail came from. */
@@ -143,29 +155,94 @@ function writeFacts(db: MemDb, threadId: number, f: ThreadFacts | null): void {
   threads.update(row, { person, waiting_since: waiting });
 }
 
-/** Threads holding inbound mail from this address or its +tagged forms (the `from` index's values, walked for the prefix). */
-function threadsFrom(db: MemDb, key: string): number[] {
-  const messages = t(db, "messages");
-  const out = new Set<number>();
-  const at = key.lastIndexOf("@");
-  const prefix = at > 0 ? `${key.slice(0, at)}+` : null;
-  const domain = at > 0 ? key.slice(at) : "";
-  const senders = [key];
-  if (prefix) for (const v of messages.indexValues("from")) if (typeof v === "string" && v.startsWith(prefix) && v.endsWith(domain)) senders.push(v);
-  for (const s of senders) for (const m of messages.by("from", s)) out.add(m.thread_id as number);
-  return [...out];
+/**
+ * The +tagged senders by the address they reduce to, for the senders the
+ * `from` index holds: built once (a walk of its values), then followed from
+ * row changes, so a requeue never walks every sender (SQLite seeks a range).
+ * A sender whose mail went stays listed: its count is simply 0.
+ */
+const tagged = new WeakMap<MemDb, Map<string, Set<string>>>();
+
+function taggedOf(db: MemDb): Map<string, Set<string>> {
+  let map = tagged.get(db);
+  if (!map) {
+    const m = new Map<string, Set<string>>();
+    const add = (from: unknown) => {
+      if (typeof from !== "string" || !from.includes("+")) return;
+      const key = addressKey(from);
+      if (key === from) return;
+      let set = m.get(key);
+      if (!set) m.set(key, (set = new Set()));
+      set.add(from);
+    };
+    for (const v of t(db, "messages").indexValues("from")) add(v);
+    db.onRow((table, row) => {
+      if (table === "messages" && row) add(row.from_email);
+    });
+    tagged.set(db, (map = m));
+  }
+  return map;
 }
 
+/** An address and its +tagged forms. */
+function sendersLike(db: MemDb, key: string): string[] {
+  return [key, ...(taggedOf(db).get(key) ?? [])];
+}
+
+/** A sender's threads to recompute, persisted (SQLite's SenderJob): its addresses in turn, each by message id past a cursor. */
+interface SenderJob {
+  email: string;
+  senders: string[];
+  i: number;
+  after: number;
+}
+
+const SENDERS_KEY = "facts_senders";
+
+function senderJobs(db: MemDb): SenderJob[] {
+  const r = t(db, "settings").get(SENDERS_KEY);
+  return r ? (JSON.parse(r.value_json) as SenderJob[]) : [];
+}
+
+function setSenderJobs(db: MemDb, jobs: SenderJob[]): void {
+  if (jobs.length) t(db, "settings").put({ key: SENDERS_KEY, value_json: JSON.stringify(jobs) });
+  else t(db, "settings").delete(SENDERS_KEY);
+}
+
+/**
+ * What you know about an address changed (you wrote to it): few threads are
+ * recomputed now; more go to a job the backfill runs in slices (Codex
+ * review 1, #2). Their facts stay as they were meanwhile.
+ */
 export function requeueSender(db: MemDb, key: string): void {
   if (factsPhase(db).phase === "senders") return;
-  const ids = threadsFrom(db, key);
-  if (ids.length === 0) return;
-  if (ids.length <= INLINE_REQUEUE) {
+  const messages = t(db, "messages");
+  const senders = sendersLike(db, key);
+  let rows = 0;
+  for (const s of senders) rows += messages.count("from", s);
+  if (rows === 0) return;
+  if (rows <= INLINE_REQUEUE) {
     const ctx = factContext(db, ownAddresses(db));
-    for (const id of ids) writeFacts(db, id, factsOf(db, id, ctx));
+    for (const id of new Set(senders.flatMap((s) => messages.by("from", s).map((m) => m.thread_id as number)))) writeFacts(db, id, factsOf(db, id, ctx));
     return;
   }
-  for (const id of ids) writeFacts(db, id, null);
+  setSenderJobs(db, [...senderJobs(db).filter((j) => j.email !== key), { email: key, senders, i: 0, after: 0 }]);
+}
+
+/** One slice of the first sender job: its next `n` messages by id, their threads recomputed. */
+function senderSlice(db: MemDb, n: number): number {
+  const jobs = senderJobs(db);
+  const job = jobs[0]!;
+  const ids = Float64Array.from(t(db, "messages").by("from", job.senders[job.i]!).map((m) => m.id as number).filter((id) => id > job.after)).sort();
+  const take = ids.subarray(0, n);
+  const messages = t(db, "messages");
+  const ctx = factContext(db, ownAddresses(db));
+  for (const thread of new Set(Array.from(take, (id) => messages.get(id)!.thread_id as number))) writeFacts(db, thread, factsOf(db, thread, ctx));
+  if (ids.length > n) jobs[0] = { ...job, after: take[take.length - 1]! };
+  else if (job.i + 1 < job.senders.length) jobs[0] = { ...job, i: job.i + 1, after: 0 };
+  else jobs.shift();
+  setSenderJobs(db, jobs);
+  return Math.max(1, take.length);
 }
 
 export function startRescan(db: MemDb): void {
@@ -194,7 +271,8 @@ export function noteSentMail(db: MemDb, from: string, recipients: readonly Addre
   }
   for (const a of recipients) {
     const to = addressKey(a.email);
-    if (to.includes("@") && upsert(db, to, "written") && weakAddress(to)) requeueSender(db, to);
+    // writing to it can change who it is (a role address, or one Gmail filed under Updates: Codex review 1, #5); a no-reply address stays one
+    if (to.includes("@") && upsert(db, to, "written") && automatedLevel({ from_email: to, list_id: null, is_bulk: 0, gmail_labels: null, is_spam: 0 }) !== 2) requeueSender(db, to);
   }
 }
 
@@ -246,7 +324,7 @@ export interface SliceResult {
 }
 
 /** One slice of the backfill, inside the caller's transaction (SQLite's backfillSlice). */
-export function backfillSlice(db: MemDb, queue: FactsQueue, limit: number): SliceResult {
+export function backfillSlice(db: MemDb, queue: FactsQueue, recency: RecencyOrder, limit: number): SliceResult {
   const n = Math.max(1, Math.floor(limit));
   const state = factsPhase(db);
   if (state.phase === "senders") {
@@ -268,12 +346,15 @@ export function backfillSlice(db: MemDb, queue: FactsQueue, limit: number): Slic
     setPhase(db, to >= max ? { phase: "threads" } : { phase: "senders", after: to });
     return { phase: "senders", processed: Math.max(1, to - state.after), more: true, next: to >= max ? "threads" : "senders" };
   }
-  const pending = queue.next(n);
+  if (senderJobs(db).length) return { phase: state.phase, processed: senderSlice(db, n), more: true };
+  const pending = queue.next(n, recency);
   if (pending.length) {
     const ctx = factContext(db, ownAddresses(db));
     for (const id of pending) writeFacts(db, id, factsOf(db, id, ctx));
     return { phase: state.phase, processed: pending.length, more: true };
   }
+  // the walk's steps ran out on computed threads: the next slice goes on from there
+  if (queue.size > 0) return { phase: state.phase, processed: n, more: true };
   if (state.phase === "threads") {
     setPhase(db, state.rescan ? { phase: "rescan", after: 0 } : { phase: "done" });
     return { phase: "threads", processed: 0, more: !!state.rescan };
@@ -302,5 +383,6 @@ export function resetFacts(db: MemDb): void {
   // a Map visits a replaced entry once and skips deleted ones: changing rows while walking is safe
   for (const r of t(db, "threads").all()) if (r.person != null || r.waiting_since != null) t(db, "threads").update(r, { person: null, waiting_since: null });
   for (const r of t(db, "correspondents").all()) t(db, "correspondents").delete(r.email);
+  setSenderJobs(db, []);
   setPhase(db, t(db, "threads").size > 0 ? { phase: "senders", after: 0 } : { phase: "done" });
 }

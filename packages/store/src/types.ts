@@ -65,6 +65,8 @@ export interface MessageState {
 export interface FlagUpdate {
   messageId: number;
   flags: Partial<{ isRead: boolean; isStarred: boolean; inInbox: boolean; isTrash: boolean; isSpam: boolean; isSent: boolean; isDraft: boolean }>;
+  /** Gmail: the message's labels now (its category decides who it's from, plan 17); absent: unchanged */
+  gmailLabels?: string[];
 }
 
 // ───────────────────────────── lists ─────────────────────────────

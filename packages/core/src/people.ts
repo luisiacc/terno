@@ -69,8 +69,9 @@ export interface FactRow {
   id: number;
   date: number;
   from_email: string;
-  to_json: string;
-  cc_json: string;
+  /** To, Cc and the Message-ID are read only for the newest message: a store may leave them out and answer `details` */
+  to_json?: string;
+  cc_json?: string;
   is_sent: number;
   is_draft: number;
   is_trash: number;
@@ -78,7 +79,7 @@ export interface FactRow {
   list_id: string | null;
   is_bulk: number;
   gmail_labels: string | null;
-  rfc_message_id: string | null;
+  rfc_message_id?: string | null;
   /** `local:…` until the server has the sent copy */
   provider_msg_id: string | null;
 }
@@ -120,6 +121,8 @@ export interface FactContext {
   answered(rfcMessageId: string): boolean;
   /** a local copy (`local:…`) whose send failed: it reached nobody, so it counts for nothing */
   failedSend(messageId: number): boolean;
+  /** a row's To, Cc and Message-ID when the store left them out of its rows (read for one message per thread) */
+  details?(messageId: number): { to_json: string; cc_json: string; rfc_message_id: string | null };
 }
 
 /** Is an inbound message's sender a person (plan 17 §2.2)? */
@@ -156,10 +159,51 @@ function decide(newest: FactRow | null, inbound: FactRow | null, ctx: FactContex
   const person = inbound !== null && senderIsPerson(inbound, ctx);
   // the newest visible message is inbound only if it is also the newest inbound one
   if (!newest || newest !== inbound || !person) return { person: person ? 1 : 0, waitingSince: null };
-  const to = addressesOf(newest.to_json);
-  const ccOnly = !to.some(ctx.own) && addressesOf(newest.cc_json).some(ctx.own);
-  const waiting = !ccOnly && !(newest.rfc_message_id && ctx.answered(newest.rfc_message_id));
+  const d = newest.to_json === undefined && ctx.details ? ctx.details(newest.id) : { to_json: newest.to_json ?? "[]", cc_json: newest.cc_json ?? "[]", rfc_message_id: newest.rfc_message_id ?? null };
+  const to = addressesOf(d.to_json);
+  const ccOnly = !to.some(ctx.own) && addressesOf(d.cc_json).some(ctx.own);
+  const waiting = !ccOnly && !(d.rfc_message_id && ctx.answered(d.rfc_message_id));
   return { person: 1, waitingSince: waiting ? newest.date : null };
+}
+
+/**
+ * The facts read a conversation's newest messages, this many at most (drafts
+ * and hidden ones included): what one thread costs is bounded, the longest
+ * included (Codex review 1, #1). A thread where you wrote 200 times since
+ * anyone else did isn't from a person lately, nor waiting for you.
+ */
+export const FACTS_WINDOW = 200;
+
+/** The `k` newest rows (date, then id), in O(n log k): a min-heap of the newest seen so far, its root the oldest of them. */
+function newestOf(rows: readonly FactRow[], k: number): FactRow[] {
+  const heap: FactRow[] = [];
+  const down = (i: number) => {
+    for (;;) {
+      const l = 2 * i + 1;
+      const r = l + 1;
+      let s = i;
+      if (l < heap.length && later(heap[s]!, heap[l]!)) s = l;
+      if (r < heap.length && later(heap[s]!, heap[r]!)) s = r;
+      if (s === i) return;
+      [heap[i], heap[s]] = [heap[s]!, heap[i]!];
+      i = s;
+    }
+  };
+  for (const m of rows) {
+    if (heap.length < k) {
+      heap.push(m);
+      for (let i = heap.length - 1; i > 0; ) {
+        const p = (i - 1) >> 1;
+        if (!later(heap[p]!, heap[i]!)) break;
+        [heap[i], heap[p]] = [heap[p]!, heap[i]!];
+        i = p;
+      }
+    } else if (later(m, heap[0]!)) {
+      heap[0] = m;
+      down(0);
+    }
+  }
+  return heap;
 }
 
 /**
@@ -170,11 +214,13 @@ function decide(newest: FactRow | null, inbound: FactRow | null, ctx: FactContex
  * Cc, and nothing of yours answers it anywhere. Drafts and failed sends
  * never count.
  */
-export function threadFacts(rows: readonly FactRow[], ctx: FactContext): ThreadFacts {
+export function threadFacts(rows: readonly FactRow[], ctx: FactContext, window: number = FACTS_WINDOW): ThreadFacts {
   let newest: FactRow | null = null;
   let inbound: FactRow | null = null;
   let hiddenInbound: FactRow | null = null;
-  for (const m of rows) {
+  // a conversation longer than the window: its newest messages only (short ones, the rule, are read as they are)
+  const read = rows.length > window ? newestOf(rows, window) : rows;
+  for (const m of read) {
     if (ignored(m, ctx)) continue;
     const visible = visibleOf(m);
     if (visible && (!newest || later(m, newest))) newest = m;
@@ -192,11 +238,12 @@ export function threadFacts(rows: readonly FactRow[], ctx: FactContext): ThreadF
  * huge conversation costs what a short one does (the backfill walks the
  * thread's index with it). Equal to threadFacts (a property test holds them).
  */
-export function threadFactsNewestFirst(next: () => FactRow | undefined, ctx: FactContext): ThreadFacts {
+export function threadFactsNewestFirst(next: () => FactRow | undefined, ctx: FactContext, window: number = FACTS_WINDOW): ThreadFacts {
   let newest: FactRow | null = null;
   let inbound: FactRow | null = null;
   let hiddenInbound: FactRow | null = null;
-  for (let m = next(); m; m = next()) {
+  let read = 0;
+  for (let m = read < window ? next() : undefined; m; m = ++read < window ? next() : undefined) {
     if (ignored(m, ctx)) continue;
     if (visibleOf(m)) {
       newest ??= m;

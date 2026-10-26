@@ -521,6 +521,9 @@ export class BackendCore {
     const accounts = await this.store.accounts.list();
     this.server.emit("accounts", accounts);
     if (this.autocomplete.warmed) this.autocomplete.setOwn(accounts.map((a) => a.email));
+    // plan 17 (Codex review 1, #7): an account added or removed changed your addresses; its rescan runs now, with or
+    // without mail to sync (an empty account brings no change that would wake it). Idle, a wake is one probe.
+    this.facts.wake();
   }
 
   /**
@@ -983,7 +986,10 @@ export class BackendCore {
       else if (error instanceof ProviderError && error.ambiguous) await this.store.ops.markUnknown(op.id, message, this.now());
       // the server couldn't be reached: wait for the network (plan 20); an outage gives the attempt back
       else if (error instanceof ProviderError && error.network) await this.store.ops.fail(op.id, message, true, this.now(), { network: true, keepAttempt: this.connectivity.inOutage(op.account_id) });
-      else await this.store.ops.fail(op.id, message, error instanceof ProviderError ? error.retryable : true, this.now());
+      else if ((await this.store.ops.fail(op.id, message, error instanceof ProviderError ? error.retryable : true, this.now())) === "failed" && op.kind === "send") {
+        // plan 17 (Codex review 1, #6): a send that failed answered nobody: the store recomputed what it replied to, the lists and counts follow
+        this.notifyChanged([]);
+      }
     } finally {
       if (sending && --this.sendsInFlight === 0) for (const settle of this.sendsSettled.splice(0)) settle();
     }

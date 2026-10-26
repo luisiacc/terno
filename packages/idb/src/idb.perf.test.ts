@@ -362,6 +362,22 @@ it("People and Waiting (plan 17) page from their own orders: every page, counts 
   }
   const counts = await warm(() => store.threads.counts(NOW));
   expect(counts.result.inboxWaiting).toEqual(expect.any(Number));
+  // every count of the sidebar, the waiting one with them: within a third of a frame (Codex review 1, #9)
+  expect(counts.ms, "counts with waiting").toBeLessThanOrEqual(5 * MULT);
+  // a search narrowed to People or Waiting: the instant index keeps those threads before paging
+  expect(await store.instant!.settled(120_000)).toBe(true);
+  for (const threadFilter of ["people", "waiting"] as const) {
+    for (const query of ["hola", "factura", "in:all"]) {
+      const first = await timed(() => store.threads.searchText({ query, threadFilter, limit: 100, now: NOW }));
+      expect(first.result.strategy, `${threadFilter} "${query}"`).not.toBe("scan");
+      expect(first.result.items.every((t) => (threadFilter === "people" ? t.person : t.waitingSince != null))).toBe(true);
+      expect(first.ms, `search "${query}" from ${threadFilter}: first page`).toBeLessThanOrEqual(25 * MULT);
+      if (first.result.nextCursor) {
+        const next = await timed(() => store.threads.searchText({ query, threadFilter, limit: 100, now: NOW, cursor: first.result.nextCursor! }));
+        expect(next.ms, `search "${query}" from ${threadFilter}: next page`).toBeLessThanOrEqual(25 * MULT);
+      }
+    }
+  }
   // the rows themselves, as a bulk change would leave them (the orders follow row changes)
   const db = (store as unknown as { db: { tx(fn: () => void): void; takeCommit(): unknown; confirm(): void; table(n: string): { all(): Iterable<Record<string, unknown>>; update(r: Record<string, unknown>, p: Record<string, unknown>): void } } }).db;
   const keep = new Map(all.map((t) => [t.id, [t.person === null ? null : +t.person, t.waitingSince] as const]));

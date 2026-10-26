@@ -133,6 +133,18 @@ describe("People and Waiting (plan 17)", () => {
     stats.push({ name: `${label}: every page (${pages.length}), the slowest`, budgetMs: 16, p50: worst, p95: worst, max: worst, iterations: pages.length });
     expect(worst, `${label}: slowest page`).toBeLessThanOrEqual(16 * BUDGET_MULTIPLIER);
     await gate(`${label}: scope count`, 5, () => store.threads.scopeCount({ ...p, now: NOW, limit: 100_001 }));
+    // the whole id walk ("select all N"), timed (Codex review 1, #9)
+    const walk = await measureAsync(`${label}: the whole id walk`, 32, async () => {
+      let walked = 0;
+      for (let after = 0; ; ) {
+        const page = await store.threads.scopeIds({ ...p, now: NOW, after, limit: 500 });
+        walked += page.length;
+        if (page.length < 500) return walked;
+        after = page[page.length - 1]!;
+      }
+    }, 10, 1);
+    stats.push(walk);
+    expect(walk.p95, `${label}: whole walk`).toBeLessThanOrEqual(32 * BUDGET_MULTIPLIER);
     let walked = 0;
     for (let after = 0; ; ) {
       const page = await store.threads.scopeIds({ ...p, now: NOW, after, limit: 500 });

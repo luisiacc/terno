@@ -29,17 +29,17 @@ const ATTEMPTS = 3;
 const CHILD = process.env.TERNO_FACTS_CHILD;
 const yieldTurn = () => new Promise<void>((r) => setImmediate(r));
 
-/** One conversation of `n` messages, a person and you taking turns (the skewed case: one thread is a fifth of the mail). */
-function giantThread(accountId: number, me: string, n: number): IncomingMessage[] {
+/** One conversation of `n` messages: a person's first, then all yours (the skewed case: a sixth of the mail, and its walk runs to the window's end, Codex review 1 #1). */
+function giantThread(accountId: number, me: string, n: number, key = "giant", trash = false): IncomingMessage[] {
   return Array.from({ length: n }, (_, i) => {
-    const mine = i % 3 === 2;
+    const mine = i > 0;
     return {
       accountId,
-      providerMsgId: `giant-${i}`,
-      providerThreadId: "giant",
-      rfcMessageId: `giant-${i}@perf.test`,
-      inReplyTo: i ? `giant-${i - 1}@perf.test` : null,
-      references: i ? [`giant-${i - 1}@perf.test`] : [],
+      providerMsgId: `${key}-${i}`,
+      providerThreadId: key,
+      rfcMessageId: `${key}-${i}@perf.test`,
+      inReplyTo: i ? `${key}-${i - 1}@perf.test` : null,
+      references: i ? [`${key}-${i - 1}@perf.test`] : [],
       from: mine ? { name: "Me", email: me } : { name: "Carlos", email: "carlos@acme.com" },
       to: [mine ? { name: "Carlos", email: "carlos@acme.com" } : { name: "Me", email: me }],
       cc: [],
@@ -53,10 +53,10 @@ function giantThread(accountId: number, me: string, n: number): IncomingMessage[
       listId: null,
       isRead: true,
       isStarred: false,
-      inInbox: !mine,
+      inInbox: !mine && !trash,
       isSent: mine,
       isDraft: false,
-      isTrash: false,
+      isTrash: trash,
       isSpam: false,
       hasAttachments: false,
       size: 100,
@@ -103,7 +103,7 @@ if (CHILD) {
       store = new SqlMailStore(openDatabase(path), { checkpointWorker: true });
       const data: MockDataset = generateDataset({ threads: 145_000, accounts: 4, seed: 17, now: NOW, bodyScale: 1 });
       const seeded = seedDataset(sqlDb(store), data, { now: NOW, chunkSize: 2000 });
-      const giant = giantThread(seeded.accountIds[0]!, data.accounts[0]!.email, 50_000);
+      const giant = giantThread(seeded.accountIds[0]!, data.accounts[0]!.email, 50_000).concat(giantThread(seeded.accountIds[0]!, data.accounts[0]!.email, 10_000, "giant-trash", true));
       for (let i = 0; i < giant.length; i += 5000) await store.sync.ingest(giant.slice(i, i + 5000), { applyFilters: false, now: NOW, classifier: null });
       expected = factsRows(store);
       meta.messages = sqlDb(store).get<{ c: number }>("SELECT count(*) AS c FROM messages")!.c;

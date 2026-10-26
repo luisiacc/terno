@@ -4,7 +4,7 @@ import type { IncomingMessage, ModelDelta } from "@terno/store";
 export type { IncomingAttachment, IncomingLocation, IncomingMessage } from "@terno/store";
 import { placeholders, type Db } from "./sqlite";
 import { pruneOpTargets } from "./repos";
-import { answeredThreads, FACT_COLUMNS, noteSentMail, ownAddresses, recomputeContext, referencesOfOwn } from "./facts";
+import { answeredThreads, FACT_COLUMNS, noteSentMail, ownAddresses, ownMailChanged, recomputeContext, referencesOfOwn } from "./facts";
 
 
 
@@ -231,9 +231,14 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
       );
       if (existing && !existing.by_provider) db.run("UPDATE messages SET provider_msg_id = ? WHERE id = ?", msg.providerMsgId, existing.id);
       if (existing) {
-        const before = db.get<{ body_state: string }>("SELECT body_state FROM messages WHERE id = ?", existing.id)!;
+        const before = db.get<{ body_state: string; is_sent: number; is_draft: number }>("SELECT body_state, is_sent, is_draft FROM messages WHERE id = ?", existing.id)!;
         updateExisting(db, existing.id, msg);
         if (before.body_state !== "full" && msg.bodyState === "full") result.bodyCompleted.push(existing.id);
+        // plan 17 (Codex review 1, #4): a draft that comes back sent (or the reverse) is your mail appearing or going
+        if (before.is_sent !== b(msg.isSent) || before.is_draft !== b(msg.isDraft)) {
+          own = null;
+          for (const t of ownMailChanged(db, existing.id)) result.touchedThreads.add(t);
+        }
         let threadId = existing.thread_id;
         if (msg.providerThreadId) threadId = adoptProviderThread(db, threadId, msg.accountId, msg.providerThreadId, result);
         result.updated.push(existing.id);
