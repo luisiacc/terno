@@ -34,6 +34,8 @@ function toV13(file: string): void {
     db.exec("ALTER TABLE threads DROP COLUMN person");
     db.exec("ALTER TABLE threads DROP COLUMN waiting_since");
     db.exec("ALTER TABLE messages DROP COLUMN is_bulk");
+    // and v15's (plan 26), which the seed of today writes
+    db.exec("ALTER TABLE messages DROP COLUMN reply_to_json");
     db.exec("DELETE FROM settings WHERE key IN ('facts_backfill', 'facts_senders')");
     // nothing of v14 left for the migration to trip on
     const left = db.prepare("SELECT name FROM sqlite_master WHERE sql LIKE '%person%' OR sql LIKE '%waiting_since%' OR sql LIKE '%is_bulk%' OR name LIKE 'ops_failed_sends'").all();
@@ -79,7 +81,7 @@ test.afterAll(async () => {
 });
 
 test("a v13 profile migrates in the desktop backend; the backfill fills every thread's facts; the greeting counts and People filters", async () => {
-  expect(read<{ user_version: number }>("PRAGMA user_version").user_version).toBe(14);
+  expect(read<{ user_version: number }>("PRAGMA user_version").user_version).toBe(15); // through v15 (plan 26: Reply-To)
   await expect.poll(() => read<{ c: number }>("SELECT count(*) AS c FROM threads WHERE person IS NULL").c, { timeout: 60_000 }).toBe(0);
   expect(read<{ v: string }>("SELECT value_json AS v FROM settings WHERE key = 'facts_backfill'").v).toBe('{"phase":"done"}');
   expect(read<{ c: number }>("SELECT count(*) AS c FROM correspondents WHERE own = 1").c).toBeGreaterThan(0);
