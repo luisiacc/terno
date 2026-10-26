@@ -6,3 +6,4 @@ export * from "./mime";
 export * from "./compose-portable";
 export * from "./gmail-api";
 export * from "./gmail-web";
+export * from "./google-photos";

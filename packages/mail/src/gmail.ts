@@ -24,6 +24,8 @@ export interface ConnectOptions {
   fetch: typeof fetch;
   /** pre-selects the account on Google's consent screen (re-verifying an owner) */
   loginHint?: string;
+  /** plan 22: the whole list asked for (installed apps get no incremental consent: mail's scopes plus the new ones) */
+  scopes?: string[];
 }
 
 type CallbackKey = "backend.oauth.invalid" | "backend.oauth.denied" | "backend.oauth.back";
@@ -90,7 +92,7 @@ export async function connectGmail(options: ConnectOptions): Promise<GmailConnec
           client_id: options.clientId,
           redirect_uri: `http://127.0.0.1:${port}/callback`,
           response_type: "code",
-          scope: SCOPES.join(" "),
+          scope: (options.scopes ?? SCOPES).join(" "),
           code_challenge: challenge,
           code_challenge_method: "S256",
           state,
@@ -104,11 +106,11 @@ export async function connectGmail(options: ConnectOptions): Promise<GmailConnec
     const body = new URLSearchParams({ client_id: options.clientId, code: code.code, code_verifier: verifier, grant_type: "authorization_code", redirect_uri: code.redirectUri });
     if (options.clientSecret) body.set("client_secret", options.clientSecret);
     const tokenRes = await netFetch(ep.token, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body });
-    const tokens = (await tokenRes.json()) as { access_token?: string; refresh_token?: string; error?: string };
+    const tokens = (await tokenRes.json()) as { access_token?: string; refresh_token?: string; scope?: string; error?: string };
     if (!tokenRes.ok || !tokens.access_token || !tokens.refresh_token) throw new ProviderError(L("errors.google.signInFailed", { detail: tokens.error ?? tokenRes.status }), false);
     const profile = (await (await netFetch(`${ep.api}/profile`, { headers: { authorization: `Bearer ${tokens.access_token}` } })).json()) as { emailAddress: string };
     const info = (await netFetch(ep.userinfo, { headers: { authorization: `Bearer ${tokens.access_token}` } }).then((r) => (r.ok ? r.json() : {})).catch(() => ({}))) as { name?: string; sub?: string; email_verified?: boolean };
-    return { email: profile.emailAddress, name: info.name ?? "", refreshToken: tokens.refresh_token, sub: info.sub ?? null, emailVerified: info.email_verified === true };
+    return { email: profile.emailAddress, name: info.name ?? "", refreshToken: tokens.refresh_token, sub: info.sub ?? null, emailVerified: info.email_verified === true, grantedScopes: (tokens.scope ?? "").split(/\s+/).filter(Boolean) };
   } finally {
     (server as Server | null)?.close();
   }

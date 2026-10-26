@@ -1,5 +1,6 @@
 import { L } from "@terno/i18n";
 import type { IncomingMessage } from "@terno/store";
+import { collectGooglePhotos } from "./google-photos";
 import { parseRaw } from "./mime";
 import { failedBeforeRequest, isFetchNetworkFailure } from "./net-errors";
 import { ProviderAuthError, ProviderError, type FlagUpdate, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
@@ -147,7 +148,8 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     try {
       let res: Response;
       try {
-        res = await netFetch(`${ep.api}${path}`, { ...init, signal: deadline.signal, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...init.headers } });
+        // plan 22: the People API and userinfo go through the same token and deadlines (absolute URLs)
+        res = await netFetch(path.startsWith("https://") ? path : `${ep.api}${path}`, { ...init, signal: deadline.signal, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...init.headers } });
       } catch (e) {
         throw failed(e);
       }
@@ -320,6 +322,10 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
   return {
     async verify() {
       await api("/profile");
+    },
+
+    photos(want) {
+      return collectGooglePhotos((url) => api(url), ep.userinfo, want);
     },
 
     async sync(sink) {

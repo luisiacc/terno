@@ -124,6 +124,8 @@ export interface MailProvider {
   reset?(): void;
   /** plan 20: the sync tick asks push whether it still hears the server (a dead session reconnects) */
   heartbeat?(): void;
+  /** plan 22 (Gmail): the account's own picture and its contacts' photos, as far as the grant allows */
+  photos?(want: import("./google-photos").PhotoWant): Promise<import("./google-photos").GooglePhotos>;
   close(): Promise<void>;
 }
 
@@ -146,6 +148,8 @@ export interface GmailConnectResult {
   /** OpenID subject: Google's stable id for the person (evidence for owner identity) */
   sub: string | null;
   emailVerified: boolean;
+  /** what Google granted (the token response's `scope`; the user may untick some) */
+  grantedScopes?: string[];
 }
 
 /** The web's Gmail sign-in: short-lived access tokens from Google's token model, kept in memory. */
@@ -163,5 +167,5 @@ export interface ProviderRegistry {
   readonly gmailTokens?: GmailTokenBroker;
   create(ctx: ProviderContext): MailProvider;
   verifyImap(config: ImapAccountConfig, password: string): Promise<void>;
-  connectGmail(options: { clientId: string; clientSecret: string | null; openExternal: (url: string) => Promise<void>; signal?: AbortSignal; fetch: typeof fetch; loginHint?: string }): Promise<GmailConnectResult>;
+  connectGmail(options: { clientId: string; clientSecret: string | null; openExternal: (url: string) => Promise<void>; signal?: AbortSignal; fetch: typeof fetch; loginHint?: string; scopes?: string[] }): Promise<GmailConnectResult>;
 }
