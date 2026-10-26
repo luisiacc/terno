@@ -24,6 +24,14 @@ async function isFree(port: number): Promise<boolean> {
   return true;
 }
 
+/** The "Local:" URL Vite prints once it listens (colors stripped), or null before that line arrives */
+export function viteLocalUrl(output: string): string | null {
+  // oxlint-disable-next-line no-control-regex -- ANSI color codes
+  const plain = output.replace(/\x1b\[[0-9;]*m/g, "");
+  const m = /Local:\s+(http:\/\/[^\s/]+)\/?\s/.exec(plain);
+  return m ? m[1]! : null;
+}
+
 export async function devPort(env: { TERNO_VITE_PORT?: string }, { start = DEFAULT_DEV_PORT, tries = 20 } = {}): Promise<{ port: number; fellBack: boolean }> {
   if (env.TERNO_VITE_PORT) return { port: Number(env.TERNO_VITE_PORT), fellBack: false };
   for (let port = start; port < start + tries; port++) {

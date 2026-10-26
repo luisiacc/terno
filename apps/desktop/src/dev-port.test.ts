@@ -1,8 +1,11 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { createServer, type Server } from "node:net";
-import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { DEFAULT_DEV_PORT, devPort } from "./dev-port";
+import { DEFAULT_DEV_PORT, devPort, viteLocalUrl } from "./dev-port";
 
 const held: Server[] = [];
 afterEach(async () => {
@@ -55,6 +58,42 @@ describe("dev server port", () => {
     const busy = await hold("127.0.0.1");
     expect(await devPort({ TERNO_VITE_PORT: String(busy) })).toEqual({ port: busy, fellBack: false });
   });
+
+  it("reads Vite's Local URL, colored or not, and nothing before it", () => {
+    expect(viteLocalUrl("  VITE v8.3.5  ready in 312 ms\n")).toBeNull();
+    expect(viteLocalUrl("  ➜  Local:   http://localhost:5848/\n  ➜  Network: use --host to expose\n")).toBe("http://localhost:5848");
+    expect(viteLocalUrl("  \x1b[32m➜\x1b[39m  \x1b[1mLocal\x1b[22m:   \x1b[36mhttp://localhost:\x1b[1m5849\x1b[22m/\x1b[39m\n")).toBe("http://localhost:5849");
+    // a chunk cut mid-URL isn't a URL yet
+    expect(viteLocalUrl("  ➜  Local:   http://localhost:58")).toBeNull();
+  });
+
+  // Codex: the port is free when chosen, then another checkout takes it before Vite binds. Vite
+  // (no --strictPort) moves on, and the URL dev.mjs follows is the one Vite reports.
+  it("a port taken after it was chosen: Vite moves on and reports where it went", async () => {
+    const root = mkdtempSync(join(tmpdir(), "terno-devport-"));
+    writeFileSync(join(root, "index.html"), "<!doctype html><title>t</title>");
+    const { port } = await devPort({}, { start: 40000 + Math.floor(Math.random() * 9000) });
+    await hold("::1", port).catch(() => hold("127.0.0.1", port)); // the race: someone binds it first
+    const viteBin = join(dirname(createRequire(join(import.meta.dirname, "../../web/package.json")).resolve("vite/package.json")), "bin", "vite.js");
+    const vite = spawn(process.execPath, [viteBin, root, "--port", String(port)], { stdio: ["ignore", "pipe", "pipe"] });
+    try {
+      const url = await new Promise<string>((resolve, reject) => {
+        let seen = "";
+        vite.stdout.on("data", (c) => {
+          seen += c;
+          const found = viteLocalUrl(seen);
+          if (found) resolve(found);
+        });
+        vite.once("exit", (code) => reject(new Error(`vite exited ${code}`)));
+      });
+      expect(url).toMatch(/^http:\/\/localhost:\d+$/);
+      expect(Number(url.split(":").pop())).not.toBe(port);
+      expect((await fetch(url)).ok).toBe(true);
+    } finally {
+      vite.kill("SIGTERM");
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 30_000);
 
   it("says how to choose one when the whole range is taken", async () => {
     const start = await hold("127.0.0.1");

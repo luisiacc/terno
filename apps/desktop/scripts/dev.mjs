@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_DEV_PORT, devPort } from "../src/dev-port.ts";
+import { DEFAULT_DEV_PORT, devPort, viteLocalUrl } from "../src/dev-port.ts";
 import { DB_FILE, LegacyProfileConflictError, LegacyProfileInUseError, migrateLegacyProfile, resolveProfile } from "../src/legacy-profile.ts";
 
 // For one release UNICA_* variables still work (the same rule as @terno/core/legacy-env).
@@ -29,9 +29,6 @@ const root = join(here, "..");
 const repo = join(root, "..", "..");
 const demo = process.argv.includes("--demo");
 const seeded = process.argv.includes("--seeded");
-const { port, fellBack } = await devPort(process.env);
-if (fellBack) console.log(`[dev] port ${DEFAULT_DEV_PORT} is in use; using ${port}`);
-const url = `http://localhost:${port}`;
 
 /**
  * The dev profile (TERNO_USER_DATA wins, as is), with its legacy files renamed
@@ -74,25 +71,33 @@ if (build.status !== 0) process.exit(build.status ?? 1);
 // Run Vite's own entry directly (not via pnpm, which doesn't forward signals), so stopping dev stops it.
 const webRequire = createRequire(join(repo, "apps/web/package.json"));
 const viteBin = join(dirname(webRequire.resolve("vite/package.json")), "bin", "vite.js");
-const vite = spawn(process.execPath, [viteBin, "--port", String(port), "--strictPort"], {
+// Chosen after the build, as late as possible. A port picked for us is only Vite's first try: it
+// moves on if another checkout took it meanwhile, and we follow the URL Vite reports, so Electron
+// never loads someone else's server. TERNO_VITE_PORT is strict.
+const { port, fellBack } = await devPort(process.env);
+if (fellBack) console.log(`[dev] port ${DEFAULT_DEV_PORT} is in use; using ${port}`);
+const vite = spawn(process.execPath, [viteBin, "--port", String(port), ...(process.env.TERNO_VITE_PORT ? ["--strictPort"] : [])], {
   cwd: join(repo, "apps/web"),
-  stdio: ["ignore", "inherit", "inherit"],
+  stdio: ["ignore", "pipe", "inherit"],
 });
 const killVite = () => vite.kill("SIGTERM");
 
-async function waitForVite(timeoutMs = 30_000) {
-  const until = Date.now() + timeoutMs;
-  while (Date.now() < until) {
-    try {
-      const res = await fetch(url);
-      if (res.ok) return;
-    } catch {
-      /* not up yet */
+/** Vite's own "Local:" URL, its output passed through as it comes */
+const localUrl = new Promise((resolve, reject) => {
+  let seen = "";
+  const timer = setTimeout(() => reject(new Error("Vite did not start in 30 s")), 30_000);
+  vite.stdout.on("data", (chunk) => {
+    process.stdout.write(chunk);
+    if (seen === null) return;
+    seen += chunk;
+    const found = viteLocalUrl(seen);
+    if (found) {
+      seen = null;
+      clearTimeout(timer);
+      resolve(found);
     }
-    await new Promise((r) => setTimeout(r, 200));
-  }
-  throw new Error(`Vite did not start on ${url}`);
-}
+  });
+});
 
 let electron;
 const shutdown = (code = 0) => {
@@ -106,7 +111,7 @@ vite.on("exit", (code) => {
   if (code && code !== 0) shutdown(code);
 });
 
-await waitForVite();
+const url = await localUrl;
 const require = createRequire(join(root, "package.json"));
 const electronBin = require("electron"); // the electron package exports the binary path
 const env = { ...process.env, TERNO_DEV_URL: url };
