@@ -1,7 +1,7 @@
 # Plan 24: the List layout (Gmail-style, with category tabs)
 
-- **Status:** planned. Implementation starts after plan 21 merges.
-- **Builds on:** `402470a` (main after plan 18), and on plan 21 (resizable sidebar and list panels, sidebar "More"), which is in flight. Section 2.4 is the contract with it.
+- **Status:** implemented (see "Implementation notes" and "What the Codex code review changed" at the end).
+- **Builds on:** `6f4be35` (main with plans 20–23: network resilience, sidebar "More" and resizable panes, sender icons, the account label). Section 2.4 describes how List uses plan 21's panes.
 - **Numbering:** 17 and 21–23 are taken by running work, so this is 24.
 - **Request (verbatim, sent with a screenshot of Gmail's list view and its category tabs):** "lets also have in settings the aiblity for users to have a view like this one here … which is more gmail-like, with the list of things, and when you open them, instead of opening to the side it like navigates to the email and the mail becomes the current view, so users can have that view, when that view is opened, we need the categories shown on top like it does here very nicely."
 - **Already decided with the user:**
@@ -9,6 +9,9 @@
   - In List, the thread list is full width. Opening a thread navigates to it, and the conversation becomes the main view. Esc or ⌘[ goes back to the list, restoring the scroll position, the selection and focus.
   - In List, category tabs run along the top of the list: All, Unread, the user's categories with counts, and a "+" that creates a category.
   - Dragging threads onto a tab moves them to that category. This is an exclusive move; adding a thread to several categories happens only through the right-click menu.
+- **Decided with the user after the plan (the two open questions, both on the plan's defaults):**
+  - **A category tab shows the same list as the sidebar category** (everything in that category, archived included, outside trash and spam), with the sidebar's count. It is not Gmail's inbox-only slice.
+  - **Archiving (or anything that takes the thread away) from an open conversation returns to the list**, with the next thread under the cursor. There is no "open the next conversation" option.
 
 ## 1. What exists
 
@@ -168,14 +171,15 @@ There is one module, `apps/web/src/lib/page-history.ts`. Its pure core takes inj
 
 ### 2.4 Panel widths with plan 21 (resizable panels)
 
-- **Sidebar:** plan 21's sidebar width (`--sidebar-w`, persisted) and its sidebar|list handle apply in List exactly as in Split. It is one shared value, so switching layouts never moves the sidebar edge.
-- **List width:** List doesn't use plan 21's list width (`--list-w`) or its list|reader handle.
-  - The handle isn't rendered. Its separator element is skipped, so there is no dead focus stop.
-  - The list column is `minmax(0, 1fr)`.
-  - The persisted list width is neither read nor written while in List, so switching back to Split restores exactly the width the user dragged.
-- **Thread and compose pages** take the whole content cell. Their content stays at the design's `--reader-max` (760–860 px), centered with `--reader-pad-x`. Reading width is a typographic choice, not a panel width.
-- **Clamps:** plan 21's minimum widths for the list and reader don't apply in List. The window minimum (980 px on desktop) minus the widest sidebar plan 21 allows still leaves the content cell at least 640 px wide on desktop.
-- **Integration:** if plan 21 lands with other variable or handle names, implementation step 1 adapts to them. The rule this plan fixes is "List reads only the sidebar width".
+Plan 21 as it merged: the widths live in `localStorage["terno:panes"]` (`{ v: 1, sidebar, list }`), applied as `--pane-sidebar` and `--pane-list` on `<html>`; globals.css's `app-panes` clamps them every frame against the window and the design's `layout.readerMin` (`--reader-min`); the handles are `components/pane-handle.tsx` (`data-testid=pane-handle-sidebar` and `-list`), separators with keyboard and pointer.
+
+- **Sidebar:** the same stored width and the same handle (`pane-handle-sidebar`) in both layouts, so switching never moves the sidebar edge. List's grid is a second utility, `app-panes-list`, which repeats `app-panes`'s sidebar clamp exactly (`clamp(200px, min(360px, var(--pane-sidebar, var(--sidebar-w))), 100vw - var(--reader-min) - 300px)`), then `minmax(0, 1fr)`. The sidebar handle's own max (`maxWidth("sidebar", …)` in `lib/panes.ts`) is the same expression, so the handle's aria values stay true.
+- **List width:** List doesn't use `--pane-list` or the list|reader edge.
+  - `pane-handle-list` isn't rendered, so there is no dead separator in the tab order.
+  - The list pane is `minmax(0, 1fr)`.
+  - `terno:panes` is neither read nor written by List: switching back to Split restores exactly the list width the user dragged (an e2e test sets 500 px, switches twice and checks the width and the stored value).
+- **Thread and compose pages** take the whole content pane. Their content stays at the design's `--reader-max` (760–860 px), centered with `--reader-pad-x`: reading width is typographic, not a pane width.
+- **Clamps:** `--reader-min` keeps the content pane at least 300 px plus the design's reader minimum wide; at the desktop's 980 px minimum the sidebar clamps to at most 980 − `readerMin` − 300 px, so the content pane is at least 648 px (macOS, reader minimum 348) or 680 px (Atelier, Lumen: 380). Below 720 px of scroller the rows are the stacked ones, as in Split.
 
 ### 2.5 Focus, scroll and selection across pages
 
@@ -509,3 +513,23 @@ Codex (`codex exec -s read-only`) was asked for at most 12 concrete points again
   - The problem: `move()` prefetches two neighbors, `extendSelection()` prefetches one, and `boot.ts` force-loads the selected thread on every `changed` event, page or no page.
   - The revision: in List, these run only while the thread page is up. On the list page the cursor is just a row: no `threads.get`, no prefetch, and `changed` only invalidates. Split is unchanged.
   - Tests: RPC counts show that j/k on the list page and background changes issue no `threads.get` until a thread is opened.
+
+## Implementation notes (what differs from the plan above)
+
+- **Where it lives.** `lib/page-history.ts` (the pure history machine, `createPageHistory`), `lib/page.ts` (the derived page, `openThread`, `closePage`, focus across pages, `installPage`/`bootPage`, the mouse and frame forwarding), `lib/tabs.ts` (`tabsShown`, `selectedTab`, `openTab`, `fitTabs`, the shared `createCategory`), `components/list-tabs.tsx`. `installPage()` and `bootPage()` run in `boot()` right before the first `reloadList`, not from `App`, so a reload's thread is selected before the list's answer can pick row 0.
+- **The tree keeps its shape across a layout switch.** `#app-list` holds the list (inside `[data-list-section]`, in both layouts) and, in List, the page layer; `<main>` exists only in Split. Switching layouts therefore never remounts `ThreadList`, and the design-switch anchor capture keeps the first row in place (applyAppearance now captures on a layout change too).
+- **The list section is `inert` + `visibility: hidden`** under a page (a `data-covered` attribute), never `display: none`: its scroller keeps its offset and size, so Back finds the same scroll and the same mounted rows (asserted by the perf gate and an e2e test, 2,400 px deep).
+- **The tab's count is its description, not part of its name.** An accessible name of "Invoices, 3 unread" over the visible "Invoices 3" failed axe's `label-content-name-mismatch` (WCAG 2.5.3). The name is the label; `aria-describedby` points at a hidden "3 unread". The visible count is `aria-hidden`.
+- **The tab indicator fades** (`--motion-fast`) on the selected tab instead of sliding between tabs: one less moving part, and it stays within `--motion`.
+- **Every tab is measured from a hidden copy inside a box of no size** (`size-0 overflow-hidden`), so the copy adds no scroll width to the header. The copy uses the strong weight for underline tabs (the widest a tab gets).
+- **R11's "re-measure when the overflow split changes during a drag"** isn't done: during a drag nothing changes the split (counts change only on a backend `counts` event, which a drag doesn't cause). Scrolling a `[data-drop-scroll]` container does re-measure.
+- **The hash for a reloaded conversation is honored only with its history state** (an entry of this mailbox: path and query). A typed or pasted `#/thread/<id>` has no state, so it lands on the list and the address is cleaned. The ids are local row ids, so a link from elsewhere could only name the wrong mail.
+- **On a reload, the conversation comes back even when the list it was opened over doesn't**: views aren't persisted, so the app opens on the inbox, and the entry is rescoped to it (so Back lands on the inbox list).
+- **`j → Back → Forward` within 300 ms** reopens the entry as it was last written (the thread that opened the page, or the last one a paused j wrote). The replace still waiting is dropped rather than written over the list's entry.
+- **Found along the way: a desktop reload never reconnected.** Main posted the reloaded window's backend port at `did-start-navigation`, while the old document was still current. The new document waited for it forever, so ⌘R and View → Reload left an app that never became ready, in either layout. The port now goes at `did-navigate` (main frame only, never for in-page changes). The packaged smoke's reload tests fail without the fix.
+- **Perf gate results** (this machine, under load): Enter → first frame with the conversation p95 26–28 ms; Esc → first frame with the list p95 22–23 ms. Over 20 round trips 1,500 rows deep: 0 `ThreadList` renders, 0 `ThreadRow` renders, the same listbox, the same scrollTop, the same mounted rows. The injected-remount twin fails the gate in every design (`sameList` and `sameScroll` false, 30 `ThreadList` renders). Holding j on the page for about 3.5 s writes history once. Scrolling 2,000 one-line rows keeps at most 42 rows mounted, with smooth frames. Drags over the tabs and the sidebar cause 0 row renders and 2.2 target items per target change.
+- **Merge note (plan 17 runs in parallel and touches the quick-filter chips, Lumen's greeting line and the stores):**
+  - this plan's change to the list header is contained in `useQuickFilters()` (List shows the menu filter button in every design) and one `{tabs && <ListTabs />}` line after the chips;
+  - the tabs live in their own file;
+  - stores are untouched (no new query);
+  - a new chip or filter from plan 17 needs nothing here, except a decision on whether it shows in List's header next to the tabs.
