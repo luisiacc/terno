@@ -9,19 +9,30 @@
  * hold of the OS counts at its CPU time), and a build over either budget is
  * measured again, up to three in all, the best of each counting: a regression
  * is slow every time.
+ *
+ * The build's CPU is the model's own (learn and prune, this thread), not the
+ * fixture's generation, and it yields between pages as the desktop backend
+ * does (setImmediate). A timer's yield slept ~1 ms after every page, and macOS
+ * then ran the thread on an efficiency core or at a low clock: the same code
+ * measured 77–81 µs a message that way against 26–28 here, at the same load,
+ * interleaved (plan 18, "The phrase build's CPU gate").
  */
 import type { Address } from "@terno/core";
 import { contactPeople, sentBody } from "@terno/mock-data";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { SentText } from "../autocomplete-source";
-import { describeGap, watchLoop } from "../../../db/src/test/timing";
+import { describeGap, threadCpuMs, watchLoop } from "../../../db/src/test/timing";
 import { bestRounds, cpuMs, memoryBytes, PERF_MULT as MULT, perfLog as log } from "../conformance/perf";
 import { SliceClock } from "../instant/slices";
 import { PhraseModel, setPhrasesSlowdownForTests, setPhrasesUnboundedForTests } from "./phrases";
 
 const N = 100_000;
 const MiB = 1024 * 1024;
-const BUDGET = { buildUsPerMessage: 60, stallMs: 16, memoryBytes: 24 * MiB, p95: 0.1, p99: 0.5 };
+// buildUsPerMessage: 26–28 µs measured under a load of 4–10 on an M2 Max (the best 26); a 25% slower model (32.5) fails it
+const MEASURED_US = 26;
+const BUDGET = { buildUsPerMessage: 31, stallMs: 16, memoryBytes: 24 * MiB, p95: 0.1, p99: 0.5 };
+/** the desktop backend's yield between slices (node:timers/promises' setImmediate): no sleep */
+const yieldNow = () => new Promise<void>((r) => (globalThis as unknown as { setImmediate(f: () => void): unknown }).setImmediate(r));
 
 let people: Address[] = [];
 let model: PhraseModel;
@@ -53,20 +64,32 @@ function* sentPages(n: number, seed = 3): Generator<SentText[]> {
   if (page.length) yield page;
 }
 
-async function build(n: number): Promise<{ model: PhraseModel; stall: number; longest: string; descheduled: number }> {
+/** Learns `n` sent messages a page at a time; `us` is the model's own CPU a message (generating the pages and yielding left out). */
+async function build(n: number): Promise<{ model: PhraseModel; us: number; stall: number; longest: string; descheduled: number }> {
   const loop = watchLoop(BUDGET.stallMs * MULT);
-  const clock = new SliceClock({ yield: () => new Promise((r) => setTimeout(r, 0)), sliceMs: 4 });
+  const clock = new SliceClock({ yield: yieldNow, sliceMs: 4 });
   const m = new PhraseModel();
+  let cpu = 0;
   for (const page of sentPages(n)) {
     await clock.pause();
+    let from = threadCpuMs();
     for (const t of page) {
       m.learn(t);
-      await clock.tick();
+      if (clock.due) {
+        cpu += threadCpuMs() - from;
+        await clock.pause();
+        from = threadCpuMs();
+      }
     }
-    if (m.needsPrune()) await m.prune(clock);
+    cpu += threadCpuMs() - from;
+    if (m.needsPrune()) {
+      from = threadCpuMs();
+      await m.prune(clock);
+      cpu += threadCpuMs() - from;
+    }
   }
   const r = loop.stop();
-  return { model: m, stall: r.stall, longest: describeGap(r.longest), descheduled: r.descheduled.length };
+  return { model: m, us: (cpu / n) * 1000, stall: r.stall, longest: describeGap(r.longest), descheduled: r.descheduled.length };
 }
 
 async function footprint(): Promise<number> {
@@ -111,13 +134,13 @@ afterAll(() => {
 describe(`the phrase model from ${N.toLocaleString("en")} sent messages`, () => {
   it("learns within its CPU and stall budgets, in bounded memory", async () => {
     // a build over either budget is measured again, up to three in all, the best of each counting (CPU time too
-    // inflates when every core is contended, from shared caches and SMT; a regression is slow in every build)
+    // inflates when every core is contended, from shared caches and slower cores; a regression is slow in every build)
     const best = { stall: Infinity, us: Infinity };
     const runs: string[] = [];
     for (let r = 0; r < 3 && !(best.stall <= BUDGET.stallMs * MULT && best.us <= BUDGET.buildUsPerMessage * MULT); r++) {
-      const { result, cpu } = await cpuMs(() => build(N));
+      const result = await build(N);
       model = result.model;
-      const us = (cpu / N) * 1000;
+      const us = result.us;
       runs.push(`${us.toFixed(1)} µs/message, stall ${result.stall.toFixed(1)} ms (longest gap ${result.longest}, ${result.descheduled} descheduled)`);
       best.stall = Math.min(best.stall, result.stall);
       best.us = Math.min(best.us, us);
@@ -156,13 +179,14 @@ describe(`the phrase model from ${N.toLocaleString("en")} sent messages`, () => 
     }
   });
 
-  it("injected regression: 80 µs of extra work per message fails the build gate", async () => {
-    setPhrasesSlowdownForTests(0.08);
+  it("injected regression: a model 25% slower fails the build gate in each of three builds", async () => {
+    // 6.5 µs a message, a quarter of the best measured (26 µs); measured as the gate measures, so the best of three must fail
+    setPhrasesSlowdownForTests((MEASURED_US * MULT) / 4 / 1000);
     try {
-      const { cpu } = await cpuMs(() => build(5000));
-      const us = (cpu / 5000) * 1000;
-      log(`phrases build, injected slowdown: ${us.toFixed(1)} µs/message`);
-      expect(us).toBeGreaterThan(BUDGET.buildUsPerMessage * MULT);
+      const runs: number[] = [];
+      for (let r = 0; r < 3; r++) runs.push((await build(20_000)).us);
+      log(`phrases build, injected slowdown: ${runs.map((us) => us.toFixed(1)).join(", ")} µs/message`);
+      expect(Math.min(...runs)).toBeGreaterThan(BUDGET.buildUsPerMessage * MULT);
     } finally {
       setPhrasesSlowdownForTests(0);
     }
