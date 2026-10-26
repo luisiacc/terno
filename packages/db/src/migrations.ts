@@ -822,6 +822,26 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 15, name: "reply destinations", sql: "ALTER TABLE messages ADD COLUMN reply_to_json TEXT NOT NULL DEFAULT '[]';" },
   { version: 16, name: "immutable attachment assets", sql: ATTACHMENTS_V16 },
   { version: 17, name: "pending content capture index", sql: `CREATE INDEX messages_capture_pending ON messages(account_id, date DESC, id DESC) WHERE (body_state != 'full' AND attachments_captured != 2) OR attachments_captured = 0;` },
+  { version: 18, name: "bounded attachment accounting", sql: `
+CREATE TABLE attachment_usage (account_id INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE, bytes INTEGER NOT NULL);
+INSERT INTO attachment_usage SELECT account_id, sum(size + 1024) FROM attachment_assets GROUP BY account_id;
+CREATE TABLE attachment_orphans (asset_id TEXT PRIMARY KEY REFERENCES attachment_assets(id) ON DELETE CASCADE, account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, created_at INTEGER NOT NULL);
+CREATE INDEX attachment_orphans_age ON attachment_orphans(account_id, created_at, asset_id);
+INSERT INTO attachment_orphans SELECT id, account_id, created_at FROM attachment_assets a WHERE NOT EXISTS (SELECT 1 FROM attachment_links l WHERE l.asset_id = a.id);
+CREATE TRIGGER attachment_reserve AFTER INSERT ON attachment_assets BEGIN
+ INSERT INTO attachment_usage VALUES (new.account_id, new.size + 1024) ON CONFLICT(account_id) DO UPDATE SET bytes = bytes + new.size + 1024;
+ INSERT INTO attachment_orphans VALUES (new.id, new.account_id, new.created_at);
+END;
+CREATE TRIGGER attachment_release AFTER DELETE ON attachment_assets BEGIN
+ UPDATE attachment_usage SET bytes = bytes - old.size - 1024 WHERE account_id = old.account_id;
+END;
+CREATE TRIGGER attachment_pin AFTER INSERT ON attachment_links BEGIN
+ DELETE FROM attachment_orphans WHERE asset_id = new.asset_id;
+END;
+CREATE TRIGGER attachment_unpin AFTER DELETE ON attachment_links BEGIN
+ INSERT OR IGNORE INTO attachment_orphans SELECT id, account_id, created_at FROM attachment_assets a WHERE id = old.asset_id AND NOT EXISTS (SELECT 1 FROM attachment_links l WHERE l.asset_id = a.id);
+END;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

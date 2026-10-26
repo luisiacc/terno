@@ -1,3 +1,4 @@
+import { installAssetAccounting } from "./asset-accounting";
 import { MemDb, type Committed, type ForeignKey, type Key, type Row, type Table, type TableSpec } from "./mem";
 
 /**
@@ -11,7 +12,7 @@ import { MemDb, type Committed, type ForeignKey, type Key, type Row, type Table,
  */
 export const IDB_VERSION = 6;
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 17;
+export const LOGICAL_SCHEMA = 18;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -108,7 +109,9 @@ export const FOREIGN_KEYS: readonly ForeignKey[] = [
 const PERSISTED = TABLES.filter((t) => !t.memoryOnly);
 
 export function createMemDb(): MemDb {
-  return new MemDb(TABLES, FOREIGN_KEYS);
+  const db = new MemDb(TABLES, FOREIGN_KEYS);
+  installAssetAccounting(db);
+  return db;
 }
 
 function request<T>(r: IDBRequest<T>): Promise<T> {

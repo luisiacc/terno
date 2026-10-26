@@ -210,6 +210,28 @@ export function defineAttachmentConformance(name: string, h: StoreHarness): void
       expect(message.attachments[1]!.assetId).toBeUndefined();
       expect(await store.providerStore(a!).pendingAttachmentBodies(50)).toEqual([]);
     });
+    it("accounts reservations exactly through failed cleanup, discard, account cascade and reopen", async () => {
+      const [a, b] = await fresh();
+      const old = await upload(a!, ""); const other = await upload(b!, "");
+      const reservations = [];
+      for (let i = 0; i < 14; i++) reservations.push(await store.attachments.create({ accountId: a!, filename: "reserved", mime: "text/plain", size: 18 * 1024 * 1024, now: 0 }));
+      reservations.push(await store.attachments.create({ accountId: a!, filename: "remainder", mime: "text/plain", size: 4 * 1024 * 1024 - 16 * 1024, now: 0 }));
+      await expect(store.attachments.create({ accountId: a!, filename: "full", mime: "text/plain", size: 0, now: 0 })).rejects.toThrow();
+      // Cleanup would free old assets, but the rejected oversized allocation rolls it back.
+      await expect(store.attachments.create({ accountId: a!, filename: "invalid", mime: "text/plain", size: 19 * 1024 * 1024, now: 172800000 })).rejects.toThrow();
+      store = await h.reopen(store);
+      expect(await store.attachments.info(a!, old.assetId)).toMatchObject(old);
+      await expect(store.attachments.create({ accountId: a!, filename: "still full", mime: "text/plain", size: 0, now: 0 })).rejects.toThrow();
+      await store.attachments.discard(a!, old.assetId);
+      const replacement = await store.attachments.create({ accountId: a!, filename: "fits exactly", mime: "text/plain", size: 0, now: 0 });
+      await store.attachments.seal(a!, replacement.assetId);
+      await expect(store.attachments.create({ accountId: a!, filename: "full again", mime: "text/plain", size: 0, now: 0 })).rejects.toThrow();
+      await store.accounts.remove(a!);
+      store = await h.reopen(store);
+      expect(await store.attachments.info(b!, other.assetId)).toMatchObject(other);
+      await store.attachments.discard(b!, other.assetId);
+      await store.debug.verify();
+    });
     it("cascades account removal through cold chunks while preserving another account", async () => {
       const [a, b] = await fresh();
       const x = await upload(a!); const y = await upload(b!);
