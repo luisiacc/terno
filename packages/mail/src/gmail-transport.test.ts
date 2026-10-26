@@ -113,3 +113,32 @@ it("provider error bodies and transport exceptions cannot expose private detail"
     } finally { await p.close(); }
   }
 });
+
+it.each([2, 3, 4])("reset after headers at microtask %i still cancels the unread control body", async (depth) => {
+  let canceled = false;
+  const body = new ReadableStream<Uint8Array>({ cancel() { canceled = true; } });
+  const response = new Response(body);
+  const later = (left: number) => { if (left) queueMicrotask(() => later(left - 1)); else p.reset!(); };
+  const p = provider(() => { later(depth); return Promise.resolve(response); }, 1000);
+  await expect(p.verify()).rejects.toBeInstanceOf(ProviderError);
+  await p.close();
+  const canceledByProvider = canceled;
+  if (!canceled) await body.cancel();
+  expect(canceledByProvider).toBe(true);
+  expect(body.locked).toBe(false);
+});
+
+it.each([
+  [{ details: [{ reason: "SERVICE_DISABLED" }] }, "disabled"],
+  [{ errors: [{ reason: "accessNotConfigured" }] }, "disabled"],
+  [{ details: [{ reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT" }] }, "denied"],
+  [{ errors: [{ reason: "insufficientPermissions" }] }, "denied"],
+  [{ message: "SERVICE_DISABLED synthetic-private-detail" }, "denied"],
+] as const)("People API retains structured recovery independently of display text: %j", async (error, expected) => {
+  const p = provider(async (input) => String(input).includes("userinfo") ? Response.json({}) : Response.json({ error }, { status: 403 }), 1000);
+  try {
+    const photos = await p.photos!({ connections: true, otherContacts: true });
+    expect(photos).toMatchObject({ connections: expected, otherContacts: expected, contacts: [] });
+    expect(JSON.stringify(photos)).not.toContain("synthetic-private-detail");
+  } finally { await p.close(); }
+});

@@ -24,9 +24,11 @@ export function cancelResponse(response: Response): void {
 
 /** Small control/error bodies only; large mail processing needs separate admission. */
 export async function readResponseText(response: Response, limit: number, signal: AbortSignal): Promise<string> {
-  signal.throwIfAborted();
   const reader = response.body?.getReader();
-  if (!reader) throw new SyntaxError("Missing response body");
+  if (!reader) {
+    signal.throwIfAborted();
+    throw new SyntaxError("Missing response body");
+  }
   // Native reader cancellation settles a pending read before awaiting the source's cancel promise.
   const cancel = () => { void reader.cancel().catch(() => {}); };
   signal.addEventListener("abort", cancel, { once: true });

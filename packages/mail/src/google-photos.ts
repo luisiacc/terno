@@ -11,6 +11,7 @@ export const PEOPLE_API = "https://people.googleapis.com/v1";
 
 /** What happened to one source: read, not granted, the project's People API off, or not asked. */
 export type PhotoSourceState = "ok" | "denied" | "disabled" | "skipped" | "failed";
+export type GoogleFailureReason = "SERVICE_DISABLED" | "ACCESS_TOKEN_SCOPE_INSUFFICIENT";
 
 export interface GooglePhotos {
   own: string | null;
@@ -55,6 +56,9 @@ export function photoUrl(url: string | undefined): string | null {
 
 function classify(error: unknown): PhotoSourceState {
   const status = (error as { status?: number }).status;
+  const reason = (error as { reason?: unknown }).reason;
+  if (status === 403 && reason === "SERVICE_DISABLED") return "disabled";
+  if (status === 403 && reason === "ACCESS_TOKEN_SCOPE_INSUFFICIENT") return "denied";
   const text = error instanceof Error ? error.message : String(error);
   if (status === 403 && /SERVICE_DISABLED|accessNotConfigured|has not been used|is disabled/i.test(text)) return "disabled";
   if (status === 403 && /SCOPE_INSUFFICIENT|insufficient/i.test(text)) return "denied";

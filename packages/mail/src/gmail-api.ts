@@ -2,7 +2,7 @@ import { gmailSendBody } from "./outgoing-wire";
 import { L } from "@terno/i18n";
 import { MAX_INCOMING_MIME_BYTES } from "@terno/core";
 import type { IncomingMessage } from "@terno/store";
-import { collectGooglePhotos } from "./google-photos";
+import { collectGooglePhotos, type GoogleFailureReason } from "./google-photos";
 import { parseRaw, parseRawHeaders } from "./mime";
 import { cancelResponse, readResponseText, untilAborted } from "./http-body";
 import { failedBeforeRequest, isFetchNetworkFailure, RequestNotDispatchedError } from "./net-errors";
@@ -154,9 +154,19 @@ async function download<T>(items: T[], work: (item: T) => Promise<void>): Promis
 }
 
 class GmailApiError extends ProviderError {
-  constructor(readonly status: number, retryable: boolean, ambiguous: boolean) {
+  constructor(readonly status: number, retryable: boolean, ambiguous: boolean, readonly reason?: GoogleFailureReason) {
     super(L("errors.gmail.requestFailed", { status }), retryable, ambiguous);
   }
+}
+
+function googleFailureReason(text: string): GoogleFailureReason | undefined {
+  try {
+    const value: unknown = JSON.parse(text);
+    if (!isRecord(value) || !isRecord(value.error)) return;
+    const details = [value.error.details, value.error.errors].flatMap((items) => Array.isArray(items) ? items : []);
+    if (details.some((detail) => isRecord(detail) && (detail.reason === "SERVICE_DISABLED" || detail.reason === "accessNotConfigured"))) return "SERVICE_DISABLED";
+    if (details.some((detail) => isRecord(detail) && (detail.reason === "ACCESS_TOKEN_SCOPE_INSUFFICIENT" || detail.reason === "insufficientPermissions" || detail.reason === "SCOPE_INSUFFICIENT"))) return "ACCESS_TOKEN_SCOPE_INSUFFICIENT";
+  } catch { /* Invalid bodies carry only their HTTP status. */ }
 }
 
 function isRateLimit(text: string): boolean {
@@ -293,7 +303,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       if (!res.ok) {
         const text = await readResponseText(res, 65_536, deadline.signal).catch(() => "");
         const retryable = res.status === 429 || res.status >= 500 || (res.status === 403 && isRateLimit(text));
-        throw new GmailApiError(res.status, retryable, Boolean(sending && res.status >= 500));
+        throw new GmailApiError(res.status, retryable, Boolean(sending && res.status >= 500), googleFailureReason(text));
       }
       if (responseMode === "void") {
         cancelResponse(res);
