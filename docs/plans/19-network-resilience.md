@@ -239,3 +239,34 @@ With an event, all of it happens at once (settled 300 ms + jitter ≤ 250 ms + r
 - Linux and Windows network monitors (wake only)
 - proxies and PAC
 - a manual "work offline" mode
+
+## Revisions after the Codex review
+
+Codex (`codex exec -s read-only`, 12 points) against the plan and the code. What changed:
+
+1. **An outage never spends a send's attempts.** Parking gives the claim's attempt back when the failure happens during an outage: the host says offline, the account's own sync is failing, or a network change happened in the last minute. It spends the attempt only when the account otherwise syncs fine (a mistyped SMTP host still fails after 8 real tries). Store API: `fail(id, error, true, now, { park: "network", keepAttempt })`. Test: 10 network changes during one outage, then delivery.
+2. **No zero-delay worker loop behind a parked op.** `nextAttemptAt()` now uses the claim's own dependency predicate, in both stores: a location op blocked by an older queued or running one isn't due. This also fixes today's spin while an older op sits in its plain backoff. Tests: parked archive → trash, counting worker passes.
+3. **One IMAP connect in flight.** `connection()` shares a pending promise. `reset()` bumps a generation, and a session that finishes connecting under an old generation is closed. `withConnection` invalidates only the session that failed (`client === c`). Tests: reset while the secret is read and while TLS/login runs; a sync and an op connecting together make one session.
+4. **Every sync trigger respects the retry state.**
+   - A pass whose failure was caused by Terno's own reset doesn't count: an epoch is captured at its start, and the coalesced pass runs at once.
+   - An IDLE event or a user request still syncs: push is proof the server is reachable, and the user is the user.
+   - The tick skips accounts in backoff.
+   - **Errors keep today's tick.** A non-retryable classification isn't always permanent (Gmail answers a rate limit with 403), so `error` accounts are still tried by the 120 s tick, as before. The plan wrongly said they wait for the user.
+5. **Gmail deadlines cover everything a read waits on:** the fetch, the body (an abort while decoding is `network`) and the token refresh (its own 30 s deadline, shared by the callers waiting on it).
+6. **Pooled HTTP sockets are really dropped.** undici's keep-alive can be extended by the server up to 600 s. On Node, the network reset swaps fetch's global dispatcher for a fresh `Agent` (the `Symbol.for("undici.globalDispatcher.1")` slot npm undici's `setGlobalDispatcher` uses) and `close()`s the old one. That closes its idle sockets now, while requests in flight (a send) finish on it. Test: a server that advertises `Keep-Alive: timeout=600`; after a reset, the next request opens a new socket and the idle one is closed.
+7. **A send has a finite deadline: 15 minutes**, long enough for a 35 MB upload on a slow uplink. Past it, the outcome is unknown (`unknown`, never retried). A send that never connected (`ECONNREFUSED`, `ENOTFOUND`, `EAI_AGAIN`, a connect timeout) never left, so it is a network failure and is retried.
+8. **Classifiers read structured codes.**
+   - nodemailer's `ESOCKET` counts only with a socket errno underneath (`originalCode`, `errno`, the cause); a TLS certificate error isn't connectivity.
+   - A Node fetch failure counts only with a network code on its cause.
+   - A browser `TypeError` without a cause counts (it can't say more).
+   - Explicit SMTP replies and post-DATA ambiguity keep their precedence.
+   - Tests: certificate errors, 451/554, a disconnect after 354.
+9. **The heartbeat is started by the tick itself** (`MailProvider.heartbeat()`), independent of the sync pass, one probe per watcher at a time. Bound: tick + `heartbeatMs`, whatever the sync does. Test: dead IDLE while the command session is black-holed too.
+10. **Lifecycle fences.**
+    - `stop()`, `quiesce()` and `dropAccount()` cancel Connectivity's timers (settle, jitter, retries).
+    - Delayed callbacks check `stopped`, and that the account is still tracked.
+    - `executeOp` re-checks offline right before dispatch and releases the claim (attempt given back), as it does for draining.
+    - `backend-entry.ts` ignores network messages until the backend exists; `init` carries the state.
+    - Tests: offline during a claimed batch, a change during quiesce, a reset during removal.
+11. **Gmail reconnect only for a sign-in to redo.** `AccountSyncState.authRequired` is set by a `ProviderAuthError` and cleared by any success. The web banner shows for it only. A second 401 in a row is a `ProviderAuthError` (ops wait for the sign-in instead of failing). Test: revoked vs 403 permission vs malformed.
+12. **Connection health is backend state.** `AccountSyncState.connection` is `{ state: "offline" | "reconnecting", retryAt }` or null. It is set after the second failure in a row, or at once while the host is offline. It reads "reconnecting" while a retry pass runs and is cleared by a success. The pill and Settings read it, so it survives reloads and second windows. The pill stays mounted from "offline" through "reconnecting" until a success, and its "Retry now" keeps focus (`aria-disabled` while reconnecting, never removed). `retryAt` moves into it.
