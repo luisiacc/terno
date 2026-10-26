@@ -5,6 +5,8 @@ import { L } from "@terno/i18n";
 export interface AssetRow {
   id: string; account_id: number; filename: string; mime: string; size: number; content_id: string | null;
   received: number; chunks: number; complete: number; created_at: number;
+  /** IDB persists grace here; SQL keeps it in attachment_orphans. Missing legacy values start fresh grace. */
+  orphan_grace_started_at?: number | null;
 }
 export interface AssetDb {
   account(id: number): boolean;
@@ -13,6 +15,7 @@ export interface AssetDb {
   update(row: AssetRow): void;
   remove(id: string): void;
   used(accountId: number): number;
+  beginOrphanGrace(accountId: number, now: number): void;
   orphans(accountId: number, before: number): string[];
   pinned(id: string): boolean;
   chunk(id: string): string | undefined;
@@ -36,7 +39,7 @@ export function createAsset(db: AssetDb, uuid: () => string, p: { accountId: num
   if (!db.account(p.accountId)) throw assetError();
   for (const id of db.orphans(p.accountId, p.now - 86400000)) db.remove(id);
   if (!Number.isSafeInteger(p.size) || p.size < 0 || p.size > MAX_ATTACHMENT_BYTES || db.used(p.accountId) + p.size + 1024 > ATTACHMENT_ACCOUNT_BYTES) throw new AttachmentLimitError();
-  const row: AssetRow = { id: uuid(), account_id: p.accountId, filename: attachmentFilename(p.filename), mime: attachmentMime(p.mime), size: p.size, content_id: attachmentCid(p.contentId), received: 0, chunks: 0, complete: 0, created_at: p.now };
+  const row: AssetRow = { id: uuid(), account_id: p.accountId, filename: attachmentFilename(p.filename), mime: attachmentMime(p.mime), size: p.size, content_id: attachmentCid(p.contentId), received: 0, chunks: 0, complete: 0, created_at: p.now, orphan_grace_started_at: p.now };
   db.insert(row);
   return assetRef(row);
 }

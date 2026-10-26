@@ -842,6 +842,25 @@ CREATE TRIGGER attachment_unpin AFTER DELETE ON attachment_links BEGIN
  INSERT OR IGNORE INTO attachment_orphans SELECT id, account_id, created_at FROM attachment_assets a WHERE id = old.asset_id AND NOT EXISTS (SELECT 1 FROM attachment_links l WHERE l.asset_id = a.id);
 END;
 ` },
+  { version: 19, name: "attachment Undo grace after last unlink", sql: `
+DROP TRIGGER attachment_reserve;
+DROP TRIGGER attachment_pin;
+DROP TRIGGER attachment_unpin;
+DROP TABLE attachment_orphans;
+CREATE TABLE attachment_orphans (asset_id TEXT PRIMARY KEY REFERENCES attachment_assets(id) ON DELETE CASCADE, account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, grace_started_at INTEGER);
+CREATE INDEX attachment_orphans_age ON attachment_orphans(account_id, grace_started_at, asset_id);
+INSERT INTO attachment_orphans SELECT id, account_id, NULL FROM attachment_assets a WHERE NOT EXISTS (SELECT 1 FROM attachment_links l WHERE l.asset_id = a.id);
+CREATE TRIGGER attachment_reserve AFTER INSERT ON attachment_assets BEGIN
+ INSERT INTO attachment_usage VALUES (new.account_id, new.size + 1024) ON CONFLICT(account_id) DO UPDATE SET bytes = bytes + new.size + 1024;
+ INSERT INTO attachment_orphans VALUES (new.id, new.account_id, new.created_at);
+END;
+CREATE TRIGGER attachment_pin AFTER INSERT ON attachment_links BEGIN
+ DELETE FROM attachment_orphans WHERE asset_id = new.asset_id;
+END;
+CREATE TRIGGER attachment_unpin AFTER DELETE ON attachment_links BEGIN
+ INSERT OR IGNORE INTO attachment_orphans SELECT id, account_id, NULL FROM attachment_assets a WHERE id = old.asset_id AND NOT EXISTS (SELECT 1 FROM attachment_links l WHERE l.asset_id = a.id);
+END;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

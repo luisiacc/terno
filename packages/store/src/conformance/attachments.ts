@@ -16,14 +16,51 @@ export function defineAttachmentConformance(name: string, h: StoreHarness): void
   };
   const draft = (accountId: number, attachments: AttachmentRef[]) => ({ accountId, to: [], cc: [], subject: "files", bodyText: "keep me", attachments });
   const send = (accountId: number, attachments: AttachmentRef[]) => ({ accountId, to: [{ name: "", email: "receiver@test.com" }], cc: [], bcc: [], subject: "files", bodyText: "exact", attachments, recordReply: false, now: 0 });
-  const fillQuota = async (accountId: number, used: number) => {
+  const fillQuota = async (accountId: number, used: number, now = 0) => {
     for (let left = ATTACHMENT_ACCOUNT_BYTES - used; left >= 1024;) {
       const size = Math.min(MAX_ATTACHMENT_BYTES, left - 1024);
-      await store.attachments.create({ accountId, filename: "reservation", mime: "text/plain", size, now: 0 });
+      await store.attachments.create({ accountId, filename: "reservation", mime: "text/plain", size, now });
       left -= size + 1024;
     }
   };
   describe(`attachment conformance: ${name}`, () => {
+    it("gives an old discarded draft a persisted full Undo grace, reset after each last unlink", async () => {
+      const [a] = await fresh();
+      const ref = await upload(a!);
+      const input = draft(a!, [ref]);
+      const saved = (await store.drafts.save(input, 0))!;
+      await store.drafts.delete(saved.id);
+      const cleanup = (now: number) => store.attachments.create({ accountId: a!, filename: "unrelated", mime: "text/plain", size: 0, now });
+      await cleanup(172800000);
+      store = await h.reopen(store);
+      await cleanup(259200000);
+      const restored = (await store.drafts.save(input, 259200000))!;
+      store = await h.reopen(store);
+      expect(JSON.parse((await store.drafts.list())[0]!.attachments_json)).toEqual([ref]);
+      expect(await store.attachments.read(a!, ref.assetId, 0)).toBe("AP+A");
+      await store.drafts.delete(restored.id);
+      await cleanup(432000000);
+      store = await h.reopen(store);
+      await cleanup(518400000);
+      expect(await store.attachments.read(a!, ref.assetId, 0)).toBe("AP+A");
+      await cleanup(518400001);
+      await expect(store.attachments.info(a!, ref.assetId)).rejects.toThrow();
+    });
+    it("persists orphan grace even when a full-quota reservation fails, then reclaims after reopen", async () => {
+      const [a] = await fresh(); const ref = await upload(a!);
+      const saved = (await store.drafts.save(draft(a!, [ref]), 0))!;
+      await fillQuota(a!, ref.size + 1024, 172800000);
+      await store.drafts.delete(saved.id);
+      const create = (now: number) => store.attachments.create({ accountId: a!, filename: "new", mime: "text/plain", size: 0, now });
+      await expect(create(172800000)).rejects.toThrow();
+      store = await h.reopen(store);
+      expect(await store.attachments.read(a!, ref.assetId, 0)).toBe("AP+A");
+      await expect(create(259200000)).rejects.toThrow();
+      store = await h.reopen(store);
+      expect(await store.attachments.read(a!, ref.assetId, 0)).toBe("AP+A");
+      await expect(create(259200001)).resolves.toMatchObject({ size: 0 });
+      await expect(store.attachments.info(a!, ref.assetId)).rejects.toThrow();
+    });
     it.each(["before", "after"] as const)("adopts a Sent copy at quota with exact bytes when markSent is %s ingestion", async (ordering) => {
       const [a] = await fresh();
       const ref = await upload(a!);
@@ -37,6 +74,7 @@ export function defineAttachmentConformance(name: string, h: StoreHarness): void
       if (ordering === "after") await store.ops.resolveUnknown(queued.opId, "markSent", 4);
       store = await h.reopen(store);
       await store.attachments.create({ accountId: a!, filename: "cleanup", mime: "text/plain", size: 0, now: 172800000 });
+      await store.attachments.create({ accountId: a!, filename: "after grace", mime: "text/plain", size: 0, now: 259200001 });
       store = await h.reopen(store);
       const adopted = (await store.threads.get(queued.threadId))!.messages;
       expect(adopted).toHaveLength(1);
@@ -121,8 +159,9 @@ export function defineAttachmentConformance(name: string, h: StoreHarness): void
       store = await h.reopen(store);
       await expect(store.attachments.discard(a!, ref.assetId)).rejects.toThrow();
       await store.drafts.delete(independent.id);
-      // Creation triggers aged orphan cleanup, with no timer.
+      // The first observation starts grace; a later creation reclaims, with no timer.
       await store.attachments.create({ accountId: a!, filename: "cleanup", mime: "text/plain", size: 0, now: 172800000 });
+      await store.attachments.create({ accountId: a!, filename: "after grace", mime: "text/plain", size: 0, now: 259200001 });
       store = await h.reopen(store);
       await expect(store.attachments.info(a!, ref.assetId)).rejects.toThrow();
       expect((await store.ops.get(queued.opId))!.state).toBe("succeeded");

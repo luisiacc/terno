@@ -540,7 +540,11 @@ export class SqlMailStore implements MailStore {
       if (r?.account_id !== accountId) throw assetError();
       this.db.run("UPDATE messages SET attachments_captured = 0 WHERE id = ?", messageId);
     }),
-    create: async (p) => this.db.tx(() => createAsset(sqlAssets(this.db), () => this.db.uuid(), p)),
+    create: async (p) => {
+      // Grace survives a refused reservation; cleanup and quota accounting still commit atomically.
+      this.db.tx(() => sqlAssets(this.db).beginOrphanGrace(p.accountId, p.now));
+      return this.db.tx(() => createAsset(sqlAssets(this.db), () => this.db.uuid(), p));
+    },
     append: async (accountId, id, index, data) => this.db.tx(() => appendAsset(sqlAssets(this.db), accountId, id, index, data)),
     seal: async (accountId, id) => this.db.tx(() => sealAsset(sqlAssets(this.db), accountId, id)),
     info: async (accountId, id) => assetRef(assetRow(sqlAssets(this.db), accountId, id)),

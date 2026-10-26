@@ -976,7 +976,11 @@ export class IdbMailStore implements MailStore {
       if (r?.account_id !== accountId) throw assetError();
       T(this.c, "messages").update(r, { attachments_captured: 0, attachment_pending: 1 });
     }),
-    create: async (p) => this.command(() => createAsset(idbAssets(this.db), () => this.c.uuid(), p)),
+    create: async (p) => {
+      // Persist grace before admission, even if quota refuses the new reservation.
+      await this.command(() => idbAssets(this.db).beginOrphanGrace(p.accountId, p.now));
+      return this.command(() => createAsset(idbAssets(this.db), () => this.c.uuid(), p));
+    },
     append: async (accountId, id, index, data) => this.command(() => appendAsset(idbAssets(this.db), accountId, id, index, data), { prefetch: () => readLazy(this.idb, this.db.table("attachment_bytes"), [`${id}:${index}`]) }),
     seal: async (accountId, id) => this.command(() => sealAsset(idbAssets(this.db), accountId, id)),
     info: async (accountId, id) => this.read(() => assetRef(assetRow(idbAssets(this.db), accountId, id))),

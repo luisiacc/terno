@@ -12,6 +12,7 @@ export function idbAssets(db: MemDb): AssetDb {
     update: (r) => { assets.update(assets.get(r.id)!, r as unknown as Row); },
     remove: (id) => { assets.delete(id); },
     used: (id) => assetAccounting(db).used(id),
+    beginOrphanGrace: (id, now) => assetAccounting(db).beginGrace(id, now),
     orphans: (id, before) => assetAccounting(db).aged(id, before),
     pinned: (id) => links.count("fk_asset_id", id) > 0,
     chunk: (id) => db.table("attachment_bytes").get(id)?.data_base64 as string | undefined,
@@ -19,7 +20,14 @@ export function idbAssets(db: MemDb): AssetDb {
       db.table("attachment_chunks").insert({ id, asset_id: assetId, position, size });
       db.table("attachment_bytes").insert({ chunk_id: id, data_base64: data });
     },
-    link: (assetId, kind, owner) => { const id = `${assetId}:${kind}:${owner}`; if (!links.get(id)) links.insert({ id, asset_id: assetId, [`${kind}_id`]: owner }); },
+    link: (assetId, kind, owner) => {
+      const id = `${assetId}:${kind}:${owner}`;
+      if (!links.get(id)) {
+        const row = assets.get(assetId)!;
+        if (row.orphan_grace_started_at !== null) assets.update(row, { orphan_grace_started_at: null });
+        links.insert({ id, asset_id: assetId, [`${kind}_id`]: owner });
+      }
+    },
     unlink: (kind, owner) => { for (const row of links.by(`fk_${kind}_id`, owner)) links.deleteRow(row); },
   };
 }

@@ -9,7 +9,8 @@ export function sqlAssets(db: Db): AssetDb {
     update: (r) => { db.run("UPDATE attachment_assets SET received = ?, chunks = ?, complete = ? WHERE id = ?", r.received, r.chunks, r.complete, r.id); },
     remove: (id) => { db.run("DELETE FROM attachment_assets WHERE id = ?", id); },
     used: (id) => db.get<{ bytes: number }>("SELECT bytes FROM attachment_usage WHERE account_id = ?", id)?.bytes ?? 0,
-    orphans: (id, before) => db.all<{ id: string }>("SELECT asset_id AS id FROM attachment_orphans WHERE account_id = ? AND created_at < ? ORDER BY created_at, asset_id LIMIT 50", id, before).map((a) => a.id),
+    beginOrphanGrace: (id, now) => { db.run("UPDATE attachment_orphans SET grace_started_at = ? WHERE asset_id IN (SELECT asset_id FROM attachment_orphans WHERE account_id = ? AND grace_started_at IS NULL ORDER BY asset_id LIMIT 50)", now, id); },
+    orphans: (id, before) => db.all<{ id: string }>("SELECT asset_id AS id FROM attachment_orphans WHERE account_id = ? AND grace_started_at < ? ORDER BY grace_started_at, asset_id LIMIT 50", id, before).map((a) => a.id),
     pinned: (id) => !!db.get("SELECT 1 FROM attachment_links WHERE asset_id = ? LIMIT 1", id),
     chunk: (id) => db.get<{ data_base64: string }>("SELECT data_base64 FROM attachment_bytes WHERE chunk_id = ?", id)?.data_base64,
     putChunk: (id, assetId, index, size, data) => {

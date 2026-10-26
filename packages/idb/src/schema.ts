@@ -12,7 +12,7 @@ import { MemDb, type Committed, type ForeignKey, type Key, type Row, type Table,
  */
 export const IDB_VERSION = 6;
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 18;
+export const LOGICAL_SCHEMA = 19;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
