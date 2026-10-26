@@ -46,6 +46,10 @@ test.describe("in every design", { tag: "@design" }, () => {
     await expect(page.getByTestId("thread-chips")).toBeVisible();
     for (const id of ["action-reply", "action-reply-all", "action-forward", "action-archive", "action-print"]) await expect(page.getByTestId(id)).toBeVisible();
     await expect(page.getByRole("button", { name: "Reply", exact: true })).toHaveCount(1);
+    // plan 21: More (a disclosure) and the two pane edges (separators), named alike everywhere
+    await expect(page.getByRole("button", { name: "More", exact: true })).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByRole("separator", { name: "Resize sidebar" })).toHaveCount(1);
+    await expect(page.getByRole("separator", { name: "Resize message list" })).toHaveCount(1);
     // c composes from anywhere, whatever the control looks like
     await focusList(page);
     await page.keyboard.press("c");
