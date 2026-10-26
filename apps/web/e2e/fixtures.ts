@@ -59,14 +59,39 @@ async function smtpRegistry(): Promise<{ registry: import("@terno/mail").Provide
   return { registry, received, close: () => new Promise<void>((r) => smtp.close(() => r())) };
 }
 
+/** plan 20: the demo provider behind a network the test switches off (sync fails as unreachable) or holds (a slow retry) */
+export interface TestNetwork {
+  down: boolean;
+  /** while set, a sync waits for it (to see "Reconnecting…") */
+  hold: Promise<void> | null;
+}
+
+async function networkRegistry(net: TestNetwork): Promise<import("@terno/mail").ProviderRegistry> {
+  const { createDemoProvider, demoRegistry, ProviderError } = await import("@terno/mail");
+  return {
+    ...demoRegistry,
+    create(ctx) {
+      const demo = createDemoProvider(ctx, 5);
+      return {
+        ...demo,
+        async sync(sink) {
+          if (net.hold) await net.hold;
+          if (net.down) throw ProviderError.network("IMAP: connect ECONNREFUSED");
+          return demo.sync(sink);
+        },
+      };
+    },
+  };
+}
+
 interface Fixtures {
   /** freeze Date for deterministic list dates (off for perf: the fake clock coarsens performance.now) */
   fixedClock: boolean;
   /** backend-dev knobs: a fresh install with no mailbox, and owner claims through the demo registry */
-  backendOptions: { empty?: boolean; ownerClaims?: boolean; agentSocket?: boolean; smtpCapture?: boolean };
+  backendOptions: { empty?: boolean; ownerClaims?: boolean; agentSocket?: boolean; smtpCapture?: boolean; network?: boolean };
   /** the design the app opens in (plan 15): each Playwright project sets its own; null leaves the install's default (Lumen) */
   design: DesignId | null;
-  server: DevServer & { smtp: CapturedMail[] };
+  server: DevServer & { smtp: CapturedMail[]; net: TestNetwork };
   /** the app, loaded, connected and showing the inbox */
   app: Page;
 }
@@ -85,8 +110,12 @@ export const test = base.extend<Fixtures>({
       if (existsSync(`${template}.search`)) copyFileSync(`${template}.search`, join(dir, "terno.db.search"));
     }
     const capture = backendOptions.smtpCapture ? await smtpRegistry() : null;
-    const server = await startDevServer({ port: 0, dataDir: dir, token: "e2e", now: () => E2E_NOW, autoSync: true, seed: !backendOptions.empty, ownerClaims: backendOptions.ownerClaims, agentSocket: backendOptions.agentSocket, providers: capture?.registry });
-    await use(Object.assign(server, { smtp: capture?.received ?? [] }));
+    const net: TestNetwork = { down: false, hold: null };
+    const providers = backendOptions.network ? await networkRegistry(net) : capture?.registry;
+    // plan 20: the retry after a first failure comes in a second, then a minute (time enough to look)
+    const connectivity = backendOptions.network ? { delays: [1000, 60_000] } : undefined;
+    const server = await startDevServer({ port: 0, dataDir: dir, token: "e2e", now: () => E2E_NOW, autoSync: true, seed: !backendOptions.empty, ownerClaims: backendOptions.ownerClaims, agentSocket: backendOptions.agentSocket, providers, connectivity });
+    await use(Object.assign(server, { smtp: capture?.received ?? [], net }));
     // Backend.stop() doesn't wait for an in-flight ops batch; let it settle first.
     const b = server.backend as unknown as { workerRunning: boolean };
     for (let i = 0; i < 100 && b.workerRunning; i++) await new Promise((r) => setTimeout(r, 20));

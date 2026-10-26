@@ -9,6 +9,7 @@ import { ChevronRight, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { t } from "@terno/i18n";
 import { useId, useState } from "react";
 import { snack } from "~/lib/snack";
+import { retryIn } from "../connection-pill";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
 import { DaysField } from "./general-tab";
@@ -22,6 +23,13 @@ const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 function status(a: Account): string {
   const error = localized(a.syncState.lastError, a.syncState.lastErrorI18n);
   if (a.syncState.status === "error") return error ? t("account.status.error", { error }) : t("account.status.errorUnknown");
+  // plan 20: can't reach its server; when it tries again (the sidebar's pill counts down, this is a snapshot)
+  const connection = a.syncState.connection;
+  if (connection?.state === "reconnecting") return t("account.status.reconnecting");
+  if (connection?.retryAt) {
+    const time = retryIn(connection.retryAt - Date.now());
+    return error ? t("account.status.offlineRetryError", { time, error }) : t("account.status.offlineRetry", { time });
+  }
   if (a.syncState.status === "offline") return error ? t("account.status.offlineError", { error }) : t("account.status.offline");
   if (a.syncState.status === "syncing") return t("account.status.syncing");
   return t("account.status.upToDate");

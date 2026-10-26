@@ -493,10 +493,9 @@ const en = {
   "sidebar.allAccounts": "All accounts",
   "sidebar.addAccount": "Add account",
   // plan 20: the sidebar's connection pill (shown only while an account can't reach its server)
-  "connection.offline": "Offline · retrying in {time}",
-  "connection.offlineWaiting": "Offline",
-  "connection.accountOffline": "{name} is offline · retrying in {time}",
-  "connection.accountOfflineWaiting": "{name} is offline",
+  "connection.offline": "Offline",
+  "connection.accountOffline": "{name} is offline",
+  "connection.retryingIn": "Retrying in {time}",
   "connection.reconnecting": "Reconnecting…",
   "connection.retryNow": "Retry now",
   "sidebar.filters": "Filters",

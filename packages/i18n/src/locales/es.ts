@@ -487,10 +487,9 @@ const es = {
   "sidebar.allAccounts": "Todas las cuentas",
   "sidebar.addAccount": "Añadir cuenta",
   // plan 20: the sidebar's connection pill (shown only while an account can't reach its server)
-  "connection.offline": "Sin conexión · reintentando en {time}",
-  "connection.offlineWaiting": "Sin conexión",
-  "connection.accountOffline": "{name} sin conexión · reintentando en {time}",
-  "connection.accountOfflineWaiting": "{name} sin conexión",
+  "connection.offline": "Sin conexión",
+  "connection.accountOffline": "{name} sin conexión",
+  "connection.retryingIn": "Reintentando en {time}",
   "connection.reconnecting": "Reconectando…",
   "connection.retryNow": "Reintentar ahora",
   "sidebar.filters": "Filtros",
