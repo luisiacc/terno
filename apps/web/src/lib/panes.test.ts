@@ -14,7 +14,8 @@ describe("stored widths (plan 21)", () => {
     expect(parsePanes(JSON.stringify({ v: 1, sidebar: 260.4, list: 420 }))).toEqual({ sidebar: 260, list: 420 });
     expect(parsePanes(JSON.stringify({ v: 1, sidebar: 120, list: "420" }))).toEqual({ sidebar: null, list: null });
     expect(parsePanes(JSON.stringify({ v: 1, sidebar: 9999, list: 640 }))).toEqual({ sidebar: null, list: 640 });
-    expect(parsePanes(JSON.stringify({ v: 1, sidebar: null, list: 1e400 }))).toEqual({ sidebar: null, list: null });
+    // a huge exponent parses as Infinity
+    expect(parsePanes(`{"v":1,"sidebar":null,"list":1e999}`)).toEqual({ sidebar: null, list: null });
   });
 
   it("round-trips through storage; both defaults remove the key; a storage that throws changes nothing", () => {
