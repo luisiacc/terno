@@ -209,7 +209,7 @@ Cost: tokenizing ≤ 1,000 characters and ≤ 24 table probes: microseconds.
   - snapshot: ≤ 24 MiB, restore ≤ 250 ms CPU;
   - lookups: p95 ≤ 0.25 ms, p99 ≤ 1 ms over 5,000 realistic keystroke queries (1 to 12 characters, names, addresses, initials);
   - an incremental message ≤ 20 µs CPU.
-- `phrases.perf.test.ts`: model from 100k sent messages: CPU per message ≤ 60 µs, max stall ≤ 16 ms, memory within the cap, suggest p99 ≤ 0.5 ms (windows up to 1,000 characters).
+- `phrases.perf.test.ts`: model from 100k sent messages: CPU per message ≤ 60 µs (31 µs of the model's own CPU since the follow-up below), max stall ≤ 16 ms, memory within the cap, suggest p99 ≤ 0.5 ms (windows up to 1,000 characters).
 - Through the stores: SQLite (node) and IndexedDB (fake-indexeddb) at 300k messages, the service end to end: build wall time and max stall, cold start from the snapshot, a lookup while the build runs.
 - **Robust to a loaded machine**: throughput gates use process CPU time (`process.cpuUsage`), not wall time; latency gates take the best of 5 rounds of the p95/p99 (preemption by other processes doesn't repeat, a regression does); stalls use best-of-3. Each gate has an **injected-regression twin** in the same file that runs the same measurement with a deliberate regression (the lookup without its token index: a scan; the build with a per-message busy loop) and asserts the gate would fail.
 
@@ -283,7 +283,7 @@ Codex (`codex exec -s read-only`, 12 points) against the plan and the code. What
 | contacts lookup, 5,000 realistic keystrokes | p50 97 µs, p95 197 µs, p99 336 µs | p95 ≤ 0.25 ms, p99 ≤ 1 ms |
 | contacts snapshot / cold start | 16 MiB / 107 ms CPU | ≤ 24 MiB / ≤ 250 ms |
 | contacts incremental | 14.6 µs a message | ≤ 20 µs |
-| phrases build, 100k sent | 46 µs CPU a message, stall 4 ms, 13 MiB | ≤ 60 µs, ≤ 16 ms, ≤ 24 MiB |
+| phrases build, 100k sent | 46 µs CPU a message, stall 4 ms, 13 MiB (re-measured October 2026: 26–28 µs of the model's own CPU, see "The phrase build's CPU gate") | ≤ 31 µs (was 60), ≤ 16 ms, ≤ 24 MiB |
 | phrases suggest | p95 9 µs, p99 10 µs; 27 µs after a 1 MB line | p95 ≤ 0.1 ms, p99 ≤ 0.5 ms |
 | SQLite end to end (300k) | both models 5 s, stall 23 ms, cold start 123 ms, catch-up 78 µs | ≤ 120 s, ≤ 32 ms, ≤ 1.5 s, ≤ 150 µs |
 | IndexedDB end to end (300k, fake-indexeddb) | 20 s, stall less GC within 48 ms, cold start 206 ms, catch-up 241 µs | ≤ 300 s, ≤ 48 ms, ≤ 3 s, ≤ 300 µs |
@@ -346,3 +346,54 @@ The timing-sensitive gates above now follow plan 04's policy (§11, `packages/db
 Off-CPU waits add no CPU, so the CPU gates take only the spun injection.
 
 **Codex review** (`codex-review.sh 76f512b autocomplete-perf-policy`, 1 finding). Medium: `watchGc().stop()` disconnected after one timer, so a collection whose entry Node hadn't delivered yet could be dropped and then count as a stall of ours. That errs strict, never lenient. Its reproduction missed 3 of 300 entries, but it counted collections that began after `stop()`. Counting only the collections inside the stage, the old helper missed none of 5,000 here. `stop()` now also waits for the check phase and takes the undelivered records (`takeRecords()`). A unit test forces a collection at the end of each of 50 stages, with real GC, and expects it reported. It passes on the old helper too: it guards the drain rather than reproducing a miss.
+
+## The phrase build's CPU gate (October 2026 follow-up)
+
+The build CPU gate (60 µs a message) kept failing at 72–100 µs after this plan landed, on `main` and on every branch, at load averages of 3–8. It had measured 46 µs when the plan was written.
+
+**Verdict: not a regression; the measurement depended on how macOS scheduled a thread that sleeps.** The gate yielded with `setTimeout(0)` after every page of 16 messages, which sleeps about 1 ms. A thread that sleeps every ~1.3 ms of work is run by macOS on an efficiency core or at a low clock, more so when other work keeps the performance cores busy. The desktop backend yields with `setImmediate` (`node-driver.ts`), which doesn't sleep.
+
+**Evidence** (interleaved in one process, the phrase model at `4c8695e` copied beside HEAD's, 4–5 rounds each, alternating order; M2 Max, load 4–10):
+
+| build of 100k messages | µs a message (median) |
+|---|---|
+| `4c8695e`, timer yields, all CPU (the gate as it was) | 89.7 |
+| HEAD, timer yields, all CPU | 84.4 |
+| HEAD, timer yields, with the loop monitor | 89.8 |
+| HEAD, `setImmediate` yields, all CPU | 31.5 |
+| HEAD, no yields | 30.6 |
+| `4c8695e`, `setImmediate` yields, the model's own CPU | 26.0–27.9 |
+| HEAD, `setImmediate` yields, the model's own CPU | 25.9–28.0 |
+| HEAD, timer yields, the model's own CPU | 76.0–80.9 |
+| HEAD, `setImmediate` yields, pinned to the efficiency cores (`taskpolicy -c background`) | 91.4 |
+
+The code is unchanged in cost (`7e92929`'s vocabulary caps add a comparison per new word). Generating the fixture's mail cost 10–12 µs a message with timer yields and about 3 µs without them, and it was counted too.
+
+**Fix** (`phrases.perf.test.ts`): the build yields with `setImmediate`, as on the desktop, and the gate counts the model's own thread CPU, `learn` and `prune` only (`threadCpuMs` around them). The stall gate is unchanged (`watchLoop`).
+
+**The budget, re-derived:** 31 µs. The model measured 25.9–28.0 µs, best 26, in five interleaved rounds and in the test's own first builds (26.9). 31 µs leaves 10% over the slowest best-of-run seen. A model 25% slower (32.5 µs) fails it. The twin now injects exactly that: 6.5 µs a message, a quarter of the best measured. It is measured as the gate measures, and the best of three builds of 20,000 must fail; it measured 32.3–32.9. The old twin injected 80 µs, which proved little, and a 25% slowdown (57.5 µs) passed the old 60 µs budget.
+
+On a machine faster than 24.8 µs, the twin's sum stays under 31, and the twin then fails. That means the budget is loose for that machine: re-derive it there (lower), as plan 04 §11 asks of quiet-machine budgets.
+
+**Also seen:** `conformance/autocomplete.ts` and the SQLite store's default platform yield with `setTimeout(0)` too. Their CPU-per-message gates (the IndexedDB and SQLite catch-up) may inflate the same way under load. They pass, so they weren't changed here.
+
+## `autocomplete-perf.spec.ts`'s "reader-subject not visible" (October 2026 follow-up)
+
+`openDraft` failed now and then, in the full ui-perf run under load: `reader-subject` wasn't visible 8 s after the press on the row. Plan 17 met it as well ("opening the draft timed out at 8 s twice"). Its scratch spec measured 114–119 s to open the 10 MB draft on both trees.
+
+**Verdict: a real bug, the one behind the 2 MB frame regression (plan 16, "Huge drafts after plan 18"),** plus a test hazard that hid in its shadow. The reader mounts the draft's editor as it shows the conversation. The ghost plugin read its parent's computed style during that mount, before the lines skipped layout, and the style recalculation took 8.9 s at 2 MB and about 114 s at 10 MB in one task. When the mount came before the reader's first paint, the subject waited behind it.
+
+**Evidence, before the fix** (a scratch spec timing each step, three opens each):
+
+- 2 MB: the subject showed after 9.3 s in one open of three (> 8 s: the failure), and focus reached the editor after 9.4 s in the others. The Chrome trace shows one React task of 9.2 s, 8.9 s of it a single `UpdateLayoutTree`.
+- 10 MB: the subject showed after 114 s in three of three.
+- The test at line 245 passed 5 of 5 here, at 13.4–13.8 s each, because the 9 s stall landed after its 8 s check.
+
+**After the fix:** after the press on the row, the 2 MB subject shows in 65 ms. At 10 MB the subject shows in about 0.3 s and the editor is focused at about 1.2 s. The test passed 10 of 10 alone at 4.1–4.7 s, 2 of 2 in the whole file, and in a full `pnpm test:ui-perf` (56 passed, load 6–8).
+
+**The hazard, found by the gate added for this.** A polled `expect` that misses computes Playwright's aria snapshot of the page for its error message (Playwright 1.64, `_ariaSnapshotForExpect`), on every miss. Over a 2 MB editor that walk forces a layout per element: one task of 41.9 s, with 9,356 layouts in `generateAriaTree`. So the dense-formatting 2 MB test's `toBeFocused` failed now and then (1 run in 6, 2 in 8 with tracing), although focus arrived a frame later. Opening a huge draft now waits with `waitForFunction`, reading one thing (`readerShown`, `focusOn` in `fixtures.ts`), in `openDraft` and the perf spec's `hugeDraft`.
+
+**Gate:** `hugeDraft` times the press on the row through r to an editable editor, gated at 2 s:
+
+- after the fix: 0.1–0.4 s (lines), 0.05–0.7 s (dense marks), 0.1 s (a 250 KB paragraph);
+- before it: 11.2 s, a failure.

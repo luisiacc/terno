@@ -181,3 +181,44 @@ Round 2 (after `89df3a3`, 7 findings), each fixed with a regression test:
 7. **Medium:** the "painted" sample was taken in the rAF callback, before layout and paint. Now the task after that frame.
 
 Round 3 (only the round-2 fixes, 3 findings), fixed with regression tests: the loading stand-in is read-only under a send in flight too (e2e with the send held); a long quoted line is cut right after a lone space, so links and double spaces stay whole across parts (unit test sweeping the boundary); the whole-draft indent gate sends only the platform's modifier (it never ran off macOS).
+
+## Huge drafts after plan 18 (October 2026 follow-up)
+
+"A 2 MB draft of short lines" failed its painted-frame gate in every run from plan 18 on: p50 57.6–62 ms against 50, on `main` and on each branch. The keystroke → transaction p50 was 21 ms; this plan measured 12.
+
+**Bisected** over the merges and then plan 18's commits, one run or two each, at a load of 5–8. The frame and transaction p50s:
+
+| commit | frame | transaction |
+|---|---|---|
+| `1d34bac` (this plan's end) | 44.2, 46.0, 46.4 ms | 11.5–11.9 ms |
+| `4c8695e` | 44.4 ms | 11.6 ms |
+| `3205c31` (plan 18: the ghost as a layer beside the editor) | 58.5 ms | 20.9 ms |
+| `402470a` (plan 18's end) | 59.9 ms | 21 ms |
+| HEAD `9c17bc5` | 61.4 ms | 21.1 ms |
+
+Narrowed inside `3205c31` by reverting parts of it:
+
+- `ghost.ts` and `rich.css` from `4c8695e`: 46.8 / 11.7, fast. The new CSS with the old `ghost.ts`: fast.
+- Without the layer appended: slow. Without the `position: relative` write: fast. With `getComputedStyle(parent)` alone, and nothing written: slow (56.7 and 62.3 / 20.6).
+
+**Cause:** the plugin's view read its parent's computed style as the editor mounted. That is inside `createEditor`, before `emptyClass()` adds `rt-huge`. One forced style pass therefore styled all 27,000 lines unskipped (8.9 s of `UpdateLayoutTree` in the mount, 114 s at 10 MB: plan 18, "reader-subject not visible"). Every keystroke afterwards paid for it, with the same 28,198 layout objects:
+
+| per keystroke | before the fix | after |
+|---|---|---|
+| layout | 15–16 ms | 6.5 ms |
+| pre-paint | 8 ms | 2 ms |
+| `TypingCommand::InsertText` | 24 ms | 14 ms |
+
+**Fix:**
+
+- The editor carries `rt-huge` in its initial attributes, so lines skip from the first style pass on, whatever reads style or layout during the mount.
+- The ghost reads no style there: the mount element is its containing block (`relative`).
+
+Either change alone restores 11.6–12 / 43–47 ms. The remaining frame is Chromium's: about 9 ms of `IntersectionObserverController::computeIntersections` (content-visibility's own observer over every line), its editing, and the paint.
+
+**Tests:**
+
+- An e2e (`composer.spec.ts`, "a huge draft skips its lines off screen from the start") wraps `getComputedStyle`, `getBoundingClientRect`, `getClientRects` and the `offset*` getters. It fails if any of them runs while an editor with over 2,000 lines lacks `rt-huge`. It fails without both changes.
+- The perf spec's `hugeDraft` gates opening the conversation through r to an editable editor at 2 s: 11.2 s before the fix, 0.1–0.7 s after. Its waits read one thing (`waitForFunction`): a polled `expect` that misses walks the whole page for Playwright's aria snapshot, 28–42 s over the dense 2 MB draft.
+
+The frame gate (50 ms) is unchanged: 42.7–47.4 ms after the fix at a load of 5–6, as when this plan set it (44–46 ms).
