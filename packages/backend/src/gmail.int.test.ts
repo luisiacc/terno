@@ -124,7 +124,7 @@ class FakeGoogle {
         // each consent grants its own refresh token (refresh-1, refresh-2 …); every one stays valid, as with Google
         const refresh = `refresh-${this.refreshTokens.size + 1}`;
         this.refreshTokens.add(refresh);
-        return json(200, { access_token: this.issue(), refresh_token: refresh, expires_in: 3600 });
+        return json(200, { access_token: this.issue(), refresh_token: refresh, expires_in: 3600, token_type: "Bearer" });
       }
       if (p.get("grant_type") === "refresh_token") {
         this.refreshCalls++;

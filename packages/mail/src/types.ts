@@ -148,14 +148,14 @@ export interface GmailConnectResult {
   /** OpenID subject: Google's stable id for the person (evidence for owner identity) */
   sub: string | null;
   emailVerified: boolean;
-  /** what Google granted (the token response's `scope`; the user may untick some) */
+  /** effective grant; omitted token-response scope means the originally requested scopes */
   grantedScopes?: string[];
 }
 
 /** The web's Gmail sign-in: short-lived access tokens from Google's token model, kept in memory. */
 export interface GmailTokenBroker {
   /** whose mailbox the token opens (Gmail profile + OpenID userinfo) */
-  inspect(accessToken: string, netFetch: typeof fetch): Promise<Omit<GmailConnectResult, "refreshToken">>;
+  inspect(accessToken: string, netFetch: typeof fetch, options?: { signal?: AbortSignal; timeoutMs?: number }): Promise<Omit<GmailConnectResult, "refreshToken">>;
   /** hands the token to that account's provider until it expires */
   set(accountId: number, accessToken: string, expiresAt: number): void;
 }
