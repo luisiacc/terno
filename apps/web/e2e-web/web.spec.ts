@@ -52,6 +52,9 @@ test("one tab at a time: a second tab waits, takes over after the first closed i
   const second = await context.newPage();
   await second.goto(DEMO);
   await expect(second.getByTestId("web-elsewhere")).toBeVisible();
+  // plan 19: a full-window screen says which app it is, by name for assistive tech too (not every title says Terno)
+  await expect(second.getByTestId("web-elsewhere").getByRole("img", { name: "Terno" })).toBeVisible();
+  await expect(second.getByRole("dialog")).toHaveAccessibleName("Terno is open in another tab");
   await expect(second.getByTestId("thread-row")).toHaveCount(0);
   await second.getByTestId("web-use-here").click();
   await rows(second).first().waitFor();

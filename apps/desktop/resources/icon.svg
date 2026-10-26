@@ -1,17 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#6d6af5"/>
-      <stop offset="1" stop-color="#3f37c9"/>
-    </linearGradient>
-    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/>
-      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
-    </linearGradient>
-  </defs>
-  <rect x="100" y="100" width="824" height="824" rx="184" fill="url(#bg)"/>
-  <rect x="100" y="100" width="824" height="824" rx="184" fill="url(#sheen)"/>
-  <!-- envelope -->
-  <rect x="262" y="330" width="500" height="364" rx="56" fill="none" stroke="#ffffff" stroke-width="44"/>
-  <path d="M290 372 L512 548 L734 372" fill="none" stroke="#ffffff" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+<defs><filter id="shadow" x="-10%" y="-10%" width="120%" height="125%" color-interpolation-filters="sRGB"><feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="black" flood-opacity="0.3"/></filter></defs>
+<path d="M383.41 100L640.59 100C722.19 100 763 100 799.79 112.14L806.92 113.89C854.88 131.34 892.66 169.12 910.11 217.08L911.86 224.21C924 261 924 301.81 924 383.41L924 640.59C924 722.19 924 763 911.86 799.79L910.11 806.92C892.66 854.88 854.88 892.66 806.92 910.11L799.79 911.86C763 924 722.19 924 640.59 924L383.41 924C301.81 924 261 924 224.21 911.86L217.08 910.11C169.12 892.66 131.34 854.88 113.89 806.92L112.14 799.79C100 763 100 722.19 100 640.59L100 383.41C100 301.81 100 261 112.14 224.21L113.89 217.08C131.34 169.12 169.12 131.34 217.08 113.89L224.21 112.14C261 100 301.81 100 383.41 100Z" fill="#2F5BFF" filter="url(#shadow)"/>
+<g transform="translate(100 100) scale(8.24)"><rect x="18" y="30" width="64" height="44" rx="7" fill="none" stroke="#FFFFFF" stroke-opacity="0.45" stroke-width="4"/><path d="M24 40 L45 56 M76 40 L55 56" fill="none" stroke="#FFFFFF" stroke-opacity="0.45" stroke-width="4" stroke-linecap="round"/><rect x="18" y="28" width="64" height="12" rx="6" fill="#FFFFFF"/><rect x="44" y="28" width="12" height="46" rx="6" fill="#FFFFFF"/></g>
 </svg>

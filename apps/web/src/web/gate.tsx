@@ -1,6 +1,7 @@
 import { flushAllDrafts } from "~/lib/drafts";
 import { t, type TextKey } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
+import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Loader2 } from "lucide-react";
 import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -37,6 +38,8 @@ function Screen({ title, body, children, testId }: { title: string; body?: React
       data-testid={testId}
     >
       <div className="max-w-md">
+        {/* a full-window state still says which app it is; named, since not every title says "Terno" */}
+        <TernoMark label="Terno" className="mx-auto mb-4 size-8 text-muted-foreground" data-testid="gate-mark" />
         <p id={titleId} className="font-semibold">
           {title}
         </p>

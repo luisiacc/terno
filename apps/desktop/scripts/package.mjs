@@ -22,6 +22,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build, Platform, Arch } from "electron-builder";
+import { withMounted } from "../src/dmg-mount.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -84,6 +85,13 @@ function assertCanSign(identity) {
   }
 }
 
+/** Plan 19: the icon macOS shows: Assets.car's "Icon" on macOS 26, the .icns elsewhere. */
+function assertIcon(app) {
+  const info = JSON.parse(execFileSync("plutil", ["-convert", "json", "-o", "-", join(app, "Contents/Info.plist")], { encoding: "utf8" }));
+  if (info.CFBundleIconName !== "Icon" || info.CFBundleIconFile !== "icon.icns") throw new Error(`unexpected icon keys: CFBundleIconName=${info.CFBundleIconName} CFBundleIconFile=${info.CFBundleIconFile}`);
+  for (const f of ["Assets.car", "icon.icns"]) if (!existsSync(join(app, "Contents/Resources", f))) throw new Error(`${f} missing from the app's Resources`);
+}
+
 const identity = pickIdentity();
 const developerId = identity.startsWith("Developer ID Application:");
 const notarize = developerId && Boolean((process.env.APPLE_ID && process.env.APPLE_APP_SPECIFIC_PASSWORD && process.env.APPLE_TEAM_ID) || (process.env.APPLE_API_KEY && process.env.APPLE_API_KEY_ID && process.env.APPLE_API_ISSUER));
@@ -126,6 +134,8 @@ await build({
     extraResources: [
       { from: join(root, "resources/bin"), to: "bin" },
       { from: join(dist, "mcp"), to: "mcp" },
+      // plan 19: the macOS 26 (Liquid Glass) icon, compiled by `pnpm brand` from resources/icon.icon
+      { from: join(root, "resources/Assets.car"), to: "Assets.car" },
     ],
     asar: true,
     npmRebuild: false,
@@ -136,7 +146,10 @@ await build({
     publish: testBuild ? { provider: "generic", url: testBuild.feed } : { provider: "github", owner: "luisiacc", repo: "terno" },
     mac: {
       category: "public.app-category.productivity",
+      // the grid-drawn .icns (Finder before the catalog loads, the DMG, older systems);
+      // CFBundleIconName points macOS at Assets.car's "Icon", the name actool gave it
       icon: join(root, "resources/icon.icns"),
+      extendInfo: { CFBundleIconName: "Icon" },
       identity,
       hardenedRuntime: developerId,
       entitlements: developerId ? join(root, "resources/entitlements.mac.plist") : undefined,
@@ -161,13 +174,31 @@ if (identity !== "-") {
 const arch = execFileSync("lipo", ["-archs", join(app, "Contents/MacOS", productName)]).toString().trim();
 if (arch !== "arm64") throw new Error(`unexpected architecture: ${arch}`);
 if (!existsSync(join(app, "Contents/Resources/app-update.yml"))) throw new Error("app-update.yml missing: electron-updater can't run without it");
+assertIcon(app);
 
 const channelFile = readdirSync(release).find((f) => /^[a-z]+-mac\.yml$/.test(f));
 if (!channelFile) throw new Error("no update channel file (latest-mac.yml) was written");
 
 if (!testBuild && process.env.TERNO_PACKAGE_DMG !== "0") {
   const dmg = join(release, `${productName}-${version}-arm64.dmg`);
-  execFileSync("hdiutil", ["create", "-volname", productName, "-srcfolder", app, "-ov", "-format", "UDZO", "-fs", "APFS", dmg], { stdio: "inherit" });
+  if (existsSync("/usr/bin/SetFile")) {
+    // a writable image first, so the mounted volume can take Terno's icon, then compressed
+    const rw = join(release, "volume-rw.dmg");
+    execFileSync("hdiutil", ["create", "-volname", productName, "-srcfolder", app, "-ov", "-format", "UDRW", "-fs", "APFS", rw], { stdio: "inherit" });
+    withMounted(rw, false, (volume) => {
+      copyFileSync(join(root, "resources/icon.icns"), join(volume, ".VolumeIcon.icns"));
+      execFileSync("SetFile", ["-a", "C", volume]);
+    });
+    execFileSync("hdiutil", ["convert", rw, "-format", "UDZO", "-ov", "-o", dmg], { stdio: "inherit" });
+    rmSync(rw, { force: true });
+    withMounted(dmg, true, (volume) => {
+      if (!existsSync(join(volume, `${productName}.app`))) throw new Error(`the DMG has no ${productName}.app at its root`);
+      if (!existsSync(join(volume, ".VolumeIcon.icns")) || !execFileSync("GetFileInfo", ["-a", volume], { encoding: "utf8" }).includes("C")) throw new Error("the DMG volume lost its icon");
+    });
+  } else {
+    console.log("! SetFile not found (Xcode command line tools): the DMG volume keeps the generic icon");
+    execFileSync("hdiutil", ["create", "-volname", productName, "-srcfolder", app, "-ov", "-format", "UDZO", "-fs", "APFS", dmg], { stdio: "inherit" });
+  }
   console.log(`\n✓ ${dmg}`);
 }
 console.log(`✓ ${app}\n✓ ${join(release, channelFile)}`);

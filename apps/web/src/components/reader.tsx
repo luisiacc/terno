@@ -2,6 +2,7 @@ import type { Account, Category, CategoryColor, MessageDetail, Reason, ThreadDet
 import { Button } from "@terno/ui/components/button";
 import { CategoryBadge, CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
+import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { Archive, Forward, Inbox, Layers, MailOpen, OctagonAlert, Printer, Reply, ReplyAll, Star, Tag, Trash2, X } from "lucide-react";
@@ -228,7 +229,7 @@ function Welcome() {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-6 p-10 text-center" data-testid="reader-empty">
       <div>
-        <div className="mx-auto mb-4 flex size-10 items-center justify-center rounded-xl bg-tint text-lg font-semibold text-muted-foreground">T</div>
+        <TernoMark className="mx-auto mb-4 size-10 text-muted-foreground" data-testid="reader-empty-mark" />
         <p className="text-lg font-semibold tracking-tight">Terno</p>
         <p className="mt-1 text-sm text-muted-foreground">{t("reader.welcome.tagline")}</p>
       </div>

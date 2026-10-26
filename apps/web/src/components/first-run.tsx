@@ -2,6 +2,7 @@ import type { AiProviderId } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@terno/ui/components/dialog";
 import { cn } from "@terno/ui/lib/utils";
+import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Cloud, LaptopMinimalCheck } from "lucide-react";
 import { t } from "@terno/i18n";
 import { Suspense, useEffect, useState } from "react";
@@ -76,6 +77,8 @@ export function FirstRun() {
       <DialogContent className="sm:max-w-lg" data-testid="first-run">
         {step === "mode" ? (
           <>
+            {/* the first thing a new user sees: the mark, quietly, above the welcome (decorative: the title names Terno) */}
+            <TernoMark className="size-7 text-foreground" data-testid="first-run-mark" />
             <DialogTitle>{t("firstRun.welcome")}</DialogTitle>
             <DialogDescription>{t("firstRun.step1")}</DialogDescription>
             {OnboardingNudge && (

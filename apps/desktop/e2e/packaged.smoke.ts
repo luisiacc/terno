@@ -214,6 +214,19 @@ test("a release carries no test build's world: no baked feed or profile, GitHub'
   if (!/Signature=adhoc/.test(signature)) expect(execFileSync("codesign", ["-d", "-r-", appPath], { encoding: "utf8" })).toContain('identifier "dev.terno.mail"');
 });
 
+test("the app carries Terno's icon: the macOS 26 asset catalog and the grid-drawn .icns (plan 19)", async () => {
+  const info = JSON.parse(execFileSync("plutil", ["-convert", "json", "-o", "-", join(appPath, "Contents/Info.plist")], { encoding: "utf8" })) as Record<string, unknown>;
+  expect(info.CFBundleIconName).toBe("Icon");
+  expect(info.CFBundleIconFile).toBe("icon.icns");
+  const resources = join(appPath, "Contents/Resources");
+  expect(readFileSync(join(resources, "icon.icns")).equals(readFileSync(join(here, "../resources/icon.icns")))).toBe(true);
+  expect(readFileSync(join(resources, "Assets.car")).equals(readFileSync(join(here, "../resources/Assets.car")))).toBe(true);
+  // the catalog holds the icon named in Info.plist, in light, dark and tinted
+  const renditions = execFileSync("xcrun", ["assetutil", "--info", join(resources, "Assets.car")], { encoding: "utf8" });
+  for (const appearance of ["NSAppearanceNameAqua", "NSAppearanceNameDarkAqua", "ISAppearanceTintable"]) expect(renditions).toContain(appearance);
+  expect(renditions).toMatch(/"Name" : "Icon"/);
+});
+
 test("warm start: relaunching with an existing mailbox shows mail fast", async () => {
   await app.close();
   const env = { ...process.env, TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_USER_DATA: userData };

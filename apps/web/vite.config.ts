@@ -45,12 +45,8 @@ function serviceWorker(buildId: string): Plugin {
       const source = readFileSync(resolve(import.meta.dirname, "src/web/sw.js"), "utf8")
         .replace("__TERNO_BUILD__", JSON.stringify(buildId))
         .replace("__TERNO_PRECACHE__", JSON.stringify(["./", "theme.js", ...files]));
+      // (manifest.webmanifest and the icons are in public/, written by `pnpm brand`)
       this.emitFile({ type: "asset", fileName: "sw.js", source });
-      this.emitFile({
-        type: "asset",
-        fileName: "manifest.webmanifest",
-        source: JSON.stringify({ name: "Terno", short_name: "Terno", start_url: "./", display: "standalone", background_color: "#fcfcfb", theme_color: "#fcfcfb", lang: "en" }),
-      });
     },
   };
 }
