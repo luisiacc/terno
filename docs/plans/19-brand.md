@@ -1,6 +1,6 @@
 # Plan 19: the Terno logo, everywhere it belongs
 
-- **Status:** in progress.
+- **Status:** shipped (see the notes at the end).
 - **Builds on:** `402470a` (main after plan 18).
 - **Request (verbatim):** "we have a logo now , its on `/Users/Luis/Downloads/terno-logo/` folder, lets use it wherever we need here and have its assets"
 - **Plan 17** is reserved for People / waiting-for-reply.
@@ -109,3 +109,23 @@ Codex (read-only, against the code) made 10 points; all are taken:
 8. **No universal starting screen:** the e2e checks the mark on the "open in another tab" screen, which the web suite already drives deterministically.
 9. **Geometry consistency:** a test compares the mark's shapes across the icon, both marks and both lockups (colors, opacity and viewBox may differ). Only the icon and the blue mark feed outputs, so only they are hashed.
 10. **Tests by owner:** `index.html`'s links and the manifest's icons are each checked against `public/` with their PNG dimensions; the theme colors (and the manifest's) are derived from the default design's palettes in the generator and checked against `index.html`. The scans (`no-hardcoded`, `source-scan`) are unchanged: the mark has no literal colors. Entry-chunk bytes are measured before and after.
+
+## Implementation notes (what differs from the plan above)
+
+- **The manifest** moved from the Vite plugin to `public/manifest.webmanifest`, written by `pnpm brand` with the default design's (Lumen's) palette background as its theme color; `index.html`'s two `theme-color` metas (`#ffffff` / `#161311`) are checked against the same derivation. They are the default's colors, not the palette the user picked (the browser chrome is outside the app).
+- **The DMG mount helper** lives in `apps/desktop/src/dmg-mount.ts` (plain TypeScript that `package.mjs` imports with Node's type stripping, like `legacy-profile.ts` for `dev.mjs`), so it has unit tests with a pretend `hdiutil`.
+- **`Assets.car` is not byte-reproducible:** each `pnpm brand` rewrites it (actool stamps it); the PNGs and the `.icns` come out identical. Commit it only with a logo or recipe change.
+- **The smoke test** reads the packaged `Info.plist` and lists the catalog with `xcrun assetutil` (Xcode's tools, present wherever `pnpm brand` runs).
+
+### Verified on this machine (macOS 26, Xcode 26.1.1)
+
+- `NSWorkspace.icon(forFile:)` on the packaged app (what Finder and the Dock use) returns the **Liquid Glass** icon from `Assets.car`, on the grid and not in the gray tile; the DMG volume shows the grid `.icns`. Older macOS couldn't be checked here.
+- Entry chunk (desktop target): 249,213 → 250,257 bytes (+1,044 raw, +422 gzip). No new request at runtime; the icons ship in `public/`.
+
+## What the Codex code review changed
+
+Three findings, all fixed:
+
+1. **(medium) The first-run baseline** still showed the dialog without the mark. Regenerated and looked at (`visual.spec.ts/first-run.png`); no other baseline changed.
+2. **(medium) A DMG could stay mounted:** if parsing `hdiutil attach -plist` failed after a successful attach, nothing detached it. Now the volume is found as the one directory under the private `-mountrandom` parent, everything mounted there is detached in `finally` (also when attach fails half-way or mounts two volumes), and the directories are removed only once empty, so a failed detach never deletes into a volume. Tests: `dmg-mount.test.ts`.
+3. **(low) Stale images could pass:** the manifest pinned the sources and the image bytes, but not how the images are drawn (grid, scales, sizes, the Icon Composer document). `generated.json` now keeps a hash of that recipe (`rasterRecipe`), and the test fails until `pnpm brand` redraws. Confirmed failing before the regeneration.
