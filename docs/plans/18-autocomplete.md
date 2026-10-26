@@ -371,9 +371,9 @@ The code is unchanged in cost (`7e92929`'s vocabulary caps add a comparison per 
 
 **Fix** (`phrases.perf.test.ts`): the build yields with `setImmediate`, as on the desktop, and the gate counts the model's own thread CPU, `learn` and `prune` only (`threadCpuMs` around them). The stall gate is unchanged (`watchLoop`).
 
-**The budget, re-derived:** 31 µs. The model measured 25.9–28.0 µs, best 26, in five interleaved rounds and in the test's own first builds (26.9). 31 µs leaves 10% over the slowest best-of-run seen. A model 25% slower (32.5 µs) fails it. The twin now injects exactly that: 6.5 µs a message, a quarter of the best measured. It is measured as the gate measures, and the best of three builds of 20,000 must fail; it measured 32.3–32.9. The old twin injected 80 µs, which proved little, and a 25% slowdown (57.5 µs) passed the old 60 µs budget.
+**The budget, re-derived:** 31 µs. The model measured 25.9–28.0 µs, best 26, in five interleaved rounds and in the test's own first builds (26.9). 31 µs leaves 10% over the slowest best-of-run seen. A model 25% slower (32.5 µs) fails it. The twin injects a quarter of the model as the gate just measured it (6.6–7.2 µs a message here). It is measured as the gate measures, and the best of three builds of 20,000 must fail; it measured 32.3–34.2. The old twin injected 80 µs, which proved little, and a 25% slowdown (57.5 µs) passed the old 60 µs budget.
 
-On a machine faster than 24.8 µs, the twin's sum stays under 31, and the twin then fails. That means the budget is loose for that machine: re-derive it there (lower), as plan 04 §11 asks of quiet-machine budgets.
+When the budget is scaled up (`PERF_BUDGET_MULTIPLIER`), or on a machine faster than the budget assumes, a quarter may not cross it. The twin then injects what does, plus a tenth, and logs whether 25% alone would have failed the gate. Here it does, since 26–28 µs × 1.25 > 31. Where it doesn't, the budget is loose for that machine: re-derive it there (lower), as plan 04 §11 asks of quiet-machine budgets.
 
 **Also seen:** `conformance/autocomplete.ts` and the SQLite store's default platform yield with `setTimeout(0)` too. Their CPU-per-message gates (the IndexedDB and SQLite catch-up) may inflate the same way under load. They pass, so they weren't changed here.
 
@@ -397,3 +397,9 @@ On a machine faster than 24.8 µs, the twin's sum stays under 31, and the twin t
 
 - after the fix: 0.1–0.4 s (lines), 0.05–0.7 s (dense marks), 0.1 s (a 250 KB paragraph);
 - before it: 11.2 s, a failure.
+
+## What the Codex review of these follow-ups changed
+
+`codex-review.sh 9c17bc5 perf-followups docs/plans/18-autocomplete.md` returned one finding. It found nothing to substantiate in the composer changes.
+
+1. **Medium:** the phrase build's twin failed on healthy code once the budget was scaled. With `PERF_BUDGET_MULTIPLIER=2` the gate is 62 µs, but the twin injected only 13 µs over about 26, measured 39.1–39.7, and failed its `> 62`. The twin now starts from the model as just measured, or from two healthy builds when it runs alone. It injects the larger of a quarter of that and what crosses the scaled budget plus a tenth, and logs whether a quarter alone would have failed. Regression check: with the multiplier at 2, the old twin fails (39.1 against 62) and the new one passes (65.0–65.5, injecting 39.2 µs over 25.3). At 1 it injects 7.2 µs over 26.4: 33.6–34.2, a failure, and 25% alone fails too.
