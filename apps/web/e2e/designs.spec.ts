@@ -162,7 +162,7 @@ test.describe("switching designs", () => {
     // a place in the list, a thread open, an older message expanded, a draft written, the filter on
     await page.getByRole("listbox").evaluate((el) => el.scrollTo(0, 900));
     const anchorBefore = await page.evaluate(() => {
-      const list = document.querySelector("[role=listbox]")!;
+      const list = document.querySelector("[data-keep-scroll=list]")!;
       const top = list.getBoundingClientRect().top;
       const row = [...document.querySelectorAll<HTMLElement>("[data-testid=thread-row]")].filter((r) => r.getBoundingClientRect().bottom > top + 1).sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0]!;
       return row.dataset.threadId;
@@ -180,14 +180,14 @@ test.describe("switching designs", () => {
     /** the row at the top of the list's viewport, and how far into it the viewport starts (a share of its height) */
     // (the list is behind the modal sheet: found by its role attribute, not the accessibility tree)
     const anchor = () =>
-      page.locator("[role=listbox]").evaluate((el) => {
+      page.locator("[data-keep-scroll=list]").evaluate((el) => {
         const top = el.getBoundingClientRect().top;
         const row = [...el.querySelectorAll<HTMLElement>("[data-testid=thread-row]")].filter((r) => r.getBoundingClientRect().bottom > top + 0.5).sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0]!;
         const r = row.getBoundingClientRect();
         return { id: row.dataset.threadId, into: (top - r.top) / r.height };
       });
     // a viewport that starts partway into a row (Codex review #3: the restore must keep the same row, at the same depth)
-    await page.locator("[role=listbox]").evaluate((el) => el.scrollBy(0, 30));
+    await page.locator("[data-keep-scroll=list]").evaluate((el) => el.scrollBy(0, 30));
     for (const id of ["atelier", "lumen", "macos"] as const) {
       const before = await anchor();
       expect(before.into).toBeGreaterThan(0.05);

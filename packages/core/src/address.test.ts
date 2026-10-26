@@ -264,3 +264,30 @@ describe("what the Codex review of the plan changed", () => {
     expect(parseAddressHeader(`"${long} <a@x.com>, B" <b@x.com>`)).toEqual([A("N".repeat(256), "a@x.com"), A("B", "b@x.com")]);
   });
 });
+
+describe("what the Codex code review changed", () => {
+  it("1 an encoded word is opaque: its literal brackets and commas are never structure (the From stays the real one)", () => {
+    expect(parseAddressHeader("=?UTF-8?Q?Ana_<ana@x.com>?= <real@x.com>", { single: true })).toEqual([A("Ana", "real@x.com")]);
+    expect(parseAddressHeader("=?UTF-8?Q?Doe, Jane <j@evil.com>?= <real@x.com>")).toEqual([A("Doe, Jane", "real@x.com")]);
+  });
+
+  it("2 beside a literal bracketed address, one an encoded word spells is still never recovered", () => {
+    const header = '"=?UTF-8?Q?Ana_=3Cleak=40attacker.example=3E=2C_Bob?= <literal@company.example>, Real" <real@company.example>';
+    const got = parseAddressHeader(header).map((a) => a.email);
+    expect(got).not.toContain("leak@attacker.example");
+    expect(got).toEqual(["literal@company.example", "real@company.example"]);
+  });
+
+  it("3 an entry that isn't an address but reads as one unquoted (a group's colon) round-trips as itself", () => {
+    for (const email of ["a:b@x.com", "mailto:", "x: y@z.com", "Team:;"]) {
+      const back = parseAddressList(formatAddress(A("", email)));
+      expect(back).toEqual([A("", email)]);
+      expect(isValidEmail(back[0]!.email)).toBe(false);
+    }
+  });
+
+  it("4 a typed part that is only a comment is kept as an entry to fix, never dropped", () => {
+    expect(parseAddressList("(bob@x.com)")).toEqual([A("", "(bob@x.com)")]);
+    expect(parseAddressList(formatAddressList(parseAddressList("ana@x.io, (bob@x.com)")))).toEqual([A("", "ana@x.io"), A("", "(bob@x.com)")]);
+  });
+});

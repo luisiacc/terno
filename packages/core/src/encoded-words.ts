@@ -81,7 +81,7 @@ const WORD = /=\?([^?\s]+)\?([QqBb])\?([^?]*)\?=/g;
  * whitespace are joined (RFC 2047 §6.2), and the bytes of neighbours in the
  * same charset are decoded together (UTF-8 split between two words).
  */
-export function decodeEncodedWords(text: string): string {
+export function decodeEncodedWords(text: string, show: (decoded: string) => string = (s) => s): string {
   if (!text.includes("=?")) return text;
   let out = "";
   let last = 0;
@@ -95,7 +95,7 @@ export function decodeEncodedWords(text: string): string {
       all.set(c, at);
       at += c.length;
     }
-    out += decodeBytes(all, pending.charset);
+    out += show(decodeBytes(all, pending.charset));
     pending = null;
   };
   for (const m of text.matchAll(WORD)) {

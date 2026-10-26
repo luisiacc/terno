@@ -96,6 +96,9 @@ export function RecipientInput({
   useLayoutEffect(() => {
     if (value === emitted.current) return;
     emitted.current = value;
+    seq.current++;
+    setItems([]);
+    token.current = null;
     setField(derive(value, rootRef.current?.contains(document.activeElement) ?? false));
     setSelected(new Set());
     history.current = { undo: [], redo: [], typing: false };
@@ -137,6 +140,8 @@ export function RecipientInput({
       const gone = field.chips.find((c) => !kept.has(c.key));
       setAnnounce(t("compose.recipients.removed", { count: -back, name: gone ? chipLabel(gone) : "" }));
     }
+    // suggestions for the text that was there are gone with it, answers in flight too (Codex code review 6)
+    close();
     setField(prev);
     setSelected(new Set());
     emit(prev);
@@ -539,6 +544,8 @@ export function RecipientInput({
             focusInput(0);
           }}
           onClick={() => focusInput(0)}
+          // Tab lands here: focus moves on to the input before the expanded field takes this button away (code review 7)
+          onFocus={() => focusInput(0)}
           className="h-[22px] rounded-md px-1 text-sm text-muted-foreground hover:text-foreground"
         >
           {t("compose.recipients.more", { count: field.chips.length - shown.length })}

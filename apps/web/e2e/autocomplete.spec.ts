@@ -183,6 +183,19 @@ test.describe("recipients", { tag: "@design" }, () => {
     await expect(page.getByTestId("compose-to")).toHaveValue("");
   });
 
+  test("undo takes the suggestions for what it took back with it: Enter then adds nobody (Codex code review 6, plan 26)", async ({ app: page, server }) => {
+    await seed(server);
+    await newMessage(page);
+    await page.keyboard.type("zul");
+    await expect(options(page).first()).toBeVisible();
+    await page.keyboard.press("ControlOrMeta+z");
+    await expect(page.getByTestId("compose-to")).toHaveValue("");
+    await expect(list(page)).toHaveCount(0);
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(200);
+    await expect(chipsOf(page, "compose-to")).toHaveCount(0);
+  });
+
   test("in a reply, Esc closes the list first and the draft only on the next Esc", async ({ app: page, server }) => {
     await seed(server);
     await openRow(page, 0);

@@ -9,7 +9,7 @@
  */
 import { parseAddressHeader, repairAddresses, type Address } from "@terno/core";
 import { describe, expect, it } from "vitest";
-import { parseRaw } from "./mime";
+import { headerFields, messageAddresses, parseRaw } from "./mime";
 
 const MULT = Number(process.env.PERF_BUDGET_MULTIPLIER ?? "1");
 const best = (rounds: number, run: () => void) => {
@@ -41,14 +41,25 @@ describe("address parsing gates (plan 26)", () => {
     expect(ms).toBeLessThanOrEqual(150 * MULT);
   });
 
-  it("a header of 16,000 recipients costs at most ~12× one of 2,000 (linear, never quadratic)", () => {
+  it("IMAP's raw fields: 32,000 repeated Cc lines cost at most ~16× 4,000 (Codex code review 5: they were copied per line)", () => {
+    const block = (n: number) => new TextEncoder().encode(Array.from({ length: n }, (_, i) => `Cc: p${i}@example.com\r\n`).join("") + "\r\n");
+    const small = block(4000);
+    const big = block(32_000);
+    const s = best(5, () => messageAddresses(headerFields(small)));
+    const b = best(5, () => messageAddresses(headerFields(big)));
+    console.log(`4,000 Cc lines ${s.toFixed(1)} ms, 32,000 ${b.toFixed(1)} ms (×${(b / s).toFixed(1)})`);
+    expect(messageAddresses(headerFields(big)).cc).toHaveLength(32_000);
+    expect(b / s).toBeLessThanOrEqual(16 * MULT);
+  });
+
+  it("a header of 16,000 recipients costs at most ~16× one of 2,000 (linear: 8×; quadratic would be 64×)", () => {
     const small = list(2000);
     const big = list(16_000);
     const s = best(5, () => parseAddressHeader(small));
     const b = best(5, () => parseAddressHeader(big));
     console.log(`2,000 recipients ${s.toFixed(1)} ms, 16,000 ${b.toFixed(1)} ms (×${(b / s).toFixed(1)})`);
     expect(parseAddressHeader(big)).toHaveLength(16_000);
-    expect(b / s).toBeLessThanOrEqual(12 * MULT);
+    expect(b / s).toBeLessThanOrEqual(16 * MULT);
   });
 
   it("clean stored addresses take the fast path: ≤ 0.5 µs each (a thread read)", () => {

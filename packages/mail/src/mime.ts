@@ -81,7 +81,10 @@ export function headerFields(block: Uint8Array | undefined): (name: string) => s
     const colon = line.indexOf(":");
     if (colon <= 0) continue;
     const name = line.slice(0, colon).trim().toLowerCase();
-    fields.set(name, [...(fields.get(name) ?? []), line.slice(colon + 1).trim()]);
+    // appended in place: thousands of repeated lines stay linear (Codex code review 5)
+    const list = fields.get(name);
+    if (list) list.push(line.slice(colon + 1).trim());
+    else fields.set(name, [line.slice(colon + 1).trim()]);
   }
   return (name) => fields.get(name) ?? [];
 }

@@ -197,6 +197,13 @@ test.describe("recipient chips", { tag: "@design" }, () => {
     await page.getByTestId("recipient-more").click();
     await expect(to(page)).toBeFocused();
     await expect(chips(page)).toHaveCount(200);
+    // Tab into the collapsed field lands in its input, never on a button that goes away (Codex code review 7)
+    await page.getByTestId("compose-subject").focus();
+    await expect(page.getByTestId("recipient-more")).toBeVisible();
+    await page.getByTestId("compose-from").focus();
+    await page.keyboard.press("Tab");
+    await expect(to(page)).toBeFocused();
+    await expect(chips(page)).toHaveCount(200);
   });
 
   for (const theme of ["light", "dark"] as const) {

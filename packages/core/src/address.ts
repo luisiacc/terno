@@ -32,9 +32,14 @@ const quoted = (s: string) => `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}
 export function formatAddress(a: Address): string {
   const email = a.email.replace(INVISIBLE, "").trim();
   const name = a.name.replace(INVISIBLE, " ").replace(/\s+/g, " ").trim();
-  if (NOT_AN_ADDRESS.test(email)) return quoted(name ? `${name} ${email}` : email);
-  if (!name) return email;
-  return `${NEEDS_QUOTES.test(name) ? quoted(name) : name} <${email}>`;
+  const whole = () => quoted(name ? `${name} ${email}` : email);
+  if (NOT_AN_ADDRESS.test(email)) return whole();
+  const text = !name ? email : `${NEEDS_QUOTES.test(name) ? quoted(name) : name} <${email}>`;
+  if (isValidEmail(email)) return text;
+  // not an address ("a:b@x.com", "bob@"): written plainly only when it reads back as itself (a group's ":" or a
+  // mailto: wouldn't), else as one quoted entry (Codex code review 3)
+  const back = parseAddressList(text);
+  return back.length === 1 && back[0]!.email === email && back[0]!.name === name ? text : whole();
 }
 
 export function formatAddressList(list: readonly Address[]): string {
@@ -60,7 +65,12 @@ function splitList(input: string, typed: boolean): string[] {
   return scanList(text, typed, true).parts;
 }
 
+/** A complete encoded word starting exactly here (Q text may hold spaces and specials: it is opaque). */
+const WORD_AT = /=\?[^?\s]+\?[QqBb]\?[^?]*\?=/y;
+
 function scanList(text: string, typed: boolean, literal: boolean): { parts: string[]; unclosed: number } {
+  // header text (not typed): encoded words are opaque
+  const opaque = !typed;
   const parts: string[] = [];
   let start = 0;
   let quote = -1;
@@ -77,6 +87,15 @@ function scanList(text: string, typed: boolean, literal: boolean): { parts: stri
   for (let i = 0; i < text.length; i++) {
     const ch = text[i]!;
     if (!literal) {
+      if (opaque && ch === "=" && quote < 0 && paren === 0 && angle === 0) {
+        // an encoded word is one opaque word: nothing in it separates or brackets (Codex code review 1)
+        WORD_AT.lastIndex = i;
+        const m = WORD_AT.exec(text);
+        if (m) {
+          i += m[0].length - 1;
+          continue;
+        }
+      }
       if (quote >= 0) {
         if (ch === "\\") i++;
         else if (ch === '"') quote = -1;
@@ -128,10 +147,15 @@ function scanList(text: string, typed: boolean, literal: boolean): { parts: stri
   return { parts, unclosed: literal ? -1 : unclosed };
 }
 
-type Token = { kind: "word" | "quoted" | "comment" | "angle"; text: string };
+type Token = { kind: "word" | "quoted" | "comment" | "angle"; text: string; encoded?: boolean };
 
-/** One part's tokens: words, quoted strings (unescaped), comments (nested), angle addresses (nested brackets dropped). */
-function tokens(part: string): Token[] {
+/**
+ * One part's tokens: words, quoted strings (unescaped), comments (nested),
+ * angle addresses (nested brackets dropped). With `opaque` (header text) an
+ * encoded word is one word whatever it holds: its `<`, `@` and `,` are text,
+ * never structure (the Mailsploit class).
+ */
+function tokens(part: string, opaque: boolean): Token[] {
   const out: Token[] = [];
   let i = 0;
   const n = part.length;
@@ -173,8 +197,22 @@ function tokens(part: string): Token[] {
       i++;
     } else {
       let s = "";
-      while (i < n && !' \t\r\n"(<>'.includes(part[i]!)) s += part[i++];
-      out.push({ kind: "word", text: s });
+      let encoded = false;
+      while (i < n) {
+        if (opaque && part[i] === "=") {
+          WORD_AT.lastIndex = i;
+          const m = WORD_AT.exec(part);
+          if (m) {
+            s += m[0];
+            i += m[0].length;
+            encoded = true;
+            continue;
+          }
+        }
+        if (' \t\r\n"(<>'.includes(part[i]!)) break;
+        s += part[i++];
+      }
+      out.push({ kind: "word", text: s, ...(encoded ? { encoded } : {}) });
     }
   }
   return out;
@@ -203,14 +241,13 @@ function mailboxes(part: string, decode: boolean): Address[] {
   /** the tokens' text (comments in parentheses when `parens`), decoded in a header */
   const text = (list: Token[], parens: boolean) => {
     const raw = list.map((t) => (parens && t.kind === "comment" ? `(${t.text})` : t.text)).join(" ").trim();
-    if (!decode) return raw;
-    const decoded = decodeEncodedWords(raw).trim();
-    // an address only an encoded word spelled out is never structure, nor evidence of a swallowed list (Codex review 1)
-    return decoded !== raw && ANGLED.test(decoded) && !ANGLED.test(raw) ? decoded.replace(/\s*<[^<>]*>\s*/g, " ").replace(/\s+([,;])/g, "$1").trim() : decoded;
+    // an address an encoded word spells out is never structure, nor evidence of a swallowed list: decoded without its
+    // brackets, whatever else the name holds literally (plan review 1, code review 2)
+    return decode ? decodeEncodedWords(raw, neutralize).replace(/\s+([,;])/g, "$1").trim() : raw;
   };
   const words = (list: Token[]) => list.filter((p) => p.kind !== "comment");
-  for (const t of tokens(part)) {
-    if (t.kind === "angle" || (t.kind === "word" && t.text.includes("@") && !t.text.startsWith("["))) {
+  for (const t of tokens(part, decode)) {
+    if (t.kind === "angle" || (t.kind === "word" && !t.encoded && t.text.includes("@") && !t.text.startsWith("["))) {
       // `Ana (Acme) <a@x>` keeps its comment; `(Jane Doe) jane@x`: the comment is the name
       const named = words(phrase).length > 0;
       out.push({ name: named ? text(t.kind === "angle" ? phrase : words(phrase), true) : text(phrase, false), email: bareAddress(t.text) });
@@ -231,10 +268,20 @@ function mailboxes(part: string, decode: boolean): Address[] {
   return out;
 }
 
-/** Every entry of a list as written: `{ email: "" }` where a part had no address. */
+/** What an encoded word decodes to, as display text only: no bracketed address, no bracket. */
+const neutralize = (s: string) => s.replace(/\s*<[^<>]*>\s*/g, " ").replace(/[<>]/g, "");
+
+/**
+ * Every entry of a list as written: `{ email: "" }` where a part had no
+ * address. Typed text keeps a part that yields nothing as an entry of its own
+ * (`(bob@x.com)` alone is an entry to fix, never silently gone: code review 4).
+ */
 function entries(input: string, decode: boolean, typed: boolean): Address[] {
   const text = decode ? input.replace(/\r?\n[ \t]+/g, " ") : input;
-  return splitList(text, typed).flatMap((p) => mailboxes(p, decode));
+  return splitList(text, typed).flatMap((p) => {
+    const found = mailboxes(p, decode);
+    return found.length || !typed ? found : [{ name: p, email: "" }];
+  });
 }
 
 /**
@@ -312,7 +359,7 @@ const NAME_MAX = 256;
 /** A display name as it should show: encoded words and their broken halves decoded, mojibake undone, invisible characters and wrapping quotes gone. */
 export function cleanName(raw: string, cap = NAME_MAX): string {
   let s = raw;
-  if (s.includes("=?") || s.includes("?=")) s = repairOrphans(decodeEncodedWords(s));
+  if (s.includes("=?") || s.includes("?=")) s = repairOrphans(decodeEncodedWords(s, neutralize));
   if (MOJIBAKE.test(s)) s = repairMojibake(s);
   s = s
     .replace(INVISIBLE, " ")
