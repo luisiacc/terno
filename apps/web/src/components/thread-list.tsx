@@ -579,10 +579,15 @@ export function ThreadList() {
     // the same capture keeps the first row through a refresh that waited behind a page, and a switch to or from one-line rows (plan 24)
     anchorRef.current = capture;
     listAnchor.capture = capture;
+    listAnchor.firstVisible = () => {
+      const el = parentRef.current;
+      const rows = useList.getState().items;
+      return el && rows.length ? (rows[Math.min(rows.length - 1, Math.floor(el.scrollTop / measuredHeight.current))]?.id ?? null) : null;
+    };
     const off = registerDesignAnchor(capture);
     return () => {
       off();
-      if (listAnchor.capture === capture) listAnchor.capture = undefined;
+      if (listAnchor.capture === capture) listAnchor.capture = listAnchor.firstVisible = undefined;
     };
   }, [virtualizer]);
 

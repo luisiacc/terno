@@ -31,6 +31,7 @@ import { closePage } from "~/lib/page";
 import { move } from "~/lib/keyboard";
 import { viewLabel } from "~/lib/format";
 import { useList } from "~/state/list";
+import { useSnack } from "~/lib/snack";
 
 function ToolButton({ label, keys, onClick, children, testId, active, disabled, busy }: { label: string; keys?: string; onClick: () => void; children: React.ReactNode; testId?: string; active?: boolean; disabled?: boolean; busy?: boolean }) {
   return (
@@ -427,6 +428,8 @@ function StepButtons({ id }: { id: number }) {
 export function Reader() {
   const selectedId = useApp((s) => s.selectedId);
   const page = useAppearance((s) => s.layout === "list");
+  // List's page: the dock sits over the conversation's foot, so its end (the reply bar) scrolls clear of it
+  const dock = useSnack((s) => (page ? s.inset : 0));
   const sectionRef = useRef<HTMLElement>(null);
   // List's page opened: focus starts on the conversation (named by its subject), unless something in it already took it (a draft asked for)
   useEffect(() => {
@@ -548,7 +551,7 @@ export function Reader() {
         </div>
         {page && <StepButtons id={selectedId} />}
       </div>
-      <div ref={scrollerRef} data-reader-scroller data-keep-scroll="reader" className="relative min-h-0 flex-1 overflow-y-auto">
+      <div ref={scrollerRef} data-reader-scroller data-keep-scroll="reader" className="relative min-h-0 flex-1 overflow-y-auto" style={dock ? { paddingBottom: dock, scrollPaddingBottom: dock } : undefined}>
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
         <div className="mx-auto max-w-(--reader-max) px-(--reader-pad-x) pt-5 pb-16">
           {!detail && gone ? (

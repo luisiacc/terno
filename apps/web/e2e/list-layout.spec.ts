@@ -229,6 +229,24 @@ test.describe("the List layout: what stays put", () => {
     await expect(selectedRow(page)).toBeInViewport();
   });
 
+  test("the tall categorization snackbar on a long conversation's page: the reply bar still scrolls clear of it (second Codex review)", async ({ app: page, server }) => {
+    // a long conversation (every message open), newest of all
+    const id = await ingestConversation(server, { subject: "Campaña de otoño", count: 6, unread: 6, now: E2E_NOW + 3 * 3_600_000 });
+    server.backend.notifyChanged([id]);
+    const row = page.locator(`[data-thread-id="${id}"]`);
+    await row.waitFor();
+    await openRow(page, row);
+    // l → a category: the three-row categorization snackbar comes up in the dock, over the page's foot
+    await page.keyboard.press("l");
+    await page.locator("[data-testid^=pick-category-]").first().click();
+    const card = page.getByTestId("category-snackbar");
+    await expect(card).toBeVisible();
+    await page.locator("[data-reader-scroller]").evaluate((el) => (el.scrollTop = el.scrollHeight));
+    await page.waitForTimeout(200);
+    const reply = (await page.getByTestId("draft-slot").boundingBox())!;
+    expect(reply.y + reply.height).toBeLessThanOrEqual((await card.boundingBox())!.y + 1);
+  });
+
   test("a drag released over the rows doesn't open a row (R8)", async ({ app: page }) => {
     const row = rows(page).nth(1);
     const b = (await row.boundingBox())!;

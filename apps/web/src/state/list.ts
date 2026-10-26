@@ -33,7 +33,9 @@ const WINDOW_PAGE = 500;
  * The list's first visible row, kept across a change of its rows (ThreadList
  * sets it): `capture` measures, the function it returns puts the row back.
  */
-export const listAnchor: { capture?: () => (() => void) | void } = {};
+export const listAnchor: { capture?: () => (() => void) | void; firstVisible?: () => number | null } = {};
+/** how far past the loaded count a window refresh may read to find the rows that were on screen (new mail above them) */
+const REACH = 1000;
 
 export const useList = create<ListState>(() => ({
   key: "",
@@ -159,8 +161,11 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
     // plan 24, R4: the whole loaded window, however deep, in pieces (a refresh that waited behind a page must not shrink the list under the cursor)
     if (options.window && sameView) {
       const want = current.items.length;
-      while (page.items.length < want && page.nextCursor) {
-        const more = await fetchPage(page.nextCursor, Math.min(WINDOW_PAGE, want - page.items.length));
+      // the first row on screen and the cursor must be in it: mail that arrived above them pushed them further down
+      const keep = [listAnchor.firstVisible?.() ?? null, getApp().selectedId].filter((id): id is number => id !== null && current.index.has(id));
+      const missing = () => keep.some((id) => !page.items.some((t) => t.id === id));
+      while ((page.items.length < want || missing()) && page.nextCursor && page.items.length < want + REACH) {
+        const more = await fetchPage(page.nextCursor, page.items.length < want ? Math.min(WINDOW_PAGE, want - page.items.length) : WINDOW_PAGE);
         if (mine !== seq) return;
         page = { ...page, items: [...page.items, ...more.items], nextCursor: more.nextCursor };
       }
@@ -239,6 +244,26 @@ export async function loadMore(): Promise<void> {
     // the next page from the top instead of continuing a stale cursor
     if (error instanceof RpcError && error.code === "STALE" && useList.getState().key === key) await reloadList({ keepSelection: true, grow: true });
   }
+}
+
+/** Optimistic edits so far (a fetch started before one may predate it). */
+export const editCount = (): number => edits;
+
+/**
+ * The open conversation's row, from its refreshed detail, while a page
+ * covers the list and its refresh waits (Codex review): the reader's star and
+ * read toggles decide from the row, so it must say what the reader shows.
+ * Skipped when an optimistic edit landed after the fetch started.
+ */
+export function syncRow(t: Pick<ThreadSummary, "id" | "starred" | "unread" | "categoryIds">, since: number): void {
+  if (edits !== since) return;
+  const st = useList.getState();
+  const i = st.index.get(t.id);
+  const row = i === undefined ? undefined : st.items[i];
+  if (!row || (row.starred === t.starred && row.unread === t.unread && row.categoryIds.join() === t.categoryIds.join())) return;
+  const items = st.items.slice();
+  items[i!] = { ...row, starred: t.starred, unread: t.unread, categoryIds: t.categoryIds };
+  useList.setState({ items });
 }
 
 /** a refresh that waited while a page covered the list (List layout) */

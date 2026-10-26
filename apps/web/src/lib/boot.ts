@@ -5,7 +5,7 @@ import { flushAllDrafts, loadDrafts } from "~/lib/drafts";
 import { client, connectBackend } from "~/rpc/connection";
 import { removeFromCategory } from "~/lib/categorize";
 import { getApp, navigate, setApp, setCategories } from "~/state/app";
-import { refreshList, reloadList, useList } from "~/state/list";
+import { editCount, refreshList, reloadList, syncRow, useList } from "~/state/list";
 import { bootPage, installPage, listCovered, listLayout, readerShown } from "~/lib/page";
 import { invalidateThreads, loadThread, useThreads } from "~/state/threads";
 import { snack } from "~/lib/snack";
@@ -52,7 +52,11 @@ export async function boot(): Promise<void> {
       invalidateThreads(threadIds);
       const selected = getApp().selectedId;
       // the conversation on screen refetches now; in List's list page the cursor is only a row (plan 24, R12)
-      if (selected !== null && threadIds.includes(selected) && readerShown()) void loadThread(selected, true);
+      if (selected !== null && threadIds.includes(selected) && readerShown()) {
+        const since = editCount();
+        // under a page the list's refresh waits: the open thread's row follows what the reader now shows
+        void loadThread(selected, true).then((d) => d && listCovered() && syncRow(d.thread, since));
+      }
       // coalesce bursts (imports) into one refresh per frame
       if (refreshQueued) return;
       refreshQueued = true;

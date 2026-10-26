@@ -32,7 +32,7 @@ const { act, scheduleMarkRead, toggleStar } = await import("./actions");
 const { extendSelection, pressRow, releaseRow, selectAll, selectWhere, toggleCurrent } = await import("./select");
 const { useThreads } = await import("~/state/threads");
 const { getApp, navigate, setApp } = await import("~/state/app");
-const { flushDeferredRefresh, listKey, refreshList, useList } = await import("~/state/list");
+const { editCount, flushDeferredRefresh, listAnchor, listKey, patchRows, refreshList, syncRow, useList } = await import("~/state/list");
 
 const row = (id: number): ThreadSummary => ({ id, unread: true, starred: false, categoryIds: [], lastDate: 1000 - id }) as unknown as ThreadSummary;
 const layout = (l: "split" | "list") => useAppearance.setState({ layout: l });
@@ -185,6 +185,66 @@ describe("what the Codex code review found", () => {
     await vi.waitFor(() => expect(useList.getState().items).toHaveLength(1200));
     refreshList(false, false);
     await vi.waitFor(() => expect(limits).toEqual([500]));
+  });
+});
+
+describe("what the second Codex review found", () => {
+  it("the open thread's row follows its refreshed detail while the list waits, so the star toggles the right way", async () => {
+    const acts: string[] = [];
+    fake.handlers["threads.act"] = async (p) => (acts.push((p as { action: string }).action), { undoId: null });
+    setApp({ selectedId: 2, readerOpen: true });
+    // another client starred it: the reader's detail says so; the covered list's row doesn't yet
+    syncRow({ id: 2, starred: true, unread: true, categoryIds: [] }, editCount());
+    toggleStar();
+    await vi.waitFor(() => expect(acts).toEqual(["unstar"]));
+  });
+
+  it("a refetch older than an optimistic edit doesn't overwrite it", () => {
+    const since = editCount();
+    patchRows([3], (t) => ({ ...t, starred: true }));
+    syncRow({ id: 3, starred: false, unread: true, categoryIds: [] }, since);
+    expect(useList.getState().items[2]!.starred).toBe(true);
+  });
+
+  it("a search or another list while writing a new message shows the list (the draft left as Esc leaves it)", () => {
+    setApp({ compose: { key: "k1", seq: 1 } });
+    expect(currentPage()).toBe("compose");
+    setApp({ query: "factura" });
+    expect(currentPage()).toBe("list");
+    expect(getApp().compose).toBeNull();
+    setApp({ query: "", compose: { key: "k2", seq: 2 } });
+    navigate({ view: "sent" });
+    expect(currentPage()).toBe("list");
+    expect(getApp().compose).toBeNull();
+  });
+
+  it("archiving the list's only thread from its page closes the page for good (nothing left to open with j)", async () => {
+    useList.setState({ items: [row(7)], index: new Map([[7, 0]]) });
+    setApp({ selectedId: 7, readerOpen: true });
+    await act("archive");
+    expect(getApp()).toMatchObject({ selectedId: null, readerOpen: false });
+  });
+
+  it("the window refresh reaches the rows that were on screen when new mail pushed them past the old count", async () => {
+    // 100 loaded, the first row on screen is #95; 30 new threads arrive above everything
+    const old = Array.from({ length: 100 }, (_, i) => row(i + 1));
+    const fresh = Array.from({ length: 30 }, (_, i) => row(1000 + i));
+    const now = [...fresh, ...old];
+    useList.setState({ items: old, index: new Map(old.map((t, i) => [t.id, i])) });
+    setApp({ selectedId: 96 });
+    listAnchor.firstVisible = () => 95;
+    fake.handlers["threads.list"] = async (p) => {
+      const { limit, cursor } = p as { limit: number; cursor?: { id: number } };
+      const start = cursor ? cursor.id : 0;
+      return { items: now.slice(start, start + limit), nextCursor: start + limit < now.length ? { lastDate: 0, id: start + limit } : null };
+    };
+    refreshList(true);
+    flushDeferredRefresh();
+    // the refresh landed (the new mail is in), and it reaches the rows that were on screen
+    await vi.waitFor(() => expect(useList.getState().index.has(1000)).toBe(true));
+    expect(useList.getState().index.has(95)).toBe(true);
+    expect(useList.getState().index.has(96)).toBe(true);
+    listAnchor.firstVisible = undefined;
   });
 });
 

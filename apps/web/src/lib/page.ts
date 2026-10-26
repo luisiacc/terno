@@ -53,11 +53,12 @@ let returnTo: HTMLElement | null = null;
 
 /** Back to the list (List only). The history follows (§2.3); `focus` puts focus back where it was in the list. */
 export function closePage(options: { focus?: boolean } = {}): void {
-  const page = currentPage();
-  if (page === "list") return;
+  const s = getApp();
+  // what's open, not what the page says: the cursor may already be gone (the list's last thread just archived)
+  if (!listLayout() || (!s.readerOpen && !s.compose)) return;
   if (options.focus) restoreFocus = true;
-  if (page === "compose") leaveNewDraft();
-  setApp({ readerOpen: false });
+  if (s.compose) leaveNewDraft();
+  if (getApp().readerOpen) setApp({ readerOpen: false });
 }
 
 const listSection = () => document.querySelector<HTMLElement>("[data-list-section]");
@@ -71,9 +72,11 @@ function focusList() {
 
 let history: PageHistory | null = null;
 
-// A search changes the list under a page (the palette's, a sender's "more from"): the list shows, with its results.
+// Another list under a page (a search from the palette, a sender's "more from", a folder or category while writing):
+// the list shows, with its rows; a new message is left the way Esc leaves it (kept if written).
 useApp.subscribe((s, p) => {
-  if (s.query !== p.query && s.readerOpen && listLayout()) setApp({ readerOpen: false });
+  const otherList = s.query !== p.query || s.view !== p.view || s.categoryId !== p.categoryId || s.accountId !== p.accountId || s.reviewCategoryId !== p.reviewCategoryId;
+  if (otherList && (s.readerOpen || s.compose) && listLayout()) closePage();
 });
 // Split → List lands on the list (the cursor kept): Split's open thread is its cursor, not a page.
 useAppearance.subscribe((s, p) => {
