@@ -8,6 +8,7 @@ import { flushSync } from "react-dom";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "./app";
+import { useAppearance } from "~/lib/appearance";
 
 interface ListState {
   key: string;
@@ -33,7 +34,7 @@ const WINDOW_PAGE = 500;
  * The list's first visible row, kept across a change of its rows (ThreadList
  * sets it): `capture` measures, the function it returns puts the row back.
  */
-export const listAnchor: { capture?: () => (() => void) | void; firstVisible?: () => number | null } = {};
+export const listAnchor: { capture?: () => (() => void) | void; firstVisible?: () => number | null; scrolled?: () => boolean } = {};
 /** how far past the loaded count a window refresh may read to find the rows that were on screen (new mail above them) */
 const REACH = 1000;
 
@@ -158,8 +159,10 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
   try {
     let page = await fetchPage(undefined, limit);
     if (mine !== seq) return;
-    // plan 24, R4: the whole loaded window, however deep, in pieces (a refresh that waited behind a page must not shrink the list under the cursor)
-    if (options.window && sameView) {
+    // plan 24, R4: the whole loaded window, however deep, in pieces (a refresh that waited behind a page must not shrink the list
+    // under the cursor). In List every refresh of the same list does it (an undo, a bulk result, new mail); Split keeps its cap.
+    const windowed = sameView && (options.window || useAppearance.getState().layout === "list");
+    if (windowed) {
       const want = current.items.length;
       // the first row on screen and the cursor must be in it: mail that arrived above them pushed them further down
       const keep = [listAnchor.firstVisible?.() ?? null, getApp().selectedId].filter((id): id is number => id !== null && current.index.has(id));
@@ -177,8 +180,9 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
     }
     if (scope?.kind === "search" && scope.filter && (sameView || options.keepSelection)) page = keepSearchRows(page, current.items);
     if (scope?.filter) page = { ...page, items: heldOnly(page.items) };
-    // the window refresh keeps the first visible row where it was (new mail above it doesn't push it down)
-    const restore = options.window && sameView ? listAnchor.capture?.() : undefined;
+    // the window refresh keeps the first visible row where it was (new mail above it doesn't push it down): always after a page
+    // (Back finds what it left), and on the list unless it's at the very top (there, new mail shows as it arrives)
+    const restore = windowed && (options.window || listAnchor.scrolled?.()) ? listAnchor.capture?.() : undefined;
     const commit = (fn: () => void) => (restore ? flushSync(fn) : fn());
     commit(() => useList.setState({
       key,
@@ -274,13 +278,13 @@ let deferred = false;
  * or, while a page covers it, once the list shows again (plan 24, R4: no
  * work for a list nobody sees, and its window and anchor survive).
  */
-export function refreshList(covered: boolean, keepWindow = false): void {
+export function refreshList(covered: boolean): void {
   if (covered) {
     deferred = true;
     return;
   }
-  // List keeps a deep window (an archive from a page 600 rows down must not shrink the list it returns to); Split as before
-  void reloadList({ keepSelection: true, window: keepWindow && useList.getState().items.length > WINDOW_PAGE });
+  // (List keeps its whole window on a same-list refresh: reloadList)
+  void reloadList({ keepSelection: true });
 }
 
 /** The list shows again: the refresh it missed, over its whole loaded window. */

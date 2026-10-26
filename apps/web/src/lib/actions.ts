@@ -109,6 +109,9 @@ function listFilterOfScope(scope: { filter?: ListFilter; unreadOnly?: boolean })
   return scope.filter ?? (scope.unreadOnly ? "unread" : undefined);
 }
 
+/** On List's page, these are done with the conversation even where its row stays (a search keeps results in place): back to the list. */
+const DONE_READING = new Set<ThreadAction>(["archive", "trash", "spam", "markUnread"]);
+
 /**
  * Applies a triage action optimistically: the list updates in the same frame,
  * selection advances to the next thread, and the backend persists + syncs.
@@ -131,7 +134,7 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
   const leaving = reading || (s.query ? false : !staysInView(s.view, action));
   const stays = reading ? s.selectedId : null;
   // List's conversation page (plan 24): an action that takes the open thread away, or marks it unread, is done reading it
-  const backToList = s.selectedId !== null && targets.includes(s.selectedId) && ((leaving && s.selectedId !== stays) || action === "markUnread") && listLayout() && currentPage() === "thread";
+  const backToList = s.selectedId !== null && targets.includes(s.selectedId) && ((leaving && s.selectedId !== stays) || DONE_READING.has(action)) && listLayout() && currentPage() === "thread";
 
   // back on the list first (focus with it), then the cursor moves: the page closes even when no thread is left to move to
   if (backToList) closePage({ focus: true });

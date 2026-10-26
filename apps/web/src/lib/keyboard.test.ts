@@ -59,6 +59,14 @@ describe("j past the loaded rows on the page (plan 24)", () => {
     await vi.waitFor(() => expect(getApp().selectedId).toBe(4));
   });
 
+  it("Older twice while the page is on its way: one step, not none (third Codex review)", async () => {
+    move(1);
+    await vi.waitFor(() => expect(fake.page).not.toBeNull());
+    move(1);
+    fake.page!(nextPage);
+    await vi.waitFor(() => expect(getApp().selectedId).toBe(4));
+  });
+
   it("a page that answers after k moved the cursor doesn't move it again", async () => {
     move(1);
     await vi.waitFor(() => expect(fake.page).not.toBeNull());

@@ -3,6 +3,7 @@ import { RpcError } from "@terno/core/rpc";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { getApp } from "./app";
+import { editCount, syncRow } from "./list";
 
 const MAX = 150;
 
@@ -50,11 +51,15 @@ export function loadThread(id: number, force = false): Promise<ThreadDetail | nu
   }
   const n = ++seq;
   newest.set(id, n);
+  const since = editCount();
   const p = client
     .call("threads.get", { threadId: id })
     .then((d) => {
       if (newest.get(id) !== n) return d;
       put(d);
+      // its row says what the conversation now says (List's page waits to refresh the list; actions read the row), unless an
+      // optimistic edit landed after this fetch started
+      syncRow(d.thread, since);
       if (n > (staleSince.get(id) ?? Infinity)) staleSince.delete(id);
       return d;
     })

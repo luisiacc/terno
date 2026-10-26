@@ -30,9 +30,9 @@ const { useAppearance } = await import("~/lib/appearance");
 const { closePage, currentPage, openThread, pageOf } = await import("./page");
 const { act, scheduleMarkRead, toggleStar } = await import("./actions");
 const { extendSelection, pressRow, releaseRow, selectAll, selectWhere, toggleCurrent } = await import("./select");
-const { useThreads } = await import("~/state/threads");
+const { loadThread, useThreads } = await import("~/state/threads");
 const { getApp, navigate, setApp } = await import("~/state/app");
-const { editCount, flushDeferredRefresh, listAnchor, listKey, patchRows, refreshList, syncRow, useList } = await import("~/state/list");
+const { editCount, flushDeferredRefresh, listAnchor, listKey, patchRows, refreshList, reloadList, syncRow, useList } = await import("~/state/list");
 
 const row = (id: number): ThreadSummary => ({ id, unread: true, starred: false, categoryIds: [], lastDate: 1000 - id }) as unknown as ThreadSummary;
 const layout = (l: "split" | "list") => useAppearance.setState({ layout: l });
@@ -178,13 +178,40 @@ describe("what the Codex code review found", () => {
       const start = cursor ? cursor.id : 0;
       return { items: many.slice(start, start + limit), nextCursor: { lastDate: 0, id: start + limit } };
     };
-    refreshList(false, true);
+    refreshList(false);
+    await vi.waitFor(() => expect(limits).toEqual([500, 500, 200]));
+    // an undo's refresh, a bulk result's: the same (third Codex review)
+    limits.length = 0;
+    await vi.waitFor(() => expect(useList.getState().items).toHaveLength(1200));
+    void reloadList({ keepSelection: true });
     await vi.waitFor(() => expect(limits).toEqual([500, 500, 200]));
     // Split: today's single capped page
     limits.length = 0;
     await vi.waitFor(() => expect(useList.getState().items).toHaveLength(1200));
-    refreshList(false, false);
+    layout("split");
+    refreshList(false);
     await vi.waitFor(() => expect(limits).toEqual([500]));
+  });
+});
+
+describe("what the third Codex review found", () => {
+  it("any fresh detail updates its row (stepping onto a conversation another client starred: its star toggles off)", async () => {
+    const acts: string[] = [];
+    fake.handlers["threads.act"] = async (p) => (acts.push((p as { action: string }).action), { undoId: null });
+    fake.handlers["threads.get"] = async () => ({ thread: { ...row(3), starred: true }, messages: [] });
+    setApp({ selectedId: 3, readerOpen: true });
+    await loadThread(3, true);
+    expect(useList.getState().items[2]!.starred).toBe(true);
+    toggleStar();
+    await vi.waitFor(() => expect(acts).toEqual(["unstar"]));
+  });
+
+  it("archiving a search result from its page returns to the results (the row stays: it's a search)", async () => {
+    setApp({ query: "concierto" });
+    setApp({ selectedId: 2, readerOpen: true });
+    await act("archive");
+    expect(currentPage()).toBe("list");
+    expect(useList.getState().index.has(2)).toBe(true);
   });
 });
 

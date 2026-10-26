@@ -26,7 +26,6 @@ let stepping = false;
 let moves = 0;
 
 export function move(delta: number) {
-  const mine = ++moves;
   const { items, index, nextCursor } = useList.getState();
   if (items.length === 0) return;
   const s = getApp();
@@ -34,9 +33,12 @@ export function move(delta: number) {
   // List's conversation page: a thread that isn't in the loaded list (a reload, a draft's) has no neighbours to step to (R10)
   const onPage = listLayout() && currentPage() === "thread";
   if (onPage && current === -1) return;
+  const pastEnd = onPage && delta > 0 && current + delta > items.length - 1 && nextCursor;
+  // the same step again while its page is on its way: one step (it doesn't cancel the first)
+  if (pastEnd && stepping) return;
+  const mine = ++moves;
   // past the last loaded row on the page: the next page first (the covered list's own scrolling may not ask for it)
-  if (onPage && delta > 0 && current + delta > items.length - 1 && nextCursor) {
-    if (stepping) return;
+  if (pastEnd) {
     stepping = true;
     void loadMore().finally(() => {
       stepping = false;
