@@ -1,4 +1,4 @@
-import { attachmentFingerprint, exportAttachment, importAttachments, validateExportedAttachments } from "./attachments";
+import { attachmentFingerprint, portableAttachmentFingerprint, exportAttachment, importAttachments, validateExportedAttachments } from "./attachments";
 import { RpcError, type ExportedAttachment } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import { decodeText, type Condition, type FilterAction, type FilterRule } from "@terno/core";
@@ -194,16 +194,17 @@ async function restoreInto(b: Backend, items: Pending, options: { final: boolean
       if (!draft) continue;
       const final = options.final === true || options.final === accountId;
       if (draft.mode === "new" && d.mode !== "new" && !final) {
-        for (const ref of draft.attachments ?? []) await store.attachments.discard(accountId, ref.assetId);
         left.drafts.push(d);
         continue;
       }
-      const key = await draftKey(b, draft);
+      const keys = [];
+      for (const part of d.attachments ?? []) keys.push([part.filename, part.mime, part.size, part.contentId ?? null, await portableAttachmentFingerprint(part, () => b.yieldTurn())]);
+      const key = await draftKey(b, draft, keys);
       if (present.has(key)) {
-        for (const ref of draft.attachments ?? []) await store.attachments.discard(accountId, ref.assetId);
         continue;
       }
       present.add(key);
+      draft.attachments = await importAttachments(store, accountId, d.attachments ?? [], now, () => b.yieldTurn());
       try { await store.drafts.save(draft, now); }
       catch (error) { for (const ref of draft.attachments ?? []) await store.attachments.discard(accountId, ref.assetId).catch(() => {}); throw error; }
       drafts++;
@@ -225,12 +226,12 @@ export async function restorePending(b: Backend, final: number | false = false):
 }
 
 /** What makes two drafts the same draft: where it goes, from where, and everything written in it. */
-async function draftKey(b: Backend, d: DraftInput | DraftRow): Promise<string> {
+async function draftKey(b: Backend, d: DraftInput | DraftRow, portableKeys?: unknown[]): Promise<string> {
   const norm = (list: unknown) => (list as DraftAddress[]).map((a) => [a.name, a.email, a.auto === true]);
   if ("account_id" in d) {
     return JSON.stringify([d.account_id, d.mode, d.subject, d.body_text, d.body_html, d.quoted_text, await attachmentKeys(b, d.account_id, JSON.parse(d.attachments_json ?? "[]")), norm(JSON.parse(d.to_json)), norm(JSON.parse(d.cc_json)), norm(JSON.parse(d.bcc_json))]);
   }
-  return JSON.stringify([d.accountId, d.mode, d.subject, d.bodyText, d.bodyHtml ?? "", d.quotedText ?? "", await attachmentKeys(b, d.accountId, d.attachments ?? []), norm(d.to), norm(d.cc), norm(d.bcc ?? [])]);
+  return JSON.stringify([d.accountId, d.mode, d.subject, d.bodyText, d.bodyHtml ?? "", d.quotedText ?? "", portableKeys ?? await attachmentKeys(b, d.accountId, d.attachments ?? []), norm(d.to), norm(d.cc), norm(d.bcc ?? [])]);
 }
 
 /**
@@ -244,8 +245,7 @@ async function draftFrom(b: Backend, accountId: number, d: ExportDraft): Promise
   const cc = addresses.safeParse(d.cc);
   const bcc = addresses.safeParse(d.bcc ?? []);
   if (!to.success || !cc.success || !bcc.success) return null;
-  const attachments = await importAttachments(b.store, accountId, d.attachments ?? [], b.now(), () => b.yieldTurn());
-  const base = { attachments, accountId, to: to.data, cc: cc.data, bcc: bcc.data, subject: d.subject, subjectEdited: d.subjectEdited, uiState: d.uiState };
+  const base = { accountId, to: to.data, cc: cc.data, bcc: bcc.data, subject: d.subject, subjectEdited: d.subjectEdited, uiState: d.uiState };
   const ref = d.mode === "forward" ? d.forwardOf : d.mode === "new" ? null : d.inReplyTo;
   const original = ref ? await b.store.drafts.findMessage(accountId, ref) : null;
   if (original) {

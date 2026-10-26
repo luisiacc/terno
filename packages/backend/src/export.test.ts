@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { demoRegistry } from "@terno/mail";
-import { afterEach, expect, it } from "vitest";
+import { sqlDb } from "@terno/db";
+import { afterEach, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { seedDemo } from "./demo";
 
@@ -79,4 +80,29 @@ it("exports exact draft attachment bytes, imports with fresh account-owned IDs, 
   const disconnected = make("disconnected.db");
   await expect(invoke(disconnected).call("app.import", { data: dump })).rejects.toThrow();
   expect(await disconnected.store.drafts.list()).toHaveLength(0);
+});
+
+it.each(["", "AP+A"])("repeated attached-draft import at full quota is a reservation-free no-op (%s)", async (dataBase64) => {
+  const dir = mkdtempSync(join(tmpdir(), "terno-import-full-"));
+  const backend = new Backend({ dbPath: join(dir, "mail.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, autoSync: false });
+  cleanups.push(async () => { await backend.stop(); rmSync(dir, { recursive: true, force: true }); });
+  const accountId = (await backend.store.accounts.create({ kind: "gmail", email: "a@test.com", displayName: "A", color: "indigo", now: 0 })).account.id;
+  const size = dataBase64 ? 3 : 0;
+  const ref = await backend.store.attachments.create({ accountId, filename: "same.bin", mime: "application/octet-stream", size, now: Date.now() });
+  if (size) await backend.store.attachments.append(accountId, ref.assetId, 0, dataBase64);
+  await backend.store.attachments.seal(accountId, ref.assetId);
+  await backend.store.drafts.save({ accountId, to: [], cc: [], subject: "same", bodyText: "same", attachments: [ref] }, 0);
+  const [c, s] = createMemoryTransportPair(); backend.connect(s, { clientId: "full", origin: "renderer" }); const client = new RpcClient(c);
+  const dump = await client.call("app.export", {});
+  for (let i = 0; i < 14; i++) await backend.store.attachments.create({ accountId, filename: "reserved", mime: "text/plain", size: 18 * 1024 * 1024, now: Date.now() });
+  await backend.store.attachments.create({ accountId, filename: "last", mime: "text/plain", size: 4 * 1024 * 1024 - size - 16 * 1024, now: Date.now() });
+  const before = await backend.store.drafts.list();
+  const db = sqlDb(backend.store);
+  const assets = db.all("SELECT * FROM attachment_assets ORDER BY id");
+  const create = vi.spyOn(backend.store.attachments, "create");
+  expect((await client.call("app.import", { data: dump })).drafts).toBe(0);
+  expect(create).not.toHaveBeenCalled();
+  expect(await backend.store.drafts.list()).toEqual(before);
+  expect(db.all("SELECT * FROM attachment_assets ORDER BY id")).toEqual(assets);
+  client.close();
 });

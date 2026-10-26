@@ -67,6 +67,10 @@ export async function importAttachments(store: MailStore, accountId: number, par
 
 export async function attachmentFingerprint(store: MailStore, accountId: number, ref: import("@terno/core").AttachmentRef, yieldTo: () => Promise<void>): Promise<string> {
   const part = await exportAttachment(store, accountId, ref, yieldTo);
+  return portableAttachmentFingerprint(part, yieldTo);
+}
+
+export async function portableAttachmentFingerprint(part: import("@terno/core/rpc").ExportedAttachment, yieldTo: () => Promise<void>): Promise<string> {
   const bytes = new Uint8Array(part.size);
   let offset = 0;
   for (const chunk of part.chunks) { const data = base64Bytes(chunk); bytes.set(data, offset); offset += data.length; await yieldTo(); }
