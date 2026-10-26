@@ -2,7 +2,7 @@ import type { CategoryColor } from "@terno/core";
 import { t } from "@terno/i18n";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
-import { Archive, CheckCheck, FileDown, FolderInput, Palette, Paperclip, Inbox, Layers, ListFilter, Mail, MailOpen, Moon, OctagonAlert, PenLine, Printer, RefreshCw, RotateCw, Search, Send, Sparkles, Star, Sun, Trash2, Undo2 } from "lucide-react";
+import { Archive, CheckCheck, FileDown, FolderInput, Palette, Paperclip, Inbox, Layers, ListFilter, Mail, MailOpen, Moon, OctagonAlert, PenLine, Printer, RefreshCw, Reply, RotateCw, Search, Send, Sparkles, Star, Sun, Trash2, Undo2, Users } from "lucide-react";
 import { useState } from "react";
 import { act, openCompose, toggleStar, undoLast } from "~/lib/actions";
 import { addScopeToCategory, addToCategory } from "~/lib/categorize";
@@ -30,6 +30,7 @@ export function CommandPalette() {
   // ⌘L's state: Unread on or not (another filter on: ⌘L switches to Unread)
   const filter = useApp((s) => (open && s.reviewCategoryId === null ? (isUnreadOnly(s) ? "on" : "off") : null));
   const active = useApp((s) => (open ? activeFilter(s) : undefined));
+  const supported = useApp((s) => s.supportedFilters);
   const design = useApp((s) => (open ? (s.settings?.design ?? null) : null));
   const updatesAvailable = useHasUpdates();
   const readyVersion = useUpdates((s) => (open && s.state?.ready && s.state.status !== "installing" ? s.state.ready.version : null));
@@ -91,6 +92,16 @@ export function CommandPalette() {
           {filter && active && active !== "unread" && (
             <CommandItem data-testid="palette-filter-all" value={`${t("palette.showAll")} ${t("palette.search.unreadFilter")}`} keywords={[...english("palette.showAll"), ...english("palette.search.unreadFilter")]} onSelect={() => run(() => setListFilter(undefined))}>
               <ListFilter /> {t("palette.showAll")}
+            </CommandItem>
+          )}
+          {filter && active !== "people" && supported.includes("people") && (
+            <CommandItem data-testid="palette-filter-people" value={`${t("palette.showPeople")} ${t("palette.search.unreadFilter")}`} keywords={[...english("palette.showPeople"), ...english("palette.search.unreadFilter")]} onSelect={() => run(() => setListFilter("people"))}>
+              <Users /> {t("palette.showPeople")}
+            </CommandItem>
+          )}
+          {filter && active !== "waiting" && supported.includes("waiting") && (
+            <CommandItem data-testid="palette-filter-waiting" value={`${t("palette.showWaiting")} ${t("palette.search.unreadFilter")}`} keywords={[...english("palette.showWaiting"), ...english("palette.search.unreadFilter")]} onSelect={() => run(() => setListFilter("waiting"))}>
+              <Reply /> {t("palette.showWaiting")}
             </CommandItem>
           )}
           {filter && active !== "attachments" && (

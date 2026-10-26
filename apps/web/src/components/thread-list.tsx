@@ -6,7 +6,7 @@ import { ChevronDown, Inbox, ListFilter, Search, SquarePen, X } from "lucide-rea
 import { cn } from "@terno/ui/lib/utils";
 import { activeFilter } from "~/lib/unread-filter";
 import { setListFilter } from "~/lib/unread";
-import { LIST_FILTERS, matchesFilter, type ListFilter as QuickFilter } from "@terno/core";
+import { matchesFilter, type ListFilter as QuickFilter } from "@terno/core";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { Button } from "@terno/ui/components/button";
@@ -72,9 +72,17 @@ function UnreadFilterButton({ filter }: { filter: QuickFilter | undefined }) {
   );
 }
 
+const FILTER_NAME = {
+  unread: "list.filter.unread",
+  people: "list.filter.people",
+  waiting: "list.filter.waiting",
+  attachments: "list.filter.attachments",
+  starred: "list.filter.starred",
+} as const satisfies Record<QuickFilter, string>;
+
 /** A filter's name, at render time (the active language). */
 function filterName(f: QuickFilter): string {
-  return f === "unread" ? t("list.filter.unread") : f === "attachments" ? t("list.filter.attachments") : t("list.filter.starred");
+  return t(FILTER_NAME[f]);
 }
 
 /**
@@ -85,6 +93,7 @@ function filterName(f: QuickFilter): string {
 function FilterStatus({ search, filter }: { search: boolean; filter: QuickFilter }) {
   const total = useList((s) => (s.unreadTotal && s.unreadTotal.key === s.key ? s.unreadTotal : null));
   const view = useApp((s) => s.view);
+  const supported = useApp((s) => s.supportedFilters);
   const n = filter === "unread" && !search && total && total.n > 0 ? `${formatNumber(total.n)}${total.capped ? "+" : ""}` : null;
   return (
     <p data-testid="unread-filter-status" className="flex min-w-0 items-center truncate text-2xs leading-tight text-muted-foreground tabular">
@@ -100,7 +109,7 @@ function FilterStatus({ search, filter }: { search: boolean; filter: QuickFilter
         />
         <DropdownMenuContent align="start" className="min-w-44">
           <DropdownMenuRadioGroup value={filter} onValueChange={(v) => setListFilter(v as QuickFilter)}>
-            {LIST_FILTERS.filter((f) => !(f === "starred" && view === "starred")).map((f) => (
+            {supported.filter((f) => !(f === "starred" && view === "starred")).map((f) => (
               <DropdownMenuRadioItem key={f} value={f} closeOnClick data-testid={`filter-option-${f}`}>
                 {filterName(f)}
               </DropdownMenuRadioItem>
@@ -113,10 +122,15 @@ function FilterStatus({ search, filter }: { search: boolean; filter: QuickFilter
   );
 }
 
-/** Lumen: the filters as chips under the header (one choice; arrow keys move between them). */
+/**
+ * Lumen: the filters as chips under the header (one choice; arrow keys move
+ * between them). Waiting has a chip only while it is on: it is reached from
+ * the greeting's count (or the palette), and the row stays five chips long.
+ */
 function QuickChips({ filter }: { filter: QuickFilter | undefined }) {
   const view = useApp((s) => s.view);
-  const chips = (["all", ...LIST_FILTERS] as const).filter((f) => !(f === "starred" && view === "starred"));
+  const supported = useApp((s) => s.supportedFilters);
+  const chips = (["all", ...supported] as const).filter((f) => !(f === "starred" && view === "starred") && (f !== "waiting" || filter === "waiting"));
   return (
     <ToggleGroup
       data-testid="quick-filters"
@@ -204,6 +218,15 @@ function SearchField({ autoCollapse }: { autoCollapse: boolean }) {
   );
 }
 
+/**
+ * The waiting count's window moves with the clock (plan 17): it is asked for
+ * again at the greeting's day-part boundaries and when the window comes
+ * back, besides every change. No timer of its own.
+ */
+function refreshCounts(): void {
+  void client.call("counts.get", {}).then((counts) => setApp({ counts }), () => {});
+}
+
 /** The part of the day a greeting names, re-read at its next boundary and when the window comes back (no polling). */
 type DayPart = "morning" | "afternoon" | "evening";
 function useDayPart(): DayPart {
@@ -221,11 +244,13 @@ function useDayPart(): DayPart {
       const next = [5, 12, 19, 29].map((h) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0).getTime() + h * 3_600_000).find((t) => t > d.getTime())!;
       timer = setTimeout(() => {
         setNow(part());
+        refreshCounts();
         schedule();
       }, next - d.getTime() + 1000);
     };
     const onVisible = () => {
       setNow(part());
+      if (document.visibilityState === "visible") refreshCounts();
       schedule();
     };
     schedule();
@@ -245,12 +270,26 @@ function Greeting() {
   return <>{first ? t(key, { name: first }) : t(`${key}Plain` as const)}</>;
 }
 
-/** Under a display title or the greeting: what's unread here (the filter's status when it's on). */
-function Subtitle({ filter, search }: { filter: QuickFilter | undefined; search: boolean }) {
+/**
+ * "M waiting for your reply" in the greeting (plan 17): a toggle for the
+ * Waiting filter. Absent while the store doesn't know yet (its backfill), or
+ * an older backend doesn't say.
+ */
+function useWaitingCount(): number | null {
+  return useApp((s) => {
+    if (!s.supportedFilters.includes("waiting") || s.counts.inboxWaiting == null) return null;
+    return s.accountId !== null ? (s.counts.inboxWaitingByAccount?.[s.accountId] ?? 0) : s.counts.inboxWaiting;
+  });
+}
+
+/** Under a display title or the greeting: what's unread here (the filter's status when it's on); the greeting adds what waits for your reply. */
+function Subtitle({ filter, search, greeting }: { filter: QuickFilter | undefined; search: boolean; greeting: boolean }) {
   const design = useDesign();
   const unread = useApp((s) =>
     s.reviewCategoryId !== null ? null : s.categoryId !== null ? (s.counts.categoryUnread[s.categoryId] ?? 0) : s.view === "inbox" ? (s.accountId !== null ? (s.counts.inboxUnreadByAccount[s.accountId] ?? 0) : s.counts.inboxUnread) : null,
   );
+  const counted = useWaitingCount();
+  const waiting = greeting && counted ? counted : 0;
   if (filter && design.variants.quickFilters === "menu")
     return (
       <div className="mt-1.5">
@@ -260,7 +299,20 @@ function Subtitle({ filter, search }: { filter: QuickFilter | undefined; search:
   if (unread === null) return null;
   return (
     <p data-testid="list-subtitle" className="type-list-subtitle mt-1 truncate text-muted-foreground tabular">
-      {unread > 0 ? <span className="type-list-subtitle-strong text-unread-ink">{t("list.unreadCount", { count: unread })}</span> : t("list.caughtUp")}
+      {unread > 0 && <span className="type-list-subtitle-strong text-unread-ink">{t("list.unreadCount", { count: unread })}</span>}
+      {unread > 0 && waiting > 0 && <span aria-hidden> · </span>}
+      {waiting > 0 && (
+        <button
+          type="button"
+          data-testid="waiting-count"
+          aria-pressed={filter === "waiting"}
+          className="no-drag rounded-sm text-foreground underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-ring aria-pressed:underline"
+          onClick={() => setListFilter(filter === "waiting" ? undefined : "waiting")}
+        >
+          {t("list.waitingCount", { count: waiting })}
+        </button>
+      )}
+      {unread === 0 && waiting === 0 && t("list.caughtUp")}
     </p>
   );
 }
@@ -348,7 +400,7 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
               {kind === "greeting" ? <Greeting /> : title}
               {kind !== "greeting" && accountSuffix}
             </h1>
-            {query && searchMs !== null ? <p className="mt-1">{stats}</p> : <Subtitle filter={filter} search={query.trim() !== ""} />}
+            {query && searchMs !== null ? <p className="mt-1">{stats}</p> : <Subtitle filter={filter} search={query.trim() !== ""} greeting={kind === "greeting"} />}
           </div>
           <div className="flex shrink-0 items-center gap-0.5 pt-0.5">{actions}</div>
         </div>
@@ -422,20 +474,25 @@ function SelectAllBanner() {
  * inside it (a button isn't an option); after "Clear filter" focus goes to
  * the header's filter button, which stays.
  */
+/** An empty filtered list's title and line, per criterion; a search says what didn't match. */
+function emptyCopy(filter: QuickFilter, search: boolean): [string, string] {
+  switch (filter) {
+    case "unread":
+      return search ? [t("list.unreadEmpty.searchTitle"), t("list.unreadEmpty.searchBody")] : [t("list.unreadEmpty.title"), t("list.unreadEmpty.body")];
+    case "people":
+      return search ? [t("list.filterEmpty.searchTitle"), t("list.filterEmpty.peopleSearchBody")] : [t("list.filterEmpty.peopleTitle"), t("list.filterEmpty.peopleBody")];
+    case "waiting":
+      return search ? [t("list.filterEmpty.searchTitle"), t("list.filterEmpty.waitingSearchBody")] : [t("list.filterEmpty.waitingTitle"), t("list.filterEmpty.waitingBody")];
+    case "attachments":
+      return search ? [t("list.filterEmpty.searchTitle"), t("list.filterEmpty.attachmentsSearchBody")] : [t("list.filterEmpty.attachmentsTitle"), t("list.filterEmpty.attachmentsBody")];
+    case "starred":
+      return search ? [t("list.filterEmpty.searchTitle"), t("list.filterEmpty.starredSearchBody")] : [t("list.filterEmpty.starredTitle"), t("list.filterEmpty.starredBody")];
+  }
+}
+
 function UnreadEmptyState({ filter }: { filter: QuickFilter }) {
   const search = useApp((s) => s.query.trim() !== "");
-  const [title, body] =
-    filter === "unread"
-      ? search
-        ? [t("list.unreadEmpty.searchTitle"), t("list.unreadEmpty.searchBody")]
-        : [t("list.unreadEmpty.title"), t("list.unreadEmpty.body")]
-      : filter === "attachments"
-        ? search
-          ? [t("list.filterEmpty.searchTitle"), t("list.filterEmpty.attachmentsSearchBody")]
-          : [t("list.filterEmpty.attachmentsTitle"), t("list.filterEmpty.attachmentsBody")]
-        : search
-          ? [t("list.filterEmpty.searchTitle"), t("list.filterEmpty.starredSearchBody")]
-          : [t("list.filterEmpty.starredTitle"), t("list.filterEmpty.starredBody")];
+  const [title, body] = emptyCopy(filter, search);
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 px-8 text-center" data-testid="unread-empty" data-filter={filter}>
       <ListFilter className="mb-2 size-7 stroke-[1.25] text-muted-foreground" aria-hidden />

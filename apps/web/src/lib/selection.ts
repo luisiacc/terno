@@ -84,5 +84,18 @@ export function menuTargets(row: number, checked: ReadonlySet<number>, order?: O
 
 /** A scope's name (a mailbox, a category, a quoted search), with "· Unread" (or the filter on) after it. */
 export function scopeLabel(label: string, filter: ListFilter | undefined): string {
-  return filter === "unread" ? t("list.scope.unread", { label }) : filter === "attachments" ? t("list.scope.attachments", { label }) : filter === "starred" ? t("list.scope.starred", { label }) : label;
+  switch (filter) {
+    case undefined:
+      return label;
+    case "unread":
+      return t("list.scope.unread", { label });
+    case "people":
+      return t("list.scope.people", { label });
+    case "waiting":
+      return t("list.scope.waiting", { label });
+    case "attachments":
+      return t("list.scope.attachments", { label });
+    case "starred":
+      return t("list.scope.starred", { label });
+  }
 }
