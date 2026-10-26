@@ -266,7 +266,8 @@ function formLabel(forward: boolean, who: string): string {
  * one tinted surface; switching between them animates its rows. Opening
  * keeps the draft in view; focus moves only on an explicit open or exit.
  */
-export function DraftSlot({ threadId, draftKey, replyTo, account }: { threadId: number; draftKey: string | null; replyTo: string; account: Account | undefined }) {
+/** `icons`: the account's own picture may be asked for (plan 22; never in spam) */
+export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true }: { threadId: number; draftKey: string | null; replyTo: string; account: Account | undefined; icons?: boolean }) {
   const d = useDrafts((s) => (draftKey ? s.drafts[draftKey] : undefined));
   const accounts = useApp((s) => s.accounts);
   const focus = useApp((s) => (draftKey && s.draftFocus?.key === draftKey ? s.draftFocus : null));
@@ -323,7 +324,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account }: { threadId: 
       <Expand open={state === "bar"}>
         <div className="flex h-10 items-center gap-0.5 pr-1.5 pl-2.5" data-testid="reply-bar">
           <button type="button" onClick={() => void openCompose("reply", threadId)} data-testid="quick-reply" className="flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-lg text-left text-sm text-muted-foreground">
-            <SenderAvatar name={me} email={account?.email ?? me} className="size-[22px] text-[9.5px]" />
+            <SenderAvatar name={me} email={account?.email ?? me} icon={icons} className="size-[22px] text-[9.5px]" />
             <span className="truncate">{t("compose.bar.reply", { name: replyTo })}</span>
           </button>
           <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" onClick={() => void openCompose("replyAll", threadId)} data-testid="quick-reply-all">

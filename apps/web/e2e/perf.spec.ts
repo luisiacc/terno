@@ -227,6 +227,66 @@ for (const design of DESIGNS) for (const density of ["comfortable", "compact"] a
  });
 }
 
+test.describe("sender icons (plan 22)", () => {
+  test.use({ design: "lumen" });
+  test("continuous scrolling with website icons arriving (Lumen): frames stay smooth, icons re-render no row", async ({ app: page, server }) => {
+    // every site has an icon, so icons arrive for every row scrolled into view
+    server.icons.everySite = true;
+    await server.backend.server.invoke("settings.update", { senderIcons: true }, { clientId: "setup", origin: "dev" as const });
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await page.getByTestId("nav-all").click();
+    await expect(page.getByTestId("list-title")).toHaveText("All Mail");
+    await expect(page.getByTestId("sender-icon").first()).toBeVisible();
+    const rowH = 84;
+    await startFrames(page);
+    const r = await page.evaluate(async (h) => {
+      const scroller = document.querySelector("[role=listbox]") as HTMLElement;
+      const target = 2000 * h;
+      const perFrame = target / 180;
+      let maxRows = 0;
+      const t0 = performance.now();
+      await new Promise<void>((resolve, reject) => {
+        const step = () => {
+          if (performance.now() - t0 > 20_000) return reject(new Error(`stuck at ${scroller.scrollTop}px`));
+          scroller.scrollTop = Math.min(scroller.scrollTop + perFrame, scroller.scrollHeight);
+          maxRows = Math.max(maxRows, document.querySelectorAll("[data-testid=thread-row]").length);
+          if (scroller.scrollTop + scroller.clientHeight >= target) resolve();
+          else requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      });
+      return { maxRows, ms: performance.now() - t0 };
+    }, rowH);
+    const f = await stopFrames(page);
+    stats.push({ name: `scroll 2,000 with icons (lumen): ${Math.round(r.ms)} ms, max DOM rows ${r.maxRows}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+    expect(r.maxRows).toBeLessThanOrEqual(80);
+    frameGate("continuous scroll with icons (lumen)", f);
+    // where the scroll stopped: once the list is still, the held icons arrive; their avatars render, the rows don't
+    let release!: () => void;
+    server.icons.hold = new Promise<void>((r) => (release = r));
+    await page.waitForTimeout(500);
+    const rowsAtRest = await renders(page, "ThreadRow");
+    // forgotten: every avatar on screen goes back to initials and asks again (held)
+    await server.backend.server.invoke("icons.forget", {}, { clientId: "setup", origin: "dev" as const });
+    await expect(page.getByTestId("sender-icon")).toHaveCount(0);
+    await page.waitForTimeout(500);
+    const rowsBefore = await renders(page, "ThreadRow");
+    expect(rowsBefore - rowsAtRest, "rows re-rendered by forgetting icons").toBe(0);
+    const iconsBefore = await renders(page, "SenderIcon");
+    release();
+    server.icons.hold = null;
+    await page.waitForTimeout(1000);
+    const rowRenders = (await renders(page, "ThreadRow")) - rowsBefore;
+    const iconRenders = (await renders(page, "SenderIcon")) - iconsBefore;
+    stats.push({ name: `icons arriving on a still list: row renders ${rowRenders}, icon renders ${iconRenders}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+    expect(iconRenders).toBeGreaterThan(0);
+    expect(rowRenders).toBe(0);
+    // only visible avatars asked: far fewer sites than the 2,000 rows scrolled past
+    expect(new Set(server.icons.requests.map((u) => new URL(u).hostname)).size).toBeLessThan(400);
+  });
+});
+
 test("switching design with hundreds of rows loaded is one frame of work: every switch's frame ≤ 50 ms, data-design and the rows in step", async ({ app: page }) => {
   await page.getByTestId("nav-all").click();
   await expect(page.getByTestId("list-title")).toHaveText("All Mail");

@@ -31,6 +31,8 @@ interface Props {
   height: number;
   compact: boolean;
   showAccount: boolean;
+  /** plan 22: the sender's icon may be asked for (never in spam) */
+  icons: boolean;
   /** the design's row layout (plan 15) */
   layout: DesignVariants["row"];
 }
@@ -42,7 +44,7 @@ interface Props {
  * checking one re-renders one. The design picks the layout inside it (classic,
  * avatar, large avatar); the shell, roles, ids and handlers are the same in all.
  */
-export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, showAccount, layout }: Props) {
+export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, showAccount, icons, layout }: Props) {
   renderProbe("ThreadRow");
   /** the open thread (the cursor; the listbox's active descendant) */
   const selected = useApp((s) => s.selectedId === thread.id);
@@ -121,6 +123,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       <SenderAvatar
         name={thread.fromName}
         email={thread.fromEmail}
+        icon={icons}
         className={compact ? "size-(--avatar-row-compact) text-[length:calc(var(--avatar-row-compact)*0.42)]" : "size-(--avatar-row) text-[length:calc(var(--avatar-row)*0.3)]"}
       />
       {/* Lumen: what's new sits on the person, ringed in what's behind the row */}

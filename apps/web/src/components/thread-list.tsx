@@ -479,6 +479,8 @@ export function ThreadList() {
   const compact = useApp((s) => s.settings?.density === "compact");
   const composing = useApp((s) => s.compose !== null);
   const showAccount = useApp((s) => s.accountId === null && s.accounts.length > 1);
+  // plan 22: no sender icons in spam (no request to a spammer's site, no borrowed logo on a phish), the view or a search in it
+  const icons = useApp((s) => s.view !== "spam" && !/(^|\s)in:spam\b/i.test(s.query));
   const filter = useApp(activeFilter);
   const design = useDesign();
   const height = design.rows[compact ? "compact" : "comfortable"];
@@ -625,7 +627,7 @@ export function ThreadList() {
         ) : (
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
             {virtualItems.map((v) => (
-              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} showAccount={showAccount} layout={layout} />
+              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} showAccount={showAccount} icons={icons} layout={layout} />
             ))}
           </div>
         )}
