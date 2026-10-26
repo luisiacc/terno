@@ -175,7 +175,7 @@ export const test = base.extend<Fixtures>({
 
 export const rows = (page: Page): Locator => page.getByTestId("thread-row");
 
-/** A recipient field's chips (plan 29): `field` is the input's test id ("compose-to"). */
+/** A recipient field's chips (plan 32): `field` is the input's test id ("compose-to"). */
 export const chipsOf = (page: Page, field: string): Locator => page.getByTestId(`${field}-field`).getByTestId("recipient-chip");
 
 /** Every address in a recipient field, in order (focused first: a long field shows them all only then). */

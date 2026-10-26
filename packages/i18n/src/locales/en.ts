@@ -888,7 +888,7 @@ const en = {
   "compose.collapsed.to": "· To {to} — {preview}",
   "compose.collapsed.forward": "· Forward {to} — {preview}",
   "compose.noAccount": "Connect an account to write mail",
-  // plan 29: recipients as chips
+  // plan 32: recipients as chips
   "compose.invalidRecipient": "“{entry}” isn’t an email address. Fix or remove it, then send.",
   "compose.noRecipient": "Add a recipient to send",
   "compose.recipients.list": "{field} recipients",

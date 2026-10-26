@@ -30,7 +30,7 @@ const WORD_BYTES = 45;
 /**
  * RFC 2047 encoded words when the value isn't plain ASCII: as many as it
  * takes, each at most 75 characters and never splitting a character
- * (plan 29), folded onto their own lines.
+ * (plan 32), folded onto their own lines.
  */
 function encodeWords(value: string): string {
   const v = oneLine(value);

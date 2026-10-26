@@ -80,7 +80,7 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
   if (!detail || mine !== intent) return;
   if (mode === "forward" && answered(detail).attachments.some((a) => !a.assetId)) { snack.error(t("attachments.unavailable")); return; }
   const account = s.accounts.find((a) => a.id === detail.thread.accountId) ?? s.accounts[0]!;
-  // none of my addresses is replied to, whichever account the conversation is in (plan 29)
+  // none of my addresses is replied to, whichever account the conversation is in (plan 32)
   const identities = s.accounts.map((a) => a.email);
   if (existing && existing.mode !== "new") {
     const before = fieldsOf(existing);
@@ -177,7 +177,7 @@ async function send(key: string): Promise<boolean> {
   const to = validRecipients(d.toText);
   const cc = validRecipients(d.ccText);
   const bcc = validRecipients(d.bccText);
-  // something typed that isn't an address (or nobody at all): stay, say what is wrong, and show it (plan 29 §2.6)
+  // something typed that isn't an address (or nobody at all): stay, say what is wrong, and show it (plan 32 §2.6)
   const bad = (["to", "cc", "bcc"] as const).map((field) => ({ field, entry: firstInvalid(d[`${field}Text`]) })).find((b) => b.entry !== null);
   if (to.length === 0 || bad) {
     markSending(key, false);

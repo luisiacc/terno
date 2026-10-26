@@ -1,5 +1,5 @@
 /**
- * Plan 29 §3.4: who a reply and a reply-all go to, whatever other clients
+ * Plan 32 §3.4: who a reply and a reply-all go to, whatever other clients
  * wrote in the headers. Table-driven; each row a message (or a thread) and
  * the To and Cc Terno fills in.
  */

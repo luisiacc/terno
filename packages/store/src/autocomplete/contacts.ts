@@ -86,7 +86,7 @@ export function normalizeEmail(email: string): string | null {
   return e.length <= 320 && VALID.test(e) ? e : null;
 }
 
-/** A display name worth showing: unquoted, collapsed, not an address (and what other clients mangle undone: plan 29). */
+/** A display name worth showing: unquoted, collapsed, not an address (and what other clients mangle undone: plan 32). */
 export function cleanName(name: string, email: string): string {
   let n = cleanFromName(name).trim();
   if (n.length >= 2 && ((n.startsWith('"') && n.endsWith('"')) || (n.startsWith("'") && n.endsWith("'")))) n = n.slice(1, -1).trim();
@@ -339,7 +339,7 @@ async function unpackStrings(s: SectionReader, name: string, clock: SliceClock):
   return out;
 }
 
-// format 4: names cleaned as plan 29 reads them (older snapshots rebuild once)
+// format 4: names cleaned as plan 32 reads them (older snapshots rebuild once)
 export const CONTACTS_SNAPSHOT: Omit<SnapshotKind, "identity"> = { tokenizer: 1, format: 4 };
 
 export interface ContactIndexOptions {

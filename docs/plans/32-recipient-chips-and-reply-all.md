@@ -1,8 +1,8 @@
-# Plan 29: recipient chips, and reply / reply-all addresses that survive other clients
+# Plan 32: recipient chips, and reply / reply-all addresses that survive other clients
 
 - **Status:** implemented (see "Implementation notes" and "What the Codex code review changed" at the end).
 - **Builds on:** `76c2ab9` (main after plans 20–24).
-- **Numbering:** first written as 26 beside the re-sign-in work (25); main then took 26 (provider reliability), 27 (Reply-To) and 28 (Google sign-in), so this is 29.
+- **Numbering:** first written as 26 beside the re-sign-in work (25). Main then took 26 (provider reliability), 27 (Reply-To), 28 (Google sign-in), 29 (mail attachments), 30 (search date boundaries) and 31 (account sync lifecycle), so this is 32.
 - **Request (verbatim):** "for the emails that are the destinies and the ccs, lets have nice little clean bubbles there instead of plain text, it is annoying sometimes to have it but its prettier and nice, make it so the ux while interacting there is good to, so they can hit backspace before an email and delete it, so the interaction there needs to be world class intuitive and good ux.
   lets also cover scenarios that i see sometimes where i hit reply all, but the user comes with a CC that is messed up because of the email client they are using like `\"_David_Sucre_L.?= <david@sucre.net> , Luis Alberto Medina\" <lmedina@sucre.net>`
   which will fail in things like Mac mail.

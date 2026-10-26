@@ -22,7 +22,7 @@ test.describe("inline reply, reply-all, forward", { tag: "@design" }, () => {
     await expect(composer(page)).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(composer(page)).toHaveAccessibleName(/^Reply to /);
-    // the sender, as a chip (plan 29)
+    // the sender, as a chip (plan 32)
     await expect(chipsOf(page, "compose-to")).toHaveCount(1);
     await expect(chipsOf(page, "compose-to")).toHaveAttribute("data-email", /@/);
     await expect(page.getByTestId("compose-to")).toHaveValue("");
@@ -84,7 +84,7 @@ test.describe("inline reply, reply-all, forward", { tag: "@design" }, () => {
     await expect(composer(page)).toContainText("Forwarded message");
     await page.getByTestId("compose-to").fill("esto no es un correo");
     await page.getByTestId("compose-send").click();
-    // Send says which entry isn't an address, and shows it: its chip selected (plan 29)
+    // Send says which entry isn't an address, and shows it: its chip selected (plan 32)
     await expect(toast(page, "“esto no es un correo” isn’t an email address. Fix or remove it, then send.")).toBeVisible();
     await expect(composer(page)).toBeVisible();
     await expect(chipsOf(page, "compose-to").first()).toBeFocused();
@@ -158,7 +158,7 @@ test.describe("drafts are kept", { tag: "@design" }, () => {
     await expect(page.getByTestId("reader-subject")).toBeVisible();
     await focusList(page);
     await page.keyboard.press("f");
-    // two chips, Bob's marked (plan 29)
+    // two chips, Bob's marked (plan 32)
     expect(await recipientEmails(page, "compose-to")).toEqual(["alice@example.com", "bob@"]);
     await expect(chipsOf(page, "compose-to").nth(1)).toHaveAttribute("aria-invalid", "true");
     // and it isn't sent like that

@@ -61,7 +61,7 @@ describe("pasting a list", () => {
 const reread = (s: FieldState) => derive(serialize(s), false);
 const emailsOf = (s: FieldState) => s.chips.map((c) => c.address.email);
 
-describe("chips (plan 29)", () => {
+describe("chips (plan 32)", () => {
   it("reads a field's text: unfocused everything is a chip; focused, an entry with no separator after it is still being typed", () => {
     const value = 'Ana <ana@x.io>, "Pérez, Luis" <l@y.com>, bo';
     expect(emailsOf(derive(value, false))).toEqual(["ana@x.io", "l@y.com", "bo"]);

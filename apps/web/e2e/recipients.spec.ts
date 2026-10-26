@@ -1,5 +1,5 @@
 /**
- * Plan 29: recipients as chips, and reply-all addresses that survive other
+ * Plan 32: recipients as chips, and reply-all addresses that survive other
  * clients. Tagged @design, so it runs in macOS, Lumen and Atelier. Typing and
  * the commit keys; Backspace selects then removes (a held key never does);
  * arrows, Home/End, ⌘A, ⌘C/⌘X/⌘V, Delete, edit by Enter and double click, ×;

@@ -162,7 +162,7 @@ const hasTargets = () => {
 function isEditable(el: Element | null): boolean {
   if (!el) return false;
   const tag = el.tagName;
-  // a recipient chip has focus inside its field (plan 29): Backspace, Delete and letters are the field's, never the conversation's
+  // a recipient chip has focus inside its field (plan 32): Backspace, Delete and letters are the field's, never the conversation's
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (el as HTMLElement).isContentEditable || el.closest("[data-recipient-field]") !== null;
 }
 

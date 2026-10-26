@@ -913,7 +913,7 @@ export function getThread(c: Ctx, threadId: number): ThreadDetail | null {
         id: m.id,
         threadId: m.thread_id,
         accountId: m.account_id,
-        // repaired at read (plan 29): mail an older parser stored reads right, no backfill
+        // repaired at read (plan 32): mail an older parser stored reads right, no backfill
         ...storedAddresses(m as Parameters<typeof storedAddresses>[0]),
         subject: m.subject,
         date: m.date,
