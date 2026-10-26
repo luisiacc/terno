@@ -743,6 +743,35 @@ const RICH_DRAFTS_V13 = `
 ALTER TABLE drafts ADD COLUMN body_html TEXT NOT NULL DEFAULT '';
 `;
 
+/**
+ * v14: People and "waiting for your reply" (plan 17). Two thread facts that
+ * recomputeThreads keeps with the other aggregates (person NULL: not computed
+ * yet), the bulk headers seen at ingest, and the addresses you send from or
+ * have written to. Nothing is rewritten here: a background backfill fills
+ * them in slices (facts.ts), its progress in settings, its queue the pending
+ * index. The filters' indexes are shaped like v11/v12's.
+ */
+const PEOPLE_V14 = `
+ALTER TABLE threads ADD COLUMN person INTEGER;
+ALTER TABLE threads ADD COLUMN waiting_since INTEGER;
+ALTER TABLE messages ADD COLUMN is_bulk INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE correspondents (
+  email TEXT PRIMARY KEY,
+  -- you send from it (an account's address is yours without a row)
+  own INTEGER NOT NULL DEFAULT 0,
+  -- you have sent mail to it
+  written INTEGER NOT NULL DEFAULT 0
+) WITHOUT ROWID;
+CREATE INDEX correspondents_own ON correspondents(email) WHERE own = 1;
+CREATE INDEX threads_people ON threads(last_date DESC, id DESC, account_id, in_inbox, in_trash, in_spam, is_starred, has_sent) WHERE person = 1;
+CREATE INDEX threads_people_id ON threads(id, account_id, in_inbox, in_trash, in_spam, is_starred, has_sent) WHERE person = 1;
+CREATE INDEX threads_waiting ON threads(last_date DESC, id DESC, waiting_since, account_id, in_inbox, in_trash, in_spam, is_starred, has_sent) WHERE waiting_since IS NOT NULL;
+CREATE INDEX threads_waiting_id ON threads(id, waiting_since, account_id, in_inbox, in_trash, in_spam, is_starred, has_sent) WHERE waiting_since IS NOT NULL;
+CREATE INDEX threads_facts_pending ON threads(last_date DESC, id DESC) WHERE person IS NULL;
+INSERT OR REPLACE INTO settings (key, value_json)
+  SELECT 'facts_backfill', CASE WHEN EXISTS (SELECT 1 FROM threads) THEN '{"phase":"senders","after":0}' ELSE '{"phase":"done"}' END;
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "initial schema", sql: SCHEMA_V1 },
   { version: 2, name: "op target index", sql: OP_TARGETS_V2 },
@@ -757,6 +786,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 11, name: "unread threads index", sql: UNREAD_V11 },
   { version: 12, name: "quick filter indexes", sql: FILTERS_V12 },
   { version: 13, name: "rich drafts", sql: RICH_DRAFTS_V13 },
+  { version: 14, name: "people and waiting for your reply", sql: PEOPLE_V14 },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

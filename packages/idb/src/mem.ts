@@ -85,6 +85,13 @@ export class Table<R extends Row = Row> {
     return out;
   }
 
+  /** the distinct values a one-column index holds (a prefix walk where SQL would seek a range) */
+  indexValues(index: string): IterableIterator<Key> {
+    const ix = this.indexes.get(index);
+    if (!ix) throw new Error(`${this.spec.name} has no index ${index}`);
+    return ix.map.keys();
+  }
+
   /** how many rows an index holds for `values` */
   count(index: string, ...values: unknown[]): number {
     return this.indexes.get(index)?.map.get(keyOf(values))?.size ?? 0;

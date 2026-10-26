@@ -61,6 +61,7 @@ import {
 import { autoReasons, categoryStats, countScope, pendingSuggestions, predictThread, quickActions, resolveScope } from "./categorize-bulk";
 import { startCheckpointWorker, type CheckpointWorker } from "./checkpoint";
 import { adoptProviderThread, deleteMessages, ingestMessages, recomputeThreads, setMessageBody } from "./ingest";
+import { answeredThreads, backfillSlice, factsIdle, ownMailChanged, referencesOfOwn, resetFacts, startRescan } from "./facts";
 import { changeOwner, claimOwner, getOwner } from "./owner";
 import { countScopeThreads, getCounts, getSummaries, getThread, listThreads, scopeThreadIds, SUMMARY_COLUMNS, toSummary, type SummaryRow } from "./queries";
 import {
@@ -287,7 +288,7 @@ export class SqlMailStore implements MailStore {
       if (!thread) return null;
       return { ...thread, categorization: { auto: autoReasons(this.db, id), suggestions: pendingSuggestions(this.db, { threadId: id, limit: 5 }) } };
     },
-    counts: async () => getCounts(this.db),
+    counts: async (now) => getCounts(this.db, now),
     search: async (req) => this.searchPage(req),
     searchText: async (p) => {
       const search = resolveQuery(this.db, p);
@@ -412,13 +413,18 @@ export class SqlMailStore implements MailStore {
           if (pending.has(u.messageId)) continue;
           const sets = Object.entries(u.flags).filter(([k]) => FLAG_COLUMNS[k]);
           if (!sets.length) continue;
-          const r = this.db.get<{ thread_id: number }>(
-            `UPDATE messages SET ${sets.map(([k]) => `${FLAG_COLUMNS[k]} = ?`).join(", ")} WHERE id = ? AND account_id = ? RETURNING thread_id`,
+          // plan 17 (Codex R4): a message becoming sent, or a draft, is your mail appearing or going
+          const sentOrDraft = "isSent" in u.flags || "isDraft" in u.flags;
+          const before = sentOrDraft ? this.db.get<{ is_sent: number; is_draft: number }>("SELECT is_sent, is_draft FROM messages WHERE id = ? AND account_id = ?", u.messageId, accountId) : undefined;
+          const r = this.db.get<{ thread_id: number; is_sent: number; is_draft: number }>(
+            `UPDATE messages SET ${sets.map(([k]) => `${FLAG_COLUMNS[k]} = ?`).join(", ")} WHERE id = ? AND account_id = ? RETURNING thread_id, is_sent, is_draft`,
             ...sets.map(([, v]) => (v ? 1 : 0)),
             u.messageId,
             accountId,
           );
-          if (r) threads.add(r.thread_id);
+          if (!r) continue;
+          threads.add(r.thread_id);
+          if (before && (before.is_sent !== r.is_sent || before.is_draft !== r.is_draft)) for (const t of ownMailChanged(this.db, u.messageId)) threads.add(t);
         }
         recomputeThreads(this.db, threads);
         return { touched: [...threads] };
@@ -453,7 +459,18 @@ export class SqlMailStore implements MailStore {
         }
         return { touched, deltas };
       }),
-    fail: async (id, error, retryable, now, park) => this.db.tx(() => failOp(this.db, id, error, retryable, now, park)),
+    fail: async (id, error, retryable, now, park) =>
+      this.db.tx(() => {
+        const state = failOp(this.db, id, error, retryable, now, park);
+        // plan 17 (Codex R8): a send that failed answered nobody; its thread and what it replied to count again
+        const op = state === "failed" ? getOp(this.db, id) : null;
+        const localId = op?.kind === "send" ? (JSON.parse(op.target_json) as { messageIds?: number[] }).messageIds?.[0] : undefined;
+        if (localId !== undefined) {
+          const row = this.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", localId);
+          recomputeThreads(this.db, new Set([...(row ? [row.thread_id] : []), ...answeredThreads(this.db, referencesOfOwn(this.db, [localId]))]));
+        }
+        return state;
+      }),
     markUnknown: async (id, error, now) => markOpUnknown(this.db, id, error, now),
     awaitAuth: async (id, error, now) => awaitAuthOp(this.db, id, error, now),
     release: async (id, now) => releaseOp(this.db, id, now),
@@ -687,6 +704,8 @@ export class SqlMailStore implements MailStore {
     create: async (a) =>
       this.db.tx(() => {
         const account = createAccount(this.db, a, a.now);
+        // plan 17 (Codex R3): a new address of yours: every thread's facts are checked again, in slices
+        startRescan(this.db);
         if (a.secret) putSecret(this.db, `account:${account.id}:${a.secret.key}`, a.secret.blob);
         const claimed = a.ownerClaim ? claimOwner(this.db, { ...a.ownerClaim, email: account.email, accountId: account.id }, a.now) : false;
         return { account, claimed };
@@ -695,6 +714,8 @@ export class SqlMailStore implements MailStore {
     remove: async (id) =>
       this.db.tx(() => {
         removeAccount(this.db, id);
+        // plan 17 (Codex R3, R5): one address fewer, and its replies gone: every thread's facts are checked again
+        startRescan(this.db);
         this.db.run("DELETE FROM secrets WHERE name LIKE ?", `account:${id}:%`);
         this.providerStores.delete(id);
       }),
@@ -755,12 +776,20 @@ export class SqlMailStore implements MailStore {
     return s;
   }
 
+  // ───────────────────────────── facts (plan 17) ─────────────────────────────
+
+  readonly facts: MailStore["facts"] = {
+    backfill: async ({ limit }) => this.db.tx(() => backfillSlice(this.db, limit)),
+    idle: async () => factsIdle(this.db),
+  };
+
   readonly debug: MailStore["debug"] = {
     snapshot: async () => storeSnapshot(this.db),
     verify: async () => {
       // rank=1 compares the index against the external content, not only its own structure
       this.db.exec("INSERT INTO messages_fts(messages_fts, rank) VALUES('integrity-check', 1)");
     },
+    resetFacts: async () => resetFacts(this.db),
   };
 
   readonly dev: MailStore["dev"] = {
@@ -821,6 +850,12 @@ function storeSnapshot(db: Db): StoreSnapshot {
       isDraft: b(m.is_draft),
       isTrash: b(m.is_trash),
       isSpam: b(m.is_spam),
+      toJson: m.to_json as string,
+      ccJson: m.cc_json as string,
+      isBulk: b(m.is_bulk),
+      gmailLabels: m.gmail_labels as string | null,
+      inReplyTo: m.in_reply_to as string | null,
+      references: JSON.parse(m.references_json as string) as string[],
     })),
     threads: db.all<Record<string, unknown>>("SELECT * FROM threads ORDER BY id").map((t) => ({
       id: t.id as number,
@@ -840,6 +875,8 @@ function storeSnapshot(db: Db): StoreSnapshot {
       inTrash: b(t.in_trash),
       inSpam: b(t.in_spam),
       categoryIds: cats.get(t.id as number) ?? [],
+      person: t.person === null ? null : t.person === 1,
+      waitingSince: t.waiting_since as number | null,
     })),
     memberships,
     examples: db

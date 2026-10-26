@@ -54,7 +54,7 @@ describe("reads", () => {
     await gate("list all mail, page at thread #15,000", 5, () => store.threads.list({ view: "all", limit: 100, cursor: { lastDate: deep.last_date, id: deep.id } }));
     const largest = store.db.get<{ category_id: number }>("SELECT category_id FROM thread_categories GROUP BY 1 ORDER BY count(*) DESC LIMIT 1")!;
     await gate("list largest category", 5, () => store.threads.list({ view: "all", categoryId: largest.category_id, limit: 100 }));
-    await gate("sidebar unread counts", 5, () => store.threads.counts());
+    await gate("sidebar unread counts", 5, () => store.threads.counts(NOW));
     const ids = store.db.all<{ id: number }>("SELECT id FROM threads ORDER BY random() LIMIT 60").map((r) => r.id);
     await gate("open random thread (with categorization)", 5, (i) => store.threads.get(ids[i % ids.length]!));
   });

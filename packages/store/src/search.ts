@@ -72,6 +72,10 @@ export interface SearchThreadDoc {
   isStarred: boolean;
   unreadCount: number;
   categoryIds: readonly number[];
+  /** plan 17: the newest inbound message is from a person (absent in a batch served before v14: false) */
+  person?: boolean;
+  /** plan 17: waiting for your reply since (absent or null: not waiting) */
+  waitingSince?: number | null;
 }
 
 export type IndexChange =

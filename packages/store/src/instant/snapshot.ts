@@ -135,6 +135,8 @@ export async function sealSnapshot(packed: Uint8Array, clock: SliceClock): Promi
 }
 
 export interface SectionReader {
+  /** the snapshot has this section (one a later format added may be absent from an older file) */
+  has(name: string): boolean;
   u8(name: string): Uint8Array<ArrayBuffer>;
   u16(name: string): Uint16Array<ArrayBuffer>;
   u32(name: string): Uint32Array<ArrayBuffer>;
@@ -180,6 +182,7 @@ export async function readSnapshot(
     return new CTORS[type](bytes.buffer as ArrayBuffer, bytes.byteOffset + base + e.offset, e.length) as InstanceType<(typeof CTORS)[T]>;
   };
   const sections: SectionReader = {
+    has: (n) => byName.has(n),
     u8: (n) => get(n, "u8"),
     u16: (n) => get(n, "u16"),
     u32: (n) => get(n, "u32"),

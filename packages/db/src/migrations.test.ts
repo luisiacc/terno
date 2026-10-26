@@ -41,6 +41,24 @@ function account(db: Db, a: { id: number; kind: "imap" | "gmail"; email: string;
   );
 }
 
+/**
+ * A database at `version` holding a mock mailbox of one account (id 1): written by today's ingest, copied
+ * row by row into that version's schema, as an install of it would hold the same mail.
+ */
+function legacyMail(version: number, o: { threads: number; seed: number }): { db: Db; path: string } {
+  const dir = mkdtempSync(join(tmpdir(), `terno-mig${version}-`));
+  dirs.push(dir);
+  const source = openDatabase(join(dir, "source.db"));
+  source.run("INSERT INTO accounts (id, kind, email, display_name, provider_config, created_at) VALUES (1, 'imap', 'yo@x.mx', '', '{}', 0)");
+  ingestMessages(source, generateDataset({ threads: o.threads, accounts: 1, seed: o.seed, now: Date.UTC(2026, 9, 22) }).messages.map((m) => ({ ...m, accountId: 1 })));
+  const path = join(dir, `v${version}.db`);
+  writeLegacyCopy(source, path, version);
+  source.close();
+  const db = new Db(nodeSqliteDriver, path);
+  dbs.push(db);
+  return { db, path };
+}
+
 const owner = (db: Db) => db.get<Record<string, unknown>>("SELECT * FROM owner");
 const appSettings = (db: Db) => {
   const r = db.get<{ value_json: string }>("SELECT value_json FROM settings WHERE key = 'app'");
@@ -225,15 +243,7 @@ describe("migration v4: smart categorization", () => {
 
 describe("migration v8: exclusive moves", () => {
   it("keys journaled move rows by their category, taken from the old move's single source, and that move still trains and undoes", () => {
-    const dir = mkdtempSync(join(tmpdir(), "terno-mig8-"));
-    dirs.push(dir);
-    const db = new Db(nodeSqliteDriver, join(dir, "v7.db"));
-    dbs.push(db);
-    for (const m of MIGRATIONS.filter((m) => m.version <= 7)) db.exec(m.sql);
-    db.exec("PRAGMA user_version = 7");
-    const data = generateDataset({ threads: 20, accounts: 1, seed: 3, now: Date.UTC(2026, 9, 22) });
-    db.run("INSERT INTO accounts (id, kind, email, display_name, provider_config, created_at) VALUES (1, 'imap', 'yo@x.mx', '', '{}', 0)");
-    ingestMessages(db, data.messages.map((m) => ({ ...m, accountId: 1 })));
+    const { db } = legacyMail(7, { threads: 20, seed: 3 });
     const [t1, t2] = db.all<{ id: number }>("SELECT id FROM threads ORDER BY id LIMIT 2").map((r) => r.id) as [number, number];
     db.run("INSERT INTO categories (id, name, color, position) VALUES (1, 'Origen', 'rose', 0), (2, 'Destino', 'cyan', 1)");
     // a v7 move from 1 to 2 that committed its memberships before the upgrade, its training not done yet
@@ -262,16 +272,7 @@ describe("migration v8: exclusive moves", () => {
 describe("migration v8: an undo of a v7 move left half-restored", () => {
   /** A v7 database whose ⌥-move (from 1 to 2) was undone and crashed while restoring examples. */
   function v7Restoring() {
-    const dir = mkdtempSync(join(tmpdir(), "terno-mig8r-"));
-    dirs.push(dir);
-    const path = join(dir, "v7.db");
-    const db = new Db(nodeSqliteDriver, path);
-    dbs.push(db);
-    for (const m of MIGRATIONS.filter((m) => m.version <= 7)) db.exec(m.sql);
-    db.exec("PRAGMA user_version = 7");
-    const data = generateDataset({ threads: 20, accounts: 1, seed: 3, now: Date.UTC(2026, 9, 22) });
-    db.run("INSERT INTO accounts (id, kind, email, display_name, provider_config, created_at) VALUES (1, 'imap', 'yo@x.mx', '', '{}', 0)");
-    ingestMessages(db, data.messages.map((m) => ({ ...m, accountId: 1 })));
+    const { db, path } = legacyMail(7, { threads: 20, seed: 3 });
     const [moved, stale] = db.all<{ id: number }>("SELECT id FROM threads ORDER BY id LIMIT 2").map((r) => r.id) as [number, number];
     db.run("INSERT INTO categories (id, name, color, position) VALUES (1, 'Origen', 'rose', 0), (2, 'Destino', 'cyan', 1)");
     const example = (t: number, cat: number, label: number, source: string) =>
@@ -309,16 +310,8 @@ describe("migration v8: an undo of a v7 move left half-restored", () => {
 
 describe("migration v9: drafts v2", () => {
   it("keeps every v8 draft as format 1 (its text untouched, no separate quote) and gives replies their conversation", () => {
-    const dir = mkdtempSync(join(tmpdir(), "terno-mig9-"));
-    dirs.push(dir);
-    const db = new Db(nodeSqliteDriver, join(dir, "v8.db"));
-    dbs.push(db);
-    for (const m of MIGRATIONS.filter((m) => m.version <= 8)) db.exec(m.sql);
-    db.exec("PRAGMA user_version = 8");
-    const data = generateDataset({ threads: 3, accounts: 1, seed: 9, now: Date.UTC(2026, 9, 22) });
-    db.run("INSERT INTO accounts (id, kind, email, display_name, provider_config, created_at) VALUES (1, 'imap', 'yo@x.mx', '', '{}', 0)");
-    ingestMessages(db, data.messages.map((m) => ({ ...m, accountId: 1 })));
-    const m = db.get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id LIMIT 1")!;
+    const { db } = legacyMail(8, { threads: 3, seed: 9 });
+    const m =db.get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id LIMIT 1")!;
     const quoted = "Sí.\n\nEl 22 oct, Ana escribió:\n> hola";
     db.run("INSERT INTO drafts (id, account_id, to_json, cc_json, subject, body_text, in_reply_to_message_id, updated_at) VALUES (1, 1, '[]', '[]', 'Re: x', ?, ?, 5)", quoted, m.id);
     db.run("INSERT INTO drafts (id, account_id, to_json, cc_json, subject, body_text, in_reply_to_message_id, updated_at) VALUES (2, 1, '[]', '[]', 'Nuevo', 'texto', NULL, 6)");

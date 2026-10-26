@@ -81,7 +81,7 @@ describe("navigation", () => {
   });
 
   it("computes sidebar counts", () => {
-    gate("sidebar unread counts (accounts + categories)", 5, () => getCounts(db));
+    gate("sidebar unread counts (accounts + categories)", 5, () => getCounts(db, NOW));
   });
 
   it("opens threads", () => {

@@ -1,4 +1,4 @@
-import { COUNT_CAP, LIST_FILTERS, parseSearch, resolveSearch, senderVetoed, type Address, type FilterAction, type ThreadAction, type ThreadSummary } from "@terno/core";
+import { COUNT_CAP, LIST_FILTERS, parseSearch, resolveSearch, senderVetoed, type Address, type FilterAction, type ListFilter, type ThreadAction, type ThreadFilter, type ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { MockDataset } from "@terno/mock-data";
@@ -134,6 +134,7 @@ import {
 import type { Key, MemDb } from "./mem";
 import { IdbProviderStore } from "./provider-store";
 import { createMemDb, EARLY_TABLES, idbExists, LATE_TABLES, LOGICAL_SCHEMA, loadAll, SEARCH_SCHEMA, openIdb, persist, readAll, readLazy, writeMeta } from "./schema";
+import { answeredThreads, backfillSlice, FactsQueue, factsReady, ownMailChanged, referencesOfOwn, resetFacts, startRescan } from "./facts";
 import { sameRevision, SearchCancelledError, type AutocompleteSource, type ContactBatch, type ContactMessage, type SentText } from "@terno/store";
 import { contactOf, isLearnable, sentOf } from "./autocomplete";
 import { appendOutbox, checkCursor, columnsOf, materializeChanges, pageOf, planScan, scanPage, searchChangeIds, searchHead } from "./search";
@@ -194,13 +195,15 @@ export class IdbMailStore implements MailStore {
   ) {
     this.log = o.log ?? (() => {});
     const order = new ThreadOrder(db);
-    const filterOrders = { unread: new ThreadOrder(db, FILTER_TEST.unread), attachments: new ThreadOrder(db, FILTER_TEST.attachments), starred: new ThreadOrder(db, FILTER_TEST.starred) };
+    const filterOrders = Object.fromEntries(LIST_FILTERS.map((f) => [f, new ThreadOrder(db, FILTER_TEST[f])])) as Record<ListFilter, ThreadOrder>;
+    const facts = new FactsQueue(db);
     const scopes = new ScopeIndex(db);
     const bodies = db.table<R>("message_bodies");
     this.c = {
       db,
       order,
       filterOrders,
+      facts,
       scopes,
       uuid: () => o.platform.uuid(),
       body: (id) => {
@@ -240,6 +243,7 @@ export class IdbMailStore implements MailStore {
       db.confirm();
     }
     if (meta.logicalSchema === undefined) await writeMeta(idb, { logicalSchema: LOGICAL_SCHEMA, createdAt: Date.now() });
+    else if (meta.logicalSchema !== LOGICAL_SCHEMA) await writeMeta(idb, { logicalSchema: LOGICAL_SCHEMA });
     const store = new IdbMailStore(idb, db, o);
     Object.assign(store.openTimings, timings);
     // the first screen needs none of it: messages load while it paints (writes to these tables wait for them)
@@ -693,7 +697,7 @@ export class IdbMailStore implements MailStore {
     return { items: page.items, nextCursor: page.nextCursor, revision, strategy: page.strategy, complete: true, pendingBodies };
   }
 
-  private resolve(p: { query: string; accountId?: number; categoryId?: number; threadAttachments?: boolean; now?: number }) {
+  private resolve(p: { query: string; accountId?: number; categoryId?: number; threadAttachments?: boolean; threadFilter?: ThreadFilter; now?: number }) {
     const lookup = {
       accounts: [...T(this.c, "accounts").all()].map((a) => ({ id: a.id as number, email: a.email as string, display_name: a.display_name as string })),
       categories: [...T(this.c, "categories").all()].map((x) => ({ id: x.id as number, name: x.name as string })),
@@ -718,7 +722,7 @@ export class IdbMailStore implements MailStore {
         return { ...thread, categorization: { auto: autoReasons(this.c, id), suggestions: pendingSuggestions(this.c, { threadId: id, limit: 5 }) } };
       });
     },
-    counts: () => this.early(() => getCounts(this.c)),
+    counts: (now) => this.early(() => getCounts(this.c, now)),
     search: (req) => this.searchPage(req),
     searchText: async (p) => {
       await this.settled();
@@ -842,8 +846,10 @@ export class IdbMailStore implements MailStore {
             if (!sets.length) continue;
             const m = messages.get(u.messageId);
             if (!m || m.account_id !== accountId) continue;
-            messages.update(m, Object.fromEntries(sets.map(([k, v]) => [FLAG_COLUMNS[k]!, v ? 1 : 0])));
+            const after = messages.update(m, Object.fromEntries(sets.map(([k, v]) => [FLAG_COLUMNS[k]!, v ? 1 : 0])));
             threads.add(m.thread_id);
+            // plan 17 (Codex R4): a message becoming sent, or a draft, is your mail appearing or going
+            if (after.is_sent !== m.is_sent || after.is_draft !== m.is_draft) for (const t of ownMailChanged(this.db, m.id)) threads.add(t);
           }
           recomputeThreads(this.c, threads);
           return { touched: [...threads] };
@@ -880,7 +886,18 @@ export class IdbMailStore implements MailStore {
         }
         return { touched, deltas };
       }),
-    fail: (id, error, retryable, now, park) => this.command(() => failOp(this.c, id, error, retryable, now, park)),
+    fail: (id, error, retryable, now, park) =>
+      this.command(() => {
+        const state = failOp(this.c, id, error, retryable, now, park);
+        // plan 17 (Codex R8): a send that failed answered nobody; its thread and what it replied to count again
+        const op = state === "failed" ? T(this.c, "ops").get(id) : undefined;
+        const localId = op?.kind === "send" ? (JSON.parse(op.target_json) as { messageIds?: number[] }).messageIds?.[0] : undefined;
+        if (localId !== undefined) {
+          const m = T(this.c, "messages").get(localId);
+          recomputeThreads(this.c, new Set([...(m ? [m.thread_id as number] : []), ...answeredThreads(this.db, referencesOfOwn(this.db, [localId]))]));
+        }
+        return state;
+      }),
     markUnknown: (id, error, now) => this.command(() => markOpUnknown(this.c, id, error, now)),
     awaitAuth: (id, error, now) => this.command(() => awaitAuthOp(this.c, id, error, now), { early: true }),
     release: (id, now) => this.command(() => releaseOp(this.c, id, now), { early: true }),
@@ -1173,6 +1190,8 @@ export class IdbMailStore implements MailStore {
     create: (a) =>
       this.command(() => {
         const account = createAccount(this.c, a, a.now);
+        // plan 17 (Codex R3): a new address of yours: every thread's facts are checked again, in slices
+        startRescan(this.db);
         if (a.secret) T(this.c, "secrets").put({ name: `account:${account.id}:${a.secret.key}`, blob: a.secret.blob });
         const claimed = a.ownerClaim ? claimOwner(this.c, { ...a.ownerClaim, email: account.email, accountId: account.id }, a.now) : false;
         return { account, claimed };
@@ -1181,6 +1200,8 @@ export class IdbMailStore implements MailStore {
     remove: (id) =>
       this.command(() => {
         T(this.c, "accounts").delete(id);
+        // plan 17 (Codex R3, R5): one address fewer, and its replies gone: every thread's facts are checked again
+        startRescan(this.db);
         const secrets = T(this.c, "secrets");
         // a Map skips entries deleted while iterating
         for (const s of secrets.all()) if (String(s.name).startsWith(`account:${id}:`)) secrets.deleteRow(s);
@@ -1310,6 +1331,15 @@ export class IdbMailStore implements MailStore {
         }
       });
     },
+    resetFacts: () => this.command(() => resetFacts(this.db)),
+  };
+
+  // ───────────────────────────── facts (plan 17) ─────────────────────────────
+
+  /** Backfill slices are commands on the late tables: they wait for messages to load (R10), like every unit that reads them. */
+  readonly facts: MailStore["facts"] = {
+    backfill: ({ limit }) => this.command(() => backfillSlice(this.db, this.c.facts, limit), { durability: "relaxed" }),
+    idle: () => this.early(() => factsReady(this.db, this.c.facts)),
   };
 
   readonly dev: MailStore["dev"] = {
@@ -1397,6 +1427,12 @@ function storeSnapshot(c: Ctx): StoreSnapshot {
       isDraft: b(m.is_draft),
       isTrash: b(m.is_trash),
       isSpam: b(m.is_spam),
+      toJson: m.to_json,
+      ccJson: m.cc_json,
+      isBulk: b(m.is_bulk ?? 0),
+      gmailLabels: m.gmail_labels ?? null,
+      inReplyTo: m.in_reply_to ?? null,
+      references: JSON.parse(m.references_json) as string[],
     })),
     threads: threads.map((t) => ({
       id: t.id,
@@ -1416,6 +1452,8 @@ function storeSnapshot(c: Ctx): StoreSnapshot {
       inTrash: b(t.in_trash),
       inSpam: b(t.in_spam),
       categoryIds: cats.get(t.id) ?? [],
+      person: t.person == null ? null : t.person === 1,
+      waitingSince: t.waiting_since ?? null,
     })),
     memberships: memberships.map((r) => ({ threadId: r.thread_id, categoryId: r.category_id, addedBy: r.added_by, batchId: r.batch_id })),
     examples: [...T(c, "cls_examples").all()]

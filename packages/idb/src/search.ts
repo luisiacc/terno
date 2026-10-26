@@ -178,6 +178,8 @@ export function planScan(c: Ctx, r: ResolvedSearch): ScanPlan {
       if (q.unread !== undefined && t.unread_count > 0 !== q.unread) return false;
       if (q.starred !== undefined && (t.is_starred === 1) !== q.starred) return false;
       if (q.threadAttachments && t.has_attachments !== 1) return false;
+      if (q.threadPeople && t.person !== 1) return false;
+      if (q.threadWaitingSince !== undefined && !(t.waiting_since != null && t.waiting_since >= q.threadWaitingSince)) return false;
       return true;
     },
   };

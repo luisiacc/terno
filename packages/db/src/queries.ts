@@ -1,4 +1,4 @@
-import { listFilterOf } from "@terno/core";
+import { listFilterOf, waitingCutoff } from "@terno/core";
 import type {
   AttachmentInfo,
   Counts,
@@ -10,6 +10,7 @@ import type {
 } from "@terno/core";
 import { keepInPage, type ListParams, type Page, type ScopeParams } from "@terno/store";
 import { placeholders, type Db, type Param } from "./sqlite";
+import { factsReady } from "./facts";
 
 export type { Cursor, ListParams, Page } from "@terno/store";
 
@@ -28,7 +29,7 @@ export const VIEW_WHERE: Record<View, string> = {
 };
 
 export const SUMMARY_COLUMNS = `t.id, t.account_id, t.subject, t.snippet, t.last_date, t.last_from_name,
-  t.last_from_email, t.message_count, t.unread_count, t.is_starred, t.has_attachments,
+  t.last_from_email, t.message_count, t.unread_count, t.is_starred, t.has_attachments, t.person, t.waiting_since,
   (SELECT group_concat(category_id) FROM thread_categories WHERE thread_id = t.id) AS cats`;
 
 export interface SummaryRow {
@@ -43,6 +44,8 @@ export interface SummaryRow {
   unread_count: number;
   is_starred: number;
   has_attachments: number;
+  person: number | null;
+  waiting_since: number | null;
   cats: string | null;
 }
 
@@ -60,6 +63,8 @@ export function toSummary(r: SummaryRow): ThreadSummary {
     starred: r.is_starred === 1,
     hasAttachments: r.has_attachments === 1,
     categoryIds: r.cats ? r.cats.split(",").map(Number) : [],
+    person: r.person === 1,
+    waitingSince: r.waiting_since,
   };
 }
 
@@ -75,14 +80,35 @@ export function pageFrom(rows: SummaryRow[], limit: number): Page {
 
 /**
  * Each quick filter's predicate, textually its partial indexes' (unread:
- * migration v11; attachments and starred: v12), and those indexes: by date
- * for pages, by id for scopes.
+ * migration v11; attachments and starred: v12; people and waiting: v14), and
+ * those indexes: by date for pages, by id for scopes. Waiting has no id
+ * index: its window bounds the date index's range (waiting_since <=
+ * last_date), so a scope walks that range and orders the few it holds.
  */
-const FILTER: Record<ListFilter, { where: string; byDate: string; byId: string }> = {
-  unread: { where: "t.unread_count > 0", byDate: "threads_unread", byId: "threads_unread_id" },
-  attachments: { where: "t.has_attachments = 1", byDate: "threads_attach", byId: "threads_attach_id" },
-  starred: { where: "t.is_starred = 1", byDate: "threads_starred_f", byId: "threads_starred_f_id" },
+interface FilterSql {
+  where: string;
+  params: Param[];
+  byDate: string;
+  byId: string | null;
+}
+
+const FILTER: Record<Exclude<ListFilter, "waiting">, FilterSql> = {
+  unread: { where: "t.unread_count > 0", params: [], byDate: "threads_unread", byId: "threads_unread_id" },
+  people: { where: "t.person = 1", params: [], byDate: "threads_people", byId: "threads_people_id" },
+  attachments: { where: "t.has_attachments = 1", params: [], byDate: "threads_attach", byId: "threads_attach_id" },
+  starred: { where: "t.is_starred = 1", params: [], byDate: "threads_starred_f", byId: "threads_starred_f_id" },
 };
+
+/** The Waiting filter at `now`: the threads whose waiting began inside the window (plan 17 §2.4). */
+export function waitingSql(now: number | undefined): FilterSql {
+  if (now === undefined) throw new Error("the Waiting filter needs the caller's clock (now)");
+  const cutoff = waitingCutoff(now);
+  return { where: "t.waiting_since IS NOT NULL AND t.last_date >= ? AND t.waiting_since >= ?", params: [cutoff, cutoff], byDate: "threads_waiting", byId: null };
+}
+
+function filterSql(filter: ListFilter, now: number | undefined): FilterSql {
+  return filter === "waiting" ? waitingSql(now) : FILTER[filter];
+}
 
 /** Keyset-paginated list of a view, optionally scoped to an account and/or category. */
 export function listThreads(db: Db, p: ListParams): Page {
@@ -101,13 +127,17 @@ export function listSql(p: ListParams, only?: readonly number[]): { sql: string;
   // unread: pinned to the unread index, which tests view and account in the index (the planner
   // picks a view's date index instead and reads a row per thread, or sorts a category: measured in plan 12)
   const filter = listFilterOf(p);
-  const threads = filter ? `threads t INDEXED BY ${FILTER[filter].byDate}` : "threads t";
-  if (filter) where.push(FILTER[filter].where);
+  const f = filter ? filterSql(filter, p.now) : null;
+  const threads = f ? `threads t INDEXED BY ${f.byDate}` : "threads t";
+  if (f) {
+    where.push(f.where);
+    params.push(...f.params);
+  }
   let from = threads;
   if (p.categoryId !== undefined) {
     from = `thread_categories tc JOIN ${threads} ON t.id = tc.thread_id`;
     where.unshift("tc.category_id = ?");
-    params.push(p.categoryId);
+    params.unshift(p.categoryId);
   }
   if (p.accountId !== undefined) {
     where.push("t.account_id = ?");
@@ -138,19 +168,24 @@ function scopeFrom(p: ScopeParams, paged = false): { from: string; where: string
   // (category_id, thread_id); pinned, so the planner never picks a date index and sorts
   // (a count lets the planner pick: a view's partial index counts fastest; an unread count walks the unread
   // index, testing in it, where a view's index reads a row per thread; a category's counts its memberships)
+  // (waiting: the window's range of its date index, ordered by id after; a sort of the threads that wait, never the mailbox)
   const filter = listFilterOf(p);
-  let from = filter ? `threads t INDEXED BY ${FILTER[filter].byId}` : !paged ? "threads t" : p.accountId !== undefined ? "threads t INDEXED BY threads_account_id" : "threads t NOT INDEXED";
+  const f = filter ? filterSql(filter, p.now) : null;
+  let from = f ? `threads t INDEXED BY ${f.byId ?? f.byDate}` : !paged ? "threads t" : p.accountId !== undefined ? "threads t INDEXED BY threads_account_id" : "threads t NOT INDEXED";
   if (p.categoryId !== undefined) {
     // CROSS JOIN keeps the memberships outer (SQLite never reorders it)
     from = paged ? "thread_categories tc INDEXED BY thread_categories_c CROSS JOIN threads t ON t.id = tc.thread_id" : "thread_categories tc JOIN threads t ON t.id = tc.thread_id";
     where.unshift("tc.category_id = ?");
-    params.push(p.categoryId);
+    params.unshift(p.categoryId);
   }
   if (p.accountId !== undefined) {
     where.push("t.account_id = ?");
     params.push(p.accountId);
   }
-  if (filter) where.push(FILTER[filter].where);
+  if (f) {
+    where.push(f.where);
+    params.push(...f.params);
+  }
   return { from, where: where.join(" AND "), params };
 }
 
@@ -265,7 +300,7 @@ export function getThread(db: Db, threadId: number): ThreadDetail | null {
 }
 
 /** Sidebar counts. Unread semantics: unread THREADS. */
-export function getCounts(db: Db): Counts {
+export function getCounts(db: Db, now: number): Counts {
   const byAccount: Record<number, number> = {};
   let inboxUnread = 0;
   for (const r of db.all<{ account_id: number; c: number }>(
@@ -284,7 +319,23 @@ export function getCounts(db: Db): Counts {
     categoryTotal[r.category_id] = r.total;
     categoryUnread[r.category_id] = r.unread;
   }
-  return { inboxUnread, inboxUnreadByAccount: byAccount, categoryUnread, categoryTotal, categorySuggestions: pendingSuggestionCounts(db) };
+  return { inboxUnread, inboxUnreadByAccount: byAccount, categoryUnread, categoryTotal, categorySuggestions: pendingSuggestionCounts(db), ...waitingCounts(db, now) };
+}
+
+/**
+ * Inbox threads waiting for your reply (plan 17), per account: the window's range of
+ * threads_waiting. Unknown (null) while any thread's facts are pending.
+ */
+export function waitingCounts(db: Db, now: number): Pick<Counts, "inboxWaiting" | "inboxWaitingByAccount"> {
+  if (!factsReady(db)) return { inboxWaiting: null, inboxWaitingByAccount: {} };
+  const w = waitingSql(now);
+  const byAccount: Record<number, number> = {};
+  let total = 0;
+  for (const r of db.all<{ account_id: number; c: number }>(`SELECT t.account_id, count(*) AS c FROM threads t INDEXED BY ${w.byDate} WHERE ${w.where} AND t.in_inbox = 1 GROUP BY t.account_id`, ...w.params)) {
+    byAccount[r.account_id] = r.c;
+    total += r.c;
+  }
+  return { inboxWaiting: total, inboxWaitingByAccount: byAccount };
 }
 
 /** Suggestions waiting for an answer, per category ("Revisar (N)"). */

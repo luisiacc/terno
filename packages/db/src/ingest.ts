@@ -1,9 +1,10 @@
-import { BODY_TAIL_TOKENS, baseSubject, emailDomain, featuresFromBlob, normalizeText, trailingTokens, type Address } from "@terno/core";
+import { addressKey, BODY_TAIL_TOKENS, baseSubject, emailDomain, featuresFromBlob, normalizeText, threadFacts, trailingTokens, type Address, type FactContext, type FactRow } from "@terno/core";
 import type { IncomingMessage, ModelDelta } from "@terno/store";
 
 export type { IncomingAttachment, IncomingLocation, IncomingMessage } from "@terno/store";
 import { placeholders, type Db } from "./sqlite";
 import { pruneOpTargets } from "./repos";
+import { answeredThreads, FACT_COLUMNS, noteSentMail, ownAddresses, recomputeContext, referencesOfOwn } from "./facts";
 
 
 
@@ -188,8 +189,8 @@ INSERT INTO messages (
   from_name, from_email, from_domain, from_name_norm, to_json, cc_json, bcc_json,
   recipients_text, recipients_norm, subject, subject_norm, date, snippet,
   body_tail_norm, body_state, list_id, is_read, is_starred, in_inbox, is_sent,
-  is_draft, is_trash, is_spam, has_attachments, gmail_labels, size, created_at
-) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+  is_draft, is_trash, is_spam, has_attachments, gmail_labels, size, created_at, is_bulk
+) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
 
 /**
  * Message ids are never reused (SQLite would reuse the max rowid after a
@@ -213,6 +214,7 @@ function nextMessageIdAllocator(db: Db): { next(): number; persist(): void } {
  */
 export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now = Date.now()): IngestResult {
   const result: IngestResult = { inserted: [], updated: [], touchedThreads: new Set(), mergedThreads: new Map(), bodyCompleted: [], deltas: [] };
+  let own: Set<string> | null = null;
   db.tx(() => {
     const ids = nextMessageIdAllocator(db);
     for (const msg of messages) {
@@ -284,9 +286,19 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
         msg.gmailLabels ? JSON.stringify(msg.gmailLabels) : null,
         msg.size,
         now,
+        b(msg.bulk ?? false),
       ).lastInsertRowid;
       if (refs.length === 1) db.run("INSERT OR IGNORE INTO message_refs (account_id, ref, message_id) VALUES (?, ?, ?)", msg.accountId, refs[0]!, id);
       else if (refs.length > 1) db.run("INSERT OR IGNORE INTO message_refs (account_id, ref, message_id) SELECT ?, value, ? FROM json_each(?)", msg.accountId, id, JSON.stringify(refs));
+      // plan 17: sent mail teaches your addresses and who you write to; mail of yours may answer another thread
+      if (!msg.isDraft) {
+        own ??= ownAddresses(db);
+        if (msg.isSent) {
+          noteSentMail(db, fromEmail, [...msg.to, ...msg.cc, ...msg.bcc]);
+          own.add(addressKey(fromEmail));
+        }
+        if (refs.length && (msg.isSent || own.has(addressKey(fromEmail)))) for (const t of answeredThreads(db, refs)) result.touchedThreads.add(t);
+      }
       for (const a of msg.attachments ?? []) {
         db.run(
           "INSERT INTO attachments (message_id, filename, mime, size, content_id, provider_ref) VALUES (?,?,?,?,?,?)",
@@ -381,19 +393,13 @@ export function setMessageBody(
   }
 }
 
-interface ThreadMessage {
-  id: number;
-  date: number;
+interface ThreadMessage extends FactRow {
   from_name: string;
-  from_email: string;
   snippet: string;
   subject: string;
   is_read: number;
-  is_trash: number;
-  is_spam: number;
   is_starred: number;
   in_inbox: number;
-  is_sent: number;
   has_attachments: number;
 }
 
@@ -405,15 +411,18 @@ function newer(a: ThreadMessage, b: ThreadMessage): boolean {
 }
 
 /**
- * Recomputes the derived columns of the given threads from their messages.
- * Threads left without messages are deleted.
+ * Recomputes the derived columns of the given threads from their messages,
+ * plan 17's facts included (NULL while the facts backfill still collects your
+ * addresses). Threads left without messages are deleted.
  */
 export function recomputeThreads(db: Db, threadIds: Iterable<number>): void {
   const written: number[] = [];
+  // read once per call, on the first thread that has messages
+  let facts: FactContext | null | undefined;
   for (const threadId of threadIds) {
     // one read of the thread's messages; the aggregates are folded here
     const messages = db.all<ThreadMessage>(
-      `SELECT id, date, from_name, from_email, snippet, subject, is_read, is_trash, is_spam, is_starred, in_inbox, is_sent, has_attachments
+      `SELECT id, date, from_name, from_email, snippet, subject, is_read, is_trash, is_spam, is_starred, in_inbox, is_sent, has_attachments, ${FACT_COLUMNS}
        FROM messages WHERE thread_id = ?`,
       threadId,
     );
@@ -449,10 +458,12 @@ export function recomputeThreads(db: Db, threadIds: Iterable<number>): void {
       if (m.date < first.date || (m.date === first.date && m.id < first.id)) first = m;
     }
     const inSpam = visible > 0 && visibleNonspam === 0 ? 1 : 0;
+    if (facts === undefined) facts = recomputeContext(db);
+    const f = facts ? threadFacts(messages, facts) : null;
     db.run(
       `UPDATE threads SET subject = ?, snippet = ?, last_date = ?, last_from_name = ?, last_from_email = ?,
          message_count = ?, unread_count = ?, has_attachments = ?, is_starred = ?, in_inbox = ?,
-         has_sent = ?, in_trash = ?, in_spam = ?
+         has_sent = ?, in_trash = ?, in_spam = ?, person = ?, waiting_since = ?
        WHERE id = ?`,
       baseSubject(first.subject) || first.subject,
       latest.snippet,
@@ -467,6 +478,8 @@ export function recomputeThreads(db: Db, threadIds: Iterable<number>): void {
       sent,
       trashAll,
       inSpam,
+      f ? f.person : null,
+      f ? f.waitingSince : null,
       threadId,
     );
     written.push(threadId);
@@ -480,6 +493,8 @@ export function deleteMessages(db: Db, messageIds: readonly number[]): Set<numbe
   const touched = new Set<number>();
   if (messageIds.length === 0) return touched;
   db.tx(() => {
+    // plan 17 (Codex R5): a reply of yours that goes may leave what it answered waiting again
+    const refs = new Set<string>();
     for (let i = 0; i < messageIds.length; i += 500) {
       const chunk = messageIds.slice(i, i + 500);
       for (const r of db.all<{ thread_id: number }>(
@@ -488,9 +503,11 @@ export function deleteMessages(db: Db, messageIds: readonly number[]): Set<numbe
       )) {
         touched.add(r.thread_id);
       }
+      for (const r of referencesOfOwn(db, chunk)) refs.add(r);
       db.run(`DELETE FROM messages WHERE id IN (${placeholders(chunk.length)})`, ...chunk);
       pruneOpTargets(db, chunk);
     }
+    for (const t of answeredThreads(db, [...refs])) touched.add(t);
     recomputeThreads(db, touched);
   });
   return touched;
