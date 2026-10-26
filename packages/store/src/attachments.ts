@@ -1,5 +1,5 @@
 import { AttachmentLimitError } from "./attachment-repo";
-import { ATTACHMENT_CHUNK, attachmentCid, attachmentFilename, attachmentMime, base64Bytes, bytesBase64, type AttachmentRef } from "@terno/core";
+import { ATTACHMENT_CHUNK, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENT_COUNT, attachmentCid, attachmentFilename, attachmentMime, base64Bytes, bytesBase64, type AttachmentRef } from "@terno/core";
 import type { MailStore } from "./mail-store";
 import type { IncomingAttachment } from "./types";
 
@@ -7,25 +7,44 @@ import type { IncomingAttachment } from "./types";
 export async function stageAttachments(store: MailStore, accountId: number, parts: readonly IncomingAttachment[], now: number, yieldTo: () => Promise<void>, previous: readonly IncomingAttachment[] = []): Promise<IncomingAttachment[]> {
   const staged: IncomingAttachment[] = [];
   const created: string[] = [];
+  const verified = new Map<number, AttachmentRef>();
+  const claimed = new Set<string>();
+  let comparisonBytes = MAX_ATTACHMENT_BYTES * 2;
+  // Verify old parts first: a newly added part must not consume the offline revision's reservation.
+  for (const [position, part] of parts.entries()) {
+    if (part.bytes === undefined) continue;
+    const matches = (prior: IncomingAttachment) => prior.assetId && !claimed.has(prior.assetId) && prior.size === part.bytes!.length && prior.filename === attachmentFilename(part.filename) && prior.mime === attachmentMime(part.mime) && attachmentCid(prior.contentId) === attachmentCid(part.contentId);
+    const ordered = [...previous.slice(position, position + 1), ...previous.slice(0, position), ...previous.slice(position + 1)];
+    for (const prior of ordered) {
+      if (!matches(prior) || prior.size > comparisonBytes) continue;
+      let equal = true;
+      for (let offset = 0, i = 0; offset < part.bytes.length; offset += ATTACHMENT_CHUNK, i++) {
+        const slice = part.bytes.subarray(offset, offset + ATTACHMENT_CHUNK);
+        const bytes = await store.attachments.read(accountId, prior.assetId!, i);
+        comparisonBytes -= slice.length;
+        if (bytes !== bytesBase64(slice)) { equal = false; break; }
+        await yieldTo();
+      }
+      if (equal) {
+        verified.set(position, await store.attachments.info(accountId, prior.assetId!));
+        claimed.add(prior.assetId!);
+        break;
+      }
+    }
+  }
+  let capturedBytes = [...verified.values()].reduce((n, ref) => n + ref.size, 0);
+  let capturedCount = verified.size;
   try {
     for (const [position, part] of parts.entries()) {
+      const reused = verified.get(position);
+      if (reused) { staged.push({ ...reused, providerRef: part.providerRef }); continue; }
       if (part.bytes === undefined) { staged.push(part); continue; }
-      const prior = previous[position];
-      if (prior?.assetId && prior.size === part.bytes.length && prior.filename === attachmentFilename(part.filename) && prior.mime === attachmentMime(part.mime) && attachmentCid(prior.contentId) === attachmentCid(part.contentId)) {
-        let equal = true;
-        for (let offset = 0, i = 0; offset < part.bytes.length; offset += ATTACHMENT_CHUNK, i++) {
-          const bytes = await store.attachments.read(accountId, prior.assetId, i);
-          if (bytes !== bytesBase64(part.bytes.subarray(offset, offset + ATTACHMENT_CHUNK))) { equal = false; break; }
-          await yieldTo();
-        }
-        // A sealed empty asset needs the same completeness/ownership proof as a nonempty one.
-        if (equal) { const verified = await store.attachments.info(accountId, prior.assetId); staged.push({ ...verified, providerRef: part.providerRef }); continue; }
-      }
       let ref: AttachmentRef;
-      try { ref = await store.attachments.create({ ...part, size: part.bytes.byteLength, accountId, now }); }
-      catch (error) {
+      try {
+        if (capturedBytes + part.bytes.byteLength > MAX_ATTACHMENT_BYTES || capturedCount >= MAX_ATTACHMENT_COUNT) throw new AttachmentLimitError();
+        ref = await store.attachments.create({ ...part, size: part.bytes.byteLength, accountId, now });
+      } catch (error) {
         if (!(error instanceof AttachmentLimitError)) throw error;
-        // Durable unavailable metadata keeps the body readable without repeatedly downloading quota-blocked bytes.
         const { bytes: _bytes, assetId: _id, ...metadata } = part;
         staged.push({ ...metadata, size: part.bytes.byteLength });
         continue;
@@ -36,6 +55,8 @@ export async function stageAttachments(store: MailStore, accountId: number, part
         await yieldTo();
       }
       await store.attachments.seal(accountId, ref.assetId);
+      capturedBytes += ref.size;
+      capturedCount++;
       staged.push({ ...ref, providerRef: part.providerRef });
     }
     return staged;

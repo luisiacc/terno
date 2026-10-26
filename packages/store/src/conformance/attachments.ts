@@ -147,6 +147,21 @@ export function defineAttachmentConformance(name: string, h: StoreHarness): void
       expect(await store.attachments.read(a!, parts[0]!.assetId!, 0)).toBe("AP+A");
       expect(parts[1]!.assetId).toBeUndefined();
       expect(await store.providerStore(a!).pendingAttachmentBodies(50)).toEqual([]);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "quota-parts", attachments: [{ ...first, filename: "new.bin", bytes: new Uint8Array([1,2,3]) }, first] })]);
+      const reordered = (await store.threads.get(thread))!.messages[0]!.attachments;
+      expect(reordered[1]!.assetId).toBe(original.assetId);
+      expect(await store.attachments.read(a!, reordered[1]!.assetId!, 0)).toBe("AP+A");
+    });
+    it("keeps an incoming message readable when its parts collectively exceed the capture budget", async () => {
+      const [a] = await fresh();
+      const part = { filename: "ten-megabytes.bin", mime: "application/octet-stream", size: 10 * 1024 * 1024, bytes: new Uint8Array(10 * 1024 * 1024) };
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "aggregate-budget", attachments: [part, { ...part, filename: "second.bin" }] })]);
+      const thread = await threadOf(store, "aggregate-budget");
+      const message = (await store.threads.get(thread))!.messages[0]!;
+      expect(message.attachments).toHaveLength(2);
+      expect(message.attachments[0]!.assetId).toBeTruthy();
+      expect(message.attachments[1]!.assetId).toBeUndefined();
+      expect(await store.providerStore(a!).pendingAttachmentBodies(50)).toEqual([]);
     });
     it("cascades account removal through cold chunks while preserving another account", async () => {
       const [a, b] = await fresh();
