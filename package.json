@@ -1,7 +1,7 @@
 {
   "name": "terno-monorepo",
   "private": true,
-  "license": "PolyForm-Noncommercial-1.0.0",
+  "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "packageManager": "pnpm@12.2.1",
   "engines": {

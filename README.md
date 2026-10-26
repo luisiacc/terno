@@ -289,11 +289,12 @@ packages/mock-data Deterministic mock mailbox generator
 
 ## License
 
-Terno is **source-available** under the [PolyForm Noncommercial License 1.0.0](LICENSE.md).
+Terno is **source-available** under the [GNU AGPL-3.0 with additional conditions](LICENSE): the Commons Clause and a business-use limit.
 
-- **Allowed:** reading the code, running it, and forking or changing it for your own personal, noncommercial version, including sharing that version noncommercially under the same license and with the `Required Notice` line. Use by charities, schools, public research and government bodies is also permitted.
-- **Not allowed:** any commercial use, such as selling Terno or a fork, offering it as a paid product or service, or using it inside a business for commercial advantage.
+- **Allowed:** using Terno for personal use or for work, by individuals and by organizations with fewer than five business users; reading, changing and forking it. Forks and modified versions, including ones offered over a network, must publish their full source under the same license, with the `Required Notice` line and the conditions.
+- **Needs a commercial license:** organizations with five or more business users.
+- **Not allowed without the author's permission:** selling Terno or a fork, or offering a paid product, hosting or support service whose value comes mainly from it. Forks must also use a different name than "Terno".
 
-To use Terno commercially, contact the author for a separate license.
+For a commercial license or permission to sell, contact the author. Contributions need a one-time [CLA](CLA.md); see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 The bundled fonts (Geist, Geist Mono, Figtree, Instrument Sans and Instrument Serif, from [Fontsource](https://fontsource.org)) are under the [SIL Open Font License 1.1](https://openfontlicense.org); their license texts ship in their packages.
