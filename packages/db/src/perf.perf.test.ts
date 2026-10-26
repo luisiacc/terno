@@ -3,6 +3,7 @@
  * realistic bodies. p95 latencies are asserted against the product targets
  * (docs/PLAN.md §11.6). Run with `pnpm test:perf`.
  */
+import { waitingCutoff } from "@terno/core";
 import { generateDataset } from "@terno/mock-data";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,7 +11,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { applyThreadAction } from "./actions";
 import { openDatabase } from "./index";
-import { countScopeThreads, getCounts, getThread, listThreads, scopeThreadIds } from "./queries";
+import { countScopeThreads, getCounts, getThread, listThreads, scopeThreadIds, waitingCounts } from "./queries";
 import { countScope } from "./categorize-bulk";
 import { addThreadsToCategory } from "./repos";
 import { findRuleMatches } from "./rules";
@@ -217,21 +218,23 @@ describe("the unread filter (plan 12)", () => {
 describe("the quick filters (plan 15): with attachments and starred", () => {
   const largest = () => db.get<{ category_id: number }>("SELECT category_id FROM thread_categories GROUP BY 1 ORDER BY count(*) DESC LIMIT 1")!.category_id;
   /** a filter's lists, deep page, kept thread, counts and a whole "select all N" walk, like the unread filter's */
-  function gates(label: string, filter: "attachments" | "starred") {
+  function gates(label: string, filter: "attachments" | "starred" | "people" | "waiting") {
     const cat = largest();
     const acct = db.all<{ id: number }>("SELECT id FROM accounts").map((a) => a.id);
-    for (const view of ["inbox", "archive", "all", "trash", "spam"] as const) gate(`${label}: ${view}, first page`, 5, () => listThreads(db, { view, filter, limit: 100 }));
-    gate(`${label}: archive per account`, 5, (i) => listThreads(db, { view: "archive", accountId: acct[i % acct.length]!, filter, limit: 100 }));
-    gate(`${label}: largest category`, 5, () => listThreads(db, { view: "all", categoryId: cat, filter, limit: 100 }));
-    const where = filter === "attachments" ? "has_attachments = 1" : "is_starred = 1";
+    const now = NOW;
+    for (const view of ["inbox", "archive", "all", "trash", "spam"] as const) gate(`${label}: ${view}, first page`, 5, () => listThreads(db, { view, filter, now, limit: 100 }));
+    gate(`${label}: archive per account`, 5, (i) => listThreads(db, { view: "archive", accountId: acct[i % acct.length]!, filter, now, limit: 100 }));
+    gate(`${label}: largest category`, 5, () => listThreads(db, { view: "all", categoryId: cat, filter, now, limit: 100 }));
+    const cutoff = waitingCutoff(NOW);
+    const where = { attachments: "has_attachments = 1", starred: "is_starred = 1", people: "person = 1", waiting: `waiting_since >= ${cutoff} AND last_date >= ${cutoff}` }[filter];
     const deep = db.get<{ last_date: number; id: number }>(`SELECT last_date, id FROM threads WHERE ${where} AND in_trash = 0 AND in_spam = 0 ORDER BY last_date DESC, id DESC LIMIT 1 OFFSET 1000`);
-    if (deep) gate(`${label}: all mail, page at #1,000`, 5, () => listThreads(db, { view: "all", filter, limit: 100, cursor: { lastDate: deep.last_date, id: deep.id } }));
+    if (deep) gate(`${label}: all mail, page at #1,000`, 5, () => listThreads(db, { view: "all", filter, now, limit: 100, cursor: { lastDate: deep.last_date, id: deep.id } }));
     const open = db.get<{ id: number }>(`SELECT id FROM threads WHERE in_inbox = 1 AND NOT (${where}) ORDER BY last_date DESC LIMIT 1`);
-    if (open) gate(`${label}: inbox keeping the open thread`, 5, () => listThreads(db, { view: "inbox", filter, keepIds: [open.id], limit: 100 }));
-    for (const view of ["inbox", "archive", "trash"] as const) gate(`${label}: count ${view}`, 5, () => countScopeThreads(db, { view, filter, limit: 100_001 }));
+    if (open) gate(`${label}: inbox keeping the open thread`, 5, () => listThreads(db, { view: "inbox", filter, now, keepIds: [open.id], limit: 100 }));
+    for (const view of ["inbox", "archive", "trash"] as const) gate(`${label}: count ${view}`, 5, () => countScopeThreads(db, { view, filter, now, limit: 100_001 }));
     gate(`${label}: archive, all scope pages`, 15, () => {
       for (let after = 0; ; ) {
-        const page = scopeThreadIds(db, { view: "archive", filter, after, limit: 500 });
+        const page = scopeThreadIds(db, { view: "archive", filter, now, after, limit: 500 });
         if (page.length < 500) return;
         after = page[page.length - 1]!;
       }
@@ -270,6 +273,41 @@ describe("the quick filters (plan 15): with attachments and starred", () => {
     gates("50k no attachments", "attachments");
     // the worst case for a search narrowed to conversations with attachments: none has any (a whole match set, nothing kept)
     searches("50k no attachments");
+  });
+
+  // plan 17: the same gates and the inbox's waiting count, on its own indexes (a scan of 50k threads is over every budget)
+  it("hold at 50k+ threads for People and Waiting: as computed, twenty far from every view, everyone, no one", () => {
+    const cutoff = waitingCutoff(NOW);
+    const waitingGates = (label: string) => {
+      gates(`${label} people`, "people");
+      gates(`${label} waiting`, "waiting");
+      gate(`${label}: counts with the waiting count`, 5, () => getCounts(db, NOW));
+      gate(`${label}: the waiting count`, 1, () => {
+        if (waitingCounts(db, NOW).inboxWaiting === null) throw new Error("the waiting count is held");
+      });
+    };
+    // the older copies came in without facts; the backfill leaves such threads neither a person's nor waiting
+    db.exec("UPDATE threads SET person = 0, waiting_since = NULL WHERE person IS NULL");
+    db.exec("ANALYZE");
+    const n = db.get<{ c: number; p: number; w: number }>("SELECT count(*) AS c, sum(person) AS p, count(waiting_since) AS w FROM threads")!;
+    expect(n.c).toBeGreaterThanOrEqual(50_000);
+    expect(n.p).toBeGreaterThan(1000);
+    expect(n.w).toBeGreaterThan(100);
+    meta.peopleThreads50k = n.p;
+    meta.waitingThreads50k = n.w;
+    waitingGates("50k");
+    // sparse and far: the twenty oldest archived threads a person's, the twenty oldest the window holds waiting
+    db.exec("UPDATE threads SET person = 0, waiting_since = NULL");
+    db.exec("UPDATE threads SET person = 1 WHERE id IN (SELECT id FROM threads WHERE in_inbox = 0 AND in_trash = 0 AND in_spam = 0 ORDER BY last_date LIMIT 20)");
+    db.run("UPDATE threads SET waiting_since = last_date WHERE id IN (SELECT id FROM threads WHERE in_inbox = 0 AND in_trash = 0 AND in_spam = 0 AND last_date >= ? ORDER BY last_date LIMIT 20)", cutoff);
+    db.exec("ANALYZE");
+    waitingGates("50k sparse");
+    db.exec("UPDATE threads SET person = 1, waiting_since = last_date");
+    db.exec("ANALYZE");
+    waitingGates("50k everyone");
+    db.exec("UPDATE threads SET person = 0, waiting_since = NULL");
+    db.exec("ANALYZE");
+    waitingGates("50k no one");
   });
 });
 
