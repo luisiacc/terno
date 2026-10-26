@@ -41,6 +41,8 @@ export interface DesignDefinition {
     sidebar: string;
     listMin: string;
     listMax: string;
+    /** the narrowest the reader gets when the user widens the sidebar or the list (px; plan 21): its toolbar still fits */
+    readerMin: number;
     /** the reader's column and its side padding */
     readerMax: string;
     readerPadX: string;

@@ -41,6 +41,7 @@ export function designVars(d: DesignDefinition): [string, string][] {
     ["--sidebar-w", d.layout.sidebar],
     ["--list-min", d.layout.listMin],
     ["--list-max", d.layout.listMax],
+    ["--reader-min", `${d.layout.readerMin}px`],
     ["--reader-max", d.layout.readerMax],
     ["--reader-pad-x", d.layout.readerPadX],
     ["--row-radius", d.layout.rowRadius],
