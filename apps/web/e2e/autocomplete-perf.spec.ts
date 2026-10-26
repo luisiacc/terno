@@ -15,7 +15,7 @@
 import type { CDPSession, Page } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
 import type { DevServer } from "../../backend-dev/src/server";
-import { expect, rows, test } from "./fixtures";
+import { expect, focusOn, readerShown, rows, test } from "./fixtures";
 
 test.use({ fixedClock: false });
 
@@ -42,11 +42,11 @@ async function openDraft(page: Page, server: DevServer, bodyText: string) {
   await page.reload();
   await page.locator("[data-ready]").waitFor();
   await rows(page).first().dispatchEvent("mousedown");
-  await expect(page.getByTestId("reader-subject")).toBeVisible();
+  await readerShown(page, 8_000);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.keyboard.press("r");
   const editor = page.getByTestId("compose-body");
-  await expect(editor).toBeFocused({ timeout: 60_000 });
+  await focusOn(page, "compose-body", 60_000);
   // the backend's models are warm (a draft opened warms them; the first build is over)
   await server.backend.autocomplete.warm();
   await server.backend.autocomplete.idle();

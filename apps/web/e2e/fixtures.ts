@@ -180,6 +180,20 @@ export async function selectRows(page: Page, ids: readonly (string | number)[]):
   await focusList(page);
 }
 
+/**
+ * Waits, reading one thing, for the reader to show a conversation and for
+ * focus to be in the element with `testId`. On a page holding a multi-MB
+ * draft, a polled `expect` that misses walks the whole page for its message
+ * (Playwright's aria snapshot, a forced layout per element): 20–40 s with the
+ * page held, past any timeout, although the next poll would have passed.
+ */
+export async function readerShown(page: Page, timeout: number): Promise<void> {
+  await page.waitForFunction(() => document.querySelector("[data-testid=reader-subject]")?.checkVisibility() === true, null, { timeout });
+}
+export async function focusOn(page: Page, testId: string, timeout: number): Promise<void> {
+  await page.waitForFunction((id) => document.activeElement?.getAttribute("data-testid") === id, testId, { timeout });
+}
+
 /** Puts focus on the document body so single-key shortcuts apply. */
 export async function focusList(page: Page): Promise<void> {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());

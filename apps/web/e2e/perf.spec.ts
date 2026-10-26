@@ -7,7 +7,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, navTo, ingestConversation, rows, selectThread, test } from "./fixtures";
+import { expect, focusOn, navTo, ingestConversation, readerShown, rows, selectThread, test } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 import { DESIGNS } from "../../../packages/ui/src/designs/index";
 
@@ -941,23 +941,33 @@ test("the unread filter: ⌘L → the other list rendered within 100 ms; moving 
 type Probe = Record<string, number[]>;
 const composerProbe = (page: import("@playwright/test").Page) => page.evaluate(() => (window as unknown as { __composer?: Probe }).__composer ?? {});
 
-/** A reply draft with a 2 MB body on the newest conversation, then opened (r): the time to an editable editor is reported. */
+/**
+ * A reply draft with a 2 MB body on the newest conversation, then the
+ * conversation opened and r: the time from the press on its row to an
+ * editable editor is gated (the reader mounts the draft's editor as it shows
+ * the conversation, so that is where a slow mount lands). A style read while
+ * its lines weren't skipped yet held the page for 9 s here (114 s at 10 MB).
+ */
 async function hugeDraft(page: import("@playwright/test").Page, server: import("../../backend-dev/src/server").DevServer, body: { bodyText: string; bodyHtml?: string }) {
   const db = sqlDb(server.backend.store);
   const m = db.get<{ id: number; thread_id: number; account_id: number }>("SELECT m.id, m.thread_id, m.account_id FROM messages m JOIN threads t ON t.id = m.thread_id WHERE t.in_inbox = 1 ORDER BY t.last_date DESC, m.date DESC LIMIT 1")!;
   await server.backend.store.drafts.save({ accountId: m.account_id, threadId: m.thread_id, mode: "reply", to: [{ name: "", email: "ana@example.com" }], cc: [], subject: "Re: x", inReplyToMessageId: m.id, ...body }, Date.now());
   await page.reload();
   await page.locator("[data-ready]").waitFor();
-  await rows(page).first().dispatchEvent("mousedown");
-  await expect(page.getByTestId("reader-subject")).toBeVisible();
-  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await rows(page).first().waitFor();
   const t0 = Date.now();
+  await rows(page).first().dispatchEvent("mousedown");
+  await readerShown(page, 20_000);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.keyboard.press("r");
   const editor = page.getByTestId("compose-body");
-  await expect(editor).toBeFocused({ timeout: 20_000 });
+  await focusOn(page, "compose-body", 20_000);
   const openMs = Date.now() - t0;
   return { editor, openMs };
 }
+
+/** opening a conversation with a huge draft, through r, to an editable editor (~0.1–0.4 s measured) */
+const HUGE_OPEN_MS = 2000;
 
 async function typeAndMeasure(page: import("@playwright/test").Page, name: string, text: string) {
   await page.evaluate(() => {
@@ -1007,7 +1017,7 @@ const LINE = "Hola, te paso las notas de la reunión con todos los puntos que vi
 test("a 2 MB draft of short lines: typing stays within a frame; no serialization per keystroke, one bounded one per save; the toolbar follows a selection fast", async ({ app: page, server }) => {
   const lines = Math.ceil(2_000_000 / (LINE.length + 1));
   const { editor, openMs } = await hugeDraft(page, server, { bodyText: Array.from({ length: lines }, (_, i) => `${i} ${LINE}`).join("\n") });
-  stat("2 MB draft (lines): r → editable", 0, [openMs]);
+  expect(stat("2 MB draft (lines): open + r → editable", HUGE_OPEN_MS, [openMs]).max).toBeLessThanOrEqual(HUGE_OPEN_MS * MULT);
   await page.keyboard.press("ControlOrMeta+End");
   const serializeBefore = (await composerProbe(page)).serialize?.length ?? 0;
   const handled = await typeAndMeasure(page, "2 MB draft (lines)", "Gracias por todo.");
@@ -1068,7 +1078,7 @@ test("a 2 MB draft with dense formatting (a mark on every few words, lists): typ
     size += b.length;
   }
   const { openMs } = await hugeDraft(page, server, { bodyText: "x", bodyHtml: blocks.join("") });
-  stat("2 MB draft (marks): r → editable", 0, [openMs]);
+  expect(stat("2 MB draft (marks): open + r → editable", HUGE_OPEN_MS, [openMs]).max).toBeLessThanOrEqual(HUGE_OPEN_MS * MULT);
   await page.keyboard.press("ControlOrMeta+End");
   const handled = await typeAndMeasure(page, "2 MB draft (marks)", "Gracias por todo.");
   expect(await page.getByTestId("compose-body").evaluate((el) => el.lastElementChild!.textContent)).toMatch(/Gracias por todo\.$/);
@@ -1077,7 +1087,7 @@ test("a 2 MB draft with dense formatting (a mark on every few words, lists): typ
 
 test("a 250 KB single paragraph (a long paste without line breaks): typing in it stays within budget", async ({ app: page, server }) => {
   const { openMs } = await hugeDraft(page, server, { bodyText: `${LINE} `.repeat(Math.ceil(250_000 / (LINE.length + 1))) });
-  stat("250 KB paragraph: r → editable", 0, [openMs]);
+  expect(stat("250 KB paragraph: open + r → editable", HUGE_OPEN_MS, [openMs]).max).toBeLessThanOrEqual(HUGE_OPEN_MS * MULT);
   const handled = await typeAndMeasure(page, "250 KB paragraph", "Gracias.");
   expect(handled.p95).toBeLessThanOrEqual(HUGE_MS * MULT);
 });
