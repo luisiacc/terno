@@ -1,6 +1,6 @@
 # Plan 26: recipient chips, and reply / reply-all addresses that survive other clients
 
-- **Status:** planned.
+- **Status:** implemented (see "Implementation notes" and "What the Codex code review changed" at the end).
 - **Builds on:** `76c2ab9` (main after plans 20–24).
 - **Numbering:** 25 is taken by the graceful re-sign-in work running beside this one, so this is 26.
 - **Request (verbatim):** "for the emails that are the destinies and the ccs, lets have nice little clean bubbles there instead of plain text, it is annoying sometimes to have it but its prettier and nice, make it so the ux while interacting there is good to, so they can hit backspace before an email and delete it, so the interaction there needs to be world class intuitive and good ux.
@@ -39,7 +39,7 @@
   | `=?UTF-8?Q?Jos=C3=A9_P=C3=A9rez <jp@x>` (no `?=`) | name `=?UTF-8?Q?Jos=C3=A9_P=C3=A9rez` |
   | `JosÃ© PÃ©rez <jp@x>` (UTF-8 read as Latin-1 upstream) | mojibake kept |
   | `<a@x.com.>`, `Ana <mailto:ana@x.com>` | the trailing dot and `mailto:` kept in the address |
-  | `"‮gnp.exe" <b@x>` | the bidi override kept (the name renders reversed) |
+  | `"\u{202E}gnp.exe" <b@x>` | the bidi override kept (the name renders reversed) |
   | ks_c_5601-1987, gb2312, windows-1252, RFC 2231 `*lang`, UTF-8 split across adjacent words, folded lines, comments `(Jane)` | fine |
 
 - **Reply recipients** (`autoRecipients` in `apps/web/src/lib/compose-fields.ts`):
@@ -297,7 +297,7 @@ Messages stored before v15 have no Reply-To, so replying to them uses From as to
 | 25 | `<a@x.com.>` | a@x.com | ingest, read |
 | 26 | `B <B@X.COM>` beside `b@x.com` | once (case-insensitive) | reply |
 | 27 | `user@bücher.de` | kept for display; sent as `user@xn--bcher-kva.de` | outgoing |
-| 28 | `"‮gnp.exe" <b@x>`, zero-width spaces | controls stripped | ingest, read |
+| 28 | `"\u{202E}gnp.exe" <b@x>`, zero-width spaces | controls stripped | ingest, read |
 | 29 | duplicate Cc headers | both read | ingest |
 | 30 | 2,000 recipients in one header | linear (benchmark) | — |
 | 31 | an address that can't be repaired (`foo bar`) | an invalid chip, Send explains | reply, send |
@@ -412,3 +412,18 @@ Codex (`codex exec -s read-only`) made 12 points against the plan and the code. 
     - the contact index cleans names when it learns them (`cleanName`), and its snapshot format version is bumped so old snapshots rebuild;
     - plan 17's people facts use addresses only (lowercased keys), so they are unchanged.
 12. **postal-mime still parses addresses.** Our parse is a second pass over five short headers; it doesn't replace postal-mime's. The claim is corrected. `parseRaw` is benchmarked whole: a message with a 2,000-recipient Cc and nasty names stays within its budget.
+
+## Implementation notes (what differs from the plan above)
+
+- **The ×** shows on the **selected** chip only, not on hover. With the × hidden but holding its space, chips looked lopsided at rest. Showing it on hover shifted every following chip under a moving pointer. A click selects (the chip turns the accent) and the × removes; Delete/Backspace do the same from the keyboard.
+- **An invalid chip** keeps the foreground text on the chip's fill. Its mark is a dotted destructive underline and a small alert glyph. `destructive-ink` on `muted` failed AA in four palettes (4.39–4.47, and Monokai 3.83). The mark is a UI pair instead: `ui("destructive", ["muted"])` (3:1), added to `CONTRAST_PAIRS`, and the contrast suite passes in every theme.
+- **Editing a chip** turns it back into text in the input, which stays after the chips. The commit puts the chip back in its original place. Rendering the input in the middle of the chips would have put a combobox inside the chips' listbox (invalid ARIA).
+- **Removing a chip** returns focus to the input with the caret at its start, so the next Backspace selects the next chip back. Apple Mail does the same.
+- **⌘V on a chip** moves focus to the input, and the paste lands there (a list becomes chips). The selected chips stay.
+- **"and N more"** is named by what it says (axe's `label-content-name-mismatch`). "Show all N recipients" is its description.
+- **The Edit menu's Undo/Redo** reach the field as native `beforeinput` (`historyUndo`/`historyRedo`). React's `onBeforeInput` is a text-input polyfill that never sees them, so a native listener handles them.
+- **Send's messages** replace "Check the recipients": "“bob@” isn’t an email address. Fix or remove it, then send." and "Add a recipient to send". Focus goes to the first invalid chip, through a DOM event on the field (`SELECT_INVALID`).
+- **The thread list's From name** and the contact index's names are cleaned at read time (`cleanFromName`), behind the same fast path: one regex test per row.
+- **Reply-To from an IMAP envelope** without the raw field is dropped when it equals From (RFC 3501 fills it in from From).
+- **Lowercasing at ingest** is kept: the whole store keys on lowercased addresses (people facts, autocomplete, `from_email`). Typed recipients keep their case; dedupe is case-insensitive.
+- **Invisible characters** (bidi controls, zero-width spaces) are written as `\u{…}` escapes in source, with the `u` flag on the regex, never as literal characters (Trojan Source).
