@@ -10,20 +10,41 @@ export async function stageAttachments(store: MailStore, accountId: number, part
   const verified = new Map<number, AttachmentRef>();
   const claimed = new Set<string>();
   let comparisonBytes = MAX_ATTACHMENT_BYTES * 2;
-  // Verify old parts first: a newly added part must not consume the offline revision's reservation.
+  const metadataKey = (part: IncomingAttachment, size: number) => JSON.stringify([size, attachmentFilename(part.filename), attachmentMime(part.mime), attachmentCid(part.contentId)]);
+  const candidates = new Map<string, Map<string | null, IncomingAttachment[]>>();
+  // Unavailable metadata is never a byte candidate. Read each eligible tail only once.
+  for (const [position, prior] of previous.entries()) {
+    if (position % 128 === 127) await yieldTo();
+    if (!prior.assetId) continue;
+    const key = metadataKey(prior, prior.size);
+    let tails = candidates.get(key);
+    if (!tails) candidates.set(key, tails = new Map());
+    const tail = prior.size ? await store.attachments.read(accountId, prior.assetId, Math.ceil(prior.size / ATTACHMENT_CHUNK) - 1) : null;
+    const bucket = tails.get(tail) ?? [];
+    bucket.push(prior);
+    tails.set(tail, bucket);
+    await yieldTo();
+  }
+  // Candidate signatures select comparisons; only complete byte equality authorizes reuse.
   for (const [position, part] of parts.entries()) {
+    if (position % 128 === 127) await yieldTo();
     if (part.bytes === undefined) continue;
-    const matches = (prior: IncomingAttachment) => prior.assetId && !claimed.has(prior.assetId) && prior.size === part.bytes!.length && prior.filename === attachmentFilename(part.filename) && prior.mime === attachmentMime(part.mime) && attachmentCid(prior.contentId) === attachmentCid(part.contentId);
-    const ordered = [...previous.slice(position, position + 1), ...previous.slice(0, position), ...previous.slice(position + 1)];
-    for (const prior of ordered) {
-      if (!matches(prior) || prior.size > comparisonBytes) continue;
+    const tails = candidates.get(metadataKey(part, part.bytes.length));
+    if (!tails) continue;
+    const offset = Math.max(0, Math.ceil(part.bytes.length / ATTACHMENT_CHUNK) - 1) * ATTACHMENT_CHUNK;
+    const tail = part.bytes.length ? bytesBase64(part.bytes.subarray(offset)) : null;
+    for (const prior of tails.get(tail) ?? []) {
+      if (claimed.has(prior.assetId!)) continue;
+      // An incomplete comparison must never replace a still-downloadable prior revision.
+      if (prior.size > comparisonBytes) return [...previous];
       let equal = true;
       for (let offset = 0, i = 0; offset < part.bytes.length; offset += ATTACHMENT_CHUNK, i++) {
         const slice = part.bytes.subarray(offset, offset + ATTACHMENT_CHUNK);
         const bytes = await store.attachments.read(accountId, prior.assetId!, i);
         comparisonBytes -= slice.length;
-        if (bytes !== bytesBase64(slice)) { equal = false; break; }
+        const matches = bytes === bytesBase64(slice);
         await yieldTo();
+        if (!matches) { equal = false; break; }
       }
       if (equal) {
         verified.set(position, await store.attachments.info(accountId, prior.assetId!));

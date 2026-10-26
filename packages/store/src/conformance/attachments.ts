@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import type { AttachmentRef } from "@terno/core";
+import { ATTACHMENT_CHUNK, bytesBase64, type AttachmentRef } from "@terno/core";
 import type { MailStore } from "../mail-store";
 import type { StoreHarness } from "./store";
 import { ingest, msg, threadOf, withAccounts } from "./fixtures";
@@ -151,6 +151,31 @@ export function defineAttachmentConformance(name: string, h: StoreHarness): void
       const reordered = (await store.threads.get(thread))!.messages[0]!.attachments;
       expect(reordered[1]!.assetId).toBe(original.assetId);
       expect(await store.attachments.read(a!, reordered[1]!.assetId!, 0)).toBe("AP+A");
+    });
+    it("retains colliding reordered nine-MiB parts at quota through reopen", async () => {
+      const [a] = await fresh();
+      const part = (last: number) => {
+        const bytes = new Uint8Array(9 * 1024 * 1024); bytes[bytes.length - 1] = last;
+        return { filename: "same.bin", mime: "application/octet-stream", size: bytes.length, bytes };
+      };
+      const first = part(1), second = part(2);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "collision", attachments: [first, second] })]);
+      const thread = await threadOf(store, "collision");
+      const original = (await store.threads.get(thread))!.messages[0]!.attachments;
+      for (let i = 0; i < 13; i++) await store.attachments.create({ accountId: a!, filename: "reserved", mime: "text/plain", size: 18 * 1024 * 1024, now: 0 });
+      await store.attachments.create({ accountId: a!, filename: "last", mime: "text/plain", size: 256 * 1024 * 1024 - 15 * 1024 - 252 * 1024 * 1024 - 1024, now: 0 });
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "collision", attachments: [part(3), first, second] })]);
+      store = await h.reopen(store);
+      const parts = (await store.threads.get(thread))!.messages[0]!.attachments;
+      expect(parts.map((p) => p.assetId)).toEqual([undefined, ...original.map((p) => p.assetId)]);
+      for (const [i, expected] of [first, second].entries()) {
+        for (let chunk = 0; chunk < expected.bytes.length / ATTACHMENT_CHUNK; chunk++) {
+          const actual = await store.attachments.read(a!, parts[i + 1]!.assetId!, chunk);
+          expect(actual).toBe(bytesBase64(expected.bytes.subarray(chunk * ATTACHMENT_CHUNK, (chunk + 1) * ATTACHMENT_CHUNK)));
+        }
+        await expect(store.attachments.discard(a!, parts[i + 1]!.assetId!)).rejects.toThrow();
+        expect(await store.attachments.info(a!, parts[i + 1]!.assetId!)).toBeTruthy();
+      }
     });
     it("keeps an incoming message readable when its parts collectively exceed the capture budget", async () => {
       const [a] = await fresh();
