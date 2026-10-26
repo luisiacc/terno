@@ -15,7 +15,7 @@ export interface TableSpec {
   /** primary key columns */
   key: readonly string[];
   /** secondary indexes: name → columns (rows with a null column are left out, like a partial index) */
-  indexes?: Record<string, readonly string[]>;
+  indexes?: Record<string, readonly string[] | { columns: readonly string[]; where: (row: Row) => boolean }>;
   /** integer primary key handed out by the table (max + 1, never reused) */
   autoId?: boolean;
   /** not loaded on open: rows enter memory when read for a command or written by one (message bodies) */
@@ -43,7 +43,7 @@ interface UndoEntry {
 
 export class Table<R extends Row = Row> {
   readonly rows = new Map<Key, R>();
-  private readonly indexes = new Map<string, { cols: readonly string[]; map: Map<Key, Set<Key>> }>();
+  private readonly indexes = new Map<string, { cols: readonly string[]; where?: (row: Row) => boolean; map: Map<Key, Set<Key>> }>();
   private nextId = 1;
   /** lazy tables: keys known to have no row in IndexedDB */
   readonly absent = new Set<Key>();
@@ -56,7 +56,10 @@ export class Table<R extends Row = Row> {
     readonly spec: TableSpec,
     private readonly db: MemDb,
   ) {
-    for (const [name, cols] of Object.entries(spec.indexes ?? {})) this.indexes.set(name, { cols, map: new Map() });
+    for (const [name, definition] of Object.entries(spec.indexes ?? {})) {
+      const { columns: cols, where } = "columns" in definition ? definition : { columns: definition, where: undefined };
+      this.indexes.set(name, { cols, where, map: new Map() });
+    }
   }
 
   keyOfRow(row: Row): Key {
@@ -235,7 +238,8 @@ export class Table<R extends Row = Row> {
   }
 
   private index(k: Key, row: R): void {
-    for (const { cols, map } of this.indexes.values()) {
+    for (const { cols, where, map } of this.indexes.values()) {
+      if (where && !where(row)) continue;
       const values = cols.map((c) => row[c]);
       if (values.some((v) => v === null || v === undefined)) continue;
       const ik = keyOf(values);
@@ -246,7 +250,8 @@ export class Table<R extends Row = Row> {
   }
 
   private unindex(k: Key, row: R): void {
-    for (const { cols, map } of this.indexes.values()) {
+    for (const { cols, where, map } of this.indexes.values()) {
+      if (where && !where(row)) continue;
       const values = cols.map((c) => row[c]);
       if (values.some((v) => v === null || v === undefined)) continue;
       const ik = keyOf(values);

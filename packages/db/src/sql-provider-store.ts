@@ -37,15 +37,16 @@ export class SqlProviderStore implements ProviderStore {
 
   async pendingBodies(limit: number) {
     return this.db.all<{ id: number; mailbox: string; uid: number; uidvalidity: number }>(
-      `SELECT m.id, l.mailbox, l.uid, l.uidvalidity FROM messages m JOIN message_locations l ON l.message_id = m.id
-       WHERE m.account_id = ? AND ((m.body_state != 'full' AND m.attachments_captured != 2) OR m.attachments_captured = 0) GROUP BY m.id ORDER BY m.date DESC LIMIT ?`,
+      `SELECT m.id, l.mailbox, l.uid, l.uidvalidity FROM messages m INDEXED BY messages_capture_pending JOIN message_locations l ON l.message_id = m.id
+       AND l.mailbox = (SELECT mailbox FROM message_locations WHERE message_id = m.id ORDER BY mailbox LIMIT 1)
+       WHERE m.account_id = ? AND ((m.body_state != 'full' AND m.attachments_captured != 2) OR m.attachments_captured = 0) ORDER BY m.date DESC, m.id DESC LIMIT ?`,
       this.accountId,
       limit,
     );
   }
 
   async countPendingBodies() {
-    return this.db.get<{ c: number }>("SELECT count(*) c FROM messages WHERE account_id = ? AND ((body_state != 'full' AND attachments_captured != 2) OR attachments_captured = 0)", this.accountId)!.c;
+    return this.db.get<{ c: number }>("SELECT count(*) c FROM messages INDEXED BY messages_capture_pending WHERE account_id = ? AND ((body_state != 'full' AND attachments_captured != 2) OR attachments_captured = 0)", this.accountId)!.c;
   }
 
   async providerIds(messageIds: readonly number[]) {

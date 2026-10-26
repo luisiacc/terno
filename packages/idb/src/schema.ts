@@ -7,10 +7,11 @@ import { MemDb, type Committed, type ForeignKey, type Key, type Row, type Table,
  * the v7 shape (bodies split, search outbox) as IndexedDB version 1; version 2
  * is SQL's v8 (the move journal keeps each removed row with its category);
  * version 3 is SQL's v9 (drafts v2); version 4 is SQL's v14 (plan 17: correspondents, thread facts); version 5 is SQL's v15 (Reply-To, defaulted on read).
+ * Version 6 adds attachment assets (SQL v16); SQL v17 adds an in-memory partial index, with no persisted shape change.
  */
 export const IDB_VERSION = 6;
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 16;
+export const LOGICAL_SCHEMA = 17;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -28,7 +29,7 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   {
     name: "messages",
     key: ["id"],
-    indexes: { ...fk("thread_id"), ...fk("account_id"), provider: ["account_id", "provider_msg_id"], rfc: ["account_id", "rfc_message_id"], from: ["from_email"], domain: ["from_domain"], list: ["list_id"], body_state: ["body_state"], attachment_pending: ["account_id", "attachment_pending"] },
+    indexes: { ...fk("thread_id"), ...fk("account_id"), provider: ["account_id", "provider_msg_id"], rfc: ["account_id", "rfc_message_id"], from: ["from_email"], domain: ["from_domain"], list: ["list_id"], body_state: ["body_state"], attachment_pending: ["account_id", "attachment_pending"], pending_bodies: { columns: ["account_id"], where: (r) => r.attachment_pending === 1 || (r.body_state !== "full" && r.attachments_captured !== 2) } },
   },
   { name: "message_bodies", key: ["message_id"], lazy: true },
   { name: "message_refs", key: ["account_id", "ref", "message_id"], indexes: { ...fk("message_id"), ref: ["account_id", "ref"] } },

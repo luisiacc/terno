@@ -821,6 +821,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 14, name: "people and waiting for your reply", sql: PEOPLE_V14 },
   { version: 15, name: "reply destinations", sql: "ALTER TABLE messages ADD COLUMN reply_to_json TEXT NOT NULL DEFAULT '[]';" },
   { version: 16, name: "immutable attachment assets", sql: ATTACHMENTS_V16 },
+  { version: 17, name: "pending content capture index", sql: `CREATE INDEX messages_capture_pending ON messages(account_id, date DESC, id DESC) WHERE (body_state != 'full' AND attachments_captured != 2) OR attachments_captured = 0;` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;
