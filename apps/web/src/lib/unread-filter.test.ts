@@ -31,7 +31,7 @@ describe("the quick filter's state (plan 12's unread filter, generalized in plan
     expect(parseStored(null)).toEqual(new Map());
     expect(parseStored("{")).toEqual(new Map());
     expect(parseStored('{"inbox||":"unread"}')).toEqual(new Map());
-    expect(parseStored(JSON.stringify([["inbox||", "unread"], ["x", "people"], ["", "unread"], ["y".repeat(65), "unread"], ["all||7", "starred"], "z"]))).toEqual(new Map([["inbox||", "unread"], ["all||7", "starred"]]));
+    expect(parseStored(JSON.stringify([["inbox||", "unread"], ["x", "friends"], ["", "unread"], ["y".repeat(65), "unread"], ["all||7", "starred"], "z"]))).toEqual(new Map([["inbox||", "unread"], ["all||7", "starred"]]));
     expect(loadListFilters({ getItem: () => { throw new Error("SecurityError"); } })).toEqual(new Map());
     expect(() => saveListFilters(new Map([["a", "unread"]]), { setItem: () => { throw new Error("QuotaExceededError"); } })).not.toThrow();
   });

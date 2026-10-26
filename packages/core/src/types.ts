@@ -98,6 +98,10 @@ export interface ThreadSummary {
   starred: boolean;
   hasAttachments: boolean;
   categoryIds: CategoryId[];
+  /** plan 17: the newest inbound message is from a person (absent from an older backend) */
+  person?: boolean;
+  /** plan 17: the date of the message waiting for your reply, or null (the window is applied by whoever reads it) */
+  waitingSince?: number | null;
 }
 
 export interface MessageDetail {
@@ -177,6 +181,9 @@ export interface Counts {
   categoryTotal: Record<CategoryId, number>;
   /** suggestions waiting for an answer ("Revisar") */
   categorySuggestions: Record<CategoryId, number>;
+  /** plan 17: inbox threads waiting for your reply (inside the window); null until the store's facts are complete, absent from an older backend */
+  inboxWaiting?: number | null;
+  inboxWaitingByAccount?: Record<AccountId, number>;
 }
 
 export type ThreadAction =

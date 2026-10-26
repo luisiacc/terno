@@ -205,6 +205,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
           bodyHtml: parsed.html,
           bodyState: "full",
           listId: parsed.listId,
+          bulk: parsed.bulk,
           isRead: st.isRead!,
           isStarred: st.isStarred!,
           inInbox: st.inInbox!,

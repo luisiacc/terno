@@ -79,6 +79,9 @@ export const CODES = {
   "ai.failed": c("aiKind", "op"),
   "keychain.migration_failed": c("errorClass"),
   "move.resume_failed": c("errorClass"),
+  // plan 17: the thread facts' backfill (a slice failed; three in a row stop it for the session)
+  "facts.backfill_failed": c("errorClass", "count"),
+  "facts.backfilled": c("count", "durationMs"),
   "import.restore_failed": c("errorClass"),
   "secret.unreadable": c("op"),
   "agents.socket_failed": c("errno"),
