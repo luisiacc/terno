@@ -499,6 +499,11 @@ test("switching theme: painted within 50 ms, no row re-renders", async ({ app: p
 test("resizing panes (plan 21): dragging either edge keeps frames smooth with five HTML mails open; the list and its rows never render", async ({ app: page, server }) => {
   const id = await ingestConversation(server, { subject: "Presupuesto con cinco boletines", count: 6, html: 5, now: Date.now() });
   await selectThread(page, id, 'subject:"Presupuesto con cinco boletines"');
+  // then the search cleared, the conversation still open: the list being resized is the whole, virtualized inbox
+  await page.getByTestId("search-input").fill("");
+  await expect(page.getByTestId("search-stats")).toBeHidden();
+  await expect(page.getByTestId("reader-subject")).toHaveText("Presupuesto con cinco boletines");
+  expect(await rows(page).count(), "a full screen of rows mounted").toBeGreaterThanOrEqual(10);
   const reader = page.getByTestId("reader");
   await reader.getByTestId("more-messages").click();
   // every message open: the toggles that are still collapsed, from the top
@@ -524,11 +529,11 @@ test("resizing panes (plan 21): dragging either edge keeps frames smooth with fi
     await startFrames(page);
     // out and back, 2 px a move (a hand on a trackpad), as fast as input arrives
     for (let i = 1; i <= MOVES; i++) await page.mouse.move(x + 2 * (i <= MOVES / 2 ? i : MOVES - i) + 40, y);
-    const f = await stopFrames(page);
     const mid = await width();
     await page.mouse.up();
-    // the commit, the handles' observers, the mail frames settling
+    // the frames go on through the release: the commit, the handles' observers, the mail frames settling
     await page.waitForTimeout(300);
+    const f = await stopFrames(page);
     rowRenders += (await renders(page, "ThreadRow")) - r0;
     listRenders += (await renders(page, "ThreadList")) - l0;
     expect(Math.round(mid - before), `${pane}: the pane followed the pointer`).toBe(40);
