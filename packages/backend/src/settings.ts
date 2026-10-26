@@ -63,6 +63,8 @@ export const DEFAULT_SETTINGS: General = {
   htmlMailAppearance: "auto",
   customThemes: [],
   density: "comfortable",
+  // plan 24: nothing changes for anyone who doesn't choose List
+  layout: "split",
   remoteImages: "ask",
   allowAgentSend: false,
   gmailClientId: "",

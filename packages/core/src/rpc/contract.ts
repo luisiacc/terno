@@ -100,6 +100,8 @@ export interface AppSettings {
   htmlMailAppearance: "auto" | "paper";
   customThemes: CustomTheme[];
   density: "comfortable" | "compact";
+  /** plan 24: the conversation beside the list (split), or the list full width with the conversation opening in its place (list) */
+  layout: "split" | "list";
   remoteImages: "ask" | "always";
   ai: AiSettings;
   allowAgentSend: boolean;
@@ -342,6 +344,7 @@ const settingsPatch = z.object({
   htmlMailAppearance: z.enum(["auto", "paper"]).optional(),
   customThemes: customThemesSchema.optional(),
   density: z.enum(["comfortable", "compact"]).optional(),
+  layout: z.enum(["split", "list"]).optional(),
   remoteImages: z.enum(["ask", "always"]).optional(),
   ai: z
     .object({

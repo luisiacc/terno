@@ -12,7 +12,9 @@ import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { getApp, setApp } from "~/state/app";
 
-type Appearance = Pick<AppSettings, "theme" | "design" | "lightTheme" | "darkTheme" | "motionMs" | "customThemes">;
+type Appearance = Pick<AppSettings, "theme" | "design" | "lightTheme" | "darkTheme" | "motionMs" | "customThemes"> & { layout?: AppSettings["layout"] };
+export type Layout = AppSettings["layout"];
+export const isLayout = (v: unknown): v is Layout => v === "split" || v === "list";
 
 /** What theme.js reads before React (and before the backend answers) on the next launch. */
 export const APPEARANCE_KEY = "terno:appearance";
@@ -26,15 +28,19 @@ export interface CachedAppearance {
   motion: number;
   /** per mode: may the macOS sidebar show the window's vibrancy */
   vibrancy: Record<ThemeMode, boolean>;
+  /** plan 24: theme.js paints data-layout from it, so a List user never sees a Split frame at launch */
+  layout?: Layout;
   /** a custom theme in use: its base [data-theme] and its full token map */
   custom?: Partial<Record<ThemeMode, { base: string; tokens: Record<string, string> }>>;
 }
 
 /** The resolved mode (anything that needs "light" | "dark"). */
-export const useAppearance = create<{ mode: ThemeMode; design: DesignId; reducedMotion: boolean; motionMs: number; themeKey: string }>(() => ({
+export const useAppearance = create<{ mode: ThemeMode; design: DesignId; layout: Layout; reducedMotion: boolean; motionMs: number; themeKey: string }>(() => ({
   mode: document.documentElement.classList.contains("dark") ? "dark" : "light",
   /** what theme.js painted, so the first render matches it */
   design: isDesignId(document.documentElement.dataset.design) ? document.documentElement.dataset.design : DEFAULT_DESIGN,
+  /** plan 24: what theme.js painted too */
+  layout: isLayout(document.documentElement.dataset.layout) ? document.documentElement.dataset.layout : "split",
   /** changes whenever the painted colors change (theme id or custom tokens) */
   themeKey: "",
   reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches,
@@ -98,17 +104,21 @@ export function applyAppearance(a: Appearance): void {
   const ms = clampMotion(a.motionMs);
   const custom = theme.id.startsWith(CUSTOM_PREFIX);
   const design = designById(a.design);
+  const layout: Layout = a.layout ?? "split";
   // the design may keep its sidebar opaque (Atelier's and Lumen's paper) whatever the palette allows
   const vibrancy = sidebarVibrancy(isMacDesktop(), theme.vibrancy && design.vibrancy, matchMedia(REDUCED_TRANSPARENCY).matches);
-  const key = JSON.stringify([mode, design.id, theme.id, custom ? theme.tokens : null, ms, reduced, vibrancy]);
+  const key = JSON.stringify([mode, design.id, theme.id, custom ? theme.tokens : null, ms, reduced, vibrancy, layout]);
   const designChanged = useAppearance.getState().design !== design.id || html.dataset.design !== design.id;
+  // a layout switch (plan 24) changes the list's width and row heights: the same capture and restore as a design switch
+  const layoutChanged = useAppearance.getState().layout !== layout || html.dataset.layout !== layout;
   if (key !== applied) {
     applied = key;
     // what must stay put across a design switch is measured before anything changes (plan 15, R3)
-    const restore = designChanged ? captureDesignAnchors() : null;
+    const restore = designChanged || layoutChanged ? captureDesignAnchors() : null;
     html.setAttribute("data-theme-switching", "");
     // CSS first, so the structure React commits below is measured with its own tokens
     html.dataset.design = design.id;
+    html.dataset.layout = layout;
     html.classList.toggle("dark", mode === "dark");
     html.dataset.theme = baseId(theme, a);
     html.style.colorScheme = mode;
@@ -119,7 +129,7 @@ export function applyAppearance(a: Appearance): void {
     else html.removeAttribute("data-vibrancy");
     if (restore) {
       // the variants' structure commits in this same task, before paint: one frame, styles and structure in agreement
-      flushSync(() => useAppearance.setState({ design: design.id }));
+      flushSync(() => useAppearance.setState({ design: design.id, layout }));
       restore();
     }
     // the first frame paints the new colors with transitions off; the next re-enables them
@@ -130,11 +140,11 @@ export function applyAppearance(a: Appearance): void {
   }
 
   // after the DOM: listeners (the mail iframe) read the painted colors
-  useAppearance.setState({ mode, design: design.id, reducedMotion: reduced, motionMs: ms, themeKey: `${theme.id}:${custom ? JSON.stringify(theme.tokens) : ""}` });
+  useAppearance.setState({ mode, design: design.id, layout, reducedMotion: reduced, motionMs: ms, themeKey: `${theme.id}:${custom ? JSON.stringify(theme.tokens) : ""}` });
 
   const light = resolveTheme(a, "light");
   const dark = resolveTheme(a, "dark");
-  const cache: CachedAppearance = { v: 2, mode: a.theme, design: design.id, light: light.id, dark: dark.id, motion: ms, vibrancy: { light: light.vibrancy && design.vibrancy, dark: dark.vibrancy && design.vibrancy } };
+  const cache: CachedAppearance = { v: 2, mode: a.theme, design: design.id, layout, light: light.id, dark: dark.id, motion: ms, vibrancy: { light: light.vibrancy && design.vibrancy, dark: dark.vibrancy && design.vibrancy } };
   for (const t of [light, dark]) {
     if (t.id.startsWith(CUSTOM_PREFIX)) (cache.custom ??= {})[t.mode] = { base: baseId(t, a), tokens: t.tokens };
   }
@@ -167,8 +177,8 @@ export function installAppearanceListeners(): () => void {
   };
 }
 
-type AppearancePatch = Pick<SettingsPatch, "theme" | "design" | "lightTheme" | "darkTheme" | "motionMs" | "customThemes" | "htmlMailAppearance">;
-const APPEARANCE_FIELDS = ["theme", "design", "lightTheme", "darkTheme", "motionMs", "customThemes", "htmlMailAppearance"] as const;
+type AppearancePatch = Pick<SettingsPatch, "theme" | "design" | "lightTheme" | "darkTheme" | "motionMs" | "customThemes" | "htmlMailAppearance" | "layout">;
+const APPEARANCE_FIELDS = ["theme", "design", "lightTheme", "darkTheme", "motionMs", "customThemes", "htmlMailAppearance", "layout"] as const;
 
 /** Appearance changes not yet acknowledged, oldest first (each one is sent after the previous answered). */
 const pending: { patch: AppearancePatch }[] = [];

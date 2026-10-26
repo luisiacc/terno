@@ -152,4 +152,12 @@ describe("theme.js: keys from when the app was called Única", () => {
     expect(r.store.get("terno:first-run")).toBe("done");
     expect(r.store.get("unica:first-run")).toBe("account");
   });
+
+  it("plan 24: paints the cached layout; anything else, or nothing, is split", () => {
+    const cache = (layout: unknown) => ({ "terno:appearance": JSON.stringify({ v: 2, design: "macos", mode: "light", light: "terno-light", dark: "terno-dark", motion: 75, layout }) });
+    expect(run({ storage: cache("list") }).attrs.get("data-layout")).toBe("list");
+    expect(run({ storage: cache("split") }).attrs.get("data-layout")).toBe("split");
+    expect(run({ storage: cache("<script>") }).attrs.get("data-layout")).toBe("split");
+    expect(run().attrs.get("data-layout")).toBe("split");
+  });
 });

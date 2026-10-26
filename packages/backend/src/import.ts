@@ -16,6 +16,7 @@ const GENERAL_KEYS = [
   "htmlMailAppearance",
   "customThemes",
   "density",
+  "layout",
   "remoteImages",
   "gmailClientId",
   "syncWindowDays",
