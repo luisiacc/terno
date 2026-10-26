@@ -427,3 +427,17 @@ Codex (`codex exec -s read-only`) made 12 points against the plan and the code. 
 - **Reply-To from an IMAP envelope** without the raw field is dropped when it equals From (RFC 3501 fills it in from From).
 - **Lowercasing at ingest** is kept: the whole store keys on lowercased addresses (people facts, autocomplete, `from_email`). Typed recipients keep their case; dedupe is case-insensitive.
 - **Invisible characters** (bidi controls, zero-width spaces) are written as `\u{…}` escapes in source, with the `u` flag on the regex, never as literal characters (Trojan Source).
+
+## What the Codex code review changed
+
+Codex (`codex exec -s read-only`, the review prompt over `35509d2..HEAD`) made seven findings. All were fixed, each with a regression test that was run against the unfixed code and failed there (commit `2031a9f`).
+
+1. **High: an encoded word could still spoof From.** With a literal `<` inside Q text, `=?UTF-8?Q?Ana_<ana@x.com>?= <real@x.com>` gave `ana@x.com`. Both tokenizers (`scanList`, `tokens`) now treat a complete encoded word as one opaque word: its brackets, `@` and commas are text. Test: core "code review 1".
+2. **High: recovery beside a literal address.** A name holding a literal `<…>` let addresses decoded from an encoded word in the same name be recovered. Decoding now neutralizes every decoded chunk (`decodeEncodedWords(text, show)`: no bracketed address, no bracket), so recovery only uses what the header holds literally. Test: core "code review 2".
+3. **High: an invalid chip could become a different, sendable one.** `a:b@x.com` serialized plainly reparsed as group `a:` plus a valid `b@x.com`. `formatAddress` now writes an invalid entry plainly only when it parses back as itself; otherwise it writes one quoted entry. Test: core "code review 3" (`a:b@x.com`, `mailto:`, `Team:;`).
+4. **Medium: a comment-only typed entry vanished.** `(bob@x.com)` produced no chip. A typed part that yields nothing is now kept as an entry to fix. Test: core "code review 4".
+5. **Medium: repeated IMAP header lines were quadratic.** `headerFields` copied the array per line (32,000 Cc lines took 1.5 s). They are now appended in place. Gate: `addresses.perf.test.ts`, 32,000 lines ≤ 16× the cost of 4,000.
+6. **Medium: Undo left stale suggestions acceptable.** Undo, redo and an external value change now close the list and drop answers still in flight. Test: autocomplete.spec "undo takes the suggestions…".
+7. **Medium: Tab into a collapsed field lost focus.** The "and N more" button moved focus to the input on focus, before the expanded field removed it. Test: recipients.spec, 200 recipients, From → Tab.
+
+Codex also saw the string-scaling gate fail once under load (12.46× against 12×). Linear is about 8× and quadratic 64×, so the bound is now 16×.
