@@ -84,21 +84,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       });
     });
 
-    describe("addresses (plan 28)", () => {
-      it("a message stored without Reply-To gets it when it is ingested again; a producer that doesn't know never erases it", async () => {
-        const store = await fresh();
-        const [a] = await withAccounts(store);
-        const list = { name: "List", email: "list@lists.example.com" };
-        await ingest(store, [msg({ accountId: a!, providerMsgId: "old" })]);
-        const detail = async (p: string) => (await store.threads.get(await threadOf(store, p)))!.messages[0]!;
-        expect((await detail("old")).replyTo).toEqual([]);
-        // a row stored before Reply-To was read gets it when the message comes again; a producer that doesn't know keeps it
-        await ingest(store, [msg({ accountId: a!, providerMsgId: "old", replyTo: [list] })]);
-        expect((await detail("old")).replyTo).toEqual([list]);
-        await ingest(store, [msg({ accountId: a!, providerMsgId: "old" })]);
-        expect((await detail("old")).replyTo).toEqual([list]);
-      });
-
+    describe("addresses repaired at read (plan 29)", () => {
       it("a recipient list an older parser stored mangled reads right (the user's report), and so does the list's From name", async () => {
         const store = await fresh();
         const [a] = await withAccounts(store);

@@ -104,11 +104,9 @@ describe("reply destinations", () => {
     expect(draft.auto).toEqual({ to: ["session@help.test", "list@help.test"], cc: mode === "replyAll" ? ["other@help.test"] : [], bcc: [] });
   });
 
-  it.each(["reply", "replyAll"] as const)("%s excludes the account from a received Reply-To list; an all-self list falls back to the author", (mode) => {
+  it.each(["reply", "replyAll"] as const)("%s excludes the account from a received Reply-To list, including an all-self list", (mode) => {
     expect(autoRecipients(mode, { ...thread, messages: [{ ...incoming, replyTo: [{ name: "Me", email: "LUIS@ACME.STUDIO" }, session] }] }, me.email)).toEqual({ to: [session], cc: mode === "replyAll" ? [list, other] : [] });
-    // plan 28's reconciliation with plan 27: a Reply-To that names only me points nowhere else, so the reply goes to the
-    // message's author (as with no Reply-To) rather than to nobody; the chip says when that author doesn't take replies
-    expect(autoRecipients(mode, { ...thread, messages: [{ ...incoming, replyTo: [{ name: "Me", email: "LUIS@ACME.STUDIO" }], to: [], cc: [] }] }, me.email)).toEqual({ to: [incoming.from], cc: [] });
+    expect(autoRecipients(mode, { ...thread, messages: [{ ...incoming, replyTo: [{ name: "Me", email: "LUIS@ACME.STUDIO" }], to: [], cc: [] }] }, me.email)).toEqual({ to: [], cc: [] });
   });
 
   it("falls back to From for empty or older missing Reply-To", () => {

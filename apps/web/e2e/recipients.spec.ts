@@ -1,12 +1,12 @@
 /**
- * Plan 26: recipients as chips, and reply-all addresses that survive other
+ * Plan 29: recipients as chips, and reply-all addresses that survive other
  * clients. Tagged @design, so it runs in macOS, Lumen and Atelier. Typing and
  * the commit keys; Backspace selects then removes (a held key never does);
  * arrows, Home/End, ⌘A, ⌘C/⌘X/⌘V, Delete, edit by Enter and double click, ×;
  * undo and redo (keys and the Edit menu's path); blur; the single-key
  * shortcuts stay off a focused chip; 200 recipients collapse and expand, and
  * typing renders no chip; reply-all on the user's mangled Cc (as a broken
- * client wrote it, and as an older parser stored it), Reply-To; axe in light
+ * client wrote it, and as an older parser stored it; Reply-To is plan 27's reply-to.spec); axe in light
  * and dark with screenshots.
  */
 import { mkdirSync } from "node:fs";
@@ -275,15 +275,6 @@ test.describe("reply-all with addresses other clients mangled", { tag: "@design"
     const id = await threadOf(server, "Presupuesto antiguo");
     await replyAll(page, id, "Presupuesto antiguo");
     await expect(chipsOf(page, "compose-cc")).toHaveText(["David Sucre L.", "Luis Alberto Medina"]);
-    // what goes out is two clean recipients (the draft as saved)
-    await expect(page.getByTestId("draft-status")).toHaveText(/saved/i, { timeout: 10_000 }).catch(() => undefined);
-  });
-
-  test("Reply-To is honoured: the list gets the reply, the author isn't added", async ({ app: page, server }) => {
-    const id = await ingestRaw(server, "Lista de proveedores", `Reply-To: Proveedores <proveedores@lists.acme.studio>\r\nCc: Ana Torres <ana@torres.mx>`);
-    await replyAll(page, id, "Lista de proveedores");
-    expect(await recipientEmails(page, "compose-to")).toEqual(["proveedores@lists.acme.studio"]);
-    expect(await recipientEmails(page, "compose-cc")).toEqual(["ana@torres.mx"]);
   });
 
   test("an address that can't be repaired shows as invalid, and Send says so instead of failing", async ({ app: page, server }) => {

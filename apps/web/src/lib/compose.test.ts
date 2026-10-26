@@ -84,7 +84,7 @@ describe("what sending says", () => {
   it("refused, failed and sent, in the active language", async () => {
     const refused = createDraft({ ...newFields(1), toText: "ana@" });
     expect(await sendDraft(refused)).toBe(false);
-    // it says which entry isn't an address (plan 26), and when nobody is there at all
+    // it says which entry isn't an address (plan 29), and when nobody is there at all
     expect(useSnack.getState().current?.message).toBe("“ana@” isn’t an email address. Fix or remove it, then send.");
     expect(await sendDraft(createDraft({ ...newFields(1), toText: "" }))).toBe(false);
     expect(useSnack.getState().current?.message).toBe("Add a recipient to send");

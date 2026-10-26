@@ -314,7 +314,7 @@ test("300 suggestions accepted, dismissed and undone don't grow the heap", async
   expect(after - before, "heap growth over 300 cycles").toBeLessThanOrEqual(2 * 1024 * 1024);
 });
 
-test("recipients (plan 26): with 200 chips in the field, a keystroke is painted within a frame (p95, best of 3) and renders no chip", async ({ app: page }) => {
+test("recipients (plan 29): with 200 chips in the field, a keystroke is painted within a frame (p95, best of 3) and renders no chip", async ({ app: page }) => {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.keyboard.press("c");
   const to = page.getByTestId("compose-to");

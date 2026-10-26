@@ -2,13 +2,13 @@ import { formatAddress, isNoReply, isValidEmail, parseAddressList, repairAddress
 import { tokenAt } from "./recipients";
 
 /**
- * A recipient field as chips (plan 26): the committed recipients, what is
+ * A recipient field as chips (plan 29): the committed recipients, what is
  * being typed, and where a commit goes. Pure, so every key's outcome is
  * unit-tested; the field's text (`serialize`) stays the draft's model, so
  * drafts, autosave and conversions are unchanged and nothing is migrated.
  */
 
-/** Send asks a field (the DOM event on it) to show its first invalid recipient (plan 26 §2.6). */
+/** Send asks a field (the DOM event on it) to show its first invalid recipient (plan 29 §2.6). */
 export const SELECT_INVALID = "terno:recipient-select-invalid";
 
 export interface Chip {

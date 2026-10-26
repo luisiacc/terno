@@ -39,7 +39,7 @@ const searchCursor = cursor.extend({
   revision: z.object({ epoch: z.string().max(100), seq: z.number().int().min(0) }).optional(),
   queryKey: z.string().max(5000).optional(),
 });
-// core's own check (plan 26): zod's email() refuses RFC-valid local parts (a/b, a=b) and Unicode domains, which the builders send as punycode
+// core's own check (plan 29): zod's email() refuses RFC-valid local parts (a/b, a=b) and Unicode domains, which the builders send as punycode
 const address = z.object({ name: z.string().max(300), email: z.string().max(320).refine(isValidEmail, "Invalid email address") });
 /** a draft keeps recipients as typed, unfinished ones too ("bob@"); addresses are validated when it is sent */
 export const attachmentRefSchema = z.object({

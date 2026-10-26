@@ -151,7 +151,7 @@ test("plan 18: the packaged backend suggests recipients from its index", async (
   await expect(list).toBeVisible({ timeout: 15_000 });
   await expect(list.getByTestId("recipient-suggestion").first()).toBeVisible();
   await page.keyboard.press("Enter");
-  // plan 26: the accepted recipient is a chip, the input ready for the next one
+  // plan 29: the accepted recipient is a chip, the input ready for the next one
   await expect(page.getByTestId("compose-to-field").getByTestId("recipient-chip")).toHaveCount(1);
   await expect(page.getByTestId("compose-to-field").getByTestId("recipient-chip")).toHaveAttribute("data-email", /@/);
   await expect(to).toHaveValue("");

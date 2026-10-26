@@ -43,7 +43,7 @@ export interface MessageAddresses {
 const lower = (list: Address[]) => list.map((a) => ({ name: a.name, email: a.email.toLowerCase() }));
 
 /**
- * A message's addresses (plan 26): read by our own parser from the raw header
+ * A message's addresses (plan 29): read by our own parser from the raw header
  * values (every occurrence: some clients write two Cc lines), so encoded
  * words are decoded only after the structure is known (no spoofed From), and
  * repaired. Where a header can't be read at all, what the MIME parser or the

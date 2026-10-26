@@ -1,6 +1,6 @@
 import { parseRaw } from "@terno/mail";
 import type { IncomingMessage } from "@terno/store";
-import { expect, selectThread, stabilize, test } from "./fixtures";
+import { chipsOf, expect, recipientEmails, selectThread, stabilize, test } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 
@@ -25,8 +25,10 @@ for (const mode of ["reply", "replyAll"] as const) {
       await page.locator("[data-ready]").waitFor();
       await selectThread(page, touched[0]!, 'in:inbox subject:"Helpdesk session"');
       await page.getByTestId(mode === "reply" ? "action-reply" : "action-reply-all").click();
-      await expect(page.getByTestId("compose-to")).toHaveValue('"Support, Session" <session@help.test>, List <list@help.test>');
-      if (mode === "replyAll") await expect(page.getByTestId("compose-cc")).toHaveValue("Other <other@help.test>");
+      // as chips (plan 29): the quoted comma name is one recipient
+      await expect(chipsOf(page, "compose-to")).toHaveText(["Support, Session", "List"]);
+      expect(await recipientEmails(page, "compose-to")).toEqual(["session@help.test", "list@help.test"]);
+      if (mode === "replyAll") expect(await recipientEmails(page, "compose-cc")).toEqual(["other@help.test"]);
       await page.getByTestId("compose-body").fill("Thanks for helping.");
       await expect(page.locator("html")).toHaveClass(theme === "dark" ? /\bdark\b/ : /^(?!.*\bdark\b)/);
       await stabilize(page);

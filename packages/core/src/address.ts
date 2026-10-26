@@ -2,7 +2,7 @@ import { decodeEncodedWords, MOJIBAKE, repairMojibake, repairOrphans } from "./e
 import type { Address } from "./types";
 
 /**
- * Addresses (plan 26): one lenient RFC 5322 reader for what people type and
+ * Addresses (plan 29): one lenient RFC 5322 reader for what people type and
  * for what other clients write in headers, a repair for what they get wrong
  * (or what an older parser stored), and the writer. Everything is one pass
  * over the text (no backtracking regexes on it): thousands of recipients in
@@ -15,7 +15,7 @@ const NEEDS_QUOTES = /[",;<>@()[\]:\\.]|=\?/;
 // oxlint-disable-next-line no-control-regex -- control characters are exactly what must go
 const INVISIBLE = /[\u0000-\u001f\u007f-\u009f\u{200B}\u{200E}\u{200F}\u{202A}-\u{202E}\u{2060}\u{2066}-\u{2069}\u{FEFF}]/gu;
 
-/** Recipients per field a draft keeps and a send takes (plan 26: a reply-all to hundreds must save; Gmail allows 500, Workspace 2,000). */
+/** Recipients per field a draft keeps and a send takes (plan 29: a reply-all to hundreds must save; Gmail allows 500, Workspace 2,000). */
 export const MAX_RECIPIENTS = 1000;
 
 /** What can't be in an address: an entry holding one isn't an address, and is written as one quoted string. */
@@ -455,7 +455,7 @@ export function cleanFromName(name: string | null | undefined): string {
 }
 
 /**
- * A stored message's addresses as they are shown and replied to (plan 26):
+ * A stored message's addresses as they are shown and replied to (plan 29):
  * repaired at read time, so mail stored by an older parser reads right
  * everywhere without a backfill. Reply-To is absent when not known.
  */

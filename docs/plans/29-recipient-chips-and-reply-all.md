@@ -1,8 +1,8 @@
-# Plan 26: recipient chips, and reply / reply-all addresses that survive other clients
+# Plan 29: recipient chips, and reply / reply-all addresses that survive other clients
 
 - **Status:** implemented (see "Implementation notes" and "What the Codex code review changed" at the end).
 - **Builds on:** `76c2ab9` (main after plans 20–24).
-- **Numbering:** 25 is taken by the graceful re-sign-in work running beside this one, so this is 26.
+- **Numbering:** first written as 26 beside the re-sign-in work (25); main then took 26 (provider reliability), 27 (Reply-To) and 28 (Google sign-in), so this is 29.
 - **Request (verbatim):** "for the emails that are the destinies and the ccs, lets have nice little clean bubbles there instead of plain text, it is annoying sometimes to have it but its prettier and nice, make it so the ux while interacting there is good to, so they can hit backspace before an email and delete it, so the interaction there needs to be world class intuitive and good ux.
   lets also cover scenarios that i see sometimes where i hit reply all, but the user comes with a CC that is messed up because of the email client they are using like `\"_David_Sucre_L.?= <david@sucre.net> , Luis Alberto Medina\" <lmedina@sucre.net>`
   which will fail in things like Mac mail.
@@ -232,7 +232,7 @@ Invalid leftovers stay in To/Cc as invalid chips, never silently dropped (step 1
 |---|---|---|
 | ordinary | From | original To + Cc − mine − To |
 | Reply-To present (one or more), not all mine | Reply-To (all of them, minus mine) | original To + Cc − mine − To. The From isn't added: the author said where replies go (RFC 5322 §3.6.3; Thunderbird and Apple Mail do the same). |
-| Reply-To is only me | From | as ordinary |
+| Reply-To is only me | nobody: To left empty (plan 27's rule, kept) | To + Cc − mine |
 | Reply-To equals a mailing list (munging) | the list | To + Cc − mine − list |
 | answering my own message (everything in the thread is mine) | its To | its Cc − mine − To |
 | my identity in the original From (an alias) | treated as my own message | |
@@ -243,12 +243,13 @@ Invalid leftovers stay in To/Cc as invalid chips, never silently dropped (step 1
 | To empty after the rules (all mine) | From (or my own address when answering myself with nobody else) | |
 | hundreds of recipients | linear (Sets), at most 1,000 per field (§2.8) | |
 
-**Reply-To is stored** from now on:
-- SQL v15 adds `messages.reply_to_json TEXT` (NULL means none or not known);
-- IDB rows get an optional `reply_to_json`, with no version bump: rows are objects, and absent reads as null;
-- `IncomingMessage.replyTo?` and `MessageDetail.replyTo?`.
+**Reply-To storage is plan 27's** (see "Reconciliation with plan 27" at the end). Its pieces:
+- SQL v15 `reply_to_json TEXT NOT NULL DEFAULT '[]'`;
+- IDB version 5;
+- `IncomingMessage.replyTo?`: absent means not known and never erases a stored value;
+- `MessageDetail.replyTo`.
 
-Messages stored before v15 have no Reply-To, so replying to them uses From as today. A resync of Gmail mail (`format=raw`) fills it in for messages ingested again. There is no backfill: it would mean re-fetching every message.
+Messages stored before v15 read `[]`, so replying to them uses From. A message ingested again fills its Reply-To in.
 
 **Out of scope:**
 - **Mail-Followup-To / Mail-Reply-To** (mutt's, rarely sent by anything else).
@@ -336,8 +337,8 @@ compose.noRecipient              "Add a recipient to send"             / "Añade
   - `parseRaw` with the raw headers: the user's case, the spoof, duplicate headers, Reply-To;
   - the IMAP envelope mapping (pure function, exported);
   - both builders round-trip nasty names and long non-ASCII names (every encoded word ≤ 75), and send IDN as punycode.
-- **store conformance:** Reply-To is stored and read back (node:sqlite, wasm, fake-indexeddb); the thread detail repairs a stored mangled row (row 2).
-- **db migrations:** v15 adds the column, and old rows read as null.
+- **store conformance:** the thread detail repairs a stored mangled row (row 2), in every store. Reply-To storage is plan 27's conformance.
+- **db migrations:** plan 27's v15; this plan adds none.
 - **web lib:**
   - `autoRecipients` for every §3.4 row;
   - `deriveChips`/`serialize` round trips, commits, edits and undo snapshots (pure);
@@ -371,7 +372,7 @@ compose.noRecipient              "Add a recipient to send"             / "Añade
 1. The plan.
 2. core: tokenizer, encoded words, `parseAddressHeader`, `repairAddresses`, `isValidEmail`, `formatAddress`, and their tests and perf.
 3. mail: `parseRaw` and IMAP use them, Reply-To ingested, outgoing fixes, tests.
-4. store: v15, IDB field, `replyTo` through ingest and detail, read-time repair, conformance.
+4. store: read-time repair in both thread details and the list's From name (Reply-To storage: plan 27).
 5. contract: the validator, and limits of 1,000.
 6. web: `autoRecipients` semantics and tests.
 7. web: the chip model (pure), then the component, keyboard, undo, the collapsed summary, Send's message, strings.
@@ -430,7 +431,7 @@ Codex (`codex exec -s read-only`) made 12 points against the plan and the code. 
 
 ## What the Codex code review changed
 
-Codex (`codex exec -s read-only`, the review prompt over `35509d2..HEAD`) made seven findings. All were fixed, each with a regression test that was run against the unfixed code and failed there (commit `2031a9f`).
+Codex (`codex exec -s read-only`, the review prompt over the branch from its base) made seven findings. All were fixed, each with a regression test that was run against the unfixed code and failed there (commit "fix(addresses, chips): what the Codex code review found").
 
 1. **High: an encoded word could still spoof From.** With a literal `<` inside Q text, `=?UTF-8?Q?Ana_<ana@x.com>?= <real@x.com>` gave `ana@x.com`. Both tokenizers (`scanList`, `tokens`) now treat a complete encoded word as one opaque word: its brackets, `@` and commas are text. Test: core "code review 1".
 2. **High: recovery beside a literal address.** A name holding a literal `<…>` let addresses decoded from an encoded word in the same name be recovered. Decoding now neutralizes every decoded chunk (`decodeEncodedWords(text, show)`: no bracketed address, no bracket), so recovery only uses what the header holds literally. Test: core "code review 2".
@@ -441,6 +442,24 @@ Codex (`codex exec -s read-only`, the review prompt over `35509d2..HEAD`) made s
 7. **Medium: Tab into a collapsed field lost focus.** The "and N more" button moved focus to the input on focus, before the expanded field removed it. Test: recipients.spec, 200 recipients, From → Tab.
 
 Codex also saw the string-scaling gate fail once under load (12.46× against 12×). Linear is about 8× and quadratic 64×, so the bound is now 16×.
+
+## Reconciliation with plan 27 (Reply-To)
+
+Plan 27 landed Reply-To on main (185cb94, 3f83a8a, 24bf111) while this branch carried its own version. The branch was rebased onto main. There is one implementation, plan 27's, and this plan adds only what plan 27 doesn't have: the chips, the lenient parser and its repair on read, the reply-all rules beyond plan 27's, and the security fix.
+
+| piece | plan 27 (kept) | this branch, after reconciliation |
+|---|---|---|
+| SQL migration | v15 `reply_to_json TEXT NOT NULL DEFAULT '[]'` | this branch's own v15 (a nullable column) is dropped. No migration is added. |
+| IDB schema | version 5, `reply_to_json` defaulted on read | no bump of its own |
+| fields | `IncomingMessage.replyTo?` (absent: unknown), `MessageDetail.replyTo` (required) | the same fields. This branch's duplicate optional `MessageDetail.replyTo?` is gone. |
+| ingest and re-ingest | insert `msg.replyTo ?? []`; `updateExisting` replaces the stored value when a message carries one and keeps it when not | unchanged, which already covers "re-ingest fills a missing Reply-To". This branch's duplicate conformance test was removed (plan 27's "retains Reply-To through ingest, refresh and reopen" covers it). |
+| Gmail raw (`parseRaw`) | `replyTo` from postal-mime | the same field, now fed by `parseAddressHeader` over the raw header values (the parser and the Mailsploit fix). Plan 27's `mime.test.ts` Reply-To case passes unchanged. |
+| IMAP | `replyTo` from the envelope | the same field, fed by the raw `Reply-To` field through our parser. Without a raw field, the envelope's Reply-To is dropped when it equals From (RFC 3501 fills it in from From). Plan 27's `imap.int.test.ts` case passes. |
+| reading | `replyTo: JSON.parse(reply_to_json)` | `storedAddresses()` reads plan 27's column and also repairs Reply-To, To, Cc and the From name |
+| replying | `autoRecipients`: Reply-To else From; dedupe; never me | replaced by this branch's version: identities (every account, sent Froms in the thread, `+tag`, Gmail dots), one answered message for recipients, quote and threading, and repair. Plan 27's eleven `compose-fields.test.ts` cases pass unchanged. |
+| a Reply-To naming only me | To left empty | **plan 27's rule is kept.** This branch first fell back to From, and briefly changed plan 27's test to say so. Plan 27 covers the case with its own test, and the instruction is to keep plan 27's version where it already decides, so that change was reverted. `reply-all.test.ts` now expects To empty there, with the others in Cc for reply-all. |
+| e2e | `reply-to.spec.ts` | the same flows. Only its two field assertions read chips now (the fields are chips). This branch's own Reply-To e2e was removed as a duplicate. |
+| people smoke | its v13 fixture didn't know v15 | the fixture drops `reply_to_json` and expects v15. Without this, the smoke fails on main too. |
 
 ## Suite results (this machine, load average 9–50, other agents running)
 

@@ -111,7 +111,7 @@ it.each(["", "AP+A"])("repeated attached-draft import at full quota is a reserva
   client.close();
 });
 
-it("a reply-all to 250 people saves, exports and imports back with its body (plan 26: one recipient limit)", async () => {
+it("a reply-all to 250 people saves, exports and imports back with its body (plan 32: one recipient limit)", async () => {
   const open = async (name: string) => {
     const dir = mkdtempSync(join(tmpdir(), `terno-${name}-`));
     const backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false });

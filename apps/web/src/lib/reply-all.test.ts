@@ -1,5 +1,5 @@
 /**
- * Plan 26 §3.4: who a reply and a reply-all go to, whatever other clients
+ * Plan 29 §3.4: who a reply and a reply-all go to, whatever other clients
  * wrote in the headers. Table-driven; each row a message (or a thread) and
  * the To and Cc Terno fills in.
  */
@@ -14,7 +14,7 @@ const bob = A("Bob", "bob@y.com");
 const cara = A("Cara", "cara@z.com");
 
 let id = 1;
-const m = (o: Partial<MessageDetail>): MessageDetail => ({ id: id++, threadId: 1, accountId: 1, from: ana, to: [me], cc: [], subject: "s", date: id, snippet: "", bodyText: `body ${id}`, bodyHtml: null, bodyState: "full", isRead: true, isStarred: false, isSent: false, hasAttachments: false, rfcMessageId: null, references: [], listId: null, attachments: [], ...o });
+const m = (o: Partial<MessageDetail>): MessageDetail => ({ id: id++, threadId: 1, accountId: 1, from: ana, replyTo: [], to: [me], cc: [], subject: "s", date: id, snippet: "", bodyText: `body ${id}`, bodyHtml: null, bodyState: "full", isRead: true, isStarred: false, isSent: false, hasAttachments: false, rfcMessageId: null, references: [], listId: null, attachments: [], ...o });
 const thread = (...messages: MessageDetail[]): ThreadDetail => ({ thread: { id: 1, subject: "s" }, messages }) as unknown as ThreadDetail;
 const emails = (list: Address[]) => list.map((a) => a.email);
 
@@ -26,7 +26,7 @@ describe("reply and reply-all recipients", () => {
     ["duplicates across and within To and Cc", [m({ to: [me, bob, A("BOB", "Bob@Y.com")], cc: [bob, A("", "ana@x.com")] })], { to: ["ana@x.com"], cc: ["bob@y.com"] }],
     ["Reply-To: the list, not the author", [m({ from: ana, replyTo: [A("Team", "team@lists.x.com")], to: [A("Team", "team@lists.x.com")], cc: [bob] })], { to: ["team@lists.x.com"], cc: ["bob@y.com"] }],
     ["several Reply-To addresses", [m({ replyTo: [bob, cara] })], { to: ["bob@y.com", "cara@z.com"], cc: [] }],
-    ["a Reply-To that is only me: the sender", [m({ replyTo: [me], cc: [bob] })], { to: ["ana@x.com"], cc: ["bob@y.com"] }],
+    ["a Reply-To that is only me: To left empty (plan 27), the others in Cc", [m({ replyTo: [me], cc: [bob] })], { to: [], cc: ["bob@y.com"] }],
     ["my own message: its To again, its Cc in Cc, not me", [m({ from: me, isSent: true, to: [bob], cc: [cara, me] })], { to: ["bob@y.com"], cc: ["cara@z.com"] }],
     ["the newest is mine: the one before it is answered", [m({ from: ana, to: [me], cc: [bob] }), m({ from: me, isSent: true, to: [ana] })], { to: ["ana@x.com"], cc: ["bob@y.com"] }],
     ["an alias of mine (a sent From in the thread) that isn't marked sent on this one", [m({ from: A("Luis", "luis@personal.dev"), isSent: true, to: [ana] }), m({ from: ana, to: [A("", "luis@personal.dev"), cara] }), m({ from: A("Luis", "luis@personal.dev"), to: [ana, cara] })], { to: ["ana@x.com"], cc: ["cara@z.com"] }],

@@ -5,7 +5,7 @@ import MailComposer from "nodemailer/lib/mail-composer/index.js";
 import { asciiEmail } from "@terno/core";
 import type { SendPayload } from "./types";
 
-/** An address for MailComposer: the name without line breaks or invisible characters, a Unicode domain as punycode (plan 26). */
+/** An address for MailComposer: the name without line breaks or invisible characters, a Unicode domain as punycode (plan 29). */
 const fmt = (a: { name: string; email: string }) => {
   const address = asciiEmail(a.email.trim());
   // oxlint-disable-next-line no-control-regex -- control characters are exactly what must go

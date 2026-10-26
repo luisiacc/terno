@@ -1,5 +1,5 @@
 /**
- * Plan 26's parser gates: reading and repairing what other clients write
+ * Plan 29's parser gates: reading and repairing what other clients write
  * must stay linear and cheap (it runs on every message ingested and on
  * every thread opened). 5,000 nasty headers; a 2,000-recipient header and
  * eight times as many (the time may grow ~8×, never quadratically); the
@@ -31,7 +31,7 @@ const NASTY = [
 ];
 const list = (n: number) => Array.from({ length: n }, (_, i) => (i % 3 ? `"Persona ${i}, Equipo" <p${i}@example.com>` : `=?UTF-8?Q?Persona_N=C3=BAmero_${i}?= <p${i}@example.com>`)).join(", ");
 
-describe("address parsing gates (plan 26)", () => {
+describe("address parsing gates (plan 29)", () => {
   it("5,000 nasty headers parse and repair in ≤ 150 ms", () => {
     const headers = Array.from({ length: 5000 }, (_, i) => NASTY[i % NASTY.length]!.replace(/@x\.com/g, `@x${i}.com`));
     const ms = best(5, () => {

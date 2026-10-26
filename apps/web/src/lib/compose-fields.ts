@@ -27,7 +27,7 @@ function identityKey(email: string): string {
 export type Mine = (email: string) => boolean;
 
 /**
- * My identities in a conversation (plan 26): every account's address, and
+ * My identities in a conversation (plan 29): every account's address, and
  * the From of every message of mine in it (a Gmail send-as alias, another
  * identity), `me+tag@` and Gmail's dotted spellings included.
  */
@@ -66,9 +66,9 @@ export function quoteFor(mode: Exclude<DraftMode, "new">, detail: ThreadDetail, 
 }
 
 /**
- * Who a reply goes to (auto: Terno filled them in), plan 26:
- * - the sender, or the Reply-To addresses when the message names any that aren't mine;
- * - my own message (or one from my alias): its To again;
+ * Who a reply goes to (auto: Terno filled them in), plans 27 and 29:
+ * - the sender, or every Reply-To address that isn't mine (plan 27: a Reply-To naming only me leaves To empty);
+ * - my own message (or one from my alias): its To again (a note to myself: to me);
  * - reply-all adds its To and Cc in Cc;
  * - never me (any identity), never twice (any case), never a Bcc; addresses repaired as other clients mangle them.
  */
@@ -78,12 +78,11 @@ export function autoRecipients(mode: Exclude<DraftMode, "new">, detail: ThreadDe
   const last = answered(detail, isMine);
   const from = repairAddress(last.from);
   const others = (list: readonly Address[]) => repairAddresses(list).filter((a) => !isMine(a.email));
-  const replyTo = others(last.replyTo ?? []);
   const own = last.isSent || isMine(from.email);
-  let to = own ? others(last.to) : replyTo.length ? replyTo : [from];
+  let to = own ? others(last.to) : last.replyTo?.length ? others(last.replyTo) : [from];
   // answering myself with nobody else on it: to me, as written
-  if (!to.length) to = own ? repairAddresses(last.to).slice(0, 1) : [from];
-  if (!to.length) to = [from];
+  if (!to.length && own) to = repairAddresses(last.to).slice(0, 1);
+  if (!to.length && own) to = [from];
   const taken = new Set(to.map((a) => a.email.toLowerCase()));
   const cc = mode === "replyAll" ? others([...last.to, ...last.cc]).filter((a) => !taken.has(a.email.toLowerCase())) : [];
   return { to, cc };
@@ -107,7 +106,7 @@ export function subjectFor(mode: DraftMode, subject: string): string {
 }
 
 /** A fresh reply/forward draft for a conversation. */
-/** `identities`: every account's address (plan 26: none of them is replied to); the draft's account's alone by default. */
+/** `identities`: every account's address (plan 29: none of them is replied to); the draft's account's alone by default. */
 export function replyFields(mode: Exclude<DraftMode, "new">, detail: ThreadDetail, account: Account, opts: { quoteInBody?: boolean; identities?: readonly string[] } = {}): DraftFields {
   const mine = identitiesIn(detail, [account.email, ...(opts.identities ?? [])]);
   const { to, cc } = autoRecipients(mode, detail, mine);
