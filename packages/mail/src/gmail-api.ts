@@ -135,7 +135,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
   async function api<T>(path: string, init: RequestInit & { ambiguousOnFailure?: boolean } = {}, retried = false): Promise<T> {
     const token = await tokens.get();
     const sending = Boolean(init.ambiguousOnFailure);
-    // Plan 19: a read on a socket a network change killed fails fast, by its deadline or by reset(), and
+    // Plan 20: a read on a socket a network change killed fails fast, by its deadline or by reset(), and
     // the sync goes again on a fresh one. A send isn't reset and has a long deadline; its failure is ambiguous.
     const deadline = deadlineSignal(sending ? NEVER : reads.signal, init.signal ?? undefined, sending ? (options.sendTimeoutMs ?? SEND_TIMEOUT_MS) : (options.readTimeoutMs ?? READ_TIMEOUT_MS));
     const failed = (e: unknown) => {

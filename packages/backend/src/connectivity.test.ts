@@ -25,7 +25,7 @@ function rig(o: { online?: boolean; random?: number; healthy?: () => boolean } =
   return { c, syncs, reconnects, offlineCalls: () => offline };
 }
 
-describe("Connectivity (plan 19)", () => {
+describe("Connectivity (plan 20)", () => {
   it("retries a failing account on the schedule (2 s, 5 s, 15 s … then every 5 min), ±20 % jitter", () => {
     const { c, syncs } = rig();
     c.track(1);

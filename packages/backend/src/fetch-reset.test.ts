@@ -1,5 +1,5 @@
 /**
- * Plan 19: after a network change Node's fetch must not reuse a pooled keep-alive socket (a server
+ * Plan 20: after a network change Node's fetch must not reuse a pooled keep-alive socket (a server
  * can stretch its idle life to 10 minutes; one the change killed would hang the next request).
  */
 import { createServer, type Server } from "node:http";
@@ -34,7 +34,7 @@ async function keepAliveServer() {
 
 const get = async (url: string) => (await fetch(url)).text();
 
-describe("resetFetchSockets (plan 19)", () => {
+describe("resetFetchSockets (plan 20)", () => {
   it("drops idle pooled sockets now, lets a request in flight finish, and new requests open new sockets", async () => {
     const { url, closed } = await keepAliveServer();
     const idle = await get(`${url}/a`);

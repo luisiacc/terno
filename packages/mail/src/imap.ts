@@ -23,7 +23,7 @@ export interface ImapProviderOptions {
   allowInsecure?: boolean;
   /** max bodies downloaded per sync pass */
   bodiesPerSync?: number;
-  /** tests only: shorter timeouts (plan 19), so a dead socket is found in seconds */
+  /** tests only: shorter timeouts (plan 20), so a dead socket is found in seconds */
   timeouts?: Partial<ImapTimeouts>;
 }
 
@@ -78,7 +78,7 @@ export function toProviderError(error: unknown): ProviderError {
   const message = e?.message ?? String(error);
   if (e.authenticationFailed) return new ProviderError(L("errors.imap.loginFailed", { detail: message }), false);
   if (e.responseStatus === "NO" || e.responseStatus === "BAD") return new ProviderError(`IMAP: ${message}`, false);
-  // the server couldn't be reached or the connection died (plan 19): waits for the network
+  // the server couldn't be reached or the connection died (plan 20): waits for the network
   if (isNetworkError(error)) return ProviderError.network(`IMAP: ${message}`);
   return new ProviderError(`IMAP: ${message}`, true);
 }
@@ -123,7 +123,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       disableAutoIdle: !forIdle,
       tls: options.allowInsecure ? { rejectUnauthorized: false } : undefined,
       connectionTimeout: timeouts.connectMs,
-      // Plan 19: a command session quiet for a minute is closed (imapflow's timeout without IDLE), so a
+      // Plan 20: a command session quiet for a minute is closed (imapflow's timeout without IDLE), so a
       // socket a network change killed is never reused after a quiet minute, and a command stuck on one
       // fails in a minute instead of five. IDLE keeps imapflow's 5 minutes; the heartbeat checks it sooner.
       ...(forIdle ? {} : { socketTimeout: timeouts.socketMs }),
@@ -613,7 +613,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     },
 
     watch(onChange) {
-      // Plan 19: one reconnect loop. At most one session and one pending timer; a failed connect and a
+      // Plan 20: one reconnect loop. At most one session and one pending timer; a failed connect and a
       // closed session schedule through the same place (they used to both, doubling the loops per failure).
       let stopped = false;
       let idle: ImapFlow | null = null;

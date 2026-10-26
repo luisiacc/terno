@@ -682,7 +682,7 @@ export const contract = {
   /**
    * Sync now. "user" ("Retry now", every account or one): the retry schedule starts over and ops
    * waiting for the network go. "focus" (a window regained focus): offline accounts only, at most
-   * every 15 s (plan 19).
+   * every 15 s (plan 20).
    */
   "sync.now": m<{ ok: true }>()(z.object({ accountId: id.optional(), reason: z.enum(["user", "focus"]).default("user") })),
   /** the web page's online/offline events (desktop's main tells the backend directly) */

@@ -1,5 +1,5 @@
 /**
- * Plan 19: Gmail requests across network changes. A read never hangs on a dead socket (its deadline,
+ * Plan 20: Gmail requests across network changes. A read never hangs on a dead socket (its deadline,
  * reset()), a send is never cut short by a reset and never retried once it may have left.
  */
 import { describe, expect, it } from "vitest";
@@ -40,7 +40,7 @@ const sendOp = { id: "op-1", kind: "send", target: {}, payload: { providerThread
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
-describe("Gmail requests and the network (plan 19)", () => {
+describe("Gmail requests and the network (plan 20)", () => {
   it("reset() fails a read in flight at once, as a network failure (the sync goes again on fresh sockets)", async () => {
     const { fetch, calls } = manualFetch();
     const p = provider(fetch);

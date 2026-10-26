@@ -6,7 +6,7 @@ import { classifySmtpError } from "./smtp";
 const err = (props: Record<string, unknown>, message = "boom") => Object.assign(new Error(message), props);
 const fetchFailed = (cause?: Record<string, unknown>) => new TypeError("fetch failed", cause ? { cause: err(cause) } : undefined);
 
-describe("plan 19: what counts as 'couldn't reach the server'", () => {
+describe("plan 20: what counts as 'couldn't reach the server'", () => {
   it("socket and resolver errnos, imapflow's and undici's codes, and aborts (also as causes)", () => {
     for (const code of ["ECONNREFUSED", "ECONNRESET", "ENOTFOUND", "EAI_AGAIN", "ETIMEDOUT", "EHOSTUNREACH", "ENETUNREACH", "EPIPE"]) expect(isNetworkError(err({ code })), code).toBe(true);
     for (const code of ["NoConnection", "EConnectionClosed", "ETIMEOUT", "CONNECT_TIMEOUT", "GREETING_TIMEOUT"]) expect(isNetworkError(err({ code })), code).toBe(true);

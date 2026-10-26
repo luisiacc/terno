@@ -172,7 +172,7 @@ export type MovePhase = "moving" | "training" | "done" | "unmoving" | "restoring
 export const AWAITING_AUTH = 8_640_000_000_000_000;
 
 /**
- * next_attempt_at of a queued op that couldn't reach its server (plan 19): never
+ * next_attempt_at of a queued op that couldn't reach its server (plan 20): never
  * ready on its own (no timer spins on it), resumed by ops.resumeNetwork when the
  * network is back (its account synced, the network changed, the user asked).
  */

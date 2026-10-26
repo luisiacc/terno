@@ -1,5 +1,5 @@
 /**
- * Plan 19 end to end: the real Backend, real imapflow ↔ in-process ImapKit and nodemailer ↔
+ * Plan 20 end to end: the real Backend, real imapflow ↔ in-process ImapKit and nodemailer ↔
  * smtp-server, with a TCP proxy in between that breaks the way networks break (test/net-proxy.ts).
  * A "VPN switch" is the proxy black-holing every open connection while new ones go through.
  */
@@ -104,7 +104,7 @@ async function setup(o: { syncIntervalMs?: number; timeouts?: Partial<ImapTimeou
   return { imap, proxy, smtp, smtpProxy, backend, client, account, db, state, subjects };
 }
 
-describe("plan 19: mail comes back after the network changes", () => {
+describe("plan 20: mail comes back after the network changes", () => {
   it("a VPN switch with the event: new mail within seconds (and without the event, not in that window)", async () => {
     const t = await setup();
     // the switch: every open socket goes silent, no error anywhere
@@ -120,13 +120,13 @@ describe("plan 19: mail comes back after the network changes", () => {
     t.backend.networkChanged(true, "network");
     await expect.poll(t.subjects, { timeout: 3000, interval: 50 }).toContain("after the switch");
     const took = Date.now() - started;
-    console.log(`plan 19: VPN switch → event → new mail listed in ${took} ms`);
+    console.log(`plan 20: VPN switch → event → new mail listed in ${took} ms`);
     expect(took).toBeLessThan(3000);
     // and push works again afterwards (a new message arrives without any event or poll)
     const pushed = Date.now();
     t.imap.server.control.addMessage("INBOX", { raw: raw("pushed after the switch") });
     await expect.poll(t.subjects, { timeout: 5000, interval: 50 }).toContain("pushed after the switch");
-    console.log(`plan 19: push after the reconnect: ${Date.now() - pushed} ms`);
+    console.log(`plan 20: push after the reconnect: ${Date.now() - pushed} ms`);
   });
 
   it("without any event the heartbeat and the command session's timeout recover within their bound", async () => {
@@ -136,7 +136,7 @@ describe("plan 19: mail comes back after the network changes", () => {
     t.imap.server.control.addMessage("INBOX", { raw: raw("found by the heartbeat") });
     // bound: a tick (1.5 s) + the command session's stall timeout (2 s) + a reconnect
     await expect.poll(t.subjects, { timeout: 8000, interval: 50 }).toContain("found by the heartbeat");
-    console.log(`plan 19: black hole, no event → new mail listed in ${Date.now() - started} ms (tick 1.5 s, socket 2 s, heartbeat 1 s)`);
+    console.log(`plan 20: black hole, no event → new mail listed in ${Date.now() - started} ms (tick 1.5 s, socket 2 s, heartbeat 1 s)`);
     // push was restored by the heartbeat: the next message arrives between ticks
     await new Promise((r) => setTimeout(r, 1600));
     const before = t.proxy.accepted;
@@ -211,7 +211,7 @@ describe("plan 19: mail comes back after the network changes", () => {
   });
 });
 
-describe("plan 19: sends across a network change are never duplicated", () => {
+describe("plan 20: sends across a network change are never duplicated", () => {
   it("a change while the server is answering DATA: delivered once, the op succeeded", async () => {
     let t!: Awaited<ReturnType<typeof setup>>;
     t = await setup({ smtp: { holdMs: 800, afterData: () => t.backend.networkChanged(true, "network") } });
@@ -247,7 +247,7 @@ describe("plan 19: sends across a network change are never duplicated", () => {
   });
 });
 
-describe("plan 19: the IMAP provider's own connections", () => {
+describe("plan 20: the IMAP provider's own connections", () => {
   function provider(port: number, o: { secretDelayMs?: number; timeouts?: Partial<ImapTimeouts> } = {}) {
     const ctx = {
       account: { id: 1, email: "luis@test.local", kind: "imap" },

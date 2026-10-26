@@ -486,7 +486,7 @@ const es = {
   "sidebar.accounts": "Cuentas",
   "sidebar.allAccounts": "Todas las cuentas",
   "sidebar.addAccount": "Añadir cuenta",
-  // plan 19: the sidebar's connection pill (shown only while an account can't reach its server)
+  // plan 20: the sidebar's connection pill (shown only while an account can't reach its server)
   "connection.offline": "Sin conexión · reintentando en {time}",
   "connection.offlineWaiting": "Sin conexión",
   "connection.accountOffline": "{name} sin conexión · reintentando en {time}",

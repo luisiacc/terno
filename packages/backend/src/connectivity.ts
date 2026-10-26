@@ -1,5 +1,5 @@
 /**
- * Plan 19: when to try an account's server again, and what a network change does. All the timer
+ * Plan 20: when to try an account's server again, and what a network change does. All the timer
  * state of reconnecting lives here, so the policy is tested without a backend:
  *
  * - a sync that failed retryably goes again after 2 s, 5 s, 15 s, 30 s, 1 min, 2 min, then every

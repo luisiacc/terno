@@ -22,7 +22,7 @@ const nodeLookup: LookupAll = (host) => dnsLookup(host, { all: true });
 const DISPATCHER = Symbol.for("undici.globalDispatcher.1");
 
 /**
- * Plan 19: Node's fetch (undici) keeps pooled keep-alive sockets that a network change killed
+ * Plan 20: Node's fetch (undici) keeps pooled keep-alive sockets that a network change killed
  * silently (a server can stretch their life to 10 minutes). New requests get a fresh dispatcher;
  * the old one is closed: its idle sockets go now, requests still in flight (a send) finish on it.
  */

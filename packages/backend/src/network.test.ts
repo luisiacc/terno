@@ -1,5 +1,5 @@
 /**
- * Plan 19 in the backend, with a scripted provider: what a network change, offline and the poll do
+ * Plan 20 in the backend, with a scripted provider: what a network change, offline and the poll do
  * to providers, push and account state. (The real-socket version is network.int.test.ts.)
  */
 import { mkdtempSync, rmSync } from "node:fs";
@@ -89,7 +89,7 @@ function setup(o: { syncIntervalMs?: number; accounts?: number } = {}) {
 
 const tick = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-describe("plan 19: the backend and the network", () => {
+describe("plan 20: the backend and the network", () => {
   it("a network change resets every provider and the host's HTTP pool once, and syncs every account", async () => {
     const t = setup();
     await t.backend.start();

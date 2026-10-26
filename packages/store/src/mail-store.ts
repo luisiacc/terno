@@ -256,7 +256,7 @@ export interface MailStore {
     get(id: string): Promise<OpRow | null>;
     /** success, including adopting the provider's ids for a sent message */
     complete(id: string, result: { providerMsgId?: string; providerThreadId?: string; warning?: string } | void, now: number): Promise<{ touched: number[]; deltas: ModelDelta[] }>;
-    /** with `park` (plan 19): the server couldn't be reached, so it waits for resumeNetwork (an outage gives the attempt back) */
+    /** with `park` (plan 20): the server couldn't be reached, so it waits for resumeNetwork (an outage gives the attempt back) */
     fail(id: string, error: string, retryable: boolean, now: number, park?: OpPark): Promise<OpState>;
     markUnknown(id: string, error: string, now: number): Promise<void>;
     /** the provider needs the user to sign in again: back to the queue without spending the attempt, until resumeAuth */

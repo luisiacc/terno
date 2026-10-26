@@ -425,7 +425,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect((await store.ops.claimReady(10_000_000, 20)).map((o) => o.id)).toEqual([first, second]);
       });
 
-      it("plan 19: an op that couldn't reach its server waits for the network; an outage never uses up its attempts", async () => {
+      it("plan 20: an op that couldn't reach its server waits for the network; an outage never uses up its attempts", async () => {
         const { store, a, b, threads, act } = await mailbox(2);
         const send = (await act(threads[0]!, "archive"))!;
         // ten network changes during one outage: each resume, a claim, the same failure, parked again with the attempt given back
@@ -449,7 +449,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         }
       });
 
-      it("plan 19: a location op blocked behind a parked one isn't due (the worker never spins on it)", async () => {
+      it("plan 20: a location op blocked behind a parked one isn't due (the worker never spins on it)", async () => {
         const { store, threads, act } = await mailbox(1);
         const archive = (await act(threads[0]!, "archive"))!;
         expect((await store.ops.claimReady(0, 20)).map((o) => o.id)).toEqual([archive]);

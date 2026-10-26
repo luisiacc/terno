@@ -67,7 +67,7 @@ export interface AccountSyncState {
   lastErrorI18n?: { key: string; params?: Readonly<Record<string, string | number>> } | null;
   lastSyncAt: number | null;
   /**
-   * Plan 19: the account can't reach its server (after two failures in a row, or at once while the
+   * Plan 20: the account can't reach its server (after two failures in a row, or at once while the
    * device is offline): "offline" until the next retry at `retryAt`, "reconnecting" while it runs.
    * Null (or absent, in rows written before) while the connection is fine or a blip is retried quietly.
    */

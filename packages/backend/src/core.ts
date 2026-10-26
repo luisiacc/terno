@@ -66,9 +66,9 @@ export interface BackendCoreOptions {
   host?: HostInfo;
   /** desktop: opens secrets sealed under Única's keychain item, so start() seals them again under Terno's (see keychain.ts) */
   legacySecrets?: LegacySecretReader;
-  /** plan 19: what the host says about the network at startup (default online) */
+  /** plan 20: what the host says about the network at startup (default online) */
   online?: boolean;
-  /** plan 19: the host drops its own pooled HTTP sockets when the network changes (Node: fetch's dispatcher) */
+  /** plan 20: the host drops its own pooled HTTP sockets when the network changes (Node: fetch's dispatcher) */
   onNetworkReset?: () => void;
   /** tests: the retry schedule, the offline probe and the settle delay (see connectivity.ts) */
   connectivity?: Pick<ConnectivityOptions, "delays" | "offlineRetryMs" | "settleMs" | "random">;
@@ -154,7 +154,7 @@ export class BackendCore {
   readonly aiAssist: AiAssist;
   /** plan 18: recipient and body suggestions, in memory, built on first use */
   readonly autocomplete: Autocomplete;
-  /** plan 19: retries, offline and network changes */
+  /** plan 20: retries, offline and network changes */
   readonly connectivity: Connectivity;
   private warming: Promise<void> | null = null;
   private idleTimer: ReturnType<typeof setInterval> | null = null;
@@ -282,7 +282,7 @@ export class BackendCore {
     }
   }
 
-  // ───────────────────────────── network (plan 19) ─────────────────────────────
+  // ───────────────────────────── network (plan 20) ─────────────────────────────
 
   /** The host's word on the network: desktop's main (a route or address change, a wake), the web page (online/offline). */
   networkChanged(online: boolean, reason: NetReason): void {
@@ -894,7 +894,7 @@ export class BackendCore {
       do {
         this.workerKicked = false;
         for (;;) {
-          // quitting: nothing more is claimed (the rest stays queued, durably); offline: they'd only fail (plan 19)
+          // quitting: nothing more is claimed (the rest stays queued, durably); offline: they'd only fail (plan 20)
           if (this.draining || this.stopped || !this.connectivity.online) break;
           const batch = await this.store.ops.claimReady(this.now(), 25);
           if (batch.length === 0) break;
@@ -939,7 +939,7 @@ export class BackendCore {
     // been superseded (deleted), pruned (deleted messages) or narrowed.
     const op = await this.store.ops.get(claimed.id);
     if (!op || op.state !== "running") return void this.undispatched.delete(claimed.id);
-    // quitting (or offline, plan 19): an op that hasn't reached its server waits, as it was (the attempt given back)
+    // quitting (or offline, plan 20): an op that hasn't reached its server waits, as it was (the attempt given back)
     const hold = () => this.draining || this.stopped || !this.connectivity.online;
     if (hold()) return void (this.undispatched.delete(op.id), await this.store.ops.release(op.id, this.now()));
     const provider = await this.provider(op.account_id);
@@ -969,7 +969,7 @@ export class BackendCore {
       else captureError(error, { code: "ops.failed", fields: { opKind: opKindOf(op.kind), retryable: pe?.retryable, ambiguous: pe?.ambiguous }, expected });
       if (error instanceof ProviderAuthError) await this.store.ops.awaitAuth(op.id, message, this.now());
       else if (error instanceof ProviderError && error.ambiguous) await this.store.ops.markUnknown(op.id, message, this.now());
-      // the server couldn't be reached: wait for the network (plan 19); an outage gives the attempt back
+      // the server couldn't be reached: wait for the network (plan 20); an outage gives the attempt back
       else if (error instanceof ProviderError && error.network) await this.store.ops.fail(op.id, message, true, this.now(), { network: true, keepAttempt: this.connectivity.inOutage(op.account_id) });
       else await this.store.ops.fail(op.id, message, error instanceof ProviderError ? error.retryable : true, this.now());
     } finally {

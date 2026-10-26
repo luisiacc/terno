@@ -1,9 +1,9 @@
-# Plan 19: network resilience (VPNs, Wi-Fi changes, sleep)
+# Plan 20: network resilience (VPNs, Wi-Fi changes, sleep)
 
 - **Status:** in progress.
 - **Builds on:** `402470a` (main after plan 18).
 - **Request (verbatim):** "when polling for new emails, if it fails for connection errors, lets make sure the retries have into accont changes in things like active vpns and that stuff, make sure that works well"
-- **Plan 17** is reserved for People / waiting-for-reply; 18 exists; this is 19.
+- **Plan 17** is reserved for People / waiting-for-reply; 18 exists; 19 is the logo (`19-brand.md`); this is 20.
 
 ## 1. What exists
 

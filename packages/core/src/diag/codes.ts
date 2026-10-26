@@ -28,7 +28,7 @@ export const CODES = {
   "renderer.gone": c("reason", "exitCode"),
   "renderer.unresponsive": c(),
   "child.gone": c("childType", "reason", "exitCode"),
-  // plan 19: main's network watcher (scutil) stopped or gave up
+  // plan 20: main's network watcher (scutil) stopped or gave up
   "net.watch_failed": c("errno", "exitCode", "attempt"),
   "keychain.secret_failed": c("op", "errorClass"),
   "appearance.save_failed": c("errno"),
@@ -62,7 +62,7 @@ export const CODES = {
   "rpc.call": c("method", "durationMs", "ok", "rpcCode"),
   "sync.done": c("accountKind", "durationMs"),
   "sync.failed": c("accountKind", "errorClass", "retryable", "expected"),
-  // plan 19: networks and reconnects (why and when only: never a host, an address or an interface)
+  // plan 20: networks and reconnects (why and when only: never a host, an address or an interface)
   "sync.retry": c("accountKind", "attempt", "delayMs"),
   "net.changed": c("netReason", "online"),
   "push.lost": c("accountKind"),

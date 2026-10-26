@@ -1,5 +1,5 @@
 /**
- * Plan 19's network in a box: a TCP proxy in front of a test server that can break the way real
+ * Plan 20's network in a box: a TCP proxy in front of a test server that can break the way real
  * networks break.
  *
  * - `blackholeExisting()`: a VPN switch. Open connections stay open, but every byte is dropped

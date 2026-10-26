@@ -1,5 +1,5 @@
 /**
- * Plan 19: is this failure "the server couldn't be reached" (the network, a VPN switch, DNS)?
+ * Plan 20: is this failure "the server couldn't be reached" (the network, a VPN switch, DNS)?
  * Those wait for the network instead of spending attempts, and a network change retries them
  * at once. A server's answer (NO/BAD, 4xx/5xx, a failed login) and a configuration problem (a
  * certificate) are never one: they read structured codes, never messages.

@@ -482,7 +482,7 @@ export function nextOpAttemptAt(db: Db): number | null {
 
 /**
  * Retryable failure: exponential backoff (1s, 2s, 4s … capped at 5 min), then `failed`. Parked
- * (plan 19): the server couldn't be reached, so it waits for resumeNetworkOps instead of a timer;
+ * (plan 20): the server couldn't be reached, so it waits for resumeNetworkOps instead of a timer;
  * during an outage the claim's attempt is given back (an outage never uses up a send).
  */
 export function failOp(db: Db, id: string, error: string, retryable: boolean, now = Date.now(), park?: OpPark): OpState {
