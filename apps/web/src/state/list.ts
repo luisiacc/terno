@@ -163,7 +163,7 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
     // under the cursor). In List every refresh of the same list does it (an undo, a bulk result, new mail); Split keeps its cap.
     const windowed = sameView && (options.window || useAppearance.getState().layout === "list");
     if (windowed) {
-      const want = current.items.length;
+      const want = current.items.length + (options.grow ? PAGE : 0);
       // the first row on screen and the cursor must be in it: mail that arrived above them pushed them further down
       const keep = [listAnchor.firstVisible?.() ?? null, getApp().selectedId].filter((id): id is number => id !== null && current.index.has(id));
       const missing = () => keep.some((id) => !page.items.some((t) => t.id === id));
@@ -219,21 +219,35 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
 /** bumped when the list changes: a page that answers for an older list touches nothing (its loading flag was reset then) */
 let pageSeq = 0;
 
-export async function loadMore(): Promise<void> {
+/** the next page on its way: a second caller (Older while the list's own scrolling asked) waits for the same one */
+let pendingMore: Promise<boolean> | null = null;
+
+/** The next page. Resolves false when it failed (the caller may say so); true otherwise, nothing to load included. */
+export function loadMore(): Promise<boolean> {
+  if (pendingMore && useList.getState().loadingMore) return pendingMore;
+  const p = loadNextPage();
+  pendingMore = p;
+  void p.finally(() => {
+    if (pendingMore === p) pendingMore = null;
+  });
+  return p;
+}
+
+async function loadNextPage(): Promise<boolean> {
   const st = useList.getState();
   // nothing to continue until the list on screen is the one asked for (its first page is in)
-  if (!st.nextCursor || st.loadingMore || st.loading || st.itemsKey !== st.key) return;
+  if (!st.nextCursor || st.loadingMore || st.loading || st.itemsKey !== st.key) return true;
   const key = st.key;
   const mine = pageSeq;
   const editsAtStart = edits;
   useList.setState({ loadingMore: true });
   try {
     const page = await fetchPage(st.nextCursor);
-    if (mine !== pageSeq || useList.getState().key !== key) return;
+    if (mine !== pageSeq || useList.getState().key !== key) return true;
     if (edits !== editsAtStart) {
       // it may bring back a row an optimistic edit just took out: ask again from where the list ends now
       useList.setState({ loadingMore: false });
-      return void loadMore();
+      return loadNextPage();
     }
     const seen = new Set(useList.getState().items.map((t) => t.id));
     const fresh = page.items.filter((t) => !seen.has(t.id));
@@ -241,14 +255,23 @@ export async function loadMore(): Promise<void> {
     useList.setState({ items, index: indexOf(items), nextCursor: page.nextCursor, loadingMore: false });
     // a filtered search may answer a page with nothing kept (and more after it): nothing on screen would ask for the next one
     if (fresh.length === 0 && page.nextCursor) void loadMore();
+    return true;
   } catch (error) {
-    if (mine !== pageSeq) return;
+    if (mine !== pageSeq) return true;
     useList.setState({ loadingMore: false });
     // the mailbox changed since that page (a thread may have moved above it): refetch the loaded window and
     // the next page from the top instead of continuing a stale cursor
-    if (error instanceof RpcError && error.code === "STALE" && useList.getState().key === key) await reloadList({ keepSelection: true, grow: true });
+    if (error instanceof RpcError && error.code === "STALE" && useList.getState().key === key) {
+      await reloadList({ keepSelection: true, grow: true });
+      return true;
+    }
+    return false;
   }
 }
+
+/** each thread's latest optimistic edit (the edit count after it): a refetch older than it doesn't overwrite its row */
+const editedAt = new Map<number, number>();
+const EDITED_MAX = 5000;
 
 /** Optimistic edits so far (a fetch started before one may predate it). */
 export const editCount = (): number => edits;
@@ -260,7 +283,7 @@ export const editCount = (): number => edits;
  * Skipped when an optimistic edit landed after the fetch started.
  */
 export function syncRow(t: Pick<ThreadSummary, "id" | "starred" | "unread" | "categoryIds">, since: number): void {
-  if (edits !== since) return;
+  if ((editedAt.get(t.id) ?? 0) > since) return;
   const st = useList.getState();
   const i = st.index.get(t.id);
   const row = i === undefined ? undefined : st.items[i];
@@ -297,6 +320,15 @@ export function flushDeferredRefresh(): void {
 /** Optimistic local edit of rows (actions apply instantly, then the backend confirms). */
 export function patchRows(ids: readonly number[], patch: (t: ThreadSummary) => ThreadSummary | null): void {
   edits++;
+  for (const id of ids.length <= EDITED_MAX ? ids : ids.slice(0, EDITED_MAX)) {
+    editedAt.delete(id);
+    editedAt.set(id, edits);
+  }
+  // bounded: the oldest marks go (a fetch that old has long answered)
+  for (const id of editedAt.keys()) {
+    if (editedAt.size <= EDITED_MAX) break;
+    editedAt.delete(id);
+  }
   const set = new Set(ids);
   let removed = false;
   const items = useList.getState().items.flatMap((t) => {

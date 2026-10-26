@@ -14,6 +14,8 @@ import { snackbarControls } from "~/components/category-snackbar";
 import { toggleUnreadFilter } from "~/lib/unread";
 import { closePage, currentPage, goBack, goForward, listLayout, openThread, uncoverList } from "~/lib/page";
 import type { DraftMode } from "@terno/core/rpc";
+import { t } from "@terno/i18n";
+import { snack } from "~/lib/snack";
 
 /** Toggles act once per press: no key repeat, and the desktop menu's echo of a key just handled is dropped. */
 const TOGGLES = new Set<Command>(["list.toggleUnread", "nav.back", "nav.forward"]);
@@ -40,10 +42,11 @@ export function move(delta: number) {
   // past the last loaded row on the page: the next page first (the covered list's own scrolling may not ask for it)
   if (pastEnd) {
     stepping = true;
-    void loadMore().finally(() => {
+    void loadMore().then((ok) => {
       stepping = false;
       const still = mine === moves && getApp().selectedId === s.selectedId && listLayout() && currentPage() === "thread";
-      if (still && useList.getState().items.length > items.length) move(delta);
+      if (!ok && still) snack.error(t("reader.olderFailed"));
+      else if (still && useList.getState().items.length > items.length) move(delta);
     });
     return;
   }

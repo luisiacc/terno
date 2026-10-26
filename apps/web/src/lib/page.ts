@@ -6,7 +6,7 @@
  */
 import { flushSync } from "react-dom";
 import { useAppearance } from "~/lib/appearance";
-import { leaveNewDraft } from "~/lib/compose";
+import { leaveNewDraft, supersedeCompose } from "~/lib/compose";
 import { createPageHistory, type Page, type PageHistory } from "~/lib/page-history";
 import { getApp, setApp, useApp, type AppState } from "~/state/app";
 import { flushDeferredRefresh, listKey } from "~/state/list";
@@ -57,6 +57,9 @@ export function closePage(options: { focus?: boolean } = {}): void {
   // what's open, not what the page says: the cursor may already be gone (the list's last thread just archived)
   if (!listLayout() || (!s.readerOpen && !s.compose)) return;
   if (options.focus) restoreFocus = true;
+  // an r / a / f still waiting for its conversation opens nothing once the page is gone (no draft, no focus later)
+  supersedeCompose();
+  if (s.draftFocus) setApp({ draftFocus: null });
   if (s.compose) leaveNewDraft();
   if (getApp().readerOpen) setApp({ readerOpen: false });
 }

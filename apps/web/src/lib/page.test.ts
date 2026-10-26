@@ -31,6 +31,8 @@ const { closePage, currentPage, openThread, pageOf } = await import("./page");
 const { act, scheduleMarkRead, toggleStar } = await import("./actions");
 const { extendSelection, pressRow, releaseRow, selectAll, selectWhere, toggleCurrent } = await import("./select");
 const { loadThread, useThreads } = await import("~/state/threads");
+const { openCompose } = await import("./compose");
+const { useDrafts } = await import("./drafts");
 const { getApp, navigate, setApp } = await import("~/state/app");
 const { editCount, flushDeferredRefresh, listAnchor, listKey, patchRows, refreshList, reloadList, syncRow, useList } = await import("~/state/list");
 
@@ -191,6 +193,45 @@ describe("what the Codex code review found", () => {
     layout("split");
     refreshList(false);
     await vi.waitFor(() => expect(limits).toEqual([500]));
+  });
+});
+
+describe("what the fourth Codex review found", () => {
+  it("an edit to one thread doesn't hold back another thread's refetched row (per-thread edit marks)", () => {
+    const since = editCount();
+    patchRows([1], (t) => ({ ...t, starred: true }));
+    syncRow({ id: 4, starred: true, unread: true, categoryIds: [] }, since);
+    expect(useList.getState().items[3]!.starred).toBe(true);
+    // the edited one is still held back
+    syncRow({ id: 1, starred: false, unread: true, categoryIds: [] }, since);
+    expect(useList.getState().items[0]!.starred).toBe(true);
+  });
+
+  it("r on a conversation still loading, then Back: no draft is created and nothing takes focus later", async () => {
+    let answer!: (v: unknown) => void;
+    fake.handlers["threads.get"] = () => new Promise((r) => (answer = r));
+    setApp({ accounts: [{ id: 1, email: "a@b.c" }] as never, draftFocus: null });
+    const before = Object.keys(useDrafts.getState().drafts).length;
+    openThread(4);
+    const pending = openCompose("reply", 4);
+    closePage({ focus: true });
+    answer({ thread: { ...row(4), accountId: 1 }, messages: [{ id: 40, from: { name: "Ana", email: "ana@x.y" }, to: [], cc: [], subject: "Hola", isSent: false }] });
+    await pending;
+    expect(Object.keys(useDrafts.getState().drafts)).toHaveLength(before);
+    expect(getApp().draftFocus).toBeNull();
+  });
+
+  it("a growing window refresh (after a stale cursor) grows, past 500 rows too", async () => {
+    const many = Array.from({ length: 900 }, (_, i) => row(i + 1));
+    const loaded = many.slice(0, 600);
+    useList.setState({ items: loaded, index: new Map(loaded.map((t, i) => [t.id, i])) });
+    fake.handlers["threads.list"] = async (p) => {
+      const { limit, cursor } = p as { limit: number; cursor?: { id: number } };
+      const start = cursor ? cursor.id : 0;
+      return { items: many.slice(start, start + limit), nextCursor: start + limit < many.length ? { lastDate: 0, id: start + limit } : null };
+    };
+    await reloadList({ keepSelection: true, grow: true });
+    expect(useList.getState().items).toHaveLength(700);
   });
 });
 

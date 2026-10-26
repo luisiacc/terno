@@ -610,6 +610,7 @@ const en = {
   "reader.back": "Back to {mailbox}",
   "reader.newer": "Newer conversation",
   "reader.older": "Older conversation",
+  "reader.olderFailed": "Couldn't load older conversations. Try again in a moment.",
   "reader.welcome.navigate": "Navigate",
   "reader.welcome.archive": "Archive",
   "reader.welcome.search": "Search",

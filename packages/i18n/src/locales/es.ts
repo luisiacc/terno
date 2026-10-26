@@ -604,6 +604,7 @@ const es = {
   "reader.back": "Volver a {mailbox}",
   "reader.newer": "Conversación más reciente",
   "reader.older": "Conversación anterior",
+  "reader.olderFailed": "No se pudieron cargar conversaciones anteriores. Inténtalo de nuevo en un momento.",
   "reader.welcome.navigate": "Moverse",
   "reader.welcome.archive": "Archivar",
   "reader.welcome.search": "Buscar",
