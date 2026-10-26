@@ -291,7 +291,7 @@ Codex (`codex exec -s read-only`) made ten points against the plan and the code.
 - **Passing:**
   - `pnpm typecheck` and `pnpm lint`;
   - `pnpm test`: 2030 + 405 tests;
-  - `pnpm test:e2e`: 742, in all three designs;
+  - `pnpm test:e2e`: 742, in all three designs. After the last fixes, a final run gave 741 plus one timeout in Lumen's print-sheet flow (the palette didn't open within 45 s). That test then passed 3 of 3 times on its own, and it passed in the run before;
   - `pnpm test:web`: 29;
   - `pnpm dist:mac` plus the packaged smoke: 41, including the new restart check.
 - **`pnpm test:ui-perf`:**
