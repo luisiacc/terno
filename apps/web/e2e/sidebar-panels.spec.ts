@@ -82,6 +82,9 @@ test.describe("Part A: More", { tag: "@design" }, () => {
           for (const a of document.getAnimations()) {
             if (seen.has(a)) continue;
             seen.add(a);
+            // More's own (an account's sync ping elsewhere in the sidebar is a loop, not this transition)
+            const target = (a.effect as KeyframeEffect | null)?.target;
+            if (!(target instanceof Element) || !target.closest("#sidebar-more-folders, [data-testid=nav-more]")) continue;
             const t = a.effect?.getTiming();
             if (t) w.__durations.push(Number(t.duration) + Number(t.delay ?? 0));
           }
