@@ -681,6 +681,9 @@ importers:
         specifier: ^1.4.0
         version: 1.4.0
     devDependencies:
+      '@playwright/test':
+        specifier: 'catalog:'
+        version: 1.64.1
       '@terno/richtext':
         specifier: workspace:*
         version: link:../richtext
