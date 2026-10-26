@@ -486,6 +486,8 @@ const es = {
   "sidebar.more": "Más",
   "sidebar.less": "Menos",
   "sidebar.moreFolders": "Más carpetas",
+  "panes.resizeSidebar": "Cambiar el ancho de la barra lateral",
+  "panes.resizeList": "Cambiar el ancho de la lista de mensajes",
   "sidebar.filters": "Filtros",
   "sidebar.local": "Local",
   "sidebar.cloudAi": "IA: {provider} (nube)",

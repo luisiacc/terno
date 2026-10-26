@@ -492,6 +492,8 @@ const en = {
   "sidebar.more": "More",
   "sidebar.less": "Less",
   "sidebar.moreFolders": "More folders",
+  "panes.resizeSidebar": "Resize sidebar",
+  "panes.resizeList": "Resize message list",
   "sidebar.filters": "Filters",
   "sidebar.local": "Local",
   "sidebar.cloudAi": "AI: {provider} (cloud)",
