@@ -64,7 +64,8 @@ export class IconCache {
   private readonly usedSlots = new Set<number>();
   private bytes = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
-  private writing: Promise<void> = Promise.resolve();
+  /** every file operation, in order: a slow slot write can't land after a clear (or another write) that came later */
+  private io: Promise<void> = Promise.resolve();
   private loaded: Promise<void> | null = null;
 
   constructor(private readonly o: IconCacheOptions) {}
@@ -163,7 +164,7 @@ export class IconCache {
     this.bytes += entry.size;
     if (this.disk) {
       try {
-        await this.o.files!.replace(this.slotPath(slot), icon.bytes);
+        await this.serial(() => this.o.files!.replace(this.slotPath(slot), icon.bytes));
       } catch {
         if (this.entries.get(key) === entry) this.drop(key);
         return;
@@ -207,10 +208,11 @@ export class IconCache {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     if (!this.disk) return;
-    await this.writing.catch(() => {});
     const files = this.o.files!;
-    for (let n = 0; n < this.o.slots; n++) await files.remove(this.slotPath(n)).catch(() => {});
-    await files.remove(this.indexPath).catch(() => {});
+    await this.serial(async () => {
+      for (let n = 0; n < this.o.slots; n++) await files.remove(this.slotPath(n)).catch(() => {});
+      await files.remove(this.indexPath).catch(() => {});
+    });
   }
 
   /** Writes a pending index now (quit). */
@@ -220,7 +222,7 @@ export class IconCache {
       this.timer = null;
       await this.write();
     }
-    await this.writing.catch(() => {});
+    await this.io;
   }
 
   private drop(key: string): void {
@@ -264,7 +266,13 @@ export class IconCache {
   private write(): Promise<void> {
     const index: IndexFile = { v: 1, entries: [...this.entries.entries()] };
     const bytes = new TextEncoder().encode(JSON.stringify(index));
-    this.writing = this.writing.then(() => this.o.files!.replace(this.indexPath, bytes)).catch(() => {});
-    return this.writing;
+    return this.serial(() => this.o.files!.replace(this.indexPath, bytes)).catch(() => {});
+  }
+
+  /** Runs `op` after every file operation queued before it; its failure is the caller's, never the queue's. */
+  private serial(op: () => Promise<void>): Promise<void> {
+    const run = this.io.then(op);
+    this.io = run.catch(() => {});
+    return run;
   }
 }

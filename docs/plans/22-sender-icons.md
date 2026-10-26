@@ -1,6 +1,6 @@
 # Plan 22: sender icons (website icons and Google photos)
 
-- **Status:** planned.
+- **Status:** done (see "Revisions after the Codex review", "What the Codex code review changed" and "Implementation notes").
 - **Builds on:** `da55479` (main after plan 20).
 - **Request (verbatim):** "extract icons for emails, 1st try to get the favicon from the main site like if the sender is from 'netflix.com' get the favicon and cache it of course, then use it in the future for thos senders, lets also make sure to render the gmail pictures of the users if they have it."
 - **Numbering:** 17 is People / waiting-for-reply and 21 the sidebar (other agents, in parallel); 23 is the account label, built with this one because both touch the thread row.
@@ -172,3 +172,26 @@ Codex (plan critique, 11 points). What changed, by point:
 9. **No avatar waits forever.** A key dropped from the queue (overflow) answers its waiters with `"again"`; the renderer asks again for those still visible, with the next batch. Waiters are kept per key without a per-key cap, bounded globally (4,000 emails; past it the lookup answers `"again"`).
 10. **Visible, not mounted.** One shared `IntersectionObserver` (root: the viewport) gates lookups: an avatar asks only once it intersects; one that leaves view before its batch is sent is dropped from it. Overscan rows and off-screen reader messages ask nothing.
 11. **Chunking.** The renderer splits lookups into 200-email and data requests into 50-id chunks, at most 2 in flight, each failing alone.
+
+## What the Codex code review changed
+
+Eight findings (three high, five medium), each fixed with a regression test that failed before the fix (checked by running the test against the unfixed code):
+
+1. **High: a discarded answer kept downloading.** A redirect's or an error page's body was drained with `res.resume()` after the deadline and the abort listener were cleared, so a site streaming an endless 404 kept a socket busy past every cap, even after icons were turned off. Now the request is destroyed before resolving. Test: endless 404 and 302 bodies are closed within ms (`fetcher.test.ts`).
+2. **High: the renderer's snapshots kept images alive.** The per-address snapshot (holding the `data:` URL) survived its avatars and the data LRU. Now the last listener leaving drops it, and evicted entries drop theirs. Test: 5,000 avatars come and go, no snapshot remains (`sender-icons.test.ts`).
+3. **High: spam searches by another spelling fetched spammers' icons.** The list's guard was a regex for `in:spam`; the parser also takes `en:spam`, `in:"spam"` and other aliases. Now the guard (`iconsAllowed`) asks the search parser for the effective view. Test: every spelling, and `-in:spam` still allowed.
+4. **Medium: turning Google photos off didn't cancel a listing in flight**, and a lazy listing ignored offline. `MailProvider.photos(want, signal)` now takes a signal that every page and request carries; turning photos off (or quitting) aborts it; a lazy listing waits for the network. Tests: no page after the abort (`google-photos.test.ts`); turning photos off aborts the provider's signal (`google.test.ts`).
+5. **Medium: a namespace prefix hid a banned SVG element** (`<s:filter>` with `s` bound to SVG). Any prefixed element is now refused. Test in `image.test.ts`.
+6. **Medium: a slow slot write could land after "Forget"** and overwrite the icon that reused its slot. Every file operation of the cache (slot writes, the clear, the index) now runs in order on one queue. Test: a held write for A, then forget, then B: B's bytes verify.
+7. **Medium: the renderer didn't keep to two requests in flight**; every frame could start another batch while earlier ones waited. Lookups and data requests now share one queue with at most two in flight, each finishing starting the next. Test: twelve frames of new avatars against a backend that doesn't answer: two at most.
+8. **Medium: partial Google failures in a row grew past the bound** (the previous list merged in without the 20,000 cap). The merge stops at the cap. Test: three listings of 15,000 new addresses with one source failing stay ≤ 20,000.
+
+## Implementation notes
+
+- **Privacy default shipped:** website icons are **off in local mode** (the default for new installs) and **on in connected mode**, until the user flips the switch (Settings → Appearance → Sender pictures → Website icons); the choice then sticks across mode changes. In local mode the hint says what turning it on does; once on, General's local-mode hint names the exception. The network policy allows purpose `icons` only under the same rule, so the setting is enforced at the single exit, not only in the UI. Imports never turn it on.
+- **Zero requests by default:** `service.test.ts` asks about every seeded sender on a new install (and in connected mode with the switch off) and asserts the transport and `fetch` saw nothing; the e2e asserts the stub saw nothing while browsing and opening mail.
+- **Web:** no website icons (`capabilities.siteIcons: false`, the switch disabled with "Website icons need the Mac app"). Photos from Google work: the People API and Google's image host answer browsers.
+- **Google photos:** the account's own picture needs no new consent (scope `profile`); contacts need the two contacts scopes, asked when the user turns photos on for an account, and the **People API enabled** in the user's own Google Cloud project (Settings says so when it's off). Unverified "Testing" clients work for their test users; a published client needs Google's sensitive-scope verification.
+- **The account's own picture** shows on the inline draft's avatar and on the account's own messages; the sidebar's account list is left to plan 21.
+- **Lookups** are asserted at a median ≤ 10 ms for 200 addresses with 4,000 cached entries (looser than §7's 2 ms, to hold on a loaded machine).
+- **Screenshots:** `/tmp/unica-scratch/icons-22/{macos,lumen,atelier}-{light,dark}.png` (the stub's icons are flat squares; real favicons sit on the same paper tile).

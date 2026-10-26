@@ -143,6 +143,8 @@ function ico(b: Uint8Array): IconImage | Refusal {
 /** Anything an SVG drawn as an image doesn't need, and anything that runs, loads or costs: refused, not rewritten. */
 const SVG_UNSAFE: RegExp[] = [
   /<!DOCTYPE|<!ENTITY/i,
+  // a prefixed element (<s:filter> with s bound to SVG) would slip past the names below: none is needed
+  /<\s*\/?\s*[A-Za-z_][\w.-]*:[A-Za-z_]/,
   /<\s*script\b/i,
   /<\s*foreignObject\b/i,
   /<\s*(iframe|embed|object|audio|video|image|feImage|filter|fe[A-Z]\w*|animate\w*|set|handler|listener)\b/,

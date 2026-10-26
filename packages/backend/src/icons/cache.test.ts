@@ -64,6 +64,33 @@ describe("the icon cache (plan 22)", () => {
     expect([...c.keys()].sort()).toEqual(["d:a.com", "d:c.com", "d:y.com", "d:z.com"]);
   });
 
+  it("a slow write that lands after 'Forget' can't overwrite the icon that reused its slot (Codex review)", async () => {
+    const files = memFiles();
+    let releaseA!: () => void;
+    const slowA = new Promise<void>((r) => (releaseA = r));
+    const replace = files.replace;
+    let first = true;
+    files.replace = async (p, b) => {
+      // the first slot write (A's) is held until after B is in
+      if (first && p.includes(".icons/")) {
+        first = false;
+        await slowA;
+      }
+      return replace(p, b);
+    };
+    const { c } = cache({ files });
+    await c.load();
+    const a = icon(32, 1);
+    const b = icon(48, 2);
+    const putA = c.put("d:a.com", a, 0);
+    const cleared = c.clear();
+    const putB = c.put("d:b.com", b, 0);
+    releaseA();
+    await Promise.all([putA, cleared, putB]);
+    expect(c.peek("d:a.com")).toBeUndefined();
+    expect(await c.read("d:b.com")).toEqual(b.bytes);
+  });
+
   it("negative entries expire; timeouts are counted on them", async () => {
     const { clock, c } = cache({ base: null });
     c.negative("d:slow.com", clock.t, 1);

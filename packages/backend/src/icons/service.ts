@@ -7,7 +7,7 @@
  */
 import type { AppSettings, GooglePhotoState, IconAnswer, IconRef } from "@terno/core/rpc";
 import { log } from "@terno/core/diag";
-import type { MailProvider } from "@terno/mail/portable";
+import { MAX_PHOTO_CONTACTS, type MailProvider } from "@terno/mail/portable";
 import type { PlatformFiles } from "@terno/store";
 import { IconCache, fnv1a, type CacheEntry } from "./cache";
 import { iconSubject, loadSuffixList, normalizeEmail, registrableDomain } from "./domain";
@@ -77,6 +77,8 @@ export class IconService {
   private readonly people = new Map<number, People>();
   private peopleWrite: Promise<void> = Promise.resolve();
   private readonly peopleSyncing = new Map<number, Promise<void>>();
+  /** each account's listing in flight, cancelled by turning its photos off or quitting */
+  private readonly peopleAborts = new Map<number, AbortController>();
   /** bumped by turning a source off, forgetting and removing an account: late results are dropped */
   private generation = 0;
   private ctl = new AbortController();
@@ -341,6 +343,8 @@ export class IconService {
   /** An account's photos off, or the account removed: its lists go, and their photos with them. */
   async dropPhotos(accountId: number): Promise<void> {
     await this.load();
+    this.peopleAborts.get(accountId)?.abort();
+    this.peopleAborts.delete(accountId);
     this.peopleSyncing.delete(accountId);
     const had = this.people.get(accountId);
     this.people.delete(accountId);
@@ -364,6 +368,11 @@ export class IconService {
 
   private readonly ownEmails = new Map<number, string>();
 
+  /** tests and diagnostics: how many addresses have a photo for an account */
+  photoCount(accountId: number): number {
+    return this.people.get(accountId)?.map.size ?? 0;
+  }
+
   /** Lists the account's photos now (turning photos on) or lazily when the last list is older than PEOPLE_TTL. */
   syncPeople(accountId: number, state: GooglePhotoState): Promise<void> {
     const running = this.peopleSyncing.get(accountId);
@@ -377,9 +386,12 @@ export class IconService {
       const email = await this.o.accountEmail(accountId);
       if (!provider?.photos || !email) return;
       let result;
+      const ctl = new AbortController();
+      this.peopleAborts.set(accountId, ctl);
       try {
-        result = await provider.photos({ connections: state.connections, otherContacts: state.otherContacts });
+        result = await provider.photos({ connections: state.connections, otherContacts: state.otherContacts }, ctl.signal);
       } catch {
+        if (ctl.signal.aborted) return;
         log.info("icons.people", { count: 0, durationMs: this.o.now() - started, status: 0 });
         return;
       }
@@ -393,7 +405,13 @@ export class IconService {
       // a source that failed keeps what it found last time
       const before = this.people.get(accountId);
       const map = new Map(result.contacts.map((c) => [c.email, c.url] as const));
-      if (before && (result.connections === "failed" || result.otherContacts === "failed")) for (const [k, v] of before.map) if (!map.has(k)) map.set(k, v);
+      if (before && (result.connections === "failed" || result.otherContacts === "failed")) {
+        for (const [k, v] of before.map) {
+          // the same bound as a full listing, however many failures in a row
+          if (map.size >= MAX_PHOTO_CONTACTS) break;
+          if (!map.has(k)) map.set(k, v);
+        }
+      }
       this.people.set(accountId, { at: this.o.now(), own: result.own, map });
       this.ownEmails.set(accountId, normalizeEmail(email));
       this.savePeople();
@@ -403,6 +421,7 @@ export class IconService {
       this.o.emit({ icons: {}, reset: true });
     })().finally(() => {
       if (this.peopleSyncing.get(accountId) === run) this.peopleSyncing.delete(accountId);
+      this.peopleAborts.delete(accountId);
     });
     this.peopleSyncing.set(accountId, run);
     return run;
@@ -412,6 +431,8 @@ export class IconService {
   private readonly peopleTried = new Map<number, number>();
 
   private maybeSyncPeople(accountId: number): void {
+    // offline: the list waits for the network (a lookup after it comes back asks again)
+    if (!this.online) return;
     const p = this.people.get(accountId);
     if (p && this.o.now() - p.at < PEOPLE_TTL) return;
     if (this.o.now() - (this.peopleTried.get(accountId) ?? -Infinity) < 3_600_000) return;
@@ -457,6 +478,7 @@ export class IconService {
   async close(): Promise<void> {
     this.closed = true;
     this.ctl.abort();
+    for (const c of this.peopleAborts.values()) c.abort();
     // aborted above; a request that ignores it doesn't hold the quit for long
     await Promise.race([Promise.allSettled([...this.inflight.values(), ...this.peopleSyncing.values()]), new Promise((r) => setTimeout(r, 2000))]);
     await this.cache.flush();

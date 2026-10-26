@@ -34,6 +34,7 @@ import { LearnedBanner } from "./learned-banner";
 import { ReportRow } from "./diag/report-row";
 import { DesktopBanner, GmailReconnect } from "~/lib/web-parts";
 import { preloadComposer } from "./composer/lazy";
+import { iconsAllowed } from "~/lib/sender-icons";
 
 export const searchInputRef: { current: HTMLInputElement | null } = { current: null };
 export const listScroller: { scrollToIndex?: (i: number) => void } = {};
@@ -480,7 +481,7 @@ export function ThreadList() {
   const composing = useApp((s) => s.compose !== null);
   const showAccount = useApp((s) => s.accountId === null && s.accounts.length > 1);
   // plan 22: no sender icons in spam (no request to a spammer's site, no borrowed logo on a phish), the view or a search in it
-  const icons = useApp((s) => s.view !== "spam" && !/(^|\s)in:spam\b/i.test(s.query));
+  const icons = useApp((s) => iconsAllowed(s.view, s.query));
   const filter = useApp(activeFilter);
   const design = useDesign();
   const height = design.rows[compact ? "compact" : "comfortable"];

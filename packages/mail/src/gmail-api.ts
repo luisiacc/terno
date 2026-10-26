@@ -324,8 +324,8 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       await api("/profile");
     },
 
-    photos(want) {
-      return collectGooglePhotos((url) => api(url), ep.userinfo, want);
+    photos(want, signal) {
+      return collectGooglePhotos((url, sig) => api(url, { signal: sig }), ep.userinfo, want, signal);
     },
 
     async sync(sink) {

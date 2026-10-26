@@ -65,6 +65,22 @@ describe("Google photos (plan 22)", () => {
     expect(failed.connections).toBe("failed");
   });
 
+  it("cancelled mid-list: not one more page, and every request carried the signal (Codex review)", async () => {
+    const ctl = new AbortController();
+    const seen: (AbortSignal | undefined)[] = [];
+    const { get, calls } = people({ connections: [[person(["a@x.com"], [{ url: PHOTO }])], [person(["b@x.com"], [{ url: PHOTO }])], [person(["c@x.com"], [{ url: PHOTO }])]] });
+    const watching: AuthorizedGet = async <T,>(url: string, signal?: AbortSignal) => {
+      seen.push(signal);
+      const r = await get<T>(url, signal);
+      if (url.includes("/connections")) ctl.abort();
+      return r;
+    };
+    await expect(collectGooglePhotos(watching, USERINFO, { connections: true, otherContacts: true }, ctl.signal)).rejects.toThrow();
+    expect(calls.filter((c) => c.includes("/connections"))).toHaveLength(1);
+    expect(calls.some((c) => c.includes("otherContacts"))).toBe(false);
+    expect(seen.every((s) => s === ctl.signal)).toBe(true);
+  });
+
   it("photo URLs only from Google's image hosts, https", () => {
     expect(photoUrl("https://lh3.googleusercontent.com/a/b=s100-c")).toBe("https://lh3.googleusercontent.com/a/b=s128");
     expect(photoUrl("https://yt3.ggpht.com/x")).toBe("https://yt3.ggpht.com/x=s128");

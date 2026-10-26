@@ -67,13 +67,14 @@ export function nodeIconTransport(o: NodeIconTransportOptions = {}): IconTranspo
           },
           (res) => {
             const status = res.statusCode ?? 0;
+            // a redirect's or an error's body is never read: the connection closes now (a site could stream one forever)
             if (status >= 300 && status < 400) {
-              res.resume();
               const location = res.headers.location ?? null;
+              req.destroy();
               return done(() => resolve({ status, location, bytes: null, tooLarge: false }));
             }
             if (status !== 200) {
-              res.resume();
+              req.destroy();
               return done(() => resolve({ status, location: null, bytes: null, tooLarge: false }));
             }
             const declared = Number(res.headers["content-length"]);

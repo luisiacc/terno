@@ -153,6 +153,38 @@ describe("photos from Google (plan 22)", () => {
     expect(await errorOf(client.call("icons.googlePhotos", { accountId: gmail.id, on: true }))).toMatchObject({ code: "UNAVAILABLE" });
   });
 
+  it("turning photos off cancels a listing in flight (Codex review)", async () => {
+    const { backend, gmail } = await setup();
+    let signal: AbortSignal | undefined;
+    const provider = (await backend.provider(gmail.id))!;
+    provider.photos = (_want, s) => {
+      signal = s;
+      return new Promise((_, reject) => s?.addEventListener("abort", () => reject(s.reason), { once: true }));
+    };
+    const running = backend.icons.syncPeople(gmail.id, { connections: true, otherContacts: true, apiDisabled: false });
+    await until(() => signal !== undefined);
+    await backend.icons.dropPhotos(gmail.id);
+    expect(signal!.aborted).toBe(true);
+    await running;
+    expect(backend.icons.photoCount(gmail.id)).toBe(0);
+  });
+
+  it("partial failures in a row never keep more than the bound of addresses (Codex review)", async () => {
+    const { backend, gmail } = await setup();
+    const provider = (await backend.provider(gmail.id))!;
+    const batch = (from: number, n: number) => Array.from({ length: n }, (_, i) => ({ email: `p${from + i}@x.com`, url: ANA }));
+    let round = 0;
+    provider.photos = async () => {
+      round++;
+      return { own: null, contacts: batch(round * 100_000, 15_000), connections: round === 1 ? "ok" : "failed", otherContacts: "ok" };
+    };
+    const state = { connections: true, otherContacts: true, apiDisabled: false };
+    await backend.icons.syncPeople(gmail.id, state);
+    await backend.icons.syncPeople(gmail.id, state);
+    await backend.icons.syncPeople(gmail.id, state);
+    expect(backend.icons.photoCount(gmail.id)).toBeLessThanOrEqual(20_000);
+  });
+
   it("removing the account drops its photo state", async () => {
     const { client, gmail } = await setup();
     await client.call("icons.googlePhotos", { accountId: gmail.id, on: true });

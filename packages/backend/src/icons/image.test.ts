@@ -79,5 +79,8 @@ describe("icon images (plan 22)", () => {
     }
     expect(readIcon(text(`<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY a "aaaa">]><svg xmlns="http://www.w3.org/2000/svg">&a;</svg>`))).toBe("unsafe-svg");
     expect(readIcon(svg("<g/>".repeat(1600)))).toBe("too-large");
+    // a namespace prefix doesn't hide a banned element (Codex review)
+    expect(readIcon(text(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:s="http://www.w3.org/2000/svg"><s:filter id="f"><s:feTurbulence/></s:filter><rect filter="url(#f)"/></svg>`))).toBe("unsafe-svg");
+    expect(readIcon(text(`<s:svg xmlns:s="http://www.w3.org/2000/svg"><s:script>x</s:script></s:svg>`))).not.toMatchObject({ mime: "image/svg+xml" });
   });
 });

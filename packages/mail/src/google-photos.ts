@@ -29,8 +29,8 @@ interface Person {
   photos?: { url?: string; default?: boolean; metadata?: { primary?: boolean } }[];
 }
 
-/** The authorized GET the provider already has (token refresh, deadlines, network classification). */
-export type AuthorizedGet = <T>(url: string) => Promise<T>;
+/** The authorized GET the provider already has (token refresh, deadlines, network classification); `signal` cancels it. */
+export type AuthorizedGet = <T>(url: string, signal?: AbortSignal) => Promise<T>;
 
 const PAGE_SIZE = 1000;
 const MAX_PAGES = 10;
@@ -62,12 +62,14 @@ function classify(error: unknown): PhotoSourceState {
   return "failed";
 }
 
-async function pages(get: AuthorizedGet, path: string, mask: string, out: Map<string, string>): Promise<void> {
+async function pages(get: AuthorizedGet, path: string, mask: string, out: Map<string, string>, signal?: AbortSignal): Promise<void> {
   let token: string | undefined;
   for (let page = 0; page < MAX_PAGES && out.size < MAX_PHOTO_CONTACTS; page++) {
+    // turned off (or quitting) mid-list: not one more page
+    signal?.throwIfAborted();
     const q = new URLSearchParams({ [mask]: "emailAddresses,photos", pageSize: String(PAGE_SIZE) });
     if (token) q.set("pageToken", token);
-    const res = await get<{ connections?: Person[]; otherContacts?: Person[]; nextPageToken?: string }>(`${PEOPLE_API}/${path}?${q}`);
+    const res = await get<{ connections?: Person[]; otherContacts?: Person[]; nextPageToken?: string }>(`${PEOPLE_API}/${path}?${q}`, signal);
     for (const p of res.connections ?? res.otherContacts ?? []) {
       const photos = (p.photos ?? []).filter((ph) => !ph.default);
       const url = photoUrl((photos.find((ph) => ph.metadata?.primary) ?? photos[0])?.url);
@@ -82,16 +84,18 @@ async function pages(get: AuthorizedGet, path: string, mask: string, out: Map<st
   }
 }
 
-/** Both sources, as far as each is granted; one failing keeps the other's photos. */
-export async function collectGooglePhotos(get: AuthorizedGet, userinfo: string, want: PhotoWant): Promise<GooglePhotos> {
-  const own = await get<{ picture?: string }>(userinfo).then((i) => photoUrl(i.picture), () => null);
+/** Both sources, as far as each is granted; one failing keeps the other's photos. Rejects when `signal` aborts. */
+export async function collectGooglePhotos(get: AuthorizedGet, userinfo: string, want: PhotoWant, signal?: AbortSignal): Promise<GooglePhotos> {
+  const own = await get<{ picture?: string }>(userinfo, signal).then((i) => photoUrl(i.picture), () => null);
+  signal?.throwIfAborted();
   const found = new Map<string, string>();
   const source = async (wanted: boolean, path: string, mask: string): Promise<PhotoSourceState> => {
     if (!wanted) return "skipped";
     try {
-      await pages(get, path, mask, found);
+      await pages(get, path, mask, found, signal);
       return "ok";
     } catch (error) {
+      if (signal?.aborted) throw error;
       return classify(error);
     }
   };

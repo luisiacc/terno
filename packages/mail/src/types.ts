@@ -125,7 +125,7 @@ export interface MailProvider {
   /** plan 20: the sync tick asks push whether it still hears the server (a dead session reconnects) */
   heartbeat?(): void;
   /** plan 22 (Gmail): the account's own picture and its contacts' photos, as far as the grant allows */
-  photos?(want: import("./google-photos").PhotoWant): Promise<import("./google-photos").GooglePhotos>;
+  photos?(want: import("./google-photos").PhotoWant, signal?: AbortSignal): Promise<import("./google-photos").GooglePhotos>;
   close(): Promise<void>;
 }
 

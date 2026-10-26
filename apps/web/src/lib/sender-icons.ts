@@ -6,6 +6,7 @@
  * goes in one lookup (chunked at the contract's 200), and icons' bytes in one
  * data request (chunks of 50). Nothing happens while both sources are off.
  */
+import { parseSearch } from "@terno/core";
 import type { IconAnswer, IconRef } from "@terno/core/rpc";
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { client } from "~/rpc/connection";
@@ -76,7 +77,10 @@ function setEntry(email: string, e: Entry): void {
   if (entries.size > MAX_ENTRIES) {
     for (const k of entries.keys()) {
       if (entries.size <= MAX_ENTRIES) break;
-      if (!listeners.get(k)?.size) entries.delete(k);
+      if (!listeners.get(k)?.size) {
+        entries.delete(k);
+        snapshots.delete(k);
+      }
     }
   }
   notify(email);
@@ -115,49 +119,77 @@ function wire(): void {
   });
 }
 
+/** requests in flight at once (lookups and data alike): a busy backend doesn't pile them up */
+const MAX_INFLIGHT = 2;
+let inflight = 0;
+
 function schedule(): void {
-  if (flushQueued || (batch.size === 0 && dataBatch.size === 0)) return;
+  if (flushQueued || inflight >= MAX_INFLIGHT || (batch.size === 0 && dataBatch.size === 0)) return;
   flushQueued = true;
   const run = () => {
     flushQueued = false;
-    void flush();
+    pump();
   };
   if (typeof requestAnimationFrame === "function" && document.visibilityState === "visible") requestAnimationFrame(run);
   else setTimeout(run, 16);
 }
 
-async function flush(): Promise<void> {
-  // only what is still on screen
-  const emails = [...batch].filter((e) => visible.has(e));
-  batch.clear();
+/** Starts requests up to MAX_INFLIGHT: lookups first (what's on screen now), then icons' bytes; each finishing starts the next. */
+function pump(): void {
+  while (inflight < MAX_INFLIGHT && (batch.size > 0 || dataBatch.size > 0)) {
+    let job: Promise<void>;
+    if (batch.size > 0) {
+      // only what is still on screen; the rest is dropped (it asks again when it comes back)
+      const emails: string[] = [];
+      for (const e of batch) {
+        batch.delete(e);
+        if (!visible.has(e)) continue;
+        emails.push(e);
+        if (emails.length === LOOKUP_CHUNK) break;
+      }
+      if (emails.length === 0) continue;
+      job = lookup(emails);
+    } else {
+      const refs: IconRef[] = [];
+      for (const [k, r] of dataBatch) {
+        dataBatch.delete(k);
+        refs.push(r);
+        if (refs.length === DATA_CHUNK) break;
+      }
+      job = fetchData(refs);
+    }
+    inflight++;
+    void job.finally(() => {
+      inflight--;
+      schedule();
+    });
+  }
+}
+
+async function lookup(emails: string[]): Promise<void> {
   for (const e of emails) entries.set(e, { state: "asked" });
-  for (let i = 0; i < emails.length; i += LOOKUP_CHUNK) {
-    const chunk = emails.slice(i, i + LOOKUP_CHUNK);
-    try {
-      apply(await client.call("icons.lookup", { emails: chunk }));
-    } catch {
-      // the initials stay; a later mount or scroll asks again
-      for (const e of chunk) if (entries.get(e)?.state === "asked") entries.delete(e);
-    }
+  try {
+    apply(await client.call("icons.lookup", { emails }));
+  } catch {
+    // the initials stay; a later mount or scroll asks again
+    for (const e of emails) if (entries.get(e)?.state === "asked") entries.delete(e);
   }
-  const refs = [...dataBatch.values()];
-  dataBatch.clear();
-  for (let i = 0; i < refs.length; i += DATA_CHUNK) {
-    const chunk = refs.slice(i, i + DATA_CHUNK);
-    let got: Record<string, string | null>;
-    try {
-      got = await client.call("icons.data", { ids: [...new Set(chunk.map((r) => r.id))] });
-    } catch {
-      continue;
-    }
-    for (const ref of chunk) {
-      const url = got[ref.id];
-      if (url) putData(dataKey(ref), url);
-    }
-    // every address showing these icons
-    const ids = new Set(chunk.map((r) => r.id));
-    for (const [email, e] of entries) if (e.state === "ref" && ids.has(e.ref.id)) notify(email);
+}
+
+async function fetchData(refs: IconRef[]): Promise<void> {
+  let got: Record<string, string | null>;
+  try {
+    got = await client.call("icons.data", { ids: [...new Set(refs.map((r) => r.id))] });
+  } catch {
+    return;
   }
+  for (const ref of refs) {
+    const url = got[ref.id];
+    if (url) putData(dataKey(ref), url);
+  }
+  // every address showing these icons
+  const ids = new Set(refs.map((r) => r.id));
+  for (const [email, e] of entries) if (e.state === "ref" && ids.has(e.ref.id)) notify(email);
 }
 
 function request(email: string): void {
@@ -207,7 +239,21 @@ function observe(el: Element, email: string): () => void {
   };
 }
 
-function shown(email: string): ShownIcon | null {
+/** Listens to one address; the last listener leaving drops its snapshot (an unmounted avatar keeps no image alive). */
+export function subscribeIcon(email: string, cb: () => void): () => void {
+  let set = listeners.get(email);
+  if (!set) listeners.set(email, (set = new Set()));
+  set.add(cb);
+  return () => {
+    set.delete(cb);
+    if (set.size > 0) return;
+    listeners.delete(email);
+    snapshots.delete(email);
+  };
+}
+
+/** The icon an address shows now (cached until it changes, for useSyncExternalStore). */
+export function shown(email: string): ShownIcon | null {
   if (snapshots.has(email)) return snapshots.get(email)!;
   const e = entries.get(email);
   const url = e?.state === "ref" ? getData(e.ref) : undefined;
@@ -222,18 +268,7 @@ function shown(email: string): ShownIcon | null {
  */
 export function useSenderIcon(email: string, el: React.RefObject<Element | null>, active: boolean): ShownIcon | null {
   const enabled = useApp(iconsEnabled) && active;
-  const subscribe = useCallback(
-    (cb: () => void) => {
-      let set = listeners.get(email);
-      if (!set) listeners.set(email, (set = new Set()));
-      set.add(cb);
-      return () => {
-        set.delete(cb);
-        if (set.size === 0) listeners.delete(email);
-      };
-    },
-    [email],
-  );
+  const subscribe = useCallback((cb: () => void) => subscribeIcon(email, cb), [email]);
   const icon = useSyncExternalStore(subscribe, () => (enabled ? shown(email) : null));
   useEffect(() => {
     const node = el.current;
@@ -248,5 +283,24 @@ export function iconFailed(email: string): void {
   setEntry(email, { state: "none" });
 }
 
+/**
+ * Plan 22: never icons in spam (no request to a spammer's site, no borrowed logo on a phish): the
+ * Spam view, or a search that is in it (`in:spam`, `en:spam`, `in:"spam"`, the parser's aliases).
+ */
+export function iconsAllowed(view: string, query: string): boolean {
+  if (view === "spam") return false;
+  return !query.trim() || parseSearch(query).view !== "spam";
+}
+
 /** tests */
-export const __senderIconsForTests = { entries, data, visible, reset: () => [entries, data, visible, batch, dataBatch, snapshots, listeners].forEach((m) => m.clear()) };
+export const __senderIconsForTests = {
+  entries,
+  data,
+  visible,
+  snapshots,
+  request,
+  get inflight() {
+    return inflight;
+  },
+  reset: () => [entries, data, visible, batch, dataBatch, snapshots, listeners].forEach((m) => m.clear()),
+};

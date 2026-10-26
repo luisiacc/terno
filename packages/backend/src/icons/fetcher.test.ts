@@ -133,6 +133,26 @@ describe("fetching a site's icon over HTTPS (plan 22)", () => {
     expect(seen).toEqual([]);
   });
 
+  it("a discarded answer (an error page, a redirect) is never read to its end: its connection is closed at once (Codex review)", async () => {
+    const closed: string[] = [];
+    // bodies that never end
+    const endless = (status: number, headers: Record<string, string> = {}): Handler => (req, res) => {
+      res.writeHead(status, headers);
+      const t = setInterval(() => res.write("x".repeat(1024)), 5);
+      res.on("close", () => {
+        clearInterval(t);
+        closed.push(req.url ?? "");
+      });
+    };
+    routes.set("example.com/", endless(404));
+    routes.set("example.com/favicon.ico", endless(302, { location: "/elsewhere.ico" }));
+    const started = Date.now();
+    expect(await fetchIcon("example.com")).toBeNull();
+    await new Promise((r) => setTimeout(r, 200));
+    expect(closed.sort()).toEqual(["/", "/favicon.ico"]);
+    expect(Date.now() - started).toBeLessThan(1500);
+  });
+
   it("an unreachable site is a network error (nothing cached)", async () => {
     const transport = nodeIconTransport({ lookup: async () => Promise.reject(Object.assign(new Error("getaddrinfo ENOTFOUND"), { code: "ENOTFOUND" })), allowAddress: () => true, ca: TEST_TLS_CA, port });
     await expect(fetchSiteIcon("example.com", { transport, assert: async () => {}, registrable: registrableDomain, signal: new AbortController().signal })).rejects.toBeInstanceOf(IconNetworkError);
