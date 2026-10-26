@@ -10,7 +10,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { chromium } from "@playwright/test";
-import { BINARY_OUTPUTS, DERIVED_FROM, ICONSET, OUT, SOURCE_FILES, WEB_ICONS, rasterArt, textOutputs, type Sources } from "../src/brand/generate";
+import { BINARY_OUTPUTS, DERIVED_FROM, ICONSET, OUT, SOURCE_FILES, WEB_ICONS, rasterArt, rasterRecipe, textOutputs, type Sources } from "../src/brand/generate";
 
 const root = join(import.meta.dirname, "../../..");
 const sha = (buf: Buffer | string) => createHash("sha256").update(buf).digest("hex");
@@ -102,6 +102,7 @@ try {
 const manifest = {
   note: "Written by `pnpm brand`: the sources the images were drawn from, and the images. Do not edit.",
   actool: actoolVersion,
+  recipe: sha(rasterRecipe(src)),
   sources: Object.fromEntries(DERIVED_FROM.map((f) => [`brand/${f}`, sha(src[f]!)])),
   outputs: Object.fromEntries(BINARY_OUTPUTS.map((rel) => [rel, sha(readFileSync(join(root, rel)))])),
 };

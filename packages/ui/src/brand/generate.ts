@@ -272,5 +272,15 @@ export function rasterArt(src: Sources): Record<"tile" | "square" | "maskable" |
   return { tile: src["terno-icon.svg"]!, square: squareIconSvg(p, 1), maskable: squareIconSvg(p, MASKABLE_SCALE), mac: macIconSvg(p) };
 }
 
+/**
+ * Everything the images depend on besides the sources: the art each is drawn
+ * from (grid, scales, shadow), the sizes and the Icon Composer document. The
+ * manifest keeps its hash, so a change to how the images are drawn fails the
+ * test until `pnpm brand` redraws them.
+ */
+export function rasterRecipe(src: Sources): string {
+  return JSON.stringify({ art: rasterArt(src), web: WEB_ICONS, iconset: ICONSET, iconComposer: iconComposer(iconParts(src["terno-icon.svg"]!)) });
+}
+
 /** The binary outputs the manifest pins, by path from the repo root. */
 export const BINARY_OUTPUTS: readonly string[] = [OUT.macPng, OUT.icns, OUT.assetsCar, ...Object.keys(WEB_ICONS).map((f) => `${OUT.public}/${f}`)];

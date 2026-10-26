@@ -1,6 +1,7 @@
 {
   "note": "Written by `pnpm brand`: the sources the images were drawn from, and the images. Do not edit.",
   "actool": "26.1.1",
+  "recipe": "68fe367c759c9daa02e64ee93d75d3213e19836cb0a0c87ad9560b574ddba711",
   "sources": {
     "brand/terno-icon.svg": "ec98103604743d5b49b5ee478f5e1d38311f0d2835d05ff5675b8a9033e56a33",
     "brand/terno-mark-blue.svg": "712105b6d5775a938a86c50e6c107cdd327834f44bf9569e2b276c171d31a06c"
@@ -8,7 +9,7 @@
   "outputs": {
     "apps/desktop/resources/icon.png": "fd10aaf0cfb51a1e26370d7cf618db938fa8d82874e743c941d45690710fe6f5",
     "apps/desktop/resources/icon.icns": "49c675f872e2d846847d56c6c389c51574fc3db912c0b8a653deef75215d7eb7",
-    "apps/desktop/resources/Assets.car": "51793d207e0acfa458a129a877af34118ed4618a4f83e34bcda755df739a83cc",
+    "apps/desktop/resources/Assets.car": "cdb49081f48105f3cbee9f33ae6103d7e2420628250c202e92eccb6475a2e216",
     "apps/web/public/favicon-32.png": "f4d905aff7b8352dda205fc3febe90a2a4c5b76ba7409dc49aede72ef30e2fd2",
     "apps/web/public/apple-touch-icon.png": "33f53a465d8845282c4e4bdf36fb089e50566cbb84127bbd59ba0170cc2a2dff",
     "apps/web/public/icon-192.png": "411092b721cc61308218b16d049bb5088864968a6915d518c2510b00759c9742",

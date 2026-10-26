@@ -3,14 +3,14 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { BINARY_OUTPUTS, DERIVED_FROM, ICONSET, MAC_GRID, OUT, SOURCE_FILES, WEB_ICONS, continuousRect, iconParts, parseSvg, textOutputs, themeColors, type Shape } from "./generate";
+import { BINARY_OUTPUTS, DERIVED_FROM, ICONSET, MAC_GRID, OUT, SOURCE_FILES, WEB_ICONS, continuousRect, iconParts, parseSvg, rasterRecipe, textOutputs, themeColors, type Shape } from "./generate";
 import { MARK_SHAPES } from "./mark.generated";
 
 const ROOT = join(import.meta.dirname, "../../../..");
 const read = (rel: string) => readFileSync(join(ROOT, rel));
 const src = Object.fromEntries(SOURCE_FILES.map((f) => [f, read(`brand/${f}`).toString("utf8")]));
 const sha = (buf: Buffer | string) => createHash("sha256").update(buf).digest("hex");
-const manifest = JSON.parse(read(OUT.manifest).toString("utf8")) as { actool: string; sources: Record<string, string>; outputs: Record<string, string> };
+const manifest = JSON.parse(read(OUT.manifest).toString("utf8")) as { actool: string; recipe: string; sources: Record<string, string>; outputs: Record<string, string> };
 
 /** a PNG's width and height, from its IHDR */
 const pngSize = (buf: Buffer): [number, number] => {
@@ -29,6 +29,8 @@ describe("brand assets are what `pnpm brand` makes of brand/ (plan 19)", () => {
     expect(Object.keys(manifest.outputs).sort()).toEqual([...BINARY_OUTPUTS].sort());
     for (const [rel, hash] of Object.entries(manifest.outputs)) expect(sha(read(rel)), `${rel} differs from what \`pnpm brand\` wrote`).toBe(hash);
     expect(parseInt(manifest.actool)).toBeGreaterThanOrEqual(26);
+    // how they are drawn (grid, scales, sizes, the Icon Composer document) is pinned too, not just what from
+    expect(sha(rasterRecipe(src)), "the drawing recipe changed: run `pnpm brand`").toBe(manifest.recipe);
   });
 
   it("each web icon has the size it claims", () => {
