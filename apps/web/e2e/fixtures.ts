@@ -92,6 +92,8 @@ interface Fixtures {
   backendOptions: { empty?: boolean; ownerClaims?: boolean; agentSocket?: boolean; smtpCapture?: boolean; network?: boolean };
   /** the design the app opens in (plan 15): each Playwright project sets its own; null leaves the install's default (Lumen) */
   design: DesignId | null;
+  /** plan 24: the layout the app opens in (null: the install's default, Split) */
+  layout: "split" | "list" | null;
   server: DevServer & { smtp: CapturedMail[]; net: TestNetwork; icons: IconStub };
   /** the app, loaded, connected and showing the inbox */
   app: Page;
@@ -101,6 +103,7 @@ export const test = base.extend<Fixtures>({
   fixedClock: [true, { option: true }],
   backendOptions: [{}, { option: true }],
   design: ["macos", { option: true }],
+  layout: [null, { option: true }],
   server: async ({ backendOptions }, use) => {
     const template = process.env[TEMPLATE_ENV];
     if (!template) throw new Error("global setup did not seed a template database");
@@ -126,9 +129,10 @@ export const test = base.extend<Fixtures>({
     await capture?.close();
     rmSync(dir, { recursive: true, force: true });
   },
-  app: async ({ page, server, fixedClock, backendOptions, design }, use) => {
+  app: async ({ page, server, fixedClock, backendOptions, design, layout }, use) => {
     if (fixedClock) await page.clock.setFixedTime(new Date(E2E_NOW));
     if (design) await server.backend.server.invoke("settings.update", { design }, { clientId: "setup", origin: "dev" as const });
+    if (layout) await server.backend.server.invoke("settings.update", { layout }, { clientId: "setup", origin: "dev" as const });
     await page.goto(`/?backend=${encodeURIComponent(server.url)}&token=e2e`);
     await page.locator("[data-ready]").waitFor();
     if (!backendOptions.empty) await rows(page).first().waitFor();

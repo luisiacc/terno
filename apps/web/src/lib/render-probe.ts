@@ -11,6 +11,12 @@ export function renderProbe(name: string): void {
   }
 }
 
+/**
+ * Regressions a perf gate injects into a test build to show it would catch
+ * them (plan 24's twins). Read only behind VITE_RENDER_PROBE.
+ */
+export const regressions: { remountList?: boolean } = {};
+
 /** Test builds expose a few internals to the perf spec (window.__terno). */
 export function exposeForTests(hooks: Record<string, unknown>): void {
   if (import.meta.env.VITE_RENDER_PROBE) Object.assign(((window as unknown as { __terno?: object }).__terno ??= {}), hooks);

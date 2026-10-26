@@ -5,6 +5,7 @@ import { lazy, Suspense, useEffect } from "react";
 import { useAppearance } from "~/lib/appearance";
 import { usePage } from "~/lib/page";
 import { useSnack } from "~/lib/snack";
+import { regressions } from "~/lib/render-probe";
 import { onFiled, undoFiled } from "~/lib/categorize";
 import { registerUndo } from "~/lib/snack";
 import { installKeyboard } from "~/lib/keyboard";
@@ -120,7 +121,14 @@ export function App() {
         <Sidebar />
         <div id="app-list" className={cn("hairline-l relative min-h-0", !list && "hairline-r hairline-strong")}>
           {/* under a page the list stays laid out (scroll, measured rows, mounted rows) but isn't painted or reachable */}
-          <div data-list-section className="h-full min-h-0 data-covered:invisible" inert={covered} data-covered={covered || undefined}>
+          <div
+            // test builds only: the perf gate's injected regression (a list remounted by every page change) must fail it
+            key={import.meta.env.VITE_RENDER_PROBE && regressions.remountList ? page : undefined}
+            data-list-section
+            className="h-full min-h-0 data-covered:invisible"
+            inert={covered}
+            data-covered={covered || undefined}
+          >
             <ThreadList />
           </div>
           {list && page !== "list" && <PageLayer page={page} />}

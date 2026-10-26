@@ -10,7 +10,7 @@ import { bootPage, installPage, listCovered, readerShown } from "~/lib/page";
 import { invalidateThreads, loadThread, useThreads } from "~/state/threads";
 import { snack } from "~/lib/snack";
 import { applyAppearance, installAppearanceListeners, reconcileSettings, updateAppearance } from "~/lib/appearance";
-import { exposeForTests } from "~/lib/render-probe";
+import { exposeForTests, regressions } from "~/lib/render-probe";
 import { captureUi } from "~/lib/diag";
 import { startDiag } from "~/state/diag";
 import { setBridgeForTests, startUpdates } from "~/lib/updates";
@@ -32,6 +32,7 @@ export async function boot(): Promise<void> {
     // desktop: main pushes the update state (nothing is checked here)
     startUpdates();
     exposeForTests({
+      regressions,
       updateAppearance,
       getApp,
       loadedIds: () => useList.getState().items.map((t) => t.id),
