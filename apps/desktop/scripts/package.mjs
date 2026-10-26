@@ -22,6 +22,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build, Platform, Arch } from "electron-builder";
+import { withMounted } from "../src/dmg-mount.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -89,26 +90,6 @@ function assertIcon(app) {
   const info = JSON.parse(execFileSync("plutil", ["-convert", "json", "-o", "-", join(app, "Contents/Info.plist")], { encoding: "utf8" }));
   if (info.CFBundleIconName !== "Icon" || info.CFBundleIconFile !== "icon.icns") throw new Error(`unexpected icon keys: CFBundleIconName=${info.CFBundleIconName} CFBundleIconFile=${info.CFBundleIconFile}`);
   for (const f of ["Assets.car", "icon.icns"]) if (!existsSync(join(app, "Contents/Resources", f))) throw new Error(`${f} missing from the app's Resources`);
-}
-
-/**
- * Attaches a disk image at a private mount point (never /Volumes, never shown
- * in Finder), runs `use` on the mounted volume and always detaches that image.
- */
-function withMounted(image, readonly, use) {
-  const parent = mkdtempSync(join(tmpdir(), "terno-dmg-"));
-  const plist = execFileSync("hdiutil", ["attach", image, "-nobrowse", "-noautoopen", ...(readonly ? ["-readonly"] : []), "-mountrandom", parent, "-plist"]);
-  const entities = JSON.parse(execFileSync("plutil", ["-convert", "json", "-o", "-", "-"], { input: plist, encoding: "utf8" }))["system-entities"];
-  const volume = entities.find((e) => e["mount-point"])?.["mount-point"];
-  // detaching the volume (or, if none mounted, the whole disk) ejects the image with its APFS container
-  const disk = entities.map((e) => e["dev-entry"]).find((d) => /^\/dev\/disk\d+$/.test(d));
-  try {
-    if (!volume) throw new Error(`${image} attached without a mounted volume`);
-    use(volume);
-  } finally {
-    execFileSync("hdiutil", ["detach", volume ?? disk, "-force"], { stdio: "ignore" });
-    rmSync(parent, { recursive: true, force: true });
-  }
 }
 
 const identity = pickIdentity();
