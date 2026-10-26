@@ -810,7 +810,7 @@ export class IdbMailStore implements MailStore {
   readonly sync: MailStore["sync"] = {
     ingest: async (batch, { applyFilters, now, classifier }) => {
       const staged: IncomingMessage[] = [];
-      for (const m of batch) staged.push(m.captureUnavailable || m.attachments === undefined ? m : { ...m, attachments: await stageAttachments(this, m.accountId, m.attachments, now, this.o.platform.yield) });
+      for (const m of batch) staged.push(m.captureUnavailable || m.attachments === undefined ? m : { ...m, attachments: await stageAttachments(this, m.accountId, m.attachments, now, this.o.platform.yield, m.attachments.length && m.providerMsgId ? await this.attachments.current(m.accountId, { providerMsgId: m.providerMsgId }) : []) });
       return this.command(
         () => {
           const result = ingestMessages(this.c, staged as IncomingMessage[], now);
@@ -829,7 +829,7 @@ export class IdbMailStore implements MailStore {
     },
     setBody: async (messageId, text, html, { now, classifier, attachments, captureUnavailable }) => {
       const accountId = await this.read(() => T(this.c, "messages").get(messageId)?.account_id as number | undefined);
-      const staged = !captureUnavailable && attachments !== undefined && accountId !== undefined ? await stageAttachments(this, accountId, attachments, now, this.o.platform.yield) : undefined;
+      const staged = !captureUnavailable && attachments !== undefined && accountId !== undefined ? await stageAttachments(this, accountId, attachments, now, this.o.platform.yield, await this.attachments.current(accountId, { id: messageId })) : undefined;
       return this.command(
         () => {
           setMessageBody(this.c, messageId, text, html, captureUnavailable ? "partial" : "full");
@@ -960,6 +960,11 @@ export class IdbMailStore implements MailStore {
   // ───────────────────────────── compose ─────────────────────────────
 
   readonly attachments: MailStore["attachments"] = {
+    current: (accountId, message) => this.read(() => {
+      const m = "id" in message ? T(this.c, "messages").get(message.id) : T(this.c, "messages").by("provider", accountId, message.providerMsgId)[0];
+      if (!m || m.account_id !== accountId) return [];
+      return T(this.c, "attachments").by("fk_message_id", m.id).sort((a,b) => a.id - b.id).map((a) => ({ filename: a.filename as string, mime: a.mime as string, size: a.size as number, assetId: a.asset_id as string | undefined, contentId: a.content_id as string | null }));
+    }),
     retry: (accountId, messageId) => this.command(() => {
       const r = T(this.c, "messages").get(messageId);
       if (r?.account_id !== accountId) throw assetError();

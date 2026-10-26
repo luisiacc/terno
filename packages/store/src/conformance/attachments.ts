@@ -130,6 +130,24 @@ export function defineAttachmentConformance(name: string, h: StoreHarness): void
       expect(await store.providerStore(a!).pendingBodies(50)).toEqual([]);
       expect((await store.threads.get(thread))!.messages[0]).toMatchObject({ bodyUnavailable: "size", bodyState: "partial" });
     });
+    it("retains verified parts at quota when another part cannot be captured, through restart", async () => {
+      const [a] = await fresh();
+      const first = { filename: "same.bin", mime: "application/octet-stream", size: 3, bytes: new Uint8Array([0,255,128]) };
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "quota-parts", attachments: [first] })]);
+      const thread = await threadOf(store, "quota-parts");
+      const original = (await store.threads.get(thread))!.messages[0]!.attachments[0]!;
+      for (let i = 0; i < 14; i++) await store.attachments.create({ accountId: a!, filename: "reserved", mime: "text/plain", size: 18 * 1024 * 1024, now: 0 });
+      const remaining = 256 * 1024 * 1024 - (3 + 1024) - 14 * (18 * 1024 * 1024 + 1024) - 1024;
+      await store.attachments.create({ accountId: a!, filename: "last reservation", mime: "text/plain", size: remaining, now: 0 });
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "quota-parts", attachments: [first, { ...first, bytes: new Uint8Array([1,2,3]) }] })]);
+      store = await h.reopen(store);
+      const parts = (await store.threads.get(thread))!.messages[0]!.attachments;
+      expect(parts).toHaveLength(2);
+      expect(parts[0]!.assetId).toBe(original.assetId);
+      expect(await store.attachments.read(a!, parts[0]!.assetId!, 0)).toBe("AP+A");
+      expect(parts[1]!.assetId).toBeUndefined();
+      expect(await store.providerStore(a!).pendingAttachmentBodies(50)).toEqual([]);
+    });
     it("cascades account removal through cold chunks while preserving another account", async () => {
       const [a, b] = await fresh();
       const x = await upload(a!); const y = await upload(b!);

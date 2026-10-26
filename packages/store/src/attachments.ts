@@ -1,15 +1,26 @@
 import { AttachmentLimitError } from "./attachment-repo";
-import { ATTACHMENT_CHUNK, base64Bytes, bytesBase64, type AttachmentRef } from "@terno/core";
+import { ATTACHMENT_CHUNK, attachmentCid, attachmentFilename, attachmentMime, base64Bytes, bytesBase64, type AttachmentRef } from "@terno/core";
 import type { MailStore } from "./mail-store";
 import type { IncomingAttachment } from "./types";
 
 /** Staging is separate from linking: a failed write never replaces a prior message/draft revision. */
-export async function stageAttachments(store: MailStore, accountId: number, parts: readonly IncomingAttachment[], now: number, yieldTo: () => Promise<void>): Promise<IncomingAttachment[]> {
+export async function stageAttachments(store: MailStore, accountId: number, parts: readonly IncomingAttachment[], now: number, yieldTo: () => Promise<void>, previous: readonly IncomingAttachment[] = []): Promise<IncomingAttachment[]> {
   const staged: IncomingAttachment[] = [];
   const created: string[] = [];
   try {
-    for (const part of parts) {
+    for (const [position, part] of parts.entries()) {
       if (part.bytes === undefined) { staged.push(part); continue; }
+      const prior = previous[position];
+      if (prior?.assetId && prior.size === part.bytes.length && prior.filename === attachmentFilename(part.filename) && prior.mime === attachmentMime(part.mime) && attachmentCid(prior.contentId) === attachmentCid(part.contentId)) {
+        let equal = true;
+        for (let offset = 0, i = 0; offset < part.bytes.length; offset += ATTACHMENT_CHUNK, i++) {
+          const bytes = await store.attachments.read(accountId, prior.assetId, i);
+          if (bytes !== bytesBase64(part.bytes.subarray(offset, offset + ATTACHMENT_CHUNK))) { equal = false; break; }
+          await yieldTo();
+        }
+        // A sealed empty asset needs the same completeness/ownership proof as a nonempty one.
+        if (equal) { const verified = await store.attachments.info(accountId, prior.assetId); staged.push({ ...verified, providerRef: part.providerRef }); continue; }
+      }
       let ref: AttachmentRef;
       try { ref = await store.attachments.create({ ...part, size: part.bytes.byteLength, accountId, now }); }
       catch (error) {

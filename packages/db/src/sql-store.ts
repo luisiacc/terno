@@ -381,7 +381,7 @@ export class SqlMailStore implements MailStore {
     // auto-categorization without its message.
     ingest: async (batch, { applyFilters, now, classifier }) => {
       const staged: IncomingMessage[] = [];
-      for (const m of batch) staged.push(m.captureUnavailable || m.attachments === undefined ? m : { ...m, attachments: await stageAttachments(this, m.accountId, m.attachments, now, this.yieldTo) });
+      for (const m of batch) staged.push(m.captureUnavailable || m.attachments === undefined ? m : { ...m, attachments: await stageAttachments(this, m.accountId, m.attachments, now, this.yieldTo, m.attachments.length && m.providerMsgId ? await this.attachments.current(m.accountId, { providerMsgId: m.providerMsgId }) : []) });
       return this.db.tx(() => {
         const result = ingestMessages(this.db, staged as IncomingMessage[], now);
         const touched = new Set(result.touchedThreads);
@@ -398,7 +398,7 @@ export class SqlMailStore implements MailStore {
     },
     setBody: async (messageId, text, html, { now, classifier, attachments, captureUnavailable }) => {
       const accountId = this.db.get<{ account_id: number }>("SELECT account_id FROM messages WHERE id = ?", messageId)?.account_id;
-      const staged = !captureUnavailable && attachments !== undefined && accountId !== undefined ? await stageAttachments(this, accountId, attachments, now, this.yieldTo) : undefined;
+      const staged = !captureUnavailable && attachments !== undefined && accountId !== undefined ? await stageAttachments(this, accountId, attachments, now, this.yieldTo, await this.attachments.current(accountId, { id: messageId })) : undefined;
       return this.db.tx(() => {
         setMessageBody(this.db, messageId, text, html, captureUnavailable ? "partial" : "full");
         if (staged !== undefined && !captureUnavailable) replaceAttachments(this.db, messageId, staged);
@@ -527,6 +527,9 @@ export class SqlMailStore implements MailStore {
   // ───────────────────────────── compose ─────────────────────────────
 
   readonly attachments: MailStore["attachments"] = {
+    current: async (accountId, message) => this.db.all<{ filename: string; mime: string; size: number; assetId?: string; contentId: string | null }>(
+      `SELECT a.filename, a.mime, a.size, a.asset_id AS assetId, a.content_id AS contentId FROM attachments a JOIN messages m ON m.id = a.message_id WHERE m.account_id = ? AND ${"id" in message ? "m.id" : "m.provider_msg_id"} = ? ORDER BY a.id`, accountId, "id" in message ? message.id : message.providerMsgId,
+    ),
     retry: async (accountId, messageId) => this.db.tx(() => {
       const r = this.db.get<{ account_id: number }>("SELECT account_id FROM messages WHERE id = ?", messageId);
       if (r?.account_id !== accountId) throw assetError();
