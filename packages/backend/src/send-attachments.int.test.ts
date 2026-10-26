@@ -82,6 +82,109 @@ it("lost local bytes after queueing fail before submission and preserve the capt
   expect(t.submitted).toEqual([]);
 });
 
+it("quiesce owns an attachment send during local hydration and leaves it queued before submission", async () => {
+  const t = setup();
+  const { send } = await queue(t);
+  const before = (await t.backend.store.ops.get(send.opId))!.payload_json;
+  let release!: () => void;
+  let entered!: () => void;
+  const blocked = new Promise<void>((resolve) => { entered = resolve; });
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const original = t.backend.store.attachments.read.bind(t.backend.store.attachments);
+  const read = vi.spyOn(t.backend.store.attachments, "read").mockImplementationOnce(async (...args) => {
+    entered(); await gate; return original(...args);
+  });
+  const running = t.backend.runWorker();
+  await blocked;
+  try {
+    expect(await t.backend.quiesce(0)).toBe("sending");
+    expect((await t.backend.store.ops.get(send.opId))?.state).toBe("running");
+    expect(t.submitted).toEqual([]);
+  } finally {
+    release();
+  }
+  await running;
+  read.mockRestore();
+  expect((await t.backend.store.ops.get(send.opId))?.state).toBe("queued");
+  expect(t.submitted).toEqual([]);
+  t.backend.resume();
+  await t.backend.runWorker();
+  expect(t.submitted).toHaveLength(1);
+  expect((await t.backend.store.ops.get(send.opId))?.payload_json).toBe(before);
+});
+
+it("removal while hydration is waiting cannot submit captured bytes through a stale provider", async () => {
+  const t = setup();
+  await queue(t);
+  let release!: () => void;
+  let entered!: () => void;
+  const blocked = new Promise<void>((resolve) => { entered = resolve; });
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const original = t.backend.store.attachments.read.bind(t.backend.store.attachments);
+  const read = vi.spyOn(t.backend.store.attachments, "read").mockImplementationOnce(async (...args) => {
+    const data = await original(...args);
+    entered(); await gate; return data;
+  });
+  const running = t.backend.runWorker();
+  await blocked;
+  try {
+    await t.client.call("accounts.remove", { id: t.accountId });
+  } finally {
+    release();
+  }
+  await running;
+  read.mockRestore();
+  expect(t.submitted).toEqual([]);
+  expect((await t.client.call("app.bootstrap", {})).accounts).toEqual([]);
+});
+
+it.each(["before commit", "after commit", "outcome recording"] as const)("accepted attachment bytes are submitted once when completion fails %s", async (failure) => {
+  const t = setup();
+  const { ref, send } = await queue(t);
+  const before = (await t.backend.store.ops.get(send.opId))!.payload_json;
+  const complete = t.backend.store.ops.complete.bind(t.backend.store.ops);
+  vi.spyOn(t.backend.store.ops, "complete").mockImplementationOnce(async (...args) => {
+    if (failure === "after commit") await complete(...args);
+    throw new Error("synthetic completion failure");
+  });
+  if (failure === "outcome recording") vi.spyOn(t.backend.store.ops, "markUnknown").mockRejectedValueOnce(new Error("synthetic outcome write failure"));
+  await t.backend.runWorker();
+  expect(t.submitted).toHaveLength(1);
+  expect(t.submitted[0]?.attachments).toEqual([{ ...ref, dataBase64: "AP+ADQo=" }]);
+  expect((await t.backend.store.ops.get(send.opId))?.state).toBe(failure === "after commit" ? "succeeded" : "unknown");
+  expect((await t.backend.store.ops.get(send.opId))?.payload_json).toBe(before);
+  await t.stop();
+  const restarted = open(t.dir);
+  await restarted.backend.runWorker();
+  expect(restarted.submitted).toEqual([]);
+  expect((await restarted.backend.store.ops.get(send.opId))?.payload_json).toBe(before);
+});
+
+it("local staging failures expose fixed recovery copy without synthetic sensitive error details", async () => {
+  const t = setup();
+  const { send } = await queue(t);
+  const read = vi.spyOn(t.backend.store.attachments, "read").mockRejectedValueOnce(new Error("SYNTHETIC-SECRET recipient@example.com Private subject"));
+  await t.backend.runWorker();
+  read.mockRestore();
+  const op = (await t.client.call("ops.list", {})).find((o) => o.id === send.opId)!;
+  expect(op).toMatchObject({ state: "failed", lastErrorI18n: { key: "attachments.unavailable" } });
+  expect(JSON.stringify(op)).not.toContain("SYNTHETIC-SECRET");
+  expect(JSON.stringify(op)).not.toContain("Private subject");
+  expect(t.submitted).toEqual([]);
+});
+
+it.each([{ payload: null }, { payload: [] }, { payload: { subject: 4 } }])("malformed persisted preparation data %j fails definitively and remains readable in the outbox", async ({ payload }) => {
+  const t = setup();
+  const { send } = await queue(t);
+  // Simulate local snapshot corruption after a valid, attachment-pinned enqueue.
+  sqlDb(t.backend.store).run("UPDATE ops SET payload_json = ? WHERE id = ?", JSON.stringify(payload), send.opId);
+  await t.backend.runWorker();
+  expect(t.submitted).toEqual([]);
+  expect((await t.client.call("ops.list", {})).find((o) => o.id === send.opId)).toMatchObject({ state: "failed", lastErrorI18n: { key: "attachments.unavailable" } });
+  await t.backend.runWorker();
+  expect(t.submitted).toEqual([]);
+});
+
 it("provider body hydration preserves attachment bytes through the public reader and chunk RPC", async () => {
   const t = setup();
   await t.backend.ingestSliced([{
@@ -99,4 +202,19 @@ it("provider body hydration preserves attachment bytes through the public reader
   expect(hydrated.attachments).toHaveLength(1);
   expect(hydrated.attachments[0]).toMatchObject({ filename: "exact.bin", size: 5, assetId: expect.any(String) });
   expect(await t.client.call("attachments.read", { accountId: t.accountId, assetId: hydrated.attachments[0]!.assetId!, index: 0 })).toEqual({ dataBase64: "AP+ADQo=" });
+  await t.sink().setBody(original.id, null, null, undefined, { captureUnavailable: "size" });
+  const unavailable = (await t.client.call("threads.get", { threadId: thread.id })).messages[0]!;
+  expect(unavailable.bodyUnavailable).toBe("size");
+  expect(unavailable.attachments).toEqual(hydrated.attachments);
+  await t.sink().setBody(original.id, "downloaded again", null);
+  const preserved = (await t.client.call("threads.get", { threadId: thread.id })).messages[0]!;
+  expect(preserved.attachments).toEqual(hydrated.attachments);
+  const stage = vi.spyOn(t.backend.store.attachments, "create").mockRejectedValueOnce(new Error("synthetic staging failure"));
+  await expect(t.sink().setBody(original.id, "must not replace", null, [{ filename: "other.bin", mime: "application/octet-stream", size: 1, bytes: new Uint8Array([1]) }])).rejects.toThrow();
+  stage.mockRestore();
+  const unchanged = (await t.client.call("threads.get", { threadId: thread.id })).messages[0]!;
+  expect(unchanged.bodyText).toBe("downloaded again");
+  expect(unchanged.attachments).toEqual(hydrated.attachments);
+  await t.sink().setBody(original.id, "attachment removed", null, []);
+  expect((await t.client.call("threads.get", { threadId: thread.id })).messages[0]!.attachments).toEqual([]);
 });

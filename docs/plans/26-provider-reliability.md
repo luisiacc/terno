@@ -233,3 +233,9 @@ Resource commit `a519bee` separates75MiB local incoming capture policy from25MiB
 ### S57 third review
 
 Exacthead `32de1e9` clears epoch seed hours before assigning literal year, retains final midnight/calendar checks, and qualifies the Azores second-round correction alongside SãoPaulo. Independent third Codex review/script exit0/DONE: no new substantiated findings. Worker nine-zone unit62outer+597child andWASM21outer+156child tests pass, four-package type/lint pass. Latest full search/performance gates remain unapproved.
+
+### Attachment dispatch qualification and malformed saved snapshots
+
+The parent integration now has public cases for quiesce during gated local byte reads, removal during hydration, completion failure before/after durable commit, failed unknown-outcome recording, real reopen with immutable refs/no resend, and fixed privacy-safe local-read errors. Body hydration distinguishes omitted attachments, explicit empty replacement, size-unavailable metadata, and staging failure preserving prior body/assets. All10initial qualification cases passed.
+
+Additional malformed persisted payload cases exposed unreadable outbox summaries (`null` payload) and the wrong size classification for malformed preparation. The send preparation boundary now checks consumed body/attachment shapes and uses a fixed definitive local error; outbox subject extraction accepts only an object/string subject. Three failing regressions become green; no provider call or retry follows malformed preparation. All65dispatch/backend/re-signin tests and both backend typecheck configs pass. These tests/fixes are part of the whole pending T02 code review, not a replacement for it.

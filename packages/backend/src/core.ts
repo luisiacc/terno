@@ -1240,7 +1240,10 @@ export class BackendCore {
       let payload: unknown;
       try {
         payload = JSON.parse(op.payload_json);
-        if (sending) payload = await hydrateSendAttachments(this.store, op.account_id, payload as SendPayload, () => this.platform.yield());
+        if (sending) {
+          if (!payload || typeof payload !== "object" || Array.isArray(payload) || !("text" in payload) || typeof payload.text !== "string" || ("html" in payload && payload.html !== undefined && typeof payload.html !== "string") || ("attachments" in payload && payload.attachments !== undefined && !Array.isArray(payload.attachments))) throw new ProviderError(L("attachments.unavailable"), false);
+          payload = await hydrateSendAttachments(this.store, op.account_id, payload as SendPayload, () => this.platform.yield());
+        }
       } catch (error) {
         if (sending && !(error instanceof ProviderError)) throw new ProviderError(L("attachments.unavailable"), false);
         throw error;
@@ -1323,7 +1326,8 @@ export class BackendCore {
   }
 
   opInfo(op: OpRow): OpInfo {
-    const payload = JSON.parse(op.payload_json) as { subject?: string };
+    const payload: unknown = JSON.parse(op.payload_json);
+    const subject = payload && typeof payload === "object" && "subject" in payload && typeof payload.subject === "string" ? payload.subject : "";
     const n = (JSON.parse(op.target_json) as { messageIds?: number[] }).messageIds?.length ?? 0;
     const stored = op.last_error === null ? null : decodeText(op.last_error);
     const lastError = { lastError: stored?.message ?? null, ...(stored?.i18n ? { lastErrorI18n: stored.i18n } : {}) };
@@ -1337,7 +1341,7 @@ export class BackendCore {
       createdAt: op.created_at,
       // plan 25: queued until the account signs in again (a send says so)
       ...(op.state === "queued" && op.next_attempt_at === AWAITING_AUTH && { awaitingAuth: true as const }),
-      ...opSummary(op.kind, payload.subject ?? "", n),
+      ...opSummary(op.kind, subject, n),
     };
   }
 
