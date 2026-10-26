@@ -1,6 +1,6 @@
 # Plan 32: durable refresh credential rotation and verified renewal
 
-Status: design and critique; implementation not yet started. Scope: X02/S17–20 and remaining T08 refresh credential handling, current Gmail desktop. Outlook remains user-deferred.
+Status: shared credential replacement and provider refresh implementation in progress; independent reviews and explicit renewal flows pending. Scope: X02/S17–20 and remaining T08 refresh credential handling, current Gmail desktop. Outlook remains user-deferred.
 
 ## Request (verbatim)
 
@@ -58,3 +58,11 @@ The read-only critique completed with10concrete points (`/tmp/terno-provider-har
 10. No raw exception/provider/token text in returned errors or captured logs. Tests use secret/address/subject markers. Acknowledged process restart persistence is distinct from OS/power-loss guarantees under SQLite synchronous=NORMAL; no durability overclaim.
 
 Implementation is split into atomic layers: shared CAS and lifetime-backed provider replacement; strict coalesced refresh and candidate persistence; deliberate omitted-renewal proof plus shared explicit-flow ownership. The parent coordinates shared file ownership and assigns a separate final Codex review to each coherent slice. Full report coverage remains active beyond this plan.
+
+## Provider exchange implementation and combined qualification
+
+`2f6ffb3689b1e7f89c6954a7027d4beca3da0e0a` implements the provider refresh layer and bounded decoder. The worker observed43failing new provider regressions before the change and an additional privacy-boundary failure before sanitizing lookup exceptions. The complete provider matrix now has64cases covering strict fields/status/scope, body deadlines/cancellation, coalescing, candidate persistence/ownership and expiry. Six adjacent mail suites pass253tests; broader integration checks and the distinct review remain pending. Matching fixed persistence error copy was added in English/Spanish in `64cd9ee`.
+
+The parent adds eight qualification cases in `gmail-rotation.int.test.ts` through a real synthetic HTTP server, real Gmail provider, Backend and SQL/IDB stores. Twenty concurrent verify calls produce one exchange and one replacement, zero mailbox requests while persistence is gated, and twenty requests after acknowledgement. Both stores reopen using the rotated credential. Before-commit and after-commit adapter failures recover by persisting/asserting the known candidate without exchanging the spent original; another reopen proves durable rotation. A newer explicit credential wins a blocked CAS with no old access publication. All eight pass. These are combined qualification tests added after the layers' original red runs, not a claim of another observed pre-fix run. No real profile or provider is used; the unavoidable provider-rotation-before-durable-knowledge crash window remains as documented.
+
+Phase1's common-store/context implementation, raw keychain-error logging correction and final validation are still being completed by its owner. Phase3's deliberate omitted-refresh renewal, shared reconnect/owner/photo ownership and compound owner commit remain unimplemented. Full release/performance/package gates remain unapproved.
