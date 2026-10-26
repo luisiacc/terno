@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { asciiEmail, cleanName, formatAddress, formatAddressList, isNoReply, isValidEmail, parseAddressHeader, parseAddressList, repairAddress, repairAddresses } from "./address";
+import { asciiEmail, cleanName, formatAddress, formatAddressList, isNoReply, isValidEmail, parseAddressHeader, parseAddressList, repairAddress, repairAddresses, storedAddresses } from "./address";
 import { decodeEncodedWords, repairMojibake, repairOrphans } from "./encoded-words";
 import type { Address } from "./types";
 
@@ -289,5 +289,20 @@ describe("what the Codex code review changed", () => {
   it("4 a typed part that is only a comment is kept as an entry to fix, never dropped", () => {
     expect(parseAddressList("(bob@x.com)")).toEqual([A("", "(bob@x.com)")]);
     expect(parseAddressList(formatAddressList(parseAddressList("ana@x.io, (bob@x.com)")))).toEqual([A("", "ana@x.io"), A("", "(bob@x.com)")]);
+  });
+});
+
+describe("what the Codex review of the reconciliation with plan 27 changed", () => {
+  const stored = A("Support <audit@thirdparty.test>, Helpdesk", "session@help.test");
+
+  it("1 Reply-To is never split: a display name never adds a destination to a plain reply", () => {
+    expect(parseAddressHeader('"Support <audit@thirdparty.test>, Helpdesk" <session@help.test>', { split: false })).toEqual([A("Support, Helpdesk", "session@help.test")]);
+    expect(storedAddresses({ from_name: "", from_email: "a@x.com", to_json: "[]", cc_json: "[]", reply_to_json: JSON.stringify([stored]) }).replyTo).toEqual([A("Support, Helpdesk", "session@help.test")]);
+  });
+
+  it("2 an address valid as stored is kept exactly; only a matching pair of quotes wraps one", () => {
+    for (const email of ["'support@example.com", "support'@example.com", "o'brien@x.ie"]) expect(repairAddresses([A("Support", email)])).toEqual([A("Support", email)]);
+    expect(repairAddresses([A("", "'a@x.com'")])).toEqual([A("", "a@x.com")]);
+    expect(parseAddressHeader("Support <'support@example.com>")).toEqual([A("Support", "'support@example.com")]);
   });
 });

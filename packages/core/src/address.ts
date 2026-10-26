@@ -224,7 +224,8 @@ function bareAddress(text: string): string {
     .trim()
     .replace(/^mailto:/i, "")
     .replace(/^(@[^:]*:)/, "")
-    .replace(/^['"]+|['"]+$/g, "")
+    // only a matching pair wraps it: a lone apostrophe is part of a valid local part ('support@x, o'brien@x)
+    .replace(/^(['"])(.*)\1$/, "$2")
     .replace(/[.,;>]+$/, "");
 }
 
@@ -302,8 +303,8 @@ export function parseAddressList(input: string): Address[] {
  * clients write it, and repairs it (repairAddresses). `single`: a header that
  * names one author (From): never split, its first address.
  */
-export function parseAddressHeader(value: string, opts: { single?: boolean } = {}): Address[] {
-  const list = repairAddresses(entries(value, true, false), { split: !opts.single });
+export function parseAddressHeader(value: string, opts: { single?: boolean; split?: boolean } = {}): Address[] {
+  const list = repairAddresses(entries(value, true, false), { split: !opts.single && opts.split !== false });
   return opts.single ? list.slice(0, 1) : list;
 }
 
@@ -376,7 +377,11 @@ export function cleanName(raw: string, cap = NAME_MAX): string {
 }
 
 /** An address cleaned of what clients wrap it in: `mailto:`, a source route, brackets, quotes, trailing dots. */
-const cleanEmail = (raw: string): string => bareAddress(raw.replace(INVISIBLE, "")).replace(/\.+$/, "");
+const cleanEmail = (raw: string): string => {
+  const e = raw.replace(INVISIBLE, "").trim();
+  // an address that is valid as stored is kept exactly: repair never redirects a working mailbox (reconciliation review 2)
+  return isValidEmail(e) ? e : bareAddress(e).replace(/\.+$/, "");
+};
 
 /** A name that says nothing beyond the address (or claims a different one): dropped, so the address shows (once, and truthfully). Capped. */
 function nameFor(full: string, email: string): string {
@@ -464,7 +469,8 @@ export function storedAddresses(m: { from_name: string; from_email: string; to_j
   return {
     from: SUSPECT_NAME.test(from.name) || MOJIBAKE.test(from.name) || from.name.length > NAME_MAX ? { ...repairAddress(from), email: from.email } : from,
     // plan 27's column ('[]' when the message has none or was stored before it; an IDB row before version 5 lacks it)
-    replyTo: repairAddresses(JSON.parse(m.reply_to_json ?? "[]") as Address[]),
+    // never split: Reply-To is where a plain reply goes, so a display name never adds a destination there (reconciliation review 1)
+    replyTo: repairAddresses(JSON.parse(m.reply_to_json ?? "[]") as Address[], { split: false }),
     to: repairAddresses(JSON.parse(m.to_json) as Address[]),
     cc: repairAddresses(JSON.parse(m.cc_json) as Address[]),
   };

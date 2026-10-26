@@ -104,6 +104,19 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect(t.messages[0]!.from).toEqual({ name: "Björn Peña", email: "bjorn@acme.studio" });
         expect(t.thread.fromName).toBe("Björn Peña");
       });
+
+      it("a stored Reply-To is repaired at read but never split, and an address valid as stored is kept exactly (reconciliation review)", async () => {
+        const store = await fresh();
+        const [a] = await withAccounts(store);
+        const replyTo = [{ name: "Support <audit@thirdparty.test>, Helpdesk", email: "session@help.test" }, { name: "'Support'", email: "'support@example.com" }];
+        await ingest(store, [msg({ accountId: a!, providerMsgId: "rt-repair", replyTo, cc: [{ name: "", email: "o'brien@x.ie" }] })]);
+        const m = (await store.threads.get(await threadOf(store, "rt-repair")))!.messages[0]!;
+        expect(m.replyTo).toEqual([
+          { name: "Support, Helpdesk", email: "session@help.test" },
+          { name: "Support", email: "'support@example.com" },
+        ]);
+        expect(m.cc).toEqual([{ name: "", email: "o'brien@x.ie" }]);
+      });
     });
 
     describe("threading", () => {

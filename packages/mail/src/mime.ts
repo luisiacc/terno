@@ -51,16 +51,20 @@ const lower = (list: Address[]) => list.map((a) => ({ name: a.name, email: a.ema
  * the store keys them.
  */
 export function messageAddresses(values: (name: string) => string[], parsed: Partial<Record<keyof MessageAddresses, PostalAddress[] | PostalAddress | undefined>> = {}): MessageAddresses {
-  const read = (name: string, key: keyof MessageAddresses, single = false): Address[] => {
+  /** `split`: may a list a mangled display name swallowed be read back out of it (To, Cc, Bcc: never From or Reply-To) */
+  const read = (name: string, key: keyof MessageAddresses, single = false, split = !single): Address[] => {
     const raw = values(name);
-    const ours = raw.length ? parseAddressHeader(raw.join(", "), { single }) : [];
+    const ours = raw.length ? parseAddressHeader(raw.join(", "), { single, split }) : [];
     if (ours.length) return lower(ours);
-    const theirs = repairAddresses(flatten(parsed[key]), { split: !single });
+    const theirs = repairAddresses(flatten(parsed[key]), { split });
     return lower(single ? theirs.slice(0, 1) : theirs);
   };
   const from = read("from", "from", true)[0] ?? { name: "", email: "" };
-  // an IMAP envelope fills Reply-To in from From when the message has none (RFC 3501): that is no Reply-To
-  const replyTo = read("reply-to", "replyTo").filter((a) => values("reply-to").length > 0 || a.email !== from.email);
+  // Reply-To is where a plain reply goes: a display name never adds a destination to it (reconciliation review 1).
+  // An IMAP envelope fills Reply-To in from From when the message has none (RFC 3501): that alone, and only when the
+  // raw field is missing, is no Reply-To; a list that merely includes From is kept whole (reconciliation review 3).
+  const listed = read("reply-to", "replyTo", false, false);
+  const replyTo = !values("reply-to").length && listed.length === 1 && listed[0]!.email === from.email ? [] : listed;
   return { from, to: read("to", "to"), cc: read("cc", "cc"), bcc: read("bcc", "bcc"), replyTo };
 }
 

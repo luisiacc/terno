@@ -111,3 +111,21 @@ describe("what we write parses back the same (both builders)", () => {
     });
   }
 });
+
+describe("what the Codex review of the reconciliation with plan 27 changed", () => {
+  it("1 a raw Reply-To is never split, even with a bracketed address and a comma in its name (a Cc still is)", async () => {
+    const p = await parseRaw(message(`From: a@x.com\r\nTo: me@mine.com\r\nReply-To: "Support <audit@thirdparty.test>, Helpdesk" <session@help.test>\r\nCc: "Support <audit@thirdparty.test>, Helpdesk" <session@help.test>`));
+    expect(p.replyTo).toEqual([A("Support, Helpdesk", "session@help.test")]);
+    expect(p.cc.map((a) => a.email)).toEqual(["audit@thirdparty.test", "session@help.test"]);
+  });
+
+  it("3 without the raw field, only an envelope Reply-To that is exactly From is dropped; a list that includes From is kept whole", () => {
+    const from = [{ name: "Sender", address: "sender@example.com" }];
+    const none = headerFields(undefined);
+    expect(messageAddresses(none, { from, replyTo: from }).replyTo).toEqual([]);
+    expect(messageAddresses(none, { from, replyTo: [...from, { name: "Support", address: "support@example.com" }] }).replyTo).toEqual([A("Sender", "sender@example.com"), A("Support", "support@example.com")]);
+    // with the raw field, Reply-To equal to From is what the message says
+    const raw = headerFields(new TextEncoder().encode("From: Sender <sender@example.com>\r\nReply-To: Sender <sender@example.com>\r\n\r\n"));
+    expect(messageAddresses(raw).replyTo).toEqual([A("Sender", "sender@example.com")]);
+  });
+});

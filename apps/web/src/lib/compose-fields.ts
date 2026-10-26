@@ -77,9 +77,9 @@ export function autoRecipients(mode: Exclude<DraftMode, "new">, detail: ThreadDe
   const isMine = asMine(mine, detail);
   const last = answered(detail, isMine);
   const from = repairAddress(last.from);
-  const others = (list: readonly Address[]) => repairAddresses(list).filter((a) => !isMine(a.email));
+  const others = (list: readonly Address[], split = true) => repairAddresses(list, { split }).filter((a) => !isMine(a.email));
   const own = last.isSent || isMine(from.email);
-  let to = own ? others(last.to) : last.replyTo?.length ? others(last.replyTo) : [from];
+  let to = own ? others(last.to) : last.replyTo?.length ? others(last.replyTo, false) : [from];
   // answering myself with nobody else on it: to me, as written
   if (!to.length && own) to = repairAddresses(last.to).slice(0, 1);
   if (!to.length && own) to = [from];
