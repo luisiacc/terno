@@ -1,6 +1,6 @@
 # Plan 25: signing in again, gently
 
-- **Status:** in progress.
+- **Status:** done (see "Implementation notes" and "What the Codex code review changed").
 - **Builds on:** `5548ae9` (main after plan 24).
 - **Request (verbatim):** "lets make sure we handle re sign-in gracefully on our app, not forcing the user, but letting them know for a particular email account that it needs to sign in, subtly and nice with a premium feeling"
 - **Why now.** The Google Cloud OAuth app is in "Testing", so a Gmail refresh token dies after 7 days (`invalid_grant`): with ~6 accounts, signing in again is a weekly event. IMAP accounts hit it when a password changes or an app password is revoked. On the web a Gmail token lasts an hour and isn't stored, so there it's every load.
@@ -43,8 +43,8 @@
 
 | needs sign-in | title (`role="status"`) | second line (muted) |
 |---|---|---|
-| one account | "Personal needs you to sign in" (its display name) | "New mail waits until you do" |
-| several | "2 accounts need you to sign in" | "New mail waits until you do" |
+| one account | "Personal needs a sign-in" (its display name) | "Sign in to catch up" |
+| several | "2 accounts need a sign-in" | "Sign in to catch up" |
 
 - The text block is the popover trigger (a `<button>`, so the whole capsule but the dismiss is one target): it opens the panel above the notice (`side="top"`, like the update popover).
 - An `X` icon button named "Later" (tooltip "Later") hides the notice. **Later lasts until that account needs a sign-in anew** (it signs in, or works again, and later fails again) **or until Terno restarts.** It never hides the row's marker. Why: with a weekly expiry, one reminder per launch is the right volume; the row marker is the quiet reminder in between. It's renderer memory (a zustand store, not persisted): a second window or a reload asks again, which is what a reload means on the web.
@@ -101,9 +101,9 @@
 
 | key | en | es |
 |---|---|---|
-| `signIn.notice.one` | {name} needs you to sign in | {name} necesita que inicies sesión |
-| `signIn.notice.many` | # accounts need you to sign in (plural) | # cuentas necesitan que inicies sesión |
-| `signIn.notice.waits` | New mail waits until you do | El correo nuevo espera hasta entonces |
+| `signIn.notice.one` | {name} needs a sign-in | {name} pide iniciar sesión |
+| `signIn.notice.many` | # accounts need a sign-in (plural) | # cuentas piden iniciar sesión |
+| `signIn.notice.waits` | Sign in to catch up | Inicia sesión y ponte al día |
 | `signIn.later` | Later | Más tarde |
 | `signIn.marker` | Sign in to keep {email} up to date | Inicia sesión para mantener {email} al día |
 | `signIn.title.one` | Sign in to {name} | Inicia sesión en {name} |
@@ -136,7 +136,7 @@ Nothing new is logged. The existing `sync.failed` / `ops.failed` codes carry no 
 - **Integration, Gmail (`gmail.int.test.ts`, FakeGoogle):** `invalid_grant` → `authRequired`; `accounts.reconnect` with another Google account → `errors.googleConnectedOther`, still `authRequired`, secret unchanged; with the right one → cleared at once, the parked op runs. `connectGmailToken` with `accountId` and another mailbox's token → refused, no account created.
 - **Unit, renderer (`lib/sign-in.test.ts`):** `forget` clears dismissal only for accounts that recovered; a late failure of a superseded attempt, or for an account that no longer needs a sign-in, stores no error.
 - **e2e (`apps/web/e2e/resign-in.spec.ts`, backend-dev with an auth knob: the scripted registry refuses an account until it signs in; a fake `connectGmail` returns the Google account the test chooses; `openExternal` is a no-op), tagged `@design`:**
-  1. one Gmail account refused: the row's marker (name, tooltip), the notice ("Personal needs you to sign in"), mail still listed and readable; "Continue with Google" → the snack, marker and notice gone, the row focused
+  1. one Gmail account refused: the row's marker (name, tooltip), the notice ("Personal needs a sign-in"), mail still listed and readable; "Continue with Google" → the snack, marker and notice gone, the row focused
   2. the wrong Google account: the inline error names the expected address; still needs a sign-in
   3. two accounts (Gmail + IMAP): "2 accounts need you to sign in", the panel lists both; a wrong password → inline error, the field keeps focus; the right one → that section goes, one remains, the notice reads the other's name
   4. Later hides the notice, not the marker; a recovery and a new failure bring it back
@@ -165,7 +165,7 @@ Nothing new is logged. The existing `sync.failed` / `ops.failed` codes carry no 
 Codex (read-only, against `5548ae9`) made 11 points; all were checked against the code and all are taken.
 
 1. **SMTP precedence.** `classifySmtpError` checks numeric replies before `EAUTH`, so `EAUTH` + 535 never reached the auth branch. Now `EAUTH` comes first, except a 4xx reply (454 "temporary authentication failure" stays retryable). Tests: `EAUTH`+535, `EAUTH`+454, `EAUTH` with no code, post-DATA ambiguity unchanged.
-2. **An IMAP success doesn't prove SMTP.** A send refused by SMTP on an IMAP account sets `authRequired` with `authScope: "send"`. For that scope a sync success doesn't clear it or resume the parked sends (it does clear `status`), the poll keeps syncing (incoming mail works), and only sends are held (7). The notice's second line reads "Messages wait to send until you do". A refusal by the sync itself (or any Gmail refusal) has no scope: the whole account. Signing in again clears both; if SMTP still refuses, the next send parks again (one attempt per sign-in). Test: "IMAP works, SMTP refuses".
+2. **An IMAP success doesn't prove SMTP.** A send refused by SMTP on an IMAP account sets `authRequired` with `authScope: "send"`. For that scope a sync success doesn't clear it or resume the parked sends (it does clear `status`), the poll keeps syncing (incoming mail works), and only sends are held (7). The notice's second line reads "Sign in to send". A refusal by the sync itself (or any Gmail refusal) has no scope: the whole account. Signing in again clears both; if SMTP still refuses, the next send parks again (one attempt per sign-in). Test: "IMAP works, SMTP refuses".
 3. **An op in flight across a sign-in.** `dropAccount` waits for the sync, not for ops. The backend keeps a per-account credential generation (memory), bumped when a sign-in stores new credentials. An op or a sync that started on an older generation and is refused doesn't park or mark the account: the op is released (attempt given back) and runs again on the new credentials; the sync counts as cut short and runs again. Test: a gated op refused after the sign-in.
 4. **One Google flow per account.** A new `accounts.reconnect` for a Gmail account aborts the previous flow for it (its listener closes, its timer is cleared: `connectGmail` now clears the timer on abort too). The aborted call fails with `errors.google.cancelled`, which the renderer drops as superseded. So "Open again" can't leave two flows racing to write the secret. Test: two flows, the first aborted, only the second's token stored.
 5. **A late 401 must not delete the new token.** `tokens.invalidate()` now takes the token that was refused and drops the stored one only if it's the same (web broker and desktop alike). Test: a request with the old token answered 401 after a renew keeps the new token.
@@ -177,3 +177,22 @@ Codex (read-only, against `5548ae9`) made 11 points; all were checked against th
 11. **One send notice per account per incident.** Tracked in the renderer's incident state (not by snack id), reset on recovery; on recovery a queued or shown notice for that account is dismissed. Test: two parked sends → one snack; recovery → the snack goes; a new incident → a new one.
 
 Also from reading the code for these: `errors.gmail.revoked`'s English is asserted in `core/src/localized.test.ts` (updated with the copy).
+
+## Implementation notes
+
+- **Commits:** the plan and its critique; the backend (`feat(backend)`); the renderer (`feat(web)`); the code review's fixes (`fix(sign-in)`).
+- **The notice's copy got shorter after looking at it.** "Freelance needs you to sign in" over "New mail waits until you do" truncated in the sidebar's ~230 px (the problem plan 20's pill had), and wrapped into four lines with widows when allowed to wrap. Now: "Freelance needs a sign-in" over "Sign in to catch up" ("Sign in to send" for a refused SMTP), `text-balance`, wrapping only for a long account name. Spanish: "{name} pide iniciar sesión" / "Inicia sesión y ponte al día" / "Inicia sesión para enviar". The panel keeps the longer, reassuring sentence.
+- **One more string:** `signIn.passwordRefused` ("That password didn’t work. Check it, or create a new app password."), shown over the server's own words when an IMAP login is refused; `signIn.google.loading`; `errors.waitingForSignIn` (an op parked before dispatch).
+- **The panel's chunk renders at once once loaded.** `React.lazy` suspends on its first render even when the chunk was preloaded, so Base UI focused the empty popup. The notice keeps the loaded module and renders it directly (lazy only before it's in), so the first tabbable control gets focus. Focus after a success is settled one frame later, once the account's event has redrawn the panel.
+- **`withdrawSnack(id)`** (snack lib): a send notice whose account signed in leaves the dock, and the queue if it waits there.
+- **Checked visually** in macOS, Atelier and Lumen, light and dark: the sidebar with one and two accounts, and the open panel (one account with its password field; two with a section each). Each design's own tokens carry it (Lumen's black primary and gold focus ring, Atelier's blue on dark). Element baselines: `e2e/__screenshots__/{,lumen/,atelier/}resign-in.spec.ts/sidebar-{one,two}-{light,dark}.png`.
+- **The desktop bundle** has no Google Identity Services code (the web glue stays behind the compile-time target); the panel is its own chunk (`sign-in-panel-*.js`).
+
+## What the Codex code review changed
+
+Codex reviewed `5548ae9..a4cf60c` and made 4 findings; each is fixed with a regression test that fails without the fix.
+
+1. **High: an old refusal could undo a sign-in.** The generation was checked before the awaited park and mark: a sign-in landing during them resumed nothing (the op wasn't parked yet) and was then marked as needing a sign-in again. Now the generation is taken before the provider is fetched (sync and ops), every park re-checks it after its await and, if a sign-in landed, resumes instead of marking (`parkedAcrossSignIn`), and `needsSignIn` checks it before writing. Test: `resign-in.test.ts`, "a sign-in landing while an old refusal is being parked".
+2. **Medium: an older Google flow could overwrite a newer token.** Ownership ended when Google answered; two answered flows both waiting on a sync's drop could both write. Ownership (either kind of sign-in) now lasts until the credentials are written, and the attempt stops (`errors.google.cancelled`) after every await once superseded. FakeGoogle now grants a distinct refresh token per consent. Test: `gmail.int.test.ts`, "two flows Google answered, both waiting on a sync".
+3. **Medium: a password being typed could be emptied.** The panel switched between a single layout and a list as the count changed, remounting the field. It's one list keyed by account for any count. Test: `resign-in.spec.ts`, "another account failing or coming back while you type a password" (fails when the field remounts).
+4. **Medium: Google's script failing left the button inert.** A failed load now says so inline ("Couldn’t load Google sign-in (are you offline?)") in the panel and Settings, and the button tries again. Test: `e2e-web/web.spec.ts`, "Google's script failing to load says so, and the button tries again".
