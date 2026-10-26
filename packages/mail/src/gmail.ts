@@ -135,9 +135,10 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
         if (secret) body.set("client_secret", secret);
         let res: Response;
         try {
-          res = await netFetch(ep.token, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body });
+          // once an hour: a refresh on a dead socket gives up in 30 s instead of undici's 5 minutes (plan 19)
+          res = await netFetch(ep.token, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body, signal: AbortSignal.timeout(30_000) });
         } catch (e) {
-          throw new ProviderError(L("errors.gmail.refreshOffline", { detail: e instanceof Error ? e.message : String(e) }), true);
+          throw ProviderError.network(L("errors.gmail.refreshOffline", { detail: e instanceof Error ? e.message : String(e) }));
         }
         const json = (await res.json().catch(() => ({}))) as { access_token?: string; expires_in?: number; error?: string };
         if (json.error === "invalid_grant") throw new ProviderAuthError(L("errors.gmail.revoked"));

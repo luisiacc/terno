@@ -3,6 +3,7 @@ import { ImapFlow, type FetchMessageObject, type MessageStructureObject } from "
 import { L, type Localized } from "@terno/i18n";
 import type { IncomingMessage } from "@terno/store";
 import { parseListId, parseRaw, splitIds } from "./mime";
+import { isNetworkError } from "./net-errors";
 import { sendViaSmtp } from "./smtp";
 import { ProviderError, type FlagUpdate, type ImapAccountConfig, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
 
@@ -22,7 +23,35 @@ export interface ImapProviderOptions {
   allowInsecure?: boolean;
   /** max bodies downloaded per sync pass */
   bodiesPerSync?: number;
+  /** tests only: shorter timeouts (plan 19), so a dead socket is found in seconds */
+  timeouts?: Partial<ImapTimeouts>;
 }
+
+export interface ImapTimeouts {
+  /** connect + TLS + greeting budget */
+  connectMs: number;
+  /** a command session quiet this long is dead (a stuck command fails; an idle session closes) */
+  socketMs: number;
+  /** how long IDLE has to answer the heartbeat's NOOP */
+  heartbeatMs: number;
+  /** IDLE heard nothing this long: the next sync pings it */
+  quietMs: number;
+  /** IDLE reconnect backoff: first wait and cap */
+  reconnectMs: number;
+  reconnectMaxMs: number;
+  /** SMTP's socket timeout (a stall after DATA is ambiguous either way) */
+  smtpSocketMs: number;
+}
+
+export const IMAP_TIMEOUTS: ImapTimeouts = {
+  connectMs: 20_000,
+  socketMs: 60_000,
+  heartbeatMs: 15_000,
+  quietMs: 60_000,
+  reconnectMs: 1000,
+  reconnectMaxMs: 60_000,
+  smtpSocketMs: 60_000,
+};
 
 const SPECIAL_USE: Record<string, Role> = {
   "\\Inbox": "inbox",
@@ -43,12 +72,14 @@ const NAME_HINTS: Record<Exclude<Role, "inbox" | "all">, RegExp> = {
   drafts: /^(inbox[./])?(drafts|borradores|entwürfe)$/i,
 };
 
-function toProviderError(error: unknown): ProviderError {
+export function toProviderError(error: unknown): ProviderError {
   if (error instanceof ProviderError) return error;
   const e = error as { authenticationFailed?: boolean; code?: string; responseStatus?: string; message?: string };
   const message = e?.message ?? String(error);
   if (e.authenticationFailed) return new ProviderError(L("errors.imap.loginFailed", { detail: message }), false);
   if (e.responseStatus === "NO" || e.responseStatus === "BAD") return new ProviderError(`IMAP: ${message}`, false);
+  // the server couldn't be reached or the connection died (plan 19): waits for the network
+  if (isNetworkError(error)) return ProviderError.network(`IMAP: ${message}`);
   return new ProviderError(`IMAP: ${message}`, true);
 }
 
@@ -74,6 +105,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   const accountId = ctx.account.id;
   let client: ImapFlow | null = null;
   let roles: Partial<Record<Role, string>> | null = null;
+  const timeouts: ImapTimeouts = { ...IMAP_TIMEOUTS, ...options.timeouts };
+  /** IDLE loops of this account (normally one): reset() restarts them, a sync pings them */
+  const watchers = new Set<{ restart(): void; ping(): void }>();
 
   const makeClient = async (forIdle = false) => {
     const password = await ctx.getSecret("password");
@@ -88,37 +122,67 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       logger: false,
       disableAutoIdle: !forIdle,
       tls: options.allowInsecure ? { rejectUnauthorized: false } : undefined,
-      connectionTimeout: 20_000,
+      connectionTimeout: timeouts.connectMs,
+      // Plan 19: a command session quiet for a minute is closed (imapflow's timeout without IDLE), so a
+      // socket a network change killed is never reused after a quiet minute, and a command stuck on one
+      // fails in a minute instead of five. IDLE keeps imapflow's 5 minutes; the heartbeat checks it sooner.
+      ...(forIdle ? {} : { socketTimeout: timeouts.socketMs }),
     });
   };
 
-  async function connection(): Promise<ImapFlow> {
-    if (client?.usable) return client;
-    const c = await makeClient();
-    c.on("error", () => {});
-    // the server may BYE us (e.g. UIDVALIDITY reset, idle timeout): never reuse a dead session
-    c.on("close", () => {
-      if (client === c) client = null;
+  /** bumped by reset(): a session that was connecting across a network change is never kept */
+  let generation = 0;
+  /** the one connect in flight: a sync and an op asking together share it */
+  let connecting: { gen: number; promise: Promise<ImapFlow>; session: ImapFlow | null } | null = null;
+
+  function connection(): Promise<ImapFlow> {
+    if (client?.usable) return Promise.resolve(client);
+    if (connecting && connecting.gen === generation) return connecting.promise;
+    const attempt: NonNullable<typeof connecting> = { gen: generation, session: null, promise: null as unknown as Promise<ImapFlow> };
+    attempt.promise = (async () => {
+      const c = await makeClient();
+      attempt.session = c;
+      c.on("error", () => {});
+      // the server may BYE us (e.g. UIDVALIDITY reset, idle timeout): never reuse a dead session
+      c.on("close", () => {
+        if (client === c) client = null;
+      });
+      // a reset while the secret was read: never start on the old network
+      if (attempt.gen !== generation) throw ProviderError.network(L("errors.network.changed"));
+      try {
+        await c.connect();
+      } catch (error) {
+        throw toProviderError(error);
+      }
+      if (attempt.gen !== generation) {
+        // it may have connected over the route that just went away
+        c.close();
+        throw ProviderError.network(L("errors.network.changed"));
+      }
+      client = c;
+      return c;
+    })().finally(() => {
+      if (connecting === attempt) connecting = null;
     });
-    try {
-      await c.connect();
-    } catch (error) {
-      throw toProviderError(error);
-    }
-    client = c;
-    return c;
+    connecting = attempt;
+    return attempt.promise;
   }
 
   /** Runs fn on a live connection; a transient failure gets one retry on a fresh session. */
   async function withConnection<T>(fn: (c: ImapFlow) => Promise<T>): Promise<T> {
+    let c: ImapFlow | null = null;
     try {
-      return await fn(await connection());
+      c = await connection();
+      return await fn(c);
     } catch (error) {
       const e = toProviderError(error);
       if (!e.retryable) throw e;
-      const stale = client;
-      client = null;
-      await stale?.logout().catch(() => {});
+      // only the session that failed goes (another caller may already hold a fresh one); never LOGOUT on
+      // it: on a dead socket that waits for the timeout
+      if (c) {
+        if (client === c) client = null;
+        c.close();
+      }
       try {
         return await fn(await connection());
       } catch (again) {
@@ -428,7 +492,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   async function send(payload: SendPayload): Promise<{ providerMsgId: string; warning?: Localized }> {
     const password = await ctx.getSecret("password");
     if (!password) throw new ProviderError(L("errors.imap.noPassword"), false);
-    const { raw, rejected } = await sendViaSmtp({ ...config.smtp, password, allowInsecure: options.allowInsecure }, payload);
+    // its own connection, made for this send: a network change never touches it (an outcome after DATA stays ambiguous)
+    const { raw, rejected } = await sendViaSmtp({ ...config.smtp, password, allowInsecure: options.allowInsecure, socketTimeoutMs: timeouts.smtpSocketMs }, payload);
     if (config.appendToSent) {
       // Best effort: the message is already sent; a failed APPEND must not resend it.
       try {
@@ -548,40 +613,177 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     },
 
     watch(onChange) {
+      // Plan 19: one reconnect loop. At most one session and one pending timer; a failed connect and a
+      // closed session schedule through the same place (they used to both, doubling the loops per failure).
       let stopped = false;
       let idle: ImapFlow | null = null;
-      let backoff = 1000;
-      const start = async () => {
-        if (stopped) return;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      let connecting = false;
+      /** reset() came while connecting: that session may be on the old route, connect again */
+      let again = false;
+      let delay = timeouts.reconnectMs;
+      /** when IDLE last heard the server (an event, a connect, an answered heartbeat) */
+      let heardAt = 0;
+      let pinging = false;
+      /** push stopped working at (null: it works) */
+      let lostAt: number | null = null;
+
+      const changed = () => {
+        heardAt = Date.now();
+        onChange();
+      };
+      const markLost = () => {
+        if (lostAt !== null) return;
+        lostAt = Date.now();
+        ctx.event?.("push.lost");
+      };
+      const schedule = () => {
+        if (stopped || timer || connecting) return;
+        // ±20 %: accounts (and clients) that lost the same server don't come back in lockstep
+        const wait = delay * (0.8 + Math.random() * 0.4);
+        delay = Math.min(delay * 2, timeouts.reconnectMaxMs);
+        timer = setTimeout(() => {
+          timer = null;
+          void connect();
+        }, wait);
+      };
+      const connect = async (): Promise<void> => {
+        if (stopped || connecting) return;
+        connecting = true;
+        again = false;
+        const gen = generation;
+        let c: ImapFlow | null = null;
         try {
-          idle = await makeClient(true);
-          idle.on("error", () => {});
-          idle.on("exists", onChange);
-          idle.on("expunge", onChange);
-          idle.on("flags", onChange);
-          idle.on("close", () => {
-            if (!stopped) setTimeout(() => void start(), (backoff = Math.min(backoff * 2, 60_000)));
+          c = await makeClient(true);
+          const session = c;
+          c.on("error", () => {});
+          c.on("exists", changed);
+          c.on("expunge", changed);
+          c.on("flags", changed);
+          c.on("close", () => {
+            if (idle !== session) return;
+            idle = null;
+            if (stopped) return;
+            markLost();
+            schedule();
           });
-          await idle.connect();
-          await idle.mailboxOpen("INBOX");
-          backoff = 1000;
+          await c.connect();
+          await c.mailboxOpen("INBOX");
+          if (stopped || again || gen !== generation) {
+            c.close();
+            connecting = false;
+            if (!stopped) return void connect();
+            return;
+          }
+          idle = c;
+          heardAt = Date.now();
+          delay = timeouts.reconnectMs;
+          connecting = false;
           // enter IDLE now so the server pushes EXISTS/EXPUNGE; imapflow re-enters it after each event
-          void idle.idle().catch(() => {});
+          void c.idle().catch(() => {});
+          if (lostAt !== null) {
+            ctx.event?.("push.restored", { durationMs: Date.now() - lostAt });
+            lostAt = null;
+            // whatever arrived while push was down
+            onChange();
+          }
         } catch {
-          if (!stopped) setTimeout(() => void start(), (backoff = Math.min(backoff * 2, 60_000)));
+          c?.close();
+          connecting = false;
+          if (stopped) return;
+          markLost();
+          schedule();
         }
       };
-      void start();
+      const watcher = {
+        /** the network changed: the session is presumed dead, reconnect now */
+        restart() {
+          if (stopped) return;
+          delay = timeouts.reconnectMs;
+          if (timer) clearTimeout(timer);
+          timer = null;
+          const c = idle;
+          idle = null;
+          if (c) {
+            markLost();
+            c.close();
+          }
+          if (connecting) again = true;
+          else void connect();
+        },
+        /** the heartbeat (the core's tick): a session quiet for a while must answer a NOOP in time, or it is dead */
+        ping() {
+          const c = idle;
+          if (!c || stopped || pinging || Date.now() - heardAt < timeouts.quietMs) return;
+          pinging = true;
+          let deadline: ReturnType<typeof setTimeout> | undefined;
+          const late = new Promise<boolean>((r) => (deadline = setTimeout(() => r(false), timeouts.heartbeatMs)));
+          void Promise.race([c.noop().then(() => true, () => false), late]).then((alive) => {
+            clearTimeout(deadline);
+            pinging = false;
+            if (idle !== c) return;
+            if (alive) {
+              heardAt = Date.now();
+              // back to IDLE at once (imapflow's auto-IDLE would wait 15 s)
+              void c.idle().catch(() => {});
+              return;
+            }
+            // dead: reconnect now (if the whole network is down, the reconnect loop backs off from here)
+            idle = null;
+            markLost();
+            c.close();
+            delay = timeouts.reconnectMs;
+            void connect();
+          });
+        },
+      };
+      watchers.add(watcher);
+      void connect();
       return () => {
         stopped = true;
-        void idle?.logout().catch(() => {});
+        watchers.delete(watcher);
+        if (timer) clearTimeout(timer);
+        timer = null;
+        const c = idle;
+        idle = null;
+        if (c) void quit(c);
       };
+    },
+
+    heartbeat() {
+      // the core's tick (no timer of our own): does IDLE still hear the server?
+      for (const w of watchers) w.ping();
+    },
+
+    reset() {
+      // the network changed: a session still connecting is abandoned, the cached one closes now (never
+      // LOGOUT on a dead socket), and IDLE reconnects at once
+      generation++;
+      const pending = connecting;
+      connecting = null;
+      pending?.session?.close();
+      const c = client;
+      client = null;
+      c?.close();
+      for (const w of watchers) w.restart();
     },
 
     async close() {
       const c = client;
       client = null;
-      await c?.logout().catch(() => {});
+      if (c) await quit(c);
     },
   };
+}
+
+/** LOGOUT politely, but a session on a dead socket would wait for its timeout: give it 2 s, then close. */
+async function quit(c: ImapFlow): Promise<void> {
+  const force = setTimeout(() => c.close(), 2000);
+  try {
+    await c.logout();
+  } catch {
+    /* closed */
+  } finally {
+    clearTimeout(force);
+  }
 }
