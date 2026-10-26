@@ -1,9 +1,9 @@
 import type { AiTasks } from "@terno/ai";
 import { decodeText, encodeText, messageOf, textRef, type Account, type AccountSyncState, type OpState, type ThreadAction } from "@terno/core";
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
-import { RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type Transport } from "@terno/core/rpc";
+import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
-import { AWAITING_AUTH, type ClassifierInput, type IncomingMessage, type MailStore, type OpRow, type Platform } from "@terno/store";
+import { AWAITING_AUTH, type ClassifierInput, type IncomingMessage, type MailStore, type OpRow, type Platform, type ProviderStore } from "@terno/store";
 import { ProviderAuthError, ProviderError, type MailProvider, type ProviderRegistry, type SendPayload, type SyncSink } from "@terno/mail/portable";
 import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_PHRASE_CAPS, WEB_AUTOCOMPLETE_PEAK, WEB_CONTACT_CAPS, WEB_PHRASE_CAPS } from "@terno/store/autocomplete";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
@@ -82,6 +82,14 @@ export interface BackendCoreOptions {
   iconTimeouts?: { requestMs?: number; budgetMs?: number };
 }
 
+interface AccountLifetime {
+  id: number;
+  abort: AbortController;
+  pending: Set<Promise<unknown>>;
+  removing: boolean;
+  provider?: MailProvider;
+}
+
 const COUNTS_EVERY_MS = 200;
 
 const accountKindOf = (kind: string | undefined): FieldValueOf<"accountKind"> => (kind === "imap" || kind === "gmail" ? kind : "other");
@@ -133,6 +141,7 @@ export class BackendCore {
   readonly server: RpcServer;
   readonly options: Required<Pick<BackendCoreOptions, "now" | "sliceBudgetMs" | "syncIntervalMs">> & BackendCoreOptions;
   private readonly providers = new Map<number, Promise<MailProvider | null>>();
+  private readonly lifetimes = new Map<number, AccountLifetime>();
   private readonly syncing = new Map<number, Promise<void>>();
   /** a change arrived while syncing: run another pass when the current one ends */
   private readonly syncAgain = new Set<number>();
@@ -320,7 +329,8 @@ export class BackendCore {
     if (!this.connectivity.online || this.stopped) return;
     for (const account of await this.store.accounts.list()) {
       // started here, not after the sync: a long or failing pass mustn't postpone it (one probe per watcher)
-      void this.providers.get(account.id)?.then((p) => p?.heartbeat?.(), () => {});
+      const life = this.lifetimes.get(account.id);
+      void this.providers.get(account.id)?.then((p) => { if (life && this.current(life)) p?.heartbeat?.(); }, () => {});
       // plan 25: one that needs a sign-in isn't asked every two minutes (a refused login, again and again, locks
       // accounts out); a start, a network change and signing in again still try it
       if (!this.connectivity.pending(account.id) && !needsWholeSignIn(account.syncState)) void this.syncAccount(account.id);
@@ -358,7 +368,10 @@ export class BackendCore {
     log.info("net.changed", { netReason: reason, online: true });
     this.options.onNetworkReset?.();
     this.icons.network(true);
-    for (const p of this.providers.values()) void p.then((provider) => provider?.reset?.(), () => {});
+    for (const [id, p] of this.providers) {
+      const life = this.lifetimes.get(id)!;
+      void p.then((provider) => { if (this.current(life)) provider?.reset?.(); }, () => {});
+    }
     for (const account of await this.store.accounts.list()) if (!this.unwatch.has(account.id)) this.watchAccount(account.id);
     await this.store.ops.resumeNetwork(null, this.now());
     // the worker paused while offline: whatever is due goes now
@@ -377,13 +390,14 @@ export class BackendCore {
     const offline = L("errors.network.offline");
     for (const account of await this.store.accounts.list()) {
       // a sign-in to redo stays what it is
-      if (account.syncState.status === "error" || !this.store.isOpen) continue;
-      await this.store.accounts.setSyncState(account.id, {
+      const life = this.lifetime(account.id);
+      if (account.syncState.status === "error" || !this.store.isOpen || !this.current(life)) continue;
+      await this.accountWrite(life, () => this.store.accounts.setSyncState(account.id, {
         status: "offline",
         lastError: offline.message,
         lastErrorI18n: textRef(offline) ?? null,
         connection: { state: "offline", retryAt: this.connectivity.retryAt(account.id) },
-      });
+      }));
     }
     if (this.store.isOpen) await this.emitAccounts();
   }
@@ -431,6 +445,7 @@ export class BackendCore {
     this.stopped = true;
     this.abort.abort();
     this.connectivity.stop();
+    const accountsClosed = Promise.allSettled([...this.lifetimes.values()].map((life) => this.dropAccount(life.id, { remove: life.removing })));
     if (this.syncTimer) clearInterval(this.syncTimer);
     if (this.idleTimer) clearInterval(this.idleTimer);
     if (this.countsTimer) clearTimeout(this.countsTimer);
@@ -441,10 +456,9 @@ export class BackendCore {
     this.aiAssist.stop();
     if (this.workerTimer) clearTimeout(this.workerTimer);
     for (const off of this.unwatch.values()) off();
-    await Promise.allSettled(this.syncing.values());
+    await accountsClosed;
     // let an in-flight ops batch finish writing before the database closes
     for (let i = 0; this.workerRunning && i < 200; i++) await new Promise((r) => setTimeout(r, 10));
-    await Promise.allSettled([...this.providers.values()].map(async (p) => (await p)?.close()));
     await this.ready.catch(() => {});
     // its snapshots are written before the store closes under them
     await this.autocomplete.close().catch(() => {});
@@ -621,12 +635,15 @@ export class BackendCore {
    * Ingests in slices sized to ~sliceBudgetMs and yields between slices so
    * interactive RPCs (list, search, open) interleave with big imports.
    */
-  async ingestSliced(messages: IncomingMessage[], applyFilters = true): Promise<{ inserted: number[] }> {
+  async ingestSliced(messages: IncomingMessage[], applyFilters = true, life?: AccountLifetime): Promise<{ inserted: number[] }> {
     const inserted: number[] = [];
     await this.runSliced(messages, 50, async (chunk) => {
       // one store command per slice: messages, filter claims and actions with their ops, and
       // the categorizer's decisions commit together
-      const r = await this.store.sync.ingest(chunk, { applyFilters, now: this.now(), classifier: await this.classifier() });
+      if (life) this.assertCurrent(life);
+      const classifier = await this.classifier();
+      const write = () => this.store.sync.ingest(chunk, { applyFilters, now: this.now(), classifier });
+      const r = await (life ? this.accountWrite(life, write) : write());
       inserted.push(...r.inserted);
       // RAM follows the database, never the other way round
       this.categorizer.apply(r.deltas);
@@ -762,71 +779,180 @@ export class BackendCore {
 
   // ───────────────────────────── providers & sync ─────────────────────────────
 
+  private lifetime(accountId: number): AccountLifetime {
+    let life = this.lifetimes.get(accountId);
+    if (!life) {
+      life = { id: accountId, abort: new AbortController(), pending: new Set(), removing: false };
+      this.lifetimes.set(accountId, life);
+    }
+    return life;
+  }
+
+  private current(life: AccountLifetime): boolean {
+    return !this.stopped && !life.abort.signal.aborted && this.lifetimes.get(life.id) === life;
+  }
+
+  private assertCurrent(life: AccountLifetime): void {
+    if (!this.current(life)) throw life.abort.signal.reason ?? this.abort.signal.reason ?? new DOMException("Account closed", "AbortError");
+  }
+
+  private async accountRead<T>(life: AccountLifetime, read: () => Promise<T>): Promise<T> {
+    this.assertCurrent(life);
+    const result = await read();
+    this.assertCurrent(life);
+    return result;
+  }
+
+  /** Deletion waits for admitted store commands, including their asynchronous staging/persistence. */
+  private accountWrite<T>(life: AccountLifetime, write: () => Promise<T>): Promise<T> {
+    const pending = (async () => {
+      this.assertCurrent(life);
+      return write();
+    })();
+    life.pending.add(pending);
+    void pending.then(() => life.pending.delete(pending), () => life.pending.delete(pending));
+    return pending;
+  }
+
+  private providerStore(life: AccountLifetime): ProviderStore {
+    const store = this.store.providerStore(life.id);
+    const read = <T,>(fn: () => Promise<T>) => this.accountRead(life, fn);
+    const write = <T,>(fn: () => Promise<T>) => this.accountWrite(life, fn);
+    const locations = store.locations;
+    return {
+      messageByProviderId: (id) => read(() => store.messageByProviderId(id)),
+      syncedMessages: () => read(() => store.syncedMessages()),
+      pendingAttachmentBodies: (limit) => read(() => store.pendingAttachmentBodies(limit)),
+      pendingBodies: (limit) => read(() => store.pendingBodies(limit)),
+      countPendingBodies: () => read(() => store.countPendingBodies()),
+      providerIds: (ids) => read(() => store.providerIds(ids)),
+      setting: <T,>(key: string) => read(() => store.setting<T>(key)),
+      locations: {
+        upsert: (...args) => write(() => locations.upsert(...args)),
+        remove: (...args) => write(() => locations.remove(...args)),
+        setFlags: (...args) => write(() => locations.setFlags(...args)),
+        resetMailbox: (...args) => write(() => locations.resetMailbox(...args)),
+        of: (...args) => read(() => locations.of(...args)),
+        at: (...args) => read(() => locations.at(...args)),
+        get: (...args) => read(() => locations.get(...args)),
+        count: (...args) => read(() => locations.count(...args)),
+        inMailbox: (...args) => read(() => locations.inMailbox(...args)),
+        resetCandidate: (...args) => read(() => locations.resetCandidate(...args)),
+      },
+    };
+  }
+
   provider(accountId: number): Promise<MailProvider | null> {
+    if (this.stopped) return Promise.resolve(null);
+    const life = this.lifetime(accountId);
+    if (!this.current(life)) return Promise.resolve(null);
     const existing = this.providers.get(accountId);
     if (existing) return existing;
     const created = (async () => {
       const account = await this.store.accounts.get(accountId);
+      if (!this.current(life) || !account) return null;
       const cfg = await this.store.accounts.config<Record<string, unknown>>(accountId);
-      if (!account || !cfg) return null;
-      return this.options.providers.create({
-        store: this.store.providerStore(accountId),
-        account,
-        config: cfg.config,
-        // an unreadable password or token is a sign-in to redo: ops wait for it, Settings shows the account's error with its fix
-        getSecret: (name) =>
+      if (!this.current(life) || !cfg) return null;
+      const provider = this.options.providers.create({
+        store: this.providerStore(life), account, config: cfg.config,
+        getSecret: (name) => this.accountRead(life, () =>
           this.getSecret(`account:${accountId}:${name}`).catch((error: unknown) => {
             throw error instanceof SecretUnreadableError ? new ProviderAuthError(messageOf(error)) : error;
-          }),
-        setSecret: (name, value) => this.setSecret(`account:${accountId}:${name}`, value),
-        getAppSecret: (name) => this.getSecret(name),
-        event: (code, fields) => breadcrumb("sync", code, { accountKind: accountKindOf(account.kind), ...(fields?.durationMs !== undefined && { durationMs: fields.durationMs }) }),
-        loadCursor: async <T,>() => ((await this.store.accounts.config<{ cursor?: T }>(accountId))?.config.cursor ?? null) as T | null,
-        // one store command: a read here and a write later would undo a preference saved in between
-        saveCursor: (cursor) => this.store.accounts.setCursor(accountId, cursor),
-        fetch: this.net.fetchFor("mail"),
+          })),
+        setSecret: async (name, value) => {
+          this.assertCurrent(life);
+          const blob = await this.options.cipher.encrypt(value);
+          await this.accountWrite(life, () => this.store.secrets.put(`account:${accountId}:${name}`, blob));
+        },
+        getAppSecret: (name) => this.accountRead(life, () => this.getSecret(name)),
+        event: (code, fields) => {
+          if (this.current(life)) breadcrumb("sync", code, { accountKind: accountKindOf(account.kind), ...(fields?.durationMs !== undefined && { durationMs: fields.durationMs }) });
+        },
+        loadCursor: async <T,>() => this.accountRead(life, async () => ((await this.store.accounts.config<{ cursor?: T }>(accountId))?.config.cursor ?? null) as T | null),
+        saveCursor: (cursor) => this.accountWrite(life, () => this.store.accounts.setCursor(accountId, cursor)),
+        // Providers cancel their reads on reset/close. Sends retain their own acceptance/ambiguity signal.
+        fetch: (input, init) => {
+          this.assertCurrent(life);
+          return this.net.fetchFor("mail")(input, init);
+        },
       });
+      life.provider = provider;
+      return provider;
     })();
     this.providers.set(accountId, created);
-    // a missing account is not cached: it may be created later under a fresh id only, but don't pin null
+    const forget = () => {
+      if (this.providers.get(accountId) !== created) return;
+      this.providers.delete(accountId);
+      if (this.current(life) && !this.connectivity.tracked(accountId)) this.lifetimes.delete(accountId);
+    };
     void created.then((p) => {
-      if (!p && this.providers.get(accountId) === created) this.providers.delete(accountId);
-    });
+      if (!p && this.current(life)) this.connectivity.untrack(accountId);
+      if (!p) forget();
+    }, forget);
     return created;
   }
 
   startAccount(account: Account): void {
+    if (this.stopped) return;
+    const life = this.lifetime(account.id);
+    if (!this.current(life)) return;
     this.connectivity.track(account.id);
-    // plan 25: still waiting for a sign-in from the last session: this start tries it once, no probe after that
     if (needsWholeSignIn(account.syncState)) this.connectivity.waitForSignIn(account.id, true);
     void this.provider(account.id).then((provider) => {
-      if (!provider || this.stopped) return;
+      if (!provider || !this.current(life)) return;
       this.watchAccount(account.id, provider);
       void this.syncAccount(account.id);
     });
   }
 
-  /** push for the account (IMAP IDLE): not while offline (its sockets would be dead; online brings it back) */
   private watchAccount(accountId: number, known?: MailProvider): void {
-    if (this.stopped || !this.connectivity.online || this.unwatch.has(accountId) || !this.connectivity.tracked(accountId)) return;
+    if (this.stopped) return;
+    const life = this.lifetime(accountId);
+    if (!this.current(life) || !this.connectivity.online || this.unwatch.has(accountId) || !this.connectivity.tracked(accountId)) return;
     void (known ? Promise.resolve(known) : this.provider(accountId)).then((provider) => {
-      if (!provider?.watch || this.stopped || !this.connectivity.online || this.unwatch.has(accountId) || !this.connectivity.tracked(accountId)) return;
-      this.unwatch.set(accountId, provider.watch(() => void this.syncAccount(accountId)));
+      if (!provider?.watch || !this.current(life) || !this.connectivity.online || this.unwatch.has(accountId) || !this.connectivity.tracked(accountId)) return;
+      this.unwatch.set(accountId, provider.watch(() => { if (this.current(life)) void this.syncAccount(accountId); }));
     });
   }
 
-  async dropAccount(accountId: number): Promise<void> {
-    // nothing of it fires later (a retry, a jittered sync after a network change)
+  async dropAccount(accountId: number, options: { remove?: boolean } = {}): Promise<void> {
+    const life = this.lifetime(accountId);
+    if (life.removing && !options.remove) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
+    life.removing ||= options.remove === true;
+    life.abort.abort(new DOMException("Account closed", "AbortError"));
+    if (options.remove) {
+      this.signIns.get(accountId)?.abort();
+      this.signIns.delete(accountId);
+    }
     this.connectivity.untrack(accountId);
     this.unwatch.get(accountId)?.();
     this.unwatch.delete(accountId);
-    await this.syncing.get(accountId)?.catch(() => {});
-    const provider = this.providers.get(accountId);
+    this.syncAgain.delete(accountId);
+    this.syncing.delete(accountId);
     this.providers.delete(accountId);
-    await (await provider?.catch(() => null))?.close().catch(() => {});
+    // Never wait for a stuck read, factory or close before cancelling its lifetime.
+    if (life.provider) {
+      life.provider.reset?.();
+      void life.provider.close().catch(() => {});
+      life.provider = undefined;
+    }
+    const outcomes = await Promise.allSettled(life.pending);
+    const failed = outcomes.find((r) => r.status === "rejected" && r.reason !== life.abort.signal.reason);
+    if (failed?.status === "rejected") throw failed.reason;
+  }
+
+  /** Called only after successful durable row deletion; failed deletion keeps its fence. */
+  accountRemoved(accountId: number): void {
+    const life = this.lifetimes.get(accountId);
+    if (!life?.abort.signal.aborted) return;
+    this.lifetimes.delete(accountId);
+    this.credentials.delete(accountId);
   }
 
   syncAccount(accountId: number): Promise<void> {
+    if (this.stopped) return Promise.resolve();
+    const life = this.lifetime(accountId);
+    if (!this.current(life)) return Promise.resolve();
     const running = this.syncing.get(accountId);
     if (running) {
       // Don't drop the notification (IDLE/push during a long sync): schedule one more pass.
@@ -834,44 +960,49 @@ export class BackendCore {
       return running.then(() => this.syncing.get(accountId));
     }
     const setState = async (patch: Partial<AccountSyncState>) => {
-      await this.store.accounts.setSyncState(accountId, patch);
-      await this.emitAccounts();
+      await this.accountWrite(life, async () => {
+        await this.store.accounts.setSyncState(accountId, patch);
+        await this.emitAccounts();
+      });
     };
     const run = (async () => {
       // before the provider: a provider made from older credentials never passes for the new ones (Codex code review #1)
       const credentials = this.credentialsOf(accountId);
       const provider = await this.provider(accountId);
-      if (!provider || this.stopped) return;
+      if (!provider || !this.current(life)) return;
       // an account that syncs is one whose failures are counted (dropAccount untracks it)
       this.connectivity.track(accountId);
       const sink: SyncSink = {
-        signal: this.abort.signal,
+        signal: life.abort.signal,
         ingest: async (messages) => {
-          await this.ingestSliced(messages);
+          await this.ingestSliced(messages, true, life);
         },
         // the account's own window, else the general one
         windowStart: this.now() - ((await this.store.accounts.get(accountId))?.syncWindowDays ?? (await readSettings(this.store)).syncWindowDays) * 86_400_000,
         updateFlags: async (updates) => {
           const touched = new Set<number>();
           await this.runSliced(updates, 200, async (chunk) => {
-            for (const t of (await this.store.sync.updateFlags(accountId, chunk)).touched) touched.add(t);
+            for (const t of (await this.accountWrite(life, () => this.store.sync.updateFlags(accountId, chunk))).touched) touched.add(t);
           });
           this.notifyChanged(touched);
         },
         setBody: async (messageId, text, html, attachments) => {
-          const r = await this.store.sync.setBody(messageId, text, html, { now: this.now(), classifier: await this.classifier(), attachments });
+          this.assertCurrent(life);
+          const classifier = await this.classifier();
+          const r = await this.accountWrite(life, () => this.store.sync.setBody(messageId, text, html, { now: this.now(), classifier, attachments }));
           this.categorizer.apply(r.deltas);
           this.announceAuto(r.auto);
           this.opsQueued(r.opIds);
           this.notifyChanged(r.touched, false);
         },
         removeMessages: async (ids) => {
-          this.notifyChanged((await this.store.sync.remove(ids)).touched);
+          this.notifyChanged((await this.accountWrite(life, () => this.store.sync.remove(ids))).touched);
         },
-        pendingMessageIds: () => this.store.sync.pendingMessageIds(accountId),
+        pendingMessageIds: () => this.accountRead(life, () => this.store.sync.pendingMessageIds(accountId)),
         setSyncState: (patch) => setState(patch),
       };
       const before = await this.store.accounts.get(accountId);
+      if (!this.current(life)) return;
       const accountKind = accountKindOf(before?.kind);
       // once the account is offline it says so until a pass works: a retry reads "reconnecting", never healthy
       const wasDown = Boolean(before?.syncState.connection);
@@ -880,7 +1011,9 @@ export class BackendCore {
       await setState({ status: "syncing", ...(wasDown && { connection: { state: "reconnecting", retryAt: null } }) });
       const started = performance.now();
       try {
+        this.assertCurrent(life);
         await provider.sync(sink);
+        if (!this.current(life)) return;
         breadcrumb("sync", "sync.done", { accountKind, durationMs: performance.now() - started });
         this.connectivity.succeeded(accountId);
         if (!this.connectivity.online && !startedOffline) {
@@ -890,20 +1023,22 @@ export class BackendCore {
           return;
         }
         // plan 25: a refused send (SMTP) isn't proven by a sync (IMAP): it keeps asking, and its sends keep waiting
-        const sendOnly = (await this.store.accounts.get(accountId))?.syncState.authScope === "send";
+        const sendOnly = (await this.accountRead(life, () => this.store.accounts.get(accountId)))?.syncState.authScope === "send";
         await setState({ status: "idle", lastError: null, lastErrorI18n: null, lastSyncAt: this.now(), connection: null, ...(!sendOnly && { authRequired: false, authScope: null }) });
+        if (!this.current(life)) return;
         this.connectivity.waitForSignIn(accountId, false);
         // a probe the host thought pointless worked: it was wrong about offline (reachability can be, with some VPNs)
         if (startedOffline && !this.connectivity.online) this.networkChanged(true, "other");
         // the account works: whatever waited for its sign-in, or for the network, goes now
-        if (!sendOnly) await this.resumeAuth(accountId);
-        if ((await this.store.ops.resumeNetwork(accountId, this.now())).length) this.kickWorker();
+        if (!sendOnly) await this.accountWrite(life, () => this.resumeAuth(accountId));
+        if ((await this.accountWrite(life, () => this.store.ops.resumeNetwork(accountId, this.now()))).length) this.kickWorker();
         // its mail is here: drafts an import kept for it (answering messages that just synced) go in
-        await restorePending(this, accountId).catch((error: unknown) => {
+        await this.accountWrite(life, () => restorePending(this, accountId)).catch((error: unknown) => {
           captureError(error, { code: "import.restore_failed" });
           this.log("warn", "restoring imported items failed", error instanceof Error ? error.message : error);
         });
       } catch (error) {
+        if (!this.current(life)) return;
         const message = error instanceof Error ? error.message : String(error);
         const lastErrorI18n = textRef((error as { i18n?: unknown } | null)?.i18n) ?? null;
         const retryable = error instanceof ProviderError && error.retryable;
@@ -933,9 +1068,12 @@ export class BackendCore {
         const down = wasDown || retry.failures >= 2 || !this.connectivity.online;
         await setState({ status: down ? "offline" : "syncing", lastError: message, lastErrorI18n, connection: down ? { state: "offline", retryAt: retry.at } : null });
       }
-    })().finally(() => {
+    })().catch((error: unknown) => {
+      if (error !== life.abort.signal.reason) throw error;
+    }).finally(() => {
+      if (this.syncing.get(accountId) !== run) return;
       this.syncing.delete(accountId);
-      if (this.syncAgain.delete(accountId) && !this.stopped) void this.syncAccount(accountId);
+      if (this.syncAgain.delete(accountId) && this.current(life)) void this.syncAccount(accountId);
     });
     this.syncing.set(accountId, run);
     return run;
@@ -958,11 +1096,20 @@ export class BackendCore {
    * flight no longer counts, and what waited for the sign-in goes. The caller syncs (or restarts the account).
    */
   async signedIn(accountId: number): Promise<void> {
+    if (this.stopped || this.lifetimes.get(accountId)?.removing) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
+    const previous = this.lifetime(accountId);
+    const account = await this.store.accounts.get(accountId);
+    if (this.stopped || previous.removing || this.lifetimes.get(accountId) !== previous || !account) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
+    // Explicit reconnect dropped its old provider first; token renewal can keep an active provider.
+    if (previous.abort.signal.aborted) this.lifetimes.delete(accountId);
+    const life = this.lifetime(accountId);
     this.credentials.set(accountId, this.credentialsOf(accountId) + 1);
     this.connectivity.waitForSignIn(accountId, false);
-    await this.store.accounts.setSyncState(accountId, { status: "idle", lastError: null, lastErrorI18n: null, authRequired: false, authScope: null });
-    await this.emitAccounts();
-    await this.resumeAuth(accountId);
+    await this.accountWrite(life, async () => {
+      await this.store.accounts.setSyncState(accountId, { status: "idle", lastError: null, lastErrorI18n: null, authRequired: false, authScope: null });
+      await this.emitAccounts();
+      await this.resumeAuth(accountId);
+    });
   }
 
   kickWorker(): void {
@@ -1040,6 +1187,14 @@ export class BackendCore {
     this.workerTimer = setTimeout(() => void this.runWorker(), Math.max(0, next - this.now()));
   }
 
+  private async parkClosedOp(op: OpRow): Promise<void> {
+    this.undispatched.delete(op.id);
+    await this.store.ops.awaitAuth(op.id, encodeText(L("errors.waitingForSignIn")), this.now());
+    // Reconnect may have resumed before this late park. The new lifetime releases it again.
+    const replacement = this.lifetimes.get(op.account_id);
+    if (replacement && this.current(replacement)) await this.resumeAuth(op.account_id);
+  }
+
   private async executeOp(claimed: OpRow, recovery: { record?: () => Promise<void> }): Promise<void> {
     // Re-read right before dispatch: while earlier ops of the batch ran, this one may have
     // been superseded (deleted), pruned (deleted messages) or narrowed.
@@ -1050,10 +1205,12 @@ export class BackendCore {
     if (hold()) return void (this.undispatched.delete(op.id), await this.store.ops.release(op.id, this.now()));
     // before the provider and the account: a sign-in after this point makes whatever they say stale (Codex code review #1)
     const credentials = this.credentialsOf(op.account_id);
+    const life = this.lifetime(op.account_id);
     const opening = this.provider(op.account_id);
     const provider = await opening;
     const account = await this.store.accounts.get(op.account_id);
     if (hold()) return void (this.undispatched.delete(op.id), await this.store.ops.release(op.id, this.now()));
+    if (!this.current(life)) return this.parkClosedOp(op);
     this.undispatched.delete(op.id);
     // plan 25: the account waits for a sign-in: so does the op, without knocking with the refused credentials
     if (account && heldBySignIn(account.syncState, op.kind)) {
@@ -1079,6 +1236,7 @@ export class BackendCore {
         if (sending && !(error instanceof ProviderError)) throw new ProviderError(L("attachments.unavailable"), false);
         throw error;
       }
+      if (!this.current(life)) return this.parkClosedOp(op);
       if (sending && (hold() || this.providers.get(op.account_id) !== opening || credentials !== this.credentialsOf(op.account_id))) {
         await this.store.ops.release(op.id, this.now());
         return;
@@ -1110,7 +1268,7 @@ export class BackendCore {
           this.kickWorker();
         } else if (error instanceof ProviderAuthError) {
           await this.store.ops.awaitAuth(op.id, message, this.now());
-          if (!(await this.parkedAcrossSignIn(op.account_id, credentials))) await this.needsSignIn(op.account_id, op.kind, error, credentials);
+          if (this.current(life) && !(await this.parkedAcrossSignIn(op.account_id, credentials))) await this.needsSignIn(op.account_id, op.kind, error, credentials, life);
         } else if (error instanceof ProviderError && error.ambiguous) await this.store.ops.markUnknown(op.id, message, this.now());
         // the server couldn't be reached: wait for the network (plan 20); an outage gives the attempt back
         else if (error instanceof ProviderError && error.network) state = await this.store.ops.fail(op.id, message, true, this.now(), { network: true, keepAttempt: this.connectivity.inOutage(op.account_id) });
@@ -1129,10 +1287,10 @@ export class BackendCore {
    * Plan 25: an action was refused for a sign-in (an SMTP login, an expired grant): the account says so now, even
    * if no sync has run into it yet. Once: an account that already says so isn't written or announced again.
    */
-  private async needsSignIn(accountId: number, opKind: string, error: ProviderAuthError, credentials: number): Promise<void> {
+  private async needsSignIn(accountId: number, opKind: string, error: ProviderAuthError, credentials: number, life: AccountLifetime): Promise<void> {
     const account = await this.store.accounts.get(accountId);
     // a sign-in landed meanwhile: this refusal was of the credentials it replaced
-    if (!account || !this.store.isOpen || credentials !== this.credentialsOf(accountId)) return;
+    if (!account || !this.store.isOpen || !this.current(life) || credentials !== this.credentialsOf(accountId)) return;
     // an IMAP account's send goes through SMTP: refused there, it's only its sending (Codex review #2)
     const scope = account.kind === "imap" && opKind === "send" ? "send" : null;
     // already asking (as a whole, or for this): nothing new to say
@@ -1140,7 +1298,7 @@ export class BackendCore {
     const lastErrorI18n = textRef((error as { i18n?: unknown }).i18n) ?? null;
     if (scope === null) this.connectivity.waitForSignIn(accountId, true);
     // a refused send leaves the account's sync as it was (it works)
-    await this.store.accounts.setSyncState(accountId, { ...(scope === null && { status: "error" as const, connection: null }), lastError: error.message, lastErrorI18n, authRequired: true, authScope: scope });
+    await this.accountWrite(life, () => this.store.accounts.setSyncState(accountId, { ...(scope === null && { status: "error" as const, connection: null }), lastError: error.message, lastErrorI18n, authRequired: true, authScope: scope }));
     await this.emitAccounts();
   }
 

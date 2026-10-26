@@ -471,6 +471,9 @@ importers:
         specifier: ^8.22.0
         version: 8.22.0
     devDependencies:
+      '@terno/idb':
+        specifier: workspace:*
+        version: link:../idb
       '@types/node':
         specifier: 'catalog:'
         version: 24.19.2
@@ -480,6 +483,9 @@ importers:
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.2
+      fake-indexeddb:
+        specifier: 6.2.6
+        version: 6.2.6
       imapflow:
         specifier: ^2.8.0
         version: 2.8.0

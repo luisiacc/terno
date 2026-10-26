@@ -1,6 +1,6 @@
 # Plan 31: account sync lifecycle
 
-Status: investigation and regression tests; X06 / S16 / S28 of plan 26. Outlook remains deferred.
+Status: implemented; parent handler integration and independent review pending; X06 / S16 / S28 of plan 26. Outlook remains deferred.
 
 ## Request (verbatim)
 
@@ -20,7 +20,7 @@ Keep a closed lifetime only while removal/reconnect is underway. The removal han
 
 Fence provider construction before and after asynchronous account/config reads. Fence provider context reads/writes, and all mutable location-store methods. Cancel safe reads using provider reset/close and the account sink signal; preserve the provider's send ambiguity/acceptance contract. Never make an accepted or ambiguous send eligible again (definitive pre-acceptance refusal keeps existing safe retries), or bind the read abort signal indiscriminately to fetch used for sends. Operations awaiting provider creation must recheck lifetime before dispatch; old auth refusals cannot affect a new account generation. Unrelated accounts remain active.
 
-Implementation should reuse sliced ingestion rather than bypass filters/model updates. Add a cancellable guard at each slice and immediately before durable mutation. Durable command ownership must cover asynchronous classifier/encryption work so deletion cannot race a write admitted earlier. Read and mutation checks must never swallow valid active-store errors.
+Implementation should reuse sliced ingestion rather than bypass filters/model updates. Add a cancellable guard at each slice and immediately before durable mutation. Recheck after asynchronous classifier/encryption preparation; durable command ownership covers asynchronous staging/persistence after the store call is admitted, so deletion cannot race that command. Read and mutation checks must never swallow valid active-store errors.
 
 ## Tests
 
@@ -38,4 +38,12 @@ Read-only Codex critique completed (12 concrete points; full transcript in the p
 
 ## Evidence and review
 
-Five clean failing tests reproduced before core edits with `pnpm exec vitest run --project unit packages/backend/src/account-lifecycle.test.ts`: close count 0 while blocked; stale ingest invoked after removal; reconnect could not finish before old network; delayed provider construction blocked removal; deletion raced an admitted ingestion and caused a foreign-key failure. The initial harness used a nonexistent accounts.list RPC; corrected to app.bootstrap.accounts. Backend typecheck then passed. Red transcript: `/tmp/terno-provider-hardening.x0emTS/account-lifecycle-red.txt`. Implementation and parent-assigned independent code review pending.
+Five clean failing tests reproduced before core edits with `pnpm exec vitest run --project unit packages/backend/src/account-lifecycle.test.ts`: close count 0 while blocked; stale ingest invoked after removal; reconnect could not finish before old network; delayed provider construction blocked removal; deletion raced an admitted ingestion and caused a foreign-key failure. The initial harness used a nonexistent accounts.list RPC; corrected to app.bootstrap.accounts. Backend typecheck then passed. Red transcript: `/tmp/terno-provider-hardening.x0emTS/account-lifecycle-red.txt`. Implemented lifetime identity/abort ownership, per-command durable draining, all provider-store/location and sink/context fences, old watch/finalizer guards, read reset/close before waiting, and fresh generation after explicit reconnect. The existing active-provider signedIn token-renewal contract remains intact; the browser explicit-reconnect handler must drop first (parent integration). Removal has an explicit `{ remove: true }` mode that cancels sign-in and prevents reopening until durable deletion. `accountRemoved(id)` releases the fence and credential counter only after successful deletion.
+
+Expanded baseline qualification: eight red lifecycle cases plus one already-correct accepted-send case; SQL and IndexedDB share the real RPC/scripted-provider harness. A newly discovered closed-account worker loop was separately reproduced in both adapters: releasing an undispatched op let the next claim reclaim it repeatedly. Closed-lifetime operations now park through the existing awaitingAuth/resumeAuth state and incur no timer/poll. Late accepted sends retain durable outcome recording and never become retries.
+
+Current targeted validation: 84 passing tests across account-lifecycle (24), backend operations, network and re-sign-in suites. The dedicated browser-store test has its own DOM-enabled `tsconfig.lifecycle.json`; the existing Node config excludes that one test, and package typecheck runs both. Dev dependencies are exactly @terno/idb workspace:* and fake-indexeddb 6.2.6, with six importer lines added to the lock. Backend typecheck and owned-file lint were rerun; their final result is recorded with the implementation commit. A transient shared attachment.retry interface error was reported to its owner and not patched here.
+
+Parent integration required (no handler/identity changes in this slice): accounts.remove calls `await b.dropAccount(id, { remove: true })`, then calls `b.accountRemoved(id)` immediately after successful `await store.accounts.remove(id)`. Browser existing-account connectGmailToken calls `await b.dropAccount(existing.id)` immediately before tokens.set. Desktop identity already drops before saving its verified credential and retains the c81c7f2 stamp/supersession fences.
+
+No UI changes or screenshots apply. No new timers, scans or mailbox queries are introduced; lifetime checks and pending-command accounting are O(1). Parent owns full release/performance gates and a distinct Codex review of exact commits. Neither is claimed complete by this implementation handoff.
