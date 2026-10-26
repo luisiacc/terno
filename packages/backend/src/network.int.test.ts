@@ -322,6 +322,42 @@ describe("plan 20: the IMAP provider's own connections", () => {
     expect(proxy.accepted).toBe(2);
   });
 
+  it("Codex review: a reset while IDLE is still connecting abandons that session at once; push works right after", async () => {
+    const imap = await startImap();
+    const proxy = await startNetProxy(imap.port);
+    cleanups.push(() => proxy.close());
+    // the old network: connections open, nothing ever answers (the greeting never comes)
+    await proxy.blackholeAll();
+    const p = provider(proxy.port, { timeouts: { connectMs: 10_000 } });
+    let changes = 0;
+    const stop = p.watch!(() => void changes++);
+    cleanups.push(stop);
+    await expect.poll(() => proxy.accepted).toBe(1);
+    await new Promise((r) => setTimeout(r, 200));
+    await proxy.pass();
+    const started = Date.now();
+    p.reset!();
+    // the stuck attempt's socket is gone and a new session listens
+    await expect.poll(() => proxy.accepted, { timeout: 2000 }).toBe(2);
+    await expect.poll(() => proxy.open, { timeout: 2000 }).toBe(1);
+    await new Promise((r) => setTimeout(r, 300));
+    imap.server.control.addMessage("INBOX", { raw: raw("pushed after a reset mid-connect") });
+    await expect.poll(() => changes, { timeout: 2000 }).toBeGreaterThan(0);
+    expect(Date.now() - started).toBeLessThan(3000);
+  });
+
+  it("Codex review: stopping push while it is still connecting closes that socket at once", async () => {
+    const imap = await startImap();
+    const proxy = await startNetProxy(imap.port);
+    cleanups.push(() => proxy.close());
+    await proxy.blackholeAll();
+    const p = provider(proxy.port, { timeouts: { connectMs: 10_000 } });
+    const stop = p.watch!(() => {});
+    await expect.poll(() => proxy.open).toBe(1);
+    stop();
+    await expect.poll(() => proxy.open, { timeout: 1000 }).toBe(0);
+  });
+
   it("a reset closes the cached session at once (no LOGOUT on a dead socket) and the next call opens a new one", async () => {
     const proxy = await behindProxy();
     const p = provider(proxy.port);

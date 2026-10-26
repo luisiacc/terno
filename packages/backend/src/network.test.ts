@@ -14,6 +14,8 @@ import { Backend, plaintextCipher } from "./backend";
 interface Scripted extends MailProvider {
   up: boolean;
   failWith: (() => Error) | null;
+  /** while set, a sync waits for it */
+  gate: Promise<void> | null;
   syncs: number;
   resets: number;
   heartbeats: number;
@@ -33,6 +35,7 @@ function setup(o: { syncIntervalMs?: number; accounts?: number } = {}) {
       const p: Scripted = {
         up: true,
         failWith: null,
+        gate: null,
         syncs: 0,
         resets: 0,
         heartbeats: 0,
@@ -41,6 +44,7 @@ function setup(o: { syncIntervalMs?: number; accounts?: number } = {}) {
         async verify() {},
         async sync() {
           p.syncs++;
+          if (p.gate) await p.gate;
           if (p.failWith) throw p.failWith();
           if (!p.up) throw ProviderError.network("IMAP: connect ECONNREFUSED");
         },
@@ -210,4 +214,23 @@ describe("plan 20: the backend and the network", () => {
     expect(p.syncs).toBe(1);
     expect(p.watching).toBe(0);
   });
+  it("Codex review: a pass that works after the host went offline keeps the account's probe (it would never be tried again)", async () => {
+    const t = setup({ accounts: 1 });
+    await t.backend.start();
+    const [a] = t.ids as [number];
+    await expect.poll(() => t.state(a).status).toBe("idle");
+    const p = t.providers.get(a)!;
+    let release!: () => void;
+    p.gate = new Promise((r) => (release = r));
+    const pass = t.backend.syncAccount(a);
+    await expect.poll(() => p.syncs).toBe(2);
+    t.backend.networkChanged(false, "offline");
+    p.gate = null;
+    release();
+    await pass;
+    expect(t.state(a)).toMatchObject({ status: "offline", connection: { state: "offline" } });
+    expect(t.state(a).connection!.retryAt).toBeGreaterThan(Date.now());
+    expect(t.backend.connectivity.pending(a)).toBe(true);
+  });
 });
+

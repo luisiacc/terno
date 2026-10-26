@@ -825,8 +825,9 @@ export class BackendCore {
         breadcrumb("sync", "sync.done", { accountKind, durationMs: performance.now() - started });
         this.connectivity.succeeded(accountId);
         if (!this.connectivity.online && !startedOffline) {
-          // the host went offline while this pass ran: what it fetched is in, the account says offline
-          await setState({ status: "offline", lastSyncAt: this.now(), connection: { state: "offline", retryAt: null } });
+          // the host went offline while this pass ran: what it fetched is in, the account says offline,
+          // and it keeps its probe (succeeded() just cleared it; nothing else would try it again)
+          await setState({ status: "offline", lastSyncAt: this.now(), connection: { state: "offline", retryAt: this.connectivity.probeLater(accountId) } });
           return;
         }
         await setState({ status: "idle", lastError: null, lastErrorI18n: null, lastSyncAt: this.now(), connection: null, authRequired: false });

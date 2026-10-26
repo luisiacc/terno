@@ -3,6 +3,7 @@
  * reset()), a send is never cut short by a reset and never retried once it may have left.
  */
 import { describe, expect, it } from "vitest";
+import { createGmailProvider } from "./gmail";
 import { createGmailApiProvider } from "./gmail-api";
 import { ProviderAuthError, ProviderError, type MailProvider, type ProviderContext } from "./types";
 
@@ -124,6 +125,31 @@ describe("Gmail requests and the network (plan 20)", () => {
     const e403 = await provider(forbidden).verify().catch((e: unknown) => e);
     expect(e403).toBeInstanceOf(ProviderError);
     expect(e403).not.toBeInstanceOf(ProviderAuthError);
+  });
+
+  it("Codex review: a token refresh whose body is cut short is the network (the op waits), never a refusal", async () => {
+    const cut = (async (input: string) => {
+      if (!String(input).includes("token")) return json({ emailAddress: "me@gmail.com" });
+      // Google answered 200, then the socket died mid-body (what undici reports)
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"access_token":'));
+          controller.error(new TypeError("terminated", { cause: Object.assign(new Error("other side closed"), { code: "UND_ERR_SOCKET" }) }));
+        },
+      });
+      return new Response(body, { status: 200 });
+    }) as typeof globalThis.fetch;
+    const ctx = {
+      account: { id: 1, email: "me@gmail.com" },
+      config: {},
+      fetch: cut,
+      getSecret: async () => "refresh-token",
+      getAppSecret: async () => null,
+      store: { setting: async () => ({ gmailClientId: "client" }) },
+    } as unknown as ProviderContext;
+    const error = await createGmailProvider(ctx).verify().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ProviderError);
+    expect(error).toMatchObject({ network: true, retryable: true });
   });
 
   it("a read leaves no timer behind once it's answered", async () => {

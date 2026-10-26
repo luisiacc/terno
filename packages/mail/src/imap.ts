@@ -647,14 +647,19 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           void connect();
         }, wait);
       };
+      /** the session still connecting (login, SELECT): a reset or a stop closes it at once (Codex review) */
+      let pending: ImapFlow | null = null;
       const connect = async (): Promise<void> => {
         if (stopped || connecting) return;
         connecting = true;
         again = false;
         const gen = generation;
+        /** a reset or a stop came while connecting: that session may be on the old route */
+        const stale = () => stopped || again || gen !== generation;
         let c: ImapFlow | null = null;
         try {
           c = await makeClient(true);
+          pending = c;
           const session = c;
           c.on("error", () => {});
           c.on("exists", changed);
@@ -667,14 +672,12 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             markLost();
             schedule();
           });
+          // the password lookup took a while: never start on the network that just went away
+          if (stale()) throw new Error("stale");
           await c.connect();
           await c.mailboxOpen("INBOX");
-          if (stopped || again || gen !== generation) {
-            c.close();
-            connecting = false;
-            if (!stopped) return void connect();
-            return;
-          }
+          if (stale()) throw new Error("stale");
+          pending = null;
           idle = c;
           heardAt = Date.now();
           delay = timeouts.reconnectMs;
@@ -688,9 +691,12 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             onChange();
           }
         } catch {
+          if (pending === c) pending = null;
           c?.close();
           connecting = false;
           if (stopped) return;
+          // a reset abandoned this attempt: the next one goes now, not after a backoff
+          if (again || gen !== generation) return void connect();
           markLost();
           schedule();
         }
@@ -708,8 +714,11 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             markLost();
             c.close();
           }
-          if (connecting) again = true;
-          else void connect();
+          if (connecting) {
+            // the attempt in flight fails now (its socket closed) and connects again at once
+            again = true;
+            pending?.close();
+          } else void connect();
         },
         /** the heartbeat (the core's tick): a session quiet for a while must answer a NOOP in time, or it is dead */
         ping() {
@@ -747,6 +756,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const c = idle;
         idle = null;
         if (c) void quit(c);
+        // one still connecting goes too (it would otherwise linger until its timeout)
+        pending?.close();
+        pending = null;
       };
     },
 

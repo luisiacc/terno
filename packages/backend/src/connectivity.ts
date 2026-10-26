@@ -157,6 +157,17 @@ export class Connectivity {
     a.failures = 0;
   }
 
+  /**
+   * Offline, this account's next probe is at the cap (a pass that worked just before the host went
+   * offline mustn't leave it without one: nothing else would ever try it again). When it is.
+   */
+  probeLater(accountId: number): number | null {
+    const a = this.accounts.get(accountId);
+    if (!a || this.stopped) return null;
+    this.schedule(accountId, a, this.offlineRetryMs);
+    return a.at;
+  }
+
   /** The host's word on the network. Offline applies at once; online and changes settle first. */
   network(online: boolean, reason: NetReason): void {
     if (this.stopped) return;

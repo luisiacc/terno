@@ -466,6 +466,21 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect((await store.ops.get(trash))!.state).toBe("queued");
       });
 
+      it("plan 20 (Codex review): scheduling with thousands of location ops queued on one thread stays fast", async () => {
+        const { store, threads, act } = await mailbox(1);
+        const first = (await act(threads[0]!, "archive"))!;
+        await store.ops.claimReady(0, 20);
+        await store.ops.fail(first, "ECONNRESET", true, 0, { network: true, keepAttempt: true });
+        // the user keeps moving the same thread while its first move waits for the network
+        for (let i = 0; i < 3000; i++) await act(threads[0]!, i % 2 ? "archive" : "moveToInbox", i + 1);
+        const started = performance.now();
+        expect(await store.ops.nextAttemptAt()).toBeNull();
+        expect(await store.ops.claimReady(10_000, 25)).toEqual([]);
+        const took = performance.now() - started;
+        // one pass over the targets, not one per op (3,000 ops cost 0.3 s that way, 10,000 cost 3 s)
+        expect(took).toBeLessThan(100);
+      });
+
       it("non-retryable failures fail immediately", async () => {
         const { store, threads, act } = await mailbox(1);
         const id = (await act(threads[0]!, "archive"))!;

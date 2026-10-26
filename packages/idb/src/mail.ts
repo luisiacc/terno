@@ -1087,29 +1087,37 @@ export function enqueueOp(c: Ctx, op: { accountId: number; kind: string; target:
 
 const opRow = (r: R): OpRow => ({ id: r.id, seq: r.seq, account_id: r.account_id, kind: r.kind, target_json: r.target_json, payload_json: r.payload_json, state: r.state, attempts: r.attempts, next_attempt_at: r.next_attempt_at, last_error: r.last_error, created_at: r.created_at });
 
-/** a location op waits for older unsettled location ops on the same messages */
-function blockedOp(c: Ctx, o: R): boolean {
+/**
+ * A location op waits for older unsettled location ops on the same messages. Computed once per
+ * pass (the oldest unsettled location op of each message): asking per op walked every op on a
+ * shared message for each of them, quadratic with a long queue on one thread (Codex review).
+ */
+function locationBlockers(c: Ctx): (o: R) => boolean {
   const ops = T(c, "ops");
   const targets = T(c, "op_targets");
-  return targets.by("fk_op_id", o.id).some(
-    (mine) =>
-      mine.grp === "location" &&
-      targets.by("message", mine.message_id).some((other) => {
-        if (other.grp !== "location") return false;
-        const o2 = ops.get(other.op_id);
-        return !!o2 && o2.seq < o.seq && (o2.state === "queued" || o2.state === "running");
-      }),
-  );
+  const oldest = new Map<number, number>();
+  for (const state of ["queued", "running"] as const) {
+    for (const op of ops.by("state", state)) {
+      for (const t of targets.by("fk_op_id", op.id)) {
+        if (t.grp !== "location") continue;
+        const seen = oldest.get(t.message_id as number);
+        if (seen === undefined || op.seq < seen) oldest.set(t.message_id as number, op.seq as number);
+      }
+    }
+  }
+  return (o) => targets.by("fk_op_id", o.id).some((mine) => mine.grp === "location" && (oldest.get(mine.message_id as number) ?? Infinity) < o.seq);
 }
 
 export function claimReadyOps(c: Ctx, now: number, limit: number): OpRow[] {
   const ops = T(c, "ops");
   return c.db.tx(() => {
     const ready = ops.by("state", "queued").filter((o) => o.next_attempt_at <= now).sort((x, y) => x.seq - y.seq);
+    // claiming moves queued → running: both count as blockers, so the map stays right for the pass
+    const blocked = locationBlockers(c);
     const out: OpRow[] = [];
     for (const o of ready) {
       if (out.length >= limit) break;
-      if (blockedOp(c, o)) continue;
+      if (blocked(o)) continue;
       const running = ops.update(o, { state: "running", attempts: o.attempts + 1, updated_at: now });
       out.push(opRow(running));
     }
@@ -1119,9 +1127,10 @@ export function claimReadyOps(c: Ctx, now: number, limit: number): OpRow[] {
 
 /** When the next op can be claimed (see the SQL store's nextOpAttemptAt): blocked and parked ones aren't due. */
 export function nextOpAttemptAt(c: Ctx): number | null {
+  const blocked = locationBlockers(c);
   let t: number | null = null;
   for (const o of T(c, "ops").by("state", "queued")) {
-    if (o.next_attempt_at >= AWAITING_NETWORK || (t !== null && o.next_attempt_at >= t) || blockedOp(c, o)) continue;
+    if (o.next_attempt_at >= AWAITING_NETWORK || (t !== null && o.next_attempt_at >= t) || blocked(o)) continue;
     t = o.next_attempt_at;
   }
   return t;
