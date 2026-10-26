@@ -71,10 +71,15 @@ export function PaneHandle({ pane }: { pane: Pane }) {
   useEffect(() => () => end(false), []);
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0 || drag.current) return;
+    // one pointer drives a drag: a second finger (not primary) neither starts nor ends one
+    if (e.button !== 0 || !e.isPrimary || drag.current) return;
     e.preventDefault();
     const el = e.currentTarget;
-    el.setPointerCapture(e.pointerId);
+    try {
+      el.setPointerCapture(e.pointerId);
+    } catch {
+      /* the pointer is already gone: the drag ends with its up, or Esc */
+    }
     // Esc puts the width back and does nothing else (captured on the window, before any shortcut sees it);
     // leaving the window mid-drag puts it back too
     const onKey = (k: KeyboardEvent) => {
@@ -143,9 +148,9 @@ export function PaneHandle({ pane }: { pane: Pane }) {
       data-testid={`pane-handle-${pane}`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
-      onPointerUp={() => end(true)}
-      onPointerCancel={() => end(true)}
-      onLostPointerCapture={() => end(true)}
+      onPointerUp={(e) => e.pointerId === drag.current?.pointer && end(true)}
+      onPointerCancel={(e) => e.pointerId === drag.current?.pointer && end(true)}
+      onLostPointerCapture={(e) => e.pointerId === drag.current?.pointer && end(true)}
       onDoubleClick={() => commitWidth(pane, null)}
       onKeyDown={onKeyDown}
       className={cn("group/handle no-drag absolute inset-y-0 z-20 w-2 cursor-col-resize touch-none outline-none", pane === "sidebar" ? "-left-1" : "-right-1")}

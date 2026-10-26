@@ -308,6 +308,27 @@ test.describe("Part B: resizable panes", { tag: "@design" }, () => {
     expect(await width(list(page))).toBeCloseTo(640, 0);
   });
 
+  test("one pointer drives a drag: a second finger touching and lifting on the handle neither ends nor restarts it (Codex review)", async ({ app: page }) => {
+    const l0 = Math.round(await width(list(page)));
+    const r = await page.evaluate(() => {
+      const h = document.querySelector<HTMLElement>("[data-testid=pane-handle-list]")!;
+      const b = h.getBoundingClientRect();
+      const fire = (type: string, pointerId: number, isPrimary: boolean, dx: number) =>
+        h.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId, isPrimary, pointerType: "touch", button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1, clientX: b.x + b.width / 2 + dx, clientY: b.y + 300 }));
+      fire("pointerdown", 11, true, 0);
+      fire("pointermove", 11, true, 40);
+      fire("pointerdown", 12, false, 0);
+      fire("pointerup", 12, false, 0);
+      const still = h.hasAttribute("data-dragging");
+      fire("pointermove", 11, true, 80);
+      fire("pointerup", 11, true, 80);
+      return { still, after: h.hasAttribute("data-dragging"), stored: localStorage.getItem("terno:panes") };
+    });
+    expect(r.still, "the second finger didn't end the drag").toBe(true);
+    expect(r.after).toBe(false);
+    expect(JSON.parse(r.stored!)).toMatchObject({ list: l0 + 80 });
+  });
+
   test("the handles are hairlines, quiet at rest, never a window drag area (desktop's title band)", async ({ app: page }) => {
     const h = handle(page, "sidebar");
     await expect(h).toHaveCSS("cursor", "col-resize");
