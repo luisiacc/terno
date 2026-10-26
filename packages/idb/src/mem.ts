@@ -75,6 +75,18 @@ export class Table<R extends Row = Row> {
     return this.rows.has(keyOf(values));
   }
 
+  /** the keys an index holds for `values`, live (rows added later come after; deleted ones are skipped): a walk that spans slices */
+  keysBy(index: string, ...values: unknown[]): IterableIterator<Key> {
+    if (!this.indexes.has(index)) throw new Error(`${this.spec.name} has no index ${index}`);
+    return (this.indexes.get(index)!.map.get(keyOf(values)) ?? new Set<Key>()).values();
+  }
+
+  /** the set of keys an index holds for `values` right now (its identity changes when the index lets it go empty) */
+  bucket(index: string, ...values: unknown[]): ReadonlySet<Key> | undefined {
+    if (!this.indexes.has(index)) throw new Error(`${this.spec.name} has no index ${index}`);
+    return this.indexes.get(index)!.map.get(keyOf(values));
+  }
+
   /** rows whose index columns equal `values` */
   by(index: string, ...values: unknown[]): R[] {
     const keys = this.indexes.get(index)?.map.get(keyOf(values));
@@ -83,6 +95,13 @@ export class Table<R extends Row = Row> {
     const out: R[] = [];
     for (const k of keys) out.push(this.rows.get(k)!);
     return out;
+  }
+
+  /** the distinct values a one-column index holds (a prefix walk where SQL would seek a range) */
+  indexValues(index: string): IterableIterator<Key> {
+    const ix = this.indexes.get(index);
+    if (!ix) throw new Error(`${this.spec.name} has no index ${index}`);
+    return ix.map.keys();
   }
 
   /** how many rows an index holds for `values` */

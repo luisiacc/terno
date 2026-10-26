@@ -31,7 +31,8 @@ describe("mock dataset", () => {
       [{ threads: 500, seed: 5, accounts: 8, bodyScale: 3 }, "3c522abe"],
     ] as const) {
       const data = generateDataset(options);
-      const legacy = { ...data, messages: data.messages.map(({ tags: _t, family: _f, ...m }) => m) };
+      // plan 17's bulk flag is derived from what the generator already chose (no draw from the PRNG)
+      const legacy = { ...data, messages: data.messages.map(({ tags: _t, family: _f, bulk: _b, ...m }) => m) };
       expect(fnv(JSON.stringify(legacy))).toBe(expected);
     }
   });

@@ -14,6 +14,7 @@ import { exposeForTests, regressions } from "~/lib/render-probe";
 import { captureUi } from "~/lib/diag";
 import { startDiag } from "~/state/diag";
 import { setBridgeForTests, startUpdates } from "~/lib/updates";
+import { supportedFilters } from "~/lib/unread-filter";
 
 export async function boot(): Promise<void> {
   startDiag();
@@ -21,7 +22,7 @@ export async function boot(): Promise<void> {
     await connectBackend();
     const b = await client.call("app.bootstrap", {});
     applyAppearance(reconcileSettings(b.settings));
-    setApp({ ready: true, accounts: b.accounts, categories: b.categories, counts: b.counts, settings: b.settings, owner: b.owner, demo: b.demo, version: b.version, host: b.host });
+    setApp({ ready: true, accounts: b.accounts, categories: b.categories, counts: b.counts, settings: b.settings, owner: b.owner, demo: b.demo, version: b.version, host: b.host, supportedFilters: supportedFilters(b.filters) });
     installAppearanceListeners();
     // every stored draft comes back: replies onto their conversations, new ones to the drafts strip
     void loadDrafts().catch((error) => console.warn("[drafts] could not load", error));

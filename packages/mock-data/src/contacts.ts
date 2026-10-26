@@ -119,6 +119,7 @@ export function* contactsPages(o: ContactsDatasetOptions, pageSize = 500, people
       bodyHtml: null,
       bodyState: "full",
       listId: null,
+      bulk: false,
       isRead: true,
       isStarred: false,
       inInbox: !sent,

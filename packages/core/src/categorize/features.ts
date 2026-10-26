@@ -175,7 +175,7 @@ for (const [phrase, intent] of [
 }
 const WEEKDAY = /@ (lun|mar|mie|jue|vie|sab|dom|mon|tue|wed|thu|fri)\b/;
 
-const BULK_LOCAL = /^(no-?reply|noreply|do-?not-?reply|notifications?|notificaciones|alertas?|automated|mailer|newsletter|boletin|news|info|updates|marketing|promo(ciones)?)\b/;
+export const BULK_LOCAL = /^(no-?reply|noreply|do-?not-?reply|notifications?|notificaciones|alertas?|automated|mailer|newsletter|boletin|news|info|updates|marketing|promo(ciones)?)\b/;
 
 function normalizeName(name: string): string {
   const folded = foldLatin(name);

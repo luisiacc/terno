@@ -316,3 +316,97 @@ it("the quick filters (plan 15) page from their own orders: with attachments and
   await store.threads.act({ threadIds: ids, action: "unstar", signal: null, now: NOW });
   await store.debug.verify();
 }, 900_000);
+
+it("People and Waiting (plan 17) page from their own orders: every page, counts and walks within a frame; dense, empty, every waiting date expired but twenty", async () => {
+  const walkAll = async (p: { view: "inbox" | "archive" | "all" | "trash"; accountId?: number; filter: "people" | "waiting" }, label: string, dense = false) => {
+    const samples: Sample[] = [];
+    let cursor: { lastDate: number; id: number } | undefined;
+    let n = 0;
+    do {
+      const r = await sampleAsync(() => store.threads.list({ ...p, now: NOW, limit: 100, cursor }));
+      samples.push(r);
+      n += r.result.items.length;
+      cursor = r.result.nextCursor ?? undefined;
+    } while (cursor);
+    const ms = settle(samples).ms;
+    // after a bulk change to every row the first page pays one re-sort of the filter's order (plan 15's dense starred case)
+    expect(ms[0]!, `${label}: first page`).toBeLessThanOrEqual(2 * FRAME * MULT);
+    const worst = Math.max(0, ...ms.slice(1));
+    expect(worst, `${label}: one page`).toBeLessThanOrEqual(FRAME * MULT);
+    const count = await warm(() => store.threads.scopeCount({ ...p, now: NOW, limit: 100_001 }));
+    expect(count.result, `${label}: count`).toBe(n);
+    // a mailbox where nearly every thread matches counts them all (plan 15's dense starred case: within a frame)
+    expect(count.ms, `${label}: count`).toBeLessThanOrEqual((dense ? FRAME : 3) * MULT);
+    const walk = await warm(async () => {
+      let walked = 0;
+      for (let after = 0; ; ) {
+        const page = await store.threads.scopeIds({ ...p, now: NOW, after, limit: 500 });
+        walked += page.length;
+        if (page.length < 500) return walked;
+        after = page[page.length - 1]!;
+      }
+    });
+    expect(walk.result, `${label}: walk`).toBe(n);
+    expect(walk.ms, `${label}: whole walk`).toBeLessThanOrEqual(FRAME * MULT);
+    return { n, worst };
+  };
+  const all = (await store.debug.snapshot()).threads;
+  for (const filter of ["people", "waiting"] as const) {
+    const cold = await timed(() => store.threads.list({ view: "inbox", filter, now: NOW, limit: 100 }));
+    expect(cold.ms, `${filter}: cold first page`).toBeLessThanOrEqual(FRAME * MULT);
+    for (const [label, p] of [
+      ["inbox", { view: "inbox" as const }],
+      ["archive", { view: "archive" as const }],
+      ["trash", { view: "trash" as const }],
+      ["account", { view: "all" as const, accountId: all[0]!.accountId }],
+    ] as const) {
+      const r = await walkAll({ ...p, filter }, `${filter} ${label}`);
+      console.log(`${filter} ${label}: ${r.n} threads, slowest page ${r.worst.toFixed(2)} ms`);
+    }
+  }
+  const counts = await warm(() => store.threads.counts(NOW));
+  expect(counts.result.inboxWaiting).toEqual(expect.any(Number));
+  // every count of the sidebar, the waiting one with them: within a third of a frame (Codex review 1, #9)
+  expect(counts.ms, "counts with waiting").toBeLessThanOrEqual(5 * MULT);
+  // a search narrowed to People or Waiting: the instant index keeps those threads before paging
+  // (on a freshly built index: after the earlier tests' bulk changes the running one reported 213 MiB, over the web's
+  // 96 MiB cap, and turned itself off; a fresh build of the same mailbox stays under it)
+  await store.close();
+  store = await IdbMailStore.open({ name, factory: indexedDB, platform, instantSearch: { sliceMs: 4 } });
+  await store.whenLoaded();
+  expect(await store.instant!.settled(900_000)).toBe(true);
+  for (const threadFilter of ["people", "waiting"] as const) {
+    for (const query of ["hola", "factura", "in:all"]) {
+      const first = await timed(() => store.threads.searchText({ query, threadFilter, limit: 100, now: NOW }));
+      expect(first.result.strategy, `${threadFilter} "${query}"`).not.toBe("scan");
+      expect(first.result.items.every((t) => (threadFilter === "people" ? t.person : t.waitingSince != null))).toBe(true);
+      expect(first.ms, `search "${query}" from ${threadFilter}: first page`).toBeLessThanOrEqual(25 * MULT);
+      if (first.result.nextCursor) {
+        const next = await timed(() => store.threads.searchText({ query, threadFilter, limit: 100, now: NOW, cursor: first.result.nextCursor! }));
+        expect(next.ms, `search "${query}" from ${threadFilter}: next page`).toBeLessThanOrEqual(25 * MULT);
+      }
+    }
+  }
+  // the rows themselves, as a bulk change would leave them (the orders follow row changes)
+  const db = (store as unknown as { db: { tx(fn: () => void): void; takeCommit(): unknown; confirm(): void; table(n: string): { all(): Iterable<Record<string, unknown>>; update(r: Record<string, unknown>, p: Record<string, unknown>): void } } }).db;
+  const keep = new Map(all.map((t) => [t.id, [t.person === null ? null : +t.person, t.waitingSince] as const]));
+  const rewrite = (fn: (t: Record<string, unknown>) => Record<string, unknown>) => {
+    db.tx(() => {
+      const threads = db.table("threads");
+      for (const t of threads.all()) threads.update(t, fn(t));
+    });
+    db.takeCommit();
+    db.confirm();
+  };
+  rewrite((t) => ({ person: 1, waiting_since: t.last_date }));
+  await walkAll({ view: "all", filter: "people" }, "people dense", true);
+  await walkAll({ view: "all", filter: "waiting" }, "waiting dense", true);
+  rewrite(() => ({ person: 0, waiting_since: null }));
+  await walkAll({ view: "all", filter: "people" }, "people empty");
+  await walkAll({ view: "all", filter: "waiting" }, "waiting empty");
+  let current = 0;
+  rewrite((t) => ({ waiting_since: (t.last_date as number) >= NOW - 10 * 86_400_000 && current++ < 20 ? t.last_date : NOW - 400 * 86_400_000 }));
+  const sparse = await walkAll({ view: "all", filter: "waiting" }, "waiting expired but 20");
+  expect(sparse.n).toBeLessThanOrEqual(20);
+  rewrite((t) => ({ person: keep.get(t.id as number)![0], waiting_since: keep.get(t.id as number)![1] }));
+}, 900_000);

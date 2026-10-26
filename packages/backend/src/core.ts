@@ -1,5 +1,5 @@
 import type { AiTasks } from "@terno/ai";
-import { decodeText, encodeText, messageOf, textRef, type Account, type AccountSyncState, type ThreadAction } from "@terno/core";
+import { decodeText, encodeText, messageOf, textRef, type Account, type AccountSyncState, type OpState, type ThreadAction } from "@terno/core";
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
 import { RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -10,6 +10,7 @@ import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { Connectivity, type ConnectivityOptions, type NetReason } from "./connectivity";
 import { AiAssist } from "./ai-assist";
 import { Categorizer } from "./categorizer";
+import { FactsBackfill } from "./facts";
 import { createHandlers } from "./handlers";
 import { restorePending } from "./import";
 import { blobFingerprint, migrateLegacySecrets, readKeychainState, SecretUnreadableError, type LegacySecretReader } from "./keychain";
@@ -160,6 +161,8 @@ export class BackendCore {
   readonly aiAssist: AiAssist;
   /** plan 18: recipient and body suggestions, in memory, built on first use */
   readonly autocomplete: Autocomplete;
+  /** plan 17: the thread facts' backfill, woken at start and by changes */
+  readonly facts: FactsBackfill;
   /** plan 20: retries, offline and network changes */
   readonly connectivity: Connectivity;
   /** plan 22: sender icons (website icons and Google photos), idle until the first lookup */
@@ -179,6 +182,7 @@ export class BackendCore {
     this.aiService = new AiService(this, options.aiFactory ?? defaultAiFactory);
     this.categorizer = new Categorizer(this);
     this.aiAssist = new AiAssist(this);
+    this.facts = new FactsBackfill(this);
     const web = options.host?.kind === "web";
     this.autocomplete = new Autocomplete({
       source: this.store.autocomplete,
@@ -280,6 +284,8 @@ export class BackendCore {
       if (this.stopped) return;
     }
     if (!this.categorizer.ready) void this.categorizer.rebuild();
+    // plan 17: old mail's facts, and threads requeued before a quit, in slices
+    this.facts.wake();
     // a resume that fails waits for the next start (its journal is intact); it must never crash the backend
     for (const m of await this.store.categories.unfinishedMoves()) {
       this.finishMove(m.batchId).catch((error: unknown) => {
@@ -419,6 +425,8 @@ export class BackendCore {
     if (this.countsTimer) clearTimeout(this.countsTimer);
     for (const n of this.autoNotices.values()) if (n.timer) clearTimeout(n.timer);
     this.categorizer.stop();
+    // the slice in flight finishes; the next start resumes where the store's progress says
+    await this.facts.stop();
     this.aiAssist.stop();
     if (this.workerTimer) clearTimeout(this.workerTimer);
     for (const off of this.unwatch.values()) off();
@@ -511,6 +519,7 @@ export class BackendCore {
       this.server.emit("changed", { threadIds, views });
       this.emitCounts();
       this.autocomplete.notify();
+      this.facts.wake();
     });
   }
 
@@ -536,7 +545,7 @@ export class BackendCore {
   }
 
   private async sendCounts(): Promise<void> {
-    const counts = await this.store.threads.counts();
+    const counts = await this.store.threads.counts(this.now());
     if (!this.stopped) this.server.emit("counts", counts);
   }
 
@@ -544,6 +553,9 @@ export class BackendCore {
     const accounts = await this.store.accounts.list();
     this.server.emit("accounts", accounts);
     if (this.autocomplete.warmed) this.autocomplete.setOwn(accounts.map((a) => a.email));
+    // plan 17 (Codex review 1, #7): an account added or removed changed your addresses; its rescan runs now, with or
+    // without mail to sync (an empty account brings no change that would wake it). Idle, a wake is one probe.
+    this.facts.wake();
   }
 
   /**
@@ -1002,11 +1014,15 @@ export class BackendCore {
       const expected = pe ? pe.expected || !provider : undefined;
       if (op.kind === "send") captureError(error, { code: "send.failed", fields: { retryable: pe?.retryable, ambiguous: pe?.ambiguous }, expected });
       else captureError(error, { code: "ops.failed", fields: { opKind: opKindOf(op.kind), retryable: pe?.retryable, ambiguous: pe?.ambiguous }, expected });
+      let state: OpState | null = null;
       if (error instanceof ProviderAuthError) await this.store.ops.awaitAuth(op.id, message, this.now());
       else if (error instanceof ProviderError && error.ambiguous) await this.store.ops.markUnknown(op.id, message, this.now());
       // the server couldn't be reached: wait for the network (plan 20); an outage gives the attempt back
-      else if (error instanceof ProviderError && error.network) await this.store.ops.fail(op.id, message, true, this.now(), { network: true, keepAttempt: this.connectivity.inOutage(op.account_id) });
-      else await this.store.ops.fail(op.id, message, error instanceof ProviderError ? error.retryable : true, this.now());
+      else if (error instanceof ProviderError && error.network) state = await this.store.ops.fail(op.id, message, true, this.now(), { network: true, keepAttempt: this.connectivity.inOutage(op.account_id) });
+      else state = await this.store.ops.fail(op.id, message, error instanceof ProviderError ? error.retryable : true, this.now());
+      // plan 17 (Codex review 1 #6, review 2 #6): a send that failed for good, whatever the cause, answered nobody: the
+      // store recomputed what it replied to, and the lists and counts follow
+      if (state === "failed" && op.kind === "send") this.notifyChanged([]);
     } finally {
       if (sending && --this.sendsInFlight === 0) for (const settle of this.sendsSettled.splice(0)) settle();
     }

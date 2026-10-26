@@ -21,6 +21,8 @@ export interface MockMessage {
   bodyHtml: string | null;
   bodyState: "full";
   listId: string | null;
+  /** sent with bulk headers (List-Unsubscribe, Precedence): newsletters, notifications, spam */
+  bulk: boolean;
   isRead: boolean;
   isStarred: boolean;
   inInbox: boolean;
@@ -211,6 +213,7 @@ export function generateDataset(options: GenerateOptions): MockDataset {
       bcc: [] as Address[],
       bodyHtml: null as string | null,
       listId: null as string | null,
+      bulk: false,
       isStarred: false,
       isTrash: false,
       isSpam: false,
@@ -234,6 +237,7 @@ export function generateDataset(options: GenerateOptions): MockDataset {
         bodyText: body,
         bodyHtml: `<div style="font-family:Georgia,serif;max-width:600px;margin:auto"><h1 style="font-size:22px">${escapeHtml(subject)}</h1><p>${escapeHtml(intro)}</p><p>${escapeHtml(sentences(nl.lang, 3))}</p><img src="https://${nl.listId}/pixel.gif" width="1" height="1" alt=""><p style="color:#888;font-size:12px"><a href="https://${nl.listId}/u">${nl.lang === "es" ? "Darse de baja" : "Unsubscribe"}</a></p></div>`,
         listId: nl.listId,
+        bulk: true,
         isRead: ageDays > 7 || chance(0.4),
         inInbox: inInboxBase && chance(0.7),
         isSent: false,
@@ -295,6 +299,8 @@ export function generateDataset(options: GenerateOptions): MockDataset {
         date: baseDate - (baseDate % 60_000),
         bodyText: body,
         listId: src.listId,
+        // calendar invitations come without bulk headers (their address says what they are)
+        bulk: src.kind !== "calendar",
         isRead: ageDays > 3 || chance(0.5),
         inInbox: inInboxBase,
         isSent: false,
@@ -375,6 +381,7 @@ export function generateDataset(options: GenerateOptions): MockDataset {
         inInbox: false,
         isSent: false,
         isSpam: true,
+        bulk: true,
       });
     }
 
@@ -434,6 +441,7 @@ function familyDraft(m: FamilyMessage, me: Address, date: number, inInbox: boole
     bodyText: m.bodyText,
     bodyHtml: null,
     listId: m.listId,
+    bulk: m.listId !== null,
     isRead: m.fromMe || ageDays > 7,
     isStarred: false,
     inInbox: !m.fromMe && !m.isSpam && inInbox,

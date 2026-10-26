@@ -6,11 +6,11 @@ import { MemDb, type Committed, type ForeignKey, type Key, type Row, type Table,
  * `meta`. Logical migration ids follow the SQL ones; this adapter starts at
  * the v7 shape (bodies split, search outbox) as IndexedDB version 1; version 2
  * is SQL's v8 (the move journal keeps each removed row with its category);
- * version 3 is SQL's v9 (drafts v2).
+ * version 3 is SQL's v9 (drafts v2); version 4 is SQL's v14 (plan 17: correspondents, thread facts).
  */
-export const IDB_VERSION = 3;
+export const IDB_VERSION = 4;
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 9;
+export const LOGICAL_SCHEMA = 14;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -44,6 +44,8 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "dismissed_suggestions", early: true, key: ["key"] },
   { name: "drafts", early: true, key: ["id"], autoId: true, indexes: { ...fk("account_id"), ...fk("thread_id") } },
   { name: "settings", early: true, key: ["key"] },
+  // plan 17: the addresses you send from (own) and have written to (written)
+  { name: "correspondents", early: true, key: ["email"], indexes: { own: ["own"] } },
   { name: "secrets", early: true, key: ["name"] },
   { name: "owner", early: true, key: ["id"], indexes: fk("account_id") },
   { name: "owner_history", key: ["id"], autoId: true },
@@ -129,6 +131,7 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
     } else {
       if (event.oldVersion < 2) upgradeMoveRows(open.transaction!);
       if (event.oldVersion < 3) upgradeDrafts(open.transaction!);
+      if (event.oldVersion < 4) upgradeFacts(db, open.transaction!);
     }
   };
   open.onblocked = () => {};
@@ -162,6 +165,21 @@ function upgradeMoveRows(tx: IDBTransaction): void {
         if (categoryId !== undefined) rows.put({ ...r, category_id: categoryId }, [r.batch_id as number, r.thread_id as number, categoryId]);
       }
     };
+  };
+}
+
+/**
+ * Version 4 (SQL v14, plan 17): the correspondents store. Thread rows keep
+ * their shape: a missing `person` is a fact not computed yet, which the
+ * backfill fills in after the store opens (slices, never this transaction).
+ * A mailbox with threads starts it from its first phase; an empty one has
+ * nothing to do.
+ */
+function upgradeFacts(db: IDBDatabase, tx: IDBTransaction): void {
+  if (!db.objectStoreNames.contains("correspondents")) db.createObjectStore("correspondents");
+  const count = tx.objectStore("threads").count();
+  count.onsuccess = () => {
+    if (count.result > 0) tx.objectStore("settings").put({ key: "facts_backfill", value_json: JSON.stringify({ phase: "senders", after: 0 }) }, "facts_backfill");
   };
 }
 

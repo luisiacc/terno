@@ -9,7 +9,7 @@ const MESSAGE_DOC = `SELECT m.id, m.thread_id, m.account_id, m.date, m.subject, 
   m.from_email, m.recipients_text, coalesce(b.body_text, '') AS body, m.has_attachments, m.body_state
   FROM messages m LEFT JOIN message_bodies b ON b.message_id = m.id`;
 
-const THREAD_DOC = `SELECT t.id, t.account_id, t.last_date, t.in_inbox, t.has_sent, t.in_trash, t.in_spam, t.is_starred, t.unread_count,
+const THREAD_DOC = `SELECT t.id, t.account_id, t.last_date, t.in_inbox, t.has_sent, t.in_trash, t.in_spam, t.is_starred, t.unread_count, t.person, t.waiting_since,
   (SELECT group_concat(category_id) FROM thread_categories WHERE thread_id = t.id) AS cats FROM threads t`;
 
 interface MessageDocRow {
@@ -36,6 +36,8 @@ interface ThreadDocRow {
   in_spam: number;
   is_starred: number;
   unread_count: number;
+  person: number | null;
+  waiting_since: number | null;
   cats: string | null;
 }
 
@@ -66,6 +68,8 @@ function toThreadDoc(r: ThreadDocRow): SearchThreadDoc {
     inSpam: r.in_spam === 1,
     isStarred: r.is_starred === 1,
     unreadCount: r.unread_count,
+    person: r.person === 1,
+    waitingSince: r.waiting_since,
     categoryIds: r.cats ? r.cats.split(",").map(Number).sort((a, b) => a - b) : [],
   };
 }

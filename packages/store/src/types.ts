@@ -36,6 +36,8 @@ export interface IncomingMessage {
   bodyHtml: string | null;
   bodyState: "none" | "partial" | "full";
   listId: string | null;
+  /** plan 17: bulk headers (List-Unsubscribe, Precedence bulk/list/junk, Auto-Submitted); absent: none seen */
+  bulk?: boolean;
   isRead: boolean;
   isStarred: boolean;
   inInbox: boolean;
@@ -63,6 +65,8 @@ export interface MessageState {
 export interface FlagUpdate {
   messageId: number;
   flags: Partial<{ isRead: boolean; isStarred: boolean; inInbox: boolean; isTrash: boolean; isSpam: boolean; isSent: boolean; isDraft: boolean }>;
+  /** Gmail: the message's labels now (its category decides who it's from, plan 17); absent: unchanged */
+  gmailLabels?: string[];
 }
 
 // ───────────────────────────── lists ─────────────────────────────
@@ -81,6 +85,8 @@ export interface ScopeParams {
   unreadOnly?: boolean;
   /** the list's quick filter (wins over unreadOnly) */
   filter?: ListFilter;
+  /** the clock the Waiting filter reads its window from (plan 17; the backend passes its own) */
+  now?: number;
 }
 
 export interface ListParams {
@@ -91,6 +97,8 @@ export interface ListParams {
   unreadOnly?: boolean;
   /** the list's quick filter (wins over unreadOnly) */
   filter?: ListFilter;
+  /** the clock the Waiting filter reads its window from (plan 17; the backend passes its own) */
+  now?: number;
   /** with a filter: these threads too while they are in the view, read or not (the open and checked ones stay put; see keepInPage) */
   keepIds?: readonly number[];
   cursor?: Cursor;

@@ -207,6 +207,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
           bodyHtml: parsed.html,
           bodyState: "full",
           listId: parsed.listId,
+          bulk: parsed.bulk,
           isRead: st.isRead!,
           isStarred: st.isStarred!,
           inInbox: st.inInbox!,
@@ -258,7 +259,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         for (let m = queue.shift(); m; m = queue.shift()) {
           try {
             const full = await api<GmailMessage>(`/messages/${m.providerMsgId}?format=minimal`);
-            updates.push({ messageId: m.id, flags: labelState(full.labelIds ?? []) });
+            updates.push({ messageId: m.id, flags: labelState(full.labelIds ?? []), gmailLabels: full.labelIds ?? [] });
           } catch (e) {
             if ((e as { status?: number }).status === 404) gone.push(m.id);
             else throw e;
@@ -303,7 +304,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       if (!local) continue;
       try {
         const m = await api<GmailMessage>(`/messages/${gid}?format=minimal`);
-        updates.push({ messageId: local, flags: labelState(m.labelIds ?? []) });
+        updates.push({ messageId: local, flags: labelState(m.labelIds ?? []), gmailLabels: m.labelIds ?? [] });
       } catch (e) {
         if ((e as { status?: number }).status === 404) deleted.add(gid);
         else throw e;

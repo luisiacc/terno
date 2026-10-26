@@ -1,5 +1,5 @@
 import PostalMime from "postal-mime";
-import type { Address } from "@terno/core";
+import { bulkHeaders, type Address } from "@terno/core";
 import type { IncomingAttachment } from "@terno/store";
 
 export interface ParsedMessage {
@@ -13,6 +13,8 @@ export interface ParsedMessage {
   subject: string;
   date: number | null;
   listId: string | null;
+  /** List-Unsubscribe, Precedence: bulk/list/junk or Auto-Submitted (plan 17) */
+  bulk: boolean;
   text: string | null;
   html: string | null;
   attachments: IncomingAttachment[];
@@ -71,6 +73,7 @@ export async function parseRaw(raw: Uint8Array | string): Promise<ParsedMessage>
     subject: email.subject ?? "",
     date: Number.isNaN(date) ? null : date,
     listId: parseListId(header("list-id")),
+    bulk: bulkHeaders({ listUnsubscribe: header("list-unsubscribe"), precedence: header("precedence"), autoSubmitted: header("auto-submitted") }),
     text: email.text ?? (email.html ? htmlToText(email.html) : null),
     html: email.html ?? null,
     attachments: email.attachments

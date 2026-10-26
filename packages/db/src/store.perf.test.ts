@@ -54,7 +54,7 @@ describe("reads", () => {
     await gate("list all mail, page at thread #15,000", 5, () => store.threads.list({ view: "all", limit: 100, cursor: { lastDate: deep.last_date, id: deep.id } }));
     const largest = store.db.get<{ category_id: number }>("SELECT category_id FROM thread_categories GROUP BY 1 ORDER BY count(*) DESC LIMIT 1")!;
     await gate("list largest category", 5, () => store.threads.list({ view: "all", categoryId: largest.category_id, limit: 100 }));
-    await gate("sidebar unread counts", 5, () => store.threads.counts());
+    await gate("sidebar unread counts", 5, () => store.threads.counts(NOW));
     const ids = store.db.all<{ id: number }>("SELECT id FROM threads ORDER BY random() LIMIT 60").map((r) => r.id);
     await gate("open random thread (with categorization)", 5, (i) => store.threads.get(ids[i % ids.length]!));
   });
@@ -112,5 +112,80 @@ describe("writes", () => {
     const log = store.db.get<{ b: number; n: number }>("SELECT total(bytes) AS b, count(*) AS n FROM search_outbox WHERE seq > ?", logBefore.s ?? 0)!;
     const mail = extra.reduce((n, m) => n + (m.bodyText?.length ?? 0) + (m.bodyHtml?.length ?? 0) + m.subject.length + m.from.email.length + m.from.name.length, 0);
     stats.push({ name: `outbox: ${log.n} batches, ${(log.b / 1e6).toFixed(1)} MB for ${(mail / 1e6).toFixed(1)} MB of mail (${(log.b / mail).toFixed(2)}×)`, budgetMs: 0, p50: log.b / mail, p95: log.b / mail, max: log.b / mail, iterations: log.n });
+  });
+});
+
+describe("People and Waiting (plan 17)", () => {
+  /** every page of a filtered view (the slowest gated), the first page by p95, then its count and its whole id walk */
+  async function walk(label: string, p: { view: "inbox" | "archive" | "all" | "trash"; accountId?: number; filter: "people" | "waiting" }) {
+    const pages: number[] = [];
+    let cursor: { lastDate: number; id: number } | undefined;
+    let n = 0;
+    do {
+      const t = performance.now();
+      const page = await store.threads.list({ ...p, now: NOW, limit: 100, cursor });
+      pages.push(performance.now() - t);
+      n += page.items.length;
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor);
+    await gate(`${label}: first filtered page (of ${pages.length}, ${n} threads)`, 5, () => store.threads.list({ ...p, now: NOW, limit: 100 }));
+    const worst = Math.max(...pages);
+    stats.push({ name: `${label}: every page (${pages.length}), the slowest`, budgetMs: 16, p50: worst, p95: worst, max: worst, iterations: pages.length });
+    expect(worst, `${label}: slowest page`).toBeLessThanOrEqual(16 * BUDGET_MULTIPLIER);
+    await gate(`${label}: scope count`, 5, () => store.threads.scopeCount({ ...p, now: NOW, limit: 100_001 }));
+    // the whole id walk ("select all N"), timed (Codex review 1, #9)
+    const walk = await measureAsync(`${label}: the whole id walk`, 32, async () => {
+      let walked = 0;
+      for (let after = 0; ; ) {
+        const page = await store.threads.scopeIds({ ...p, now: NOW, after, limit: 500 });
+        walked += page.length;
+        if (page.length < 500) return walked;
+        after = page[page.length - 1]!;
+      }
+    }, 10, 1);
+    stats.push(walk);
+    expect(walk.p95, `${label}: whole walk`).toBeLessThanOrEqual(32 * BUDGET_MULTIPLIER);
+    let walked = 0;
+    for (let after = 0; ; ) {
+      const page = await store.threads.scopeIds({ ...p, now: NOW, after, limit: 500 });
+      walked += page.length;
+      if (page.length < 500) break;
+      after = page[page.length - 1]!;
+    }
+    expect(walked).toBe(n);
+  }
+
+  it("pages, counts and scopes from their own indexes: as seeded, dense, empty, and every waiting date expired but twenty", async () => {
+    meta.people = store.db.get<{ c: number }>("SELECT count(*) AS c FROM threads WHERE person = 1")!.c;
+    meta.waiting = store.db.get<{ c: number }>("SELECT count(*) AS c FROM threads WHERE waiting_since IS NOT NULL")!.c;
+    expect(meta.people as number).toBeGreaterThan(1000);
+    for (const filter of ["people", "waiting"] as const) {
+      for (const [label, p] of [
+        ["inbox", { view: "inbox" as const }],
+        ["archive", { view: "archive" as const }],
+        ["trash", { view: "trash" as const }],
+        ["an account", { view: "all" as const, accountId: accountIds[0]! }],
+      ] as const)
+        await walk(`${filter} ${label}`, { ...p, filter });
+    }
+    await gate("counts with the waiting count", 5, () => store.threads.counts(NOW));
+    const keep = store.db.all<{ id: number; person: number | null; waiting_since: number | null }>("SELECT id, person, waiting_since FROM threads");
+    // dense: everyone a person, every thread waiting since its newest message (the window keeps the last 30 days)
+    store.db.tx(() => store.db.run("UPDATE threads SET person = 1, waiting_since = last_date"));
+    await walk("people dense", { view: "all", filter: "people" });
+    await walk("waiting dense", { view: "all", filter: "waiting" });
+    store.db.tx(() => store.db.run("UPDATE threads SET person = 0, waiting_since = NULL"));
+    await walk("people empty", { view: "all", filter: "people" });
+    await walk("waiting empty", { view: "all", filter: "waiting" });
+    // Codex R9: dense expired, sparse current; the window bounds the walk, not the threads that ever waited
+    store.db.tx(() => {
+      store.db.run("UPDATE threads SET waiting_since = ?", NOW - 400 * 86_400_000);
+      store.db.run("UPDATE threads SET waiting_since = last_date WHERE id IN (SELECT id FROM threads WHERE last_date >= ? ORDER BY id LIMIT 20)", NOW - 10 * 86_400_000);
+    });
+    await walk("waiting expired but 20", { view: "all", filter: "waiting" });
+    await gate("counts, every waiting date expired but 20", 5, () => store.threads.counts(NOW));
+    store.db.tx(() => {
+      for (const r of keep) store.db.run("UPDATE threads SET person = ?, waiting_since = ? WHERE id = ?", r.person, r.waiting_since, r.id);
+    });
   });
 });

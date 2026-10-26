@@ -9,4 +9,5 @@ export * from "./address";
 export * from "./ai";
 export * from "./themes";
 export * from "./list-filter";
+export * from "./people";
 export * from "./localized";

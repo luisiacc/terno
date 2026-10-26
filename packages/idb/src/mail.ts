@@ -1,5 +1,10 @@
 import {
   LIST_FILTERS,
+  addressKey,
+  threadFacts,
+  waitingCutoff,
+  type FactContext,
+  type FactRow,
   listFilterOf,
   type ListFilter,
   accountPrefs,
@@ -35,6 +40,7 @@ import {
 import type { OwnerIdentity } from "@terno/core/rpc";
 import { AWAITING_AUTH, AWAITING_NETWORK, keepInPage, type OpPark, type DraftInput, type DraftRow, type IncomingMessage, type ListParams, type ModelDelta, type OpRow, type OwnerClaim, type MessageState, type Page, type ScopeParams, type SearchMessageDoc, type SearchThreadDoc } from "@terno/store";
 import type { MemDb, Row, Table } from "./mem";
+import { answeredThreads, factsReady, noteSentMail, ownAddresses, ownMailChanged, recomputeContext, referencesOfOwn, type FactsQueue } from "./facts";
 
 /**
  * The store commands' building blocks, ported from packages/db (same names,
@@ -52,18 +58,32 @@ export interface Ctx {
   /** the same order, per quick filter (unread, attachments, starred): a filtered page never walks the threads it leaves out */
   filterOrders: Record<ListFilter, ThreadOrder>;
   scopes: ScopeIndex;
+  /** plan 17: the threads whose facts the backfill hasn't computed yet */
+  facts: FactsQueue;
   /** a message's stored body: written by this command, read ahead of it, or absent; throws if it wasn't read ahead */
   body(messageId: number): { body_text: string | null; body_html: string | null } | null;
 }
 
 export const T = (c: Ctx, name: string): Table<R> => c.db.table<R>(name);
 
-/** Each quick filter's test on a thread row (the SQL store's partial index predicates). */
+/**
+ * Each quick filter's test on a thread row (the SQL store's partial index
+ * predicates). Waiting's is every thread that waits at all: the window is
+ * applied where `now` is known (inWindow), on these orders and ids.
+ */
 export const FILTER_TEST: Record<ListFilter, (t: Record<string, unknown> | null | undefined) => boolean> = {
   unread: (t) => ((t?.unread_count as number | undefined) ?? 0) > 0,
+  people: (t) => t?.person === 1,
+  waiting: (t) => t?.waiting_since != null,
   attachments: (t) => t?.has_attachments === 1,
   starred: (t) => t?.is_starred === 1,
 };
+
+/** The Waiting filter's window at `now` (plan 17 §2.4): the caller's clock, never read here. */
+function waitingFrom(now: number | undefined): number {
+  if (now === undefined) throw new Error("the Waiting filter needs the caller's clock (now)");
+  return waitingCutoff(now);
+}
 
 // ───────────────────────────── recency order ─────────────────────────────
 
@@ -104,6 +124,11 @@ export class ThreadOrder {
       else hi = mid;
     }
     return lo;
+  }
+
+  /** the order needs no sort to be current (built, a few changes pending): walking it costs only the walk */
+  get ready(): boolean {
+    return !this.stale && this.pending.size <= 64;
   }
 
   /** the order, brought up to date with the rows */
@@ -167,7 +192,7 @@ export class ScopeIndex {
   private readonly members = new Map<number, number[]>();
   /** per quick filter, the matching ids ascending (a filtered "select all N" and its count): kept by the threads that cross */
   private readonly filtered = new Map<ListFilter, number[]>();
-  private readonly crossed: Record<ListFilter, Set<number>> = { unread: new Set(), attachments: new Set(), starred: new Set() };
+  private readonly crossed: Record<ListFilter, Set<number>> = { unread: new Set(), people: new Set(), waiting: new Set(), attachments: new Set(), starred: new Set() };
 
   constructor(db: MemDb) {
     db.onRow((table, row, prev) => {
@@ -332,6 +357,8 @@ function newThread(c: Ctx, accountId: number, providerThreadId: string | null): 
     has_sent: 0,
     in_trash: 0,
     in_spam: 0,
+    person: null,
+    waiting_since: null,
   };
   T(c, "threads").insert(row);
   return row.id as number;
@@ -420,6 +447,7 @@ function messageIdAllocator(c: Ctx): { next(): number; persist(): void } {
 export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: number): IngestResult {
   const result: IngestResult = { inserted: [], updated: [], touchedThreads: new Set(), mergedThreads: new Map(), bodyCompleted: [], deltas: [] };
   const messages = T(c, "messages");
+  let own: Set<string> | null = null;
   c.db.tx(() => {
     const ids = messageIdAllocator(c);
     for (const msg of batch) {
@@ -431,6 +459,11 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
       if (existing) {
         const before = existing.body_state;
         updateExisting(c, existing, msg);
+        // plan 17 (Codex review 1, #4): a draft that comes back sent (or the reverse) is your mail appearing or going
+        if (existing.is_sent !== b(msg.isSent) || existing.is_draft !== b(msg.isDraft)) {
+          own = null;
+          for (const t of ownMailChanged(c.db, existing.id)) result.touchedThreads.add(t);
+        }
         if (before !== "full" && msg.bodyState === "full") result.bodyCompleted.push(existing.id);
         let threadId = messages.get(existing.id)!.thread_id as number;
         if (msg.providerThreadId) threadId = adoptProviderThread(c, threadId, msg.accountId, msg.providerThreadId, result);
@@ -479,10 +512,20 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
         gmail_labels: msg.gmailLabels ? JSON.stringify(msg.gmailLabels) : null,
         size: msg.size,
         created_at: now,
+        is_bulk: b(msg.bulk ?? false),
       });
       if (msg.bodyText !== null || msg.bodyHtml !== null) T(c, "message_bodies").put({ message_id: id, body_text: msg.bodyText, body_html: msg.bodyHtml });
       else T(c, "message_bodies").markAbsent(id);
       for (const ref of refs) T(c, "message_refs").insert({ account_id: msg.accountId, ref, message_id: id });
+      // plan 17: sent mail teaches your addresses and who you write to; mail of yours may answer another thread
+      if (!msg.isDraft) {
+        own ??= ownAddresses(c.db);
+        if (msg.isSent) {
+          noteSentMail(c.db, fromEmail, [...msg.to, ...msg.cc, ...msg.bcc]);
+          own.add(addressKey(fromEmail));
+        }
+        if (refs.length && (msg.isSent || own.has(addressKey(fromEmail)))) for (const t of answeredThreads(c.db, refs)) result.touchedThreads.add(t);
+      }
       for (const a of msg.attachments ?? []) {
         T(c, "attachments").insert({ id: undefined, message_id: id, filename: a.filename, mime: a.mime, size: a.size, content_id: a.contentId ?? null, provider_ref: a.providerRef ?? null });
       }
@@ -536,6 +579,8 @@ function newer(x: R, y: R): boolean {
 export function recomputeThreads(c: Ctx, threadIds: Iterable<number>): void {
   const threads = T(c, "threads");
   const messages = T(c, "messages");
+  // plan 17: read once per call; null while the backfill still collects your addresses (facts stay NULL)
+  let facts: FactContext | null | undefined;
   for (const threadId of threadIds) {
     const rows = messages.by("fk_thread_id", threadId);
     const thread = threads.get(threadId);
@@ -570,6 +615,8 @@ export function recomputeThreads(c: Ctx, threadIds: Iterable<number>): void {
       if (!m.is_sent && (!counterpart || newer(m, counterpart))) counterpart = m;
       if (m.date < first.date || (m.date === first.date && m.id < first.id)) first = m;
     }
+    if (facts === undefined) facts = recomputeContext(c.db);
+    const f = facts ? threadFacts(rows as unknown as FactRow[], facts) : null;
     threads.update(thread, {
       subject: baseSubject(first.subject) || first.subject,
       snippet: latest.snippet,
@@ -584,6 +631,8 @@ export function recomputeThreads(c: Ctx, threadIds: Iterable<number>): void {
       has_sent: sent,
       in_trash: trashAll,
       in_spam: visible > 0 && visibleNonspam === 0 ? 1 : 0,
+      person: f ? f.person : null,
+      waiting_since: f ? f.waitingSince : null,
     });
   }
 }
@@ -593,6 +642,8 @@ export function deleteMessages(c: Ctx, messageIds: readonly number[]): Set<numbe
   if (messageIds.length === 0) return touched;
   const messages = T(c, "messages");
   c.db.tx(() => {
+    // plan 17 (Codex R5): a reply of yours that goes may leave what it answered waiting again
+    const refs = referencesOfOwn(c.db, messageIds);
     for (const id of messageIds) {
       const m = messages.get(id);
       if (!m) continue;
@@ -600,6 +651,7 @@ export function deleteMessages(c: Ctx, messageIds: readonly number[]): Set<numbe
       messages.delete(id);
     }
     pruneOpTargets(c, messageIds);
+    for (const t of answeredThreads(c.db, refs)) touched.add(t);
     recomputeThreads(c, touched);
   });
   return touched;
@@ -747,6 +799,8 @@ export function toSummary(c: Ctx, t: R): ThreadSummary {
     starred: t.is_starred === 1,
     hasAttachments: t.has_attachments === 1,
     categoryIds: categoryIdsOf(c, t.id),
+    person: t.person === 1,
+    waitingSince: t.waiting_since ?? null,
   };
 }
 
@@ -757,9 +811,15 @@ export function listThreads(c: Ctx, p: ListParams): Page {
   const ids = order.current(threads);
   const test = VIEW_TEST[p.view];
   const inCategory = p.categoryId === undefined ? null : T(c, "thread_categories");
+  // waiting: the window at the caller's clock; its order is by date and waiting_since <= last_date, so the walk stops at the cutoff
+  const cutoff = filter === "waiting" ? waitingFrom(p.now) : null;
   const rows: R[] = [];
   for (let i = p.cursor ? order.after(threads, p.cursor) : 0; i < ids.length && rows.length <= p.limit; i++) {
     const t = threads.get(ids[i]!)!;
+    if (cutoff !== null) {
+      if (t.last_date < cutoff) break;
+      if (t.waiting_since < cutoff) continue;
+    }
     if (!test(t)) continue;
     if (p.accountId !== undefined && t.account_id !== p.accountId) continue;
     if (inCategory && !inCategory.has(t.id, p.categoryId)) continue;
@@ -785,13 +845,34 @@ export function scopeThreadIds(c: Ctx, p: ScopeParams & { after?: number; limit:
   // ascending ids, seeked past the last page and walked until this one is full
   // (the unread filter: only the unread ids, so a scope of few or none never walks the read mailbox)
   const filter = listFilterOf(p);
+  if (filter === "waiting" && p.categoryId === undefined) return waitingScope(c, p);
+  const cutoff = filter === "waiting" ? waitingFrom(p.now) : null;
   const ids = p.categoryId !== undefined ? c.scopes.category(c, p.categoryId) : filter ? c.scopes.matching(c, filter) : c.scopes.threads(c);
   const out: number[] = [];
   for (let i = seekAfter(ids, p.after ?? 0); i < ids.length && out.length < p.limit; i++) {
     const t = threads.get(ids[i]!);
-    if (t && test(t) && (p.accountId === undefined || t.account_id === p.accountId) && (!filter || FILTER_TEST[filter](t))) out.push(t.id as number);
+    if (t && test(t) && (p.accountId === undefined || t.account_id === p.accountId) && (!filter || FILTER_TEST[filter](t)) && (cutoff === null || t.waiting_since >= cutoff)) out.push(t.id as number);
   }
   return out;
+}
+
+/**
+ * Waiting's scope (Codex R9): the window's part of its date order, from the
+ * top to the cutoff, ordered by id after; the threads that wait in the last
+ * 30 days, never every thread that ever waited.
+ */
+function waitingScope(c: Ctx, p: ScopeParams & { after?: number; limit: number }): number[] {
+  const threads = T(c, "threads");
+  const test = VIEW_TEST[p.view];
+  const cutoff = waitingFrom(p.now);
+  const after = p.after ?? 0;
+  const ids: number[] = [];
+  for (const id of c.filterOrders.waiting.current(threads)) {
+    const t = threads.get(id)!;
+    if (t.last_date < cutoff) break;
+    if (t.waiting_since >= cutoff && id > after && test(t) && (p.accountId === undefined || t.account_id === p.accountId)) ids.push(id);
+  }
+  return ids.sort((x, y) => x - y).slice(0, p.limit);
 }
 
 export function summariesInOrder(c: Ctx, ids: readonly number[]): ThreadSummary[] {
@@ -858,7 +939,7 @@ export function pendingSuggestionCounts(c: Ctx): Record<number, number> {
   return out;
 }
 
-export function getCounts(c: Ctx): Counts {
+export function getCounts(c: Ctx, now: number): Counts {
   const byAccount: Record<number, number> = {};
   let inboxUnread = 0;
   const threads = T(c, "threads");
@@ -876,7 +957,24 @@ export function getCounts(c: Ctx): Counts {
     categoryTotal[tc.category_id] = (categoryTotal[tc.category_id] ?? 0) + 1;
     categoryUnread[tc.category_id] = (categoryUnread[tc.category_id] ?? 0) + (t.unread_count > 0 ? 1 : 0);
   }
-  return { inboxUnread, inboxUnreadByAccount: byAccount, categoryUnread, categoryTotal, categorySuggestions: pendingSuggestionCounts(c) };
+  return { inboxUnread, inboxUnreadByAccount: byAccount, categoryUnread, categoryTotal, categorySuggestions: pendingSuggestionCounts(c), ...waitingCounts(c, now) };
+}
+
+/** Inbox threads waiting for your reply (plan 17): the waiting order from the top to the cutoff; unknown while facts are pending. */
+export function waitingCounts(c: Ctx, now: number): Pick<Counts, "inboxWaiting" | "inboxWaitingByAccount"> {
+  if (!factsReady(c.db, c.facts)) return { inboxWaiting: null, inboxWaitingByAccount: {} };
+  const threads = T(c, "threads");
+  const cutoff = waitingCutoff(now);
+  const byAccount: Record<number, number> = {};
+  let total = 0;
+  for (const id of c.filterOrders.waiting.current(threads)) {
+    const t = threads.get(id)!;
+    if (t.last_date < cutoff) break;
+    if (t.waiting_since < cutoff || t.in_inbox !== 1) continue;
+    byAccount[t.account_id] = (byAccount[t.account_id] ?? 0) + 1;
+    total++;
+  }
+  return { inboxWaiting: total, inboxWaitingByAccount: byAccount };
 }
 
 // ───────────────────────────── accounts, categories, filters ─────────────────────────────
@@ -1457,6 +1555,8 @@ export function threadDoc(c: Ctx, t: R): SearchThreadDoc {
     inSpam: t.in_spam === 1,
     isStarred: t.is_starred === 1,
     unreadCount: t.unread_count,
+    person: t.person === 1,
+    waitingSince: t.waiting_since ?? null,
     categoryIds: categoryIdsOf(c, t.id),
   };
 }

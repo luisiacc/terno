@@ -16,7 +16,7 @@ import type { I18nRef } from "./envelope";
 import type { AutoCategorize } from "../categorize/policy";
 import type { LearnedProposal } from "../learning/propose";
 import { filterRuleSchema, type Filter, type FilterRule } from "../rules/schema";
-import { LIST_FILTERS } from "../list-filter";
+import { LIST_FILTERS, type ListFilter } from "../list-filter";
 import { customThemesSchema, DESIGN_IDS, type CustomTheme, type DesignId, type MotionMs } from "../themes";
 import {
   CATEGORY_COLORS,
@@ -197,6 +197,8 @@ export interface Bootstrap {
   owner: OwnerIdentity | null;
   /** demo builds have no owner (and say so) */
   demo: boolean;
+  /** plan 17: the quick filters this backend knows (absent from an older one: plan 15's unread, attachments, starred) */
+  filters?: ListFilter[];
   version: string;
 }
 

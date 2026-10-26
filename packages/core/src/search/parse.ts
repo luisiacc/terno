@@ -16,6 +16,10 @@ export interface SearchQuery {
   hasAttachment?: boolean;
   /** the conversation has attachments (the list's quick filter, plan 15): never typed, set by the caller; thread-level unlike `hasAttachment` */
   threadAttachments?: boolean;
+  /** plan 17: the newest inbound message is from a person (the People filter); never typed */
+  threadPeople?: boolean;
+  /** plan 17: waiting for your reply since this date or later (the Waiting filter at the caller's clock); never typed */
+  threadWaitingSince?: number;
   unread?: boolean;
   starred?: boolean;
   view?: View;

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { ImapFlow, type FetchMessageObject, type MessageStructureObject } from "imapflow";
+import { bulkHeaders } from "@terno/core";
 import { L, type Localized } from "@terno/i18n";
 import type { IncomingMessage } from "@terno/store";
 import { parseListId, parseRaw, splitIds } from "./mime";
@@ -282,7 +283,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       const claimed = new Map<string, number>();
       for (let i = 0; i < found.length; i += 250) {
         const batch = found.slice(i, i + 250);
-        for await (const msg of c.fetch(batch, { uid: true, flags: true, envelope: true, internalDate: true, size: true, bodyStructure: true, headers: ["references", "list-id"] }, { uid: true })) {
+        for await (const msg of c.fetch(batch, { uid: true, flags: true, envelope: true, internalDate: true, size: true, bodyStructure: true, headers: ["references", "list-id", "list-unsubscribe", "precedence", "auto-submitted"] }, { uid: true })) {
           const m = msg as FetchMessageObject;
           const flags = [...(m.flags ?? new Set<string>())];
           const env = m.envelope;
@@ -372,6 +373,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             bodyHtml: null,
             bodyState: "none",
             listId: parseListId(headerValue(m.headers, "list-id")),
+            bulk: bulkHeaders({ listUnsubscribe: headerValue(m.headers, "list-unsubscribe"), precedence: headerValue(m.headers, "precedence"), autoSubmitted: headerValue(m.headers, "auto-submitted") }),
             isRead: flags.includes("\\Seen"),
             isStarred: flags.includes("\\Flagged"),
             inInbox: role === "inbox",

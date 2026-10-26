@@ -46,6 +46,16 @@ export async function withAccounts(store: MailStore, n = 2): Promise<number[]> {
   return ids;
 }
 
+/** Runs plan 17's facts backfill to the end, a slice at a time (what the backend's runner does). */
+export async function backfillFacts(store: MailStore, limit = 500): Promise<number> {
+  let slices = 0;
+  for (;;) {
+    const r = await store.facts.backfill({ limit });
+    slices++;
+    if (!r.more) return slices;
+  }
+}
+
 export async function ingest(store: MailStore, messages: IncomingMessage[], now = 0) {
   return store.sync.ingest(messages, { applyFilters: true, now, classifier: null });
 }

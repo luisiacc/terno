@@ -6,7 +6,7 @@
  * derived from the mailbox, never set by navigation, so every way of changing
  * mailbox (the sidebar, a sender search, boot) gets the right one.
  */
-import { isListFilter, type ListFilter, type View } from "@terno/core";
+import { isListFilter, LIST_FILTERS, type ListFilter, type View } from "@terno/core";
 
 export const STORAGE_KEY = "terno:list-filter";
 /** plan 12's: the keys whose unread filter was on */
@@ -26,9 +26,22 @@ export interface Mailbox {
 /** "inbox||", "all||7", "inbox|2|" */
 export const mailboxKey = (m: Mailbox): string => `${m.view}|${m.accountId ?? ""}|${m.categoryId ?? ""}`;
 
-/** The current list's filter, if any. "Revisar" (a category's suggestions) is never filtered. */
-export function activeFilter(m: Mailbox & { listFilters: ListFilters }): ListFilter | undefined {
-  return m.reviewCategoryId === null ? m.listFilters.get(mailboxKey(m)) : undefined;
+/** Plan 15's filters: what a backend that doesn't say (older than plan 17) knows. */
+export const LEGACY_FILTERS: readonly ListFilter[] = ["unread", "attachments", "starred"];
+
+/** The filters a backend says it knows, in the renderer's order; nothing said: plan 15's (Codex R12). */
+export function supportedFilters(said: readonly unknown[] | undefined): readonly ListFilter[] {
+  return said ? LIST_FILTERS.filter((f) => said.includes(f)) : LEGACY_FILTERS;
+}
+
+/**
+ * The current list's filter, if any. "Revisar" (a category's suggestions) is
+ * never filtered, and a remembered filter the backend doesn't know reads as
+ * none (it would be refused).
+ */
+export function activeFilter(m: Mailbox & { listFilters: ListFilters; supportedFilters?: readonly ListFilter[] }): ListFilter | undefined {
+  const f = m.reviewCategoryId === null ? m.listFilters.get(mailboxKey(m)) : undefined;
+  return f && (m.supportedFilters ?? LIST_FILTERS).includes(f) ? f : undefined;
 }
 
 /** Is the current list filtered to unread threads (⌘L's state, its "Filtered by" count)? */

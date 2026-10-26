@@ -46,6 +46,8 @@ const T_TRASH = 8;
 const T_SPAM = 16;
 const T_STARRED = 32;
 const T_UNREAD = 64;
+/** plan 17: the newest inbound message is from a person */
+const T_PERSON = 128;
 
 /** the oracle's VIEW_TEST as (flags & mask) === value */
 const VIEW_FLAGS: Record<View, [number, number]> = {
@@ -109,6 +111,8 @@ interface ThreadFilter {
   /** the conversation has attachments (plan 15's quick filter): one of its live messages has; each thread's answer
    * kept for the query, so candidates of one long conversation never rescan it */
   attachments: Map<number, boolean> | null;
+  /** plan 17: waiting for your reply since this date or later (the Waiting filter's cutoff) */
+  waitingSince: number | null;
 }
 
 interface Phrase {
@@ -278,6 +282,8 @@ export class InstantSearchEngine implements CachedSearchEngine {
   private thrDate = new Float64Array(0);
   private thrFlags = new Uint8Array(0);
   private thrAccount = new Float64Array(0);
+  /** plan 17: since when the thread waits for your reply (0: it doesn't) */
+  private thrWaiting = new Float64Array(0);
   private thrHead = new Int32Array(0);
   private thrCats: (readonly number[])[] = [];
   private seen = new Uint32Array(0);
@@ -328,7 +334,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
     const buffers = new Set<ArrayBufferLike>();
     for (const a of [
       this.baseSortedIds, this.baseOff, this.baseDocs, this.baseMask, this.docMsg, this.docThread, this.docDate, this.docAtt, this.docFrom,
-      this.docNext, this.docFwd, this.alive, this.fwd, this.thrId, this.thrDate, this.thrFlags, this.thrAccount, this.thrHead, this.seen,
+      this.docNext, this.docFwd, this.alive, this.fwd, this.thrId, this.thrDate, this.thrFlags, this.thrAccount, this.thrWaiting, this.thrHead, this.seen,
       this.order, this.tokens, this.masks, this.restDeltaTerms, this.restDeltaOff, this.restDeltaPairs,
     ]) buffers.add(a.buffer);
     for (const s of this.cache.values()) buffers.add(s.buffer);
@@ -575,6 +581,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
     this.thrDate = grown(this.thrDate, cap);
     this.thrFlags = grown(this.thrFlags, cap);
     this.thrAccount = grown(this.thrAccount, cap);
+    this.thrWaiting = grown(this.thrWaiting, cap);
     this.thrHead = grown(this.thrHead, cap, -1);
     this.seen = grown(this.seen, cap);
     this.order = grown(this.order, cap);
@@ -624,6 +631,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
     this.thrDate[t] = 0;
     this.thrFlags[t] = 0;
     this.thrAccount[t] = 0;
+    this.thrWaiting[t] = 0;
     this.thrHead[t] = -1;
     this.thrCats[t] = EMPTY;
     this.threadIdx.set(threadId, t);
@@ -758,7 +766,9 @@ export class InstantSearchEngine implements CachedSearchEngine {
       (doc.inTrash ? T_TRASH : 0) |
       (doc.inSpam ? T_SPAM : 0) |
       (doc.isStarred ? T_STARRED : 0) |
-      (doc.unreadCount > 0 ? T_UNREAD : 0);
+      (doc.unreadCount > 0 ? T_UNREAD : 0) |
+      (doc.person ? T_PERSON : 0);
+    this.thrWaiting[t] = doc.waitingSince ?? 0;
     this.setCats(t, doc.categoryIds);
     if (move) this.orderInsert(t);
   }
@@ -768,6 +778,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
     if (t === undefined || !(this.thrFlags[t]! & T_EXISTS)) return;
     if (this.indexed) this.orderRemove(t);
     this.thrFlags[t] = 0;
+    this.thrWaiting[t] = 0;
     this.setCats(t, EMPTY);
   }
 
@@ -892,6 +903,8 @@ export class InstantSearchEngine implements CachedSearchEngine {
       inSpam: (f & T_SPAM) !== 0,
       isStarred: (f & T_STARRED) !== 0,
       unreadCount: f & T_UNREAD ? 1 : 0,
+      person: (f & T_PERSON) !== 0,
+      waitingSince: this.thrWaiting[t]! || null,
       categoryIds: this.thrCats[t]!,
     };
   }
@@ -967,6 +980,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
     const q = r.query;
     if (q.unread !== undefined && !need(T_UNREAD, q.unread)) return null;
     if (q.starred !== undefined && !need(T_STARRED, q.starred)) return null;
+    if (q.threadPeople && !need(T_PERSON, true)) return null;
     const inCats: Uint32Array[] = [];
     for (const c of r.categoryIds) {
       const s = this.cats.get(c);
@@ -986,6 +1000,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
       inCats,
       outCats,
       attachments: q.threadAttachments ? new Map() : null,
+      waitingSince: q.threadWaitingSince ?? null,
     };
   }
 
@@ -993,6 +1008,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
     if ((this.thrFlags[t]! & f.mask) !== f.value) return false;
     if (f.accounts && !f.accounts.has(this.thrAccount[t]!)) return false;
     if (f.excludeAccounts && f.excludeAccounts.has(this.thrAccount[t]!)) return false;
+    if (f.waitingSince !== null && !(this.thrWaiting[t]! > 0 && this.thrWaiting[t]! >= f.waitingSince)) return false;
     for (const s of f.inCats) if (!has(s, t)) return false;
     for (const s of f.outCats) if (has(s, t)) return false;
     if (f.attachments) {
@@ -1504,6 +1520,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
         thrDate: this.thrDate.subarray(0, T),
         thrFlags: this.thrFlags.subarray(0, T),
         thrAccount: this.thrAccount.subarray(0, T),
+        thrWaiting: this.thrWaiting.subarray(0, T),
         thrHead: this.thrHead.subarray(0, T),
         order: this.order.subarray(0, this.orderLen),
         catOff,
@@ -1565,7 +1582,8 @@ export class InstantSearchEngine implements CachedSearchEngine {
       const catOff = s.u32("catOff");
       const catIds = s.f64("catIds");
       const docArrays = [s.f64("docMsg"), s.i32("docThread"), s.f64("docDate"), s.u8("docAtt"), s.i32("docFrom"), s.i32("docNext")];
-      const thrArrays = [s.f64("thrId"), s.f64("thrDate"), s.u8("thrFlags"), s.f64("thrAccount"), s.i32("thrHead")];
+      // plan 17's waiting dates: a snapshot written before them has none (zeros: the backfill's batches fill them in)
+      const thrArrays = [s.f64("thrId"), s.f64("thrDate"), s.u8("thrFlags"), s.f64("thrAccount"), s.i32("thrHead"), s.has("thrWaiting") ? s.f64("thrWaiting") : new Float64Array(Number.isInteger(T) && T > 0 ? T : 0)];
       const order = s.i32("order");
       const baseSortedIds = s.i32("baseSortedIds");
       const deltaSortedIds = s.i32("deltaSortedIds");
@@ -1647,6 +1665,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
       this.thrFlags = thrArrays[2] as Uint8Array<ArrayBuffer>;
       this.thrAccount = thrArrays[3] as Float64Array<ArrayBuffer>;
       this.thrHead = thrArrays[4] as Int32Array<ArrayBuffer>;
+      this.thrWaiting = thrArrays[5] as Float64Array<ArrayBuffer>;
       this.seen = new Uint32Array(T);
       // room for every thread: a removed one may come back
       this.order = new Int32Array(T);

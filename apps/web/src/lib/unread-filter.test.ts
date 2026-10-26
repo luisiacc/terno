@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeFilter, isUnreadOnly, LEGACY_KEY, loadListFilters, mailboxKey, MAX_KEYS, parseLegacy, parseStored, saveListFilters, STORAGE_KEY, withFilter } from "./unread-filter";
+import { activeFilter, isUnreadOnly, LEGACY_FILTERS, LEGACY_KEY, loadListFilters, mailboxKey, MAX_KEYS, parseLegacy, parseStored, saveListFilters, STORAGE_KEY, supportedFilters, withFilter } from "./unread-filter";
 
 const inbox = { view: "inbox" as const, accountId: null, categoryId: null, reviewCategoryId: null };
 
@@ -31,7 +31,7 @@ describe("the quick filter's state (plan 12's unread filter, generalized in plan
     expect(parseStored(null)).toEqual(new Map());
     expect(parseStored("{")).toEqual(new Map());
     expect(parseStored('{"inbox||":"unread"}')).toEqual(new Map());
-    expect(parseStored(JSON.stringify([["inbox||", "unread"], ["x", "people"], ["", "unread"], ["y".repeat(65), "unread"], ["all||7", "starred"], "z"]))).toEqual(new Map([["inbox||", "unread"], ["all||7", "starred"]]));
+    expect(parseStored(JSON.stringify([["inbox||", "unread"], ["x", "friends"], ["", "unread"], ["y".repeat(65), "unread"], ["all||7", "starred"], "z"]))).toEqual(new Map([["inbox||", "unread"], ["all||7", "starred"]]));
     expect(loadListFilters({ getItem: () => { throw new Error("SecurityError"); } })).toEqual(new Map());
     expect(() => saveListFilters(new Map([["a", "unread"]]), { setItem: () => { throw new Error("QuotaExceededError"); } })).not.toThrow();
   });
@@ -44,5 +44,13 @@ describe("the quick filter's state (plan 12's unread filter, generalized in plan
     saveListFilters(new Map([["inbox||", "attachments"], ["all||7", "starred"]]), storage);
     expect(store.get(STORAGE_KEY)).toBe('[["inbox||","attachments"],["all||7","starred"]]');
     expect(loadListFilters(storage)).toEqual(new Map([["inbox||", "attachments"], ["all||7", "starred"]]));
+  });
+
+  it("offers what the backend knows: an older one (no list) knows plan 15's three, and a remembered People reads as none there (Codex R12)", () => {
+    expect(supportedFilters(undefined)).toEqual(LEGACY_FILTERS);
+    expect(supportedFilters(["starred", "people", "unread", "waiting", "attachments", "future"])).toEqual(["unread", "people", "waiting", "attachments", "starred"]);
+    const people = new Map([["inbox||", "people" as const]]);
+    expect(activeFilter({ ...inbox, listFilters: people, supportedFilters: supportedFilters(undefined) })).toBeUndefined();
+    expect(activeFilter({ ...inbox, listFilters: people, supportedFilters: supportedFilters(["unread", "people"]) })).toBe("people");
   });
 });

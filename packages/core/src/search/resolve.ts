@@ -1,5 +1,7 @@
 import { normalizeText } from "../text";
 import type { View } from "../types";
+import type { ThreadFilter } from "../list-filter";
+import { waitingCutoff } from "../people";
 import type { SearchQuery } from "./parse";
 
 export interface ScopeLookup {
@@ -41,11 +43,15 @@ export function searchKey(text: string, scope: { accountId?: number; categoryId?
 export function resolveSearch(
   query: SearchQuery,
   text: string,
-  scope: { accountId?: number; categoryId?: number; threadAttachments?: boolean },
+  scope: { accountId?: number; categoryId?: number; threadAttachments?: boolean; threadFilter?: ThreadFilter; now?: number },
   lookup: ScopeLookup,
 ): ResolvedSearch {
-  // the list's attachments filter (plan 15): thread-level, applied by the engines, a part of the query's identity
-  if (scope.threadAttachments) query = { ...query, threadAttachments: true };
+  // the list's thread filters (plan 15's attachments, plan 17's people and waiting): thread-level, applied by the
+  // engines, a part of the query's identity (waiting's window moves with the clock, so only its name is)
+  const thread = scope.threadFilter ?? (scope.threadAttachments ? "attachments" : undefined);
+  if (thread === "attachments") query = { ...query, threadAttachments: true };
+  else if (thread === "people") query = { ...query, threadPeople: true };
+  else if (thread === "waiting") query = { ...query, threadWaitingSince: waitingCutoff(scope.now ?? Date.now()) };
   let impossible = false;
   const accountIds = new Set<number>();
   if (scope.accountId !== undefined) accountIds.add(scope.accountId);
@@ -81,6 +87,6 @@ export function resolveSearch(
     categoryIds: [...categoryIds],
     excludeCategoryIds: [...excludeCategoryIds],
     impossible,
-    key: searchKey(text, scope) + (scope.threadAttachments ? "\u0000attachments" : ""),
+    key: searchKey(text, scope) + (thread ? `\u0000${thread}` : ""),
   };
 }

@@ -12,6 +12,7 @@ import type {
   CategoryColor,
   CategoryModelStats,
   Counts,
+  ThreadFilter,
   Filter,
   FilterRule,
   OpState,
@@ -71,6 +72,13 @@ export interface SnapshotMessage {
   isDraft: boolean;
   isTrash: boolean;
   isSpam: boolean;
+  /** what plan 17's facts read: To and Cc as stored (JSON), the bulk headers, Gmail's labels (JSON), the references */
+  toJson: string;
+  ccJson: string;
+  isBulk: boolean;
+  gmailLabels: string | null;
+  inReplyTo: string | null;
+  references: string[];
 }
 
 export interface SnapshotThread {
@@ -91,6 +99,9 @@ export interface SnapshotThread {
   inTrash: boolean;
   inSpam: boolean;
   categoryIds: number[];
+  /** plan 17: null until computed */
+  person: boolean | null;
+  waitingSince: number | null;
 }
 
 export interface StoreSnapshot {
@@ -225,12 +236,13 @@ export interface MailStore {
     /** how many threads a view holds, counted up to `limit` */
     scopeCount(p: ScopeParams & { limit: number }): Promise<number>;
     get(id: number): Promise<(ThreadDetail & { categorization: { auto: { categoryId: number; reasons: Reason[] }[]; suggestions: PendingSuggestion[] } }) | null>;
-    counts(): Promise<Counts>;
+    /** `now`: the clock the waiting count reads its window from (plan 17) */
+    counts(now: number): Promise<Counts>;
     /** resolves account:/category: and searches within one unit of work */
     /** an RPC cursor without revision/key (older renderers) continues this query */
     /** `signal`: the caller no longer wants the answer (a newer search); a slow path may stop and reject with SearchCancelledError */
-    /** `threadAttachments`: only conversations with attachments (the list's quick filter), applied by the engine before paging */
-    searchText(p: { query: string; accountId?: number; categoryId?: number; threadAttachments?: boolean; cursor?: Cursor & Partial<Pick<SearchCursor, "revision" | "queryKey">>; limit: number; now: number; signal?: { readonly aborted: boolean } }): Promise<StoreSearchPage>;
+    /** `threadFilter` (`threadAttachments`: its plan 15 name for attachments): the list's thread filters, applied by the engine before paging; waiting reads `now` */
+    searchText(p: { query: string; accountId?: number; categoryId?: number; threadAttachments?: boolean; threadFilter?: ThreadFilter; cursor?: Cursor & Partial<Pick<SearchCursor, "revision" | "queryKey">>; limit: number; now: number; signal?: { readonly aborted: boolean } }): Promise<StoreSearchPage>;
     /** local optimistic change + learning signal + provider ops, atomically; `before`: each changed message as it was */
     act(c: { threadIds: readonly number[]; action: ThreadAction; signal: UserActionKind | null; now: number }): Promise<{ threadIds: number[]; opIds: string[]; before: MessageState[] }>;
     /**
@@ -419,6 +431,17 @@ export interface MailStore {
     dismiss(key: string, now: number): Promise<void>;
   };
 
+  /**
+   * Plan 17's thread facts: the backfill of mail stored before them, and of
+   * threads requeued since. Each call is ONE unit of work and does at most
+   * `limit` message ids (while it collects your addresses) or threads.
+   */
+  facts: {
+    backfill(o: { limit: number }): Promise<{ phase: "senders" | "threads" | "rescan" | "done"; processed: number; more: boolean; next?: "senders" | "threads" }>;
+    /** nothing is pending (cheap: what a wake checks first) */
+    idle(): Promise<boolean>;
+  };
+
   providerStore(accountId: number): ProviderStore;
 
   /** test-only, required: plain rows for oracles and property tests */
@@ -426,6 +449,8 @@ export interface MailStore {
     snapshot(): Promise<StoreSnapshot>;
     /** internal consistency (FTS5: integrity-check against the content) */
     verify(): Promise<void>;
+    /** plan 17: back to the state right after the facts migration (no facts, no correspondents, the backfill from its start) */
+    resetFacts(): Promise<void>;
   };
 
   /** development hosts and tests */

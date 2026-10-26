@@ -41,6 +41,24 @@ function account(db: Db, a: { id: number; kind: "imap" | "gmail"; email: string;
   );
 }
 
+/**
+ * A database at `version` holding a mock mailbox of one account (id 1): written by today's ingest, copied
+ * row by row into that version's schema, as an install of it would hold the same mail.
+ */
+function legacyMail(version: number, o: { threads: number; seed: number }): { db: Db; path: string } {
+  const dir = mkdtempSync(join(tmpdir(), `terno-mig${version}-`));
+  dirs.push(dir);
+  const source = openDatabase(join(dir, "source.db"));
+  source.run("INSERT INTO accounts (id, kind, email, display_name, provider_config, created_at) VALUES (1, 'imap', 'yo@x.mx', '', '{}', 0)");
+  ingestMessages(source, generateDataset({ threads: o.threads, accounts: 1, seed: o.seed, now: Date.UTC(2026, 9, 22) }).messages.map((m) => ({ ...m, accountId: 1 })));
+  const path = join(dir, `v${version}.db`);
+  writeLegacyCopy(source, path, version);
+  source.close();
+  const db = new Db(nodeSqliteDriver, path);
+  dbs.push(db);
+  return { db, path };
+}
+
 const owner = (db: Db) => db.get<Record<string, unknown>>("SELECT * FROM owner");
 const appSettings = (db: Db) => {
   const r = db.get<{ value_json: string }>("SELECT value_json FROM settings WHERE key = 'app'");
@@ -225,15 +243,7 @@ describe("migration v4: smart categorization", () => {
 
 describe("migration v8: exclusive moves", () => {
   it("keys journaled move rows by their category, taken from the old move's single source, and that move still trains and undoes", () => {
-    const dir = mkdtempSync(join(tmpdir(), "terno-mig8-"));
-    dirs.push(dir);
-    const db = new Db(nodeSqliteDriver, join(dir, "v7.db"));
-    dbs.push(db);
-    for (const m of MIGRATIONS.filter((m) => m.version <= 7)) db.exec(m.sql);
-    db.exec("PRAGMA user_version = 7");
-    const data = generateDataset({ threads: 20, accounts: 1, seed: 3, now: Date.UTC(2026, 9, 22) });
-    db.run("INSERT INTO accounts (id, kind, email, display_name, provider_config, created_at) VALUES (1, 'imap', 'yo@x.mx', '', '{}', 0)");
-    ingestMessages(db, data.messages.map((m) => ({ ...m, accountId: 1 })));
+    const { db } = legacyMail(7, { threads: 20, seed: 3 });
     const [t1, t2] = db.all<{ id: number }>("SELECT id FROM threads ORDER BY id LIMIT 2").map((r) => r.id) as [number, number];
     db.run("INSERT INTO categories (id, name, color, position) VALUES (1, 'Origen', 'rose', 0), (2, 'Destino', 'cyan', 1)");
     // a v7 move from 1 to 2 that committed its memberships before the upgrade, its training not done yet
@@ -262,16 +272,7 @@ describe("migration v8: exclusive moves", () => {
 describe("migration v8: an undo of a v7 move left half-restored", () => {
   /** A v7 database whose ⌥-move (from 1 to 2) was undone and crashed while restoring examples. */
   function v7Restoring() {
-    const dir = mkdtempSync(join(tmpdir(), "terno-mig8r-"));
-    dirs.push(dir);
-    const path = join(dir, "v7.db");
-    const db = new Db(nodeSqliteDriver, path);
-    dbs.push(db);
-    for (const m of MIGRATIONS.filter((m) => m.version <= 7)) db.exec(m.sql);
-    db.exec("PRAGMA user_version = 7");
-    const data = generateDataset({ threads: 20, accounts: 1, seed: 3, now: Date.UTC(2026, 9, 22) });
-    db.run("INSERT INTO accounts (id, kind, email, display_name, provider_config, created_at) VALUES (1, 'imap', 'yo@x.mx', '', '{}', 0)");
-    ingestMessages(db, data.messages.map((m) => ({ ...m, accountId: 1 })));
+    const { db, path } = legacyMail(7, { threads: 20, seed: 3 });
     const [moved, stale] = db.all<{ id: number }>("SELECT id FROM threads ORDER BY id LIMIT 2").map((r) => r.id) as [number, number];
     db.run("INSERT INTO categories (id, name, color, position) VALUES (1, 'Origen', 'rose', 0), (2, 'Destino', 'cyan', 1)");
     const example = (t: number, cat: number, label: number, source: string) =>
@@ -309,16 +310,8 @@ describe("migration v8: an undo of a v7 move left half-restored", () => {
 
 describe("migration v9: drafts v2", () => {
   it("keeps every v8 draft as format 1 (its text untouched, no separate quote) and gives replies their conversation", () => {
-    const dir = mkdtempSync(join(tmpdir(), "terno-mig9-"));
-    dirs.push(dir);
-    const db = new Db(nodeSqliteDriver, join(dir, "v8.db"));
-    dbs.push(db);
-    for (const m of MIGRATIONS.filter((m) => m.version <= 8)) db.exec(m.sql);
-    db.exec("PRAGMA user_version = 8");
-    const data = generateDataset({ threads: 3, accounts: 1, seed: 9, now: Date.UTC(2026, 9, 22) });
-    db.run("INSERT INTO accounts (id, kind, email, display_name, provider_config, created_at) VALUES (1, 'imap', 'yo@x.mx', '', '{}', 0)");
-    ingestMessages(db, data.messages.map((m) => ({ ...m, accountId: 1 })));
-    const m = db.get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id LIMIT 1")!;
+    const { db } = legacyMail(8, { threads: 3, seed: 9 });
+    const m =db.get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id LIMIT 1")!;
     const quoted = "Sí.\n\nEl 22 oct, Ana escribió:\n> hola";
     db.run("INSERT INTO drafts (id, account_id, to_json, cc_json, subject, body_text, in_reply_to_message_id, updated_at) VALUES (1, 1, '[]', '[]', 'Re: x', ?, ?, 5)", quoted, m.id);
     db.run("INSERT INTO drafts (id, account_id, to_json, cc_json, subject, body_text, in_reply_to_message_id, updated_at) VALUES (2, 1, '[]', '[]', 'Nuevo', 'texto', NULL, 6)");
@@ -412,6 +405,95 @@ describe("migration v13: rich drafts", () => {
     expect(db.get<Record<string, unknown>>("SELECT * FROM drafts WHERE id = 1")).toEqual({ ...before, body_html: "" });
     const saved = saveDraft(db, { id: 1, baseRevision: 1, accountId: 1, to: [], cc: [], subject: "Plano", bodyText: "Hola", bodyHtml: "<div><b>Hola</b></div>" }, 6)!;
     expect(saved).toMatchObject({ body_text: "Hola", body_html: "<div><b>Hola</b></div>", revision: 2 });
+  });
+});
+
+describe("migration v14: people and waiting for your reply (plan 17)", () => {
+  const planOf = (db: Db, sql: string, ...params: (number | string | null)[]) => db.all<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`, ...params).map((r) => r.detail).join(" | ");
+
+  it("rewrites no row: the facts are NULL until the backfill, which starts from its first phase; an empty mailbox has nothing to do", () => {
+    const { db } = legacyMail(13, { threads: 30, seed: 4 });
+    const before = db.all<Record<string, unknown>>("SELECT * FROM threads ORDER BY id");
+    expect(migrate(db)).toEqual({ from: 13, to: SCHEMA_VERSION });
+    const after = db.all<Record<string, unknown>>("SELECT * FROM threads ORDER BY id");
+    expect(after).toEqual(before.map((t) => ({ ...t, person: null, waiting_since: null })));
+    expect(db.get<{ c: number }>("SELECT count(*) AS c FROM messages WHERE is_bulk != 0")!.c).toBe(0);
+    expect(db.get<{ c: number }>("SELECT count(*) AS c FROM correspondents")!.c).toBe(0);
+    expect(JSON.parse(db.get<{ value_json: string }>("SELECT value_json FROM settings WHERE key = 'facts_backfill'")!.value_json)).toEqual({ phase: "senders", after: 0 });
+    const empty = v2();
+    migrate(empty);
+    expect(JSON.parse(empty.get<{ value_json: string }>("SELECT value_json FROM settings WHERE key = 'facts_backfill'")!.value_json)).toEqual({ phase: "done" });
+  });
+
+  it("People and Waiting pages, counts and scopes, the queue, a failed send's lookup and a sender's messages all walk an index (no table scan, no sort of the mailbox)", async () => {
+    const { listSql, scopeIdsSql, waitingSql } = await import("./queries");
+    const { SENDER_SQL } = await import("./facts");
+    const { db } = legacyMail(13, { threads: 200, seed: 5 });
+    migrate(db);
+    db.exec("ANALYZE");
+    for (const filter of ["people", "waiting"] as const) {
+      for (const p of [{ view: "inbox" as const }, { view: "all" as const, accountId: 1 }, { view: "trash" as const }]) {
+        const page = listSql({ ...p, filter, now: Date.UTC(2026, 9, 22), limit: 100 });
+        const plan = planOf(db, page.sql, ...(page.params as number[]));
+        expect(plan, `${filter} ${JSON.stringify(p)} page`).toMatch(filter === "people" ? /threads_people\b/ : /threads_waiting\b/);
+        expect(plan, `${filter} page`).not.toMatch(/TEMP B-TREE/);
+        const scope = scopeIdsSql({ ...p, filter, now: Date.UTC(2026, 9, 22), limit: 500 });
+        const scopePlan = planOf(db, scope.sql, ...(scope.params as number[]));
+        // people: its id index in key order; waiting: the window's range of its date index (a sort of what waits, Codex R9)
+        expect(scopePlan, `${filter} scope`).toMatch(filter === "people" ? /threads_people_id/ : /threads_waiting \(last_date>\?\)/);
+        if (filter === "people") expect(scopePlan).not.toMatch(/TEMP B-TREE/);
+      }
+    }
+    const w = waitingSql(Date.UTC(2026, 9, 22));
+    expect(planOf(db, `SELECT t.account_id, count(*) FROM threads t INDEXED BY ${w.byDate} WHERE ${w.where} AND t.in_inbox = 1 GROUP BY t.account_id`, ...(w.params as number[]))).toMatch(/threads_waiting \(last_date>\?\)/);
+    // the greeting's count: a covering range of the inbox's waiting threads
+    expect(planOf(db, "SELECT account_id, count(*) AS c FROM threads INDEXED BY threads_waiting_inbox WHERE in_inbox = 1 AND waiting_since IS NOT NULL AND waiting_since >= ? GROUP BY account_id", 1)).toMatch(/SEARCH threads USING COVERING INDEX threads_waiting_inbox \(waiting_since>\?\)/);
+    expect(planOf(db, "SELECT id FROM threads INDEXED BY threads_facts_pending WHERE person IS NULL ORDER BY last_date DESC, id DESC LIMIT 5")).toMatch(/threads_facts_pending/);
+    // Codex review 1, #3: a local copy's failed send, without reading every op ever run
+    expect(planOf(db, "SELECT 1 FROM ops WHERE kind = 'send' AND state = 'failed' AND json_extract(target_json, '$.messageIds[0]') = ? LIMIT 1", 7)).toMatch(/SEARCH ops USING INDEX ops_failed_sends/);
+    // a sender's messages, and their +tagged forms, by ranges of messages_from
+    expect(planOf(db, SENDER_SQL.address, "a@x", 0, 10)).toMatch(/messages_from \(from_email=\? AND rowid>\?\)/);
+    // the +tagged forms: the cursor's address past its id (both in the seek, Codex review 2 #4), then the next addresses of the range
+    expect(planOf(db, SENDER_SQL.address, "a+b@x", 9, 10)).toMatch(/messages_from \(from_email=\? AND rowid>\?\)/);
+    expect(planOf(db, SENDER_SQL.range, "a+", "a,", 10)).toMatch(/messages_from \(from_email>\? AND from_email<\?\)/);
+    expect(planOf(db, SENDER_SQL.range, "a+", "a,", 10)).not.toMatch(/TEMP B-TREE/);
+    // "answered": message_refs probed per account, in one statement
+    expect(planOf(db, "SELECT m.id FROM message_refs r JOIN messages m ON m.id = r.message_id WHERE r.account_id IN (SELECT id FROM accounts) AND r.ref = ?", "q@x")).toMatch(/SEARCH r USING PRIMARY KEY \(account_id=\? AND ref=\?\)/);
+  });
+});
+
+describe("migration v14: what the code actually runs (Codex review 3, #2)", () => {
+  it("the greeting's count and a sender job at a late +tagged cursor run statements that seek their indexes", async () => {
+    const { waitingCounts } = await import("./queries");
+    const { backfillSlice } = await import("./facts");
+    const { db } = legacyMail(13, { threads: 200, seed: 6 });
+    migrate(db);
+    db.exec("ANALYZE");
+    db.run("UPDATE settings SET value_json = '{\"phase\":\"done\"}' WHERE key = 'facts_backfill'");
+    db.run("UPDATE threads SET person = 0");
+    // every statement the calls prepare, with dummy values for EXPLAIN
+    const seen: string[] = [];
+    const prepare = db.prepare.bind(db);
+    db.prepare = (sql: string) => {
+      seen.push(sql);
+      return prepare(sql);
+    };
+    const planOfRun = (sql: string) => db.all<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`, ...Array.from(sql.matchAll(/\?/g), () => 0)).map((r) => r.detail).join(" | ");
+    waitingCounts(db, Date.UTC(2026, 9, 22));
+    const count = seen.find((s) => /count\(\*\)/.test(s) && /waiting_since/.test(s))!;
+    expect(planOfRun(count)).toMatch(/SEARCH threads USING COVERING INDEX threads_waiting_inbox \(waiting_since>\?\)/);
+    seen.length = 0;
+    db.run("INSERT OR REPLACE INTO settings (key, value_json) VALUES ('facts_senders', ?)", JSON.stringify([{ email: "support@shop.com", stage: 1, from: "support+t1@shop.com", id: 5 }]));
+    db.tx(() => backfillSlice(db, 10));
+    const senders = seen.filter((s) => /FROM messages WHERE .*from_email [=<>]/.test(s));
+    expect(senders.length).toBeGreaterThanOrEqual(2);
+    // the cursor's own address is sought with its id in the seek (a row value would read that address's earlier mail)
+    expect(senders.some((s) => /messages_from \(from_email=\? AND rowid>\?\)/.test(planOfRun(s)))).toBe(true);
+    for (const s of senders) {
+      const plan = planOfRun(s);
+      expect(plan, s).toMatch(/SEARCH messages USING INDEX messages_from \((from_email=\? AND rowid>\?|from_email>\? AND from_email<\?)\)/);
+      expect(plan, s).not.toMatch(/TEMP B-TREE/);
+    }
   });
 });
 

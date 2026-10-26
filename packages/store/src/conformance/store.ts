@@ -1,14 +1,15 @@
-import { evaluateRule, termsQuery, tokenize, VIEWS, type FilterRule, type RuleMessage, type ThreadAction } from "@terno/core";
+import { evaluateRule, termsQuery, tokenize, VIEWS, waitingCutoff, type FilterRule, type RuleMessage, type ThreadAction } from "@terno/core";
 import { generateDataset } from "@terno/mock-data";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { MailStore, SnapshotMessage, StoreSnapshot } from "../mail-store";
 import type { Revision, SearchMessageDoc } from "../search";
 import type { Cursor } from "../types";
 import { StaleCursorError } from "../search";
-import { ingest, msg, seedThroughCommands, threadOf, withAccounts } from "./fixtures";
+import { backfillFacts, ingest, msg, seedThroughCommands, threadOf, withAccounts } from "./fixtures";
 import { byRecency, VIEW_TEST, type SearchCorpus } from "./oracle";
 import { SearchReplica } from "./replica";
 import { defineSearchConformance } from "./search";
+import { defineFactsConformance } from "./facts";
 
 export interface StoreHarness {
   /** a fresh, empty, migrated store */
@@ -46,6 +47,12 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
   });
 
   describe(`store conformance: ${name}`, () => {
+    defineFactsConformance(fresh, async (s) => {
+      const next = await harness.reopen(s);
+      open.push(next);
+      return next;
+    });
+
     describe("threading", () => {
       it("joins replies to their parent via In-Reply-To / References", async () => {
         const store = await fresh();
@@ -707,7 +714,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       });
 
       it("sidebar counts equal a brute-force count of unread threads", async () => {
-        const counts = await store.threads.counts();
+        const counts = await store.threads.counts(NOW);
         const inbox = snap.threads.filter((t) => t.inInbox && t.unreadCount > 0);
         expect(counts.inboxUnread).toBe(inbox.length);
         for (const [accountId, n] of Object.entries(counts.inboxUnreadByAccount)) expect(n).toBe(inbox.filter((t) => t.accountId === Number(accountId)).length);
@@ -1538,9 +1545,19 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       it.runIf(!!harness.upgraded)("upgrades data written by the previous schema: rows preserved, search consistent", async () => {
         const { store, before } = await harness.upgraded!();
         open.push(store);
-        const after = await store.debug.snapshot();
-        expect(after.messages).toEqual(before.messages);
+        let after = await store.debug.snapshot();
+        // the bulk headers were never stored before v14: old mail has none (plan 17 §4.2)
+        expect(after.messages).toEqual(before.messages.map((m) => ({ ...m, isBulk: false })));
+        // plan 17: the old mail's facts aren't known until the backfill has run, and the waiting count says so
+        expect(after.threads).toEqual(before.threads.map((t) => ({ ...t, person: null, waitingSince: null })));
+        expect((await store.threads.counts(NOW)).inboxWaiting).toBeNull();
+        expect(await store.facts.idle()).toBe(false);
+        await backfillFacts(store);
+        expect(await store.facts.idle()).toBe(true);
+        after = await store.debug.snapshot();
+        // the same facts as mail ingested by today's code (this mailbox's automated senders give themselves away without headers)
         expect(after.threads).toEqual(before.threads);
+        expect((await store.threads.counts(NOW)).inboxWaiting).toBe(before.threads.filter((t) => t.inInbox && t.waitingSince !== null && t.waitingSince >= waitingCutoff(NOW)).length);
         expect(after.memberships).toEqual(before.memberships);
         expect(after.examples).toEqual(before.examples);
         expect(after.search).toEqual(before.search);

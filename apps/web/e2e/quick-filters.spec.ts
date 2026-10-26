@@ -114,6 +114,8 @@ test.describe("Lumen: chips", () => {
     // arrow keys move the focus along the chips; Enter picks
     await page.getByTestId("quick-filter-unread").focus();
     await page.keyboard.press("ArrowRight");
+    await expect(page.getByTestId("quick-filter-people")).toBeFocused();
+    await page.keyboard.press("ArrowRight");
     await expect(page.getByTestId("quick-filter-attachments")).toBeFocused();
     await page.keyboard.press("Enter");
     await showing(page, "attachments");

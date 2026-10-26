@@ -2,6 +2,7 @@ export * from "./oracle";
 export * from "./search";
 export * from "./fixtures";
 export * from "./store";
+export * from "./facts";
 export * from "./replica";
 export * from "./engine";
 export * from "./autocomplete";

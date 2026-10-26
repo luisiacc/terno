@@ -184,6 +184,57 @@ describe("sending", () => {
     expect(sqlDb(backend.store).get("SELECT provider_msg_id FROM messages WHERE is_sent = 1")).toEqual({ provider_msg_id: `srv-${sent.opId}` });
   });
 
+  it("a reply whose send fails for good puts the conversation back among those waiting, and the lists and counts are told (plan 17, Codex review 1, #6)", async () => {
+    const { backend, client, providers, accountId, events } = setup();
+    await backend.ingestSliced([incoming(accountId, { from: { name: "Ana", email: "ana@corp.io" }, listId: null })]);
+    const [t] = (await client.call("threads.list", { view: "inbox" })).items;
+    const original = (await client.call("threads.get", { threadId: t!.id })).messages[0]!;
+    expect((await client.call("counts.get", {})).inboxWaiting).toBe(1);
+    await backend.provider(accountId);
+    providers.get(accountId)!.failNext = new ProviderError("550 mailbox unavailable", false);
+    await client.call("compose.send", { accountId, to: [{ name: "Ana", email: "ana@corp.io" }], subject: "Re: hola", bodyText: "¡Gracias!", inReplyToMessageId: original.id });
+    expect((await client.call("counts.get", {})).inboxWaiting).toBe(0);
+    await tick();
+    events.length = 0;
+    await backend.runWorker();
+    await tick();
+    expect((await client.call("ops.list", {}))[0]).toMatchObject({ state: "failed" });
+    expect(events.some((e) => e.name === "changed")).toBe(true);
+    expect((await client.call("counts.get", {})).inboxWaiting).toBe(1);
+  });
+
+  it("a send that runs out of attempts on network errors tells the lists and counts too (plan 17, Codex review 2, #6)", async () => {
+    const { backend, client, providers, accountId, events } = setup();
+    await backend.ingestSliced([incoming(accountId, { from: { name: "Ana", email: "ana@corp.io" }, listId: null })]);
+    const [t] = (await client.call("threads.list", { view: "inbox" })).items;
+    const original = (await client.call("threads.get", { threadId: t!.id })).messages[0]!;
+    await backend.provider(accountId);
+    const sent = await client.call("compose.send", { accountId, to: [{ name: "Ana", email: "ana@corp.io" }], subject: "Re: hola", bodyText: "¡Gracias!", inReplyToMessageId: original.id });
+    // its last attempt: the server can't be reached once more
+    sqlDb(backend.store).run("UPDATE ops SET attempts = 99 WHERE id = ?", sent.opId);
+    providers.get(accountId)!.failNext = ProviderError.network("SMTP: connect ECONNREFUSED");
+    await tick();
+    events.length = 0;
+    await backend.runWorker();
+    await tick();
+    expect((await client.call("ops.list", {})).find((o) => o.id === sent.opId)).toMatchObject({ state: "failed" });
+    expect(events.some((e) => e.name === "changed")).toBe(true);
+    expect((await client.call("counts.get", {})).inboxWaiting).toBe(1);
+  });
+
+  it("adding an account wakes its rescan: without any mail to sync, the waiting count is known again (plan 17, Codex review 1, #7)", async () => {
+    const { backend, client, accountId } = setup();
+    await backend.ingestSliced([incoming(accountId, { from: { name: "Ana", email: "ana@corp.io" }, listId: null })]);
+    await backend.facts.idle();
+    expect((await client.call("counts.get", {})).inboxWaiting).toBe(1);
+    await backend.store.accounts.create({ kind: "imap", email: "second@example.com", displayName: "Second", color: "indigo", now: NOW });
+    expect(await backend.store.facts.idle()).toBe(false);
+    await backend.emitAccounts();
+    await backend.facts.idle();
+    expect(await backend.store.facts.idle()).toBe(true);
+    expect((await client.call("counts.get", {})).inboxWaiting).toBe(1);
+  });
+
   it("discarding an unknown send leaves no empty thread behind", async () => {
     const { backend, client, providers, accountId } = setup();
     await backend.provider(accountId);
