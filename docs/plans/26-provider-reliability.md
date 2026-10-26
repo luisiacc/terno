@@ -135,3 +135,11 @@ Six critique points accepted: use the shared label path, compare exact captured 
 ## User scope update: defer Outlook
 
 The user instructed: “for the outlook related things, just take note on them to do them later on after outlook integration is done”. All Graph/Microsoft-specific implementation is therefore deferred to [the future checklist](../research/outlook-reliability-checklist.md). Mixed provider-independent scenarios remain active for current Gmail/IMAP/SMTP and local storage. This supersedes the baseline audit's W07 capability implementation recommendation. Deferred is not implemented/verified.
+
+### Slice 3 — code review round 2
+
+Codex reviewed `c11d93f..b8e8a2d`: no substantiated findings. Its read-only test launch was blocked; parent-run 71 passing tests and type/lint are the executed evidence. T04 classification/provenance is implemented/reviewed, while durable provider Retry-After/admission remains open.
+
+### Slice 4 — implementation and validation
+
+Restore now uses the shared sequential ≤1,000-ID label transition, preserving unrelated labels and propagating all failed chunks. Explicit void response mode accepts batchModify's empty 200/204 success and releases its body; JSON endpoints still parse their response. The new send-204 regression failed before the change (untyped TypeError, risking normal retry), and now has the existing typed ambiguous-send outcome. A 2,001-message test applies chunk2 then loses its response, verifies chunk3 waits and exact-target replay converges without touching a late arrival. Backend restore→sync verifies real fake-server label/list state. Eighty-two targeted mail/Gmail integration tests, mail typecheck and lint pass. Full project typecheck remains part of series verification while the independent Reply-To model change is being completed. Code review pending.

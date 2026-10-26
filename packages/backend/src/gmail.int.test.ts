@@ -489,6 +489,22 @@ describe("Gmail sync", () => {
 });
 
 describe("Gmail operations", () => {
+  it("restoring from trash updates the real mailbox labels and remains in Inbox after sync", async () => {
+    const { google, backend, client, account } = await freshMailbox();
+    google.add({ id: "restore", threadId: "restore", labelIds: ["TRASH", "UNREAD", "STARRED", "custom"], raw: rawMail({ subject: "Restore this", id: "restore@example.com" }) }, false);
+    await backend.syncAccount(account.id);
+    const thread = (await client.call("threads.list", { view: "trash" })).items[0]!;
+    await client.call("threads.act", { threadIds: [thread.id], action: "moveToInbox" });
+    const start = google.calls.length;
+    await backend.runWorker();
+    expect(google.calls.slice(start).filter((c) => c.method === "POST").map((c) => c.path)).toEqual(["/gmail/messages/batchModify"]);
+    expect(google.messages.get("restore")?.labelIds.sort()).toEqual(["INBOX", "STARRED", "UNREAD", "custom"]);
+    await backend.syncAccount(account.id);
+    expect((await client.call("threads.list", { view: "inbox" })).items.map((t) => t.id)).toContain(thread.id);
+    expect((await client.call("threads.list", { view: "trash" })).items).toEqual([]);
+    expect((await client.call("ops.list", {}))[0]).toMatchObject({ state: "succeeded" });
+  });
+
   it.each(["rateLimitExceeded", "userRateLimitExceeded"])("a %s response leaves an operation retryable without disconnecting its account", async (reason) => {
     const { google, backend, client, account } = await freshMailbox();
     seed(google);

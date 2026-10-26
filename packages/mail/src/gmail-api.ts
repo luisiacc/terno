@@ -85,6 +85,7 @@ function labelState(labels: string[]): FlagUpdate["flags"] {
 }
 
 const LABEL_OPS: Record<string, { add?: string[]; remove?: string[] }> = {
+  moveToInbox: { add: ["INBOX"], remove: ["SPAM", "TRASH"] },
   archive: { remove: ["INBOX"] },
   spam: { add: ["SPAM"], remove: ["INBOX"] },
   notSpam: { add: ["INBOX"], remove: ["SPAM"] },
@@ -156,12 +157,13 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
   /** reads in flight listen here: reset() aborts them all at once (a send never does) */
   let reads = new AbortController();
 
-  async function api<T>(path: string, init: RequestInit & { ambiguousOnFailure?: boolean } = {}, retried = false): Promise<T> {
+  async function api<T>(path: string, init: RequestInit & { ambiguousOnFailure?: boolean; responseMode?: "json" | "void" } = {}, retried = false): Promise<T> {
+    const { ambiguousOnFailure, responseMode = "json", ...request } = init;
     const token = await tokens.get();
-    const sending = Boolean(init.ambiguousOnFailure);
+    const sending = Boolean(ambiguousOnFailure);
     // Plan 20: a read on a socket a network change killed fails fast, by its deadline or by reset(), and
     // the sync goes again on a fresh one. A send isn't reset and has a long deadline; its failure is ambiguous.
-    const deadline = deadlineSignal(sending ? NEVER : reads.signal, init.signal ?? undefined, sending ? (options.sendTimeoutMs ?? SEND_TIMEOUT_MS) : (options.readTimeoutMs ?? READ_TIMEOUT_MS));
+    const deadline = deadlineSignal(sending ? NEVER : reads.signal, request.signal ?? undefined, sending ? (options.sendTimeoutMs ?? SEND_TIMEOUT_MS) : (options.readTimeoutMs ?? READ_TIMEOUT_MS));
     const failed = (e: unknown) => {
       const detail = L("errors.network", { detail: e instanceof Error ? e.message : String(e) });
       // a send that never connected (offline, DNS, refused) never left: it waits for the network like a read
@@ -172,7 +174,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       let res: Response;
       try {
         // plan 22: the People API and userinfo go through the same token and deadlines (absolute URLs)
-        res = await netFetch(path.startsWith("https://") ? path : `${ep.api}${path}`, { ...init, signal: deadline.signal, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...init.headers } });
+        res = await netFetch(path.startsWith("https://") ? path : `${ep.api}${path}`, { ...request, signal: deadline.signal, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...request.headers } });
       } catch (e) {
         throw failed(e);
       }
@@ -188,7 +190,10 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         const retryable = res.status === 429 || res.status >= 500 || (res.status === 403 && isRateLimit(text));
         throw new GmailApiError(res.status, text, retryable, Boolean(sending && res.status >= 500));
       }
-      if (res.status === 204) return undefined as T;
+      if (responseMode === "void") {
+        await res.body?.cancel().catch(() => {});
+        return undefined as T;
+      }
       try {
         return (await res.json()) as T;
       } catch (e) {
@@ -397,15 +402,10 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         for (const id of gmailIds) await api(`/messages/${id}/trash`, { method: "POST" });
         return;
       }
-      if (op.kind === "moveToInbox") {
-        for (const id of gmailIds) await api(`/messages/${id}/untrash`, { method: "POST" }).catch(() => undefined);
-        await api("/messages/batchModify", { method: "POST", body: JSON.stringify({ ids: gmailIds, addLabelIds: ["INBOX"], removeLabelIds: ["SPAM"] }) });
-        return;
-      }
       const labels = LABEL_OPS[op.kind];
       if (!labels) throw new ProviderError(`Unsupported operation ${op.kind}`, false);
       for (let i = 0; i < gmailIds.length; i += 1000) {
-        await api("/messages/batchModify", { method: "POST", body: JSON.stringify({ ids: gmailIds.slice(i, i + 1000), addLabelIds: labels.add ?? [], removeLabelIds: labels.remove ?? [] }) });
+        await api("/messages/batchModify", { method: "POST", responseMode: "void", body: JSON.stringify({ ids: gmailIds.slice(i, i + 1000), addLabelIds: labels.add ?? [], removeLabelIds: labels.remove ?? [] }) });
       }
     },
 

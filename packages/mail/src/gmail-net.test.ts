@@ -144,6 +144,13 @@ describe("Gmail requests and the network (plan 20)", () => {
     expect(requests).toBe(1);
   });
 
+  it("an empty HTTP 204 send acknowledgement is uncertain, not an ordinary error eligible for retry", async () => {
+    const fetch = (async () => new Response(null, { status: 204 })) as typeof globalThis.fetch;
+    const error = await provider(fetch).execute(sendOp).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ProviderError);
+    expect(error).toMatchObject({ ambiguous: true, retryable: false });
+  });
+
   it("reset() fails a read in flight at once, as a network failure (the sync goes again on fresh sockets)", async () => {
     const { fetch, calls } = manualFetch();
     const p = provider(fetch);
