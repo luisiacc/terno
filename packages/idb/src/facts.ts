@@ -262,12 +262,12 @@ function sendersLike(db: MemDb, key: string): string[] {
 
 /**
  * A sender's threads to recompute, persisted (SQLite's SenderJob): its
- * addresses in turn, and how many keys of the current one are done (`pos`,
- * committed with each slice). Within one, a live walk of the `from` index's
- * keys (memory only, Codex review 2, #2): each slice reads the next `n`,
- * never the sender's whole history. The walk is trusted only while it agrees
- * with what committed (Codex reviews 3 and 4): after a rolled-back slice (its
- * position is ahead), a key set the index let go (all the address's mail
+ * addresses in turn, and a count of its slices (`seq`), committed with each.
+ * Within one, a live walk of the `from` index's keys (memory only, Codex
+ * review 2, #2): each slice reads the next `n`, never the sender's whole
+ * history. The walk is trusted only while it was made for the committed
+ * count and the same key set (Codex reviews 3–5): after a rolled-back slice
+ * (replays included), a key set the index let go (all the address's mail
  * went, even in a reverted command) or a restart, the address is walked
  * again from its start in the same bounded slices (recomputing is
  * idempotent; an update moving a key to the set's end is visited again).
@@ -276,10 +276,11 @@ interface SenderJob {
   email: string;
   senders: string[];
   i: number;
-  pos: number;
+  /** advanced by every slice, never reset: a walk made for another value is one a rollback undid (Codex review 5) */
+  seq: number;
 }
 
-const walks = new WeakMap<MemDb, Map<string, { set: ReadonlySet<unknown> | undefined; keys: IterableIterator<unknown>; pos: number }>>();
+const walks = new WeakMap<MemDb, Map<string, { set: ReadonlySet<unknown> | undefined; keys: IterableIterator<unknown>; seq: number }>>();
 
 const SENDERS_KEY = "facts_senders";
 
@@ -310,7 +311,7 @@ export function requeueSender(db: MemDb, key: string): void {
     for (const id of new Set(senders.flatMap((s) => messages.by("from", s).map((m) => m.thread_id as number)))) computeOrDefer(db, id, ctx);
     return;
   }
-  setSenderJobs(db, [...senderJobs(db).filter((j) => j.email !== key), { email: key, senders, i: 0, pos: 0 }]);
+  setSenderJobs(db, [...senderJobs(db).filter((j) => j.email !== key), { email: key, senders, i: 0, seq: 0 }]);
   walks.get(db)?.delete(key);
 }
 
@@ -324,11 +325,11 @@ function senderSlice(db: MemDb, n: number): number {
   const sender = job.senders[job.i]!;
   const set = messages.bucket("from", sender);
   let walk = mine.get(job.email);
-  if (!walk || walk.set !== set || walk.pos !== job.pos) {
+  if (!walk || walk.set !== set || walk.seq !== job.seq) {
     // the walk disagrees with what committed (a rollback, a key set the index let go, a restart): the address
     // again from its start, in the same bounded slices (Codex review 4: skipping to `pos` could skip a key an
     // update moved, and would be unbounded); recomputing what was done is idempotent
-    mine.set(job.email, (walk = { set, keys: messages.keysBy("from", sender), pos: 0 }));
+    mine.set(job.email, (walk = { set, keys: messages.keysBy("from", sender), seq: job.seq }));
   }
   const threads = new Set<number>();
   let read = 0;
@@ -343,14 +344,14 @@ function senderSlice(db: MemDb, n: number): number {
     const m = messages.get(k.value);
     if (m) threads.add(m.thread_id as number);
   }
-  walk.pos += read;
+  walk.seq = job.seq + 1;
   const ctx = factContext(db, ownAddresses(db));
   for (const thread of threads) computeOrDefer(db, thread, ctx);
   if (done) {
     mine.delete(job.email);
-    if (job.i + 1 < job.senders.length) jobs[0] = { ...job, i: job.i + 1, pos: 0 };
+    if (job.i + 1 < job.senders.length) jobs[0] = { ...job, i: job.i + 1, seq: walk.seq };
     else jobs.shift();
-  } else jobs[0] = { ...job, pos: walk.pos };
+  } else jobs[0] = { ...job, seq: walk.seq };
   setSenderJobs(db, jobs);
   return Math.max(1, read);
 }

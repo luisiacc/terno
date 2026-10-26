@@ -143,6 +143,28 @@ describe("the facts backfill's bounds on IndexedDB (Codex review 2)", () => {
     await store.close();
   });
 
+  it("a replay that is itself reverted is walked again too: the slice count only moves forward (Codex review 5)", async () => {
+    const store = await IdbMailStore.open({ name: `facts-replay2-${Date.now()}`, factory: indexedDB, platform, instantSearch: false });
+    const { account } = await store.accounts.create({ kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo", now: 0 });
+    await store.sync.ingest(Array.from({ length: 600 }, (_, i) => message(account.id, i, { from: { name: "", email: "support@shop.com" } })), { applyFilters: false, now: NOW, classifier: null });
+    await store.sync.ingest([message(account.id, 9999, { from: { name: "", email: "me@example.com" }, to: [{ name: "", email: "support@shop.com" }], isSent: true, inInbox: false })], { applyFilters: false, now: NOW, classifier: null });
+    await store.facts.backfill({ limit: 200 });
+    const first = (await store.debug.snapshot()).messages.find((m) => m.providerMsgId === "m0")!;
+    await store.threads.act({ threadIds: [first.threadId], action: "markRead", signal: null, now: NOW });
+    const inner = store as unknown as { db: MemDb; c: { facts: FactsQueue; order: RecencyOrder } };
+    const reverted = (limit: number) => {
+      inner.db.tx(() => backfillSlice(inner.db, inner.c.facts, inner.c.order, limit));
+      inner.db.takeCommit();
+      inner.db.revert();
+    };
+    reverted(50);
+    // the replay from the start reads 200 again, and is reverted as well
+    reverted(200);
+    for (;;) if (!(await store.facts.backfill({ limit: 50 })).more) break;
+    expect((await store.debug.snapshot()).threads.filter((t) => t.person === true).length).toBe(600);
+    await store.close();
+  });
+
   it(`a conversation longer than ${BIG_THREAD} messages is read in chunks, one a slice, to the facts of its newest 200 (#3)`, async () => {
     const store = await IdbMailStore.open({ name: `facts-big-${Date.now()}`, factory: indexedDB, platform, instantSearch: false });
     const { account } = await store.accounts.create({ kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo", now: 0 });
