@@ -235,7 +235,8 @@ test.describe("sender icons (plan 22)", () => {
     await server.backend.server.invoke("settings.update", { senderIcons: true }, { clientId: "setup", origin: "dev" as const });
     await page.reload();
     await page.locator("[data-ready]").waitFor();
-    await page.getByTestId("nav-all").click();
+    // All Mail waits behind More since plan 21
+    await navTo(page, "all");
     await expect(page.getByTestId("list-title")).toHaveText("All Mail");
     await expect(page.getByTestId("sender-icon").first()).toBeVisible();
     const rowH = 84;
