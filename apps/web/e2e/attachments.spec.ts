@@ -7,6 +7,54 @@ import { sqlDb } from "../../backend-dev/src/server";
 
 test.use({ backendOptions: { smtpCapture: true } });
 
+test("last attachment removal keeps From locked until acknowledgement, then edits autosave across reload @design", async ({ app: page, server }, testInfo) => {
+  await openRow(page, 0);
+  await page.getByTestId("quick-reply").click();
+  await page.getByTestId("attachment-input").setInputFiles({ name: "remove.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 255, 128]) });
+  await expect.poll(async () => JSON.parse((await server.backend.store.drafts.list())[0]?.attachments_json ?? "[]").length).toBe(1);
+  await page.reload();
+  const from = page.getByTestId("compose-from");
+  await expect(from).toBeDisabled();
+  const saved = (await server.backend.store.drafts.list())[0]!;
+  const accounts = await server.backend.store.accounts.list();
+  const other = accounts.find((a) => a.id !== saved.account_id)!;
+  const save = server.backend.store.drafts.save;
+  let release!: () => void; let reached!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  const waiting = new Promise<void>((r) => { reached = r; });
+  server.backend.store.drafts.save = async (...args) => {
+    if (args[0].id === saved.id && args[0].attachments?.length === 0) { reached(); await gate; }
+    return save(...args);
+  };
+  try {
+    await page.getByRole("button", { name: "Remove remove.bin" }).click();
+    await expect(from).toBeDisabled();
+    await expect(page.getByTestId("compose-body")).toBeFocused();
+    await page.keyboard.type("typed during removal");
+    await waiting;
+    await expect(from).toBeDisabled();
+    release();
+    await expect(from).toBeEnabled();
+    await from.focus();
+    await page.keyboard.press("Space");
+    await page.getByRole("option", { name: `${other.displayName} · ${other.email}`, exact: true }).click();
+    await expect(from).toContainText(other.email);
+    await page.getByTestId("compose-body").fill("later edit survives account change");
+    await expect.poll(async () => (await server.backend.store.drafts.list())[0]?.body_text).toBe("later edit survives account change");
+    expect((await server.backend.store.drafts.list())[0]!.account_id).toBe(other.id);
+    await page.reload();
+    await expect(page.getByTestId("compose-body")).toHaveText("later edit survives account change");
+    await expect(page.getByTestId("compose-from")).toContainText(other.email);
+    await expect(page.getByTestId("draft-attachment")).toHaveCount(0);
+    for (const theme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: theme });
+      await stabilize(page);
+      expect((await new AxeBuilder({ page }).include("[data-testid=composer]").analyze()).violations).toEqual([]);
+      await page.screenshot({ path: `/tmp/terno-attachments-r2-evidence/from-${testInfo.project.name}-${theme}.png` });
+    }
+  } finally { release(); server.backend.store.drafts.save = save; }
+});
+
 test("attachments attach/remove/reload/send/download exact bytes @design", async ({ app: page, server }, testInfo) => {
   await openRow(page, 0);
   await page.getByTestId("quick-reply").click();

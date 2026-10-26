@@ -80,6 +80,8 @@ export interface LocalDraft {
   /** bodyHtml came from this session's editor (a stored one is re-read through the schema before it is sent) */
   canonical: boolean;
   attachments?: import("@terno/core").AttachmentRef[];
+  /** A stored or in-flight revision still owns files; only an empty save acknowledgement unlocks From. */
+  attachmentOwner?: boolean;
   /** the last save was refused for good (too long): no automatic retries */
   tooLong: boolean;
 }
@@ -162,6 +164,7 @@ export function fromServer(d: Draft): LocalDraft {
     bodyText: d.bodyText,
     bodyHtml: d.bodyHtml ?? "",
     attachments: d.attachments ?? [],
+    attachmentOwner: Boolean(d.attachments?.length),
     quotedText: d.quotedText,
     includeQuote: d.includeQuote,
     inReplyToMessageId: d.inReplyToMessageId,
@@ -280,13 +283,15 @@ export function createDraft(fields: DraftFields): string {
   return key;
 }
 
+export const draftSenderLocked = (d: LocalDraft): boolean => Boolean(d.attachments?.length || d.attachmentOwner);
+
 /** An edit: the content changes now, the save follows (800 ms after the last edit, ≤ 5 s while typing). */
 export function editDraft(key: string, patch: Partial<DraftFields>): void {
   // a body patch is compared with the body as the editor has it now
   const d = "bodyText" in patch || "bodyHtml" in patch ? materialize(key) : get(key);
   // nothing changes under a send in flight (it is sending what is there now)
   if (!d || d.sending) return;
-  if (patch.accountId !== undefined && patch.accountId !== d.accountId && d.attachments?.length) return;
+  if (patch.accountId !== undefined && patch.accountId !== d.accountId && draftSenderLocked(d)) return;
   const bodyChanged = (patch.bodyText !== undefined && patch.bodyText !== d.bodyText) || (patch.bodyHtml !== undefined && patch.bodyHtml !== d.bodyHtml);
   put({
     ...d,
@@ -335,7 +340,7 @@ function save(key: string): Promise<void> {
   if (!d || !authored(d) || d.savedRev === d.localRev) return Promise.resolve();
   const rev = d.localRev;
   w.dirtySince = null;
-  put({ ...d, status: "saving" });
+  put({ ...d, status: "saving", attachmentOwner: d.attachmentOwner || Boolean(d.attachments?.length) });
   const params = {
     id: d.id ?? undefined,
     baseRevision: d.id !== null ? d.revision : undefined,
@@ -370,7 +375,7 @@ function save(key: string): Promise<void> {
         return;
       }
       const done = cur.localRev === rev;
-      put({ ...cur, id: saved.id, revision: saved.revision, savedRev: rev, status: done ? "saved" : "dirty" });
+      put({ ...cur, id: saved.id, revision: saved.revision, savedRev: rev, status: done ? "saved" : "dirty", attachmentOwner: Boolean(saved.attachments?.length) });
       if (!done) return save(key);
     },
     (error: unknown) => {

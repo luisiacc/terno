@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/rpc/connection", () => ({ client: { call: () => Promise.reject(new Error("not in tests")) } }));
 
-const { attachBody, createDraft, discardDraft, draftForSend, editDraft, fieldsOf, flushDraft, fromServer, loadDrafts, recipients, restoreDiscarded, retryDraft, sendBody, sendHtml, setDraftTransport, threadDraftKey, useDrafts, validRecipients } = await import("./drafts");
+const { attachBody, createDraft, discardDraft, draftForSend, draftSenderLocked, editDraft, fieldsOf, flushDraft, fromServer, loadDrafts, recipients, restoreDiscarded, retryDraft, sendBody, sendHtml, setDraftTransport, threadDraftKey, useDrafts, validRecipients } = await import("./drafts");
 const { convertFields, newFields, replyFields } = await import("./compose-fields");
 
 interface Pending {
@@ -56,6 +56,24 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("the draft writer", () => {
+  it("keeps From locked if an attached save is in flight or the removal fails, until an empty revision is acknowledged", async () => {
+    const key = draft();
+    const ref = { assetId: "asset", filename: "x", mime: "text/plain", size: 0 };
+    editDraft(key, { attachments: [ref] });
+    await vi.advanceTimersByTimeAsync(800);
+    editDraft(key, { attachments: [] });
+    editDraft(key, { accountId: 2 });
+    expect(state(key).accountId).toBe(1);
+    await answer(); // Attached revision acknowledged, empty revision starts saving.
+    expect(draftSenderLocked(state(key))).toBe(true);
+    await answer(false);
+    editDraft(key, { accountId: 2 });
+    expect(state(key).accountId).toBe(1);
+    retryDraft(key); await answer();
+    expect(draftSenderLocked(state(key))).toBe(false);
+    editDraft(key, { accountId: 2 });
+    expect(state(key).accountId).toBe(2);
+  });
   it("a draft Terno only prefilled is never saved; the first edit saves 800 ms after typing stops", async () => {
     const k = draft();
     await vi.advanceTimersByTimeAsync(5000);

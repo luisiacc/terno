@@ -27,7 +27,11 @@ export function DraftAttachments({ d }: { d: LocalDraft }) {
       {(d.attachments ?? []).map((a) => <li key={a.assetId} data-testid="draft-attachment" className="flex max-w-full items-center gap-2 rounded-md bg-tint py-1 pl-2.5 pr-1 text-xs">
         <Paperclip className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="max-w-48 truncate">{a.filename}</span><span className="text-muted-foreground tabular">{formatBytes(a.size)}</span>
-        <Button type="button" variant="ghost" size="icon-sm" aria-label={t("attachments.remove", { name: a.filename })} disabled={d.sending || busy} onClick={() => editDraft(d.key, { attachments: d.attachments!.filter((x) => x.assetId !== a.assetId) })}><X className="size-3" /></Button>
+        <Button type="button" variant="ghost" size="icon-sm" aria-label={t("attachments.remove", { name: a.filename })} disabled={d.sending || busy} onClick={(e) => {
+          const body = e.currentTarget.closest("[data-testid=composer]")?.querySelector<HTMLElement>("[data-testid=compose-body]");
+          editDraft(d.key, { attachments: d.attachments!.filter((x) => x.assetId !== a.assetId) });
+          body?.focus({ preventScroll: true });
+        }}><X className="size-3" /></Button>
       </li>)}
     </ul>
   </div>;

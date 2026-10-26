@@ -9,7 +9,7 @@ import { cn } from "@terno/ui/lib/utils";
 import { ChevronDown, Forward, PenLine, ReplyAll, Send, Trash2 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { openCompose, sendDraft, supersedeCompose } from "~/lib/compose";
-import { discardDraft, editDraft, flushDraft, restoreDiscarded, retryDraft, setDraftUi, signatureBlock, useDrafts, type DraftFields, type LocalDraft } from "~/lib/drafts";
+import { discardDraft, draftSenderLocked, editDraft, flushDraft, restoreDiscarded, retryDraft, setDraftUi, signatureBlock, useDrafts, type DraftFields, type LocalDraft } from "~/lib/drafts";
 import { SenderAvatar } from "./sender-avatar";
 import { RecipientInput } from "./recipient-input";
 import { warmAutocomplete } from "~/lib/autocomplete";
@@ -129,8 +129,8 @@ export function DraftFieldsForm({ d, accounts, showSubject, flat }: { d: LocalDr
     <div className={cn(flat && "hairline-t")}>
       {accounts.length > 1 && (
         <Row label={t("compose.from")}>
-          <Select disabled={d.sending || Boolean(d.attachments?.length)} value={String(d.accountId)} onValueChange={(v) => update({ accountId: Number(v) })} items={accounts.map((a) => ({ value: String(a.id), label: `${a.displayName} · ${a.email}` }))}>
-            <SelectTrigger size="sm" aria-label={t("compose.from")}className="-ml-2 h-7 border-0 bg-transparent shadow-none dark:bg-transparent" data-testid="compose-from" title={d.attachments?.length ? t("attachments.senderLocked") : undefined}>
+          <Select disabled={d.sending || draftSenderLocked(d)} value={String(d.accountId)} onValueChange={(v) => update({ accountId: Number(v) })} items={accounts.map((a) => ({ value: String(a.id), label: `${a.displayName} · ${a.email}` }))}>
+            <SelectTrigger size="sm" aria-label={t("compose.from")}className="-ml-2 h-7 border-0 bg-transparent shadow-none dark:bg-transparent" data-testid="compose-from" title={draftSenderLocked(d) ? t("attachments.senderLocked") : undefined}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
