@@ -56,8 +56,61 @@ describe("parseSearch", () => {
     const q = parseSearch("after:2026-01-15 before:7d", NOW);
     expect(q.after).toBe(new Date(2026, 0, 15).getTime());
     expect(q.before).toBe(NOW - 7 * 86_400_000);
-    expect(parseDate("2026/02/30", NOW)).toBe(new Date(2026, 1, 30).getTime()); // JS rolls over, still a date
+    expect(parseDate("2026/02/30", NOW)).toBeUndefined();
     expect(parseDate("tomorrow", NOW)).toBeUndefined();
+  });
+
+  it("rejects impossible calendar dates instead of searching a rolled-over day", () => {
+    for (const date of ["2026-00-10", "2026-13-01", "2026-01-00", "2026-01-32", "2026-04-31", "2026-02-29", "1900-02-29"]) {
+      expect(parseDate(date, NOW), date).toBeUndefined();
+    }
+    expect(parseDate("2000-02-29", NOW)).toBe(new Date(2000, 1, 29).getTime());
+    expect(parseDate("2024/2/29", NOW)).toBe(new Date(2024, 1, 29).getTime());
+    expect(parseDate("2026-01/15", NOW)).toBe(new Date(2026, 0, 15).getTime());
+  });
+
+  it("uses literal four-digit years, including leap days before year 100", () => {
+    expect(parseDate("0000-02-29", NOW)).toBe(Date.parse("0000-02-29T00:00:00"));
+    expect(parseDate("0004-02-29", NOW)).toBe(Date.parse("0004-02-29T00:00:00"));
+    expect(parseDate("0099-01-15", NOW)).toBe(Date.parse("0099-01-15T00:00:00"));
+    expect(parseDate("0001-02-29", NOW)).toBeUndefined();
+  });
+
+  it("never places non-finite relative boundaries in a search query", () => {
+    for (const clock of [NaN, Infinity, -Infinity]) expect(parseDate("0d", clock)).toBeUndefined();
+    for (const value of [`${"9".repeat(400)}d`, `1${"0".repeat(308)}d`]) {
+      expect(parseDate(value, NOW), value).toBeUndefined();
+      const q = parseSearch(`after:${value}`, NOW);
+      expect(q.after).toBeUndefined();
+      expect(q.terms[0]?.value).toBe(`after:${value}`);
+    }
+    expect(parseDate(`1${"0".repeat(300)}d`, -Number.MAX_VALUE)).toBeUndefined();
+    expect(parseDate("0d", NOW)).toBe(NOW);
+    expect(parseDate("2w", NOW)).toBe(NOW - 14 * 86_400_000);
+    expect(parseDate("3m", NOW)).toBe(NOW - 90 * 86_400_000);
+    expect(parseDate("1y", NOW)).toBe(NOW - 365 * 86_400_000);
+    expect(parseDate("2026-01-15", NaN)).toBe(new Date(2026, 0, 15).getTime());
+  });
+
+  it.each([
+    ["before:2026-02-30", "before:2026-02-30", false, false, true],
+    ["-before:2026-02-30", "before:2026-02-30", false, true, true],
+    ['after:"2026-02-30"', "after:2026-02-30", true, false, false],
+    ["before:2026-02-30 ", "before:2026-02-30", false, false, false],
+    ["-antes:2026-02-30 ", "before:2026-02-30", false, true, false],
+    ["después:2026-02-30", "after:2026-02-30", false, false, true],
+  ])("keeps invalid date input %s as a complete literal term", (input, value, phrase, negate, prefix) => {
+    const q = parseSearch(input, NOW);
+    expect(q.before).toBeUndefined();
+    expect(q.after).toBeUndefined();
+    expect(q.terms).toEqual([{ field: "text", value, phrase, negate, prefix }]);
+  });
+
+  it("keeps the last valid effective bound when invalid input follows", () => {
+    const q = parseSearch("before:2026-01-01 -after:2026-01-02 before:2026-02-30 after:2025-01-01 -before:2025-01-02", NOW);
+    expect(q.before).toBe(new Date(2026, 0, 2).getTime());
+    expect(q.after).toBe(new Date(2025, 0, 2).getTime());
+    expect(q.terms).toEqual([{ field: "text", value: "before:2026-02-30", phrase: false, negate: false, prefix: false }]);
   });
 
   it("treats an unterminated quote as a phrase to the end of input", () => {

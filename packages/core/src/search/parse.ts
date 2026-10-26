@@ -28,9 +28,9 @@ export interface SearchQuery {
   /** -account:x / -category:x */
   excludeAccounts: string[];
   excludeCategories: string[];
-  /** ms epoch, exclusive bound */
+  /** ms epoch, exclusive bound; an absolute date starts in the runtime's local zone */
   before?: number;
-  /** ms epoch, inclusive bound */
+  /** ms epoch, inclusive bound (on/after); an absolute date starts in the runtime's local zone */
   after?: number;
 }
 
@@ -124,18 +124,23 @@ function lex(input: string): RawToken[] {
 
 const DAY_MS = 86_400_000;
 
-/** Accepts YYYY-MM-DD, YYYY/MM/DD, or relative "7d", "2w", "3m", "1y". */
+/** Absolute calendar dates start in the runtime's local zone; relative units are elapsed durations. */
 export function parseDate(value: string, now: number): number | undefined {
   const rel = /^(\d+)([dwmy])$/.exec(value);
   if (rel) {
     const amount = Number(rel[1]);
     const unit = { d: 1, w: 7, m: 30, y: 365 }[rel[2] as "d" | "w" | "m" | "y"];
-    return now - amount * unit * DAY_MS;
+    const date = now - amount * unit * DAY_MS;
+    return Number.isFinite(date) ? date : undefined;
   }
   const abs = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/.exec(value);
   if (abs) {
-    const t = new Date(Number(abs[1]), Number(abs[2]) - 1, Number(abs[3])).getTime();
-    return Number.isNaN(t) ? undefined : t;
+    const year = Number(abs[1]);
+    const month = Number(abs[2]) - 1;
+    const day = Number(abs[3]);
+    const date = new Date(year, month, day);
+    if (year < 100) date.setFullYear(year, month, day);
+    return date.getFullYear() === year && date.getMonth() === month && date.getDate() === day ? date.getTime() : undefined;
   }
   return undefined;
 }
