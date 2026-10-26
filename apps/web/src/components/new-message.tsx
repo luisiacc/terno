@@ -1,3 +1,4 @@
+import { AttachButton, DraftAttachments } from "./attachments";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Shortcut } from "@terno/ui/components/shortcut";
@@ -105,6 +106,7 @@ export function NewMessage() {
             <DraftFieldsForm d={d} accounts={accounts} showSubject flat />
           </div>
           <ComposerBody draftKey={key} placeholder={t("compose.bodyPlaceholder.new")} className="block min-h-[260px] w-full flex-1 pt-4 text-base" />
+          <DraftAttachments d={d} />
           <SignaturePreview accountId={d.accountId} className="pt-2" />
         </div>
       </div>
@@ -114,6 +116,7 @@ export function NewMessage() {
           <ComposerFormatBar draftKey={key} id={formatId} className="-mx-1" />
           <div className="-ml-1.5 flex items-center gap-1">
             <FormatToggle controls={formatId} />
+            <AttachButton d={d} />
             <LinkButton draftKey={key} disabled={d.sending} />
             <span className="ml-1.5">
               <SaveState d={d} />

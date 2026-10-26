@@ -1,3 +1,4 @@
+import { ReaderAttachments } from "./attachments";
 import type { Account, Category, CategoryColor, MessageDetail, Reason, ThreadDetail } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { CategoryBadge, CategoryDot } from "@terno/ui/components/category-dot";
@@ -15,7 +16,7 @@ import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { act, cancelMarkRead, openCompose, scheduleMarkRead, toggleStar } from "~/lib/actions";
 import { acceptSuggestion, rejectSuggestion, removeFromCategory } from "~/lib/categorize";
 import { t } from "@terno/i18n";
-import { formatBytes, fullDate, listDate } from "~/lib/format";
+import { fullDate, listDate } from "~/lib/format";
 import { SenderAvatar } from "./sender-avatar";
 import { setApp, useApp } from "~/state/app";
 import { loadThread, useThread, useThreadGone } from "~/state/threads";
@@ -69,10 +70,6 @@ function replyTo(messages: MessageDetail[]): string {
   return last ? (last.from.name || last.from.email).split(/\s+/)[0]! : "";
 }
 
-function fileType(name: string): string {
-  const ext = /\.([a-z0-9]{1,5})$/i.exec(name)?.[1];
-  return ext ? ext.toUpperCase() : "";
-}
 
 function Message({ m, expanded, onToggle, icons }: { m: MessageDetail; expanded: boolean; onToggle: () => void; icons: boolean }) {
   const remoteImages = useApp((s) => s.settings?.remoteImages ?? "ask");
@@ -133,28 +130,13 @@ function Message({ m, expanded, onToggle, icons }: { m: MessageDetail; expanded:
           <div className="hairline-t ml-[calc(var(--avatar-message)+0.75rem)]" />
           <div className="pt-3.5 pb-5">
             {m.bodyHtml ? (
-              <HtmlBody html={m.bodyHtml} messageId={m.id} remoteImages={remoteImages} localMode={localMode} appearance={mailAppearance} />
+              <HtmlBody html={m.bodyHtml} messageId={m.id} accountId={m.accountId} attachments={m.attachments} remoteImages={remoteImages} localMode={localMode} appearance={mailAppearance} />
             ) : m.bodyText !== null ? (
               <TextBody text={m.bodyText} />
             ) : (
               <p className="text-sm text-muted-foreground italic">{t("reader.downloading")}</p>
             )}
-            {m.attachments.length > 0 && (
-              // view-only tiles: opening and saving attachments needs content Terno doesn't fetch yet
-              <ul aria-label={t("reader.attachments")} className="mt-4 flex flex-wrap gap-2">
-                {m.attachments.map((a) => (
-                  <li key={a.id} data-testid="attachment" className="flex h-14 w-[260px] items-center gap-3 rounded-[calc(var(--radius-lg)+2px)] bg-tint px-2.5">
-                    <span className="relative flex h-[34px] w-[27px] shrink-0 items-end justify-center rounded-[3px] rounded-tr-lg bg-card pb-1 shadow-hairline">
-                      <span className="text-[7px] leading-none font-bold tracking-wide text-muted-foreground uppercase">{fileType(a.filename)}</span>
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="line-clamp-2 text-sm leading-4 font-medium break-all">{a.filename}</span>
-                      <span className="block text-xs text-muted-foreground tabular">{formatBytes(a.size)}</span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
+            {m.attachments.length > 0 && <ReaderAttachments messageId={m.id} accountId={m.accountId} attachments={m.attachments} />}
           </div>
         </Expand>
       </div>

@@ -79,13 +79,14 @@ export interface LocalDraft {
   bodyVersion: number;
   /** bodyHtml came from this session's editor (a stored one is re-read through the schema before it is sent) */
   canonical: boolean;
+  attachments?: import("@terno/core").AttachmentRef[];
   /** the last save was refused for good (too long): no automatic retries */
   tooLong: boolean;
 }
 
 export type DraftFields = Pick<
   LocalDraft,
-  "accountId" | "threadId" | "mode" | "toText" | "ccText" | "bccText" | "auto" | "subject" | "subjectEdited" | "bodyText" | "bodyHtml" | "quotedText" | "includeQuote" | "inReplyToMessageId" | "forwardOfMessageId" | "uiState"
+  "attachments" | "accountId" | "threadId" | "mode" | "toText" | "ccText" | "bccText" | "auto" | "subject" | "subjectEdited" | "bodyText" | "bodyHtml" | "quotedText" | "includeQuote" | "inReplyToMessageId" | "forwardOfMessageId" | "uiState"
 >;
 
 interface DraftsState {
@@ -160,6 +161,7 @@ export function fromServer(d: Draft): LocalDraft {
     subjectEdited: d.subjectEdited,
     bodyText: d.bodyText,
     bodyHtml: d.bodyHtml ?? "",
+    attachments: d.attachments ?? [],
     quotedText: d.quotedText,
     includeQuote: d.includeQuote,
     inReplyToMessageId: d.inReplyToMessageId,
@@ -176,8 +178,8 @@ export function fromServer(d: Draft): LocalDraft {
 /** A draft's content, without its identity or save state (its body as the editor has it now). */
 export function fieldsOf(d: LocalDraft): DraftFields {
   const cur = materialize(d.key) ?? d;
-  const { accountId, threadId, mode, toText, ccText, bccText, auto, subject, subjectEdited, bodyText, bodyHtml, quotedText, includeQuote, inReplyToMessageId, forwardOfMessageId, uiState } = cur;
-  return { accountId, threadId, mode, toText, ccText, bccText, auto, subject, subjectEdited, bodyText, bodyHtml, quotedText, includeQuote, inReplyToMessageId, forwardOfMessageId, uiState };
+  const { attachments, accountId, threadId, mode, toText, ccText, bccText, auto, subject, subjectEdited, bodyText, bodyHtml, quotedText, includeQuote, inReplyToMessageId, forwardOfMessageId, uiState } = cur;
+  return { attachments, accountId, threadId, mode, toText, ccText, bccText, auto, subject, subjectEdited, bodyText, bodyHtml, quotedText, includeQuote, inReplyToMessageId, forwardOfMessageId, uiState };
 }
 
 // ───────────────────────────── the editor's body ─────────────────────────────
@@ -284,6 +286,7 @@ export function editDraft(key: string, patch: Partial<DraftFields>): void {
   const d = "bodyText" in patch || "bodyHtml" in patch ? materialize(key) : get(key);
   // nothing changes under a send in flight (it is sending what is there now)
   if (!d || d.sending) return;
+  if (patch.accountId !== undefined && patch.accountId !== d.accountId && d.attachments?.length) return;
   const bodyChanged = (patch.bodyText !== undefined && patch.bodyText !== d.bodyText) || (patch.bodyHtml !== undefined && patch.bodyHtml !== d.bodyHtml);
   put({
     ...d,
@@ -346,6 +349,7 @@ function save(key: string): Promise<void> {
     subjectEdited: d.subjectEdited,
     bodyText: d.bodyText,
     bodyHtml: d.bodyHtml,
+    attachments: d.attachments ?? [],
     quotedText: d.quotedText,
     includeQuote: d.includeQuote,
     inReplyToMessageId: d.inReplyToMessageId,

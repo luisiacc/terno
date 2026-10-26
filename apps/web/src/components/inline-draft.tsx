@@ -1,3 +1,4 @@
+import { AttachButton, DraftAttachments } from "./attachments";
 import type { Account } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
@@ -128,8 +129,8 @@ export function DraftFieldsForm({ d, accounts, showSubject, flat }: { d: LocalDr
     <div className={cn(flat && "hairline-t")}>
       {accounts.length > 1 && (
         <Row label={t("compose.from")}>
-          <Select value={String(d.accountId)} onValueChange={(v) => update({ accountId: Number(v) })} items={accounts.map((a) => ({ value: String(a.id), label: `${a.displayName} · ${a.email}` }))}>
-            <SelectTrigger size="sm" aria-label={t("compose.from")}className="-ml-2 h-7 border-0 bg-transparent shadow-none dark:bg-transparent" data-testid="compose-from">
+          <Select disabled={d.sending || Boolean(d.attachments?.length)} value={String(d.accountId)} onValueChange={(v) => update({ accountId: Number(v) })} items={accounts.map((a) => ({ value: String(a.id), label: `${a.displayName} · ${a.email}` }))}>
+            <SelectTrigger size="sm" aria-label={t("compose.from")}className="-ml-2 h-7 border-0 bg-transparent shadow-none dark:bg-transparent" data-testid="compose-from" title={d.attachments?.length ? t("attachments.senderLocked") : undefined}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -373,6 +374,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true }
           >
             <DraftFieldsForm d={d} accounts={accounts} showSubject={d.mode === "forward"} />
             <ComposerBody draftKey={d.key} placeholder={d.mode === "forward" ? t("compose.bodyPlaceholder.forward") : t("compose.bodyPlaceholder.reply")} className="block min-h-[132px] w-full px-3.5 pt-3 pb-1 text-base" />
+            <DraftAttachments d={d} />
             <SignaturePreview accountId={d.accountId} className="px-3.5 pb-2" />
             <Quote d={d} />
             <ComposerFormatBar draftKey={d.key} id={formatId} className="px-2 pt-1.5" />
@@ -381,6 +383,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true }
                 <Send /> {t("common.send")} <Shortcut keys="mod+enter" className="[&_kbd]:bg-primary-foreground/15 [&_kbd]:text-primary-foreground [&_kbd]:shadow-none" />
               </Button>
               <FormatToggle controls={formatId} />
+              <AttachButton d={d} />
               <LinkButton draftKey={d.key} disabled={d.sending} />
               <span className="ml-1.5">
                 <SaveState d={d} />

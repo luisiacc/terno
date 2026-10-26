@@ -225,7 +225,7 @@ describe("converting a draft to another mode keeps what the user wrote", () => {
   const lucas = { name: "Lucas", email: "lucas@acme.studio" };
   const detail = {
     thread: { id: 7, subject: "Propuesta" },
-    messages: [{ id: 3, isSent: false, from: yuki, to: [{ name: "Luis", email: "luis@acme.studio" }, lucas], cc: [], subject: "Propuesta", date: 0, bodyText: "Hola", snippet: "Hola" }],
+    messages: [{ id: 3, isSent: false, from: yuki, to: [{ name: "Luis", email: "luis@acme.studio" }, lucas], cc: [], subject: "Propuesta", date: 0, bodyText: "Hola", snippet: "Hola", attachments: [] }],
   } as unknown as import("@terno/core").ThreadDetail;
 
   it("reply → reply-all adds the others to Cc; the body and a typed recipient stay; the subject regenerates unless edited", () => {

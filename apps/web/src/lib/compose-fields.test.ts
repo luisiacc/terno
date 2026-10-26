@@ -16,7 +16,7 @@ const when = new Date(2026, 9, 20, 10, 12).getTime();
 const yuki = { name: "Yuki", email: "yuki@acme.studio" };
 const detail = {
   thread: { id: 7, subject: "Propuesta" },
-  messages: [{ id: 3, isSent: false, from: yuki, to: [{ name: "Luis", email: "luis@acme.studio" }], cc: [], subject: "Propuesta", date: when, bodyText: "¿Lo vemos el jueves?\nYuki", snippet: "" }],
+  messages: [{ id: 3, isSent: false, from: yuki, to: [{ name: "Luis", email: "luis@acme.studio" }], cc: [], subject: "Propuesta", date: when, bodyText: "¿Lo vemos el jueves?\nYuki", snippet: "", attachments: [] }],
 } as unknown as ThreadDetail;
 const me = { id: 1, email: "luis@acme.studio" } as Account;
 

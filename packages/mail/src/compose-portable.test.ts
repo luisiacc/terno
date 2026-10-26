@@ -76,7 +76,8 @@ it("the web's Gmail send: the queued payload's HTML goes out through the API, Bc
   const broker = createGmailTokenBroker({ now: () => 0 });
   broker.set(7, "token", 10 * 60_000);
   const provider = broker.provider({ account: { id: 7 }, fetch, store: {} } as never);
-  const payload = { ...base, bcc: [{ name: "", email: "spy@example.com" }], text, html, providerThreadId: "t1" };
+  const attachments = [{ assetId: crypto.randomUUID(), filename: "binary.dat", mime: "application/octet-stream", size: 3, dataBase64: "AP+A" }, { assetId: crypto.randomUUID(), filename: "empty", mime: "text/plain", size: 0, dataBase64: "" }];
+  const payload = { ...base, bcc: [{ name: "", email: "spy@example.com" }], text, html, providerThreadId: "t1", attachments };
   await expect(provider.execute({ id: "op1", kind: "send", target: {}, payload })).resolves.toEqual({ providerMsgId: "g1", providerThreadId: "t1" });
   expect(sent).toHaveLength(1);
   expect(sent[0]!.threadId).toBe("t1");
@@ -85,6 +86,7 @@ it("the web's Gmail send: the queued payload's HTML goes out through the API, Bc
   expect(parsed.html).toBe(html);
   expect(parsed.text?.replace(/\r\n/g, "\n")).toBe(text);
   expect(parsed.bcc).toEqual([{ name: "", email: "spy@example.com" }]);
+  expect(parsed.attachments.map((a) => [...a.bytes!])).toEqual([[0,255,128], []]);
 });
 
 it("both MIME builders preserve exact attachments, duplicate Unicode names, empty files and CID bytes", async () => {

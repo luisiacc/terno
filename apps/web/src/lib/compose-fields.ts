@@ -75,6 +75,7 @@ export function replyFields(mode: Exclude<DraftMode, "new">, detail: ThreadDetai
     // the floating composer shows the quote inside the text; the inline one keeps it apart
     bodyText: opts.quoteInBody ? `\n\n${quote}` : "",
     bodyHtml: "",
+    attachments: mode === "forward" ? last.attachments.filter((a) => a.assetId).map((a) => ({ assetId: a.assetId!, filename: a.filename, mime: a.mime, size: a.size, contentId: a.contentId ?? null })) : [],
     quotedText: opts.quoteInBody ? "" : quote,
     includeQuote: !opts.quoteInBody,
     inReplyToMessageId: mode === "forward" ? null : last.id,
@@ -112,6 +113,7 @@ export function convertFields(d: DraftFields, mode: Exclude<DraftMode, "new">, d
   const autoCc = parseAddressList(fresh.ccText).filter((a) => !taken.has(lower(a.email)));
   return {
     ...d,
+    attachments: [...new Map([...(d.attachments ?? []), ...(mode === "forward" ? fresh.attachments ?? [] : [])].map((a) => [a.assetId, a])).values()],
     mode,
     toText: formatAddressList([...typedTo, ...autoTo]),
     ccText: formatAddressList([...typedCc, ...autoCc]),

@@ -1,3 +1,4 @@
+import { attachmentUploading } from "./attachments";
 import { breadcrumb, captureUi } from "~/lib/diag";
 import { isValidEmail, parseAddressList } from "@terno/core";
 import type { DraftMode } from "@terno/core/rpc";
@@ -6,7 +7,7 @@ import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";
 import { invalidateThreads, loadThread, useThreads } from "~/state/threads";
 import { registerUndo, snack } from "./snack";
-import { convertFields, newFields, replyFields } from "./compose-fields";
+import { answered, convertFields, newFields, replyFields } from "./compose-fields";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
 import { authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, type LocalDraft } from "./drafts";
 
@@ -77,6 +78,7 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
   // the open conversation is loaded: no wait, so nothing can come in between
   const detail = useThreads.getState().details.get(threadId) ?? (await loadThread(threadId));
   if (!detail || mine !== intent) return;
+  if (mode === "forward" && answered(detail).attachments.some((a) => !a.assetId)) { snack.error(t("attachments.unavailable")); return; }
   const account = s.accounts.find((a) => a.id === detail.thread.accountId) ?? s.accounts[0]!;
   if (existing && existing.mode !== "new") {
     const before = fieldsOf(existing);
@@ -154,6 +156,7 @@ export function sendDraft(key: string): Promise<boolean> {
 export const isSending = (key: string): boolean => pendingSends.has(key);
 
 async function send(key: string): Promise<boolean> {
+  if (attachmentUploading(key)) { snack.error(t("attachments.adding")); return false; }
   // read-only from here: nothing typed while the save in flight settles can fall between it and the send
   markSending(key, true);
   const d = await draftForSend(key);
@@ -187,6 +190,8 @@ async function send(key: string): Promise<boolean> {
       inReplyToMessageId: d.inReplyToMessageId ?? undefined,
       forwardOfMessageId: d.forwardOfMessageId ?? undefined,
       draftId: d.id ?? undefined,
+      draftRevision: d.id ? d.revision : undefined,
+      attachments: d.attachments ?? [],
     });
     forgetDraft(key);
     if (getApp().compose?.key === key) setApp({ compose: null });

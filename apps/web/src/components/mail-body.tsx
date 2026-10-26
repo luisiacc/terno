@@ -1,3 +1,5 @@
+import type { AttachmentInfo } from "@terno/core";
+import { resolveCidHtml } from "~/lib/cid";
 import DOMPurify from "dompurify";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ImageOff } from "lucide-react";
@@ -35,7 +37,7 @@ function rememberHeight(key: number, h: number) {
  * scripts (sandbox without allow-scripts), strict CSP, links opened externally.
  * allow-same-origin (without scripts) only lets the parent measure the height.
  */
-export function HtmlBody({ html, messageId, remoteImages, localMode, appearance }: { html: string; messageId: number; remoteImages: "ask" | "always"; localMode: boolean; appearance: "auto" | "paper" }) {
+export function HtmlBody({ html, messageId, remoteImages, localMode, appearance, attachments = [], accountId }: { attachments?: AttachmentInfo[]; accountId?: number; html: string; messageId: number; remoteImages: "ask" | "always"; localMode: boolean; appearance: "auto" | "paper" }) {
   const ref = useRef<HTMLIFrameElement>(null);
   // local mode: remote content is never loaded, whatever the setting or a click says
   const allowRemote = useRemoteConsent((s) => remoteAllowed(messageId, { remoteImages, localMode }, s.allowed));
@@ -45,12 +47,23 @@ export function HtmlBody({ html, messageId, remoteImages, localMode, appearance 
   const themeKey = useAppearance((s) => s.themeKey);
   const mode = useAppearance((s) => s.mode);
   const clean = useMemo(() => DOMPurify.sanitize(html, { WHOLE_DOCUMENT: false, FORBID_TAGS: ["style"], FORBID_ATTR: ["srcset"], ADD_ATTR: ["target"] }), [html]);
+  const [cidAllowed, setCidAllowed] = useState(false);
+  const [cidResult, setCidResult] = useState<{ key: string; html: string } | null>(null);
+  const cidKey = `${html}\0${attachments.map((a) => `${a.assetId}:${a.contentId}`).join("|")}`;
+  const hasCid = /\bsrc\s*=\s*["']?cid:/i.test(html);
+  useEffect(() => {
+    if (!cidAllowed || accountId === undefined) return;
+    let active = true;
+    void resolveCidHtml(clean, accountId, attachments, () => active).then((html) => { if (active) setCidResult({ key: cidKey, html }); });
+    return () => { active = false; };
+  }, [cidAllowed, accountId, cidKey, clean]);
+  const visibleHtml = cidAllowed && cidResult?.key === cidKey ? cidResult.html : clean;
   const paper = appearance === "paper" || hasOwnColors(clean);
   const doc = useMemo(() => {
     const c = mailColors()[paper ? "paper" : "themed"];
     // the CSP is unchanged by theming: local mode keeps the strict policy (allowRemote is false there)
-    return `<!doctype html><html data-mail="${paper ? "paper" : "themed"}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(allowRemote)}"><base target="_blank"><style>html{overflow-y:hidden}html,body{margin:0;padding:0;background:${c.bg};color:${c.fg};font:14px/1.55 -apple-system,BlinkMacSystemFont,"Geist Variable",sans-serif;overflow-wrap:anywhere;color-scheme:${paper ? "light" : mode}}body{padding:${paper ? "16px" : "0"}}img{max-width:100%;height:auto}a{color:${c.link}}table{max-width:100%}</style></head><body>${clean}</body></html>`;
-  }, [clean, allowRemote, paper, themeKey, mode]);
+    return `<!doctype html><html data-mail="${paper ? "paper" : "themed"}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(allowRemote)}"><base target="_blank"><style>html{overflow-y:hidden}html,body{margin:0;padding:0;background:${c.bg};color:${c.fg};font:14px/1.55 -apple-system,BlinkMacSystemFont,"Geist Variable",sans-serif;overflow-wrap:anywhere;color-scheme:${paper ? "light" : mode}}body{padding:${paper ? "16px" : "0"}}img{max-width:100%;height:auto}a{color:${c.link}}table{max-width:100%}</style></head><body>${visibleHtml}</body></html>`;
+  }, [visibleHtml, allowRemote, paper, themeKey, mode]);
 
   useEffect(() => {
     const frame = ref.current;
@@ -116,6 +129,7 @@ export function HtmlBody({ html, messageId, remoteImages, localMode, appearance 
 
   return (
     <div>
+      {hasCid && !cidAllowed && <button type="button" data-testid="inline-load" className="mb-3 text-xs text-muted-foreground hover:text-foreground" onClick={() => setCidAllowed(true)}>{t("attachments.loadInline")}</button>}
       {blocked && <RemoteBlocked localMode={localMode} onLoad={() => allowRemoteFor(messageId)} />}
       {/* themed mail flows on the page with no box; mail with its own colors keeps a borderless paper surface */}
       <div className={paper ? "overflow-hidden rounded-lg bg-[var(--mail-paper)]" : undefined}>
