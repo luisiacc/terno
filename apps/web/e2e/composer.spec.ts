@@ -713,3 +713,52 @@ test("the editor stays out of the startup bundle: the entry and what it imports 
   expect(entry.files).toBeGreaterThan(3);
   expect(entry.hits).toEqual([]);
 });
+
+test("a huge draft skips its lines off screen from the start: nothing reads style or layout while all of them would be styled", async ({ app: page, server }) => {
+  // a read then styled every line before content-visibility applied, and every keystroke after cost twice as much
+  // (a 2 MB draft: 21 ms to the transaction instead of 12, the frame at 60 ms; plan 16, "Huge drafts")
+  await page.addInitScript(() => {
+    const w = window as unknown as { __unskipped: string[] };
+    w.__unskipped = [];
+    const check = (what: string) => {
+      const body = document.querySelector<HTMLElement>(".rt-body:not(.rt-huge)");
+      if (body && body.childElementCount > 2000) w.__unskipped.push(`${what}\n${new Error().stack}`);
+    };
+    const style = window.getComputedStyle;
+    window.getComputedStyle = function (...args: Parameters<typeof style>) {
+      check("getComputedStyle");
+      return style.apply(this, args);
+    };
+    for (const name of ["getBoundingClientRect", "getClientRects"] as const) {
+      const read = Element.prototype[name] as (this: Element) => unknown;
+      (Element.prototype as unknown as Record<string, unknown>)[name] = function (this: Element) {
+        check(name);
+        return read.call(this);
+      };
+    }
+    for (const name of ["offsetWidth", "offsetHeight", "offsetTop", "offsetLeft"] as const) {
+      const d = Object.getOwnPropertyDescriptor(HTMLElement.prototype, name)!;
+      Object.defineProperty(HTMLElement.prototype, name, {
+        ...d,
+        get(this: HTMLElement) {
+          check(name);
+          return d.get!.call(this);
+        },
+      });
+    }
+  });
+  const db = sqlDb(server.backend.store);
+  const m = db.get<{ id: number; thread_id: number; account_id: number }>("SELECT m.id, m.thread_id, m.account_id FROM messages m JOIN threads t ON t.id = m.thread_id WHERE t.in_inbox = 1 ORDER BY t.last_date DESC, m.date DESC LIMIT 1")!;
+  const lines = Array.from({ length: 2500 }, (_, i) => `${i} Hola, te paso las notas de la reunión.`);
+  await server.backend.store.drafts.save({ accountId: m.account_id, threadId: m.thread_id, mode: "reply", to: [{ name: "", email: "ana@example.com" }], cc: [], subject: "Re: x", bodyText: lines.join("\n"), inReplyToMessageId: m.id }, Date.now());
+  await page.reload();
+  await page.locator("[data-ready]").waitFor();
+  await openRow(page, 0);
+  await focusList(page);
+  await page.keyboard.press("r");
+  await expect(body(page)).toBeFocused();
+  await expect(body(page)).toHaveClass(/rt-huge/);
+  await page.keyboard.type("Gracias.");
+  await expect(body(page).locator("p").last()).toHaveText(`${lines.at(-1)}Gracias.`);
+  expect(await page.evaluate(() => (window as unknown as { __unskipped: string[] }).__unskipped)).toEqual([]);
+});

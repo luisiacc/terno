@@ -303,9 +303,10 @@ export function ghostPlugin(hooksOf: (view: EditorView) => GhostHooks | undefine
       layer.dataset.testid = "compose-ghost";
       layer.setAttribute("aria-hidden", "true");
       layer.hidden = true;
+      // the editor's parent is the layer's containing block (rich.tsx's mount is `relative`): its style isn't read here,
+      // as the editor mounts, where it styled a huge draft's every line before they skip, and typing cost twice as much
       const parent = editor.dom.parentElement;
       if (parent) {
-        if (getComputedStyle(parent).position === "static") parent.style.position = "relative";
         parent.append(layer);
         layers.set(editor, layer);
       }

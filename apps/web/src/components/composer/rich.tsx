@@ -189,7 +189,9 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
         "data-placeholder": placeholder,
         "data-testid": "compose-body",
         spellcheck: "true",
-        class: cn("rt-body type-body", className),
+        // a huge draft skips its lines off screen from the first style pass on: anything that reads style or layout
+        // before emptyClass() runs would otherwise style every line (typing then cost twice as much, plan 16)
+        class: cn("rt-body type-body", className, state.doc.childCount > HUGE_BLOCKS && "rt-huge"),
       },
       hooks: {
         onChange: () => {
@@ -329,7 +331,8 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
 
   return (
     <div ref={wrapRef} className="relative">
-      <div ref={mountRef} />
+      {/* the ghost layer's containing block (beside the editor's own element) */}
+      <div ref={mountRef} className="relative" />
       <span ref={announceRef} className="sr-only" aria-live="polite" data-testid="compose-ghost-announce" />
       {link && viewRef.current && <LinkPopover view={viewRef.current} draft={link} onClose={closeLink} />}
       {bubble && !link && viewRef.current && (
