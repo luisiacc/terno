@@ -446,6 +446,14 @@ function messageIdAllocator(c: Ctx): { next(): number; persist(): void } {
 }
 
 
+export function findIngestMessage(c: Ctx, msg: Pick<IncomingMessage, "accountId" | "providerMsgId" | "rfcMessageId">): R | undefined {
+  const messages = T(c, "messages");
+  const byProvider = msg.providerMsgId === null ? undefined : messages.by("provider", msg.accountId, msg.providerMsgId)[0];
+  if (byProvider) return byProvider;
+  const rfcLookup = normalizeMessageId(msg.rfcMessageId);
+  return rfcLookup ? messages.by("rfc", msg.accountId, rfcLookup).filter((m) => String(m.provider_msg_id ?? "").startsWith("local:")).sort((x, y) => x.id - y.id)[0] : undefined;
+}
+
 export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: number): IngestResult {
   const result: IngestResult = { inserted: [], updated: [], touchedThreads: new Set(), mergedThreads: new Map(), bodyCompleted: [], deltas: [] };
   const messages = T(c, "messages");
@@ -453,11 +461,8 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
   c.db.tx(() => {
     const ids = messageIdAllocator(c);
     for (const msg of batch) {
-      const rfcLookup = normalizeMessageId(msg.rfcMessageId);
-      const byProvider = msg.providerMsgId === null ? undefined : messages.by("provider", msg.accountId, msg.providerMsgId)[0];
-      const byLocal = byProvider || !rfcLookup ? undefined : messages.by("rfc", msg.accountId, rfcLookup).filter((m) => String(m.provider_msg_id ?? "").startsWith("local:")).sort((x, y) => x.id - y.id)[0];
-      let existing = byProvider ?? byLocal;
-      if (existing && !byProvider) existing = messages.update(existing, { provider_msg_id: msg.providerMsgId });
+      let existing = findIngestMessage(c, msg);
+      if (existing && existing.provider_msg_id !== msg.providerMsgId) existing = messages.update(existing, { provider_msg_id: msg.providerMsgId });
       if (existing) {
         const before = existing.body_state;
         updateExisting(c, existing, msg);

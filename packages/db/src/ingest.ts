@@ -207,12 +207,17 @@ function nextMessageIdAllocator(db: Db): { next(): number; persist(): void } {
   };
 }
 
-/**
- * Upserts a batch of messages in ONE transaction. Existing messages (same
- * account + provider id) get their flags/body/locations refreshed; new ones are
- * threaded. Thread aggregates are recomputed once per touched thread at the
- * end, never per message, so long threads don't make imports quadratic.
- */
+/** Staging and ingestion must select the same account-bound message revision. */
+export function findIngestMessage(db: Db, msg: Pick<IncomingMessage, "accountId" | "providerMsgId" | "rfcMessageId">): { id: number; thread_id: number; by_provider: number } | undefined {
+  return db.get(
+    `SELECT id, thread_id, provider_msg_id IS ?2 AS by_provider FROM messages
+     WHERE account_id = ?1 AND (provider_msg_id = ?2 OR (rfc_message_id = ?3 AND provider_msg_id LIKE 'local:%'))
+     ORDER BY by_provider DESC, id LIMIT 1`,
+    msg.accountId, msg.providerMsgId, normalizeMessageId(msg.rfcMessageId),
+  );
+}
+
+/** Upserts and threads one batch atomically; recomputes aggregates once per touched thread. */
 export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now = Date.now()): IngestResult {
   const result: IngestResult = { inserted: [], updated: [], touchedThreads: new Set(), mergedThreads: new Map(), bodyCompleted: [], deltas: [] };
   let own: Set<string> | null = null;
@@ -221,15 +226,7 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
     for (const msg of messages) {
       // the same provider message, else the server copy of a message we sent (adopt the optimistic local row
       // instead of duplicating it): one lookup for both
-      const rfcLookup = normalizeMessageId(msg.rfcMessageId);
-      const existing = db.get<{ id: number; thread_id: number; by_provider: number }>(
-        `SELECT id, thread_id, provider_msg_id IS ?2 AS by_provider FROM messages
-         WHERE account_id = ?1 AND (provider_msg_id = ?2 OR (rfc_message_id = ?3 AND provider_msg_id LIKE 'local:%'))
-         ORDER BY by_provider DESC LIMIT 1`,
-        msg.accountId,
-        msg.providerMsgId,
-        rfcLookup,
-      );
+      const existing = findIngestMessage(db, msg);
       if (existing && !existing.by_provider) db.run("UPDATE messages SET provider_msg_id = ? WHERE id = ?", msg.providerMsgId, existing.id);
       if (existing) {
         const before = db.get<{ body_state: string; is_sent: number; is_draft: number }>("SELECT body_state, is_sent, is_draft FROM messages WHERE id = ?", existing.id)!;

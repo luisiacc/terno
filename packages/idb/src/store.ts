@@ -98,6 +98,7 @@ import {
   getSetting,
   getThread,
   ingestMessages,
+  findIngestMessage,
   listAccounts,
   listCategories,
   listDrafts,
@@ -810,7 +811,10 @@ export class IdbMailStore implements MailStore {
   readonly sync: MailStore["sync"] = {
     ingest: async (batch, { applyFilters, now, classifier }) => {
       const staged: IncomingMessage[] = [];
-      for (const m of batch) staged.push(m.captureUnavailable || m.attachments === undefined ? m : { ...m, attachments: await stageAttachments(this, m.accountId, m.attachments, now, this.o.platform.yield, m.attachments.length && m.providerMsgId ? await this.attachments.current(m.accountId, { providerMsgId: m.providerMsgId }) : []) });
+      for (const m of batch) {
+        const existing = !m.captureUnavailable && m.attachments?.length ? await this.read(() => findIngestMessage(this.c, m)) : undefined;
+        staged.push(m.captureUnavailable || m.attachments === undefined ? m : { ...m, attachments: await stageAttachments(this, m.accountId, m.attachments, now, this.o.platform.yield, existing ? await this.attachments.current(m.accountId, { id: existing.id }) : []) });
+      }
       return this.command(
         () => {
           const result = ingestMessages(this.c, staged as IncomingMessage[], now);

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { ATTACHMENT_CHUNK, bytesBase64, type AttachmentRef } from "@terno/core";
+import { ATTACHMENT_ACCOUNT_BYTES, ATTACHMENT_CHUNK, MAX_ATTACHMENT_BYTES, bytesBase64, type AttachmentRef } from "@terno/core";
 import type { MailStore } from "../mail-store";
 import type { StoreHarness } from "./store";
 import { ingest, msg, threadOf, withAccounts } from "./fixtures";
@@ -16,7 +16,57 @@ export function defineAttachmentConformance(name: string, h: StoreHarness): void
   };
   const draft = (accountId: number, attachments: AttachmentRef[]) => ({ accountId, to: [], cc: [], subject: "files", bodyText: "keep me", attachments });
   const send = (accountId: number, attachments: AttachmentRef[]) => ({ accountId, to: [{ name: "", email: "receiver@test.com" }], cc: [], bcc: [], subject: "files", bodyText: "exact", attachments, recordReply: false, now: 0 });
+  const fillQuota = async (accountId: number, used: number) => {
+    for (let left = ATTACHMENT_ACCOUNT_BYTES - used; left >= 1024;) {
+      const size = Math.min(MAX_ATTACHMENT_BYTES, left - 1024);
+      await store.attachments.create({ accountId, filename: "reservation", mime: "text/plain", size, now: 0 });
+      left -= size + 1024;
+    }
+  };
   describe(`attachment conformance: ${name}`, () => {
+    it.each(["before", "after"] as const)("adopts a Sent copy at quota with exact bytes when markSent is %s ingestion", async (ordering) => {
+      const [a] = await fresh();
+      const ref = await upload(a!);
+      const queued = await store.compose.queueSend(send(a!, [ref]));
+      const local = (await store.threads.get(queued.threadId))!.messages[0]!;
+      await store.ops.claimReady(0, 1);
+      await store.ops.markUnknown(queued.opId, "acceptance unknown", 1);
+      await fillQuota(a!, ref.size + 1024);
+      if (ordering === "before") await store.ops.resolveUnknown(queued.opId, "markSent", 2);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "server-sent-id", rfcMessageId: ` <${local.rfcMessageId!.toUpperCase()}> `, inInbox: false, isSent: true, attachments: [{ filename: ref.filename, mime: ref.mime, size: ref.size, bytes: new Uint8Array([0, 255, 128]) }] })], 3);
+      if (ordering === "after") await store.ops.resolveUnknown(queued.opId, "markSent", 4);
+      store = await h.reopen(store);
+      await store.attachments.create({ accountId: a!, filename: "cleanup", mime: "text/plain", size: 0, now: 172800000 });
+      store = await h.reopen(store);
+      const adopted = (await store.threads.get(queued.threadId))!.messages;
+      expect(adopted).toHaveLength(1);
+      expect(adopted[0]).toMatchObject({ id: local.id, attachments: [expect.objectContaining(ref)] });
+      expect(await store.attachments.read(a!, ref.assetId, 0)).toBe("AP+A");
+      await expect(store.attachments.discard(a!, ref.assetId)).rejects.toThrow();
+      await store.sync.remove([local.id]);
+      await store.attachments.discard(a!, ref.assetId);
+    });
+    it("stages against the provider match before a local RFC collision, never a foreign account or nonlocal RFC match", async () => {
+      const [a, b] = await fresh();
+      const ref = await upload(a!);
+      const queued = await store.compose.queueSend(send(a!, [ref]));
+      const local = (await store.threads.get(queued.threadId))!.messages[0]!;
+      const same = { filename: ref.filename, mime: ref.mime, size: ref.size, bytes: new Uint8Array([0, 255, 128]) };
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "provider-match", attachments: [{ ...same, bytes: new Uint8Array([1, 2, 3]) }] })]);
+      const providerThread = await threadOf(store, "provider-match");
+      const provider = (await store.threads.get(providerThread))!.messages[0]!;
+      await fillQuota(a!, 2 * (ref.size + 1024));
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "provider-match", rfcMessageId: local.rfcMessageId, attachments: [same] })]);
+      expect((await store.threads.get(providerThread))!.messages.find((m) => m.id === provider.id)!.attachments[0]!.assetId).toBeUndefined();
+      expect((await store.threads.get(queued.threadId))!.messages.find((m) => m.id === local.id)!.attachments[0]!.assetId).toBe(ref.assetId);
+      await fillQuota(b!, 0);
+      await ingest(store, [msg({ accountId: b!, providerMsgId: "foreign", rfcMessageId: local.rfcMessageId, attachments: [same] }), msg({ accountId: a!, providerMsgId: "nonlocal-rfc", rfcMessageId: provider.rfcMessageId, attachments: [same] })]);
+      for (const id of ["foreign", "nonlocal-rfc"]) {
+        const thread = await threadOf(store, id);
+        const message = (await store.debug.snapshot()).messages.find((m) => m.providerMsgId === id)!;
+        expect((await store.threads.get(thread))!.messages.find((m) => m.id === message.id)!.attachments[0]!.assetId).toBeUndefined();
+      }
+    });
     it("retains exact binary and legitimate empty assets across restart; never crosses accounts", async () => {
       const [a, b] = await fresh();
       const ref = await upload(a!);

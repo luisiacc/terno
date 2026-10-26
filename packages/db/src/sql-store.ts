@@ -63,7 +63,7 @@ import {
 } from "./categorize";
 import { autoReasons, categoryStats, countScope, pendingSuggestions, predictThread, quickActions, resolveScope } from "./categorize-bulk";
 import { startCheckpointWorker, type CheckpointWorker } from "./checkpoint";
-import { adoptProviderThread, deleteMessages, ingestMessages, recomputeThreads, setMessageBody } from "./ingest";
+import { adoptProviderThread, deleteMessages, findIngestMessage, ingestMessages, recomputeThreads, setMessageBody } from "./ingest";
 import { answeredThreads, backfillSlice, factsIdle, ownMailChanged, referencesOfOwn, resetFacts, startRescan } from "./facts";
 import { changeOwner, claimOwner, getOwner } from "./owner";
 import { countScopeThreads, getCounts, getSummaries, getThread, listThreads, scopeThreadIds, SUMMARY_COLUMNS, toSummary, type SummaryRow } from "./queries";
@@ -381,7 +381,10 @@ export class SqlMailStore implements MailStore {
     // auto-categorization without its message.
     ingest: async (batch, { applyFilters, now, classifier }) => {
       const staged: IncomingMessage[] = [];
-      for (const m of batch) staged.push(m.captureUnavailable || m.attachments === undefined ? m : { ...m, attachments: await stageAttachments(this, m.accountId, m.attachments, now, this.yieldTo, m.attachments.length && m.providerMsgId ? await this.attachments.current(m.accountId, { providerMsgId: m.providerMsgId }) : []) });
+      for (const m of batch) {
+        const existing = !m.captureUnavailable && m.attachments?.length ? findIngestMessage(this.db, m) : undefined;
+        staged.push(m.captureUnavailable || m.attachments === undefined ? m : { ...m, attachments: await stageAttachments(this, m.accountId, m.attachments, now, this.yieldTo, existing ? await this.attachments.current(m.accountId, { id: existing.id }) : []) });
+      }
       return this.db.tx(() => {
         const result = ingestMessages(this.db, staged as IncomingMessage[], now);
         const touched = new Set(result.touchedThreads);
