@@ -9,7 +9,7 @@ import type { Locator, Page } from "@playwright/test";
 import { DESIGNS } from "../../../packages/ui/src/designs/index";
 import type { DesignDefinition } from "../../../packages/ui/src/designs/types";
 import { sqlDb } from "../../backend-dev/src/server";
-import { expect, focusList, openRow, selectedRow, test } from "./fixtures";
+import { expect, focusList, navTo, openRow, selectedRow, test } from "./fixtures";
 
 const HIDDEN = ["sent", "archive", "all", "spam", "trash"] as const;
 const designOf = async (page: Page): Promise<DesignDefinition> => {
@@ -338,5 +338,30 @@ test.describe("Part B: resizable panes", { tag: "@design" }, () => {
     const b = (await h.boundingBox())!;
     const hit = await page.evaluate(([x, y]) => (document.elementFromPoint(x!, y!) as HTMLElement | null)?.closest("[data-testid]")?.getAttribute("data-testid"), [b.x + b.width / 2, b.y + 10]);
     expect(hit).toBe("pane-handle-sidebar");
+  });
+});
+
+test.describe("found along the way", () => {
+  test("a folder whose first page arrives while the list is scrolled to its end keeps paging (the same row count, the same last row)", async ({ app: page, server }) => {
+    // hold the next list's first page, so the old list is scrolled to its end meanwhile
+    const handlers = (server.backend.server as unknown as { handlers: Record<string, (...a: unknown[]) => unknown> }).handlers;
+    const original = handlers["threads.list"]!;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    handlers["threads.list"] = async (...args: unknown[]) => {
+      await gate;
+      return original(...args);
+    };
+    await navTo(page, "all");
+    const listbox = page.getByRole("listbox");
+    const before = await listbox.evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+      return el.scrollHeight;
+    });
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    handlers["threads.list"] = original;
+    release();
+    await expect(page.getByTestId("thread-list")).toHaveAttribute("data-results-for", /^\["all"/);
+    await expect.poll(() => listbox.evaluate((el) => el.scrollHeight)).toBeGreaterThan(before);
   });
 });
