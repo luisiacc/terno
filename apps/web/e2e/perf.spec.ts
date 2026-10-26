@@ -503,7 +503,7 @@ test("resizing panes (plan 21): dragging either edge keeps frames smooth with fi
   await page.getByTestId("search-input").fill("");
   await expect(page.getByTestId("search-stats")).toBeHidden();
   await expect(page.getByTestId("reader-subject")).toHaveText("Presupuesto con cinco boletines");
-  expect(await rows(page).count(), "a full screen of rows mounted").toBeGreaterThanOrEqual(10);
+  await expect.poll(() => rows(page).count(), { message: "a full screen of rows mounted" }).toBeGreaterThanOrEqual(10);
   const reader = page.getByTestId("reader");
   await reader.getByTestId("more-messages").click();
   // every message open: the toggles that are still collapsed, from the top
