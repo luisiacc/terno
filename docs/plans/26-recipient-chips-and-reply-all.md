@@ -376,3 +376,39 @@ compose.noRecipient              "Add a recipient to send"             / "Añade
 6. web: `autoRecipients` semantics and tests.
 7. web: the chip model (pure), then the component, keyboard, undo, the collapsed summary, Send's message, strings.
 8. e2e, the perf gate, screenshots, baselines.
+
+## Revisions after the Codex review
+
+Codex (`codex exec -s read-only`) made 12 points against the plan and the code. All of them are taken, three of them narrowed as explained.
+
+1. **Recovery could turn display-name text into recipients.**
+   - Recovery now needs a bracketed address *and* a separator outside any brackets: the swallowed-list signature. `"Support <leak@attacker.example>" <support@…>` is not split. Its name loses the bracketed part and nothing is added.
+   - At ingest, a bracketed address that only appears **after decoding an encoded word** is never structure. It is removed from the name, so read-time repair later finds nothing to split. Only text the header literally carries can be recovered.
+   - The user's case is literal: the address sits in a correctly quoted string. So the request stands, and the narrowed rule still recovers david.
+   - **Why it stays automatic rather than an explicit action:**
+     - recovery is limited to To/Cc/Bcc/Reply-To, never From;
+     - every recovered address is one the sender could have listed in Cc directly;
+     - the reader shows it as its own recipient after the read-time repair, so what reply-all adds is what the reader shows;
+     - it appears as its own chip before anything is sent.
+2. **Invalid chips must round-trip losslessly.**
+   - An invalid entry is written as it was typed when that reparses to exactly one entry. Otherwise it becomes one quoted string, so `"a@x.com, b@x.com"` stays one invalid entry and never two valid ones.
+   - `formatAddress` quotes an "address" that contains whitespace or specials instead of stripping them, so draft save → reload never makes something sendable that wasn't.
+   - Tested through autosave, reload and Send.
+3. **IMAP gets the same structural parser.** The fetch asks for the raw From, Sender, To, Cc, Bcc and Reply-To header fields (every occurrence, 8-bit read as UTF-8 then Latin-1). They are parsed with `parseAddressHeader`; the envelope is the fallback when a header is missing.
+   - **Legacy limit:** a From already stored wrong by an earlier ingest can only be cleaned (name), not re-derived. This is stated here, and the tests use raw-versus-envelope fixtures.
+4. **One answered message.** `answered(detail, mine)` is resolved once and used by the recipients, the quote, `inReplyToMessageId` and the reader's "Reply to …" bar (`reader.tsx` `replyTo`). Test: the newest message is from my alias but not marked sent.
+5. **Re-ingest fills Reply-To.** `updateExisting` (SQL) and the IDB upsert set `reply_to_json` when the incoming message carries it (`replyTo` present, even an empty `[]` = "parsed, none"). `undefined` (a producer that doesn't know) never erases it. The conformance suite ingests the same provider id twice.
+6. **One recipient limit.** `MAX_RECIPIENTS = 1000` per field, in core, is used by the contract (drafts, send) and by draft import/export (`backend/import.ts`). Tested with a 250-recipient draft that exports, imports and keeps its body.
+   - **Older versions** importing such an export refuse that draft, as they refuse any over-limit draft today. This is noted, not solved.
+7. **Recovery runs before the 256-character cap.** The cap applies to each resulting name. Test: a swallowed recipient after character 256.
+8. **Paste keeps invalid entries.** `pastedAddresses` no longer filters by validity: `ana@x.com; bob@` makes two chips, Bob's invalid, and dedupe applies to valid ones only. Tested with mixed pastes, replacing a selection, undo and reload.
+9. **Ownership of auto recipients.**
+   - The field reports the addresses the *user* put in with each change: typed, accepted, pasted, edited or re-added. `DraftFieldsForm` drops those from `auto[field]`, so an edited or deliberately re-added recipient survives a conversion to Forward.
+   - Undo restores the text; the address stays user-authored, which is harmless.
+   - Tested with the conversion and with save/reload.
+10. **Exclusions beyond 600.** Suggestions are filtered on the client against every address in the three fields (a Set) before they show. The request still sends at most 600, the contract's cap. Test: a delayed answer with more than 600 recipients in the draft.
+11. **The other readers of stored addresses:**
+    - the thread list's From name (both stores' `toSummary`) gets `cleanName` behind the same fast path (one regex test per row);
+    - the contact index cleans names when it learns them (`cleanName`), and its snapshot format version is bumped so old snapshots rebuild;
+    - plan 17's people facts use addresses only (lowercased keys), so they are unchanged.
+12. **postal-mime still parses addresses.** Our parse is a second pass over five short headers; it doesn't replace postal-mime's. The claim is corrected. `parseRaw` is benchmarked whole: a message with a 2,000-recipient Cc and nasty names stays within its budget.
