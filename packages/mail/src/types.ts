@@ -160,6 +160,8 @@ export interface GmailTokenBroker {
   inspect(accessToken: string, netFetch: typeof fetch, options?: { signal?: AbortSignal; timeoutMs?: number }): Promise<Omit<GmailConnectResult, "refreshToken">>;
   /** hands the token to that account's provider until it expires */
   set(accountId: number, accessToken: string, expiresAt: number): void;
+  /** release the removed account's in-memory credential */
+  forget?(accountId: number): void;
 }
 
 export interface ProviderRegistry {

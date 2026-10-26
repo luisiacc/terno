@@ -119,6 +119,39 @@ describe("Google connection RPC validation", () => {
     expect(await t.client.call("app.bootstrap", {})).toMatchObject({ accounts: before.accounts, owner: before.owner });
   });
 
+  it.each(["identity lookup", "credential admission"] as const)("removal during browser reconnect's %s cannot reinstall its token or recreate its account", async (stage) => {
+    const t = await setup();
+    const account = await t.client.call("accounts.connectGmailToken", { accessToken: "first-token", expiresIn: 3600 });
+    await t.backend.syncAccount(account.id);
+    t.installed.mockClear();
+    let release!: () => void;
+    let entered!: () => void;
+    const blocked = new Promise<void>((resolve) => { entered = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const get = t.backend.store.accounts.get.bind(t.backend.store.accounts);
+    const signedIn = t.backend.signedIn.bind(t.backend);
+    const spy = stage === "identity lookup" ? vi.spyOn(t.backend.store.accounts, "get").mockImplementationOnce(async (id) => {
+      const value = await get(id);
+      entered(); await gate;
+      return value;
+    }) : vi.spyOn(t.backend, "signedIn").mockImplementationOnce(async (...args) => {
+      entered(); await gate;
+      return signedIn(...args);
+    });
+    const reconnect = t.client.call("accounts.connectGmailToken", { accessToken: "replacement", expiresIn: 3600, accountId: account.id }).then((value) => ({ value }), (error: unknown) => ({ error }));
+    await blocked;
+    try {
+      await t.client.call("accounts.remove", { id: account.id });
+    } finally {
+      release();
+    }
+    const result = await reconnect;
+    spy.mockRestore();
+    expect(result).toHaveProperty("error");
+    expect(t.installed).not.toHaveBeenCalled();
+    expect((await t.client.call("app.bootstrap", {})).accounts).toEqual([]);
+  });
+
   it("a browser token expired during inspection is never installed or saved", async () => {
     const t = await setup();
     t.inspect.mockImplementationOnce(async () => { t.advance(60_001); return { ...identity, refreshToken: "unused" }; });

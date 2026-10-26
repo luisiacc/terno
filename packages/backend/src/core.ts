@@ -947,6 +947,7 @@ export class BackendCore {
     if (!life?.abort.signal.aborted) return;
     this.lifetimes.delete(accountId);
     this.credentials.delete(accountId);
+    this.options.providers.gmailTokens?.forget?.(accountId);
   }
 
   syncAccount(accountId: number): Promise<void> {
@@ -1095,7 +1096,7 @@ export class BackendCore {
    * login or Google's answer: it stops asking now, not after the sync. A refusal of the old credentials still in
    * flight no longer counts, and what waited for the sign-in goes. The caller syncs (or restarts the account).
    */
-  async signedIn(accountId: number): Promise<void> {
+  async signedIn(accountId: number, installCredentials?: () => void): Promise<void> {
     if (this.stopped || this.lifetimes.get(accountId)?.removing) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
     const previous = this.lifetime(accountId);
     const account = await this.store.accounts.get(accountId);
@@ -1106,6 +1107,7 @@ export class BackendCore {
     this.credentials.set(accountId, this.credentialsOf(accountId) + 1);
     this.connectivity.waitForSignIn(accountId, false);
     await this.accountWrite(life, async () => {
+      installCredentials?.();
       await this.store.accounts.setSyncState(accountId, { status: "idle", lastError: null, lastErrorI18n: null, authRequired: false, authScope: null });
       await this.emitAccounts();
       await this.resumeAuth(accountId);

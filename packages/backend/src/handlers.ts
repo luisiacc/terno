@@ -555,14 +555,19 @@ export function createHandlers(b: Backend): Handlers {
         if (expected.email.toLowerCase() !== who.email.toLowerCase()) throw new RpcError("BAD_REQUEST", L("errors.googleConnectedOther", { got: who.email, expected: expected.email }));
       }
       const existing = (await store.accounts.list()).find((a) => a.email === who.email.toLowerCase());
+      if (accountId !== undefined && existing?.id !== accountId) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
       if (existing) {
         if (existing.kind !== "gmail") throw new RpcError("BAD_REQUEST", L("errors.alreadyConnectedImap", { email: who.email }));
         // reconnect: the same mailbox gets a fresh token and syncs what it missed
         googleFlowActive(b);
         if (expiresAt <= b.now()) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
-        tokens.set(existing.id, accessToken, expiresAt);
+        await b.dropAccount(existing.id);
         // plan 25: Google just proved the token (its profile answered): the account stops asking now, and what waited goes
-        await b.signedIn(existing.id);
+        await b.signedIn(existing.id, () => {
+          googleFlowActive(b);
+          if (expiresAt <= b.now()) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
+          tokens.set(existing.id, accessToken, expiresAt);
+        });
         void b.syncAccount(existing.id);
         return existing;
       }
@@ -599,12 +604,13 @@ export function createHandlers(b: Backend): Handlers {
 
     "accounts.remove": async ({ id }) => {
       const wasOwner = (await store.owner.get())?.accountId === id;
-      await b.dropAccount(id);
+      await b.dropAccount(id, { remove: true });
       // plan 22: its photo lists and photos go with it
       await setGooglePhotoState(store, id, null);
       await b.icons.dropPhotos(id);
       // the owner row survives: its account_id is cleared (ON DELETE SET NULL)
       await store.accounts.remove(id);
+      b.accountRemoved(id);
       // nobody from a removed account lingers in suggestions
       await b.autocomplete.reset();
       await b.emitAccounts();

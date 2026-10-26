@@ -119,6 +119,9 @@ export function createGmailTokenBroker(o: { endpoints?: Partial<GmailEndpoints>;
     set(accountId, accessToken, expiresAt) {
       tokens.set(accountId, { token: accessToken, expiresAt });
     },
+    forget(accountId) {
+      tokens.delete(accountId);
+    },
     provider(ctx) {
       const id = ctx.account.id;
       return createGmailApiProvider(ctx, {
