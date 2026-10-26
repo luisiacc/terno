@@ -1,4 +1,4 @@
-import { addressKey, automatedLevel, threadFacts, type Address, type FactContext, type FactRow, type ThreadFacts } from "@terno/core";
+import { addressKey, automatedLevel, FACTS_WINDOW, newestMessages, threadFacts, type Address, type FactContext, type FactRow, type ThreadFacts } from "@terno/core";
 import type { MemDb, Row, Table } from "./mem";
 
 /**
@@ -33,14 +33,28 @@ export class FactsQueue {
   private pending: Set<number> | null = null;
   /** where the walk of the recency order stopped (the first backfill) */
   private cursor: { lastDate: number; id: number } | null = null;
+  /** where the walk by id stopped, when the recency order isn't built yet (it would take a sort of every thread) */
+  private idCursor: number | null = null;
+  /** a conversation too long for one slice, read a chunk of messages a slice (memory only: a restart reads it again) */
+  big: { thread: number; keys: IterableIterator<unknown>; rows: FactRow[]; changed: boolean } | null = null;
 
   constructor(private readonly db: MemDb) {
     db.onRow((table, row, prev) => {
+      if (table === "messages") {
+        // a message of the long conversation being read came, went or changed: read it again
+        if (this.big && (row?.thread_id === this.big.thread || prev?.thread_id === this.big.thread)) this.big.changed = true;
+        return;
+      }
       if (table !== "threads" || !this.pending) return;
       const id = (row ?? prev)!.id as number;
       if (pendingRow(row)) this.pending.add(id);
       else this.pending.delete(id);
     });
+  }
+
+  /** is this thread pending (its facts not computed)? */
+  has(id: number): boolean {
+    return this.set().has(id);
   }
 
   private set(): Set<number> {
@@ -66,8 +80,16 @@ export class FactsQueue {
     if (pending.size === 0) return [];
     const threads = t(this.db, "threads");
     if (pending.size <= SORT_UNDER) return [...pending].sort((a, b) => threads.get(b)!.last_date - threads.get(a)!.last_date || b - a).slice(0, n);
-    const ids = recency.current(threads);
     const out: number[] = [];
+    if (!recency.ready) {
+      // the recency order isn't built (nothing has listed yet): newest ids first, which is about newest mail
+      // first, never a sort of every thread (Codex review 2, #1)
+      let id = this.idCursor ?? threads.highestKey();
+      for (let steps = 0; id > 0 && out.length < n && steps < n * 64; id--, steps++) if (pending.has(id)) out.push(id);
+      this.idCursor = id > 0 ? id : null;
+      return out;
+    }
+    const ids = recency.current(threads);
     let i = this.cursor ? recency.after(threads, this.cursor) : 0;
     for (let steps = 0; i < ids.length && out.length < n && steps < n * 64; i++, steps++) if (pending.has(ids[i]!)) out.push(ids[i]!);
     const last = i < ids.length && i > 0 ? threads.get(ids[i - 1]!) : undefined;
@@ -77,11 +99,60 @@ export class FactsQueue {
   }
 }
 
+/** More messages than this and a conversation is read in chunks of this many, a chunk a slice (Codex review 2, #3). */
+export const BIG_THREAD = 4096;
+
+/**
+ * A thread's facts, or, for a conversation too long to read in one slice,
+ * back to the queue: the backfill reads it in chunks (requeues, sender
+ * jobs and rescans never read one whole).
+ */
+function computeOrDefer(db: MemDb, id: number, ctx: FactContext): void {
+  writeFacts(db, id, t(db, "messages").count("fk_thread_id", id) > BIG_THREAD ? null : factsOf(db, id, ctx));
+}
+
+/**
+ * One chunk of the long conversation being read: its messages' newest
+ * FACTS_WINDOW kept so far; at the end, the facts from them (the newest
+ * window of the thread: what threadFacts reads). A change to the thread
+ * meanwhile reads it again; a thread no longer pending (ingest computed it)
+ * is let go. Returns the messages read.
+ */
+function bigSlice(db: MemDb, queue: FactsQueue, ctx: FactContext): number {
+  const big = queue.big!;
+  if (!queue.has(big.thread)) {
+    queue.big = null;
+    return 1;
+  }
+  if (big.changed) queue.big = { thread: big.thread, keys: t(db, "messages").keysBy("fk_thread_id", big.thread), rows: [], changed: false };
+  const scan = queue.big!;
+  const messages = t(db, "messages");
+  const chunk: FactRow[] = [];
+  let done = false;
+  while (chunk.length < BIG_THREAD) {
+    const k = scan.keys.next();
+    if (k.done) {
+      done = true;
+      break;
+    }
+    const m = messages.get(k.value);
+    if (m) chunk.push(m as unknown as FactRow);
+  }
+  scan.rows = newestMessages([...scan.rows, ...chunk], FACTS_WINDOW);
+  if (done) {
+    writeFacts(db, scan.thread, threadFacts(scan.rows, ctx));
+    queue.big = null;
+  }
+  return Math.max(1, chunk.length);
+}
+
 /** Under this many pending threads the queue sorts them; above, it walks the recency order. */
 const SORT_UNDER = 4096;
 
 /** The store's recency order of every thread (mail.ts's ThreadOrder), kept current from row changes. */
 export interface RecencyOrder {
+  /** built and current enough that walking it needs no sort */
+  readonly ready: boolean;
   current(threads: Table<R>): readonly number[];
   after(threads: Table<R>, cursor: { lastDate: number; id: number }): number;
 }
@@ -189,13 +260,20 @@ function sendersLike(db: MemDb, key: string): string[] {
   return [key, ...(taggedOf(db).get(key) ?? [])];
 }
 
-/** A sender's threads to recompute, persisted (SQLite's SenderJob): its addresses in turn, each by message id past a cursor. */
+/**
+ * A sender's threads to recompute, persisted (SQLite's SenderJob): its
+ * addresses in turn. Within one, a live walk of the `from` index's keys
+ * (memory only, Codex review 2, #2): each slice reads the next `n`, never the
+ * sender's whole history; a restart walks that address again (recomputing
+ * is idempotent).
+ */
 interface SenderJob {
   email: string;
   senders: string[];
   i: number;
-  after: number;
 }
+
+const walks = new WeakMap<MemDb, Map<string, IterableIterator<unknown>>>();
 
 const SENDERS_KEY = "facts_senders";
 
@@ -223,26 +301,44 @@ export function requeueSender(db: MemDb, key: string): void {
   if (rows === 0) return;
   if (rows <= INLINE_REQUEUE) {
     const ctx = factContext(db, ownAddresses(db));
-    for (const id of new Set(senders.flatMap((s) => messages.by("from", s).map((m) => m.thread_id as number)))) writeFacts(db, id, factsOf(db, id, ctx));
+    for (const id of new Set(senders.flatMap((s) => messages.by("from", s).map((m) => m.thread_id as number)))) computeOrDefer(db, id, ctx);
     return;
   }
-  setSenderJobs(db, [...senderJobs(db).filter((j) => j.email !== key), { email: key, senders, i: 0, after: 0 }]);
+  setSenderJobs(db, [...senderJobs(db).filter((j) => j.email !== key), { email: key, senders, i: 0 }]);
+  walks.get(db)?.delete(key);
 }
 
-/** One slice of the first sender job: its next `n` messages by id, their threads recomputed. */
+/** One slice of the first sender job: the next `n` of its messages, their threads recomputed. */
 function senderSlice(db: MemDb, n: number): number {
   const jobs = senderJobs(db);
   const job = jobs[0]!;
-  const ids = Float64Array.from(t(db, "messages").by("from", job.senders[job.i]!).map((m) => m.id as number).filter((id) => id > job.after)).sort();
-  const take = ids.subarray(0, n);
   const messages = t(db, "messages");
+  let mine = walks.get(db);
+  if (!mine) walks.set(db, (mine = new Map()));
+  let keys = mine.get(job.email);
+  if (!keys) mine.set(job.email, (keys = messages.keysBy("from", job.senders[job.i]!)));
+  const threads = new Set<number>();
+  let read = 0;
+  let done = false;
+  while (read < n) {
+    const k = keys.next();
+    if (k.done) {
+      done = true;
+      break;
+    }
+    read++;
+    const m = messages.get(k.value);
+    if (m) threads.add(m.thread_id as number);
+  }
   const ctx = factContext(db, ownAddresses(db));
-  for (const thread of new Set(Array.from(take, (id) => messages.get(id)!.thread_id as number))) writeFacts(db, thread, factsOf(db, thread, ctx));
-  if (ids.length > n) jobs[0] = { ...job, after: take[take.length - 1]! };
-  else if (job.i + 1 < job.senders.length) jobs[0] = { ...job, i: job.i + 1, after: 0 };
-  else jobs.shift();
-  setSenderJobs(db, jobs);
-  return Math.max(1, take.length);
+  for (const thread of threads) computeOrDefer(db, thread, ctx);
+  if (done) {
+    mine.delete(job.email);
+    if (job.i + 1 < job.senders.length) jobs[0] = { ...job, i: job.i + 1 };
+    else jobs.shift();
+    setSenderJobs(db, jobs);
+  }
+  return Math.max(1, read);
 }
 
 export function startRescan(db: MemDb): void {
@@ -347,10 +443,20 @@ export function backfillSlice(db: MemDb, queue: FactsQueue, recency: RecencyOrde
     return { phase: "senders", processed: Math.max(1, to - state.after), more: true, next: to >= max ? "threads" : "senders" };
   }
   if (senderJobs(db).length) return { phase: state.phase, processed: senderSlice(db, n), more: true };
+  // a long conversation being read goes on first: a chunk of its messages is this slice
+  if (queue.big) return { phase: state.phase, processed: Math.ceil(bigSlice(db, queue, factContext(db, ownAddresses(db))) / 16), more: true };
   const pending = queue.next(n, recency);
   if (pending.length) {
     const ctx = factContext(db, ownAddresses(db));
-    for (const id of pending) writeFacts(db, id, factsOf(db, id, ctx));
+    const messages = t(db, "messages");
+    for (const id of pending) {
+      if (messages.count("fk_thread_id", id) > BIG_THREAD) {
+        // too long for a slice: read in chunks from the next slice on; the rest of these wait for theirs
+        queue.big = { thread: id, keys: messages.keysBy("fk_thread_id", id), rows: [], changed: false };
+        break;
+      }
+      writeFacts(db, id, factsOf(db, id, ctx));
+    }
     return { phase: state.phase, processed: pending.length, more: true };
   }
   // the walk's steps ran out on computed threads: the next slice goes on from there
@@ -370,7 +476,7 @@ export function backfillSlice(db: MemDb, queue: FactsQueue, recency: RecencyOrde
       if (threads.has(id)) ids.push(id);
     }
     const ctx = factContext(db, ownAddresses(db));
-    for (const x of ids) writeFacts(db, x, factsOf(db, x, ctx));
+    for (const x of ids) computeOrDefer(db, x, ctx);
     const done = id >= top;
     setPhase(db, done ? { phase: "done" } : { phase: "rescan", after: id });
     return { phase: "rescan", processed: Math.max(1, ids.length), more: !done };

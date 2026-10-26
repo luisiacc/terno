@@ -126,6 +126,11 @@ export class ThreadOrder {
     return lo;
   }
 
+  /** the order needs no sort to be current (built, a few changes pending): walking it costs only the walk */
+  get ready(): boolean {
+    return !this.stale && this.pending.size <= 64;
+  }
+
   /** the order, brought up to date with the rows */
   current(threads: Table<R>): readonly number[] {
     if (this.pending.size === 0 && !this.stale) return this.ids;

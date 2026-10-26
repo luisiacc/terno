@@ -427,6 +427,7 @@ describe("migration v14: people and waiting for your reply (plan 17)", () => {
 
   it("People and Waiting pages, counts and scopes, the queue, a failed send's lookup and a sender's messages all walk an index (no table scan, no sort of the mailbox)", async () => {
     const { listSql, scopeIdsSql, waitingSql } = await import("./queries");
+    const { SENDER_SQL } = await import("./facts");
     const { db } = legacyMail(13, { threads: 200, seed: 5 });
     migrate(db);
     db.exec("ANALYZE");
@@ -445,13 +446,17 @@ describe("migration v14: people and waiting for your reply (plan 17)", () => {
     }
     const w = waitingSql(Date.UTC(2026, 9, 22));
     expect(planOf(db, `SELECT t.account_id, count(*) FROM threads t INDEXED BY ${w.byDate} WHERE ${w.where} AND t.in_inbox = 1 GROUP BY t.account_id`, ...(w.params as number[]))).toMatch(/threads_waiting \(last_date>\?\)/);
+    // the greeting's count: a covering range of the inbox's waiting threads
+    expect(planOf(db, "SELECT account_id, count(*) AS c FROM threads INDEXED BY threads_waiting_inbox WHERE in_inbox = 1 AND waiting_since IS NOT NULL AND waiting_since >= ? GROUP BY account_id", 1)).toMatch(/SEARCH threads USING COVERING INDEX threads_waiting_inbox \(waiting_since>\?\)/);
     expect(planOf(db, "SELECT id FROM threads INDEXED BY threads_facts_pending WHERE person IS NULL ORDER BY last_date DESC, id DESC LIMIT 5")).toMatch(/threads_facts_pending/);
     // Codex review 1, #3: a local copy's failed send, without reading every op ever run
     expect(planOf(db, "SELECT 1 FROM ops WHERE kind = 'send' AND state = 'failed' AND json_extract(target_json, '$.messageIds[0]') = ? LIMIT 1", 7)).toMatch(/SEARCH ops USING INDEX ops_failed_sends/);
     // a sender's messages, and their +tagged forms, by ranges of messages_from
-    expect(planOf(db, "SELECT id, thread_id, from_email FROM messages WHERE from_email = ? AND id > ? ORDER BY id LIMIT ?", "a@x", 0, 10)).toMatch(/messages_from \(from_email=\? AND rowid>\?\)/);
-    expect(planOf(db, "SELECT id, thread_id, from_email FROM messages WHERE (from_email, id) > (?, ?) AND from_email < ? ORDER BY from_email, id LIMIT ?", "a+", 0, "a,", 10)).toMatch(/messages_from/);
-    expect(planOf(db, "SELECT id, thread_id, from_email FROM messages WHERE (from_email, id) > (?, ?) AND from_email < ? ORDER BY from_email, id LIMIT ?", "a+", 0, "a,", 10)).not.toMatch(/TEMP B-TREE/);
+    expect(planOf(db, SENDER_SQL.address, "a@x", 0, 10)).toMatch(/messages_from \(from_email=\? AND rowid>\?\)/);
+    // the +tagged forms: the cursor's address past its id (both in the seek, Codex review 2 #4), then the next addresses of the range
+    expect(planOf(db, SENDER_SQL.address, "a+b@x", 9, 10)).toMatch(/messages_from \(from_email=\? AND rowid>\?\)/);
+    expect(planOf(db, SENDER_SQL.range, "a+", "a,", 10)).toMatch(/messages_from \(from_email>\? AND from_email<\?\)/);
+    expect(planOf(db, SENDER_SQL.range, "a+", "a,", 10)).not.toMatch(/TEMP B-TREE/);
     // "answered": message_refs probed per account, in one statement
     expect(planOf(db, "SELECT m.id FROM message_refs r JOIN messages m ON m.id = r.message_id WHERE r.account_id IN (SELECT id FROM accounts) AND r.ref = ?", "q@x")).toMatch(/SEARCH r USING PRIMARY KEY \(account_id=\? AND ref=\?\)/);
   });

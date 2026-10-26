@@ -1,5 +1,5 @@
 import type { AiTasks } from "@terno/ai";
-import { decodeText, encodeText, messageOf, textRef, type Account, type AccountSyncState, type ThreadAction } from "@terno/core";
+import { decodeText, encodeText, messageOf, textRef, type Account, type AccountSyncState, type OpState, type ThreadAction } from "@terno/core";
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
 import { RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -982,14 +982,15 @@ export class BackendCore {
       const expected = pe ? pe.expected || !provider : undefined;
       if (op.kind === "send") captureError(error, { code: "send.failed", fields: { retryable: pe?.retryable, ambiguous: pe?.ambiguous }, expected });
       else captureError(error, { code: "ops.failed", fields: { opKind: opKindOf(op.kind), retryable: pe?.retryable, ambiguous: pe?.ambiguous }, expected });
+      let state: OpState | null = null;
       if (error instanceof ProviderAuthError) await this.store.ops.awaitAuth(op.id, message, this.now());
       else if (error instanceof ProviderError && error.ambiguous) await this.store.ops.markUnknown(op.id, message, this.now());
       // the server couldn't be reached: wait for the network (plan 20); an outage gives the attempt back
-      else if (error instanceof ProviderError && error.network) await this.store.ops.fail(op.id, message, true, this.now(), { network: true, keepAttempt: this.connectivity.inOutage(op.account_id) });
-      else if ((await this.store.ops.fail(op.id, message, error instanceof ProviderError ? error.retryable : true, this.now())) === "failed" && op.kind === "send") {
-        // plan 17 (Codex review 1, #6): a send that failed answered nobody: the store recomputed what it replied to, the lists and counts follow
-        this.notifyChanged([]);
-      }
+      else if (error instanceof ProviderError && error.network) state = await this.store.ops.fail(op.id, message, true, this.now(), { network: true, keepAttempt: this.connectivity.inOutage(op.account_id) });
+      else state = await this.store.ops.fail(op.id, message, error instanceof ProviderError ? error.retryable : true, this.now());
+      // plan 17 (Codex review 1 #6, review 2 #6): a send that failed for good, whatever the cause, answered nobody: the
+      // store recomputed what it replied to, and the lists and counts follow
+      if (state === "failed" && op.kind === "send") this.notifyChanged([]);
     } finally {
       if (sending && --this.sendsInFlight === 0) for (const settle of this.sendsSettled.splice(0)) settle();
     }

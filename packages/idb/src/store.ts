@@ -841,7 +841,15 @@ export class IdbMailStore implements MailStore {
           const messages = T(this.c, "messages");
           const threads = new Set<number>();
           for (const u of updates) {
-            if (pending.has(u.messageId)) continue;
+            // optimistic local state wins until its op settles; Gmail's labels aren't optimistic state (Codex review 2, #5)
+            if (pending.has(u.messageId)) {
+              const p = u.gmailLabels ? messages.get(u.messageId) : undefined;
+              if (p && p.account_id === accountId) {
+                messages.update(p, { gmail_labels: JSON.stringify(u.gmailLabels) });
+                threads.add(p.thread_id);
+              }
+              continue;
+            }
             const sets: [string, number | string][] = Object.entries(u.flags)
               .filter(([k]) => FLAG_COLUMNS[k])
               .map(([k, v]) => [FLAG_COLUMNS[k]!, v ? 1 : 0]);

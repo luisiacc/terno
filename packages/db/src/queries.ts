@@ -328,10 +328,13 @@ export function getCounts(db: Db, now: number): Counts {
  */
 export function waitingCounts(db: Db, now: number): Pick<Counts, "inboxWaiting" | "inboxWaitingByAccount"> {
   if (!factsReady(db)) return { inboxWaiting: null, inboxWaitingByAccount: {} };
-  const w = waitingSql(now);
   const byAccount: Record<number, number> = {};
   let total = 0;
-  for (const r of db.all<{ account_id: number; c: number }>(`SELECT t.account_id, count(*) AS c FROM threads t INDEXED BY ${w.byDate} WHERE ${w.where} AND t.in_inbox = 1 GROUP BY t.account_id`, ...w.params)) {
+  // threads_waiting_inbox holds only the inbox's waiting threads: the window is its range (waiting_since <= last_date, so no date test)
+  for (const r of db.all<{ account_id: number; c: number }>(
+    "SELECT account_id, count(*) AS c FROM threads INDEXED BY threads_waiting_inbox WHERE in_inbox = 1 AND waiting_since IS NOT NULL AND waiting_since >= ? GROUP BY account_id",
+    waitingCutoff(now),
+  )) {
     byAccount[r.account_id] = r.c;
     total += r.c;
   }

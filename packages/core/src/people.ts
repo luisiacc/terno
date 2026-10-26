@@ -138,7 +138,7 @@ export interface ThreadFacts {
   waitingSince: number | null;
 }
 
-const later = (a: FactRow, b: FactRow) => a.date > b.date || (a.date === b.date && a.id > b.id);
+const later = (a: Pick<FactRow, "date" | "id">, b: Pick<FactRow, "date" | "id">) => a.date > b.date || (a.date === b.date && a.id > b.id);
 
 function addressesOf(json: string): string[] {
   try {
@@ -175,8 +175,8 @@ function decide(newest: FactRow | null, inbound: FactRow | null, ctx: FactContex
 export const FACTS_WINDOW = 200;
 
 /** The `k` newest rows (date, then id), in O(n log k): a min-heap of the newest seen so far, its root the oldest of them. */
-function newestOf(rows: readonly FactRow[], k: number): FactRow[] {
-  const heap: FactRow[] = [];
+export function newestMessages<T extends Pick<FactRow, "date" | "id">>(rows: readonly T[], k: number): T[] {
+  const heap: T[] = [];
   const down = (i: number) => {
     for (;;) {
       const l = 2 * i + 1;
@@ -219,7 +219,7 @@ export function threadFacts(rows: readonly FactRow[], ctx: FactContext, window: 
   let inbound: FactRow | null = null;
   let hiddenInbound: FactRow | null = null;
   // a conversation longer than the window: its newest messages only (short ones, the rule, are read as they are)
-  const read = rows.length > window ? newestOf(rows, window) : rows;
+  const read = rows.length > window ? newestMessages(rows, window) : rows;
   for (const m of read) {
     if (ignored(m, ctx)) continue;
     const visible = visibleOf(m);

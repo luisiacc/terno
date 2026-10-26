@@ -409,8 +409,12 @@ export class SqlMailStore implements MailStore {
         const pending = messagesWithPendingOps(this.db, accountId);
         const threads = new Set<number>();
         for (const u of updates) {
-          // optimistic local state wins until its op settles
-          if (pending.has(u.messageId)) continue;
+          // optimistic local state wins until its op settles; Gmail's labels aren't optimistic state (Codex review 2, #5)
+          if (pending.has(u.messageId)) {
+            const r = u.gmailLabels ? this.db.get<{ thread_id: number }>("UPDATE messages SET gmail_labels = ? WHERE id = ? AND account_id = ? RETURNING thread_id", JSON.stringify(u.gmailLabels), u.messageId, accountId) : undefined;
+            if (r) threads.add(r.thread_id);
+            continue;
+          }
           const sets: [string, number | string][] = Object.entries(u.flags)
             .filter(([k]) => FLAG_COLUMNS[k])
             .map(([k, v]) => [FLAG_COLUMNS[k]!, v ? 1 : 0]);

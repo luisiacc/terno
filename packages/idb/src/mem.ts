@@ -75,6 +75,12 @@ export class Table<R extends Row = Row> {
     return this.rows.has(keyOf(values));
   }
 
+  /** the keys an index holds for `values`, live (rows added later come after; deleted ones are skipped): a walk that spans slices */
+  keysBy(index: string, ...values: unknown[]): IterableIterator<Key> {
+    if (!this.indexes.has(index)) throw new Error(`${this.spec.name} has no index ${index}`);
+    return (this.indexes.get(index)!.map.get(keyOf(values)) ?? new Set<Key>()).values();
+  }
+
   /** rows whose index columns equal `values` */
   by(index: string, ...values: unknown[]): R[] {
     const keys = this.indexes.get(index)?.map.get(keyOf(values));

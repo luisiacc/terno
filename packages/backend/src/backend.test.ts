@@ -203,6 +203,25 @@ describe("sending", () => {
     expect((await client.call("counts.get", {})).inboxWaiting).toBe(1);
   });
 
+  it("a send that runs out of attempts on network errors tells the lists and counts too (plan 17, Codex review 2, #6)", async () => {
+    const { backend, client, providers, accountId, events } = setup();
+    await backend.ingestSliced([incoming(accountId, { from: { name: "Ana", email: "ana@corp.io" }, listId: null })]);
+    const [t] = (await client.call("threads.list", { view: "inbox" })).items;
+    const original = (await client.call("threads.get", { threadId: t!.id })).messages[0]!;
+    await backend.provider(accountId);
+    const sent = await client.call("compose.send", { accountId, to: [{ name: "Ana", email: "ana@corp.io" }], subject: "Re: hola", bodyText: "¡Gracias!", inReplyToMessageId: original.id });
+    // its last attempt: the server can't be reached once more
+    sqlDb(backend.store).run("UPDATE ops SET attempts = 99 WHERE id = ?", sent.opId);
+    providers.get(accountId)!.failNext = ProviderError.network("SMTP: connect ECONNREFUSED");
+    await tick();
+    events.length = 0;
+    await backend.runWorker();
+    await tick();
+    expect((await client.call("ops.list", {})).find((o) => o.id === sent.opId)).toMatchObject({ state: "failed" });
+    expect(events.some((e) => e.name === "changed")).toBe(true);
+    expect((await client.call("counts.get", {})).inboxWaiting).toBe(1);
+  });
+
   it("adding an account wakes its rescan: without any mail to sync, the waiting count is known again (plan 17, Codex review 1, #7)", async () => {
     const { backend, client, accountId } = setup();
     await backend.ingestSliced([incoming(accountId, { from: { name: "Ana", email: "ana@corp.io" }, listId: null })]);

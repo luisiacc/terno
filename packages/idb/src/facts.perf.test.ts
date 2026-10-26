@@ -100,8 +100,6 @@ describe("the facts backfill at 300,000 messages (IndexedDB)", () => {
     messages = seeded.messageCount + giant.length;
     expect(messages).toBeGreaterThanOrEqual(300_000);
     expected = await facts(store);
-    // the app's first list page builds the recency order the backfill walks: as it would be by then
-    await store.threads.list({ view: "inbox", limit: 1 });
     expect(expected.some(([, p]) => p) && expected.some(([, , w]) => w !== null)).toBe(true);
   }, 3_600_000);
 

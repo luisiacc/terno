@@ -131,14 +131,24 @@ function writeFacts(db: Db, threadId: number, f: ThreadFacts | null): boolean {
  * order past a cursor: one range of messages_from per stage (0: the address,
  * 1: `local+…` with its domain), at most `limit` rows.
  */
+/** A sender's messages: one address past an id, and a range of addresses (both seeks of messages_from; the plans are tested) */
+export const SENDER_SQL = {
+  address: "SELECT id, thread_id, from_email FROM messages WHERE from_email = ? AND id > ? ORDER BY id LIMIT ?",
+  range: "SELECT id, thread_id, from_email FROM messages WHERE from_email > ? AND from_email < ? ORDER BY from_email, id LIMIT ?",
+};
+
 function messagesFrom(db: Db, key: string, stage: 0 | 1, after: { from: string; id: number }, limit: number): { id: number; thread_id: number; from_email: string }[] {
-  if (stage === 0) return db.all("SELECT id, thread_id, from_email FROM messages WHERE from_email = ? AND id > ? ORDER BY id LIMIT ?", key, after.id, limit);
+  if (stage === 0) return db.all(SENDER_SQL.address, key, after.id, limit);
   const at = key.lastIndexOf("@");
   if (at <= 0) return [];
   const local = key.slice(0, at);
-  const from = after.from > `${local}+` ? after.from : `${local}+`;
-  return db
-    .all<{ id: number; thread_id: number; from_email: string }>("SELECT id, thread_id, from_email FROM messages WHERE (from_email, id) > (?, ?) AND from_email < ? ORDER BY from_email, id LIMIT ?", from, after.from === from ? after.id : 0, `${local},`, limit);
+  // the address the cursor is in, past its id (a seek on both: Codex review 2, #4), then the next addresses of the range
+  const rows: { id: number; thread_id: number; from_email: string }[] = after.from > `${local}+` ? db.all(SENDER_SQL.address, after.from, after.id, limit) : [];
+  if (rows.length < limit) {
+    const from = after.from > `${local}+` ? after.from : `${local}+`;
+    rows.push(...db.all<{ id: number; thread_id: number; from_email: string }>(SENDER_SQL.range, from, `${local},`, limit - rows.length));
+  }
+  return rows;
 }
 
 /** A sender's threads to recompute, persisted: bounded slices of its messages (Codex review 1, #2). */

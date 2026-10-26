@@ -166,6 +166,11 @@ export function defineFactsConformance(fresh: () => Promise<MailStore>, reopen: 
       expect((await facts(store, "promo")).person).toBe(true);
       await store.sync.updateFlags(a!, [{ messageId: promo, flags: { isRead: true }, gmailLabels: ["CATEGORY_PROMOTIONS"] }]);
       expect((await facts(store, "promo")).person).toBe(false);
+      // a read waiting to reach Gmail holds the message's flags, not its category (Codex review 2, #5)
+      await store.threads.act({ threadIds: [await threadOf(store, "promo")], action: "markUnread", signal: null, now: NOW });
+      await store.sync.updateFlags(a!, [{ messageId: promo, flags: { isRead: true }, gmailLabels: ["INBOX", "CATEGORY_PERSONAL"] }]);
+      expect((await facts(store, "promo")).person).toBe(true);
+      expect((await store.debug.snapshot()).messages.find((m) => m.id === promo)!.isRead).toBe(false);
     });
 
     it("trash and spam: a trashed conversation never waits but keeps who it's from; spam is no one", async () => {

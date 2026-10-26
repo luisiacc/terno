@@ -767,6 +767,8 @@ CREATE INDEX threads_people ON threads(last_date DESC, id DESC, account_id, in_i
 CREATE INDEX threads_people_id ON threads(id, account_id, in_inbox, in_trash, in_spam, is_starred, has_sent) WHERE person = 1;
 CREATE INDEX threads_waiting ON threads(last_date DESC, id DESC, waiting_since, account_id, in_inbox, in_trash, in_spam, is_starred, has_sent) WHERE waiting_since IS NOT NULL;
 CREATE INDEX threads_waiting_id ON threads(id, waiting_since, account_id, in_inbox, in_trash, in_spam, is_starred, has_sent) WHERE waiting_since IS NOT NULL;
+-- the greeting's count: the inbox's waiting threads by date, their accounts in the index (a range of the window, nothing else read)
+CREATE INDEX threads_waiting_inbox ON threads(waiting_since, account_id) WHERE in_inbox = 1 AND waiting_since IS NOT NULL;
 CREATE INDEX threads_facts_pending ON threads(last_date DESC, id DESC) WHERE person IS NULL;
 -- a local copy whose send failed answers nobody: found by its message, not by reading every op ever run
 CREATE INDEX ops_failed_sends ON ops(json_extract(target_json, '$.messageIds[0]')) WHERE kind = 'send' AND state = 'failed';
