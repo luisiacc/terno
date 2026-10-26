@@ -8,6 +8,12 @@
  * - `<b>…</b>`: rich text, rendered by rich()/richT() callbacks
  */
 const en = {
+  "attachments.connectBeforeImport": "Connect the draft’s mail account before importing its attachments.",
+  "attachments.retryRequested": "Attachment sync requested. Try the download again when sync finishes.",
+  "attachments.readerUnavailable": "This file is unavailable on this device. Sync the account and try again.",
+  "attachments.senderLocked": "Remove attachments before changing the sender.",
+  "attachments.backupTooLarge": "This backup has too much attachment data. Export fewer drafts at a time.",
+  "attachments.invalidBackup": "This backup has incomplete attachment data. Keep the original file and export it again.",
   "attachments.loadInline": "Show inline images from this message",
   "attachments.attach": "Attach files",
   "attachments.adding": "Adding attachments…",

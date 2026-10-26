@@ -1,3 +1,6 @@
+import { attachmentFingerprint, exportAttachment, importAttachments, validateExportedAttachments } from "./attachments";
+import { RpcError, type ExportedAttachment } from "@terno/core/rpc";
+import { L } from "@terno/i18n";
 import { decodeText, type Condition, type FilterAction, type FilterRule } from "@terno/core";
 import { draftAddressSchema, exportCategorySchema, exportDraftSchema, exportFilterSchema, settingsPatchSchema, type ExportCategory, type ExportDraftItem, type ExportFilter, type DraftAddress, type ExportedDraft, type ExportFile, type ImportResult, type MailboxExport, type SettingsPatch } from "@terno/core/rpc";
 import type { DraftInput, DraftRow } from "@terno/store";
@@ -60,6 +63,16 @@ export async function exportMailbox(b: Backend): Promise<MailboxExport> {
   const emailOf = (id: number) => accounts.find((a) => a.id === id)?.email ?? null;
   const ref = (id: number | null) => (id === null ? Promise.resolve(null) : store.drafts.messageRef(id));
   const drafts: ExportedDraft[] = [];
+  let attachmentBytes = 0;
+  const exportParts = async (accountId: number, refs: import("@terno/core").AttachmentRef[]) => {
+    const parts: ExportedAttachment[] = [];
+    for (const ref of refs) {
+      attachmentBytes += ref.size;
+      if (attachmentBytes > 32 * 1024 * 1024) throw new RpcError("BAD_REQUEST", L("attachments.backupTooLarge"));
+      parts.push(await exportAttachment(store, accountId, ref, () => b.yieldTurn()));
+    }
+    return parts;
+  };
   for (const d of await store.drafts.list()) {
     drafts.push({
       accountEmail: emailOf(d.account_id),
@@ -71,6 +84,7 @@ export async function exportMailbox(b: Backend): Promise<MailboxExport> {
       subjectEdited: d.subject_edited === 1,
       bodyText: d.body_text,
       bodyHtml: d.body_html,
+      attachments: await exportParts(d.account_id, JSON.parse(d.attachments_json ?? "[]")),
       quotedText: d.quoted_text,
       includeQuote: d.include_quote === 1,
       inReplyTo: await ref(d.in_reply_to_message_id),
@@ -78,6 +92,14 @@ export async function exportMailbox(b: Backend): Promise<MailboxExport> {
       uiState: d.ui_state,
       updatedAt: d.updated_at,
     });
+  }
+  const ops: MailboxExport["ops"] = [];
+  for (const o of await store.ops.recent(100_000)) {
+    if (o.state === "succeeded") continue;
+    const payload = JSON.parse(o.payload_json);
+    if (o.kind === "send" && payload.attachments?.length) payload.attachments = await exportParts(o.account_id, payload.attachments);
+    ops.push({ accountEmail: emailOf(o.account_id), kind: o.kind, state: o.state, createdAt: o.created_at, lastError: o.last_error === null ? null : decodeText(o.last_error).message, target: JSON.parse(o.target_json), payload });
+    await b.yieldTurn();
   }
   return {
     format: "terno-export",
@@ -89,9 +111,7 @@ export async function exportMailbox(b: Backend): Promise<MailboxExport> {
     filters: await store.filters.list(),
     settings: await readSettings(store),
     drafts,
-    ops: (await store.ops.recent(100_000))
-      .filter((o) => o.state !== "succeeded")
-      .map((o) => ({ accountEmail: emailOf(o.account_id), kind: o.kind, state: o.state, createdAt: o.created_at, lastError: o.last_error === null ? null : decodeText(o.last_error).message, target: JSON.parse(o.target_json), payload: JSON.parse(o.payload_json) })),
+    ops,
   };
 }
 
@@ -125,6 +145,12 @@ function mergePending(a: Pending, b: Pending): Pending {
  * for its account (its first sync is done): then it comes in as a new message.
  * Returns what still waits.
  */
+async function attachmentKeys(b: Backend, accountId: number, refs: import("@terno/core").AttachmentRef[]): Promise<unknown[]> {
+  const keys = [];
+  for (const ref of refs) keys.push([ref.filename, ref.mime, ref.size, ref.contentId ?? null, await attachmentFingerprint(b.store, accountId, ref, () => b.yieldTurn())]);
+  return keys;
+}
+
 async function restoreInto(b: Backend, items: Pending, options: { final: boolean | number }): Promise<{ filters: number; existingFilters: number; drafts: number; left: Pending }> {
   const store = b.store;
   const now = b.now();
@@ -155,7 +181,8 @@ async function restoreInto(b: Backend, items: Pending, options: { final: boolean
     }
   });
   let drafts = 0;
-  const present = new Set((await store.drafts.list()).map(draftKey));
+  const present = new Set<string>();
+  for (const d of await store.drafts.list()) present.add(await draftKey(b, d));
   await b.runSliced(items.drafts, 50, async (chunk) => {
     for (const d of chunk) {
       const accountId = d.accountEmail ? idOf(d.accountEmail) : undefined;
@@ -167,13 +194,18 @@ async function restoreInto(b: Backend, items: Pending, options: { final: boolean
       if (!draft) continue;
       const final = options.final === true || options.final === accountId;
       if (draft.mode === "new" && d.mode !== "new" && !final) {
+        for (const ref of draft.attachments ?? []) await store.attachments.discard(accountId, ref.assetId);
         left.drafts.push(d);
         continue;
       }
-      const key = draftKey(draft);
-      if (present.has(key)) continue;
+      const key = await draftKey(b, draft);
+      if (present.has(key)) {
+        for (const ref of draft.attachments ?? []) await store.attachments.discard(accountId, ref.assetId);
+        continue;
+      }
       present.add(key);
-      await store.drafts.save(draft, now);
+      try { await store.drafts.save(draft, now); }
+      catch (error) { for (const ref of draft.attachments ?? []) await store.attachments.discard(accountId, ref.assetId).catch(() => {}); throw error; }
       drafts++;
     }
   });
@@ -193,12 +225,12 @@ export async function restorePending(b: Backend, final: number | false = false):
 }
 
 /** What makes two drafts the same draft: where it goes, from where, and everything written in it. */
-function draftKey(d: DraftInput | DraftRow): string {
+async function draftKey(b: Backend, d: DraftInput | DraftRow): Promise<string> {
   const norm = (list: unknown) => (list as DraftAddress[]).map((a) => [a.name, a.email, a.auto === true]);
   if ("account_id" in d) {
-    return JSON.stringify([d.account_id, d.mode, d.subject, d.body_text, d.body_html, d.quoted_text, norm(JSON.parse(d.to_json)), norm(JSON.parse(d.cc_json)), norm(JSON.parse(d.bcc_json))]);
+    return JSON.stringify([d.account_id, d.mode, d.subject, d.body_text, d.body_html, d.quoted_text, await attachmentKeys(b, d.account_id, JSON.parse(d.attachments_json ?? "[]")), norm(JSON.parse(d.to_json)), norm(JSON.parse(d.cc_json)), norm(JSON.parse(d.bcc_json))]);
   }
-  return JSON.stringify([d.accountId, d.mode, d.subject, d.bodyText, d.bodyHtml ?? "", d.quotedText ?? "", norm(d.to), norm(d.cc), norm(d.bcc ?? [])]);
+  return JSON.stringify([d.accountId, d.mode, d.subject, d.bodyText, d.bodyHtml ?? "", d.quotedText ?? "", await attachmentKeys(b, d.accountId, d.attachments ?? []), norm(d.to), norm(d.cc), norm(d.bcc ?? [])]);
 }
 
 /**
@@ -212,7 +244,8 @@ async function draftFrom(b: Backend, accountId: number, d: ExportDraft): Promise
   const cc = addresses.safeParse(d.cc);
   const bcc = addresses.safeParse(d.bcc ?? []);
   if (!to.success || !cc.success || !bcc.success) return null;
-  const base = { accountId, to: to.data, cc: cc.data, bcc: bcc.data, subject: d.subject, subjectEdited: d.subjectEdited, uiState: d.uiState };
+  const attachments = await importAttachments(b.store, accountId, d.attachments ?? [], b.now(), () => b.yieldTurn());
+  const base = { attachments, accountId, to: to.data, cc: cc.data, bcc: bcc.data, subject: d.subject, subjectEdited: d.subjectEdited, uiState: d.uiState };
   const ref = d.mode === "forward" ? d.forwardOf : d.mode === "new" ? null : d.inReplyTo;
   const original = ref ? await b.store.drafts.findMessage(accountId, ref) : null;
   if (original) {
@@ -260,6 +293,9 @@ export async function importMailbox(b: Backend, file: ExportFile): Promise<Impor
   const store = b.store;
   const skipped: string[] = [];
   const named = (item: unknown) => skipped.push(String((item as { name?: unknown } | null)?.name ?? "?"));
+  for (const item of file.drafts) {
+    if (item && typeof item === "object" && "attachments" in item && !exportDraftSchema.safeParse(item).success) throw new RpcError("BAD_REQUEST", L("attachments.invalidBackup"));
+  }
   const data = {
     accounts: file.accounts,
     settings: file.settings,
@@ -267,6 +303,15 @@ export async function importMailbox(b: Backend, file: ExportFile): Promise<Impor
     filters: await valid<ExportFilter>(b, file.filters, exportFilterSchema, named),
     drafts: await valid<ExportDraftItem>(b, file.drafts, exportDraftSchema),
   };
+
+  let attachmentBytes = 0;
+  const connected = new Set((await store.accounts.list()).map((a) => a.email.toLowerCase()));
+  for (const d of data.drafts) {
+    if (d.attachments?.length && (!d.accountEmail || !connected.has(d.accountEmail.toLowerCase()))) throw new RpcError("BAD_REQUEST", L("attachments.connectBeforeImport"));
+    attachmentBytes += (d.attachments ?? []).reduce((n, a) => n + a.size, 0);
+    if (attachmentBytes > 32 * 1024 * 1024) throw new RpcError("BAD_REQUEST", L("attachments.backupTooLarge"));
+    await validateExportedAttachments(d.attachments ?? [], () => b.yieldTurn());
+  }
 
   // categories: the same name (any case) is the same category; new ones are created in time slices
   const existing = await store.categories.list();

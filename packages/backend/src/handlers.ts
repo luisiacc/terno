@@ -414,6 +414,11 @@ export function createHandlers(b: Backend): Handlers {
       return { opId, threadId };
     },
 
+    "attachments.retry": (p, ctx) => attachmentCall(ctx.origin, async () => {
+      await store.attachments.retry(p.accountId, p.messageId);
+      await b.syncAccount(p.accountId);
+      return { ok: true as const };
+    }),
     "attachments.create": (p, ctx) => attachmentCall(ctx.origin, () => store.attachments.create({ ...p, now: b.now() })),
     "attachments.append": (p, ctx) => attachmentCall(ctx.origin, async () => { await store.attachments.append(p.accountId, p.assetId, p.index, p.dataBase64); return { ok: true as const }; }),
     "attachments.seal": (p, ctx) => attachmentCall(ctx.origin, async () => { await store.attachments.seal(p.accountId, p.assetId); return { ok: true as const }; }),

@@ -43,3 +43,40 @@ it("exports categories, filters, settings, drafts and unsent ops, and no secret"
   // agents can't take it
   await expect(backend.server.invoke("app.export", {}, { clientId: "agent", origin: "mcp" })).rejects.toBeTruthy();
 });
+
+it("exports exact draft attachment bytes, imports with fresh account-owned IDs, and preserves byte-distinct drafts on repeated import", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "terno-export-assets-"));
+  const make = (name: string) => {
+    const b = new Backend({ dbPath: join(dir, name), version: "test", cipher: plaintextCipher, providers: demoRegistry, autoSync: false });
+    cleanups.push(() => b.stop());
+    return b;
+  };
+  cleanups.push(async () => { rmSync(dir, { recursive: true, force: true }); });
+  const source = make("source.db"); const target = make("target.db");
+  const account = async (b: Backend) => (await b.store.accounts.create({ kind: "gmail", email: "a@test.com", displayName: "A", color: "indigo", now: 0 })).account.id;
+  const a = await account(source); const other = await account(target);
+  for (const dataBase64 of ["AP+A", "AQID"]) {
+    const ref = await source.store.attachments.create({ accountId: a, filename: "same.bin", mime: "application/octet-stream", size: 3, now: 0 });
+    await source.store.attachments.append(a, ref.assetId, 0, dataBase64); await source.store.attachments.seal(a, ref.assetId);
+    await source.store.drafts.save({ accountId: a, to: [], cc: [], subject: "same draft", bodyText: "same", attachments: [ref] }, 0);
+  }
+  const invoke = (b: Backend) => { const [c,s] = createMemoryTransportPair(); b.connect(s, { clientId: "r", origin: "renderer" }); return new RpcClient(c); };
+  const dump = await invoke(source).call("app.export", {});
+  expect(dump.drafts.map((d) => d.attachments?.[0]?.chunks)).toEqual([["AP+A"], ["AQID"]]);
+  const dest = invoke(target);
+  expect((await dest.call("app.import", { data: dump })).drafts).toBe(2);
+  const drafts = await target.store.drafts.list();
+  expect(drafts).toHaveLength(2);
+  const parts = drafts.map((d) => JSON.parse(d.attachments_json)[0]);
+  expect(parts.map((a) => a.assetId)).not.toEqual((await source.store.drafts.list()).map((d) => JSON.parse(d.attachments_json)[0].assetId));
+  expect(await Promise.all(parts.map((p) => target.store.attachments.read(other, p.assetId, 0)))).toEqual(["AP+A", "AQID"]);
+  expect((await dest.call("app.import", { data: dump })).drafts).toBe(0);
+  expect(await target.store.drafts.list()).toHaveLength(2);
+  const damaged = structuredClone(dump);
+  damaged.drafts[0]!.attachments![0]!.chunks = [];
+  await expect(dest.call("app.import", { data: damaged })).rejects.toThrow();
+  expect(await target.store.drafts.list()).toHaveLength(2);
+  const disconnected = make("disconnected.db");
+  await expect(invoke(disconnected).call("app.import", { data: dump })).rejects.toThrow();
+  expect(await disconnected.store.drafts.list()).toHaveLength(0);
+});

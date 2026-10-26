@@ -49,18 +49,35 @@ export function base64Bytes(value: string, limit = ATTACHMENT_CHUNK): Uint8Array
   return bytes;
 }
 
-/** Conservative bound includes body encodings, line folding and per-part/header overhead. */
+/** Budget includes base64 and line folding plus bounded per-part/header overhead. */
 export function attachmentMessageBudget(text: string, html: string | undefined, attachments: readonly AttachmentRef[]): boolean {
+  return attachmentBudgetFromBytes(utf8Size(text) + utf8Size(html ?? ""), attachments);
+}
+
+function attachmentBudgetFromBytes(bodyBytes: number, attachments: readonly AttachmentRef[]): boolean {
   if (attachments.length > MAX_ATTACHMENT_COUNT) return false;
   const decoded = attachments.reduce((n, a) => n + a.size, 0);
-  const size = utf8Size(text) + utf8Size(html ?? "") + decoded;
+  const size = bodyBytes + decoded;
   return decoded <= MAX_ATTACHMENT_BYTES && Math.ceil(size / 3) * 4 + Math.ceil(size / 57) * 2 + attachments.length * 2048 + 16384 <= MAX_MIME_BYTES;
 }
 
-function utf8Size(value: string): number {
-  // Large bodies reserve the UTF-8 upper bound without scanning inside a store transaction.
-  if (value.length > 65536) return value.length * 3;
+/** Outside atomic writes: exact UTF-8 accounting with bounded scan/allocation slices. */
+export async function attachmentMessageBudgetAsync(text: string, html: string | undefined, attachments: readonly AttachmentRef[], yieldTo: () => Promise<void>): Promise<boolean> {
+  if (text.length + (html?.length ?? 0) <= 16384) return attachmentMessageBudget(text, html, attachments);
   let bytes = 0;
-  for (const c of value) { const code = c.codePointAt(0)!; bytes += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4; }
-  return bytes;
+  for (const value of [text, html ?? ""]) {
+    for (let i = 0; i < value.length;) {
+      let end = Math.min(i + 16384, value.length);
+      const last = value.charCodeAt(end - 1);
+      if (end < value.length && last >= 0xd800 && last <= 0xdbff) end--;
+      bytes += utf8Size(value.slice(i, end));
+      if (!attachmentBudgetFromBytes(bytes, attachments)) return false;
+      i = end;
+      await yieldTo();
+    }
+  }
+  return attachmentBudgetFromBytes(bytes, attachments);
 }
+
+declare class TextEncoder { encode(value: string): Uint8Array; }
+function utf8Size(value: string): number { return new TextEncoder().encode(value).length; }

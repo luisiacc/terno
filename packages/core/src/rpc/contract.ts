@@ -210,6 +210,14 @@ export interface Bootstrap {
 
 /** What a browser mailbox can't afford to lose to storage eviction (re-syncable mail excluded), never a secret. */
 /** A draft in an export (format 2): all of it; what it answers or forwards by Message-ID, which survives a re-sync. */
+export interface ExportedAttachment {
+  filename: string;
+  mime: string;
+  size: number;
+  contentId?: string | null;
+  chunks: string[];
+}
+
 export interface ExportedDraft {
   accountEmail: string | null;
   mode: DraftMode;
@@ -221,7 +229,7 @@ export interface ExportedDraft {
   bodyText: string;
   /** plan 16: the written part as mail HTML ('' for a plain draft); bodyText is always its plain-text alternative */
   bodyHtml?: string;
-  attachments?: AttachmentRef[];
+  attachments?: ExportedAttachment[];
   quotedText: string;
   includeQuote: boolean;
   inReplyTo: string | null;
@@ -383,6 +391,9 @@ export { settingsPatch as settingsPatchSchema, draftAddress as draftAddressSchem
 /** What an import reads of each item; items are validated one by one on the backend, in time slices (a bad one is skipped). */
 export const exportCategorySchema = z.object({ id, name: z.string().trim().min(1).max(60), color: z.enum(CATEGORY_COLORS), position: z.number().int().optional(), autoApply: z.boolean().optional() });
 export const exportFilterSchema = z.object({ name: z.string().trim().min(1).max(120), enabled: z.boolean(), source: z.enum(["manual", "ai", "learned"]), rule: filterRuleSchema });
+export const exportedAttachmentSchema = z.object({
+  filename: z.string().min(1).max(180), mime: z.string().max(120), size: z.number().int().min(0).max(18 * 1024 * 1024), contentId: z.string().max(300).nullable().optional(), chunks: z.array(z.string().max(65536)).max(384),
+}).strict();
 export const exportDraftSchema = z.object({
   accountEmail: z.string().max(320).nullable(),
   // format 2 (format 1 had only recipients, subject and text: those import as new messages)
@@ -395,6 +406,7 @@ export const exportDraftSchema = z.object({
   bodyText: z.string().max(5_000_000),
   // plan 16 (files from before carry none: plain drafts)
   bodyHtml: z.string().max(20_000_000).default(""),
+  attachments: z.array(exportedAttachmentSchema).max(100).optional(),
   quotedText: z.string().max(5_000_000).default(""),
   includeQuote: z.boolean().default(false),
   inReplyTo: z.string().max(1000).nullable().default(null),
@@ -621,6 +633,7 @@ export const contract = {
     }),
   ),
   /** null: the draft is gone (sent or discarded elsewhere). A stale baseRevision never overwrites: it saves a new draft. */
+  "attachments.retry": m<{ ok: true }>()(z.object({ accountId: id, messageId: id }).strict(), { timeoutMs: 120_000 }),
   "attachments.create": m<AttachmentRef>()(z.object({ accountId: id, filename: z.string().max(1000), mime: z.string().max(120), size: z.number().int().min(0).max(18 * 1024 * 1024), contentId: z.string().max(300).nullable().optional() }).strict()),
   "attachments.append": m<{ ok: true }>()(assetRequest.extend({ index: z.number().int().min(0).max(384), dataBase64: z.string().max(65536) }).strict()),
   "attachments.seal": m<{ ok: true }>()(assetRequest),

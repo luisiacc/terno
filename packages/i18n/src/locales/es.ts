@@ -2,6 +2,12 @@ import type { LocaleCheck } from "../types";
 
 /** Español (es-MX). Same keys, placeholders and tags as en.ts: the type check at the bottom enforces it. */
 const es = {
+  "attachments.connectBeforeImport": "Conecta la cuenta de correo del borrador antes de importar sus adjuntos.",
+  "attachments.retryRequested": "Se solicitó sincronizar los adjuntos. Vuelve a descargar cuando termine.",
+  "attachments.readerUnavailable": "Este archivo no está disponible en este dispositivo. Sincroniza la cuenta e inténtalo de nuevo.",
+  "attachments.senderLocked": "Quita los adjuntos antes de cambiar el remitente.",
+  "attachments.backupTooLarge": "Esta copia contiene demasiados adjuntos. Exporta menos borradores a la vez.",
+  "attachments.invalidBackup": "Esta copia contiene adjuntos incompletos. Conserva el archivo original y vuelve a exportarlo.",
   "attachments.loadInline": "Mostrar imágenes adjuntas de este mensaje",
   "attachments.attach": "Adjuntar archivos",
   "attachments.adding": "Añadiendo adjuntos…",

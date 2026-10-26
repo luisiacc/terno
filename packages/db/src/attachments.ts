@@ -8,7 +8,7 @@ export function sqlAssets(db: Db): AssetDb {
     insert: (r) => { db.run("INSERT INTO attachment_assets (id, account_id, filename, mime, size, content_id, received, chunks, complete, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)", r.id, r.account_id, r.filename, r.mime, r.size, r.content_id, r.received, r.chunks, r.complete, r.created_at); },
     update: (r) => { db.run("UPDATE attachment_assets SET received = ?, chunks = ?, complete = ? WHERE id = ?", r.received, r.chunks, r.complete, r.id); },
     remove: (id) => { db.run("DELETE FROM attachment_assets WHERE id = ?", id); },
-    used: (id) => db.get<{ n: number }>("SELECT coalesce(sum(size),0) AS n FROM attachment_assets WHERE account_id = ?", id)!.n,
+    used: (id) => db.get<{ n: number }>("SELECT coalesce(sum(size + 1024),0) AS n FROM attachment_assets WHERE account_id = ?", id)!.n,
     orphans: (id, before) => db.all<{ id: string }>("SELECT a.id FROM attachment_assets a WHERE account_id = ? AND created_at < ? AND NOT EXISTS (SELECT 1 FROM attachment_links l WHERE l.asset_id = a.id) LIMIT 50", id, before).map((a) => a.id),
     pinned: (id) => !!db.get("SELECT 1 FROM attachment_links WHERE asset_id = ? LIMIT 1", id),
     chunk: (id) => db.get<{ data_base64: string }>("SELECT data_base64 FROM attachment_bytes WHERE chunk_id = ?", id)?.data_base64,

@@ -21,6 +21,9 @@ export interface AssetDb {
   unlink(kind: "draft" | "message", owner: number): void;
 }
 export const assetRef = (r: AssetRow): AttachmentRef => ({ assetId: r.id, filename: r.filename, mime: r.mime, size: r.size, contentId: r.content_id });
+export class AttachmentLimitError extends RpcError {
+  constructor() { super("BAD_REQUEST", L("attachments.tooLarge")); }
+}
 export const assetError = () => new RpcError("BAD_REQUEST", L("attachments.unavailable"));
 
 export function assetRow(db: AssetDb, accountId: number, id: string, complete = true): AssetRow {
@@ -32,7 +35,7 @@ export function assetRow(db: AssetDb, accountId: number, id: string, complete = 
 export function createAsset(db: AssetDb, uuid: () => string, p: { accountId: number; filename: string; mime: string; size: number; contentId?: string | null; now: number }): AttachmentRef {
   if (!db.account(p.accountId)) throw assetError();
   for (const id of db.orphans(p.accountId, p.now - 86400000)) db.remove(id);
-  if (!Number.isSafeInteger(p.size) || p.size < 0 || p.size > MAX_ATTACHMENT_BYTES || db.used(p.accountId) + p.size > ATTACHMENT_ACCOUNT_BYTES) throw new RpcError("BAD_REQUEST", L("attachments.tooLarge"));
+  if (!Number.isSafeInteger(p.size) || p.size < 0 || p.size > MAX_ATTACHMENT_BYTES || db.used(p.accountId) + p.size + 1024 > ATTACHMENT_ACCOUNT_BYTES) throw new AttachmentLimitError();
   const row: AssetRow = { id: uuid(), account_id: p.accountId, filename: attachmentFilename(p.filename), mime: attachmentMime(p.mime), size: p.size, content_id: attachmentCid(p.contentId), received: 0, chunks: 0, complete: 0, created_at: p.now };
   db.insert(row);
   return assetRef(row);

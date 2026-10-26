@@ -544,6 +544,32 @@ describe("sending through SMTP", () => {
     expect(saved.html?.trim()).toBe(html);
   });
 
+  it("attachments arrive offline through IMAP and forward exact binary/empty bytes through SMTP and Sent APPEND", async () => {
+    const { imap, smtp, backend, client, addAccount } = await setup();
+    const { buildRaw, parseRaw } = await import("@terno/mail");
+    const binary = new Uint8Array([0,255,128,13,10,46]);
+    const source = await buildRaw({ from: { name: "Source", email: "source@test.com" }, to: [{ name: "Me", email: "me@test.com" }], cc: [], bcc: [], text: "files", subject: "Binary attachment source", messageId: "attachment-source@test.com", inReplyTo: null, references: [], providerThreadId: null,
+      attachments: [{ assetId: crypto.randomUUID(), filename: "same.bin", mime: "application/octet-stream", size: 6, dataBase64: Buffer.from(binary).toString("base64") }, { assetId: crypto.randomUUID(), filename: "same.bin", mime: "text/plain", size: 0, dataBase64: "" }],
+    });
+    imap.server.control.addMessage("INBOX", { raw: source });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const thread = sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE subject = 'Binary attachment source'")!.thread_id;
+    const message = (await client.call("threads.get", { threadId: thread })).messages[0]!;
+    expect(message.attachments).toHaveLength(2);
+    const attachments = message.attachments.map((a) => ({ assetId: a.assetId!, filename: a.filename, mime: a.mime, size: a.size, contentId: a.contentId ?? null }));
+    expect(await backend.store.attachments.read(account.id, attachments[0]!.assetId, 0)).toBe(Buffer.from(binary).toString("base64"));
+    const draft = (await client.call("drafts.save", { accountId: account.id, to: [{ name: "", email: "forward@test.com" }], subject: "Fwd: bytes", bodyText: "forwarded", attachments }))!;
+    await client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "forward@test.com" }], subject: "Fwd: bytes", bodyText: "forwarded", attachments, draftId: draft.id, draftRevision: draft.revision });
+    await backend.runWorker();
+    expect(smtp.received).toHaveLength(1);
+    const transmitted = await parseRaw(smtp.received[0]!.raw);
+    expect(transmitted.attachments.map((a) => [...a.bytes!])).toEqual([[...binary], []]);
+    const copies = imap.server.control.listMessages("Sent", { raw: true }) as { raw: Buffer }[];
+    expect(copies).toHaveLength(1);
+    expect((await parseRaw(copies[0]!.raw)).attachments.map((a) => [...a.bytes!])).toEqual([[...binary], []]);
+  });
+
   it("a rejected recipient fails permanently (no retries)", async () => {
     const { imap, backend, client, addAccount } = await setup({ smtp: { rejectRcpt: "nadie@example.com" } });
     const account = await addAccount(imap.port);

@@ -10,7 +10,7 @@ export function idbAssets(db: MemDb): AssetDb {
     insert: (r) => { assets.insert(r as unknown as Row); },
     update: (r) => { assets.update(assets.get(r.id)!, r as unknown as Row); },
     remove: (id) => { assets.delete(id); },
-    used: (id) => assets.by("fk_account_id", id).reduce((n, r) => n + Number(r.size), 0),
+    used: (id) => assets.by("fk_account_id", id).reduce((n, r) => n + Number(r.size) + 1024, 0),
     orphans: (id, before) => assets.by("fk_account_id", id).filter((r) => Number(r.created_at) < before && !links.by("fk_asset_id", r.id).length).slice(0, 50).map((r) => String(r.id)),
     pinned: (id) => links.by("fk_asset_id", id).length > 0,
     chunk: (id) => db.table("attachment_bytes").get(id)?.data_base64 as string | undefined,

@@ -74,13 +74,18 @@ export function defineAttachmentConformance(name: string, h: StoreHarness): void
     });
     it("tracks legacy and inline-only capture independently of history/body state, once", async () => {
       const [a, b] = await fresh();
-      await ingest(store, [msg({ accountId: a!, providerMsgId: "legacy-inline", hasAttachments: false }), msg({ accountId: b!, providerMsgId: "other" })]);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "legacy-inline", hasAttachments: false, locations: [{ mailbox: "INBOX", uid: 1, uidvalidity: 1, flags: [] }] }), msg({ accountId: b!, providerMsgId: "other" })]);
       const pending = await store.providerStore(a!).pendingAttachmentBodies(50);
       expect(pending.map((p) => p.providerMsgId)).toEqual(["legacy-inline"]);
+      expect(await store.providerStore(a!).pendingBodies(50)).toHaveLength(1);
       await ingest(store, [msg({ accountId: a!, providerMsgId: "legacy-inline", attachments: [] })]);
       store = await h.reopen(store);
       expect(await store.providerStore(a!).pendingAttachmentBodies(50)).toEqual([]);
       expect(await store.providerStore(b!).pendingAttachmentBodies(50)).toHaveLength(1);
+    });
+    it("accepts a large ASCII body whose actual encoded MIME fits the budget", async () => {
+      const [a] = await fresh();
+      await expect(store.compose.queueSend({ ...send(a!, []), bodyText: "a".repeat(7 * 1024 * 1024) })).resolves.toMatchObject({ opId: expect.any(String) });
     });
     it("bounds chunk ordering, reserved bytes and actual encoded message overhead", async () => {
       const [a] = await fresh();
@@ -92,6 +97,17 @@ export function defineAttachmentConformance(name: string, h: StoreHarness): void
       expect(await store.drafts.list()).toHaveLength(1);
       for (let i = 0; i < 14; i++) await store.attachments.create({ accountId: a!, filename: "reserved", mime: "text/plain", size: 18 * 1024 * 1024, now: 0 });
       await expect(store.attachments.create({ accountId: a!, filename: "over quota", mime: "text/plain", size: 18 * 1024 * 1024, now: 0 })).rejects.toThrow();
+    });
+    it("keeps oversized incoming mail readable without a retry loop, and explicit retry reopens capture", async () => {
+      const [a] = await fresh();
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "over-limit", attachments: [{ filename: "huge.bin", mime: "application/octet-stream", size: 19 * 1024 * 1024, bytes: new Uint8Array(19 * 1024 * 1024) }] })]);
+      const thread = await threadOf(store, "over-limit");
+      const message = (await store.threads.get(thread))!.messages[0]!;
+      expect(message.bodyText).not.toBeNull();
+      expect(message.attachments[0]!.assetId).toBeUndefined();
+      expect(await store.providerStore(a!).pendingAttachmentBodies(50)).toEqual([]);
+      await store.attachments.retry(a!, message.id);
+      expect(await store.providerStore(a!).pendingAttachmentBodies(50)).toHaveLength(1);
     });
     it("cascades account removal through cold chunks while preserving another account", async () => {
       const [a, b] = await fresh();

@@ -1,4 +1,4 @@
-import { attachmentMessageBudget } from "@terno/core";
+import { attachmentMessageBudgetAsync } from "@terno/core";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { sqlAssets, replaceAttachments } from "./attachments";
 import { senderVetoed, type Address, type FilterAction, type ThreadAction, type ThreadSummary } from "@terno/core";
@@ -525,6 +525,11 @@ export class SqlMailStore implements MailStore {
   // ───────────────────────────── compose ─────────────────────────────
 
   readonly attachments: MailStore["attachments"] = {
+    retry: async (accountId, messageId) => this.db.tx(() => {
+      const r = this.db.get<{ account_id: number }>("SELECT account_id FROM messages WHERE id = ?", messageId);
+      if (r?.account_id !== accountId) throw assetError();
+      this.db.run("UPDATE messages SET attachments_captured = 0 WHERE id = ?", messageId);
+    }),
     create: async (p) => this.db.tx(() => createAsset(sqlAssets(this.db), () => this.db.uuid(), p)),
     append: async (accountId, id, index, data) => this.db.tx(() => appendAsset(sqlAssets(this.db), accountId, id, index, data)),
     seal: async (accountId, id) => this.db.tx(() => sealAsset(sqlAssets(this.db), accountId, id)),
@@ -535,8 +540,10 @@ export class SqlMailStore implements MailStore {
 
   readonly compose: MailStore["compose"] = {
     // Optimistic local copy + durable send op, atomically: a crash can't lose or duplicate the send.
-    queueSend: async (p) =>
-      this.db.tx(() => {
+    queueSend: async (p) => {
+      p = structuredClone(p);
+      if (!await attachmentMessageBudgetAsync(p.bodyText, p.bodyHtml, p.attachments ?? [], this.yieldTo)) throw new RpcError("BAD_REQUEST", L("attachments.tooLarge"));
+      return this.db.tx(() => {
         const account = getAccount(this.db, p.accountId);
         if (!account) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
         const cfg = getAccountConfig<{ senderName?: string }>(this.db, p.accountId)!;
@@ -546,7 +553,6 @@ export class SqlMailStore implements MailStore {
         if (p.draftId !== undefined && (!draft || draft.account_id !== p.accountId || (p.draftRevision !== undefined && p.draftRevision !== draft.revision))) throw new RpcError("STALE", L("errors.draftGone"));
         if (draft && p.attachments === undefined && JSON.parse(draft.attachments_json ?? "[]").length) throw assetError();
         const attachments = validateAssets(sqlAssets(this.db), p.accountId, p.attachments ?? []);
-        if (!attachmentMessageBudget(p.bodyText, p.bodyHtml, attachments)) throw new RpcError("BAD_REQUEST", L("attachments.tooLarge"));
         let inReplyTo: string | null = null;
         let references: string[] = [];
         let providerThreadId: string | null = null;
@@ -609,7 +615,8 @@ export class SqlMailStore implements MailStore {
         if (replyThreadId && p.recordReply) recordUserActions(this.db, [replyThreadId], "reply", p.now);
         const threadId = this.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", localId)!.thread_id;
         return { opId, threadId, deltas: ingest.deltas };
-      }),
+      });
+    },
   };
 
   // ───────────────────────────── filters ─────────────────────────────

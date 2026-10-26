@@ -43,7 +43,7 @@ export class IdbProviderStore implements ProviderStore {
       const locations = T(this.c, "message_locations");
       return T(this.c, "messages")
         .by("fk_account_id", this.accountId)
-        .filter((m) => m.body_state !== "full")
+        .filter((m) => m.body_state !== "full" || !m.attachments_captured)
         .sort((x, y) => y.date - x.date || y.id - x.id)
         .flatMap((m) => {
           const l = locations.by("fk_message_id", m.id).sort((x, y) => (x.mailbox < y.mailbox ? -1 : 1))[0];
@@ -54,7 +54,7 @@ export class IdbProviderStore implements ProviderStore {
   }
 
   countPendingBodies() {
-    return this.read(() => T(this.c, "messages").by("fk_account_id", this.accountId).filter((m) => m.body_state !== "full").length);
+    return this.read(() => T(this.c, "messages").by("fk_account_id", this.accountId).filter((m) => m.body_state !== "full" || !m.attachments_captured).length);
   }
 
   providerIds(messageIds: readonly number[]) {

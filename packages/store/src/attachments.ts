@@ -1,3 +1,4 @@
+import { AttachmentLimitError } from "./attachment-repo";
 import { ATTACHMENT_CHUNK, base64Bytes, bytesBase64, type AttachmentRef } from "@terno/core";
 import type { MailStore } from "./mail-store";
 import type { IncomingAttachment } from "./types";
@@ -9,7 +10,15 @@ export async function stageAttachments(store: MailStore, accountId: number, part
   try {
     for (const part of parts) {
       if (part.bytes === undefined) { staged.push(part); continue; }
-      const ref = await store.attachments.create({ ...part, size: part.bytes.byteLength, accountId, now });
+      let ref: AttachmentRef;
+      try { ref = await store.attachments.create({ ...part, size: part.bytes.byteLength, accountId, now }); }
+      catch (error) {
+        if (!(error instanceof AttachmentLimitError)) throw error;
+        // Durable unavailable metadata keeps the body readable without repeatedly downloading quota-blocked bytes.
+        const { bytes: _bytes, assetId: _id, ...metadata } = part;
+        staged.push({ ...metadata, size: part.bytes.byteLength });
+        continue;
+      }
       created.push(ref.assetId);
       for (let offset = 0, i = 0; offset < part.bytes.length; offset += ATTACHMENT_CHUNK, i++) {
         await store.attachments.append(accountId, ref.assetId, i, bytesBase64(part.bytes.subarray(offset, offset + ATTACHMENT_CHUNK)));

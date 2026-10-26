@@ -291,6 +291,7 @@ export interface MailStore {
   };
 
   attachments: {
+    retry(accountId: number, messageId: number): Promise<void>;
     create(p: { accountId: number; filename: string; mime: string; size: number; contentId?: string | null; now: number }): Promise<import("@terno/core").AttachmentRef>;
     append(accountId: number, assetId: string, index: number, dataBase64: string): Promise<void>;
     seal(accountId: number, assetId: string): Promise<void>;
