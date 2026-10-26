@@ -39,6 +39,7 @@ import type {
   ListParams,
   ModelDelta,
   MovePhase,
+  OpPark,
   OpRow,
   OwnerClaim,
   Page,
@@ -255,7 +256,8 @@ export interface MailStore {
     get(id: string): Promise<OpRow | null>;
     /** success, including adopting the provider's ids for a sent message */
     complete(id: string, result: { providerMsgId?: string; providerThreadId?: string; warning?: string } | void, now: number): Promise<{ touched: number[]; deltas: ModelDelta[] }>;
-    fail(id: string, error: string, retryable: boolean, now: number): Promise<OpState>;
+    /** with `park` (plan 19): the server couldn't be reached, so it waits for resumeNetwork (an outage gives the attempt back) */
+    fail(id: string, error: string, retryable: boolean, now: number, park?: OpPark): Promise<OpState>;
     markUnknown(id: string, error: string, now: number): Promise<void>;
     /** the provider needs the user to sign in again: back to the queue without spending the attempt, until resumeAuth */
     awaitAuth(id: string, error: string, now: number): Promise<void>;
@@ -263,7 +265,10 @@ export interface MailStore {
     release(id: string, now: number): Promise<void>;
     /** the account's authorization works again: its waiting ops are ready now (their ids) */
     resumeAuth(accountId: number, now: number): Promise<string[]>;
+    /** the network is back (one account's, or every account's with null): ops parked for it are ready now (their ids) */
+    resumeNetwork(accountId: number | null, now: number): Promise<string[]>;
     recover(now: number): Promise<{ requeued: number; unknown: number }>;
+    /** when the next op can actually be claimed (one blocked behind an older op on its messages isn't due) */
     nextAttemptAt(): Promise<number | null>;
     recent(limit: number): Promise<OpRow[]>;
     resolveUnknown(id: string, resolution: "markSent" | "retry" | "discard", now: number): Promise<{ touched: number[] }>;

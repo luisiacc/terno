@@ -171,6 +171,19 @@ export type MovePhase = "moving" | "training" | "done" | "unmoving" | "restoring
  */
 export const AWAITING_AUTH = 8_640_000_000_000_000;
 
+/**
+ * next_attempt_at of a queued op that couldn't reach its server (plan 19): never
+ * ready on its own (no timer spins on it), resumed by ops.resumeNetwork when the
+ * network is back (its account synced, the network changed, the user asked).
+ */
+export const AWAITING_NETWORK = AWAITING_AUTH - 1;
+
+/** ops.fail's network case: wait for the network; an outage gives the claim's attempt back */
+export interface OpPark {
+  network: true;
+  keepAttempt: boolean;
+}
+
 export interface OpRow {
   id: string;
   seq: number;
