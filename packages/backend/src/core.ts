@@ -10,6 +10,7 @@ import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { Connectivity, type ConnectivityOptions, type NetReason } from "./connectivity";
 import { AiAssist } from "./ai-assist";
 import { Categorizer } from "./categorizer";
+import { FactsBackfill } from "./facts";
 import { createHandlers } from "./handlers";
 import { restorePending } from "./import";
 import { blobFingerprint, migrateLegacySecrets, readKeychainState, SecretUnreadableError, type LegacySecretReader } from "./keychain";
@@ -154,6 +155,8 @@ export class BackendCore {
   readonly aiAssist: AiAssist;
   /** plan 18: recipient and body suggestions, in memory, built on first use */
   readonly autocomplete: Autocomplete;
+  /** plan 17: the thread facts' backfill, woken at start and by changes */
+  readonly facts: FactsBackfill;
   /** plan 20: retries, offline and network changes */
   readonly connectivity: Connectivity;
   private warming: Promise<void> | null = null;
@@ -171,6 +174,7 @@ export class BackendCore {
     this.aiService = new AiService(this, options.aiFactory ?? defaultAiFactory);
     this.categorizer = new Categorizer(this);
     this.aiAssist = new AiAssist(this);
+    this.facts = new FactsBackfill(this);
     const web = options.host?.kind === "web";
     this.autocomplete = new Autocomplete({
       source: this.store.autocomplete,
@@ -252,6 +256,8 @@ export class BackendCore {
       if (this.stopped) return;
     }
     if (!this.categorizer.ready) void this.categorizer.rebuild();
+    // plan 17: old mail's facts, and threads requeued before a quit, in slices
+    this.facts.wake();
     // a resume that fails waits for the next start (its journal is intact); it must never crash the backend
     for (const m of await this.store.categories.unfinishedMoves()) {
       this.finishMove(m.batchId).catch((error: unknown) => {
@@ -389,6 +395,8 @@ export class BackendCore {
     if (this.countsTimer) clearTimeout(this.countsTimer);
     for (const n of this.autoNotices.values()) if (n.timer) clearTimeout(n.timer);
     this.categorizer.stop();
+    // the slice in flight finishes; the next start resumes where the store's progress says
+    await this.facts.stop();
     this.aiAssist.stop();
     if (this.workerTimer) clearTimeout(this.workerTimer);
     for (const off of this.unwatch.values()) off();
@@ -479,6 +487,7 @@ export class BackendCore {
       this.server.emit("changed", { threadIds, views });
       this.emitCounts();
       this.autocomplete.notify();
+      this.facts.wake();
     });
   }
 
@@ -504,7 +513,7 @@ export class BackendCore {
   }
 
   private async sendCounts(): Promise<void> {
-    const counts = await this.store.threads.counts();
+    const counts = await this.store.threads.counts(this.now());
     if (!this.stopped) this.server.emit("counts", counts);
   }
 

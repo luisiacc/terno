@@ -1,5 +1,5 @@
 import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
-import { capFilterName, COUNT_CAP, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, searchWithFilter, type ThreadAction } from "@terno/core";
+import { capFilterName, COUNT_CAP, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, searchWithFilter, type ThreadAction } from "@terno/core";
 import { L } from "@terno/i18n";
 import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type MessageState } from "@terno/store";
 import type { GmailAccountConfig, ImapAccountConfig } from "@terno/mail";
@@ -103,7 +103,9 @@ export function createHandlers(b: Backend): Handlers {
       host: { ...b.host, storage: store.capabilities.engine },
       accounts: await store.accounts.list(),
       categories: await store.categories.list(),
-      counts: await store.threads.counts(),
+      counts: await store.threads.counts(b.now()),
+      // plan 17 (Codex R12): the quick filters this backend knows; a renderer offers only these
+      filters: [...LIST_FILTERS],
       settings: await readSettings(store),
       // agents get the mailboxes, not the person's identity
       owner: ctx.origin === "mcp" ? null : await store.owner.get(),
@@ -115,7 +117,8 @@ export function createHandlers(b: Backend): Handlers {
 
     "app.import": ({ data }) => importMailbox(b, data),
 
-    "threads.list": (p) => store.threads.list(p),
+    // the Waiting filter reads its window from the backend's clock
+    "threads.list": (p) => store.threads.list({ ...p, now: b.now() }),
 
     "threads.search": async ({ unreadOnly, filter: asked, ...p }, ctx) => {
       // Latest-wins per client: a query superseded while queued is not executed.
@@ -129,13 +132,13 @@ export function createHandlers(b: Backend): Handlers {
       b.searchAborts.get(ctx.clientId)?.abort();
       // the quick filter is part of the query (cursors and the instant engine see one query); asking for its opposite too matches nothing
       const filter = listFilterOf({ filter: asked, unreadOnly });
-      const { query, threadLevel } = filter ? searchWithFilter(p.query, filter, b.now()) : { query: p.query, threadLevel: false };
+      const { query, threadFilter } = filter ? searchWithFilter(p.query, filter, b.now()) : { query: p.query, threadFilter: undefined };
       if (query === null) return { items: [], nextCursor: null, strategy: "none", tookMs: performance.now() - started, complete: true };
       const abort = new AbortController();
       b.searchAborts.set(ctx.clientId, abort);
       try {
-        // "with attachments" is the conversation's: the engine keeps those threads before paging (threadLevel)
-        const page = await store.threads.searchText({ ...p, query, threadAttachments: threadLevel || undefined, now: b.now(), signal: abort.signal });
+        // attachments, people, waiting are the conversation's: the engine keeps those threads before paging
+        const page = await store.threads.searchText({ ...p, query, threadFilter, now: b.now(), signal: abort.signal });
         return {
           items: page.items,
           nextCursor: page.nextCursor,
@@ -330,7 +333,7 @@ export function createHandlers(b: Backend): Handlers {
       return { removed };
     },
 
-    "counts.get": () => store.threads.counts(),
+    "counts.get": () => store.threads.counts(b.now()),
 
     "filters.list": () => store.filters.list(),
     "filters.save": (p) => store.filters.save(p, b.now()),
