@@ -9,6 +9,7 @@ import { getApp, setApp, type ScopeSelection } from "~/state/app";
 import { trackJob, undoAction } from "~/lib/actions";
 import { scopeRows } from "~/lib/select";
 import { registerUndo, snack } from "~/lib/snack";
+import { closePage, currentPage, listLayout } from "~/lib/page";
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -171,6 +172,8 @@ async function reconcileCounts(b: Bump): Promise<void> {
  */
 function leaveView(ids: readonly number[]): void {
   const s = getApp();
+  // List's conversation page (plan 24): the open thread moved out of this list, so the list comes back
+  const backToList = s.selectedId !== null && ids.includes(s.selectedId) && listLayout() && currentPage() === "thread";
   const { items, index } = useList.getState();
   const leaving = new Set(ids);
   if (s.selectedId !== null && leaving.has(s.selectedId)) {
@@ -181,6 +184,7 @@ function leaveView(ids: readonly number[]): void {
   reflowRemoval(ids);
   patchRows(ids, () => null);
   if (s.checked.size) setApp({ checked: new Set() });
+  if (backToList) closePage({ focus: true });
 }
 
 /** A user removal: the engine learns from it (unless it undoes the user's own add a moment ago). */

@@ -58,7 +58,7 @@ export interface AppState {
   menuOpen: boolean;
   /** "Crear filtro desde este remitente…", Ajustes → Filtros → Editar: what the filter builder opens with (an id edits that filter) */
   filterPrefill: { id?: number; name: string; rule: FilterRule; enabled?: boolean; source?: Filter["source"]; returnTo?: "settings" } | null;
-  /** the reader pane shows the selected thread */
+  /** plan 24: in the List layout, the selected conversation is the page (not just the list's cursor); Split ignores it */
   readerOpen: boolean;
 
   compose: ComposeState | null;
@@ -103,7 +103,8 @@ export const useApp = create<AppState>(() => ({
   scope: null,
   menuOpen: false,
   filterPrefill: null,
-  readerOpen: true,
+  // List starts on its list: only an explicit open (or a reload on a conversation) shows one (plan 24, R7)
+  readerOpen: false,
   compose: null,
   draftFocus: null,
   draftShown: null,
@@ -129,6 +130,8 @@ export function navigate(to: { view?: View; accountId?: number | null; categoryI
     checked: new Set(),
     anchorId: null,
     scope: null,
+    // another mailbox is the list (List layout); Split ignores it
+    readerOpen: false,
   }));
 }
 

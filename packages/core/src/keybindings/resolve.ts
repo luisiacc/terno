@@ -13,6 +13,8 @@ export type Command =
   | "list.menu"
   | "list.toggleUnread"
   | "reader.close"
+  | "nav.back"
+  | "nav.forward"
   | "thread.archive"
   | "thread.trash"
   | "thread.spam"
@@ -103,6 +105,9 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   // Apple Mail's message filter; resolves everywhere (else the browser's ⌘L takes the address bar), the handler decides
   { keys: "mod+l", command: "list.toggleUnread", inEditable: true, inDialog: true },
   { keys: "escape", command: "reader.close" },
+  // plan 24: the List layout's Back and Forward (the browser's and the desktop menu's too); nothing in Split
+  { keys: "mod+[", command: "nav.back" },
+  { keys: "mod+]", command: "nav.forward" },
   { keys: "e", command: "thread.archive" },
   // Apple Mail's archive
   { keys: "mod+ctrl+a", command: "thread.archive" },

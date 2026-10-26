@@ -44,7 +44,7 @@ export interface DesktopBridge {
   /** reveals a PDF this session exported, by the id its export returned */
   showSaved?(exportId: string): Promise<boolean>;
   /** the menu's commands (Archivo, Ver) */
-  onCommand?(listener: (command: "thread.print" | "thread.exportPdf" | "list.toggleUnread" | "updates.check") => void): () => void;
+  onCommand?(listener: (command: "thread.print" | "thread.exportPdf" | "list.toggleUnread" | "updates.check" | "nav.back" | "nav.forward") => void): () => void;
   /** older shells don't have it */
   diag?: DesktopDiag;
   /** in-app updates (main owns the state and the install); older shells don't have it */

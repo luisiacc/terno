@@ -12,6 +12,7 @@ import { currentScope, listKey, useList } from "~/state/list";
 import { loadThread } from "~/state/threads";
 import { viewLabel } from "~/lib/format";
 import { addRange, extend, pick, scopeLabel, targetsOf, toggle, type Order } from "~/lib/selection";
+import { listLayout, openThread } from "~/lib/page";
 
 export const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
@@ -62,6 +63,11 @@ export function pressRow(id: number, m: PressModifiers): void {
     if (s.selectedId !== id) setApp({ selectedId: id, anchorId: id });
     return;
   }
+  // List (plan 24): the press only moves the cursor; the click that ends it opens (a press may be a drag starting)
+  if (listLayout()) {
+    setApp({ selectedId: id, anchorId: id });
+    return;
+  }
   const patch: Partial<AppState> = { selectedId: id, readerOpen: true, anchorId: id };
   if (s.checked.size || s.scope) Object.assign(patch, { checked: EMPTY, scope: null });
   // a new message in the reader steps aside for the conversation clicked (it stays in the drafts strip)
@@ -69,8 +75,12 @@ export function pressRow(id: number, m: PressModifiers): void {
   setApp(patch);
 }
 
-/** The click that ends a plain press on a selected row without a drag: the selection becomes that row. */
+/** The click that ends a plain press without a drag: List opens the conversation; on a selected row (Split) the selection becomes that row. */
 export function releaseRow(id: number): void {
+  if (listLayout()) {
+    collapseOnClick = null;
+    return openThread(id);
+  }
   if (collapseOnClick !== id) return;
   collapseOnClick = null;
   setApp({ checked: EMPTY, scope: null, selectedId: id, readerOpen: true });
@@ -106,7 +116,8 @@ export function extendSelection(delta: number): void {
   if (i !== undefined) {
     listScroller.scrollToIndex?.(i);
     const next = useList.getState().items[i + delta];
-    if (next) void loadThread(next.id);
+    // no conversation shows on List's list page: nothing to warm (R12)
+    if (next && !listLayout()) void loadThread(next.id);
   }
 }
 

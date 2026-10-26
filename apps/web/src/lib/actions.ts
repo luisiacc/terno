@@ -10,6 +10,7 @@ import type { ListFilter } from "@terno/core";
 import { getApp, setApp, type ScopeSelection } from "~/state/app";
 import { patchRows, reloadList, useList } from "~/state/list";
 import { invalidateThreads } from "~/state/threads";
+import { closePage, currentPage, listLayout } from "~/lib/page";
 
 /** Does a thread still belong in the current view after an action? */
 function staysInView(view: View, action: ThreadAction): boolean {
@@ -129,6 +130,8 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
   const reading = unmatches(action, activeFilter(s));
   const leaving = reading || (s.query ? false : !staysInView(s.view, action));
   const stays = reading ? s.selectedId : null;
+  // List's conversation page (plan 24): an action that takes the open thread away, or marks it unread, is done reading it
+  const backToList = s.selectedId !== null && targets.includes(s.selectedId) && ((leaving && s.selectedId !== stays) || action === "markUnread") && listLayout() && currentPage() === "thread";
 
   if (leaving && !reading && s.selectedId !== null && targets.includes(s.selectedId)) {
     // Superhuman-style: move to the next thread that isn't being removed
@@ -139,6 +142,8 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
   }
   if (leaving) reflowRemoval(targets.filter((id) => id !== stays));
   patchRows(targets, (t): ThreadSummary | null => (leaving && t.id !== stays ? null : patched(t, action)));
+  // back on the list, the cursor on the next thread (moved above), the snack beside it
+  if (backToList) closePage({ focus: true });
   // what the user acted on stops being selected; automatic and undo actions never touch the selection
   const onTargets = !options.quiet && targets.some((id) => s.checked.has(id));
   if (onTargets && (s.checked.size || s.scope)) setApp({ checked: new Set(), scope: null });

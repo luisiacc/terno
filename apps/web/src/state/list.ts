@@ -4,6 +4,7 @@ import { keepInPage } from "@terno/store/list";
 import { prune } from "~/lib/selection";
 import { activeFilter } from "~/lib/unread-filter";
 import { matchesFilter } from "@terno/core";
+import { flushSync } from "react-dom";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "./app";
@@ -25,6 +26,14 @@ interface ListState {
 }
 
 export const PAGE = 100;
+/** the most rows one request brings back (a refresh of a longer window asks for it in pieces this size) */
+const WINDOW_PAGE = 500;
+
+/**
+ * The list's first visible row, kept across a change of its rows (ThreadList
+ * sets it): `capture` measures, the function it returns puts the row back.
+ */
+export const listAnchor: { capture?: () => (() => void) | void } = {};
 
 export const useList = create<ListState>(() => ({
   key: "",
@@ -125,7 +134,7 @@ function pruneSelection(index: Map<number, number>): void {
 }
 
 /** (Re)loads the first page for the current view/search. Latest call wins. */
-export async function reloadList(options: { keepSelection?: boolean; grow?: boolean } = {}): Promise<void> {
+export async function reloadList(options: { keepSelection?: boolean; grow?: boolean; window?: boolean } = {}): Promise<void> {
   const key = listKey();
   const mine = ++seq;
   const current = useList.getState();
@@ -133,11 +142,13 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
   if (!sameView) {
     // another list: a page still on its way for the last one is no longer anyone's, and the next one may start
     pageSeq++;
+    // and a refresh the last one was owed is this load
+    deferred = false;
     // and its cursor goes with it: a page asked for before the new list's first answer would continue the old one
     useList.setState({ key, loading: true, error: null, loadingMore: false, nextCursor: null });
   }
   // keep as many rows as are loaded so a background refresh doesn't shrink the list
-  const limit = sameView ? Math.min(Math.max(PAGE, current.items.length + (options.grow ? PAGE : 0)), 500) : PAGE;
+  const limit = sameView ? Math.min(Math.max(PAGE, current.items.length + (options.grow ? PAGE : 0)), WINDOW_PAGE) : PAGE;
   const editsAtStart = edits;
   const scope = currentScope();
   // the filtered mailbox's unread count, alongside the page (a search shows its own result count)
@@ -145,6 +156,15 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
   try {
     let page = await fetchPage(undefined, limit);
     if (mine !== seq) return;
+    // plan 24, R4: the whole loaded window, however deep, in pieces (a refresh that waited behind a page must not shrink the list under the cursor)
+    if (options.window && sameView) {
+      const want = current.items.length;
+      while (page.items.length < want && page.nextCursor) {
+        const more = await fetchPage(page.nextCursor, Math.min(WINDOW_PAGE, want - page.items.length));
+        if (mine !== seq) return;
+        page = { ...page, items: [...page.items, ...more.items], nextCursor: more.nextCursor };
+      }
+    }
     if (edits !== editsAtStart) {
       // an optimistic edit landed meanwhile: this answer may predate it (an archived row back, a read one unread)
       void reloadList({ ...options, keepSelection: true });
@@ -152,7 +172,10 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
     }
     if (scope?.kind === "search" && scope.filter && (sameView || options.keepSelection)) page = keepSearchRows(page, current.items);
     if (scope?.filter) page = { ...page, items: heldOnly(page.items) };
-    useList.setState({
+    // the window refresh keeps the first visible row where it was (new mail above it doesn't push it down)
+    const restore = options.window && sameView ? listAnchor.capture?.() : undefined;
+    const commit = (fn: () => void) => (restore ? flushSync(fn) : fn());
+    commit(() => useList.setState({
       key,
       itemsKey: key,
       items: page.items,
@@ -163,7 +186,8 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
       searchMs: "tookMs" in page ? (page.tookMs as number) : null,
       complete: "complete" in page ? (page.complete as boolean) : true,
       ...(counting ? {} : { unreadTotal: null }),
-    });
+    }));
+    restore?.();
     if (counting)
       void counting.then((r) => {
         if (mine === seq && r) useList.setState({ unreadTotal: { key, n: r.count, capped: r.capped } });
@@ -215,6 +239,29 @@ export async function loadMore(): Promise<void> {
     // the next page from the top instead of continuing a stale cursor
     if (error instanceof RpcError && error.code === "STALE" && useList.getState().key === key) await reloadList({ keepSelection: true, grow: true });
   }
+}
+
+/** a refresh that waited while a page covered the list (List layout) */
+let deferred = false;
+
+/**
+ * The mailbox changed underneath (a backend `changed`): the list refreshes,
+ * or, while a page covers it, once the list shows again (plan 24, R4: no
+ * work for a list nobody sees, and its window and anchor survive).
+ */
+export function refreshList(covered: boolean): void {
+  if (covered) {
+    deferred = true;
+    return;
+  }
+  void reloadList({ keepSelection: true });
+}
+
+/** The list shows again: the refresh it missed, over its whole loaded window. */
+export function flushDeferredRefresh(): void {
+  if (!deferred) return;
+  deferred = false;
+  void reloadList({ keepSelection: true, window: true });
 }
 
 /** Optimistic local edit of rows (actions apply instantly, then the backend confirms). */

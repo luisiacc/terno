@@ -83,6 +83,10 @@ export function viewMenu(send: (command: MenuCommand) => void, dev: boolean): Me
     submenu: [
       { id: "unread-filter", label: t("menu.filterUnread"), accelerator: "CmdOrCtrl+L", click: () => send("list.toggleUnread") },
       { type: "separator" },
+      // plan 24: the List layout's Back and Forward (the renderer decides; nothing in Split). The accelerators also reach a mail's frame.
+      { id: "nav-back", label: t("menu.back"), accelerator: "CmdOrCtrl+[", click: () => send("nav.back") },
+      { id: "nav-forward", label: t("menu.forward"), accelerator: "CmdOrCtrl+]", click: () => send("nav.forward") },
+      { type: "separator" },
       { role: "reload", label: t("menu.reload") },
       { role: "toggleDevTools", label: t("menu.devTools"), visible: dev },
       { type: "separator" },

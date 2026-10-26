@@ -5,7 +5,7 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, Forward, Inbox, Layers, MailOpen, OctagonAlert, Printer, Reply, ReplyAll, Star, Tag, Trash2, X } from "lucide-react";
+import { Archive, ChevronDown, ChevronLeft, ChevronUp, Forward, Inbox, Layers, MailOpen, OctagonAlert, Printer, Reply, ReplyAll, Star, Tag, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { cancelReaderScroll, keepInView } from "~/lib/reader-scroll";
@@ -26,13 +26,18 @@ import { reasonText } from "~/lib/reasons";
 import { useDesign, variant } from "~/lib/design";
 import { Kbd } from "@terno/ui/components/kbd";
 import { renderProbe } from "~/lib/render-probe";
+import { useAppearance } from "~/lib/appearance";
+import { closePage } from "~/lib/page";
+import { move } from "~/lib/keyboard";
+import { viewLabel } from "~/lib/format";
+import { useList } from "~/state/list";
 
-function ToolButton({ label, keys, onClick, children, testId, active }: { label: string; keys?: string; onClick: () => void; children: React.ReactNode; testId?: string; active?: boolean }) {
+function ToolButton({ label, keys, onClick, children, testId, active, disabled, busy }: { label: string; keys?: string; onClick: () => void; children: React.ReactNode; testId?: string; active?: boolean; disabled?: boolean; busy?: boolean }) {
   return (
     <Tooltip>
       <TooltipTrigger
         render={
-          <Button variant="ghost" size="icon-sm" aria-label={label} data-testid={testId} onClick={onClick} className={cn("no-drag rounded-md text-muted-foreground hover:text-foreground [&_svg]:[stroke-width:var(--icon-stroke-toolbar)]", active && "text-star hover:text-star")}>
+          <Button variant="ghost" size="icon-sm" aria-label={label} data-testid={testId} onClick={onClick} disabled={disabled} aria-busy={busy || undefined} className={cn("no-drag rounded-md text-muted-foreground hover:text-foreground [&_svg]:[stroke-width:var(--icon-stroke-toolbar)]", active && "text-star hover:text-star")}>
             {children}
           </Button>
         }
@@ -346,7 +351,7 @@ function ReaderHeader({ detail, account, cats }: { detail: ThreadDetail; account
   return variant(design.variants.readerHeader, {
     classic: (
       <>
-        <h2 data-testid="reader-subject" className="text-xl font-semibold tracking-display text-balance">
+        <h2 id="reader-subject" data-testid="reader-subject" className="text-xl font-semibold tracking-display text-balance">
           {subject}
         </h2>
         <ThreadChips detail={detail} account={account} cats={cats} accountChip={false} className="mt-2 mb-5" />
@@ -355,7 +360,7 @@ function ReaderHeader({ detail, account, cats }: { detail: ThreadDetail; account
     "chips-display": (
       <>
         <ThreadChips detail={detail} account={account} cats={cats} accountChip="address" className="mt-4" />
-        <h2 data-testid="reader-subject" className="type-reader-subject mt-4 mb-8 text-balance">
+        <h2 id="reader-subject" data-testid="reader-subject" className="type-reader-subject mt-4 mb-8 text-balance">
           {subject}
         </h2>
       </>
@@ -372,7 +377,7 @@ function ReaderHeader({ detail, account, cats }: { detail: ThreadDetail; account
               <ThreadChips detail={detail} account={account} cats={cats} accountChip="name" className="mt-1.5" />
             </div>
           </div>
-          <h2 data-testid="reader-subject" className="type-reader-subject mt-8 mb-6 text-balance">
+          <h2 id="reader-subject" data-testid="reader-subject" className="type-reader-subject mt-8 mb-6 text-balance">
             {subject}
           </h2>
         </>
@@ -381,8 +386,57 @@ function ReaderHeader({ detail, account, cats }: { detail: ThreadDetail; account
   });
 }
 
+/** Where Back goes: the list's own title ("Inbox", "Invoices", "Review · Invoices", a search's “query”). */
+function useListTitle(): string {
+  return useApp((s) => {
+    const review = s.categories.find((c) => c.id === s.reviewCategoryId);
+    if (review) return t("list.reviewTitle", { category: review.name });
+    if (s.query.trim()) return t("list.scope.quoted", { label: s.query.trim() });
+    return s.categories.find((c) => c.id === s.categoryId)?.name ?? viewLabel(s.view);
+  });
+}
+
+/** List's page (plan 24): Back to the list, at the toolbar's start. */
+function BackButton() {
+  const title = useListTitle();
+  return (
+    <ToolButton label={t("reader.back", { mailbox: title })} keys="escape" onClick={() => closePage({ focus: true })} testId="reader-back">
+      <ChevronLeft />
+    </ToolButton>
+  );
+}
+
+/** List's page: the newer and older conversations (k and j), at the toolbar's end; nothing to step from a thread the list doesn't hold. */
+function StepButtons({ id }: { id: number }) {
+  const at = useList((s) => s.index.get(id));
+  const last = useList((s) => s.items.length - 1);
+  const more = useList((s) => s.nextCursor !== null);
+  const busy = useList((s) => s.loadingMore);
+  return (
+    <div className="flex items-center gap-0.5" role="group" aria-label={t("reader.group.navigate")}>
+      <ToolButton label={t("reader.newer")} keys="k" onClick={() => move(-1)} testId="reader-newer" disabled={at === undefined || at === 0}>
+        <ChevronUp />
+      </ToolButton>
+      <ToolButton label={t("reader.older")} keys="j" onClick={() => move(1)} testId="reader-older" disabled={at === undefined || (at >= last && !more)} busy={busy && at === last}>
+        <ChevronDown />
+      </ToolButton>
+    </div>
+  );
+}
+
 export function Reader() {
   const selectedId = useApp((s) => s.selectedId);
+  const page = useAppearance((s) => s.layout === "list");
+  const sectionRef = useRef<HTMLElement>(null);
+  // List's page opened: focus starts on the conversation (named by its subject), unless something in it already took it (a draft asked for)
+  useEffect(() => {
+    if (!page) return;
+    const frame = requestAnimationFrame(() => {
+      const section = sectionRef.current;
+      if (section && !section.contains(document.activeElement)) section.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [page]);
   const design = useDesign();
   const detail = useThread(selectedId);
   const gone = useThreadGone(selectedId);
@@ -425,8 +479,9 @@ export function Reader() {
   const account = thread ? accounts.find((a) => a.id === thread.accountId) : undefined;
 
   return (
-    <section className="@container flex h-full min-h-0 flex-col bg-background" data-testid="reader">
+    <section ref={sectionRef} tabIndex={page ? -1 : undefined} aria-labelledby={page && detail ? "reader-subject" : undefined} className="@container flex h-full min-h-0 flex-col bg-background outline-none" data-testid="reader">
       <div ref={toolbarRef} className="drag-region scroll-hairline flex h-[52px] shrink-0 items-center gap-3 px-3.5">
+        {page && <BackButton />}
         <div className="flex items-center gap-0.5" role="group" aria-label={t("reader.group.organize")}>
         {thread?.inTrash || thread?.inSpam ? (
           <ToolButton label={t("actions.moveToInbox")} onClick={() => act(thread.inSpam ? "notSpam" : "moveToInbox")} testId="action-inbox">
@@ -491,6 +546,7 @@ export function Reader() {
             <Printer />
           </ToolButton>
         </div>
+        {page && <StepButtons id={selectedId} />}
       </div>
       <div ref={scrollerRef} data-reader-scroller data-keep-scroll="reader" className="relative min-h-0 flex-1 overflow-y-auto">
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />

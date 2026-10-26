@@ -4,7 +4,7 @@ import { focusDock } from "~/components/snack-dock";
 import { clearSelection, extendSelection, isMac, selectAll, selectWhere, toggleCurrent } from "~/lib/select";
 import { openMenuForSelection } from "~/components/thread-menu";
 import { getApp, navigate, setApp } from "~/state/app";
-import { useList } from "~/state/list";
+import { loadMore, useList } from "~/state/list";
 import { loadThread, useThreads } from "~/state/threads";
 import { acceptSuggestion, rejectSuggestion } from "~/lib/categorize";
 import { printCommand } from "~/lib/print-open";
@@ -12,28 +12,68 @@ import { checkForUpdates } from "~/lib/updates";
 import { focusSearch, listScroller } from "~/components/thread-list";
 import { snackbarControls } from "~/components/category-snackbar";
 import { toggleUnreadFilter } from "~/lib/unread";
+import { closePage, currentPage, goBack, goForward, listLayout, openThread, uncoverList } from "~/lib/page";
+import type { DraftMode } from "@terno/core/rpc";
 
 /** Toggles act once per press: no key repeat, and the desktop menu's echo of a key just handled is dropped. */
-const TOGGLES = new Set<Command>(["list.toggleUnread"]);
+const TOGGLES = new Set<Command>(["list.toggleUnread", "nav.back", "nav.forward"]);
 const ECHO_MS = 300;
 const lastKey = new Map<Command, number>();
 
-function move(delta: number) {
-  const { items, index } = useList.getState();
+/** a next page asked for by j at the end of the loaded rows (one at a time) */
+let stepping = false;
+
+export function move(delta: number) {
+  const { items, index, nextCursor } = useList.getState();
   if (items.length === 0) return;
   const s = getApp();
   const current = s.selectedId !== null ? (index.get(s.selectedId) ?? -1) : -1;
+  // List's conversation page: a thread that isn't in the loaded list (a reload, a draft's) has no neighbours to step to (R10)
+  const onPage = listLayout() && currentPage() === "thread";
+  if (onPage && current === -1) return;
+  // past the last loaded row on the page: the next page first (the covered list's own scrolling may not ask for it)
+  if (onPage && delta > 0 && current + delta > items.length - 1 && nextCursor) {
+    if (stepping) return;
+    stepping = true;
+    void loadMore().finally(() => {
+      stepping = false;
+      if (useList.getState().items.length > items.length) move(delta);
+    });
+    return;
+  }
   const next = Math.max(0, Math.min(items.length - 1, current + delta));
   const id = items[next]!.id;
   if (id === s.selectedId) return;
-  setApp({ selectedId: id, readerOpen: true });
+  // the cursor moves; in Split that opens it, in List's list page it's only the cursor (Enter opens)
+  setApp({ selectedId: id });
   // where it is now: a read row the filter kept may have just left above it
   listScroller.scrollToIndex?.(useList.getState().index.get(id) ?? next);
-  // warm the neighbours so the next keypress renders from cache
+  // warm the neighbours so the next keypress renders from cache (only where a conversation shows: R12)
+  if (listLayout() && !onPage) return;
   for (const n of [next + delta, next + 2 * delta]) {
     const t = items[n];
     if (t) void loadThread(t.id);
   }
+}
+
+/** Enter / o: in List the cursor's conversation becomes the page. */
+function openCurrent() {
+  const id = getApp().selectedId;
+  if (!listLayout()) return setApp({ readerOpen: true });
+  if (id !== null) openThread(id);
+}
+
+/** r / a / f: on List's list page, the conversation opens first (its draft is in it; R3). */
+function reply(mode: DraftMode) {
+  const id = getApp().selectedId;
+  if (listLayout() && currentPage() === "list" && id !== null) openThread(id);
+  void openCompose(mode);
+}
+
+/** Esc: Back from a page (List), else the multi-selection ends. */
+function escape() {
+  if (listLayout() && currentPage() !== "list") closePage({ focus: true });
+  else clearSelection();
 }
 
 /** y / n answer the reader's first "¿Categoría?" chip. */
@@ -47,7 +87,7 @@ function answerSuggestion(yes: boolean) {
 const HANDLERS: Partial<Record<Command, () => void>> = {
   "list.next": () => move(1),
   "list.prev": () => move(-1),
-  "list.open": () => setApp({ readerOpen: true }),
+  "list.open": openCurrent,
   "list.toggleSelect": toggleCurrent,
   "list.selectAll": selectAll,
   "list.selectNone": clearSelection,
@@ -58,7 +98,9 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "list.extendPrev": () => extendSelection(-1),
   "list.menu": () => openMenuForSelection(),
   "list.toggleUnread": toggleUnreadFilter,
-  "reader.close": clearSelection,
+  "reader.close": escape,
+  "nav.back": goBack,
+  "nav.forward": goForward,
   "thread.archive": () => void act("archive"),
   "thread.trash": () => void act("trash"),
   "thread.spam": () => void act("spam"),
@@ -72,10 +114,13 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "thread.print": () => printCommand("print"),
   "thread.exportPdf": () => printCommand("pdf"),
   "compose.new": () => openCompose("new"),
-  "compose.reply": () => openCompose("reply"),
-  "compose.replyAll": () => openCompose("replyAll"),
-  "compose.forward": () => openCompose("forward"),
-  "search.focus": () => focusSearch(),
+  "compose.reply": () => reply("reply"),
+  "compose.replyAll": () => reply("replyAll"),
+  "compose.forward": () => reply("forward"),
+  "search.focus": () => {
+    uncoverList();
+    focusSearch();
+  },
   "palette.open": () => setApp({ dialog: getApp().dialog === "palette" ? null : "palette" }),
   "go.inbox": () => navigate({ view: "inbox" }),
   "go.starred": () => navigate({ view: "starred" }),

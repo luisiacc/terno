@@ -44,6 +44,7 @@ import { addScopeToCategory, addToCategory, isExclusivelyIn, moveToCategory, rem
 import { rowSelector, setRule } from "~/lib/flash";
 import { renderProbe } from "~/lib/render-probe";
 import { isMac, scopeRows, selectAll } from "~/lib/select";
+import { openThread } from "~/lib/page";
 import { menuTargets } from "~/lib/selection";
 import { openPrint } from "~/lib/print-open";
 import { getApp, setApp, useApp, type ScopeSelection } from "~/state/app";
@@ -206,7 +207,7 @@ function MenuItems() {
   const reply = (mode: "reply" | "replyAll" | "forward") => {
     if (!single) return;
     // the menu's own thread, passed explicitly (the selection follows, it isn't read back)
-    setApp({ selectedId: single.id, readerOpen: true });
+    openThread(single.id);
     void openCompose(mode, single.id);
   };
   const inAll = (categoryId: number) => rows.length > 0 && rows.every((t) => t.categoryIds.includes(categoryId));
