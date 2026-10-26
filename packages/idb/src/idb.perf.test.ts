@@ -316,3 +316,72 @@ it("the quick filters (plan 15) page from their own orders: with attachments and
   await store.threads.act({ threadIds: ids, action: "unstar", signal: null, now: NOW });
   await store.debug.verify();
 }, 900_000);
+
+it("People and Waiting (plan 17) page from their own orders: every page, counts and walks within a frame; dense, empty, every waiting date expired but twenty", async () => {
+  const walkAll = async (p: { view: "inbox" | "archive" | "all" | "trash"; accountId?: number; filter: "people" | "waiting" }, label: string) => {
+    const samples: Sample[] = [];
+    let cursor: { lastDate: number; id: number } | undefined;
+    let n = 0;
+    do {
+      const r = await sampleAsync(() => store.threads.list({ ...p, now: NOW, limit: 100, cursor }));
+      samples.push(r);
+      n += r.result.items.length;
+      cursor = r.result.nextCursor ?? undefined;
+    } while (cursor);
+    const worst = Math.max(...settle(samples).ms);
+    expect(worst, `${label}: one page`).toBeLessThanOrEqual(FRAME * MULT);
+    const count = await warm(() => store.threads.scopeCount({ ...p, now: NOW, limit: 100_001 }));
+    expect(count.result, `${label}: count`).toBe(n);
+    expect(count.ms, `${label}: count`).toBeLessThanOrEqual(3 * MULT);
+    const walk = await warm(async () => {
+      let walked = 0;
+      for (let after = 0; ; ) {
+        const page = await store.threads.scopeIds({ ...p, now: NOW, after, limit: 500 });
+        walked += page.length;
+        if (page.length < 500) return walked;
+        after = page[page.length - 1]!;
+      }
+    });
+    expect(walk.result, `${label}: walk`).toBe(n);
+    expect(walk.ms, `${label}: whole walk`).toBeLessThanOrEqual(FRAME * MULT);
+    return { n, worst };
+  };
+  const all = (await store.debug.snapshot()).threads;
+  for (const filter of ["people", "waiting"] as const) {
+    const cold = await timed(() => store.threads.list({ view: "inbox", filter, now: NOW, limit: 100 }));
+    expect(cold.ms, `${filter}: cold first page`).toBeLessThanOrEqual(FRAME * MULT);
+    for (const [label, p] of [
+      ["inbox", { view: "inbox" as const }],
+      ["archive", { view: "archive" as const }],
+      ["trash", { view: "trash" as const }],
+      ["account", { view: "all" as const, accountId: all[0]!.accountId }],
+    ] as const) {
+      const r = await walkAll({ ...p, filter }, `${filter} ${label}`);
+      console.log(`${filter} ${label}: ${r.n} threads, slowest page ${r.worst.toFixed(2)} ms`);
+    }
+  }
+  const counts = await warm(() => store.threads.counts(NOW));
+  expect(counts.result.inboxWaiting).toEqual(expect.any(Number));
+  // the rows themselves, as a bulk change would leave them (the orders follow row changes)
+  const db = (store as unknown as { db: { tx(fn: () => void): void; takeCommit(): unknown; confirm(): void; table(n: string): { all(): Iterable<Record<string, unknown>>; update(r: Record<string, unknown>, p: Record<string, unknown>): void } } }).db;
+  const keep = new Map(all.map((t) => [t.id, [t.person === null ? null : +t.person, t.waitingSince] as const]));
+  const rewrite = (fn: (t: Record<string, unknown>) => Record<string, unknown>) => {
+    db.tx(() => {
+      const threads = db.table("threads");
+      for (const t of threads.all()) threads.update(t, fn(t));
+    });
+    db.takeCommit();
+    db.confirm();
+  };
+  rewrite((t) => ({ person: 1, waiting_since: t.last_date }));
+  await walkAll({ view: "all", filter: "people" }, "people dense");
+  await walkAll({ view: "all", filter: "waiting" }, "waiting dense");
+  rewrite(() => ({ person: 0, waiting_since: null }));
+  await walkAll({ view: "all", filter: "people" }, "people empty");
+  await walkAll({ view: "all", filter: "waiting" }, "waiting empty");
+  let current = 0;
+  rewrite((t) => ({ waiting_since: (t.last_date as number) >= NOW - 10 * 86_400_000 && current++ < 20 ? t.last_date : NOW - 400 * 86_400_000 }));
+  const sparse = await walkAll({ view: "all", filter: "waiting" }, "waiting expired but 20");
+  expect(sparse.n).toBeLessThanOrEqual(20);
+  rewrite((t) => ({ person: keep.get(t.id as number)![0], waiting_since: keep.get(t.id as number)![1] }));
+}, 900_000);
