@@ -41,7 +41,7 @@ export function focusDraft(key: string, target: "body" | "to") {
 }
 
 /** Does a draft carry anything the user wrote? */
-const written = (d: LocalDraft) => d.bodyText.trim() !== "" || d.subjectEdited || d.localRev > 0;
+const written = (d: LocalDraft) => d.bodyText.trim() !== "" || d.subjectEdited || d.localRev > 0 || (d.attachments?.length ?? 0) > 0;
 
 /**
  * Opens the draft for `mode` on `threadId` (default: the open thread).

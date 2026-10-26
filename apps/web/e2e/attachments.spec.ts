@@ -102,3 +102,36 @@ test("sending during attachment staging refuses a partial revision @design", asy
     expect((await parseRaw(server.smtp[0]!.raw)).attachments[0]!.bytes).toEqual(new Uint8Array([0,255,128]));
   } finally { release(); store.attachments.seal = seal; }
 });
+
+
+test("attachment-only reply survives reload and mode conversion with exact Undo @design", async ({ app: page, server }, testInfo) => {
+  await openRow(page, 0);
+  await page.getByTestId("quick-reply").click();
+  const bytes = Buffer.from([0, 255, 128, 13, 10]);
+  await page.getByTestId("attachment-input").setInputFiles({ name: "authored.bin", mimeType: "application/octet-stream", buffer: bytes });
+  const saved = () => sqlDb(server.backend.store).get<{ id: string; attachments_json: string; mode: string }>("SELECT id, attachments_json, mode FROM drafts WHERE json_array_length(attachments_json) = 1");
+  await expect.poll(() => saved()?.mode).toBe("reply");
+  const refs = JSON.parse(saved()!.attachments_json);
+  await page.reload();
+  await expect(page.getByTestId("draft-attachment")).toHaveCount(1);
+  await page.getByTestId("action-reply-all").click();
+  await expect(page.getByTestId("draft-attachment")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Undo convert to reply all" })).toBeVisible();
+  await page.getByRole("button", { name: "Undo convert to reply all" }).click();
+  await expect(page.getByTestId("composer")).toHaveAttribute("data-mode", "reply");
+  await page.getByTestId("action-reply-all").click();
+  await expect.poll(() => saved()?.mode).toBe("replyAll");
+  expect(JSON.parse(saved()!.attachments_json)).toEqual(refs);
+  await page.reload();
+  await expect(page.getByTestId("composer")).toHaveAttribute("data-mode", "replyAll");
+  await expect(page.getByTestId("draft-attachment")).toHaveCount(1);
+  expect(JSON.parse(saved()!.attachments_json)).toEqual(refs);
+  for (const theme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: theme });
+    await stabilize(page);
+    await page.screenshot({ path: `/tmp/terno-scoped-fixes-evidence/conversion-${testInfo.project.name}-${theme}.png` });
+  }
+  await page.getByTestId("compose-send").click();
+  await expect.poll(() => server.smtp.length).toBe(1);
+  expect((await parseRaw(server.smtp[0]!.raw)).attachments[0]!.bytes).toEqual(new Uint8Array(bytes));
+});
