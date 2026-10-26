@@ -232,3 +232,34 @@ Part A changes every full-window baseline that shows the sidebar, which is inten
 - Resizing the reader's column (`--reader-max`).
 - Reordering the folders, or choosing which ones stay visible.
 - A dot on More (no hidden folder has a count today; the rule is written down in §A.2).
+
+## Revisions after the Codex review
+
+Codex (`codex exec -s read-only`) made ten points against the plan and the code. All ten were taken.
+
+**Part A**
+
+1. **`view` alone isn't the folder you're in.** A category navigates with `view: "all"`, and so do a category's suggestions (with no category selected). The plan's rule would have revealed All Mail there, and the existing active style already lit All Mail on a category's suggestions. Now there's one predicate, `folderView = categoryId === null && reviewCategoryId === null ? view : null`. It drives both the active style and the closed-More exception, with an e2e for a category and for its suggestions.
+2. **Focus recovery covers automatic hiding too.** Picture More closed, Trash selected and focused, then `g i`: the Trash slot goes inert under the focus without any click on More. The fix is a layout effect on `[open, view]` that moves focus to More whenever the focused element sits in a slot that just became inert. It runs before the browser's focus fixup, which happens at the next frame. The click-time check was removed, since this one covers both cases. There's an e2e for that exact sequence. The Tab-order test now expects the Categories section's + button (it comes before the first category).
+
+**Part B**
+
+3. **Esc restores the preference, not the measured width.** The drag keeps the stored, nullable value (`stored`) apart from the effective width, and Esc writes the stored value back, or removes the variable when there was none. Cancelling cancels the pending rAF, and the `lostpointercapture` that follows does nothing. Tested with an untouched pane: nothing is stored afterwards.
+4. **Cancellation is owned and always cleaned up.**
+   - Esc is captured on the window with `stopImmediatePropagation`, the way row dragging does it, so the document's shortcut handler never clears the selection. The e2e checks that the open thread survives.
+   - A window blur cancels the drag, and so does unmounting.
+   - `pointercancel` and `lostpointercapture` end the drag.
+   - Every way out releases capture, removes the listeners, cancels the rAF and clears `data-resizing`.
+5. **ARIA bounds when the window changes but the panes don't.** The handles also observe the grid itself, whose width is the window's. There's an e2e: going from 1440 to 1300 changes the list's `aria-valuemax` while neither pane moves.
+6. **The snackbar's inset can re-render the list.** A docked snack that wraps as the list narrows changes `useSnack.inset`, which `ThreadList` reads. That render is legitimate (the dock's height changed) and bounded by line wraps. The zero-render gate runs without a snack. This is noted here rather than gated.
+7. **The Electron drag region can't be proven with `elementFromPoint`.** `-webkit-app-region` is applied by the browser process on macOS, and Playwright's synthetic input never reaches it, so a native window-drag check isn't possible in the smoke. The tests assert what can be asserted: the handle's computed `-webkit-app-region` is `no-drag`, and the top of the boundary hit-tests to the handle. The packaged smoke repeats both on `app://`. Moving the window from the title band is unchanged code: the sidebar and the list header keep their `drag-region`.
+8. **Mail frames do re-render.** `mail-body.tsx` measures with a `ResizeObserver` and `setHeight`, so the reader's open HTML messages render as their width changes. The perf gate therefore drags with five HTML messages expanded.
+9. **Pointermove to the next rAF isn't the paint cost.** The gate records every frame interval across the whole drag instead (the `frameGate` used by the other gates: p95 ≤ 20 ms, no frame over 50 ms, long animation frames reported). It also asserts the pane really followed the pointer.
+10. **Defaults are preserved only from the minimum window up.** Below 980 px (web only), the reader keeps its minimum by narrowing the list, then the sidebar. Before this, the reader shrank first. Below the sum of the three minimums, the grid clips, as it already did below 572 px. The no-overflow test now also checks the document, not only the panes.
+
+## Implementation notes (what differs from the plan above)
+
+- **The reader's minimum is the design's.** A first round of screenshots showed Lumen's toolbar (the reply pill) cut off at a 340 px reader. So `layout.readerMin` joins `DesignDefinition`, emitted as `--reader-min`: macOS 348, and Atelier and Lumen 380. Each value is what that design leaves the reader at 980 today, or less, so the default layout at 980 is unchanged in every design (asserted in `panes.test.ts`). macOS needs 348 rather than 340: at 340 its reader overflowed by 2 px, caught by the clamping e2e.
+- **The list's minimum is 300 and the sidebar's is 200, everywhere.** Screenshots at both minimums in all three designs (`b-*-minimums.png`) show every row layout keeping its date and the sidebar footer intact.
+- **More's placement:** (a), as planned. In the screenshots of (b) (`a-macos-*-variantb-*.png`), More floats alone under a hole.
+- **The ui-perf gate failed on the injected regression.** The injection committed the width to `usePanes` on every move, with `ThreadList` subscribed to it. The gate failed with `ThreadList renders 208` against the required 0. With the regression reverted it passes: 0 renders, frame p95 of 16.7 ms on both edges, no long animation frames.
