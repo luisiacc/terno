@@ -209,7 +209,7 @@ Each `{ name, email }` goes through the following steps.
    - strip one pair of surrounding quotes, whether `"…"`, `'…'`, `“…”`, `‘…’`, `«…»` or `„…“`, and unescape `\x`;
    - a name equal to the address, case-insensitively, or to `'address'`, is dropped, so it shows once;
    - cap the name at 256 characters.
-3. **Recovery** (`split: true`: To, Cc, Bcc and Reply-To; never From):
+3. **Recovery** (`split: true`: To, Cc and Bcc; never From or Reply-To, see the reconciliation review):
    - when the cleaned name contains `<valid address>`, `name <email>` is re-parsed as a list, and each part goes through step 2 (once, no recursion). The user's case becomes "José David Sucre L." <david@sucre.net> and "Luis Alberto Medina" <lmedina@sucre.net>;
    - a name containing a bare address in prose (`"leak@attacker.example, Support" <support@…>`, "Write to ana@x.com") is **not** split: without brackets there is no evidence of a swallowed recipient;
    - From is never split: one sender, the real address. Its name is cleaned only.
@@ -387,7 +387,7 @@ Codex (`codex exec -s read-only`) made 12 points against the plan and the code. 
    - At ingest, a bracketed address that only appears **after decoding an encoded word** is never structure. It is removed from the name, so read-time repair later finds nothing to split. Only text the header literally carries can be recovered.
    - The user's case is literal: the address sits in a correctly quoted string. So the request stands, and the narrowed rule still recovers david.
    - **Why it stays automatic rather than an explicit action:**
-     - recovery is limited to To/Cc/Bcc/Reply-To, never From;
+     - recovery is limited to To/Cc/Bcc, never From or Reply-To (the reconciliation review);
      - every recovered address is one the sender could have listed in Cc directly;
      - the reader shows it as its own recipient after the read-time repair, so what reply-all adds is what the reader shows;
      - it appears as its own chip before anything is sent.
@@ -460,6 +460,14 @@ Plan 27 landed Reply-To on main (185cb94, 3f83a8a, 24bf111) while this branch ca
 | a Reply-To naming only me | To left empty | **plan 27's rule is kept.** This branch first fell back to From, and briefly changed plan 27's test to say so. Plan 27 covers the case with its own test, and the instruction is to keep plan 27's version where it already decides, so that change was reverted. `reply-all.test.ts` now expects To empty there, with the others in Cc for reply-all. |
 | e2e | `reply-to.spec.ts` | the same flows. Only its two field assertions read chips now (the fields are chips). This branch's own Reply-To e2e was removed as a duplicate. |
 | people smoke | its v13 fixture didn't know v15 | the fixture drops `reply_to_json` and expects v15. Without this, the smoke fails on main too. |
+
+### What the Codex review of the reconciliation changed
+
+Codex reviewed the reconciled diff, scoped to the Reply-To pieces and the areas they touch, and made three findings. All three were fixed, each with regression tests in core, in mail and in the conformance suite of every store.
+
+1. **P1: a stored or raw Reply-To could gain a destination.** Read-time repair split `"Support <audit@thirdparty.test>, Helpdesk" <session@…>` into two. That address list is where a *plain reply* goes, so the swallowed-list recovery no longer applies to it. Reply-To is never split, whether at ingest (`parseAddressHeader(…, { split: false })`), at read (`storedAddresses`) or at reply time (`autoRecipients`). To, Cc and Bcc keep the recovery, which the user's report needs.
+2. **P1: repair could change a valid address.** `'support@example.com` lost its apostrophe, which redirected replies. An address valid as stored is now kept exactly, and only a matching pair of quotes counts as wrapping.
+3. **P2: the IMAP envelope fallback dropped a real Reply-To member.** A list containing From lost that member. Without the raw field, only a Reply-To that is exactly From is now dropped. A list that includes From stays whole.
 
 ## Suite results (this machine, load average 9–50, other agents running)
 
