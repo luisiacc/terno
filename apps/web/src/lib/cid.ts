@@ -29,19 +29,30 @@ export async function resolveCidHtml(html: string, accountId: number, attachment
   const refs = new Map<string, AttachmentInfo | null>();
   for (const a of attachments) { const cid = attachmentCid(a.contentId); if (cid) refs.set(cid, refs.has(cid) ? null : a); }
   let budget = 8 * 1024 * 1024;
+  let renderBudget = 8 * 1024 * 1024;
+  const resolved = new Map<string, string | null>();
   for (const img of template.content.querySelectorAll("img")) {
     const src = img.getAttribute("src") ?? "";
     if (!/^cid:/i.test(src)) continue;
     img.removeAttribute("src");
     const a = refs.get(attachmentCid(src) ?? "");
-    if (!current() || !a?.assetId || a.size > 4 * 1024 * 1024 || a.size > budget || !["image/png", "image/gif", "image/jpeg"].includes(a.mime)) continue;
-    try {
-      const bytes = new Uint8Array(await (await attachmentBlob(accountId, { ...a, assetId: a.assetId })).arrayBuffer());
-      if (!current()) return html;
-      if (!inlineRaster(a.mime, bytes)) continue;
-      budget -= bytes.length;
-      img.setAttribute("src", `data:${a.mime};base64,${bytesBase64(bytes)}`);
-    } catch { /* An unavailable inline image never replaces the readable message. */ }
+    if (!current() || !a?.assetId || !Number.isSafeInteger(a.size) || a.size < 0 || a.size > 4 * 1024 * 1024 || !["image/png", "image/gif", "image/jpeg"].includes(a.mime)) continue;
+    if (!resolved.has(a.assetId)) {
+      resolved.set(a.assetId, null);
+      if (a.size > budget) continue;
+      // Failed and invalid reads consume the same reservation as successful ones.
+      budget -= a.size;
+      try {
+        const bytes = new Uint8Array(await (await attachmentBlob(accountId, { ...a, assetId: a.assetId })).arrayBuffer());
+        if (!current()) return html;
+        if (bytes.length === a.size && inlineRaster(a.mime, bytes)) resolved.set(a.assetId, `data:${a.mime};base64,${bytesBase64(bytes)}`);
+      } catch { /* An unavailable inline image never replaces the readable message. */ }
+    }
+    const data = resolved.get(a.assetId);
+    if (data && data.length <= renderBudget) {
+      renderBudget -= data.length;
+      img.setAttribute("src", data);
+    }
   }
   return template.innerHTML;
 }
