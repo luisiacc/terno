@@ -1335,6 +1335,8 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.smtp.connectionLost": "Se perdió la conexión durante el envío: {detail}",
   "errors.smtp.notDeliveredTo": "No se entregó a: {recipients}",
   "errors.gmail.invalidResponse": "Gmail devolvió una respuesta incompleta.",
+  "errors.gmail.requestFailed": "Gmail no pudo completar la solicitud ({status}). Inténtalo de nuevo o revisa el acceso de esta cuenta.",
+  "errors.gmail.requestOffline": "No se pudo contactar a Gmail. Revisa tu conexión e inténtalo de nuevo.",
   "errors.google.mailScopeRequired": "Google no concedió acceso al correo. Permite el acceso a Gmail en la ventana de Google e inténtalo de nuevo.",
   "errors.google.invalidResponse": "Google devolvió una respuesta de inicio de sesión no válida. Intenta iniciar sesión de nuevo.",
   "errors.google.unavailable": "No se pudo completar el inicio de sesión con Google. Revisa tu conexión e inténtalo de nuevo.",

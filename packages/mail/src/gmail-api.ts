@@ -4,6 +4,7 @@ import { MAX_INCOMING_MIME_BYTES } from "@terno/core";
 import type { IncomingMessage } from "@terno/store";
 import { collectGooglePhotos } from "./google-photos";
 import { parseRaw, parseRawHeaders } from "./mime";
+import { cancelResponse, readResponseText, untilAborted } from "./http-body";
 import { failedBeforeRequest, isFetchNetworkFailure, RequestNotDispatchedError } from "./net-errors";
 import { ProviderAuthError, ProviderError, type FlagUpdate, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
 
@@ -153,8 +154,8 @@ async function download<T>(items: T[], work: (item: T) => Promise<void>): Promis
 }
 
 class GmailApiError extends ProviderError {
-  constructor(readonly status: number, detail: string, retryable: boolean, ambiguous: boolean) {
-    super(`Gmail API ${status}: ${detail.slice(0, 200)}`, retryable, ambiguous);
+  constructor(readonly status: number, retryable: boolean, ambiguous: boolean) {
+    super(L("errors.gmail.requestFailed", { status }), retryable, ambiguous);
   }
 }
 
@@ -265,7 +266,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     const deadline = deadlineSignal(sending ? NEVER : reads.signal, request.signal ?? undefined, sending ? (options.sendTimeoutMs ?? SEND_TIMEOUT_MS) : (options.readTimeoutMs ?? READ_TIMEOUT_MS));
     const failed = (e: unknown) => {
       if (e instanceof RequestNotDispatchedError) return e;
-      const detail = L("errors.network", { detail: e instanceof Error ? e.message : String(e) });
+      const detail = L("errors.gmail.requestOffline");
       // a send that never connected (offline, DNS, refused) never left: it waits for the network like a read
       if (sending) return failedBeforeRequest(e) ? ProviderError.network(detail) : new ProviderError(detail, false, true);
       return isFetchNetworkFailure(e) ? ProviderError.network(detail) : new ProviderError(detail, true);
@@ -274,31 +275,37 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       let res: Response;
       try {
         // plan 22: the People API and userinfo go through the same token and deadlines (absolute URLs)
-        res = await netFetch(path.startsWith("https://") ? path : `${ep.api}${path}`, { ...request, signal: deadline.signal, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...request.headers } });
+        deadline.signal.throwIfAborted();
+        res = await untilAborted(netFetch(path.startsWith("https://") ? path : `${ep.api}${path}`, { ...request, signal: deadline.signal, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...request.headers } }).then((response) => {
+          if (deadline.signal.aborted) { cancelResponse(response); throw deadline.signal.reason; }
+          return response;
+        }), deadline.signal);
       } catch (e) {
         throw failed(e);
       }
       if (res.status === 401) {
-        await res.body?.cancel().catch(() => {});
+        cancelResponse(res);
         tokens.invalidate(token);
         // a fresh token refused as well: the grant is gone, the user signs in again (ops wait for it)
         if (retried) throw new ProviderAuthError(L("errors.gmail.revoked"));
         return await api<T>(path, init, true);
       }
       if (!res.ok) {
-        const text = await res.text().catch(() => "");
+        const text = await readResponseText(res, 65_536, deadline.signal).catch(() => "");
         const retryable = res.status === 429 || res.status >= 500 || (res.status === 403 && isRateLimit(text));
-        throw new GmailApiError(res.status, text, retryable, Boolean(sending && res.status >= 500));
+        throw new GmailApiError(res.status, retryable, Boolean(sending && res.status >= 500));
       }
       if (responseMode === "void") {
-        await res.body?.cancel().catch(() => {});
+        cancelResponse(res);
         return undefined as T;
       }
       try {
-        return (await res.json()) as T;
+        if (path === "/profile" || path === "/messages/send" || path === ep.userinfo) return JSON.parse(await readResponseText(res, 65_536, deadline.signal)) as T;
+        return await untilAborted(res.json(), deadline.signal) as T;
       } catch (e) {
         // The request was accepted; a send whose answer can't be read has an unknown outcome (no resend).
-        if (sending) throw new ProviderError(`Unreadable response after a successful request: ${e instanceof Error ? e.message : e}`, false, true);
+        if (sending) throw invalidResponse(true);
+        if (!deadline.signal.aborted && !isFetchNetworkFailure(e)) throw invalidResponse();
         // a read whose body stopped coming (the deadline, a reset, a dead socket) is safe to repeat
         throw failed(e);
       }

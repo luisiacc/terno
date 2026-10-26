@@ -1342,6 +1342,8 @@ It contains none of your mail, contacts, settings or keys.
   "errors.smtp.connectionLost": "Connection lost while sending: {detail}",
   "errors.smtp.notDeliveredTo": "Not delivered to: {recipients}",
   "errors.gmail.invalidResponse": "Gmail returned an incomplete response.",
+  "errors.gmail.requestFailed": "Gmail couldn’t complete the request ({status}). Try again or check this account’s access.",
+  "errors.gmail.requestOffline": "Couldn’t reach Gmail. Check your connection and try again.",
   "errors.google.mailScopeRequired": "Google did not grant mail access. Allow Gmail access in the Google window and try again.",
   "errors.google.invalidResponse": "Google returned an invalid sign-in response. Try signing in again.",
   "errors.google.unavailable": "Could not finish Google sign-in. Check your connection and try again.",
