@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import { create } from "zustand";
 import type { CategoryColor, View } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, Check, Inbox, Layers, OctagonAlert, Plus, Send, Settings2, Sparkles, SquarePen, Star, Trash2 } from "lucide-react";
+import { Archive, Check, ChevronDown, Inbox, Layers, OctagonAlert, Plus, Send, Settings2, Sparkles, SquarePen, Star, Trash2 } from "lucide-react";
 import { Kbd } from "@terno/ui/components/kbd";
 import { openCompose } from "~/lib/actions";
 import { useDesign, variant } from "~/lib/design";
@@ -31,6 +32,29 @@ const VIEWS: { view: View; icon: typeof Inbox; keys?: string }[] = [
   { view: "spam", icon: OctagonAlert },
   { view: "trash", icon: Trash2, keys: "g #" },
 ];
+/** always shown; the rest wait behind More (plan 21) */
+const PINNED = 2;
+
+// ── More: open or closed, remembered on this device (like the format bar)
+
+const MORE_KEY = "terno:sidebar-more";
+function readMore(): boolean {
+  try {
+    return localStorage.getItem(MORE_KEY) === "open";
+  } catch {
+    return false;
+  }
+}
+export const useSidebarMore = create<{ open: boolean }>(() => ({ open: readMore() }));
+function toggleMore(): void {
+  const open = !useSidebarMore.getState().open;
+  useSidebarMore.setState({ open });
+  try {
+    localStorage.setItem(MORE_KEY, open ? "open" : "closed");
+  } catch {
+    // private mode: remembered for this session only
+  }
+}
 
 function NavItem({
   active,
@@ -149,6 +173,58 @@ function ReviewBadge({ id, name, n, active }: { id: number; name: string; n: num
   );
 }
 
+/**
+ * Sent, Archive, All Mail, Spam and Trash behind a quiet More (plan 21). Their
+ * slots keep their height while hidden, so nothing below moves when they fade
+ * in or out; the folder you're in stays shown, in its own slot. A hidden slot
+ * is inert: not focusable, not clickable, not in the accessibility tree.
+ */
+function MoreFolders({ view, folder }: { view: View | null; folder: (f: (typeof VIEWS)[number]) => React.ReactNode }) {
+  const open = useSidebarMore((s) => s.open);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  // a focused folder just hidden (More closed over it, or a key went elsewhere): focus goes to More, not to the
+  // document (the browser drops focus from an inert node only at the next frame, so it's still there now)
+  useLayoutEffect(() => {
+    if (document.activeElement?.closest("[data-more-slot][inert]")) toggleRef.current?.focus();
+  }, [open, view]);
+  return (
+    <>
+      <button
+        ref={toggleRef}
+        type="button"
+        data-testid="nav-more"
+        aria-expanded={open}
+        aria-controls="sidebar-more-folders"
+        onClick={toggleMore}
+        className="group/more type-nav flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-left text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+      >
+        <span className="flex size-4 items-center justify-center">
+          <ChevronDown className={cn("size-3.5 transition-transform duration-base ease-motion", !open && "-rotate-90")} />
+        </span>
+        <span className="min-w-0 flex-1 truncate">{open ? t("sidebar.less") : t("sidebar.more")}</span>
+      </button>
+      <div id="sidebar-more-folders" role="group" aria-label={t("sidebar.moreFolders")}>
+        {VIEWS.slice(PINNED).map((f) => {
+          const active = view === f.view;
+          const shown = open || active;
+          return (
+            <div
+              key={f.view}
+              data-more-slot={f.view}
+              data-active-slot={active || undefined}
+              data-shown={shown || undefined}
+              inert={!shown}
+              className="invisible -translate-y-0.5 opacity-0 transition-[opacity,translate,visibility] duration-base ease-motion data-shown:visible data-shown:translate-y-0 data-shown:opacity-100"
+            >
+              {folder(f)}
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 export function Sidebar() {
   const view = useApp((s) => s.view);
   const accountId = useApp((s) => s.accountId);
@@ -173,33 +249,38 @@ export function Sidebar() {
     }
   };
 
+  // the folder you're in: none in a category or its suggestions (both are "all" underneath)
+  const folderView = categoryId === null && reviewCategoryId === null ? view : null;
+  const folder = ({ view: v, icon: Icon, keys }: (typeof VIEWS)[number]) => (
+    <Tooltip key={v}>
+      <TooltipTrigger
+        render={
+          <NavItem
+            testId={`nav-${v}`}
+            active={folderView === v}
+            onClick={() => navigate({ view: v })}
+            icon={<Icon className="size-4" />}
+            label={viewLabel(v)}
+            count={v === "inbox" ? (accountId ? counts.inboxUnreadByAccount[accountId] : counts.inboxUnread) : undefined}
+            countTone={v === "inbox" ? design.surfaces.inboxCount : "muted"}
+          />
+        }
+      />
+      {keys && (
+        <TooltipContent side="right">
+          <Shortcut keys={keys} />
+        </TooltipContent>
+      )}
+    </Tooltip>
+  );
+
   return (
-    <aside data-testid="sidebar" className="flex h-full min-h-0 w-full flex-col bg-sidebar text-sidebar-foreground">
+    <aside id="app-sidebar" data-testid="sidebar" className="flex h-full min-h-0 w-full flex-col bg-sidebar text-sidebar-foreground">
       <div className="drag-region h-[52px] shrink-0" />
       {variant(design.variants.compose, { "list-header": null, "sidebar-outline": <ComposeOutline />, "sidebar-pill": <ComposePill /> })}
       <nav data-drop-scroll className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-        {VIEWS.map(({ view: v, icon: Icon, keys }) => (
-          <Tooltip key={v}>
-            <TooltipTrigger
-              render={
-                <NavItem
-                  testId={`nav-${v}`}
-                  active={categoryId === null && view === v}
-                  onClick={() => navigate({ view: v })}
-                  icon={<Icon className="size-4" />}
-                  label={viewLabel(v)}
-                  count={v === "inbox" ? (accountId ? counts.inboxUnreadByAccount[accountId] : counts.inboxUnread) : undefined}
-                  countTone={v === "inbox" ? design.surfaces.inboxCount : "muted"}
-                />
-              }
-            />
-            {keys && (
-              <TooltipContent side="right">
-                <Shortcut keys={keys} />
-              </TooltipContent>
-            )}
-          </Tooltip>
-        ))}
+        {VIEWS.slice(0, PINNED).map(folder)}
+        <MoreFolders view={folderView} folder={folder} />
 
         <SectionTitle
           action={

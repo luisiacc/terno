@@ -16,6 +16,7 @@ import { Reader } from "./components/reader";
 import { SelectionBar } from "./components/selection-bar";
 import { SnackDock } from "./components/snack-dock";
 import { Sidebar } from "./components/sidebar";
+import { PaneHandle } from "./components/pane-handle";
 import { ThreadList } from "./components/thread-list";
 import { EngineStopped } from "./components/diag/engine-stopped";
 import { PaneBoundary } from "./components/diag/error-boundary";
@@ -87,11 +88,14 @@ export function App() {
   return (
     <TooltipProvider delay={500}>
       {gate}
-      <div className="grid h-screen grid-cols-[var(--sidebar-w)_minmax(var(--list-min),var(--list-max))_minmax(0,1fr)] overflow-hidden" data-ready={ready || undefined}>
+      <div className="app-panes grid h-screen overflow-hidden" data-ready={ready || undefined}>
         <Sidebar />
-        <div className="hairline-l hairline-r hairline-strong relative min-h-0">
+        <div id="app-list" className="hairline-l hairline-r hairline-strong relative min-h-0">
           <ThreadList />
           <SnackDock />
+          {/* plan 21: the panes' edges, over the hairlines */}
+          <PaneHandle pane="sidebar" />
+          <PaneHandle pane="list" />
         </div>
         <main className="relative min-h-0">
           {/* the reader pane: a bulk selection, else a new message being written, else the conversation; one that fails to render is that pane only */}

@@ -5,7 +5,7 @@
  */
 import type { Locator, Page } from "@playwright/test";
 import type { DevServer } from "../../backend-dev/src/server";
-import { expect, focusList, rows, selectedRow, selectRows, stabilize, test, searchBox } from "./fixtures";
+import { expect, navTo, focusList, rows, selectedRow, selectRows, stabilize, test, searchBox } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
@@ -111,7 +111,7 @@ test.describe("context menu on one thread", { tag: "@design" }, () => {
   });
 
   test("Trash and Spam: what can't apply there is disabled, the way back is offered", async ({ app: page }) => {
-    await page.getByTestId("nav-trash").click();
+    await navTo(page, "trash");
     await expect(page.getByTestId("list-title")).toHaveText("Trash");
     await viewLoaded(page, "trash");
     await rightClick(page, rows(page).first());
@@ -122,7 +122,7 @@ test.describe("context menu on one thread", { tag: "@design" }, () => {
     await page.keyboard.press("Escape");
     await expect(menu(page)).toBeHidden();
 
-    await page.getByTestId("nav-spam").click();
+    await navTo(page, "spam");
     await expect(page.getByTestId("list-title")).toHaveText("Spam");
     await viewLoaded(page, "spam");
     await rightClick(page, rows(page).first());
@@ -366,7 +366,7 @@ test.describe("undo is exact", { tag: "@design" }, () => {
     const count = (where: string) => db(server).get<{ c: number }>(`SELECT count(*) AS c FROM threads WHERE ${where}`)!.c;
     const archived = count("in_inbox = 0 AND in_trash = 0 AND in_spam = 0");
     const inbox = count("in_inbox = 1");
-    await page.getByTestId("nav-archive").click();
+    await navTo(page, "archive");
     await expect(page.getByTestId("list-title")).toHaveText("Archive");
     await viewLoaded(page, "archive");
     await focusList(page);

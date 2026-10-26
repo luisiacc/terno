@@ -310,6 +310,28 @@
   transition: none !important;
 }
 
+/*
+ * Plan 21: the shell's columns. --pane-sidebar / --pane-list are the widths
+ * the user dragged to (unset: the design's, resolved as before). Clamped here
+ * against the window on every frame: the reader keeps its design's minimum, the list gives
+ * way first (to 300), then the sidebar (to 200); growing the window gives the
+ * chosen widths back. The numbers are apps/web/src/lib/panes.ts's LIMITS.
+ */
+@utility app-panes {
+  --pane-sidebar-eff: clamp(200px, min(360px, var(--pane-sidebar, var(--sidebar-w))), 100vw - var(--reader-min) - 300px);
+  --pane-list-eff: clamp(300px, min(640px, var(--pane-list, max(var(--list-min), var(--list-max)))), 100vw - var(--reader-min) - var(--pane-sidebar-eff));
+  grid-template-columns: var(--pane-sidebar-eff) var(--pane-list-eff) minmax(0, 1fr);
+}
+/* a pane edge being dragged: its cursor everywhere, no text selection, and mail frames don't catch the pointer */
+:root[data-resizing],
+:root[data-resizing] * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+:root[data-resizing] iframe {
+  pointer-events: none;
+}
+
 @utility drag-region {
   -webkit-app-region: drag;
   user-select: none;
