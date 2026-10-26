@@ -33,7 +33,7 @@ import {
   withAccountPrefs,
 } from "@terno/core";
 import type { OwnerIdentity } from "@terno/core/rpc";
-import { AWAITING_AUTH, keepInPage, type DraftInput, type DraftRow, type IncomingMessage, type ListParams, type ModelDelta, type OpRow, type OwnerClaim, type MessageState, type Page, type ScopeParams, type SearchMessageDoc, type SearchThreadDoc } from "@terno/store";
+import { AWAITING_AUTH, AWAITING_NETWORK, keepInPage, type OpPark, type DraftInput, type DraftRow, type IncomingMessage, type ListParams, type ModelDelta, type OpRow, type OwnerClaim, type MessageState, type Page, type ScopeParams, type SearchMessageDoc, type SearchThreadDoc } from "@terno/store";
 import type { MemDb, Row, Table } from "./mem";
 
 /**
@@ -1087,30 +1087,58 @@ export function enqueueOp(c: Ctx, op: { accountId: number; kind: string; target:
 
 const opRow = (r: R): OpRow => ({ id: r.id, seq: r.seq, account_id: r.account_id, kind: r.kind, target_json: r.target_json, payload_json: r.payload_json, state: r.state, attempts: r.attempts, next_attempt_at: r.next_attempt_at, last_error: r.last_error, created_at: r.created_at });
 
-export function claimReadyOps(c: Ctx, now: number, limit: number): OpRow[] {
+/**
+ * A location op waits for older unsettled location ops on the same messages. Each message's oldest
+ * unsettled location op is looked up once a pass and only when asked (Codex review): asking per op
+ * walked every op on a shared message for each of them (quadratic with a long queue on one thread),
+ * and building the whole map up front walked every target of a bulk move on every pass. An op stops
+ * at its first blocked message.
+ */
+function locationBlockers(c: Ctx): (o: R) => boolean {
   const ops = T(c, "ops");
   const targets = T(c, "op_targets");
+  const oldest = new Map<number, number>();
+  const oldestOn = (messageId: number): number => {
+    let seq = oldest.get(messageId);
+    if (seq !== undefined) return seq;
+    seq = Infinity;
+    for (const t of targets.by("message", messageId)) {
+      if (t.grp !== "location") continue;
+      const o2 = ops.get(t.op_id);
+      if (o2 && (o2.state === "queued" || o2.state === "running") && o2.seq < seq) seq = o2.seq as number;
+    }
+    oldest.set(messageId, seq);
+    return seq;
+  };
+  return (o) => targets.by("fk_op_id", o.id).some((mine) => mine.grp === "location" && oldestOn(mine.message_id as number) < o.seq);
+}
+
+export function claimReadyOps(c: Ctx, now: number, limit: number): OpRow[] {
+  const ops = T(c, "ops");
   return c.db.tx(() => {
     const ready = ops.by("state", "queued").filter((o) => o.next_attempt_at <= now).sort((x, y) => x.seq - y.seq);
+    // claiming moves queued → running: both count as blockers, so the map stays right for the pass
+    const blocked = locationBlockers(c);
     const out: OpRow[] = [];
     for (const o of ready) {
       if (out.length >= limit) break;
-      // a location op waits for older unsettled location ops on the same messages
-      const blocked = targets.by("fk_op_id", o.id).some(
-        (mine) =>
-          mine.grp === "location" &&
-          targets.by("message", mine.message_id).some((other) => {
-            if (other.grp !== "location") return false;
-            const o2 = ops.get(other.op_id);
-            return !!o2 && o2.seq < o.seq && (o2.state === "queued" || o2.state === "running");
-          }),
-      );
-      if (blocked) continue;
+      if (blocked(o)) continue;
       const running = ops.update(o, { state: "running", attempts: o.attempts + 1, updated_at: now });
       out.push(opRow(running));
     }
     return out;
   });
+}
+
+/** When the next op can be claimed (see the SQL store's nextOpAttemptAt): blocked and parked ones aren't due. */
+export function nextOpAttemptAt(c: Ctx): number | null {
+  const blocked = locationBlockers(c);
+  let t: number | null = null;
+  for (const o of T(c, "ops").by("state", "queued")) {
+    if (o.next_attempt_at >= AWAITING_NETWORK || (t !== null && o.next_attempt_at >= t) || blocked(o)) continue;
+    t = o.next_attempt_at;
+  }
+  return t;
 }
 
 export function getOp(c: Ctx, id: string): OpRow | null {
@@ -1169,13 +1197,15 @@ export function pruneOpTargets(c: Ctx, messageIds: readonly number[]): void {
   for (const m of gone) for (const t of targets.by("message", m)) targets.deleteRow(t);
 }
 
-export function failOp(c: Ctx, id: string, error: string, retryable: boolean, now: number): OpState {
+/** See the SQL store's failOp: backoff, or parked for the network (an outage gives the attempt back). */
+export function failOp(c: Ctx, id: string, error: string, retryable: boolean, now: number, park?: OpPark): OpState {
   const ops = T(c, "ops");
   const op = ops.get(id);
   if (!op) return "failed";
-  const state: OpState = retryable && op.attempts < MAX_OP_ATTEMPTS ? "queued" : "failed";
+  const state: OpState = retryable && (park?.keepAttempt || op.attempts < MAX_OP_ATTEMPTS) ? "queued" : "failed";
   const delay = Math.min(1000 * 2 ** (op.attempts - 1), 300_000);
-  ops.update(op, { state, last_error: error, next_attempt_at: now + delay, updated_at: now });
+  const attempts = park?.keepAttempt ? Math.max(op.attempts - 1, 0) : op.attempts;
+  ops.update(op, { state, attempts, last_error: error, next_attempt_at: park && state === "queued" ? AWAITING_NETWORK : now + delay, updated_at: now });
   if (state === "failed") dropTargets(c, id);
   else if (!yieldToNewerOps(c, id)) return "succeeded";
   return state;
@@ -1199,6 +1229,18 @@ export function resumeAuthOps(c: Ctx, accountId: number, now: number): string[] 
   const out: string[] = [];
   for (const o of ops.by("fk_account_id", accountId)) {
     if (o.state !== "queued" || o.next_attempt_at !== AWAITING_AUTH) continue;
+    ops.update(o, { next_attempt_at: 0, updated_at: now });
+    out.push(o.id);
+  }
+  return out;
+}
+
+export function resumeNetworkOps(c: Ctx, accountId: number | null, now: number): string[] {
+  const ops = T(c, "ops");
+  const out: string[] = [];
+  // the queued ops only: an account's ops include its whole history (every success), and this runs on every sync
+  for (const o of ops.by("state", "queued")) {
+    if (o.next_attempt_at !== AWAITING_NETWORK || (accountId !== null && o.account_id !== accountId)) continue;
     ops.update(o, { next_attempt_at: 0, updated_at: now });
     out.push(o.id);
   }

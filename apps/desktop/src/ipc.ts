@@ -1,7 +1,9 @@
 /** Messages between main and the backend utility process (parent port). */
 export type MainToBackend =
-  | { type: "init"; dbPath: string; demo: boolean; dev: boolean; socketPath: string; tokenPath: string; version: string; diag: { session: string; build: string; channel: "production" | "dev" | "test" | "demo" }; testSmtpPort?: number }
+  | { type: "init"; dbPath: string; demo: boolean; dev: boolean; socketPath: string; tokenPath: string; version: string; diag: { session: string; build: string; channel: "production" | "dev" | "test" | "demo" }; testSmtpPort?: number; online: boolean }
   | { type: "port"; clientId: string }
+  /** plan 20: the network changed (network-watch.ts), or the Mac woke up */
+  | { type: "network"; online: boolean; reason: "network" | "wake" | "online" | "offline" }
   /**
    * Quitting or updating: stop starting ops, give a send in flight until the
    * deadline, close the database (its WAL checkpointed) and answer. `force`

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { connect } from "node:net";
-import { expect, test } from "./fixtures";
+import { expect, navTo, test } from "./fixtures";
 
 test.describe("accounts, settings and command palette", () => {
   test("IMAP presets autofill servers; the account is added and appears in the sidebar", async ({ app: page }) => {
@@ -98,7 +98,7 @@ test.describe("accounts, settings and command palette", () => {
   });
 
   test("g then i returns to the inbox from anywhere; ? shows the shortcuts", async ({ app: page }) => {
-    await page.getByTestId("nav-archive").click();
+    await navTo(page, "archive");
     await expect(page.getByTestId("list-title")).toHaveText("Archive");
     await page.keyboard.press("g");
     await page.keyboard.press("i");

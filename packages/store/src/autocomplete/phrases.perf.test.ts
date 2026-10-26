@@ -5,12 +5,17 @@
  * (heap and ArrayBuffers after GC, within the fixed table), and suggestion
  * latency for windows up to 1,000 characters and for a 1 MB line before the
  * caret (only its end is read). Each gate has an injected-regression twin.
+ * The build's stall is the event loop's (timing.ts: on a busy machine a rare
+ * hold of the OS counts at its CPU time), and a build over either budget is
+ * measured again, up to three in all, the best of each counting: a regression
+ * is slow every time.
  */
 import type { Address } from "@terno/core";
 import { contactPeople, sentBody } from "@terno/mock-data";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { SentText } from "../autocomplete-source";
-import { bestRounds, cpuMs, memoryBytes, PERF_MULT as MULT, perfLog as log, stallMeter } from "../conformance/perf";
+import { describeGap, watchLoop } from "../../../db/src/test/timing";
+import { bestRounds, cpuMs, memoryBytes, PERF_MULT as MULT, perfLog as log } from "../conformance/perf";
 import { SliceClock } from "../instant/slices";
 import { PhraseModel, setPhrasesSlowdownForTests, setPhrasesUnboundedForTests } from "./phrases";
 
@@ -48,9 +53,9 @@ function* sentPages(n: number, seed = 3): Generator<SentText[]> {
   if (page.length) yield page;
 }
 
-async function build(n: number): Promise<{ model: PhraseModel; stall: number }> {
-  const meter = stallMeter();
-  const clock = new SliceClock({ yield: meter.yield, sliceMs: 4 });
+async function build(n: number): Promise<{ model: PhraseModel; stall: number; longest: string; descheduled: number }> {
+  const loop = watchLoop(BUDGET.stallMs * MULT);
+  const clock = new SliceClock({ yield: () => new Promise((r) => setTimeout(r, 0)), sliceMs: 4 });
   const m = new PhraseModel();
   for (const page of sentPages(n)) {
     await clock.pause();
@@ -60,7 +65,8 @@ async function build(n: number): Promise<{ model: PhraseModel; stall: number }> 
     }
     if (m.needsPrune()) await m.prune(clock);
   }
-  return { model: m, stall: meter.done() };
+  const r = loop.stop();
+  return { model: m, stall: r.stall, longest: describeGap(r.longest), descheduled: r.descheduled.length };
 }
 
 async function footprint(): Promise<number> {
@@ -104,18 +110,22 @@ afterAll(() => {
 
 describe(`the phrase model from ${N.toLocaleString("en")} sent messages`, () => {
   it("learns within its CPU and stall budgets, in bounded memory", async () => {
-    let best: { stall: number; cpu: number } | null = null;
-    for (let r = 0; r < 3; r++) {
+    // a build over either budget is measured again, up to three in all, the best of each counting (CPU time too
+    // inflates when every core is contended, from shared caches and SMT; a regression is slow in every build)
+    const best = { stall: Infinity, us: Infinity };
+    const runs: string[] = [];
+    for (let r = 0; r < 3 && !(best.stall <= BUDGET.stallMs * MULT && best.us <= BUDGET.buildUsPerMessage * MULT); r++) {
       const { result, cpu } = await cpuMs(() => build(N));
       model = result.model;
-      if (!best || result.stall < best.stall) best = { stall: result.stall, cpu };
-      if (best.stall <= BUDGET.stallMs * MULT) break;
+      const us = (cpu / N) * 1000;
+      runs.push(`${us.toFixed(1)} µs/message, stall ${result.stall.toFixed(1)} ms (longest gap ${result.longest}, ${result.descheduled} descheduled)`);
+      best.stall = Math.min(best.stall, result.stall);
+      best.us = Math.min(best.us, us);
     }
     const held = await footprint();
-    const us = (best!.cpu / N) * 1000;
-    log(`phrases build: ${best!.cpu.toFixed(0)} ms CPU (${us.toFixed(1)} µs/message), longest stall ${best!.stall.toFixed(1)} ms; memory ${(held / MiB).toFixed(1)} MiB measured, ${(model.allocatedBytes() / MiB).toFixed(1)} MiB counted`);
-    expect(us, "build CPU per message (µs)").toBeLessThanOrEqual(BUDGET.buildUsPerMessage * MULT);
-    expect(best!.stall, "longest stall (ms)").toBeLessThanOrEqual(BUDGET.stallMs * MULT);
+    log(`phrases build: ${best.us.toFixed(1)} µs CPU a message, longest stall ${best.stall.toFixed(1)} ms [${runs.join("; ")}]; memory ${(held / MiB).toFixed(1)} MiB measured, ${(model.allocatedBytes() / MiB).toFixed(1)} MiB counted`);
+    expect(best.us, "build CPU per message (µs)").toBeLessThanOrEqual(BUDGET.buildUsPerMessage * MULT);
+    expect(best.stall, "longest stall (ms)").toBeLessThanOrEqual(BUDGET.stallMs * MULT);
     expect(held, "heap + ArrayBuffers held").toBeLessThanOrEqual(BUDGET.memoryBytes);
     expect(model.allocatedBytes(), "counted ≥ measured").toBeGreaterThanOrEqual(held * 0.9);
     // and it learned the habits, not the quotes

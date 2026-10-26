@@ -9,10 +9,11 @@ import { renderProbe } from "~/lib/render-probe";
 import { useHasDraft } from "~/lib/drafts";
 import { pressRow, releaseRow } from "~/lib/select";
 import { useApp, type AppState } from "~/state/app";
+import { accountLabels } from "~/lib/account-labels";
 import type { DesignVariants } from "@terno/ui/designs/index";
 import { SenderAvatar } from "./sender-avatar";
 
-/** The account, in "Todas las cuentas": a small ring in its color (category dots are filled). */
+/** The account, in all-accounts views: a small ring in its color (category dots are filled) before its name (plan 23). */
 const ACCOUNT_MARK: Record<CategoryColor, string> = {
   rose: "border-cat-rose",
   amber: "border-cat-amber",
@@ -30,6 +31,8 @@ interface Props {
   height: number;
   compact: boolean;
   showAccount: boolean;
+  /** plan 22: the sender's icon may be asked for (never in spam) */
+  icons: boolean;
   /** the design's row layout (plan 15) */
   layout: DesignVariants["row"];
 }
@@ -41,7 +44,7 @@ interface Props {
  * checking one re-renders one. The design picks the layout inside it (classic,
  * avatar, large avatar); the shell, roles, ids and handlers are the same in all.
  */
-export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, showAccount, layout }: Props) {
+export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, showAccount, icons, layout }: Props) {
   renderProbe("ThreadRow");
   /** the open thread (the cursor; the listbox's active descendant) */
   const selected = useApp((s) => s.selectedId === thread.id);
@@ -50,7 +53,8 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
   const checked = useApp((s) => inScope(s) || s.checked.has(thread.id));
   // what assistive tech hears as selected: the checked rows, or the open thread when nothing is checked
   const inSelection = useApp((s) => inScope(s) || s.checked.has(thread.id) || (s.selectedId === thread.id && s.checked.size === 0));
-  const accountColor = useApp((s) => (showAccount ? s.accounts.find((a) => a.id === thread.accountId)?.color : undefined)) as CategoryColor | undefined;
+  // one object per account, kept while it doesn't change (accountLabels): sync-state events re-render no row
+  const account = useApp((s) => (showAccount ? accountLabels(s.accounts).get(thread.accountId) : undefined));
   const categories = useApp((s) => s.categories);
   /** a draft with something written in it (one boolean: only this row renders when it changes) */
   const hasDraft = useHasDraft(thread.id);
@@ -71,8 +75,32 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       ))}
       {thread.hasAttachments && <Paperclip className="size-3 text-muted-foreground" />}
       {thread.starred && <Star className="size-3 fill-star text-star" />}
-      {accountColor && <span data-testid="account-mark" className={cn("size-1.5 shrink-0 rounded-full border-[1.5px]", ACCOUNT_MARK[accountColor])} />}
     </>
+  );
+  // Apple Mail's "to which account" (plan 23): muted, under the date (before it in compact), within a share of the line so the
+  // subject always keeps the rest; an address truncates its local part first (shrink 100 to 1: a factor under 1 leaves overflow unresolved), then its @domain. Screen readers get it once, at the end.
+  const accountTag = account && (
+    <span
+      aria-hidden
+      data-testid="account-label"
+      title={account.email}
+      className={cn(
+        "flex min-w-0 shrink-0 items-center gap-1 self-center text-2xs",
+        // a checked row is on the accent (muted text isn't checked there): its own foreground
+        checked && !selected ? "text-accent-foreground" : "text-muted-foreground",
+        compact ? "max-w-[min(7rem,32%)]" : "ml-auto max-w-[min(8rem,40%)] pl-1",
+      )}
+    >
+      <span data-testid="account-mark" className={cn("size-1.5 shrink-0 rounded-full border-[1.5px]", ACCOUNT_MARK[account.color])} />
+      {account.local !== undefined ? (
+        <>
+          <span className="min-w-[1ch] shrink-[100] truncate">{account.local}</span>
+          <span className="min-w-0 truncate">{account.domain}</span>
+        </>
+      ) : (
+        <span className="min-w-0 truncate">{account.text}</span>
+      )}
+    </span>
   );
   const date = (
     <span data-testid="row-date" className={cn("text-xs tabular", thread.unread ? "text-foreground" : "text-muted-foreground")}>
@@ -95,6 +123,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       <SenderAvatar
         name={thread.fromName}
         email={thread.fromEmail}
+        icon={icons}
         className={compact ? "size-(--avatar-row-compact) text-[length:calc(var(--avatar-row-compact)*0.42)]" : "size-(--avatar-row) text-[length:calc(var(--avatar-row)*0.3)]"}
       />
       {/* Lumen: what's new sits on the person, ringed in what's behind the row */}
@@ -138,6 +167,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
           <span className={cn("type-row-subject min-w-0 flex-1 truncate", thread.unread ? "text-foreground" : "text-muted-foreground")}>
             {thread.subject} {draft} <span className="text-muted-foreground">— {thread.snippet}</span>
           </span>
+          {accountTag}
           <span className="ml-auto flex shrink-0 items-center gap-1.5">
             {marks}
             {date}
@@ -154,9 +184,12 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
             </span>
           </div>
           <div className="relative mt-0.5 flex min-w-0 items-baseline gap-1.5 text-sm">
-            {subject}
-            {draft}
-            {snippet}
+            <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+              {subject}
+              {draft}
+              {snippet}
+            </span>
+            {accountTag}
           </div>
         </>
       ) : (
@@ -172,8 +205,11 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
               </span>
             </div>
             <div className="flex min-w-0 items-baseline gap-1.5 text-sm">
-              {subject}
-              {draft}
+              <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+                {subject}
+                {draft}
+              </span>
+              {accountTag}
             </div>
             <div className={cn("flex min-w-0 items-center gap-1.5", big && "mt-0.5")}>
               {snippet}
@@ -182,6 +218,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
           </div>
         </div>
       )}
+      {account && <span className="sr-only">{t("list.accountLabel.sr", { account: account.text })}</span>}
     </div>
   );
 });

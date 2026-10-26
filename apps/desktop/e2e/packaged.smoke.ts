@@ -155,6 +155,19 @@ test("plan 18: the packaged backend suggests recipients from its index", async (
   await page.keyboard.press("Escape");
 });
 
+test("plan 22: the packaged backend can fetch website icons, and they're off in local mode until turned on (nothing is fetched here)", async () => {
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("Meta+,");
+  await page.getByTestId("tab-appearance").click();
+  const row = page.getByTestId("site-icons-row");
+  await row.scrollIntoViewIfNeeded();
+  // the desktop host has the node:https transport (the switch is live, unlike the web's), and local mode keeps it off
+  await expect(page.getByTestId("site-icons-switch")).toBeEnabled();
+  await expect(page.getByTestId("site-icons-switch")).not.toBeChecked();
+  await expect(row).toContainText("Off in local mode");
+  await page.keyboard.press("Escape");
+});
+
 test("local mode (the default for a new profile): main cancels the renderer's remote requests", async () => {
   await expect(page.getByTestId("local-pill")).toHaveText("Local");
   // observe cancellations in main itself, so a failure for any other reason (offline, CSP) doesn't count
@@ -212,6 +225,45 @@ test("a release carries no test build's world: no baked feed or profile, GitHub'
   expect(readFileSync(join(appPath, "Contents/Resources/app-update.yml"), "utf8")).toMatch(/^owner: luisiacc\nrepo: terno\nprovider: github\n/);
   const signature = spawnSync("codesign", ["-dv", "--verbose=2", appPath], { encoding: "utf8" }).stderr;
   if (!/Signature=adhoc/.test(signature)) expect(execFileSync("codesign", ["-d", "-r-", appPath], { encoding: "utf8" })).toContain('identifier "dev.terno.mail"');
+});
+
+test("the app carries Terno's icon: the macOS 26 asset catalog and the grid-drawn .icns (plan 19)", async () => {
+  const info = JSON.parse(execFileSync("plutil", ["-convert", "json", "-o", "-", join(appPath, "Contents/Info.plist")], { encoding: "utf8" })) as Record<string, unknown>;
+  expect(info.CFBundleIconName).toBe("Icon");
+  expect(info.CFBundleIconFile).toBe("icon.icns");
+  const resources = join(appPath, "Contents/Resources");
+  expect(readFileSync(join(resources, "icon.icns")).equals(readFileSync(join(here, "../resources/icon.icns")))).toBe(true);
+  expect(readFileSync(join(resources, "Assets.car")).equals(readFileSync(join(here, "../resources/Assets.car")))).toBe(true);
+  // the catalog holds the icon named in Info.plist, in light, dark and tinted
+  const renditions = execFileSync("xcrun", ["assetutil", "--info", join(resources, "Assets.car")], { encoding: "utf8" });
+  for (const appearance of ["NSAppearanceNameAqua", "NSAppearanceNameDarkAqua", "ISAppearanceTintable"]) expect(renditions).toContain(appearance);
+  expect(renditions).toMatch(/"Name" : "Icon"/);
+});
+
+test("plan 21: More's state and the panes' widths survive a real restart on app://; the edges are never a window drag area", async () => {
+  const handle = page.getByTestId("pane-handle-sidebar");
+  // the boundary's top runs through the title band (the sidebar's drag region): there it's the handle's, and no-drag
+  const b = (await handle.boundingBox())!;
+  expect(await page.evaluate(([x, y]) => (document.elementFromPoint(x!, y!) as HTMLElement | null)?.closest("[data-testid]")?.getAttribute("data-testid"), [b.x + b.width / 2, b.y + 10])).toBe("pane-handle-sidebar");
+  expect(await handle.evaluate((el) => getComputedStyle(el).getPropertyValue("-webkit-app-region") || getComputedStyle(el).getPropertyValue("app-region"))).toBe("no-drag");
+  await handle.focus();
+  await page.keyboard.press("End");
+  await expect(handle).toHaveAttribute("aria-valuenow", "360");
+  await page.getByTestId("nav-more").click();
+  await expect(page.getByTestId("nav-trash")).toBeVisible();
+  await app.close();
+  const env = { ...process.env, TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_USER_DATA: userData };
+  delete env.ELECTRON_RUN_AS_NODE;
+  app = await electron.launch({ executablePath: join(appPath, "Contents/MacOS/Terno"), env });
+  page = await app.firstWindow();
+  await page.locator("[data-testid=thread-row]").first().waitFor({ timeout: 30_000 });
+  await expect(page.getByTestId("pane-handle-sidebar")).toHaveAttribute("aria-valuenow", "360");
+  expect((await page.getByTestId("sidebar").boundingBox())!.width).toBeCloseTo(360, 0);
+  await expect(page.getByTestId("nav-more")).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByTestId("nav-trash")).toBeVisible();
+  // back to the defaults for what follows
+  await page.getByTestId("pane-handle-sidebar").dblclick();
+  await page.getByTestId("nav-more").click();
 });
 
 test("warm start: relaunching with an existing mailbox shows mail fast", async () => {

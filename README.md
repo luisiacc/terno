@@ -1,4 +1,9 @@
-# Terno
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/terno-lockup-white.svg" />
+    <img src="brand/terno-lockup.svg" alt="Terno" height="48" />
+  </picture>
+</h1>
 
 > **Your mail, made to measure.**
 
@@ -7,12 +12,13 @@ Terno is a minimalist, keyboard-first, extremely fast desktop email client for m
 - Unlimited accounts: Gmail via OAuth, plus any IMAP/SMTP server.
 - Categories that span accounts, with smart categorization: Terno learns from how you file (sender, list, domain and content, all on this Mac, no AI needed), files new mail on its own only when it is sure and says why, suggests the rest, and after every filing offers "everything from this sender / about these topics" in one keystroke, all undoable.
 - Filters built with AI from a plain-language description, then refined in a visual editor. The AI can run on this Mac (Ollama, LM Studio, any local OpenAI-compatible server) or in the cloud with your own key (Claude, OpenAI, OpenRouter, Groq, Together, Azure).
-- **Local mode** (on for new installs): nothing leaves the Mac except mail with your own servers.
+- **Local mode** (on for new installs): nothing leaves the Mac except mail with your own servers (and website icons, only if you turn them on).
 - Filters learned from what you archive.
 - Drag one or many conversations onto a category to move them there (out of every other category); the same undoable snackbar as the `l` picker.
 - A right-click menu on a conversation or a selection (read/unread, star, archive, delete, spam, categories with checkmarks, "Move to…", everything from a sender, a filter from them), selection with ⌘A, ⌘/⇧-click and ⇧J/K, the usual triage keys (⌫, ⇧I, ⇧U, ⌘⇧U, ⌃⌘A, z…), and "select all N conversations" that the backend applies to a whole view in slices, with progress and undo ([plan 06](docs/plans/06-context-menu-selection.md)).
 - A quiet, Apple-Mail-like interface: conversations without boxes (hairlines and faint surfaces), replies and new messages written in place (no dialogs), drafts that are never lost (saved as you type, restored after a restart).
 - Three styles ([plan 15](docs/plans/15-design-themes.md)): **Lumen** (the default: warm and people-first, Figtree, big avatars, a greeting, filter chips), **Atelier** (editorial: Instrument Serif titles, ink and paper) and **macOS** (Apple Mail-like, compact, SF). Each has its own type, shapes, density and layout, and its own colors in light and dark; the 17 color themes (Terno, Apple, Solarized, Gruvbox, GitHub, Catppuccin, Dracula, Monokai, Tokyo Night, Nord, Lumen, Atelier) and your own JSON ones work in any style, all checked for WCAG AA contrast; animations you can set to 0/50/75/100 ms (Settings → Appearance); reduced transparency respected.
+- Sender pictures ([plan 22](docs/plans/22-sender-icons.md)): a company's icon from its own website (one request per site, never a third-party service, cached on the Mac; on in connected mode, off in local mode until you turn it on, never in Spam) and, per Gmail account you allow, your Google contacts' photos and your own. In views across accounts, each row names the account the mail came to, as Apple Mail does ([plan 23](docs/plans/23-account-label.md)).
 - Quick filters: unread (⌘L), with attachments, starred, per mailbox, from the "Filtered by" menu or Lumen's chips.
 - An MCP server so **Claude Code** and **Codex** get one access point to all your email.
 - Printing and PDF (⌘P, ⇧⌘P, File, the reader's printer button, or a right-click on a conversation or a single message): with headers or just the content, quoted history hidden or kept, Letter or A4, previewed as the exact page that prints; wide mail is fitted to the page and nothing leaves the Mac ([plan 09](docs/plans/09-print.md)).
@@ -26,6 +32,7 @@ The technical plan, and the design review held with Codex before implementation,
 pnpm install            # Node 24+, pnpm 12
 pnpm dev                # backend (WebSocket, demo mailbox) + renderer at http://localhost:5173
 pnpm dist:mac           # → apps/desktop/release/mac-arm64/Terno.app and Terno-<v>-arm64.dmg
+pnpm brand              # every icon (app, Tahoe, DMG, favicons, the in-app mark) from the logo in brand/ (macOS, Xcode 26)
 
 pnpm dev:desktop         # Electron + Vite HMR on your real profile
 pnpm dev:desktop:demo    # separate profile with the ~3k-thread demo mailbox

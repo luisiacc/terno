@@ -118,6 +118,7 @@
   --sidebar-w: 248px;
   --list-min: 340px;
   --list-max: min(400px, 32vw);
+  --reader-min: 380px;
   --reader-max: 760px;
   --reader-pad-x: 2.5rem;
   --row-radius: 1rem;
@@ -256,6 +257,7 @@
   --sidebar-w: 240px;
   --list-min: 340px;
   --list-max: min(390px, 32vw);
+  --reader-min: 380px;
   --reader-max: 768px;
   --reader-pad-x: 2.5rem;
   --row-radius: 0.75rem;
@@ -394,6 +396,7 @@
   --sidebar-w: 232px;
   --list-min: 340px;
   --list-max: 400px;
+  --reader-min: 348px;
   --reader-max: 860px;
   --reader-pad-x: 1.75rem;
   --row-radius: 0.375rem;

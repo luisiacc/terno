@@ -7,7 +7,8 @@ import { BackendCore as Backend } from "./core";
 import { changeOwnerTo, gmailClaim, imapClaim, loginFailed, reconnectAccount } from "./identity";
 import { exportMailbox, importMailbox, restorePending } from "./import";
 import { countThreadScope, progressReporter, resolveThreadScope, UndoJournal } from "./scope";
-import { readAutoCategorize, readSettings, SettingsError, updateSettings } from "./settings";
+import { readAutoCategorize, readSettings, setGooglePhotoState, SettingsError, updateSettings } from "./settings";
+import { authorizeGooglePhotos, setGooglePhotos } from "./icons/google";
 
 /** How long a recipient lookup waits for the index's first build (then answers with what it has: nothing). */
 const FIRST_BUILD_WAIT_MS = 250;
@@ -555,6 +556,9 @@ export function createHandlers(b: Backend): Handlers {
     "accounts.remove": async ({ id }) => {
       const wasOwner = (await store.owner.get())?.accountId === id;
       await b.dropAccount(id);
+      // plan 22: its photo lists and photos go with it
+      await setGooglePhotoState(store, id, null);
+      await b.icons.dropPhotos(id);
       // the owner row survives: its account_id is cleared (ON DELETE SET NULL)
       await store.accounts.remove(id);
       // nobody from a removed account lingers in suggestions
@@ -573,6 +577,8 @@ export function createHandlers(b: Backend): Handlers {
         const next = await updateSettings(store, patch, { endpointIsLocal });
         if (next.localMode !== was.localMode || next.errorReports !== was.errorReports || next.language !== was.language) await b.publishPolicy();
         if (next.composeSuggestions !== was.composeSuggestions) await b.autocomplete.setPhrases(next.composeSuggestions);
+        // plan 22: website icons turned off (or local mode took the default away): nothing in flight lands, windows forget them
+        if (next.senderIcons !== was.senderIcons) b.icons.invalidate();
         return next;
       } catch (error) {
         if (error instanceof SettingsError) throw new RpcError("BAD_REQUEST", messageOf(error));
@@ -608,9 +614,21 @@ export function createHandlers(b: Backend): Handlers {
       return { ok: true as const };
     },
 
-    "sync.now": async ({ accountId }) => {
-      const ids = accountId ? [accountId] : (await store.accounts.list()).map((a) => a.id);
-      for (const id of ids) void b.syncAccount(id);
+    "sync.now": async ({ accountId, reason }) => {
+      await b.retryNow(accountId ?? null, reason);
+      return { ok: true as const };
+    },
+    "icons.lookup": ({ emails }) => b.icons.lookup(emails),
+    "icons.data": ({ ids }) => b.icons.data(ids),
+    "icons.forget": async () => {
+      await b.icons.forget();
+      return { ok: true as const };
+    },
+    "icons.googlePhotos": ({ accountId, on }) => setGooglePhotos(b, accountId, on),
+    "icons.authorizeGoogle": (p) => authorizeGooglePhotos(b, p),
+
+    "sync.network": ({ online }) => {
+      b.networkChanged(online, online ? "online" : "offline");
       return { ok: true as const };
     },
   };

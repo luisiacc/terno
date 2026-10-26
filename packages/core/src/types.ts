@@ -66,6 +66,14 @@ export interface AccountSyncState {
   /** lastError as a catalog message (when it is one of Terno's): the renderer shows it in the user's language */
   lastErrorI18n?: { key: string; params?: Readonly<Record<string, string | number>> } | null;
   lastSyncAt: number | null;
+  /**
+   * Plan 20: the account can't reach its server (after two failures in a row, or at once while the
+   * device is offline): "offline" until the next retry at `retryAt`, "reconnecting" while it runs.
+   * Null (or absent, in rows written before) while the connection is fine or a blip is retried quietly.
+   */
+  connection?: { state: "offline" | "reconnecting"; retryAt: number | null } | null;
+  /** the provider wants the user to sign in again (a revoked or expired grant); cleared by a success */
+  authRequired?: boolean;
 }
 
 export const VIEWS = ["inbox", "starred", "sent", "archive", "spam", "trash", "all"] as const;

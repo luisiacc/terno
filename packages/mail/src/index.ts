@@ -1,4 +1,5 @@
 export * from "./types";
+export * from "./net-errors";
 export * from "./demo";
 export * from "./mime";
 export * from "./compose";
@@ -8,3 +9,4 @@ export * from "./gmail";
 export * from "./registry";
 export * from "./compose-portable";
 export * from "./gmail-web";
+export * from "./google-photos";

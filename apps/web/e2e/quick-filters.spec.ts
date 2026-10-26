@@ -8,7 +8,7 @@ import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import type { DevServer } from "../../backend-dev/src/server";
 import { sqlDb } from "../../backend-dev/src/server";
-import { expect, focusList, selectedRow, test } from "./fixtures";
+import { expect, navTo, focusList, selectedRow, test } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 const db = (server: DevServer) => sqlDb(server.backend.store);
@@ -122,7 +122,7 @@ test.describe("Lumen: chips", () => {
     await showing(page, "attachments");
     const results = await new AxeBuilder({ page }).include("[data-testid=list-header]").analyze();
     expect(results.violations).toEqual([]);
-    await page.getByTestId("nav-archive").click();
+    await navTo(page, "archive");
     await expect(page.getByTestId("quick-filter-all")).toHaveAttribute("aria-pressed", "true");
     await page.reload();
     await page.locator("[data-ready]").waitFor();

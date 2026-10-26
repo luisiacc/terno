@@ -7,13 +7,16 @@ import type { ClassifierInput, IncomingMessage, MailStore, OpRow, Platform } fro
 import { ProviderAuthError, ProviderError, type MailProvider, type ProviderRegistry, type SyncSink } from "@terno/mail/portable";
 import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_PHRASE_CAPS, WEB_AUTOCOMPLETE_PEAK, WEB_CONTACT_CAPS, WEB_PHRASE_CAPS } from "@terno/store/autocomplete";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
+import { Connectivity, type ConnectivityOptions, type NetReason } from "./connectivity";
 import { AiAssist } from "./ai-assist";
 import { Categorizer } from "./categorizer";
 import { createHandlers } from "./handlers";
 import { restorePending } from "./import";
 import { blobFingerprint, migrateLegacySecrets, readKeychainState, SecretUnreadableError, type LegacySecretReader } from "./keychain";
 import { createNetworkPolicy, type LookupAll, type NetworkPolicy } from "./net-policy";
-import { readAutoCategorize, readComposeSuggestions, readLocalMode, readPolicy, readSettings } from "./settings";
+import { readAutoCategorize, readComposeSuggestions, readGooglePhotos, readLocalMode, readPolicy, readSettings, readSiteIcons, setGooglePhotoState } from "./settings";
+import { IconService } from "./icons/service";
+import type { IconTransport } from "./icons/transport";
 import { BULK_SLICE, SliceSizer, type SliceBudget } from "./slicer";
 
 export interface SecretCipher {
@@ -65,6 +68,16 @@ export interface BackendCoreOptions {
   host?: HostInfo;
   /** desktop: opens secrets sealed under Única's keychain item, so start() seals them again under Terno's (see keychain.ts) */
   legacySecrets?: LegacySecretReader;
+  /** plan 20: what the host says about the network at startup (default online) */
+  online?: boolean;
+  /** plan 20: the host drops its own pooled HTTP sockets when the network changes (Node: fetch's dispatcher) */
+  onNetworkReset?: () => void;
+  /** tests: the retry schedule, the offline probe and the settle delay (see connectivity.ts) */
+  connectivity?: Pick<ConnectivityOptions, "delays" | "offlineRetryMs" | "settleMs" | "random">;
+  /** plan 22: how website icons are fetched (Node: node-transport.ts); none: this host shows no website icons (the web) */
+  iconTransport?: IconTransport | null;
+  /** tests: the icon fetcher's deadlines */
+  iconTimeouts?: { requestMs?: number; budgetMs?: number };
 }
 
 const COUNTS_EVERY_MS = 200;
@@ -147,6 +160,10 @@ export class BackendCore {
   readonly aiAssist: AiAssist;
   /** plan 18: recipient and body suggestions, in memory, built on first use */
   readonly autocomplete: Autocomplete;
+  /** plan 20: retries, offline and network changes */
+  readonly connectivity: Connectivity;
+  /** plan 22: sender icons (website icons and Google photos), idle until the first lookup */
+  readonly icons: IconService;
   private warming: Promise<void> | null = null;
   private idleTimer: ReturnType<typeof setInterval> | null = null;
   /** auto-filed threads waiting to be announced, per category */
@@ -158,7 +175,7 @@ export class BackendCore {
     this.options = { now: Date.now, sliceBudgetMs: 8, syncIntervalMs: 120_000, ...defined };
     this.platform = options.platform;
     this.store = options.store;
-    this.net = createNetworkPolicy({ localMode: () => readLocalMode(this.store), lookup: options.lookup });
+    this.net = createNetworkPolicy({ localMode: () => readLocalMode(this.store), siteIcons: () => readSiteIcons(this.store), lookup: options.lookup });
     this.aiService = new AiService(this, options.aiFactory ?? defaultAiFactory);
     this.categorizer = new Categorizer(this);
     this.aiAssist = new AiAssist(this);
@@ -176,6 +193,32 @@ export class BackendCore {
         else log.info(`autocomplete.${event}`, fields as never);
       },
     });
+    this.connectivity = new Connectivity(
+      {
+        sync: (accountId) => void this.syncAccount(accountId),
+        reconnect: (reason) => void this.reconnect(reason),
+        offline: () => void this.wentOffline(),
+      },
+      { online: options.online, now: () => this.now(), retries: options.autoSync !== false, ...options.connectivity },
+    );
+    this.icons = new IconService({
+      transport: options.iconTransport ?? null,
+      files: this.platform.files,
+      base: this.store.autocomplete.snapshotBase,
+      web,
+      now: () => this.now(),
+      assertSite: async (url) => void (await this.net.assert("icons", url)),
+      photoFetch: this.net.fetchFor("mail"),
+      siteIconsOn: () => readSiteIcons(this.store),
+      googlePhotos: () => readGooglePhotos(this.store),
+      setGooglePhotoState: (accountId, state) => setGooglePhotoState(this.store, accountId, state),
+      accountEmail: async (accountId) => (await this.store.accounts.get(accountId))?.email ?? null,
+      provider: (accountId) => this.provider(accountId),
+      // the people's pictures are for the user's own windows, never for agents
+      emit: (payload) => this.server.emit("icons", payload, { origins: ["renderer", "dev"] }),
+      timeouts: options.iconTimeouts,
+    });
+    if (options.online === false) this.icons.network(false);
     this.ready = this.init();
     this.server = new RpcServer(createHandlers(this), {
       onError: (error, method, payload) => {
@@ -198,7 +241,9 @@ export class BackendCore {
   agents: { connected(): number; tokenSince(): number; rotate(): { disconnected: number; tokenSince: number } } | null = null;
 
   get host(): HostInfo {
-    return this.options.host ?? FULL_HOST;
+    const host = this.options.host ?? FULL_HOST;
+    // plan 22: website icons where there is a way to fetch them
+    return { ...host, capabilities: { ...host.capabilities, siteIcons: !!this.options.iconTransport } };
   }
 
   private async init(): Promise<void> {
@@ -245,13 +290,85 @@ export class BackendCore {
     if (this.options.autoSync === false) return;
     this.idleTimer = setInterval(() => void this.categorizer.idle(), 10 * 60_000);
     this.idleTimer.unref?.();
+    // a new start is a fresh look at the network: ops parked for it in the last session try again
+    if (this.connectivity.online) await this.store.ops.resumeNetwork(null, this.now());
     for (const account of await this.store.accounts.list()) this.startAccount(account);
-    this.syncTimer = setInterval(() => {
-      void this.store.accounts.list().then((accounts) => {
-        for (const account of accounts) void this.syncAccount(account.id);
-      });
-    }, this.options.syncIntervalMs);
+    this.syncTimer = setInterval(() => void this.tick(), this.options.syncIntervalMs);
     this.kickWorker();
+  }
+
+  /**
+   * The poll (folders push doesn't watch) and push's heartbeat. Nothing while offline (the
+   * connectivity probes cover it); an account in backoff waits for its retry.
+   */
+  private async tick(): Promise<void> {
+    if (!this.connectivity.online || this.stopped) return;
+    for (const account of await this.store.accounts.list()) {
+      // started here, not after the sync: a long or failing pass mustn't postpone it (one probe per watcher)
+      void this.providers.get(account.id)?.then((p) => p?.heartbeat?.(), () => {});
+      if (!this.connectivity.pending(account.id)) void this.syncAccount(account.id);
+    }
+  }
+
+  // ───────────────────────────── network (plan 20) ─────────────────────────────
+
+  /** The host's word on the network: desktop's main (a route or address change, a wake), the web page (online/offline). */
+  networkChanged(online: boolean, reason: NetReason): void {
+    if (this.stopped || this.options.autoSync === false) return;
+    breadcrumb("sync", "net.changed", { netReason: reason, online });
+    this.connectivity.network(online, reason);
+  }
+
+  /** "Retry now" (the user: every account or one) or a window regaining focus (offline accounts, rate-limited). */
+  async retryNow(accountId: number | null, reason: "user" | "focus"): Promise<void> {
+    if (this.stopped) return;
+    const ids = this.connectivity.retryNow(accountId, reason);
+    if (reason === "user") {
+      let resumed = false;
+      for (const id of ids) resumed = (await this.store.ops.resumeNetwork(id, this.now())).length > 0 || resumed;
+      if (resumed) this.kickWorker();
+    }
+    for (const id of ids) void this.syncAccount(id);
+  }
+
+  /**
+   * Online, or the network changed: every socket is presumed dead. Providers drop theirs (push
+   * reconnects at once), the host drops its pooled HTTP sockets, push that was paused offline comes
+   * back and ops parked for the network go. Connectivity then syncs every account.
+   */
+  private async reconnect(reason: NetReason): Promise<void> {
+    if (this.stopped) return;
+    log.info("net.changed", { netReason: reason, online: true });
+    this.options.onNetworkReset?.();
+    this.icons.network(true);
+    for (const p of this.providers.values()) void p.then((provider) => provider?.reset?.(), () => {});
+    for (const account of await this.store.accounts.list()) if (!this.unwatch.has(account.id)) this.watchAccount(account.id);
+    await this.store.ops.resumeNetwork(null, this.now());
+    // the worker paused while offline: whatever is due goes now
+    this.kickWorker();
+  }
+
+  /** The host went offline: push stops (its sockets are dead anyway), the worker waits, accounts say so. */
+  private async wentOffline(): Promise<void> {
+    if (this.stopped) return;
+    log.info("net.changed", { netReason: "offline", online: false });
+    this.icons.network(false);
+    for (const off of this.unwatch.values()) off();
+    this.unwatch.clear();
+    if (this.workerTimer) clearTimeout(this.workerTimer);
+    this.workerTimer = null;
+    const offline = L("errors.network.offline");
+    for (const account of await this.store.accounts.list()) {
+      // a sign-in to redo stays what it is
+      if (account.syncState.status === "error" || !this.store.isOpen) continue;
+      await this.store.accounts.setSyncState(account.id, {
+        status: "offline",
+        lastError: offline.message,
+        lastErrorI18n: textRef(offline) ?? null,
+        connection: { state: "offline", retryAt: this.connectivity.retryAt(account.id) },
+      });
+    }
+    if (this.store.isOpen) await this.emitAccounts();
   }
 
   /**
@@ -296,6 +413,7 @@ export class BackendCore {
   async stop(): Promise<void> {
     this.stopped = true;
     this.abort.abort();
+    this.connectivity.stop();
     if (this.syncTimer) clearInterval(this.syncTimer);
     if (this.idleTimer) clearInterval(this.idleTimer);
     if (this.countsTimer) clearTimeout(this.countsTimer);
@@ -311,6 +429,8 @@ export class BackendCore {
     await this.ready.catch(() => {});
     // its snapshots are written before the store closes under them
     await this.autocomplete.close().catch(() => {});
+    // fetches in flight aborted, the icon index and the photo lists written
+    await this.icons.close().catch(() => {});
     try {
       await this.categorizer.persist();
     } catch (error) {
@@ -637,6 +757,7 @@ export class BackendCore {
           }),
         setSecret: (name, value) => this.setSecret(`account:${accountId}:${name}`, value),
         getAppSecret: (name) => this.getSecret(name),
+        event: (code, fields) => breadcrumb("sync", code, { accountKind: accountKindOf(account.kind), ...(fields?.durationMs !== undefined && { durationMs: fields.durationMs }) }),
         loadCursor: async <T,>() => ((await this.store.accounts.config<{ cursor?: T }>(accountId))?.config.cursor ?? null) as T | null,
         // one store command: a read here and a write later would undo a preference saved in between
         saveCursor: (cursor) => this.store.accounts.setCursor(accountId, cursor),
@@ -652,16 +773,26 @@ export class BackendCore {
   }
 
   startAccount(account: Account): void {
+    this.connectivity.track(account.id);
     void this.provider(account.id).then((provider) => {
       if (!provider || this.stopped) return;
-      if (provider.watch && !this.unwatch.has(account.id)) {
-        this.unwatch.set(account.id, provider.watch(() => void this.syncAccount(account.id)));
-      }
+      this.watchAccount(account.id, provider);
       void this.syncAccount(account.id);
     });
   }
 
+  /** push for the account (IMAP IDLE): not while offline (its sockets would be dead; online brings it back) */
+  private watchAccount(accountId: number, known?: MailProvider): void {
+    if (this.stopped || !this.connectivity.online || this.unwatch.has(accountId) || !this.connectivity.tracked(accountId)) return;
+    void (known ? Promise.resolve(known) : this.provider(accountId)).then((provider) => {
+      if (!provider?.watch || this.stopped || !this.connectivity.online || this.unwatch.has(accountId) || !this.connectivity.tracked(accountId)) return;
+      this.unwatch.set(accountId, provider.watch(() => void this.syncAccount(accountId)));
+    });
+  }
+
   async dropAccount(accountId: number): Promise<void> {
+    // nothing of it fires later (a retry, a jittered sync after a network change)
+    this.connectivity.untrack(accountId);
     this.unwatch.get(accountId)?.();
     this.unwatch.delete(accountId);
     await this.syncing.get(accountId)?.catch(() => {});
@@ -683,7 +814,9 @@ export class BackendCore {
     };
     const run = (async () => {
       const provider = await this.provider(accountId);
-      if (!provider) return;
+      if (!provider || this.stopped) return;
+      // an account that syncs is one whose failures are counted (dropAccount untracks it)
+      this.connectivity.track(accountId);
       const sink: SyncSink = {
         signal: this.abort.signal,
         ingest: async (messages) => {
@@ -711,15 +844,30 @@ export class BackendCore {
         pendingMessageIds: () => this.store.sync.pendingMessageIds(accountId),
         setSyncState: (patch) => setState(patch),
       };
-      await setState({ status: "syncing" });
-      const accountKind = accountKindOf((await this.store.accounts.get(accountId))?.kind);
+      const before = await this.store.accounts.get(accountId);
+      const accountKind = accountKindOf(before?.kind);
+      // once the account is offline it says so until a pass works: a retry reads "reconnecting", never healthy
+      const wasDown = Boolean(before?.syncState.connection);
+      const epoch = this.connectivity.epoch;
+      const startedOffline = !this.connectivity.online;
+      await setState({ status: "syncing", ...(wasDown && { connection: { state: "reconnecting", retryAt: null } }) });
       const started = performance.now();
       try {
         await provider.sync(sink);
         breadcrumb("sync", "sync.done", { accountKind, durationMs: performance.now() - started });
-        await setState({ status: "idle", lastError: null, lastErrorI18n: null, lastSyncAt: this.now() });
-        // the account works: whatever waited for its sign-in goes now
+        this.connectivity.succeeded(accountId);
+        if (!this.connectivity.online && !startedOffline) {
+          // the host went offline while this pass ran: what it fetched is in, the account says offline,
+          // and it keeps its probe (succeeded() just cleared it; nothing else would try it again)
+          await setState({ status: "offline", lastSyncAt: this.now(), connection: { state: "offline", retryAt: this.connectivity.probeLater(accountId) } });
+          return;
+        }
+        await setState({ status: "idle", lastError: null, lastErrorI18n: null, lastSyncAt: this.now(), connection: null, authRequired: false });
+        // a probe the host thought pointless worked: it was wrong about offline (reachability can be, with some VPNs)
+        if (startedOffline && !this.connectivity.online) this.networkChanged(true, "other");
+        // the account works: whatever waited for its sign-in, or for the network, goes now
         await this.resumeAuth(accountId);
+        if ((await this.store.ops.resumeNetwork(accountId, this.now())).length) this.kickWorker();
         // its mail is here: drafts an import kept for it (answering messages that just synced) go in
         await restorePending(this, accountId).catch((error: unknown) => {
           captureError(error, { code: "import.restore_failed" });
@@ -728,10 +876,26 @@ export class BackendCore {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const lastErrorI18n = textRef((error as { i18n?: unknown } | null)?.i18n) ?? null;
+        const retryable = error instanceof ProviderError && error.retryable;
         // offline or a sign-in to redo is the provider's verdict (expected); anything else is ours
-        captureError(error, { code: "sync.failed", fields: { accountKind, retryable: error instanceof ProviderError && error.retryable } });
+        captureError(error, { code: "sync.failed", fields: { accountKind, retryable } });
         this.log("warn", `sync failed for account ${accountId}`, message);
-        if (this.store.isOpen) await setState({ status: error instanceof ProviderError && error.retryable ? "offline" : "error", lastError: message, lastErrorI18n });
+        if (!this.store.isOpen) return;
+        if (!retryable) {
+          // a sign-in or configuration problem: no retry schedule (the poll and the user try again); offline
+          // the poll doesn't run, so it keeps its 5-minute probe (some refusals pass: Gmail's 403 rate limits)
+          this.connectivity.succeeded(accountId);
+          if (!this.connectivity.online) this.connectivity.probeLater(accountId);
+          await setState({ status: "error", lastError: message, lastErrorI18n, connection: null, authRequired: error instanceof ProviderAuthError });
+          return;
+        }
+        const retry = this.connectivity.failed(accountId, epoch);
+        // a pass our own reconnect cut short doesn't count: the pass that follows the change decides
+        if (!retry) return;
+        breadcrumb("sync", "sync.retry", { accountKind, attempt: retry.failures, delayMs: retry.at - this.now() });
+        // a blip is retried quietly (2 s later); the second failure in a row, or the host offline, is honest about it
+        const down = wasDown || retry.failures >= 2 || !this.connectivity.online;
+        await setState({ status: down ? "offline" : "syncing", lastError: message, lastErrorI18n, connection: down ? { state: "offline", retryAt: retry.at } : null });
       }
     })().finally(() => {
       this.syncing.delete(accountId);
@@ -765,8 +929,8 @@ export class BackendCore {
       do {
         this.workerKicked = false;
         for (;;) {
-          // quitting: nothing more is claimed (the rest stays queued, durably)
-          if (this.draining || this.stopped) break;
+          // quitting: nothing more is claimed (the rest stays queued, durably); offline: they'd only fail (plan 20)
+          if (this.draining || this.stopped || !this.connectivity.online) break;
           const batch = await this.store.ops.claimReady(this.now(), 25);
           if (batch.length === 0) break;
           for (const op of batch) this.undispatched.add(op.id);
@@ -788,7 +952,7 @@ export class BackendCore {
           );
           processed += batch.length;
         }
-      } while (this.workerKicked && !this.stopped && !this.draining);
+      } while (this.workerKicked && !this.stopped && !this.draining && this.connectivity.online);
     } finally {
       this.workerRunning = false;
     }
@@ -797,7 +961,8 @@ export class BackendCore {
   }
 
   private async scheduleRetry(): Promise<void> {
-    if (this.stopped || this.draining || this.options.autoSync === false) return;
+    // offline: the online event kicks the worker
+    if (this.stopped || this.draining || this.options.autoSync === false || !this.connectivity.online) return;
     const next = await this.store.ops.nextAttemptAt();
     if (next === null || this.stopped) return;
     if (this.workerTimer) clearTimeout(this.workerTimer);
@@ -809,10 +974,11 @@ export class BackendCore {
     // been superseded (deleted), pruned (deleted messages) or narrowed.
     const op = await this.store.ops.get(claimed.id);
     if (!op || op.state !== "running") return void this.undispatched.delete(claimed.id);
-    // quitting: an op that hasn't reached its server waits for the next start, as it was
-    if (this.draining) return void (this.undispatched.delete(op.id), await this.store.ops.release(op.id, this.now()));
+    // quitting (or offline, plan 20): an op that hasn't reached its server waits, as it was (the attempt given back)
+    const hold = () => this.draining || this.stopped || !this.connectivity.online;
+    if (hold()) return void (this.undispatched.delete(op.id), await this.store.ops.release(op.id, this.now()));
     const provider = await this.provider(op.account_id);
-    if (this.draining) return void (this.undispatched.delete(op.id), await this.store.ops.release(op.id, this.now()));
+    if (hold()) return void (this.undispatched.delete(op.id), await this.store.ops.release(op.id, this.now()));
     // from here it is on its way (synchronously after the last check: quiesce can't release it now)
     this.undispatched.delete(op.id);
     const sending = op.kind === "send";
@@ -838,6 +1004,8 @@ export class BackendCore {
       else captureError(error, { code: "ops.failed", fields: { opKind: opKindOf(op.kind), retryable: pe?.retryable, ambiguous: pe?.ambiguous }, expected });
       if (error instanceof ProviderAuthError) await this.store.ops.awaitAuth(op.id, message, this.now());
       else if (error instanceof ProviderError && error.ambiguous) await this.store.ops.markUnknown(op.id, message, this.now());
+      // the server couldn't be reached: wait for the network (plan 20); an outage gives the attempt back
+      else if (error instanceof ProviderError && error.network) await this.store.ops.fail(op.id, message, true, this.now(), { network: true, keepAttempt: this.connectivity.inOutage(op.account_id) });
       else await this.store.ops.fail(op.id, message, error instanceof ProviderError ? error.retryable : true, this.now());
     } finally {
       if (sending && --this.sendsInFlight === 0) for (const settle of this.sendsSettled.splice(0)) settle();

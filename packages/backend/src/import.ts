@@ -27,7 +27,7 @@ const GENERAL_KEYS = [
 const addresses = draftAddressSchema.array().max(200);
 
 /** The settings an export carries, as a patch: each field only if valid on its own; secrets never travel. */
-function settingsFrom(raw: Record<string, unknown>, current: { localMode: boolean; allowAgentSend: boolean; errorReports: string }): { general: SettingsPatch; ai: SettingsPatch["ai"] } {
+function settingsFrom(raw: Record<string, unknown>, current: { localMode: boolean; allowAgentSend: boolean; errorReports: string; senderIcons: boolean }): { general: SettingsPatch; ai: SettingsPatch["ai"] } {
   const general: Record<string, unknown> = {};
   for (const key of GENERAL_KEYS) {
     if (raw[key] === undefined) continue;
@@ -45,6 +45,8 @@ function settingsFrom(raw: Record<string, unknown>, current: { localMode: boolea
   if (raw.localMode === true && !current.localMode) general.localMode = true;
   if (raw.allowAgentSend === false && current.allowAgentSend) general.allowAgentSend = false;
   if (raw.errorReports === "never" && current.errorReports !== "never") general.errorReports = "never";
+  // plan 22: website icons can go off, never on
+  if (raw.senderIcons === false && current.senderIcons) general.senderIcons = false;
   const ai = raw.ai as { provider?: unknown; model?: unknown; baseURL?: unknown; preset?: unknown } | undefined;
   const parsed = ai ? settingsPatchSchema.safeParse({ ai: { provider: ai.provider, model: ai.model, baseURL: ai.baseURL ?? null, preset: ai.preset ?? null } }) : null;
   return { general: general as SettingsPatch, ai: parsed?.success ? parsed.data.ai : undefined };

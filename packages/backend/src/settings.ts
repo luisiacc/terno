@@ -73,6 +73,9 @@ export const DEFAULT_SETTINGS: General = {
   // new installs follow the system: English unless it's a language Terno ships
   language: "system",
   composeSuggestions: true,
+  // plan 22: unset follows the mode (readSettings); this is local mode's answer
+  senderIcons: false,
+  googlePhotos: {},
 };
 
 const DEFAULT_PROVIDER: AiProviderId = "none";
@@ -171,6 +174,32 @@ export async function readLocalMode(store: SettingsStore): Promise<boolean> {
   return (await stored(store)).localMode ?? DEFAULT_SETTINGS.localMode;
 }
 
+/**
+ * Plan 22: whether website icons may be fetched. Connected mode: unless turned off. Local mode:
+ * only when the user turned them on (an explicit choice; the default there is off).
+ */
+export async function readSiteIcons(store: SettingsStore): Promise<boolean> {
+  const s = await stored(store);
+  const localMode = s.localMode ?? DEFAULT_SETTINGS.localMode;
+  return s.senderIcons ?? !localMode;
+}
+
+/** Plan 22: the Gmail accounts showing photos from Google, and what each was granted. */
+export async function readGooglePhotos(store: SettingsStore): Promise<AppSettings["googlePhotos"]> {
+  return (await stored(store)).googlePhotos ?? {};
+}
+
+/** Plan 22: an account's photo state (null: off), written only by the icons service. */
+export async function setGooglePhotoState(store: SettingsStore, accountId: number, state: AppSettings["googlePhotos"][string] | null): Promise<void> {
+  await store.settings.update<StoredSettings, void>("app", {}, (raw) => {
+    const s = migrateAppearance(raw);
+    const next = { ...s.googlePhotos };
+    if (state) next[String(accountId)] = state;
+    else delete next[String(accountId)];
+    return { value: { ...s, googlePhotos: next }, result: undefined };
+  });
+}
+
 /** What the host enforces outside the backend: the network fence and whether error reports may go. */
 export async function readPolicy(store: SettingsStore): Promise<{ localMode: boolean; errorReports: AppSettings["errorReports"]; language: AppSettings["language"] }> {
   const s = await stored(store);
@@ -236,7 +265,9 @@ export async function readSettings(store: SettingsStore): Promise<AppSettings> {
     capabilities: capabilities[capabilityKey(provider, profile)] ?? null,
     profiles,
   };
-  return { ...resolveThemes({ ...DEFAULT_SETTINGS, ...general, language: languageOf(s) }), gmailClientSecretSet: await store.secrets.has("gmailClientSecret"), gmailClientSecretUnreadable: unreadable.has("gmailClientSecret"), ai };
+  // plan 22: website icons follow the mode until the user chooses
+  const senderIcons = s.senderIcons ?? !(s.localMode ?? DEFAULT_SETTINGS.localMode);
+  return { ...resolveThemes({ ...DEFAULT_SETTINGS, ...general, language: languageOf(s), senderIcons }), gmailClientSecretSet: await store.secrets.has("gmailClientSecret"), gmailClientSecretUnreadable: unreadable.has("gmailClientSecret"), ai };
 }
 
 export class SettingsError extends Error {

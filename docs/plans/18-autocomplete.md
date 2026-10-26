@@ -317,3 +317,32 @@ Also fixed while running the suites: the ops worker kept claiming batches after 
 ## Timing-sensitive gates (for the load-aware policy)
 
 Machine-load sensitive (wall clock): every event-loop stall gate (`contacts.perf` build stall; `phrases.perf` build stall; `autocomplete.perf` in `packages/db` and `packages/idb`: build, cold start), the cold-start and build wall times, and all of `autocomplete-perf.spec.ts` (paired ratios, suggestion latency, recipient paint). CPU-time gates still inflate under heavy contention (cache, frequency): phrase build µs a message, IndexedDB catch-up µs a message. The contact index's lookup, build, memory, snapshot and incremental gates held at a load average of 35 on 12 cores.
+
+## The perf gates under the load-aware policy (October 2026)
+
+The timing-sensitive gates above now follow plan 04's policy (§11, `packages/db/src/test/timing.ts`). Budgets are unchanged.
+
+- **Build stalls** (`contacts.perf`, `phrases.perf`, and the SQLite and IndexedDB builds) are the event loop's (`watchLoop`). On a busy machine a rare hold of the OS counts at its CPU time; on a quiet one nothing is excused. A build over its stall or CPU budget is measured again, up to three builds in all (on SQLite and IndexedDB without the snapshots of the last one). The best of each figure counts.
+- **Collections only excuse their own gap.** The SQLite and IndexedDB build stalls used to subtract the stage's longest collection from its longest stall, wherever each fell. An injected 60 ms block passed the 48 ms IndexedDB gate at 45.7 ms when spun, and at 14.0 ms off a CPU on a quiet machine, because a 44–75 ms collection had happened elsewhere. Now each gap leaves out only the collections inside it (`watchGc`, `stallLessGc`, unit-tested). The same injections fail at 70.2 and 80.6 ms.
+- **Cold start.** Only the first start is cold: later ones run compiled code, 101–119 ms against 120–157 ms for the first. So the time is the first start's, less the holds excused on a busy machine. A stall over budget (the restore's slices, which compiled code doesn't change much) is measured again with another start.
+- **Catch-up.** The first catch-up after a start costs about a second of CPU however few the messages: 1.25 s for 300 messages (4.2 ms a message, thread CPU 1.06 ms), against 22–82 µs a message for each 3,000 after it. That cost is compiling and lazy reads. So the 241–693 µs a message measured before was mostly that one-time cost, and a re-measured catch-up would have been warm while the first was cold. An untimed 300-message warm-up now runs first; each timed catch-up then follows other new mail and is measured again if over budget. **This gate is now much less sensitive in practice:** 300 µs against about 30–80 µs a message warm under load. Tighten it once it has been measured on a quiet machine.
+- **CPU time on a loaded M2 Max.** This machine has 8 performance and 4 efficiency cores. Once load passes about 8, threads run on efficiency cores, and CPU time grows on the thread itself: the phrase build measured 71.2 µs of thread CPU against 72.3 µs of process CPU. Re-measuring can't fix sustained load. The phrase build CPU gate (60 µs a message) failed in every run here: 72–100 µs, and also on main's unchanged test at 97 µs (load 5–8, 1-minute average). It measured 46 µs when this plan was written.
+- **The UI spec** (`autocomplete-perf.spec.ts`) is unchanged; its header now states the gates it asserts. It already pairs and interleaves its runs, and takes the best of three for latencies.
+
+**Proof.** Each regression was injected temporarily, never committed: a block of 25 ms per 100 pages (store builds), 60 ms per 20 sent-mail reads (SQLite and IndexedDB builds), 60 ms plus 10 ms chunks over the time budget in a cold start's snapshot read, and 300 µs a message in a catch-up. Each was run spun with `PERF_MACHINE` unset (busy by load), and off a CPU (`Atomics.wait`) with `PERF_MACHINE=quiet` and `=busy`:
+
+| gate (budget) | spun, busy by load | off-CPU, quiet | off-CPU, busy |
+|---|---|---|---|
+| contacts build stall (16 ms) | 25.5 ✗ | 30.6 ✗ | 30.5 ✗ (holds recur: none excused) |
+| phrases build stall (16 ms) | 25.3 ✗ | 30.8 ✗ | 31.0 ✗ |
+| phrases build CPU (60 µs, +30 µs spun) | 89.3 ✗ | — | — |
+| SQLite build stall less GC (32 ms) | 54.9 ✗ | 75.8 ✗ | 66.2 ✗ |
+| IndexedDB build stall less GC (48 ms) | 70.2 ✗ (was 45.7, passing) | 80.6 ✗ (was 14.0, passing) | — |
+| SQLite cold start (1.5 s / 32 ms) | 1,959 ✗ / 70.1 ✗ | 2,291 ✗ / 77.6 ✗ | 2,225 ✗ / 14.4 (one hold: excused by design) |
+| IndexedDB cold start (3 s / 48 ms) | 3,781 ✗ / 70.1 ✗ | 4,403 ✗ / 74.0 ✗ | 4,337 ✗ / 36.6 (two holds: excused by design) |
+| SQLite catch-up (150 µs) | 321.6 ✗ | — | — |
+| IndexedDB catch-up (300 µs) | 324.1 ✗ | — | — |
+
+Off-CPU waits add no CPU, so the CPU gates take only the spun injection.
+
+**Codex review** (`codex-review.sh 76f512b autocomplete-perf-policy`, 1 finding). Medium: `watchGc().stop()` disconnected after one timer, so a collection whose entry Node hadn't delivered yet could be dropped and then count as a stall of ours. That errs strict, never lenient. Its reproduction missed 3 of 300 entries, but it counted collections that began after `stop()`. Counting only the collections inside the stage, the old helper missed none of 5,000 here. `stop()` now also waits for the check phase and takes the undelivered records (`takeRecords()`). A unit test forces a collection at the end of each of 50 stages, with real GC, and expects it reported. It passes on the old helper too: it guards the drain rather than reproducing a miss.

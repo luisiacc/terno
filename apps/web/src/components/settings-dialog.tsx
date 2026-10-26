@@ -70,7 +70,7 @@ export function SettingsDialog() {
               </TabsContent>
 
               <TabsContent value="appearance">
-                <AppearanceTab settings={settings} />
+                <AppearanceTab settings={settings} update={update} />
               </TabsContent>
 
               <TabsContent value="accounts">

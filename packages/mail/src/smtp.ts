@@ -1,6 +1,7 @@
 import { L } from "@terno/i18n";
 import nodemailer from "nodemailer";
 import { buildRaw, envelopeOf } from "./compose";
+import { isNetworkError } from "./net-errors";
 import { ProviderError, type SendPayload } from "./types";
 
 export interface SmtpConfig {
@@ -11,6 +12,8 @@ export interface SmtpConfig {
   password: string;
   /** tests use self-signed / plaintext servers */
   allowInsecure?: boolean;
+  /** tests only: shorter socket timeout (a stall after DATA still reads as ambiguous) */
+  socketTimeoutMs?: number;
 }
 
 interface SmtpLikeError extends Error {
@@ -36,6 +39,8 @@ export function classifySmtpError(error: unknown, dataStarted = false): Provider
   if (e.code === "EENVELOPE") return new ProviderError(L("errors.smtp.recipientRejected", { detail: message }), false);
   // No answer after the server said "354": it may have accepted the message.
   if (dataStarted) return new ProviderError(L("errors.smtp.connectionLost", { detail: message }), false, true);
+  // before the body: the server couldn't be reached (the network, a VPN switch), nothing was handed over
+  if (isNetworkError(error)) return ProviderError.network(message);
   return new ProviderError(message, true);
 }
 
@@ -62,7 +67,7 @@ export async function sendViaSmtp(config: SmtpConfig, payload: SendPayload): Pro
     auth: { user: config.user, pass: config.password },
     connectionTimeout: 20_000,
     greetingTimeout: 15_000,
-    socketTimeout: 60_000,
+    socketTimeout: config.socketTimeoutMs ?? 60_000,
     tls: config.allowInsecure ? { rejectUnauthorized: false } : undefined,
   });
   try {

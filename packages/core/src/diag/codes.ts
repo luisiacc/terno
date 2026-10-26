@@ -28,6 +28,8 @@ export const CODES = {
   "renderer.gone": c("reason", "exitCode"),
   "renderer.unresponsive": c(),
   "child.gone": c("childType", "reason", "exitCode"),
+  // plan 20: main's network watcher (scutil) stopped or gave up
+  "net.watch_failed": c("errno", "exitCode", "attempt"),
   "keychain.secret_failed": c("op", "errorClass"),
   "appearance.save_failed": c("errno"),
   "legacy.storage_failed": c("errorClass"),
@@ -60,6 +62,11 @@ export const CODES = {
   "rpc.call": c("method", "durationMs", "ok", "rpcCode"),
   "sync.done": c("accountKind", "durationMs"),
   "sync.failed": c("accountKind", "errorClass", "retryable", "expected"),
+  // plan 20: networks and reconnects (why and when only: never a host, an address or an interface)
+  "sync.retry": c("accountKind", "attempt", "delayMs"),
+  "net.changed": c("netReason", "online"),
+  "push.lost": c("accountKind"),
+  "push.restored": c("accountKind", "durationMs"),
   "ops.failed": c("opKind", "errorClass", "retryable", "ambiguous", "expected"),
   "ops.crashed": c("opKind", "errorClass"),
   "ops.recovered": c("count"),
@@ -83,6 +90,10 @@ export const CODES = {
   "autocomplete.evicted": c("model", "count"),
   "autocomplete.rebuild": c("model", "errorClass"),
   "autocomplete.disabled": c("model", "errorClass"),
+  // sender icons (plan 22): counts, sizes and durations only, never a domain, an address or a URL
+  "icons.batch": c("count", "durationMs"),
+  "icons.trimmed": c("count", "bytes"),
+  "icons.people": c("count", "durationMs", "status"),
 
   // renderer
   "ui.boundary": c("area", "errorClass"),

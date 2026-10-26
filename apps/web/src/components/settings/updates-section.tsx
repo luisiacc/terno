@@ -1,6 +1,7 @@
 import type { UpdateChannel, UpdateState } from "@terno/core/updates";
 import { localeTag, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
+import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Switch } from "@terno/ui/components/switch";
 import { Loader2 } from "lucide-react";
@@ -55,7 +56,8 @@ export function UpdatesSection() {
       title={t("updates.settings.title")}
       testId="updates-section"
       footer={
-        <span data-testid="updates-version" className="tabular-nums select-text">
+        <span data-testid="updates-version" className="inline-flex items-center gap-1.5 tabular-nums select-text">
+          <TernoMark className="size-3.5" data-testid="updates-mark" />
           Terno {state.current}
         </span>
       }

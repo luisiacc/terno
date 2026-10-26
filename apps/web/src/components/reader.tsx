@@ -2,6 +2,7 @@ import type { Account, Category, CategoryColor, MessageDetail, Reason, ThreadDet
 import { Button } from "@terno/ui/components/button";
 import { CategoryBadge, CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
+import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { Archive, Forward, Inbox, Layers, MailOpen, OctagonAlert, Printer, Reply, ReplyAll, Star, Tag, Trash2, X } from "lucide-react";
@@ -67,7 +68,7 @@ function fileType(name: string): string {
   return ext ? ext.toUpperCase() : "";
 }
 
-function Message({ m, expanded, onToggle }: { m: MessageDetail; expanded: boolean; onToggle: () => void }) {
+function Message({ m, expanded, onToggle, icons }: { m: MessageDetail; expanded: boolean; onToggle: () => void; icons: boolean }) {
   const remoteImages = useApp((s) => s.settings?.remoteImages ?? "ask");
   const localMode = useApp((s) => s.settings?.localMode ?? true);
   const mailAppearance = useApp((s) => s.settings?.htmlMailAppearance ?? "auto");
@@ -92,7 +93,7 @@ function Message({ m, expanded, onToggle }: { m: MessageDetail; expanded: boolea
         >
           {expanded ? (
             <>
-              <SenderAvatar name={name} email={m.from.email} className="size-(--avatar-message) text-xs" />
+              <SenderAvatar name={name} email={m.from.email} icon={icons} className="size-(--avatar-message) text-xs" />
               <span className="min-w-0 flex-1">
                 <span className="flex items-baseline gap-2">
                   <span className="type-sender-name truncate">{name}</span>
@@ -112,7 +113,7 @@ function Message({ m, expanded, onToggle }: { m: MessageDetail; expanded: boolea
             </>
           ) : (
             <>
-              <SenderAvatar name={name} email={m.from.email} className="size-(--avatar-collapsed) text-2xs" />
+              <SenderAvatar name={name} email={m.from.email} icon={icons} className="size-(--avatar-collapsed) text-2xs" />
               <span className="shrink-0 font-medium">{name}</span>
               <span className="min-w-0 flex-1 truncate text-muted-foreground">{m.snippet}</span>
               <span className="shrink-0 text-xs text-muted-foreground tabular">{listDate(m.date)}</span>
@@ -162,7 +163,8 @@ function Message({ m, expanded, onToggle }: { m: MessageDetail; expanded: boolea
  * animates, and keeps each message's while it is shown: the dwell's mark-read
  * or a newer message never folds one away under the reader.
  */
-function Conversation({ messages }: { messages: MessageDetail[] }) {
+/** `icons`: senders' icons may be asked for (never in spam: plan 22) */
+function Conversation({ messages, icons }: { messages: MessageDetail[]; icons: boolean }) {
   renderProbe("Conversation");
   const last = messages[messages.length - 1];
   const opensAt = (m: MessageDetail) => !m.isRead || m.id === last?.id;
@@ -202,7 +204,7 @@ function Conversation({ messages }: { messages: MessageDetail[] }) {
     <div className="hairline-t">
       {items.map((it) =>
         it.kind === "message" ? (
-          <Message key={it.m.id} m={it.m} expanded={isOpen(it.m)} onToggle={() => toggle(it.m.id, isOpen(it.m))} />
+          <Message key={it.m.id} m={it.m} icons={icons} expanded={isOpen(it.m)} onToggle={() => toggle(it.m.id, isOpen(it.m))} />
         ) : (
           <div key={`more-${it.ids[0]}`} className="hairline-b">
             <button
@@ -228,7 +230,7 @@ function Welcome() {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-6 p-10 text-center" data-testid="reader-empty">
       <div>
-        <div className="mx-auto mb-4 flex size-10 items-center justify-center rounded-xl bg-tint text-lg font-semibold text-muted-foreground">T</div>
+        <TernoMark className="mx-auto mb-4 size-10 text-muted-foreground" data-testid="reader-empty-mark" />
         <p className="text-lg font-semibold tracking-tight">Terno</p>
         <p className="mt-1 text-sm text-muted-foreground">{t("reader.welcome.tagline")}</p>
       </div>
@@ -363,7 +365,7 @@ function ReaderHeader({ detail, account, cats }: { detail: ThreadDetail; account
       return (
         <>
           <div data-testid="sender-card" className="mt-2 flex items-center gap-4">
-            <SenderAvatar name={who.name} email={who.email} className="size-(--avatar-sender) text-lg" />
+            <SenderAvatar name={who.name} email={who.email} icon={!detail.thread.inSpam} className="size-(--avatar-sender) text-lg" />
             <div className="flex min-w-0 flex-col">
               <span className="type-sender-name truncate">{who.name}</span>
               {who.name !== who.email && <span className="truncate text-sm text-muted-foreground">{who.email}</span>}
@@ -507,10 +509,10 @@ export function Reader() {
               <ReaderHeader detail={detail} account={account} cats={cats} />
               <MessageMenu threadId={detail.thread.id}>
                 <div>
-                  <Conversation key={detail.thread.id} messages={detail.messages} />
+                  <Conversation key={detail.thread.id} messages={detail.messages} icons={!detail.thread.inSpam} />
                 </div>
               </MessageMenu>
-              <DraftSlot key={detail.thread.id} threadId={detail.thread.id} draftKey={draftKey} replyTo={replyTo(detail.messages)} account={account} />
+              <DraftSlot key={detail.thread.id} threadId={detail.thread.id} draftKey={draftKey} replyTo={replyTo(detail.messages)} account={account} icons={!detail.thread.inSpam} />
             </>
           )}
         </div>

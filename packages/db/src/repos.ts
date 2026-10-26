@@ -14,7 +14,7 @@ import {
   type UserActionKind,
 } from "@terno/core";
 import { addToCategory, removeFromCategory, type AddedBy } from "./categorize";
-import { AWAITING_AUTH, type DraftInput, type DraftRow, type OpRow } from "@terno/store";
+import { AWAITING_AUTH, AWAITING_NETWORK, type DraftInput, type DraftRow, type OpPark, type OpRow } from "@terno/store";
 import type { Db, Param } from "./sqlite";
 
 export type { DraftRow, OpRow } from "@terno/store";
@@ -384,16 +384,19 @@ export function enqueueOp(
  * archive/trash/spam effects always reach the provider in the order the user
  * made them, even across retries.
  */
-export function claimReadyOps(db: Db, now = Date.now(), limit = 20, accountId?: number): OpRow[] {
-  return db.tx(() => {
-    const rows = db.all<OpRow>(
-      `SELECT * FROM ops WHERE state = 'queued' AND next_attempt_at <= ?${accountId ? " AND account_id = ?" : ""}
-         AND NOT EXISTS (
+/** a location op waits while an older unsettled location op targets any of its messages */
+const NOT_BLOCKED = `NOT EXISTS (
            SELECT 1 FROM op_targets mine
            JOIN op_targets other ON other.message_id = mine.message_id AND other.grp = mine.grp
            JOIN ops o2 ON o2.id = other.op_id
            WHERE mine.op_id = ops.id AND mine.grp = 'location'
-             AND o2.seq < ops.seq AND o2.state IN ('queued', 'running'))
+             AND o2.seq < ops.seq AND o2.state IN ('queued', 'running'))`;
+
+export function claimReadyOps(db: Db, now = Date.now(), limit = 20, accountId?: number): OpRow[] {
+  return db.tx(() => {
+    const rows = db.all<OpRow>(
+      `SELECT * FROM ops WHERE state = 'queued' AND next_attempt_at <= ?${accountId ? " AND account_id = ?" : ""}
+         AND ${NOT_BLOCKED}
        ORDER BY seq LIMIT ?`,
       now,
       ...(accountId ? [accountId] : []),
@@ -468,17 +471,32 @@ export function pruneOpTargets(db: Db, messageIds: readonly number[]): void {
   db.run("DELETE FROM op_targets WHERE message_id IN (SELECT value FROM json_each(?))", json);
 }
 
-/** Retryable failure: exponential backoff (1s, 2s, 4s … capped at 5 min), then `failed`. */
-export function failOp(db: Db, id: string, error: string, retryable: boolean, now = Date.now()): OpState {
+/**
+ * When the next op can be claimed: the earliest queued op that isn't waiting for the user or the
+ * network and isn't blocked behind an older op on its messages (a blocked one becomes claimable
+ * when its blocker settles, in the same worker pass; counting it would spin a zero-delay timer).
+ */
+export function nextOpAttemptAt(db: Db): number | null {
+  return db.get<{ t: number | null }>(`SELECT min(next_attempt_at) AS t FROM ops WHERE state = 'queued' AND next_attempt_at < ? AND ${NOT_BLOCKED}`, AWAITING_NETWORK)?.t ?? null;
+}
+
+/**
+ * Retryable failure: exponential backoff (1s, 2s, 4s … capped at 5 min), then `failed`. Parked
+ * (plan 20): the server couldn't be reached, so it waits for resumeNetworkOps instead of a timer;
+ * during an outage the claim's attempt is given back (an outage never uses up a send).
+ */
+export function failOp(db: Db, id: string, error: string, retryable: boolean, now = Date.now(), park?: OpPark): OpState {
   const op = db.get<{ attempts: number }>("SELECT attempts FROM ops WHERE id = ?", id);
   if (!op) return "failed";
-  const state: OpState = retryable && op.attempts < MAX_OP_ATTEMPTS ? "queued" : "failed";
+  const attempts = park?.keepAttempt ? Math.max(op.attempts - 1, 0) : op.attempts;
+  const state: OpState = retryable && (park?.keepAttempt || op.attempts < MAX_OP_ATTEMPTS) ? "queued" : "failed";
   const delay = Math.min(1000 * 2 ** (op.attempts - 1), 300_000);
   db.run(
-    "UPDATE ops SET state = ?, last_error = ?, next_attempt_at = ?, updated_at = ? WHERE id = ?",
+    "UPDATE ops SET state = ?, attempts = ?, last_error = ?, next_attempt_at = ?, updated_at = ? WHERE id = ?",
     state,
+    attempts,
     error,
-    now + delay,
+    park && state === "queued" ? AWAITING_NETWORK : now + delay,
     now,
     id,
   );
@@ -500,6 +518,18 @@ export function releaseOp(db: Db, id: string, now: number): void {
 export function resumeAuthOps(db: Db, accountId: number, now: number): string[] {
   return db
     .all<{ id: string }>("UPDATE ops SET next_attempt_at = 0, updated_at = ? WHERE account_id = ? AND state = 'queued' AND next_attempt_at = ? RETURNING id", now, accountId, AWAITING_AUTH)
+    .map((r) => r.id);
+}
+
+/** The network is back (one account's, or all with null): parked ops are ready now. */
+export function resumeNetworkOps(db: Db, accountId: number | null, now: number): string[] {
+  return db
+    .all<{ id: string }>(
+      `UPDATE ops SET next_attempt_at = 0, updated_at = ? WHERE state = 'queued' AND next_attempt_at = ?${accountId === null ? "" : " AND account_id = ?"} RETURNING id`,
+      now,
+      AWAITING_NETWORK,
+      ...(accountId === null ? [] : [accountId]),
+    )
     .map((r) => r.id);
 }
 

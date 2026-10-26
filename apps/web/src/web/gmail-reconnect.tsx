@@ -14,7 +14,8 @@ import { connectGmailWeb, preloadGoogle } from "./google";
  */
 export function GmailReconnect() {
   const accounts = useApp((s) => s.accounts);
-  const waiting = accounts.filter((a) => a.kind === "gmail" && (a.syncState.status === "offline" || a.syncState.status === "error"));
+  // a sign-in to redo, never a network blip (plan 20: offline accounts retry on their own)
+  const waiting = accounts.filter((a) => a.kind === "gmail" && a.syncState.authRequired);
   const [busy, setBusy] = useState<number | null>(null);
   useEffect(() => {
     if (waiting.length) void preloadGoogle().catch(() => {});

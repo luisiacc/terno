@@ -28,7 +28,8 @@
     "test:web": "pnpm --filter @terno/web test:web",
     "test:web-perf": "pnpm --filter @terno/web test:web-perf",
     "test:ui-perf": "pnpm --filter @terno/web test:ui-perf",
-    "diag:symbolicate": "node scripts/symbolicate.mjs"
+    "diag:symbolicate": "node scripts/symbolicate.mjs",
+    "brand": "pnpm --filter @terno/ui gen:brand"
   },
   "devDependencies": {
     "@jridgewell/trace-mapping": "catalog:",

@@ -4,13 +4,17 @@
  * ArrayBuffers after GC, and the index's own count), the snapshot's size and
  * a cold start from it, per-keystroke lookups (p95/p99 over 5,000 realistic
  * queries, best of 5 rounds), and an incremental message. Each gate has an
- * injected-regression twin that must fail it.
+ * injected-regression twin that must fail it. The build's stall is the event
+ * loop's (timing.ts: on a busy machine a rare hold of the OS counts at its CPU
+ * time), and a build over either budget is measured again, up to three in
+ * all, the best of each counting: a regression is slow every time.
  */
 import type { Address } from "@terno/core";
 import { contactPeople, contactsPages, generateContactsDataset, type ContactsDatasetOptions } from "@terno/mock-data";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ContactMessage } from "../autocomplete-source";
-import { bestRounds, cpuMs, memoryBytes, PERF_MULT as MULT, perfLog as log, stallMeter } from "../conformance/perf";
+import { describeGap, watchLoop } from "../../../db/src/test/timing";
+import { bestRounds, cpuMs, memoryBytes, PERF_MULT as MULT, perfLog as log } from "../conformance/perf";
 import { SliceClock } from "../instant/slices";
 import { ContactIndex, setContactsScanForTests, setContactsSlowdownForTests } from "./contacts";
 import { fold } from "./fold";
@@ -56,9 +60,9 @@ function realisticQueries(n: number): string[] {
 }
 
 /** As the service builds: pages of 500 headers (a store read each, then a yield), the clock in between. */
-async function build(o: ContactsDatasetOptions): Promise<{ index: ContactIndex; stall: number }> {
-  const meter = stallMeter();
-  const clock = new SliceClock({ yield: meter.yield, sliceMs: 4 });
+async function build(o: ContactsDatasetOptions): Promise<{ index: ContactIndex; stall: number; longest: string; descheduled: number }> {
+  const loop = watchLoop(BUDGET.stallMs * MULT);
+  const clock = new SliceClock({ yield: () => new Promise((r) => setTimeout(r, 0)), sliceMs: 4 });
   const idx = new ContactIndex({ now: () => NOW });
   idx.beginBuild({ epoch: "perf", seq: 0 });
   let id = 0;
@@ -72,7 +76,8 @@ async function build(o: ContactsDatasetOptions): Promise<{ index: ContactIndex; 
     }
   }
   await idx.finishBuild(clock);
-  return { index: idx, stall: meter.done() };
+  const r = loop.stop();
+  return { index: idx, stall: r.stall, longest: describeGap(r.longest), descheduled: r.descheduled.length };
 }
 
 /** What an index built from the dataset holds: memory after building it (alive), minus before (each after a full GC). */
@@ -106,23 +111,26 @@ afterAll(() => {
 
 describe(`the contact index at ${N.toLocaleString("en")} messages`, () => {
   it("builds within its CPU and stall budgets, in bounded memory", async () => {
-    // best of 3 for the stall (a preemption by another process shows as a long stretch once; ours every time)
-    let best: { stall: number; cpu: number } | null = null;
-    for (let r = 0; r < 3; r++) {
+    // a build over either budget is measured again, up to three in all, the best of each counting (a preemption by
+    // another process, or a busy moment of the cores, shows once; ours every time)
+    const best = { stall: Infinity, us: Infinity };
+    const runs: string[] = [];
+    for (let r = 0; r < 3 && !(best.stall <= BUDGET.stallMs * MULT && best.us <= BUDGET.buildUsPerMessage * MULT); r++) {
       index = null as unknown as ContactIndex;
       const { result, cpu } = await cpuMs(() => build(DATA));
       index = result.index;
-      if (!best || result.stall < best.stall) best = { stall: result.stall, cpu };
-      if (best.stall <= BUDGET.stallMs * MULT) break;
+      const us = (cpu / N) * 1000;
+      runs.push(`${us.toFixed(2)} µs/message, stall ${result.stall.toFixed(1)} ms (longest gap ${result.longest}, ${result.descheduled} descheduled)`);
+      best.stall = Math.min(best.stall, result.stall);
+      best.us = Math.min(best.us, us);
     }
     const counted = index.allocatedBytes();
     const size = index.size;
     const held = await footprint();
-    const usPerMessage = (best!.cpu / N) * 1000;
-    log(`contacts build: ${size} contacts, ${best!.cpu.toFixed(0)} ms CPU (${usPerMessage.toFixed(2)} µs/message), longest stall ${best!.stall.toFixed(1)} ms; memory ${(held / MiB).toFixed(1)} MiB measured, ${(counted / MiB).toFixed(1)} MiB counted`);
+    log(`contacts build: ${size} contacts, ${best.us.toFixed(2)} µs CPU a message, longest stall ${best.stall.toFixed(1)} ms [${runs.join("; ")}]; memory ${(held / MiB).toFixed(1)} MiB measured, ${(counted / MiB).toFixed(1)} MiB counted`);
     expect(size).toBeGreaterThanOrEqual(100_000);
-    expect(usPerMessage, "build CPU per message (µs)").toBeLessThanOrEqual(BUDGET.buildUsPerMessage * MULT);
-    expect(best!.stall, "longest stall (ms)").toBeLessThanOrEqual(BUDGET.stallMs * MULT);
+    expect(best.us, "build CPU per message (µs)").toBeLessThanOrEqual(BUDGET.buildUsPerMessage * MULT);
+    expect(best.stall, "longest stall (ms)").toBeLessThanOrEqual(BUDGET.stallMs * MULT);
     expect(held, "heap + ArrayBuffers held").toBeLessThanOrEqual(BUDGET.memoryBytes);
     // the caps are enforced on the counted figure: it must never undercount, and not wildly overcount either
     expect(counted, "counted ≥ measured").toBeGreaterThanOrEqual(held);

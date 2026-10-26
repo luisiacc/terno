@@ -14,7 +14,8 @@ import { DESIGNS, designById, type DesignDefinition } from "@terno/ui/designs/in
 import { designDescription, designName } from "~/lib/design";
 import { viewLabel } from "~/lib/format";
 import { resolvedMode, resolveTheme, updateAppearance, useAppearance } from "~/lib/appearance";
-import { ConfirmDialog, SettingsGroup, SettingsRow, type RowA11y } from "./parts";
+import { ConfirmDialog, SettingsGroup, SettingsRow, type RowA11y, type SettingsUpdate } from "./parts";
+import { SenderPictures } from "./sender-pictures";
 
 /** Under a theme picked for the mode not showing now. */
 const APPLIES_IN = { light: "settings.appearance.appliesLight", dark: "settings.appearance.appliesDark" } as const satisfies Record<ThemeMode, string>;
@@ -260,7 +261,7 @@ function CustomThemeItem({ theme, all }: { theme: CustomTheme; all: readonly Cus
   );
 }
 
-export function AppearanceTab({ settings }: { settings: AppSettings }) {
+export function AppearanceTab({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
   const mode = useAppearance((s) => s.mode);
   const reduced = useAppearance((s) => s.reducedMotion);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -374,6 +375,8 @@ export function AppearanceTab({ settings }: { settings: AppSettings }) {
           )}
         </SettingsRow>
       </SettingsGroup>
+
+      <SenderPictures settings={settings} update={update} />
 
       <SettingsGroup title={t("settings.appearance.custom")} testId="custom-themes" footer={t("settings.appearance.custom.footer")}>
         {settings.customThemes.map((c) => (

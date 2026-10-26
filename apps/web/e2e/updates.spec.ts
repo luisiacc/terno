@@ -182,6 +182,8 @@ test.describe("updates: Settings and ⌘K", { tag: "@design" }, () => {
     await expect(section).toContainText("github.com");
     await expect(page.getByTestId("updates-status")).toContainText("Last checked 5 minutes ago");
     await expect(page.getByTestId("updates-version")).toHaveText("Terno 0.1.0");
+    // plan 19: the mark beside the version, decorative (the text names Terno)
+    await expect(page.getByTestId("updates-mark")).toHaveAttribute("aria-hidden", "true");
     await page.getByTestId("updates-auto-switch").click();
     await expect.poll(() => calls(page)).toContain(`prefs:${JSON.stringify({ mode: "manual", channel: "stable" })}`);
     await page.getByTestId("updates-channel-select").click();

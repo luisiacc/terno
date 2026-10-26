@@ -132,6 +132,11 @@ parentPort.on("message", async (event) => {
     if (port && backend) backend.connect(portTransport(port), { clientId: msg.clientId, origin: "renderer" });
     return;
   }
+  if (msg.type === "network") {
+    // before init there is nothing to tell (init carries the state); after a stop, nothing to do
+    backend?.networkChanged(msg.online, msg.reason);
+    return;
+  }
   if (msg.type === "init") {
     installDiag(diagOptions({ version: msg.version, build: msg.diag.build, channel: msg.diag.channel, session: msg.diag.session }));
     try {
@@ -145,6 +150,7 @@ parentPort.on("message", async (event) => {
         openExternal: async (url) => send({ type: "open-external", url }),
         demoAi: msg.demo || msg.dev,
         demo: msg.demo,
+        online: msg.online,
         onPolicy: (policy) => send({ type: "policy", ...policy }),
         // free-form lines (the store, the search engine): the log keeps that one happened, never its text
         // (it can quote a provider's or a model's answer); a dev build also prints it

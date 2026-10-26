@@ -1,7 +1,7 @@
 import type { Account } from "@terno/core";
 import { t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
-import { getApp } from "~/state/app";
+import { getApp, setApp } from "~/state/app";
 
 /** Google Identity Services' token model: the subset Terno uses. */
 interface TokenResponse {
@@ -81,4 +81,30 @@ export async function connectGmailWeb(loginHint?: string): Promise<Account> {
   const token = await accessToken(clientId, loginHint);
   if (!token.scope.split(" ").includes("https://www.googleapis.com/auth/gmail.modify")) throw new Error(t("web.google.noGmailScope"));
   return client.call("accounts.connectGmailToken", { accessToken: token.access_token, expiresIn: Number(token.expires_in) || 3600 });
+}
+
+/** plan 22: the two contacts scopes (@terno/mail's CONTACTS_SCOPE, OTHER_CONTACTS_SCOPE) */
+const PHOTO_SCOPES = ["https://www.googleapis.com/auth/contacts.readonly", "https://www.googleapis.com/auth/contacts.other.readonly"];
+
+/**
+ * Plan 22: photos from Google for an account. Google's popup asks for the contacts scopes beside
+ * mail's (granted ones kept), for that address; the token goes to that account only, never
+ * creating one, and later reconnects carry the same grant (include_granted_scopes).
+ */
+export async function authorizeGooglePhotosWeb(account: Account): Promise<void> {
+  const clientId = getApp().settings?.gmailClientId;
+  if (!clientId) throw Object.assign(new Error(t("errors.gmailClientIdMissing")), { i18n: { key: "errors.gmailClientIdMissing" } });
+  await preloadGoogle();
+  const token = await new Promise<TokenResponse>((resolve, reject) => {
+    const tokens = window.google!.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      scope: [...GMAIL_SCOPES, ...PHOTO_SCOPES].join(" "),
+      login_hint: account.email,
+      include_granted_scopes: true,
+      callback: (r) => (r.error ? reject(new Error(r.error_description || r.error)) : resolve(r)),
+      error_callback: (e) => reject(new Error(e.type === "popup_closed" ? t("web.google.popupClosed") : e.type === "popup_failed_to_open" ? t("web.google.popupBlocked") : (e.message ?? e.type))),
+    });
+    tokens.requestAccessToken({ prompt: "consent", login_hint: account.email });
+  });
+  setApp({ settings: await client.call("icons.authorizeGoogle", { accountId: account.id, accessToken: token.access_token, expiresIn: Number(token.expires_in) || 3600, scope: token.scope }) });
 }

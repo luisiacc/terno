@@ -9,7 +9,7 @@
  */
 import { parseRaw } from "@terno/mail";
 import type { Page } from "@playwright/test";
-import { expect, focusList, openRow, test, type CapturedMail } from "./fixtures";
+import { expect, navTo, focusList, openRow, test, type CapturedMail } from "./fixtures";
 
 test.use({ backendOptions: { smtpCapture: true } });
 
@@ -195,7 +195,7 @@ test("a formatted new message arrives as written: multipart/alternative, inline 
   }
 
   // the sent copy reads as HTML in Terno too
-  await page.getByTestId("nav-sent").click();
+  await navTo(page, "sent");
   const row = page.locator("[data-testid=thread-row]", { hasText: "Propuesta con formato" }).first();
   await row.dispatchEvent("mousedown");
   const frame = page.getByTestId("message").last().locator("iframe").contentFrame();

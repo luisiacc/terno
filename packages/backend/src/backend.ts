@@ -3,6 +3,7 @@ import { nodePlatform, openDatabase, SqlMailStore } from "@terno/db";
 import type { MailStore } from "@terno/store";
 import { BackendCore, type BackendCoreOptions } from "./core";
 import type { LookupAll } from "./net-policy";
+import { nodeIconTransport } from "./icons/node-transport";
 
 export * from "./core";
 
@@ -17,6 +18,27 @@ export interface BackendOptions extends Omit<BackendCoreOptions, "store" | "plat
 }
 
 const nodeLookup: LookupAll = (host) => dnsLookup(host, { all: true });
+
+/** where Node's fetch finds its dispatcher (npm undici's setGlobalDispatcher writes the same slot) */
+const DISPATCHER = Symbol.for("undici.globalDispatcher.1");
+
+/**
+ * Plan 20: Node's fetch (undici) keeps pooled keep-alive sockets that a network change killed
+ * silently (a server can stretch their life to 10 minutes). New requests get a fresh dispatcher;
+ * the old one is closed: its idle sockets go now, requests still in flight (a send) finish on it.
+ */
+export function resetFetchSockets(): void {
+  const slot = globalThis as unknown as Record<symbol, { close?: () => Promise<void> } | undefined>;
+  const old = slot[DISPATCHER];
+  // nothing fetched yet: no pool to drop
+  if (!old || typeof old.close !== "function") return;
+  try {
+    slot[DISPATCHER] = new (old.constructor as new () => { close(): Promise<void> })();
+  } catch {
+    return;
+  }
+  void old.close().catch(() => {});
+}
 
 /**
  * The backend on Node (Electron's utility process, backend-dev, tests):
@@ -37,6 +59,8 @@ export class Backend extends BackendCore {
         log: (level, message, extra) => options.log?.(level, message, extra),
       });
     }
-    super({ ...options, store, platform, lookup: options.lookup ?? nodeLookup });
+    // plan 22: website icons over node:https (public addresses only) unless the host says otherwise (null: none)
+    const iconTransport = options.iconTransport === undefined ? nodeIconTransport() : options.iconTransport;
+    super({ ...options, store, platform, lookup: options.lookup ?? nodeLookup, onNetworkReset: options.onNetworkReset ?? resetFetchSockets, iconTransport });
   }
 }

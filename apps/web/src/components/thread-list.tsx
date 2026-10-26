@@ -34,6 +34,8 @@ import { LearnedBanner } from "./learned-banner";
 import { ReportRow } from "./diag/report-row";
 import { DesktopBanner, GmailReconnect } from "~/lib/web-parts";
 import { preloadComposer } from "./composer/lazy";
+import { iconsAllowed, iconsAllowedForList } from "~/lib/sender-icons";
+import { renderProbe } from "~/lib/render-probe";
 
 export const searchInputRef: { current: HTMLInputElement | null } = { current: null };
 export const listScroller: { scrollToIndex?: (i: number) => void } = {};
@@ -473,12 +475,17 @@ function EmptyState() {
 }
 
 export function ThreadList() {
+  renderProbe("ThreadList");
   const items = useList((s) => s.items);
   const loading = useList((s) => s.loading);
   const itemsKey = useList((s) => s.itemsKey);
   const compact = useApp((s) => s.settings?.density === "compact");
   const composing = useApp((s) => s.compose !== null);
   const showAccount = useApp((s) => s.accountId === null && s.accounts.length > 1);
+  // plan 22: no sender icons in spam (no request to a spammer's site, no borrowed logo on a phish), the view or a search in it
+  const iconsHere = useApp((s) => iconsAllowed(s.view, s.query));
+  // and the rows on screen allow them too (leaving Spam, its rows stay until the new ones arrive)
+  const icons = iconsHere && iconsAllowedForList(itemsKey);
   const filter = useApp(activeFilter);
   const design = useDesign();
   const height = design.rows[compact ? "compact" : "comfortable"];
@@ -590,9 +597,10 @@ export function ThreadList() {
 
   const virtualItems = virtualizer.getVirtualItems();
   const last = virtualItems[virtualItems.length - 1];
+  // a new list (itemsKey) asks too: one that arrives while the old one sat at its end has the same length and last row
   useEffect(() => {
     if (last && last.index >= items.length - 40) void loadMore();
-  }, [last?.index, items.length]);
+  }, [last?.index, items.length, itemsKey]);
 
   return (
     <section className="flex h-full min-h-0 flex-col bg-pane" data-testid="thread-list" data-results-for={itemsKey} data-composing={composing || undefined}>
@@ -625,7 +633,7 @@ export function ThreadList() {
         ) : (
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
             {virtualItems.map((v) => (
-              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} showAccount={showAccount} layout={layout} />
+              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} showAccount={showAccount} icons={icons} layout={layout} />
             ))}
           </div>
         )}
