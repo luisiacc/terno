@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { IncomingMessage } from "@terno/store";
+import { MAX_INCOMING_MIME_BYTES } from "@terno/core";
 import { createGmailApiProvider, toBase64url } from "./gmail-api";
 import { ProviderError, type FlagUpdate, type ProviderContext, type SyncSink } from "./types";
 
@@ -259,6 +260,26 @@ describe("Gmail successful response validation", () => {
     } finally {
       clearTimeout(timer);
     }
+    expect(box.checkpoints).toEqual([{ historyId: "10" }]);
+  });
+
+  it("retains an oversized message's bounded headers and unavailable state while a neighbor is captured", async () => {
+    let headers = "From: Sender <sender@example.com>\r\nSubject: Oversized\r\nMessage-ID: <oversized@example.com>\r\n\r\n";
+    while (new TextEncoder().encode(headers).length % 3) headers += " ";
+    const prefix = toBase64url(new TextEncoder().encode(headers));
+    const source = prefix + "A".repeat(Math.ceil((MAX_INCOMING_MIME_BYTES + 3) / 3) * 4 - prefix.length);
+    const box = mailbox({ respond: (url) => {
+      if (url.pathname.endsWith("/messages")) return { messages: [{ id: "m1" }, { id: "large" }] };
+      if (url.pathname.endsWith("/messages/large")) {
+        const response = new Response();
+        Object.defineProperty(response, "json", { value: async () => ({ id: "large", threadId: "large-thread", raw: source, labelIds: ["INBOX"] }) });
+        return response;
+      }
+    } });
+    await box.sync();
+    expect(box.ingested.find((m) => m.providerMsgId === "large")).toMatchObject({ subject: "Oversized", from: { email: "sender@example.com" }, bodyState: "partial", captureUnavailable: "size", bodyText: null, bodyHtml: null });
+    expect(box.ingested.find((m) => m.providerMsgId === "large")?.attachments).toBeUndefined();
+    expect(box.ingested.find((m) => m.providerMsgId === "m1")?.bodyText).toContain("Original body");
     expect(box.checkpoints).toEqual([{ historyId: "10" }]);
   });
 });

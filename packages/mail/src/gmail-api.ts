@@ -1,7 +1,8 @@
 import { L } from "@terno/i18n";
+import { MAX_INCOMING_MIME_BYTES } from "@terno/core";
 import type { IncomingMessage } from "@terno/store";
 import { collectGooglePhotos } from "./google-photos";
-import { parseRaw } from "./mime";
+import { parseRaw, parseRawHeaders } from "./mime";
 import { failedBeforeRequest, isFetchNetworkFailure } from "./net-errors";
 import { ProviderAuthError, ProviderError, type FlagUpdate, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
 
@@ -316,13 +317,16 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         throw error;
       }
       await validateRaw(m.raw!);
+      const raw = m.raw!;
+      const padding = raw.endsWith("==") ? 2 : raw.endsWith("=") ? 1 : 0;
+      const oversized = Math.floor((raw.length - padding) * 3 / 4) > MAX_INCOMING_MIME_BYTES;
       let bytes: Uint8Array;
       try {
-        bytes = fromBase64url(m.raw!);
+        bytes = fromBase64url(oversized ? raw.slice(0, Math.ceil((65536 + 4) / 3) * 4) : raw);
       } catch {
         throw invalidResponse();
       }
-      const parsed = await parseRaw(bytes);
+      const parsed = oversized ? await parseRawHeaders(bytes, "size") : await parseRaw(bytes);
       const labels = m.labelIds ?? [];
       const st = labelState(labels);
       out.push({
@@ -342,7 +346,8 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         snippet: "",
         bodyText: parsed.text,
         bodyHtml: parsed.html,
-        bodyState: "full",
+        bodyState: parsed.captureUnavailable ? "partial" : "full",
+        captureUnavailable: parsed.captureUnavailable,
         listId: parsed.listId,
         bulk: parsed.bulk,
         isRead: st.isRead!,
@@ -355,7 +360,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         hasAttachments: parsed.attachments.length > 0,
         gmailLabels: labels,
         size: m.sizeEstimate ?? 0,
-        attachments: parsed.attachments,
+        attachments: parsed.captureUnavailable ? undefined : parsed.attachments,
       });
     });
     return out;
