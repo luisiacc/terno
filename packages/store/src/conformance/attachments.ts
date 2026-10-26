@@ -58,7 +58,6 @@ export function defineAttachmentConformance(name: string, h: StoreHarness): void
     it.each(["complete", "markSent"] as const)("releases only the definitive successful operation pin (%s), through restart and cleanup", async (resolution) => {
       const [a] = await fresh();
       const ref = await upload(a!);
-      const independent = (await store.drafts.save(draft(a!, [ref]), 0))!;
       const queued = await store.compose.queueSend(send(a!, [ref]));
       await store.ops.claimReady(0, 10);
       const message = (await store.threads.get(queued.threadId))!.messages[0]!;
@@ -66,6 +65,7 @@ export function defineAttachmentConformance(name: string, h: StoreHarness): void
       await expect(store.attachments.discard(a!, ref.assetId)).rejects.toThrow();
       await store.ops.markUnknown(queued.opId, "acceptance unknown", 1);
       await expect(store.attachments.discard(a!, ref.assetId)).rejects.toThrow();
+      const independent = (await store.drafts.save(draft(a!, [ref]), 1))!;
       if (resolution === "markSent") await store.ops.resolveUnknown(queued.opId, "markSent", 2);
       else await store.ops.complete(queued.opId, {}, 2);
       store = await h.reopen(store);
@@ -76,6 +76,17 @@ export function defineAttachmentConformance(name: string, h: StoreHarness): void
       store = await h.reopen(store);
       await expect(store.attachments.info(a!, ref.assetId)).rejects.toThrow();
       expect((await store.ops.get(queued.opId))!.state).toBe("succeeded");
+    });
+    it("retains the independent message pin after operation success, then reclaims on deletion", async () => {
+      const [a] = await fresh(); const ref = await upload(a!);
+      const queued = await store.compose.queueSend(send(a!, [ref]));
+      await store.ops.claimReady(0, 10); await store.ops.complete(queued.opId, {}, 1);
+      store = await h.reopen(store);
+      await expect(store.attachments.discard(a!, ref.assetId)).rejects.toThrow();
+      const message = (await store.threads.get(queued.threadId))!.messages[0]!;
+      await store.sync.remove([message.id]);
+      await store.attachments.discard(a!, ref.assetId);
+      await expect(store.attachments.info(a!, ref.assetId)).rejects.toThrow();
     });
     it("persists parsed incoming bytes/CID at ingestion and body completion without duplicate parts", async () => {
       const [a] = await fresh();
@@ -197,6 +208,27 @@ export function defineAttachmentConformance(name: string, h: StoreHarness): void
         }
         await expect(store.attachments.discard(a!, parts[i + 1]!.assetId!)).rejects.toThrow();
         expect(await store.attachments.info(a!, parts[i + 1]!.assetId!)).toBeTruthy();
+      }
+    });
+    it("preserves the prior attachment revision when colliding verification cannot finish safely", async () => {
+      const [a] = await fresh();
+      const part = (marker: number) => {
+        const bytes = new Uint8Array(8 * 1024 * 1024); bytes[bytes.length - ATTACHMENT_CHUNK - 1] = marker;
+        return { filename: "same.bin", mime: "application/octet-stream", size: bytes.length, bytes };
+      };
+      const first = part(1), second = part(2);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "comparison-exhausted", attachments: [first, second] })]);
+      const thread = await threadOf(store, "comparison-exhausted");
+      const original = (await store.threads.get(thread))!.messages[0]!.attachments;
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "comparison-exhausted", attachments: [part(3), part(4), first, second] })]);
+      store = await h.reopen(store);
+      const current = (await store.threads.get(thread))!.messages[0]!.attachments;
+      const revision = (parts: typeof current) => parts.map((p) => [p.assetId, p.filename, p.mime, p.size, p.contentId]);
+      expect(revision(current)).toEqual(revision(original));
+      for (const [i, expected] of [first, second].entries()) {
+        for (let chunk = 0; chunk < Math.ceil(expected.bytes.length / ATTACHMENT_CHUNK); chunk++) {
+          expect(await store.attachments.read(a!, current[i]!.assetId!, chunk)).toBe(bytesBase64(expected.bytes.subarray(chunk * ATTACHMENT_CHUNK, (chunk + 1) * ATTACHMENT_CHUNK)));
+        }
       }
     });
     it("keeps an incoming message readable when its parts collectively exceed the capture budget", async () => {
