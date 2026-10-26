@@ -388,10 +388,11 @@ export class BackendCore {
     if (this.workerTimer) clearTimeout(this.workerTimer);
     this.workerTimer = null;
     const offline = L("errors.network.offline");
+    const lifetimes = new Map(this.lifetimes);
     for (const account of await this.store.accounts.list()) {
       // a sign-in to redo stays what it is
-      const life = this.lifetime(account.id);
-      if (account.syncState.status === "error" || !this.store.isOpen || !this.current(life)) continue;
+      const life = lifetimes.get(account.id);
+      if (!life || account.syncState.status === "error" || !this.store.isOpen || !this.current(life)) continue;
       await this.accountWrite(life, () => this.store.accounts.setSyncState(account.id, {
         status: "offline",
         lastError: offline.message,

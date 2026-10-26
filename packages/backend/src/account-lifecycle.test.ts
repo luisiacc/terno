@@ -27,7 +27,7 @@ interface Scripted extends MailProvider {
   push: () => void;
   run: (sink: SyncSink) => Promise<void>;
 }
-async function setup(kind: "SQL" | "IndexedDB", accountKind: "imap" | "gmail" = "imap") {
+async function setup(kind: "SQL" | "IndexedDB", accountKind: "imap" | "gmail" = "imap", autoSync = false) {
   const instances: Scripted[] = [];
   const gates: ReturnType<typeof gate>[] = [];
   const registry: ProviderRegistry = {
@@ -48,7 +48,7 @@ async function setup(kind: "SQL" | "IndexedDB", accountKind: "imap" | "gmail" = 
   const dir = mkdtempSync(join(tmpdir(), "terno-account-lifecycle-"));
   const platform = { uuid: () => crypto.randomUUID(), yield: turn };
   const store = kind === "IndexedDB" ? await IdbMailStore.open({ name: "synthetic-lifecycle", factory: new IDBFactory(), platform }) : undefined;
-  const backend = new Backend({ dbPath: join(dir, "test.db"), store, platform: store ? platform : undefined, version: "test", providers: registry, cipher: plaintextCipher, autoSync: false, iconTransport: null, openExternal: async () => {} });
+  const backend = new Backend({ dbPath: join(dir, "test.db"), store, platform: store ? platform : undefined, version: "test", providers: registry, cipher: plaintextCipher, autoSync, iconTransport: null, openExternal: async () => {} });
   const ids: number[] = [];
   for (const name of ["first", "sibling"]) ids.push((await backend.store.accounts.create({ kind: accountKind, email: `${name}@example.test`, displayName: name, color: "indigo", providerConfig: { senderName: name }, now: 1 })).account.id);
   const [c, s] = createMemoryTransportPair();
@@ -72,6 +72,37 @@ function incoming(accountId: number): IncomingMessage {
 }
 
 describe.each(["SQL", "IndexedDB"] as const)("%s account lifetime: X06 / S16 / S28", (kind) => {
+  it("a stale offline snapshot cannot retain a lifetime after successful account removal", async () => {
+    const t = await setup(kind, "imap", true);
+    await t.start();
+    await t.start(t.ids[1]);
+    const captured = t.gate(), blocked = t.gate(), announced = t.gate();
+    const list = t.backend.store.accounts.list.bind(t.backend.store.accounts);
+    const snapshot = vi.spyOn(t.backend.store.accounts, "list").mockImplementationOnce(async () => {
+      const accounts = await list();
+      captured.release();
+      await blocked.promise;
+      return accounts;
+    });
+    t.backend.networkChanged(false, "offline");
+    await captured.promise;
+    await t.client.call("accounts.remove", { id: t.ids[0]! });
+    const emit = t.backend.emitAccounts.bind(t.backend);
+    const emitted = vi.spyOn(t.backend, "emitAccounts").mockImplementationOnce(async () => {
+      await emit();
+      announced.release();
+    });
+    blocked.release();
+    await announced.promise;
+    snapshot.mockRestore();
+    emitted.mockRestore();
+    expect(await t.backend.store.accounts.get(t.ids[0]!)).toBeNull();
+    const lifetimes = (t.backend as unknown as { lifetimes: Map<number, unknown> }).lifetimes;
+    expect(lifetimes.has(t.ids[0]!)).toBe(false);
+    expect(lifetimes.size).toBe(1);
+    expect((await t.backend.store.accounts.get(t.ids[1]!))?.syncState.status).toBe("offline");
+  });
+
   it("closes and cancels a blocked sync before waiting, discards push's trailing pass, and leaves its sibling working", async () => {
     const t = await setup(kind);
     const p = await t.start();
