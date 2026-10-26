@@ -574,6 +574,8 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
   app.whenReady().then(async () => {
+    // a dev run is Electron.app: show Terno's icon in the Dock and the About panel (a packaged app has its own)
+    if (!app.isPackaged) app.dock?.setIcon(join(resourcesDir(), "icon.png"));
     registerAppProtocol();
     installNetworkBackstop();
     registerPrint({
