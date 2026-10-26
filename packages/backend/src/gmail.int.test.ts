@@ -261,27 +261,29 @@ function browser(google: FakeGoogle, behaviour: "approve" | "deny" | "forge-then
   };
 }
 
-async function setup(behaviour?: Parameters<typeof browser>[1]) {
+async function setup(behaviour?: Parameters<typeof browser>[1], options: { cipher?: typeof plaintextCipher } = {}) {
   const google = await new FakeGoogle().start();
   cleanups.push(() => google.stop());
   const dir = mkdtempSync(join(tmpdir(), "terno-gmail-"));
   const backend = new Backend({
     dbPath: join(dir, "u.db"),
     version: "t",
-    cipher: plaintextCipher,
+    cipher: options.cipher ?? plaintextCipher,
     providers: createRegistry({ gmail: { endpoints: google.endpoints() } }),
     openExternal: browser(google, behaviour),
     autoSync: false,
   });
+  let closed = false;
+  const stopBackend = async () => { if (!closed) { closed = true; await backend.stop(); } };
   cleanups.push(async () => {
-    await backend.stop();
+    await stopBackend();
     rmSync(dir, { recursive: true, force: true });
   });
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "r", origin: "renderer" });
   const client = new RpcClient(c, { defaultTimeoutMs: 20_000 });
   await client.call("settings.update", { gmailClientId: "client-123.apps.googleusercontent.com" });
-  return { google, backend, client };
+  return { google, backend, client, dir, stopBackend };
 }
 
 function seed(google: FakeGoogle) {
@@ -374,6 +376,26 @@ describe("Gmail attachment capture", () => {
     await ctx.backend.syncAccount(ctx.account.id);
     expect(await ctx.backend.store.providerStore(ctx.account.id).messageByProviderId("gone")).toBeNull();
     expect(await ctx.backend.store.providerStore(ctx.account.id).pendingAttachmentBodies(50)).toEqual([]);
+  });
+
+  it("a failed byte capture remains owned after a real backend restart", async () => {
+    const ctx = await freshMailbox();
+    const id = await legacyAttachment(ctx, "restart");
+    ctx.google.failRawOnce = { id: "restart", status: 403 };
+    await ctx.backend.syncAccount(ctx.account.id);
+    await ctx.stopBackend();
+    ctx.client.close();
+    const backend = new Backend({ dbPath: join(ctx.dir, "u.db"), version: "test", cipher: plaintextCipher, providers: createRegistry({ gmail: { endpoints: ctx.google.endpoints() } }), autoSync: false });
+    cleanups.push(() => backend.stop());
+    const [c, s] = createMemoryTransportPair();
+    backend.connect(s, { clientId: "restarted", origin: "renderer" });
+    const client = new RpcClient(c);
+    cleanups.push(() => client.close());
+    const resumed = { ...ctx, backend, client };
+    expect(await backend.store.providerStore(ctx.account.id).pendingAttachmentBodies(50)).toEqual([{ id, providerMsgId: "restart" }]);
+    await backend.syncAccount(ctx.account.id);
+    await receivedAttachment(resumed, id);
+    expect(await backend.store.providerStore(ctx.account.id).pendingAttachmentBodies(50)).toEqual([]);
   });
 
   it("captures at most fifty legacy messages in a pass and resumes from durable remaining work", async () => {
@@ -894,35 +916,47 @@ describe("plan 25: signing a Gmail account in again (desktop)", () => {
     expect(await state()).toMatchObject({ authRequired: false });
   });
 
-  it("Codex code review #2: two flows Google answered, both waiting on a sync: the older stops, the newer's token is the one kept", async () => {
-    const ctx = await setup("manual");
+  it("a newer answered flow wins while an old sync and the earlier flow's encryption are pending", async () => {
+    let blockEncryption = false;
+    let releaseEncryption!: () => void;
+    let entered!: () => void;
+    const encrypting = new Promise<void>((resolve) => { entered = resolve; });
+    const encryptionGate = new Promise<void>((resolve) => { releaseEncryption = resolve; });
+    const ctx = await setup("manual", { cipher: { ...plaintextCipher, encrypt: async (plain) => {
+      if (blockEncryption) { blockEncryption = false; entered(); await encryptionGate; }
+      return plaintextCipher.encrypt(plain);
+    } } });
     seed(ctx.google);
     const connecting = ctx.client.call("accounts.connectGmail", {});
     await expect.poll(() => ctx.google.consents.length).toBe(1);
     await ctx.google.consents.shift()!.approve();
     const account = await connecting;
     await ctx.backend.syncAccount(account.id);
-    // a sync is held at Google: a sign-in's drop of the account waits for it
+    // Removing the old provider must not wait for this network response.
     const [token] = [...ctx.google.validTokens].slice(-1);
     let release!: () => void;
     ctx.google.gate = { token: token!, until: new Promise<void>((r) => (release = r)) };
     const pass = ctx.backend.syncAccount(account.id);
     await expect.poll(() => ctx.google.held).toBe(1);
+    blockEncryption = true;
     const first = ctx.client.call("accounts.reconnect", { id: account.id });
     const firstDone = first.then(() => "resolved", (e: Error) => e.message);
     await expect.poll(() => ctx.google.consents.length).toBe(1);
     await ctx.google.consents.shift()!.approve();
-    // Google answered the first: it now waits on the sync, past the point where Open again could abort Google's page
-    await expect.poll(() => ctx.google.refreshTokens.size).toBe(2);
-    const second = ctx.client.call("accounts.reconnect", { id: account.id });
-    await expect.poll(() => ctx.google.consents.length).toBe(1);
-    await ctx.google.consents.shift()!.approve();
-    await expect.poll(() => ctx.google.refreshTokens.size).toBe(3);
-    ctx.google.gate = null;
-    release();
+    try {
+      await encrypting;
+      const second = ctx.client.call("accounts.reconnect", { id: account.id });
+      await expect.poll(() => ctx.google.consents.length).toBe(1);
+      await ctx.google.consents.shift()!.approve();
+      await second;
+      expect(await ctx.backend.getSecret(`account:${account.id}:refreshToken`)).toBe("refresh-3");
+    } finally {
+      ctx.google.gate = null;
+      release();
+      releaseEncryption();
+    }
     await pass;
     expect(await firstDone).toBe("Sign-in cancelled.");
-    await second;
     expect(await ctx.backend.getSecret(`account:${account.id}:refreshToken`)).toBe("refresh-3");
   });
 });
