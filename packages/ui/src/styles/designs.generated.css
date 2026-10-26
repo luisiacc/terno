@@ -128,6 +128,7 @@
   --row-h-compact: 48px;
   --avatar-row: 44px;
   --avatar-row-compact: 24px;
+  --avatar-row-wide: 32px;
   --avatar-message: 32px;
   --avatar-collapsed: 32px;
   --avatar-sender: 64px;
@@ -267,6 +268,7 @@
   --row-h-compact: 44px;
   --avatar-row: 36px;
   --avatar-row-compact: 22px;
+  --avatar-row-wide: 26px;
   --avatar-message: 40px;
   --avatar-collapsed: 28px;
   --avatar-sender: 0px;
@@ -406,6 +408,7 @@
   --row-h-compact: 40px;
   --avatar-row: 0px;
   --avatar-row-compact: 0px;
+  --avatar-row-wide: 0px;
   --avatar-message: 36px;
   --avatar-collapsed: 24px;
   --avatar-sender: 0px;

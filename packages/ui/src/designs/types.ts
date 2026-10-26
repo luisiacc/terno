@@ -52,10 +52,10 @@ export interface DesignDefinition {
     /** a sidebar item's height */
     navHeight: string;
   };
-  /** list row heights in px: the virtualizer reads these */
-  rows: Record<"comfortable" | "compact", number>;
-  /** avatar sizes in px (0: none) */
-  avatar: { row: number; rowCompact: number; message: number; collapsed: number; senderCard: number };
+  /** list row heights in px: the virtualizer reads these; `wide` is the one-line row of the List layout's full-width list at comfortable density (plan 24) */
+  rows: Record<"comfortable" | "compact" | "wide", number>;
+  /** avatar sizes in px (0: none); `rowWide` goes with `rows.wide` */
+  avatar: { row: number; rowCompact: number; rowWide: number; message: number; collapsed: number; senderCard: number };
   surfaces: {
     /** the inline draft's surface */
     draft: "tint" | "outline" | "card";
@@ -120,4 +120,6 @@ export interface DesignVariants {
   readerHeader: "classic" | "chips-display" | "sender-card";
   /** the reader toolbar's reply group */
   replyAction: "icons" | "pill";
+  /** the List layout's category tabs (plan 24): text with an indicator under it, or pills */
+  categoryTabs: "underline" | "pill";
 }

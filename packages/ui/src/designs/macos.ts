@@ -37,8 +37,8 @@ export const macos: DesignDefinition = {
   },
   icon: { stroke: 2, toolbar: 1.75 },
   layout: { sidebar: "232px", listMin: "340px", listMax: "400px", readerMin: 348, readerMax: "860px", readerPadX: "1.75rem", rowRadius: "0.375rem", navRadius: "0.375rem", navHeight: "1.75rem" },
-  rows: { comfortable: 68, compact: 40 },
-  avatar: { row: 0, rowCompact: 0, message: 36, collapsed: 24, senderCard: 0 },
+  rows: { comfortable: 68, compact: 40, wide: 44 },
+  avatar: { row: 0, rowCompact: 0, rowWide: 0, message: 36, collapsed: 24, senderCard: 0 },
   surfaces: { draft: "tint", reviewBadge: "plain", inboxCount: "muted" },
   variants: {
     compose: "list-header",
@@ -49,5 +49,6 @@ export const macos: DesignDefinition = {
     categoryReview: "sub-rows",
     readerHeader: "classic",
     replyAction: "icons",
+    categoryTabs: "underline",
   },
 };
