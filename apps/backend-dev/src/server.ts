@@ -1,7 +1,7 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
-import { Backend, plaintextCipher, seedDemo, startAgentSocket, webSocketTransport, type AiFactory, type LookupAll } from "@terno/backend";
+import { Backend, plaintextCipher, seedDemo, startAgentSocket, webSocketTransport, type AiFactory, type BackendOptions, type LookupAll } from "@terno/backend";
 import { demoRegistry, type ProviderRegistry } from "@terno/mail";
 export { sqlDb } from "@terno/db";
 import { WebSocketServer } from "ws";
@@ -25,6 +25,8 @@ export interface DevServerOptions {
   seed?: boolean;
   /** also open the MCP socket in dataDir (agent.sock + agent.token), as the desktop app does */
   agentSocket?: boolean;
+  /** E2E (plan 20): the retry schedule */
+  connectivity?: BackendOptions["connectivity"];
 }
 
 export interface DevServer {
@@ -55,6 +57,7 @@ export async function startDevServer(o: DevServerOptions): Promise<DevServer> {
     allowDemoOwnerClaims: o.ownerClaims,
     now: o.now,
     autoSync: o.autoSync ?? true,
+    connectivity: o.connectivity,
     log: (level, message, extra) => (level === "error" ? console.error : console.log)(`[backend] ${message}`, extra ?? ""),
   });
   if (o.seed !== false && (await seedDemo(backend.store, { threads: o.threads, accounts: o.accounts }))) {

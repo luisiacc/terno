@@ -11,6 +11,7 @@ import { CommandPalette } from "./components/command-palette";
 import { DragGhost } from "./components/drag-ghost";
 import { NewMessage } from "./components/new-message";
 import { installComposeFollowsSelection } from "~/lib/compose";
+import { installNetworkEvents } from "~/lib/network";
 import { Reader } from "./components/reader";
 import { SelectionBar } from "./components/selection-bar";
 import { SnackDock } from "./components/snack-dock";
@@ -57,6 +58,7 @@ export function App() {
   const selectedId = useApp((s) => s.selectedId);
   useEffect(() => installKeyboard(), []);
   useEffect(() => installComposeFollowsSelection(), []);
+  useEffect(() => installNetworkEvents(), []);
   // every way of filing threads offers the snackbar, except its own bulk adds
   useEffect(
     () =>

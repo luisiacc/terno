@@ -1,7 +1,8 @@
 import { L } from "@terno/i18n";
 import type { IncomingMessage } from "@terno/store";
 import { parseRaw } from "./mime";
-import { ProviderError, type FlagUpdate, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
+import { failedBeforeRequest, isFetchNetworkFailure } from "./net-errors";
+import { ProviderAuthError, ProviderError, type FlagUpdate, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
 
 export interface GmailEndpoints {
   auth: string;
@@ -85,6 +86,39 @@ export interface GmailApiOptions {
   tokens: GmailTokenSource;
   /** the RFC 5322 source of a message to send (Bcc kept: the Gmail API reads recipients from headers) */
   buildRaw(payload: SendPayload): Promise<Uint8Array>;
+  /** tests only: a read's and a send's deadlines */
+  readTimeoutMs?: number;
+  sendTimeoutMs?: number;
+}
+
+/** A read that hasn't finished in a minute is on a dead socket (undici's own wait is 5 minutes). */
+const READ_TIMEOUT_MS = 60_000;
+/** A send may upload 35 MB over a slow link; past this its outcome is unknown (never retried). */
+const SEND_TIMEOUT_MS = 15 * 60_000;
+const NEVER = new AbortController().signal;
+
+/**
+ * One request's signal: aborted by its deadline, by reset (`reset`) or by the caller. `done()`
+ * clears the timer and the listeners (an `AbortSignal.timeout` would keep a timer per request alive).
+ */
+function deadlineSignal(reset: AbortSignal, caller: AbortSignal | undefined, ms: number): { signal: AbortSignal; done(): void } {
+  const ctl = new AbortController();
+  const abort = (reason: unknown) => ctl.abort(reason);
+  const onReset = () => abort(reset.reason);
+  const onCaller = () => abort(caller?.reason);
+  const timer = setTimeout(() => abort(new DOMException(`no answer in ${ms} ms`, "TimeoutError")), ms);
+  if (reset.aborted) onReset();
+  else reset.addEventListener("abort", onReset, { once: true });
+  if (caller?.aborted) onCaller();
+  else caller?.addEventListener("abort", onCaller, { once: true });
+  return {
+    signal: ctl.signal,
+    done() {
+      clearTimeout(timer);
+      reset.removeEventListener("abort", onReset);
+      caller?.removeEventListener("abort", onCaller);
+    },
+  };
 }
 
 /** The Gmail REST client (sync, history, labels, send) over any token source: no Node APIs. */
@@ -95,33 +129,53 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
   const accountId = ctx.account.id;
   const tokens = options.tokens;
 
+  /** reads in flight listen here: reset() aborts them all at once (a send never does) */
+  let reads = new AbortController();
+
   async function api<T>(path: string, init: RequestInit & { ambiguousOnFailure?: boolean } = {}, retried = false): Promise<T> {
     const token = await tokens.get();
-    let res: Response;
+    const sending = Boolean(init.ambiguousOnFailure);
+    // Plan 20: a read on a socket a network change killed fails fast, by its deadline or by reset(), and
+    // the sync goes again on a fresh one. A send isn't reset and has a long deadline; its failure is ambiguous.
+    const deadline = deadlineSignal(sending ? NEVER : reads.signal, init.signal ?? undefined, sending ? (options.sendTimeoutMs ?? SEND_TIMEOUT_MS) : (options.readTimeoutMs ?? READ_TIMEOUT_MS));
+    const failed = (e: unknown) => {
+      const detail = L("errors.network", { detail: e instanceof Error ? e.message : String(e) });
+      // a send that never connected (offline, DNS, refused) never left: it waits for the network like a read
+      if (sending) return failedBeforeRequest(e) ? ProviderError.network(detail) : new ProviderError(detail, false, true);
+      return isFetchNetworkFailure(e) ? ProviderError.network(detail) : new ProviderError(detail, true);
+    };
     try {
-      res = await netFetch(`${ep.api}${path}`, { ...init, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...init.headers } });
-    } catch (e) {
-      throw new ProviderError(L("errors.network", { detail: e instanceof Error ? e.message : String(e) }), !init.ambiguousOnFailure, init.ambiguousOnFailure);
-    }
-    if (res.status === 401 && !retried) {
-      tokens.invalidate();
-      return api<T>(path, init, true);
-    }
-    if (res.ok && init.ambiguousOnFailure) {
-      // The request was accepted; if the body can't be read we don't know the outcome (no resend).
+      let res: Response;
       try {
-        return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+        res = await netFetch(`${ep.api}${path}`, { ...init, signal: deadline.signal, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...init.headers } });
       } catch (e) {
-        throw new ProviderError(`Unreadable response after a successful request: ${e instanceof Error ? e.message : e}`, false, true);
+        throw failed(e);
       }
+      if (res.status === 401) {
+        await res.body?.cancel().catch(() => {});
+        tokens.invalidate();
+        // a fresh token refused as well: the grant is gone, the user signs in again (ops wait for it)
+        if (retried) throw new ProviderAuthError(L("errors.gmail.revoked"));
+        return await api<T>(path, init, true);
+      }
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        const err = new ProviderError(`Gmail API ${res.status}: ${text.slice(0, 200)}`, res.status === 429 || res.status >= 500, Boolean(sending && res.status >= 500));
+        (err as ProviderError & { status: number }).status = res.status;
+        throw err;
+      }
+      if (res.status === 204) return undefined as T;
+      try {
+        return (await res.json()) as T;
+      } catch (e) {
+        // The request was accepted; a send whose answer can't be read has an unknown outcome (no resend).
+        if (sending) throw new ProviderError(`Unreadable response after a successful request: ${e instanceof Error ? e.message : e}`, false, true);
+        // a read whose body stopped coming (the deadline, a reset, a dead socket) is safe to repeat
+        throw failed(e);
+      }
+    } finally {
+      deadline.done();
     }
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      const err = new ProviderError(`Gmail API ${res.status}: ${text.slice(0, 200)}`, res.status === 429 || res.status >= 500, Boolean(init.ambiguousOnFailure && res.status >= 500));
-      (err as ProviderError & { status: number }).status = res.status;
-      throw err;
-    }
-    return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
   }
 
   async function fetchFull(ids: string[]): Promise<IncomingMessage[]> {
@@ -316,6 +370,15 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       }
     },
 
-    async close() {},
+    reset() {
+      // reads in flight fail now (retryable) and the sync goes again on fresh sockets; sends aren't listening
+      const stale = reads;
+      reads = new AbortController();
+      stale.abort(new DOMException("the network changed", "AbortError"));
+    },
+
+    async close() {
+      reads.abort(new DOMException("closed", "AbortError"));
+    },
   };
 }

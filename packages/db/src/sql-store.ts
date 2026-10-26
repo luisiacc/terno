@@ -3,7 +3,6 @@ import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { MockDataset } from "@terno/mock-data";
 import {
-  AWAITING_AUTH,
   type AddedBy,
   type ClassifierInput,
   type Cursor,
@@ -103,6 +102,8 @@ import {
   recoverOps,
   removeAccount,
   resumeAuthOps,
+  resumeNetworkOps,
+  nextOpAttemptAt,
   saveDraft,
   messageRef,
   findMessageByRef,
@@ -452,13 +453,14 @@ export class SqlMailStore implements MailStore {
         }
         return { touched, deltas };
       }),
-    fail: async (id, error, retryable, now) => this.db.tx(() => failOp(this.db, id, error, retryable, now)),
+    fail: async (id, error, retryable, now, park) => this.db.tx(() => failOp(this.db, id, error, retryable, now, park)),
     markUnknown: async (id, error, now) => markOpUnknown(this.db, id, error, now),
     awaitAuth: async (id, error, now) => awaitAuthOp(this.db, id, error, now),
     release: async (id, now) => releaseOp(this.db, id, now),
     resumeAuth: async (accountId, now) => this.db.tx(() => resumeAuthOps(this.db, accountId, now)),
+    resumeNetwork: async (accountId, now) => this.db.tx(() => resumeNetworkOps(this.db, accountId, now)),
     recover: async (now) => recoverOps(this.db, now),
-    nextAttemptAt: async () => this.db.get<{ t: number | null }>("SELECT min(next_attempt_at) AS t FROM ops WHERE state = 'queued' AND next_attempt_at < ?", AWAITING_AUTH)?.t ?? null,
+    nextAttemptAt: async () => nextOpAttemptAt(this.db),
     recent: async (limit) => listRecentOps(this.db, limit),
     resolveUnknown: async (id, resolution, now) =>
       this.db.tx(() => {

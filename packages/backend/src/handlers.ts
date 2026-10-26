@@ -608,9 +608,12 @@ export function createHandlers(b: Backend): Handlers {
       return { ok: true as const };
     },
 
-    "sync.now": async ({ accountId }) => {
-      const ids = accountId ? [accountId] : (await store.accounts.list()).map((a) => a.id);
-      for (const id of ids) void b.syncAccount(id);
+    "sync.now": async ({ accountId, reason }) => {
+      await b.retryNow(accountId ?? null, reason);
+      return { ok: true as const };
+    },
+    "sync.network": ({ online }) => {
+      b.networkChanged(online, online ? "online" : "offline");
       return { ok: true as const };
     },
   };

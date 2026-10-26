@@ -30,6 +30,8 @@ export interface ProviderOp {
 /**
  * retryable: transient (network, 5xx, 429) → backoff and retry.
  * ambiguous: the outcome is unknown (e.g. connection lost after SMTP DATA) → never retried.
+ * network: the server couldn't be reached at all (DNS, refused, reset, unreachable, timed out):
+ * retryable, never ambiguous; ops wait for the network instead of spending attempts (plan 20).
  */
 export class ProviderError extends Error {
   /** set when the message is a catalog message (L()): the renderer translates it */
@@ -38,11 +40,17 @@ export class ProviderError extends Error {
     message: string | Localized,
     readonly retryable: boolean,
     readonly ambiguous = false,
+    readonly network = false,
   ) {
     super(typeof message === "string" ? message : message.message);
     this.name = "ProviderError";
     const i18n = textRef(message);
     if (i18n) this.i18n = i18n;
+  }
+
+  /** the server couldn't be reached: retryable, and the network is the likely cause */
+  static network(message: string | Localized): ProviderError {
+    return new ProviderError(message, true, false, true);
   }
 
   /** transient (offline, 5xx, 429) or unknowable: the provider classified it, not our bug */
@@ -97,6 +105,8 @@ export interface ProviderContext {
   saveCursor(cursor: unknown): Promise<void>;
   /** every HTTP request a provider makes goes through this (the backend's network policy, purpose "mail") */
   fetch: typeof fetch;
+  /** plan 20: push stopped or came back (diagnostics; counts and durations only) */
+  event?(code: "push.lost" | "push.restored", fields?: { durationMs?: number }): void;
 }
 
 export interface MailProvider {
@@ -106,6 +116,14 @@ export interface MailProvider {
   execute(op: ProviderOp): Promise<{ providerMsgId?: string; providerThreadId?: string; warning?: string | Localized } | void>;
   /** Push notifications (IMAP IDLE, Gmail push). Calls onChange when a sync is worthwhile. */
   watch?(onChange: () => void): () => void;
+  /**
+   * The network changed (plan 20): every socket the provider holds is presumed dead. Drop them
+   * now without waiting on them; requests safe to repeat fail fast (retryable), a send in flight
+   * is left alone; push reconnects at once.
+   */
+  reset?(): void;
+  /** plan 20: the sync tick asks push whether it still hears the server (a dead session reconnects) */
+  heartbeat?(): void;
   close(): Promise<void>;
 }
 

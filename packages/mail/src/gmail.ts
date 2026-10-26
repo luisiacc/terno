@@ -3,6 +3,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { DEFAULT_LOCALE, L, LOCALE_IDS, LOCALES } from "@terno/i18n";
 import { buildRaw } from "./compose";
+import { isFetchNetworkFailure } from "./net-errors";
 import { createGmailApiProvider, GMAIL_SCOPES as SCOPES, GOOGLE_ENDPOINTS, type GmailEndpoints } from "./gmail-api";
 import { ProviderAuthError, ProviderError, type GmailConnectResult, type MailProvider, type ProviderContext } from "./types";
 
@@ -135,11 +136,19 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
         if (secret) body.set("client_secret", secret);
         let res: Response;
         try {
-          res = await netFetch(ep.token, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body });
+          // once an hour: a refresh on a dead socket gives up in 30 s instead of undici's 5 minutes (plan 20)
+          res = await netFetch(ep.token, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body, signal: AbortSignal.timeout(30_000) });
         } catch (e) {
-          throw new ProviderError(L("errors.gmail.refreshOffline", { detail: e instanceof Error ? e.message : String(e) }), true);
+          throw ProviderError.network(L("errors.gmail.refreshOffline", { detail: e instanceof Error ? e.message : String(e) }));
         }
-        const json = (await res.json().catch(() => ({}))) as { access_token?: string; expires_in?: number; error?: string };
+        let json: { access_token?: string; expires_in?: number; error?: string };
+        try {
+          json = (await res.json()) as typeof json;
+        } catch (e) {
+          // an answer whose body never arrived (the deadline, a dead socket) is the network, never a refusal
+          if (isFetchNetworkFailure(e)) throw ProviderError.network(L("errors.gmail.refreshOffline", { detail: e instanceof Error ? e.message : String(e) }));
+          json = {};
+        }
         if (json.error === "invalid_grant") throw new ProviderAuthError(L("errors.gmail.revoked"));
         if (!res.ok || !json.access_token) throw new ProviderError(L("errors.gmail.refreshFailed", { status: res.status }), res.status >= 500);
         access = { token: json.access_token, expiresAt: Date.now() + (json.expires_in ?? 3600) * 1000 - 60_000 };

@@ -425,6 +425,62 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect((await store.ops.claimReady(10_000_000, 20)).map((o) => o.id)).toEqual([first, second]);
       });
 
+      it("plan 20: an op that couldn't reach its server waits for the network; an outage never uses up its attempts", async () => {
+        const { store, a, b, threads, act } = await mailbox(2);
+        const send = (await act(threads[0]!, "archive"))!;
+        // ten network changes during one outage: each resume, a claim, the same failure, parked again with the attempt given back
+        for (let round = 0; round < 10; round++) {
+          const now = round * 60_000;
+          expect((await store.ops.claimReady(now, 20)).map((o) => o.id), `round ${round}`).toEqual([send]);
+          expect(await store.ops.fail(send, "ECONNREFUSED", true, now, { network: true, keepAttempt: true })).toBe("queued");
+          // parked: nothing to schedule (a timer would spin) and nothing claimable
+          expect(await store.ops.nextAttemptAt()).toBeNull();
+          expect(await store.ops.claimReady(now + 3_600_000, 20)).toEqual([]);
+          expect(await store.ops.resumeNetwork(b, now)).toEqual([]);
+          expect(await store.ops.resumeNetwork(a, now)).toEqual([send]);
+        }
+        expect(await store.ops.get(send)).toMatchObject({ state: "queued", attempts: 0, last_error: "ECONNREFUSED" });
+        // the account syncs fine but its server stays unreachable: real tries, the 8th fails
+        for (let attempt = 1; attempt <= 8; attempt++) {
+          expect((await store.ops.claimReady(10_000_000, 20)).map((o) => o.id)).toEqual([send]);
+          const state = await store.ops.fail(send, "ENOTFOUND", true, 10_000_000, { network: true, keepAttempt: false });
+          expect(state).toBe(attempt < 8 ? "queued" : "failed");
+          if (attempt < 8) expect((await store.ops.resumeNetwork(null, 10_000_000)).length).toBe(1);
+        }
+      });
+
+      it("plan 20: a location op blocked behind a parked one isn't due (the worker never spins on it)", async () => {
+        const { store, threads, act } = await mailbox(1);
+        const archive = (await act(threads[0]!, "archive"))!;
+        expect((await store.ops.claimReady(0, 20)).map((o) => o.id)).toEqual([archive]);
+        await store.ops.fail(archive, "ECONNRESET", true, 0, { network: true, keepAttempt: true });
+        // the user then trashes the same thread: due now, but it must wait for the archive
+        const trash = (await act(threads[0]!, "trash", 1))!;
+        expect(await store.ops.claimReady(5, 20)).toEqual([]);
+        expect(await store.ops.nextAttemptAt()).toBeNull();
+        // the same with a plain backoff: the next wake is the blocker's, not the blocked op's (already due)
+        await store.ops.resumeNetwork(null, 10);
+        expect((await store.ops.claimReady(10, 20)).map((o) => o.id)).toEqual([archive]);
+        await store.ops.fail(archive, "HTTP 503", true, 10);
+        expect(await store.ops.nextAttemptAt()).toBe((await store.ops.get(archive))!.next_attempt_at);
+        expect((await store.ops.get(trash))!.state).toBe("queued");
+      });
+
+      it("plan 20 (Codex review): scheduling with thousands of location ops queued on one thread stays fast", async () => {
+        const { store, threads, act } = await mailbox(1);
+        const first = (await act(threads[0]!, "archive"))!;
+        await store.ops.claimReady(0, 20);
+        await store.ops.fail(first, "ECONNRESET", true, 0, { network: true, keepAttempt: true });
+        // the user keeps moving the same thread while its first move waits for the network
+        for (let i = 0; i < 3000; i++) await act(threads[0]!, i % 2 ? "archive" : "moveToInbox", i + 1);
+        const started = performance.now();
+        expect(await store.ops.nextAttemptAt()).toBeNull();
+        expect(await store.ops.claimReady(10_000, 25)).toEqual([]);
+        const took = performance.now() - started;
+        // one pass over the targets, not one per op (3,000 ops cost 0.3 s that way, 10,000 cost 3 s)
+        expect(took).toBeLessThan(100);
+      });
+
       it("non-retryable failures fail immediately", async () => {
         const { store, threads, act } = await mailbox(1);
         const id = (await act(threads[0]!, "archive"))!;

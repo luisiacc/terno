@@ -18,6 +18,7 @@ import { snack } from "~/lib/snack";
 import { renderProbe } from "~/lib/render-probe";
 import { useDropState } from "~/state/drag";
 import { LocalPill } from "./local-pill";
+import { ConnectionPill } from "./connection-pill";
 import { UpdatePill } from "./update-pill";
 import { preloadComposer } from "./composer/lazy";
 
@@ -286,6 +287,7 @@ export function Sidebar() {
           <Plus className="size-4" /> {t("sidebar.addAccount")}
         </button>
       </nav>
+      <ConnectionPill />
       <UpdatePill />
       <div className="hairline-t hairline-strong flex shrink-0 items-center gap-1 px-2 py-2">
         <Button data-testid="open-filters" variant="ghost" size="sm" className="flex-1 justify-start gap-2 text-sidebar-foreground" onClick={() => setApp({ dialog: "filters" })}>

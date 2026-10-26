@@ -3,7 +3,6 @@ import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { MockDataset } from "@terno/mock-data";
 import {
-  AWAITING_AUTH,
   type ClassifierInput,
   type ClassifyResult,
   type Cursor,
@@ -111,6 +110,8 @@ import {
   recordUserActions,
   recoverOps,
   resumeAuthOps,
+  resumeNetworkOps,
+  nextOpAttemptAt,
   ruleNeedsBody,
   saveDraft,
   saveFilter,
@@ -879,18 +880,14 @@ export class IdbMailStore implements MailStore {
         }
         return { touched, deltas };
       }),
-    fail: (id, error, retryable, now) => this.command(() => failOp(this.c, id, error, retryable, now)),
+    fail: (id, error, retryable, now, park) => this.command(() => failOp(this.c, id, error, retryable, now, park)),
     markUnknown: (id, error, now) => this.command(() => markOpUnknown(this.c, id, error, now)),
     awaitAuth: (id, error, now) => this.command(() => awaitAuthOp(this.c, id, error, now), { early: true }),
     release: (id, now) => this.command(() => releaseOp(this.c, id, now), { early: true }),
     resumeAuth: (accountId, now) => this.command(() => resumeAuthOps(this.c, accountId, now), { early: true }),
+    resumeNetwork: (accountId, now) => this.command(() => resumeNetworkOps(this.c, accountId, now), { early: true }),
     recover: (now) => this.command(() => recoverOps(this.c, now), { early: true }),
-    nextAttemptAt: () =>
-      this.read(() => {
-        let t: number | null = null;
-        for (const o of T(this.c, "ops").by("state", "queued")) if (o.next_attempt_at < AWAITING_AUTH) t = t === null ? o.next_attempt_at : Math.min(t, o.next_attempt_at);
-        return t;
-      }),
+    nextAttemptAt: () => this.read(() => nextOpAttemptAt(this.c)),
     recent: (limit) => this.early(() => listRecentOps(this.c, limit)),
     resolveUnknown: (id, resolution, now) =>
       this.command(() => {

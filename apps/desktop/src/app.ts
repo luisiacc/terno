@@ -1,4 +1,6 @@
+import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { networkInterfaces } from "node:os";
 import { extname, join, normalize } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -9,6 +11,7 @@ import {
   MessageChannelMain,
   nativeTheme,
   net,
+  powerMonitor,
   protocol,
   safeStorage,
   session,
@@ -24,6 +27,7 @@ import { mainDiag } from "./diag/main";
 import { RestartPolicy } from "./diag/supervisor";
 import type { BackendToMain, MainToBackend } from "./ipc";
 import { readLegacySecrets } from "./keychain-helper";
+import { NetworkWatch } from "./network-watch";
 import { DB_FILE } from "./legacy-profile";
 import { printLocalModeChanged, registerPrint } from "./print";
 import { isTrustedSender, testPdfDir, testSmtpPort } from "./print-policy";
@@ -133,6 +137,16 @@ let clientSeq = 0;
 let backendInstance = 0;
 const restarts = new RestartPolicy();
 const windows = new Set<BrowserWindow>();
+
+/** Plan 20: VPNs, Wi-Fi changes and wakes, told to the backend so mail resumes in seconds (network-watch.ts). */
+const networkWatch = new NetworkWatch({
+  platform: process.platform,
+  spawn: (command, args, options) => spawn(command, args, options),
+  interfaces: () => networkInterfaces(),
+  isOnline: () => net.isOnline(),
+  onChange: (change) => backend?.postMessage({ type: "network", ...change } satisfies MainToBackend),
+  onFailure: (f) => diagLog.warn("net.watch_failed", { attempt: f.attempt, ...(f.errno && { errno: f.errno }), ...(f.exitCode !== null && { exitCode: f.exitCode }) }),
+});
 
 function agentPaths() {
   const userData = app.getPath("userData");
@@ -255,6 +269,8 @@ function startBackend() {
     version: app.getVersion(),
     diag: { session: diagSession(), build: BUILD_ID, channel: mainDiag.channel },
     testSmtpPort: testSmtpPort(process.env, app.isPackaged, demo) ?? undefined,
+    // a restarted backend starts from what the network is now
+    online: net.isOnline(),
   } satisfies MainToBackend);
 }
 
@@ -586,6 +602,9 @@ if (!app.requestSingleInstanceLock()) {
     await switchLanguage(language, systemLanguages());
     buildMenu();
     startBackend();
+    networkWatch.start();
+    // sockets from before a sleep are suspect, whatever the network does next
+    powerMonitor.on("resume", () => networkWatch.wake());
     // nothing runs before its startup delay (no engine loaded, no request)
     updates = startUpdates({
       trusted,
@@ -610,6 +629,8 @@ if (!app.requestSingleInstanceLock()) {
   // Every quit: drafts flushed, the backend closed cleanly (WAL checkpointed), then out. The windows go
   // at once; a send in flight may hold the process for up to SEND_DEADLINE_MS. With an update ready,
   // Squirrel installs it as the app exits (updates.quitting records it for the next run's check).
+  // the watcher's child goes with us (it would also exit on its own when its stdin closes)
+  app.on("will-quit", () => networkWatch.stop());
   app.on("before-quit", (event) => {
     if (quitState === "stopped") return;
     event.preventDefault();

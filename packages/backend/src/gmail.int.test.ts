@@ -346,7 +346,9 @@ describe("Gmail sync", () => {
     google.messages.delete("g5");
     google.failMinimalOnce = true;
     await backend.syncAccount(account.id); // a transient 503 must not advance the cursor
-    expect(sqlDb(backend.store).get<{ s: string }>("SELECT json_extract(sync_state, '$.status') s FROM accounts")!.s).toBe("offline");
+    // plan 20: a first failure is retried quietly (2 s later), not shown as offline
+    expect(sqlDb(backend.store).get<{ s: string; c: unknown }>("SELECT json_extract(sync_state, '$.status') s, json_extract(sync_state, '$.connection') c FROM accounts")).toEqual({ s: "syncing", c: null });
+    expect(backend.connectivity.failures(account.id)).toBe(1);
     await backend.syncAccount(account.id);
     expect(sqlDb(backend.store).get("SELECT count(*) c FROM messages WHERE provider_msg_id = 'g5'")).toEqual({ c: 0 });
   });
