@@ -34,7 +34,7 @@ describe("addresses", () => {
   });
 });
 
-describe("parseAddressList: typed and pasted text (plan 32)", () => {
+describe("parseAddressList: typed and pasted text (plan 34)", () => {
   it.each<[string, Address[]]>([
     ["Ana Torres ana@x.com", [A("Ana Torres", "ana@x.com")]],
     ["a@x.com b@y.com", [A("", "a@x.com"), A("", "b@y.com")]],
@@ -62,7 +62,7 @@ describe("parseAddressList: typed and pasted text (plan 32)", () => {
 const USER_HEADER = '"=?utf-8?Q?Jos=C3=A9?=_David_Sucre_L.?= <david@sucre.net> , Luis Alberto Medina" <lmedina@sucre.net>';
 const USER_STORED = A("_David_Sucre_L.?= <david@sucre.net> , Luis Alberto Medina", "lmedina@sucre.net");
 
-describe("parseAddressHeader: what other clients write (plan 32 §3.6)", () => {
+describe("parseAddressHeader: what other clients write (plan 34 §3.6)", () => {
   it.each<[string, string, Address[]]>([
     ["1 the user's mangled Cc", USER_HEADER, [A("José David Sucre L.", "david@sucre.net"), A("Luis Alberto Medina", "lmedina@sucre.net")]],
     ["4 an encoded word without its end", "=?UTF-8?Q?Jos=C3=A9_P=C3=A9rez <jp@x.com>", [A("José Pérez", "jp@x.com")]],

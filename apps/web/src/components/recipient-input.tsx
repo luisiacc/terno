@@ -643,7 +643,7 @@ export function RecipientInput({
  * One recipient: its name (or address), the full address in its accessible
  * name and tooltip; quiet at rest, the accent when selected; an address that
  * isn't one in the destructive ink, dotted. Memoized: typing in the field
- * renders none of them (plan 32's render gate).
+ * renders none of them (plan 34's render gate).
  */
 const RecipientChip = memo(function RecipientChip({ chip: c, selected, ids }: { chip: Chip; selected: boolean; ids: { invalid: string; noReply: string; hint: string } }) {
   renderProbe("RecipientChip");

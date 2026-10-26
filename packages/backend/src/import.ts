@@ -28,7 +28,7 @@ const GENERAL_KEYS = [
   "language",
 ] as const;
 
-// the same limit drafts are saved with (plan 32, Codex review 6): an export always imports back
+// the same limit drafts are saved with (plan 34, Codex review 6): an export always imports back
 const addresses = draftAddressSchema.array().max(MAX_RECIPIENTS);
 
 /** The settings an export carries, as a patch: each field only if valid on its own; secrets never travel. */

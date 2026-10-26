@@ -1,5 +1,5 @@
 /**
- * Plan 32 at the mail layer: what other clients write in address headers is
+ * Plan 34 at the mail layer: what other clients write in address headers is
  * read by our parser (Gmail's raw messages, IMAP's raw fields beside the
  * envelope), and what we write parses back the same in any client.
  */

@@ -85,7 +85,7 @@ test.describe("recipients", { tag: "@design" }, () => {
     await page.keyboard.press("ArrowUp");
     await expect(options(page).first()).toHaveAttribute("aria-selected", "true");
     await page.keyboard.press("Enter");
-    // a chip (plan 32), the input empty for the next one
+    // a chip (plan 34), the input empty for the next one
     await expect(chipsOf(page, "compose-to")).toHaveText(["Zuleika Ñúñez"]);
     await expect(chipsOf(page, "compose-to")).toHaveAttribute("data-email", "zuleika.nunez@acme.studio");
     await expect(to).toHaveValue("");
@@ -183,7 +183,7 @@ test.describe("recipients", { tag: "@design" }, () => {
     await expect(page.getByTestId("compose-to")).toHaveValue("");
   });
 
-  test("undo takes the suggestions for what it took back with it: Enter then adds nobody (Codex code review 6, plan 32)", async ({ app: page, server }) => {
+  test("undo takes the suggestions for what it took back with it: Enter then adds nobody (Codex code review 6, plan 34)", async ({ app: page, server }) => {
     await seed(server);
     await newMessage(page);
     await page.keyboard.type("zul");

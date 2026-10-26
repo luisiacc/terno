@@ -25,7 +25,7 @@ for (const mode of ["reply", "replyAll"] as const) {
       await page.locator("[data-ready]").waitFor();
       await selectThread(page, touched[0]!, 'in:inbox subject:"Helpdesk session"');
       await page.getByTestId(mode === "reply" ? "action-reply" : "action-reply-all").click();
-      // as chips (plan 32): the quoted comma name is one recipient
+      // as chips (plan 34): the quoted comma name is one recipient
       await expect(chipsOf(page, "compose-to")).toHaveText(["Support, Session", "List"]);
       expect(await recipientEmails(page, "compose-to")).toEqual(["session@help.test", "list@help.test"]);
       if (mode === "replyAll") expect(await recipientEmails(page, "compose-cc")).toEqual(["other@help.test"]);

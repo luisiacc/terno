@@ -94,7 +94,7 @@ function hasAttachmentPart(node: MessageStructureObject | undefined): boolean {
   return (node.childNodes ?? []).some(hasAttachmentPart);
 }
 
-/** The address fields fetched raw beside the envelope (plan 32: parsed by us, the envelope's when one is missing). */
+/** The address fields fetched raw beside the envelope (plan 34: parsed by us, the envelope's when one is missing). */
 const ADDRESS_HEADERS = ["from", "to", "cc", "bcc", "reply-to"];
 
 function headerValue(headers: Buffer | undefined, name: string): string | null {
@@ -361,7 +361,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           claimed.set(key, m.uid);
           if (reset && new Date(env?.date ?? m.internalDate ?? Date.now()).getTime() < sink.windowStart) continue; // only re-identify old mail
           const role = roleOf(path);
-          // the raw address fields, read by our parser (plan 32); the server's envelope where one is missing
+          // the raw address fields, read by our parser (plan 34); the server's envelope where one is missing
           const addrs = messageAddresses(headerFields(m.headers), { from: env?.from, to: env?.to, cc: env?.cc, bcc: env?.bcc, replyTo: env?.replyTo });
           fresh.push({
             accountId,

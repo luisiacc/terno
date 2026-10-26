@@ -84,7 +84,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       });
     });
 
-    describe("addresses repaired at read (plan 32)", () => {
+    describe("addresses repaired at read (plan 34)", () => {
       it("a recipient list an older parser stored mangled reads right (the user's report), and so does the list's From name", async () => {
         const store = await fresh();
         const [a] = await withAccounts(store);

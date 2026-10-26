@@ -17,7 +17,7 @@ describe("WCAG AA in every built-in theme", () => {
     // plan 07: fg + muted-fg on tint, the draft label on 4 surfaces, sidebar glyphs on 2, 3 menu texts over black and white
     // plan 08: error and "saved" inks on background, tint (and menus); the ring on tint and the sidebar, an on switch on tint; sidebar text
     // plan 15: unread ink on 4 surfaces, 8 badge inks over 5 row/draft surfaces, the sidebar's accent as text on 2
-    // plan 32: an invalid recipient chip's mark on the chip
+    // plan 34: an invalid recipient chip's mark on the chip
     expect(CONTRAST_PAIRS).toHaveLength(49 + 2 + 4 + 2 + 6 + 5 + 3 + 3 + 4 + 40 + 2 + 1);
   });
 

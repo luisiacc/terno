@@ -53,7 +53,7 @@ export function emailsIn(text: string): string[] {
 /**
  * A pasted text that is a list of addresses (a separator, `mailto:`, more
  * than one address, or one written `Name <addr>`), parsed; null for anything
- * else (an ordinary paste). Entries that aren't addresses are kept (plan 32,
+ * else (an ordinary paste). Entries that aren't addresses are kept (plan 34,
  * Codex review 8): "ana@x.com; bob@" is two recipients, Bob's to fix.
  */
 export function pastedAddresses(pasted: string): Address[] | null {

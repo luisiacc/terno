@@ -27,7 +27,7 @@ function identityKey(email: string): string {
 export type Mine = (email: string) => boolean;
 
 /**
- * My identities in a conversation (plan 32): every account's address, and
+ * My identities in a conversation (plan 34): every account's address, and
  * the From of every message of mine in it (a Gmail send-as alias, another
  * identity), `me+tag@` and Gmail's dotted spellings included.
  */
@@ -106,7 +106,7 @@ export function subjectFor(mode: DraftMode, subject: string): string {
 }
 
 /** A fresh reply/forward draft for a conversation. */
-/** `identities`: every account's address (plan 32: none of them is replied to); the draft's account's alone by default. */
+/** `identities`: every account's address (plan 34: none of them is replied to); the draft's account's alone by default. */
 export function replyFields(mode: Exclude<DraftMode, "new">, detail: ThreadDetail, account: Account, opts: { quoteInBody?: boolean; identities?: readonly string[] } = {}): DraftFields {
   const mine = identitiesIn(detail, [account.email, ...(opts.identities ?? [])]);
   const { to, cc } = autoRecipients(mode, detail, mine);

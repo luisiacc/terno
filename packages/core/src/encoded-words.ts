@@ -1,5 +1,5 @@
 /**
- * RFC 2047 encoded words, leniently (plan 32). Only ever applied to a
+ * RFC 2047 encoded words, leniently (plan 34). Only ever applied to a
  * phrase or a comment whose place in the header is already known, so what
  * an encoded word says can never become an address or a separator (the
  * Mailsploit class of spoofs: `=?UTF-8?Q?boss@corp.com_<boss@corp.com>?=

@@ -4,7 +4,7 @@ import type { ContactMessage } from "../autocomplete-source";
 import { SliceClock } from "../instant/slices";
 import { cleanName, ContactIndex, contactTokens, normalizeEmail } from "./contacts";
 
-describe("names as other clients mangle them (plan 32)", () => {
+describe("names as other clients mangle them (plan 34)", () => {
   it("mojibake, smart quotes, invisible characters and broken encoded words are undone before a name is learned", () => {
     expect(cleanName("JosÃ© PÃ©rez", "jp@x.com")).toBe("José Pérez");
     expect(cleanName("“Ana Torres”", "a@x.com")).toBe("Ana Torres");

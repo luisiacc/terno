@@ -5,7 +5,7 @@ declare function clearTimeout(handle: unknown): void;
 declare function queueMicrotask(callback: () => void): void;
 declare function structuredClone<T>(value: T): T;
 declare const performance: { now(): number };
-// addresses (plan 32): encoded words, punycode
+// addresses (plan 34): encoded words, punycode
 declare function atob(data: string): string;
 declare function btoa(data: string): string;
 declare class TextDecoder {
