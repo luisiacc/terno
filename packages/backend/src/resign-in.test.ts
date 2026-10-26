@@ -131,13 +131,13 @@ describe("plan 25: an account that needs a sign-in", () => {
     await expect.poll(() => t.state(refused).authRequired).toBe(true);
     await expect.poll(() => t.state(fine).status).toBe("idle");
     t.backend.networkChanged(false, "offline");
-    const connectivity = (t.backend as unknown as { connectivity: { pending(id: number): boolean } }).connectivity;
+    const connectivity = (t.backend as unknown as { connectivity: { pending(id: number): boolean; retryNow(id: number | null, reason: "user"): number[] } }).connectivity;
     expect(connectivity.pending(refused)).toBe(false);
     expect(connectivity.pending(fine)).toBe(true);
-    const syncs = t.providers.get(refused)!.syncs;
-    await t.backend.retryNow(null, "user");
-    await tick(50);
-    expect(t.providers.get(refused)!.syncs).toBe(syncs);
+    // (the backend's Retry now syncs what this returns; a healthy account's success while "offline" is then a
+    // network change, which does try every account once: plan 20's rule, not a probe)
+    expect(connectivity.retryNow(null, "user")).toEqual([fine]);
+    expect(connectivity.retryNow(refused, "user")).toEqual([]);
   });
 
   it("an action refused for its sign-in parks (attempt given back) and marks the account; later ones don't knock", async () => {
