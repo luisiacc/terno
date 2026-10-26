@@ -1,4 +1,9 @@
-# Terno
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/terno-lockup-white.svg" />
+    <img src="brand/terno-lockup.svg" alt="Terno" height="48" />
+  </picture>
+</h1>
 
 > **Your mail, made to measure.**
 
@@ -26,6 +31,7 @@ The technical plan, and the design review held with Codex before implementation,
 pnpm install            # Node 24+, pnpm 12
 pnpm dev                # backend (WebSocket, demo mailbox) + renderer at http://localhost:5173
 pnpm dist:mac           # → apps/desktop/release/mac-arm64/Terno.app and Terno-<v>-arm64.dmg
+pnpm brand              # every icon (app, Tahoe, DMG, favicons, the in-app mark) from the logo in brand/ (macOS, Xcode 26)
 
 pnpm dev:desktop         # Electron + Vite HMR on your real profile
 pnpm dev:desktop:demo    # separate profile with the ~3k-thread demo mailbox
