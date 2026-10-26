@@ -17,7 +17,7 @@
 Apple Mail, in All Inboxes, writes the mailbox's account in small grey text on the message's second line, right-aligned under the date. Terno does the same, in every design and density:
 
 - **What it says:** the account's display name; when it's empty or another account has the same one (two Gmail accounts both called "Luis Cordero"), the address. An address truncates in its local part and keeps `@domain` (`luis.cord…@gmail.com`), so the part that tells accounts apart survives.
-- **What it looks like:** the existing ring in the account's color (kept, `data-testid=account-mark`, same size and stroke) followed by the label in `text-2xs text-muted-foreground` (muted-foreground on pane, row-hover, row-selected and tint are all in `CONTRAST_PAIRS`: AA), at most `max-w-[9rem]` (`7rem` in compact), truncated with an ellipsis, `title` = the full address. The ring leaves the marks group, where it was.
+- **What it looks like:** the existing ring in the account's color (kept, `data-testid=account-mark`, same size and stroke) followed by the label in `text-2xs text-muted-foreground` (muted-foreground on pane, row-hover, row-selected and tint are all in `CONTRAST_PAIRS`: AA), at most `max-w-[min(8rem,40%)]` (`7rem` in compact), truncated with an ellipsis, `title` = the full address. The ring leaves the marks group, where it was.
 - **Where:**
   - **macOS (`classic`), comfortable:** line 2 (subject — snippet), right end, under the date.
   - **Atelier (`avatar`), comfortable:** line 2 (subject), right end, under the date.
@@ -47,7 +47,7 @@ Apple Mail, in All Inboxes, writes the mailbox's account in small grey text on t
 
 Codex (plan critique, 10 points) checked the plan against the row code. What changed:
 
-1. **Width budget (classic, Atelier, Lumen).** Line 2's subject, draft and snippet now sit in one `min-w-0 flex-1` group and the label is its sibling, `shrink-0`, capped at `min(9rem, 45%)` of the line (`min(7rem, 32%)` in compact), so a long subject and a long label share the line instead of overflowing. The classic subject's 60 % cap is now of that group.
+1. **Width budget (classic, Atelier, Lumen).** Line 2's subject, draft and snippet now sit in one `min-w-0 flex-1` group and the label is its sibling, `shrink-0`, capped at `min(8rem, 40%)` of the line (narrowed from 9rem/45% after the lead saw a long name crowd the subject) (`min(7rem, 32%)` in compact), so a long subject and a long label share the line instead of overflowing. The classic subject's 60 % cap is now of that group.
 2. **Right-aligned under the date in every comfortable layout** (`ml-auto` on the label, which is outside the subject group).
 3. **Compact:** the label left the right-hand `shrink-0` group (marks and date): it sits between the subject (which shrinks) and that group, with its own cap.
 4. **Address truncation:** the local part shrinks first (`min-w-[1ch]`), then the `@domain`, so a very long domain still ends in an ellipsis inside the cap instead of overflowing (see the code review below for how).

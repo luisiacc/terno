@@ -88,7 +88,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
         "flex min-w-0 shrink-0 items-center gap-1 self-center text-2xs",
         // a checked row is on the accent (muted text isn't checked there): its own foreground
         checked && !selected ? "text-accent-foreground" : "text-muted-foreground",
-        compact ? "max-w-[min(7rem,32%)]" : "ml-auto max-w-[min(9rem,45%)] pl-1",
+        compact ? "max-w-[min(7rem,32%)]" : "ml-auto max-w-[min(8rem,40%)] pl-1",
       )}
     >
       <span data-testid="account-mark" className={cn("size-1.5 shrink-0 rounded-full border-[1.5px]", ACCOUNT_MARK[account.color])} />
