@@ -65,3 +65,23 @@ Initial red tests: backend completion failures before/after commit each produced
 The backend now retains dispatched-send ownership through worker recovery and records provider acceptance before result processing. Local completion failures bypass provider retry classification. Both stores ignore stale fail/unknown callbacks, including settled, queued and parked operations, without recomputing thread state. The outer recovery is bounded: a second storage error leaves the running send noneligible, logs diagnostics, and allows other claimed operations to settle; startup recovery remains conservative.
 
 Red: both completion cases and a lost unknown-state write produced two provider acceptances. Green: 26 focused cases; 549 tests passed (2 skipped) across backend operations, connectivity, sign-in, SQL/IDB conformance and IDB storage. Typecheck and lint passed. The new IDB case aborts a real fake-IndexedDB transaction; the SQL case throws before COMMIT, then reopens the real temporary store. Existing quiesce and provider network tests remain unchanged. Code review pending; full release/performance gates remain open for the series.
+
+## Slice 2: T06 — concurrent message deletion is not expired history
+
+### Investigation and specification
+
+Gmail list/history enumeration is not a frozen snapshot. A message can be listed or named as newly added, then be deleted before its raw download. `fetchFull` currently propagates that message GET 404. Initial sync fails; incremental sync's broad 404 catch mistakes it for expired history and starts a full mailbox scan. Known cached minimal-message 404 handling is already scoped correctly and must remain so.
+
+Only a 404 returned by history enumeration authorizes history-expiry recovery. A confirmed 404 downloading a newly discovered message omits that vanished item, continues good neighbors and preserves progress. Any transient, authentication or permission failure still aborts the checkpoint. Do not infer message deletion from missing raw data, invalid response shape or omitted batch entries; response-validation/poison-record work remains a separate open slice.
+
+Use the existing fake Google HTTP server through real backend sync, injecting a one-shot deletion after enumeration and before raw GET. Cover initial and incremental passes, successful neighbor ingestion, no extra full listing/profile request on a message 404, and a real expired-history 404 still triggering full reconciliation. Keep existing cached-old-mail and transient-failure cursor tests. No new cache, loop, timer or full-mailbox lookup; skip a definitively missing fetch within the existing six-worker budget. Other T06 backfill/reset-crash work remains open.
+
+### Slice 1 — Codex code review round 1 and corrections
+
+Reviewed head `6331fbd` using the repository review script, through the requested Codex subagent. Two medium findings were reproduced before changing the code: a failed state write for a definitive network/auth/permanent refusal produced `unknown`, and fallback recording of an uncertain send emitted no op event. Four focused tests failed on that reviewed commit.
+
+The worker now retries recording the captured provider outcome, preserving its original authentication/network/definitive-failure semantics. It never repeats submission to repair persistence. After successful fallback recording it emits the operation event, so the existing uncertainty warning is discoverable. Dispatched ownership still lasts through this bounded retry. Both-write failure remains a noneligible running row recovered at restart rather than an automatic send. The three backend/connectivity/sign-in files pass all 60 tests; typecheck/lint pass. The broad perf run was interrupted deliberately when review required changing the implementation, and is not claimed as passed; it will be rerun on the stable series.
+
+### Slice 2 — plan critique revisions
+
+Six points accepted: classify expiry only at each history request; catch only the individual raw GET 404; retain actual full/delta watermarks; give the deletion fixture stable list pages; assert raw 403/503 never advances the cursor; and verify genuine expiry reconciles cached labels/deletions before installing a replacement watermark. The raw catch must continue its worker, not exit and lose later queued IDs.

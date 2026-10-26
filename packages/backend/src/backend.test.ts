@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient, type Events } from "@terno/core/rpc";
 import { claimReadyOps, createAccount, enqueueOp, getOp, type IncomingMessage, sqlDb } from "@terno/db";
-import { ProviderError, type MailProvider, type ProviderOp, type ProviderRegistry, type SyncSink } from "@terno/mail";
+import { ProviderAuthError, ProviderError, type MailProvider, type ProviderOp, type ProviderRegistry, type SyncSink } from "@terno/mail";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { startAgentSocket } from "./agent-socket";
 import { Backend, plaintextCipher } from "./backend";
@@ -178,7 +178,7 @@ describe("sending", () => {
 
   it("an accepted send stays unknown when recording its ambiguous outcome fails once", async () => {
     let now = NOW;
-    const { backend, client, providers, accountId } = setup({ now: () => now });
+    const { backend, client, providers, accountId, events } = setup({ now: () => now });
     await backend.provider(accountId);
     const p = providers.get(accountId)!;
     p.execute = async (op) => {
@@ -192,6 +192,22 @@ describe("sending", () => {
     await backend.runWorker();
     expect(p.executed).toHaveLength(1);
     expect((await client.call("ops.list", {})).find((o) => o.id === sent.opId)?.state).toBe("unknown");
+    await tick();
+    expect(events.filter((e) => e.name === "op").map((e) => e.payload)).toContainEqual(expect.objectContaining({ id: sent.opId, state: "unknown" }));
+  });
+
+  it.each(["network", "authentication", "permanent"] as const)("a definitively unsubmitted send retains its %s outcome after a failed state write", async (failure) => {
+    const { backend, client, providers, accountId } = setup();
+    await backend.provider(accountId);
+    providers.get(accountId)!.failNext = failure === "network" ? ProviderError.network("connection refused") : failure === "authentication" ? new ProviderAuthError("sign in") : new ProviderError("recipient refused", false);
+    if (failure === "authentication") vi.spyOn(backend.store.ops, "awaitAuth").mockRejectedValueOnce(new Error("recording failed"));
+    else vi.spyOn(backend.store.ops, "fail").mockRejectedValueOnce(new Error("recording failed"));
+    const sent = await client.call("compose.send", { accountId, to: [{ name: "", email: "receiver@example.com" }], subject: "once", bodyText: "hello" });
+    await backend.runWorker();
+    expect((await backend.store.ops.get(sent.opId))?.state).toBe(failure === "permanent" ? "failed" : "queued");
+    expect(await backend.store.ops.nextAttemptAt()).toBeNull();
+    expect(providers.get(accountId)!.executed).toEqual([]);
+    if (failure === "authentication") expect((await backend.store.accounts.get(accountId))?.syncState).toMatchObject({ authRequired: true, authScope: "send" });
   });
 
   it("a transaction rollback after submission cannot send again, including after reopening storage", async () => {

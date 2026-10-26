@@ -147,7 +147,7 @@ export class BackendCore {
   private stopped = false;
   /** quitting or updating (quiesce): no op starts; claimed ones go back to the queue */
   private draining = false;
-  /** sends talking to their server right now, and who waits for them to finish */
+  /** sends talking to their server or recording its outcome, and who waits for them to finish */
   private readonly sendsInFlight = new Set<string>();
   /** claimed by the worker, not yet at their provider: quiesce gives them back at once */
   private readonly undispatched = new Set<string>();
@@ -991,16 +991,22 @@ export class BackendCore {
           await Promise.all(
             [...byAccount.values()].map(async (ops) => {
               for (const op of ops) {
+                const recovery: { record?: () => Promise<void> } = {};
                 try {
-                  await this.executeOp(op);
+                  await this.executeOp(op, recovery);
                 } catch (error) {
                   // never strand the rest of the batch in "running"
                   captureError(error, { code: "ops.crashed", fields: { opKind: opKindOf(op.kind) } });
                   this.log("error", `op ${op.id} crashed`, error instanceof Error ? error.stack : error);
                   try {
-                    if (this.store.isOpen && (await this.store.ops.get(op.id))?.state === "running") {
-                      if (this.sendsInFlight.has(op.id)) await this.store.ops.markUnknown(op.id, String(error), this.now());
-                      else await this.store.ops.fail(op.id, String(error), true, this.now());
+                    if (this.store.isOpen) {
+                      if (recovery.record) await recovery.record();
+                      else if ((await this.store.ops.get(op.id))?.state === "running") {
+                        if (this.sendsInFlight.has(op.id)) await this.store.ops.markUnknown(op.id, String(error), this.now());
+                        else await this.store.ops.fail(op.id, String(error), true, this.now());
+                      }
+                      const after = await this.store.ops.get(op.id);
+                      if (after) this.server.emit("op", this.opInfo(after));
                     }
                   } catch (recoveryError) {
                     // A running send stays noneligible until storage recovers or startup marks it unknown.
@@ -1033,7 +1039,7 @@ export class BackendCore {
     this.workerTimer = setTimeout(() => void this.runWorker(), Math.max(0, next - this.now()));
   }
 
-  private async executeOp(claimed: OpRow): Promise<void> {
+  private async executeOp(claimed: OpRow, recovery: { record?: () => Promise<void> }): Promise<void> {
     // Re-read right before dispatch: while earlier ops of the batch ran, this one may have
     // been superseded (deleted), pruned (deleted messages) or narrowed.
     const op = await this.store.ops.get(claimed.id);
@@ -1080,22 +1086,25 @@ export class BackendCore {
       const expected = pe ? pe.expected || !provider : undefined;
       if (op.kind === "send") captureError(error, { code: "send.failed", fields: { retryable: pe?.retryable, ambiguous: pe?.ambiguous }, expected });
       else captureError(error, { code: "ops.failed", fields: { opKind: opKindOf(op.kind), retryable: pe?.retryable, ambiguous: pe?.ambiguous }, expected });
-      let state: OpState | null = null;
-      // plan 25: refused with credentials a sign-in replaced meanwhile: it goes again with the new ones
-      if (sending && accepted) await this.store.ops.markUnknown(op.id, message, this.now());
-      else if (error instanceof ProviderAuthError && credentials !== this.credentialsOf(op.account_id)) {
-        await this.store.ops.release(op.id, this.now());
-        this.kickWorker();
-      } else if (error instanceof ProviderAuthError) {
-        await this.store.ops.awaitAuth(op.id, message, this.now());
-        if (!(await this.parkedAcrossSignIn(op.account_id, credentials))) await this.needsSignIn(op.account_id, op.kind, error, credentials);
-      } else if (error instanceof ProviderError && error.ambiguous) await this.store.ops.markUnknown(op.id, message, this.now());
-      // the server couldn't be reached: wait for the network (plan 20); an outage gives the attempt back
-      else if (error instanceof ProviderError && error.network) state = await this.store.ops.fail(op.id, message, true, this.now(), { network: true, keepAttempt: this.connectivity.inOutage(op.account_id) });
-      else state = await this.store.ops.fail(op.id, message, error instanceof ProviderError ? error.retryable : true, this.now());
-      // plan 17 (Codex review 1 #6, review 2 #6): a send that failed for good, whatever the cause, answered nobody: the
-      // store recomputed what it replied to, and the lists and counts follow
-      if (state === "failed" && op.kind === "send") this.notifyChanged([]);
+      // If persistence fails, the worker retries recording this outcome, never the provider call.
+      recovery.record = async () => {
+        let state: OpState | null = null;
+        // plan 25: refused with credentials a sign-in replaced meanwhile: it goes again with the new ones
+        if (sending && accepted) await this.store.ops.markUnknown(op.id, message, this.now());
+        else if (error instanceof ProviderAuthError && credentials !== this.credentialsOf(op.account_id)) {
+          await this.store.ops.release(op.id, this.now());
+          this.kickWorker();
+        } else if (error instanceof ProviderAuthError) {
+          await this.store.ops.awaitAuth(op.id, message, this.now());
+          if (!(await this.parkedAcrossSignIn(op.account_id, credentials))) await this.needsSignIn(op.account_id, op.kind, error, credentials);
+        } else if (error instanceof ProviderError && error.ambiguous) await this.store.ops.markUnknown(op.id, message, this.now());
+        // the server couldn't be reached: wait for the network (plan 20); an outage gives the attempt back
+        else if (error instanceof ProviderError && error.network) state = await this.store.ops.fail(op.id, message, true, this.now(), { network: true, keepAttempt: this.connectivity.inOutage(op.account_id) });
+        else state = await this.store.ops.fail(op.id, message, error instanceof ProviderError ? error.retryable : true, this.now());
+        // A permanently failed send answered nobody: recomputed lists and counts follow.
+        if (state === "failed" && sending) this.notifyChanged([]);
+      };
+      await recovery.record();
     }
     if (this.stopped && !this.store.isOpen) return;
     const after = await this.store.ops.get(op.id);
