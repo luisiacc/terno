@@ -77,10 +77,20 @@ function invalidResponse(sending = false): ProviderError {
 
 function readMessage(value: unknown, id: string, raw = false): GmailMessage {
   if (!isRecord(value) || value.id !== id || (value.labelIds !== undefined && (!Array.isArray(value.labelIds) || !value.labelIds.every(nonempty)))) throw invalidResponse();
-  if (raw && (!nonempty(value.threadId) || typeof value.raw !== "string" || !/^[A-Za-z0-9_-]+={0,2}$/.test(value.raw) || value.raw.replace(/=+$/, "").length % 4 === 1)) throw invalidResponse();
+  if (raw && (!nonempty(value.threadId) || typeof value.raw !== "string" || !value.raw.length)) throw invalidResponse();
   if (raw && value.internalDate !== undefined && (typeof value.internalDate !== "string" || !/^-?\d+$/.test(value.internalDate) || !Number.isFinite(new Date(Number(value.internalDate)).getTime()))) throw invalidResponse();
   if (raw && value.sizeEstimate !== undefined && (typeof value.sizeEstimate !== "number" || !Number.isSafeInteger(value.sizeEstimate) || value.sizeEstimate < 0)) throw invalidResponse();
   return value as unknown as GmailMessage;
+}
+
+async function validateRaw(raw: string): Promise<void> {
+  const chunkSize = 256 * 1024;
+  const end = raw.length - (raw.endsWith("==") ? 2 : raw.endsWith("=") ? 1 : 0);
+  if (!end || end % 4 === 1) throw invalidResponse();
+  for (let offset = 0; offset < end; offset += chunkSize) {
+    if (offset) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    if (!/^[A-Za-z0-9_-]+$/.test(raw.slice(offset, Math.min(end, offset + chunkSize)))) throw invalidResponse();
+  }
 }
 
 function historyId(value: unknown): value is string {
@@ -305,6 +315,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         if (error instanceof GmailApiError && error.status === 404) return;
         throw error;
       }
+      await validateRaw(m.raw!);
       let bytes: Uint8Array;
       try {
         bytes = fromBase64url(m.raw!);
@@ -350,8 +361,9 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     return out;
   }
 
-  async function fullSync(sink: SyncSink) {
+  async function fullSync(sink: SyncSink, previousHistory?: string) {
     const baseline = readBaseline(await api<unknown>("/profile"));
+    if (previousHistory && earlierHistory(baseline, previousHistory)) throw invalidResponse();
     const after = Math.floor(sink.windowStart / 1000);
     const freshlyIngested = new Set<string>();
     let pageToken: string | undefined;
@@ -462,8 +474,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       } catch (e) {
         // History records expire (~1 week): Google answers 404 and a full resync is required.
         if (e instanceof ExpiredHistory) {
-          await ctx.saveCursor(null);
-          return fullSync(sink);
+          return fullSync(sink, cursor.historyId);
         }
         throw e;
       }

@@ -6,7 +6,7 @@ import { ProviderError, type FlagUpdate, type ProviderContext, type SyncSink } f
 const raw = toBase64url(new TextEncoder().encode("From: Sender <sender@example.com>\r\nTo: me@example.com\r\nSubject: Original\r\n\r\nOriginal body"));
 const message = { id: "m1", threadId: "t1", raw, labelIds: ["INBOX", "UNREAD"] };
 
-function mailbox(options: { cursor?: unknown; cached?: boolean | number; respond?: (url: URL) => unknown | Promise<unknown> } = {}) {
+function mailbox(options: { cursor?: unknown; cached?: boolean | number; respond?: (url: URL) => unknown | Promise<unknown>; onIngest?: () => void } = {}) {
   let cursor: unknown = options.cursor ?? null;
   const checkpoints: unknown[] = [];
   const ingested: IncomingMessage[] = [];
@@ -30,6 +30,7 @@ function mailbox(options: { cursor?: unknown; cached?: boolean | number; respond
       // The guard is an oracle for accidental unbounded continuation loops.
       if (requests.length > 20) throw new Error("unexpected continuation loop");
       const value = await options.respond?.(url);
+      if (value instanceof Response) return value;
       if (value !== undefined) return Response.json(value);
       if (url.pathname.endsWith("/profile")) return Response.json({ emailAddress: "me@example.com", historyId: "10" });
       if (url.pathname.endsWith("/history")) return Response.json({ historyId: "11", history: [{ labelsAdded: [{ message: { id: "m1" } }] }] });
@@ -40,6 +41,7 @@ function mailbox(options: { cursor?: unknown; cached?: boolean | number; respond
   } as unknown as ProviderContext;
   const sink: SyncSink = {
     ingest: async (messages) => {
+      options.onIngest?.();
       ingested.push(...messages);
       for (const m of messages) if (m.providerMsgId && !cached.some((c) => c.providerMsgId === m.providerMsgId)) cached.push({ id: cached.length + 1, providerMsgId: m.providerMsgId });
     },
@@ -152,6 +154,19 @@ describe("Gmail successful response validation", () => {
     await rejectedRead(mailbox({ cursor: { historyId: "9007199254740995" }, respond: (url) => url.pathname.endsWith("/history") ? { historyId: "9007199254740993" } : undefined }));
   });
 
+  it.each([false, true])("expired history cannot replace its prior baseline with a lower checkpoint (cached=%s)", async (cached) => {
+    const box = mailbox({ cached, cursor: { historyId: "9007199254740995" }, respond: (url) => {
+      if (url.pathname.endsWith("/history")) return new Response(null, { status: 404 });
+      if (url.pathname.endsWith("/profile")) return { historyId: "9007199254740993" };
+    } });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await rejectedRead(box);
+      expect(box.ingested).toEqual([]);
+      expect(box.flags).toEqual([]);
+    }
+    expect(box.requests.filter((u) => u.pathname.endsWith("/history")).map((u) => u.searchParams.get("startHistoryId"))).toEqual(["9007199254740995", "9007199254740995"]);
+  });
+
   it.each(["9007199254740995", "9007199254740999"])("accepts unchanged or noncontiguous increasing history checkpoint %s", async (checkpoint) => {
     const box = mailbox({ cursor: { historyId: "9007199254740995" }, respond: (url) => url.pathname.endsWith("/history") ? { historyId: checkpoint } : undefined });
     await box.sync();
@@ -223,5 +238,26 @@ describe("Gmail successful response validation", () => {
     await box.sync();
     expect(box.ingested[0]?.bodyText?.trimEnd() === body).toBe(true);
     expect(box.requests.filter((u) => u.searchParams.get("format") === "raw")).toHaveLength(1);
+  });
+
+  it("lets a pending foreground event run during large raw validation", async () => {
+    const source = toBase64url(new TextEncoder().encode(`Subject: Large\r\n\r\n${"a".repeat(8 * 1024 * 1024)}`));
+    let responsive = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const box = mailbox({ respond: (url) => {
+      if (url.searchParams.get("format") !== "raw") return;
+      const response = new Response();
+      Object.defineProperty(response, "json", { value: async () => {
+        timer = setTimeout(() => { responsive = true; }, 0);
+        return { ...message, raw: source };
+      } });
+      return response;
+    }, onIngest: () => expect(responsive).toBe(true) });
+    try {
+      await box.sync();
+    } finally {
+      clearTimeout(timer);
+    }
+    expect(box.checkpoints).toEqual([{ historyId: "10" }]);
   });
 });

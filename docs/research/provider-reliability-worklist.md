@@ -7,15 +7,15 @@ Every report entry remains open until investigation establishes its Terno dispos
 | ID | Report item | Status / workgroup | Validation / review / commit |
 |---|---|---|---|
 | T01 | Remote success versus local completion (P0 candidate) | Implemented and Codex-reviewed; release gates pending | `6331fbd`, `a7c784a`; plan 26 slice 1; 549+68 initial tests, 60 correction tests; review round 2 clear. |
-| T02 | Attachment capability (P1, established limitation) | Pending investigation | — |
-| T03 | Mailbox coverage and Microsoft support (P1, established limitation) | Pending investigation | — |
-| T04 | Gmail retry decisions (P1 observed classification gap) | Pending investigation | — |
-| T05 | Partial mutations and swallowed errors (P1 observed handling; remote outcomes need fixtures) | Pending investigation | — |
+| T02 | Attachment capability (P1, established limitation) | In progress: plan 29; immutable local attachment assets and transport | Independent implementation active; parent owns Gmail/raw dispatch integration and later review. |
+| T03 | Mailbox coverage and Microsoft support (P1, established limitation) | Pending IMAP capability investigation; Outlook user-deferred | See future Outlook checklist; ordinary IMAP hierarchy remains active. |
+| T04 | Gmail retry decisions (P1 observed classification gap) | Partial: Gmail classification implemented/reviewed; durable throttling open | c11d93f, b8e8a2d; plan26 slice3; 71 tests/review2 clear. W05 admission/Retry-After remains. |
+| T05 | Partial mutations and swallowed errors (P1 observed handling; remote outcomes need fixtures) | Partial: Gmail restore implemented/reviewed; IMAP partial fallback open | ee84ebf; plan26 slice4; 82 tests/review clear. |
 | T06 | Backfill and disappearing messages (P1 validation) | Partial: concurrent deletion fixed/reviewed; backfill/reset crash work open | `88f9094`; slice 2; baseline W03/W06 retains remaining scenarios. |
 | T07 | Sent copies and partial recipients (P1 gap) | Pending investigation | — |
-| T08 | Scope, identity and timeout qualification (P1 validation) | Pending investigation | — |
+| T08 | Scope, identity and timeout qualification (P1 validation) | Partial: initial Google auth implemented/reviewed; refresh/rotation/capabilities open | 2023c8e, 292eed8, 9c54cb3, 7507b7c, c81c7f2; plan28; 136 tests/review2 clear. |
 | T09 | Resource and UI contracts (P2) | Pending investigation | — |
-| T10 | Reply-To is lost before recipient selection (P1, established source-level limitation) | Pending investigation | — |
+| T10 | Reply-To is lost before recipient selection (P1, established source-level limitation) | Implemented and Codex-reviewed; release gates pending | 185cb94, 3f83a8a, 24bf111, a4d0abc, 8016c62; plan27; distinct review clear; recorded full-gate limitations remain. |
 | A01 | Denied Gmail consent and revoked authorization need different recovery from transient failures | Pending: W04/W05; E+R | Baseline audit records existing tests and required new oracles. |
 | A02 | Failed identity lookup and sessions with no accounts require explicit cleanup | Pending: W04/W03; E+R+L | Baseline audit records existing tests and required new oracles. |
 | A03 | Expired Gmail history requires resumable reconciliation, followed by catch-up from a pre-enumeration baseline | Pending: W03; E+R | Baseline audit records existing tests and required new oracles. |
@@ -96,7 +96,7 @@ Every report entry remains open until investigation establishes its Terno dispos
 | B42 | Parallel Graph fetches can surface as unavailable-mail UI | User-deferred: Outlook integration checklist | Resume after Outlook integration; shared/Gmail equivalents stay tracked separately. |
 | B43 | Multi-account attachment regressions need ownership tests | Pending: W08; C+R | Baseline audit records existing tests and required new oracles. |
 | B44 | Search results can use a different Outlook ID namespace | User-deferred: Outlook integration checklist | Resume after Outlook integration; shared/Gmail equivalents stay tracked separately. |
-| B45 | Reply-To may contain several addresses and must survive both UI and provider drafting | Pending: W09; C+R | Baseline audit records existing tests and required new oracles. |
+| B45 | Reply-To may contain several addresses and must survive both UI and provider drafting | Implemented and Codex-reviewed; release gates pending | Plan27/T10; multi-address Reply-To persists through both stores and public composer/queued payload; exact review head8016c62 clear. |
 | B46 | Undo must release idempotency admission while still blocking real duplicate sends | Pending: W01/W08/W02; E+R | Baseline audit records existing tests and required new oracles. |
 | B47 | Non-protocol HTTP failures must not be parsed as successful sync pages | Pending: W03/W05/W07; E+R | Baseline audit records existing tests and required new oracles. |
 | S01 | An expired Gmail history cursor triggers recovery; a transient message fetch failure does not advance beyond unhandled work. | Pending: W03; E+R | Baseline audit records existing tests and required new oracles. |
@@ -121,7 +121,7 @@ Every report entry remains open until investigation establishes its Terno dispos
 | S20 | Reconnect selects a different mailbox or tenant; reject identity replacement and preserve the intended account's local state. | Pending: W04/W07; E+C+R | Baseline audit records existing tests and required new oracles. |
 | S21 | Reading works while SMTP authentication fails; receiving continues and only sends wait. | Pending: W04; E | Baseline audit records existing tests and required new oracles. |
 | S22 | Consent grants read but not send, or an administrator blocks a permission; expose the affected capability and the right next action. | Pending: W04/W07/W12; R+C | Baseline audit records existing tests and required new oracles. |
-| S23 | Gmail quota 403, policy 403 and message 404 follow different recovery paths. | Pending: W05/W03; E+R | Baseline audit records existing tests and required new oracles. |
+| S23 | Gmail quota 403, policy 403 and message 404 follow different recovery paths. | Implemented and Codex-reviewed; release gates pending | Plan26 slices2–3; quota403/policy403/resource404 and OAuth404 provenance regressions, review2 clear. |
 | S24 | Graph batch envelope is 200 with mixed 204/429/404; retry only eligible failed members after the server delay. | User-deferred: Outlook integration checklist | Resume after Outlook integration; shared/Gmail equivalents stay tracked separately. |
 | S25 | A provider remains throttled through restart; persisted next-attempt timing prevents a burst on launch. | Pending: W05; E+R | Baseline audit records existing tests and required new oracles. |
 | S26 | A large backfill is running when the user sends or opens a message; interactive work has bounded latency. | Pending: W05/W11; R | Baseline audit records existing tests and required new oracles. |
@@ -155,9 +155,11 @@ Every report entry remains open until investigation establishes its Terno dispos
 | S54 | Reauthentication or background recovery while typing preserves composer content, caret, selection, list focus and scroll. | Pending: W12/W08; E+R | Baseline audit records existing tests and required new oracles. |
 | S55 | Idle after healthy sync or an authentication refusal has no spinning retry timers or unexpected network, apart from explicitly selected transport liveness requirements. Browser reload/expiry preserves queued work while token reacquisition is pending. | Pending: W11/W04/W05; E+R | Baseline audit records existing tests and required new oracles. |
 | S56 | A recoverable per-message error remains discoverable after the global sync indicator returns to healthy. | Pending: W10/W12; R | Baseline audit records existing tests and required new oracles. |
-| S57 | Date-range search crosses midnight, DST and a non-PST timezone; exact epoch boundaries return the intended set. | Pending: W11; E+R | Baseline audit records existing tests and required new oracles. |
+| S57 | Date-range search crosses midnight, DST and a non-PST timezone; exact epoch boundaries return the intended set. | In progress: plan 30 date-boundary qualification | Independent worker owns local date parser and dedicated public query tests; both-store parity remains required. |
 | S58 | Gmail API results differ from alias-expanded/thread-wide provider UI results; communicate or implement the chosen parity rather than treating absence as deletion. | Pending: W11/W12; E+R+L | Baseline audit records existing tests and required new oracles. |
 | S59 | A remote draft replacement changes its underlying message ID and a send removes the container; delayed autosave cannot target the sent message or resurrect the draft. | Pending: W08; C+R | Baseline audit records existing tests and required new oracles. |
 | S60 | An inline-only Graph message reports no ordinary attachments; CID images still resolve under the explicit content policy. | User-deferred: Outlook integration checklist | Resume after Outlook integration; shared/Gmail equivalents stay tracked separately. |
 
 Additional audit candidates X01–X06 (late settled observations, refresh-token rotation, poison mail, visible-text matching, response validation, account-removal fencing) remain open and are specified in the baseline audit.
+
+Current additional-candidate status: X05 REST validation implemented in `343e0d9`; review corrections (bounded raw scans and expired-history floor) are under second review. X02 initial-flow validation is complete, but refresh rotation/omitted replacement remains open. X01/X03/X04/X06 remain active. No full release-gate completion is claimed.
