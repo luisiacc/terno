@@ -533,3 +533,76 @@ Codex (`codex exec -s read-only`) was asked for at most 12 concrete points again
   - the tabs live in their own file;
   - stores are untouched (no new query);
   - a new chip or filter from plan 17 needs nothing here, except a decision on whether it shows in List's header next to the tabs.
+- **Same-list refreshes in List keep the whole loaded window** (§R4 widened by the reviews below): an undo, a bulk result, new mail. A deep list (say 2,000 rows) therefore costs four 500-row requests per refresh instead of one; backend changes are already coalesced to one refresh per frame. Split keeps its 500-row cap. The first row on screen is kept in place, except when the list is at its very top, where new mail shows as it arrives.
+
+## What the Codex code review changed
+
+Four rounds, each run with `/tmp/unica-scratch/codex-review.sh`'s prompt and `-C` on this worktree, over `e44dcfd..HEAD`. Every finding was fixed with a test that fails without the fix. That was checked each time by running the tests against the pre-fix code, then restoring.
+
+**Round 1** (10 findings, commit `f81c0c2`, plus the anchor e2e test in `5c4f204`):
+
+| Finding | Fix |
+|---|---|
+| ⌘A, x, ⇧J or `* r` under a page made a hidden selection, which the reader's actions then acted on | The selection functions do nothing while a page covers the list |
+| A thread outside the loaded list (a reload on it) toggled its star the wrong way and was never marked read | `targetRows` and the read dwell fall back to the cached detail |
+| Split → List opened the conversation Split had open | The layout switch clears `readerOpen`; the cursor stays |
+| A palette search under a page left its results hidden | A query change closes the page |
+| An archive 600 rows down: the next refresh shrank the list to 500 | The refresh keeps the window (widened in round 3) |
+| The window refresh's restore used the cursor's old index and scrolled back | The index is looked up again at restore (e2e, with mail arriving under a page) |
+| A page that j requested landed after Esc or k and moved the cursor anyway | Moves are numbered; a stale one does nothing |
+| Open, close, open, close before the first `popstate` left a phantom history entry | The history machine queues before its equality shortcut |
+| A drop was hit-tested on rectangles from drag start | Targets are measured again at the drop |
+| The open gate stopped at the page wrapper (a skeleton passed it) | It warms the detail and stops at the rendered subject |
+
+**Round 2** (5 findings, `6b20d7a`):
+
+| Finding | Fix |
+|---|---|
+| The reader's star and read toggles read a stale list row while the list's refresh waited | `syncRow` from the refreshed detail, skipped if an optimistic edit came after the fetch |
+| A search or folder change while writing a new message left the composer covering the list | Any list change closes the page, leaving the draft as Esc does |
+| Archiving the list's only thread left `readerOpen` set, so a later j opened a conversation | `closePage` runs before the cursor moves and checks what is open, not the derived page |
+| New mail could push the rows that were on screen past the old window | The window refresh reads on (at most 1,000 rows past the old count) until the first visible row and the cursor are back |
+| The dock covered the reader's reply bar | The reader scroller is padded by the dock's inset (e2e with the tall categorization snackbar) |
+
+**Round 3** (4 findings, `cc11ceb`):
+
+| Finding | Fix |
+|---|---|
+| An undo's refresh still collapsed a deep list | Every same-list refresh in List keeps the window (`refreshPolicy`, set by `lib/page`) |
+| Rows stayed stale after stepping onto a conversation another client had changed | Every fresh detail updates its row (in `loadThread`) |
+| A second Older while the next page loaded cancelled the step | Repeated steps join the one in flight |
+| Archiving a search result from its page didn't return to the list | Archive, delete, spam and mark unread return to the list even where the row stays |
+
+**Round 4** (5 findings, `031c9d1`, and `1b98e44` for an import cycle its fix caused):
+
+| Finding | Fix |
+|---|---|
+| An edit to one thread held back another thread's refetched row | Per-thread edit marks, bounded to 5,000 |
+| Back didn't cancel an r/a/f still loading its conversation (an invisible draft, focus stolen later) | `closePage` supersedes the compose intent and clears `draftFocus` |
+| Older lost its step when the list's own scrolling had already requested the page | `loadMore` hands a second caller the page in flight |
+| A growing refresh ignored `grow` past 500 rows | It now adds the extra page |
+| A failed next page was silent | It says so ("Couldn't load older conversations. Try again in a moment." / "No se pudieron cargar conversaciones anteriores. Inténtalo de nuevo en un momento.") |
+
+Round 4's findings were narrower edge cases than round 1's; I stopped there.
+
+## Suite results (this machine, load average 6–9, other agents running)
+
+- `pnpm typecheck` and `pnpm lint`: clean.
+- `pnpm test`: 2,273 unit tests and 426 db-wasm tests passed.
+- `pnpm test:e2e` (`E2E_PORT=5261`): 839 passed in macOS, Lumen and Atelier. An earlier full run also failed on `print.spec` "from the toolbar … and the palette", the known flake under parallel load (plans 14 and 15); it passes on reruns.
+- `pnpm test:web` (`WEB_PORT=5265`): 29 passed.
+- `pnpm test:ui-perf`: every gate passes, the List gates included, except two composer timing gates.
+  - The 10 MB-draft paired gate failed once (a reader wait timed out) and passed on rerun.
+  - "A 2 MB draft of short lines" fails at a frame p50 of 59–60 ms against 50. Main's own source, checked out here at the same time, fails it the same way (60.6 ms), so it's this machine's load, not this branch.
+- `pnpm test:perf`: 129 passed.
+- `pnpm dist:mac` and `pnpm --filter @terno/desktop test:smoke`: 51 passed, including the List smoke (View → Back/Forward, ⌘[ with its menu echo, the mouse's side buttons, reloads).
+- Also fixed: plan 22's sender-icons perf gate clicked All Mail, which plan 21 hid behind More, so the serial perf run stopped there (main had fixed the e2e twin only).
+
+## Screenshots
+
+`/tmp/unica-scratch/list-24/`: 36 shots covering macOS, Atelier and Lumen in light and dark, both layouts.
+
+- **Split:** the conversation open.
+- **List:** the list, a conversation, a new message, a selection with its toolbar, and the 1,000 px window with More.
+
+The List baselines in `apps/web/e2e/__screenshots__/{,lumen/,atelier/}list-layout.spec.ts/` cover the list and a conversation in light and dark for each design. The two Settings General baselines changed on purpose (the Layout row). I looked at all of them.
