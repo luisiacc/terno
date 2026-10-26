@@ -48,7 +48,7 @@ export function newId(): string {
   return s;
 }
 
-const CATEGORY: Record<string, CrumbCategory> = { nav: "nav", action: "action", sync: "sync", rpc: "rpc", ui: "ui", send: "action", compose: "action", print: "action", ops: "sync" };
+const CATEGORY: Record<string, CrumbCategory> = { nav: "nav", action: "action", sync: "sync", rpc: "rpc", ui: "ui", send: "action", compose: "action", print: "action", ops: "sync", net: "sync", push: "sync" };
 const categoryOf = (code: string): CrumbCategory => CATEGORY[code.slice(0, code.indexOf("."))] ?? "lifecycle";
 
 /** Fields of `code` that fit its schema; everything else is dropped (no key survives that the code didn't declare). */

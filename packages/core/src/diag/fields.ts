@@ -55,7 +55,11 @@ export const FIELD_TYPES = {
   method: id,
   /** an autocomplete model (plan 18) */
   model: enumOf("contacts", "phrases"),
+  /** plan 19: why the network was looked at again */
+  netReason: enumOf("network", "wake", "online", "offline", "user", "focus", "other"),
   ok: bool,
+  /** plan 19: what the host says about the network */
+  online: bool,
   /** how a quit ended: the database closed, a send kept it open (deferred), or the deadline passed */
   outcome: enumOf("closed", "sending", "forced", "timeout", "other"),
   op: enumOf("encrypt", "decrypt", "legacy", "sync", "send", "move", "import", "export", "persist", "rebuild", "restore", "generate", "test", "classify", "other"),

@@ -18,6 +18,27 @@ export interface BackendOptions extends Omit<BackendCoreOptions, "store" | "plat
 
 const nodeLookup: LookupAll = (host) => dnsLookup(host, { all: true });
 
+/** where Node's fetch finds its dispatcher (npm undici's setGlobalDispatcher writes the same slot) */
+const DISPATCHER = Symbol.for("undici.globalDispatcher.1");
+
+/**
+ * Plan 19: Node's fetch (undici) keeps pooled keep-alive sockets that a network change killed
+ * silently (a server can stretch their life to 10 minutes). New requests get a fresh dispatcher;
+ * the old one is closed: its idle sockets go now, requests still in flight (a send) finish on it.
+ */
+export function resetFetchSockets(): void {
+  const slot = globalThis as unknown as Record<symbol, { close?: () => Promise<void> } | undefined>;
+  const old = slot[DISPATCHER];
+  // nothing fetched yet: no pool to drop
+  if (!old || typeof old.close !== "function") return;
+  try {
+    slot[DISPATCHER] = new (old.constructor as new () => { close(): Promise<void> })();
+  } catch {
+    return;
+  }
+  void old.close().catch(() => {});
+}
+
 /**
  * The backend on Node (Electron's utility process, backend-dev, tests):
  * node:sqlite with WAL checkpoints on a worker and the instant index,
@@ -37,6 +58,6 @@ export class Backend extends BackendCore {
         log: (level, message, extra) => options.log?.(level, message, extra),
       });
     }
-    super({ ...options, store, platform, lookup: options.lookup ?? nodeLookup });
+    super({ ...options, store, platform, lookup: options.lookup ?? nodeLookup, onNetworkReset: options.onNetworkReset ?? resetFetchSockets });
   }
 }
