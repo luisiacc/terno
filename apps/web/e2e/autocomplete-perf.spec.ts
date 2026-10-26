@@ -314,6 +314,50 @@ test("300 suggestions accepted, dismissed and undone don't grow the heap", async
   expect(after - before, "heap growth over 300 cycles").toBeLessThanOrEqual(2 * 1024 * 1024);
 });
 
+test("recipients (plan 26): with 200 chips in the field, a keystroke is painted within a frame (p95, best of 3) and renders no chip", async ({ app: page }) => {
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("c");
+  const to = page.getByTestId("compose-to");
+  await expect(to).toBeFocused();
+  await to.evaluate((el) => {
+    const data = new DataTransfer();
+    data.setData("text/plain", Array.from({ length: 200 }, (_, i) => `Persona ${i} <persona${i}@example.com>`).join(", "));
+    el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+  });
+  await expect(page.getByTestId("recipient-chip")).toHaveCount(200);
+  await page.evaluate(() => {
+    const w = window as unknown as { __kp: number[] };
+    w.__kp = [];
+    document.addEventListener(
+      "keydown",
+      (e) => {
+        if (e.key.length !== 1) return;
+        const t0 = performance.now();
+        requestAnimationFrame(() => setTimeout(() => w.__kp.push(performance.now() - t0), 0));
+      },
+      { capture: true },
+    );
+  });
+  const chipRenders = () => page.evaluate(() => (window as unknown as { __renders?: Record<string, number> }).__renders?.RecipientChip ?? 0);
+  let best = Infinity;
+  for (let round = 0; round < 3; round++) {
+    await page.evaluate(() => ((window as unknown as { __kp: number[] }).__kp = []));
+    const before = await chipRenders();
+    // words nobody in the mailbox matches (no list): the field's own cost, not the suggestions'
+    for (const word of ["qzx", "wvq", "xjq", "zqv"]) {
+      await page.keyboard.type(word, { delay: 60 });
+      await to.fill("");
+    }
+    expect(await chipRenders(), "chip renders while typing").toBe(before);
+    const s = stats(await page.evaluate(() => (window as unknown as { __kp: number[] }).__kp));
+    console.log(`200 chips, round ${round + 1}: keystroke → painted p50 ${s.p50.toFixed(1)} ms, p95 ${s.p95.toFixed(1)} ms (${s.n})`);
+    expect(s.n).toBeGreaterThanOrEqual(10);
+    best = Math.min(best, s.p95);
+    if (best <= 16.7 * MULT) break;
+  }
+  expect(best, "keystroke → painted p95 with 200 chips").toBeLessThanOrEqual(16.7 * MULT);
+});
+
 test("recipients: a keystroke to its suggestions painted within a frame (p95, best of 3)", async ({ app: page }) => {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.keyboard.press("c");
