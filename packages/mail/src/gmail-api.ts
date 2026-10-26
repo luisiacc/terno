@@ -3,7 +3,7 @@ import { MAX_INCOMING_MIME_BYTES } from "@terno/core";
 import type { IncomingMessage } from "@terno/store";
 import { collectGooglePhotos } from "./google-photos";
 import { parseRaw, parseRawHeaders } from "./mime";
-import { failedBeforeRequest, isFetchNetworkFailure } from "./net-errors";
+import { failedBeforeRequest, isFetchNetworkFailure, RequestNotDispatchedError } from "./net-errors";
 import { ProviderAuthError, ProviderError, type FlagUpdate, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
 
 export interface GmailEndpoints {
@@ -263,6 +263,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     // the sync goes again on a fresh one. A send isn't reset and has a long deadline; its failure is ambiguous.
     const deadline = deadlineSignal(sending ? NEVER : reads.signal, request.signal ?? undefined, sending ? (options.sendTimeoutMs ?? SEND_TIMEOUT_MS) : (options.readTimeoutMs ?? READ_TIMEOUT_MS));
     const failed = (e: unknown) => {
+      if (e instanceof RequestNotDispatchedError) return e;
       const detail = L("errors.network", { detail: e instanceof Error ? e.message : String(e) });
       // a send that never connected (offline, DNS, refused) never left: it waits for the network like a read
       if (sending) return failedBeforeRequest(e) ? ProviderError.network(detail) : new ProviderError(detail, false, true);

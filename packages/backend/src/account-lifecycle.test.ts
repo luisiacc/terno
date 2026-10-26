@@ -5,6 +5,7 @@ import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { IdbMailStore } from "@terno/idb";
 import { IDBFactory } from "fake-indexeddb";
 import { ProviderAuthError, type MailProvider, type ProviderContext, type ProviderRegistry, type SyncSink } from "@terno/mail";
+import { createGmailApiProvider } from "@terno/mail/portable";
 import type { IncomingMessage } from "@terno/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
@@ -26,7 +27,7 @@ interface Scripted extends MailProvider {
   push: () => void;
   run: (sink: SyncSink) => Promise<void>;
 }
-async function setup(kind: "SQL" | "IndexedDB") {
+async function setup(kind: "SQL" | "IndexedDB", accountKind: "imap" | "gmail" = "imap") {
   const instances: Scripted[] = [];
   const gates: ReturnType<typeof gate>[] = [];
   const registry: ProviderRegistry = {
@@ -47,9 +48,9 @@ async function setup(kind: "SQL" | "IndexedDB") {
   const dir = mkdtempSync(join(tmpdir(), "terno-account-lifecycle-"));
   const platform = { uuid: () => crypto.randomUUID(), yield: turn };
   const store = kind === "IndexedDB" ? await IdbMailStore.open({ name: "synthetic-lifecycle", factory: new IDBFactory(), platform }) : undefined;
-  const backend = new Backend({ dbPath: join(dir, "test.db"), store, platform: store ? platform : undefined, version: "test", providers: registry, cipher: plaintextCipher, autoSync: false, iconTransport: null });
+  const backend = new Backend({ dbPath: join(dir, "test.db"), store, platform: store ? platform : undefined, version: "test", providers: registry, cipher: plaintextCipher, autoSync: false, iconTransport: null, openExternal: async () => {} });
   const ids: number[] = [];
-  for (const name of ["first", "sibling"]) ids.push((await backend.store.accounts.create({ kind: "imap", email: `${name}@example.test`, displayName: name, color: "indigo", providerConfig: { senderName: name }, now: 1 })).account.id);
+  for (const name of ["first", "sibling"]) ids.push((await backend.store.accounts.create({ kind: accountKind, email: `${name}@example.test`, displayName: name, color: "indigo", providerConfig: { senderName: name }, now: 1 })).account.id);
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "lifecycle", origin: "renderer" });
   const client = new RpcClient(c);
@@ -230,6 +231,55 @@ describe.each(["SQL", "IndexedDB"] as const)("%s account lifetime: X06 / S16 / S
     await t.backend.runWorker();
     expect(calls).toBe(1);
     expect((await t.client.call("ops.list", {})).find((op) => op.id === queued.opId)?.state).toBe("succeeded");
+  });
+
+  it.each(["MIME preparation", "request dispatch"] as const)("Gmail cancellation after %s across reconnect preserves the dispatch boundary", async (phase) => {
+    const t = await setup(kind, "gmail");
+    const entered = t.gate();
+    const waiting = t.gate();
+    let builds = 0;
+    let requests = 0;
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => {
+      requests++;
+      if (phase === "request dispatch") {
+        entered.release();
+        await waiting.promise;
+        throw new DOMException("Synthetic cancellation after dispatch", "AbortError");
+      }
+      return new Response(JSON.stringify({ id: "accepted-once", threadId: "accepted-thread" }), { status: 200 });
+    });
+    const transport = vi.spyOn(t.backend.net, "fetchFor").mockReturnValue(fetch);
+    t.registry.create = (ctx) => ({
+      ...createGmailApiProvider(ctx, {
+        tokens: { get: async () => "synthetic-access", invalidate() {} },
+        buildRaw: async () => {
+          if (++builds === 1 && phase === "MIME preparation") { entered.release(); await waiting.promise; }
+          return new TextEncoder().encode("synthetic raw");
+        },
+      }),
+      // The test drives real Gmail execution; no mailbox enumeration is needed.
+      async sync() {},
+    });
+    t.registry.connectGmail = async (o) => ({ email: o.loginHint!, name: "Synthetic", sub: "synthetic-subject", emailVerified: true, refreshToken: "synthetic-refresh", grantedScopes: ["https://www.googleapis.com/auth/gmail.modify"] });
+    await t.client.call("settings.update", { gmailClientId: "synthetic-client" });
+    t.backend.startAccount((await t.backend.store.accounts.get(t.ids[0]!))!);
+    await t.backend.syncAccount(t.ids[0]!);
+    const queued = await t.client.call("compose.send", { accountId: t.ids[0]!, to: [{ name: "", email: "receiver@example.test" }], subject: "once", bodyText: "synthetic" });
+    const worker = t.backend.runWorker();
+    await entered.promise;
+    expect(requests).toBe(phase === "MIME preparation" ? 0 : 1);
+    try {
+      await t.client.call("accounts.reconnect", { id: t.ids[0]! });
+    } finally {
+      waiting.release();
+    }
+    await worker;
+    await t.backend.runWorker();
+    expect(requests).toBe(1);
+    expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/\/messages\/send$/), expect.objectContaining({ method: "POST" }));
+    expect(builds).toBe(phase === "MIME preparation" ? 2 : 1);
+    expect((await t.client.call("ops.list", {})).find((op) => op.id === queued.opId)?.state).toBe(phase === "MIME preparation" ? "succeeded" : "unknown");
+    transport.mockRestore();
   });
 
   it("an admitted store failure rejects both its caller and removal without deleting the account", async () => {

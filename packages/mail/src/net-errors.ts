@@ -5,6 +5,17 @@
  * certificate) are never one: they read structured codes, never messages.
  */
 
+import type { Localized } from "@terno/i18n";
+import { ProviderError } from "./types";
+
+/** The host rejected dispatch before calling its transport; no request could have left. */
+export class RequestNotDispatchedError extends ProviderError {
+  constructor(message: string | Localized) {
+    super(message, true);
+    this.name = "RequestNotDispatchedError";
+  }
+}
+
 /** Node socket and resolver errnos */
 const ERRNOS = new Set(["ECONNREFUSED", "ECONNRESET", "ECONNABORTED", "ENOTFOUND", "EAI_AGAIN", "EAI_FAIL", "ETIMEDOUT", "EHOSTUNREACH", "EHOSTDOWN", "ENETUNREACH", "ENETDOWN", "ENETRESET", "EPIPE", "EADDRNOTAVAIL", "ENOTCONN"]);
 /** imapflow's connection codes */

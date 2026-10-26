@@ -4,7 +4,7 @@ import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/di
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import { AWAITING_AUTH, type ClassifierInput, type IncomingMessage, type MailStore, type OpRow, type Platform, type ProviderStore } from "@terno/store";
-import { ProviderAuthError, ProviderError, type MailProvider, type ProviderRegistry, type SendPayload, type SyncSink } from "@terno/mail/portable";
+import { ProviderAuthError, ProviderError, RequestNotDispatchedError, type MailProvider, type ProviderRegistry, type SendPayload, type SyncSink } from "@terno/mail/portable";
 import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_PHRASE_CAPS, WEB_AUTOCOMPLETE_PEAK, WEB_CONTACT_CAPS, WEB_PHRASE_CAPS } from "@terno/store/autocomplete";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { Connectivity, type ConnectivityOptions, type NetReason } from "./connectivity";
@@ -872,7 +872,7 @@ export class BackendCore {
         saveCursor: (cursor) => this.accountWrite(life, () => this.store.accounts.setCursor(accountId, cursor)),
         // Providers cancel their reads on reset/close. Sends retain their own acceptance/ambiguity signal.
         fetch: (input, init) => {
-          this.assertCurrent(life);
+          if (!this.current(life)) throw new RequestNotDispatchedError(L("errors.accountGone"));
           return this.net.fetchFor("mail")(input, init);
         },
       });
@@ -1272,6 +1272,7 @@ export class BackendCore {
         let state: OpState | null = null;
         // plan 25: refused with credentials a sign-in replaced meanwhile: it goes again with the new ones
         if (sending && accepted) await this.store.ops.markUnknown(op.id, message, this.now());
+        else if (error instanceof RequestNotDispatchedError && !this.current(life)) await this.parkClosedOp(op);
         else if (error instanceof ProviderAuthError && credentials !== this.credentialsOf(op.account_id)) {
           await this.store.ops.release(op.id, this.now());
           this.kickWorker();

@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { createGmailProvider } from "./gmail";
 import { createGmailApiProvider } from "./gmail-api";
+import { RequestNotDispatchedError } from "./net-errors";
 import { ProviderAuthError, ProviderError, type MailProvider, type ProviderContext, type SyncSink } from "./types";
 
 interface Call {
@@ -203,6 +204,24 @@ describe("Gmail requests and the network (plan 20)", () => {
     const { fetch } = manualFetch();
     const error = await provider(fetch, { sendTimeoutMs: 80 }).execute(sendOp).catch((e: unknown) => e);
     expect(error).toMatchObject({ ambiguous: true, retryable: false, network: false });
+  });
+
+  it("a host cancellation before dispatch preserves its definitive marker instead of becoming ambiguous", async () => {
+    const cancelled = new RequestNotDispatchedError("Synthetic account closed before dispatch");
+    const refused = (async () => { throw cancelled; }) as typeof globalThis.fetch;
+    const error = await provider(refused).execute(sendOp).catch((e: unknown) => e);
+    expect(error).toBe(cancelled);
+    expect(error).toMatchObject({ retryable: true, ambiguous: false, network: false });
+  });
+
+  it("an ordinary cancellation after dispatch remains ambiguous and cannot be retried", async () => {
+    let requests = 0;
+    const cancelled = (async () => {
+      requests++;
+      throw new DOMException("Synthetic request cancelled", "AbortError");
+    }) as typeof globalThis.fetch;
+    expect(await provider(cancelled).execute(sendOp).catch((e: unknown) => e)).toMatchObject({ ambiguous: true, retryable: false, network: false });
+    expect(requests).toBe(1);
   });
 
   it("a send that never connected never left: it waits for the network like a read", async () => {
