@@ -1,6 +1,6 @@
 # Plan 28: bounded, validated Google sign-in
 
-Status: implementation in progress. Scope: T08, A01/A02/B03 and X05's initial-profile case from the provider reliability report. Builds on plans 04, 05 and 25. Outlook is explicitly deferred until integration.
+Status: focused implementation complete; parent integration and independent code review pending. Scope: T08, A01/A02/B03 and X05's initial-profile case from the provider reliability report. Builds on plans 04, 05 and 25. Outlook is explicitly deferred until integration.
 
 ## Request (verbatim)
 
@@ -75,3 +75,20 @@ Mail validation: 60 auth tests plus the existing compose-portable tests pass; @t
 Parent patch required in packages/mail/src/types.ts: extend GmailTokenBroker.inspect(accessToken, netFetch, options?: { signal?: AbortSignal; timeoutMs?: number }). Optionally clarify GmailConnectResult.grantedScopes's comment to describe effective scopes when the response omits scope. Parent must add token_type: "Bearer" to FakeGoogle's authorization-code success fixture. No shared type or fixture files were edited here.
 
 Full unit/WASM, e2e/web/UI perf, packaged macOS smoke and the independent final Codex review are owned by parent integration. No UI layout changed. All tests use synthetic responses and temporary databases; no real profiles, secrets or live provider requests were used. Outlook and refresh rotation/persistence CAS remain deferred.
+
+
+## Implementation and verification: backend boundary
+
+Added runtime validation before account creation, token installation, credential replacement and Google owner re-verification. Invalid mailbox/name/subject/verification/grant/refresh results cannot become persisted identities. Explicit reduced mail grants have actionable errors. Browser input rejects blank/control tokens and unsafe reconnect IDs; existing RPC lifetime bounds remain intact. Expiration is based on receipt before inspection; an expired inspection result is never installed. Shutdown is checked after provider and pre-write awaits. Plan 25's superseded-flow ownership and mailbox matching remain in place.
+
+Public-RPC red/green observations (`pnpm exec vitest run --project unit packages/backend/src/google-connection.test.ts`): invalid desktop mailbox was persisted before the fix; invalid browser subject was installed before the fix; inspection extended expiration by 20 seconds before the fix; malformed owner evidence changed ownership before the fix. These now refuse before encryption/installation/persistence. Twenty new RPC cases pass, including reduced scopes, invalid IDs, expired inspection, wrong-mailbox desktop/browser reconnect and unchanged owner/credentials after refusal. Existing initial account sync is awaited before preservation snapshots, so background sync timestamps do not confound those assertions.
+
+Final focused validation:
+
+- `pnpm exec vitest run --project unit packages/mail/src/gmail-auth.test.ts packages/mail/src/compose-portable.test.ts packages/backend/src/google-connection.test.ts packages/backend/src/identity.test.ts packages/backend/src/resign-in.test.ts`: **103/103 pass**, five files.
+- `pnpm --filter @terno/backend typecheck`: **pass** after parent's inspect type integration.
+- `pnpm lint`: **pass** across apps/packages.
+- `pnpm --filter @terno/mail typecheck`: passed before the concurrent parent Gmail REST test was added; latest check reports only `gmail-response.test.ts(44,132)` (nullable string fixture). Exact finding sent to parent; its file was not edited here.
+- Parent has applied the inspect signature and FakeGoogle Bearer fixture patches; no integration patch from this slice remains outstanding. The optional effective-grant type comment was also applied by parent.
+
+Independent final review is intentionally left to the parent's separately assigned Codex reviewer, as requested. Full integration/e2e/performance/packaging gates were not run by this worker. No hot sync/list/store path or UI layout was changed by this slice.

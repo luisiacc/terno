@@ -4,7 +4,7 @@ import { L } from "@terno/i18n";
 import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type MessageState } from "@terno/store";
 import type { GmailAccountConfig, ImapAccountConfig } from "@terno/mail";
 import { BackendCore as Backend } from "./core";
-import { changeOwnerTo, gmailClaim, imapClaim, loginFailed, reconnectAccount } from "./identity";
+import { changeOwnerTo, gmailClaim, googleFlowActive, imapClaim, loginFailed, reconnectAccount, validateGoogleConnection } from "./identity";
 import { exportMailbox, importMailbox, restorePending } from "./import";
 import { countThreadScope, progressReporter, resolveThreadScope, UndoJournal } from "./scope";
 import { readAutoCategorize, readSettings, setGooglePhotoState, SettingsError, updateSettings } from "./settings";
@@ -489,15 +489,19 @@ export function createHandlers(b: Backend): Handlers {
         signal: b.abort.signal,
         fetch: b.net.fetchFor("mail"),
       });
+      googleFlowActive(b);
+      validateGoogleConnection(result, true);
       const existing = (await store.accounts.list()).find((a) => a.email === result.email.toLowerCase());
       if (existing) throw new RpcError("BAD_REQUEST", L("errors.alreadyConnected", { email: result.email }));
       const config: GmailAccountConfig = { senderName: result.name || result.email };
       const blob = await b.options.cipher.encrypt(result.refreshToken);
+      const color = await nextAccountColor();
+      googleFlowActive(b);
       const { account, claimed } = await store.accounts.create({
         kind: "gmail",
         email: result.email,
         displayName: result.email.split("@")[0]!,
-        color: await nextAccountColor(),
+        color,
         providerConfig: config,
         secret: { key: "refreshToken", blob },
         ownerClaim: b.canClaimOwner() ? gmailClaim({ ...result, name: result.name || result.email }) : undefined,
@@ -515,10 +519,14 @@ export function createHandlers(b: Backend): Handlers {
       const tokens = b.options.providers.gmailTokens;
       // i18n-ignore: a wiring mistake (only the web build calls this, and it has the broker), for developers
       if (!tokens) throw new RpcError("UNAVAILABLE", "This host connects Gmail with accounts.connectGmail.");
-      const who = await tokens.inspect(accessToken, b.net.fetchFor("mail")).catch((error: unknown) => {
+      if (!/^[\x21-\x7e]+$/.test(accessToken) || (accountId !== undefined && (!Number.isSafeInteger(accountId) || accountId <= 0))) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
+      const expiresAt = b.now() + expiresIn * 1000;
+      const who = await tokens.inspect(accessToken, b.net.fetchFor("mail"), { signal: b.abort.signal }).catch((error: unknown) => {
         throw new RpcError("BAD_REQUEST", messageOf(error));
       });
-      const expiresAt = b.now() + expiresIn * 1000;
+      googleFlowActive(b);
+      validateGoogleConnection(who);
+      if (expiresAt <= b.now()) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
       if (accountId !== undefined) {
         // plan 25: signing this account in again: another Google account picked in the popup changes nothing
         const expected = await store.accounts.get(accountId);
@@ -529,6 +537,8 @@ export function createHandlers(b: Backend): Handlers {
       if (existing) {
         if (existing.kind !== "gmail") throw new RpcError("BAD_REQUEST", L("errors.alreadyConnectedImap", { email: who.email }));
         // reconnect: the same mailbox gets a fresh token and syncs what it missed
+        googleFlowActive(b);
+        if (expiresAt <= b.now()) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
         tokens.set(existing.id, accessToken, expiresAt);
         // plan 25: Google just proved the token (its profile answered): the account stops asking now, and what waited goes
         await b.signedIn(existing.id);
@@ -536,11 +546,14 @@ export function createHandlers(b: Backend): Handlers {
         return existing;
       }
       const config: GmailAccountConfig = { senderName: who.name || who.email };
+      const color = await nextAccountColor();
+      googleFlowActive(b);
+      if (expiresAt <= b.now()) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
       const { account, claimed } = await store.accounts.create({
         kind: "gmail",
         email: who.email,
         displayName: who.email.split("@")[0]!,
-        color: await nextAccountColor(),
+        color,
         providerConfig: config,
         ownerClaim: b.canClaimOwner() ? gmailClaim({ ...who, name: who.name || who.email }) : undefined,
         now: b.now(),

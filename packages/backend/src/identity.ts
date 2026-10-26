@@ -1,4 +1,4 @@
-import { messageOf, type Account } from "@terno/core";
+import { isValidEmail, messageOf, type Account } from "@terno/core";
 import { RpcError, type OwnerIdentity } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { OwnerClaim } from "@terno/store";
@@ -25,6 +25,25 @@ export function imapClaim(account: { email: string }, config: ImapAccountConfig,
     verifiedBy: "imap_login",
     evidence: { imapHost: config.imap.host, loginUser: config.imap.user, emailMatchesLogin: config.imap.user.toLowerCase() === account.email.toLowerCase() },
   };
+}
+
+/** Provider registries are a boundary too: malformed identity must never become a saved account or claim. */
+export function validateGoogleConnection(result: unknown, desktop = false): void {
+  const value = result as Record<string, unknown> | null;
+  if (!value || typeof value !== "object" || Array.isArray(value) ||
+    typeof value.email !== "string" || value.email.length > 254 || (!isValidEmail(value.email) || /\p{Cc}/u.test(value.email)) ||
+    typeof value.name !== "string" ||
+    typeof value.sub !== "string" || !value.sub || value.sub.length > 255 || /[\s\p{Cc}]/u.test(value.sub) ||
+    typeof value.emailVerified !== "boolean" ||
+    (desktop && (typeof value.refreshToken !== "string" || !/^[\x21-\x7e]+$/.test(value.refreshToken)))) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
+  if (value.grantedScopes !== undefined) {
+    if (!Array.isArray(value.grantedScopes) || !value.grantedScopes.every((scope) => typeof scope === "string")) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
+    if (!value.grantedScopes.includes("https://www.googleapis.com/auth/gmail.modify") && !value.grantedScopes.includes("https://mail.google.com/")) throw new RpcError("BAD_REQUEST", L("errors.google.mailScopeRequired"));
+  }
+}
+
+export function googleFlowActive(b: Backend): void {
+  if (b.abort.signal.aborted) throw new RpcError("BAD_REQUEST", L("errors.google.cancelled"));
 }
 
 export function gmailClaim(result: Omit<GmailConnectResult, "refreshToken">): Omit<OwnerClaim, "accountId" | "email"> {
@@ -106,6 +125,8 @@ async function signIn(
     }
     // a newer sign-in took over while Google answered this one: that one decides
     superseded();
+    googleFlowActive(b);
+    validateGoogleConnection(result, true);
     if (result.email.toLowerCase() !== account.email.toLowerCase()) {
       throw new RpcError("BAD_REQUEST", L("errors.googleConnectedOther", { got: result.email, expected: account.email }));
     }
@@ -118,6 +139,7 @@ async function signIn(
   await b.dropAccount(accountId);
   // the drop waited for a sync: a newer sign-in may have started meanwhile (no await from here to the write)
   superseded();
+  if (account.kind === "gmail") googleFlowActive(b);
   await b.setSecret(`account:${accountId}:${secret.name}`, secret.value);
   // plan 25: proven just now (a live login, Google's answer): it stops asking at once, and what waited goes
   await b.signedIn(accountId);
@@ -166,6 +188,8 @@ export async function changeOwnerTo(b: Backend, accountId: number, password: str
       fetch: b.net.fetchFor("mail"),
       loginHint: account.email,
     });
+    googleFlowActive(b);
+    validateGoogleConnection(result, true);
     if (result.email.toLowerCase() !== account.email.toLowerCase()) {
       throw new RpcError("BAD_REQUEST", L("errors.googleVerifiedOther", { got: result.email, expected: account.email }));
     }
@@ -174,6 +198,7 @@ export async function changeOwnerTo(b: Backend, accountId: number, password: str
   }
   // Verification took a while (a login, a browser round trip): commit only if it is still the same mailbox,
   // and write its fresh credentials and the ownership together.
+  if (account.kind === "gmail") googleFlowActive(b);
   await store.owner.change({
     claim: { ...claim, email: account.email, accountId },
     stamp: { createdAt: stamp.createdAt, email: stamp.email },
