@@ -50,6 +50,7 @@ describe("Gmail requests and the network (plan 20)", () => {
     const ctx = {
       account: { id: 1, email: "me@gmail.com" }, config: {},
       getSecret: async () => "refresh-token", getAppSecret: async () => null,
+      replaceSecret: async (_name: string, expected: string, next: string) => expected === "refresh-token" && next === expected,
       store: {
         setting: async () => ({ gmailClientId: "client" }),
         syncedMessages: async () => [{ id: 7, providerMsgId: "g7" }],
@@ -59,7 +60,7 @@ describe("Gmail requests and the network (plan 20)", () => {
       saveCursor: async (cursor: unknown) => { saved.push(cursor); },
       fetch: async (input: string | URL) => {
         const path = new URL(String(input)).pathname;
-        if (path.endsWith("/token")) return ++refreshes === 1 ? json({ access_token: "token", expires_in: 3600 }) : json({ error: "not_found" }, 404);
+        if (path.endsWith("/token")) return ++refreshes === 1 ? json({ access_token: "token", expires_in: 3600, token_type: "Bearer" }) : json({ error: "not_found" }, 404);
         if (path.endsWith("/profile")) return json({ historyId: "11" });
         if (path.endsWith("/messages")) return json({ messages: [] });
         if (path.endsWith("/history")) return phase === "history" ? json({}, 401) : json({ historyId: "11", history: [{ [phase === "new raw" ? "messagesAdded" : "labelsAdded"]: [{ message: { id: "g7" } }] }] });
@@ -126,6 +127,7 @@ describe("Gmail requests and the network (plan 20)", () => {
       account: { id: 1, email: "me@gmail.com" }, config: {},
       fetch: async () => { requests++; return new Response(body, { status: 429 }); },
       getSecret: async () => "refresh-token", getAppSecret: async () => null,
+      replaceSecret: async (_name: string, expected: string, next: string) => expected === "refresh-token" && next === expected,
       store: { setting: async () => ({ gmailClientId: "client" }) },
     } as unknown as ProviderContext;
     const error = await createGmailProvider(ctx).verify().catch((e: unknown) => e);

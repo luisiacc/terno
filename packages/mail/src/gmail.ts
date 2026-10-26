@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { DEFAULT_LOCALE, L, LOCALE_IDS, LOCALES } from "@terno/i18n";
 import { buildRaw } from "./compose";
 import { readGoogleIdentity, withGoogleSignIn } from "./gmail-web";
-import { isFetchNetworkFailure } from "./net-errors";
+import { exchangeGmailRefresh, type GmailRefreshExchange } from "./gmail-refresh";
 import { createGmailApiProvider, GMAIL_SCOPES as SCOPES, GOOGLE_ENDPOINTS, type GmailEndpoints } from "./gmail-api";
 import { ProviderAuthError, ProviderError, type GmailConnectResult, type MailProvider, type ProviderContext } from "./types";
 
@@ -140,41 +140,66 @@ export async function connectGmail(options: ConnectOptions): Promise<GmailConnec
 /** Desktop: the API client with tokens refreshed from the stored refresh token, and nodemailer's MIME. */
 export function createGmailProvider(ctx: ProviderContext, options: { endpoints?: Partial<GmailEndpoints> } = {}): MailProvider {
   const ep = { ...GOOGLE_ENDPOINTS, ...options.endpoints };
-  const netFetch = ctx.fetch;
-  const store = ctx.store;
-  let access: { token: string; expiresAt: number } | null = null;
+  let access: GmailRefreshExchange | null = null;
   let refreshing: Promise<string> | null = null;
+  let candidate: { expected: string; exchange: GmailRefreshExchange; uncertain: boolean } | null = null;
+  const lifetime = new AbortController();
+  const assertOpen = () => { lifetime.signal.throwIfAborted(); };
+  const persistenceFailure = () => new ProviderError(L("errors.secret.replaceFailed"), true);
 
-  /** One refresh at a time: concurrent 401s share the same in-flight refresh. */
+  async function persist(pending: NonNullable<typeof candidate>): Promise<void> {
+    assertOpen();
+    try {
+      // A failed acknowledgement may already have committed. Assert ownership before retrying old bytes.
+      let committed = pending.uncertain && await ctx.replaceSecret("refreshToken", pending.exchange.refreshToken, pending.exchange.refreshToken);
+      assertOpen();
+      if (!committed) committed = await ctx.replaceSecret("refreshToken", pending.expected, pending.exchange.refreshToken);
+      assertOpen();
+      if (!committed) {
+        candidate = null;
+        throw persistenceFailure();
+      }
+      candidate = null;
+    } catch (error) {
+      assertOpen();
+      if (candidate === pending) pending.uncertain = true;
+      if (error instanceof ProviderAuthError) throw error;
+      if (error instanceof Error && error.name === "AbortError") throw new DOMException("closed", "AbortError");
+      throw persistenceFailure();
+    }
+  }
+
+  /** One promise owns both the exchange and its durable result for every waiting operation. */
   function refresh(): Promise<string> {
     refreshing ??= (async () => {
       try {
-        const refreshToken = await ctx.getSecret("refreshToken");
-        if (!refreshToken) throw new ProviderAuthError(L("errors.gmail.reconnect"));
-        const clientId = (await store.setting<{ gmailClientId?: string }>("app"))?.gmailClientId;
-        const body = new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: clientId ?? "" });
-        const secret = await ctx.getAppSecret("gmailClientSecret").catch(() => null);
-        if (secret) body.set("client_secret", secret);
-        let res: Response;
-        try {
-          // once an hour: a refresh on a dead socket gives up in 30 s instead of undici's 5 minutes (plan 20)
-          res = await netFetch(ep.token, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body, signal: AbortSignal.timeout(30_000) });
-        } catch (e) {
-          throw ProviderError.network(L("errors.gmail.refreshOffline", { detail: e instanceof Error ? e.message : String(e) }));
+        assertOpen();
+        if (!candidate) {
+          const refreshToken = await ctx.getSecret("refreshToken");
+          assertOpen();
+          if (!refreshToken) throw new ProviderAuthError(L("errors.gmail.reconnect"));
+          const clientId = (await ctx.store.setting<{ gmailClientId?: string }>("app"))?.gmailClientId;
+          const clientSecret = await ctx.getAppSecret("gmailClientSecret").catch(() => null);
+          assertOpen();
+          const exchange = await exchangeGmailRefresh({ fetch: ctx.fetch, url: ep.token, clientId: clientId ?? "", clientSecret, refreshToken, signal: lifetime.signal });
+          assertOpen();
+          candidate = { expected: refreshToken, exchange, uncertain: false };
         }
-        let json: { access_token?: string; expires_in?: number; error?: string };
-        try {
-          const value: unknown = await res.json();
-          json = value !== null && typeof value === "object" && !Array.isArray(value) ? value as typeof json : {};
-        } catch (e) {
-          // an answer whose body never arrived (the deadline, a dead socket) is the network, never a refusal
-          if (isFetchNetworkFailure(e)) throw ProviderError.network(L("errors.gmail.refreshOffline", { detail: e instanceof Error ? e.message : String(e) }));
-          json = {};
+        const pending = candidate;
+        await persist(pending);
+        assertOpen();
+        // A delayed commit consumes token life. The next demand uses the now-durable credential.
+        if (pending.exchange.expiresAt <= Date.now()) throw new ProviderError(L("errors.gmail.refreshFailed", { status: 200 }), true);
+        access = pending.exchange;
+        return access.accessToken;
+      } catch (error) {
+        assertOpen();
+        if (error instanceof ProviderError) throw error;
+        if (error instanceof Error && error.name === "AbortError") {
+          candidate = null;
+          throw new DOMException("closed", "AbortError");
         }
-        if (res.status === 400 && json.error === "invalid_grant") throw new ProviderAuthError(L("errors.gmail.revoked"));
-        if (!res.ok || !json.access_token) throw Object.assign(new ProviderError(L("errors.gmail.refreshFailed", { status: res.status }), res.status === 429 || res.status >= 500), { status: res.status });
-        access = { token: json.access_token, expiresAt: Date.now() + (json.expires_in ?? 3600) * 1000 - 60_000 };
-        return json.access_token;
+        throw persistenceFailure();
       } finally {
         refreshing = null;
       }
@@ -182,14 +207,26 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
     return refreshing;
   }
 
-  return createGmailApiProvider(ctx, {
+  const provider = createGmailApiProvider(ctx, {
     endpoints: options.endpoints,
     tokens: {
-      get: async () => (access && access.expiresAt > Date.now() ? access.token : refresh()),
+      get: async () => {
+        assertOpen();
+        return access && access.refreshAt > Date.now() ? access.accessToken : refresh();
+      },
       invalidate: (token) => {
-        if (access?.token === token) access = null;
+        if (access?.accessToken === token) access = null;
       },
     },
     buildRaw: (payload) => buildRaw(payload, { keepBcc: true }),
   });
+  const close = provider.close.bind(provider);
+  provider.close = async () => {
+    lifetime.abort(new DOMException("closed", "AbortError"));
+    access = null;
+    candidate = null;
+    refreshing = null;
+    await close();
+  };
+  return provider;
 }

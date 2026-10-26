@@ -130,7 +130,7 @@ class FakeGoogle {
         this.refreshCalls++;
         await new Promise((r) => setTimeout(r, 30)); // make concurrent refreshes overlap
         if (!this.refreshTokens.has(p.get("refresh_token") ?? "")) return json(400, { error: "invalid_grant" });
-        return json(200, { access_token: this.issue(), expires_in: 3600 });
+        return json(200, { access_token: this.issue(), expires_in: 3600, token_type: "Bearer" });
       }
       return json(400, { error: "unsupported_grant_type" });
     }
