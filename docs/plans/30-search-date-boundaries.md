@@ -1,6 +1,6 @@
 # Plan 30: Local search date boundaries (S57 / W11)
 
-Status: parser fixes green; boundary qualification green; final checks and parent-assigned implementation review pending, 2026-10-26.
+Status: implementation and targeted qualification complete; parent-assigned code review and full integration gates pending, 2026-10-26.
 
 ## Request and evidence
 
@@ -67,6 +67,16 @@ The existing local-time and query implementations already implement S57's valid-
 
 Eight isolated zones cover UTC, Costa Rica, Kathmandu, New York/Berlin spring and autumn, Lord Howe's 30-minute changes, São Paulo's skipped midnight and Apia's skipped date. “On D” uses existing date bounds; the end is the next existing local date if a calendar date was skipped. Negated bounds complement message predicates, so the same conversation may match both complements through different messages. Relative-date cursors retain existing moving-clock behavior; exact pagination here freezes the clock.
 
-Commands and final results are recorded below as checks complete. Initial fixture failures caused by concurrently incomplete attachment ingestion edits were reported to the parent; the attachment owner repaired those shared files. They are not claimed as date-search defects.
+Initial fixture failures caused by concurrently incomplete attachment ingestion edits were reported to the parent; the attachment owner repaired those shared files. They are not claimed as date-search defects.
+
+### Final checks
+
+- `pnpm exec vitest run --project unit packages/core/src/search/parse.test.ts packages/db/src/date-timezones.test.ts packages/db/src/search-dates.test.ts packages/idb/src/search-dates.test.ts packages/backend/src/search-dates.int.test.ts`: **5 files, 61 outer tests passed**, including eight subprocess rounds that assert **330 child tests passed** in total (30 per single-day zone, 60 per two-transition zone). Transcript: `/tmp/terno-s57-final-unit.txt`. Fixed-clock RPC fixtures include a second matching account to prove scope isolation.
+- `pnpm exec vitest run --project db-wasm packages/db/src/date-timezones.test.ts packages/db/src/search-dates.test.ts`: **2 files, 20 outer tests passed**, including eight subprocess rounds that assert **132 child tests passed**. Transcript: `/tmp/terno-s57-final-wasm.txt`.
+- `pnpm -r --parallel --filter @terno/core --filter @terno/db --filter @terno/idb --filter @terno/backend typecheck`: **all four pass** (`/tmp/terno-s57-typecheck-final.txt`). Earlier concurrent attachment/account-lifecycle type errors were reported to their owners and resolved there.
+- `pnpm exec oxlint --deny-warnings` on all seven owned TypeScript files: **passes** (`/tmp/terno-s57-lint.txt`).
+- Targeted performance attempt: `pnpm exec vitest run --project perf packages/db/src/perf.perf.test.ts packages/db/src/instant.perf.test.ts packages/idb/src/idb.perf.test.ts -t 'search|queries|exact scan'`: **28 failed, 21 passed, 22 skipped** (`/tmp/terno-s57-search-perf.txt`). The IDB exact-scan gate and SQL date cases passed. The filter incorrectly omitted the instant build prerequisite, causing 25 setup-dependent failures; these are not product defect evidence. Three real budget failures occurred while other team suites were running: FTS prefix `pro` p95 **29.052 ms > 25 ms**, restore list p95 **24.476 ms > 10 ms**, compaction list p95 **28.806 ms > 10 ms**. Their relationship to system contention was not isolated. A corrected instant selection including the prerequisite build was stopped (SIGINT to this agent's captured Vitest PID) to avoid competing with team qualification work; it establishes no passing perf result. The parent must rerun performance gates serialized before calling the whole series done.
+
+Production changes add only bounded date construction/component checks and one finite-number check during parsing. They introduce no query scans, per-message JS date filtering, timers, provider traffic or storage changes. Fallback strategies (`walk`, `date-index`, `fts`, `sender-index`, IDB `scan`) and explicitly settled `instant:` routes are asserted through their public result metadata.
 
 The parent will assign a distinct Codex code review of the exact commits. No final reviewer was spawned by this implementation agent. Full repository/e2e/web/UI performance and desktop packaging gates remain parent integration responsibility; no UI or desktop-only path changed.
