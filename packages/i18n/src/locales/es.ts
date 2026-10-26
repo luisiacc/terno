@@ -1279,6 +1279,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.theme.duplicateIds": "Ids de tema repetidos",
   "errors.theme.tooBig": "Los temas ocupan más de 16 KB",
   // keychain: a secret that can't be opened, and where Settings asks for it again
+  "errors.secret.replaceFailed": "No se pudo guardar el acceso actualizado. Inténtalo de nuevo.",
   "errors.secret.keychain.password": "El llavero no abre la contraseña de esta cuenta. Vuelve a introducirla en Ajustes → Cuentas (Cambiar contraseña…).",
   "errors.secret.keychain.googleSession": "El llavero no abre la sesión de Google de esta cuenta. Vuelve a conectarla en Ajustes → Cuentas (Conectar con Google).",
   "errors.secret.keychain.clientSecret": "El llavero no abre el client secret de Google. Vuelve a guardarlo en Ajustes → Cuentas.",

@@ -1286,6 +1286,7 @@ It contains none of your mail, contacts, settings or keys.
   "errors.theme.duplicateIds": "Repeated theme ids",
   "errors.theme.tooBig": "The themes take up more than 16 KB",
   // keychain: a secret that can't be opened, and where Settings asks for it again
+  "errors.secret.replaceFailed": "Couldn’t save the updated sign-in. Try again.",
   "errors.secret.keychain.password": "The keychain won’t open this account’s password. Enter it again in Settings → Accounts (Change password…).",
   "errors.secret.keychain.googleSession": "The keychain won’t open this account’s Google session. Reconnect it in Settings → Accounts (Connect with Google).",
   "errors.secret.keychain.clientSecret": "The keychain won’t open the Google client secret. Save it again in Settings → Accounts.",
