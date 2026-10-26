@@ -76,8 +76,10 @@ function AccountSignIn({ account, expanded = false }: { account: Account; expand
   const attempt = useSignIn((s) => s.attempts.get(account.id) ?? null);
   const google = useSignIn((s) => s.google);
   const [asking, setAsking] = useState(expanded);
-  // alone in the panel its field is just there; among several it waits for "Enter password" (and stays once shown)
-  const form = account.kind === "imap" && (asking || expanded);
+  // alone in the panel its field is just there; among several it waits for "Enter password". Once shown it stays
+  // (latched as it renders: another account failing later never takes a half-typed password away, review 2)
+  if (expanded && !asking) setAsking(true);
+  const form = account.kind === "imap" && asking;
   return (
     <>
       {!expanded && (

@@ -196,3 +196,14 @@ Codex reviewed `5548ae9..a4cf60c` and made 4 findings; each is fixed with a regr
 2. **Medium: an older Google flow could overwrite a newer token.** Ownership ended when Google answered; two answered flows both waiting on a sync's drop could both write. Ownership (either kind of sign-in) now lasts until the credentials are written, and the attempt stops (`errors.google.cancelled`) after every await once superseded. FakeGoogle now grants a distinct refresh token per consent. Test: `gmail.int.test.ts`, "two flows Google answered, both waiting on a sync".
 3. **Medium: a password being typed could be emptied.** The panel switched between a single layout and a list as the count changed, remounting the field. It's one list keyed by account for any count. Test: `resign-in.spec.ts`, "another account failing or coming back while you type a password" (fails when the field remounts).
 4. **Medium: Google's script failing left the button inert.** A failed load now says so inline ("Couldn’t load Google sign-in (are you offline?)") in the panel and Settings, and the button tries again. Test: `e2e-web/web.spec.ts`, "Google's script failing to load says so, and the button tries again".
+
+**Second round** (`a4cf60c..10ef014`, the fixes only): one finding. A field shown because the panel went down to one account was not latched open, so a second failure (back to two) hid it with what was typed. It now latches as it renders. Test: `resign-in.spec.ts`, "two, then one (its field appears), type, then two again" (fails without the latch). Nothing else substantiated.
+
+## Suite results
+
+- `pnpm typecheck`, `pnpm lint`: pass.
+- `pnpm test`: pass. Two one-off timing failures under load in untouched tests (`facts.test.ts`, `idb/ops-scale.test.ts`) passed alone (3 of 3).
+- `pnpm test:e2e` (macOS, Lumen, Atelier): 880 of 880. The plan 25 spec alone: 32 of 32 in all three designs.
+- `pnpm test:web`: 31 of 31.
+- `pnpm test:ui-perf`: the "2 MB draft of short lines" gate fails on this machine on `main` too (interleaved runs: main 104.8 and 57.4 ms, this branch 49.7 and 54.7 ms, against 50), as plan 16 records. The "10 MB draft" autocomplete gate failed once under load and passed alone. One run had a 66.7 ms dropped frame in the sender-icons scroll gate with no long animation frame behind it; interleaved with `main` the two were the same (max 16.8 ms, 4 of 4 each). No gate file was touched.
+- `pnpm dist:mac` and `pnpm --filter @terno/desktop test:smoke`: 52 of 52.

@@ -123,6 +123,22 @@ test.describe("signing in again", { tag: "@design" }, () => {
     await expect(field).toBeFocused();
   });
 
+  test("Codex code review 2: two, then one (its field appears), type, then two again: the field and what was typed stay", async ({ app: page, server }) => {
+    const { personal, freelance } = await accounts(server);
+    await refuse(server, personal, freelance);
+    await page.getByTestId("sign-in-open").click();
+    await expect(popover(page).getByTestId("sign-in-section")).toHaveCount(2);
+    server.net.refused.delete(personal.email);
+    await server.backend.syncAccount(personal.id);
+    const field = popover(page).getByLabel(`Password for ${freelance.email}`);
+    await expect(field).toBeVisible();
+    await field.fill("half-typ");
+    await refuse(server, personal);
+    await expect(popover(page).getByTestId("sign-in-section")).toHaveCount(2);
+    await expect(field).toHaveValue("half-typ");
+    await expect(field).toBeFocused();
+  });
+
   test("Later puts the line off, never the row's key; the account working and failing again brings it back", async ({ app: page, server }) => {
     const { freelance } = await accounts(server);
     await refuse(server, freelance);
