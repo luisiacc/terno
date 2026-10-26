@@ -898,6 +898,7 @@ export class IdbMailStore implements MailStore {
         const touched: number[] = [];
         const deltas: ModelDelta[] = [];
         if (!op) return { touched, deltas };
+        if (op.kind === "send") idbAssets(this.db).unlink("op", id);
         const ops = T(this.c, "ops");
         if (result?.warning) ops.update(ops.get(id)!, { last_error: result.warning });
         const localId = (JSON.parse(op.target_json) as { messageIds?: number[] }).messageIds?.[0];
@@ -941,6 +942,7 @@ export class IdbMailStore implements MailStore {
         const ops = T(this.c, "ops");
         if (resolution === "markSent") {
           completeOp(this.c, id, now);
+          if (op.kind === "send") idbAssets(this.db).unlink("op", id);
           return { touched: [] };
         }
         if (resolution === "retry") {

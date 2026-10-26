@@ -465,6 +465,7 @@ export class SqlMailStore implements MailStore {
         const touched: number[] = [];
         const deltas: ModelDelta[] = [];
         if (!op) return { touched, deltas };
+        if (op.kind === "send") sqlAssets(this.db).unlink("op", id);
         if (result?.warning) this.db.run("UPDATE ops SET last_error = ? WHERE id = ?", result.warning, id);
         const localId = (JSON.parse(op.target_json) as { messageIds?: number[] }).messageIds?.[0];
         if (op.kind === "send" && result && localId) {
@@ -507,6 +508,7 @@ export class SqlMailStore implements MailStore {
         if (!op || op.state !== "unknown") throw new RpcError("NOT_FOUND", L("errors.opResolved"));
         if (resolution === "markSent") {
           completeOp(this.db, id, now);
+          if (op.kind === "send") sqlAssets(this.db).unlink("op", id);
           return { touched: [] };
         }
         if (resolution === "retry") {

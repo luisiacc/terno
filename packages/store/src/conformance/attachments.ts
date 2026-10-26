@@ -55,6 +55,28 @@ export function defineAttachmentConformance(name: string, h: StoreHarness): void
       expect(m.attachments[0]).toMatchObject(ref);
       expect(await store.attachments.read(a!, ref.assetId, 0)).toBe("AP+A");
     });
+    it.each(["complete", "markSent"] as const)("releases only the definitive successful operation pin (%s), through restart and cleanup", async (resolution) => {
+      const [a] = await fresh();
+      const ref = await upload(a!);
+      const independent = (await store.drafts.save(draft(a!, [ref]), 0))!;
+      const queued = await store.compose.queueSend(send(a!, [ref]));
+      await store.ops.claimReady(0, 10);
+      const message = (await store.threads.get(queued.threadId))!.messages[0]!;
+      await store.sync.remove([message.id]);
+      await expect(store.attachments.discard(a!, ref.assetId)).rejects.toThrow();
+      await store.ops.markUnknown(queued.opId, "acceptance unknown", 1);
+      await expect(store.attachments.discard(a!, ref.assetId)).rejects.toThrow();
+      if (resolution === "markSent") await store.ops.resolveUnknown(queued.opId, "markSent", 2);
+      else await store.ops.complete(queued.opId, {}, 2);
+      store = await h.reopen(store);
+      await expect(store.attachments.discard(a!, ref.assetId)).rejects.toThrow();
+      await store.drafts.delete(independent.id);
+      // Creation triggers aged orphan cleanup, with no timer.
+      await store.attachments.create({ accountId: a!, filename: "cleanup", mime: "text/plain", size: 0, now: 172800000 });
+      store = await h.reopen(store);
+      await expect(store.attachments.info(a!, ref.assetId)).rejects.toThrow();
+      expect((await store.ops.get(queued.opId))!.state).toBe("succeeded");
+    });
     it("persists parsed incoming bytes/CID at ingestion and body completion without duplicate parts", async () => {
       const [a] = await fresh();
       const incoming = msg({ accountId: a!, providerMsgId: "binary", hasAttachments: true, attachments: [{ filename: "same.png", mime: "image/png", size: 3, contentId: "photo", bytes: new Uint8Array([0, 255, 128]) }] });

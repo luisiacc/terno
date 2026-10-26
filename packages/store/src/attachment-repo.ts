@@ -18,7 +18,7 @@ export interface AssetDb {
   chunk(id: string): string | undefined;
   putChunk(id: string, assetId: string, index: number, size: number, data: string): void;
   link(assetId: string, kind: "draft" | "message" | "op", owner: number | string): void;
-  unlink(kind: "draft" | "message", owner: number): void;
+  unlink(kind: "draft" | "message" | "op", owner: number | string): void;
 }
 export const assetRef = (r: AssetRow): AttachmentRef => ({ assetId: r.id, filename: r.filename, mime: r.mime, size: r.size, contentId: r.content_id });
 export class AttachmentLimitError extends RpcError {
