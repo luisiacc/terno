@@ -1,0 +1,60 @@
+# Plan 32: durable refresh credential rotation and verified renewal
+
+Status: design and critique; implementation not yet started. Scope: X02/S17–20 and remaining T08 refresh credential handling, current Gmail desktop. Outlook remains user-deferred.
+
+## Request (verbatim)
+
+> I want you to go through every item to fix here in this report. For each item that needs fixing you already have, in that report, what needs to be done but for each item you need to:
+> 1. Go for that item.
+> 2. Spec it out a bit more.
+> 3. Do maybe a better investigation on it to see what's truly needed for us.
+> 4. Build a test case reproducing that scenario, that potential scenario, or multiple test cases.
+> 5. Fix it.
+> 6. That will do it.
+> 7. Spawn a subagent with Codex doing a code review of that fix, of that code you have just fixed and/or added.
+> 8. Fix any findings.
+> create atomic commits as you are fixing things.
+> That way there is a double check on what you're doing and this can be better. Of course we need to maintain our performance while doing this and follow the directives that we have. You're going to do this for each and every one of the items that you have done here.
+> Let's not create a separate branch or anything like that. Let's just do the fixes right here in the main branch. You should not stop until everything in that report is done.
+
+## Existing behavior and exact investigation
+
+The read-only handoff in /tmp/terno-refresh-rotation-design.md records all account, owner, photo-consent, migration and provider secret writers. Current refresh coalesces per provider and compares rejected access tokens, but ignores returned refresh_token, trusts response fields and uses an unbounded JSON body. Initial authorization-code validation requires refreshToken even for verified same-mailbox renewal. Plans25/28/31 establish account identity, cumulative initial-flow deadlines and provider lifetime fencing; preserve them. The store has get/put secrets but no atomic replacement primitive.
+
+## Design
+
+1. Add encrypted-blob compare-and-set to the common secrets repository, with optional account stamp checked in the same command. SQLite conditional UPDATE and IndexedDB serialized early-table command compare actual bytes, never randomized re-encryption or public get/put. No upsert on mismatch/missing and no mailbox scan; conform SQL/SQL-WASM/IDB. Browser writer lock remains the cross-instance ownership boundary; do not claim mirrored IDB commands are distributed CAS.
+2. ProviderContext.replaceSecret(name, expectedPlaintext, nextPlaintext) reads/decrypts the exact current blob, honors unreadable-keychain handling, encrypts the candidate, rechecks lifetime, and submits the atomic replacement through admitted accountWrite. Recheck lifetime after persistence before publishing success. Identical/omitted rotation asserts ownership without rewriting. Concurrent owner/photo/reconnect writes must not be overwritten.
+3. Keep one shared refresh network+persistence promise per generation. Validate bounded complete token responses under a cleaned-up30second deadline; preserve actual400invalid_grant,429/5xx, transport failures and public OAuth status provenance. Strict printable bounded token fields, Bearer token_type, finite positive expiry, optional scope types. Rotate durably before exposing access. Snapshot access expiry on response receipt, including commit delay; never expose expired access. Small lifetimes need proportional early-refresh slack. Cached valid access does no extra storage/network. Close cancels pending refresh transport and drops its bounded candidate.
+4. On persistence failure keep at most one in-memory candidate and retry only its persistence on the next demanded operation, not a new exchange with the potentially spent old credential. After an after-commit error, confirm candidate ownership/current durable value without unconditional rollback. No timer or token history. A crash/lost response/disk failure after provider rotation but before durable record can require user sign-in; explicitly retain this unavoidable limitation.
+5. Allow wire omission only for deliberate verified existing-account renewal. Normalize absence to null, never empty-string success; initial connect still requires a refresh credential and validates malformed present fields. Reconnect/owner/photo flows share per-account signIns ownership through encryption, stamp/secret commit and success. All successful replacements invalidate old providers and advance credential refusal ownership, preserving owner+secret atomicity.
+6. Retaining a previous credential requires a bounded forced-refresh and identity proof of that exact current stored credential; a newly consented access token proves current mailbox access, not old-refresh usability or new photo permission. Missing/unreadable/refused/wrong-identity old credential rejects safely. A cold registry proof helper may return rotation, which commits with CAS. Omitted photo grant must also prove selected feature access/scopes; do not claim persistence from new access alone. Custom registries lacking proof reject omission safely. No auto-opened consent or background grant polling.
+
+## Public seams and regression matrix
+
+Tests go through common store conformance, actual public Gmail provider/token endpoints using synthetic HTTP, and backend connect/reconnect/owner/photo RPCs with temp profiles. Prove each red before its fix. Gates:20same-generation expired reads=>one exchange+one CAS and no API access before commit; omitted/identical/new rotation; old invalid immediately; encryption/CAS admission/persistence blocked; precommit vs after-commit failures and real reopen; candidate retry no repeated exchange; concurrent reconnect/owner/photo/newer flow/account removal; equal bytes in distinct arrays/missing/stale/stamp mismatch; wrong mailbox and malformed identity; omitted initial/revoked/unreadable renewal refusal; omitted photo permission; strict field/body/status classification; stalled/ignored abort/late bodies; expiry during commit. Preserve prior401retry/provenance, accepted-send no resend, initial auth deadlines, both-store lifetimes and UI work.
+
+## Performance, privacy and verification
+
+Cold rotation work is constant secret/account commands with bounded token JSON, one candidate per provider, no idle timer, and no mailbox/outbox scans. Test early-table CAS while late IDB loading is blocked and50k mailbox cost. All values synthetic; no real profiles/secrets or raw token/error body logging. Changes are atomic commits on main under the shared lock. Independent Codex plan critique and final separate code review required; fix every finding with failing regression. All project release/perf/package gates remain required and presently unapproved. No new UI layout; fixed errors use en/es together.
+
+## Sources
+
+[OAuth2 refresh/rotation RFC6749§6](https://www.rfc-editor.org/rfc/rfc6749#section-6), [token response§5.1](https://www.rfc-editor.org/rfc/rfc6749#section-5.1), [Google desktop OAuth](https://developers.google.com/identity/protocols/oauth2/native-app), [Google token bounds/lifecycle](https://developers.google.com/identity/protocols/oauth2#size). The proof/CAS/fencing design is an engineering decision grounded in this code, not a provider guarantee.
+
+## Revisions after the Codex plan review
+
+The read-only critique completed with10concrete points (`/tmp/terno-provider-hardening.x0emTS/refresh-plan-review.txt`); all are accepted:
+
+1. Owner credential intent is a strict union: `{kind:'retain',name,expectedBlob}` or `{kind:'replace',name,expectedBlob:Uint8Array|null,blob}`. The owner transaction compares the mailbox stamp and expected blob together; mismatch leaves owner/secret unchanged. Missing is deliberate replacement only, never retention/refresh upsert.
+2. Explicit credential flow ownership persists through finalization, not merely until setSecret. Final success publication checks the active signIns owner inside admission after awaited lookups. Test a newer flow during persistence and signedIn lookup; older work cannot clear its auth state.
+3. Photo-off supersedes pending photo-on using the same flow ownership. Late consent cannot call turnOn after off, removal or a newer intent. No automatic prompt.
+4. Failure after drop needs a dedicated reopen-preserving-state path. It may restore a still-existing, nonremoving account's activity while retaining error/auth state; never call signedIn to pretend an unproven grant works. Do not revive a removed/newer generation.
+5. Forced omission proof exposes a structured known refresh exchange to its current caller before subsequent proof steps. Hold at most one candidate for the exact mailbox stamp/expected blob. Do not persist an unverified or mismatching mailbox candidate, and do not lose an already proven mail rotation solely because optional photo proof later fails. Pending proof/persistence can retry on the next explicit demand under fresh ownership; no timer or unbounded history. Removal/supersession discards stale candidates. If a crash or failed proof leaves no safely usable durable grant, report retry/sign-in honestly, never claim successful renewal. Keep owner+secret compound commit atomic; recovery is a separate explicit demand, not rollback or a partial successful owner claim.
+6. Once delayed candidate persistence succeeds, retire the candidate. If its access token is expired, the next demand refreshes using the newly durable refresh credential; it must not exchange the spent original token or repeatedly revisit expired access. Access expiry is actual response receipt plus validated duration, with proportional early slack for short durations.
+7. Exact refresh decoder:64KiB complete JSON cap; printable nonblank token fields capped4096bytes; case-insensitive Bearer token_type; finite positive expires_in with overflow-safe multiplication/addition; optional string scope and explicit Gmail mail coverage when supplied. Only absence retains refresh; present null/empty/number rejects. Actual400invalid_grant alone is auth refusal. Malformed/oversized429/5xx still preserve retryability and public OAuth status. Reuse bounded mechanics but not withGoogleSignIn.json's status-first body discard. Fixed errors replace arbitrary transport/body exception detail.
+8. Interfaces: normalized `GmailConnectResult.refreshToken:string|null`, opt-in `allowOmittedRefreshToken` on installed connect/registry options, explicit initial versus renewal validation policy, and optional cold proof capability on custom registries (absence refuses omission safely). Initial create remains string-only. Proof records whether scope was returned or established by requested/feature proof; do not infer durable photo permission from a fresh consent access token alone. Wire null remains malformed; only omitted field normalizes to null.
+9. Exercise the entire provider-context CAS path with late IndexedDB tables blocked. Account stamp, keychain pending fingerprint and secret reads must stay on early tables; primitive-only tests are insufficient. Common CAS compares byte contents of views and exact stamp, with constant account/secret work at50k mail rows.
+10. No raw exception/provider/token text in returned errors or captured logs. Tests use secret/address/subject markers. Acknowledged process restart persistence is distinct from OS/power-loss guarantees under SQLite synchronous=NORMAL; no durability overclaim.
+
+Implementation is split into atomic layers: shared CAS and lifetime-backed provider replacement; strict coalesced refresh and candidate persistence; deliberate omitted-renewal proof plus shared explicit-flow ownership. The parent coordinates shared file ownership and assigns a separate final Codex review to each coherent slice. Full report coverage remains active beyond this plan.
