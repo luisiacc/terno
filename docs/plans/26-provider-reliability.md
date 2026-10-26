@@ -85,3 +85,11 @@ The worker now retries recording the captured provider outcome, preserving its o
 ### Slice 2 — plan critique revisions
 
 Six points accepted: classify expiry only at each history request; catch only the individual raw GET 404; retain actual full/delta watermarks; give the deletion fixture stable list pages; assert raw 403/503 never advances the cursor; and verify genuine expiry reconciles cached labels/deletions before installing a replacement watermark. The raw catch must continue its worker, not exit and lose later queued IDs.
+
+### Slice 1 — code review round 2
+
+Codex reviewed `6331fbd..a7c784a` with the original fix context using the repository script. No substantiated findings; both prior corrections hold. Its read-only test attempt was blocked by temporary config-file writes; the parent-run green test results above remain the executed evidence. T01 implementation/review is complete; final required release/performance gates remain open for the series.
+
+### Slice 2 — reproduction and initial validation
+
+Two new regressions failed before the change: initial sync ended in error on a vanished raw message; incremental sync made seven unnecessary profile/list calls. The raw-download catch now skips only its own confirmed 404, and an internal marker scopes expiry to history requests. Forty-one Gmail integration/network tests pass, including raw 403/503 checkpoint retention and history expiry on a continuation page. New fixtures use an unstarted synthetic mailbox to avoid an OAuth connection's trailing sync changing the watermark under assertion; full listings are pinned during deletion so the fake's offset paging does not skip unrelated messages. Existing provider auth, send uncertainty and real history-expiry behavior remain covered. Typecheck/lint passed before the final continuation fixture; code review pending.

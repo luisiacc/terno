@@ -6,7 +6,7 @@ Every report entry remains open until investigation establishes its Terno dispos
 
 | ID | Report item | Status / workgroup | Validation / review / commit |
 |---|---|---|---|
-| T01 | Remote success versus local completion (P0 candidate) | Investigating: accepted-send completion | — |
+| T01 | Remote success versus local completion (P0 candidate) | Implemented and Codex-reviewed; release gates pending | `6331fbd`, `a7c784a`; plan 26 slice 1; 549+68 initial tests, 60 correction tests; review round 2 clear. |
 | T02 | Attachment capability (P1, established limitation) | Pending investigation | — |
 | T03 | Mailbox coverage and Microsoft support (P1, established limitation) | Pending investigation | — |
 | T04 | Gmail retry decisions (P1 observed classification gap) | Pending investigation | — |
@@ -129,7 +129,7 @@ Every report entry remains open until investigation establishes its Terno dispos
 | S28 | Remove a refused account; all queued jobs, reconnect timers and pending sign-in results are fenced off. | Pending: W04/W03; E+R | Baseline audit records existing tests and required new oracles. |
 | S29 | Persist an intent, crash before submission, and restart; the queued message is eligible exactly once. | Pending: W01; E+R | Baseline audit records existing tests and required new oracles. |
 | S30 | The server accepts the message but the final response is lost; the durable result is unknown and no automatic resend occurs. | Pending: W01; E | Baseline audit records existing tests and required new oracles. |
-| S31 | Submission succeeds but saving the local result fails before commit, after commit before acknowledgement, or in post-completion work; neither a running nor succeeded send may become automatically queued again. | Pending: W01; R | Baseline audit records existing tests and required new oracles. |
+| S31 | Submission succeeds but saving the local result fails before commit, after commit before acknowledgement, or in post-completion work; neither a running nor succeeded send may become automatically queued again. | Implemented and Codex-reviewed; release gates pending | `6331fbd`, `a7c784a`; plan 26 slice 1; 549+68 initial tests, 60 correction tests; review round 2 clear. |
 | S32 | Submission succeeds but Sent APPEND is rejected or its acknowledgement is lost; keep submission accepted, reconcile uncertain copies before replay, and never resubmit SMTP. | Pending: W01/W08; E+R | Baseline audit records existing tests and required new oracles. |
 | S33 | Two recipients are accepted and one is rejected; expose partial submission and never silently send again to the accepted set. | Pending: W01/W08; E+R | Baseline audit records existing tests and required new oracles. |
 | S34 | Bcc-only and mixed To/Cc/Bcc sends preserve actual delivery recipients without exposing Bcc in recipients' raw messages. SMTP submission omits the Bcc header; Gmail raw API submission retains it as required to address delivery. | Pending: W01/W09; E+R | Baseline audit records existing tests and required new oracles. |

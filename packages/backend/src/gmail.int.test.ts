@@ -48,6 +48,11 @@ class FakeGoogle {
   rateLimitNext = 0;
   failMinimalOnce = false;
   historyExpired = false;
+  listSnapshot: string[] | null = null;
+  disappearOnRaw = new Set<string>();
+  failRawOnce: { id: string; status: number } | null = null;
+  historyPageSize: number | null = null;
+  expireHistoryPage: string | null = null;
   sent: { raw: string; threadId?: string }[] = [];
   truncateSendResponse = false;
   /** the Google account the consent screen signs in with */
@@ -142,13 +147,22 @@ class FakeGoogle {
     const path = url.pathname.replace(/^\/gmail/, "");
     if (path === "/profile") return json(200, { emailAddress: this.email, historyId: String(this.historyId) });
     if (path === "/messages" && req.method === "GET") {
-      const all = [...this.messages.keys()];
+      const all = this.listSnapshot ?? [...this.messages.keys()];
       const start = Number(url.searchParams.get("pageToken") ?? 0);
       const page = all.slice(start, start + 2); // tiny pages exercise pagination
       return json(200, { messages: page.map((id) => ({ id })), nextPageToken: start + 2 < all.length ? String(start + 2) : undefined });
     }
     const m = /^\/messages\/([^/]+)(\/(trash|untrash))?$/.exec(path);
     if (m && req.method === "GET") {
+      if (url.searchParams.get("format") === "raw") {
+        if (this.disappearOnRaw.delete(m[1]!)) this.remove(m[1]!);
+        const failure = this.failRawOnce;
+        if (failure && failure.id === m[1]) {
+          const { status } = failure;
+          this.failRawOnce = null;
+          return json(status, { error: { code: status } });
+        }
+      }
       const msg = this.messages.get(m[1]!);
       if (!msg) return json(404, { error: { code: 404 } });
       if (url.searchParams.get("format") === "minimal" && this.failMinimalOnce) {
@@ -184,12 +198,15 @@ class FakeGoogle {
       return json(200, { id, threadId: b.threadId ?? id });
     }
     if (path === "/history") {
-      if (this.historyExpired) return json(404, { error: { code: 404, message: "history expired" } });
+      if (this.historyExpired || (this.expireHistoryPage !== null && url.searchParams.get("pageToken") === this.expireHistoryPage)) return json(404, { error: { code: 404, message: "history expired" } });
       const start = Number(url.searchParams.get("startHistoryId"));
       const entries = this.history.filter((h) => h.id > start);
+      const offset = Number(url.searchParams.get("pageToken") ?? 0);
+      const size = this.historyPageSize ?? entries.length;
       return json(200, {
         historyId: String(this.historyId),
-        history: entries.map((h) => ({
+        nextPageToken: offset + size < entries.length ? String(offset + size) : undefined,
+        history: entries.slice(offset, offset + size).map((h) => ({
           id: String(h.id),
           messagesAdded: h.added?.map((id) => ({ message: { id } })),
           messagesDeleted: h.deleted?.map((id) => ({ message: { id } })),
@@ -317,6 +334,83 @@ describe("Gmail and the owner identity", () => {
 });
 
 describe("Gmail sync", () => {
+  async function freshMailbox() {
+    const ctx = await setup();
+    ctx.google.refreshTokens.add("mailbox-fixture");
+    const { account } = await ctx.backend.store.accounts.create({ kind: "gmail", email: ctx.google.email, displayName: "Mail", color: "indigo", providerConfig: {}, secret: { key: "refreshToken", blob: await plaintextCipher.encrypt("mailbox-fixture") }, now: Date.now() });
+    return { ...ctx, account };
+  }
+
+  it("initial enumeration tolerates a message deleted before raw download and retains its initial watermark", async () => {
+    const { google, backend, client, account } = await freshMailbox();
+    for (let i = 0; i < 9; i++) google.add({ id: `race-${i}`, threadId: `race-${i}`, labelIds: ["INBOX"], raw: rawMail({ subject: `Race ${i}`, id: `race-${i}@example.com` }) }, false);
+    google.listSnapshot = [...google.messages.keys()];
+    google.disappearOnRaw.add("race-0");
+    const watermark = String(google.historyId);
+    await backend.syncAccount(account.id);
+    expect((await backend.store.accounts.get(account.id))?.syncState.status).toBe("idle");
+    expect((await client.call("threads.list", { view: "inbox" })).items.map((t) => t.subject).sort()).toEqual(Array.from({ length: 8 }, (_, i) => `Race ${i + 1}`));
+    expect((await backend.store.accounts.config<{ cursor: { historyId: string } }>(account.id))?.config.cursor).toEqual({ historyId: watermark });
+    google.listSnapshot = null;
+    google.add({ id: "later", threadId: "later", labelIds: ["INBOX"], raw: rawMail({ subject: "After enumeration", id: "later@example.com" }) });
+    await backend.syncAccount(account.id);
+    expect((await client.call("threads.list", { view: "inbox" })).items.map((t) => t.subject)).toContain("After enumeration");
+  });
+
+  it("incremental raw-message 404s continue every fetch worker without starting full reconciliation", async () => {
+    const { google, backend, client, account } = await freshMailbox();
+    seed(google);
+    await backend.syncAccount(account.id);
+    for (let i = 0; i < 12; i++) {
+      google.add({ id: `delta-${i}`, threadId: `delta-${i}`, labelIds: ["INBOX"], raw: rawMail({ subject: `Delta ${i}`, id: `delta-${i}@example.com` }) });
+      if (i < 6) google.disappearOnRaw.add(`delta-${i}`);
+    }
+    const watermark = String(google.historyId);
+    const start = google.calls.length;
+    await backend.syncAccount(account.id);
+    expect(google.calls.slice(start).filter((c) => c.path === "/gmail/messages" || c.path === "/gmail/profile")).toEqual([]);
+    expect((await backend.store.accounts.config<{ cursor: { historyId: string } }>(account.id))?.config.cursor).toEqual({ historyId: watermark });
+    const subjects = (await client.call("threads.list", { view: "inbox" })).items.map((t) => t.subject);
+    expect(subjects.filter((s) => s.startsWith("Delta ")).sort()).toEqual(["Delta 10", "Delta 11", "Delta 6", "Delta 7", "Delta 8", "Delta 9"]);
+    google.add({ id: "after-delta", threadId: "after-delta", labelIds: ["INBOX"], raw: rawMail({ subject: "After delta", id: "after-delta@example.com" }) });
+    await backend.syncAccount(account.id);
+    expect((await client.call("threads.list", { view: "inbox" })).items.map((t) => t.subject)).toContain("After delta");
+  });
+
+  it.each([403, 503])("raw-message %i retains its checkpoint and never starts full reconciliation", async (status) => {
+    const { google, backend, client, account } = await freshMailbox();
+    seed(google);
+    await backend.syncAccount(account.id);
+    const cursor = (await backend.store.accounts.config<{ cursor: { historyId: string } }>(account.id))?.config.cursor;
+    google.add({ id: "raw-failure", threadId: "raw-failure", labelIds: ["INBOX"], raw: rawMail({ subject: "Retry raw", id: "raw-failure@example.com" }) });
+    google.failRawOnce = { id: "raw-failure", status };
+    const start = google.calls.length;
+    await backend.syncAccount(account.id);
+    expect((await backend.store.accounts.config<{ cursor: { historyId: string } }>(account.id))?.config.cursor).toEqual(cursor);
+    expect(google.calls.slice(start).filter((c) => c.path === "/gmail/messages" || c.path === "/gmail/profile")).toEqual([]);
+    await backend.syncAccount(account.id);
+    expect((await client.call("threads.list", { view: "inbox" })).items.map((t) => t.subject)).toContain("Retry raw");
+  });
+
+  it("history expiry on a continuation page reconciles cached flags and deletions before replacing its watermark", async () => {
+    const { google, backend, client, account } = await freshMailbox();
+    seed(google);
+    await backend.syncAccount(account.id);
+    google.relabel("g1", [], ["UNREAD"]);
+    google.remove("g2");
+    google.add({ id: "after-expiry", threadId: "after-expiry", labelIds: ["INBOX"], raw: rawMail({ subject: "Continuation expiry", id: "after-expiry@example.com" }) });
+    google.historyPageSize = 1;
+    google.expireHistoryPage = "1";
+    const watermark = String(google.historyId);
+    await backend.syncAccount(account.id);
+    const inbox = await client.call("threads.list", { view: "inbox" });
+    const trip = inbox.items.find((t) => t.subject === "Viaje a Oaxaca")!;
+    expect(trip).toMatchObject({ unread: false, messageCount: 1 });
+    expect(inbox.items.map((t) => t.subject)).toContain("Continuation expiry");
+    expect((await backend.store.accounts.config<{ cursor: { historyId: string } }>(account.id))?.config.cursor).toEqual({ historyId: watermark });
+    expect((await backend.store.accounts.get(account.id))?.syncState.status).toBe("idle");
+  });
+
   async function connected() {
     const ctx = await setup();
     seed(ctx.google);

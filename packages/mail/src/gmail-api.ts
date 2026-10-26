@@ -51,6 +51,8 @@ interface Cursor {
   historyId: string;
 }
 
+class ExpiredHistory extends Error {}
+
 function labelState(labels: string[]): FlagUpdate["flags"] {
   const has = (l: string) => labels.includes(l);
   return {
@@ -188,7 +190,14 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     const queue = [...ids];
     const worker = async () => {
       for (let id = queue.shift(); id; id = queue.shift()) {
-        const m = await api<GmailMessage>(`/messages/${id}?format=raw`);
+        let m: GmailMessage;
+        try {
+          m = await api<GmailMessage>(`/messages/${id}?format=raw`);
+        } catch (error) {
+          // Enumeration isn't a snapshot: a message may disappear before its download.
+          if ((error as { status?: number }).status === 404) continue;
+          throw error;
+        }
         const parsed = await parseRaw(fromBase64url(m.raw ?? ""));
         const labels = m.labelIds ?? [];
         const st = labelState(labels);
@@ -285,7 +294,10 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       const q = new URLSearchParams({ startHistoryId: cursor.historyId, maxResults: "500" });
       for (const t of ["messageAdded", "messageDeleted", "labelAdded", "labelRemoved"]) q.append("historyTypes", t);
       if (pageToken) q.set("pageToken", pageToken);
-      const page = await api<{ history?: { messagesAdded?: { message: GmailMessage }[]; messagesDeleted?: { message: GmailMessage }[]; labelsAdded?: { message: GmailMessage }[]; labelsRemoved?: { message: GmailMessage }[] }[]; historyId: string; nextPageToken?: string }>(`/history?${q}`);
+      const page = await api<{ history?: { messagesAdded?: { message: GmailMessage }[]; messagesDeleted?: { message: GmailMessage }[]; labelsAdded?: { message: GmailMessage }[]; labelsRemoved?: { message: GmailMessage }[] }[]; historyId: string; nextPageToken?: string }>(`/history?${q}`).catch((error: unknown) => {
+        if ((error as { status?: number }).status === 404) throw new ExpiredHistory();
+        throw error;
+      });
       for (const h of page.history ?? []) {
         for (const a of h.messagesAdded ?? []) added.add(a.message.id);
         for (const d of h.messagesDeleted ?? []) deleted.add(d.message.id);
@@ -339,7 +351,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         await incremental(sink, cursor);
       } catch (e) {
         // History records expire (~1 week): Google answers 404 and a full resync is required.
-        if ((e as { status?: number }).status === 404) {
+        if (e instanceof ExpiredHistory) {
           await ctx.saveCursor(null);
           return fullSync(sink);
         }
