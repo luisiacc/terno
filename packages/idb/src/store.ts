@@ -810,7 +810,7 @@ export class IdbMailStore implements MailStore {
   readonly sync: MailStore["sync"] = {
     ingest: async (batch, { applyFilters, now, classifier }) => {
       const staged: IncomingMessage[] = [];
-      for (const m of batch) staged.push(m.attachments === undefined ? m : { ...m, attachments: await stageAttachments(this, m.accountId, m.attachments, now, this.o.platform.yield) });
+      for (const m of batch) staged.push(m.captureUnavailable || m.attachments === undefined ? m : { ...m, attachments: await stageAttachments(this, m.accountId, m.attachments, now, this.o.platform.yield) });
       return this.command(
         () => {
           const result = ingestMessages(this.c, staged as IncomingMessage[], now);
@@ -827,15 +827,17 @@ export class IdbMailStore implements MailStore {
         { durability: "relaxed" },
       );
     },
-    setBody: async (messageId, text, html, { now, classifier, attachments }) => {
+    setBody: async (messageId, text, html, { now, classifier, attachments, captureUnavailable }) => {
       const accountId = await this.read(() => T(this.c, "messages").get(messageId)?.account_id as number | undefined);
-      const staged = attachments !== undefined && accountId !== undefined ? await stageAttachments(this, accountId, attachments, now, this.o.platform.yield) : undefined;
+      const staged = !captureUnavailable && attachments !== undefined && accountId !== undefined ? await stageAttachments(this, accountId, attachments, now, this.o.platform.yield) : undefined;
       return this.command(
         () => {
-          setMessageBody(this.c, messageId, text, html, "full");
-          if (staged !== undefined) replaceAttachments(this.db, messageId, staged);
+          setMessageBody(this.c, messageId, text, html, captureUnavailable ? "partial" : "full");
+          if (staged !== undefined && !captureUnavailable) replaceAttachments(this.db, messageId, staged);
           const owner = T(this.c, "messages").get(messageId);
+          if (captureUnavailable && owner) T(this.c, "messages").update(owner, { attachments_captured: 2, attachment_pending: 0 });
           if (owner) recomputeThreads(this.c, [owner.thread_id]);
+          if (captureUnavailable) return { touched: owner ? [owner.thread_id] : [], deltas: [], auto: new Map(), opIds: [] };
           const opIds: string[] = [];
           const touched = this.applyFiltersTo([messageId], true, now, opIds);
           const c = this.classify(classifier, [], [messageId], now);

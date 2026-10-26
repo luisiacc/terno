@@ -2,6 +2,8 @@ import type { LocaleCheck } from "../types";
 
 /** Español (es-MX). Same keys, placeholders and tags as en.ts: the type check at the bottom enforces it. */
 const es = {
+  "attachments.bodyUnavailable": "Este mensaje supera el límite de contenido local. Sus encabezados están guardados; puedes leer el mensaje completo con tu proveedor de correo.",
+  "attachments.noBody": "Este mensaje no tiene texto.",
   "attachments.connectBeforeImport": "Conecta la cuenta de correo del borrador antes de importar sus adjuntos.",
   "attachments.retryRequested": "Se solicitó sincronizar los adjuntos. Vuelve a descargar cuando termine.",
   "attachments.readerUnavailable": "Este archivo no está disponible en este dispositivo. Sincroniza la cuenta e inténtalo de nuevo.",

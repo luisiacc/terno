@@ -1,3 +1,4 @@
+import { MAX_INCOMING_MIME_BYTES } from "@terno/core";
 import { createHash } from "node:crypto";
 import { ImapFlow, type FetchMessageObject, type MessageStructureObject } from "imapflow";
 import { bulkHeaders } from "@terno/core";
@@ -122,6 +123,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       doSTARTTLS: options.allowInsecure ? false : config.imap.secure ? undefined : true,
       auth: { user: config.imap.user, pass: password },
       logger: false,
+      maxLiteralSize: MAX_INCOMING_MIME_BYTES + 1,
+      maxResponseSize: MAX_INCOMING_MIME_BYTES + 65536,
       disableAutoIdle: !forIdle,
       tls: options.allowInsecure ? { rejectUnauthorized: false } : undefined,
       connectionTimeout: timeouts.connectMs,
@@ -439,11 +442,11 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const byUid = new Map(items.map((i) => [i.uid, i.id]));
         for (let i = 0; i < items.length; i += 25) {
           const uids = items.slice(i, i + 25).map((x) => x.uid);
-          for await (const msg of c.fetch(uids, { uid: true, source: true }, { uid: true })) {
+          for await (const msg of c.fetch(uids, { uid: true, source: { start: 0, maxLength: MAX_INCOMING_MIME_BYTES + 1 } }, { uid: true })) {
             const id = byUid.get(msg.uid);
             if (!id || !msg.source) continue;
             const parsed = await parseRaw(msg.source);
-            await sink.setBody(id, parsed.text, parsed.html, parsed.attachments);
+            await sink.setBody(id, parsed.text, parsed.html, parsed.captureUnavailable ? undefined : parsed.attachments, parsed.captureUnavailable ? { captureUnavailable: parsed.captureUnavailable } : undefined);
           }
         }
       } finally {

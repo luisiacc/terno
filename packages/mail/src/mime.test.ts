@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseRaw } from "./mime";
+import { parseRaw, parseRawHeaders } from "./mime";
 
 const raw = (headers: string) => `From: Xataka <boletin@xataka.com>\r\nTo: me@mine.com\r\nSubject: Hola\r\nMessage-ID: <a@x>\r\n${headers}\r\n\r\nCuerpo\r\n`;
 
@@ -33,5 +33,28 @@ describe("attachment bytes", () => {
     expect(parsed.attachments).toHaveLength(3);
     expect(parsed.attachments.map((a) => [...a.bytes!])).toEqual([[0,255,128], [], [1,2,3]]);
     expect(parsed.attachments[2]).toMatchObject({ contentId: "Photo@Test" });
+  });
+});
+
+describe("incoming capture budgets", () => {
+  it("parses valid incoming raw sources between 35 and 70 MiB independently of the outgoing ceiling", async () => {
+    for (const mib of [36, 70]) {
+      const header = 'From: Sender <sender@test.com>\r\nSubject: Large incoming\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename="large.bin"\r\nContent-Transfer-Encoding: base64\r\n\r\n';
+      const lines = Math.floor((mib * 1024 * 1024 - header.length) / 78);
+      const source = new TextEncoder().encode(header + ("paWl".repeat(19) + "\r\n").repeat(lines));
+      const parsed = await parseRaw(source);
+      expect(parsed.subject).toBe("Large incoming");
+      expect(parsed.attachments[0]!.bytes!.length).toBe(lines * 57);
+      expect(parsed.attachments[0]!.bytes![0]).toBe(165);
+      expect(parsed.attachments[0]!.bytes!.at(-1)).toBe(165);
+    }
+  }, 60000);
+
+  it("an over-budget source returns bounded headers and an explicit unavailable capture, never truncated content", async () => {
+    const source = new Uint8Array(75 * 1024 * 1024 + 1);
+    source.set(new TextEncoder().encode('From: Sender <sender@test.com>\r\nSubject: Oversize envelope\r\nContent-Type: multipart/mixed; boundary="not-parsed"\r\n\r\n'));
+    const parsed = await parseRaw(source);
+    expect(await parseRawHeaders(source.subarray(0, 65536), "size")).toEqual(parsed);
+    expect(parsed).toMatchObject({ subject: "Oversize envelope", from: { email: "sender@test.com" }, text: null, html: null, attachments: [], captureUnavailable: "size" });
   });
 });

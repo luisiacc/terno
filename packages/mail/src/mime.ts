@@ -1,5 +1,5 @@
 import PostalMime from "postal-mime";
-import { MAX_MIME_BYTES, attachmentFilename, attachmentMime, bulkHeaders, type Address } from "@terno/core";
+import { MAX_INCOMING_MIME_BYTES, attachmentFilename, attachmentMime, bulkHeaders, type Address } from "@terno/core";
 import type { IncomingAttachment } from "@terno/store";
 
 export interface ParsedMessage {
@@ -19,6 +19,8 @@ export interface ParsedMessage {
   text: string | null;
   html: string | null;
   attachments: IncomingAttachment[];
+  /** Header-only local capture policy; providers must persist this as unavailable, never full. */
+  captureUnavailable?: "size";
 }
 
 type PostalAddress = { name?: string; address?: string; group?: PostalAddress[] };
@@ -58,9 +60,35 @@ export function htmlToText(html: string): string {
     .trim();
 }
 
-export async function parseRaw(raw: Uint8Array | string): Promise<ParsedMessage> {
-  if ((typeof raw === "string" ? new TextEncoder().encode(raw).length : raw.byteLength) > MAX_MIME_BYTES) throw new Error("Message exceeds the local MIME limit");
-  const email = await PostalMime.parse(raw);
+async function tooLarge(raw: Uint8Array | string): Promise<boolean> {
+  if (typeof raw !== "string") return raw.byteLength > MAX_INCOMING_MIME_BYTES;
+  if (raw.length > MAX_INCOMING_MIME_BYTES) return true;
+  if (raw.length <= MAX_INCOMING_MIME_BYTES / 3) return false;
+  let size = 0;
+  for (let i = 0; i < raw.length;) {
+    let end = Math.min(raw.length, i + 16384);
+    const last = raw.charCodeAt(end - 1);
+    if (end < raw.length && last >= 0xd800 && last <= 0xdbff) end--;
+    size += new TextEncoder().encode(raw.slice(i, end)).length;
+    if (size > MAX_INCOMING_MIME_BYTES) return true;
+    i = end;
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+  return false;
+}
+
+/** A complete bounded header block only: no truncated MIME body is interpreted as content. */
+function envelopeOnly(raw: Uint8Array | string): Uint8Array | string {
+  const header = typeof raw === "string" ? raw.slice(0, 65536) : new TextDecoder("latin1").decode(raw.subarray(0, 65536));
+  const end = /\r?\n\r?\n/.exec(header);
+  if (!end) return "";
+  const length = end.index + end[0].length;
+  return typeof raw === "string" ? raw.slice(0, length) : raw.subarray(0, length);
+}
+
+export async function parseRaw(raw: Uint8Array | string, options: { captureUnavailable?: "size" } = {}): Promise<ParsedMessage> {
+  const unavailable = options.captureUnavailable === "size" || await tooLarge(raw);
+  const email = await PostalMime.parse(unavailable ? envelopeOnly(raw) : raw);
   const header = (name: string) => email.headers.find((h) => h.key.toLowerCase() === name)?.value ?? null;
   const from = addresses(email.from as PostalAddress | undefined)[0] ?? { name: "", email: "" };
   const date = email.date ? Date.parse(email.date) : NaN;
@@ -77,11 +105,17 @@ export async function parseRaw(raw: Uint8Array | string): Promise<ParsedMessage>
     date: Number.isNaN(date) ? null : date,
     listId: parseListId(header("list-id")),
     bulk: bulkHeaders({ listUnsubscribe: header("list-unsubscribe"), precedence: header("precedence"), autoSubmitted: header("auto-submitted") }),
-    text: email.text ?? (email.html ? htmlToText(email.html) : null),
-    html: email.html ?? null,
-    attachments: email.attachments.map((a) => {
+    ...(unavailable ? { captureUnavailable: "size" as const } : {}),
+    text: unavailable ? null : email.text ?? (email.html ? htmlToText(email.html) : null),
+    html: unavailable ? null : email.html ?? null,
+    attachments: (unavailable ? [] : email.attachments).map((a) => {
       const bytes = typeof a.content === "string" ? new TextEncoder().encode(a.content) : new Uint8Array(a.content);
       return { filename: attachmentFilename(a.filename ?? "attachment"), mime: attachmentMime(a.mimeType), size: bytes.byteLength, contentId: a.contentId?.replace(/^<|>$/g, "") ?? null, bytes };
     }),
   };
+}
+
+/** Providers can decode only a bounded prefix when the raw source is over the local capture policy. */
+export function parseRawHeaders(prefix: Uint8Array, reason: "size"): Promise<ParsedMessage> {
+  return parseRaw(prefix.subarray(0, 65536), { captureUnavailable: reason });
 }

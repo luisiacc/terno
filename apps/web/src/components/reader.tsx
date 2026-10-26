@@ -134,7 +134,7 @@ function Message({ m, expanded, onToggle, icons }: { m: MessageDetail; expanded:
             ) : m.bodyText !== null ? (
               <TextBody text={m.bodyText} />
             ) : (
-              <p className="text-sm text-muted-foreground italic">{t("reader.downloading")}</p>
+              <p className="text-sm text-muted-foreground italic">{m.bodyUnavailable ? t("attachments.bodyUnavailable") : m.bodyState === "full" ? t("attachments.noBody") : t("reader.downloading")}</p>
             )}
             {m.attachments.length > 0 && <ReaderAttachments messageId={m.id} accountId={m.accountId} attachments={m.attachments} />}
           </div>

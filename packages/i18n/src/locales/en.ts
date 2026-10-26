@@ -8,6 +8,8 @@
  * - `<b>…</b>`: rich text, rendered by rich()/richT() callbacks
  */
 const en = {
+  "attachments.bodyUnavailable": "This message exceeds the local content limit. Its headers are saved; you can read the full message with your mail provider.",
+  "attachments.noBody": "This message has no text body.",
   "attachments.connectBeforeImport": "Connect the draft’s mail account before importing its attachments.",
   "attachments.retryRequested": "Attachment sync requested. Try the download again when sync finishes.",
   "attachments.readerUnavailable": "This file is unavailable on this device. Sync the account and try again.",

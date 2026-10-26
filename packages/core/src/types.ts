@@ -123,6 +123,7 @@ export interface MessageDetail {
   bodyText: string | null;
   bodyHtml: string | null;
   bodyState: "none" | "partial" | "full";
+  bodyUnavailable?: "size";
   isRead: boolean;
   isStarred: boolean;
   isSent: boolean;

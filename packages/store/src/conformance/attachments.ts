@@ -109,6 +109,27 @@ export function defineAttachmentConformance(name: string, h: StoreHarness): void
       await store.attachments.retry(a!, message.id);
       expect(await store.providerStore(a!).pendingAttachmentBodies(50)).toHaveLength(1);
     });
+    it("durably records header-only size refusal without blocking neighbors or erasing cached assets", async () => {
+      const [a, b] = await fresh();
+      const ref = await upload(a!);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "saved-part", attachments: [ref] })]);
+      const cached = await threadOf(store, "saved-part");
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "saved-part", bodyState: "partial", bodyText: null, attachments: [], captureUnavailable: "size" })]);
+      expect((await store.threads.get(cached))!.messages[0]!.attachments[0]).toMatchObject(ref);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "header-only", bodyState: "partial", bodyText: null, attachments: [], captureUnavailable: "size", locations: [{ mailbox: "INBOX", uid: 8, uidvalidity: 1, flags: [] }] }), msg({ accountId: a!, providerMsgId: "good-neighbor", attachments: [] })]);
+      const thread = await threadOf(store, "header-only");
+      store = await h.reopen(store);
+      const message = (await store.threads.get(thread))!.messages[0]!;
+      expect(message).toMatchObject({ bodyUnavailable: "size", bodyState: "partial", bodyText: null });
+      expect(await store.providerStore(a!).pendingAttachmentBodies(50)).toEqual([]);
+      expect(await store.providerStore(a!).pendingBodies(50)).toEqual([]);
+      await expect(store.attachments.retry(b!, message.id)).rejects.toThrow();
+      await store.attachments.retry(a!, message.id);
+      expect(await store.providerStore(a!).pendingBodies(50)).toHaveLength(1);
+      await store.sync.setBody(message.id, null, null, { now: 1, classifier: null, captureUnavailable: "size" });
+      expect(await store.providerStore(a!).pendingBodies(50)).toEqual([]);
+      expect((await store.threads.get(thread))!.messages[0]).toMatchObject({ bodyUnavailable: "size", bodyState: "partial" });
+    });
     it("cascades account removal through cold chunks while preserving another account", async () => {
       const [a, b] = await fresh();
       const x = await upload(a!); const y = await upload(b!);

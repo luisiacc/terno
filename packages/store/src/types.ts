@@ -54,6 +54,7 @@ export interface IncomingMessage {
   gmailLabels?: string[] | null;
   size: number;
   attachments?: IncomingAttachment[];
+  captureUnavailable?: "size";
   locations?: IncomingLocation[];
 }
 

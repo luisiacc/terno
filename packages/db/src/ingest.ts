@@ -306,7 +306,8 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
         }
         if (refs.length && (msg.isSent || own.has(addressKey(fromEmail)))) for (const t of answeredThreads(db, refs)) result.touchedThreads.add(t);
       }
-      if (msg.attachments !== undefined) replaceAttachments(db, id, msg.attachments);
+      if (msg.attachments !== undefined && !msg.captureUnavailable) replaceAttachments(db, id, msg.attachments);
+      if (msg.captureUnavailable) db.run("UPDATE messages SET attachments_captured = 2 WHERE id = ?", id);
       upsertLocations(db, id, msg);
       result.inserted.push(id);
       result.touchedThreads.add(threadId);
@@ -345,7 +346,8 @@ function updateExisting(db: Db, id: number, msg: IncomingMessage): void {
   if (msg.bodyState === "full") {
     setMessageBody(db, id, msg.bodyText, msg.bodyHtml, "full");
   }
-  if (msg.attachments !== undefined) replaceAttachments(db, id, msg.attachments);
+  if (msg.attachments !== undefined && !msg.captureUnavailable) replaceAttachments(db, id, msg.attachments);
+  if (msg.captureUnavailable) db.run("UPDATE messages SET attachments_captured = 2 WHERE id = ?", id);
   upsertLocations(db, id, msg);
 }
 

@@ -381,7 +381,7 @@ export class SqlMailStore implements MailStore {
     // auto-categorization without its message.
     ingest: async (batch, { applyFilters, now, classifier }) => {
       const staged: IncomingMessage[] = [];
-      for (const m of batch) staged.push(m.attachments === undefined ? m : { ...m, attachments: await stageAttachments(this, m.accountId, m.attachments, now, this.yieldTo) });
+      for (const m of batch) staged.push(m.captureUnavailable || m.attachments === undefined ? m : { ...m, attachments: await stageAttachments(this, m.accountId, m.attachments, now, this.yieldTo) });
       return this.db.tx(() => {
         const result = ingestMessages(this.db, staged as IncomingMessage[], now);
         const touched = new Set(result.touchedThreads);
@@ -396,14 +396,16 @@ export class SqlMailStore implements MailStore {
         return { inserted: result.inserted, touched: [...touched], deltas: [...result.deltas, ...c.deltas], auto: c.auto, backfill: c.backfill, uncertain: c.uncertain, opIds };
       });
     },
-    setBody: async (messageId, text, html, { now, classifier, attachments }) => {
+    setBody: async (messageId, text, html, { now, classifier, attachments, captureUnavailable }) => {
       const accountId = this.db.get<{ account_id: number }>("SELECT account_id FROM messages WHERE id = ?", messageId)?.account_id;
-      const staged = attachments !== undefined && accountId !== undefined ? await stageAttachments(this, accountId, attachments, now, this.yieldTo) : undefined;
+      const staged = !captureUnavailable && attachments !== undefined && accountId !== undefined ? await stageAttachments(this, accountId, attachments, now, this.yieldTo) : undefined;
       return this.db.tx(() => {
-        setMessageBody(this.db, messageId, text, html, "full");
-          if (staged !== undefined) replaceAttachments(this.db, messageId, staged);
+        setMessageBody(this.db, messageId, text, html, captureUnavailable ? "partial" : "full");
+        if (staged !== undefined && !captureUnavailable) replaceAttachments(this.db, messageId, staged);
         const owner = this.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", messageId);
+        if (captureUnavailable) this.db.run("UPDATE messages SET attachments_captured = 2 WHERE id = ?", messageId);
         if (owner) recomputeThreads(this.db, [owner.thread_id]);
+        if (captureUnavailable) return { touched: owner ? [owner.thread_id] : [], deltas: [], auto: new Map(), opIds: [] };
         const opIds: string[] = [];
         const touched = this.applyFiltersTo([messageId], true, now, opIds);
         // the body was the missing piece: reclassify once

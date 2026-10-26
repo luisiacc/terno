@@ -13,6 +13,7 @@ export interface AttachmentRef {
 
 export const ATTACHMENT_CHUNK = 48 * 1024; // divisible by three: concatenated base64 stays canonical
 export const MAX_ATTACHMENT_BYTES = 18 * 1024 * 1024;
+export const MAX_INCOMING_MIME_BYTES = 75 * 1024 * 1024;
 export const MAX_MIME_BYTES = 25 * 1024 * 1024;
 export const MAX_ATTACHMENT_COUNT = 100;
 export const ATTACHMENT_ACCOUNT_BYTES = 256 * 1024 * 1024;

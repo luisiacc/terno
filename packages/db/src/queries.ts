@@ -237,6 +237,7 @@ interface MessageRow {
   body_text: string | null;
   body_html: string | null;
   body_state: "none" | "partial" | "full";
+  attachments_captured: number;
   is_read: number;
   is_starred: number;
   is_sent: number;
@@ -254,7 +255,7 @@ export function getThread(db: Db, threadId: number): ThreadDetail | null {
   if (!row) return null;
   const messages = db.all<MessageRow>(
     `SELECT m.id, m.thread_id, m.account_id, m.from_name, m.from_email, m.to_json, m.cc_json, m.reply_to_json, m.subject, m.date, m.snippet,
-            b.body_text, b.body_html, m.body_state, m.is_read, m.is_starred, m.is_sent, m.has_attachments,
+            b.body_text, b.body_html, m.body_state, m.attachments_captured, m.is_read, m.is_starred, m.is_sent, m.has_attachments,
             m.rfc_message_id, m.references_json, m.list_id
      FROM messages m LEFT JOIN message_bodies b ON b.message_id = m.id WHERE m.thread_id = ? ORDER BY m.date ASC, m.id ASC`,
     threadId,
@@ -288,6 +289,7 @@ export function getThread(db: Db, threadId: number): ThreadDetail | null {
         bodyText: m.body_text,
         bodyHtml: m.body_html,
         bodyState: m.body_state,
+        ...(m.attachments_captured === 2 && m.body_state !== "full" ? { bodyUnavailable: "size" as const } : {}),
         isRead: m.is_read === 1,
         isStarred: m.is_starred === 1,
         isSent: m.is_sent === 1,

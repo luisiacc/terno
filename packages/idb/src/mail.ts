@@ -531,7 +531,8 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
         }
         if (refs.length && (msg.isSent || own.has(addressKey(fromEmail)))) for (const t of answeredThreads(c.db, refs)) result.touchedThreads.add(t);
       }
-      if (msg.attachments !== undefined) replaceAttachments(c.db, id, msg.attachments);
+      if (msg.attachments !== undefined && !msg.captureUnavailable) replaceAttachments(c.db, id, msg.attachments);
+      if (msg.captureUnavailable) messages.update(messages.get(id)!, { attachments_captured: 2, attachment_pending: 0 });
       upsertLocations(c, id, msg);
       result.inserted.push(id);
       result.touchedThreads.add(threadId);
@@ -555,7 +556,8 @@ function updateExisting(c: Ctx, row: R, msg: IncomingMessage): void {
     ...(msg.replyTo === undefined ? {} : { reply_to_json: JSON.stringify(msg.replyTo) }),
   });
   if (msg.bodyState === "full") setMessageBody(c, row.id, msg.bodyText, msg.bodyHtml, "full");
-  if (msg.attachments !== undefined) replaceAttachments(c.db, row.id, msg.attachments);
+  if (msg.attachments !== undefined && !msg.captureUnavailable) replaceAttachments(c.db, row.id, msg.attachments);
+  if (msg.captureUnavailable) T(c, "messages").update(T(c, "messages").get(row.id)!, { attachments_captured: 2, attachment_pending: 0 });
   upsertLocations(c, row.id, msg);
 }
 
@@ -914,6 +916,7 @@ export function getThread(c: Ctx, threadId: number): ThreadDetail | null {
         bodyText: body?.body_text ?? null,
         bodyHtml: body?.body_html ?? null,
         bodyState: m.body_state,
+        ...(m.attachments_captured === 2 && m.body_state !== "full" ? { bodyUnavailable: "size" as const } : {}),
         isRead: m.is_read === 1,
         isStarred: m.is_starred === 1,
         isSent: m.is_sent === 1,
