@@ -4,7 +4,7 @@
  */
 import type { Page } from "@playwright/test";
 import { DESIGNS } from "../../../packages/ui/src/designs/index";
-import { expect, focusList, rows, test } from "./fixtures";
+import { expect, focusList, navTo, rows, test } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 
@@ -64,7 +64,7 @@ test.describe("sender icons", { tag: "@design" }, () => {
     await reload(page);
     await page.waitForTimeout(400);
     const before = server.icons.requests.length;
-    await page.getByTestId("sidebar").getByText("Spam", { exact: true }).click();
+    await navTo(page, "spam");
     await expect(page.getByTestId("list-title")).toHaveText("Spam");
     await rows(page).first().waitFor();
     await rows(page).first().dispatchEvent("mousedown", { button: 0 });
