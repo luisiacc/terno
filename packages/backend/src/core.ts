@@ -987,10 +987,10 @@ export class BackendCore {
           });
           this.notifyChanged(touched);
         },
-        setBody: async (messageId, text, html, attachments) => {
+        setBody: async (messageId, text, html, attachments, capture) => {
           this.assertCurrent(life);
           const classifier = await this.classifier();
-          const r = await this.accountWrite(life, () => this.store.sync.setBody(messageId, text, html, { now: this.now(), classifier, attachments }));
+          const r = await this.accountWrite(life, () => this.store.sync.setBody(messageId, text, html, { now: this.now(), classifier, attachments, captureUnavailable: capture?.captureUnavailable }));
           this.categorizer.apply(r.deltas);
           this.announceAuto(r.auto);
           this.opsQueued(r.opIds);
@@ -1098,9 +1098,16 @@ export class BackendCore {
    */
   async signedIn(accountId: number, installCredentials?: () => void): Promise<void> {
     if (this.stopped || this.lifetimes.get(accountId)?.removing) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
+    const allocated = !this.lifetimes.has(accountId);
     const previous = this.lifetime(accountId);
-    const account = await this.store.accounts.get(accountId);
-    if (this.stopped || previous.removing || this.lifetimes.get(accountId) !== previous || !account) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
+    try {
+      const account = await this.store.accounts.get(accountId);
+      if (this.stopped || previous.removing || this.lifetimes.get(accountId) !== previous || !account) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
+    } catch (error) {
+      // A rejected late sign-in owns only its unused allocation, never a deletion fence or newer generation.
+      if (allocated && this.lifetimes.get(accountId) === previous && !previous.removing && !previous.abort.signal.aborted && !this.providers.has(accountId) && !this.connectivity.tracked(accountId) && previous.pending.size === 0) this.lifetimes.delete(accountId);
+      throw error;
+    }
     // Explicit reconnect dropped its old provider first; token renewal can keep an active provider.
     if (previous.abort.signal.aborted) this.lifetimes.delete(accountId);
     const life = this.lifetime(accountId);

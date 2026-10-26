@@ -310,6 +310,58 @@ describe.each(["SQL", "IndexedDB"] as const)("%s account lifetime: X06 / S16 / S
     expect(fresh.syncs).toBe(3);
   });
 
+  it("repeated late sign-ins reject deleted accounts without retaining lifetimes", async () => {
+    const t = await setup(kind);
+    const lifetimes = (t.backend as unknown as { lifetimes: Map<number, unknown> }).lifetimes;
+    for (let i = 0; i < 12; i++) {
+      const account = (await t.backend.store.accounts.create({ kind: "imap", email: `removed${i}@example.test`, displayName: "Removed", color: "indigo", now: i + 2 })).account;
+      await t.client.call("accounts.remove", { id: account.id });
+      const install = vi.fn();
+      await expect(t.backend.signedIn(account.id, install)).rejects.toMatchObject({ code: "NOT_FOUND" });
+      expect(install).not.toHaveBeenCalled();
+      expect(await t.backend.store.accounts.get(account.id)).toBeNull();
+      expect(lifetimes.has(account.id)).toBe(false);
+    }
+    expect(t.instances).toHaveLength(0);
+  });
+
+  it("a rejected sign-in preserves a deletion fence created during its account read", async () => {
+    const t = await setup(kind);
+    const waiting = t.gate();
+    const entered = t.gate();
+    const read = t.backend.store.accounts.get.bind(t.backend.store.accounts);
+    const lookup = vi.spyOn(t.backend.store.accounts, "get").mockImplementationOnce(async (id) => { entered.release(); await waiting.promise; return read(id); });
+    const pending = Promise.allSettled([t.backend.signedIn(t.ids[0]!)]);
+    await entered.promise;
+    await t.backend.dropAccount(t.ids[0]!, { remove: true });
+    waiting.release();
+    expect((await pending)[0]).toMatchObject({ status: "rejected", reason: { code: "NOT_FOUND" } });
+    lookup.mockRestore();
+    await expect(t.backend.signedIn(t.ids[0]!)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(await t.backend.provider(t.ids[0]!)).toBeNull();
+    expect(await t.backend.store.accounts.get(t.ids[0]!)).not.toBeNull();
+  });
+
+  it("a rejected sign-in cannot remove the newer generation that superseded its account read", async () => {
+    const t = await setup(kind);
+    const waiting = t.gate();
+    const entered = t.gate();
+    const read = t.backend.store.accounts.get.bind(t.backend.store.accounts);
+    const lookup = vi.spyOn(t.backend.store.accounts, "get").mockImplementationOnce(async (id) => { entered.release(); await waiting.promise; return read(id); });
+    const pending = Promise.allSettled([t.backend.signedIn(t.ids[0]!)]);
+    await entered.promise;
+    await t.backend.dropAccount(t.ids[0]!);
+    await t.backend.signedIn(t.ids[0]!);
+    const fresh = await t.start();
+    waiting.release();
+    expect((await pending)[0]).toMatchObject({ status: "rejected", reason: { code: "NOT_FOUND" } });
+    lookup.mockRestore();
+    await t.backend.syncAccount(t.ids[0]!);
+    expect(fresh.syncs).toBe(2);
+    expect(fresh.sink.signal.aborted).toBe(false);
+    expect(await t.backend.provider(t.ids[0]!)).toBe(fresh);
+  });
+
   it("removal owns its closed generation and cancels a pending verified sign-in", async () => {
     const t = await setup(kind);
     await t.start();
