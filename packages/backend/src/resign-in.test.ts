@@ -97,7 +97,10 @@ function setup(o: { syncIntervalMs?: number; kinds?: ("imap" | "gmail")[] } = {}
   });
   const db = () => sqlDb(backend.store);
   const state = (id: number) => JSON.parse(db().get<{ s: string }>("SELECT sync_state s FROM accounts WHERE id = ?", id)!.s) as { status: string; authRequired?: boolean; authScope?: string | null };
-  const op = (accountId: number, kind: string) => enqueueOp(db(), { accountId, kind, target: {}, payload: { subject: "Hola" } })!;
+  const op = (accountId: number, kind: string) => enqueueOp(db(), { accountId, kind, target: {}, payload: kind === "send" ? {
+    from: { name: "", email: "sender@example.com" }, to: [{ name: "", email: "recipient@example.com" }], cc: [], bcc: [],
+    subject: "Hola", text: "Synthetic body", messageId: "synthetic@example.com", inReplyTo: null, references: [], providerThreadId: null,
+  } : { subject: "Hola" } })!;
   const opRow = (id: string) => db().get<{ state: string; attempts: number }>("SELECT state, attempts FROM ops WHERE id = ?", id)!;
   return { backend, client, providers, script, ids, state, op, opRow };
 }

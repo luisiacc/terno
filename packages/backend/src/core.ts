@@ -4,11 +4,12 @@ import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/di
 import { RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import { AWAITING_AUTH, type ClassifierInput, type IncomingMessage, type MailStore, type OpRow, type Platform } from "@terno/store";
-import { ProviderAuthError, ProviderError, type MailProvider, type ProviderRegistry, type SyncSink } from "@terno/mail/portable";
+import { ProviderAuthError, ProviderError, type MailProvider, type ProviderRegistry, type SendPayload, type SyncSink } from "@terno/mail/portable";
 import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_PHRASE_CAPS, WEB_AUTOCOMPLETE_PEAK, WEB_CONTACT_CAPS, WEB_PHRASE_CAPS } from "@terno/store/autocomplete";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { Connectivity, type ConnectivityOptions, type NetReason } from "./connectivity";
 import { AiAssist } from "./ai-assist";
+import { hydrateSendAttachments } from "./attachments";
 import { Categorizer } from "./categorizer";
 import { FactsBackfill } from "./facts";
 import { createHandlers } from "./handlers";
@@ -857,8 +858,8 @@ export class BackendCore {
           });
           this.notifyChanged(touched);
         },
-        setBody: async (messageId, text, html) => {
-          const r = await this.store.sync.setBody(messageId, text, html, { now: this.now(), classifier: await this.classifier() });
+        setBody: async (messageId, text, html, attachments) => {
+          const r = await this.store.sync.setBody(messageId, text, html, { now: this.now(), classifier: await this.classifier(), attachments });
           this.categorizer.apply(r.deltas);
           this.announceAuto(r.auto);
           this.opsQueued(r.opIds);
@@ -1049,7 +1050,8 @@ export class BackendCore {
     if (hold()) return void (this.undispatched.delete(op.id), await this.store.ops.release(op.id, this.now()));
     // before the provider and the account: a sign-in after this point makes whatever they say stale (Codex code review #1)
     const credentials = this.credentialsOf(op.account_id);
-    const provider = await this.provider(op.account_id);
+    const opening = this.provider(op.account_id);
+    const provider = await opening;
     const account = await this.store.accounts.get(op.account_id);
     if (hold()) return void (this.undispatched.delete(op.id), await this.store.ops.release(op.id, this.now()));
     this.undispatched.delete(op.id);
@@ -1069,7 +1071,19 @@ export class BackendCore {
     let accepted = false;
     try {
       if (!provider) throw new ProviderError(L("errors.accountGone"), false);
-      const execution = await provider.execute({ id: op.id, kind: op.kind, target, payload: JSON.parse(op.payload_json) });
+      let payload: unknown;
+      try {
+        payload = JSON.parse(op.payload_json);
+        if (sending) payload = await hydrateSendAttachments(this.store, op.account_id, payload as SendPayload, () => this.platform.yield());
+      } catch (error) {
+        if (sending && !(error instanceof ProviderError)) throw new ProviderError(L("attachments.unavailable"), false);
+        throw error;
+      }
+      if (sending && (hold() || this.providers.get(op.account_id) !== opening || credentials !== this.credentialsOf(op.account_id))) {
+        await this.store.ops.release(op.id, this.now());
+        return;
+      }
+      const execution = await provider.execute({ id: op.id, kind: op.kind, target, payload });
       accepted = true;
       const { warning, ...result } = execution || {};
       if (op.kind === "send") log.info("send.done", { durationMs: performance.now() - started });
