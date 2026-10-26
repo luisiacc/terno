@@ -10,7 +10,7 @@ import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { seedDataset, sqlDb } from "@terno/db";
 import { demoRegistry } from "@terno/mail";
 import { generateDataset } from "@terno/mock-data";
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { BUDGET_MULTIPLIER, report, type Stat } from "../../db/src/test/perf";
 import { describeGap, watchLoop } from "../../db/src/test/timing";
@@ -76,3 +76,23 @@ it("importing 5,000 filters, 500 categories and 2,000 drafts: no stall over 50 m
   expect(stall).toBeLessThanOrEqual(50 * BUDGET_MULTIPLIER);
   expect(p95(list)).toBeLessThanOrEqual(20 * BUDGET_MULTIPLIER);
 }, 300_000);
+
+it.each([false, true])("strict validation of 5,000 attachment-bearing drafts stays within the 15 ms slice budget (connected: %s)", async (connected) => {
+  const email = connected ? (await backend.store.accounts.list())[0]!.email : "not-connected@test.com";
+  const attachments = Array.from({ length: 100 }, () => ({ filename: "empty.txt", mime: "text/plain", size: 0, contentId: null, chunks: [] }));
+  const drafts = Array.from({ length: 5000 }, (_, i) => ({ accountEmail: email, subject: `Attached ${i}`, bodyText: "keep", to: [], cc: [], attachments }));
+  const data = { format: "terno-export", version: 2, accounts: [], categories: [], filters: [], drafts };
+  const categories = connected ? vi.spyOn(backend.store.categories, "list").mockRejectedValueOnce(new Error("validation complete")) : null;
+  const loop = watchLoop(15);
+  try {
+    // Direct public RPC invocation isolates backend work from the transport's large structuredClone.
+    const run = backend.server.invoke("app.import", { data }, { clientId: "attachment-importer", origin: "renderer" });
+    if (connected) await expect(run).rejects.toThrow("validation complete");
+    else await expect(run).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  } finally {
+    const r = loop.stop();
+    categories?.mockRestore();
+    process.stderr.write(`[attached draft validation] max stall ${r.stall.toFixed(2)} ms (${describeGap(r.longest)})\n`);
+    expect(r.stall).toBeLessThanOrEqual(15);
+  }
+}, 60000);

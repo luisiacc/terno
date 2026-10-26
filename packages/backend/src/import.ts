@@ -68,7 +68,7 @@ export async function exportMailbox(b: Backend): Promise<MailboxExport> {
     const parts: ExportedAttachment[] = [];
     for (const ref of refs) {
       attachmentBytes += ref.size;
-      if (attachmentBytes > 32 * 1024 * 1024) throw new RpcError("BAD_REQUEST", L("attachments.backupTooLarge"));
+        if (attachmentBytes > 32 * 1024 * 1024) throw new RpcError("BAD_REQUEST", L("attachments.backupTooLarge"));
       parts.push(await exportAttachment(store, accountId, ref, () => b.yieldTurn()));
     }
     return parts;
@@ -277,9 +277,9 @@ async function draftFrom(b: Backend, accountId: number, d: ExportDraft): Promise
 }
 
 /** The items of a list that are valid, read in time slices (a large file must not hold the event loop); `bad` gets what isn't. */
-async function valid<T>(b: Backend, items: readonly unknown[], schema: { safeParse(x: unknown): { success: true; data: T } | { success: false } }, bad?: (item: unknown) => void): Promise<T[]> {
+async function valid<T>(b: Backend, items: readonly unknown[], schema: { safeParse(x: unknown): { success: true; data: T } | { success: false } }, bad?: (item: unknown) => void, initialSize = 200): Promise<T[]> {
   const out: T[] = [];
-  await b.runSliced(items, 200, (chunk) => {
+  await b.runSliced(items, initialSize, (chunk) => {
     for (const item of chunk) {
       const r = schema.safeParse(item);
       if (r.success) out.push(r.data);
@@ -293,25 +293,26 @@ export async function importMailbox(b: Backend, file: ExportFile): Promise<Impor
   const store = b.store;
   const skipped: string[] = [];
   const named = (item: unknown) => skipped.push(String((item as { name?: unknown } | null)?.name ?? "?"));
-  for (const item of file.drafts) {
-    if (item && typeof item === "object" && "attachments" in item && !exportDraftSchema.safeParse(item).success) throw new RpcError("BAD_REQUEST", L("attachments.invalidBackup"));
-  }
   const data = {
     accounts: file.accounts,
     settings: file.settings,
     categories: await valid<ExportCategory>(b, file.categories, exportCategorySchema),
     filters: await valid<ExportFilter>(b, file.filters, exportFilterSchema, named),
-    drafts: await valid<ExportDraftItem>(b, file.drafts, exportDraftSchema),
+    drafts: await valid<ExportDraftItem>(b, file.drafts, exportDraftSchema, (item) => {
+      if (item && typeof item === "object" && "attachments" in item) throw new RpcError("BAD_REQUEST", L("attachments.invalidBackup"));
+    }, 8),
   };
 
   let attachmentBytes = 0;
   const connected = new Set((await store.accounts.list()).map((a) => a.email.toLowerCase()));
-  for (const d of data.drafts) {
-    if (d.attachments?.length && (!d.accountEmail || !connected.has(d.accountEmail.toLowerCase()))) throw new RpcError("BAD_REQUEST", L("attachments.connectBeforeImport"));
-    attachmentBytes += (d.attachments ?? []).reduce((n, a) => n + a.size, 0);
-    if (attachmentBytes > 32 * 1024 * 1024) throw new RpcError("BAD_REQUEST", L("attachments.backupTooLarge"));
-    await validateExportedAttachments(d.attachments ?? [], () => b.yieldTurn());
-  }
+  await b.runSliced(data.drafts, 8, async (chunk) => {
+    for (const d of chunk) {
+      if (d.attachments?.length && (!d.accountEmail || !connected.has(d.accountEmail.toLowerCase()))) throw new RpcError("BAD_REQUEST", L("attachments.connectBeforeImport"));
+      attachmentBytes += (d.attachments ?? []).reduce((n, a) => n + a.size, 0);
+      if (attachmentBytes > 32 * 1024 * 1024) throw new RpcError("BAD_REQUEST", L("attachments.backupTooLarge"));
+      await validateExportedAttachments(d.attachments ?? [], () => b.yieldTurn());
+    }
+  });
 
   // categories: the same name (any case) is the same category; new ones are created in time slices
   const existing = await store.categories.list();
