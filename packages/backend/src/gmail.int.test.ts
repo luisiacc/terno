@@ -299,6 +299,95 @@ async function freshMailbox() {
   return { ...ctx, account };
 }
 
+function attachmentRaw(id: string, inline = false) {
+  return [
+    "From: Sender <sender@example.com>", "To: Luis <luis@gmail.com>", `Subject: Attachment ${id}`, `Message-ID: <${id}@example.com>`,
+    'MIME-Version: 1.0', 'Content-Type: multipart/mixed; boundary="asset-boundary"', "", "--asset-boundary", "Content-Type: text/plain", "", "downloaded body",
+    "--asset-boundary", "Content-Type: application/octet-stream", `Content-Disposition: ${inline ? "inline" : "attachment"}; filename="exact.bin"`,
+    "Content-ID: <image@example.com>", "Content-Transfer-Encoding: base64", "", "AP+ADQo=", "--asset-boundary--", "",
+  ].join("\r\n");
+}
+
+async function legacyAttachment(ctx: Awaited<ReturnType<typeof freshMailbox>>, id: string, inline = false) {
+  const date = Date.now() - 400 * 86400000;
+  ctx.google.add({ id, threadId: id, labelIds: ["INBOX"], raw: attachmentRaw(id, inline), internalDate: date }, false);
+  await ctx.backend.ingestSliced([{
+    accountId: ctx.account.id, providerMsgId: id, providerThreadId: id, rfcMessageId: `${id}@example.com`, inReplyTo: null, references: [],
+    from: { name: "Sender", email: "sender@example.com" }, to: [], cc: [], bcc: [], subject: `Attachment ${id}`, date,
+    snippet: "", bodyText: "old cached body", bodyHtml: null, bodyState: "full", listId: null,
+    isRead: true, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: !inline, size: 5,
+  }]);
+  await ctx.backend.store.accounts.setCursor(ctx.account.id, { historyId: String(ctx.google.historyId) });
+  return (await ctx.backend.store.providerStore(ctx.account.id).messageByProviderId(id))!.id;
+}
+
+async function receivedAttachment(ctx: Awaited<ReturnType<typeof freshMailbox>>, messageId: number) {
+  const thread = (await ctx.client.call("threads.list", { view: "inbox", limit: 100 })).items.find((t) => t.messageCount === 1 && t.id > 0);
+  expect(thread).toBeDefined();
+  const messages = (await ctx.client.call("threads.get", { threadId: thread!.id })).messages;
+  const message = messages.find((m) => m.id === messageId)!;
+  expect(message).toBeDefined();
+  expect(message.attachments).toHaveLength(1);
+  const assetId = message.attachments[0]!.assetId;
+  expect(assetId).toEqual(expect.any(String));
+  expect(await ctx.client.call("attachments.read", { accountId: ctx.account.id, assetId: assetId!, index: 0 })).toEqual({ dataBase64: "AP+ADQo=" });
+}
+
+describe("Gmail attachment capture", () => {
+  it.each([false, true])("recovers bytes for cached full mail older than the sync window, including inline-only mail (%s)", async (inline) => {
+    const ctx = await freshMailbox();
+    const id = await legacyAttachment(ctx, "legacy", inline);
+    expect(await ctx.backend.store.providerStore(ctx.account.id).pendingAttachmentBodies(50)).toEqual([{ id, providerMsgId: "legacy" }]);
+    await ctx.backend.syncAccount(ctx.account.id);
+    await receivedAttachment(ctx, id);
+    expect(await ctx.backend.store.providerStore(ctx.account.id).pendingAttachmentBodies(50)).toEqual([]);
+    const afterCapture = ctx.google.calls.length;
+    await ctx.backend.syncAccount(ctx.account.id);
+    expect(ctx.google.calls.slice(afterCapture).filter((c) => c.path === "/gmail/messages/legacy")).toEqual([]);
+  });
+
+  it("captures fresh raw attachments without leaving recovery work", async () => {
+    const ctx = await freshMailbox();
+    ctx.google.add({ id: "fresh", threadId: "fresh", labelIds: ["INBOX"], raw: attachmentRaw("fresh") });
+    await ctx.backend.syncAccount(ctx.account.id);
+    const id = (await ctx.backend.store.providerStore(ctx.account.id).messageByProviderId("fresh"))!.id;
+    await receivedAttachment(ctx, id);
+    expect(await ctx.backend.store.providerStore(ctx.account.id).pendingAttachmentBodies(50)).toEqual([]);
+  });
+
+  it.each([403, 503])("a raw capture HTTP %i keeps durable pending work for a later pass", async (status) => {
+    const ctx = await freshMailbox();
+    const id = await legacyAttachment(ctx, "retry");
+    ctx.google.failRawOnce = { id: "retry", status };
+    await ctx.backend.syncAccount(ctx.account.id);
+    expect(await ctx.backend.store.providerStore(ctx.account.id).pendingAttachmentBodies(50)).toEqual([{ id, providerMsgId: "retry" }]);
+    expect((await ctx.backend.store.accounts.get(ctx.account.id))?.syncState.status).not.toBe("idle");
+    await ctx.backend.syncAccount(ctx.account.id);
+    await receivedAttachment(ctx, id);
+    expect(await ctx.backend.store.providerStore(ctx.account.id).pendingAttachmentBodies(50)).toEqual([]);
+  });
+
+  it("a confirmed raw-message 404 retires the known cached message", async () => {
+    const ctx = await freshMailbox();
+    await legacyAttachment(ctx, "gone");
+    ctx.google.messages.delete("gone");
+    await ctx.backend.syncAccount(ctx.account.id);
+    expect(await ctx.backend.store.providerStore(ctx.account.id).messageByProviderId("gone")).toBeNull();
+    expect(await ctx.backend.store.providerStore(ctx.account.id).pendingAttachmentBodies(50)).toEqual([]);
+  });
+
+  it("captures at most fifty legacy messages in a pass and resumes from durable remaining work", async () => {
+    const ctx = await freshMailbox();
+    for (let i = 0; i < 51; i++) await legacyAttachment(ctx, `legacy-${i}`);
+    const start = ctx.google.calls.length;
+    await ctx.backend.syncAccount(ctx.account.id);
+    expect(ctx.google.calls.slice(start).filter((c) => c.path.startsWith("/gmail/messages/"))).toHaveLength(50);
+    expect(await ctx.backend.store.providerStore(ctx.account.id).pendingAttachmentBodies(50)).toHaveLength(1);
+    await ctx.backend.syncAccount(ctx.account.id);
+    expect(await ctx.backend.store.providerStore(ctx.account.id).pendingAttachmentBodies(50)).toEqual([]);
+  });
+});
+
 describe("Gmail OAuth (installed app)", () => {
   it("completes PKCE + state, ignores a forged redirect, and stores the refresh token", async () => {
     const { client, backend } = await setup("forge-then-approve");

@@ -457,6 +457,18 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     await ctx.saveCursor({ historyId: latest } satisfies Cursor);
   }
 
+  async function captureAttachments(sink: SyncSink) {
+    if (sink.signal.aborted) return;
+    const pending = await store.pendingAttachmentBodies(50);
+    if (!pending.length || sink.signal.aborted) return;
+    const messages = await fetchFull(pending.map((m) => m.providerMsgId));
+    if (sink.signal.aborted) return;
+    await sink.ingest(messages);
+    const captured = new Set(messages.map((m) => m.providerMsgId));
+    const gone = pending.filter((m) => !captured.has(m.providerMsgId)).map((m) => m.id);
+    if (gone.length) await sink.removeMessages(gone);
+  }
+
   return {
     async verify() {
       readBaseline(await api<unknown>("/profile"));
@@ -468,16 +480,21 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
 
     async sync(sink) {
       const cursor = await ctx.loadCursor<Cursor>();
-      if (!isRecord(cursor) || !historyId(cursor.historyId)) return fullSync(sink);
+      if (!isRecord(cursor) || !historyId(cursor.historyId)) {
+        await fullSync(sink);
+        return captureAttachments(sink);
+      }
       try {
         await incremental(sink, cursor);
       } catch (e) {
         // History records expire (~1 week): Google answers 404 and a full resync is required.
         if (e instanceof ExpiredHistory) {
-          return fullSync(sink, cursor.historyId);
+          await fullSync(sink, cursor.historyId);
+        } else {
+          throw e;
         }
-        throw e;
       }
+      await captureAttachments(sink);
     },
 
     async execute(op: ProviderOp) {

@@ -20,7 +20,7 @@ it.each([25, 35])("validates six %i MiB raw responses within the backend slice b
   let effects = 0;
   const ctx = {
     account: { id: 1 }, config: {},
-    store: { messageByProviderId: async () => null, syncedMessages: async () => [] },
+    store: { messageByProviderId: async () => null, syncedMessages: async () => [], pendingAttachmentBodies: async () => [] },
     loadCursor: async () => null, saveCursor: async () => { checkpoints++; },
     fetch: async (input: string | URL) => {
       const url = new URL(String(input));

@@ -20,6 +20,7 @@ function mailbox(options: { cursor?: unknown; cached?: boolean | number; respond
     store: {
       messageByProviderId: async (id: string) => cached.find((m) => m.providerMsgId === id),
       syncedMessages: async () => cached,
+      pendingAttachmentBodies: async () => [],
     },
     loadCursor: async () => cursor,
     saveCursor: async (value: unknown) => { cursor = value; checkpoints.push(value); },
