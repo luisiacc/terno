@@ -151,7 +151,7 @@ export interface GmailAccountConfig {
 export interface GmailConnectResult {
   email: string;
   name: string;
-  refreshToken: string;
+  refreshToken: string | null;
   /** OpenID subject: Google's stable id for the person (evidence for owner identity) */
   sub: string | null;
   emailVerified: boolean;
@@ -169,6 +169,22 @@ export interface GmailTokenBroker {
   forget?(accountId: number): void;
 }
 
+export interface GmailRenewalProof {
+  readonly refreshToken: string;
+  readonly expiresAt: number;
+  /** Uses this forced refresh's access, never a cached or newly consented token. */
+  inspect(signal?: AbortSignal): Promise<Omit<GmailConnectResult, "refreshToken">>;
+  provePhotos(scopes: readonly string[], signal?: AbortSignal): Promise<string[]>;
+}
+
+export interface GmailRenewalOptions {
+  clientId: string;
+  clientSecret: string | null;
+  refreshToken: string;
+  fetch: typeof fetch;
+  signal?: AbortSignal;
+}
+
 export interface ProviderRegistry {
   /** demo registries never verify anything, so they never establish an owner */
   readonly kind?: "demo";
@@ -176,5 +192,7 @@ export interface ProviderRegistry {
   readonly gmailTokens?: GmailTokenBroker;
   create(ctx: ProviderContext): MailProvider;
   verifyImap(config: ImapAccountConfig, password: string): Promise<void>;
-  connectGmail(options: { clientId: string; clientSecret: string | null; openExternal: (url: string) => Promise<void>; signal?: AbortSignal; fetch: typeof fetch; loginHint?: string; scopes?: string[] }): Promise<GmailConnectResult>;
+  connectGmail(options: { clientId: string; clientSecret: string | null; openExternal: (url: string) => Promise<void>; signal?: AbortSignal; fetch: typeof fetch; loginHint?: string; scopes?: string[]; allowOmittedRefreshToken?: boolean }): Promise<GmailConnectResult>;
+  /** Cold proof is optional: custom registries without it must refuse omitted renewal credentials. */
+  beginGmailRenewal?(options: GmailRenewalOptions): Promise<GmailRenewalProof>;
 }

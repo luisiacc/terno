@@ -27,6 +27,8 @@ export interface ConnectOptions {
   loginHint?: string;
   /** plan 22: the whole list asked for (installed apps get no incremental consent: mail's scopes plus the new ones) */
   scopes?: string[];
+  /** Only an existing-account caller that will prove the stored grant may accept true wire omission. */
+  allowOmittedRefreshToken?: boolean;
 }
 
 type CallbackKey = "backend.oauth.invalid" | "backend.oauth.denied" | "backend.oauth.back";
@@ -116,15 +118,15 @@ export async function connectGmail(options: ConnectOptions): Promise<GmailConnec
       const body = new URLSearchParams({ client_id: options.clientId, code: code.code, code_verifier: verifier, grant_type: "authorization_code", redirect_uri: code.redirectUri });
       if (options.clientSecret) body.set("client_secret", options.clientSecret);
       const tokens = await flow.json(ep.token, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body });
-      if (typeof tokens.access_token !== "string" || !/^[\x21-\x7e]+$/.test(tokens.access_token) ||
-        typeof tokens.refresh_token !== "string" || !/^[\x21-\x7e]+$/.test(tokens.refresh_token) ||
+      if (typeof tokens.access_token !== "string" || tokens.access_token.length > 4096 || !/^[\x21-\x7e]+$/.test(tokens.access_token) ||
+        (Object.hasOwn(tokens, "refresh_token") ? (typeof tokens.refresh_token !== "string" || tokens.refresh_token.length > 4096 || !/^[\x21-\x7e]+$/.test(tokens.refresh_token)) : !options.allowOmittedRefreshToken) ||
         typeof tokens.token_type !== "string" || tokens.token_type.toLowerCase() !== "bearer" ||
         (tokens.expires_in !== undefined && (typeof tokens.expires_in !== "number" || !Number.isFinite(tokens.expires_in) || tokens.expires_in <= 0)) ||
         (tokens.scope !== undefined && typeof tokens.scope !== "string")) throw new ProviderError(L("errors.google.invalidResponse"), false);
       const grantedScopes = tokens.scope === undefined ? requestedScopes : tokens.scope.split(/\s+/).filter(Boolean);
       if (!grantedScopes.includes("https://www.googleapis.com/auth/gmail.modify") && !grantedScopes.includes("https://mail.google.com/")) throw new ProviderError(L("errors.google.mailScopeRequired"), false);
       const identity = await readGoogleIdentity(tokens.access_token, ep, flow);
-      return { ...identity, refreshToken: tokens.refresh_token, grantedScopes };
+      return { ...identity, refreshToken: (tokens.refresh_token as string | undefined) ?? null, grantedScopes };
     } finally {
       const listener = server as Server | null;
       if (listener) {

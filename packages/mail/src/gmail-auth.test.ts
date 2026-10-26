@@ -103,6 +103,18 @@ describe("initial Google sign-in", () => {
   });
 });
 
+describe("deliberate installed renewal", () => {
+  it("normalizes true omission only when explicitly allowed", async () => {
+    const omitted = { ...token, refresh_token: undefined };
+    await expect(desktop({ token: () => json(omitted) }).result).rejects.toThrow("invalid sign-in response");
+    await expect(desktop({ token: () => json(omitted), options: { allowOmittedRefreshToken: true } }).result).resolves.toMatchObject({ refreshToken: null, email: profile.emailAddress });
+  });
+
+  it.each([null, "", " ", 12, [], "x".repeat(4097)])("rejects malformed present refresh in renewal: %s", async (refresh_token) => {
+    await expect(desktop({ token: () => json({ ...token, refresh_token }), options: { allowOmittedRefreshToken: true } }).result).rejects.toThrow("invalid sign-in response");
+  });
+});
+
 describe("browser Google token inspection", () => {
   it("rejects an invalid access token before contacting Google", async () => {
     const netFetch = vi.fn<typeof fetch>(async (url) => json(String(url).endsWith("/profile") ? profile : info));

@@ -1,5 +1,6 @@
 import { L } from "@terno/i18n";
 import { createDemoProvider } from "./demo";
+import { beginGmailRenewal } from "./gmail-renewal";
 import { createGmailProvider, connectGmail } from "./gmail";
 import { createImapProvider, type ImapProviderOptions } from "./imap";
 import { sendViaSmtp, verifySmtp } from "./smtp";
@@ -63,5 +64,6 @@ export function createRegistry(options: RegistryOptions = {}): ProviderRegistry 
       }
     },
     connectGmail: (o) => connectGmail({ ...o, endpoints: options.gmail?.endpoints }),
+    beginGmailRenewal: (o) => beginGmailRenewal({ ...o, endpoints: options.gmail?.endpoints }),
   };
 }
