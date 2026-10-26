@@ -37,6 +37,8 @@ import {
   type ThreadSummary,
   type UserActionKind,
   type View,
+  cleanFromName,
+  storedAddresses,
   withAccountPrefs,
 } from "@terno/core";
 import type { OwnerIdentity } from "@terno/core/rpc";
@@ -804,7 +806,7 @@ export function toSummary(c: Ctx, t: R): ThreadSummary {
     subject: t.subject,
     snippet: t.snippet,
     lastDate: t.last_date,
-    fromName: t.last_from_name || t.last_from_email,
+    fromName: cleanFromName(t.last_from_name) || t.last_from_email,
     fromEmail: t.last_from_email,
     messageCount: t.message_count,
     unread: t.unread_count > 0,
@@ -911,10 +913,8 @@ export function getThread(c: Ctx, threadId: number): ThreadDetail | null {
         id: m.id,
         threadId: m.thread_id,
         accountId: m.account_id,
-        from: { name: m.from_name, email: m.from_email },
-        to: JSON.parse(m.to_json),
-        cc: JSON.parse(m.cc_json),
-        replyTo: JSON.parse(m.reply_to_json ?? "[]"),
+        // repaired at read (plan 26): mail an older parser stored reads right, no backfill
+        ...storedAddresses(m as Parameters<typeof storedAddresses>[0]),
         subject: m.subject,
         date: m.date,
         snippet: m.snippet,

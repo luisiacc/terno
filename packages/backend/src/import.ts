@@ -1,7 +1,7 @@
 import { attachmentFingerprint, portableAttachmentFingerprint, exportAttachment, importAttachments, validateExportedAttachments } from "./attachments";
 import { RpcError, type ExportedAttachment } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
-import { attachmentFilename, attachmentMime, attachmentCid, decodeText, type Condition, type FilterAction, type FilterRule } from "@terno/core";
+import { attachmentFilename, attachmentMime, attachmentCid, decodeText, MAX_RECIPIENTS, type Condition, type FilterAction, type FilterRule } from "@terno/core";
 import { draftAddressSchema, exportCategorySchema, exportDraftSchema, exportFilterSchema, settingsPatchSchema, type ExportCategory, type ExportDraftItem, type ExportFilter, type DraftAddress, type ExportedDraft, type ExportFile, type ImportResult, type MailboxExport, type SettingsPatch } from "@terno/core/rpc";
 import type { DraftInput, DraftRow } from "@terno/store";
 import { GAP, textToHtmlChunks } from "@terno/richtext/quote";
@@ -28,7 +28,8 @@ const GENERAL_KEYS = [
   "language",
 ] as const;
 
-const addresses = draftAddressSchema.array().max(200);
+// the same limit drafts are saved with (plan 26, Codex review 6): an export always imports back
+const addresses = draftAddressSchema.array().max(MAX_RECIPIENTS);
 
 /** The settings an export carries, as a patch: each field only if valid on its own; secrets never travel. */
 function settingsFrom(raw: Record<string, unknown>, current: { localMode: boolean; allowAgentSend: boolean; errorReports: string; senderIcons: boolean }): { general: SettingsPatch; ai: SettingsPatch["ai"] } {

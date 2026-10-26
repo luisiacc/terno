@@ -110,3 +110,31 @@ it.each(["", "AP+A"])("repeated attached-draft import at full quota is a reserva
   expect(db.all("SELECT * FROM attachment_assets ORDER BY id")).toEqual(assets);
   client.close();
 });
+
+it("a reply-all to 250 people saves, exports and imports back with its body (plan 26: one recipient limit)", async () => {
+  const open = async (name: string) => {
+    const dir = mkdtempSync(join(tmpdir(), `terno-${name}-`));
+    const backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false });
+    cleanups.push(async () => {
+      await backend.stop();
+      rmSync(dir, { recursive: true, force: true });
+    });
+    await seedDemo(backend.store, { threads: 20, accounts: 1 });
+    const [c, s] = createMemoryTransportPair();
+    backend.connect(s, { clientId: "r", origin: "renderer" });
+    return new RpcClient(c);
+  };
+  const from = await open("export");
+  const { accounts } = await from.call("app.bootstrap", {});
+  const many = Array.from({ length: 250 }, (_, i) => ({ name: `Persona ${i}`, email: `p${i}@example.com` }));
+  await from.call("drafts.save", { accountId: accounts[0]!.id, to: many, cc: many.slice(0, 10), subject: "Todos", bodyText: "hola a todos" });
+  const dump = await from.call("app.export", {});
+  expect(dump.drafts[0]!.to).toHaveLength(250);
+  const into = await open("import");
+  const result = await into.call("app.import", { data: dump });
+  expect(result.drafts).toBe(1);
+  const imported = (await into.call("drafts.list", {})).find((d) => d.subject === "Todos")!;
+  expect(imported.to).toHaveLength(250);
+  expect(imported.cc).toHaveLength(10);
+  expect(imported.bodyText).toBe("hola a todos");
+});

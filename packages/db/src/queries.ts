@@ -1,4 +1,4 @@
-import { listFilterOf, waitingCutoff } from "@terno/core";
+import { cleanFromName, listFilterOf, storedAddresses, waitingCutoff } from "@terno/core";
 import type {
   AttachmentInfo,
   Counts,
@@ -56,7 +56,7 @@ export function toSummary(r: SummaryRow): ThreadSummary {
     subject: r.subject,
     snippet: r.snippet,
     lastDate: r.last_date,
-    fromName: r.last_from_name || r.last_from_email,
+    fromName: cleanFromName(r.last_from_name) || r.last_from_email,
     fromEmail: r.last_from_email,
     messageCount: r.message_count,
     unread: r.unread_count > 0,
@@ -279,10 +279,8 @@ export function getThread(db: Db, threadId: number): ThreadDetail | null {
         id: m.id,
         threadId: m.thread_id,
         accountId: m.account_id,
-        from: { name: m.from_name, email: m.from_email },
-        to: JSON.parse(m.to_json),
-        cc: JSON.parse(m.cc_json),
-        replyTo: JSON.parse(m.reply_to_json),
+        // repaired at read (plan 26): mail an older parser stored reads right, no backfill
+        ...storedAddresses(m),
         subject: m.subject,
         date: m.date,
         snippet: m.snippet,

@@ -1,6 +1,7 @@
 import type { AttachmentRef } from "../attachments";
 import { LANGUAGE_SETTINGS, type LanguageSetting } from "@terno/i18n";
 import { z } from "zod";
+import { isValidEmail, MAX_RECIPIENTS } from "../address";
 import {
   AI_PROVIDER_IDS,
   COMPATIBLE_PRESETS,
@@ -38,7 +39,8 @@ const searchCursor = cursor.extend({
   revision: z.object({ epoch: z.string().max(100), seq: z.number().int().min(0) }).optional(),
   queryKey: z.string().max(5000).optional(),
 });
-const address = z.object({ name: z.string().max(300), email: z.string().email().max(320) });
+// core's own check (plan 26): zod's email() refuses RFC-valid local parts (a/b, a=b) and Unicode domains, which the builders send as punycode
+const address = z.object({ name: z.string().max(300), email: z.string().max(320).refine(isValidEmail, "Invalid email address") });
 /** a draft keeps recipients as typed, unfinished ones too ("bob@"); addresses are validated when it is sent */
 export const attachmentRefSchema = z.object({
   assetId: z.string().uuid(), filename: z.string().min(1).max(180), mime: z.string().max(120), size: z.number().int().min(0).max(18 * 1024 * 1024), contentId: z.string().max(300).nullable().optional(),
@@ -618,9 +620,9 @@ export const contract = {
   "compose.send": m<{ opId: string; threadId: number }>()(
     z.object({
       accountId: id,
-      to: z.array(address).min(1).max(200),
-      cc: z.array(address).max(200).default([]),
-      bcc: z.array(address).max(200).default([]),
+      to: z.array(address).min(1).max(MAX_RECIPIENTS),
+      cc: z.array(address).max(MAX_RECIPIENTS).default([]),
+      bcc: z.array(address).max(MAX_RECIPIENTS).default([]),
       subject: z.string().max(998),
       // what was written, the signature and the quote (plan 16: an HTML alternative from the renderer only)
       bodyText: z.string().max(10_000_000),
@@ -648,9 +650,9 @@ export const contract = {
       accountId: id,
       threadId: id.nullable().optional(),
       mode: z.enum(DRAFT_MODES).optional(),
-      to: z.array(draftAddress).max(200).default([]),
-      cc: z.array(draftAddress).max(200).default([]),
-      bcc: z.array(draftAddress).max(200).default([]),
+      to: z.array(draftAddress).max(MAX_RECIPIENTS).default([]),
+      cc: z.array(draftAddress).max(MAX_RECIPIENTS).default([]),
+      bcc: z.array(draftAddress).max(MAX_RECIPIENTS).default([]),
       subject: z.string().max(998).default(""),
       subjectEdited: z.boolean().optional(),
       bodyText: z.string().max(5_000_000).default(""),

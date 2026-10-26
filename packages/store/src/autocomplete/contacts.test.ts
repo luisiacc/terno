@@ -2,7 +2,16 @@ import type { Address } from "@terno/core";
 import { describe, expect, it } from "vitest";
 import type { ContactMessage } from "../autocomplete-source";
 import { SliceClock } from "../instant/slices";
-import { ContactIndex, contactTokens, normalizeEmail } from "./contacts";
+import { cleanName, ContactIndex, contactTokens, normalizeEmail } from "./contacts";
+
+describe("names as other clients mangle them (plan 26)", () => {
+  it("mojibake, smart quotes, invisible characters and broken encoded words are undone before a name is learned", () => {
+    expect(cleanName("JosÃ© PÃ©rez", "jp@x.com")).toBe("José Pérez");
+    expect(cleanName("“Ana Torres”", "a@x.com")).toBe("Ana Torres");
+    expect(cleanName("Ana\u{202E} Torres", "a@x.com")).toBe("Ana Torres");
+    expect(cleanName("José_David_Sucre_L.?=", "d@x.com")).toBe("José David Sucre L.");
+  });
+});
 import { fold } from "./fold";
 
 const DAY = 86_400_000;

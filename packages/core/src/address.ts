@@ -15,6 +15,9 @@ const NEEDS_QUOTES = /[",;<>@()[\]:\\.]|=\?/;
 // oxlint-disable-next-line no-control-regex -- control characters are exactly what must go
 const INVISIBLE = /[\u0000-\u001f\u007f-\u009f\u{200B}\u{200E}\u{200F}\u{202A}-\u{202E}\u{2060}\u{2066}-\u{2069}\u{FEFF}]/gu;
 
+/** Recipients per field a draft keeps and a send takes (plan 26: a reply-all to hundreds must save; Gmail allows 500, Workspace 2,000). */
+export const MAX_RECIPIENTS = 1000;
+
 /** What can't be in an address: an entry holding one isn't an address, and is written as one quoted string. */
 const NOT_AN_ADDRESS = /[\s,;<>"()\\]/;
 const quoted = (s: string) => `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
@@ -396,4 +399,26 @@ export function repairAddresses(list: readonly Address[], opts: { split?: boolea
 /** One address (a From): cleaned, never split. */
 export function repairAddress(a: Address): Address {
   return repairAddresses([a], { split: false })[0] ?? { name: cleanName(a.name), email: a.email.trim() };
+}
+
+/** A From name as a list shows it: cleaned (only when it looks wrong; the list's hot path pays one regex test). */
+export function cleanFromName(name: string | null | undefined): string {
+  if (!name) return "";
+  return name.length > NAME_MAX || SUSPECT_NAME.test(name) || MOJIBAKE.test(name) ? cleanName(name) : name;
+}
+
+/**
+ * A stored message's addresses as they are shown and replied to (plan 26):
+ * repaired at read time, so mail stored by an older parser reads right
+ * everywhere without a backfill. Reply-To is absent when not known.
+ */
+export function storedAddresses(m: { from_name: string; from_email: string; to_json: string; cc_json: string; reply_to_json?: string | null }): { from: Address; replyTo: Address[]; to: Address[]; cc: Address[] } {
+  const from = { name: m.from_name, email: m.from_email };
+  return {
+    from: SUSPECT_NAME.test(from.name) || MOJIBAKE.test(from.name) || from.name.length > NAME_MAX ? { ...repairAddress(from), email: from.email } : from,
+    // plan 27's column ('[]' when the message has none or was stored before it; an IDB row before version 5 lacks it)
+    replyTo: repairAddresses(JSON.parse(m.reply_to_json ?? "[]") as Address[]),
+    to: repairAddresses(JSON.parse(m.to_json) as Address[]),
+    cc: repairAddresses(JSON.parse(m.cc_json) as Address[]),
+  };
 }

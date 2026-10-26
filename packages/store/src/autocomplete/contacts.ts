@@ -1,4 +1,4 @@
-import type { Address } from "@terno/core";
+import { cleanFromName, type Address } from "@terno/core";
 import type { ContactMessage } from "../autocomplete-source";
 import type { Revision } from "../search";
 import { packSnapshot, readSnapshot, sealSnapshot, type SectionReader, type SnapshotKind } from "../instant/snapshot";
@@ -86,9 +86,9 @@ export function normalizeEmail(email: string): string | null {
   return e.length <= 320 && VALID.test(e) ? e : null;
 }
 
-/** A display name worth showing: unquoted, collapsed, not an address. */
+/** A display name worth showing: unquoted, collapsed, not an address (and what other clients mangle undone: plan 26). */
 export function cleanName(name: string, email: string): string {
-  let n = name.trim();
+  let n = cleanFromName(name).trim();
   if (n.length >= 2 && ((n.startsWith('"') && n.endsWith('"')) || (n.startsWith("'") && n.endsWith("'")))) n = n.slice(1, -1).trim();
   n = n.replace(/\s+/g, " ").slice(0, 200);
   const lower = n.toLowerCase();
@@ -339,7 +339,8 @@ async function unpackStrings(s: SectionReader, name: string, clock: SliceClock):
   return out;
 }
 
-export const CONTACTS_SNAPSHOT: Omit<SnapshotKind, "identity"> = { tokenizer: 1, format: 3 };
+// format 4: names cleaned as plan 26 reads them (older snapshots rebuild once)
+export const CONTACTS_SNAPSHOT: Omit<SnapshotKind, "identity"> = { tokenizer: 1, format: 4 };
 
 export interface ContactIndexOptions {
   caps?: ContactCaps;
