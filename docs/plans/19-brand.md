@@ -94,3 +94,18 @@ No new UI strings: the mark is decorative where shown, next to the existing "Ter
 ## 10. Out of scope
 
 - A DMG window background or Applications shortcut, Windows/Linux icons, a marketing site, an animated mark, per-palette colored icons.
+
+## Revisions after the Codex review
+
+Codex (read-only, against the code) made 10 points; all are taken:
+
+1. **`CFBundleIconName` isn't Tahoe-only:** macOS reads asset-catalog app icons since 10.13, so older systems may draw the catalog's own legacy renditions (actool's flattened rendering of the same art, on the same grid) rather than our `.icns`. Accepted: that is also what electron-builder's own `.icon` path ships, and it is Apple's rendering of this icon. The `.icns` stays for anything that ignores the catalog, the DMG volume and the dev Dock. Only Tahoe can be checked on this machine (§3.5).
+2. **Icon name:** the generator compiles from a staged `Icon.icon` (actool names the icon after the document) and fails unless actool's partial Info.plist says `CFBundleIconName = Icon`, the value `package.mjs` sets.
+3. **Hashes don't validate artwork:** the compiled icon is looked at on Tahoe (Finder/Dock rendering, actool's flattened rendering, `assetutil` listing light, dark and tinted renditions); `brand/generated.json` records the actool version that compiled `Assets.car`.
+4. **DMG tools and cleanup:** the volume icon needs `SetFile`; without it both the icon and its check are skipped (with a note). With it: a writable image, attached `-nobrowse -noautoopen -mountrandom <private tmp dir>`, the attach plist parsed for the mount point, the icon copied and flagged, detached in `finally`; then compressed, re-attached read-only and checked the same way. (`hdiutil create -srcfolder` alone drops the root's custom-icon flag: tried.)
+5. **Precache:** icons are *not* added to the service worker's precache (one 404 would fail the whole install; a missing favicon offline is harmless). The manifest becomes a static file in `public/` (generated), still linked only by the web build.
+6. **Favicon selection:** the SVG gets `sizes="any"`, the 32 px PNG stays as the fallback (Safari before 26 has no SVG favicons). `favicon-16.png` is dropped (nothing would link it). The e2e checks each declared icon loads with the right type; which one a browser picks is its choice.
+7. **Gate screens don't all name Terno:** there the mark is a named image (`role="img"`, "Terno", a product name, the same in every language); the dialog keeps its `aria-labelledby` title and focus.
+8. **No universal starting screen:** the e2e checks the mark on the "open in another tab" screen, which the web suite already drives deterministically.
+9. **Geometry consistency:** a test compares the mark's shapes across the icon, both marks and both lockups (colors, opacity and viewBox may differ). Only the icon and the blue mark feed outputs, so only they are hashed.
+10. **Tests by owner:** `index.html`'s links and the manifest's icons are each checked against `public/` with their PNG dimensions; the theme colors (and the manifest's) are derived from the default design's palettes in the generator and checked against `index.html`. The scans (`no-hardcoded`, `source-scan`) are unchanged: the mark has no literal colors. Entry-chunk bytes are measured before and after.
