@@ -132,15 +132,19 @@ async function signIn(
     }
     secret = { name: "refreshToken", value: result.refreshToken };
   }
+  const blob = await b.options.cipher.encrypt(secret.value);
   // signing in took a while: the secret goes only to the same mailbox (not one removed and added again meanwhile)
   const now = await store.accounts.stamp(accountId);
   if (!now || now.createdAt !== stamp.createdAt || now.email !== stamp.email) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
   superseded();
+  googleFlowActive(b);
   await b.dropAccount(accountId);
-  // the drop waited for a sync: a newer sign-in may have started meanwhile (no await from here to the write)
+  const current = await store.accounts.stamp(accountId);
+  if (!current || current.createdAt !== stamp.createdAt || current.email !== stamp.email) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
+  // Dropping waited for sync; neither another sign-in nor removal may replace this mailbox's credential.
   superseded();
-  if (account.kind === "gmail") googleFlowActive(b);
-  await b.setSecret(`account:${accountId}:${secret.name}`, secret.value);
+  googleFlowActive(b);
+  await store.secrets.put(`account:${accountId}:${secret.name}`, blob);
   // plan 25: proven just now (a live login, Google's answer): it stops asking at once, and what waited goes
   await b.signedIn(accountId);
   b.startAccount((await store.accounts.get(accountId))!);

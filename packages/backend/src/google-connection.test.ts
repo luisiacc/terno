@@ -67,6 +67,36 @@ describe("Google connection RPC validation", () => {
     expect(await t.client.call("app.bootstrap", {})).toMatchObject({ accounts: before.accounts, owner: before.owner });
   });
 
+  it.each(["shutdown", "newer reconnect", "account removal"] as const)("a reconnect whose encryption overlaps %s cannot write stale credentials", async (scenario) => {
+    const t = await setup(false);
+    const account = await t.client.call("accounts.connectGmail", {});
+    await t.backend.syncAccount(account.id);
+    let release!: () => void;
+    let entered!: () => void;
+    const encrypting = new Promise<void>((resolve) => { entered = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    t.encrypt.mockImplementationOnce(async (plain) => {
+      entered();
+      await gate;
+      return plaintextCipher.encrypt(plain);
+    });
+    t.answer({ ...identity, refreshToken: "older-refresh" });
+    const older = t.client.call("accounts.reconnect", { id: account.id }).then((value) => ({ value }), (error: unknown) => ({ error }));
+    await encrypting;
+    try {
+      if (scenario === "shutdown") t.backend.abort.abort();
+      if (scenario === "account removal") await t.client.call("accounts.remove", { id: account.id });
+      if (scenario === "newer reconnect") {
+        t.answer({ ...identity, refreshToken: "newer-refresh" });
+        await t.client.call("accounts.reconnect", { id: account.id });
+      }
+    } finally {
+      release();
+    }
+    expect(await older).toHaveProperty("error");
+    expect(await t.backend.getSecret(`account:${account.id}:refreshToken`)).toBe(scenario === "account removal" ? null : scenario === "newer reconnect" ? "newer-refresh" : "synthetic-refresh");
+  });
+
   it("wrong-mailbox desktop reconnect preserves the target instead of adding the other mailbox", async () => {
     const t = await setup(false);
     const account = await t.client.call("accounts.connectGmail", {});

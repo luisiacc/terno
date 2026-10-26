@@ -92,3 +92,11 @@ Final focused validation:
 - Parent has applied the inspect signature and FakeGoogle Bearer fixture patches; no integration patch from this slice remains outstanding. The optional effective-grant type comment was also applied by parent.
 
 Independent final review is intentionally left to the parent's separately assigned Codex reviewer, as requested. Full integration/e2e/performance/packaging gates were not run by this worker. No hot sync/list/store path or UI layout was changed by this slice.
+
+## Independent Codex code review — round 1
+
+Reviewed exact head `7507b7c` plus spec/locales `2023c8e`, required script completed exit0/DONE. One medium finding: reconnect's final checks run before setSecret's asynchronous encryption, so cancellation/shutdown or a newer reconnect during encryption can still persist the stale result. Parent adds public-RPC regressions gating encryption during shutdown, supersession and account removal. Encrypt before final identity/flow checks; preserve same-mailbox validation across dropAccount, then check cancellation/shutdown immediately before the store write. Existing newer-flow ownership remains through completion; no token values enter diagnostic output. A second distinct review is required after the correction.
+
+### Round 1 correction and validation
+
+All three encryption-gated regressions failed before the correction: shutdown/superseded flows could complete and account removal left an orphan stale secret. Reconnect now encrypts before final checks, verifies the mailbox before and after dropping its provider, then rechecks flow supersession and backend cancellation immediately before putting the encrypted blob. Both Gmail and IMAP share the final cancellation fence. The five auth/identity/reconnect/Gmail integration suites pass 136 tests; backend typecheck and repository lint pass. Independent second review pending; release gates remain pending.
