@@ -82,7 +82,7 @@ function Pill({ down, total }: { down: Account[]; total: number }) {
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className={cn("shrink-0 text-sidebar-foreground", reconnecting && "opacity-60")}
+                className={cn("shrink-0", reconnecting ? "text-muted-foreground" : "text-sidebar-foreground")}
                 aria-label={t("connection.retryNow")}
                 aria-disabled={reconnecting}
                 data-testid="connection-retry"
