@@ -186,6 +186,16 @@ Eight findings (three high, five medium), each fixed with a regression test that
 7. **Medium: the renderer didn't keep to two requests in flight**; every frame could start another batch while earlier ones waited. Lookups and data requests now share one queue with at most two in flight, each finishing starting the next. Test: twelve frames of new avatars against a backend that doesn't answer: two at most.
 8. **Medium: partial Google failures in a row grew past the bound** (the previous list merged in without the 20,000 cap). The merge stops at the cap. Test: three listings of 15,000 new addresses with one source failing stay ≤ 20,000.
 
+### Second review (on the fixes)
+
+Five more (one high, four medium), each with a regression test that failed before its fix:
+
+1. **High: leaving Spam, its rows still on screen could ask.** The list's guard read the new navigation state while Spam's rows waited to be replaced. Rows now ask only when both the state and the key the rows were loaded for (`itemsKey`) allow it (`iconsAllowedForList`).
+2. **Medium: turning photos off while a listing was still starting didn't stop it** (no controller existed yet). The controller is registered before any await, and the listing checks it, the generation and that photos are still on before reaching Google.
+3. **Medium: a cache entry was readable before its bytes were written**, and a read meanwhile dropped it for good. A slot is now reserved and written first; the entry is published only after (a refresh keeps the old icon until then).
+4. **Medium: an icon whose bytes were gone (evicted, a lost file) never recovered in the renderer.** A data answer of null makes those addresses look the icon up again, once; a second miss shows initials (no loop).
+5. **Medium: photo URLs accumulated in the service.** A URL is kept only while its fetch is queued, running or waiting for the network.
+
 ## Implementation notes
 
 - **Privacy default shipped:** website icons are **off in local mode** (the default for new installs) and **on in connected mode**, until the user flips the switch (Settings → Appearance → Sender pictures → Website icons); the choice then sticks across mode changes. In local mode the hint says what turning it on does; once on, General's local-mode hint names the exception. The network policy allows purpose `icons` only under the same rule, so the setting is enforced at the single exit, not only in the UI. Imports never turn it on.

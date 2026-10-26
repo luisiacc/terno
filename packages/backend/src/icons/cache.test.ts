@@ -91,6 +91,27 @@ describe("the icon cache (plan 22)", () => {
     expect(await c.read("d:b.com")).toEqual(b.bytes);
   });
 
+  it("an icon is readable only once its bytes are written: a read meanwhile is a miss that doesn't lose it (second Codex review)", async () => {
+    const files = memFiles();
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const replace = files.replace;
+    files.replace = async (p, b) => {
+      if (p.includes(".icons/")) await held;
+      return replace(p, b);
+    };
+    const { c } = cache({ files });
+    await c.load();
+    const a = icon(32);
+    const put = c.put("d:a.com", a, 0);
+    await new Promise((r) => setTimeout(r, 5));
+    expect(c.get("d:a.com")).toBeUndefined();
+    expect(await c.read("d:a.com")).toBeNull();
+    release();
+    await put;
+    expect(await c.read("d:a.com")).toEqual(a.bytes);
+  });
+
   it("negative entries expire; timeouts are counted on them", async () => {
     const { clock, c } = cache({ base: null });
     c.negative("d:slow.com", clock.t, 1);

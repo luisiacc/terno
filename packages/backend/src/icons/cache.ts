@@ -67,6 +67,8 @@ export class IconCache {
   /** every file operation, in order: a slow slot write can't land after a clear (or another write) that came later */
   private io: Promise<void> = Promise.resolve();
   private loaded: Promise<void> | null = null;
+  /** bumped by clear(): a write that started before it doesn't publish */
+  private epoch = 0;
 
   constructor(private readonly o: IconCacheOptions) {}
 
@@ -151,27 +153,28 @@ export class IconCache {
 
   async put(key: string, icon: { mime: IconMime; bytes: Uint8Array; px: number; full: boolean }, fetchedAt: number): Promise<void> {
     if (icon.bytes.length > MAX_STORED) return;
-    const old = this.entries.get(key);
-    // a refresh reuses its slot; otherwise the lowest free one (evicting first if all are taken)
-    let slot = old?.kind === "icon" ? old.slot : -1;
-    if (old) this.drop(key);
+    // a free slot is reserved (evicting first if needed) and written; only then is the entry published, so a
+    // lookup meanwhile can't hand out an icon whose bytes aren't there yet (and a refresh keeps the old one till then)
     this.evict(icon.bytes.length, 1);
-    if (slot < 0 || this.usedSlots.has(slot)) slot = this.freeSlot();
+    const slot = this.freeSlot();
     if (slot < 0) return;
     this.usedSlots.add(slot);
-    const entry: PositiveEntry = { kind: "icon", mime: icon.mime, px: icon.px, full: icon.full, size: icon.bytes.length, hash: fnv1a(icon.bytes), slot, fetchedAt, usedAt: this.o.now() };
-    this.entries.set(key, entry);
-    this.bytes += entry.size;
-    if (this.disk) {
-      try {
-        await this.serial(() => this.o.files!.replace(this.slotPath(slot), icon.bytes));
-      } catch {
-        if (this.entries.get(key) === entry) this.drop(key);
-        return;
+    this.bytes += icon.bytes.length;
+    const epoch = this.epoch;
+    try {
+      if (this.disk) await this.serial(() => this.o.files!.replace(this.slotPath(slot), icon.bytes));
+      else this.memory.set(slot, icon.bytes);
+    } catch {
+      if (epoch === this.epoch) {
+        this.usedSlots.delete(slot);
+        this.bytes -= icon.bytes.length;
       }
-    } else {
-      this.memory.set(slot, icon.bytes);
+      return;
     }
+    // forgotten while writing: the clear already took the slot back
+    if (epoch !== this.epoch) return;
+    this.drop(key);
+    this.entries.set(key, { kind: "icon", mime: icon.mime, px: icon.px, full: icon.full, size: icon.bytes.length, hash: fnv1a(icon.bytes), slot, fetchedAt, usedAt: this.o.now() });
     this.schedule();
   }
 
@@ -201,6 +204,7 @@ export class IconCache {
 
   /** "Forget saved icons": every slot path and the index removed, whatever the index knew. */
   async clear(): Promise<void> {
+    this.epoch++;
     this.entries.clear();
     this.usedSlots.clear();
     this.memory.clear();

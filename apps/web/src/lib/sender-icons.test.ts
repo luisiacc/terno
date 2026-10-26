@@ -37,7 +37,7 @@ const fake = vi.hoisted(() => {
 vi.mock("~/rpc/connection", () => ({ client: fake.client }));
 vi.mock("~/state/app", () => ({ useApp: () => true }));
 
-const { __senderIconsForTests: store, iconsAllowed, shown, subscribeIcon } = await import("./sender-icons");
+const { __senderIconsForTests: store, iconsAllowed, iconsAllowedForList, shown, subscribeIcon } = await import("./sender-icons");
 const frame = () => new Promise((r) => setTimeout(r, 1));
 
 beforeEach(() => {
@@ -86,5 +86,36 @@ describe("the renderer's sender icons (plan 22)", () => {
     expect(iconsAllowed("spam", "")).toBe(false);
     for (const q of ["in:spam", "en:spam", 'in:"spam"', "IN:Spam factura", "from:ana in:spam"]) expect(iconsAllowed("inbox", q), q).toBe(false);
     for (const q of ["spam", "in:inbox", "in:all factura", "-in:spam"]) expect(iconsAllowed("all", q), q).toBe(true);
+  });
+
+  it("leaving Spam: the rows still on screen were loaded for Spam, so they don't ask (second Codex review)", () => {
+    expect(iconsAllowedForList(JSON.stringify(["spam", null, null, null, null, ""]))).toBe(false);
+    expect(iconsAllowedForList(JSON.stringify(["inbox", null, null, null, null, "en:spam"]))).toBe(false);
+    expect(iconsAllowedForList(JSON.stringify(["inbox", null, null, null, null, ""]))).toBe(true);
+    expect(iconsAllowedForList(null)).toBe(false);
+  });
+
+  it("an icon whose bytes are gone (evicted, a lost file) is looked up again, once, while it's on screen (second Codex review)", async () => {
+    const ref = { id: "d:gone.com", v: 1, kind: "site" as const, px: 32, full: false };
+    store.entries.set("a@gone.com", { state: "ref", ref });
+    store.visible.add("a@gone.com");
+    store.request("a@gone.com");
+    await frame();
+    const data = fake.pending.shift()!;
+    expect(data.method).toBe("icons.data");
+    data.resolve({ "d:gone.com": null });
+    await frame();
+    await frame();
+    const again = fake.pending.shift()!;
+    expect(again).toMatchObject({ method: "icons.lookup", params: { emails: ["a@gone.com"] } });
+    // the same ref and still no bytes: initials, no loop
+    again.resolve({ "a@gone.com": ref });
+    await frame();
+    await frame();
+    fake.pending.shift()!.resolve({ "d:gone.com": null });
+    await frame();
+    await frame();
+    expect(fake.pending).toEqual([]);
+    expect(store.entries.get("a@gone.com")).toEqual({ state: "none" });
   });
 });

@@ -132,6 +132,7 @@ export class IconService {
         const key = photoKey(url);
         this.photoUrls.set(key, url);
         this.answer(key, email, out);
+        this.releaseUrl(key);
         continue;
       }
       const subject = iconSubject(norm);
@@ -189,11 +190,20 @@ export class IconService {
     if (at >= 0) this.queue.splice(at, 1);
     this.queue.push(key);
     // a full queue drops its oldest: whoever waited on it hears "again" (asked again while still shown)
-    while (this.queue.length > QUEUE_MAX) this.settle(this.queue.shift()!, "again");
+    while (this.queue.length > QUEUE_MAX) {
+      const dropped = this.queue.shift()!;
+      this.settle(dropped, "again");
+      this.releaseUrl(dropped);
+    }
     return true;
   }
 
   /** Tells everyone waiting on `key`, once. */
+  /** A photo's URL is kept only while its fetch is queued, running or waiting for the network (a later lookup sets it again). */
+  private releaseUrl(key: string): void {
+    if (key.startsWith("p:") && !this.queue.includes(key) && !this.inflight.has(key) && !this.retryOnline.has(key)) this.photoUrls.delete(key);
+  }
+
   private settle(key: string, answer: IconAnswer): void {
     const set = this.waiters.get(key);
     if (!set) return;
@@ -211,6 +221,7 @@ export class IconService {
       this.batch.count++;
       const run = this.run(key).finally(() => {
         this.inflight.delete(key);
+        this.releaseUrl(key);
         if (this.inflight.size === 0 && this.queue.length === 0 && this.batch.count > 0) {
           log.info("icons.batch", { count: this.batch.count, durationMs: this.o.now() - this.batch.startedAt });
           this.batch.count = 0;
@@ -324,6 +335,7 @@ export class IconService {
   /** Everything in flight or waiting is dropped and the windows forget their icons. */
   invalidate(): void {
     this.generation++;
+    this.photoUrls.clear();
     this.ctl.abort();
     this.ctl = new AbortController();
     this.queue.length = 0;
@@ -368,6 +380,11 @@ export class IconService {
 
   private readonly ownEmails = new Map<number, string>();
 
+  /** tests: photo URLs kept for fetches queued or running */
+  get pendingPhotoUrls(): number {
+    return this.photoUrls.size;
+  }
+
   /** tests and diagnostics: how many addresses have a photo for an account */
   photoCount(accountId: number): number {
     return this.people.get(accountId)?.map.size ?? 0;
@@ -380,14 +397,17 @@ export class IconService {
     const generation = this.generation;
     const started = this.o.now();
     let run!: Promise<void>;
+    // cancellable from the start: turning photos off while this still waits for the provider stops it too
+    const ctl = new AbortController();
+    this.peopleAborts.set(accountId, ctl);
     run = (async () => {
       await this.load();
       const provider = await this.o.provider(accountId);
       const email = await this.o.accountEmail(accountId);
-      if (!provider?.photos || !email) return;
+      if (!provider?.photos || !email || ctl.signal.aborted || generation !== this.generation || this.closed) return;
+      // still on (not turned off between the call and now)
+      if (!(await this.o.googlePhotos())[String(accountId)] || ctl.signal.aborted) return;
       let result;
-      const ctl = new AbortController();
-      this.peopleAborts.set(accountId, ctl);
       try {
         result = await provider.photos({ connections: state.connections, otherContacts: state.otherContacts }, ctl.signal);
       } catch {
@@ -421,7 +441,7 @@ export class IconService {
       this.o.emit({ icons: {}, reset: true });
     })().finally(() => {
       if (this.peopleSyncing.get(accountId) === run) this.peopleSyncing.delete(accountId);
-      this.peopleAborts.delete(accountId);
+      if (this.peopleAborts.get(accountId) === ctl) this.peopleAborts.delete(accountId);
     });
     this.peopleSyncing.set(accountId, run);
     return run;

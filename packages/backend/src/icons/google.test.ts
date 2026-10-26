@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { pngBytes } from "../test/icons-fixtures";
 import { Backend, plaintextCipher } from "../backend";
 import { seedDemo } from "../demo";
+import { setGooglePhotoState } from "../settings";
 
 const MAIL = "https://www.googleapis.com/auth/gmail.modify";
 const CONTACTS = "https://www.googleapis.com/auth/contacts.readonly";
@@ -161,12 +162,47 @@ describe("photos from Google (plan 22)", () => {
       signal = s;
       return new Promise((_, reject) => s?.addEventListener("abort", () => reject(s.reason), { once: true }));
     };
+    await setGooglePhotoState(backend.store, gmail.id, { connections: true, otherContacts: true, apiDisabled: false });
     const running = backend.icons.syncPeople(gmail.id, { connections: true, otherContacts: true, apiDisabled: false });
     await until(() => signal !== undefined);
     await backend.icons.dropPhotos(gmail.id);
     expect(signal!.aborted).toBe(true);
     await running;
     expect(backend.icons.photoCount(gmail.id)).toBe(0);
+  });
+
+  it("turning photos off while a listing is still starting: it never reaches Google (second Codex review)", async () => {
+    const { backend, gmail } = await setup();
+    const provider = (await backend.provider(gmail.id))!;
+    let asked = 0;
+    provider.photos = async () => {
+      asked++;
+      return { own: null, contacts: [], connections: "ok", otherContacts: "ok" };
+    };
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const original = backend.provider.bind(backend);
+    backend.provider = async (id: number) => {
+      await held;
+      return original(id);
+    };
+    await setGooglePhotoState(backend.store, gmail.id, { connections: true, otherContacts: true, apiDisabled: false });
+    const running = backend.icons.syncPeople(gmail.id, { connections: true, otherContacts: true, apiDisabled: false });
+    await new Promise((r) => setTimeout(r, 20));
+    await backend.icons.dropPhotos(gmail.id);
+    release();
+    await running;
+    expect(asked).toBe(0);
+  });
+
+  it("photo URLs are kept only while their fetch is pending (second Codex review)", async () => {
+    const { client, gmail, events, backend } = await setup();
+    await client.call("icons.googlePhotos", { accountId: gmail.id, on: true });
+    await client.call("icons.lookup", { emails: ["ana@gmail.com", gmail.email] });
+    await until(() => Object.keys(Object.assign({}, ...events.map((e) => e.icons))).length >= 2);
+    await until(() => backend.icons.pendingPhotoUrls === 0);
+    await client.call("icons.googlePhotos", { accountId: gmail.id, on: false });
+    expect(backend.icons.pendingPhotoUrls).toBe(0);
   });
 
   it("partial failures in a row never keep more than the bound of addresses (Codex review)", async () => {
@@ -179,10 +215,12 @@ describe("photos from Google (plan 22)", () => {
       return { own: null, contacts: batch(round * 100_000, 15_000), connections: round === 1 ? "ok" : "failed", otherContacts: "ok" };
     };
     const state = { connections: true, otherContacts: true, apiDisabled: false };
+    await setGooglePhotoState(backend.store, gmail.id, state);
+    await backend.icons.syncPeople(gmail.id, state);
+    expect(backend.icons.photoCount(gmail.id)).toBe(15_000);
     await backend.icons.syncPeople(gmail.id, state);
     await backend.icons.syncPeople(gmail.id, state);
-    await backend.icons.syncPeople(gmail.id, state);
-    expect(backend.icons.photoCount(gmail.id)).toBeLessThanOrEqual(20_000);
+    expect(backend.icons.photoCount(gmail.id)).toBe(20_000);
   });
 
   it("removing the account drops its photo state", async () => {

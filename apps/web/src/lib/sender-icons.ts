@@ -35,6 +35,8 @@ const visible = new Set<string>();
 const batch = new Set<string>();
 const dataBatch = new Map<string, IconRef>();
 let flushQueued = false;
+/** addresses that already looked up again after their icon's bytes were gone (once each) */
+const refetched = new Set<string>();
 let wired = false;
 /** `shown` cache per address, so useSyncExternalStore sees the same object until something changes */
 const snapshots = new Map<string, ShownIcon | null>();
@@ -183,9 +185,24 @@ async function fetchData(refs: IconRef[]): Promise<void> {
   } catch {
     return;
   }
+  const gone = new Set<string>();
   for (const ref of refs) {
     const url = got[ref.id];
     if (url) putData(dataKey(ref), url);
+    else gone.add(ref.id);
+  }
+  // bytes the backend no longer has (evicted, a lost file): those addresses look the icon up again, once
+  if (gone.size) {
+    for (const [email, e] of entries) {
+      if (e.state !== "ref" || !gone.has(e.ref.id)) continue;
+      if (refetched.has(email)) {
+        setEntry(email, { state: "none" });
+        continue;
+      }
+      refetched.add(email);
+      setEntry(email, { state: "idle" });
+      if (visible.has(email)) request(email);
+    }
   }
   // every address showing these icons
   const ids = new Set(refs.map((r) => r.id));
@@ -292,6 +309,20 @@ export function iconsAllowed(view: string, query: string): boolean {
   return !query.trim() || parseSearch(query).view !== "spam";
 }
 
+/**
+ * The same for the rows on screen, by the key they were loaded for (`[view, account, category,
+ * review, filter, query]`): leaving Spam, its rows stay until the next results replace them.
+ */
+export function iconsAllowedForList(itemsKey: string | null): boolean {
+  if (!itemsKey) return false;
+  try {
+    const key = JSON.parse(itemsKey) as unknown[];
+    return iconsAllowed(String(key[0] ?? ""), typeof key[5] === "string" ? key[5] : "");
+  } catch {
+    return false;
+  }
+}
+
 /** tests */
 export const __senderIconsForTests = {
   entries,
@@ -302,5 +333,5 @@ export const __senderIconsForTests = {
   get inflight() {
     return inflight;
   },
-  reset: () => [entries, data, visible, batch, dataBatch, snapshots, listeners].forEach((m) => m.clear()),
+  reset: () => [entries, data, visible, batch, dataBatch, snapshots, listeners, refetched].forEach((m) => m.clear()),
 };
