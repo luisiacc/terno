@@ -462,6 +462,41 @@ describe("migration v14: people and waiting for your reply (plan 17)", () => {
   });
 });
 
+describe("migration v14: what the code actually runs (Codex review 3, #2)", () => {
+  it("the greeting's count and a sender job at a late +tagged cursor run statements that seek their indexes", async () => {
+    const { waitingCounts } = await import("./queries");
+    const { backfillSlice } = await import("./facts");
+    const { db } = legacyMail(13, { threads: 200, seed: 6 });
+    migrate(db);
+    db.exec("ANALYZE");
+    db.run("UPDATE settings SET value_json = '{\"phase\":\"done\"}' WHERE key = 'facts_backfill'");
+    db.run("UPDATE threads SET person = 0");
+    // every statement the calls prepare, with dummy values for EXPLAIN
+    const seen: string[] = [];
+    const prepare = db.prepare.bind(db);
+    db.prepare = (sql: string) => {
+      seen.push(sql);
+      return prepare(sql);
+    };
+    const planOfRun = (sql: string) => db.all<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`, ...Array.from(sql.matchAll(/\?/g), () => 0)).map((r) => r.detail).join(" | ");
+    waitingCounts(db, Date.UTC(2026, 9, 22));
+    const count = seen.find((s) => /count\(\*\)/.test(s) && /waiting_since/.test(s))!;
+    expect(planOfRun(count)).toMatch(/SEARCH threads USING COVERING INDEX threads_waiting_inbox \(waiting_since>\?\)/);
+    seen.length = 0;
+    db.run("INSERT OR REPLACE INTO settings (key, value_json) VALUES ('facts_senders', ?)", JSON.stringify([{ email: "support@shop.com", stage: 1, from: "support+t1@shop.com", id: 5 }]));
+    db.tx(() => backfillSlice(db, 10));
+    const senders = seen.filter((s) => /FROM messages WHERE .*from_email [=<>]/.test(s));
+    expect(senders.length).toBeGreaterThanOrEqual(2);
+    // the cursor's own address is sought with its id in the seek (a row value would read that address's earlier mail)
+    expect(senders.some((s) => /messages_from \(from_email=\? AND rowid>\?\)/.test(planOfRun(s)))).toBe(true);
+    for (const s of senders) {
+      const plan = planOfRun(s);
+      expect(plan, s).toMatch(/SEARCH messages USING INDEX messages_from \((from_email=\? AND rowid>\?|from_email>\? AND from_email<\?)\)/);
+      expect(plan, s).not.toMatch(/TEMP B-TREE/);
+    }
+  });
+});
+
 describe("scope pages walk an index in key order", () => {
   it("every view, account and category scope pages without a temporary sort", async () => {
     const { scopeIdsSql } = await import("./queries");

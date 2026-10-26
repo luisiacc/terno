@@ -6,7 +6,8 @@ import "fake-indexeddb/auto";
  */
 import type { IncomingMessage, Platform } from "@terno/store";
 import { describe, expect, it, vi } from "vitest";
-import { BIG_THREAD, FactsQueue, type RecencyOrder } from "./facts";
+import { backfillSlice, BIG_THREAD, FactsQueue, type RecencyOrder } from "./facts";
+import type { MemDb } from "./mem";
 import { createMemDb } from "./schema";
 import { IdbMailStore } from "./store";
 
@@ -82,6 +83,34 @@ describe("the facts backfill's bounds on IndexedDB (Codex review 2)", () => {
     expect(by.mock.calls.filter(([index]) => index === "from")).toEqual([]);
     expect((await store.debug.snapshot()).threads.filter((t) => t.person === true).length).toBe(600);
     await store.close();
+  });
+
+  it("a sender job's walk follows what committed: a reverted slice, and a reverted command that took all the sender's mail, are walked again (Codex review 3, #1)", async () => {
+    for (const scenario of ["reverted slice", "reverted deletion"] as const) {
+      const store = await IdbMailStore.open({ name: `facts-revert-${scenario.length}-${Date.now()}`, factory: indexedDB, platform, instantSearch: false });
+      const { account } = await store.accounts.create({ kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo", now: 0 });
+      await store.sync.ingest(Array.from({ length: 600 }, (_, i) => message(account.id, i, { from: { name: "", email: "support@shop.com" } })), { applyFilters: false, now: NOW, classifier: null });
+      await store.sync.ingest([message(account.id, 9999, { from: { name: "", email: "me@example.com" }, to: [{ name: "", email: "support@shop.com" }], isSent: true, inInbox: false })], { applyFilters: false, now: NOW, classifier: null });
+      const inner = store as unknown as { db: MemDb; c: { facts: FactsQueue; order: RecencyOrder } };
+      const { db } = inner;
+      // a unit that commits in memory, then IndexedDB refuses it: what IdbMailStore.command does on a failed write
+      const reverted = (fn: () => void) => {
+        db.tx(fn);
+        db.takeCommit();
+        db.revert();
+      };
+      if (scenario === "reverted slice") reverted(() => backfillSlice(db, inner.c.facts, inner.c.order, 50));
+      else {
+        await store.facts.backfill({ limit: 50 });
+        reverted(() => {
+          const messages = db.table("messages");
+          for (const m of messages.by("from", "support@shop.com")) messages.delete(m.id);
+        });
+      }
+      for (;;) if (!(await store.facts.backfill({ limit: 50 })).more) break;
+      expect((await store.debug.snapshot()).threads.filter((t) => t.person === true).length, scenario).toBe(600);
+      await store.close();
+    }
   });
 
   it(`a conversation longer than ${BIG_THREAD} messages is read in chunks, one a slice, to the facts of its newest 200 (#3)`, async () => {

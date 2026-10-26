@@ -81,6 +81,12 @@ export class Table<R extends Row = Row> {
     return (this.indexes.get(index)!.map.get(keyOf(values)) ?? new Set<Key>()).values();
   }
 
+  /** the set of keys an index holds for `values` right now (its identity changes when the index lets it go empty) */
+  bucket(index: string, ...values: unknown[]): ReadonlySet<Key> | undefined {
+    if (!this.indexes.has(index)) throw new Error(`${this.spec.name} has no index ${index}`);
+    return this.indexes.get(index)!.map.get(keyOf(values));
+  }
+
   /** rows whose index columns equal `values` */
   by(index: string, ...values: unknown[]): R[] {
     const keys = this.indexes.get(index)?.map.get(keyOf(values));
