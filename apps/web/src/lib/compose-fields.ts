@@ -1,4 +1,4 @@
-import { formatAddressList, parseAddressList, type Account, type Address, type ThreadDetail } from "@terno/core";
+import { formatAddressList, parseAddressList, repairAddress, repairAddresses, type Account, type Address, type MessageDetail, type ThreadDetail } from "@terno/core";
 import type { DraftMode } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import type { DraftFields } from "./drafts";
@@ -9,9 +9,45 @@ import { fullDate } from "./format";
  * draft between modes. Pure (no DOM, no backend): unit-tested on its own.
  */
 
-/** The message a reply answers: the last one someone else sent (or the last one). */
-export function answered(detail: ThreadDetail) {
-  return [...detail.messages].reverse().find((m) => !m.isSent) ?? detail.messages[detail.messages.length - 1]!;
+/** An address as an identity: lowercased, `+tag` dropped; Gmail ignores dots in its local parts. */
+function identityKey(email: string): string {
+  const e = email.trim().toLowerCase();
+  const at = e.lastIndexOf("@");
+  if (at <= 0) return e;
+  let local = e.slice(0, at).replace(/\+.*$/, "");
+  let domain = e.slice(at + 1);
+  if (domain === "gmail.com" || domain === "googlemail.com") {
+    local = local.replace(/\./g, "");
+    domain = "gmail.com";
+  }
+  return `${local}@${domain}`;
+}
+
+/** Is an address mine? */
+export type Mine = (email: string) => boolean;
+
+/**
+ * My identities in a conversation (plan 26): every account's address, and
+ * the From of every message of mine in it (a Gmail send-as alias, another
+ * identity), `me+tag@` and Gmail's dotted spellings included.
+ */
+export function identitiesIn(detail: ThreadDetail, accounts: readonly string[]): Mine {
+  const keys = new Set(accounts.map(identityKey));
+  for (const m of detail.messages) if (m.isSent && m.from.email) keys.add(identityKey(m.from.email));
+  return (email) => keys.has(identityKey(email));
+}
+
+const asMine = (mine: Mine | string | readonly string[] | undefined, detail: ThreadDetail): Mine =>
+  typeof mine === "function" ? mine : identitiesIn(detail, mine === undefined ? [] : typeof mine === "string" ? [mine] : mine);
+
+/**
+ * The message a reply answers: the last one someone else sent (not marked
+ * sent, and not from one of my identities), or the last one. Recipients, the
+ * quote and the threading all answer this one (Codex review 4).
+ */
+export function answered(detail: ThreadDetail, mine?: Mine | string | readonly string[]): MessageDetail {
+  const isMine = asMine(mine, detail);
+  return [...detail.messages].reverse().find((m) => !m.isSent && !isMine(m.from.email)) ?? detail.messages[detail.messages.length - 1]!;
 }
 
 /**
@@ -19,8 +55,8 @@ export function answered(detail: ThreadDetail) {
  * written in the language of the moment, date included; from then on it is
  * the draft's text and never changes.
  */
-export function quoteFor(mode: Exclude<DraftMode, "new">, detail: ThreadDetail): string {
-  const last = answered(detail);
+export function quoteFor(mode: Exclude<DraftMode, "new">, detail: ThreadDetail, mine?: Mine | string | readonly string[]): string {
+  const last = answered(detail, mine);
   const text = last.bodyText ?? last.snippet;
   const date = fullDate(last.date);
   if (mode === "forward") {
@@ -29,21 +65,34 @@ export function quoteFor(mode: Exclude<DraftMode, "new">, detail: ThreadDetail):
   return `${t("compose.quote.attribution", { date, name: last.from.name || last.from.email })}\n${text.split("\n").map((l) => `> ${l}`).join("\n")}`;
 }
 
-/** Received replies use Reply-To or From; sent continuations keep original To, including notes to self. */
-export function autoRecipients(mode: Exclude<DraftMode, "new">, detail: ThreadDetail, me: string): { to: Address[]; cc: Address[] } {
+/**
+ * Who a reply goes to (auto: Terno filled them in), plan 26:
+ * - the sender, or the Reply-To addresses when the message names any that aren't mine;
+ * - my own message (or one from my alias): its To again;
+ * - reply-all adds its To and Cc in Cc;
+ * - never me (any identity), never twice (any case), never a Bcc; addresses repaired as other clients mangle them.
+ */
+export function autoRecipients(mode: Exclude<DraftMode, "new">, detail: ThreadDetail, mine: Mine | string | readonly string[]): { to: Address[]; cc: Address[] } {
   if (mode === "forward") return { to: [], cc: [] };
-  const last = answered(detail);
-  const mine = me.toLowerCase();
-  const seen = new Set<string>();
-  const unique = (addresses: Address[], excludeMe: boolean) => addresses.filter((a) => {
-    const key = a.email.toLowerCase();
-    if ((excludeMe && key === mine) || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-  const to = unique(last.isSent ? last.to : last.replyTo?.length ? last.replyTo : [last.from], !last.isSent);
-  const cc = mode === "replyAll" ? unique([...last.to, ...last.cc], true) : [];
+  const isMine = asMine(mine, detail);
+  const last = answered(detail, isMine);
+  const from = repairAddress(last.from);
+  const others = (list: readonly Address[]) => repairAddresses(list).filter((a) => !isMine(a.email));
+  const replyTo = others(last.replyTo ?? []);
+  const own = last.isSent || isMine(from.email);
+  let to = own ? others(last.to) : replyTo.length ? replyTo : [from];
+  // answering myself with nobody else on it: to me, as written
+  if (!to.length) to = own ? repairAddresses(last.to).slice(0, 1) : [from];
+  if (!to.length) to = [from];
+  const taken = new Set(to.map((a) => a.email.toLowerCase()));
+  const cc = mode === "replyAll" ? others([...last.to, ...last.cc]).filter((a) => !taken.has(a.email.toLowerCase())) : [];
   return { to, cc };
+}
+
+/** The first name a reply goes to, for "Reply to Ana…": who autoRecipients puts in To. */
+export function replyName(detail: ThreadDetail, mine: Mine | string | readonly string[]): string {
+  const to = autoRecipients("reply", detail, mine).to[0];
+  return to ? (to.name || to.email).split(/\s+/)[0]! : "";
 }
 
 /** A prefix already on the subject, from any language ("RE:", "Fw:", Outlook's Spanish "RV:"): kept, never doubled. */
@@ -58,10 +107,12 @@ export function subjectFor(mode: DraftMode, subject: string): string {
 }
 
 /** A fresh reply/forward draft for a conversation. */
-export function replyFields(mode: Exclude<DraftMode, "new">, detail: ThreadDetail, account: Account, opts: { quoteInBody?: boolean } = {}): DraftFields {
-  const { to, cc } = autoRecipients(mode, detail, account.email);
-  const quote = quoteFor(mode, detail);
-  const last = answered(detail);
+/** `identities`: every account's address (plan 26: none of them is replied to); the draft's account's alone by default. */
+export function replyFields(mode: Exclude<DraftMode, "new">, detail: ThreadDetail, account: Account, opts: { quoteInBody?: boolean; identities?: readonly string[] } = {}): DraftFields {
+  const mine = identitiesIn(detail, [account.email, ...(opts.identities ?? [])]);
+  const { to, cc } = autoRecipients(mode, detail, mine);
+  const quote = quoteFor(mode, detail, mine);
+  const last = answered(detail, mine);
   return {
     accountId: account.id,
     threadId: detail.thread.id,
@@ -95,8 +146,8 @@ export function newFields(accountId: number): DraftFields {
  * Only what Terno filled in (auto recipients, subject, quote, threading) is
  * recomputed for the new mode.
  */
-export function convertFields(d: DraftFields, mode: Exclude<DraftMode, "new">, detail: ThreadDetail, account: Account): DraftFields {
-  const fresh = replyFields(mode, detail, account);
+export function convertFields(d: DraftFields, mode: Exclude<DraftMode, "new">, detail: ThreadDetail, account: Account, identities: readonly string[] = []): DraftFields {
+  const fresh = replyFields(mode, detail, account, { identities });
   const lower = (e: string) => e.toLowerCase();
   // what the user typed, field by field (Terno's own entries in that field excluded)
   const typed = (text: string, auto: readonly string[]) => {

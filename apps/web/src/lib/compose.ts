@@ -80,14 +80,16 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
   if (!detail || mine !== intent) return;
   if (mode === "forward" && answered(detail).attachments.some((a) => !a.assetId)) { snack.error(t("attachments.unavailable")); return; }
   const account = s.accounts.find((a) => a.id === detail.thread.accountId) ?? s.accounts[0]!;
+  // none of my addresses is replied to, whichever account the conversation is in (plan 26)
+  const identities = s.accounts.map((a) => a.email);
   if (existing && existing.mode !== "new") {
     const before = fieldsOf(existing);
     if (!written(existing)) {
       // nothing written yet: simply the other mode, fresh
-      editDraft(existing.key, { ...replyFields(mode, detail, account) });
+      editDraft(existing.key, { ...replyFields(mode, detail, account, { identities }) });
       return focusDraft(existing.key, target);
     }
-    editDraft(existing.key, convertFields(before, mode, detail, account));
+    editDraft(existing.key, convertFields(before, mode, detail, account, identities));
     focusDraft(existing.key, target);
     // back to what it was, still open where the user is looking
     const undo = registerUndo(() => editDraft(existing.key, { ...before, uiState: "open" }));
@@ -95,7 +97,7 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
     snack(t(message), { action: { label: t("common.undo"), name: t(name), undo } });
     return;
   }
-  const key = createDraft(replyFields(mode, detail, account));
+  const key = createDraft(replyFields(mode, detail, account, { identities }));
   focusDraft(key, target);
 }
 

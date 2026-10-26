@@ -13,6 +13,7 @@ import { cancelReaderScroll, keepInView } from "~/lib/reader-scroll";
 import { Expand } from "./expand";
 import { DraftSlot } from "./inline-draft";
 import { shownDraftKey, useDrafts } from "~/lib/drafts";
+import { replyName } from "~/lib/compose-fields";
 import { act, cancelMarkRead, openCompose, scheduleMarkRead, toggleStar } from "~/lib/actions";
 import { acceptSuggestion, rejectSuggestion, removeFromCategory } from "~/lib/categorize";
 import { t } from "@terno/i18n";
@@ -64,11 +65,6 @@ function Reasons({ title, reasons, hint }: { title: string; reasons: Reason[]; h
 }
 
 /** The extension a tile shows on its document glyph ("PDF", "XLSX"), or nothing. */
-/** Who a reply goes to, by first name: the last person who wrote. */
-function replyTo(messages: MessageDetail[]): string {
-  const last = [...messages].reverse().find((m) => !m.isSent) ?? messages[messages.length - 1];
-  return last ? (last.from.name || last.from.email).split(/\s+/)[0]! : "";
-}
 
 
 function Message({ m, expanded, onToggle, icons }: { m: MessageDetail; expanded: boolean; onToggle: () => void; icons: boolean }) {
@@ -553,7 +549,7 @@ export function Reader() {
                   <Conversation key={detail.thread.id} messages={detail.messages} icons={!detail.thread.inSpam} />
                 </div>
               </MessageMenu>
-              <DraftSlot key={detail.thread.id} threadId={detail.thread.id} draftKey={draftKey} replyTo={replyTo(detail.messages)} account={account} icons={!detail.thread.inSpam} />
+              <DraftSlot key={detail.thread.id} threadId={detail.thread.id} draftKey={draftKey} replyTo={replyName(detail, accounts.map((a) => a.email))} account={account} icons={!detail.thread.inSpam} />
             </>
           )}
         </div>
