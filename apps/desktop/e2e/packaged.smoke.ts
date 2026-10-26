@@ -214,6 +214,32 @@ test("a release carries no test build's world: no baked feed or profile, GitHub'
   if (!/Signature=adhoc/.test(signature)) expect(execFileSync("codesign", ["-d", "-r-", appPath], { encoding: "utf8" })).toContain('identifier "dev.terno.mail"');
 });
 
+test("plan 21: More's state and the panes' widths survive a real restart on app://; the edges are never a window drag area", async () => {
+  const handle = page.getByTestId("pane-handle-sidebar");
+  // the boundary's top runs through the title band (the sidebar's drag region): there it's the handle's, and no-drag
+  const b = (await handle.boundingBox())!;
+  expect(await page.evaluate(([x, y]) => (document.elementFromPoint(x!, y!) as HTMLElement | null)?.closest("[data-testid]")?.getAttribute("data-testid"), [b.x + b.width / 2, b.y + 10])).toBe("pane-handle-sidebar");
+  expect(await handle.evaluate((el) => getComputedStyle(el).getPropertyValue("-webkit-app-region") || getComputedStyle(el).getPropertyValue("app-region"))).toBe("no-drag");
+  await handle.focus();
+  await page.keyboard.press("End");
+  await expect(handle).toHaveAttribute("aria-valuenow", "360");
+  await page.getByTestId("nav-more").click();
+  await expect(page.getByTestId("nav-trash")).toBeVisible();
+  await app.close();
+  const env = { ...process.env, TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_USER_DATA: userData };
+  delete env.ELECTRON_RUN_AS_NODE;
+  app = await electron.launch({ executablePath: join(appPath, "Contents/MacOS/Terno"), env });
+  page = await app.firstWindow();
+  await page.locator("[data-testid=thread-row]").first().waitFor({ timeout: 30_000 });
+  await expect(page.getByTestId("pane-handle-sidebar")).toHaveAttribute("aria-valuenow", "360");
+  expect((await page.getByTestId("sidebar").boundingBox())!.width).toBeCloseTo(360, 0);
+  await expect(page.getByTestId("nav-more")).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByTestId("nav-trash")).toBeVisible();
+  // back to the defaults for what follows
+  await page.getByTestId("pane-handle-sidebar").dblclick();
+  await page.getByTestId("nav-more").click();
+});
+
 test("warm start: relaunching with an existing mailbox shows mail fast", async () => {
   await app.close();
   const env = { ...process.env, TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_USER_DATA: userData };
