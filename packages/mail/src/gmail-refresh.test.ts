@@ -228,6 +228,41 @@ describe("durable Gmail refresh", () => {
     if (status !== 200) expect(error).toMatchObject({ status, retryable: true });
   });
 
+  it.each([429, 503])("a stalled HTTP %i body retains server backoff after its internal deadline", async (status) => {
+    vi.useFakeTimers();
+    let canceled = 0;
+    const body = new ReadableStream<Uint8Array>({ cancel() { canceled++; } });
+    const h = harness(() => new Response(body, { status }));
+    const result = h.provider.verify().catch((error: unknown) => error);
+    await flush();
+    await vi.advanceTimersByTimeAsync(30_000);
+    const error = await result;
+    expect(error).toMatchObject({ status, retryable: true, network: false, ambiguous: false });
+    expect(error).not.toBeInstanceOf(ProviderAuthError);
+    expect(canceled).toBe(1);
+    expect(body.locked).toBe(false);
+    expect(h.api).toEqual([]);
+    expect(h.replace).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    await h.provider.close();
+  });
+
+  it.each([429, 503])("explicit close still cancels a stalled HTTP %i body", async (status) => {
+    vi.useFakeTimers();
+    let canceled = 0;
+    const body = new ReadableStream<Uint8Array>({ cancel() { canceled++; } });
+    const h = harness(() => new Response(body, { status }));
+    const result = h.provider.verify().catch((error: unknown) => error);
+    await flush();
+    await h.provider.close();
+    expect(await result).toMatchObject({ name: "AbortError" });
+    expect(canceled).toBe(1);
+    expect(body.locked).toBe(false);
+    expect(h.api).toEqual([]);
+    expect(h.replace).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("one cumulative deadline races ignored abort across headers and body, cancels/releases the reader", async () => {
     vi.useFakeTimers();
     const cancel = vi.fn(async () => {}), releaseLock = vi.fn();

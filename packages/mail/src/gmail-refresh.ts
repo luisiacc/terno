@@ -29,6 +29,7 @@ export async function exchangeGmailRefresh(options: {
   const signal = controller.signal;
   const cancel = () => controller.abort(new DOMException("closed", "AbortError"));
   const timer = setTimeout(() => controller.abort(networkFailure()), 30_000);
+  let responseStatus: number | undefined;
   if (options.signal?.aborted) cancel();
   else options.signal?.addEventListener("abort", cancel, { once: true });
   const wait = async <T,>(work: Promise<T>): Promise<T> => {
@@ -57,6 +58,7 @@ export async function exchangeGmailRefresh(options: {
       return res;
     }));
     const receivedAt = Date.now();
+    responseStatus = response.status;
     let value: Record<string, unknown>;
     try {
       const reader = response.body?.getReader();
@@ -112,6 +114,8 @@ export async function exchangeGmailRefresh(options: {
       grantedScopes,
     };
   } catch (error) {
+    if (options.signal?.aborted) throw new DOMException("closed", "AbortError");
+    if (signal.aborted && responseStatus !== undefined && responseStatus >= 400) throw statusFailure(responseStatus);
     if (signal.aborted) throw signal.reason;
     if (error instanceof RequestNotDispatchedError || error instanceof ProviderError) throw error;
     throw isFetchNetworkFailure(error) ? networkFailure() : new ProviderError(L("errors.network.offline"), true);
