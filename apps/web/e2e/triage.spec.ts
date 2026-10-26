@@ -1,4 +1,4 @@
-import { expect, focusList, openRow, rows, rowSubject, selectedId, selectedRow, test } from "./fixtures";
+import { expect, navTo, focusList, openRow, rows, rowSubject, selectedId, selectedRow, test } from "./fixtures";
 
 test.describe("keyboard triage", { tag: "@design" }, () => {
   test("j/k move the selection and the reader follows", async ({ app: page }) => {
@@ -35,7 +35,7 @@ test.describe("keyboard triage", { tag: "@design" }, () => {
     await page.keyboard.press("s");
     await expect(selectedRow(page).locator("svg.fill-star")).toBeVisible();
 
-    await page.getByTestId("nav-trash").click();
+    await navTo(page, "trash");
     await expect(page.locator(`[data-thread-id="${trashed}"]`)).toHaveCount(1);
     await page.getByTestId("nav-starred").click();
     await expect(page.getByTestId("list-title")).toHaveText("Starred");
@@ -60,7 +60,7 @@ test.describe("keyboard triage", { tag: "@design" }, () => {
     await page.keyboard.press("e");
     for (const id of ids) await expect(page.locator(`[data-thread-id="${id}"]`)).toHaveCount(0);
     await expect(page.locator("[data-testid=snack]").filter({ hasText: "3 conversations" })).toBeVisible();
-    await page.getByTestId("nav-archive").click();
+    await navTo(page, "archive");
     for (const id of ids) await expect(page.locator(`[data-thread-id="${id}"]`)).toHaveCount(1);
   });
 

@@ -6,7 +6,7 @@
  * can be undone.
  */
 import type { Page } from "@playwright/test";
-import { expect, focusList, openRow, rows, selectThread, test } from "./fixtures";
+import { expect, navTo, focusList, openRow, rows, selectThread, test } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
 const composer = (page: Page) => page.getByTestId("reader").getByTestId("composer");
@@ -249,7 +249,7 @@ test.describe("new message, in the reader pane", { tag: "@design" }, () => {
     await expect(page.getByTestId("composer")).toHaveCount(0);
     await expect(page.getByTestId("reader")).toBeVisible();
     await expect(page.getByTestId("drafts-strip")).toHaveCount(0);
-    await page.getByTestId("nav-sent").click();
+    await navTo(page, "sent");
     await expect(page.getByTestId("row-subject").first()).toHaveText("Propuesta de colaboración");
   });
 

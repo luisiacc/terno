@@ -7,7 +7,7 @@
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import type { Page } from "@playwright/test";
-import { expect, openRow, rows, selectedId, test } from "./fixtures";
+import { expect, navTo, openRow, rows, selectedId, test } from "./fixtures";
 import { englishLeaks } from "./i18n-leaks";
 
 const SETTINGS_TABS = ["general", "appearance", "accounts", "categories", "filters", "ai", "agents", "data"] as const;
@@ -113,9 +113,9 @@ test.describe("languages", () => {
     }
     await page.keyboard.press("Escape");
     await expectNoLeaks(page, "inbox");
-    for (const nav of ["nav-starred", "nav-sent", "nav-archive", "nav-trash"]) {
-      await page.getByTestId(nav).click();
-      await expectNoLeaks(page, nav);
+    for (const view of ["starred", "sent", "archive", "trash"] as const) {
+      await navTo(page, view);
+      await expectNoLeaks(page, `nav-${view}`);
     }
     // the shortcuts dialog
     await page.getByTestId("nav-inbox").click();

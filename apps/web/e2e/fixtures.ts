@@ -187,6 +187,16 @@ export async function stabilize(page: Page): Promise<void> {
   await page.mouse.move(0, 0);
 }
 
+/** Goes to a folder from the sidebar, opening More first where it hides (plan 21: only Inbox and Starred are always shown). */
+export async function navTo(page: Page, view: "inbox" | "starred" | "sent" | "archive" | "all" | "spam" | "trash"): Promise<void> {
+  const item = page.getByTestId(`nav-${view}`);
+  if (!(await item.isVisible())) {
+    const more = page.getByTestId("nav-more");
+    if ((await more.getAttribute("aria-expanded")) !== "true") await more.click();
+  }
+  await item.click();
+}
+
 /**
  * First-run discovery probes Ollama and LM Studio on their default ports. Point both at
  * known places (a stub, or a closed port) so a real server on the test machine can't leak in.
