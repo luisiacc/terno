@@ -674,7 +674,7 @@ const RecipientChip = memo(function RecipientChip({ chip: c, selected, ids }: { 
       <span className={cn("truncate", !c.valid && "underline decoration-destructive decoration-dotted decoration-2 underline-offset-[3px] group-aria-selected/chip:decoration-primary-foreground")}>{chipLabel(c)}</span>
       {/* on the selected chip only: no space held at rest (the chips stay balanced), nothing shifts under a moving pointer */}
       {selected && (
-        <span aria-hidden="true" data-chip-remove className="-mr-0.5 grid size-4 shrink-0 place-items-center rounded-sm opacity-80 hover:opacity-100">
+        <span aria-hidden="true" data-chip-remove className="-mr-0.5 grid size-4 shrink-0 place-items-center rounded-sm">
           <X className="size-3" />
         </span>
       )}
