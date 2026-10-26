@@ -1,6 +1,6 @@
 # Provider reliability implementation worklist
 
-Status: in progress. Source: [research report](provider-reliability-report.md). Plan: [26](../plans/26-provider-reliability.md). Detailed baseline mapping: [coverage audit](provider-reliability-baseline.md).
+Status: in progress. User update: Outlook-specific work is deferred until its integration is implemented; see [future Outlook checklist](outlook-reliability-checklist.md). Source: [research report](provider-reliability-report.md). Plan: [26](../plans/26-provider-reliability.md). Detailed baseline mapping: [coverage audit](provider-reliability-baseline.md).
 
 Every report entry remains open until investigation establishes its Terno disposition and records tests, review, and commits. Duplicate scenarios can share a reviewed change; evidence from other systems is not automatically a Terno bug. New capability work is not dismissed merely because older plans deferred it.
 
@@ -36,9 +36,9 @@ Every report entry remains open until investigation establishes its Terno dispos
 | A18 | Reply-To, own-message follow-up, aliases, and Bcc need separate tests | Pending: W09; E+C+R | Baseline audit records existing tests and required new oracles. |
 | A19 | Browser reconnect must invalidate fresh caches and retire only settled optimistic overrides | Pending: W02/W11/W12; E+R+L | Baseline audit records existing tests and required new oracles. |
 | A20 | Execution-platform budgets and successful empty pages must be modeled separately from provider failures | Pending: W03/W11; E+R+L | Baseline audit records existing tests and required new oracles. |
-| A21 | Outlook batch success is not the same as success of each message operation | Pending: W07/W02; C+R | Baseline audit records existing tests and required new oracles. |
-| A22 | Returning an Outlook nextLink without consuming it makes the pagination contract incomplete | Pending: W07/W03; C+R | Baseline audit records existing tests and required new oracles. |
-| A23 | Graph replies need real reply/forward drafts, including migration of older standalone drafts | Pending: W07/W08/W09; C+R | Baseline audit records existing tests and required new oracles. |
+| A21 | Outlook batch success is not the same as success of each message operation | User-deferred: Outlook integration checklist | Resume after Outlook integration; shared/Gmail equivalents stay tracked separately. |
+| A22 | Returning an Outlook nextLink without consuming it makes the pagination contract incomplete | User-deferred: Outlook integration checklist | Resume after Outlook integration; shared/Gmail equivalents stay tracked separately. |
+| A23 | Graph replies need real reply/forward drafts, including migration of older standalone drafts | User-deferred: Outlook integration checklist | Resume after Outlook integration; shared/Gmail equivalents stay tracked separately. |
 | A24 | A failed Outlook draft update must not trigger destructive replacement | Pending: W08/W07; C+R | Baseline audit records existing tests and required new oracles. |
 | A25 | IMAP identity is folder + UIDVALIDITY + UID, not UID alone | Pending: W06/W03; E+R | Baseline audit records existing tests and required new oracles. |
 | A26 | Bounded IMAP backfill is a product limit, and capability fallbacks can leave old flags stale | Pending: W06/W11; E+R | Baseline audit records existing tests and required new oracles. |
@@ -55,7 +55,7 @@ Every report entry remains open until investigation establishes its Terno dispos
 | B01 | Refresh success can overwrite newer credentials | Pending: W04; E+R | Baseline audit records existing tests and required new oracles. |
 | B02 | Old auth failures must not disconnect a freshly reconnected mailbox | Pending: W04; E+R | Baseline audit records existing tests and required new oracles. |
 | B03 | Reconnect must be bound to the intended mailbox | Pending: W04; E+C+R | Baseline audit records existing tests and required new oracles. |
-| B04 | Library updates can silently change provider identity keys | Pending: W04/W07; C+R | Baseline audit records existing tests and required new oracles. |
+| B04 | Library updates can silently change provider identity keys | User-deferred: Outlook integration checklist | Resume after Outlook integration; shared/Gmail equivalents stay tracked separately. |
 | B05 | Verified email renames require provider-specific authority and ownership checks | Pending: W04/W09; R+C+L | Baseline audit records existing tests and required new oracles. |
 | B06 | Concurrent Gmail webhook processors can move the history cursor backward | Pending: W03; E+R+L | Baseline audit records existing tests and required new oracles. |
 | B07 | Failed deduplication locks can turn recoverable failures into permanent skips | Pending: W03; E+R+L | Baseline audit records existing tests and required new oracles. |
@@ -66,43 +66,43 @@ Every report entry remains open until investigation establishes its Terno dispos
 | B12 | Expired history, archive, and deletion are different states | Pending: W03; E+R | Baseline audit records existing tests and required new oracles. |
 | B13 | An omitted batch result is not evidence of deletion | Pending: W03/W07; E+C+R+L | Baseline audit records existing tests and required new oracles. |
 | B14 | Repeated resync requests can create an idle CPU/network loop | Pending: W03/W11; E+R | Baseline audit records existing tests and required new oracles. |
-| B15 | Mutating an offset-paged inbox skips every other page | Pending: W02/W11; E+R | Baseline audit records existing tests and required new oracles. |
-| B16 | Thread actions must enumerate the entire conversation before writing | Pending: W02/W07; E+C+R | Baseline audit records existing tests and required new oracles. |
-| B17 | All-mail must include custom folders and exclude deleted-folder descendants | Pending: W06/W07; C+R | Baseline audit records existing tests and required new oracles. |
-| B18 | Outlook categories are not folders | Pending: W06/W07; E+C+L | Baseline audit records existing tests and required new oracles. |
-| B19 | Category read-modify-write needs ETags and fresh recomputation | Pending: W07/W02; C+R | Baseline audit records existing tests and required new oracles. |
-| B20 | Bulk success is per item, not the batch HTTP status | Pending: W07/W02; C+R | Baseline audit records existing tests and required new oracles. |
+| B15 | Mutating an offset-paged inbox skips every other page | User-deferred: Outlook integration checklist | Resume after Outlook integration; shared/Gmail equivalents stay tracked separately. |
+| B16 | Thread actions must enumerate the entire conversation before writing | User-deferred: Outlook integration checklist | Resume after Outlook integration; shared/Gmail equivalents stay tracked separately. |
+| B17 | All-mail must include custom folders and exclude deleted-folder descendants | User-deferred: Outlook integration checklist | Resume after Outlook integration; shared/Gmail equivalents stay tracked separately. |
+| B18 | Outlook categories are not folders | User-deferred: Outlook integration checklist | Resume after Outlook integration; shared/Gmail equivalents stay tracked separately. |
+| B19 | Category read-modify-write needs ETags and fresh recomputation | User-deferred: Outlook integration checklist | Resume after Outlook integration; shared/Gmail equivalents stay tracked separately. |
+| B20 | Bulk success is per item, not the batch HTTP status | User-deferred: Outlook integration checklist | Resume after Outlook integration; shared/Gmail equivalents stay tracked separately. |
 | B21 | Send acceptance must be independent of sent-copy readability | Pending: W01/W08; E+R | Baseline audit records existing tests and required new oracles. |
 | B22 | Retry policies for sends must differ from reads | Pending: W01/W05; E+R | Baseline audit records existing tests and required new oracles. |
-| B23 | Missing contentBytes is not an empty attachment | Pending: W08/W07; C+R | Baseline audit records existing tests and required new oracles. |
-| B24 | Attachment metadata size is not always the raw-byte size | Pending: W08; C+R | Baseline audit records existing tests and required new oracles. |
+| B23 | Missing contentBytes is not an empty attachment | User-deferred: Outlook integration checklist | Resume after Outlook integration; shared/Gmail equivalents stay tracked separately. |
+| B24 | Attachment metadata size is not always the raw-byte size | User-deferred: Outlook integration checklist | Resume after Outlook integration; shared/Gmail equivalents stay tracked separately. |
 | B25 | Server-local attachment staging fails across application instances | Pending: W08; C+R+L | Baseline audit records existing tests and required new oracles. |
 | B26 | Gmail draft replacement makes concurrent autosave and upload destructive | Pending: W08; E+C+R | Baseline audit records existing tests and required new oracles. |
 | B27 | Missing drafts are terminal autosave state | Pending: W08; E+C+R | Baseline audit records existing tests and required new oracles. |
-| B28 | Empty arrays and omitted recipient fields have different semantics | Pending: W08/W07; E+C+R | Baseline audit records existing tests and required new oracles. |
+| B28 | Empty arrays and omitted recipient fields have different semantics | User-deferred: Outlook integration checklist | Resume after Outlook integration; shared/Gmail equivalents stay tracked separately. |
 | B29 | Reply identity must follow the destination alias, including its signature | Pending: W09; C+R | Baseline audit records existing tests and required new oracles. |
 | B30 | Provider autosave echoes must not replace the live composer | Pending: W08/W12; E+C+R | Baseline audit records existing tests and required new oracles. |
 | B31 | MIME alternatives and sequential parts must be handled differently | Pending: W10; R | Baseline audit records existing tests and required new oracles. |
 | B32 | Malformed mail and oversized metadata can wedge a whole account | Pending: W10/W03; R | Baseline audit records existing tests and required new oracles. |
-| B33 | One unreadable Graph item can poison a whole continuation page | Pending: W07/W03; C+R | Baseline audit records existing tests and required new oracles. |
+| B33 | One unreadable Graph item can poison a whole continuation page | User-deferred: Outlook integration checklist | Resume after Outlook integration; shared/Gmail equivalents stay tracked separately. |
 | B34 | A local rate-limit guard must not refresh its own expiry | Pending: W05; R | Baseline audit records existing tests and required new oracles. |
 | B35 | Gmail disabled is a permanent precondition failure, not a retry opportunity | Pending: W05/W04; E+R | Baseline audit records existing tests and required new oracles. |
-| B36 | Provider-neutral search can silently inherit Gmail semantics | Pending: W11/W07; E+C+L | Baseline audit records existing tests and required new oracles. |
+| B36 | Provider-neutral search can silently inherit Gmail semantics | User-deferred: Outlook integration checklist | Resume after Outlook integration; shared/Gmail equivalents stay tracked separately. |
 | B37 | Static body rules must use visible text for HTML-only messages | Pending: W10; E+R | Baseline audit records existing tests and required new oracles. |
 | B38 | Scheduled actions can lose stable IDs and report success without doing work | Pending: W02/W06; E+R+L | Baseline audit records existing tests and required new oracles. |
 | B39 | An invented AI rule name must not become successful no-op processing | Pending: W10/W12; E+R+L | Baseline audit records existing tests and required new oracles. |
 | B40 | Concurrent automation-history writes require retrying the version allocation | Pending: W02/W11; E+R+L | Baseline audit records existing tests and required new oracles. |
 | B41 | Onboarding quota exhaustion must have a recovery path | Pending: W05/W12; E+R+L | Baseline audit records existing tests and required new oracles. |
-| B42 | Parallel Graph fetches can surface as unavailable-mail UI | Pending: W07/W05/W12; C+R | Baseline audit records existing tests and required new oracles. |
+| B42 | Parallel Graph fetches can surface as unavailable-mail UI | User-deferred: Outlook integration checklist | Resume after Outlook integration; shared/Gmail equivalents stay tracked separately. |
 | B43 | Multi-account attachment regressions need ownership tests | Pending: W08; C+R | Baseline audit records existing tests and required new oracles. |
-| B44 | Search results can use a different Outlook ID namespace | Pending: W07/W09; C+R | Baseline audit records existing tests and required new oracles. |
+| B44 | Search results can use a different Outlook ID namespace | User-deferred: Outlook integration checklist | Resume after Outlook integration; shared/Gmail equivalents stay tracked separately. |
 | B45 | Reply-To may contain several addresses and must survive both UI and provider drafting | Pending: W09; C+R | Baseline audit records existing tests and required new oracles. |
 | B46 | Undo must release idempotency admission while still blocking real duplicate sends | Pending: W01/W08/W02; E+R | Baseline audit records existing tests and required new oracles. |
 | B47 | Non-protocol HTTP failures must not be parsed as successful sync pages | Pending: W03/W05/W07; E+R | Baseline audit records existing tests and required new oracles. |
 | S01 | An expired Gmail history cursor triggers recovery; a transient message fetch failure does not advance beyond unhandled work. | Pending: W03; E+R | Baseline audit records existing tests and required new oracles. |
 | S02 | Three history pages overlap message IDs and contain repeated label changes; the final materialized state is correct with no duplicate message or duplicate automation. | Pending: W03; R | Baseline audit records existing tests and required new oracles. |
 | S03 | Fail after applying a page and before saving its cursor, restart, and replay; state remains correct. | Pending: W03; E+R | Baseline audit records existing tests and required new oracles. |
-| S04 | An empty Graph page includes nextLink; the worker continues to the terminal deltaLink. | Pending: W07; C+R | Baseline audit records existing tests and required new oracles. |
+| S04 | An empty Graph page includes nextLink; the worker continues to the terminal deltaLink. | User-deferred: Outlook integration checklist | Resume after Outlook integration; shared/Gmail equivalents stay tracked separately. |
 | S05 | A notification arrives while reconciliation is running; one trailing pass occurs and the final event is reflected. | Pending: W03; E+R | Baseline audit records existing tests and required new oracles. |
 | S06 | Two workers race and the older lease expires; only the current worker can promote the checkpoint. | Pending: W03/W11; E+R+L | Baseline audit records existing tests and required new oracles. |
 | S07 | An initial backfill races with a new arrival, archive, delete and read change; the next incremental pass catches every concurrent mutation. | Pending: W03; E+R | Baseline audit records existing tests and required new oracles. |
@@ -122,7 +122,7 @@ Every report entry remains open until investigation establishes its Terno dispos
 | S21 | Reading works while SMTP authentication fails; receiving continues and only sends wait. | Pending: W04; E | Baseline audit records existing tests and required new oracles. |
 | S22 | Consent grants read but not send, or an administrator blocks a permission; expose the affected capability and the right next action. | Pending: W04/W07/W12; R+C | Baseline audit records existing tests and required new oracles. |
 | S23 | Gmail quota 403, policy 403 and message 404 follow different recovery paths. | Pending: W05/W03; E+R | Baseline audit records existing tests and required new oracles. |
-| S24 | Graph batch envelope is 200 with mixed 204/429/404; retry only eligible failed members after the server delay. | Pending: W07/W02/W05; C+R | Baseline audit records existing tests and required new oracles. |
+| S24 | Graph batch envelope is 200 with mixed 204/429/404; retry only eligible failed members after the server delay. | User-deferred: Outlook integration checklist | Resume after Outlook integration; shared/Gmail equivalents stay tracked separately. |
 | S25 | A provider remains throttled through restart; persisted next-attempt timing prevents a burst on launch. | Pending: W05; E+R | Baseline audit records existing tests and required new oracles. |
 | S26 | A large backfill is running when the user sends or opens a message; interactive work has bounded latency. | Pending: W05/W11; R | Baseline audit records existing tests and required new oracles. |
 | S27 | Sleep, VPN change, captive portal and reconnect interrupt work; cancellation closes only the relevant reads, and no automatic resend follows uncertain submission. | Pending: W01/W04/W06; E+R | Baseline audit records existing tests and required new oracles. |
@@ -158,6 +158,6 @@ Every report entry remains open until investigation establishes its Terno dispos
 | S57 | Date-range search crosses midnight, DST and a non-PST timezone; exact epoch boundaries return the intended set. | Pending: W11; E+R | Baseline audit records existing tests and required new oracles. |
 | S58 | Gmail API results differ from alias-expanded/thread-wide provider UI results; communicate or implement the chosen parity rather than treating absence as deletion. | Pending: W11/W12; E+R+L | Baseline audit records existing tests and required new oracles. |
 | S59 | A remote draft replacement changes its underlying message ID and a send removes the container; delayed autosave cannot target the sent message or resurrect the draft. | Pending: W08; C+R | Baseline audit records existing tests and required new oracles. |
-| S60 | An inline-only Graph message reports no ordinary attachments; CID images still resolve under the explicit content policy. | Pending: W08/W07/W12; C+R | Baseline audit records existing tests and required new oracles. |
+| S60 | An inline-only Graph message reports no ordinary attachments; CID images still resolve under the explicit content policy. | User-deferred: Outlook integration checklist | Resume after Outlook integration; shared/Gmail equivalents stay tracked separately. |
 
 Additional audit candidates X01–X06 (late settled observations, refresh-token rotation, poison mail, visible-text matching, response validation, account-removal fencing) remain open and are specified in the baseline audit.

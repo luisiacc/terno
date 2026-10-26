@@ -131,3 +131,7 @@ Codex reviewed `88f9094..c11d93f` and found one medium issue: newly exposed OAut
 ### Slice 4 — critique and red cases
 
 Six critique points accepted: use the shared label path, compare exact captured provider IDs, test a remotely applied chunk whose response is lost, propagate all refusal outcomes, select void success only for batchModify (never send), and retain sequential bounded bodies/requests with the existing O(N) provider-ID list. Five initial restore regressions fail: TRASH remains after swallowed untrash failure, empty 200 is rejected, and 1,001 IDs exceed the request bound. Additional late-arrival/lost-response tests are added before implementation.
+
+## User scope update: defer Outlook
+
+The user instructed: “for the outlook related things, just take note on them to do them later on after outlook integration is done”. All Graph/Microsoft-specific implementation is therefore deferred to [the future checklist](../research/outlook-reliability-checklist.md). Mixed provider-independent scenarios remain active for current Gmail/IMAP/SMTP and local storage. This supersedes the baseline audit's W07 capability implementation recommendation. Deferred is not implemented/verified.
