@@ -54,11 +54,17 @@ test.describe("the List layout", { tag: "@design" }, () => {
     // deep in the list
     await listbox(page).evaluate((el) => (el.scrollTop = 2400));
     await expect.poll(() => scrollTop(page)).toBe(2400);
-    // a row on screen, clicked where it is (a locator click would scroll it into view first)
-    const box = (await listbox(page).boundingBox())!;
-    await page.mouse.click(box.x + box.width / 2, box.y + 200);
-    await expect(listPage(page)).toHaveAttribute("data-page", "thread");
-    const id = (await selectedRow(page).getAttribute("data-thread-id"))!;
+    // a row wholly on screen (clicking it scrolls nothing), once the rows for this offset are in
+    await page.waitForTimeout(150);
+    const onScreen = await listbox(page).evaluate((lb) => {
+      const r = lb.getBoundingClientRect();
+      return [...lb.querySelectorAll<HTMLElement>("[data-testid=thread-row]")].find((row) => {
+        const b = row.getBoundingClientRect();
+        return b.top >= r.top + 100 && b.bottom <= r.bottom - 100;
+      })!.dataset.threadId!;
+    });
+    const id = await openRow(page, page.locator(`[data-thread-id="${onScreen}"]`));
+    expect(await scrollTop(page)).toBe(2400);
     await expect(page).toHaveURL(new RegExp(`#/thread/${id}$`));
     // the list is still there underneath: not painted, not reachable, its rows still mounted
     await expect(section(page)).toHaveAttribute("inert", "");
@@ -212,7 +218,8 @@ test.describe("the List layout: what stays put", () => {
     const id = await openRow(page, first);
     expect(await scrollTop(page)).toBe(0);
     // a new thread lands above every row while the list is covered: its refresh waits for Back
-    await ingestConversation(server, { subject: "Llegó mientras leías", count: 1, now: E2E_NOW + 3 * 3_600_000 });
+    const arrived = await ingestConversation(server, { subject: "Llegó mientras leías", count: 1, now: E2E_NOW + 3 * 3_600_000 });
+    server.backend.notifyChanged([arrived]);
     await page.waitForTimeout(600);
     await page.keyboard.press("Escape");
     await expect(page.locator("[data-thread-id]").first()).not.toHaveAttribute("data-thread-id", id);
