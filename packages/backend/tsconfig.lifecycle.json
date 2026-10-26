@@ -1,6 +1,6 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": { "lib": ["ES2023", "DOM"] },
-  "include": ["src/account-lifecycle.test.ts"],
+  "include": ["src/account-lifecycle.test.ts", "src/provider-secret.test.ts", "src/gmail-rotation.int.test.ts"],
   "exclude": []
 }

@@ -100,6 +100,11 @@ export interface ProviderContext {
   config: Record<string, unknown>;
   getSecret(name: string): Promise<string | null>;
   setSecret(name: string, value: string): Promise<void>;
+  /** Durable encrypted CAS for this lifetime/mailbox. False means missing or changed credentials; failures throw.
+   * Equal plaintext asserts ownership without rewriting. After an uncertain commit, next→next can confirm it.
+   * Success is checked again after persistence; a closed lifetime never publishes success.
+   */
+  replaceSecret(name: string, expectedPlaintext: string, nextPlaintext: string): Promise<boolean>;
   /** app-wide secrets (e.g. the Gmail OAuth client secret) */
   getAppSecret(name: string): Promise<string | null>;
   /** persistent provider sync cursor (stored on the account) */

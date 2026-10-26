@@ -2,5 +2,5 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "types": ["node"] },
   "include": ["src"],
-  "exclude": ["src/account-lifecycle.test.ts"]
+  "exclude": ["src/account-lifecycle.test.ts", "src/provider-secret.test.ts", "src/gmail-rotation.int.test.ts"]
 }

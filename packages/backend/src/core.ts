@@ -815,6 +815,40 @@ export class BackendCore {
     return pending;
   }
 
+  private async replaceProviderSecret(life: AccountLifetime, stamp: { id: number; email: string; createdAt: number }, key: string, expected: string, next: string): Promise<boolean> {
+    const name = `account:${life.id}:${key}`;
+    let unreadable: ProviderAuthError | undefined;
+    try {
+      const blob = await this.accountRead(life, async () => {
+        const stored = await this.store.secrets.get(name);
+        return stored ? Uint8Array.from(stored) : null;
+      });
+      if (!blob) return false;
+      const pending = await this.accountRead(life, () => readKeychainState(this.store));
+      if (pending?.pending[name] === blobFingerprint(blob)) {
+        unreadable = new ProviderAuthError(messageOf(new SecretUnreadableError(name, true)));
+        throw unreadable;
+      }
+      let plain: string;
+      try {
+        plain = await this.options.cipher.decrypt(blob);
+      } catch {
+        unreadable = new ProviderAuthError(messageOf(new SecretUnreadableError(name, false)));
+        throw unreadable;
+      }
+      this.assertCurrent(life);
+      if (plain !== expected) return false;
+      const candidate = next === expected ? blob : await this.options.cipher.encrypt(next);
+      const replaced = await this.accountWrite(life, () => this.store.secrets.replace(name, blob, candidate, stamp));
+      this.assertCurrent(life);
+      return replaced;
+    } catch {
+      this.assertCurrent(life);
+      if (unreadable) throw unreadable;
+      throw new ProviderError(L("errors.secret.replaceFailed"), true);
+    }
+  }
+
   private providerStore(life: AccountLifetime): ProviderStore {
     const store = this.store.providerStore(life.id);
     const read = <T,>(fn: () => Promise<T>) => this.accountRead(life, fn);
@@ -854,6 +888,8 @@ export class BackendCore {
       if (!this.current(life) || !account) return null;
       const cfg = await this.store.accounts.config<Record<string, unknown>>(accountId);
       if (!this.current(life) || !cfg) return null;
+      const stamp = await this.store.accounts.stamp(accountId);
+      if (!this.current(life) || !stamp) return null;
       const provider = this.options.providers.create({
         store: this.providerStore(life), account, config: cfg.config,
         getSecret: (name) => this.accountRead(life, () =>
@@ -865,6 +901,7 @@ export class BackendCore {
           const blob = await this.options.cipher.encrypt(value);
           await this.accountWrite(life, () => this.store.secrets.put(`account:${accountId}:${name}`, blob));
         },
+        replaceSecret: (name, expected, next) => this.replaceProviderSecret(life, stamp, name, expected, next),
         getAppSecret: (name) => this.accountRead(life, () => this.getSecret(name)),
         event: (code, fields) => {
           if (this.current(life)) breadcrumb("sync", code, { accountKind: accountKindOf(account.kind), ...(fields?.durationMs !== undefined && { durationMs: fields.durationMs }) });
