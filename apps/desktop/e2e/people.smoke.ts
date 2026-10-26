@@ -29,12 +29,15 @@ test.describe.configure({ mode: "serial" });
 function toV13(file: string): void {
   const db = new DatabaseSync(file);
   try {
-    for (const ix of ["threads_people", "threads_people_id", "threads_waiting", "threads_facts_pending", "correspondents_own"]) db.exec(`DROP INDEX IF EXISTS ${ix}`);
+    for (const ix of ["threads_people", "threads_people_id", "threads_waiting", "threads_waiting_id", "threads_waiting_inbox", "threads_facts_pending", "ops_failed_sends", "correspondents_own"]) db.exec(`DROP INDEX IF EXISTS ${ix}`);
     db.exec("DROP TABLE correspondents");
     db.exec("ALTER TABLE threads DROP COLUMN person");
     db.exec("ALTER TABLE threads DROP COLUMN waiting_since");
     db.exec("ALTER TABLE messages DROP COLUMN is_bulk");
-    db.exec("DELETE FROM settings WHERE key = 'facts_backfill'");
+    db.exec("DELETE FROM settings WHERE key IN ('facts_backfill', 'facts_senders')");
+    // nothing of v14 left for the migration to trip on
+    const left = db.prepare("SELECT name FROM sqlite_master WHERE sql LIKE '%person%' OR sql LIKE '%waiting_since%' OR sql LIKE '%is_bulk%' OR name LIKE 'ops_failed_sends'").all();
+    if (left.length) throw new Error(`v14 left behind: ${JSON.stringify(left)}`);
     db.exec("PRAGMA user_version = 13");
   } finally {
     db.close();
