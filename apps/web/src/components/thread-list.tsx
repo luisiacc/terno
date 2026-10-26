@@ -34,6 +34,7 @@ import { LearnedBanner } from "./learned-banner";
 import { ReportRow } from "./diag/report-row";
 import { DesktopBanner, GmailReconnect } from "~/lib/web-parts";
 import { preloadComposer } from "./composer/lazy";
+import { iconsAllowed, iconsAllowedForList } from "~/lib/sender-icons";
 
 export const searchInputRef: { current: HTMLInputElement | null } = { current: null };
 export const listScroller: { scrollToIndex?: (i: number) => void } = {};
@@ -479,6 +480,10 @@ export function ThreadList() {
   const compact = useApp((s) => s.settings?.density === "compact");
   const composing = useApp((s) => s.compose !== null);
   const showAccount = useApp((s) => s.accountId === null && s.accounts.length > 1);
+  // plan 22: no sender icons in spam (no request to a spammer's site, no borrowed logo on a phish), the view or a search in it
+  const iconsHere = useApp((s) => iconsAllowed(s.view, s.query));
+  // and the rows on screen allow them too (leaving Spam, its rows stay until the new ones arrive)
+  const icons = iconsHere && iconsAllowedForList(itemsKey);
   const filter = useApp(activeFilter);
   const design = useDesign();
   const height = design.rows[compact ? "compact" : "comfortable"];
@@ -625,7 +630,7 @@ export function ThreadList() {
         ) : (
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
             {virtualItems.map((v) => (
-              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} showAccount={showAccount} layout={layout} />
+              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} showAccount={showAccount} icons={icons} layout={layout} />
             ))}
           </div>
         )}

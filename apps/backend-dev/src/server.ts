@@ -27,6 +27,8 @@ export interface DevServerOptions {
   agentSocket?: boolean;
   /** E2E (plan 20): the retry schedule */
   connectivity?: BackendOptions["connectivity"];
+  /** plan 22: how website icons are fetched (default: the real one; E2E passes a stub that never touches the internet) */
+  iconTransport?: BackendOptions["iconTransport"];
 }
 
 export interface DevServer {
@@ -58,6 +60,7 @@ export async function startDevServer(o: DevServerOptions): Promise<DevServer> {
     now: o.now,
     autoSync: o.autoSync ?? true,
     connectivity: o.connectivity,
+    iconTransport: o.iconTransport,
     log: (level, message, extra) => (level === "error" ? console.error : console.log)(`[backend] ${message}`, extra ?? ""),
   });
   if (o.seed !== false && (await seedDemo(backend.store, { threads: o.threads, accounts: o.accounts }))) {

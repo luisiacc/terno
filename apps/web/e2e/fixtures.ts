@@ -8,6 +8,7 @@ import type { DesignId } from "@terno/core";
 import { seedPrintFixtures } from "@terno/backend";
 import type { PrintFixtureKey } from "@terno/mock-data";
 import { E2E_NOW, TEMPLATE_ENV } from "./constants";
+import { iconStub, type IconStub } from "./icon-stub";
 
 export { expect };
 
@@ -91,7 +92,7 @@ interface Fixtures {
   backendOptions: { empty?: boolean; ownerClaims?: boolean; agentSocket?: boolean; smtpCapture?: boolean; network?: boolean };
   /** the design the app opens in (plan 15): each Playwright project sets its own; null leaves the install's default (Lumen) */
   design: DesignId | null;
-  server: DevServer & { smtp: CapturedMail[]; net: TestNetwork };
+  server: DevServer & { smtp: CapturedMail[]; net: TestNetwork; icons: IconStub };
   /** the app, loaded, connected and showing the inbox */
   app: Page;
 }
@@ -114,8 +115,10 @@ export const test = base.extend<Fixtures>({
     const providers = backendOptions.network ? await networkRegistry(net) : capture?.registry;
     // plan 20: the retry after a first failure comes in a second, then a minute (time enough to look)
     const connectivity = backendOptions.network ? { delays: [1000, 60_000] } : undefined;
-    const server = await startDevServer({ port: 0, dataDir: dir, token: "e2e", now: () => E2E_NOW, autoSync: true, seed: !backendOptions.empty, ownerClaims: backendOptions.ownerClaims, agentSocket: backendOptions.agentSocket, providers, connectivity });
-    await use(Object.assign(server, { smtp: capture?.received ?? [], net }));
+    // plan 22: website icons never reach the internet from a test (a few seeded sites have icons, the rest 404)
+    const icons = iconStub();
+    const server = await startDevServer({ port: 0, dataDir: dir, token: "e2e", now: () => E2E_NOW, autoSync: true, seed: !backendOptions.empty, ownerClaims: backendOptions.ownerClaims, agentSocket: backendOptions.agentSocket, providers, connectivity, iconTransport: icons });
+    await use(Object.assign(server, { smtp: capture?.received ?? [], net, icons }));
     // Backend.stop() doesn't wait for an in-flight ops batch; let it settle first.
     const b = server.backend as unknown as { workerRunning: boolean };
     for (let i = 0; i < 100 && b.workerRunning; i++) await new Promise((r) => setTimeout(r, 20));

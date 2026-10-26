@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { closeSync, openSync, readSync } from "node:fs";
-import { readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { endianness } from "node:os";
+import { dirname } from "node:path";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { setImmediate as yieldToLoop } from "node:timers/promises";
 import { Worker } from "node:worker_threads";
@@ -228,6 +229,8 @@ const nodeFiles: PlatformFiles = {
   async replace(path, bytes) {
     const tmp = `${path}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`;
     try {
+      // a cache in a directory of its own (plan 22's icon slots) creates it on first write
+      await mkdir(dirname(path), { recursive: true });
       await writeFile(tmp, bytes);
       await rename(tmp, path);
     } catch (error) {

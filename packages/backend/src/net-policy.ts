@@ -6,7 +6,7 @@ import { L, type Localized } from "@terno/i18n";
  * and goes through this module (an architecture test enforces it), so local
  * mode is one decision in one place instead of a convention.
  */
-export type NetPurpose = "mail" | "ai" | "remote-content" | "telemetry" | "update" | "cloud";
+export type NetPurpose = "mail" | "ai" | "remote-content" | "telemetry" | "update" | "cloud" | "icons";
 
 export interface NetMeta {
   /** declared locality of the AI provider making the call */
@@ -44,6 +44,11 @@ export type LookupAll = (host: string) => Promise<{ address: string; family: num
 
 export interface NetworkPolicyOptions {
   localMode: () => boolean | Promise<boolean>;
+  /**
+   * Plan 22: website icons are allowed (the setting: in connected mode unless turned off, in local
+   * mode only when the user turned them on). Without it, never.
+   */
+  siteIcons?: () => boolean | Promise<boolean>;
   /**
    * DNS (Node: dns.lookup; tests resolve names without real DNS). Browsers
    * have none: then only literal loopback hosts (127.x, ::1, localhost) count
@@ -119,6 +124,11 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
 
   async function assert(purpose: NetPurpose, target: string | URL, meta: NetMeta = {}): Promise<{ pinnedHost?: string }> {
     const url = new URL(String(target));
+    // sender icons are their own decision in both modes: the user's explicit choice in local mode
+    if (purpose === "icons") {
+      if (!(await options.siteIcons?.())) throw new NetworkPolicyError(L("errors.net.iconsOff", { host: url.host }), purpose, url.host);
+      return {};
+    }
     if (purpose === "mail" || !(await options.localMode())) return {};
     if (purpose !== "ai") throw new NetworkPolicyError(L("errors.net.localModeBlocks", { purpose, host: url.host }), purpose, url.host);
     if (meta.providerLocality !== "local") {

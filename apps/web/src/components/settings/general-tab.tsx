@@ -168,7 +168,7 @@ export function GeneralTab({ settings, update, onLocalOff }: { settings: AppSett
           testId="local-mode-row"
           label={t("settings.general.localMode")}
           hint={
-            WEB ? t("settings.general.localMode.hintWeb") : t("settings.general.localMode.hint")
+            WEB ? t("settings.general.localMode.hintWeb") : settings.localMode && settings.senderIcons ? t("settings.general.localMode.hintIcons") : t("settings.general.localMode.hint")
           }
         >
           {(a) => <Switch {...a} data-testid="local-mode-switch" checked={settings.localMode} onCheckedChange={(on) => (on ? void update({ localMode: true }) : onLocalOff())} />}

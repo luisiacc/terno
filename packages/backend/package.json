@@ -21,6 +21,7 @@
     "@terno/mock-data": "workspace:*",
     "@terno/richtext": "workspace:*",
     "@terno/store": "workspace:*",
+    "tldts": "7.4.19",
     "ws": "^8.22.0"
   },
   "devDependencies": {
