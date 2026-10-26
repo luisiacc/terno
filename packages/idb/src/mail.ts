@@ -1088,24 +1088,29 @@ export function enqueueOp(c: Ctx, op: { accountId: number; kind: string; target:
 const opRow = (r: R): OpRow => ({ id: r.id, seq: r.seq, account_id: r.account_id, kind: r.kind, target_json: r.target_json, payload_json: r.payload_json, state: r.state, attempts: r.attempts, next_attempt_at: r.next_attempt_at, last_error: r.last_error, created_at: r.created_at });
 
 /**
- * A location op waits for older unsettled location ops on the same messages. Computed once per
- * pass (the oldest unsettled location op of each message): asking per op walked every op on a
- * shared message for each of them, quadratic with a long queue on one thread (Codex review).
+ * A location op waits for older unsettled location ops on the same messages. Each message's oldest
+ * unsettled location op is looked up once a pass and only when asked (Codex review): asking per op
+ * walked every op on a shared message for each of them (quadratic with a long queue on one thread),
+ * and building the whole map up front walked every target of a bulk move on every pass. An op stops
+ * at its first blocked message.
  */
 function locationBlockers(c: Ctx): (o: R) => boolean {
   const ops = T(c, "ops");
   const targets = T(c, "op_targets");
   const oldest = new Map<number, number>();
-  for (const state of ["queued", "running"] as const) {
-    for (const op of ops.by("state", state)) {
-      for (const t of targets.by("fk_op_id", op.id)) {
-        if (t.grp !== "location") continue;
-        const seen = oldest.get(t.message_id as number);
-        if (seen === undefined || op.seq < seen) oldest.set(t.message_id as number, op.seq as number);
-      }
+  const oldestOn = (messageId: number): number => {
+    let seq = oldest.get(messageId);
+    if (seq !== undefined) return seq;
+    seq = Infinity;
+    for (const t of targets.by("message", messageId)) {
+      if (t.grp !== "location") continue;
+      const o2 = ops.get(t.op_id);
+      if (o2 && (o2.state === "queued" || o2.state === "running") && o2.seq < seq) seq = o2.seq as number;
     }
-  }
-  return (o) => targets.by("fk_op_id", o.id).some((mine) => mine.grp === "location" && (oldest.get(mine.message_id as number) ?? Infinity) < o.seq);
+    oldest.set(messageId, seq);
+    return seq;
+  };
+  return (o) => targets.by("fk_op_id", o.id).some((mine) => mine.grp === "location" && oldestOn(mine.message_id as number) < o.seq);
 }
 
 export function claimReadyOps(c: Ctx, now: number, limit: number): OpRow[] {
@@ -1233,8 +1238,9 @@ export function resumeAuthOps(c: Ctx, accountId: number, now: number): string[] 
 export function resumeNetworkOps(c: Ctx, accountId: number | null, now: number): string[] {
   const ops = T(c, "ops");
   const out: string[] = [];
-  for (const o of accountId === null ? ops.by("state", "queued") : ops.by("fk_account_id", accountId)) {
-    if (o.state !== "queued" || o.next_attempt_at !== AWAITING_NETWORK) continue;
+  // the queued ops only: an account's ops include its whole history (every success), and this runs on every sync
+  for (const o of ops.by("state", "queued")) {
+    if (o.next_attempt_at !== AWAITING_NETWORK || (accountId !== null && o.account_id !== accountId)) continue;
     ops.update(o, { next_attempt_at: 0, updated_at: now });
     out.push(o.id);
   }

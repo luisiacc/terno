@@ -850,8 +850,10 @@ export class BackendCore {
         this.log("warn", `sync failed for account ${accountId}`, message);
         if (!this.store.isOpen) return;
         if (!retryable) {
-          // a sign-in or configuration problem: no retry schedule (the poll and the user try again)
+          // a sign-in or configuration problem: no retry schedule (the poll and the user try again); offline
+          // the poll doesn't run, so it keeps its 5-minute probe (some refusals pass: Gmail's 403 rate limits)
           this.connectivity.succeeded(accountId);
+          if (!this.connectivity.online) this.connectivity.probeLater(accountId);
           await setState({ status: "error", lastError: message, lastErrorI18n, connection: null, authRequired: error instanceof ProviderAuthError });
           return;
         }

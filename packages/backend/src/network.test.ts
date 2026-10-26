@@ -232,5 +232,18 @@ describe("plan 20: the backend and the network", () => {
     expect(t.state(a).connection!.retryAt).toBeGreaterThan(Date.now());
     expect(t.backend.connectivity.pending(a)).toBe(true);
   });
+  it("Codex review (2): a refusal while the host says offline keeps the probe, so the account recovers once it passes", async () => {
+    const t = setup({ accounts: 1 });
+    await t.backend.start();
+    const [a] = t.ids as [number];
+    await expect.poll(() => t.state(a).status).toBe("idle");
+    const p = t.providers.get(a)!;
+    t.backend.networkChanged(false, "offline");
+    // the host is wrong about offline, and Gmail answers a passing 403
+    p.failWith = () => new ProviderError("Gmail API 403: rateLimitExceeded", false);
+    await t.client.call("sync.now", { accountId: a });
+    await expect.poll(() => t.state(a).status).toBe("error");
+    expect(t.backend.connectivity.pending(a)).toBe(true);
+  });
 });
 
