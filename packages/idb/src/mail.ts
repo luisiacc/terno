@@ -1300,6 +1300,7 @@ export function failOp(c: Ctx, id: string, error: string, retryable: boolean, no
   const ops = T(c, "ops");
   const op = ops.get(id);
   if (!op) return "failed";
+  if (op.state !== "running") return op.state;
   const state: OpState = retryable && (park?.keepAttempt || op.attempts < MAX_OP_ATTEMPTS) ? "queued" : "failed";
   const delay = Math.min(1000 * 2 ** (op.attempts - 1), 300_000);
   const attempts = park?.keepAttempt ? Math.max(op.attempts - 1, 0) : op.attempts;
@@ -1348,7 +1349,7 @@ export function resumeNetworkOps(c: Ctx, accountId: number | null, now: number):
 export function markOpUnknown(c: Ctx, id: string, error: string, now: number): void {
   const ops = T(c, "ops");
   const op = ops.get(id);
-  if (op) ops.update(op, { state: "unknown", last_error: error, updated_at: now });
+  if (op && op.state === "running") ops.update(op, { state: "unknown", last_error: error, updated_at: now });
 }
 
 export function recoverOps(c: Ctx, now: number): { requeued: number; unknown: number } {

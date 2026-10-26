@@ -376,6 +376,30 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
     });
 
     describe("ops state machine", () => {
+      it.each(["succeeded", "unknown", "failed", "queued", "auth", "network"] as const)("late failure callbacks cannot change a %s send", async (state) => {
+        let store = await fresh();
+        const [accountId] = await withAccounts(store);
+        const send = await store.compose.queueSend({ accountId: accountId!, to: [{ name: "", email: "receiver@example.com" }], cc: [], bcc: [], subject: "once", bodyText: "hello", recordReply: false, now: 0 });
+        await store.ops.claimReady(0, 20);
+        if (state === "succeeded") await store.ops.complete(send.opId, { providerMsgId: "accepted" }, 1);
+        else if (state === "unknown") await store.ops.markUnknown(send.opId, "acknowledgement lost", 1);
+        else if (state === "failed") await store.ops.fail(send.opId, "rejected", false, 1);
+        else if (state === "queued") await store.ops.release(send.opId, 1);
+        else if (state === "auth") await store.ops.awaitAuth(send.opId, "sign in", 1);
+        else await store.ops.fail(send.opId, "offline", true, 1, { network: true, keepAttempt: true });
+        const settled = await store.ops.get(send.opId);
+        expect(await store.ops.fail(send.opId, "late storage failure", true, 2)).toBe(settled!.state);
+        await store.ops.markUnknown(send.opId, "late recovery", 3);
+        expect(await store.ops.get(send.opId)).toEqual(settled);
+        store = await harness.reopen(store);
+        open.push(store);
+        expect(await store.ops.get(send.opId)).toEqual(settled);
+        if (state !== "queued") {
+          expect(await store.ops.claimReady(3_600_000, 20)).toEqual([]);
+          expect(await store.ops.nextAttemptAt()).toBeNull();
+        }
+      });
+
       async function mailbox(n = 2) {
         const store = await fresh();
         const [a, b] = await withAccounts(store);

@@ -1,6 +1,6 @@
 # Plan 26: provider reliability
 
-Status: in progress on `main`. Baseline: `35509d2ffcd2608d0531c2ee9c0e326b92e9afa9`.
+Status: in progress on `main`. Baseline: `11092b6e48c947e2bde60d2b1b3dd34abb19cb5d` (application code unchanged from research snapshot `35509d2`).
 
 ## Request (verbatim)
 
@@ -59,3 +59,9 @@ The read-only Codex critique made nine concrete points. All are accepted: captur
 ## Implementation, review and validation log
 
 Initial red tests: backend completion failures before/after commit each produced two accepted submissions rather than one. A rejected unknown-state write also produced two submissions. Nine shared conformance cases failed because succeeded/unknown/failed rows returned to queued. Command: `pnpm exec vitest run --project unit packages/backend/src/backend.test.ts packages/db/src/store.conformance.test.ts packages/idb/src/idb.conformance.test.ts -t 'accepted send is never|late failure callbacks'`.
+
+### Slice 1 implementation validation (before code review)
+
+The backend now retains dispatched-send ownership through worker recovery and records provider acceptance before result processing. Local completion failures bypass provider retry classification. Both stores ignore stale fail/unknown callbacks, including settled, queued and parked operations, without recomputing thread state. The outer recovery is bounded: a second storage error leaves the running send noneligible, logs diagnostics, and allows other claimed operations to settle; startup recovery remains conservative.
+
+Red: both completion cases and a lost unknown-state write produced two provider acceptances. Green: 26 focused cases; 549 tests passed (2 skipped) across backend operations, connectivity, sign-in, SQL/IDB conformance and IDB storage. Typecheck and lint passed. The new IDB case aborts a real fake-IndexedDB transaction; the SQL case throws before COMMIT, then reopens the real temporary store. Existing quiesce and provider network tests remain unchanged. Code review pending; full release/performance gates remain open for the series.

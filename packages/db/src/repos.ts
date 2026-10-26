@@ -486,8 +486,9 @@ export function nextOpAttemptAt(db: Db): number | null {
  * during an outage the claim's attempt is given back (an outage never uses up a send).
  */
 export function failOp(db: Db, id: string, error: string, retryable: boolean, now = Date.now(), park?: OpPark): OpState {
-  const op = db.get<{ attempts: number }>("SELECT attempts FROM ops WHERE id = ?", id);
+  const op = db.get<{ attempts: number; state: OpState }>("SELECT attempts, state FROM ops WHERE id = ?", id);
   if (!op) return "failed";
+  if (op.state !== "running") return op.state;
   const attempts = park?.keepAttempt ? Math.max(op.attempts - 1, 0) : op.attempts;
   const state: OpState = retryable && (park?.keepAttempt || op.attempts < MAX_OP_ATTEMPTS) ? "queued" : "failed";
   const delay = Math.min(1000 * 2 ** (op.attempts - 1), 300_000);
@@ -535,7 +536,7 @@ export function resumeNetworkOps(db: Db, accountId: number | null, now: number):
 
 /** Ambiguous outcome (e.g. connection lost after SMTP DATA). Never retried automatically. */
 export function markOpUnknown(db: Db, id: string, error: string, now = Date.now()): void {
-  db.run("UPDATE ops SET state = 'unknown', last_error = ?, updated_at = ? WHERE id = ?", error, now, id);
+  db.run("UPDATE ops SET state = 'unknown', last_error = ?, updated_at = ? WHERE id = ? AND state = 'running'", error, now, id);
 }
 
 /**

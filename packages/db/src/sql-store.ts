@@ -469,6 +469,8 @@ export class SqlMailStore implements MailStore {
       }),
     fail: async (id, error, retryable, now, park) =>
       this.db.tx(() => {
+        const current = getOp(this.db, id);
+        if (current && current.state !== "running") return current.state;
         const state = failOp(this.db, id, error, retryable, now, park);
         // plan 17 (Codex R8): a send that failed answered nobody; its thread and what it replied to count again
         const op = state === "failed" ? getOp(this.db, id) : null;

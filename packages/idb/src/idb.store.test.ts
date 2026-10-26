@@ -3,7 +3,7 @@ import { CategorizerModel } from "@terno/core";
 import { generateDataset } from "@terno/mock-data";
 import type { Platform } from "@terno/store";
 import { ingest, msg, withAccounts } from "@terno/store/conformance";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMemDb, databaseName, IDB_VERSION, openIdb, TABLES } from "./schema";
 import { IdbMailStore } from "./store";
 
@@ -17,7 +17,32 @@ const open = async (name = `store-${Date.now()}-${++n}`, instantSearch = false) 
   return s;
 };
 afterEach(async () => {
+  vi.restoreAllMocks();
   for (const s of opened.splice(0)) await s.close();
+});
+
+it("an aborted send-completion transaction restores running state and its unknown outcome survives reopen", async () => {
+  const store = await open();
+  const [accountId] = await withAccounts(store);
+  const send = await store.compose.queueSend({ accountId: accountId!, to: [{ name: "", email: "receiver@example.com" }], cc: [], bcc: [], subject: "once", bodyText: "hello", recordReply: false, now: NOW });
+  await store.ops.claimReady(NOW, 20);
+  const transaction = IDBDatabase.prototype.transaction;
+  let abort = true;
+  vi.spyOn(IDBDatabase.prototype, "transaction").mockImplementation(function (this: IDBDatabase, ...args) {
+    const tx = transaction.call(this, ...args);
+    if (abort && args[1] === "readwrite") {
+      abort = false;
+      queueMicrotask(() => tx.abort());
+    }
+    return tx;
+  });
+  await expect(store.ops.complete(send.opId, { providerMsgId: "accepted" }, NOW + 1)).rejects.toThrow();
+  expect((await store.ops.get(send.opId))?.state).toBe("running");
+  await store.ops.markUnknown(send.opId, "completion failed", NOW + 2);
+  await store.close();
+  const reopened = await open(store.name);
+  expect((await reopened.ops.get(send.opId))?.state).toBe("unknown");
+  expect(await reopened.ops.claimReady(NOW + 3_600_000, 20)).toEqual([]);
 });
 
 describe("bodies the store knows are absent", () => {

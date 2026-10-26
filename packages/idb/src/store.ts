@@ -900,6 +900,8 @@ export class IdbMailStore implements MailStore {
       }),
     fail: (id, error, retryable, now, park) =>
       this.command(() => {
+        const current = getOp(this.c, id);
+        if (current && current.state !== "running") return current.state;
         const state = failOp(this.c, id, error, retryable, now, park);
         // plan 17 (Codex R8): a send that failed answered nobody; its thread and what it replied to count again
         const op = state === "failed" ? T(this.c, "ops").get(id) : undefined;

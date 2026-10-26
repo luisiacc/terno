@@ -148,7 +148,7 @@ export class BackendCore {
   /** quitting or updating (quiesce): no op starts; claimed ones go back to the queue */
   private draining = false;
   /** sends talking to their server right now, and who waits for them to finish */
-  private sendsInFlight = 0;
+  private readonly sendsInFlight = new Set<string>();
   /** claimed by the worker, not yet at their provider: quiesce gives them back at once */
   private readonly undispatched = new Set<string>();
   private sendsSettled: (() => void)[] = [];
@@ -404,7 +404,7 @@ export class BackendCore {
       this.undispatched.delete(id);
       await this.store.ops.release(id, this.now());
     }
-    if (this.sendsInFlight === 0) return "idle";
+    if (this.sendsInFlight.size === 0) return "idle";
     let timer: ReturnType<typeof setTimeout> | undefined;
     const settled = await Promise.race([
       this.sendsIdle().then(() => true),
@@ -423,7 +423,7 @@ export class BackendCore {
 
   /** Resolves once no send is in flight. */
   sendsIdle(): Promise<void> {
-    return this.sendsInFlight === 0 ? Promise.resolve() : new Promise((r) => this.sendsSettled.push(r));
+    return this.sendsInFlight.size === 0 ? Promise.resolve() : new Promise((r) => this.sendsSettled.push(r));
   }
 
   async stop(): Promise<void> {
@@ -997,7 +997,19 @@ export class BackendCore {
                   // never strand the rest of the batch in "running"
                   captureError(error, { code: "ops.crashed", fields: { opKind: opKindOf(op.kind) } });
                   this.log("error", `op ${op.id} crashed`, error instanceof Error ? error.stack : error);
-                  if (this.store.isOpen && (await this.store.ops.get(op.id))?.state === "running") await this.store.ops.fail(op.id, String(error), true, this.now());
+                  try {
+                    if (this.store.isOpen && (await this.store.ops.get(op.id))?.state === "running") {
+                      if (this.sendsInFlight.has(op.id)) await this.store.ops.markUnknown(op.id, String(error), this.now());
+                      else await this.store.ops.fail(op.id, String(error), true, this.now());
+                    }
+                  } catch (recoveryError) {
+                    // A running send stays noneligible until storage recovers or startup marks it unknown.
+                    captureError(recoveryError, { code: "ops.crashed", fields: { opKind: opKindOf(op.kind) } });
+                    this.log("error", `op ${op.id} recovery failed`, recoveryError instanceof Error ? recoveryError.stack : recoveryError);
+                  }
+                } finally {
+                  this.undispatched.delete(op.id);
+                  if (this.sendsInFlight.delete(op.id) && this.sendsInFlight.size === 0) for (const settle of this.sendsSettled.splice(0)) settle();
                 }
               }
             }),
@@ -1045,12 +1057,15 @@ export class BackendCore {
     }
     // from here it is on its way (synchronously after the last check: quiesce can't release it now)
     const sending = op.kind === "send";
-    if (sending) this.sendsInFlight++;
+    if (sending) this.sendsInFlight.add(op.id);
     const target = JSON.parse(op.target_json) as { messageIds?: number[] };
     const started = performance.now();
+    let accepted = false;
     try {
       if (!provider) throw new ProviderError(L("errors.accountGone"), false);
-      const { warning, ...result } = (await provider.execute({ id: op.id, kind: op.kind, target, payload: JSON.parse(op.payload_json) })) || {};
+      const execution = await provider.execute({ id: op.id, kind: op.kind, target, payload: JSON.parse(op.payload_json) });
+      accepted = true;
+      const { warning, ...result } = execution || {};
       if (op.kind === "send") log.info("send.done", { durationMs: performance.now() - started });
       if (this.stopped && !this.store.isOpen) return;
       // a warning in Terno's words stays a catalog message (see opInfo)
@@ -1067,7 +1082,8 @@ export class BackendCore {
       else captureError(error, { code: "ops.failed", fields: { opKind: opKindOf(op.kind), retryable: pe?.retryable, ambiguous: pe?.ambiguous }, expected });
       let state: OpState | null = null;
       // plan 25: refused with credentials a sign-in replaced meanwhile: it goes again with the new ones
-      if (error instanceof ProviderAuthError && credentials !== this.credentialsOf(op.account_id)) {
+      if (sending && accepted) await this.store.ops.markUnknown(op.id, message, this.now());
+      else if (error instanceof ProviderAuthError && credentials !== this.credentialsOf(op.account_id)) {
         await this.store.ops.release(op.id, this.now());
         this.kickWorker();
       } else if (error instanceof ProviderAuthError) {
@@ -1080,8 +1096,6 @@ export class BackendCore {
       // plan 17 (Codex review 1 #6, review 2 #6): a send that failed for good, whatever the cause, answered nobody: the
       // store recomputed what it replied to, and the lists and counts follow
       if (state === "failed" && op.kind === "send") this.notifyChanged([]);
-    } finally {
-      if (sending && --this.sendsInFlight === 0) for (const settle of this.sendsSettled.splice(0)) settle();
     }
     if (this.stopped && !this.store.isOpen) return;
     const after = await this.store.ops.get(op.id);

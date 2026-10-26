@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient, type Events } from "@terno/core/rpc";
 import { claimReadyOps, createAccount, enqueueOp, getOp, type IncomingMessage, sqlDb } from "@terno/db";
 import { ProviderError, type MailProvider, type ProviderOp, type ProviderRegistry, type SyncSink } from "@terno/mail";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { startAgentSocket } from "./agent-socket";
 import { Backend, plaintextCipher } from "./backend";
 import { socketTransport } from "./transports";
@@ -63,7 +63,7 @@ function scriptedRegistry() {
   return { registry, providers };
 }
 
-function setup(options: { dir?: string } = {}) {
+function setup(options: { dir?: string; now?: () => number } = {}) {
   const dir = options.dir ?? mkdtempSync(join(tmpdir(), "terno-backend-"));
   const { registry, providers } = scriptedRegistry();
   const backend = new Backend({
@@ -72,7 +72,7 @@ function setup(options: { dir?: string } = {}) {
     cipher: plaintextCipher,
     providers: registry,
     demoAi: true,
-    now: () => NOW,
+    now: options.now ?? (() => NOW),
     autoSync: false,
   });
   const [c, s] = createMemoryTransportPair();
@@ -158,6 +158,126 @@ describe("local-first actions", () => {
 });
 
 describe("sending", () => {
+  it.each(["before commit", "after commit"] as const)("an accepted send is never submitted again when completion fails %s", async (failure) => {
+    let now = NOW;
+    const { backend, client, providers, accountId } = setup({ now: () => now });
+    await backend.provider(accountId);
+    const complete = backend.store.ops.complete;
+    vi.spyOn(backend.store.ops, "complete").mockImplementationOnce(async (...args) => {
+      if (failure === "after commit") await complete(...args);
+      throw new Error("storage completion unavailable");
+    });
+    const sent = await client.call("compose.send", { accountId, to: [{ name: "", email: "receiver@example.com" }], subject: "once", bodyText: "hello" });
+    await backend.runWorker();
+    const state = (await backend.store.ops.get(sent.opId))?.state;
+    now += 3_600_000;
+    await backend.runWorker();
+    expect(providers.get(accountId)!.executed.filter((o) => o.kind === "send")).toHaveLength(1);
+    expect(state).toBe(failure === "before commit" ? "unknown" : "succeeded");
+  });
+
+  it("an accepted send stays unknown when recording its ambiguous outcome fails once", async () => {
+    let now = NOW;
+    const { backend, client, providers, accountId } = setup({ now: () => now });
+    await backend.provider(accountId);
+    const p = providers.get(accountId)!;
+    p.execute = async (op) => {
+      p.executed.push(op);
+      throw new ProviderError("acceptance acknowledgement lost", false, true);
+    };
+    vi.spyOn(backend.store.ops, "markUnknown").mockRejectedValueOnce(new Error("storage unavailable"));
+    const sent = await client.call("compose.send", { accountId, to: [{ name: "", email: "receiver@example.com" }], subject: "once", bodyText: "hello" });
+    await backend.runWorker();
+    now += 3_600_000;
+    await backend.runWorker();
+    expect(p.executed).toHaveLength(1);
+    expect((await client.call("ops.list", {})).find((o) => o.id === sent.opId)?.state).toBe("unknown");
+  });
+
+  it("a transaction rollback after submission cannot send again, including after reopening storage", async () => {
+    let now = NOW;
+    const first = setup({ now: () => now });
+    await first.backend.provider(first.accountId);
+    const p = first.providers.get(first.accountId)!;
+    let failCommit = false;
+    sqlDb(first.backend.store).onBeforeCommit(() => {
+      if (!failCommit) return;
+      failCommit = false;
+      throw new Error("commit failed");
+    });
+    p.beforeExecute = () => { failCommit = true; };
+    const sent = await first.client.call("compose.send", { accountId: first.accountId, to: [{ name: "", email: "receiver@example.com" }], subject: "once", bodyText: "hello" });
+    await first.backend.runWorker();
+    expect((await first.backend.store.ops.get(sent.opId))?.state).toBe("unknown");
+    await first.backend.stop();
+    const second = setup({ dir: first.dir, now: () => now });
+    await second.backend.provider(first.accountId);
+    second.providers.get(first.accountId)!.executed = p.executed;
+    now += 3_600_000;
+    await second.backend.retryNow(first.accountId, "user");
+    await second.backend.runWorker();
+    expect(p.executed).toHaveLength(1);
+    expect((await second.backend.store.ops.get(sent.opId))?.state).toBe("unknown");
+  });
+
+  it("quiesce waits until fallback recovery records the uncertain send", async () => {
+    const { backend, client, providers, accountId } = setup();
+    await backend.provider(accountId);
+    providers.get(accountId)!.failNext = new ProviderError("acknowledgement lost", false, true);
+    let entered!: () => void;
+    let release!: () => void;
+    const fallback = new Promise<void>((r) => { entered = r; });
+    const gate = new Promise<void>((r) => { release = r; });
+    cleanups.push(() => release());
+    const markUnknown = backend.store.ops.markUnknown;
+    vi.spyOn(backend.store.ops, "markUnknown").mockRejectedValueOnce(new Error("first write failed")).mockImplementationOnce(async (...args) => {
+      entered();
+      await gate;
+      await markUnknown(...args);
+    });
+    const sent = await client.call("compose.send", { accountId, to: [{ name: "", email: "receiver@example.com" }], subject: "once", bodyText: "hello" });
+    const worker = backend.runWorker();
+    await fallback;
+    let idle = false;
+    const quiesce = backend.quiesce(5000).then((result) => { idle = true; return result; });
+    await tick();
+    expect(idle).toBe(false);
+    release();
+    await worker;
+    expect(await quiesce).toBe("idle");
+    expect((await backend.store.ops.get(sent.opId))?.state).toBe("unknown");
+  });
+
+  it("repeated recovery write failures leave a send noneligible and the rest of its batch still runs", async () => {
+    let now = NOW;
+    const { backend, client, providers, accountId } = setup({ now: () => now });
+    await backend.provider(accountId);
+    vi.spyOn(backend.store.ops, "complete").mockRejectedValueOnce(new Error("completion failed"));
+    vi.spyOn(backend.store.ops, "markUnknown").mockRejectedValueOnce(new Error("recording failed")).mockRejectedValueOnce(new Error("recovery failed"));
+    const first = await client.call("compose.send", { accountId, to: [{ name: "", email: "receiver@example.com" }], subject: "once", bodyText: "hello" });
+    const second = await client.call("compose.send", { accountId, to: [{ name: "", email: "receiver@example.com" }], subject: "next", bodyText: "hello" });
+    await backend.runWorker();
+    now += 3_600_000;
+    await backend.runWorker();
+    expect(providers.get(accountId)!.executed.map((op) => op.id)).toEqual([first.opId, second.opId]);
+    expect((await backend.store.ops.get(second.opId))?.state).toBe("succeeded");
+    expect((await backend.store.ops.get(first.opId))?.state).toBe("running");
+    expect(await backend.store.ops.nextAttemptAt()).toBeNull();
+  });
+
+  it.each(["retry", "markSent"] as const)("only an explicit %s resolution can settle a send whose local completion failed", async (resolution) => {
+    const { backend, client, providers, accountId } = setup();
+    await backend.provider(accountId);
+    vi.spyOn(backend.store.ops, "complete").mockRejectedValueOnce(new Error("completion failed"));
+    const sent = await client.call("compose.send", { accountId, to: [{ name: "", email: "receiver@example.com" }], subject: "once", bodyText: "hello" });
+    await backend.runWorker();
+    await client.call("ops.resolveUnknown", { opId: sent.opId, resolution });
+    await backend.runWorker();
+    expect(providers.get(accountId)!.executed).toHaveLength(resolution === "retry" ? 2 : 1);
+    expect((await backend.store.ops.get(sent.opId))?.state).toBe("succeeded");
+    await expect(client.call("ops.resolveUnknown", { opId: sent.opId, resolution })).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
   it("shows the reply in the thread instantly and adopts the provider id after sending", async () => {
     const { backend, client, providers, accountId } = setup();
     await backend.ingestSliced([incoming(accountId, { from: { name: "Ana", email: "ana@corp.io" }, listId: null })]);
