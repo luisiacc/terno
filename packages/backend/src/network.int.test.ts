@@ -278,6 +278,27 @@ describe("plan 20: the IMAP provider's own connections", () => {
     expect(attempts).toBeLessThan(20);
   });
 
+  it("plan 25: a refused password isn't knocked with every minute: one login, none more; a network change tries once", async () => {
+    const imap = await startImap();
+    const proxy = await startNetProxy(imap.port);
+    cleanups.push(() => proxy.close());
+    // the password was changed on the server
+    imap.server.control.updateUser("testuser", { password: "changed" });
+    const p = provider(proxy.port, { timeouts: { reconnectMs: 50, reconnectMaxMs: 200 } });
+    const stop = p.watch!(() => {});
+    cleanups.push(() => stop());
+    await expect.poll(() => proxy.accepted).toBe(1);
+    // with the old loop: 50, 100, 200, 200 … ms, a dozen logins in this window
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(proxy.accepted).toBe(1);
+    p.reset?.();
+    await expect.poll(() => proxy.accepted).toBe(2);
+    await new Promise((r) => setTimeout(r, 800));
+    expect(proxy.accepted).toBe(2);
+    // and a sync says it's a sign-in to redo
+    await expect(p.sync({} as never)).rejects.toBeInstanceOf((await import("@terno/mail")).ProviderAuthError);
+  });
+
   /** an op on a message the provider has no location for: it connects, discovers folders and does nothing else */
   const markRead = (p: ReturnType<typeof provider>) => p.execute({ id: "x", kind: "markRead", target: { messageIds: [1] }, payload: null });
 

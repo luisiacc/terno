@@ -63,7 +63,13 @@ export async function connectGmail(options: ConnectOptions): Promise<GmailConnec
   try {
     const code = await new Promise<{ code: string; redirectUri: string }>((resolve, reject) => {
       const timer = setTimeout(() => reject(new ProviderError(L("errors.google.timedOut"), false)), options.timeoutMs ?? 300_000);
-      options.signal?.addEventListener("abort", () => reject(new ProviderError(L("errors.google.cancelled"), false)));
+      // a newer sign-in (plan 25) or a quit: nothing of this flow stays (its page listener closes below, its timer here)
+      const cancel = () => {
+        clearTimeout(timer);
+        reject(new ProviderError(L("errors.google.cancelled"), false));
+      };
+      if (options.signal?.aborted) cancel();
+      else options.signal?.addEventListener("abort", cancel, { once: true });
       server = createServer((req, res) => {
         const url = new URL(req.url ?? "/", "http://127.0.0.1");
         if (url.pathname !== "/callback") return void res.writeHead(404).end();
@@ -166,7 +172,9 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
     endpoints: options.endpoints,
     tokens: {
       get: async () => (access && access.expiresAt > Date.now() ? access.token : refresh()),
-      invalidate: () => void (access = null),
+      invalidate: (token) => {
+        if (access?.token === token) access = null;
+      },
     },
     buildRaw: (payload) => buildRaw(payload, { keepBcc: true }),
   });

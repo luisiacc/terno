@@ -2,7 +2,7 @@ import { L } from "@terno/i18n";
 import nodemailer from "nodemailer";
 import { buildRaw, envelopeOf } from "./compose";
 import { isNetworkError } from "./net-errors";
-import { ProviderError, type SendPayload } from "./types";
+import { ProviderAuthError, ProviderError, type SendPayload } from "./types";
 
 export interface SmtpConfig {
   host: string;
@@ -24,18 +24,20 @@ interface SmtpLikeError extends Error {
 
 /**
  * Maps a nodemailer failure to retry semantics:
- *  - rejected recipients / auth / 5xx → permanent
- *  - failures before the message was handed over (connect, EHLO, AUTH, 4xx) → retry
+ *  - the login refused (535, or EAUTH without a temporary 4xx) → a sign-in to redo (plan 25): the send waits
+ *  - rejected recipients / 5xx → permanent
+ *  - failures before the message was handed over (connect, EHLO, a temporary AUTH 454, 4xx) → retry
  *  - connection lost during or after DATA → ambiguous: the server may have accepted it
  */
 export function classifySmtpError(error: unknown, dataStarted = false): ProviderError {
   const e = error as SmtpLikeError;
   const message = e?.message ?? String(error);
+  // the password was refused (EAUTH comes before DATA: never ambiguous); a 454 is "try again later"
+  if (e.code === "EAUTH" && !(e.responseCode && e.responseCode >= 400 && e.responseCode < 500)) return new ProviderAuthError(L("errors.smtp.authFailed", { detail: message }));
   // An explicit reply code is a definitive answer: 5xx permanent, 4xx temporary (retry),
   // whether it came for a recipient (450/550) or after the body (451/554).
   if (e.responseCode && e.responseCode >= 500) return new ProviderError(e.code === "EENVELOPE" ? L("errors.smtp.recipientRejected", { detail: message }) : message, false);
   if (e.responseCode && e.responseCode >= 400) return new ProviderError(message, true);
-  if (e.code === "EAUTH") return new ProviderError(L("errors.smtp.authFailed", { detail: message }), false);
   if (e.code === "EENVELOPE") return new ProviderError(L("errors.smtp.recipientRejected", { detail: message }), false);
   // No answer after the server said "354": it may have accepted the message.
   if (dataStarted) return new ProviderError(L("errors.smtp.connectionLost", { detail: message }), false, true);

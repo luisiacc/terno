@@ -64,18 +64,27 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
     if (!settings.gmailClientId) throw new RpcError("BAD_REQUEST", L("errors.gmailClientIdMissing"));
     if (!b.options.openExternal) throw new RpcError("UNAVAILABLE", L("errors.googleConnectNeedsDesktop"));
     let result: GmailConnectResult;
+    // plan 25 (Codex review #4): one Google sign-in per account: "Open again" aborts the one before (its page
+    // listener closes), so two flows never race to store a token
+    b.signIns.get(accountId)?.abort();
+    const flow = new AbortController();
+    b.signIns.set(accountId, flow);
     try {
       result = await b.options.providers.connectGmail({
         clientId: settings.gmailClientId,
         clientSecret: await b.getSecret("gmailClientSecret"),
         openExternal: b.options.openExternal,
-        signal: b.abort.signal,
+        signal: AbortSignal.any([b.abort.signal, flow.signal]),
         fetch: b.net.fetchFor("mail"),
         loginHint: account.email,
       });
     } catch (error) {
       throw new RpcError("BAD_REQUEST", messageOf(error));
+    } finally {
+      if (b.signIns.get(accountId) === flow) b.signIns.delete(accountId);
     }
+    // a newer sign-in took over while Google answered this one: that one decides
+    if (flow.signal.aborted) throw new RpcError("BAD_REQUEST", L("errors.google.cancelled"));
     if (result.email.toLowerCase() !== account.email.toLowerCase()) {
       throw new RpcError("BAD_REQUEST", L("errors.googleConnectedOther", { got: result.email, expected: account.email }));
     }
@@ -86,9 +95,8 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
   if (!now || now.createdAt !== stamp.createdAt || now.email !== stamp.email) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
   await b.dropAccount(accountId);
   await b.setSecret(`account:${accountId}:${secret.name}`, secret.value);
-  await store.accounts.setSyncState(accountId, { status: "idle", lastError: null, lastErrorI18n: null });
-  await b.emitAccounts();
-  await b.resumeAuth(accountId);
+  // plan 25: proven just now (a live login, Google's answer): it stops asking at once, and what waited goes
+  await b.signedIn(accountId);
   b.startAccount((await store.accounts.get(accountId))!);
   return (await store.accounts.get(accountId))!;
 }

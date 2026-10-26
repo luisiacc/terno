@@ -53,6 +53,10 @@ class FakeGoogle {
   /** the Google account the consent screen signs in with */
   email = "luis@gmail.com";
   loginHints: (string | null)[] = [];
+  /** while set, API requests with that token wait for it, then are checked against the tokens valid then */
+  gate: { token: string; until: Promise<void> } | null = null;
+  /** consent screens a "manual" browser opened and hasn't approved yet: approve(i) sends the user back */
+  consents: { approve(): Promise<void> }[] = [];
   private tokenSeq = 0;
   url = "";
   private server = createServer((req, res) => void this.handle(req, res));
@@ -118,6 +122,7 @@ class FakeGoogle {
       return json(400, { error: "unsupported_grant_type" });
     }
     const token = (req.headers.authorization ?? "").replace("Bearer ", "");
+    if (this.gate?.token === token) await this.gate.until;
     if (!this.validTokens.has(token)) return json(401, { error: { code: 401 } });
     if (url.pathname === "/userinfo") return json(200, { name: "Luis Cordero", sub: `sub-${this.email}`, email: this.email, email_verified: true });
     this.calls.push({ method: req.method!, path: url.pathname, body: body ? JSON.parse(body) : null });
@@ -193,15 +198,26 @@ afterEach(async () => {
 });
 
 /** Acts as the user's browser: approves (or denies) the consent screen. */
-function browser(google: FakeGoogle, behaviour: "approve" | "deny" | "forge-then-approve" = "approve") {
+function browser(google: FakeGoogle, behaviour: "approve" | "deny" | "forge-then-approve" | "manual" = "approve") {
   return async (authUrl: string) => {
     const u = new URL(authUrl);
     const redirect = u.searchParams.get("redirect_uri")!;
     const state = u.searchParams.get("state")!;
     expect(u.searchParams.get("code_challenge_method")).toBe("S256");
     expect(u.searchParams.get("access_type")).toBe("offline");
-    google.challenges.set("auth-code", u.searchParams.get("code_challenge")!);
     google.loginHints.push(u.searchParams.get("login_hint"));
+    if (behaviour === "manual") {
+      // the user comes back later (or never: a newer sign-in replaces this one)
+      const challenge = u.searchParams.get("code_challenge")!;
+      google.consents.push({
+        approve: async () => {
+          google.challenges.set("auth-code", challenge);
+          await fetch(`${redirect}?code=auth-code&state=${state}`).catch(() => {});
+        },
+      });
+      return;
+    }
+    google.challenges.set("auth-code", u.searchParams.get("code_challenge")!);
     setTimeout(async () => {
       if (behaviour === "forge-then-approve") {
         const forged = await fetch(`${redirect}?code=evil&state=wrong`);
@@ -540,5 +556,103 @@ describe("Gmail on the web (Google's token model, no refresh token)", () => {
     const parsed = await parseRaw(raw);
     expect(parsed).toMatchObject({ subject: "Reunión mañana", to: [{ name: "Ana Pérez", email: "ana@example.com" }], text: expect.stringMatching(/^¿Nos vemos\?\r?\nSaludos$/) });
     expect(sqlDb(backend.store).get("SELECT state FROM ops WHERE kind = 'send'")).toEqual({ state: "succeeded" });
+  });
+
+  it("plan 25: signing an account in again with another Google account's token changes nothing (no account added)", async () => {
+    const { google, client } = await webSetup();
+    const account = await client.call("accounts.connectGmailToken", { accessToken: google.issue(), expiresIn: 3600 });
+    google.email = "someone-else@gmail.com";
+    await expect(client.call("accounts.connectGmailToken", { accessToken: google.issue(), expiresIn: 3600, accountId: account.id })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Google connected someone-else@gmail.com, not luis@gmail.com. Choose that account in the Google window.",
+    });
+    expect((await client.call("app.bootstrap", {})).accounts.map((a) => a.email)).toEqual(["luis@gmail.com"]);
+    // the right one renews it, and it stops asking at once
+    google.email = "luis@gmail.com";
+    await expect(client.call("accounts.connectGmailToken", { accessToken: google.issue(), expiresIn: 3600, accountId: account.id })).resolves.toMatchObject({ id: account.id });
+    expect((await client.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ authRequired: false });
+  });
+
+  it("plan 25 (Codex review #5): a request refused with the old token after a renew keeps the new one", async () => {
+    const { google, backend, client } = await webSetup();
+    seed(google);
+    const old = google.issue();
+    const account = await client.call("accounts.connectGmailToken", { accessToken: old, expiresIn: 3600 });
+    await backend.syncAccount(account.id);
+    // a sync leaves with the old token and is held at Google; meanwhile that token dies and the page renews
+    let release!: () => void;
+    google.gate = { token: old, until: new Promise<void>((r) => (release = r)) };
+    const pass = backend.syncAccount(account.id);
+    await new Promise((r) => setTimeout(r, 50));
+    google.expireTokens();
+    const fresh = google.issue();
+    await client.call("accounts.connectGmailToken", { accessToken: fresh, expiresIn: 3600, accountId: account.id });
+    google.gate = null;
+    release();
+    await pass;
+    // the 401 for the old token didn't drop the new one: the pass retried with it, and the account works
+    expect((await client.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "idle", authRequired: false });
+    await backend.syncAccount(account.id);
+    expect((await client.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "idle", authRequired: false });
+  });
+});
+
+describe("plan 25: signing a Gmail account in again (desktop)", () => {
+  async function expired(behaviour?: Parameters<typeof browser>[1]) {
+    const ctx = await setup(behaviour);
+    seed(ctx.google);
+    if (behaviour === "manual") {
+      const connecting = ctx.client.call("accounts.connectGmail", {});
+      await expect.poll(() => ctx.google.consents.length).toBe(1);
+      await ctx.google.consents.shift()!.approve();
+      var account = await connecting;
+    } else account = await ctx.client.call("accounts.connectGmail", {});
+    await ctx.backend.syncAccount(account.id);
+    // a week later (a Testing app): Google refuses the refresh token
+    await ctx.backend.setSecret(`account:${account.id}:refreshToken`, "expired");
+    ctx.google.expireTokens();
+    await ctx.backend.syncAccount(account.id);
+    const state = async () => (await ctx.client.call("app.bootstrap", {})).accounts[0]!.syncState;
+    const secret = () => ctx.backend.getSecret(`account:${account.id}:refreshToken`);
+    return { ...ctx, account, state, secret };
+  }
+
+  it("an expired grant asks for a sign-in; another Google account is refused by name; the right one clears it at once", async () => {
+    const { google, backend, client, account, state, secret } = await expired();
+    expect(await state()).toMatchObject({ status: "error", authRequired: true, lastErrorI18n: { key: "errors.gmail.revoked" } });
+    const thread = sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE subject = 'Viaje a Oaxaca'")!.thread_id;
+    await client.call("threads.act", { threadIds: [thread], action: "star" });
+    await backend.runWorker();
+    expect(sqlDb(backend.store).get("SELECT state, attempts FROM ops WHERE kind = 'star'")).toEqual({ state: "queued", attempts: 0 });
+
+    google.email = "someone-else@gmail.com";
+    await expect(client.call("accounts.reconnect", { id: account.id })).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringMatching(/someone-else@gmail.com, not luis@gmail.com/) });
+    expect(google.loginHints.at(-1)).toBe("luis@gmail.com");
+    expect(await state()).toMatchObject({ authRequired: true });
+    expect(await secret()).toBe("expired");
+
+    google.email = "luis@gmail.com";
+    await client.call("accounts.reconnect", { id: account.id });
+    expect(await secret()).toBe("refresh-1");
+    expect(await state()).toMatchObject({ status: "idle", authRequired: false, lastError: null });
+    await backend.runWorker();
+    expect(sqlDb(backend.store).get("SELECT state FROM ops WHERE kind = 'star'")).toEqual({ state: "succeeded" });
+  });
+
+  it("Codex review #4: Open again aborts the first flow (its page listener closes); only the second stores a token", async () => {
+    const { google, client, account, state, secret } = await expired("manual");
+    const first = client.call("accounts.reconnect", { id: account.id });
+    await expect.poll(() => google.consents.length).toBe(1);
+    const stale = google.consents.shift()!;
+    const second = client.call("accounts.reconnect", { id: account.id });
+    await expect(first).rejects.toMatchObject({ message: "Sign-in cancelled." });
+    await expect.poll(() => google.consents.length).toBe(1);
+    // the user finishes the first page anyway: nobody listens there any more
+    await stale.approve();
+    expect(await secret()).toBe("expired");
+    await google.consents.shift()!.approve();
+    await second;
+    expect(await secret()).toBe("refresh-1");
+    expect(await state()).toMatchObject({ authRequired: false });
   });
 });

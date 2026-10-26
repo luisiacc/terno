@@ -3,7 +3,7 @@ import { decodeText, encodeText, messageOf, textRef, type Account, type AccountS
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
 import { RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
-import type { ClassifierInput, IncomingMessage, MailStore, OpRow, Platform } from "@terno/store";
+import { AWAITING_AUTH, type ClassifierInput, type IncomingMessage, type MailStore, type OpRow, type Platform } from "@terno/store";
 import { ProviderAuthError, ProviderError, type MailProvider, type ProviderRegistry, type SyncSink } from "@terno/mail/portable";
 import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_PHRASE_CAPS, WEB_AUTOCOMPLETE_PEAK, WEB_CONTACT_CAPS, WEB_PHRASE_CAPS } from "@terno/store/autocomplete";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
@@ -86,6 +86,10 @@ const COUNTS_EVERY_MS = 200;
 const accountKindOf = (kind: string | undefined): FieldValueOf<"accountKind"> => (kind === "imap" || kind === "gmail" ? kind : "other");
 const OP_KINDS = new Set<string>(["archive", "trash", "spam", "notSpam", "moveToInbox", "markRead", "markUnread", "star", "unstar", "send", "move"]);
 const opKindOf = (kind: string): FieldValueOf<"opKind"> => (OP_KINDS.has(kind) ? (kind as FieldValueOf<"opKind">) : "other");
+/** plan 25: the account's sign-in was refused as a whole (not only its sending) */
+const needsWholeSignIn = (s: AccountSyncState): boolean => Boolean(s.authRequired) && s.authScope !== "send";
+/** plan 25: an op this refusal holds back (a refused send holds only sends) */
+const heldBySignIn = (s: AccountSyncState, kind: string): boolean => Boolean(s.authRequired) && (s.authScope !== "send" || kind === "send");
 
 const OP_SUMMARY = {
   archive: "backend.op.archive",
@@ -131,6 +135,10 @@ export class BackendCore {
   private readonly syncing = new Map<number, Promise<void>>();
   /** a change arrived while syncing: run another pass when the current one ends */
   private readonly syncAgain = new Set<number>();
+  /** plan 25: bumped per account each time a sign-in stores new credentials (a refusal from before doesn't count) */
+  private readonly credentials = new Map<number, number>();
+  /** plan 25: the Google sign-in in flight per account (a new one aborts it: one flow, one secret written) */
+  readonly signIns = new Map<number, AbortController>();
   private readonly unwatch = new Map<number, () => void>();
   private syncTimer: ReturnType<typeof setInterval> | null = null;
   private workerTimer: ReturnType<typeof setTimeout> | null = null;
@@ -312,7 +320,9 @@ export class BackendCore {
     for (const account of await this.store.accounts.list()) {
       // started here, not after the sync: a long or failing pass mustn't postpone it (one probe per watcher)
       void this.providers.get(account.id)?.then((p) => p?.heartbeat?.(), () => {});
-      if (!this.connectivity.pending(account.id)) void this.syncAccount(account.id);
+      // plan 25: one that needs a sign-in isn't asked every two minutes (a refused login, again and again, locks
+      // accounts out); a start, a network change and signing in again still try it
+      if (!this.connectivity.pending(account.id) && !needsWholeSignIn(account.syncState)) void this.syncAccount(account.id);
     }
   }
 
@@ -786,6 +796,8 @@ export class BackendCore {
 
   startAccount(account: Account): void {
     this.connectivity.track(account.id);
+    // plan 25: still waiting for a sign-in from the last session: this start tries it once, no probe after that
+    if (needsWholeSignIn(account.syncState)) this.connectivity.waitForSignIn(account.id, true);
     void this.provider(account.id).then((provider) => {
       if (!provider || this.stopped) return;
       this.watchAccount(account.id, provider);
@@ -861,6 +873,7 @@ export class BackendCore {
       // once the account is offline it says so until a pass works: a retry reads "reconnecting", never healthy
       const wasDown = Boolean(before?.syncState.connection);
       const epoch = this.connectivity.epoch;
+      const credentials = this.credentialsOf(accountId);
       const startedOffline = !this.connectivity.online;
       await setState({ status: "syncing", ...(wasDown && { connection: { state: "reconnecting", retryAt: null } }) });
       const started = performance.now();
@@ -874,11 +887,14 @@ export class BackendCore {
           await setState({ status: "offline", lastSyncAt: this.now(), connection: { state: "offline", retryAt: this.connectivity.probeLater(accountId) } });
           return;
         }
-        await setState({ status: "idle", lastError: null, lastErrorI18n: null, lastSyncAt: this.now(), connection: null, authRequired: false });
+        // plan 25: a refused send (SMTP) isn't proven by a sync (IMAP): it keeps asking, and its sends keep waiting
+        const sendOnly = (await this.store.accounts.get(accountId))?.syncState.authScope === "send";
+        await setState({ status: "idle", lastError: null, lastErrorI18n: null, lastSyncAt: this.now(), connection: null, ...(!sendOnly && { authRequired: false, authScope: null }) });
+        this.connectivity.waitForSignIn(accountId, false);
         // a probe the host thought pointless worked: it was wrong about offline (reachability can be, with some VPNs)
         if (startedOffline && !this.connectivity.online) this.networkChanged(true, "other");
         // the account works: whatever waited for its sign-in, or for the network, goes now
-        await this.resumeAuth(accountId);
+        if (!sendOnly) await this.resumeAuth(accountId);
         if ((await this.store.ops.resumeNetwork(accountId, this.now())).length) this.kickWorker();
         // its mail is here: drafts an import kept for it (answering messages that just synced) go in
         await restorePending(this, accountId).catch((error: unknown) => {
@@ -894,11 +910,17 @@ export class BackendCore {
         this.log("warn", `sync failed for account ${accountId}`, message);
         if (!this.store.isOpen) return;
         if (!retryable) {
-          // a sign-in or configuration problem: no retry schedule (the poll and the user try again); offline
-          // the poll doesn't run, so it keeps its 5-minute probe (some refusals pass: Gmail's 403 rate limits)
+          const auth = error instanceof ProviderAuthError;
+          // plan 25: refused with the credentials a sign-in has since replaced: it says nothing, the next pass decides
+          if (auth && credentials !== this.credentialsOf(accountId)) return void this.syncAgain.add(accountId);
+          // a configuration problem: no retry schedule (the poll and the user try again); offline the poll doesn't
+          // run, so it keeps its 5-minute probe (some refusals pass: Gmail's 403 rate limits). A refused sign-in
+          // (plan 25) waits for the user: no probe, no poll (a start and a network change still try it).
           this.connectivity.succeeded(accountId);
-          if (!this.connectivity.online) this.connectivity.probeLater(accountId);
-          await setState({ status: "error", lastError: message, lastErrorI18n, connection: null, authRequired: error instanceof ProviderAuthError });
+          this.connectivity.waitForSignIn(accountId, auth);
+          if (!this.connectivity.online && !auth) this.connectivity.probeLater(accountId);
+          // anything else proves nothing about the sign-in: a request for one stays
+          await setState({ status: "error", lastError: message, lastErrorI18n, connection: null, ...(auth && { authRequired: true, authScope: null }) });
           return;
         }
         const retry = this.connectivity.failed(accountId, epoch);
@@ -922,6 +944,23 @@ export class BackendCore {
   /** The account's authorization works again (sync succeeded, reconnected): its ops waiting for it run now. */
   async resumeAuth(accountId: number): Promise<void> {
     if ((await this.store.ops.resumeAuth(accountId, this.now())).length) this.kickWorker();
+  }
+
+  credentialsOf(accountId: number): number {
+    return this.credentials.get(accountId) ?? 0;
+  }
+
+  /**
+   * Plan 25: the account was just signed in again with new credentials (stored by the caller), proven by a live
+   * login or Google's answer: it stops asking now, not after the sync. A refusal of the old credentials still in
+   * flight no longer counts, and what waited for the sign-in goes. The caller syncs (or restarts the account).
+   */
+  async signedIn(accountId: number): Promise<void> {
+    this.credentials.set(accountId, this.credentialsOf(accountId) + 1);
+    this.connectivity.waitForSignIn(accountId, false);
+    await this.store.accounts.setSyncState(accountId, { status: "idle", lastError: null, lastErrorI18n: null, authRequired: false, authScope: null });
+    await this.emitAccounts();
+    await this.resumeAuth(accountId);
   }
 
   kickWorker(): void {
@@ -990,9 +1029,18 @@ export class BackendCore {
     const hold = () => this.draining || this.stopped || !this.connectivity.online;
     if (hold()) return void (this.undispatched.delete(op.id), await this.store.ops.release(op.id, this.now()));
     const provider = await this.provider(op.account_id);
+    const account = await this.store.accounts.get(op.account_id);
     if (hold()) return void (this.undispatched.delete(op.id), await this.store.ops.release(op.id, this.now()));
-    // from here it is on its way (synchronously after the last check: quiesce can't release it now)
     this.undispatched.delete(op.id);
+    // plan 25: the account waits for a sign-in: so does the op, without knocking with the refused credentials
+    if (account && heldBySignIn(account.syncState, op.kind)) {
+      await this.store.ops.awaitAuth(op.id, encodeText(L("errors.waitingForSignIn")), this.now());
+      const after = await this.store.ops.get(op.id);
+      if (after) this.server.emit("op", this.opInfo(after));
+      return;
+    }
+    // from here it is on its way (synchronously after the last check: quiesce can't release it now)
+    const credentials = this.credentialsOf(op.account_id);
     const sending = op.kind === "send";
     if (sending) this.sendsInFlight++;
     const target = JSON.parse(op.target_json) as { messageIds?: number[] };
@@ -1015,8 +1063,14 @@ export class BackendCore {
       if (op.kind === "send") captureError(error, { code: "send.failed", fields: { retryable: pe?.retryable, ambiguous: pe?.ambiguous }, expected });
       else captureError(error, { code: "ops.failed", fields: { opKind: opKindOf(op.kind), retryable: pe?.retryable, ambiguous: pe?.ambiguous }, expected });
       let state: OpState | null = null;
-      if (error instanceof ProviderAuthError) await this.store.ops.awaitAuth(op.id, message, this.now());
-      else if (error instanceof ProviderError && error.ambiguous) await this.store.ops.markUnknown(op.id, message, this.now());
+      // plan 25: refused with credentials a sign-in replaced meanwhile: it goes again with the new ones
+      if (error instanceof ProviderAuthError && credentials !== this.credentialsOf(op.account_id)) {
+        await this.store.ops.release(op.id, this.now());
+        this.kickWorker();
+      } else if (error instanceof ProviderAuthError) {
+        await this.store.ops.awaitAuth(op.id, message, this.now());
+        await this.needsSignIn(op.account_id, op.kind, error);
+      } else if (error instanceof ProviderError && error.ambiguous) await this.store.ops.markUnknown(op.id, message, this.now());
       // the server couldn't be reached: wait for the network (plan 20); an outage gives the attempt back
       else if (error instanceof ProviderError && error.network) state = await this.store.ops.fail(op.id, message, true, this.now(), { network: true, keepAttempt: this.connectivity.inOutage(op.account_id) });
       else state = await this.store.ops.fail(op.id, message, error instanceof ProviderError ? error.retryable : true, this.now());
@@ -1029,6 +1083,24 @@ export class BackendCore {
     if (this.stopped && !this.store.isOpen) return;
     const after = await this.store.ops.get(op.id);
     if (after) this.server.emit("op", this.opInfo(after)); // a superseded op is simply gone
+  }
+
+  /**
+   * Plan 25: an action was refused for a sign-in (an SMTP login, an expired grant): the account says so now, even
+   * if no sync has run into it yet. Once: an account that already says so isn't written or announced again.
+   */
+  private async needsSignIn(accountId: number, opKind: string, error: ProviderAuthError): Promise<void> {
+    const account = await this.store.accounts.get(accountId);
+    if (!account || !this.store.isOpen) return;
+    // an IMAP account's send goes through SMTP: refused there, it's only its sending (Codex review #2)
+    const scope = account.kind === "imap" && opKind === "send" ? "send" : null;
+    // already asking (as a whole, or for this): nothing new to say
+    if (account.syncState.authRequired && (account.syncState.authScope !== "send" || scope === "send")) return;
+    const lastErrorI18n = textRef((error as { i18n?: unknown }).i18n) ?? null;
+    if (scope === null) this.connectivity.waitForSignIn(accountId, true);
+    // a refused send leaves the account's sync as it was (it works)
+    await this.store.accounts.setSyncState(accountId, { ...(scope === null && { status: "error" as const, connection: null }), lastError: error.message, lastErrorI18n, authRequired: true, authScope: scope });
+    await this.emitAccounts();
   }
 
   opInfo(op: OpRow): OpInfo {
@@ -1044,6 +1116,8 @@ export class BackendCore {
       attempts: op.attempts,
       ...lastError,
       createdAt: op.created_at,
+      // plan 25: queued until the account signs in again (a send says so)
+      ...(op.state === "queued" && op.next_attempt_at === AWAITING_AUTH && { awaitingAuth: true as const }),
       ...opSummary(op.kind, payload.subject ?? "", n),
     };
   }
