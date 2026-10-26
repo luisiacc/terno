@@ -30,6 +30,8 @@ interface Props {
   top: number;
   height: number;
   compact: boolean;
+  /** plan 24: List's full-width list, one line with the senders in a column (Gmail's); compact density is one line already */
+  wide?: boolean;
   showAccount: boolean;
   /** plan 22: the sender's icon may be asked for (never in spam) */
   icons: boolean;
@@ -44,7 +46,7 @@ interface Props {
  * checking one re-renders one. The design picks the layout inside it (classic,
  * avatar, large avatar); the shell, roles, ids and handlers are the same in all.
  */
-export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, showAccount, icons, layout }: Props) {
+export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout }: Props) {
   renderProbe("ThreadRow");
   /** the open thread (the cursor; the listbox's active descendant) */
   const selected = useApp((s) => s.selectedId === thread.id);
@@ -61,6 +63,8 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
   const cats = thread.categoryIds.length ? categories.filter((c) => thread.categoryIds.includes(c.id)) : [];
   const classic = layout === "classic";
   const big = layout === "large-avatar";
+  /** one line: compact density, or a wide list */
+  const line = compact || wide;
 
   const from = (
     <span data-testid="row-from" className={cn("min-w-0 truncate", thread.unread ? "type-row-from-strong" : "type-row-from text-foreground")}>
@@ -88,7 +92,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
         "flex min-w-0 shrink-0 items-center gap-1 self-center text-2xs",
         // a checked row is on the accent (muted text isn't checked there): its own foreground
         checked && !selected ? "text-accent-foreground" : "text-muted-foreground",
-        compact ? "max-w-[min(7rem,32%)]" : "ml-auto max-w-[min(8rem,40%)] pl-1",
+        line ? "max-w-[min(7rem,32%)]" : "ml-auto max-w-[min(8rem,40%)] pl-1",
       )}
     >
       <span data-testid="account-mark" className={cn("size-1.5 shrink-0 rounded-full border-[1.5px]", ACCOUNT_MARK[account.color])} />
@@ -119,15 +123,21 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
     </span>
   );
   const avatar = !classic && (
-    <span className={cn("relative shrink-0", !compact && !big && "self-start mt-0.5")}>
+    <span className={cn("relative shrink-0", !line && !big && "self-start mt-0.5")}>
       <SenderAvatar
         name={thread.fromName}
         email={thread.fromEmail}
         icon={icons}
-        className={compact ? "size-(--avatar-row-compact) text-[length:calc(var(--avatar-row-compact)*0.42)]" : "size-(--avatar-row) text-[length:calc(var(--avatar-row)*0.3)]"}
+        className={
+          compact
+            ? "size-(--avatar-row-compact) text-[length:calc(var(--avatar-row-compact)*0.42)]"
+            : wide
+              ? "size-(--avatar-row-wide) text-[length:calc(var(--avatar-row-wide)*0.38)]"
+              : "size-(--avatar-row) text-[length:calc(var(--avatar-row)*0.3)]"
+        }
       />
       {/* Lumen: what's new sits on the person, ringed in what's behind the row */}
-      {big && !compact && thread.unread && (
+      {big && !line && thread.unread && (
         <span data-testid="row-unread-dot" className={cn("absolute -top-0.5 -left-0.5 size-3 rounded-full bg-unread ring-2", selected ? "ring-row-selected" : checked ? "ring-accent" : "ring-pane")} />
       )}
     </span>
@@ -145,6 +155,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       data-messages={thread.messageCount > 1 ? thread.messageCount : undefined}
       data-checked={checked || undefined}
       data-layout={layout}
+      data-wide={(wide && !compact) || undefined}
       onMouseDown={(e) => e.button === 0 && pressRow(thread.id, { meta: e.metaKey, ctrl: e.ctrlKey, shift: e.shiftKey })}
       onClick={(e) => !e.metaKey && !e.ctrlKey && !e.shiftKey && releaseRow(thread.id)}
       className={cn(
@@ -158,12 +169,22 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       )}
       style={{ transform: `translateY(${top}px)`, height }}
     >
-      {!(big && !compact) && <span className={cn("absolute top-1/2 left-[11px] size-1.5 -translate-y-1/2 rounded-full bg-unread", !thread.unread && "invisible")} />}
-      {compact ? (
-        <div className={cn("relative flex min-w-0 items-center", classic ? "gap-2" : "gap-2.5")}>
+      {!(big && !line) && <span className={cn("absolute top-1/2 left-[11px] size-1.5 -translate-y-1/2 rounded-full bg-unread", !thread.unread && "invisible")} />}
+      {line ? (
+        <div className={cn("relative flex min-w-0 items-center", classic ? "gap-2" : "gap-2.5", wide && !classic && "gap-3")}>
           {avatar}
-          {from}
-          {count}
+          {wide ? (
+            // the senders line up in a column, so the subjects do too
+            <span className="flex w-[clamp(9rem,18%,14rem)] shrink-0 items-center gap-1.5">
+              {from}
+              {count}
+            </span>
+          ) : (
+            <>
+              {from}
+              {count}
+            </>
+          )}
           <span className={cn("type-row-subject min-w-0 flex-1 truncate", thread.unread ? "text-foreground" : "text-muted-foreground")}>
             {thread.subject} {draft} <span className="text-muted-foreground">— {thread.snippet}</span>
           </span>

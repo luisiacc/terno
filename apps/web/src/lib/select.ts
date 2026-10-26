@@ -12,6 +12,7 @@ import { currentScope, listKey, useList } from "~/state/list";
 import { loadThread } from "~/state/threads";
 import { viewLabel } from "~/lib/format";
 import { addRange, extend, pick, scopeLabel, targetsOf, toggle, type Order } from "~/lib/selection";
+import { listCovered, listLayout, openThread } from "~/lib/page";
 
 export const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
@@ -62,6 +63,11 @@ export function pressRow(id: number, m: PressModifiers): void {
     if (s.selectedId !== id) setApp({ selectedId: id, anchorId: id });
     return;
   }
+  // List (plan 24): the press only moves the cursor; the click that ends it opens (a press may be a drag starting)
+  if (listLayout()) {
+    setApp({ selectedId: id, anchorId: id });
+    return;
+  }
   const patch: Partial<AppState> = { selectedId: id, readerOpen: true, anchorId: id };
   if (s.checked.size || s.scope) Object.assign(patch, { checked: EMPTY, scope: null });
   // a new message in the reader steps aside for the conversation clicked (it stays in the drafts strip)
@@ -69,8 +75,12 @@ export function pressRow(id: number, m: PressModifiers): void {
   setApp(patch);
 }
 
-/** The click that ends a plain press on a selected row without a drag: the selection becomes that row. */
+/** The click that ends a plain press without a drag: List opens the conversation; on a selected row (Split) the selection becomes that row. */
 export function releaseRow(id: number): void {
+  if (listLayout()) {
+    collapseOnClick = null;
+    return openThread(id);
+  }
   if (collapseOnClick !== id) return;
   collapseOnClick = null;
   setApp({ checked: EMPTY, scope: null, selectedId: id, readerOpen: true });
@@ -79,25 +89,28 @@ export function releaseRow(id: number): void {
 /** x */
 export function toggleCurrent(): void {
   const s = getApp();
-  if (s.selectedId === null) return;
+  // a page covers the list (List): a selection made there would be invisible, and the reader's actions would act on it
+  if (s.selectedId === null || listCovered()) return;
   setApp({ checked: toggle(s.checked, s.selectedId), anchorId: s.selectedId, scope: null });
 }
 
 /** ⌘A / `* a`: every loaded row (more may exist: the banner offers the whole view). */
 export function selectAll(): void {
   const { items } = useList.getState();
-  if (items.length === 0) return;
+  if (items.length === 0 || listCovered()) return;
   const s = getApp();
   setApp({ checked: pick(items), anchorId: s.anchorId ?? items[0]!.id, scope: null });
 }
 
 /** `* r` / `* u` / `* s` */
 export function selectWhere(keep: (t: { unread: boolean; starred: boolean }) => boolean): void {
+  if (listCovered()) return;
   setApp({ checked: pick(useList.getState().items, keep), scope: null });
 }
 
 /** ⇧J / ⇧K: the cursor moves and the anchor→cursor range is selected. */
 export function extendSelection(delta: number): void {
+  if (listCovered()) return;
   const s = getApp();
   const order = listOrder();
   const r = extend(s.checked, order, s.anchorId ?? s.selectedId, s.selectedId, delta);
@@ -106,14 +119,15 @@ export function extendSelection(delta: number): void {
   if (i !== undefined) {
     listScroller.scrollToIndex?.(i);
     const next = useList.getState().items[i + delta];
-    if (next) void loadThread(next.id);
+    // no conversation shows on List's list page: nothing to warm (R12)
+    if (next && !listLayout()) void loadThread(next.id);
   }
 }
 
 /** "Select all N conversations in “…”": the whole view or search, by scope. */
 export function selectScope(count: number): void {
   const scope = currentScope();
-  if (!scope) return;
+  if (!scope || listCovered()) return;
   const s = getApp();
   const category = s.categories.find((c) => c.id === s.categoryId)?.name;
   const label = scope.kind === "search" ? t("list.scope.quoted", { label: s.query.trim() }) : (category ?? viewLabel(s.view));

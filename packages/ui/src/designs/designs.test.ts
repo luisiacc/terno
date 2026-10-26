@@ -34,6 +34,12 @@ describe("designs (plan 15)", () => {
       expect(d.rows.compact).toBeLessThan(d.rows.comfortable);
       expect(d.avatar.row + 16).toBeLessThanOrEqual(d.rows.comfortable);
       expect(d.avatar.rowCompact + 12).toBeLessThanOrEqual(d.rows.compact);
+      // plan 24: the List layout's one-line row sits between the two, with room around its avatar
+      expect(d.rows.wide).toBeGreaterThan(d.rows.compact);
+      expect(d.rows.wide).toBeLessThan(d.rows.comfortable);
+      expect(d.avatar.rowWide + 16).toBeLessThanOrEqual(d.rows.wide);
+      // no avatar in rows means none in wide rows either
+      expect(d.avatar.rowWide === 0).toBe(d.avatar.row === 0);
     }
   });
 
@@ -42,7 +48,7 @@ describe("designs (plan 15)", () => {
     expect(m.fonts.sans).toMatch(/^-apple-system, BlinkMacSystemFont, "Geist Variable"/);
     expect(m.text.sm).toEqual(["0.8125rem", "1.125rem"]);
     expect(m.radius.md).toBe("0.375rem");
-    expect(m.rows).toEqual({ comfortable: 68, compact: 40 });
+    expect(m.rows).toEqual({ comfortable: 68, compact: 40, wide: 44 });
     expect(m.avatar.row).toBe(0);
     expect(m.palette).toEqual({ light: "terno-light", dark: "terno-dark" });
   });

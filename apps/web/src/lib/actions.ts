@@ -9,7 +9,8 @@ import { activeFilter } from "~/lib/unread-filter";
 import type { ListFilter } from "@terno/core";
 import { getApp, setApp, type ScopeSelection } from "~/state/app";
 import { patchRows, reloadList, useList } from "~/state/list";
-import { invalidateThreads } from "~/state/threads";
+import { invalidateThreads, useThreads } from "~/state/threads";
+import { closePage, currentPage, listLayout } from "~/lib/page";
 
 /** Does a thread still belong in the current view after an action? */
 function staysInView(view: View, action: ThreadAction): boolean {
@@ -108,6 +109,9 @@ function listFilterOfScope(scope: { filter?: ListFilter; unreadOnly?: boolean })
   return scope.filter ?? (scope.unreadOnly ? "unread" : undefined);
 }
 
+/** On List's page, these are done with the conversation even where its row stays (a search keeps results in place): back to the list. */
+const DONE_READING = new Set<ThreadAction>(["archive", "trash", "spam", "markUnread"]);
+
 /**
  * Applies a triage action optimistically: the list updates in the same frame,
  * selection advances to the next thread, and the backend persists + syncs.
@@ -129,7 +133,11 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
   const reading = unmatches(action, activeFilter(s));
   const leaving = reading || (s.query ? false : !staysInView(s.view, action));
   const stays = reading ? s.selectedId : null;
+  // List's conversation page (plan 24): an action that takes the open thread away, or marks it unread, is done reading it
+  const backToList = s.selectedId !== null && targets.includes(s.selectedId) && ((leaving && s.selectedId !== stays) || DONE_READING.has(action)) && listLayout() && currentPage() === "thread";
 
+  // back on the list first (focus with it), then the cursor moves: the page closes even when no thread is left to move to
+  if (backToList) closePage({ focus: true });
   if (leaving && !reading && s.selectedId !== null && targets.includes(s.selectedId)) {
     // Superhuman-style: move to the next thread that isn't being removed
     const start = index.get(s.selectedId) ?? 0;
@@ -139,6 +147,7 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
   }
   if (leaving) reflowRemoval(targets.filter((id) => id !== stays));
   patchRows(targets, (t): ThreadSummary | null => (leaving && t.id !== stays ? null : patched(t, action)));
+
   // what the user acted on stops being selected; automatic and undo actions never touch the selection
   const onTargets = !options.quiet && targets.some((id) => s.checked.has(id));
   if (onTargets && (s.checked.size || s.scope)) setApp({ checked: new Set(), scope: null });
@@ -247,7 +256,8 @@ export function targetRows(ids?: readonly number[]): ThreadSummary[] {
   const target = ids ? { ids } : currentTargets();
   if ("scope" in target) return scopeRows(items, target.scope.scope);
   return target.ids.flatMap((id) => {
-    const row = items[index.get(id) ?? -1];
+    // a conversation the list doesn't hold (List's reload on one, a draft's): what the reader shows of it
+    const row = items[index.get(id) ?? -1] ?? useThreads.getState().details.get(id)?.thread;
     return row ? [row] : [];
   });
 }
@@ -275,7 +285,7 @@ export function scheduleMarkRead(id: number): void {
   if (readTimer) clearTimeout(readTimer);
   readTimer = setTimeout(() => {
     const st = useList.getState();
-    const row = st.items[st.index.get(id) ?? -1];
+    const row = st.items[st.index.get(id) ?? -1] ?? useThreads.getState().details.get(id)?.thread;
     if (row?.unread && getApp().selectedId === id) void act("markRead", [id], { quiet: true });
   }, 450);
 }

@@ -1,6 +1,11 @@
 import { t } from "@terno/i18n";
 import { TooltipProvider } from "@terno/ui/components/tooltip";
+import { cn } from "@terno/ui/lib/utils";
 import { lazy, Suspense, useEffect } from "react";
+import { useAppearance } from "~/lib/appearance";
+import { usePage } from "~/lib/page";
+import { useSnack } from "~/lib/snack";
+import { regressions } from "~/lib/render-probe";
 import { onFiled, undoFiled } from "~/lib/categorize";
 import { registerUndo } from "~/lib/snack";
 import { installKeyboard } from "~/lib/keyboard";
@@ -49,6 +54,25 @@ function Fatal({ message }: { message: string }) {
   );
 }
 
+/**
+ * List's page (plan 24): the conversation or a new message, over the list,
+ * which stays mounted underneath (inert, unpainted) so Back finds it exactly
+ * as it was. Keyed by nothing: moving between conversations never remounts it
+ * (and never animates); only coming from the list fades it in.
+ */
+function PageLayer({ page }: { page: "thread" | "compose" }) {
+  const selectedId = useApp((s) => s.selectedId);
+  // a new message keeps its foot (the format bar) clear of the dock
+  const inset = useSnack((s) => (page === "compose" ? s.inset : 0));
+  return (
+    <div data-testid="list-page" data-page={page} className="absolute inset-0 z-[5] flex flex-col bg-background animate-in fade-in-0 slide-in-from-right-1 duration-base" style={inset ? { paddingBottom: inset } : undefined}>
+      <PaneBoundary area="reader" resetKey={selectedId}>
+        {page === "compose" ? <NewMessage /> : <Reader />}
+      </PaneBoundary>
+    </div>
+  );
+}
+
 export function App() {
   const ready = useApp((s) => s.ready);
   const fatal = useApp((s) => s.fatal);
@@ -57,6 +81,9 @@ export function App() {
   const many = useApp((s) => s.scope !== null || s.checked.size >= 2);
   const composing = useApp((s) => s.compose !== null);
   const selectedId = useApp((s) => s.selectedId);
+  const list = useAppearance((s) => s.layout) === "list";
+  const page = usePage();
+  const covered = page !== "list";
   useEffect(() => installKeyboard(), []);
   useEffect(() => installComposeFollowsSelection(), []);
   useEffect(() => installNetworkEvents(), []);
@@ -88,21 +115,36 @@ export function App() {
   return (
     <TooltipProvider delay={500}>
       {gate}
-      <div className="app-panes grid h-screen overflow-hidden" data-ready={ready || undefined}>
+      {/* plan 24: Split is three panes; List is the sidebar and one content pane (the list, or a page over it). The tree keeps its
+          shape across a switch, so the list (and its scroll) survives it. */}
+      <div className={cn("grid h-screen overflow-hidden", list ? "app-panes-list" : "app-panes")} data-ready={ready || undefined}>
         <Sidebar />
-        <div id="app-list" className="hairline-l hairline-r hairline-strong relative min-h-0">
-          <ThreadList />
+        <div id="app-list" className={cn("hairline-l relative min-h-0", !list && "hairline-r hairline-strong")}>
+          {/* under a page the list stays laid out (scroll, measured rows, mounted rows) but isn't painted or reachable */}
+          <div
+            // test builds only: the perf gate's injected regression (a list remounted by every page change) must fail it
+            key={import.meta.env.VITE_RENDER_PROBE && regressions.remountList ? page : undefined}
+            data-list-section
+            className="h-full min-h-0 data-covered:invisible"
+            inert={covered}
+            data-covered={covered || undefined}
+          >
+            <ThreadList />
+          </div>
+          {list && page !== "list" && <PageLayer page={page} />}
           <SnackDock />
-          {/* plan 21: the panes' edges, over the hairlines */}
+          {/* plan 21: the panes' edges, over the hairlines; List has no list|reader edge (its width is Split's, kept for it) */}
           <PaneHandle pane="sidebar" />
-          <PaneHandle pane="list" />
+          {!list && <PaneHandle pane="list" />}
         </div>
-        <main className="relative min-h-0">
-          {/* the reader pane: a bulk selection, else a new message being written, else the conversation; one that fails to render is that pane only */}
-          <PaneBoundary area="reader" resetKey={selectedId}>
-            {many ? <SelectionBar /> : composing ? <NewMessage /> : <Reader />}
-          </PaneBoundary>
-        </main>
+        {!list && (
+          <main className="relative min-h-0">
+            {/* the reader pane: a bulk selection, else a new message being written, else the conversation; one that fails to render is that pane only */}
+            <PaneBoundary area="reader" resetKey={selectedId}>
+              {many ? <SelectionBar /> : composing ? <NewMessage /> : <Reader />}
+            </PaneBoundary>
+          </main>
+        )}
       </div>
       <CommandPalette />
       <CategoryPicker />

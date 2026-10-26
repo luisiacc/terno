@@ -40,6 +40,18 @@ describe("main: the menu bar", () => {
     expect(items.filter((i) => i.accelerator === "CmdOrCtrl+L")).toHaveLength(1);
   });
 
+  it("View has Back (⌘[) and Forward (⌘]) for the List layout, both whitelisted commands (plan 24)", () => {
+    const sent: string[] = [];
+    const items = sub(viewMenu((c) => sent.push(c), false));
+    const back = items.find((i) => i.id === "nav-back")!;
+    const forward = items.find((i) => i.id === "nav-forward")!;
+    expect([back.label, back.accelerator, forward.label, forward.accelerator]).toEqual(["Back", "CmdOrCtrl+[", "Forward", "CmdOrCtrl+]"]);
+    (back.click as () => void)();
+    (forward.click as () => void)();
+    expect(sent).toEqual(["nav.back", "nav.forward"]);
+    for (const c of sent) expect(MENU_COMMANDS).toContain(c);
+  });
+
   it("File prints and exports through the renderer's commands", () => {
     const sent: string[] = [];
     const menu = fileMenu((c) => sent.push(c));

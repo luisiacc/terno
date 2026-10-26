@@ -35,8 +35,8 @@ export const lumen: DesignDefinition = {
   },
   icon: { stroke: 1.5, toolbar: 1.5 },
   layout: { sidebar: "248px", listMin: "340px", listMax: "min(400px, 32vw)", readerMin: 380, readerMax: "760px", readerPadX: "2.5rem", rowRadius: "1rem", navRadius: "0.75rem", navHeight: "2.125rem" },
-  rows: { comfortable: 84, compact: 48 },
-  avatar: { row: 44, rowCompact: 24, message: 32, collapsed: 32, senderCard: 64 },
+  rows: { comfortable: 84, compact: 48, wide: 56 },
+  avatar: { row: 44, rowCompact: 24, rowWide: 32, message: 32, collapsed: 32, senderCard: 64 },
   surfaces: { draft: "card", reviewBadge: "tinted", inboxCount: "unread" },
   variants: {
     compose: "sidebar-pill",
@@ -47,5 +47,6 @@ export const lumen: DesignDefinition = {
     categoryReview: "inline-badge",
     readerHeader: "sender-card",
     replyAction: "pill",
+    categoryTabs: "pill",
   },
 };

@@ -54,6 +54,8 @@
       a = { v: 2, mode: a.mode, design: LUMEN.design, light: LUMEN.light, dark: LUMEN.dark, motion: a.motion, vibrancy: LUMEN.vibrancy };
     }
     html.setAttribute("data-design", DESIGNS.indexOf(a.design) >= 0 ? a.design : LUMEN.design);
+    // plan 24: the layout (split, or the list full width), so the first frame has the right grid
+    html.setAttribute("data-layout", a.layout === "list" ? "list" : "split");
     var mode = MODES.indexOf(a.mode) >= 0 ? a.mode : "system";
     var dark = mode === "dark" || (mode === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
     var m = dark ? "dark" : "light";

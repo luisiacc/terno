@@ -322,6 +322,11 @@
   --pane-list-eff: clamp(300px, min(640px, var(--pane-list, max(var(--list-min), var(--list-max)))), 100vw - var(--reader-min) - var(--pane-sidebar-eff));
   grid-template-columns: var(--pane-sidebar-eff) var(--pane-list-eff) minmax(0, 1fr);
 }
+/* plan 24, the List layout: the same sidebar (its width, its clamp), then one pane for the list or the page over it; the list's own width is Split's */
+@utility app-panes-list {
+  --pane-sidebar-eff: clamp(200px, min(360px, var(--pane-sidebar, var(--sidebar-w))), 100vw - var(--reader-min) - 300px);
+  grid-template-columns: var(--pane-sidebar-eff) minmax(0, 1fr);
+}
 /* a pane edge being dragged: its cursor everywhere, no text selection, and mail frames don't catch the pointer */
 :root[data-resizing],
 :root[data-resizing] * {

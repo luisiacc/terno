@@ -23,6 +23,8 @@ export interface PointerLike {
 
 export interface TargetRect {
   id: number;
+  /** which measured element it is (a category can be a target twice: its sidebar item and its tab, plan 24) */
+  at?: number;
   left: number;
   top: number;
   right: number;
@@ -41,9 +43,9 @@ export interface DragEnv {
   start(ids: number[], at: PointerLike): void;
   /** every pointermove while dragging (the binding coalesces to one frame) */
   move(at: PointerLike): void;
-  target(categoryId: number | null, state: DropState | null): void;
-  /** an exclusive move: afterwards the threads are in this category only */
-  drop(categoryId: number, ids: number[]): void;
+  target(categoryId: number | null, state: DropState | null, at?: number): void;
+  /** an exclusive move: afterwards the threads are in this category only (`at`: the element it was dropped on) */
+  drop(categoryId: number, ids: number[], at?: number): void;
   cancel(): void;
 }
 
@@ -52,7 +54,12 @@ export function exceedsThreshold(dx: number, dy: number): boolean {
 }
 
 export function hitTest(rects: readonly TargetRect[], x: number, y: number): number | null {
-  for (const r of rects) if (x >= r.left && x < r.right && y >= r.top && y < r.bottom) return r.id;
+  return hitRect(rects, x, y)?.id ?? null;
+}
+
+/** The target under the point itself (which of a category's elements). */
+export function hitRect(rects: readonly TargetRect[], x: number, y: number): TargetRect | null {
+  for (const r of rects) if (x >= r.left && x < r.right && y >= r.top && y < r.bottom) return r;
   return null;
 }
 
@@ -75,7 +82,7 @@ export function newIds(ids: readonly number[], categoryId: number, categoriesOf:
   return ids.filter((id) => !categoriesOf(id)?.includes(categoryId));
 }
 
-type Phase = { kind: "idle" } | { kind: "pressed"; id: number; x: number; y: number; pointerId?: number } | { kind: "dragging"; ids: number[]; over: number | null; state: DropState | null; rects: TargetRect[]; last: PointerLike };
+type Phase = { kind: "idle" } | { kind: "pressed"; id: number; x: number; y: number; pointerId?: number } | { kind: "dragging"; ids: number[]; over: number | null; at: number | undefined; state: DropState | null; rects: TargetRect[]; last: PointerLike };
 
 export class DragController {
   private phase: Phase = { kind: "idle" };
@@ -103,7 +110,7 @@ export class DragController {
     if (p.kind === "pressed") {
       if (!exceedsThreshold(e.x - p.x, e.y - p.y)) return false;
       const ids = this.env.payload(p.id);
-      this.phase = { kind: "dragging", ids, over: null, state: null, rects: this.env.targets(), last: e };
+      this.phase = { kind: "dragging", ids, over: null, at: undefined, state: null, rects: this.env.targets(), last: e };
       this.env.start(ids, e);
       this.track(e);
       return true;
@@ -124,12 +131,14 @@ export class DragController {
     if (p.kind !== "dragging") return;
     p.last = e;
     this.env.move(e);
-    const over = hitTest(p.rects, e.x, e.y);
+    const hit = hitRect(p.rects, e.x, e.y);
+    const over = hit?.id ?? null;
     const state: DropState | null = over === null ? null : this.env.isAlready(over, p.ids) ? "already" : "over";
-    if (over !== p.over || state !== p.state) {
+    if (over !== p.over || state !== p.state || hit?.at !== p.at) {
       p.over = over;
+      p.at = hit?.at;
       p.state = state;
-      this.env.target(over, state);
+      this.env.target(over, state, hit?.at);
     }
   }
 
@@ -137,8 +146,9 @@ export class DragController {
     const p = this.phase;
     this.phase = { kind: "idle" };
     if (p.kind !== "dragging") return;
-    const over = hitTest(p.rects, e.x, e.y);
-    if (over !== null && !this.env.isAlready(over, p.ids)) this.env.drop(over, p.ids);
+    // measured again for the drop itself: a target may have moved since the drag started (a tab widened by a new count, into More)
+    const hit = hitRect(this.env.targets(), e.x, e.y);
+    if (hit && !this.env.isAlready(hit.id, p.ids)) this.env.drop(hit.id, p.ids, hit.at);
     else this.env.cancel();
   }
 

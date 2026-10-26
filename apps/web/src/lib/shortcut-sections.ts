@@ -12,6 +12,8 @@ export const SECTIONS: { title: Label; rows: [Command, Label][] }[] = [
       ["list.next", "shortcuts.next"],
       ["list.prev", "shortcuts.prev"],
       ["list.open", "common.open"],
+      ["nav.back", "shortcuts.back"],
+      ["nav.forward", "shortcuts.goForward"],
       ["search.focus", "common.search"],
       ["list.toggleUnread", "shortcuts.unreadOnly"],
       ["palette.open", "shortcuts.palette"],

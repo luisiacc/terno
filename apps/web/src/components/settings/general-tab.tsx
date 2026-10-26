@@ -3,7 +3,9 @@ import { Button } from "@terno/ui/components/button";
 import { Input } from "@terno/ui/components/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Switch } from "@terno/ui/components/switch";
-import { Keyboard } from "lucide-react";
+import { Columns2, Keyboard, Rows3 } from "lucide-react";
+import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
+import { updateAppearance } from "~/lib/appearance";
 import { Suspense, useRef, useState } from "react";
 import { isLanguageSetting, LOCALE_IDS, LOCALES, resolveLocale, t, type LanguageSetting } from "@terno/i18n";
 import { setApp } from "~/state/app";
@@ -191,6 +193,29 @@ export function GeneralTab({ settings, update, onLocalOff }: { settings: AppSett
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.general.list")}>
+        {/* plan 24: the conversation beside the list, or in its place (applied at once, like the style) */}
+        <SettingsRow label={t("settings.general.layout")} hint={t("settings.general.layout.hint")} testId="layout-row">
+          {(a) => (
+            <ToggleGroup
+              aria-labelledby={a["aria-labelledby"]}
+              aria-describedby={a["aria-describedby"]}
+              variant="outline"
+              size="sm"
+              value={[settings.layout]}
+              onValueChange={(v: string[]) => v[0] && void updateAppearance({ layout: v[0] as AppSettings["layout"] })}
+              data-testid="layout-toggle"
+            >
+              <ToggleGroupItem value="split" data-testid="layout-split" className="gap-1.5">
+                <Columns2 aria-hidden />
+                {t("settings.general.layout.split")}
+              </ToggleGroupItem>
+              <ToggleGroupItem value="list" data-testid="layout-list" className="gap-1.5">
+                <Rows3 aria-hidden />
+                {t("settings.general.layout.list")}
+              </ToggleGroupItem>
+            </ToggleGroup>
+          )}
+        </SettingsRow>
         <SettingsRow label={t("settings.general.density")} hint={t("settings.general.density.hint")}>
           {({ id: _id, ...a }) => (
             <Select value={settings.density} onValueChange={(v) => void update({ density: v as AppSettings["density"] })} items={density().map((d) => ({ ...d }))}>

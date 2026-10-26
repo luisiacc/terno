@@ -60,7 +60,8 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
   }
   if (mode === "new" || threadId === null) {
     // a new message takes the reader pane; a bulk selection steps aside for it
-    setApp({ compose: { key: createDraft(newFields(defaultAccount)), seq: ++seq }, checked: new Set(), scope: null });
+    // (List: the new message is the page, and leaving it lands on the list, not on the conversation it was opened over; plan 24, R1)
+    setApp({ compose: { key: createDraft(newFields(defaultAccount)), seq: ++seq }, checked: new Set(), scope: null, readerOpen: false });
     return;
   }
   if (s.scope !== null || s.checked.size >= 2) return;
@@ -98,7 +99,7 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
 
 /** Shows a new-message draft in the reader pane again (from the drafts strip). */
 export function showNewDraft(key: string): void {
-  setApp({ compose: { key, seq: ++seq }, checked: new Set(), scope: null });
+  setApp({ compose: { key, seq: ++seq }, checked: new Set(), scope: null, readerOpen: false });
 }
 
 /**

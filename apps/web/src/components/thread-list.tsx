@@ -35,10 +35,28 @@ import { ReportRow } from "./diag/report-row";
 import { DesktopBanner, GmailReconnect } from "~/lib/web-parts";
 import { preloadComposer } from "./composer/lazy";
 import { iconsAllowed, iconsAllowedForList } from "~/lib/sender-icons";
+import { useAppearance } from "~/lib/appearance";
+import { selectedTab, tabsShown } from "~/lib/tabs";
+import { listAnchor } from "~/state/list";
+import { ListTabs, TAB_PANEL_ID } from "./list-tabs";
+import { SelectionBar } from "./selection-bar";
 import { renderProbe } from "~/lib/render-probe";
 
 export const searchInputRef: { current: HTMLInputElement | null } = { current: null };
 export const listScroller: { scrollToIndex?: (i: number) => void } = {};
+
+/** The quick filters' control in effect: List's tabs carry All and Unread, so every design keeps the filter button there (plan 24 §2.7). */
+function useQuickFilters(): "menu" | "chips" {
+  const design = useDesign();
+  const list = useAppearance((s) => s.layout === "list");
+  return list ? "menu" : design.variants.quickFilters;
+}
+
+/** The scroller is wide enough for one-line rows (List only; 16 px of hysteresis so a width near the line doesn't flip back and forth). */
+export const WIDE_MIN = 720;
+export function nextWide(wide: boolean, width: number): boolean {
+  return wide ? width >= WIDE_MIN - 16 : width >= WIDE_MIN;
+}
 
 /** the header's filter button, where focus goes when the empty state's "Clear filter" disappears */
 export const unreadFilterButton: { current: HTMLButtonElement | null } = { current: null };
@@ -249,11 +267,11 @@ function Greeting() {
 
 /** Under a display title or the greeting: what's unread here (the filter's status when it's on). */
 function Subtitle({ filter, search }: { filter: QuickFilter | undefined; search: boolean }) {
-  const design = useDesign();
+  const quick = useQuickFilters();
   const unread = useApp((s) =>
     s.reviewCategoryId !== null ? null : s.categoryId !== null ? (s.counts.categoryUnread[s.categoryId] ?? 0) : s.view === "inbox" ? (s.accountId !== null ? (s.counts.inboxUnreadByAccount[s.accountId] ?? 0) : s.counts.inboxUnread) : null,
   );
-  if (filter && design.variants.quickFilters === "menu")
+  if (filter && quick === "menu")
     return (
       <div className="mt-1.5">
         <FilterStatus search={search} filter={filter} />
@@ -285,6 +303,9 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   // the greeting is the inbox's title (any account); everywhere else a design that greets shows its display title
   const kind = design.variants.listHeader === "greeting" && view === "inbox" && !category && !review ? "greeting" : design.variants.listHeader === "title" ? "title" : "display";
   const behindButton = design.variants.search === "button";
+  const quick = useQuickFilters();
+  const list = useAppearance((s) => s.layout === "list");
+  const tabs = useApp((s) => list && tabsShown(s));
   const showField = !behindButton || searchOpen || query !== "";
   const stats = query && searchMs !== null && (
     <span data-testid="search-stats" className="shrink-0 text-2xs text-muted-foreground tabular">
@@ -296,7 +317,7 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   );
   const actions = (
     <>
-      {!review && design.variants.quickFilters === "menu" && <UnreadFilterButton filter={filter} />}
+      {!review && quick === "menu" && <UnreadFilterButton filter={filter} />}
       {behindButton && (
         <Tooltip>
           <TooltipTrigger
@@ -356,7 +377,8 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
         </div>
       )}
       {showField && <SearchField autoCollapse={behindButton} />}
-      {!review && design.variants.quickFilters === "chips" && <QuickChips filter={filter} />}
+      {!review && quick === "chips" && <QuickChips filter={filter} />}
+      {tabs && <ListTabs />}
     </div>
   );
 }
@@ -488,9 +510,18 @@ export function ThreadList() {
   const icons = iconsHere && iconsAllowedForList(itemsKey);
   const filter = useApp(activeFilter);
   const design = useDesign();
-  const height = design.rows[compact ? "compact" : "comfortable"];
+  // plan 24: List's full-width list draws one-line rows once its scroller is wide enough for them
+  const list = useAppearance((s) => s.layout === "list");
+  const [wideEnough, setWideEnough] = useState(false);
+  const wide = list && wideEnough;
+  const height = wide && !compact ? design.rows.wide : design.rows[compact ? "compact" : "comfortable"];
   const layout = design.variants.row;
+  const many = useApp((s) => s.scope !== null || s.checked.size >= 2);
+  const tabs = useApp((s) => list && tabsShown(s));
+  const tab = useApp(selectedTab);
   const parentRef = useRef<HTMLDivElement>(null);
+  const anchorRef = useRef<(() => (() => void) | void) | null>(null);
+  const wideRef = useRef(false);
   const headerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -515,9 +546,8 @@ export function ThreadList() {
   }, [height]);
 
   // a design switch keeps the first visible row where it was on screen, and the open thread in view if it was (plan 15, R3)
-  useEffect(
-    () =>
-      registerDesignAnchor(() => {
+  useEffect(() => {
+    const capture = () => {
         const el = parentRef.current;
         const rows = useList.getState().items;
         if (!el || rows.length === 0) return;
@@ -534,6 +564,8 @@ export function ThreadList() {
           if (i === undefined) return;
           const h = measuredHeight.current;
           el.scrollTop = Math.max(0, i * h + into * (h / oldH));
+          // where the open thread is now (rows may have arrived above it since the capture)
+          const sel = id === null ? undefined : useList.getState().index.get(id);
           // the open thread was on screen: if the new heights carried it out of view, it comes back (set directly: the
           // virtualizer's own scroll would land on positions measured before this switch)
           if (selVisible && sel !== undefined) {
@@ -543,9 +575,40 @@ export function ThreadList() {
             else if (top >= bottom) el.scrollTop = top + h - (el.clientHeight - useSnack.getState().inset);
           }
         };
-      }),
-    [virtualizer],
-  );
+    };
+    // the same capture keeps the first row through a refresh that waited behind a page, and a switch to or from one-line rows (plan 24)
+    anchorRef.current = capture;
+    listAnchor.capture = capture;
+    listAnchor.scrolled = () => (parentRef.current?.scrollTop ?? 0) > 0;
+    listAnchor.firstVisible = () => {
+      const el = parentRef.current;
+      const rows = useList.getState().items;
+      return el && rows.length ? (rows[Math.min(rows.length - 1, Math.floor(el.scrollTop / measuredHeight.current))]?.id ?? null) : null;
+    };
+    const off = registerDesignAnchor(capture);
+    return () => {
+      off();
+      if (listAnchor.capture === capture) listAnchor.capture = listAnchor.firstVisible = listAnchor.scrolled = undefined;
+    };
+  }, [virtualizer]);
+
+  // one-line rows from WIDE_MIN px: the switch keeps the first visible row where it was (heights change under it)
+  useLayoutEffect(() => {
+    const el = parentRef.current;
+    if (!el) return;
+    const read = () => {
+      const next = nextWide(wideRef.current, el.clientWidth);
+      if (next === wideRef.current) return;
+      const restore = anchorRef.current?.();
+      wideRef.current = next;
+      flushSync(() => setWideEnough(next));
+      restore?.();
+    };
+    read();
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // the dock came up over the open thread's row: it moves up into view, once (after the padded spacer is in)
   useEffect(() => {
@@ -613,11 +676,14 @@ export function ThreadList() {
           <DesktopBanner />
         </Suspense>
       )}
+      {/* List has no reader pane for a multi-selection: its actions are a toolbar over the rows (plan 24) */}
+      {list && many && <SelectionBar variant="toolbar" />}
       <SelectAllBanner />
       <DraftsStrip />
-      <div className="relative flex min-h-0 flex-1 flex-col">
+      {/* under tabs the rows are what they control (tabpanel); the listbox takes focus when a page closes (it's never a tab stop) */}
+      <div className="relative flex min-h-0 flex-1 flex-col" {...(tabs ? { role: "tabpanel", id: TAB_PANEL_ID, "aria-labelledby": `list-tab-${tab}` } : {})}>
       <ThreadMenu>
-      <div ref={parentRef} data-keep-scroll="list" role="listbox" aria-label={t("list.label")} aria-multiselectable className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain [contain:strict]">
+      <div ref={parentRef} data-keep-scroll="list" role="listbox" tabIndex={-1} aria-label={t("list.label")} aria-multiselectable className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none [contain:strict]">
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
         {loading && items.length === 0 ? (
           <div className="space-y-3 p-4">
@@ -633,7 +699,7 @@ export function ThreadList() {
         ) : (
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
             {virtualItems.map((v) => (
-              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} showAccount={showAccount} icons={icons} layout={layout} />
+              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} />
             ))}
           </div>
         )}

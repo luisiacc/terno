@@ -267,7 +267,7 @@ export function SnackDock() {
   const spoken = current && !inert && hushed !== current.heard ? current.spoken : "";
   const alert = current?.tone === "error";
   return (
-    <section aria-label={t("snack.dock")} data-testid="snack-dock" className="pointer-events-none absolute inset-x-2 bottom-2 z-10 flex flex-col justify-end">
+    <section aria-label={t("snack.dock")} data-testid="snack-dock" className="pointer-events-none absolute inset-x-2 bottom-2 z-10 flex flex-col justify-end in-data-[layout=list]:right-auto in-data-[layout=list]:w-[min(calc(100%-1rem),30rem)]">
       <div role="status" aria-live="polite" aria-atomic className="sr-only" data-testid="snack-live">
         {!alert && spoken && <span key={current?.heard}>{spoken}</span>}
       </div>

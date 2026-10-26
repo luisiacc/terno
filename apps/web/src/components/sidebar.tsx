@@ -13,9 +13,7 @@ import { useDesign, variant } from "~/lib/design";
 import { formatNumber, t } from "@terno/i18n";
 import { viewLabel } from "~/lib/format";
 import { navigate, setApp, useApp } from "~/state/app";
-import { client } from "~/rpc/connection";
-import { CATEGORY_COLORS } from "@terno/core";
-import { snack } from "~/lib/snack";
+import { createCategory as createNamedCategory } from "~/lib/tabs";
 import { renderProbe } from "~/lib/render-probe";
 import { useDropState } from "~/state/drag";
 import { LocalPill } from "./local-pill";
@@ -237,16 +235,10 @@ export function Sidebar() {
   const inlineReview = design.variants.categoryReview === "inline-badge";
 
   const [creating, setCreating] = useState(false);
+  // the same creation as the List layout's tab "+" (lib/tabs)
   const createCategory = async (name: string) => {
     setCreating(false);
-    if (!name.trim()) return;
-    try {
-      const color = CATEGORY_COLORS[categories.length % CATEGORY_COLORS.length]!;
-      const c = await client.call("categories.create", { name: name.trim(), color });
-      navigate({ categoryId: c.id });
-    } catch (e) {
-      snack.error(String(e));
-    }
+    await createNamedCategory(name);
   };
 
   // the folder you're in: none in a category or its suggestions (both are "all" underneath)

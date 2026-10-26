@@ -55,6 +55,7 @@ const SERVER: AppSettings = {
   htmlMailAppearance: "auto",
   customThemes: [],
   density: "comfortable",
+  layout: "split",
   remoteImages: "ask",
   allowAgentSend: false,
   gmailClientId: "",
@@ -116,6 +117,19 @@ describe("designs (plan 15)", () => {
     expect(painted()).toBe("atelier-dark");
     expect(useAppearance.getState().design).toBe("atelier");
     expect(JSON.parse(fake.stored.get(APPEARANCE_KEY)!)).toMatchObject({ v: 2, design: "atelier", dark: "atelier-dark", light: "terno-light", vibrancy: { light: false, dark: false } });
+    await answer();
+  });
+
+  it("plan 24: the layout is painted on <html> and cached for theme.js, so a List user's first frame is List", async () => {
+    void updateAppearance({ layout: "list" });
+    await tick();
+    expect(fake.html.dataset.layout).toBe("list");
+    expect(useAppearance.getState().layout).toBe("list");
+    expect(JSON.parse(fake.stored.get(APPEARANCE_KEY)!)).toMatchObject({ v: 2, layout: "list" });
+    await answer();
+    void updateAppearance({ layout: "split" });
+    await tick();
+    expect(fake.html.dataset.layout).toBe("split");
     await answer();
   });
 

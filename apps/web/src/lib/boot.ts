@@ -5,11 +5,12 @@ import { flushAllDrafts, loadDrafts } from "~/lib/drafts";
 import { client, connectBackend } from "~/rpc/connection";
 import { removeFromCategory } from "~/lib/categorize";
 import { getApp, navigate, setApp, setCategories } from "~/state/app";
-import { reloadList, useList } from "~/state/list";
+import { refreshList, reloadList, useList } from "~/state/list";
+import { bootPage, installPage, listCovered, readerShown } from "~/lib/page";
 import { invalidateThreads, loadThread, useThreads } from "~/state/threads";
 import { snack } from "~/lib/snack";
 import { applyAppearance, installAppearanceListeners, reconcileSettings, updateAppearance } from "~/lib/appearance";
-import { exposeForTests } from "~/lib/render-probe";
+import { exposeForTests, regressions } from "~/lib/render-probe";
 import { captureUi } from "~/lib/diag";
 import { startDiag } from "~/state/diag";
 import { setBridgeForTests, startUpdates } from "~/lib/updates";
@@ -31,6 +32,7 @@ export async function boot(): Promise<void> {
     // desktop: main pushes the update state (nothing is checked here)
     startUpdates();
     exposeForTests({
+      regressions,
       updateAppearance,
       getApp,
       loadedIds: () => useList.getState().items.map((t) => t.id),
@@ -49,13 +51,16 @@ export async function boot(): Promise<void> {
     client.on("changed", ({ threadIds }) => {
       invalidateThreads(threadIds);
       const selected = getApp().selectedId;
-      if (selected !== null && threadIds.includes(selected)) void loadThread(selected, true);
+      // the conversation on screen refetches now; in List's list page the cursor is only a row (plan 24, R12)
+      // (its row follows the refetched detail: loadThread)
+      if (selected !== null && threadIds.includes(selected) && readerShown()) void loadThread(selected, true);
       // coalesce bursts (imports) into one refresh per frame
       if (refreshQueued) return;
       refreshQueued = true;
       requestAnimationFrame(() => {
         refreshQueued = false;
-        void reloadList({ keepSelection: true });
+        // a page covering the list: one refresh when it shows again (plan 24, R4)
+        refreshList(listCovered());
       });
     });
     client.on("counts", (counts) => setApp({ counts }));
@@ -84,7 +89,10 @@ export async function boot(): Promise<void> {
       if (op.state === "unknown") snack.warning(t("actions.send.unknown", { summary: localized(op.summary, op.summaryI18n) }), { description: t("actions.send.unknownHint"), duration: 10_000, background: true });
       if (op.state === "failed") snack.error(t("actions.send.failed", { summary: localized(op.summary, op.summaryI18n) }), { description: localized(op.lastError, op.lastErrorI18n) ?? undefined, background: true });
     });
-    await reloadList();
+    // plan 24: history and pages; a reload on a conversation (List) reopens it before the list's first answer can pick row 0
+    installPage();
+    const reopened = bootPage();
+    await reloadList({ keepSelection: reopened !== null });
   } catch (error) {
     captureUi(error, { code: "boot.failed" });
     setApp({ fatal: error instanceof Error ? error.message : String(error) });

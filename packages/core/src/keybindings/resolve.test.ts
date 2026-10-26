@@ -185,3 +185,20 @@ describe("selection and triage bindings (plan 06)", () => {
     expect(shortcutsFor("thread.archive", undefined, false)).toEqual(["e"]);
   });
 });
+
+describe("back and forward (plan 24)", () => {
+  it("⌘[ and ⌘] (Ctrl off Mac) go back and forward, never while typing or under a dialog", () => {
+    expect(resolveKey(key("[", { meta: true }), ctx, null).command).toBe("nav.back");
+    expect(resolveKey(key("]", { meta: true }), ctx, null).command).toBe("nav.forward");
+    expect(resolveKey(key("[", { ctrl: true }), ctx, null, undefined, false).command).toBe("nav.back");
+    expect(resolveKey(key("[", { meta: true }), { ...ctx, editable: true }, null).command).toBeNull();
+    expect(resolveKey(key("[", { meta: true }), { ...ctx, dialogOpen: true }, null).command).toBeNull();
+    // a bare bracket is nothing
+    expect(resolveKey(key("["), ctx, null).command).toBeNull();
+  });
+  it("Esc is the snackbar's first, then the reader's (Back in List); never while typing", () => {
+    expect(resolveKey(key("Escape"), { ...ctx, snackbar: true }, null).command).toBe("snackbar.close");
+    expect(resolveKey(key("Escape"), ctx, null).command).toBe("reader.close");
+    expect(resolveKey(key("Escape"), { ...ctx, editable: true }, null).command).toBeNull();
+  });
+});

@@ -176,7 +176,7 @@ describe("app.import", () => {
     await from.client.call("filters.save", { name: "Trabajo", enabled: false, source: "ai", rule: rule([{ field: "account", op: "is", value: a.id }], [{ type: "star" }]) });
     await from.client.call("filters.save", { name: "Viejo", enabled: true, source: "manual", rule: rule([{ field: "account", op: "is", value: gone.id }], [{ type: "archive" }]) });
     await from.client.call("drafts.save", { accountId: a.id, to: [{ name: "", email: "ana@" }], subject: "Pendiente", bodyText: "Hola Ana" });
-    await from.client.call("settings.update", { localMode: false, density: "compact", motionMs: 50, allowAgentSend: true, ai: { provider: "fake" } });
+    await from.client.call("settings.update", { localMode: false, density: "compact", layout: "list", motionMs: 50, allowAgentSend: true, ai: { provider: "fake" } });
     const dump = await from.client.call("app.export", {});
 
     const to = setup();
@@ -192,8 +192,8 @@ describe("app.import", () => {
     expect(filters.find((f) => f.name === "Recibos")!.rule.actions).toEqual([{ type: "addCategory", categoryId: boot.categories[0]!.id }]);
     expect(filters.find((f) => f.name === "Trabajo")).toMatchObject({ enabled: false, source: "ai", rule: { conditions: [{ field: "account", value: here.id }] } });
     expect((await to.client.call("drafts.list", {})).map((d) => [d.accountId, d.subject, d.to])).toEqual([[here.id, "Pendiente", [{ name: "", email: "ana@" }]]]);
-    // density and motion come along; local mode stays on and agents still can't send
-    expect(boot.settings).toMatchObject({ density: "compact", motionMs: 50, localMode: true, allowAgentSend: false });
+    // density, the layout (plan 24) and motion come along; local mode stays on and agents still can't send
+    expect(boot.settings).toMatchObject({ density: "compact", layout: "list", motionMs: 50, localMode: true, allowAgentSend: false });
 
     // a second import adds nothing new
     expect(await to.client.call("app.import", { data: dump })).toMatchObject({ categories: { added: 0, merged: 2 }, filters: { added: 0, existing: 2 } });

@@ -40,6 +40,8 @@ describe("appearance settings", () => {
     setSetting(sqlDb(backend.store), "app", { theme: "dark", density: "compact" });
     const s = (await client.call("app.bootstrap", {})).settings;
     expect(s).toMatchObject({ theme: "dark", density: "compact", design: "lumen", lightTheme: "design", darkTheme: "design", previousLightTheme: null, motionMs: 75, htmlMailAppearance: "auto", customThemes: [] });
+    // plan 24: an install from before the layout setting is Split
+    expect(s.layout).toBe("split");
   });
 
   it("every new field round-trips", async () => {

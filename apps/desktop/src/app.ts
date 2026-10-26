@@ -492,13 +492,13 @@ function createWindow() {
   });
 
   // Every (re)load gets a fresh port: the previous one died with the old document (and its draft flusher with it).
+  // The port goes once the new document is committed (did-navigate: main frame, never in-page): sent when the
+  // navigation only starts, it reached the old document, and a reload (⌘R, View → Reload) waited forever (plan 24).
   const contentsId = win.webContents.id;
   win.webContents.on("did-start-navigation", (_e, _url, isInPlace, isMainFrame) => {
-    if (isMainFrame && !isInPlace) {
-      flushers.delete(contentsId);
-      void connectWindow(win);
-    }
+    if (isMainFrame && !isInPlace) flushers.delete(contentsId);
   });
+  win.webContents.on("did-navigate", () => void connectWindow(win));
   win.on("closed", () => flushers.delete(contentsId));
 
   // Links never navigate the app window; vetted schemes open in the system browser.

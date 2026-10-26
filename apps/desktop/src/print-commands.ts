@@ -5,5 +5,5 @@
  */
 export const PRINT_COMMANDS = ["thread.print", "thread.exportPdf"] as const;
 export type PrintCommand = (typeof PRINT_COMMANDS)[number];
-export const MENU_COMMANDS = [...PRINT_COMMANDS, "list.toggleUnread", "updates.check"] as const;
+export const MENU_COMMANDS = [...PRINT_COMMANDS, "list.toggleUnread", "updates.check", "nav.back", "nav.forward"] as const;
 export type MenuCommand = (typeof MENU_COMMANDS)[number];

@@ -235,7 +235,8 @@ test.describe("sender icons (plan 22)", () => {
     await server.backend.server.invoke("settings.update", { senderIcons: true }, { clientId: "setup", origin: "dev" as const });
     await page.reload();
     await page.locator("[data-ready]").waitFor();
-    await page.getByTestId("nav-all").click();
+    // All Mail waits behind More since plan 21
+    await navTo(page, "all");
     await expect(page.getByTestId("list-title")).toHaveText("All Mail");
     await expect(page.getByTestId("sender-icon").first()).toBeVisible();
     const rowH = 84;
@@ -1079,4 +1080,238 @@ test("a 250 KB single paragraph (a long paste without line breaks): typing in it
   stat("250 KB paragraph: r → editable", 0, [openMs]);
   const handled = await typeAndMeasure(page, "250 KB paragraph", "Gracias.");
   expect(handled.p95).toBeLessThanOrEqual(HUGE_MS * MULT);
+});
+
+// ───────────────────────────── plan 24: the List layout ─────────────────────────────
+
+interface PageCycles {
+  open: number[];
+  back: number[];
+  /** the listbox element after every Back is the one there before the first open */
+  sameList: boolean;
+  /** scrollTop after every Back equals the one before */
+  sameScroll: boolean;
+  /** the mounted rows after every Back are the set before */
+  sameRows: boolean;
+  maxRows: number;
+  rowRenders: number;
+  listRenders: number;
+}
+
+/**
+ * Opens the cursor's conversation (Enter) and goes back (Esc) `n` times,
+ * deep in a long list: keydown → the first frame showing the page or the
+ * list, and what changed in the list across each round trip.
+ */
+async function pageCycles(page: import("@playwright/test").Page, n: number): Promise<PageCycles> {
+  const before = { rows: await renders(page, "ThreadRow"), list: await renders(page, "ThreadList") };
+  const r = await page.evaluate(async (count) => {
+    const lb = () => document.querySelector("[data-testid=thread-list] [role=listbox]") as HTMLElement;
+    const first = lb();
+    const top = first.scrollTop;
+    const ids = () => [...document.querySelectorAll("[data-testid=thread-row]")].map((e) => e.getAttribute("data-thread-id")).sort().join();
+    const rows0 = ids();
+    const out = { open: [] as number[], back: [] as number[], sameList: true, sameScroll: true, sameRows: true, maxRows: 0 };
+    const press = (key: string) => document.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+    const frame = () => new Promise<void>((res) => requestAnimationFrame(() => res()));
+    const until = async (ok: () => boolean) => {
+      for (let i = 0; i < 120 && !ok(); i++) await frame();
+    };
+    for (let i = 0; i < count; i++) {
+      let t0 = performance.now();
+      press("Enter");
+      // the conversation itself on screen (its subject: the detail, warmed by deepInList's open), not just the page around it
+      await until(() => !!document.querySelector("[data-testid=list-page] [data-testid=reader-subject]"));
+      await frame();
+      out.open.push(performance.now() - t0);
+      // under the dwell that marks it read (450 ms): the round trip is the page alone
+      await new Promise((res) => setTimeout(res, 60));
+      t0 = performance.now();
+      press("Escape");
+      await until(() => !document.querySelector("[data-testid=list-page]"));
+      await frame();
+      out.back.push(performance.now() - t0);
+      out.sameList &&= lb() === first;
+      out.sameScroll &&= lb().scrollTop === top;
+      out.sameRows &&= ids() === rows0;
+      out.maxRows = Math.max(out.maxRows, document.querySelectorAll("[data-testid=thread-row]").length);
+      await new Promise((res) => setTimeout(res, 40));
+    }
+    return out;
+  }, n);
+  return { ...r, rowRenders: (await renders(page, "ThreadRow")) - before.rows, listRenders: (await renders(page, "ThreadList")) - before.list };
+}
+
+/** The gate's verdict on a run of round trips (the twin below must fail it). */
+function pageCyclesPass(c: PageCycles, n: number): boolean {
+  return c.sameList && c.sameScroll && c.sameRows && c.listRenders <= 2 * n && c.rowRenders <= 2 * n && c.maxRows <= 80;
+}
+
+/** List, the All Mail list loaded 1,500 rows deep, the cursor on a row in view. */
+async function deepInList(page: import("@playwright/test").Page, server: import("../../backend-dev/src/server").DevServer, design: (typeof DESIGNS)[number]) {
+  await server.backend.server.invoke("settings.update", { layout: "list", density: "comfortable" }, { clientId: "setup", origin: "dev" as const });
+  await page.reload();
+  await page.locator("[data-ready]").waitFor();
+  await navTo(page, "all");
+  await expect(page.getByTestId("list-title")).toHaveText("All Mail");
+  await expect(rows(page).first()).toHaveAttribute("data-wide", "true");
+  const h = design.rows.wide;
+  await page.evaluate(async (target) => {
+    const el = document.querySelector("[data-testid=thread-list] [role=listbox]") as HTMLElement;
+    for (let i = 0; i < 400 && el.scrollTop < target; i++) {
+      el.scrollTop = Math.min(target, el.scrollHeight);
+      await new Promise((r) => setTimeout(r, 25));
+    }
+  }, 1500 * h);
+  // a row in view becomes the cursor (a click there opens it, which loads its conversation into the cache; Esc comes back)
+  const box = (await page.locator("[data-testid=thread-list] [role=listbox]").boundingBox())!;
+  await page.mouse.click(box.x + box.width / 2, box.y + 3.5 * h);
+  await expect(page.getByTestId("list-page").getByTestId("reader-subject")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("list-page")).toHaveCount(0);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.waitForTimeout(300);
+}
+
+for (const design of DESIGNS) {
+  test.describe(`List layout (${design.id})`, () => {
+    test.use({ design: design.id, viewport: { width: 1400, height: 900 } });
+
+    test(`opening and closing a conversation 1,500 rows deep (${design.id}): each within a frame, the list never remounts or scrolls, rows render only for the cursor`, async ({ app: page, server }) => {
+      await deepInList(page, server, design);
+      const N = 20;
+      const c = await pageCycles(page, N);
+      const open = stat(`List (${design.id}): Enter → first frame with the conversation`, 50, c.open);
+      const back = stat(`List (${design.id}): Esc → first frame with the list`, 50, c.back);
+      stats.push({ name: `List (${design.id}): ${N} round trips, ThreadList renders ${c.listRenders}, ThreadRow renders ${c.rowRenders}, max rows ${c.maxRows}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: N });
+      expect(c.sameList, "the listbox is the same element after Back (never remounted)").toBe(true);
+      expect(c.sameScroll, "scrollTop unchanged after Back").toBe(true);
+      expect(c.sameRows, "the same rows mounted after Back").toBe(true);
+      expect(c.maxRows).toBeLessThanOrEqual(80);
+      expect(c.listRenders).toBeLessThanOrEqual(2 * N);
+      expect(c.rowRenders).toBeLessThanOrEqual(2 * N);
+      expect(pageCyclesPass(c, N)).toBe(true);
+      expect(open.p95).toBeLessThanOrEqual(50 * MULT);
+      expect(back.p95).toBeLessThanOrEqual(50 * MULT);
+    });
+
+    test(`the gate catches a remounted list (${design.id}): the same round trips with the list keyed by page fail it`, async ({ app: page, server }) => {
+      await deepInList(page, server, design);
+      await page.evaluate(() => ((window as unknown as { __terno: { regressions: { remountList?: boolean } } }).__terno.regressions.remountList = true));
+      const c = await pageCycles(page, 5);
+      stats.push({ name: `List (${design.id}) injected remount: sameList ${c.sameList}, sameScroll ${c.sameScroll}, ThreadList renders ${c.listRenders}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 5 });
+      expect(c.sameList).toBe(false);
+      expect(pageCyclesPass(c, 5)).toBe(false);
+    });
+
+    test(`holding j on the conversation page (${design.id}): frames stay smooth, at most one history write per 300 ms`, async ({ app: page, server }) => {
+      await deepInList(page, server, design);
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId("list-page")).toBeVisible();
+      await page.evaluate(() => {
+        const w = window as unknown as { __hist: number[] };
+        w.__hist = [];
+        for (const k of ["pushState", "replaceState"] as const) {
+          const orig = history[k].bind(history);
+          history[k] = (...a: Parameters<History["pushState"]>) => (w.__hist.push(performance.now()), orig(...a));
+        }
+      });
+      await startFrames(page);
+      const t0 = Date.now();
+      for (let i = 0; i < 90; i++) {
+        await page.keyboard.press("j");
+        await page.waitForTimeout(33);
+      }
+      const held = Date.now() - t0;
+      await page.waitForTimeout(400);
+      const f = await stopFrames(page);
+      const writes = await page.evaluate(() => (window as unknown as { __hist: number[] }).__hist);
+      stats.push({ name: `List (${design.id}): history writes while holding j for ${held} ms: ${writes.length}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+      expect(writes.length).toBeLessThanOrEqual(Math.ceil((held + 400) / 300));
+      for (let i = 1; i < writes.length; i++) expect(writes[i]! - writes[i - 1]!).toBeGreaterThanOrEqual(290);
+      frameGate(`List holding j on the page (${design.id})`, f);
+    });
+
+    for (const density of ["comfortable", "compact"] as const) {
+      test(`continuous scrolling across 2,000 one-line rows (${design.id}, ${density}): frames stay smooth, the DOM stays bounded`, async ({ app: page, server }) => {
+        await server.backend.server.invoke("settings.update", { layout: "list", density }, { clientId: "setup", origin: "dev" as const });
+        await page.reload();
+        await page.locator("[data-ready]").waitFor();
+        await navTo(page, "all");
+        await expect(page.getByTestId("list-title")).toHaveText("All Mail");
+        const rowH = density === "compact" ? design.rows.compact : design.rows.wide;
+        await expect(rows(page).first()).toHaveCSS("height", `${rowH}px`);
+        await startFrames(page);
+        const r = await page.evaluate(async (h) => {
+          const scroller = document.querySelector("[data-testid=thread-list] [role=listbox]") as HTMLElement;
+          const target = 2000 * h;
+          const perFrame = target / 180;
+          let maxRows = 0;
+          const t0 = performance.now();
+          await new Promise<void>((resolve, reject) => {
+            const step = () => {
+              if (performance.now() - t0 > 20_000) return reject(new Error(`stuck at ${scroller.scrollTop}px`));
+              scroller.scrollTop = Math.min(scroller.scrollTop + perFrame, scroller.scrollHeight);
+              maxRows = Math.max(maxRows, document.querySelectorAll("[data-testid=thread-row]").length);
+              if (scroller.scrollTop + scroller.clientHeight >= target) resolve();
+              else requestAnimationFrame(step);
+            };
+            requestAnimationFrame(step);
+          });
+          return { maxRows, ms: performance.now() - t0 };
+        }, rowH);
+        const f = await stopFrames(page);
+        stats.push({ name: `List scroll 2,000 (${design.id}, ${density}): ${Math.round(r.ms)} ms, max DOM rows ${r.maxRows}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+        expect(r.maxRows).toBeLessThanOrEqual(80);
+        frameGate(`List continuous scroll (${design.id}, ${density})`, f);
+      });
+    }
+  });
+}
+
+test.describe("List layout: dragging onto the tabs", () => {
+  test.use({ design: "macos", layout: "list" });
+  test("dragging rows over the tabs and the sidebar: no row renders, at most four target items per target change", async ({ app: page, server }) => {
+    const cats = sqlDb(server.backend.store).all<{ id: number }>("SELECT id FROM categories ORDER BY position");
+    const row = rows(page).nth(2);
+    const b = (await row.boundingBox())!;
+    const from = { x: b.x + 60, y: b.y + b.height / 2 };
+    const targets: { x: number; y: number }[] = [];
+    for (const c of cats)
+      for (const id of [`list-tab-${c.id}`, `nav-category-${c.id}`]) {
+        const t = await page.getByTestId(id).boundingBox();
+        if (t) targets.push({ x: t.x + t.width / 2, y: t.y + t.height / 2 });
+      }
+    // a press moves the cursor (two rows render, as with j): press it first so the window below is the drag alone
+    await row.dispatchEvent("mousedown");
+    await expect(row).toHaveAttribute("data-cursor", "true");
+    await page.waitForTimeout(100);
+    const rows0 = await renders(page, "ThreadRow");
+    const items0 = (await renders(page, "NavItem")) + (await renders(page, "ListTab"));
+    const DRAGS = 10;
+    let changes = 0;
+    for (let i = 0; i < DRAGS; i++) {
+      await page.mouse.move(from.x, from.y);
+      await page.mouse.down();
+      await page.mouse.move(from.x + 3, from.y + 1);
+      await page.mouse.move(from.x + 8, from.y + 2);
+      for (const t of targets) {
+        await page.mouse.move(t.x, t.y - 3);
+        await page.mouse.move(t.x, t.y + 3);
+        changes++;
+      }
+      await page.mouse.move(from.x, from.y, { steps: 3 });
+      changes++;
+      await page.keyboard.press("Escape");
+      await page.mouse.up();
+    }
+    await page.waitForTimeout(200);
+    const rowRenders = (await renders(page, "ThreadRow")) - rows0;
+    const items = (await renders(page, "NavItem")) + (await renders(page, "ListTab")) - items0;
+    stats.push({ name: `List: ThreadRow renders during ${DRAGS} drags: ${rowRenders}; target items per change ${(items / changes).toFixed(2)}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+    expect(rowRenders).toBe(0);
+    expect(items / changes).toBeLessThanOrEqual(4);
+    // no drop happened, and nothing opened
+    await expect(page.getByTestId("list-page")).toHaveCount(0);
+  });
 });

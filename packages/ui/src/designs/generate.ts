@@ -51,6 +51,7 @@ export function designVars(d: DesignDefinition): [string, string][] {
     ["--row-h-compact", `${d.rows.compact}px`],
     ["--avatar-row", `${d.avatar.row}px`],
     ["--avatar-row-compact", `${d.avatar.rowCompact}px`],
+    ["--avatar-row-wide", `${d.avatar.rowWide}px`],
     ["--avatar-message", `${d.avatar.message}px`],
     ["--avatar-collapsed", `${d.avatar.collapsed}px`],
     ["--avatar-sender", `${d.avatar.senderCard}px`],
