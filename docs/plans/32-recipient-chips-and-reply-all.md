@@ -469,6 +469,25 @@ Codex reviewed the reconciled diff, scoped to the Reply-To pieces and the areas 
 2. **P1: repair could change a valid address.** `'support@example.com` lost its apostrophe, which redirected replies. An address valid as stored is now kept exactly, and only a matching pair of quotes counts as wrapping.
 3. **P2: the IMAP envelope fallback dropped a real Reply-To member.** A list containing From lost that member. Without the raw field, only a Reply-To that is exactly From is now dropped. A list that includes From stays whole.
 
+### Suites after the reconciliation (based on main `32de1e9`, load average 6–115)
+
+Every failure below was checked against the same main commit in a separate checkout.
+
+| suite | result |
+|---|---|
+| `typecheck`, `lint` | pass |
+| `pnpm test` | 2,911 passed, 9 failed. All nine fail identically on main `32de1e9`: `db/migrations.test.ts` (v12 drafts, legacy IDB upgrades), `idb/idb.store.test.ts` (plan 27's "version 4 messages default Reply-To", AbortError), `backend/icons/google.test.ts`. They are main's, outside this branch. Earlier timing-only failures (`ops-scale`, IDB `-factura` search timeouts, slice budgets at load 68) passed on an isolated rerun. |
+| `test:e2e` | 937 passed, 6 failed. Each is classified below. |
+| `test:web` | 31 passed |
+| `test:ui-perf` | 57 passed. The 200-chip gate: p95 15 ms. |
+| `test:perf` | 140 passed, 5 failed. On main as well: `db/ingest.perf` (0.90–0.93× there, 0.91–0.92× here), the phrase build (34.8 µs there), and `load.perf` "a disk that turns slow mid-job". `categorize.perf` passed 2 of 2 in isolation; main also failed it once at that load. |
+
+The six e2e failures:
+- **On main too:** `reader.spec.ts:65` "attachments are view-only tiles" (plan 29 added download controls).
+- **Flaky on main too:** `resign-in.spec.ts:126`. Interleaved runs failed 2 of 8 on main and 4 of 8 here. It is a sign-in popover focus race; nothing in this branch touches it.
+- **Flaky:** `autocomplete.spec.ts:341` (Atelier ghost text) passed 3 of 3 on rerun.
+- **Baseline updated:** `visual.spec` "inline reply" shows the recipient as a chip beside plan 29's attach button. I looked at it.
+
 ## Suite results (this machine, load average 9–50, other agents running)
 
 | suite | result |
