@@ -29,7 +29,7 @@ export function quoteFor(mode: Exclude<DraftMode, "new">, detail: ThreadDetail):
   return `${t("compose.quote.attribution", { date, name: last.from.name || last.from.email })}\n${text.split("\n").map((l) => `> ${l}`).join("\n")}`;
 }
 
-/** Who a reply goes to (auto: Terno filled them in): the sender, plus everyone else on reply-all, never me. */
+/** Received replies use Reply-To or From; sent continuations keep original To, including notes to self. */
 export function autoRecipients(mode: Exclude<DraftMode, "new">, detail: ThreadDetail, me: string): { to: Address[]; cc: Address[] } {
   if (mode === "forward") return { to: [], cc: [] };
   const last = answered(detail);

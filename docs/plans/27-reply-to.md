@@ -71,3 +71,21 @@ Plan critique completed, final distinct Codex code review remains parent-owned. 
 Typecheck and lint passed. The ten-file targeted unit run finished with **598 passed, 2 skipped, 1 failed**: pre-existing exact-scan IndexedDB search `-factura` exceeded 20 s; an initial focused rerun also timed out. No search query or index code changes in this slice. Further isolation is in progress; this is not claimed as a clean full unit gate. The SQLite-WASM equivalents (ingest, migrations and shared conformance) passed all **175 tests**.
 
 Initial e2e harness errors were corrected: backend theme changes require reload (matching existing tests), and `ops.recent` intentionally omits completed operations older than the real clock while e2e backend time is fixed. The final test uses the public debug snapshot plus `ops.get` and passes. These were test setup failures, not production fixes.
+
+
+Full web gate: `WEB_PORT=61709 pnpm test:web` **31 passed**, including complete shared store conformance on both native browser engines (IndexedDB and SQLite-WASM/OPFS), migrations, backup/import and worker lifecycle. Existing compose/send regression suite: `E2E_PORT=55984 pnpm --filter @terno/web exec playwright test compose.spec.ts composer-send.spec.ts --project=e2e --workers=1` **22 passed**. Portable/localized MIME builder suites **7 passed**. Final typecheck passed again after integration edits. Owned-file lint passes; whole-repo lint currently sees unused declarations in concurrent parent-owned Gmail auth work.
+
+The isolated fake-IndexedDB `-factura` diagnostic passes with a 90-second command-line timeout (suite 25.71 s including seed); the repository's default 20-second case still timed out. The timeout was not changed or hidden. Native IndexedDB browser conformance passes at its normal limits.
+
+Implementation commits (shared lock, explicit files only): `56e6725d6e02b6ae914f8a73e5fbe9d091133873..185cb940a760d4ce85563fdd8013ef48a1a0da14` (model/ingest/persistence) and `ee84ebfa9c6d3829276136d619405a2819a2db8f..3f83a8ae661fe54bf667da6be67aa3361ffc1cbf` (composer/lifecycle/e2e). Exact owned paths and base/head manifest: `/tmp/terno-reply-owned-files.txt`, `/tmp/terno-reply-commit-pairs.jsonl`. Parent has applied the separate Gmail mapping; parent owns its regressions and final distinct Codex review.
+
+
+Full UI performance attempt: `E2E_PORT=55984 pnpm test:ui-perf` stopped after **12 passed, 1 failed, 43 not run** because serial Lumen compact sustained-j navigation recorded a 99.9 ms longest frame against 50 ms. All nine autocomplete performance cases (including 5/10 MB drafts, heap stability, recipient painting and regression canaries) passed. The gate is not claimed green; no thresholds changed. A focused navigation/reply-opening rerun follows.
+
+
+Focused UI performance rerun: `E2E_PORT=55984 pnpm --filter @terno/web exec playwright test perf.spec.ts --project=perf --no-deps --grep 'sustained j at key-repeat rate \(lumen, compact\)|inline reply:'` **2 passed**. Lumen compact navigation max frame 33.3 ms, p95 16.8 ms, 300 moves and 2.96 row renders/move. Inline reply's first frame p95 12.6 ms, max 28.6 ms (limit 50); expansion p95 116.3 ms (limit 133). The earlier full-run navigation spike remains recorded; the 43 unrun cases are not claimed as executed. Parent's separate Gmail integration commit is `24bf111` (read-only confirmation; no parent files staged here).
+
+
+### Handoff
+
+Per parent steering, optional broader tests do not delay this owned slice's handoff. The paired ingestion benchmark was started but intentionally terminated by its captured process tree before completion; **no ingestion performance result is claimed**. Whole-repo lint passes at handoff (`pnpm lint`); previous temporary Gmail auth warnings are resolved by the parent. Final typecheck passed; all targeted functional results and the two default-gate failures above remain recorded honestly. Remaining series gates (full unit/e2e/performance and packaged desktop verification as applicable) and the distinct final T10 Codex code review are parent-owned. No push, new branch, worktree, real secrets/profile access, new strings, background work or extra provider requests.
