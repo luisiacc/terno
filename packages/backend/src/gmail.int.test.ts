@@ -24,9 +24,10 @@ interface FakeMsg {
 
 const b64 = (s: string) => Buffer.from(s).toString("base64url");
 
-function rawMail(o: { subject: string; from?: string; id: string; body?: string; inReplyTo?: string }) {
+function rawMail(o: { subject: string; from?: string; replyTo?: string; id: string; body?: string; inReplyTo?: string }) {
   return [
     `From: ${o.from ?? "Ana <ana@example.com>"}`,
+    ...(o.replyTo ? [`Reply-To: ${o.replyTo}`] : []),
     "To: Luis <luis@gmail.com>",
     `Subject: ${o.subject}`,
     `Message-ID: <${o.id}>`,
@@ -347,6 +348,14 @@ describe("Gmail and the owner identity", () => {
 });
 
 describe("Gmail sync", () => {
+  it("retains multiple Reply-To addresses from Gmail raw mail through the public reader", async () => {
+    const { google, backend, client, account } = await freshMailbox();
+    google.add({ id: "ticket", threadId: "ticket", labelIds: ["INBOX"], raw: rawMail({ subject: "Support ticket", id: "ticket@example.com", from: "No Reply <noreply@example.com>", replyTo: '"Support, Team" <tickets@example.com>, Other <other@example.com>' }) }, false);
+    await backend.syncAccount(account.id);
+    const thread = (await client.call("threads.list", { view: "inbox" })).items[0]!;
+    expect((await client.call("threads.get", { threadId: thread.id })).messages[0]?.replyTo).toEqual([{ name: "Support, Team", email: "tickets@example.com" }, { name: "Other", email: "other@example.com" }]);
+  });
+
   it("initial enumeration tolerates a message deleted before raw download and retains its initial watermark", async () => {
     const { google, backend, client, account } = await freshMailbox();
     for (let i = 0; i < 9; i++) google.add({ id: `race-${i}`, threadId: `race-${i}`, labelIds: ["INBOX"], raw: rawMail({ subject: `Race ${i}`, id: `race-${i}@example.com` }) }, false);

@@ -231,6 +231,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
           inReplyTo: parsed.inReplyTo,
           references: parsed.references,
           from: parsed.from,
+          replyTo: parsed.replyTo,
           to: parsed.to,
           cc: parsed.cc,
           bcc: parsed.bcc,

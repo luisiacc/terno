@@ -143,3 +143,11 @@ Codex reviewed `c11d93f..b8e8a2d`: no substantiated findings. Its read-only test
 ### Slice 4 — implementation and validation
 
 Restore now uses the shared sequential ≤1,000-ID label transition, preserving unrelated labels and propagating all failed chunks. Explicit void response mode accepts batchModify's empty 200/204 success and releases its body; JSON endpoints still parse their response. The new send-204 regression failed before the change (untyped TypeError, risking normal retry), and now has the existing typed ambiguous-send outcome. A 2,001-message test applies chunk2 then loses its response, verifies chunk3 waits and exact-target replay converges without touching a late arrival. Backend restore→sync verifies real fake-server label/list state. Eighty-two targeted mail/Gmail integration tests, mail typecheck and lint pass. Full project typecheck remains part of series verification while the independent Reply-To model change is being completed. Code review pending.
+
+### Slice 4 — Codex code review
+
+Reviewed `185cb94..ee84ebf` with the required Codex subagent/script: no substantiated findings. Parent executed the 82 passing tests; reviewer read-only startup could not create Vitest's temporary file. Gmail restore/empty mutation acknowledgment handling is implemented/reviewed. T05's IMAP partial-move and capability-fallback cases remain active.
+
+### T10 — Gmail integration of the independent Reply-To slice
+
+The independent worker committed the shared MIME/store/migration support (`185cb94`) and composer behavior (`3f83a8a`). Parent's Gmail integration regression reproduced an empty Reply-To array from the public reader despite two raw header addresses. The Gmail raw-to-incoming mapping now carries parsed Reply-To; the focused fake-Google/backend/reader test passes. Worker plan 27 and its remaining UI verification plus a distinct whole-slice Codex review are still required before closing T10.
