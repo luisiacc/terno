@@ -1,3 +1,4 @@
+import { gmailSendBody } from "./outgoing-wire";
 import { L } from "@terno/i18n";
 import { MAX_INCOMING_MIME_BYTES } from "@terno/core";
 import type { IncomingMessage } from "@terno/store";
@@ -509,7 +510,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         const raw = await options.buildRaw(payload);
         const res = await api<unknown>("/messages/send", {
           method: "POST",
-          body: JSON.stringify({ raw: toBase64url(raw), threadId: payload.providerThreadId ?? undefined }),
+          body: await gmailSendBody(raw, payload.providerThreadId),
           ambiguousOnFailure: true,
         });
         if (!isRecord(res) || !nonempty(res.id) || (res.threadId !== undefined && !nonempty(res.threadId))) throw invalidResponse(true);

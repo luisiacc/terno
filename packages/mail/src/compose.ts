@@ -1,4 +1,6 @@
-import { checkedAttachments, checkMimeSize } from "./attachment-payload";
+import { Readable } from "node:stream";
+import { ATTACHMENT_CHUNK } from "@terno/core";
+import { checkedAttachments, checkMimeSize, yieldPreparation } from "./attachment-payload";
 import MailComposer from "nodemailer/lib/mail-composer/index.js";
 import type { SendPayload } from "./types";
 
@@ -6,7 +8,7 @@ const fmt = (a: { name: string; email: string }) => (a.name ? { name: a.name, ad
 
 /** Builds the RFC 5322 source once, so the same bytes are sent and saved to Sent. */
 export async function buildRaw(p: SendPayload, options: { keepBcc?: boolean; now?: Date } = {}): Promise<Buffer> {
-  const attachments = checkedAttachments(p);
+  const attachments = await checkedAttachments(p);
   const now = options.now ?? new Date();
   const composer = new MailComposer({
     from: fmt(p.from),
@@ -14,10 +16,10 @@ export async function buildRaw(p: SendPayload, options: { keepBcc?: boolean; now
     cc: p.cc.length ? p.cc.map(fmt) : undefined,
     bcc: p.bcc.length ? p.bcc.map(fmt) : undefined,
     subject: p.subject,
-    attachments: attachments.map((a) => ({ filename: a.filename, contentType: a.mime, content: a.dataBase64, encoding: "base64", ...(a.contentId ? { cid: a.contentId, contentDisposition: "inline" as const } : {}) })),
-    text: p.text,
+    attachments: attachments.map((a) => ({ filename: a.filename, contentType: a.mime, content: Readable.from(attachmentContent(a.dataBase64)), ...(a.contentId ? { cid: a.contentId, contentDisposition: "inline" as const } : {}) })),
+    text: streamedText(p.text),
     // with html, MailComposer writes multipart/alternative: the text first, the HTML last (the preferred one)
-    ...(p.html ? { html: p.html } : {}),
+    ...(p.html ? { html: streamedText(p.html) } : {}),
     messageId: `<${p.messageId}>`,
     inReplyTo: p.inReplyTo ? `<${p.inReplyTo}>` : undefined,
     references: p.references.length ? p.references.map((r) => `<${r}>`).join(" ") : undefined,
@@ -28,11 +30,46 @@ export async function buildRaw(p: SendPayload, options: { keepBcc?: boolean; now
   const node = composer.compile();
   // SMTP carries Bcc in the envelope only; the Gmail API reads recipients from headers, so keep it there.
   if (options.keepBcc) (node as unknown as { keepBcc: boolean }).keepBcc = true;
-  const raw = await node.build();
-  checkMimeSize(raw.byteLength);
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of node.createReadStream()) {
+    size += chunk.length;
+    checkMimeSize(size);
+    chunks.push(chunk);
+    await yieldPreparation();
+  }
+  const raw = Buffer.allocUnsafe(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    chunk.copy(raw, offset);
+    offset += chunk.length;
+    await yieldPreparation();
+  }
   return raw;
 }
 
 export function envelopeOf(p: SendPayload): { from: string; to: string[] } {
   return { from: p.from.email, to: [...p.to, ...p.cc, ...p.bcc].map((a) => a.email) };
+}
+
+async function* attachmentContent(base64: string) {
+  const width = ATTACHMENT_CHUNK / 3 * 4;
+  for (let i = 0; i < base64.length; i += width) {
+    yield Buffer.from(base64.slice(i, i + width), "base64");
+    await yieldPreparation();
+  }
+}
+
+function streamedText(text: string) {
+  if (text.length <= 16384) return text;
+  return { contentTransferEncoding: "base64" as const, content: Readable.from((async function* () {
+    for (let i = 0; i < text.length;) {
+      let end = Math.min(i + 16384, text.length);
+      const last = text.charCodeAt(end - 1);
+      if (end < text.length && last >= 0xd800 && last <= 0xdbff) end--;
+      yield Buffer.from(text.slice(i, end));
+      i = end;
+      await yieldPreparation();
+    }
+  })()) };
 }

@@ -1,4 +1,4 @@
-import { checkedAttachments, checkMimeSize } from "./attachment-payload";
+import { checkedAttachments, checkMimeSize, yieldPreparation } from "./attachment-payload";
 import type { Address } from "@terno/core";
 import type { SendPayload } from "./types";
 
@@ -37,9 +37,6 @@ function rfc5322Date(d: Date): string {
   return `${DAYS[d.getUTCDay()]}, ${pad(d.getUTCDate())} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} +0000`;
 }
 
-/** A body as base64 lines of 76 (CRLF line ends in the text first). */
-const base64Body = (text: string) => (base64(text.replace(/\r?\n/g, CRLF)).match(/.{1,76}/g) ?? []).join(CRLF);
-
 /** A boundary no base64 line can contain ("=" and "_" never appear together in one). */
 const boundary = (messageId: string) => `=_terno_${base64(messageId).replace(/[^A-Za-z0-9]/g, "").slice(0, 24)}_=`;
 
@@ -50,8 +47,8 @@ const boundary = (messageId: string) => `=_terno_${base64(messageId).replace(/[^
  * (the preferred one). Bcc stays in the headers: the Gmail API reads
  * recipients from them and strips it.
  */
-export function buildRawPortable(p: SendPayload, options: { now?: Date } = {}): Uint8Array {
-  const attachments = checkedAttachments(p);
+export async function buildRawPortable(p: SendPayload, options: { now?: Date } = {}): Promise<Uint8Array> {
+  const attachments = await checkedAttachments(p);
   const headers: string[] = [
     `From: ${formatAddress(p.from)}`,
     `To: ${p.to.map(formatAddress).join(", ")}`,
@@ -65,30 +62,83 @@ export function buildRawPortable(p: SendPayload, options: { now?: Date } = {}): 
     "X-Mailer: Terno",
     "MIME-Version: 1.0",
   ];
-  let body: string;
-  if (p.html) {
-    const b = boundary(p.messageId);
-    headers.push(`Content-Type: multipart/alternative; boundary="${b}"`);
-    const part = (type: string, content: string) => [`--${b}`, `Content-Type: ${type}; charset=utf-8`, "Content-Transfer-Encoding: base64", "", base64Body(content)].join(CRLF);
-    body = [part("text/plain", p.text), part("text/html", p.html), `--${b}--`].join(CRLF);
-  } else {
-    headers.push("Content-Type: text/plain; charset=utf-8", "Content-Transfer-Encoding: base64");
-    body = base64Body(p.text);
-  }
-  if (attachments.length) {
-    const contentAt = headers.findIndex((h) => h.startsWith("Content-Type:"));
-    const contentHeaders = headers.splice(contentAt);
-    const mixed = boundary(p.messageId) + "mixed";
-    const parts = [contentHeaders.join(CRLF) + CRLF + CRLF + body];
-    for (const a of attachments) {
-      const filename = encodeWord(a.filename).replace(/["\\]/g, "\\$&");
-      const cid = a.contentId?.replace(/[<>\r\n]/g, "");
-      parts.push([`Content-Type: ${a.mime}`, `Content-Disposition: ${cid ? "inline" : "attachment"}; filename="${filename}"`, ...(cid ? [`Content-ID: <${cid}>`] : []), "Content-Transfer-Encoding: base64", "", (a.dataBase64.match(/.{1,76}/g) ?? []).join(CRLF)].join(CRLF));
+  const chunks: Uint8Array[] = [];
+  const encoder = new TextEncoder();
+  let size = 0;
+  const write = (value: string) => {
+    const bytes = encoder.encode(value);
+    size += bytes.length;
+    checkMimeSize(size);
+    chunks.push(bytes);
+  };
+  const mixed = attachments.length ? boundary(p.messageId) + "mixed" : null;
+  const alternative = p.html ? boundary(p.messageId) : null;
+  const contentHeaders = alternative ? [`Content-Type: multipart/alternative; boundary="${alternative}"`] : ["Content-Type: text/plain; charset=utf-8", "Content-Transfer-Encoding: base64"];
+  write([...headers, ...(mixed ? [`Content-Type: multipart/mixed; boundary="${mixed}"`] : contentHeaders)].join(CRLF) + CRLF + CRLF);
+  if (mixed) write(`--${mixed}` + CRLF + contentHeaders.join(CRLF) + CRLF + CRLF);
+  if (alternative) {
+    for (const [type, content] of [["text/plain", p.text], ["text/html", p.html!]]) {
+      write(`--${alternative}` + CRLF + `Content-Type: ${type}; charset=utf-8` + CRLF + "Content-Transfer-Encoding: base64" + CRLF + CRLF);
+      await writeFolded(textBase64(content!), write);
+      write(CRLF);
     }
-    headers.push(`Content-Type: multipart/mixed; boundary="${mixed}"`);
-    body = parts.map((part) => `--${mixed}` + CRLF + part).join(CRLF) + CRLF + `--${mixed}--`;
+    write(`--${alternative}--`);
+  } else {
+    await writeFolded(textBase64(p.text), write);
   }
-  const raw = new TextEncoder().encode(headers.join(CRLF) + CRLF + CRLF + body + CRLF);
-  checkMimeSize(raw.byteLength);
+  for (const a of attachments) {
+    const filename = encodeWord(a.filename).replace(/["\\]/g, "\\$&");
+    const cid = a.contentId?.replace(/[<>\r\n]/g, "");
+    write(CRLF + `--${mixed}` + CRLF + [`Content-Type: ${a.mime}`, `Content-Disposition: ${cid ? "inline" : "attachment"}; filename="${filename}"`, ...(cid ? [`Content-ID: <${cid}>`] : []), "Content-Transfer-Encoding: base64", "", ""].join(CRLF));
+    await writeFolded(attachmentBase64(a.dataBase64), write);
+  }
+  if (mixed) write(CRLF + `--${mixed}--`);
+  write(CRLF);
+  // The only full wire allocation is capped; copies yield instead of joining a huge string.
+  const raw = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    raw.set(chunk, offset);
+    offset += chunk.length;
+    await yieldPreparation();
+  }
   return raw;
+}
+
+async function* attachmentBase64(value: string) {
+  for (let i = 0; i < value.length; i += 16384) yield value.slice(i, i + 16384);
+}
+
+async function* textBase64(value: string) {
+  const encoder = new TextEncoder();
+  let rest = new Uint8Array(0);
+  for (let i = 0; i < value.length;) {
+    let end = Math.min(i + 8192, value.length);
+    const last = value.charCodeAt(end - 1);
+    if (end < value.length && (last === 13 || last >= 0xd800 && last <= 0xdbff)) end--;
+    const encoded = encoder.encode(value.slice(i, end).replace(/\r?\n/g, CRLF));
+    const bytes = new Uint8Array(rest.length + encoded.length);
+    bytes.set(rest); bytes.set(encoded, rest.length);
+    const full = bytes.length - bytes.length % 3;
+    yield btoa(String.fromCharCode(...bytes.subarray(0, full)));
+    rest = bytes.slice(full);
+    i = end;
+  }
+  if (rest.length) yield btoa(String.fromCharCode(...rest));
+}
+
+async function writeFolded(source: AsyncIterable<string>, write: (value: string) => void) {
+  let column = 0;
+  for await (const chunk of source) {
+    const lines: string[] = [];
+    for (let i = 0; i < chunk.length;) {
+      if (column === 76) { lines.push(CRLF); column = 0; }
+      const end = Math.min(i + 76 - column, chunk.length);
+      lines.push(chunk.slice(i, end));
+      column += end - i;
+      i = end;
+    }
+    write(lines.join(""));
+    await yieldPreparation();
+  }
 }
