@@ -3,7 +3,7 @@ import type { SearchPage } from "@terno/core/rpc";
 import { StaleCursorError, type IncomingMessage, type MailStore, type SearchCursor, type StoreSearchPage } from "@terno/store";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-export const DATE_ZONES = ["UTC", "America/Costa_Rica", "Asia/Kathmandu", "America/New_York", "Europe/Berlin", "Australia/Lord_Howe", "America/Sao_Paulo", "Pacific/Apia"] as const;
+export const DATE_ZONES = ["UTC", "America/Costa_Rica", "Asia/Kathmandu", "America/New_York", "Europe/Berlin", "Australia/Lord_Howe", "America/Sao_Paulo", "Pacific/Apia", "Atlantic/Azores"] as const;
 type DateZone = typeof DATE_ZONES[number];
 type Day = readonly [date: string, nextDate: string, start: string, end: string];
 
@@ -29,6 +29,7 @@ const DAYS: Record<DateZone, readonly Day[]> = {
     ["0099-10-03", "0099-10-04", "0099-10-03T03:06:28Z", "0099-10-04T03:06:28Z"],
   ],
   "Pacific/Apia": [["2011-12-29", "2011-12-31", "2011-12-29T10:00:00Z", "2011-12-30T10:00:00Z"]],
+  "Atlantic/Azores": [["1916-06-17", "1916-06-18", "1916-06-17T02:00:00Z", "1916-06-18T01:00:00Z"]],
 };
 
 export interface DateSearchHarness {
@@ -97,9 +98,11 @@ export function defineDateSearch(name: string, open: (now: number) => Promise<Da
           expect.soft(parseSearch(`después:${date.replaceAll("-", "/")} antes:${nextDate}`, end)).toMatchObject({ after: start, before: end, terms: [] });
           expect(parseSearch(`on:${date}`, end).terms[0]?.value).toBe(`on:${date}`);
           if (zone === "Pacific/Apia") {
-            const skipped = parseSearch("before:2011-12-30", end);
-            expect(skipped.before).toBeUndefined();
-            expect(skipped.terms).toEqual([{ field: "text", value: "before:2011-12-30", phrase: false, negate: false, prefix: true }]);
+            for (const operator of ["before", "after"] as const) {
+              const skipped = parseSearch(`${operator}:2011-12-30`, end);
+              expect(skipped[operator]).toBeUndefined();
+              expect(skipped.terms).toEqual([{ field: "text", value: `${operator}:2011-12-30`, phrase: false, negate: false, prefix: true }]);
+            }
           }
         });
 

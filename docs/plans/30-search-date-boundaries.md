@@ -1,6 +1,6 @@
 # Plan 30: Local search date boundaries (S57 / W11)
 
-Status: round-1 review finding corrected and targeted qualification complete; parent-assigned review round 2 and full integration gates pending, 2026-10-26.
+Status: round-2 finding corrected and targeted qualification complete; parent-assigned review round 3 and full integration gates pending, 2026-10-26.
 
 ## Request and evidence
 
@@ -99,3 +99,23 @@ The existing process-isolated São Paulo fixture now also covers October 3–4 i
 - `pnpm exec oxlint --deny-warnings` on the parser, parser tests and all five date-qualification TypeScript files → **passes**.
 
 No new plan critique or final reviewer was spawned for this concrete correction: the parent assigns a new, distinct Codex review round 2 after the fix commit. Broad performance gates were deliberately not rerun concurrently; the previous budget failures and all full integration gates above remain pending.
+
+## Correction after independent Codex review, round 2
+
+The review of round-1 correction `1008191743ef6c14c394c70006953d2932702797` found one new **Low** regression at `packages/core/src/search/parse.ts:142` (source: `/tmp/terno-provider-hardening.x0emTS/search-dates-review-r2.txt`). In `Atlantic/Azores`, epoch zero is local 23:00 on December 31, 1969. `setFullYear(1916, 5, 17)` retained 23:00, which falls in a DST gap and rolls into June 18 before the subsequent midnight reset. Validation then rejected valid `before:1916-06-17` and `after:1916-06-17` as literal text. The correct June 17 boundary is independently specified as `1916-06-17T02:00:00Z` (epoch **-1689631200000**); June 18 begins at `1916-06-18T01:00:00Z`.
+
+Response: clear the seed's local hours before assigning the literal year/month/day, retain the final midnight reset and component validation. The initial reset prevents a seed hour from crossing the requested day's late-hour gap. The final reset removes any normalized hour inherited from seed-midnight or target-midnight DST behavior; a real midnight gap may normalize within the requested day. A wholly skipped target day still rolls to a different calendar date and is rejected, as do impossible Gregorian dates. This preserves round 1's literal-year fix and avoids the implicit 1900 constructor mapping. Relative arithmetic and query/store implementations remain unchanged; the added date operation is bounded per parsed operator.
+
+Add Azores to the isolated process matrix with exact parser and SQL/IDB fallback/instant/RPC query-result oracles for both operators, complements, conjunctions and pagination. Preserve the original eight zones, including São Paulo year 0099 and 2018, Apia's skipped day, half-hour DST and both DST directions. Run the existing parser positive/invalid/leap/early-year/relative/finite guards in every unit-project timezone child. Strengthen Apia's skipped-day rejection to assert both operators.
+
+Before the production correction, `TZ=Atlantic/Azores pnpm exec vitest run --project unit packages/db/src/search-dates.test.ts packages/idb/src/search-dates.test.ts packages/backend/src/search-dates.int.test.ts` failed **20/30**, including exact epoch/parser fallback and query-result failures across all five harnesses; **10 passed**. Transcript: `/tmp/terno-s57-round2-fix-red.txt`.
+
+### Round-2 correction checks
+
+- Azores green: the same isolated-zone command plus `packages/core/src/search/parse.test.ts` passed **4 files, 53 tests**. Transcript: `/tmp/terno-s57-round2-fix-green-azores.txt`.
+- Focused unit qualification: `pnpm exec vitest run --project unit packages/core/src/search/parse.test.ts packages/db/src/date-timezones.test.ts packages/db/src/search-dates.test.ts packages/idb/src/search-dates.test.ts packages/backend/src/search-dates.int.test.ts` passed **5 files, 62 outer tests**, including nine isolated-zone rounds asserting **597 child tests** (390 parser/store/RPC fixture tests plus 207 standalone parser guards). Transcript: `/tmp/terno-s57-round2-fix-unit.txt`.
+- SQLite-WASM qualification: `pnpm exec vitest run --project db-wasm packages/db/src/date-timezones.test.ts packages/db/src/search-dates.test.ts` passed **2 files, 21 outer tests**, including nine isolated-zone rounds asserting **156 child tests**. Transcript: `/tmp/terno-s57-round2-fix-wasm.txt`.
+- `pnpm -r --parallel --filter @terno/core --filter @terno/db --filter @terno/idb --filter @terno/backend typecheck` passed **all four packages**, including the backend lifecycle check; the previously reported shared backend typing failure is absent in this checkout. Transcript: `/tmp/terno-s57-round2-fix-typecheck.txt`.
+- `pnpm exec oxlint --deny-warnings` on the parser, parser tests and all five date-qualification TypeScript files passed; `git diff --check` passed. Lint transcript: `/tmp/terno-s57-round2-fix-lint.txt`.
+
+The parent will assign distinct Codex review round 3 after the correction commit. No reviewer or broad performance suite is launched by this implementation sub-agent. Earlier unresolved performance/full integration gates remain pending.

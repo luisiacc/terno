@@ -139,6 +139,7 @@ export function parseDate(value: string, now: number): number | undefined {
     const month = Number(abs[2]) - 1;
     const day = Number(abs[3]);
     const date = new Date(0);
+    date.setHours(0, 0, 0, 0);
     date.setFullYear(year, month, day);
     date.setHours(0, 0, 0, 0);
     return date.getFullYear() === year && date.getMonth() === month && date.getDate() === day ? date.getTime() : undefined;
