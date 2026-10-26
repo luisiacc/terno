@@ -441,3 +441,25 @@ Codex (`codex exec -s read-only`, the review prompt over `35509d2..HEAD`) made s
 7. **Medium: Tab into a collapsed field lost focus.** The "and N more" button moved focus to the input on focus, before the expanded field removed it. Test: recipients.spec, 200 recipients, From → Tab.
 
 Codex also saw the string-scaling gate fail once under load (12.46× against 12×). Linear is about 8× and quadratic 64×, so the bound is now 16×.
+
+## Suite results (this machine, load average 9–50, other agents running)
+
+| suite | result |
+|---|---|
+| `pnpm typecheck` | pass |
+| `pnpm lint` | pass |
+| `pnpm test` | 2,530 passed, 1 failed, 2 skipped. The failure is `idb/ops-scale.test.ts` "a parked bulk archive…" (a 10 ms budget). It has nothing to do with this feature, fails only in the full parallel run under load, and passes alone (3 of 4 runs). |
+| `pnpm test:e2e` (all three designs) | 925 passed |
+| `pnpm test:web` | 31 passed |
+| `pnpm test:ui-perf` | 20 passed, 2 failed under load: the 10 MB paired ghost gate (plan 18's timing-sensitive gate) and the longest frame of "j at key repeat (macos, compact)". Both passed on rerun. The new 200-chip gate passed: p95 14 ms. |
+| `pnpm test:perf` | 141 passed, 1 failed under load: the phrase build CPU (32.2 against 31 µs, not touched here). It passed on rerun. The new address gates passed: 5,000 nasty headers in 30 ms; 0.2 µs for each clean address; linear scaling. |
+| `pnpm dist:mac` + `test:smoke` | 51 passed and 1 failed. The failing people smoke's v13 fixture kept v15's new column; the fixture was fixed and that smoke then passed. |
+
+## Screenshots
+
+`/tmp/unica-scratch/chips-26/shots/` holds, for each of `macos`, `lumen` and `atelier` in `light` and `dark`:
+- `chips-<design>-<theme>.png`: a few chips, a no-reply chip selected, an invalid one;
+- `collapsed-<design>-<theme>.png`: a long list, unfocused;
+- `wrapped-<design>-<theme>.png`: the same list focused, wrapping.
+
+The changed baselines are the inline reply in all three designs (`design-reply.png`), where the recipient is now a chip.
