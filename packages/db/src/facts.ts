@@ -98,7 +98,8 @@ export function factsOf(db: Db, threadId: number, ctx: FactContext): ThreadFacts
   return threadFactsNewestFirst(() => {
     if (i === page.length && page.length === WALK_PAGE) {
       const last = page[page.length - 1]!;
-      page = db.all<FactRow>(`${sql} AND (date < ? OR (date = ? AND id < ?)) ORDER BY date DESC, id DESC LIMIT ${WALK_PAGE}`, threadId, last.date, last.date, last.id);
+      // a row value: a range of the index (an OR would read the thread's rows from the start)
+      page = db.all<FactRow>(`${sql} AND (date, id) < (?, ?) ORDER BY date DESC, id DESC LIMIT ${WALK_PAGE}`, threadId, last.date, last.id);
       i = 0;
     }
     return page[i++];
@@ -239,6 +240,8 @@ export interface SliceResult {
   processed: number;
   /** more work is left */
   more: boolean;
+  /** the kind of the next slice, when this one ended a phase of message ids (the runner sizes each kind apart) */
+  next?: "senders" | "threads";
 }
 
 /**
@@ -268,7 +271,7 @@ export function backfillSlice(db: Db, limit: number): SliceResult {
     }
     // the threads computed meanwhile were written NULL: the queue holds them, and a rescan isn't needed for them
     setPhase(db, to >= max ? { phase: "threads" } : { ...state, after: to });
-    return { phase: "senders", processed: Math.max(1, to - state.after), more: true };
+    return { phase: "senders", processed: Math.max(1, to - state.after), more: true, next: to >= max ? "threads" : "senders" };
   }
   const pending = db.all<{ id: number }>("SELECT id FROM threads INDEXED BY threads_facts_pending WHERE person IS NULL ORDER BY last_date DESC, id DESC LIMIT ?", n).map((r) => r.id);
   if (pending.length) {

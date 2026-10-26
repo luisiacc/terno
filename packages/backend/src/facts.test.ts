@@ -69,7 +69,7 @@ describe("the facts backfill (plan 17)", () => {
     const { backend, expected } = await pendingMailbox(dir);
     let slices = 0;
     const real = backend.store.facts.backfill.bind(backend.store.facts);
-    vi.spyOn(backend.store.facts, "backfill").mockImplementation(async (o) => {
+    vi.spyOn(backend.store.facts, "backfill").mockImplementation(async () => {
       slices++;
       return real({ limit: 5 });
     });

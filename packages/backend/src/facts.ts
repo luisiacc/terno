@@ -82,7 +82,8 @@ export class FactsBackfill {
         if (r.phase !== "senders") threads += r.processed;
         this.failures = 0;
         if (!r.more) break;
-        phase = r.phase === "senders" ? "senders" : "threads";
+        // the next slice's kind (message ids or threads): each has its own sizer
+        phase = r.next ?? (r.phase === "senders" ? "senders" : "threads");
         if (performance.now() - announced >= ANNOUNCE_EVERY_MS) {
           announced = performance.now();
           this.host.notifyChanged([], true);

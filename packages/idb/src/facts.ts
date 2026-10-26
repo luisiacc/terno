@@ -242,6 +242,7 @@ export interface SliceResult {
   phase: FactsPhase["phase"];
   processed: number;
   more: boolean;
+  next?: "senders" | "threads";
 }
 
 /** One slice of the backfill, inside the caller's transaction (SQLite's backfillSlice). */
@@ -265,7 +266,7 @@ export function backfillSlice(db: MemDb, queue: FactsQueue, limit: number): Slic
       }
     }
     setPhase(db, to >= max ? { phase: "threads" } : { phase: "senders", after: to });
-    return { phase: "senders", processed: Math.max(1, to - state.after), more: true };
+    return { phase: "senders", processed: Math.max(1, to - state.after), more: true, next: to >= max ? "threads" : "senders" };
   }
   const pending = queue.next(n);
   if (pending.length) {

@@ -437,7 +437,7 @@ export interface MailStore {
    * `limit` message ids (while it collects your addresses) or threads.
    */
   facts: {
-    backfill(o: { limit: number }): Promise<{ phase: "senders" | "threads" | "rescan" | "done"; processed: number; more: boolean }>;
+    backfill(o: { limit: number }): Promise<{ phase: "senders" | "threads" | "rescan" | "done"; processed: number; more: boolean; next?: "senders" | "threads" }>;
     /** nothing is pending (cheap: what a wake checks first) */
     idle(): Promise<boolean>;
   };
