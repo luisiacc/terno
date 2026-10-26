@@ -1,12 +1,15 @@
 import { checkedAttachments, checkMimeSize, yieldPreparation } from "./attachment-payload";
-import type { Address } from "@terno/core";
+import { asciiEmail, type Address } from "@terno/core";
 import type { SendPayload } from "./types";
 
 const CRLF = "\r\n";
 const ASCII = /^[\x20-\x7e]*$/;
+/** Folding whitespace between header words: a line stays short (RFC 5322 §2.2.3: 78 recommended, 998 at most). */
+const FOLD = `${CRLF} `;
 
-/** No header can be smuggled through a value. */
-const oneLine = (s: string) => s.replace(/[\r\n]+/g, " ");
+/** No header can be smuggled through a value; no bidi control or invisible character goes out in one either. */
+// oxlint-disable-next-line no-control-regex -- control characters are exactly what must go
+const oneLine = (s: string) => s.replace(/[\r\n]+/g, " ").replace(/[\u{0}-\u{8}\u{B}-\u{1F}\u{7F}\u{200B}\u{200E}\u{200F}\u{202A}-\u{202E}\u{2060}\u{2066}-\u{2069}\u{FEFF}]/gu, "");
 
 function base64(text: string): string {
   const bytes = new TextEncoder().encode(text);
@@ -15,20 +18,50 @@ function base64(text: string): string {
   return btoa(binary);
 }
 
-/** RFC 2047 encoded word when the value isn't plain ASCII. */
+/** One RFC 2047 encoded word when the value isn't plain ASCII, unfolded (an attachment's quoted filename parameter). */
 function encodeWord(value: string): string {
   const v = oneLine(value);
   return ASCII.test(v) ? v : `=?UTF-8?B?${base64(v)}?=`;
 }
 
+/** UTF-8 bytes per encoded word: `=?UTF-8?B?` + base64 of 45 bytes (60) + `?=` = 72, within RFC 2047's 75. */
+const WORD_BYTES = 45;
+
+/**
+ * RFC 2047 encoded words when the value isn't plain ASCII: as many as it
+ * takes, each at most 75 characters and never splitting a character
+ * (plan 26), folded onto their own lines.
+ */
+function encodeWords(value: string): string {
+  const v = oneLine(value);
+  if (ASCII.test(v)) return v;
+  const words: string[] = [];
+  let chunk = "";
+  let size = 0;
+  for (const ch of v) {
+    const n = new TextEncoder().encode(ch).length;
+    if (size + n > WORD_BYTES && chunk) {
+      words.push(`=?UTF-8?B?${base64(chunk)}?=`);
+      chunk = "";
+      size = 0;
+    }
+    chunk += ch;
+    size += n;
+  }
+  if (chunk) words.push(`=?UTF-8?B?${base64(chunk)}?=`);
+  return words.join(FOLD);
+}
+
 function formatAddress(a: Address): string {
-  const email = oneLine(a.email).replace(/[<>\s]/g, "");
-  if (!a.name) return email;
-  const name = oneLine(a.name);
-  if (!ASCII.test(name)) return `${encodeWord(name)} <${email}>`;
+  const email = asciiEmail(oneLine(a.email).replace(/[<>\s]/g, ""));
+  const name = oneLine(a.name).trim();
+  if (!name) return email;
+  if (!ASCII.test(name)) return `${encodeWords(name)} <${email}>`;
   return `${/[()<>[\]:;@\\,."]/.test(name) ? `"${name.replace(/["\\]/g, "\\$&")}"` : name} <${email}>`;
 }
 
+/** An address list, one address a line (a reply-all to hundreds stays within the line limit). */
+const addressList = (list: readonly Address[]) => list.map(formatAddress).join(`,${FOLD}`);
 const pad = (n: number) => String(n).padStart(2, "0");
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -51,10 +84,10 @@ export async function buildRawPortable(p: SendPayload, options: { now?: Date } =
   const attachments = await checkedAttachments(p);
   const headers: string[] = [
     `From: ${formatAddress(p.from)}`,
-    `To: ${p.to.map(formatAddress).join(", ")}`,
-    ...(p.cc.length ? [`Cc: ${p.cc.map(formatAddress).join(", ")}`] : []),
-    ...(p.bcc.length ? [`Bcc: ${p.bcc.map(formatAddress).join(", ")}`] : []),
-    `Subject: ${encodeWord(p.subject)}`,
+    `To: ${addressList(p.to)}`,
+    ...(p.cc.length ? [`Cc: ${addressList(p.cc)}`] : []),
+    ...(p.bcc.length ? [`Bcc: ${addressList(p.bcc)}`] : []),
+    `Subject: ${encodeWords(p.subject)}`,
     `Date: ${rfc5322Date(options.now ?? new Date())}`,
     `Message-ID: <${oneLine(p.messageId)}>`,
     ...(p.inReplyTo ? [`In-Reply-To: <${oneLine(p.inReplyTo)}>`] : []),

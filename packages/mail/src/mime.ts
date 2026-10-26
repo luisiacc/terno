@@ -1,5 +1,5 @@
 import PostalMime from "postal-mime";
-import { MAX_INCOMING_MIME_BYTES, attachmentFilename, attachmentMime, bulkHeaders, type Address } from "@terno/core";
+import { MAX_INCOMING_MIME_BYTES, attachmentFilename, attachmentMime, bulkHeaders, parseAddressHeader, repairAddresses, type Address } from "@terno/core";
 import type { IncomingAttachment } from "@terno/store";
 
 export interface ParsedMessage {
@@ -23,12 +23,67 @@ export interface ParsedMessage {
   captureUnavailable?: "size";
 }
 
-type PostalAddress = { name?: string; address?: string; group?: PostalAddress[] };
+/** An address as a MIME parser or an IMAP envelope gives it. */
+export type PostalAddress = { name?: string; address?: string; group?: PostalAddress[] };
 
-function addresses(list: PostalAddress[] | PostalAddress | undefined): Address[] {
+function flatten(list: PostalAddress[] | PostalAddress | undefined): Address[] {
   if (!list) return [];
   const arr = Array.isArray(list) ? list : [list];
-  return arr.flatMap((a) => (a.group ? addresses(a.group) : a.address ? [{ name: a.name ?? "", email: a.address.toLowerCase() }] : []));
+  return arr.flatMap((a) => (a.group ? flatten(a.group) : a.address ? [{ name: a.name ?? "", email: a.address }] : []));
+}
+
+export interface MessageAddresses {
+  from: Address;
+  to: Address[];
+  cc: Address[];
+  bcc: Address[];
+  replyTo: Address[];
+}
+
+const lower = (list: Address[]) => list.map((a) => ({ name: a.name, email: a.email.toLowerCase() }));
+
+/**
+ * A message's addresses (plan 26): read by our own parser from the raw header
+ * values (every occurrence: some clients write two Cc lines), so encoded
+ * words are decoded only after the structure is known (no spoofed From), and
+ * repaired. Where a header can't be read at all, what the MIME parser or the
+ * IMAP envelope made of it (repaired) stands in. Addresses are lowercased, as
+ * the store keys them.
+ */
+export function messageAddresses(values: (name: string) => string[], parsed: Partial<Record<keyof MessageAddresses, PostalAddress[] | PostalAddress | undefined>> = {}): MessageAddresses {
+  const read = (name: string, key: keyof MessageAddresses, single = false): Address[] => {
+    const raw = values(name);
+    const ours = raw.length ? parseAddressHeader(raw.join(", "), { single }) : [];
+    if (ours.length) return lower(ours);
+    const theirs = repairAddresses(flatten(parsed[key]), { split: !single });
+    return lower(single ? theirs.slice(0, 1) : theirs);
+  };
+  const from = read("from", "from", true)[0] ?? { name: "", email: "" };
+  // an IMAP envelope fills Reply-To in from From when the message has none (RFC 3501): that is no Reply-To
+  const replyTo = read("reply-to", "replyTo").filter((a) => values("reply-to").length > 0 || a.email !== from.email);
+  return { from, to: read("to", "to"), cc: read("cc", "cc"), bcc: read("bcc", "bcc"), replyTo };
+}
+
+const UTF8 = new TextDecoder("utf-8", { fatal: true });
+const LATIN1 = new TextDecoder("windows-1252");
+
+/** A raw header block's fields by lowercase name, unfolded (8-bit bytes read as UTF-8, else Latin-1). */
+export function headerFields(block: Uint8Array | undefined): (name: string) => string[] {
+  if (!block) return () => [];
+  let text: string;
+  try {
+    text = UTF8.decode(block);
+  } catch {
+    text = LATIN1.decode(block);
+  }
+  const fields = new Map<string, string[]>();
+  for (const line of text.replace(/\r?\n[ \t]+/g, " ").split(/\r?\n/)) {
+    const colon = line.indexOf(":");
+    if (colon <= 0) continue;
+    const name = line.slice(0, colon).trim().toLowerCase();
+    fields.set(name, [...(fields.get(name) ?? []), line.slice(colon + 1).trim()]);
+  }
+  return (name) => fields.get(name) ?? [];
 }
 
 export function splitIds(value: string | null | undefined): string[] {
@@ -90,17 +145,14 @@ export async function parseRaw(raw: Uint8Array | string, options: { captureUnava
   const unavailable = options.captureUnavailable === "size" || await tooLarge(raw);
   const email = await PostalMime.parse(unavailable ? envelopeOnly(raw) : raw);
   const header = (name: string) => email.headers.find((h) => h.key.toLowerCase() === name)?.value ?? null;
-  const from = addresses(email.from as PostalAddress | undefined)[0] ?? { name: "", email: "" };
+  const values = (name: string) => email.headers.filter((h) => h.key.toLowerCase() === name).map((h) => h.value);
+  const addresses = messageAddresses(values, { from: email.from as PostalAddress | undefined, to: email.to, cc: email.cc, bcc: email.bcc, replyTo: email.replyTo });
   const date = email.date ? Date.parse(email.date) : NaN;
   return {
     rfcMessageId: email.messageId ? email.messageId.replace(/[<>]/g, "").trim() : null,
     inReplyTo: email.inReplyTo ? splitIds(email.inReplyTo)[0] ?? null : null,
     references: splitIds(email.references ?? header("references")),
-    from,
-    replyTo: addresses(email.replyTo as PostalAddress[] | undefined),
-    to: addresses(email.to as PostalAddress[]),
-    cc: addresses(email.cc as PostalAddress[]),
-    bcc: addresses(email.bcc as PostalAddress[]),
+    ...addresses,
     subject: email.subject ?? "",
     date: Number.isNaN(date) ? null : date,
     listId: parseListId(header("list-id")),

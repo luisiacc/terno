@@ -4,7 +4,7 @@ import { ImapFlow, type FetchMessageObject, type MessageStructureObject } from "
 import { bulkHeaders } from "@terno/core";
 import { L, type Localized } from "@terno/i18n";
 import type { IncomingMessage } from "@terno/store";
-import { parseListId, parseRaw, splitIds } from "./mime";
+import { headerFields, messageAddresses, parseListId, parseRaw, splitIds } from "./mime";
 import { isNetworkError } from "./net-errors";
 import { sendViaSmtp } from "./smtp";
 import { ProviderAuthError, ProviderError, type FlagUpdate, type ImapAccountConfig, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
@@ -93,6 +93,9 @@ function hasAttachmentPart(node: MessageStructureObject | undefined): boolean {
   if (node.disposition === "attachment") return true;
   return (node.childNodes ?? []).some(hasAttachmentPart);
 }
+
+/** The address fields fetched raw beside the envelope (plan 26: parsed by us, the envelope's when one is missing). */
+const ADDRESS_HEADERS = ["from", "to", "cc", "bcc", "reply-to"];
 
 function headerValue(headers: Buffer | undefined, name: string): string | null {
   if (!headers) return null;
@@ -287,7 +290,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       const claimed = new Map<string, number>();
       for (let i = 0; i < found.length; i += 250) {
         const batch = found.slice(i, i + 250);
-        for await (const msg of c.fetch(batch, { uid: true, flags: true, envelope: true, internalDate: true, size: true, bodyStructure: true, headers: ["references", "list-id", "list-unsubscribe", "precedence", "auto-submitted"] }, { uid: true })) {
+        for await (const msg of c.fetch(batch, { uid: true, flags: true, envelope: true, internalDate: true, size: true, bodyStructure: true, headers: ["references", "list-id", "list-unsubscribe", "precedence", "auto-submitted", ...ADDRESS_HEADERS] }, { uid: true })) {
           const m = msg as FetchMessageObject;
           const flags = [...(m.flags ?? new Set<string>())];
           const env = m.envelope;
@@ -358,7 +361,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           claimed.set(key, m.uid);
           if (reset && new Date(env?.date ?? m.internalDate ?? Date.now()).getTime() < sink.windowStart) continue; // only re-identify old mail
           const role = roleOf(path);
-          const addr = (list?: { name?: string; address?: string }[]) => (list ?? []).filter((a) => a.address).map((a) => ({ name: a.name ?? "", email: a.address!.toLowerCase() }));
+          // the raw address fields, read by our parser (plan 26); the server's envelope where one is missing
+          const addrs = messageAddresses(headerFields(m.headers), { from: env?.from, to: env?.to, cc: env?.cc, bcc: env?.bcc, replyTo: env?.replyTo });
           fresh.push({
             accountId,
             providerMsgId: key,
@@ -366,11 +370,11 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             rfcMessageId: messageKey(env?.messageId),
             inReplyTo: env?.inReplyTo ? (splitIds(env.inReplyTo)[0] ?? null) : null,
             references: splitIds(headerValue(m.headers, "references")),
-            from: addr(env?.from)[0] ?? { name: "", email: "" },
-            replyTo: addr(env?.replyTo),
-            to: addr(env?.to),
-            cc: addr(env?.cc),
-            bcc: addr(env?.bcc),
+            from: addrs.from,
+            to: addrs.to,
+            cc: addrs.cc,
+            bcc: addrs.bcc,
+            replyTo: addrs.replyTo,
             subject: env?.subject ?? "",
             date: (env?.date ?? m.internalDate ?? new Date()).valueOf() as number,
             snippet: "",
@@ -382,7 +386,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             isRead: flags.includes("\\Seen"),
             isStarred: flags.includes("\\Flagged"),
             inInbox: role === "inbox",
-            isSent: role === "sent" || addr(env?.from)[0]?.email === ctx.account.email,
+            isSent: role === "sent" || addrs.from.email === ctx.account.email.toLowerCase(),
             isDraft: role === "drafts" || flags.includes("\\Draft"),
             isTrash: role === "trash",
             isSpam: role === "junk",

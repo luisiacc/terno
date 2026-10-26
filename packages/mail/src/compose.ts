@@ -2,9 +2,16 @@ import { Readable } from "node:stream";
 import { ATTACHMENT_CHUNK } from "@terno/core";
 import { checkedAttachments, checkMimeSize, yieldPreparation } from "./attachment-payload";
 import MailComposer from "nodemailer/lib/mail-composer/index.js";
+import { asciiEmail } from "@terno/core";
 import type { SendPayload } from "./types";
 
-const fmt = (a: { name: string; email: string }) => (a.name ? { name: a.name, address: a.email } : a.email);
+/** An address for MailComposer: the name without line breaks or invisible characters, a Unicode domain as punycode (plan 26). */
+const fmt = (a: { name: string; email: string }) => {
+  const address = asciiEmail(a.email.trim());
+  // oxlint-disable-next-line no-control-regex -- control characters are exactly what must go
+  const name = a.name.replace(/[\u{0}-\u{1F}\u{7F}\u{200B}\u{200E}\u{200F}\u{202A}-\u{202E}\u{2060}\u{2066}-\u{2069}\u{FEFF}]/gu, " ").replace(/\s+/g, " ").trim();
+  return name ? { name, address } : address;
+};
 
 /** Builds the RFC 5322 source once, so the same bytes are sent and saved to Sent. */
 export async function buildRaw(p: SendPayload, options: { keepBcc?: boolean; now?: Date } = {}): Promise<Buffer> {
@@ -49,7 +56,7 @@ export async function buildRaw(p: SendPayload, options: { keepBcc?: boolean; now
 }
 
 export function envelopeOf(p: SendPayload): { from: string; to: string[] } {
-  return { from: p.from.email, to: [...p.to, ...p.cc, ...p.bcc].map((a) => a.email) };
+  return { from: asciiEmail(p.from.email), to: [...p.to, ...p.cc, ...p.bcc].map((a) => asciiEmail(a.email)) };
 }
 
 async function* attachmentContent(base64: string) {
