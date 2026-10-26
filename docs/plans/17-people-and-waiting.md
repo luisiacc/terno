@@ -258,3 +258,44 @@ Codex (`codex exec -s read-only`, `/tmp/unica-scratch/people-17/plan-critique.tx
 10. **A thread count doesn't bound a slice** (one 50,000-message thread). The backfill and the rescan compute facts only (the other aggregates are already right), walking the thread's messages newest first through `messages_thread` in pages of 16, stopping once the newest visible message and the newest inbound one are known. `threadFactsNewestFirst` in core does it; a property test holds it equal to `threadFacts`. A skewed fixture with a 50,000-message thread is in the stall gate. IndexedDB's rows are in memory: one linear pass.
 11. **Requeues and counts.** A requeue clears both facts. A requeue of at most 200 threads recomputes them in the same unit (no flicker of the count); more go back to the queue. `inboxWaiting` is `null` while any thread is pending or a phase other than `done` runs.
 12. **A newer renderer and an older backend.** `app.bootstrap` reports the filters the backend knows (`filters`); the renderer offers only those (a missing list means plan 15's three), and a stored filter the backend doesn't know reads as none. A unit test runs the renderer's filter state against an older bootstrap.
+
+## 11. What the Codex code reviews changed
+
+### Round 1 (`/tmp/unica-scratch/people-17/review-1.txt`, `da55479..a887998`, 9 findings, all fixed in `12f6d99`)
+
+Each fix has a regression test that fails without it (checked by undoing the fix for #5 and #6, and by construction for the rest).
+
+1. **High: one long conversation could hold a slice.** A 50,000-message thread of yours (or entirely in the Trash) made the newest-first walk read all of it (94–99 ms). The facts now read a conversation's **newest 200 messages** (`FACTS_WINDOW`, drafts and hidden ones included), identically in `threadFacts` (a bounded heap when a thread is longer) and `threadFactsNewestFirst` (stops at 200). Test: core, a 50,000-message thread reads exactly 200; the property test runs both with a window of 3. The perf fixtures' giant thread is now a person's message then 50,000 of yours, plus a 10,000-message trashed one.
+2. **High: writing to a sender with many conversations recomputed them inside the ingest.** A bounded look (`LIMIT 201` on the sender's range of `messages_from`, an O(1) count on IndexedDB's index) decides: up to 200 threads are recomputed in the unit, more become a persisted **sender job** (`settings.facts_senders`) that backfill slices walk by message id, the +tagged forms after the address. Facts stay as they were meanwhile; counts read unknown until the job ends. IndexedDB keeps its +tagged senders per address from row changes (no walk of every sender). Test (conformance, both stores): 205 conversations from a role address are untouched by the ingest that writes to it, then the backfill makes them people in more than three slices.
+3. **High: a failed send was looked up by scanning every op.** `ops_failed_sends`, an expression index on the local message of failed sends (part of v14). Test: the query plan searches it.
+4. **Medium: a draft ingested again as sent skipped the facts' upkeep.** Ingest of an existing message runs the same upkeep as a flag update when sent/draft changes. Test (conformance): a draft answering a question in another Gmail thread comes back sent; the question stops waiting.
+5. **Medium: writing to someone Gmail filed under Updates didn't make them a person.** Every newly written address that isn't a no-reply address goes through the requeue (bounded, #2). Test (conformance).
+6. **Medium: a send failing for good didn't tell the renderer.** The backend announces a change after a terminal send failure. Test (backend): a `changed` event and the count back at 1.
+7. **Medium: adding an account left its rescan asleep.** `emitAccounts` wakes the runner (one probe when idle). Test (backend).
+8. **Medium: Gmail's category moves never reached the stored labels.** `FlagUpdate.gmailLabels`, sent by the Gmail provider and written by both stores' `updateFlags`. Test (conformance): Promotions → Primary → Promotions.
+9. **Low: some promised gates weren't asserted.** The SQLite People/Waiting id walk is timed, the IndexedDB waiting count is gated (≤ 5 ms), and searches narrowed to People or Waiting are gated on the FTS engine and IndexedDB's instant index (≤ 25 ms a page).
+
+Found while measuring, before the review: the runner sized the first thread slice with the message-id sizer (a 5,277-thread slice, 265 ms), so slices report the next slice's kind; the walk's next page used an `OR`, which reads a long thread from its start, so it pages by a row value (`a3656b2`); IndexedDB's queue sorted every pending thread in one slice (180 ms at 145,000 threads), so it walks the store's recency order from a cursor (19 ms); the SQLite recompute reads To, Cc and the Message-ID only for the newest message, and Gmail's labels as the one category that decides.
+
+### Round 2 (`review-2.txt`, on round 1's fixes, 6 findings, all fixed in `7b6b48c`)
+
+1. **High: IndexedDB's first queue slice sorted every thread** when nothing had listed yet (`ThreadOrder`'s first build, 119 ms at 145,000). Until the recency order is built (`ready`), the queue walks ids from the highest down (about newest mail first), a bounded number of steps a slice. Test: the queue never asks an unready order for its threads. The IndexedDB backfill gate now runs on an unprimed store.
+2. **High: a sender job materialized the sender's whole history every slice** (68–82 ms at 600,000 conversations, quadratic overall). A live walk of the `from` index's keys (`Table.keysBy`), `n` a slice. Test: no `by("from")` during the job's slices.
+3. **High: the 200-message window didn't bound IndexedDB**, which fetched a whole thread to choose its newest 200 (74–113 ms for 300,000). Past `BIG_THREAD` (4,096) messages the backfill reads a conversation in chunks, one a slice, keeping the newest 200; a change to it reads it again, and a thread ingest computed meanwhile is let go. Requeues, sender jobs and rescans hand such a thread to the queue instead of reading it. Test: a 12,289-message thread takes at least three chunk slices.
+4. **High: SQLite's +tagged sender walk sought on the address only** (`(from_email, id) > (?, ?)` read the address's earlier rows: 41–84 ms late in 600,000). The cursor's address is sought with its id (`from_email = ? AND id > ?`), then the next addresses (`from_email > ?`). Test: round 3 #2's.
+5. **Medium: a pending op dropped Gmail's category change** with the flags. Labels aren't optimistic state: they're written for messages with pending ops too. Test (conformance).
+6. **Medium: a send that ran out of attempts on network errors didn't tell the renderer.** One announcement after either failure branch. Test (backend).
+
+Also: the greeting's count got its own covering index (`threads_waiting_inbox`), since the window's range of `threads_waiting` read ~0.28 ms per counts call, about 8% of the sidebar's counts at 30,000 threads.
+
+### Round 3 (`review-3.txt`, on round 2's fixes, 2 findings, fixed in `943e788`)
+
+1. **Medium: IndexedDB's sender walk ran ahead of what committed.** A reverted slice, or a reverted command that took all the sender's mail (the index lets an empty key set go), left threads behind. The job commits its position with each slice; the walk is trusted only while its position and key set agree with what committed, otherwise it is made again (skipping to the position, or from the start for a new set). Tests: both scenarios, the first verified failing without the fix.
+2. **Low: the plan tests checked constants, not the code's statements.** A test records what the greeting's count and a sender job at a late +tagged cursor actually prepare, and checks those plans (verified failing without the address seek).
+
+### Rounds 4–6 (`review-4.txt` … `review-6.txt`, on the sender walk)
+
+- Round 4 (2 findings, `23e7789`): skipping to the committed position after a reverted slice could skip a key an update had moved to the set's end (599 of 600), and the skip was unbounded (250,001 steps for a one-message slice). A walk that disagrees with what committed now walks its address again from the start, in the same bounded slices. Test: a reverted slice after an update; the next slice takes at most `limit + 1` steps (205 before).
+- Round 5 (1 finding, `b390fc3`): a replay that was itself reverted could match the committed position again. The job commits a slice counter that only moves forward; a walk made for another value starts over. Test: two reverted slices in a row (599 of 600 before).
+- Round 6: nothing found ("rollback/replay, reindexed rows, replaced key sets, restart, same-address requeue and +tag transitions" checked).
+
