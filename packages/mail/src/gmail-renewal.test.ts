@@ -32,6 +32,7 @@ describe("cold installed grant proof", () => {
     const t = setup();
     const proof = await t.begin();
     await proof.inspect();
+    expect(proof.scopeSource).toBe("resource-proof");
     await expect(proof.provePhotos([CONTACTS_SCOPE, OTHER_CONTACTS_SCOPE])).resolves.toEqual([CONTACTS_SCOPE, OTHER_CONTACTS_SCOPE]);
     expect(t.net.mock.calls.filter(([url]) => String(url).startsWith("https://people.googleapis.com/")).map(([url]) => String(url))).toEqual([
       expect.stringContaining("people/me/connections?"), expect.stringContaining("otherContacts?"),
@@ -51,6 +52,7 @@ describe("cold installed grant proof", () => {
     const t = setup("https://www.googleapis.com/auth/gmail.modify");
     const proof = await t.begin();
     await proof.inspect();
+    expect(proof.scopeSource).toBe("refresh-response");
     const calls = t.net.mock.calls.length;
     await expect(proof.provePhotos([CONTACTS_SCOPE])).rejects.toThrow();
     expect(t.net).toHaveBeenCalledTimes(calls);

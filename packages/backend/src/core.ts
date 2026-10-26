@@ -1,3 +1,4 @@
+import type { PendingGmailRenewal } from "./identity";
 import type { AiTasks } from "@terno/ai";
 import { decodeText, encodeText, messageOf, textRef, type Account, type AccountSyncState, type OpState, type ThreadAction } from "@terno/core";
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
@@ -149,6 +150,8 @@ export class BackendCore {
   private readonly credentials = new Map<number, number>();
   /** plan 25: the Google sign-in in flight per account (a new one aborts it: one flow, one secret written) */
   readonly signIns = new Map<number, AbortController>();
+  readonly gmailRenewals = new Map<number, PendingGmailRenewal>();
+  private readonly credentialFlows = new Map<number, Promise<unknown>>();
   private readonly unwatch = new Map<number, () => void>();
   private syncTimer: ReturnType<typeof setInterval> | null = null;
   private workerTimer: ReturnType<typeof setTimeout> | null = null;
@@ -233,7 +236,10 @@ export class BackendCore {
       photoFetch: this.net.fetchFor("mail"),
       siteIconsOn: () => readSiteIcons(this.store),
       googlePhotos: () => readGooglePhotos(this.store),
-      setGooglePhotoState: (accountId, state) => setGooglePhotoState(this.store, accountId, state),
+      setGooglePhotoState: (accountId, state) => {
+        const flow = this.signIns.get(accountId);
+        return flow ? this.credentialWrite(accountId, flow, () => setGooglePhotoState(this.store, accountId, state)) : setGooglePhotoState(this.store, accountId, state);
+      },
       accountEmail: async (accountId) => (await this.store.accounts.get(accountId))?.email ?? null,
       provider: (accountId) => this.provider(accountId),
       // the people's pictures are for the user's own windows, never for agents
@@ -444,6 +450,9 @@ export class BackendCore {
 
   async stop(): Promise<void> {
     this.stopped = true;
+    this.gmailRenewals.clear();
+    for (const flow of this.signIns.values()) flow.abort();
+    this.signIns.clear();
     this.abort.abort();
     this.connectivity.stop();
     const accountsClosed = Promise.allSettled([...this.lifetimes.values()].map((life) => this.dropAccount(life.id, { remove: life.removing })));
@@ -959,7 +968,8 @@ export class BackendCore {
     life.removing ||= options.remove === true;
     life.abort.abort(new DOMException("Account closed", "AbortError"));
     if (options.remove) {
-      this.signIns.get(accountId)?.abort();
+      this.gmailRenewals.delete(accountId);
+      this.signIns.get(accountId)?.abort(new RpcError("NOT_FOUND", L("errors.accountGone")));
       this.signIns.delete(accountId);
     }
     this.connectivity.untrack(accountId);
@@ -1129,17 +1139,72 @@ export class BackendCore {
     return this.credentials.get(accountId) ?? 0;
   }
 
+  assertSignIn(accountId: number, flow: AbortController): void {
+    if (flow.signal.aborted && flow.signal.reason instanceof RpcError && flow.signal.reason.code === "NOT_FOUND") throw flow.signal.reason;
+    if (this.stopped || this.abort.signal.aborted || flow.signal.aborted || this.signIns.get(accountId) !== flow) throw new RpcError("BAD_REQUEST", L("errors.google.cancelled"));
+    if (this.lifetimes.get(accountId)?.removing) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
+  }
+
+  /** Serialize finalization, including recovery, so an admitted old write precedes the newer snapshot. */
+  async credentialFlow<T>(accountId: number, flow: AbortController, run: () => Promise<T>): Promise<T> {
+    const previous = this.credentialFlows.get(accountId);
+    const pending = (async () => {
+      await previous?.catch(() => {});
+      this.assertSignIn(accountId, flow);
+      const life = this.lifetime(accountId);
+      try { return await run(); }
+      catch (error) {
+        await this.recoverSignIn(accountId, flow, life);
+        throw error;
+      }
+    })();
+    this.credentialFlows.set(accountId, pending);
+    try { return await pending; }
+    finally { if (this.credentialFlows.get(accountId) === pending) this.credentialFlows.delete(accountId); }
+  }
+
+  /** A failed newer intent can also inherit the previous intent's deliberate drop. */
+  async recoverSignIn(accountId: number, flow: AbortController, expected = this.lifetimes.get(accountId)): Promise<void> {
+    const active = () => !!expected && expected.abort.signal.aborted && !expected.removing && this.lifetimes.get(accountId) === expected && this.signIns.get(accountId) === flow && !flow.signal.aborted && !this.abort.signal.aborted && !this.stopped;
+    if (!active()) return;
+    const account = await this.store.accounts.get(accountId);
+    if (!account || !active()) return;
+    this.lifetimes.delete(accountId);
+    this.lifetime(accountId);
+    this.connectivity.track(accountId);
+    this.connectivity.waitForSignIn(accountId, needsWholeSignIn(account.syncState));
+    // Pending rotation recovery belongs to the next explicit demand, never a refresh of the spent old grant.
+    if (!needsWholeSignIn(account.syncState) && !this.gmailRenewals.has(accountId)) this.startAccount(account);
+  }
+
+  credentialStored(accountId: number, flow: AbortController): void {
+    this.assertSignIn(accountId, flow);
+    this.credentials.set(accountId, this.credentialsOf(accountId) + 1);
+  }
+
+  /** Explicit writes may follow a deliberate drop; deletion still drains every admitted command. */
+  credentialWrite<T>(accountId: number, flow: AbortController, write: () => Promise<T>): Promise<T> {
+    this.assertSignIn(accountId, flow);
+    const life = this.lifetime(accountId);
+    const pending = write();
+    life.pending.add(pending);
+    void pending.then(() => life.pending.delete(pending), () => life.pending.delete(pending));
+    return pending;
+  }
+
   /**
    * Plan 25: the account was just signed in again with new credentials (stored by the caller), proven by a live
    * login or Google's answer: it stops asking now, not after the sync. A refusal of the old credentials still in
    * flight no longer counts, and what waited for the sign-in goes. The caller syncs (or restarts the account).
    */
-  async signedIn(accountId: number, installCredentials?: () => void): Promise<void> {
+  async signedIn(accountId: number, installCredentials?: () => void, flow?: AbortController): Promise<void> {
+    if (flow) this.assertSignIn(accountId, flow);
     if (this.stopped || this.lifetimes.get(accountId)?.removing) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
     const allocated = !this.lifetimes.has(accountId);
     const previous = this.lifetime(accountId);
     try {
       const account = await this.store.accounts.get(accountId);
+      if (flow) this.assertSignIn(accountId, flow);
       if (this.stopped || previous.removing || this.lifetimes.get(accountId) !== previous || !account) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
     } catch (error) {
       // A rejected late sign-in owns only its unused allocation, never a deletion fence or newer generation.
@@ -1149,12 +1214,16 @@ export class BackendCore {
     // Explicit reconnect dropped its old provider first; token renewal can keep an active provider.
     if (previous.abort.signal.aborted) this.lifetimes.delete(accountId);
     const life = this.lifetime(accountId);
+    if (flow) this.assertSignIn(accountId, flow);
     this.credentials.set(accountId, this.credentialsOf(accountId) + 1);
     this.connectivity.waitForSignIn(accountId, false);
     await this.accountWrite(life, async () => {
+      if (flow) this.assertSignIn(accountId, flow);
       installCredentials?.();
       await this.store.accounts.setSyncState(accountId, { status: "idle", lastError: null, lastErrorI18n: null, authRequired: false, authScope: null });
+      if (flow) this.assertSignIn(accountId, flow);
       await this.emitAccounts();
+      if (flow) this.assertSignIn(accountId, flow);
       await this.resumeAuth(accountId);
     });
   }

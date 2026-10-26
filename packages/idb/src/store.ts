@@ -1295,13 +1295,17 @@ export class IdbMailStore implements MailStore {
 
   readonly owner: MailStore["owner"] = {
     get: () => this.early(() => getOwner(this.c)),
-    change: (o) =>
-      this.command(() => {
-        const r = T(this.c, "accounts").get(o.claim.accountId);
-        if (!r || r.created_at !== o.stamp.createdAt || r.email !== o.stamp.email) throw new RpcError("NOT_FOUND", L("errors.accountRemovedWhileVerifying", { email: o.stamp.email }));
-        T(this.c, "secrets").put({ name: o.secret.name, blob: o.secret.blob });
-        changeOwner(this.c, o.claim, o.reason, o.now);
-      }),
+    change: (o) => {
+      const stamp = { ...o.stamp }, claim = { ...o.claim, evidence: { ...o.claim.evidence } };
+      const secret = o.secret.kind === "retain" ? { ...o.secret, expectedBlob: Uint8Array.from(o.secret.expectedBlob) } : { ...o.secret, expectedBlob: o.secret.expectedBlob && Uint8Array.from(o.secret.expectedBlob), blob: Uint8Array.from(o.secret.blob) };
+      return this.command(() => {
+        const r = T(this.c, "accounts").get(claim.accountId);
+        if (!r || r.created_at !== stamp.createdAt || r.email !== stamp.email) throw new RpcError("NOT_FOUND", L("errors.accountRemovedWhileVerifying", { email: stamp.email }));
+        if (!this.commitSecret(secret, { ...stamp, id: claim.accountId })) return false;
+        changeOwner(this.c, claim, o.reason, o.now);
+        return true;
+      });
+    },
   };
 
   readonly drafts: MailStore["drafts"] = {
@@ -1331,7 +1335,23 @@ export class IdbMailStore implements MailStore {
       }),
   };
 
+  private commitSecret(intent: import("@terno/store").SecretIntent, stamp: { id: number; email: string; createdAt: number }): boolean {
+    const account = T(this.c, "accounts").get(stamp.id);
+    if (!account || account.email !== stamp.email || account.created_at !== stamp.createdAt) return false;
+    const secrets = T(this.c, "secrets");
+    const current = secrets.get(intent.name)?.blob as Uint8Array | undefined;
+    const expected = intent.expectedBlob;
+    if (expected === null ? current !== undefined : !current || current.length !== expected.length || !current.every((b, i) => b === expected[i])) return false;
+    if (intent.kind === "replace" && (!current || current.length !== intent.blob.length || !current.every((b, i) => b === intent.blob[i]))) secrets.put({ name: intent.name, blob: intent.blob });
+    return true;
+  }
+
   readonly secrets: MailStore["secrets"] = {
+    commit: (intent, stamp) => {
+      const copy = intent.kind === "retain" ? { ...intent, expectedBlob: Uint8Array.from(intent.expectedBlob) } : { ...intent, expectedBlob: intent.expectedBlob && Uint8Array.from(intent.expectedBlob), blob: Uint8Array.from(intent.blob) };
+      const account = { ...stamp };
+      return this.command(() => this.commitSecret(copy, account), { early: true });
+    },
     names: () => this.early(() => [...T(this.c, "secrets").all()].map((s) => String(s.name)).sort()),
     get: (name) => this.early(() => (T(this.c, "secrets").get(name)?.blob as Uint8Array | undefined) ?? null),
     has: (name) => this.early(() => T(this.c, "secrets").has(name)),

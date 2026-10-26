@@ -391,31 +391,45 @@ export class IconService {
   }
 
   /** Lists the account's photos now (turning photos on) or lazily when the last list is older than PEOPLE_TTL. */
-  syncPeople(accountId: number, state: GooglePhotoState): Promise<void> {
+  syncPeople(accountId: number, state: GooglePhotoState, externalSignal?: AbortSignal): Promise<void> {
     const running = this.peopleSyncing.get(accountId);
-    if (running) return running;
+    if (running && !externalSignal) return running;
+    // Explicit consent owns a new listing; an older flow's abort only ever reaches its own controller.
+    if (running) this.peopleAborts.get(accountId)?.abort();
     const generation = this.generation;
     const started = this.o.now();
     let run!: Promise<void>;
     // cancellable from the start: turning photos off while this still waits for the provider stops it too
     const ctl = new AbortController();
+    const cancel = () => ctl.abort();
+    if (externalSignal?.aborted) cancel();
+    else externalSignal?.addEventListener("abort", cancel, { once: true });
+    const wait = async <T,>(work: Promise<T>): Promise<T> => {
+      let stop: (() => void) | undefined;
+      try {
+        return await Promise.race([work, new Promise<never>((_resolve, reject) => {
+          stop = () => reject(ctl.signal.reason);
+          if (ctl.signal.aborted) stop(); else ctl.signal.addEventListener("abort", stop, { once: true });
+        })]);
+      } finally { if (stop) ctl.signal.removeEventListener("abort", stop); }
+    };
     this.peopleAborts.set(accountId, ctl);
     run = (async () => {
-      await this.load();
-      const provider = await this.o.provider(accountId);
-      const email = await this.o.accountEmail(accountId);
+      await wait(this.load());
+      const provider = await wait(this.o.provider(accountId));
+      const email = await wait(this.o.accountEmail(accountId));
       if (!provider?.photos || !email || ctl.signal.aborted || generation !== this.generation || this.closed) return;
       // still on (not turned off between the call and now)
-      if (!(await this.o.googlePhotos())[String(accountId)] || ctl.signal.aborted) return;
+      if (!(await wait(this.o.googlePhotos()))[String(accountId)] || ctl.signal.aborted) return;
       let result;
       try {
-        result = await provider.photos({ connections: state.connections, otherContacts: state.otherContacts }, ctl.signal);
+        result = await wait(provider.photos({ connections: state.connections, otherContacts: state.otherContacts }, ctl.signal));
       } catch {
         if (ctl.signal.aborted) return;
         log.info("icons.people", { count: 0, durationMs: this.o.now() - started, status: 0 });
         return;
       }
-      if (generation !== this.generation || this.closed || this.peopleSyncing.get(accountId) !== run) return;
+      if (ctl.signal.aborted || generation !== this.generation || this.closed || this.peopleSyncing.get(accountId) !== run) return;
       const disabled = result.connections === "disabled" || result.otherContacts === "disabled";
       const next: GooglePhotoState = {
         connections: state.connections && result.connections !== "denied",
@@ -439,7 +453,10 @@ export class IconService {
       log.info("icons.people", { count: map.size, durationMs: this.o.now() - started, status: disabled ? 403 : 200 });
       // addresses already answered "initials" may have a photo now
       this.o.emit({ icons: {}, reset: true });
-    })().finally(() => {
+    })().catch((error: unknown) => {
+      if (!ctl.signal.aborted) throw error;
+    }).finally(() => {
+      externalSignal?.removeEventListener("abort", cancel);
       if (this.peopleSyncing.get(accountId) === run) this.peopleSyncing.delete(accountId);
       if (this.peopleAborts.get(accountId) === ctl) this.peopleAborts.delete(accountId);
     });

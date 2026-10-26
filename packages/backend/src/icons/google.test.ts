@@ -51,7 +51,7 @@ function registry(f: Fake, web = false): ProviderRegistry {
     },
     async connectGmail(o) {
       f.connectCalls.push({ scopes: o.scopes, loginHint: o.loginHint });
-      return { email: o.loginHint ?? "", name: "", refreshToken: "new-token", sub: null, emailVerified: true, grantedScopes: [MAIL, CONTACTS], ...f.connect };
+      return { email: o.loginHint ?? "", name: "", refreshToken: "new-token", sub: "synthetic-photo-subject", emailVerified: true, grantedScopes: [MAIL, CONTACTS], ...f.connect };
     },
   };
 }

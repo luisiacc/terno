@@ -16,6 +16,8 @@ export async function beginGmailRenewal(options: GmailRenewalOptions & { endpoin
     return withGoogleSignIn({ fetch: options.fetch, signal: options.signal && signal ? AbortSignal.any([options.signal, signal]) : options.signal ?? signal, timeoutMs: remaining }, work);
   };
   return {
+    scopeSource: grant.grantedScopes ? "refresh-response" : "resource-proof",
+    grantedScopes: grant.grantedScopes,
     refreshToken: grant.refreshToken,
     expiresAt: grant.expiresAt,
     inspect: (signal) => run(signal, (flow) => readGoogleIdentity(grant.accessToken, ep, flow)),

@@ -788,8 +788,9 @@ export class SqlMailStore implements MailStore {
         if (!now || now.createdAt !== c.stamp.createdAt || now.email !== c.stamp.email) {
           throw new RpcError("NOT_FOUND", L("errors.accountRemovedWhileVerifying", { email: c.stamp.email }));
         }
-        putSecret(this.db, c.secret.name, c.secret.blob);
+        if (!this.commitSecret(c.secret, { ...c.stamp, id: c.claim.accountId })) return false;
         changeOwner(this.db, c.claim, c.reason, c.now);
+        return true;
       }),
   };
 
@@ -812,7 +813,18 @@ export class SqlMailStore implements MailStore {
       }),
   };
 
+  private commitSecret(intent: import("@terno/store").SecretIntent, stamp: { id: number; email: string; createdAt: number }): boolean {
+    const account = accountStamp(this.db, stamp.id);
+    if (!account || account.email !== stamp.email || account.createdAt !== stamp.createdAt) return false;
+    const current = getSecret(this.db, intent.name);
+    const expected = intent.expectedBlob;
+    if (expected === null ? current !== null : !current || current.length !== expected.length || !current.every((b, i) => b === expected[i])) return false;
+    if (intent.kind === "replace" && (!current || current.length !== intent.blob.length || !current.every((b, i) => b === intent.blob[i]))) putSecret(this.db, intent.name, intent.blob);
+    return true;
+  }
+
   readonly secrets: MailStore["secrets"] = {
+    commit: async (intent, stamp) => this.db.tx(() => this.commitSecret(intent, stamp)),
     names: async () => secretNames(this.db),
     get: async (name) => getSecret(this.db, name),
     has: async (name) => getSecret(this.db, name) !== null,

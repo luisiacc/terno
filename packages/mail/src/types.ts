@@ -170,6 +170,8 @@ export interface GmailTokenBroker {
 }
 
 export interface GmailRenewalProof {
+  readonly scopeSource: "refresh-response" | "resource-proof";
+  readonly grantedScopes?: readonly string[];
   readonly refreshToken: string;
   readonly expiresAt: number;
   /** Uses this forced refresh's access, never a cached or newly consented token. */

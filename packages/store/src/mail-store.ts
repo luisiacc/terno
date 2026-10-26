@@ -210,6 +210,11 @@ export interface ImapLocationStore {
   resetCandidate(c: { candidates: readonly number[]; subject: string; fromEmail: string; date: number; size: number; mailbox: string }): Promise<{ id: number } | null>;
 }
 
+/** Explicit verification can deliberately replace a missing credential; ordinary refresh CAS never upserts. */
+export type SecretIntent =
+  | { kind: "retain"; name: string; expectedBlob: Uint8Array }
+  | { kind: "replace"; name: string; expectedBlob: Uint8Array | null; blob: Uint8Array };
+
 /**
  * The storage boundary the backend uses. Every method is ONE atomic unit of
  * work; there is no generic cross-call transaction. Returned model deltas and
@@ -410,7 +415,7 @@ export interface MailStore {
   owner: {
     get(): Promise<OwnerIdentity | null>;
     /** moves ownership to a re-verified account with its fresh secret, if it is still the same mailbox */
-    change(c: { claim: OwnerClaim; stamp: { createdAt: number; email: string }; secret: { name: string; blob: Uint8Array }; reason: string; now: number }): Promise<void>;
+    change(c: { claim: OwnerClaim; stamp: { createdAt: number; email: string }; secret: SecretIntent; reason: string; now: number }): Promise<boolean>;
   };
 
   drafts: {
@@ -439,6 +444,8 @@ export interface MailStore {
     put(name: string, blob: Uint8Array): Promise<void>;
     /** Exact byte CAS, never an upsert. Optional mailbox stamp is checked atomically; equal bytes assert ownership without rewriting. */
     replace(name: string, expectedBlob: Uint8Array, nextBlob: Uint8Array, accountStamp?: { id: number; email: string; createdAt: number }): Promise<boolean>;
+    /** Explicit verified flow only: stamp and exact expected secret are one transaction. */
+    commit(intent: SecretIntent, stamp: { id: number; email: string; createdAt: number }): Promise<boolean>;
     delete(name: string): Promise<void>;
   };
 

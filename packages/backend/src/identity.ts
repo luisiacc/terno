@@ -1,8 +1,8 @@
 import { isValidEmail, messageOf, type Account } from "@terno/core";
 import { RpcError, type OwnerIdentity } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
-import type { OwnerClaim } from "@terno/store";
-import type { GmailAccountConfig, GmailConnectResult, ImapAccountConfig } from "@terno/mail";
+import type { OwnerClaim, SecretIntent } from "@terno/store";
+import type { GmailAccountConfig, GmailConnectResult, GmailRenewalProof, ImapAccountConfig } from "@terno/mail";
 import type { BackendCore as Backend } from "./core";
 import { readSettings } from "./settings";
 
@@ -28,14 +28,14 @@ export function imapClaim(account: { email: string }, config: ImapAccountConfig,
 }
 
 /** Provider registries are a boundary too: malformed identity must never become a saved account or claim. */
-export function validateGoogleConnection(result: unknown, desktop = false): void {
+export function validateGoogleConnection(result: unknown, policy: "browser" | "initial" | "renewal" = "browser"): asserts result is GmailConnectResult {
   const value = result as Record<string, unknown> | null;
   if (!value || typeof value !== "object" || Array.isArray(value) ||
     typeof value.email !== "string" || value.email.length > 254 || (!isValidEmail(value.email) || /\p{Cc}/u.test(value.email)) ||
     typeof value.name !== "string" ||
     typeof value.sub !== "string" || !value.sub || value.sub.length > 255 || /[\s\p{Cc}]/u.test(value.sub) ||
     typeof value.emailVerified !== "boolean" ||
-    (desktop && (typeof value.refreshToken !== "string" || !/^[\x21-\x7e]+$/.test(value.refreshToken)))) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
+    (policy !== "browser" && !(policy === "renewal" && value.refreshToken === null) && (typeof value.refreshToken !== "string" || value.refreshToken.length > 4096 || !/^[\x21-\x7e]+$/.test(value.refreshToken)))) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
   if (value.grantedScopes !== undefined) {
     if (!Array.isArray(value.grantedScopes) || !value.grantedScopes.every((scope) => typeof scope === "string")) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
     if (!value.grantedScopes.includes("https://www.googleapis.com/auth/gmail.modify") && !value.grantedScopes.includes("https://mail.google.com/")) throw new RpcError("BAD_REQUEST", L("errors.google.mailScopeRequired"));
@@ -55,161 +55,225 @@ export function gmailClaim(result: Omit<GmailConnectResult, "refreshToken">): Om
   };
 }
 
-/**
- * Signs an account in again with fresh credentials: the IMAP password checked
- * by a live login, or Google's sign-in for the same address. The new secret
- * replaces the old one only if it is still the same mailbox; then the account
- * restarts, its waiting actions resume and it syncs.
- */
-export async function reconnectAccount(b: Backend, accountId: number, password: string | undefined): Promise<Account> {
-  const store = b.store;
-  const account = await store.accounts.get(accountId);
-  const stamp = await store.accounts.stamp(accountId);
-  if (!account || !stamp) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
-  const config = (await store.accounts.config<Record<string, unknown>>(accountId))!.config;
-  // plan 25: one sign-in per account at a time, until its credentials are written: a newer one ("Open again", a
-  // second password) aborts this one (Google's page listener closes), and this one stops at every step after an
-  // await, so an older attempt never writes over a newer one (Codex review #4, code review #2)
+export interface PendingGmailRenewal {
+  stamp: { id: number; email: string; createdAt: number };
+  expectedBlob: Uint8Array;
+  proof: GmailRenewalProof;
+  verified: boolean;
+  subject?: string;
+  blob?: Uint8Array;
+}
+
+export function beginSignIn(b: Backend, accountId: number): AbortController {
+  if (b.signIns.has(accountId)) b.gmailRenewals.delete(accountId);
   b.signIns.get(accountId)?.abort();
   const flow = new AbortController();
   b.signIns.set(accountId, flow);
-  const superseded = () => {
-    if (flow.signal.aborted) throw new RpcError("BAD_REQUEST", L("errors.google.cancelled"));
-  };
-  try {
-    return await signIn(b, account, stamp, config, password, flow.signal, superseded);
-  } finally {
-    if (b.signIns.get(accountId) === flow) b.signIns.delete(accountId);
-  }
+  return flow;
 }
 
-async function signIn(
-  b: Backend,
-  account: Account,
-  stamp: NonNullable<Awaited<ReturnType<Backend["store"]["accounts"]["stamp"]>>>,
-  config: Record<string, unknown>,
-  password: string | undefined,
-  signal: AbortSignal,
-  superseded: () => void,
-): Promise<Account> {
-  const store = b.store;
-  const accountId = account.id;
-  let secret: { name: string; value: string };
-  if (account.kind === "imap") {
-    if (!b.host.capabilities.imap) throw new RpcError("UNAVAILABLE", L("errors.imapNeedsDesktop"));
-    if (!password) throw new RpcError("BAD_REQUEST", L("errors.passwordRequired"));
-    try {
-      await b.options.providers.verifyImap(config as unknown as ImapAccountConfig, password);
-    } catch (error) {
-      throw loginFailed("errors.couldNotConnectAccount", account.email, error);
-    }
-    superseded();
-    secret = { name: "password", value: password };
-  } else {
-    if (b.options.providers.gmailTokens) throw new RpcError("UNAVAILABLE", L("errors.gmailReconnectInBrowser"));
-    const settings = await readSettings(store);
-    if (!settings.gmailClientId) throw new RpcError("BAD_REQUEST", L("errors.gmailClientIdMissing"));
-    if (!b.options.openExternal) throw new RpcError("UNAVAILABLE", L("errors.googleConnectNeedsDesktop"));
-    let result: GmailConnectResult;
-    try {
-      result = await b.options.providers.connectGmail({
-        clientId: settings.gmailClientId,
-        clientSecret: await b.getSecret("gmailClientSecret"),
-        openExternal: b.options.openExternal,
-        signal: AbortSignal.any([b.abort.signal, signal]),
-        fetch: b.net.fetchFor("mail"),
-        loginHint: account.email,
-      });
-    } catch (error) {
-      throw new RpcError("BAD_REQUEST", messageOf(error));
-    }
-    // a newer sign-in took over while Google answered this one: that one decides
-    superseded();
-    googleFlowActive(b);
-    validateGoogleConnection(result, true);
-    if (result.email.toLowerCase() !== account.email.toLowerCase()) {
-      throw new RpcError("BAD_REQUEST", L("errors.googleConnectedOther", { got: result.email, expected: account.email }));
-    }
-    secret = { name: "refreshToken", value: result.refreshToken };
-  }
-  const blob = await b.options.cipher.encrypt(secret.value);
-  // signing in took a while: the secret goes only to the same mailbox (not one removed and added again meanwhile)
-  const now = await store.accounts.stamp(accountId);
-  if (!now || now.createdAt !== stamp.createdAt || now.email !== stamp.email) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
-  superseded();
-  googleFlowActive(b);
-  await b.dropAccount(accountId);
-  const current = await store.accounts.stamp(accountId);
+export async function endSignIn(b: Backend, accountId: number, flow: AbortController): Promise<void> {
+  try { await b.recoverSignIn(accountId, flow); }
+  finally { if (b.signIns.get(accountId) === flow) b.signIns.delete(accountId); }
+}
+
+export async function encryptCredential(b: Backend, value: string): Promise<Uint8Array> {
+  try { return await b.options.cipher.encrypt(value); }
+  catch { throw new RpcError("BAD_REQUEST", L("errors.secret.replaceFailed")); }
+}
+
+export async function sameAccount(b: Backend, stamp: { id: number; email: string; createdAt: number }, flow: AbortController): Promise<void> {
+  const current = await b.store.accounts.stamp(stamp.id);
+  b.assertSignIn(stamp.id, flow);
   if (!current || current.createdAt !== stamp.createdAt || current.email !== stamp.email) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
-  // Dropping waited for sync; neither another sign-in nor removal may replace this mailbox's credential.
-  superseded();
-  googleFlowActive(b);
-  await store.secrets.put(`account:${accountId}:${secret.name}`, blob);
-  // plan 25: proven just now (a live login, Google's answer): it stops asking at once, and what waited goes
-  await b.signedIn(accountId);
-  b.startAccount((await store.accounts.get(accountId))!);
-  return (await store.accounts.get(accountId))!;
 }
 
-/**
- * Moves the Terno account to another connected mailbox, which must be verified
- * again right now: Google OAuth with the address pre-selected (and matching),
- * or a live IMAP login with the password typed again. A stored password does
- * not count. The user id stays; the previous owner goes to history.
- */
-export async function changeOwnerTo(b: Backend, accountId: number, password: string | undefined): Promise<OwnerIdentity> {
-  const store = b.store;
-  if (!b.canClaimOwner()) throw new RpcError("BAD_REQUEST", L("errors.demoNoOwner"));
-  const account = await store.accounts.get(accountId);
-  const stamp = await store.accounts.stamp(accountId);
-  if (!account || !stamp) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
-  const config = (await store.accounts.config<Record<string, unknown>>(accountId))!.config;
-  if (config.demo) throw new RpcError("BAD_REQUEST", L("errors.demoAccountOwner"));
-  const current = await store.owner.get();
-  if (current?.accountId === accountId) throw new RpcError("BAD_REQUEST", L("errors.alreadyOwner", { email: account.email }));
+const sameBytes = (a: Uint8Array | null, c: Uint8Array) => !!a && a.length === c.length && a.every((v, i) => v === c[i]);
+const invalidRenewal = () => new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
+const persistenceFailed = () => new RpcError("BAD_REQUEST", L("errors.secret.replaceFailed"));
 
-  let claim: Omit<OwnerClaim, "accountId" | "email">;
-  let secret: { name: string; blob: Uint8Array };
-  if (account.kind === "imap") {
-    if (!password) throw new RpcError("BAD_REQUEST", L("errors.passwordToVerify"));
-    const imap = config as unknown as ImapAccountConfig;
-    try {
-      await b.options.providers.verifyImap(imap, password);
-    } catch (error) {
-      throw loginFailed("errors.couldNotVerifyAccount", account.email, error);
-    }
-    secret = { name: `account:${accountId}:password`, blob: await b.options.cipher.encrypt(password) };
-    claim = imapClaim(account, imap, (config as unknown as ImapAccountConfig).senderName || account.displayName);
-  } else {
-    const settings = await readSettings(store);
-    if (!settings.gmailClientId) throw new RpcError("BAD_REQUEST", L("errors.gmailClientIdMissing"));
-    if (!b.options.openExternal) throw new RpcError("UNAVAILABLE", L("errors.googleVerifyNeedsDesktop"));
-    const result = await b.options.providers.connectGmail({
-      clientId: settings.gmailClientId,
-      clientSecret: await b.getSecret("gmailClientSecret"),
-      openExternal: b.options.openExternal,
-      signal: b.abort.signal,
-      fetch: b.net.fetchFor("mail"),
-      loginHint: account.email,
-    });
-    googleFlowActive(b);
-    validateGoogleConnection(result, true);
-    if (result.email.toLowerCase() !== account.email.toLowerCase()) {
-      throw new RpcError("BAD_REQUEST", L("errors.googleVerifiedOther", { got: result.email, expected: account.email }));
-    }
-    secret = { name: `account:${accountId}:refreshToken`, blob: await b.options.cipher.encrypt(result.refreshToken) };
-    claim = gmailClaim({ ...result, name: result.name || (config as unknown as GmailAccountConfig).senderName });
+/** Called after old provider drain, under the account's finalization owner. */
+export async function googleCredentialIntent(b: Backend, account: Account, stamp: { id: number; email: string; createdAt: number }, result: GmailConnectResult, flow: AbortController, freshBlob?: Uint8Array): Promise<{ intent: SecretIntent; pending?: PendingGmailRenewal }> {
+  await sameAccount(b, stamp, flow);
+  const name = `account:${account.id}:refreshToken`;
+  let current: Uint8Array | null;
+  try { current = await b.store.secrets.get(name); } catch { throw persistenceFailed(); }
+  b.assertSignIn(account.id, flow);
+  current = current && Uint8Array.from(current);
+  if (result.refreshToken !== null) {
+    b.gmailRenewals.delete(account.id);
+    return { intent: { kind: "replace", name, expectedBlob: current, blob: freshBlob! } };
   }
-  // Verification took a while (a login, a browser round trip): commit only if it is still the same mailbox,
-  // and write its fresh credentials and the ownership together.
-  if (account.kind === "gmail") googleFlowActive(b);
-  await store.owner.change({
-    claim: { ...claim, email: account.email, accountId },
-    stamp: { createdAt: stamp.createdAt, email: stamp.email },
-    secret,
-    reason: current ? "changed by user" : "claimed by user",
-    now: b.now(),
-  });
-  await b.emitOwner();
-  return (await store.owner.get())!;
+  if (!current || !b.options.providers.beginGmailRenewal) throw invalidRenewal();
+  let pending = b.gmailRenewals.get(account.id);
+  if (pending && (pending.stamp.email !== stamp.email || pending.stamp.createdAt !== stamp.createdAt || (!sameBytes(current, pending.expectedBlob) && !(pending.blob && sameBytes(current, pending.blob))))) {
+    b.gmailRenewals.delete(account.id);
+    pending = undefined;
+  }
+  if (!pending) {
+    let refreshToken: string | null;
+    try { refreshToken = await b.getSecret(name); } catch { throw invalidRenewal(); }
+    b.assertSignIn(account.id, flow);
+    if (!refreshToken) throw invalidRenewal();
+    // getSecret honors the keychain migration fingerprint. Assert the exact ciphertext again before exchange.
+    let latest: Uint8Array | null;
+    try { latest = await b.store.secrets.get(name); } catch { throw persistenceFailed(); }
+    if (!sameBytes(latest, current)) throw persistenceFailed();
+    b.assertSignIn(account.id, flow);
+    const settings = await readSettings(b.store);
+    const clientSecret = await b.getSecret("gmailClientSecret");
+    b.assertSignIn(account.id, flow);
+    let proof: GmailRenewalProof;
+    try { proof = await b.options.providers.beginGmailRenewal({ clientId: settings.gmailClientId, clientSecret, refreshToken, fetch: b.net.fetchFor("mail"), signal: AbortSignal.any([b.abort.signal, flow.signal]) }); }
+    catch { throw invalidRenewal(); }
+    b.assertSignIn(account.id, flow);
+    if (!proof || typeof proof.refreshToken !== "string" || proof.refreshToken.length > 4096 || !/^[\x21-\x7e]+$/.test(proof.refreshToken) || !Number.isFinite(proof.expiresAt) || typeof proof.inspect !== "function" || typeof proof.provePhotos !== "function") throw invalidRenewal();
+    pending = { stamp: { ...stamp }, expectedBlob: current, proof, verified: false };
+    b.gmailRenewals.set(account.id, pending);
+  }
+  if (pending.verified && pending.subject !== result.sub) { b.gmailRenewals.delete(account.id); throw invalidRenewal(); }
+  if (!pending.verified) {
+    if (pending.proof.expiresAt <= Date.now()) { b.gmailRenewals.delete(account.id); throw invalidRenewal(); }
+    let who: Omit<GmailConnectResult, "refreshToken">;
+    try { who = await pending.proof.inspect(AbortSignal.any([b.abort.signal, flow.signal])); } catch { throw invalidRenewal(); }
+    b.assertSignIn(account.id, flow);
+    validateGoogleConnection(who, "browser");
+    if (who.email.toLowerCase() !== account.email.toLowerCase() || who.sub !== result.sub) { b.gmailRenewals.delete(account.id); throw invalidRenewal(); }
+    pending.verified = true;
+    pending.subject = who.sub!;
+  }
+  if (!pending.blob) {
+    let old: string;
+    try { old = await b.options.cipher.decrypt(pending.expectedBlob); } catch { throw invalidRenewal(); }
+    b.assertSignIn(account.id, flow);
+    pending.blob = old === pending.proof.refreshToken ? pending.expectedBlob : await encryptCredential(b, pending.proof.refreshToken);
+    b.assertSignIn(account.id, flow);
+  }
+  // A commit may have succeeded before its adapter threw. Never restore the old bytes.
+  if (sameBytes(current, pending.blob)) return { intent: { kind: "retain", name, expectedBlob: current }, pending };
+  return { intent: { kind: "replace", name, expectedBlob: pending.expectedBlob, blob: pending.blob }, pending };
+}
+
+export async function commitGoogleCredential(b: Backend, accountId: number, stamp: { id: number; email: string; createdAt: number }, flow: AbortController, intent: SecretIntent): Promise<void> {
+  await sameAccount(b, stamp, flow);
+  let committed: boolean;
+  try { committed = await b.credentialWrite(accountId, flow, () => b.store.secrets.commit(intent, stamp)); }
+  catch { b.assertSignIn(accountId, flow); throw persistenceFailed(); }
+  b.assertSignIn(accountId, flow);
+  if (!committed) { b.gmailRenewals.delete(accountId); throw persistenceFailed(); }
+  b.gmailRenewals.delete(accountId);
+  b.credentialStored(accountId, flow);
+}
+
+export async function connectExistingGoogle(b: Backend, account: Account, flow: AbortController, scopes?: string[]): Promise<GmailConnectResult> {
+  if (b.options.providers.gmailTokens) throw new RpcError("UNAVAILABLE", L("errors.gmailReconnectInBrowser"));
+  const settings = await readSettings(b.store);
+  b.assertSignIn(account.id, flow);
+  if (!settings.gmailClientId) throw new RpcError("BAD_REQUEST", L("errors.gmailClientIdMissing"));
+  if (!b.options.openExternal) throw new RpcError("UNAVAILABLE", L("errors.googleConnectNeedsDesktop"));
+  const clientSecret = await b.getSecret("gmailClientSecret");
+  b.assertSignIn(account.id, flow);
+  let result: GmailConnectResult;
+  try { result = await b.options.providers.connectGmail({ clientId: settings.gmailClientId, clientSecret, openExternal: b.options.openExternal, signal: AbortSignal.any([b.abort.signal, flow.signal]), fetch: b.net.fetchFor("mail"), loginHint: account.email, scopes, allowOmittedRefreshToken: true }); }
+  catch { b.assertSignIn(account.id, flow); throw invalidRenewal(); }
+  b.assertSignIn(account.id, flow);
+  validateGoogleConnection(result, "renewal");
+  if (result.email.toLowerCase() !== account.email.toLowerCase()) throw new RpcError("BAD_REQUEST", L("errors.googleConnectedOther", { got: result.email, expected: account.email }));
+  return result;
+}
+
+/** Explicit credential changes retain one owner through preparation, durable commit and state publication. */
+export async function reconnectAccount(b: Backend, accountId: number, password: string | undefined): Promise<Account> {
+  const flow = beginSignIn(b, accountId);
+  try {
+    const account = await b.store.accounts.get(accountId), stamp = await b.store.accounts.stamp(accountId);
+    b.assertSignIn(accountId, flow);
+    if (!account || !stamp) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
+    let result: GmailConnectResult | undefined;
+    let blob: Uint8Array | undefined;
+    if (account.kind === "imap") {
+      if (!b.host.capabilities.imap) throw new RpcError("UNAVAILABLE", L("errors.imapNeedsDesktop"));
+      if (!password) throw new RpcError("BAD_REQUEST", L("errors.passwordRequired"));
+      const config = (await b.store.accounts.config<ImapAccountConfig>(accountId))!.config;
+      try { await b.options.providers.verifyImap(config, password); } catch (error) { throw loginFailed("errors.couldNotConnectAccount", account.email, error); }
+      b.assertSignIn(accountId, flow);
+      blob = await encryptCredential(b, password);
+    } else {
+      result = await connectExistingGoogle(b, account, flow);
+      if (result.refreshToken !== null) blob = await encryptCredential(b, result.refreshToken);
+    }
+    b.assertSignIn(accountId, flow);
+    return await b.credentialFlow(accountId, flow, async () => {
+      await sameAccount(b, stamp, flow);
+      await b.dropAccount(accountId);
+      b.assertSignIn(accountId, flow);
+      const prepared = result ? await googleCredentialIntent(b, account, stamp, result, flow, blob) : { intent: { kind: "replace" as const, name: `account:${accountId}:password`, expectedBlob: await b.store.secrets.get(`account:${accountId}:password`), blob: blob! } };
+      await commitGoogleCredential(b, accountId, stamp, flow, prepared.intent);
+      if (prepared.pending && prepared.pending.proof.expiresAt <= Date.now()) throw invalidRenewal();
+      await b.signedIn(accountId, undefined, flow);
+      const current = await b.store.accounts.get(accountId);
+      b.assertSignIn(accountId, flow);
+      if (!current) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
+      b.startAccount(current);
+      return current;
+    });
+  } finally { await endSignIn(b, accountId, flow); }
+}
+
+/** Owner and exact credential expectation commit as one store transaction. */
+export async function changeOwnerTo(b: Backend, accountId: number, password: string | undefined): Promise<OwnerIdentity> {
+  const flow = beginSignIn(b, accountId);
+  try {
+    if (!b.canClaimOwner()) throw new RpcError("BAD_REQUEST", L("errors.demoNoOwner"));
+    const account = await b.store.accounts.get(accountId), stamp = await b.store.accounts.stamp(accountId);
+    b.assertSignIn(accountId, flow);
+    if (!account || !stamp) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
+    const config = (await b.store.accounts.config<Record<string, unknown>>(accountId))!.config;
+    if (config.demo) throw new RpcError("BAD_REQUEST", L("errors.demoAccountOwner"));
+    const current = await b.store.owner.get();
+    b.assertSignIn(accountId, flow);
+    if (current?.accountId === accountId) throw new RpcError("BAD_REQUEST", L("errors.alreadyOwner", { email: account.email }));
+    let claim: Omit<OwnerClaim, "accountId" | "email">;
+    let result: GmailConnectResult | undefined;
+    let blob: Uint8Array | undefined;
+    if (account.kind === "imap") {
+      if (!password) throw new RpcError("BAD_REQUEST", L("errors.passwordToVerify"));
+      try { await b.options.providers.verifyImap(config as unknown as ImapAccountConfig, password); } catch (error) { throw loginFailed("errors.couldNotVerifyAccount", account.email, error); }
+      b.assertSignIn(accountId, flow);
+      blob = await encryptCredential(b, password);
+      claim = imapClaim(account, config as unknown as ImapAccountConfig, (config as unknown as ImapAccountConfig).senderName || account.displayName);
+    } else {
+      result = await connectExistingGoogle(b, account, flow);
+      if (result.refreshToken !== null) blob = await encryptCredential(b, result.refreshToken);
+      claim = gmailClaim({ ...result, name: result.name || (config as unknown as GmailAccountConfig).senderName });
+    }
+    b.assertSignIn(accountId, flow);
+    return await b.credentialFlow(accountId, flow, async () => {
+      await sameAccount(b, stamp, flow);
+      await b.dropAccount(accountId);
+      b.assertSignIn(accountId, flow);
+      const prepared = result ? await googleCredentialIntent(b, account, stamp, result, flow, blob) : { intent: { kind: "replace" as const, name: `account:${accountId}:password`, expectedBlob: await b.store.secrets.get(`account:${accountId}:password`), blob: blob! } };
+      if (prepared.pending && prepared.pending.proof.expiresAt <= Date.now()) {
+        await commitGoogleCredential(b, accountId, stamp, flow, prepared.intent);
+        throw invalidRenewal();
+      }
+      let changed: boolean;
+      try { changed = await b.credentialWrite(accountId, flow, () => b.store.owner.change({ claim: { ...claim, accountId, email: account.email }, stamp, secret: prepared.intent, reason: current ? "changed by user" : "claimed by user", now: b.now() })); }
+      catch { b.assertSignIn(accountId, flow); throw persistenceFailed(); }
+      b.assertSignIn(accountId, flow);
+      if (!changed) { b.gmailRenewals.delete(accountId); throw persistenceFailed(); }
+      b.gmailRenewals.delete(accountId);
+      b.credentialStored(accountId, flow);
+      if (prepared.pending && prepared.pending.proof.expiresAt <= Date.now()) throw invalidRenewal();
+      await b.signedIn(accountId, undefined, flow);
+      await b.emitOwner();
+      b.assertSignIn(accountId, flow);
+      const owner = await b.store.owner.get();
+      b.assertSignIn(accountId, flow);
+      const fresh = await b.store.accounts.get(accountId);
+      b.assertSignIn(accountId, flow);
+      if (fresh) b.startAccount(fresh);
+      return owner!;
+    });
+  } finally { await endSignIn(b, accountId, flow); }
 }

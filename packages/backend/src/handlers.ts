@@ -511,7 +511,8 @@ export function createHandlers(b: Backend): Handlers {
         fetch: b.net.fetchFor("mail"),
       });
       googleFlowActive(b);
-      validateGoogleConnection(result, true);
+      validateGoogleConnection(result, "initial");
+      if (result.refreshToken === null) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
       const existing = (await store.accounts.list()).find((a) => a.email === result.email.toLowerCase());
       if (existing) throw new RpcError("BAD_REQUEST", L("errors.alreadyConnected", { email: result.email }));
       const config: GmailAccountConfig = { senderName: result.name || result.email };

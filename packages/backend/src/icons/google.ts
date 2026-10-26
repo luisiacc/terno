@@ -12,6 +12,7 @@ import { RpcError, type AppSettings, type GooglePhotoState } from "@terno/core/r
 import { L } from "@terno/i18n";
 import { CONTACTS_SCOPE, GMAIL_SCOPES, OTHER_CONTACTS_SCOPE } from "@terno/mail/portable";
 import type { BackendCore as Backend } from "../core";
+import { beginSignIn, endSignIn, encryptCredential, connectExistingGoogle, googleCredentialIntent, sameAccount, commitGoogleCredential } from "../identity";
 import { readSettings, setGooglePhotoState } from "../settings";
 
 const MAIL_SCOPE = "https://www.googleapis.com/auth/gmail.modify";
@@ -35,43 +36,55 @@ async function turnOn(b: Backend, accountId: number, state: GooglePhotoState): P
 
 /** icons.googlePhotos: off anywhere; on through Google's consent on desktop (the web uses authorizeGooglePhotos). */
 export async function setGooglePhotos(b: Backend, accountId: number, on: boolean): Promise<AppSettings> {
-  const account = await gmailAccount(b, accountId);
-  if (!on) {
-    await setGooglePhotoState(b.store, accountId, null);
-    await b.icons.dropPhotos(accountId);
-    return readSettings(b.store);
-  }
-  if (b.options.providers.gmailTokens) throw new RpcError("UNAVAILABLE", L("errors.gmailReconnectInBrowser"));
-  const settings = await readSettings(b.store);
-  if (!settings.gmailClientId) throw new RpcError("BAD_REQUEST", L("errors.gmailClientIdMissing"));
-  if (!b.options.openExternal) throw new RpcError("UNAVAILABLE", L("errors.googleConnectNeedsDesktop"));
-  const stamp = await b.store.accounts.stamp(accountId);
-  let result;
+  const flow = beginSignIn(b, accountId);
   try {
-    result = await b.options.providers.connectGmail({
-      clientId: settings.gmailClientId,
-      clientSecret: await b.getSecret("gmailClientSecret"),
-      openExternal: b.options.openExternal,
-      signal: b.abort.signal,
-      fetch: b.net.fetchFor("mail"),
-      loginHint: account.email,
-      scopes: [...GMAIL_SCOPES, ...PHOTO_SCOPES],
+    const account = await gmailAccount(b, accountId);
+    const stamp = await b.store.accounts.stamp(accountId);
+    b.assertSignIn(accountId, flow);
+    if (!stamp) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
+    if (!on) return await b.credentialFlow(accountId, flow, async () => {
+      await sameAccount(b, stamp, flow);
+      await b.credentialWrite(accountId, flow, () => setGooglePhotoState(b.store, accountId, null));
+      b.assertSignIn(accountId, flow);
+      await b.icons.dropPhotos(accountId);
+      b.assertSignIn(accountId, flow);
+      return readSettings(b.store);
     });
-  } catch (error) {
-    throw new RpcError("BAD_REQUEST", messageOf(error));
-  }
-  // nothing changes unless it's the same mailbox and mail is still covered
-  if (result.email.toLowerCase() !== account.email.toLowerCase()) throw new RpcError("BAD_REQUEST", L("errors.googleConnectedOther", { got: result.email, expected: account.email }));
-  const granted = result.grantedScopes ?? [];
-  if (!granted.includes(MAIL_SCOPE)) throw new RpcError("BAD_REQUEST", L("errors.icons.mailScopeLost"));
-  const now = await b.store.accounts.stamp(accountId);
-  if (!stamp || !now || now.createdAt !== stamp.createdAt || now.email !== stamp.email) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
-  // the provider holds an access token for the old grant: it starts again on the new one
-  await b.dropAccount(accountId);
-  await b.setSecret(`account:${accountId}:refreshToken`, result.refreshToken);
-  await b.signedIn(accountId);
-  b.startAccount((await b.store.accounts.get(accountId))!);
-  return turnOn(b, accountId, stateFrom(granted));
+    const result = await connectExistingGoogle(b, account, flow, [...GMAIL_SCOPES, ...PHOTO_SCOPES]);
+    const granted = result.grantedScopes ?? [];
+    if (!granted.includes(MAIL_SCOPE) && !granted.includes("https://mail.google.com/")) throw new RpcError("BAD_REQUEST", L("errors.icons.mailScopeLost"));
+    const wanted = PHOTO_SCOPES.filter((scope) => granted.includes(scope));
+    const blob = result.refreshToken === null ? undefined : await encryptCredential(b, result.refreshToken);
+    b.assertSignIn(accountId, flow);
+    return await b.credentialFlow(accountId, flow, async () => {
+      await sameAccount(b, stamp, flow);
+      await b.dropAccount(accountId);
+      b.assertSignIn(accountId, flow);
+      const prepared = await googleCredentialIntent(b, account, stamp, result, flow, blob);
+      let photoFailed = false;
+      if (prepared.pending) {
+        try {
+          if (!wanted.length || prepared.pending.proof.expiresAt <= Date.now()) throw new Error();
+          const proved = await prepared.pending.proof.provePhotos(wanted, AbortSignal.any([b.abort.signal, flow.signal]));
+          if (!wanted.every((scope) => proved.includes(scope))) throw new Error();
+        } catch { photoFailed = true; }
+        b.assertSignIn(accountId, flow);
+      }
+      // Mail identity is proven independently: do not lose its rotation when optional contacts access fails.
+      await commitGoogleCredential(b, accountId, stamp, flow, prepared.intent);
+      if (photoFailed || (prepared.pending && prepared.pending.proof.expiresAt <= Date.now())) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
+      await b.signedIn(accountId, undefined, flow);
+      const current = await b.store.accounts.get(accountId);
+      b.assertSignIn(accountId, flow);
+      if (!current) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
+      b.startAccount(current);
+      await b.credentialWrite(accountId, flow, () => setGooglePhotoState(b.store, accountId, stateFrom(granted)));
+      b.assertSignIn(accountId, flow);
+      await b.icons.syncPeople(accountId, stateFrom(granted), flow.signal);
+      b.assertSignIn(accountId, flow);
+      return readSettings(b.store);
+    });
+  } finally { await endSignIn(b, accountId, flow); }
 }
 
 /** icons.authorizeGoogle (web): the token must open this account's mailbox and still cover mail; it never creates one. */
