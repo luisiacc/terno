@@ -34,8 +34,15 @@ export function autoRecipients(mode: Exclude<DraftMode, "new">, detail: ThreadDe
   if (mode === "forward") return { to: [], cc: [] };
   const last = answered(detail);
   const mine = me.toLowerCase();
-  const to = last.isSent ? last.to : [last.from];
-  const cc = mode === "replyAll" ? [...last.to, ...last.cc].filter((a) => a.email.toLowerCase() !== mine && !to.some((r) => r.email.toLowerCase() === a.email.toLowerCase())) : [];
+  const seen = new Set<string>();
+  const unique = (addresses: Address[], excludeMe: boolean) => addresses.filter((a) => {
+    const key = a.email.toLowerCase();
+    if ((excludeMe && key === mine) || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const to = unique(last.isSent ? last.to : last.replyTo?.length ? last.replyTo : [last.from], !last.isSent);
+  const cc = mode === "replyAll" ? unique([...last.to, ...last.cc], true) : [];
   return { to, cc };
 }
 

@@ -62,3 +62,12 @@ IMAP red: the synthetic real ImapKit sync case returned `replyTo: []` instead of
 Composer red: 6 new unit cases failed (From selected, duplicates retained, wrong conversion). Green: 15 tests pass after recipient selection/deduplication; no strings changed. Draft lifecycle coverage on SQL and IDB passes 4 cases for reply/reply-all, save/reopen, format-2 backup restore, auto markers, exact queued envelope and explicit-vs-original Bcc. Source mailbox content is intentionally absent from app.export.
 
 Plan critique completed, final distinct Codex code review remains parent-owned. Broader targeted suites and UI verification in progress.
+
+
+### Composer and UI validation
+
+`E2E_PORT=55984 pnpm --filter @terno/web exec playwright test reply-to.spec.ts --project=e2e --project=e2e-lumen --project=e2e-atelier --workers=1`: **12 passed** (reply/reply-all × light/dark × macOS/Lumen/Atelier). Assertions compare the visible To/Cc fields, persisted send payload, delivered MIME headers and real SMTP envelope; original Bcc is absent. Screenshots were captured and inspected in all six design/theme combinations: recipients fit, quoted comma names remain intact, and Cc is visible. Retained copies: `/tmp/terno-reply-visual/`.
+
+Typecheck and lint passed. The ten-file targeted unit run finished with **598 passed, 2 skipped, 1 failed**: pre-existing exact-scan IndexedDB search `-factura` exceeded 20 s; an initial focused rerun also timed out. No search query or index code changes in this slice. Further isolation is in progress; this is not claimed as a clean full unit gate. The SQLite-WASM equivalents (ingest, migrations and shared conformance) passed all **175 tests**.
+
+Initial e2e harness errors were corrected: backend theme changes require reload (matching existing tests), and `ops.recent` intentionally omits completed operations older than the real clock while e2e backend time is fixed. The final test uses the public debug snapshot plus `ops.get` and passes. These were test setup failures, not production fixes.
