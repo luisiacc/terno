@@ -53,3 +53,25 @@ Read-only Codex CLI critique completed (12 concrete points, /tmp/terno-plan28-cr
 10. Preserve superseded desktop ownership and add backend shutdown checks after provider/encryption awaits before persistence.
 11. Derive browser expiration from receipt time, preserve existing RPC 60–86,400 second limits and reject expired inspection results before installation.
 12. Parent must add token_type: Bearer to FakeGoogle's authorization-code success fixture. Public-seam assertions cover unchanged owner/accounts/credentials, closed listener and no installation/encryption after refusal.
+
+
+## Implementation and verification: mail flow
+
+Implemented an absolute desktop deadline from entry, including callback-page setup and complete token/profile/userinfo requests; a 30-second browser inspection deadline; external abort propagation; streamed 64 KiB JSON caps; status-first failures; late-response/body cancellation and reader release; listener/socket teardown; and fixed privacy-safe errors. Token responses require Bearer and valid token/lifetime/scope shapes. Effective scopes preserve the authorization-request snapshot only when scope is absent. Gmail identity uses core.isValidEmail plus length/control checks and requires a valid stable subject; optional claims remain optional with strict types and matching email when supplied. Refresh classification/provider code is unchanged.
+
+Public-seam red/green observations (`pnpm exec vitest run --project unit packages/mail/src/gmail-auth.test.ts`):
+
+- Omitted scope: red returned []; green retains the requested grant.
+- Explicit reduced scope: red connected; green refuses before profile lookup with actionable mail-permission copy.
+- Token shapes: seven red cases exposed coercions/property errors or acceptance; green uses the fixed invalid-response error.
+- Token body deadline: red still waited 500 ms after a 100 ms budget; green times out and cancels/releases the body. Header/body stalls at every stage, cumulative timeout, external abort, late responses, 64 KiB overflow and HTTP status classification also pass.
+- Identity: nine red cases accepted missing/numeric mailbox or subject, invalid optional fields and a mismatched mailbox; green refuses. Separate red control-character and address-delimiter cases are fixed using the existing core email validator.
+- Missing callback code and blank browser token: red proceeded; green refuses before exchange/network. Forged-state recovery, denial, unknown-error privacy, callback listener closure and partial-socket cancellation pass.
+
+Mail validation: 60 auth tests plus the existing compose-portable tests pass; @terno/mail typecheck and targeted oxlint pass. New error keys were committed with plan/spec separately, including the parent's reserved errors.gmail.invalidResponse key with its exact requested English/Spanish copy.
+
+## Integration notes
+
+Parent patch required in packages/mail/src/types.ts: extend GmailTokenBroker.inspect(accessToken, netFetch, options?: { signal?: AbortSignal; timeoutMs?: number }). Optionally clarify GmailConnectResult.grantedScopes's comment to describe effective scopes when the response omits scope. Parent must add token_type: "Bearer" to FakeGoogle's authorization-code success fixture. No shared type or fixture files were edited here.
+
+Full unit/WASM, e2e/web/UI perf, packaged macOS smoke and the independent final Codex review are owned by parent integration. No UI layout changed. All tests use synthetic responses and temporary databases; no real profiles, secrets or live provider requests were used. Outlook and refresh rotation/persistence CAS remain deferred.

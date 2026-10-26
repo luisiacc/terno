@@ -3,6 +3,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { DEFAULT_LOCALE, L, LOCALE_IDS, LOCALES } from "@terno/i18n";
 import { buildRaw } from "./compose";
+import { readGoogleIdentity, withGoogleSignIn } from "./gmail-web";
 import { isFetchNetworkFailure } from "./net-errors";
 import { createGmailApiProvider, GMAIL_SCOPES as SCOPES, GOOGLE_ENDPOINTS, type GmailEndpoints } from "./gmail-api";
 import { ProviderAuthError, ProviderError, type GmailConnectResult, type MailProvider, type ProviderContext } from "./types";
@@ -53,73 +54,85 @@ export async function callbackPage(): Promise<(ok: boolean, msg: CallbackKey) =>
  * a random state. The redirect is accepted only with the matching state.
  */
 export async function connectGmail(options: ConnectOptions): Promise<GmailConnectResult> {
-  const ep = { ...GOOGLE_ENDPOINTS, ...options.endpoints };
-  const netFetch = options.fetch;
-  const verifier = b64url(randomBytes(48));
-  const challenge = b64url(createHash("sha256").update(verifier).digest());
-  const state = b64url(randomBytes(24));
-  const page = await callbackPage();
-  let server: Server | null = null;
-  try {
-    const code = await new Promise<{ code: string; redirectUri: string }>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new ProviderError(L("errors.google.timedOut"), false)), options.timeoutMs ?? 300_000);
-      // a newer sign-in (plan 25) or a quit: nothing of this flow stays (its page listener closes below, its timer here)
-      const cancel = () => {
-        clearTimeout(timer);
-        reject(new ProviderError(L("errors.google.cancelled"), false));
-      };
-      if (options.signal?.aborted) cancel();
-      else options.signal?.addEventListener("abort", cancel, { once: true });
-      server = createServer((req, res) => {
-        const url = new URL(req.url ?? "/", "http://127.0.0.1");
-        if (url.pathname !== "/callback") return void res.writeHead(404).end();
-        const done = (ok: boolean, msg: CallbackKey) => {
-          res.writeHead(ok ? 200 : 400, { "content-type": "text/html; charset=utf-8" });
-          res.end(page(ok, msg));
-        };
-        if (url.searchParams.get("state") !== state) {
-          done(false, "backend.oauth.invalid");
-          return; // ignore forged/stale redirects, keep waiting for the real one
-        }
-        clearTimeout(timer);
-        const error = url.searchParams.get("error");
-        if (error) {
-          done(false, "backend.oauth.denied");
-          reject(new ProviderError(error === "access_denied" ? L("errors.google.denied") : L("errors.google.error", { code: error }), false));
-          return;
-        }
-        done(true, "backend.oauth.back");
-        const port = (server!.address() as AddressInfo).port;
-        resolve({ code: url.searchParams.get("code") ?? "", redirectUri: `http://127.0.0.1:${port}/callback` });
-      });
-      server.listen(0, "127.0.0.1", () => {
-        const port = (server!.address() as AddressInfo).port;
-        const params = new URLSearchParams({
-          client_id: options.clientId,
-          redirect_uri: `http://127.0.0.1:${port}/callback`,
-          response_type: "code",
-          scope: (options.scopes ?? SCOPES).join(" "),
-          code_challenge: challenge,
-          code_challenge_method: "S256",
-          state,
-          access_type: "offline",
-          prompt: "consent",
+  return withGoogleSignIn({ fetch: options.fetch, signal: options.signal, timeoutMs: options.timeoutMs ?? 300_000 }, async (flow) => {
+    const ep = { ...GOOGLE_ENDPOINTS, ...options.endpoints };
+    const requestedScopes = [...(options.scopes ?? SCOPES)];
+    const verifier = b64url(randomBytes(48));
+    const challenge = b64url(createHash("sha256").update(verifier).digest());
+    const state = b64url(randomBytes(24));
+    const page = await flow.wait(callbackPage());
+    let server: Server | null = null;
+    try {
+      let settled = false;
+      const code = await flow.wait(new Promise<{ code: string; redirectUri: string }>((resolve, reject) => {
+        server = createServer((req, res) => {
+          const url = new URL(req.url ?? "/", "http://127.0.0.1");
+          if (url.pathname !== "/callback") return void res.writeHead(404).end();
+          const done = (ok: boolean, msg: CallbackKey) => {
+            res.writeHead(ok ? 200 : 400, { "content-type": "text/html; charset=utf-8" });
+            res.end(page(ok, msg));
+          };
+          if (url.searchParams.get("state") !== state) {
+            done(false, "backend.oauth.invalid");
+            return; // ignore forged/stale redirects, keep waiting for the real one
+          }
+          if (settled) return void res.writeHead(409).end();
+          settled = true;
+          const error = url.searchParams.get("error");
+          if (error) {
+            done(false, "backend.oauth.denied");
+            reject(new ProviderError(error === "access_denied" ? L("errors.google.denied") : L("errors.google.invalidResponse"), false));
+            return;
+          }
+          const authorizationCode = url.searchParams.get("code");
+          if (!authorizationCode?.trim() || url.searchParams.getAll("code").length !== 1) {
+            done(false, "backend.oauth.invalid");
+            reject(new ProviderError(L("errors.google.invalidResponse"), false));
+            return;
+          }
+          done(true, "backend.oauth.back");
+          const port = (server!.address() as AddressInfo).port;
+          resolve({ code: authorizationCode, redirectUri: `http://127.0.0.1:${port}/callback` });
         });
-        if (options.loginHint) params.set("login_hint", options.loginHint);
-        void options.openExternal(`${ep.auth}?${params}`).catch(reject);
-      });
-    });
-    const body = new URLSearchParams({ client_id: options.clientId, code: code.code, code_verifier: verifier, grant_type: "authorization_code", redirect_uri: code.redirectUri });
-    if (options.clientSecret) body.set("client_secret", options.clientSecret);
-    const tokenRes = await netFetch(ep.token, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body });
-    const tokens = (await tokenRes.json()) as { access_token?: string; refresh_token?: string; scope?: string; error?: string };
-    if (!tokenRes.ok || !tokens.access_token || !tokens.refresh_token) throw new ProviderError(L("errors.google.signInFailed", { detail: tokens.error ?? tokenRes.status }), false);
-    const profile = (await (await netFetch(`${ep.api}/profile`, { headers: { authorization: `Bearer ${tokens.access_token}` } })).json()) as { emailAddress: string };
-    const info = (await netFetch(ep.userinfo, { headers: { authorization: `Bearer ${tokens.access_token}` } }).then((r) => (r.ok ? r.json() : {})).catch(() => ({}))) as { name?: string; sub?: string; email_verified?: boolean };
-    return { email: profile.emailAddress, name: info.name ?? "", refreshToken: tokens.refresh_token, sub: info.sub ?? null, emailVerified: info.email_verified === true, grantedScopes: (tokens.scope ?? "").split(/\s+/).filter(Boolean) };
-  } finally {
-    (server as Server | null)?.close();
-  }
+        server.on("error", reject);
+        server.listen(0, "127.0.0.1", () => {
+          if (flow.signal.aborted) return;
+          const port = (server!.address() as AddressInfo).port;
+          const params = new URLSearchParams({
+            client_id: options.clientId,
+            redirect_uri: `http://127.0.0.1:${port}/callback`,
+            response_type: "code",
+            scope: requestedScopes.join(" "),
+            code_challenge: challenge,
+            code_challenge_method: "S256",
+            state,
+            access_type: "offline",
+            prompt: "consent",
+          });
+          if (options.loginHint) params.set("login_hint", options.loginHint);
+          void Promise.resolve().then(() => options.openExternal(`${ep.auth}?${params}`)).catch(reject);
+        });
+      }));
+      const body = new URLSearchParams({ client_id: options.clientId, code: code.code, code_verifier: verifier, grant_type: "authorization_code", redirect_uri: code.redirectUri });
+      if (options.clientSecret) body.set("client_secret", options.clientSecret);
+      const tokens = await flow.json(ep.token, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body });
+      if (typeof tokens.access_token !== "string" || !/^[\x21-\x7e]+$/.test(tokens.access_token) ||
+        typeof tokens.refresh_token !== "string" || !/^[\x21-\x7e]+$/.test(tokens.refresh_token) ||
+        typeof tokens.token_type !== "string" || tokens.token_type.toLowerCase() !== "bearer" ||
+        (tokens.expires_in !== undefined && (typeof tokens.expires_in !== "number" || !Number.isFinite(tokens.expires_in) || tokens.expires_in <= 0)) ||
+        (tokens.scope !== undefined && typeof tokens.scope !== "string")) throw new ProviderError(L("errors.google.invalidResponse"), false);
+      const grantedScopes = tokens.scope === undefined ? requestedScopes : tokens.scope.split(/\s+/).filter(Boolean);
+      if (!grantedScopes.includes("https://www.googleapis.com/auth/gmail.modify") && !grantedScopes.includes("https://mail.google.com/")) throw new ProviderError(L("errors.google.mailScopeRequired"), false);
+      const identity = await readGoogleIdentity(tokens.access_token, ep, flow);
+      return { ...identity, refreshToken: tokens.refresh_token, grantedScopes };
+    } finally {
+      const listener = server as Server | null;
+      if (listener) {
+        listener.closeAllConnections();
+        await new Promise<void>((resolve) => listener.close(() => resolve()));
+      }
+    }
+  });
 }
 
 // ───────────────────────────── provider (refresh token) ─────────────────────────────
