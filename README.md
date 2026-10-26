@@ -289,7 +289,7 @@ packages/mock-data Deterministic mock mailbox generator
 
 ## Contributing
 
-Terno has one maintainer, so pull requests need to be focused and come with evidence. Read [CONTRIBUTING.md](CONTRIBUTING.md) before you start: it says what is likely to be accepted, when to open an issue first, and how to show that a change works. Bugs and ideas go in [issues](https://github.com/luisiacc/terno/issues).
+Contributions are welcome! Have a look at [CONTRIBUTING.md](CONTRIBUTING.md) before you start: it covers what tends to land, when to open an issue first, and how to show that a change works. Bugs and ideas go in [issues](https://github.com/luisiacc/terno/issues).
 
 ## License
 
