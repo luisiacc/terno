@@ -1163,6 +1163,8 @@ It contains none of your mail, contacts, settings or keys.
   "errors.gmailReconnectInBrowser": "In the browser, Gmail reconnects through the Google window.",
   "errors.googleConnectNeedsDesktop": "Connecting with Google needs the desktop app.",
   "errors.googleVerifyNeedsDesktop": "Verifying with Google needs the desktop app.",
+  "errors.icons.notGmail": "Photos from Google are for Gmail accounts.",
+  "errors.icons.mailScopeLost": "Google didn’t keep Terno’s access to this mailbox, so nothing changed. Try again and leave “Read, compose and send emails” ticked.",
   "errors.googleConnectedOther": "Google connected {got}, not {expected}. Choose that account in the Google window.",
   "errors.googleVerifiedOther": "Google verified {got}, not {expected}. Choose that account in the Google window.",
   "errors.demoNoOwner": "Demo mode has no Terno account.",
@@ -1208,6 +1210,7 @@ It contains none of your mail, contacts, settings or keys.
   "errors.net.redirectNowhere": "{from} answered with a redirect: Terno doesn’t follow redirects for requests that carry your API key. Check the server URL in Settings → AI.",
   "errors.net.localModeBlocks": "Local mode blocks “{purpose}” connections ({host}).",
   "errors.net.localModeCloudAi": "Local mode doesn’t allow cloud AI ({host}). Turn it off in Settings → General to use it.",
+  "errors.net.iconsOff": "Website icons are off ({host}).",
   "errors.net.localModeNotLocal": "Local mode only allows AI on this Mac; {host} isn’t a local address.",
   // AI
   "errors.ai.notConfigured": "Connect an AI in Settings → AI to create filters with AI.",

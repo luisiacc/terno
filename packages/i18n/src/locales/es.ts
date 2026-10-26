@@ -1156,6 +1156,8 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.gmailReconnectInBrowser": "En el navegador, Gmail se reconecta con la ventana de Google.",
   "errors.googleConnectNeedsDesktop": "Conectar con Google necesita la app de escritorio.",
   "errors.googleVerifyNeedsDesktop": "Verificar con Google necesita la app de escritorio.",
+  "errors.icons.notGmail": "Las fotos de Google son para cuentas de Gmail.",
+  "errors.icons.mailScopeLost": "Google no mantuvo el acceso de Terno a este buzón, así que no cambió nada. Inténtalo de nuevo y deja marcado «Leer, redactar y enviar correos».",
   "errors.googleConnectedOther": "Google conectó {got}, no {expected}. Elige esa cuenta en la ventana de Google.",
   "errors.googleVerifiedOther": "Google verificó {got}, no {expected}. Elige esa cuenta en la ventana de Google.",
   "errors.demoNoOwner": "El modo demo no tiene cuenta de Terno.",
@@ -1201,6 +1203,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.net.redirectNowhere": "{from} respondió con una redirección: Terno no sigue redirecciones de peticiones que llevan tu API key. Revisa la URL del servidor en Ajustes → IA.",
   "errors.net.localModeBlocks": "El modo local bloquea las conexiones de tipo «{purpose}» ({host}).",
   "errors.net.localModeCloudAi": "El modo local no permite IA en la nube ({host}). Desactívalo en Ajustes → General para usarla.",
+  "errors.net.iconsOff": "Los íconos de sitios web están desactivados ({host}).",
   "errors.net.localModeNotLocal": "El modo local solo permite IA en este Mac; {host} no es una dirección local.",
   // AI
   "errors.ai.notConfigured": "Conecta una IA en Ajustes → IA para crear filtros con IA.",

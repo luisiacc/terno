@@ -3,6 +3,7 @@ import { nodePlatform, openDatabase, SqlMailStore } from "@terno/db";
 import type { MailStore } from "@terno/store";
 import { BackendCore, type BackendCoreOptions } from "./core";
 import type { LookupAll } from "./net-policy";
+import { nodeIconTransport } from "./icons/node-transport";
 
 export * from "./core";
 
@@ -58,6 +59,8 @@ export class Backend extends BackendCore {
         log: (level, message, extra) => options.log?.(level, message, extra),
       });
     }
-    super({ ...options, store, platform, lookup: options.lookup ?? nodeLookup, onNetworkReset: options.onNetworkReset ?? resetFetchSockets });
+    // plan 22: website icons over node:https (public addresses only) unless the host says otherwise (null: none)
+    const iconTransport = options.iconTransport === undefined ? nodeIconTransport() : options.iconTransport;
+    super({ ...options, store, platform, lookup: options.lookup ?? nodeLookup, onNetworkReset: options.onNetworkReset ?? resetFetchSockets, iconTransport });
   }
 }

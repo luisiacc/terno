@@ -14,7 +14,9 @@ import { createHandlers } from "./handlers";
 import { restorePending } from "./import";
 import { blobFingerprint, migrateLegacySecrets, readKeychainState, SecretUnreadableError, type LegacySecretReader } from "./keychain";
 import { createNetworkPolicy, type LookupAll, type NetworkPolicy } from "./net-policy";
-import { readAutoCategorize, readComposeSuggestions, readLocalMode, readPolicy, readSettings } from "./settings";
+import { readAutoCategorize, readComposeSuggestions, readGooglePhotos, readLocalMode, readPolicy, readSettings, readSiteIcons, setGooglePhotoState } from "./settings";
+import { IconService } from "./icons/service";
+import type { IconTransport } from "./icons/transport";
 import { BULK_SLICE, SliceSizer, type SliceBudget } from "./slicer";
 
 export interface SecretCipher {
@@ -72,6 +74,10 @@ export interface BackendCoreOptions {
   onNetworkReset?: () => void;
   /** tests: the retry schedule, the offline probe and the settle delay (see connectivity.ts) */
   connectivity?: Pick<ConnectivityOptions, "delays" | "offlineRetryMs" | "settleMs" | "random">;
+  /** plan 22: how website icons are fetched (Node: node-transport.ts); none: this host shows no website icons (the web) */
+  iconTransport?: IconTransport | null;
+  /** tests: the icon fetcher's deadlines */
+  iconTimeouts?: { requestMs?: number; budgetMs?: number };
 }
 
 const COUNTS_EVERY_MS = 200;
@@ -156,6 +162,8 @@ export class BackendCore {
   readonly autocomplete: Autocomplete;
   /** plan 20: retries, offline and network changes */
   readonly connectivity: Connectivity;
+  /** plan 22: sender icons (website icons and Google photos), idle until the first lookup */
+  readonly icons: IconService;
   private warming: Promise<void> | null = null;
   private idleTimer: ReturnType<typeof setInterval> | null = null;
   /** auto-filed threads waiting to be announced, per category */
@@ -167,7 +175,7 @@ export class BackendCore {
     this.options = { now: Date.now, sliceBudgetMs: 8, syncIntervalMs: 120_000, ...defined };
     this.platform = options.platform;
     this.store = options.store;
-    this.net = createNetworkPolicy({ localMode: () => readLocalMode(this.store), lookup: options.lookup });
+    this.net = createNetworkPolicy({ localMode: () => readLocalMode(this.store), siteIcons: () => readSiteIcons(this.store), lookup: options.lookup });
     this.aiService = new AiService(this, options.aiFactory ?? defaultAiFactory);
     this.categorizer = new Categorizer(this);
     this.aiAssist = new AiAssist(this);
@@ -193,6 +201,24 @@ export class BackendCore {
       },
       { online: options.online, now: () => this.now(), retries: options.autoSync !== false, ...options.connectivity },
     );
+    this.icons = new IconService({
+      transport: options.iconTransport ?? null,
+      files: this.platform.files,
+      base: this.store.autocomplete.snapshotBase,
+      web,
+      now: () => this.now(),
+      assertSite: async (url) => void (await this.net.assert("icons", url)),
+      photoFetch: this.net.fetchFor("mail"),
+      siteIconsOn: () => readSiteIcons(this.store),
+      googlePhotos: () => readGooglePhotos(this.store),
+      setGooglePhotoState: (accountId, state) => setGooglePhotoState(this.store, accountId, state),
+      accountEmail: async (accountId) => (await this.store.accounts.get(accountId))?.email ?? null,
+      provider: (accountId) => this.provider(accountId),
+      // the people's pictures are for the user's own windows, never for agents
+      emit: (payload) => this.server.emit("icons", payload, { origins: ["renderer", "dev"] }),
+      timeouts: options.iconTimeouts,
+    });
+    if (options.online === false) this.icons.network(false);
     this.ready = this.init();
     this.server = new RpcServer(createHandlers(this), {
       onError: (error, method, payload) => {
@@ -215,7 +241,9 @@ export class BackendCore {
   agents: { connected(): number; tokenSince(): number; rotate(): { disconnected: number; tokenSince: number } } | null = null;
 
   get host(): HostInfo {
-    return this.options.host ?? FULL_HOST;
+    const host = this.options.host ?? FULL_HOST;
+    // plan 22: website icons where there is a way to fetch them
+    return { ...host, capabilities: { ...host.capabilities, siteIcons: !!this.options.iconTransport } };
   }
 
   private async init(): Promise<void> {
@@ -312,6 +340,7 @@ export class BackendCore {
     if (this.stopped) return;
     log.info("net.changed", { netReason: reason, online: true });
     this.options.onNetworkReset?.();
+    this.icons.network(true);
     for (const p of this.providers.values()) void p.then((provider) => provider?.reset?.(), () => {});
     for (const account of await this.store.accounts.list()) if (!this.unwatch.has(account.id)) this.watchAccount(account.id);
     await this.store.ops.resumeNetwork(null, this.now());
@@ -323,6 +352,7 @@ export class BackendCore {
   private async wentOffline(): Promise<void> {
     if (this.stopped) return;
     log.info("net.changed", { netReason: "offline", online: false });
+    this.icons.network(false);
     for (const off of this.unwatch.values()) off();
     this.unwatch.clear();
     if (this.workerTimer) clearTimeout(this.workerTimer);
@@ -399,6 +429,8 @@ export class BackendCore {
     await this.ready.catch(() => {});
     // its snapshots are written before the store closes under them
     await this.autocomplete.close().catch(() => {});
+    // fetches in flight aborted, the icon index and the photo lists written
+    await this.icons.close().catch(() => {});
     try {
       await this.categorizer.persist();
     } catch (error) {

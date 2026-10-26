@@ -464,6 +464,9 @@ importers:
       '@terno/store':
         specifier: workspace:*
         version: link:../store
+      tldts:
+        specifier: 7.4.19
+        version: 7.4.19
       ws:
         specifier: ^8.22.0
         version: 8.22.0

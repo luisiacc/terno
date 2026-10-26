@@ -119,7 +119,35 @@ export interface AppSettings {
   language: LanguageSetting;
   /** plan 18: ghost text while writing, learned from the user's sent mail on this device (recipients are always suggested) */
   composeSuggestions: boolean;
+  /**
+   * Plan 22: website icons for senders, loaded from each sender's own site. Unset it follows the
+   * mode (on in connected mode, off in local mode); the user's choice sticks.
+   */
+  senderIcons: boolean;
+  /** plan 22: Gmail accounts showing photos from Google, by account id (set through icons.googlePhotos, never settings.update) */
+  googlePhotos: Record<string, GooglePhotoState>;
 }
+
+/** Plan 22: what Google granted an account for photos (each contacts scope on its own), and whether its project's People API is off. */
+export interface GooglePhotoState {
+  connections: boolean;
+  otherContacts: boolean;
+  apiDisabled: boolean;
+}
+
+/** Plan 22: an icon the backend has for an address: `id` names its bytes (icons.data), `v` changes when they do. */
+export interface IconRef {
+  id: string;
+  v: number;
+  kind: "site" | "photo";
+  /** the smaller side in px (SVG: 512) */
+  px: number;
+  /** drawn edge to edge (photos, touch icons); otherwise centered on a tile */
+  full: boolean;
+}
+
+/** An address's icon, none (initials), or "again": dropped from a full queue, ask again while it's still shown. */
+export type IconAnswer = IconRef | null | "again";
 
 /** The person this install belongs to (the future Terno account). Verification evidence stays in the backend. */
 export interface OwnerIdentity {
@@ -147,6 +175,8 @@ export interface HostCapabilities {
   backgroundSync: boolean;
   /** how local mode is enforced: "pinned" = names resolved and pinned, the renderer fenced by main; "browser" = only literal loopback hosts, no pinning, nothing outside Terno's own requests */
   network: "pinned" | "browser";
+  /** plan 22: website icons can be fetched (desktop; a browser can't read other sites' icons) */
+  siteIcons?: boolean;
 }
 
 export interface HostInfo {
@@ -330,6 +360,7 @@ const settingsPatch = z.object({
   errorReports: z.enum(["ask", "always", "never"]).optional(),
   language: z.enum(LANGUAGE_SETTINGS).optional(),
   composeSuggestions: z.boolean().optional(),
+  senderIcons: z.boolean().optional(),
 });
 export type SettingsPatch = z.output<typeof settingsPatch>;
 export { settingsPatch as settingsPatchSchema, draftAddress as draftAddressSchema };
@@ -687,6 +718,20 @@ export const contract = {
   "sync.now": m<{ ok: true }>()(z.object({ accountId: id.optional(), reason: z.enum(["user", "focus"]).default("user") })),
   /** the web page's online/offline events (desktop's main tells the backend directly) */
   "sync.network": m<{ ok: true }>()(z.object({ online: z.boolean() })),
+
+  /** plan 22: the icons for addresses on screen; an address missing from the answer is on its way (the `icons` event) */
+  "icons.lookup": m<Record<string, IconAnswer>>()(z.object({ emails: z.array(z.string().max(320)).max(200) })),
+  /** plan 22: icons' bytes as data: URLs (null: gone) */
+  "icons.data": m<Record<string, string | null>>()(z.object({ ids: z.array(z.string().max(300)).max(50) })),
+  /** plan 22: "Forget saved icons" */
+  "icons.forget": m<{ ok: true }>()(empty),
+  /** plan 22: photos from Google for a Gmail account, on (desktop: Google's consent in the browser) or off */
+  "icons.googlePhotos": m<AppSettings>()(z.object({ accountId: id, on: z.boolean() }), { timeoutMs: 300_000 }),
+  /** plan 22, web: the token Google's consent gave for that account's photos (refused unless it opens the same mailbox) */
+  "icons.authorizeGoogle": m<AppSettings>()(
+    z.object({ accountId: id, accessToken: z.string().min(1).max(4096), expiresIn: z.number().int().min(60).max(86_400), scope: z.string().max(2000) }),
+    { timeoutMs: 120_000 },
+  ),
 } as const;
 
 export type Contract = typeof contract;
@@ -709,5 +754,7 @@ export interface Events {
   drafts: { reason: "import" };
   /** the engine filed new mail on its own (coalesced per category, at most every 30 s) */
   categorized: { categoryId: number; threadIds: number[]; by: "auto" };
+  /** plan 22: icons that arrived for addresses asked about; `reset`: forget every icon (turned off, forgotten) */
+  icons: { icons: Record<string, IconAnswer>; reset?: boolean };
 }
 export type EventName = keyof Events;
