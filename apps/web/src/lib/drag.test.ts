@@ -157,3 +157,27 @@ describe("DragController", () => {
     ]);
   });
 });
+
+describe("a category that is a target twice (plan 24: its sidebar item and its List tab)", () => {
+  // category 1 in the sidebar (at 0) and as a tab (at 1), side by side
+  const TWICE: TargetRect[] = [
+    { id: 1, at: 0, left: 0, right: 200, top: 100, bottom: 128 },
+    { id: 1, at: 1, left: 400, right: 480, top: 40, bottom: 72 },
+  ];
+
+  it("moving from one to the other is a target change (the drop flies to the one under the pointer)", () => {
+    const seen: [number | null, number | undefined][] = [];
+    const drops: [number, number | undefined][] = [];
+    const { ctl } = setup({ targets: () => TWICE, target: (id, _s, at) => seen.push([id, at]), drop: (id, _ids, at) => drops.push([id, at]) });
+    ctl.down(11, { x: 300, y: 300 });
+    ctl.move({ x: 300, y: 310 });
+    ctl.move({ x: 50, y: 110 });
+    ctl.move({ x: 440, y: 50 });
+    ctl.up({ x: 440, y: 50 });
+    expect(seen).toEqual([
+      [1, 0],
+      [1, 1],
+    ]);
+    expect(drops).toEqual([[1, 1]]);
+  });
+});

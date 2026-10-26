@@ -32,18 +32,48 @@ const row = (id: number) => {
   return items[index.get(id) ?? -1];
 };
 const scroller = () => document.querySelector<HTMLElement>("[data-drop-scroll]");
+/** every container targets scroll in (the sidebar's nav; the List layout's tab strip when it scrolls) */
+const scrollers = () => document.querySelectorAll<HTMLElement>("[data-drop-scroll]");
 
-function measureTargets(): TargetRect[] {
-  const clip = scroller()?.getBoundingClientRect();
+/** the elements measured at drag start, by TargetRect.at (the drop flies to the one it landed on) */
+let measured: HTMLElement[] = [];
+
+/**
+ * The targets, each clipped to its own scrolling container (plan 24: a tab
+ * above the sidebar's nav isn't clipped by the nav), skipping what's
+ * scrolled out of view or inside something hidden (an inert page cover).
+ */
+export function measureTargets(): TargetRect[] {
   const out: TargetRect[] = [];
+  measured = [];
   for (const el of document.querySelectorAll<HTMLElement>("[data-drop-target]")) {
+    if (el.closest("[inert]")) continue;
     const r = el.getBoundingClientRect();
+    const clip = el.closest<HTMLElement>("[data-drop-scroll]")?.getBoundingClientRect();
     const top = Math.max(r.top, clip?.top ?? -Infinity);
     const bottom = Math.min(r.bottom, clip?.bottom ?? Infinity);
-    if (bottom - top < 4) continue; // scrolled out of the sidebar
-    out.push({ id: Number(el.dataset.dropTarget), left: r.left, right: r.right, top, bottom });
+    const left = Math.max(r.left, clip?.left ?? -Infinity);
+    const right = Math.min(r.right, clip?.right ?? Infinity);
+    if (bottom - top < 4 || right - left < 4) continue; // scrolled out of its container
+    out.push({ id: Number(el.dataset.dropTarget), at: measured.length, left, right, top, bottom });
+    measured.push(el);
   }
   return out;
+}
+
+/**
+ * The click that ends a drag (released over the rows: a cancel, a drop back
+ * on the list) must not open a row (List opens on click; plan 24, R8): it
+ * is swallowed once, and the guard goes at the next frame either way.
+ */
+function swallowNextClick() {
+  const swallow = (e: MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    window.removeEventListener("click", swallow, true);
+  };
+  window.addEventListener("click", swallow, true);
+  requestAnimationFrame(() => setTimeout(() => window.removeEventListener("click", swallow, true), 0));
 }
 
 function placeGhost(p: PointerLike) {
@@ -83,11 +113,12 @@ function fadeGhost() {
   setTimeout(() => g.querySelector("[data-ghost-body]")?.hasAttribute("data-leaving") && hideGhost(), Math.round(ms * 0.66) + 20);
 }
 
-/** Drop: the ghost flies into the category's dot and fades. */
-function flyGhost(categoryId: number) {
+/** Drop: the ghost flies into the dot of the target it landed on (the sidebar's item or the tab) and fades. */
+function flyGhost(categoryId: number, at?: number) {
   if (!ghost) return;
   const ms = motionMs();
-  const dot = document.querySelector(`[data-drop-target="${categoryId}"] [data-slot=category-dot]`)?.getBoundingClientRect();
+  const target = (at !== undefined ? measured[at] : undefined) ?? document.querySelector(`[data-drop-target="${categoryId}"]`);
+  const dot = target?.querySelector("[data-slot=category-dot]")?.getBoundingClientRect();
   if (ms === 0 || !dot) return hideGhost();
   const duration = Math.min(Math.round(ms * 1.33), 100);
   const from = ghost.style.transform;
@@ -144,8 +175,8 @@ export function installDragController(list: HTMLElement): () => void {
       if (!frame) frame = requestAnimationFrame(tick);
     },
     target: (overTarget, overState) => useDrag.setState({ overTarget, overState }),
-    drop: (categoryId, ids) => {
-      flyGhost(categoryId);
+    drop: (categoryId, ids, at) => {
+      flyGhost(categoryId, at);
       end();
       const added = newIds(ids, categoryId, (id) => row(id)?.categoryIds);
       void moveToCategory(categoryId, ids, { source: "dnd" });
@@ -165,7 +196,7 @@ export function installDragController(list: HTMLElement): () => void {
     window.removeEventListener("pointercancel", onCancel, true);
     window.removeEventListener("keydown", onKey, true);
     window.removeEventListener("blur", onCancel);
-    scroller()?.removeEventListener("scroll", onScroll);
+    for (const s of scrollers()) s.removeEventListener("scroll", onScroll);
     if (frame) cancelAnimationFrame(frame);
     frame = 0;
     latest = null;
@@ -181,7 +212,7 @@ export function installDragController(list: HTMLElement): () => void {
       } catch {
         /* the pointer is already gone */
       }
-      scroller()?.addEventListener("scroll", onScroll, { passive: true });
+      for (const s of scrollers()) s.addEventListener("scroll", onScroll, { passive: true });
       if (PROBE) {
         performance.measure("drag:start", { start: t0, end: performance.now() });
         // the frame that shows the ghost: its rAF runs before style, layout and paint; a message
@@ -200,10 +231,12 @@ export function installDragController(list: HTMLElement): () => void {
     if (ctl.dragging) e.preventDefault();
   }
   function onUp(e: PointerEvent) {
+    if (ctl.dragging) swallowNextClick();
     ctl.up(point(e));
     cleanup();
   }
   function onCancel() {
+    if (ctl.dragging) swallowNextClick();
     ctl.cancel();
     cleanup();
   }
