@@ -75,6 +75,7 @@ export interface SnapshotMessage {
   /** what plan 17's facts read: To and Cc as stored (JSON), the bulk headers, Gmail's labels (JSON), the references */
   toJson: string;
   ccJson: string;
+  replyToJson: string;
   isBulk: boolean;
   gmailLabels: string | null;
   inReplyTo: string | null;

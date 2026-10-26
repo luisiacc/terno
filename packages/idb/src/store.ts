@@ -1443,6 +1443,7 @@ function storeSnapshot(c: Ctx): StoreSnapshot {
       isSpam: b(m.is_spam),
       toJson: m.to_json,
       ccJson: m.cc_json,
+      replyToJson: m.reply_to_json ?? "[]",
       isBulk: b(m.is_bulk ?? 0),
       gmailLabels: m.gmail_labels ?? null,
       inReplyTo: m.in_reply_to ?? null,

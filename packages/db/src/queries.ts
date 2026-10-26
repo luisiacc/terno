@@ -230,6 +230,7 @@ interface MessageRow {
   from_email: string;
   to_json: string;
   cc_json: string;
+  reply_to_json: string;
   subject: string;
   date: number;
   snippet: string;
@@ -252,7 +253,7 @@ export function getThread(db: Db, threadId: number): ThreadDetail | null {
   );
   if (!row) return null;
   const messages = db.all<MessageRow>(
-    `SELECT m.id, m.thread_id, m.account_id, m.from_name, m.from_email, m.to_json, m.cc_json, m.subject, m.date, m.snippet,
+    `SELECT m.id, m.thread_id, m.account_id, m.from_name, m.from_email, m.to_json, m.cc_json, m.reply_to_json, m.subject, m.date, m.snippet,
             b.body_text, b.body_html, m.body_state, m.is_read, m.is_starred, m.is_sent, m.has_attachments,
             m.rfc_message_id, m.references_json, m.list_id
      FROM messages m LEFT JOIN message_bodies b ON b.message_id = m.id WHERE m.thread_id = ? ORDER BY m.date ASC, m.id ASC`,
@@ -280,6 +281,7 @@ export function getThread(db: Db, threadId: number): ThreadDetail | null {
         from: { name: m.from_name, email: m.from_email },
         to: JSON.parse(m.to_json),
         cc: JSON.parse(m.cc_json),
+        replyTo: JSON.parse(m.reply_to_json),
         subject: m.subject,
         date: m.date,
         snippet: m.snippet,

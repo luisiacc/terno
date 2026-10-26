@@ -6,11 +6,11 @@ import { MemDb, type Committed, type ForeignKey, type Key, type Row, type Table,
  * `meta`. Logical migration ids follow the SQL ones; this adapter starts at
  * the v7 shape (bodies split, search outbox) as IndexedDB version 1; version 2
  * is SQL's v8 (the move journal keeps each removed row with its category);
- * version 3 is SQL's v9 (drafts v2); version 4 is SQL's v14 (plan 17: correspondents, thread facts).
+ * version 3 is SQL's v9 (drafts v2); version 4 is SQL's v14 (plan 17: correspondents, thread facts); version 5 is SQL's v15 (Reply-To, defaulted on read).
  */
-export const IDB_VERSION = 4;
+export const IDB_VERSION = 5;
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 14;
+export const LOGICAL_SCHEMA = 15;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 

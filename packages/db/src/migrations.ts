@@ -791,6 +791,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 12, name: "quick filter indexes", sql: FILTERS_V12 },
   { version: 13, name: "rich drafts", sql: RICH_DRAFTS_V13 },
   { version: 14, name: "people and waiting for your reply", sql: PEOPLE_V14 },
+  { version: 15, name: "reply destinations", sql: "ALTER TABLE messages ADD COLUMN reply_to_json TEXT NOT NULL DEFAULT '[]';" },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

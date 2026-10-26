@@ -36,12 +36,13 @@ afterEach(async () => {
 });
 
 let seq = 0;
-function raw(o: { from?: string; to?: string; subject: string; body?: string; html?: string; id?: string; inReplyTo?: string; listId?: string; date?: Date }) {
+function raw(o: { from?: string; to?: string; subject: string; replyTo?: string; body?: string; html?: string; id?: string; inReplyTo?: string; listId?: string; date?: Date }) {
   const id = o.id ?? `m${++seq}@test.local`;
   const headers = [
     `From: ${o.from ?? "Ana Pérez <ana@example.com>"}`,
     `To: ${o.to ?? "Luis <luis@test.local>"}`,
     `Subject: ${o.subject}`,
+    ...(o.replyTo ? [`Reply-To: ${o.replyTo}`] : []),
     `Message-ID: <${id}>`,
     `Date: ${(o.date ?? new Date()).toUTCString()}`,
     "MIME-Version: 1.0",
@@ -167,6 +168,18 @@ async function setup(opts: { smtp?: Parameters<typeof startSmtp>[0] } = {}) {
 const count = (backend: Backend, sql: string, ...p: (string | number)[]) => sqlDb(backend.store).get<{ c: number }>(`SELECT count(*) AS c FROM (${sql})`, ...p)!.c;
 
 describe("IMAP provider against ImapKit", () => {
+  it("retains parsed multi-address Reply-To through envelope sync, body download, and later flag refresh", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Helpdesk Reply-To", from: "No reply <noreply@help.test>", replyTo: '"Support, Session" <Session@help.test>, List <list@help.test>' }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const [thread] = (await client.call("threads.list", { view: "inbox" })).items;
+    const expected = { from: { name: "No reply", email: "noreply@help.test" }, replyTo: [{ name: "Support, Session", email: "session@help.test" }, { name: "List", email: "list@help.test" }], bodyState: "full" };
+    expect((await client.call("threads.get", { threadId: thread!.id }))!.messages[0]).toMatchObject(expected);
+    await backend.syncAccount(account.id);
+    expect((await client.call("threads.get", { threadId: thread!.id }))!.messages[0]).toMatchObject(expected);
+  });
+
   it("rejects a wrong password when adding the account", async () => {
     const { client, imap, smtp } = await setup();
     await expect(

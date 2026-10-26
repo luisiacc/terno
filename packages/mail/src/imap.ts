@@ -364,6 +364,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             inReplyTo: env?.inReplyTo ? (splitIds(env.inReplyTo)[0] ?? null) : null,
             references: splitIds(headerValue(m.headers, "references")),
             from: addr(env?.from)[0] ?? { name: "", email: "" },
+            replyTo: addr(env?.replyTo),
             to: addr(env?.to),
             cc: addr(env?.cc),
             bcc: addr(env?.bcc),

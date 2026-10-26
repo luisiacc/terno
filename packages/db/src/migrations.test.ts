@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { generateDataset } from "@terno/mock-data";
 import { movePending, movePhase, restoreMoveSlice, trainMoveSlice, undoMoveBegin, undoMoveSlice } from "./categorize";
+import { getThread } from "./queries";
 import { ingestMessages } from "./ingest";
 import { MIGRATIONS, migrate, SCHEMA_VERSION } from "./migrations";
 import { openDatabase } from "./index";
@@ -519,4 +520,15 @@ describe("scope pages walk an index in key order", () => {
       if (p.accountId !== undefined && p.categoryId === undefined) expect(plan, JSON.stringify(p)).toMatch(/threads_account_id/);
     }
   });
+});
+
+
+it("migration v15 opens legacy messages with empty Reply-To and preserves their bodies", () => {
+  const { db } = legacyMail(14, { threads: 3, seed: 27 });
+  const before = db.get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id LIMIT 1")!;
+  expect(migrate(db)).toEqual({ from: 14, to: SCHEMA_VERSION });
+  const message = getThread(db, before.thread_id)!.messages.find((m) => m.id === before.id)!;
+  expect(message.replyTo).toEqual([]);
+  expect(message.bodyText).toBeTruthy();
+  expect(migrate(db)).toEqual({ from: SCHEMA_VERSION, to: SCHEMA_VERSION });
 });

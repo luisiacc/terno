@@ -234,3 +234,37 @@ describe("scope pages after the mailbox changes", () => {
     expect((await page({})).length).toBe(ids.length);
   });
 });
+
+
+it("version 4 messages default Reply-To on read without rewriting persisted mail", async () => {
+  const store = await open();
+  const [accountId] = await withAccounts(store);
+  await ingest(store, [msg({ accountId: accountId!, providerMsgId: "legacy-reply" })], NOW);
+  const message = (await store.debug.snapshot()).messages[0]!;
+  const req = <T>(r: IDBRequest<T>) => new Promise<T>((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
+  await store.close();
+  const source = await req(indexedDB.open(databaseName(store.name)));
+  const names = Array.from(source.objectStoreNames);
+  const tx = source.transaction(names, "readonly");
+  const rows = await Promise.all(names.map(async (table) => ({ table, rows: await req(tx.objectStore(table).getAll()), keys: await req(tx.objectStore(table).getAllKeys()) })));
+  source.close();
+  const name = `${store.name}-v4`;
+  const legacy = indexedDB.open(databaseName(name), 4);
+  legacy.onupgradeneeded = () => {
+    for (const { table, rows: saved, keys } of rows) {
+      const target = legacy.result.createObjectStore(table);
+      saved.forEach((row: Record<string, unknown>, i: number) => {
+        if (table === "messages") delete row.reply_to_json;
+        target.put(row, keys[i]!);
+      });
+    }
+  };
+  (await req(legacy)).close();
+  const reopened = await open(name);
+  expect((await reopened.threads.get(message.threadId))!.messages[0]!.replyTo).toEqual([]);
+  await reopened.debug.verify();
+  await reopened.close();
+  const again = await open(name);
+  expect((await again.threads.get(message.threadId))!.messages[0]!.replyTo).toEqual([]);
+  await again.debug.verify();
+});

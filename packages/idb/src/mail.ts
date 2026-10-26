@@ -491,6 +491,7 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
         from_name_norm: normalizeText(msg.from.name),
         to_json: JSON.stringify(msg.to),
         cc_json: JSON.stringify(msg.cc),
+        reply_to_json: JSON.stringify(msg.replyTo ?? []),
         bcc_json: JSON.stringify(msg.bcc),
         recipients_text: recipients,
         recipients_norm: normalizeText(recipients),
@@ -549,6 +550,7 @@ function updateExisting(c: Ctx, row: R, msg: IncomingMessage): void {
     is_trash: b(msg.isTrash),
     is_spam: b(msg.isSpam),
     gmail_labels: msg.gmailLabels ? JSON.stringify(msg.gmailLabels) : row.gmail_labels,
+    ...(msg.replyTo === undefined ? {} : { reply_to_json: JSON.stringify(msg.replyTo) }),
   });
   if (msg.bodyState === "full") setMessageBody(c, row.id, msg.bodyText, msg.bodyHtml, "full");
   upsertLocations(c, row.id, msg);
@@ -902,6 +904,7 @@ export function getThread(c: Ctx, threadId: number): ThreadDetail | null {
         from: { name: m.from_name, email: m.from_email },
         to: JSON.parse(m.to_json),
         cc: JSON.parse(m.cc_json),
+        replyTo: JSON.parse(m.reply_to_json ?? "[]"),
         subject: m.subject,
         date: m.date,
         snippet: m.snippet,

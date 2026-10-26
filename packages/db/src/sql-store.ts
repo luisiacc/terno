@@ -862,6 +862,7 @@ function storeSnapshot(db: Db): StoreSnapshot {
       isSpam: b(m.is_spam),
       toJson: m.to_json as string,
       ccJson: m.cc_json as string,
+      replyToJson: m.reply_to_json as string,
       isBulk: b(m.is_bulk),
       gmailLabels: m.gmail_labels as string | null,
       inReplyTo: m.in_reply_to as string | null,

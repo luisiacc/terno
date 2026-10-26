@@ -14,3 +14,13 @@ describe("parseRaw: bulk headers (plan 17)", () => {
     expect((await parseRaw(raw("List-Id: Boletin <boletin.xataka.com>"))).listId).toBe("boletin.xataka.com");
   });
 });
+
+
+describe("parseRaw: Reply-To", () => {
+  it("retains every reply destination and a quoted comma name separately from From", async () => {
+    const message = await parseRaw(raw('Reply-To: "Support, Session" <Session@help.test>, List <list@help.test>'));
+    expect(message.from).toEqual({ name: "Xataka", email: "boletin@xataka.com" });
+    expect(message).toMatchObject({ replyTo: [{ name: "Support, Session", email: "session@help.test" }, { name: "List", email: "list@help.test" }] });
+    expect(await parseRaw(raw(""))).toMatchObject({ replyTo: [] });
+  });
+});

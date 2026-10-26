@@ -114,6 +114,7 @@ export interface MessageDetail {
   threadId: ThreadId;
   accountId: AccountId;
   from: Address;
+  replyTo: Address[];
   to: Address[];
   cc: Address[];
   subject: string;

@@ -189,8 +189,8 @@ INSERT INTO messages (
   from_name, from_email, from_domain, from_name_norm, to_json, cc_json, bcc_json,
   recipients_text, recipients_norm, subject, subject_norm, date, snippet,
   body_tail_norm, body_state, list_id, is_read, is_starred, in_inbox, is_sent,
-  is_draft, is_trash, is_spam, has_attachments, gmail_labels, size, created_at, is_bulk
-) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+  is_draft, is_trash, is_spam, has_attachments, gmail_labels, size, created_at, is_bulk, reply_to_json
+) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
 
 /**
  * Message ids are never reused (SQLite would reuse the max rowid after a
@@ -292,6 +292,7 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
         msg.size,
         now,
         b(msg.bulk ?? false),
+        JSON.stringify(msg.replyTo ?? []),
       ).lastInsertRowid;
       if (refs.length === 1) db.run("INSERT OR IGNORE INTO message_refs (account_id, ref, message_id) VALUES (?, ?, ?)", msg.accountId, refs[0]!, id);
       else if (refs.length > 1) db.run("INSERT OR IGNORE INTO message_refs (account_id, ref, message_id) SELECT ?, value, ? FROM json_each(?)", msg.accountId, id, JSON.stringify(refs));
@@ -338,7 +339,7 @@ function b(v: boolean): number {
 function updateExisting(db: Db, id: number, msg: IncomingMessage): void {
   db.run(
     `UPDATE messages SET is_read = ?, is_starred = ?, in_inbox = ?, is_sent = ?, is_draft = ?, is_trash = ?,
-       is_spam = ?, gmail_labels = coalesce(?, gmail_labels) WHERE id = ?`,
+       is_spam = ?, gmail_labels = coalesce(?, gmail_labels), reply_to_json = coalesce(?, reply_to_json) WHERE id = ?`,
     b(msg.isRead),
     b(msg.isStarred),
     b(msg.inInbox),
@@ -347,6 +348,7 @@ function updateExisting(db: Db, id: number, msg: IncomingMessage): void {
     b(msg.isTrash),
     b(msg.isSpam),
     msg.gmailLabels ? JSON.stringify(msg.gmailLabels) : null,
+    msg.replyTo === undefined ? null : JSON.stringify(msg.replyTo),
     id,
   );
   if (msg.bodyState === "full") {

@@ -53,6 +53,35 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       return next;
     });
 
+    describe("reply destinations", () => {
+      it("retains Reply-To through ingest, refresh and reopen without replacing it on partial updates", async () => {
+        let store = await fresh();
+        const [accountId] = await withAccounts(store);
+        const replyTo = [{ name: "Support, Session", email: "session@help.test" }, { name: "List", email: "list@help.test" }];
+        const incoming = msg({ accountId: accountId!, providerMsgId: "helpdesk", from: { name: "No reply", email: "noreply@help.test" }, replyTo });
+        await ingest(store, [incoming]);
+        const threadId = await threadOf(store, "helpdesk");
+        expect((await store.threads.get(threadId))!.messages[0]).toMatchObject({ replyTo });
+        await ingest(store, [msg({ ...incoming, replyTo: undefined, isRead: true })]);
+        expect((await store.threads.get(threadId))!.messages[0]).toMatchObject({ replyTo, isRead: true });
+        store = await harness.reopen(store);
+        open.push(store);
+        expect((await store.threads.get(threadId))!.messages[0]).toMatchObject({ replyTo });
+        const changed = [{ name: "New destination", email: "new@help.test" }];
+        await ingest(store, [{ ...incoming, replyTo: changed }]);
+        expect((await store.threads.get(threadId))!.messages[0]).toMatchObject({ replyTo: changed });
+        await ingest(store, [{ ...incoming, replyTo: [] }]);
+        expect((await store.threads.get(threadId))!.messages[0]).toMatchObject({ replyTo: [] });
+      });
+
+      it("defaults missing Reply-To to an empty list", async () => {
+        const store = await fresh();
+        const [accountId] = await withAccounts(store);
+        await ingest(store, [msg({ accountId: accountId!, providerMsgId: "legacy" })]);
+        expect((await store.threads.get(await threadOf(store, "legacy")))!.messages[0]).toMatchObject({ replyTo: [] });
+      });
+    });
+
     describe("threading", () => {
       it("joins replies to their parent via In-Reply-To / References", async () => {
         const store = await fresh();

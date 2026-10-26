@@ -7,6 +7,7 @@ export interface ParsedMessage {
   inReplyTo: string | null;
   references: string[];
   from: Address;
+  replyTo: Address[];
   to: Address[];
   cc: Address[];
   bcc: Address[];
@@ -67,6 +68,7 @@ export async function parseRaw(raw: Uint8Array | string): Promise<ParsedMessage>
     inReplyTo: email.inReplyTo ? splitIds(email.inReplyTo)[0] ?? null : null,
     references: splitIds(email.references ?? header("references")),
     from,
+    replyTo: addresses(email.replyTo as PostalAddress[] | undefined),
     to: addresses(email.to as PostalAddress[]),
     cc: addresses(email.cc as PostalAddress[]),
     bcc: addresses(email.bcc as PostalAddress[]),

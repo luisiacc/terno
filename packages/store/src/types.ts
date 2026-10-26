@@ -26,6 +26,8 @@ export interface IncomingMessage {
   inReplyTo: string | null;
   references: string[];
   from: Address;
+  /** Absent on partial/legacy ingestion; an empty list explicitly clears Reply-To. */
+  replyTo?: Address[];
   to: Address[];
   cc: Address[];
   bcc: Address[];
