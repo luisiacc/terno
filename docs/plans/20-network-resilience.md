@@ -1,6 +1,6 @@
 # Plan 20: network resilience (VPNs, Wi-Fi changes, sleep)
 
-- **Status:** in progress.
+- **Status:** done (see "Implementation notes" and "What the Codex code review changed").
 - **Builds on:** `402470a` (main after plan 18).
 - **Request (verbatim):** "when polling for new emails, if it fails for connection errors, lets make sure the retries have into accont changes in things like active vpns and that stuff, make sure that works well"
 - **Plan 17** is reserved for People / waiting-for-reply; 18 exists; 19 is the logo (`19-brand.md`); this is 20.
@@ -270,3 +270,63 @@ Codex (`codex exec -s read-only`, 12 points) against the plan and the code. What
     - Tests: offline during a claimed batch, a change during quiesce, a reset during removal.
 11. **Gmail reconnect only for a sign-in to redo.** `AccountSyncState.authRequired` is set by a `ProviderAuthError` and cleared by any success. The web banner shows for it only. A second 401 in a row is a `ProviderAuthError` (ops wait for the sign-in instead of failing). Test: revoked vs 403 permission vs malformed.
 12. **Connection health is backend state.** `AccountSyncState.connection` is `{ state: "offline" | "reconnecting", retryAt }` or null. It is set after the second failure in a row, or at once while the host is offline. It reads "reconnecting" while a retry pass runs and is cleared by a success. The pill and Settings read it, so it survives reloads and second windows. The pill stays mounted from "offline" through "reconnecting" until a success, and its "Retry now" keeps focus (`aria-disabled` while reconnecting, never removed). `retryAt` moves into it.
+
+## Implementation notes (what differs from the plan above)
+
+- **The pill is two lines plus an icon button.** As one capsule with a text button beside it, the countdown was truncated in the sidebar ("Personal is off…"). It now reads "Personal is offline" (or "Offline", or "Reconnecting…") over a muted "Retrying in 1 min", with a retry icon button named "Retry now" (tooltip, `aria-disabled` while reconnecting). Minutes round to the nearest, so 62 s reads "1 min". It is checked in all three designs, light and dark.
+- **Strings:**
+  - `connection.offline`, `connection.accountOffline`, `connection.retryingIn`, `connection.reconnecting`, `connection.retryNow`
+  - `account.status.offlineRetry`, `account.status.offlineRetryError`, `account.status.reconnecting`
+  - `errors.network.offline`, `errors.network.changed`
+- **The scutil script uses one pattern per key.** POSIX alternation isn't relied on. The exact script was run against the real `scutil`: silent until configd posts, and gone 1 ms after its stdin closed.
+- **A pass that succeeds while the host says offline:**
+  - If it started offline, the OS was wrong, and the backend goes online.
+  - If it started online and the host went offline meanwhile, the account shows offline and keeps its probe.
+- **With `autoSync: false`, Connectivity counts failures but schedules nothing.** Those hosts sync by hand.
+
+### Verified against this Mac's network (Tailscale connected; no VPN toggled by me)
+
+- **A passive logger ran for 74 minutes** (scutil on Terno's keys, plus the routing socket).
+- **It caught one real event: a full-tunnel VPN on `utun9` disconnecting at 23:52:09.**
+  - Its `0/1` and `128.0/1` routes and the host route to its server were deleted.
+  - configd posted `Global/IPv4` and `Global/DNS` **90 ms** after the first route delete, then `Interface/utun9/IPv4`, all within 50 ms. The fingerprint lost `utun9`'s IPv4.
+  - Those exact lines are the watcher's unit-test fixture.
+- **In the same 74 minutes:**
+  - scutil posted nothing else.
+  - The routing socket posted 88–6,748 RTM_MISS a minute (median 142), plus cloned-route add/delete churn about every minute.
+- **Why no deliberate toggle:** creating a `utun` and writing dynamic-store keys both need root (both tried: `EPERM`, "Permission denied"), and toggling Tailscale would have cut the user's own connection.
+
+### Measured timeline after a VPN switch (loopback servers; real servers add their TLS and login round trips)
+
+| | at |
+|---|---|
+| routes change | 0 |
+| configd posts (real event, above) | +90 ms |
+| the watcher tells the backend (750 ms debounce, real code fed the real lines) | +840 ms |
+| the backend settles (300 ms), resets every socket and syncs with jitter | |
+| new mail listed (production timings, 5 runs) | **+1.09 – 1.17 s** |
+| push works again on the new route | +50 ms more |
+| without any event: mail through the next poll | ≤ 120 s poll + ≤ 60 s socket timeout |
+| without any event: push back via the heartbeat | ≤ 120 s + 15 s |
+
+Scaled integration runs (tick 1.5 s, socket 2 s, heartbeat 1 s): with the event, 159 ms (settle 100 ms); without it, 3.0 s.
+
+## What the Codex code review changed
+
+Round 1 (`codex-review.sh` prompt with `-C <worktree>`, 4 findings). Each was fixed with a regression test that fails without the fix:
+
+1. **High: offline recovery could stop for good.** A pass that succeeded after the host went offline cleared the account's probe, and nothing tried it again. It now keeps its 5-minute probe (`probeLater`). Test: a pass held open across the offline event.
+2. **High: a token refresh cut short failed sends for good.** A refresh whose body was cut short (the deadline, a dead socket) failed the op permanently. It is now a network failure. Test: a 200 whose body errors as undici does.
+3. **Medium: push couldn't be closed while connecting.** A watcher still connecting (login, SELECT) couldn't be closed by a reset or a stop. The pending session now closes at once, and a reset reconnects without a backoff. Tests: a black-holed handshake, then reset (push works within 2 s), then stop (the socket closes within 1 s).
+4. **Medium: IndexedDB scheduling was quadratic** with many ops on one thread (0.3 s for 3,000). Blockers are now computed once a pass. Test: both stores within 100 ms for 3,000.
+
+Round 2 (the round-1 fixes, 3 findings), each fixed with a regression test that fails without the fix:
+
+1. **A refusal while the host said offline** (Gmail's passing 403) cleared the probe. It now keeps it.
+2. **IndexedDB built the blocker map over a bulk move's every target** (40 ms at 100,000 messages). Each message is now looked up only when asked, and an op stops at its first blocked message. Test: ≤ 10 ms.
+3. **IndexedDB `resumeNetwork` read the account's whole op history on every sync** (40 ms at 500,000). It now reads the queue. Test: ≤ 5 ms with 300,000 settled ops.
+
+Before the code review:
+
+- The design checks caught the retry button dimmed with `opacity` (the contrast rule). It now uses the muted token.
+- The e2e caught the Settings button's focus tooltip covering the pill after Settings closes. The test now uses the keyboard; the overlap is ordinary tooltip behaviour.
