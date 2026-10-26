@@ -69,6 +69,7 @@ export async function setGooglePhotos(b: Backend, accountId: number, on: boolean
   // the provider holds an access token for the old grant: it starts again on the new one
   await b.dropAccount(accountId);
   await b.setSecret(`account:${accountId}:refreshToken`, result.refreshToken);
+  await b.signedIn(accountId);
   b.startAccount((await b.store.accounts.get(accountId))!);
   return turnOn(b, accountId, stateFrom(granted));
 }

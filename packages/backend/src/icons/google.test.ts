@@ -109,6 +109,34 @@ describe("photos from Google (plan 22)", () => {
     expect((await client.call("icons.data", { ids: [got["ana@gmail.com"]!.id] }))[got["ana@gmail.com"]!.id]).toMatch(/^data:image\/png;base64,/);
   });
 
+  it("desktop photo consent replaces the provider and keeps push sync working", async () => {
+    const { backend, client, gmail, f } = await setup();
+    const create = backend.options.providers.create.bind(backend.options.providers);
+    const runs = [vi.fn(async () => {}), vi.fn(async () => {})];
+    const stops = [vi.fn(), vi.fn()];
+    const pushes: (() => void)[] = [];
+    let made = 0;
+    vi.spyOn(backend.options.providers, "create").mockImplementation((ctx) => {
+      const index = made++;
+      return { ...create(ctx), sync: runs[index]!, watch(push) { pushes[index] = push; return stops[index]!; } };
+    });
+    backend.startAccount(gmail);
+    await until(() => runs[0]!.mock.calls.length === 1 && pushes.length === 1);
+    await backend.syncAccount(gmail.id);
+    await client.call("icons.googlePhotos", { accountId: gmail.id, on: true });
+    expect(made).toBe(2);
+    expect(stops[0]).toHaveBeenCalledOnce();
+    expect(f.photoWants).toEqual([{ connections: true, otherContacts: false }]);
+    await until(() => runs[1]!.mock.calls.length === 1 && pushes.length === 2);
+    await backend.syncAccount(gmail.id);
+    const synced = runs[1]!.mock.calls.length;
+    pushes[1]!();
+    await until(() => runs[1]!.mock.calls.length === synced + 1);
+    const fresh = await backend.provider(gmail.id);
+    expect(fresh).not.toBeNull();
+    expect((await backend.store.accounts.get(gmail.id))?.syncState.authRequired).toBe(false);
+  });
+
   it("nothing changes when Google connected another account, or dropped mail's scope", async () => {
     const { backend, client, f, gmail } = await setup();
     const before = await backend.getSecret(`account:${gmail.id}:refreshToken`);
