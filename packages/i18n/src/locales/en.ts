@@ -552,6 +552,7 @@ const en = {
   "list.empty.title": "Nothing here",
   "list.empty.body": "Mail will show up here.",
   "list.draft": "Draft",
+  "list.accountLabel.sr": ", to {account}",
   "list.scope.quoted": "“{label}”",
   "list.scope.unread": "{label} · Unread",
   "list.scope.attachments": "{label} · With attachments",

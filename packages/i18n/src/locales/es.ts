@@ -546,6 +546,7 @@ const es = {
   "list.empty.title": "Nada por aquí",
   "list.empty.body": "Los correos aparecerán aquí.",
   "list.draft": "Borrador",
+  "list.accountLabel.sr": ", para {account}",
   "list.scope.quoted": "«{label}»",
   "list.scope.unread": "{label} · No leídos",
   "list.scope.attachments": "{label} · Con adjuntos",

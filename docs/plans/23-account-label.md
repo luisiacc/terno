@@ -1,6 +1,6 @@
 # Plan 23: the receiving account on rows, in all-accounts views
 
-- **Status:** planned.
+- **Status:** done (see "Revisions after the Codex review" and "Implementation notes").
 - **Builds on:** `da55479` (main after plan 20); built alongside plan 22 (both touch the thread row).
 - **Request (verbatim):** "when we are on the view of all emails for all email accounts we need to show very subtly to whicch email its coming to from all my current accounts, similar to how Mac mail does it"
 
@@ -42,3 +42,24 @@ Apple Mail, in All Inboxes, writes the mailbox's account in small grey text on t
 ## 4. Out of scope
 
 - Per-account filtering from the label (the sidebar does that), labels in the reader (it already shows the account chip).
+
+## Revisions after the Codex review
+
+Codex (plan critique, 10 points) checked the plan against the row code. What changed:
+
+1. **Width budget (classic, Atelier, Lumen).** Line 2's subject, draft and snippet now sit in one `min-w-0 flex-1` group and the label is its sibling, `shrink-0`, capped at `min(9rem, 45%)` of the line (`min(7rem, 32%)` in compact), so a long subject and a long label share the line instead of overflowing. The classic subject's 60 % cap is now of that group.
+2. **Right-aligned under the date in every comfortable layout** (`ml-auto` on the label, which is outside the subject group).
+3. **Compact:** the label left the right-hand `shrink-0` group (marks and date): it sits between the subject (which shrinks) and that group, with its own cap.
+4. **Address truncation:** the local part shrinks first (`min-w-[1ch]`); the `@domain` shrinks only once the local part is at its minimum (`shrink-[0.01]`), so a very long domain still ends in an ellipsis inside the cap instead of overflowing.
+5. **Same-domain addresses sharing a long prefix:** not changed. The ring's color and the `title` (the full address) tell them apart, and naming the accounts in Settings → Accounts is the fix; a computed middle truncation was judged not worth its cost for a rare case.
+6. **Checked rows** (accent background): the label uses `accent-foreground` there (`muted-foreground` on `accent` isn't a certified pair); the cursor row and the rest keep `muted-foreground`.
+7. **Screen readers:** the visible label is `aria-hidden`; one visually hidden ", to {account}" (`list.accountLabel.sr`, en/es) is the row's last child, so the option's name ends with it in every layout (asserted with `toHaveAccessibleName`).
+8. **Stable label objects across new `accounts` arrays:** labels are reused by value equality, so sync-state events re-render no row (unit test, and an e2e that counts `ThreadRow` renders: zero for metadata-only events, exactly that account's visible rows for a rename).
+9. **Overflow the height checks can't see:** the e2e asserts that nothing a row draws (outside what an ancestor clips) leaves the row's box, in all three designs and both densities, with a long name and address labels.
+10. **Fixtures:** the e2e renames accounts to create a shared name (both fall back to addresses), a long name, and checks the label-to-account mapping in the inbox, a search and a category, in both densities.
+
+## Implementation notes
+
+- `apps/web/src/lib/account-labels.ts` (derivation and reuse), `thread-row.tsx` (placement per layout), `e2e/account-label.spec.ts` (`@design`).
+- Visual baselines showing the unified list were updated (the label is the only difference; checked against the diffs).
+- Screenshots: `/tmp/unica-scratch/account-label-23/{macos,lumen,atelier}-{light,dark}-{comfortable,compact}.png`.
