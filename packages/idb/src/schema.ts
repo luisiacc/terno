@@ -8,9 +8,9 @@ import { MemDb, type Committed, type ForeignKey, type Key, type Row, type Table,
  * is SQL's v8 (the move journal keeps each removed row with its category);
  * version 3 is SQL's v9 (drafts v2); version 4 is SQL's v14 (plan 17: correspondents, thread facts); version 5 is SQL's v15 (Reply-To, defaulted on read).
  */
-export const IDB_VERSION = 5;
+export const IDB_VERSION = 6;
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 15;
+export const LOGICAL_SCHEMA = 16;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -28,11 +28,15 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   {
     name: "messages",
     key: ["id"],
-    indexes: { ...fk("thread_id"), ...fk("account_id"), provider: ["account_id", "provider_msg_id"], rfc: ["account_id", "rfc_message_id"], from: ["from_email"], domain: ["from_domain"], list: ["list_id"], body_state: ["body_state"] },
+    indexes: { ...fk("thread_id"), ...fk("account_id"), provider: ["account_id", "provider_msg_id"], rfc: ["account_id", "rfc_message_id"], from: ["from_email"], domain: ["from_domain"], list: ["list_id"], body_state: ["body_state"], attachment_pending: ["account_id", "attachment_pending"] },
   },
   { name: "message_bodies", key: ["message_id"], lazy: true },
   { name: "message_refs", key: ["account_id", "ref", "message_id"], indexes: { ...fk("message_id"), ref: ["account_id", "ref"] } },
   { name: "message_locations", key: ["message_id", "mailbox"], indexes: { ...fk("message_id"), uid: ["account_id", "mailbox", "uidvalidity", "uid"], mailbox: ["account_id", "mailbox"] } },
+  { name: "attachment_assets", key: ["id"], indexes: fk("account_id") },
+  { name: "attachment_chunks", key: ["id"], indexes: fk("asset_id") },
+  { name: "attachment_bytes", key: ["chunk_id"], lazy: true },
+  { name: "attachment_links", key: ["id"], indexes: { ...fk("asset_id"), ...fk("draft_id"), ...fk("message_id"), ...fk("op_id") } },
   { name: "attachments", key: ["id"], autoId: true, indexes: fk("message_id") },
   { name: "categories", early: true, key: ["id"], autoId: true },
   { name: "thread_categories", early: true, key: ["thread_id", "category_id"], indexes: { ...fk("thread_id"), ...fk("category_id"), batch: ["batch_id"] } },
@@ -72,6 +76,13 @@ export const FOREIGN_KEYS: readonly ForeignKey[] = [
   c("message_bodies", "message_id", "messages"),
   c("message_refs", "message_id", "messages"),
   c("message_locations", "message_id", "messages"),
+  c("attachment_assets", "account_id", "accounts"),
+  c("attachment_chunks", "asset_id", "attachment_assets"),
+  c("attachment_bytes", "chunk_id", "attachment_chunks"),
+  c("attachment_links", "asset_id", "attachment_assets"),
+  c("attachment_links", "draft_id", "drafts"),
+  c("attachment_links", "message_id", "messages"),
+  c("attachment_links", "op_id", "ops"),
   c("attachments", "message_id", "messages"),
   c("thread_categories", "thread_id", "threads"),
   c("thread_categories", "category_id", "categories"),
@@ -132,6 +143,12 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       if (event.oldVersion < 2) upgradeMoveRows(open.transaction!);
       if (event.oldVersion < 3) upgradeDrafts(open.transaction!);
       if (event.oldVersion < 4) upgradeFacts(db, open.transaction!);
+      if (event.oldVersion < 6) {
+        for (const name of ["attachment_assets", "attachment_chunks", "attachment_bytes", "attachment_links"]) db.createObjectStore(name);
+        const messages = open.transaction!.objectStore("messages");
+        const cursor = messages.openCursor();
+        cursor.onsuccess = () => { const c = cursor.result; if (!c) return; c.update({ ...c.value, attachment_pending: 1 }); c.continue(); };
+      }
     }
   };
   open.onblocked = () => {};

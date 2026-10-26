@@ -24,3 +24,14 @@ describe("parseRaw: Reply-To", () => {
     expect(await parseRaw(raw(""))).toMatchObject({ replyTo: [] });
   });
 });
+
+
+describe("attachment bytes", () => {
+  it("retains binary, empty, duplicate filenames and inline CID parts", async () => {
+    const source = ["From: me@test.com", "MIME-Version: 1.0", 'Content-Type: multipart/mixed; boundary="parts"', "", "--parts", "Content-Type: text/plain", "", "body", ...["AP+A", "", "AQID"].flatMap((data, i) => ["--parts", "Content-Type: image/png", `Content-Disposition: ${i === 2 ? "inline" : "attachment"}; filename="same.png"`, ...(i === 2 ? ["Content-ID: <Photo@Test>"] : []), "Content-Transfer-Encoding: base64", "", data]), "--parts--", ""].join("\r\n");
+    const parsed = await parseRaw(source);
+    expect(parsed.attachments).toHaveLength(3);
+    expect(parsed.attachments.map((a) => [...a.bytes!])).toEqual([[0,255,128], [], [1,2,3]]);
+    expect(parsed.attachments[2]).toMatchObject({ contentId: "Photo@Test" });
+  });
+});

@@ -443,7 +443,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             const id = byUid.get(msg.uid);
             if (!id || !msg.source) continue;
             const parsed = await parseRaw(msg.source);
-            await sink.setBody(id, parsed.text, parsed.html);
+            await sink.setBody(id, parsed.text, parsed.html, parsed.attachments);
           }
         }
       } finally {

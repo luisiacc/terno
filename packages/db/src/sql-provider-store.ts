@@ -31,6 +31,10 @@ export class SqlProviderStore implements ProviderStore {
       .map((r) => ({ id: r.id, providerMsgId: r.provider_msg_id, date: r.date }));
   }
 
+  async pendingAttachmentBodies(limit: number) {
+    return this.db.all<{ id: number; providerMsgId: string }>("SELECT id, provider_msg_id AS providerMsgId FROM messages WHERE account_id = ? AND attachments_captured = 0 AND provider_msg_id IS NOT NULL AND provider_msg_id NOT LIKE 'local:%' ORDER BY id LIMIT ?", this.accountId, Math.max(0, Math.min(50, limit)));
+  }
+
   async pendingBodies(limit: number) {
     return this.db.all<{ id: number; mailbox: string; uid: number; uidvalidity: number }>(
       `SELECT m.id, l.mailbox, l.uid, l.uidvalidity FROM messages m JOIN message_locations l ON l.message_id = m.id

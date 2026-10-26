@@ -776,6 +776,34 @@ INSERT OR REPLACE INTO settings (key, value_json)
   SELECT 'facts_backfill', CASE WHEN EXISTS (SELECT 1 FROM threads) THEN '{"phase":"senders","after":0}' ELSE '{"phase":"done"}' END;
 `;
 
+const ATTACHMENTS_V16 = `
+ALTER TABLE messages ADD COLUMN attachments_captured INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX messages_attachment_pending ON messages(account_id, id) WHERE attachments_captured = 0 AND provider_msg_id IS NOT NULL;
+ALTER TABLE drafts ADD COLUMN attachments_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE attachments ADD COLUMN asset_id TEXT;
+CREATE TABLE attachment_assets (
+ id TEXT PRIMARY KEY, account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ filename TEXT NOT NULL, mime TEXT NOT NULL, size INTEGER NOT NULL, content_id TEXT,
+ received INTEGER NOT NULL DEFAULT 0, chunks INTEGER NOT NULL DEFAULT 0, complete INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL
+);
+CREATE INDEX attachment_assets_account ON attachment_assets(account_id, created_at);
+CREATE TABLE attachment_chunks (
+ id TEXT PRIMARY KEY, asset_id TEXT NOT NULL REFERENCES attachment_assets(id) ON DELETE CASCADE, position INTEGER NOT NULL, size INTEGER NOT NULL
+);
+CREATE INDEX attachment_chunks_asset ON attachment_chunks(asset_id, position);
+CREATE TABLE attachment_bytes (chunk_id TEXT PRIMARY KEY REFERENCES attachment_chunks(id) ON DELETE CASCADE, data_base64 TEXT NOT NULL);
+CREATE TABLE attachment_links (
+ id TEXT PRIMARY KEY, asset_id TEXT NOT NULL REFERENCES attachment_assets(id) ON DELETE CASCADE,
+ draft_id INTEGER REFERENCES drafts(id) ON DELETE CASCADE,
+ message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
+ op_id TEXT REFERENCES ops(id) ON DELETE CASCADE
+);
+CREATE INDEX attachment_links_asset ON attachment_links(asset_id);
+CREATE INDEX attachment_links_draft ON attachment_links(draft_id);
+CREATE INDEX attachment_links_message ON attachment_links(message_id);
+CREATE INDEX attachment_links_op ON attachment_links(op_id);
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "initial schema", sql: SCHEMA_V1 },
   { version: 2, name: "op target index", sql: OP_TARGETS_V2 },
@@ -792,6 +820,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 13, name: "rich drafts", sql: RICH_DRAFTS_V13 },
   { version: 14, name: "people and waiting for your reply", sql: PEOPLE_V14 },
   { version: 15, name: "reply destinations", sql: "ALTER TABLE messages ADD COLUMN reply_to_json TEXT NOT NULL DEFAULT '[]';" },
+  { version: 16, name: "immutable attachment assets", sql: ATTACHMENTS_V16 },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

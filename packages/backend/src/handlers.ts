@@ -35,6 +35,7 @@ function toDraft(r: DraftRow): Draft {
     subjectEdited: r.subject_edited === 1,
     bodyText: r.body_text,
     bodyHtml: r.body_html,
+    attachments: JSON.parse(r.attachments_json ?? "[]"),
     quotedText: r.quoted_text,
     includeQuote: r.include_quote === 1,
     inReplyToMessageId: r.in_reply_to_message_id,
@@ -46,6 +47,12 @@ function toDraft(r: DraftRow): Draft {
 
 export function createHandlers(b: Backend): Handlers {
   const store = b.store;
+  let attachmentCalls = 0;
+  const attachmentCall = async <T,>(origin: string, work: () => Promise<T>): Promise<T> => {
+    if (origin !== "renderer" || attachmentCalls >= 2) throw new RpcError("UNAVAILABLE", L("attachments.busy"));
+    attachmentCalls++;
+    try { return await work(); } finally { attachmentCalls--; }
+  };
   const requireCategory = async (id: number) => {
     if (!(await store.categories.exists(id))) throw new RpcError("NOT_FOUND", L("errors.categoryGone"));
   };
@@ -396,6 +403,8 @@ export function createHandlers(b: Backend): Handlers {
         bodyHtml: ctx.origin === "renderer" && p.bodyHtml ? p.bodyHtml : undefined,
         inReplyToMessageId: p.inReplyToMessageId,
         draftId: p.draftId,
+        draftRevision: p.draftRevision,
+        attachments: p.attachments,
         recordReply: ctx.origin === "renderer",
         now: b.now(),
       });
@@ -404,6 +413,13 @@ export function createHandlers(b: Backend): Handlers {
       b.kickWorker();
       return { opId, threadId };
     },
+
+    "attachments.create": (p, ctx) => attachmentCall(ctx.origin, () => store.attachments.create({ ...p, now: b.now() })),
+    "attachments.append": (p, ctx) => attachmentCall(ctx.origin, async () => { await store.attachments.append(p.accountId, p.assetId, p.index, p.dataBase64); return { ok: true as const }; }),
+    "attachments.seal": (p, ctx) => attachmentCall(ctx.origin, async () => { await store.attachments.seal(p.accountId, p.assetId); return { ok: true as const }; }),
+    "attachments.info": (p, ctx) => attachmentCall(ctx.origin, () => store.attachments.info(p.accountId, p.assetId)),
+    "attachments.read": (p, ctx) => attachmentCall(ctx.origin, async () => ({ dataBase64: await store.attachments.read(p.accountId, p.assetId, p.index) })),
+    "attachments.discard": (p, ctx) => attachmentCall(ctx.origin, async () => { await store.attachments.discard(p.accountId, p.assetId); return { ok: true as const }; }),
 
     "drafts.save": async (p, ctx) => {
       // a rich body only from the renderer (an agent's save is plain text, and rewrites the body)

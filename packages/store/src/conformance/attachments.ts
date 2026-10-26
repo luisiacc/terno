@@ -1,0 +1,106 @@
+import { afterEach, describe, expect, it } from "vitest";
+import type { AttachmentRef } from "@terno/core";
+import type { MailStore } from "../mail-store";
+import type { StoreHarness } from "./store";
+import { ingest, msg, threadOf, withAccounts } from "./fixtures";
+
+export function defineAttachmentConformance(name: string, h: StoreHarness): void {
+  let store: MailStore;
+  afterEach(async () => store?.isOpen && store.close());
+  const fresh = async () => { store = await h.open(); return withAccounts(store); };
+  const upload = async (accountId: number, data = "AP+A") => {
+    const ref = await store.attachments.create({ accountId, filename: "../binary.dat", mime: "application/octet-stream", size: data.length ? 3 : 0, now: 0 });
+    if (data) await store.attachments.append(accountId, ref.assetId, 0, data);
+    await store.attachments.seal(accountId, ref.assetId);
+    return ref;
+  };
+  const draft = (accountId: number, attachments: AttachmentRef[]) => ({ accountId, to: [], cc: [], subject: "files", bodyText: "keep me", attachments });
+  const send = (accountId: number, attachments: AttachmentRef[]) => ({ accountId, to: [{ name: "", email: "receiver@test.com" }], cc: [], bcc: [], subject: "files", bodyText: "exact", attachments, recordReply: false, now: 0 });
+  describe(`attachment conformance: ${name}`, () => {
+    it("retains exact binary and legitimate empty assets across restart; never crosses accounts", async () => {
+      const [a, b] = await fresh();
+      const ref = await upload(a!);
+      const empty = await upload(a!, "");
+      expect(ref.filename).toBe("binary.dat");
+      store = await h.reopen(store);
+      expect(await store.attachments.read(a!, ref.assetId, 0)).toBe("AP+A");
+      expect(await store.attachments.info(a!, empty.assetId)).toMatchObject({ size: 0 });
+      await expect(store.attachments.read(b!, ref.assetId, 0)).rejects.toThrow();
+      await expect(store.attachments.info(a!, "missing")).rejects.toThrow();
+    });
+    it("refuses incomplete or foreign assets atomically, retaining the original draft", async () => {
+      const [a, b] = await fresh();
+      const ref = await upload(a!);
+      const incomplete = await store.attachments.create({ accountId: a!, filename: "empty", mime: "text/plain", size: 0, now: 0 });
+      const d = await store.drafts.save(draft(a!, [ref]), 0);
+      for (const bad of [[incomplete], [ref, { ...ref, assetId: "missing-asset" }]]) {
+        await expect(store.compose.queueSend({ ...send(a!, bad), draftId: d!.id })).rejects.toThrow();
+      }
+      await expect(store.drafts.save(draft(b!, [ref]), 0)).rejects.toThrow();
+      await expect(store.compose.queueSend({ ...send(b!, []), draftId: d!.id })).rejects.toThrow();
+      expect(await store.drafts.list()).toHaveLength(1);
+      expect(await store.ops.recent(20)).toHaveLength(0);
+    });
+    it("captures immutable refs, rejects stale send revision, and cannot resurrect sent drafts", async () => {
+      const [a] = await fresh();
+      const ref = await upload(a!);
+      const d = (await store.drafts.save(draft(a!, [ref]), 0))!;
+      const edited = (await store.drafts.save({ ...draft(a!, []), id: d.id, baseRevision: d.revision }, 1))!;
+      await expect(store.compose.queueSend({ ...send(a!, [ref]), draftId: d.id, draftRevision: d.revision })).rejects.toThrow();
+      const q = await store.compose.queueSend({ ...send(a!, [ref]), draftId: edited.id, draftRevision: edited.revision });
+      store = await h.reopen(store);
+      expect(JSON.parse((await store.ops.get(q.opId))!.payload_json).attachments).toEqual([ref]);
+      expect(await store.drafts.save({ ...draft(a!, []), id: d.id }, 2)).toBeNull();
+      const m = (await store.threads.get(q.threadId))!.messages[0]!;
+      expect(m.attachments[0]).toMatchObject(ref);
+      expect(await store.attachments.read(a!, ref.assetId, 0)).toBe("AP+A");
+    });
+    it("persists parsed incoming bytes/CID at ingestion and body completion without duplicate parts", async () => {
+      const [a] = await fresh();
+      const incoming = msg({ accountId: a!, providerMsgId: "binary", hasAttachments: true, attachments: [{ filename: "same.png", mime: "image/png", size: 3, contentId: "photo", bytes: new Uint8Array([0, 255, 128]) }] });
+      await ingest(store, [incoming]);
+      const id = await threadOf(store, "binary");
+      const original = (await store.threads.get(id))!.messages[0]!;
+      expect(original.attachments).toHaveLength(1);
+      expect(await store.attachments.read(a!, original.attachments[0]!.assetId!, 0)).toBe("AP+A");
+      await ingest(store, [incoming]);
+      expect((await store.threads.get(id))!.messages[0]!.attachments).toHaveLength(1);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "partial", bodyState: "none", bodyText: null })]);
+      const thread = await threadOf(store, "partial");
+      const mid = (await store.threads.get(thread))!.messages[0]!.id;
+      await store.sync.setBody(mid, "body", '<img src="cid:photo">', { now: 1, classifier: null, attachments: incoming.attachments });
+      store = await h.reopen(store);
+      expect((await store.threads.get(thread))!.messages[0]!.attachments[0]).toMatchObject({ contentId: "photo", size: 3 });
+    });
+    it("tracks legacy and inline-only capture independently of history/body state, once", async () => {
+      const [a, b] = await fresh();
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "legacy-inline", hasAttachments: false }), msg({ accountId: b!, providerMsgId: "other" })]);
+      const pending = await store.providerStore(a!).pendingAttachmentBodies(50);
+      expect(pending.map((p) => p.providerMsgId)).toEqual(["legacy-inline"]);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "legacy-inline", attachments: [] })]);
+      store = await h.reopen(store);
+      expect(await store.providerStore(a!).pendingAttachmentBodies(50)).toEqual([]);
+      expect(await store.providerStore(b!).pendingAttachmentBodies(50)).toHaveLength(1);
+    });
+    it("bounds chunk ordering, reserved bytes and actual encoded message overhead", async () => {
+      const [a] = await fresh();
+      const ref = await store.attachments.create({ accountId: a!, filename: "file", mime: "text/plain", size: 3, now: 0 });
+      await expect(store.attachments.append(a!, ref.assetId, 0, "AQ==")).rejects.toThrow();
+      await expect(store.attachments.seal(a!, ref.assetId)).rejects.toThrow();
+      const d = (await store.drafts.save(draft(a!, []), 0))!;
+      await expect(store.compose.queueSend({ ...send(a!, []), draftId: d.id, bodyText: "界".repeat(7_000_000) })).rejects.toThrow();
+      expect(await store.drafts.list()).toHaveLength(1);
+      for (let i = 0; i < 14; i++) await store.attachments.create({ accountId: a!, filename: "reserved", mime: "text/plain", size: 18 * 1024 * 1024, now: 0 });
+      await expect(store.attachments.create({ accountId: a!, filename: "over quota", mime: "text/plain", size: 18 * 1024 * 1024, now: 0 })).rejects.toThrow();
+    });
+    it("cascades account removal through cold chunks while preserving another account", async () => {
+      const [a, b] = await fresh();
+      const x = await upload(a!); const y = await upload(b!);
+      store = await h.reopen(store);
+      await store.accounts.remove(a!);
+      await expect(store.attachments.info(a!, x.assetId)).rejects.toThrow();
+      expect(await store.attachments.read(b!, y.assetId, 0)).toBe("AP+A");
+      await store.debug.verify();
+    });
+  });
+}

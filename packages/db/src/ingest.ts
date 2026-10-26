@@ -1,3 +1,4 @@
+import { replaceAttachments } from "./attachments";
 import { addressKey, BODY_TAIL_TOKENS, baseSubject, emailDomain, featuresFromBlob, normalizeText, threadFacts, trailingTokens, type Address, type FactContext, type FactRow } from "@terno/core";
 import type { IncomingMessage, ModelDelta } from "@terno/store";
 
@@ -305,17 +306,7 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
         }
         if (refs.length && (msg.isSent || own.has(addressKey(fromEmail)))) for (const t of answeredThreads(db, refs)) result.touchedThreads.add(t);
       }
-      for (const a of msg.attachments ?? []) {
-        db.run(
-          "INSERT INTO attachments (message_id, filename, mime, size, content_id, provider_ref) VALUES (?,?,?,?,?,?)",
-          id,
-          a.filename,
-          a.mime,
-          a.size,
-          a.contentId ?? null,
-          a.providerRef ?? null,
-        );
-      }
+      if (msg.attachments !== undefined) replaceAttachments(db, id, msg.attachments);
       upsertLocations(db, id, msg);
       result.inserted.push(id);
       result.touchedThreads.add(threadId);
@@ -354,6 +345,7 @@ function updateExisting(db: Db, id: number, msg: IncomingMessage): void {
   if (msg.bodyState === "full") {
     setMessageBody(db, id, msg.bodyText, msg.bodyHtml, "full");
   }
+  if (msg.attachments !== undefined) replaceAttachments(db, id, msg.attachments);
   upsertLocations(db, id, msg);
 }
 

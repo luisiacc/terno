@@ -1,3 +1,6 @@
+import { attachmentMessageBudget } from "@terno/core";
+import { appendAsset, assetError, assetRef, assetRow, createAsset, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
+import { idbAssets, replaceAttachments } from "./attachments";
 import { COUNT_CAP, LIST_FILTERS, parseSearch, resolveSearch, senderVetoed, type Address, type FilterAction, type ListFilter, type ThreadAction, type ThreadFilter, type ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -354,6 +357,8 @@ export class IdbMailStore implements MailStore {
 
   private evictBodies(): void {
     if (this.seeding || this.db.inTransaction) return;
+    const chunks = this.db.table("attachment_bytes");
+    chunks.evict([...chunks.rows.keys()]);
     const bodies = this.db.table<R>("message_bodies");
     let { count, bytes } = this.bodyCache();
     if (count <= BODY_CACHE && bytes <= BODY_CACHE_BYTES) return;
@@ -803,10 +808,12 @@ export class IdbMailStore implements MailStore {
   // ───────────────────────────── sync ─────────────────────────────
 
   readonly sync: MailStore["sync"] = {
-    ingest: (batch, { applyFilters, now, classifier }) =>
-      this.command(
+    ingest: async (batch, { applyFilters, now, classifier }) => {
+      const staged: IncomingMessage[] = [];
+      for (const m of batch) staged.push(m.attachments === undefined ? m : { ...m, attachments: await stageAttachments(this, m.accountId, m.attachments, now, this.o.platform.yield) });
+      return this.command(
         () => {
-          const result = ingestMessages(this.c, batch as IncomingMessage[], now);
+          const result = ingestMessages(this.c, staged as IncomingMessage[], now);
           const touched = new Set(result.touchedThreads);
           const opIds: string[] = [];
           if (applyFilters) {
@@ -818,11 +825,15 @@ export class IdbMailStore implements MailStore {
           return { inserted: result.inserted, touched: [...touched], deltas: [...result.deltas, ...c.deltas], auto: c.auto, backfill: c.backfill, uncertain: c.uncertain, opIds };
         },
         { durability: "relaxed" },
-      ),
-    setBody: (messageId, text, html, { now, classifier }) =>
-      this.command(
+      );
+    },
+    setBody: async (messageId, text, html, { now, classifier, attachments }) => {
+      const accountId = await this.read(() => T(this.c, "messages").get(messageId)?.account_id as number | undefined);
+      const staged = attachments !== undefined && accountId !== undefined ? await stageAttachments(this, accountId, attachments, now, this.o.platform.yield) : undefined;
+      return this.command(
         () => {
           setMessageBody(this.c, messageId, text, html, "full");
+          if (staged !== undefined) replaceAttachments(this.db, messageId, staged);
           const owner = T(this.c, "messages").get(messageId);
           if (owner) recomputeThreads(this.c, [owner.thread_id]);
           const opIds: string[] = [];
@@ -833,7 +844,8 @@ export class IdbMailStore implements MailStore {
           return { touched: [...touched], deltas: c.deltas, auto: c.auto, opIds };
         },
         { durability: "relaxed" },
-      ),
+      );
+    },
     updateFlags: (accountId, updates) =>
       this.command(
         () => {
@@ -945,6 +957,15 @@ export class IdbMailStore implements MailStore {
 
   // ───────────────────────────── compose ─────────────────────────────
 
+  readonly attachments: MailStore["attachments"] = {
+    create: async (p) => this.command(() => createAsset(idbAssets(this.db), () => this.c.uuid(), p)),
+    append: async (accountId, id, index, data) => this.command(() => appendAsset(idbAssets(this.db), accountId, id, index, data), { prefetch: () => readLazy(this.idb, this.db.table("attachment_bytes"), [`${id}:${index}`]) }),
+    seal: async (accountId, id) => this.command(() => sealAsset(idbAssets(this.db), accountId, id)),
+    info: async (accountId, id) => this.read(() => assetRef(assetRow(idbAssets(this.db), accountId, id))),
+    read: async (accountId, id, index) => this.exclusive(async () => { assetRow(idbAssets(this.db), accountId, id); if (!Number.isSafeInteger(index) || index < 0) throw assetError(); const key = `${id}:${index}`; await readLazy(this.idb, this.db.table("attachment_bytes"), [key]); return idbAssets(this.db).chunk(key) ?? null; }),
+    discard: async (accountId, id) => this.command(() => { const db = idbAssets(this.db); assetRow(db, accountId, id, false); if (db.pinned(id)) throw assetError(); db.remove(id); }),
+  };
+
   readonly compose: MailStore["compose"] = {
     queueSend: (p) =>
       this.command(() => {
@@ -953,7 +974,11 @@ export class IdbMailStore implements MailStore {
         const cfg = getAccountConfig<{ senderName?: string }>(this.c, p.accountId)!;
         const from: Address = { name: cfg.config.senderName || account.displayName, email: account.email };
         // a draft is sent once: sending deletes it, so a second send of the same draft finds nothing
-        if (p.draftId !== undefined && !T(this.c, "drafts").get(p.draftId)) throw new RpcError("STALE", L("errors.draftGone"));
+        const draft = p.draftId === undefined ? undefined : T(this.c, "drafts").get(p.draftId);
+        if (p.draftId !== undefined && (!draft || draft.account_id !== p.accountId || (p.draftRevision !== undefined && p.draftRevision !== draft.revision))) throw new RpcError("STALE", L("errors.draftGone"));
+        if (draft && p.attachments === undefined && JSON.parse(draft.attachments_json ?? "[]").length) throw assetError();
+        const attachments = validateAssets(idbAssets(this.db), p.accountId, p.attachments ?? []);
+        if (!attachmentMessageBudget(p.bodyText, p.bodyHtml, attachments)) throw new RpcError("BAD_REQUEST", L("attachments.tooLarge"));
         let inReplyTo: string | null = null;
         let references: string[] = [];
         let providerThreadId: string | null = null;
@@ -967,7 +992,7 @@ export class IdbMailStore implements MailStore {
           if (original.account_id === p.accountId) providerThreadId = T(this.c, "threads").get(original.thread_id)!.provider_thread_id;
         }
         const messageId = `${this.c.uuid()}@${account.email.split("@")[1] || "terno.local"}`;
-        const payload = { from, to: p.to, cc: p.cc, bcc: p.bcc, subject: p.subject, text: p.bodyText, ...(p.bodyHtml ? { html: p.bodyHtml } : {}), messageId, inReplyTo, references, providerThreadId };
+        const payload = { ...(attachments.length ? { attachments } : {}), from, to: p.to, cc: p.cc, bcc: p.bcc, subject: p.subject, text: p.bodyText, ...(p.bodyHtml ? { html: p.bodyHtml } : {}), messageId, inReplyTo, references, providerThreadId };
         const ingest = ingestMessages(
           this.c,
           [
@@ -997,7 +1022,8 @@ export class IdbMailStore implements MailStore {
               isDraft: false,
               isTrash: false,
               isSpam: false,
-              hasAttachments: false,
+              hasAttachments: attachments.length > 0,
+              attachments,
               size: p.bodyText.length + (p.bodyHtml?.length ?? 0),
             },
           ],
@@ -1005,6 +1031,7 @@ export class IdbMailStore implements MailStore {
         );
         const localId = ingest.inserted[0]!;
         const opId = enqueueOp(this.c, { accountId: p.accountId, kind: "send", target: { messageIds: [localId] }, payload }, p.now)!;
+        linkAssets(idbAssets(this.db), "op", opId, attachments);
         if (p.draftId) T(this.c, "drafts").delete(p.draftId);
         if (replyThreadId && p.recordReply) recordUserActions(this.c, [replyThreadId], "reply", p.now);
         return { opId, threadId: T(this.c, "messages").get(localId)!.thread_id as number, deltas: ingest.deltas };

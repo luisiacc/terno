@@ -32,6 +32,12 @@ export class IdbProviderStore implements ProviderStore {
     );
   }
 
+  pendingAttachmentBodies(limit: number) {
+    return this.read(() => T(this.c, "messages").by("attachment_pending", this.accountId, 1)
+      .filter((m) => m.provider_msg_id != null && !String(m.provider_msg_id).startsWith("local:"))
+      .slice(0, Math.max(0, Math.min(50, limit))).map((m) => ({ id: m.id as number, providerMsgId: m.provider_msg_id as string })));
+  }
+
   pendingBodies(limit: number) {
     return this.read(() => {
       const locations = T(this.c, "message_locations");

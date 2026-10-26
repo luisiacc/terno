@@ -1,3 +1,4 @@
+import { checkedAttachments, checkMimeSize } from "./attachment-payload";
 import type { Address } from "@terno/core";
 import type { SendPayload } from "./types";
 
@@ -50,6 +51,7 @@ const boundary = (messageId: string) => `=_terno_${base64(messageId).replace(/[^
  * recipients from them and strips it.
  */
 export function buildRawPortable(p: SendPayload, options: { now?: Date } = {}): Uint8Array {
+  const attachments = checkedAttachments(p);
   const headers: string[] = [
     `From: ${formatAddress(p.from)}`,
     `To: ${p.to.map(formatAddress).join(", ")}`,
@@ -73,5 +75,20 @@ export function buildRawPortable(p: SendPayload, options: { now?: Date } = {}): 
     headers.push("Content-Type: text/plain; charset=utf-8", "Content-Transfer-Encoding: base64");
     body = base64Body(p.text);
   }
-  return new TextEncoder().encode(headers.join(CRLF) + CRLF + CRLF + body + CRLF);
+  if (attachments.length) {
+    const contentAt = headers.findIndex((h) => h.startsWith("Content-Type:"));
+    const contentHeaders = headers.splice(contentAt);
+    const mixed = boundary(p.messageId) + "mixed";
+    const parts = [contentHeaders.join(CRLF) + CRLF + CRLF + body];
+    for (const a of attachments) {
+      const filename = encodeWord(a.filename).replace(/["\\]/g, "\\$&");
+      const cid = a.contentId?.replace(/[<>\r\n]/g, "");
+      parts.push([`Content-Type: ${a.mime}`, `Content-Disposition: ${cid ? "inline" : "attachment"}; filename="${filename}"`, ...(cid ? [`Content-ID: <${cid}>`] : []), "Content-Transfer-Encoding: base64", "", (a.dataBase64.match(/.{1,76}/g) ?? []).join(CRLF)].join(CRLF));
+    }
+    headers.push(`Content-Type: multipart/mixed; boundary="${mixed}"`);
+    body = parts.map((part) => `--${mixed}` + CRLF + part).join(CRLF) + CRLF + `--${mixed}--`;
+  }
+  const raw = new TextEncoder().encode(headers.join(CRLF) + CRLF + CRLF + body + CRLF);
+  checkMimeSize(raw.byteLength);
+  return raw;
 }

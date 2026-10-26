@@ -165,6 +165,8 @@ export interface SendCommand {
   bodyHtml?: string;
   inReplyToMessageId?: number;
   draftId?: number;
+  draftRevision?: number;
+  attachments?: import("@terno/core").AttachmentRef[];
   /** explicit user replies feed learned filters; agents' don't */
   recordReply: boolean;
   now: number;
@@ -176,6 +178,7 @@ export interface ProviderStore {
   /** synced (non-local) messages of the account */
   syncedMessages(): Promise<{ id: number; providerMsgId: string; date: number }[]>;
   /** messages whose body hasn't been downloaded, newest first, with one IMAP location each */
+  pendingAttachmentBodies(limit: number): Promise<{ id: number; providerMsgId: string }[]>;
   pendingBodies(limit: number): Promise<{ id: number; mailbox: string; uid: number; uidvalidity: number }[]>;
   countPendingBodies(): Promise<number>;
   /** provider ids of the given messages (missing ids are absent) */
@@ -257,7 +260,7 @@ export interface MailStore {
   sync: {
     /** threading, aggregates, filters (claims, actions, ops) and classification of one slice */
     ingest(batch: readonly IncomingMessage[], o: { applyFilters: boolean; now: number; classifier: ClassifierInput | null }): Promise<IngestOutcome>;
-    setBody(messageId: number, text: string | null, html: string | null, o: { now: number; classifier: ClassifierInput | null }): Promise<{ touched: number[]; deltas: ModelDelta[]; auto: ClassifyResult["auto"]; opIds: string[] }>;
+    setBody(messageId: number, text: string | null, html: string | null, o: { now: number; classifier: ClassifierInput | null; attachments?: import("./types").IncomingAttachment[] }): Promise<{ touched: number[]; deltas: ModelDelta[]; auto: ClassifyResult["auto"]; opIds: string[] }>;
     /** provider state for existing messages; skips messages with unsettled ops, read inside the same unit */
     updateFlags(accountId: number, updates: readonly FlagUpdate[]): Promise<{ touched: number[] }>;
     remove(messageIds: readonly number[]): Promise<{ touched: number[] }>;
@@ -285,6 +288,16 @@ export interface MailStore {
     nextAttemptAt(): Promise<number | null>;
     recent(limit: number): Promise<OpRow[]>;
     resolveUnknown(id: string, resolution: "markSent" | "retry" | "discard", now: number): Promise<{ touched: number[] }>;
+  };
+
+  attachments: {
+    create(p: { accountId: number; filename: string; mime: string; size: number; contentId?: string | null; now: number }): Promise<import("@terno/core").AttachmentRef>;
+    append(accountId: number, assetId: string, index: number, dataBase64: string): Promise<void>;
+    seal(accountId: number, assetId: string): Promise<void>;
+    info(accountId: number, assetId: string): Promise<import("@terno/core").AttachmentRef>;
+    read(accountId: number, assetId: string, index: number): Promise<string | null>;
+    /** Only orphan assets; pinned draft/message/op assets cannot be removed. */
+    discard(accountId: number, assetId: string): Promise<void>;
   };
 
   compose: {

@@ -1,3 +1,5 @@
+import { assetError, linkAssets, validateAssets } from "@terno/store";
+import { idbAssets, replaceAttachments } from "./attachments";
 import {
   LIST_FILTERS,
   addressKey,
@@ -480,6 +482,8 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
       messages.insert({
         id,
         account_id: msg.accountId,
+        attachment_pending: msg.attachments === undefined ? 1 : 0,
+        attachments_captured: msg.attachments === undefined ? 0 : 1,
         thread_id: threadId,
         provider_msg_id: msg.providerMsgId,
         rfc_message_id: rfcId,
@@ -527,9 +531,7 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
         }
         if (refs.length && (msg.isSent || own.has(addressKey(fromEmail)))) for (const t of answeredThreads(c.db, refs)) result.touchedThreads.add(t);
       }
-      for (const a of msg.attachments ?? []) {
-        T(c, "attachments").insert({ id: undefined, message_id: id, filename: a.filename, mime: a.mime, size: a.size, content_id: a.contentId ?? null, provider_ref: a.providerRef ?? null });
-      }
+      if (msg.attachments !== undefined) replaceAttachments(c.db, id, msg.attachments);
       upsertLocations(c, id, msg);
       result.inserted.push(id);
       result.touchedThreads.add(threadId);
@@ -553,6 +555,7 @@ function updateExisting(c: Ctx, row: R, msg: IncomingMessage): void {
     ...(msg.replyTo === undefined ? {} : { reply_to_json: JSON.stringify(msg.replyTo) }),
   });
   if (msg.bodyState === "full") setMessageBody(c, row.id, msg.bodyText, msg.bodyHtml, "full");
+  if (msg.attachments !== undefined) replaceAttachments(c.db, row.id, msg.attachments);
   upsertLocations(c, row.id, msg);
 }
 
@@ -922,7 +925,7 @@ export function getThread(c: Ctx, threadId: number): ThreadDetail | null {
           ? attachments
               .by("fk_message_id", m.id)
               .sort((x, y) => x.id - y.id)
-              .map((a): AttachmentInfo => ({ id: a.id, filename: a.filename, mime: a.mime, size: a.size }))
+              .map((a): AttachmentInfo => ({ id: a.id, filename: a.filename, mime: a.mime, size: a.size, assetId: a.asset_id ?? undefined, contentId: a.content_id ?? null }))
           : [],
       };
     }),
@@ -1429,6 +1432,7 @@ const draftRow = (r: R): DraftRow => ({
   body_text: r.body_text,
   // drafts stored before plan 16 have none: plain
   body_html: r.body_html ?? "",
+  attachments_json: r.attachments_json ?? "[]",
   quoted_text: r.quoted_text ?? "",
   include_quote: r.include_quote ?? 0,
   in_reply_to_message_id: r.in_reply_to_message_id ?? null,
@@ -1445,6 +1449,9 @@ export function saveDraft(c: Ctx, d: DraftInput, now: number): DraftRow | null {
   if (d.id !== undefined && !row) return null;
   const inReplyTo = d.inReplyToMessageId !== undefined ? d.inReplyToMessageId : (row?.in_reply_to_message_id ?? null);
   const replyThread = inReplyTo ? ((T(c, "messages").get(inReplyTo)?.thread_id as number | undefined) ?? null) : null;
+  const previous = JSON.parse(row?.attachments_json ?? "[]") as import("@terno/core").AttachmentRef[];
+  if (row && row.account_id !== d.accountId && (previous.length || d.attachments?.length)) throw assetError();
+  const attachments = validateAssets(idbAssets(c.db), d.accountId, d.attachments ?? previous);
   const values = {
     account_id: d.accountId,
     thread_id: d.threadId !== undefined ? d.threadId : row ? (row.thread_id ?? null) : replyThread,
@@ -1456,6 +1463,7 @@ export function saveDraft(c: Ctx, d: DraftInput, now: number): DraftRow | null {
     subject_edited: d.subjectEdited !== undefined ? Number(d.subjectEdited) : (row?.subject_edited ?? 0),
     body_text: d.bodyText,
     body_html: d.bodyHtml ?? "",
+    attachments_json: JSON.stringify(attachments),
     quoted_text: d.quotedText ?? row?.quoted_text ?? "",
     include_quote: d.includeQuote !== undefined ? Number(d.includeQuote) : (row?.include_quote ?? 0),
     in_reply_to_message_id: inReplyTo,
@@ -1463,9 +1471,14 @@ export function saveDraft(c: Ctx, d: DraftInput, now: number): DraftRow | null {
     ui_state: d.uiState ?? row?.ui_state ?? "open",
     updated_at: now,
   };
-  if (row && (d.baseRevision === undefined || d.baseRevision === row.revision)) return draftRow(drafts.update(row, { ...values, revision: (row.revision ?? 1) + 1 }));
+  if (row && (d.baseRevision === undefined || d.baseRevision === row.revision)) {
+    const saved = draftRow(drafts.update(row, { ...values, revision: (row.revision ?? 1) + 1 }));
+    linkAssets(idbAssets(c.db), "draft", saved.id, attachments);
+    return saved;
+  }
   const fresh: R = { id: undefined, ...values, format: 2, revision: 1 };
   drafts.insert(fresh);
+  linkAssets(idbAssets(c.db), "draft", fresh.id, attachments);
   return draftRow(fresh);
 }
 

@@ -1,5 +1,5 @@
 import PostalMime from "postal-mime";
-import { bulkHeaders, type Address } from "@terno/core";
+import { MAX_MIME_BYTES, attachmentFilename, attachmentMime, bulkHeaders, type Address } from "@terno/core";
 import type { IncomingAttachment } from "@terno/store";
 
 export interface ParsedMessage {
@@ -59,6 +59,7 @@ export function htmlToText(html: string): string {
 }
 
 export async function parseRaw(raw: Uint8Array | string): Promise<ParsedMessage> {
+  if ((typeof raw === "string" ? new TextEncoder().encode(raw).length : raw.byteLength) > MAX_MIME_BYTES) throw new Error("Message exceeds the local MIME limit");
   const email = await PostalMime.parse(raw);
   const header = (name: string) => email.headers.find((h) => h.key.toLowerCase() === name)?.value ?? null;
   const from = addresses(email.from as PostalAddress | undefined)[0] ?? { name: "", email: "" };
@@ -78,13 +79,9 @@ export async function parseRaw(raw: Uint8Array | string): Promise<ParsedMessage>
     bulk: bulkHeaders({ listUnsubscribe: header("list-unsubscribe"), precedence: header("precedence"), autoSubmitted: header("auto-submitted") }),
     text: email.text ?? (email.html ? htmlToText(email.html) : null),
     html: email.html ?? null,
-    attachments: email.attachments
-      .filter((a) => a.disposition !== "inline" || !a.contentId)
-      .map((a) => ({
-        filename: a.filename ?? "adjunto",
-        mime: a.mimeType,
-        size: typeof a.content === "string" ? a.content.length : (a.content as ArrayBuffer).byteLength,
-        contentId: a.contentId ?? null,
-      })),
+    attachments: email.attachments.map((a) => {
+      const bytes = typeof a.content === "string" ? new TextEncoder().encode(a.content) : new Uint8Array(a.content);
+      return { filename: attachmentFilename(a.filename ?? "attachment"), mime: attachmentMime(a.mimeType), size: bytes.byteLength, contentId: a.contentId?.replace(/^<|>$/g, "") ?? null, bytes };
+    }),
   };
 }

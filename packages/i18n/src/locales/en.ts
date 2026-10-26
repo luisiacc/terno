@@ -8,6 +8,15 @@
  * - `<b>…</b>`: rich text, rendered by rich()/richT() callbacks
  */
 const en = {
+  "attachments.loadInline": "Show inline images from this message",
+  "attachments.attach": "Attach files",
+  "attachments.adding": "Adding attachments…",
+  "attachments.remove": "Remove {name}",
+  "attachments.download": "Download {name}",
+  "attachments.notCached": "Unavailable offline",
+  "attachments.busy": "An attachment is busy. Try again in a moment.",
+  "attachments.unavailable": "This attachment is unavailable. Reattach the file before sending.",
+  "attachments.tooLarge": "This message is too large. Remove an attachment or shorten the message.",
   // ── common
   "common.cancel": "Cancel",
   "common.close": "Close",

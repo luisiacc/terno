@@ -262,12 +262,12 @@ export function getThread(db: Db, threadId: number): ThreadDetail | null {
   const attachments = new Map<number, AttachmentInfo[]>();
   if (messages.some((m) => m.has_attachments)) {
     for (const a of db.all<AttachmentInfo & { message_id: number }>(
-      `SELECT a.id, a.message_id, a.filename, a.mime, a.size FROM attachments a
+      `SELECT a.id, a.message_id, a.filename, a.mime, a.size, a.asset_id AS assetId, a.content_id AS contentId FROM attachments a
        JOIN messages m ON m.id = a.message_id WHERE m.thread_id = ?`,
       threadId,
     )) {
       const list = attachments.get(a.message_id) ?? [];
-      list.push({ id: a.id, filename: a.filename, mime: a.mime, size: a.size });
+      list.push({ id: a.id, filename: a.filename, mime: a.mime, size: a.size, assetId: a.assetId ?? undefined, contentId: a.contentId });
       attachments.set(a.message_id, list);
     }
   }

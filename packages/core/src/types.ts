@@ -135,6 +135,8 @@ export interface MessageDetail {
 
 export interface AttachmentInfo {
   id: number;
+  assetId?: string;
+  contentId?: string | null;
   filename: string;
   mime: string;
   size: number;

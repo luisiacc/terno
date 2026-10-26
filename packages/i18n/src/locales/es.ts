@@ -2,6 +2,15 @@ import type { LocaleCheck } from "../types";
 
 /** Español (es-MX). Same keys, placeholders and tags as en.ts: the type check at the bottom enforces it. */
 const es = {
+  "attachments.loadInline": "Mostrar imágenes adjuntas de este mensaje",
+  "attachments.attach": "Adjuntar archivos",
+  "attachments.adding": "Añadiendo adjuntos…",
+  "attachments.remove": "Quitar {name}",
+  "attachments.download": "Descargar {name}",
+  "attachments.notCached": "No disponible sin conexión",
+  "attachments.busy": "Un adjunto está ocupado. Inténtalo de nuevo en un momento.",
+  "attachments.unavailable": "Este adjunto no está disponible. Vuelve a adjuntar el archivo antes de enviar.",
+  "attachments.tooLarge": "Este mensaje es demasiado grande. Quita un adjunto o acorta el mensaje.",
   // ── common
   "common.cancel": "Cancelar",
   "common.close": "Cerrar",

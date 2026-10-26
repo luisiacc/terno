@@ -1,3 +1,5 @@
+import { assetError, linkAssets, validateAssets } from "@terno/store";
+import { sqlAssets } from "./attachments";
 import {
   accountPrefs,
   withAccountPrefs,
@@ -659,6 +661,9 @@ export function saveDraft(db: Db, d: DraftInput, now = Date.now()): DraftRow | n
   if (d.id !== undefined && !row) return null;
   const replyThread = (msgId: number | null | undefined) => (msgId ? (db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", msgId)?.thread_id ?? null) : null);
   const inReplyTo = d.inReplyToMessageId !== undefined ? d.inReplyToMessageId : (row?.in_reply_to_message_id ?? null);
+  const previous = JSON.parse(row?.attachments_json ?? "[]") as import("@terno/core").AttachmentRef[];
+  if (row && row.account_id !== d.accountId && (previous.length || d.attachments?.length)) throw assetError();
+  const attachments = validateAssets(sqlAssets(db), d.accountId, d.attachments ?? previous);
   const values = {
     account_id: d.accountId,
     thread_id: d.threadId !== undefined ? d.threadId : row ? row.thread_id : replyThread(inReplyTo),
@@ -670,6 +675,7 @@ export function saveDraft(db: Db, d: DraftInput, now = Date.now()): DraftRow | n
     subject_edited: d.subjectEdited !== undefined ? Number(d.subjectEdited) : (row?.subject_edited ?? 0),
     body_text: d.bodyText,
     body_html: d.bodyHtml ?? "",
+    attachments_json: JSON.stringify(attachments),
     quoted_text: d.quotedText ?? row?.quoted_text ?? "",
     include_quote: d.includeQuote !== undefined ? Number(d.includeQuote) : (row?.include_quote ?? 0),
     in_reply_to_message_id: inReplyTo,
@@ -679,6 +685,7 @@ export function saveDraft(db: Db, d: DraftInput, now = Date.now()): DraftRow | n
   const cols = Object.keys(values);
   if (row && (d.baseRevision === undefined || d.baseRevision === row.revision)) {
     db.run(`UPDATE drafts SET ${cols.map((c) => `${c} = ?`).join(", ")}, revision = revision + 1, updated_at = ? WHERE id = ?`, ...(Object.values(values) as Param[]), now, row.id);
+    linkAssets(sqlAssets(db), "draft", row.id, attachments);
     return db.get<DraftRow>("SELECT * FROM drafts WHERE id = ?", row.id)!;
   }
   // new (or edited from a revision another writer replaced): its own draft, format 2
@@ -687,6 +694,7 @@ export function saveDraft(db: Db, d: DraftInput, now = Date.now()): DraftRow | n
     ...(Object.values(values) as Param[]),
     now,
   ).lastInsertRowid;
+  linkAssets(sqlAssets(db), "draft", id, attachments);
   return db.get<DraftRow>("SELECT * FROM drafts WHERE id = ?", id)!;
 }
 

@@ -1,0 +1,66 @@
+// Available on both supported runtimes (Node 24 and browsers).
+declare function btoa(value: string): string;
+declare function atob(value: string): string;
+
+/** Immutable local attachment identity; filenames are labels, never paths. */
+export interface AttachmentRef {
+  assetId: string;
+  filename: string;
+  mime: string;
+  size: number;
+  contentId?: string | null;
+}
+
+export const ATTACHMENT_CHUNK = 48 * 1024; // divisible by three: concatenated base64 stays canonical
+export const MAX_ATTACHMENT_BYTES = 18 * 1024 * 1024;
+export const MAX_MIME_BYTES = 25 * 1024 * 1024;
+export const MAX_ATTACHMENT_COUNT = 100;
+export const ATTACHMENT_ACCOUNT_BYTES = 256 * 1024 * 1024;
+
+export function attachmentFilename(value: string): string {
+  const leaf = value.replace(/\\/g, "/").split("/").pop() ?? "";
+  // oxlint-disable-next-line no-control-regex -- filenames exclude control characters
+  return leaf.replace(/[\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069]/g, "").replace(/^\.+|\.+$/g, "").trim().slice(0, 120) || "attachment";
+}
+
+export function attachmentMime(value: string): string {
+  return /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i.test(value) && value.length <= 120 ? value.toLowerCase() : "application/octet-stream";
+}
+
+export function attachmentCid(value: string | null | undefined): string | null {
+  if (!value) return null;
+  let cid = value.replace(/^cid:/i, "").replace(/^<|>$/g, "");
+  try { cid = decodeURIComponent(cid); } catch { return null; }
+  // oxlint-disable-next-line no-control-regex -- content IDs cannot contain header controls
+  return cid.length <= 300 && !/[\x00-\x20\x7f<>]/.test(cid) ? cid.toLowerCase() : null;
+}
+
+export function bytesBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+  return btoa(binary);
+}
+
+export function base64Bytes(value: string, limit = ATTACHMENT_CHUNK): Uint8Array {
+  if (value.length > Math.ceil(limit / 3) * 4 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) throw new Error("Invalid attachment bytes");
+  const binary = atob(value);
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  if (bytes.length > limit || bytesBase64(bytes) !== value) throw new Error("Invalid attachment bytes");
+  return bytes;
+}
+
+/** Conservative bound includes body encodings, line folding and per-part/header overhead. */
+export function attachmentMessageBudget(text: string, html: string | undefined, attachments: readonly AttachmentRef[]): boolean {
+  if (attachments.length > MAX_ATTACHMENT_COUNT) return false;
+  const decoded = attachments.reduce((n, a) => n + a.size, 0);
+  const size = utf8Size(text) + utf8Size(html ?? "") + decoded;
+  return decoded <= MAX_ATTACHMENT_BYTES && Math.ceil(size / 3) * 4 + Math.ceil(size / 57) * 2 + attachments.length * 2048 + 16384 <= MAX_MIME_BYTES;
+}
+
+function utf8Size(value: string): number {
+  // Large bodies reserve the UTF-8 upper bound without scanning inside a store transaction.
+  if (value.length > 65536) return value.length * 3;
+  let bytes = 0;
+  for (const c of value) { const code = c.codePointAt(0)!; bytes += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4; }
+  return bytes;
+}

@@ -13,6 +13,8 @@ export interface SendPayload {
   text: string;
   /** plan 16: the text/html alternative (a rich draft); absent: a single text/plain part, as before */
   html?: string;
+  /** Persisted as immutable refs; dispatch resolves dataBase64 before submission. */
+  attachments?: (import("@terno/core").AttachmentRef & { dataBase64?: string })[];
   /** RFC Message-ID we generated, without angle brackets */
   messageId: string;
   inReplyTo: string | null;
@@ -78,7 +80,7 @@ export class ProviderAuthError extends ProviderError {
 /** Where providers deliver synced data. The backend implements it (chunking, filters, events). */
 export interface SyncSink {
   ingest(messages: IncomingMessage[]): Promise<void>;
-  setBody(messageId: number, text: string | null, html: string | null): Promise<void>;
+  setBody(messageId: number, text: string | null, html: string | null, attachments?: import("@terno/store").IncomingAttachment[]): Promise<void>;
   removeMessages(messageIds: number[]): Promise<void>;
   /** Applies provider-side state to existing messages (skips messages with pending local ops). */
   updateFlags(updates: FlagUpdate[]): Promise<void>;

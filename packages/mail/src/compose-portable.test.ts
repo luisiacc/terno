@@ -86,3 +86,25 @@ it("the web's Gmail send: the queued payload's HTML goes out through the API, Bc
   expect(parsed.text?.replace(/\r\n/g, "\n")).toBe(text);
   expect(parsed.bcc).toEqual([{ name: "", email: "spy@example.com" }]);
 });
+
+it("both MIME builders preserve exact attachments, duplicate Unicode names, empty files and CID bytes", async () => {
+  const { buildRaw } = await import("./compose");
+  const attachments = ["AP+A", "", "AQID"].map((dataBase64, i) => ({ assetId: crypto.randomUUID(), filename: "résumé.pdf", mime: "application/octet-stream", size: i === 1 ? 0 : 3, dataBase64, ...(i === 2 ? { contentId: "photo" } : {}) }));
+  const p = { ...base, text, html, attachments };
+  for (const raw of [buildRawPortable(p), await buildRaw(p)]) {
+    const parsed = await parseRaw(raw);
+    expect(parsed.attachments.map((a) => [...a.bytes!]).sort((a,b) => a.length - b.length || (a[0] ?? 0) - (b[0] ?? 0))).toEqual([[], [0,255,128], [1,2,3]]);
+    expect(parsed.attachments.map((a) => a.filename)).toEqual(attachments.map((a) => a.filename));
+    expect(parsed.attachments.find((a) => a.contentId === "photo")?.bytes).toEqual(new Uint8Array([1,2,3]));
+    expect(parsed.text?.replace(/\r\n/g, "\n")).toBe(text);
+  }
+});
+
+it("both builders fail closed for unresolved refs and size mismatch before transport", async () => {
+  const { buildRaw } = await import("./compose");
+  const ref = { assetId: crypto.randomUUID(), filename: "file", mime: "application/octet-stream", size: 3 };
+  for (const attachment of [ref, { ...ref, dataBase64: "" }]) {
+    expect(() => buildRawPortable({ ...base, attachments: [attachment] })).toThrow();
+    await expect(buildRaw({ ...base, attachments: [attachment] })).rejects.toThrow();
+  }
+});

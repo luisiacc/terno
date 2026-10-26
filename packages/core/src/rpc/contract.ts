@@ -1,3 +1,4 @@
+import type { AttachmentRef } from "../attachments";
 import { LANGUAGE_SETTINGS, type LanguageSetting } from "@terno/i18n";
 import { z } from "zod";
 import {
@@ -39,6 +40,11 @@ const searchCursor = cursor.extend({
 });
 const address = z.object({ name: z.string().max(300), email: z.string().email().max(320) });
 /** a draft keeps recipients as typed, unfinished ones too ("bob@"); addresses are validated when it is sent */
+export const attachmentRefSchema = z.object({
+  assetId: z.string().uuid(), filename: z.string().min(1).max(180), mime: z.string().max(120), size: z.number().int().min(0).max(18 * 1024 * 1024), contentId: z.string().max(300).nullable().optional(),
+}).strict();
+const attachmentRefs = z.array(attachmentRefSchema).max(100);
+const assetRequest = z.object({ accountId: id, assetId: z.string().uuid() }).strict();
 const draftAddress = z.object({ name: z.string().max(300), email: z.string().max(320), auto: z.literal(true).optional() });
 
 export interface ThreadPage {
@@ -215,6 +221,7 @@ export interface ExportedDraft {
   bodyText: string;
   /** plan 16: the written part as mail HTML ('' for a plain draft); bodyText is always its plain-text alternative */
   bodyHtml?: string;
+  attachments?: AttachmentRef[];
   quotedText: string;
   includeQuote: boolean;
   inReplyTo: string | null;
@@ -304,6 +311,7 @@ export interface Draft {
   bodyText: string;
   /** plan 16: the written part as mail HTML ('' for a plain draft); bodyText is always its plain-text alternative */
   bodyHtml: string;
+  attachments?: AttachmentRef[];
   quotedText: string;
   includeQuote: boolean;
   inReplyToMessageId: number | null;
@@ -608,9 +616,18 @@ export const contract = {
       inReplyToMessageId: id.optional(),
       forwardOfMessageId: id.optional(),
       draftId: id.optional(),
+      draftRevision: z.number().int().positive().optional(),
+      attachments: attachmentRefs.optional(),
     }),
   ),
   /** null: the draft is gone (sent or discarded elsewhere). A stale baseRevision never overwrites: it saves a new draft. */
+  "attachments.create": m<AttachmentRef>()(z.object({ accountId: id, filename: z.string().max(1000), mime: z.string().max(120), size: z.number().int().min(0).max(18 * 1024 * 1024), contentId: z.string().max(300).nullable().optional() }).strict()),
+  "attachments.append": m<{ ok: true }>()(assetRequest.extend({ index: z.number().int().min(0).max(384), dataBase64: z.string().max(65536) }).strict()),
+  "attachments.seal": m<{ ok: true }>()(assetRequest),
+  "attachments.info": m<AttachmentRef>()(assetRequest),
+  "attachments.read": m<{ dataBase64: string | null }>()(assetRequest.extend({ index: z.number().int().min(0).max(384) }).strict()),
+  "attachments.discard": m<{ ok: true }>()(assetRequest),
+
   "drafts.save": m<Draft | null>()(
     z.object({
       id: id.optional(),
@@ -626,6 +643,7 @@ export const contract = {
       bodyText: z.string().max(5_000_000).default(""),
       // plan 16: omitted = a plain draft (every save rewrites the body); only the renderer's is kept
       bodyHtml: z.string().max(20_000_000).default(""),
+      attachments: attachmentRefs.optional(),
       quotedText: z.string().max(5_000_000).optional(),
       includeQuote: z.boolean().optional(),
       inReplyToMessageId: id.nullable().optional(),

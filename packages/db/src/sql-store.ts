@@ -1,3 +1,6 @@
+import { attachmentMessageBudget } from "@terno/core";
+import { appendAsset, assetError, assetRef, assetRow, createAsset, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
+import { sqlAssets, replaceAttachments } from "./attachments";
 import { senderVetoed, type Address, type FilterAction, type ThreadAction, type ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -376,9 +379,11 @@ export class SqlMailStore implements MailStore {
     // Messages, filter claims, filter actions and their ops, and the categorizer's decisions
     // commit together: a crash can't record a filter as applied without its effects, nor an
     // auto-categorization without its message.
-    ingest: async (batch, { applyFilters, now, classifier }) =>
-      this.db.tx(() => {
-        const result = ingestMessages(this.db, batch as IncomingMessage[], now);
+    ingest: async (batch, { applyFilters, now, classifier }) => {
+      const staged: IncomingMessage[] = [];
+      for (const m of batch) staged.push(m.attachments === undefined ? m : { ...m, attachments: await stageAttachments(this, m.accountId, m.attachments, now, this.yieldTo) });
+      return this.db.tx(() => {
+        const result = ingestMessages(this.db, staged as IncomingMessage[], now);
         const touched = new Set(result.touchedThreads);
         const opIds: string[] = [];
         if (applyFilters) {
@@ -389,10 +394,14 @@ export class SqlMailStore implements MailStore {
         const c = this.classify(classifier, result.inserted, result.bodyCompleted, now);
         for (const t of c.touched) touched.add(t);
         return { inserted: result.inserted, touched: [...touched], deltas: [...result.deltas, ...c.deltas], auto: c.auto, backfill: c.backfill, uncertain: c.uncertain, opIds };
-      }),
-    setBody: async (messageId, text, html, { now, classifier }) =>
-      this.db.tx(() => {
+      });
+    },
+    setBody: async (messageId, text, html, { now, classifier, attachments }) => {
+      const accountId = this.db.get<{ account_id: number }>("SELECT account_id FROM messages WHERE id = ?", messageId)?.account_id;
+      const staged = attachments !== undefined && accountId !== undefined ? await stageAttachments(this, accountId, attachments, now, this.yieldTo) : undefined;
+      return this.db.tx(() => {
         setMessageBody(this.db, messageId, text, html, "full");
+          if (staged !== undefined) replaceAttachments(this.db, messageId, staged);
         const owner = this.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", messageId);
         if (owner) recomputeThreads(this.db, [owner.thread_id]);
         const opIds: string[] = [];
@@ -402,7 +411,8 @@ export class SqlMailStore implements MailStore {
         for (const t of c.touched) touched.add(t);
         if (owner) touched.add(owner.thread_id);
         return { touched: [...touched], deltas: c.deltas, auto: c.auto, opIds };
-      }),
+      });
+    },
     updateFlags: async (accountId, updates) =>
       this.db.tx(() => {
         // read inside this unit: a user action committed just before is honoured
@@ -514,6 +524,15 @@ export class SqlMailStore implements MailStore {
 
   // ───────────────────────────── compose ─────────────────────────────
 
+  readonly attachments: MailStore["attachments"] = {
+    create: async (p) => this.db.tx(() => createAsset(sqlAssets(this.db), () => this.db.uuid(), p)),
+    append: async (accountId, id, index, data) => this.db.tx(() => appendAsset(sqlAssets(this.db), accountId, id, index, data)),
+    seal: async (accountId, id) => this.db.tx(() => sealAsset(sqlAssets(this.db), accountId, id)),
+    info: async (accountId, id) => assetRef(assetRow(sqlAssets(this.db), accountId, id)),
+    read: async (accountId, id, index) => Promise.resolve().then(() => { assetRow(sqlAssets(this.db), accountId, id); if (!Number.isSafeInteger(index) || index < 0) throw assetError(); return sqlAssets(this.db).chunk(`${id}:${index}`) ?? null; }),
+    discard: async (accountId, id) => this.db.tx(() => { const db = sqlAssets(this.db); assetRow(db, accountId, id, false); if (db.pinned(id)) throw assetError(); db.remove(id); }),
+  };
+
   readonly compose: MailStore["compose"] = {
     // Optimistic local copy + durable send op, atomically: a crash can't lose or duplicate the send.
     queueSend: async (p) =>
@@ -523,7 +542,11 @@ export class SqlMailStore implements MailStore {
         const cfg = getAccountConfig<{ senderName?: string }>(this.db, p.accountId)!;
         const from: Address = { name: cfg.config.senderName || account.displayName, email: account.email };
         // a draft is sent once: sending deletes it, so a second send of the same draft finds nothing
-        if (p.draftId !== undefined && !this.db.get("SELECT 1 FROM drafts WHERE id = ?", p.draftId)) throw new RpcError("STALE", L("errors.draftGone"));
+        const draft = p.draftId === undefined ? undefined : this.db.get<{ account_id: number; revision: number; attachments_json: string }>("SELECT account_id, revision, attachments_json FROM drafts WHERE id = ?", p.draftId);
+        if (p.draftId !== undefined && (!draft || draft.account_id !== p.accountId || (p.draftRevision !== undefined && p.draftRevision !== draft.revision))) throw new RpcError("STALE", L("errors.draftGone"));
+        if (draft && p.attachments === undefined && JSON.parse(draft.attachments_json ?? "[]").length) throw assetError();
+        const attachments = validateAssets(sqlAssets(this.db), p.accountId, p.attachments ?? []);
+        if (!attachmentMessageBudget(p.bodyText, p.bodyHtml, attachments)) throw new RpcError("BAD_REQUEST", L("attachments.tooLarge"));
         let inReplyTo: string | null = null;
         let references: string[] = [];
         let providerThreadId: string | null = null;
@@ -542,7 +565,7 @@ export class SqlMailStore implements MailStore {
           }
         }
         const messageId = `${this.db.uuid()}@${account.email.split("@")[1] || "terno.local"}`;
-        const payload = { from, to: p.to, cc: p.cc, bcc: p.bcc, subject: p.subject, text: p.bodyText, ...(p.bodyHtml ? { html: p.bodyHtml } : {}), messageId, inReplyTo, references, providerThreadId };
+        const payload = { ...(attachments.length ? { attachments } : {}), from, to: p.to, cc: p.cc, bcc: p.bcc, subject: p.subject, text: p.bodyText, ...(p.bodyHtml ? { html: p.bodyHtml } : {}), messageId, inReplyTo, references, providerThreadId };
         const ingest = ingestMessages(
           this.db,
           [
@@ -572,7 +595,8 @@ export class SqlMailStore implements MailStore {
               isDraft: false,
               isTrash: false,
               isSpam: false,
-              hasAttachments: false,
+              hasAttachments: attachments.length > 0,
+              attachments,
               size: p.bodyText.length + (p.bodyHtml?.length ?? 0),
             },
           ],
@@ -580,6 +604,7 @@ export class SqlMailStore implements MailStore {
         );
         const localId = ingest.inserted[0]!;
         const opId = enqueueOp(this.db, { accountId: p.accountId, kind: "send", target: { messageIds: [localId] }, payload }, p.now)!;
+        linkAssets(sqlAssets(this.db), "op", opId, attachments);
         if (p.draftId) deleteDraft(this.db, p.draftId);
         if (replyThreadId && p.recordReply) recordUserActions(this.db, [replyThreadId], "reply", p.now);
         const threadId = this.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", localId)!.thread_id;
@@ -748,7 +773,7 @@ export class SqlMailStore implements MailStore {
   };
 
   readonly drafts: MailStore["drafts"] = {
-    save: async (d, now) => saveDraft(this.db, d, now),
+    save: async (d, now) => this.db.tx(() => saveDraft(this.db, d, now)),
     list: async () => listDrafts(this.db),
     delete: async (id) => deleteDraft(this.db, id),
     messageRef: async (id) => messageRef(this.db, id),

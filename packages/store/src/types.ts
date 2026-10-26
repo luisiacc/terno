@@ -8,6 +8,9 @@ export interface IncomingAttachment {
   size: number;
   contentId?: string | null;
   providerRef?: string | null;
+  assetId?: string;
+  /** Decoded MIME bytes, staged before the message transaction. */
+  bytes?: Uint8Array;
 }
 
 export interface IncomingLocation {
@@ -238,6 +241,7 @@ export interface DraftRow {
   body_text: string;
   /** plan 16: the written part as mail HTML ('' = a plain draft) */
   body_html: string;
+  attachments_json: string;
   quoted_text: string;
   include_quote: number;
   in_reply_to_message_id: number | null;
@@ -265,6 +269,7 @@ export interface DraftInput {
   bodyText: string;
   /** omitted: '' (a plain draft; the body is rewritten on every save) */
   bodyHtml?: string;
+  attachments?: import("@terno/core").AttachmentRef[];
   quotedText?: string;
   includeQuote?: boolean;
   inReplyToMessageId?: number | null;

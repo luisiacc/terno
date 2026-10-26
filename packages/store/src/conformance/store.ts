@@ -9,6 +9,7 @@ import { backfillFacts, ingest, msg, seedThroughCommands, threadOf, withAccounts
 import { byRecency, VIEW_TEST, type SearchCorpus } from "./oracle";
 import { SearchReplica } from "./replica";
 import { defineSearchConformance } from "./search";
+import { defineAttachmentConformance } from "./attachments";
 import { defineFactsConformance } from "./facts";
 
 export interface StoreHarness {
@@ -36,6 +37,7 @@ function corpusOf(s: StoreSnapshot): SearchCorpus {
  * counts, categorization, migrations).
  */
 export function defineStoreConformance(name: string, harness: StoreHarness): void {
+  defineAttachmentConformance(name, harness);
   const open: MailStore[] = [];
   const fresh = async () => {
     const s = await harness.open();
