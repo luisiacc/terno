@@ -824,3 +824,35 @@ export const visiblePolicyCases: Pick<VisibleReviewCase, "name" | "html" | "text
     "text": "Useful policytoken Tail"
   }
 ];
+
+const displayMatrix: [string, string, string][] = [
+  ["none", "Tail", "Tail"], ["contents", "Useful policy Tail", "Useful policy Tail"],
+  ["inline", "Tail", "Useful policy Tail"], ["inline-block", "Tail", "Tail"],
+  ["block", "Tail", "Tail"], ["flow-root", "Tail", "Tail"], ["list-item", "Tail", "Tail"],
+  ["flex", "Tail", "Tail"], ["grid", "Tail", "Tail"], ["inline-flex", "Tail", "Tail"], ["inline-grid", "Tail", "Tail"],
+  ["table", "Tail", "Useful policy Tail"], ["inline-table", "Tail", "Useful policy Tail"],
+  ["table-row-group", "Tail", "Useful policy Tail"], ["table-header-group", "Tail", "Useful policy Tail"],
+  ["table-footer-group", "Tail", "Useful policy Tail"], ["table-row", "Tail", "Useful policy Tail"], ["table-cell", "Tail", "Useful policy Tail"],
+  ["table-column", "Tail", "Tail"], ["table-column-group", "Tail", "Tail"], ["table-caption", "Tail", "Tail"],
+];
+for (const [display, opacityText, heightText] of displayMatrix) {
+  visiblePolicyCases.push({ name: `R2-F4 display ${display} opacity matrix`, html: `<div style="display:${display};opacity:0"><b>Useful policy</b></div><p>Tail</p>`, text: opacityText });
+  visiblePolicyCases.push({ name: `R2-F4 display ${display} max-height matrix`, html: `<div style="display:${display};max-height:0;overflow:hidden"><b>Useful policy</b></div><p>Tail</p>`, text: heightText });
+}
+visibleReviewCases.push(
+  { name: "R2-F4 contents opacity does not suppress descendants", html: '<div style="display:contents;opacity:0"><b>Useful policy</b></div><p>Tail</p>', text: "Useful policy Tail", value: "useful policy", query: '"useful policy"', matches: true },
+  { name: "R2-F4 contents cannot clip descendants", html: '<div style="display:contents;max-height:0;overflow:hidden">Useful policy</div><p>Tail</p>', text: "Useful policy Tail", value: "useful policy", query: '"useful policy"', matches: true },
+  { name: "R2-F4 inline cannot acquire max-height clipping", html: '<div style="display:inline;max-height:0;overflow:hidden">Useful policy</div><p>Tail</p>', text: "Useful policy Tail", value: "useful policy", query: '"useful policy"', matches: true },
+  { name: "R2-F4 initial display cancels block clipping", html: '<p style="display:block;max-height:0;overflow:hidden;display:initial">Useful policy</p><p>Tail</p>', text: "Useful policy Tail", value: "useful policy", query: '"useful policy"', matches: true },
+  { name: "R2-F4 unset display cancels block clipping", html: '<p style="display:block;max-height:0;overflow:hidden;display:unset">Useful policy</p><p>Tail</p>', text: "Useful policy Tail", value: "useful policy", query: '"useful policy"', matches: true },
+  { name: "R2-F4 default inline span stays useful", html: '<span style="max-height:0;overflow:hidden">Useful policy</span><p>Tail</p>', text: "Useful policy Tail", value: "useful policy", query: '"useful policy"', matches: true },
+  { name: "R2-F4 default slot is boxless", html: '<slot style="opacity:0;max-height:0;overflow:hidden">Useful policy</slot><p>Tail</p>', text: "Useful policy Tail", value: "useful policy", query: '"useful policy"', matches: true },
+  { name: "R2-F4 boxless retained slot still inherits visibility", html: '<slot style="opacity:0;visibility:hidden">phantomneedle<span style="visibility:visible">Useful policy</span></slot><p>Tail</p>', text: "Useful policy Tail", value: "phantomneedle", query: "phantomneedle", matches: false },
+  { name: "R2-F4 native table max-height does not clip text", html: '<table style="max-height:0;overflow:hidden"><tr><td>Useful policy</td></tr></table><p>Tail</p>', text: "Useful policy Tail", value: "useful policy", query: '"useful policy"', matches: true },
+  { name: "R2-F4 table row max-height does not clip text", html: '<div style="display:table-row;max-height:0;overflow:hidden">Useful policy</div><p>Tail</p>', text: "Useful policy Tail", value: "useful policy", query: '"useful policy"', matches: true },
+  { name: "R2-F4 table cell max-height does not clip text", html: '<div style="display:table-cell;max-height:0;overflow:hidden">Useful policy</div><p>Tail</p>', text: "Useful policy Tail", value: "useful policy", query: '"useful policy"', matches: true },
+  { name: "R2-F4 important block still clips", html: '<div style="display:block!important;display:contents;max-height:0;overflow:hidden">phantomneedle</div><p>Useful</p>', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false },
+  { name: "R2-F4 ordinary block clipping remains hidden", html: '<div style="max-height:0;overflow:hidden">phantomneedle</div><p>Useful</p>', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false },
+  { name: "R2-F4 inline block clipping remains hidden", html: '<div style="display:inline-block;max-height:0;overflow:hidden">phantomneedle</div><p>Useful</p>', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false },
+  { name: "R2-F4 ordinary inline opacity remains hidden", html: '<span style="opacity:0">phantomneedle</span><p>Useful</p>', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false },
+);

@@ -11,6 +11,8 @@ const DROP_CONTENT = new Set(["head", "title", "script", "style", "template", "p
 const BLOCKS = new Set(["address", "article", "aside", "blockquote", "br", "caption", "dd", "div", "dl", "dt", "fieldset", "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "li", "main", "nav", "ol", "p", "pre", "section", "table", "tbody", "td", "th", "thead", "tr", "ul"]);
 const DISPLAYS = new Set(["none", "contents", "block", "inline", "inline-block", "flow-root", "list-item", "flex", "inline-flex", "grid", "inline-grid", "table", "inline-table", "table-row-group", "table-header-group", "table-footer-group", "table-row", "table-column-group", "table-column", "table-cell", "table-caption"]);
 const INLINE_DISPLAYS = new Set(["inline", "inline-block", "inline-flex", "inline-grid", "inline-table", "contents"]);
+const HEIGHT_BOXES = new Set(["block", "flow-root", "list-item", "inline-block", "flex", "inline-flex", "grid", "inline-grid", "table-caption"]);
+const DEFAULT_DISPLAY = new Map([["slot", "contents"], ["button", "inline-block"], ["input", "inline-block"], ["marquee", "inline-block"], ["meter", "inline-block"], ["progress", "inline-block"], ["select", "inline-block"], ["textarea", "inline-block"], ["table", "table"], ["caption", "table-caption"], ["thead", "table-header-group"], ["tbody", "table-row-group"], ["tfoot", "table-footer-group"], ["tr", "table-row"], ["td", "table-cell"], ["th", "table-cell"], ["col", "table-column"], ["colgroup", "table-column-group"]]);
 const LENGTHS = new Set(["px", "em", "rem", "ex", "ch", "cap", "ic", "lh", "rlh", "vw", "vh", "vmin", "vmax", "svh", "lvh", "dvh", "cm", "mm", "q", "in", "pt", "pc"]);
 const PROPERTIES = new Set(["display", "visibility", "opacity", "max-height", "overflow", "overflow-x", "overflow-y"]);
 const INITIAL = new Map([["display", "inline"], ["opacity", "positive"], ["max-height", "none"], ["overflow", "visible"], ["overflow-x", "visible"], ["overflow-y", "visible"]]);
@@ -120,13 +122,14 @@ export async function htmlToText(html: string): Promise<string> {
     const attrs = new Map(node.attrs.map((attr) => [attr.name, attr.value]));
     const source = attrs.get("style");
     const style = source ? inlineStyle(source) : EMPTY_STYLE;
-    const display = style.get("display")?.value;
+    const authoredDisplay = style.get("display")?.value;
+    const display = authoredDisplay ?? DEFAULT_DISPLAY.get(node.tagName) ?? (BLOCKS.has(node.tagName) ? "block" : "inline");
     const hidden = attrs.get("hidden")?.trim().toLowerCase();
     const overflow = verticalOverflow(style);
-    if (display === "none" || (attrs.has("hidden") && (!display || hidden === "until-found")) || style.get("opacity")?.value === "0" || (style.get("max-height")?.value === "0" && overflow !== "visible")) continue;
+    if (display === "none" || display === "table-column" || display === "table-column-group" || (attrs.has("hidden") && (!authoredDisplay || hidden === "until-found")) || (display !== "contents" && style.get("opacity")?.value === "0") || (HEIGHT_BOXES.has(display) && style.get("max-height")?.value === "0" && overflow !== "visible")) continue;
     const visibility = style.get("visibility")?.value;
     const invisible = visibility === "hidden" || visibility === "collapse" || (visibility !== "visible" && visibility !== "initial" && frame.invisible);
-    const block = node.tagName === "br" || (display ? !INLINE_DISPLAYS.has(display) : BLOCKS.has(node.tagName));
+    const block = node.tagName === "br" || !INLINE_DISPLAYS.has(display);
     if (block) output.push(" ");
     if (node.childNodes.length) stack.push({ children: node.childNodes, index: 0, invisible, block });
   }
