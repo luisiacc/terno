@@ -87,4 +87,41 @@ test.describe("no focus ring around the conversation list @design", () => {
     await list.evaluate((node) => node.focus());
     await expect(list).not.toBeFocused();
   });
+
+  test("the list is never a Tab stop without rows, loading included", async ({ app: page }) => {
+    // record every moment the listbox is tabbable with no option in it, from the first frame of a reload
+    await page.addInitScript(() => {
+      const w = window as unknown as { __tabbableEmpty: number };
+      w.__tabbableEmpty = 0;
+      const check = () => {
+        const list = document.querySelector("[data-testid=thread-list] [role=listbox]");
+        if (list?.getAttribute("tabindex") === "0" && !list.querySelector("[role=option]")) w.__tabbableEmpty++;
+      };
+      new MutationObserver(check).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ["tabindex"] });
+    });
+    await page.reload();
+    await rows(page).first().waitFor();
+    await search(page, "zzqx-no-such-mail");
+    await expect(page.getByTestId("list-empty")).toBeVisible();
+    expect(await page.evaluate(() => (window as unknown as { __tabbableEmpty: number }).__tabbableEmpty)).toBe(0);
+  });
+
+  test("the hand-off brings a scrolled-away sidebar item into sight", async ({ app: page }) => {
+    await page.setViewportSize({ width: 1200, height: 420 });
+    const nav = page.locator("#app-sidebar nav");
+    await search(page, "291 gadgets");
+    await expect(rows(page)).toHaveCount(1);
+    await rows(page).first().click();
+    await nav.evaluate((el) => { el.scrollTop = el.scrollHeight; });
+    await page.keyboard.press("#");
+    await expect(page.getByTestId("list-empty")).toBeVisible();
+    const inSight = await page.evaluate(() => {
+      const el = document.activeElement as HTMLElement;
+      const scroller = el.closest("nav");
+      if (!scroller) return false;
+      const a = el.getBoundingClientRect(), b = scroller.getBoundingClientRect();
+      return a.top >= b.top - 1 && a.bottom <= b.bottom + 1;
+    });
+    expect(inSight).toBe(true);
+  });
 });

@@ -38,3 +38,10 @@ Codex had one finding (medium): an empty list kept keyboard focus with nothing v
 - If it holds focus as it empties, or receives focus later (a page closing), focus moves to a visible control: the empty state's Clear button when there is one, otherwise the sidebar's current view.
 
 Regression tests in `list-focus.spec.ts` cover trashing a search's only result and Tab or programmatic focus into an empty search. Both fail without the fix.
+
+Round 2 found two more gaps (both P2):
+
+- The loading skeleton (no rows yet) was still a Tab stop with nothing visible. The listbox is now tabbable only while it has rows, and the hand-off still waits for a truly empty, non-loading list, so a view switch never steals focus.
+- The hand-off used `preventScroll`, so a sidebar scrolled past its current view got focus out of sight. The focus may now scroll it into view.
+
+Regressions cover both: a MutationObserver from the first frame records any tabbable listbox without options, and an overflowed sidebar scrolled to its end must bring the focused item back into sight. Both fail without the fix.
