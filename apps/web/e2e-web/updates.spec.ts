@@ -18,7 +18,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const BUILT = join(here, "..", process.env.WEB_PORT ? `dist-web-e2e-${process.env.WEB_PORT}` : "dist-web-e2e");
 const MIME: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".wasm": "application/wasm", ".json": "application/json", ".webmanifest": "application/manifest+json", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2" };
 
-let dirs: { a: string; b: string };
+let dirs: { a: string; b: string; c: string };
 let serving: string;
 let server: Server;
 let origin: string;
@@ -26,7 +26,7 @@ let origin: string;
 test.beforeAll(async () => {
   test.skip(!existsSync(join(BUILT, "sw.js")), "the web e2e build (dist-web-e2e) is made by this config's webServer");
   const root = mkdtempSync(join(tmpdir(), "terno-sw-"));
-  dirs = { a: join(root, "a"), b: join(root, "b") };
+  dirs = { a: join(root, "a"), b: join(root, "b"), c: join(root, "c") };
   cpSync(BUILT, dirs.a, { recursive: true });
   cpSync(BUILT, dirs.b, { recursive: true });
   // the next deploy: a new build id in the service worker (its bytes change, so the browser installs it)
@@ -34,6 +34,8 @@ test.beforeAll(async () => {
   const next = sw.replace(/const BUILD = "([^"]+)"/, (_m, id: string) => `const BUILD = "${id}-next"`);
   expect(next).not.toBe(sw);
   writeFileSync(join(dirs.b, "sw.js"), next);
+  cpSync(dirs.b, dirs.c, { recursive: true });
+  writeFileSync(join(dirs.c, "sw.js"), next.replace(/-next"/, '-third"'));
   serving = dirs.a;
   server = createServer((req, res) => {
     const path = decodeURIComponent((req.url ?? "/").split("?")[0]!);
@@ -124,7 +126,7 @@ test("a new deployment: offered in the pill, and a tab writing a draft saves it 
 });
 
 
-test("terminal recovery holds different-build Reload and service-worker controller changes until explicit copy", async ({ page }) => {
+test("terminal recovery holds repeated deployments and persistent Reload survives A-B-C activation", async ({ context, page }) => {
   serving = dirs.a;
   await page.goto(`${origin}${URL_}`); await rows(page).first().waitFor({ timeout: 60_000 });
   await page.evaluate(async () => {
@@ -152,6 +154,15 @@ test("terminal recovery holds different-build Reload and service-worker controll
   });
   await expect(page.getByRole("button", { name: "Try Again", exact: true })).toBeVisible();
   expect(navigations).toBe(0); await expect(body).toHaveText("web recovery exact latest");
+  serving = dirs.c;
+  await page.evaluate(async () => { await (await navigator.serviceWorker.ready).update(); });
+  await expect.poll(() => page.evaluate(async () => Boolean((await navigator.serviceWorker.ready).waiting))).toBe(true);
+  const other = await context.newPage(); await other.goto(`${origin}/sw.js`);
+  await other.evaluate(async () => (await navigator.serviceWorker.ready).waiting!.postMessage("skip-waiting"));
+  await expect.poll(() => page.evaluate(() => navigator.serviceWorker.controller?.scriptURL)).toContain("sw.js");
+  await expect.poll(() => page.evaluate(async () => Boolean((await navigator.serviceWorker.ready).waiting))).toBe(false);
+  expect(navigations).toBe(0); await expect(body).toHaveText("web recovery exact latest");
+  await other.close();
   await page.getByTestId("draft-save-copy").click(); await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
   await Promise.all([page.waitForEvent("framenavigated", { predicate: (frame) => frame === page.mainFrame(), timeout: 5000 }), page.getByTestId("update-pill").click()]);
   await rows(page).first().waitFor();

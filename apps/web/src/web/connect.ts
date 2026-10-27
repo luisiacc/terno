@@ -338,9 +338,10 @@ async function registerServiceWorker(): Promise<void> {
   // come from it, once what this tab is writing is saved (its worker is still the old one, and still answers)
   let reloading = false;
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    if (!hadController || reloading) return;
-    reloading = true;
+    if (!hadController) return;
     setWeb({ update: { apply: () => void whenDraftsSaved(() => location.reload()) } });
+    if (reloading) return;
+    reloading = true;
     void whenDraftsSaved(() => location.reload());
   });
   watchDeployments(reg);
