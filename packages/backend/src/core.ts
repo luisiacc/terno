@@ -157,6 +157,7 @@ export class BackendCore {
   private readonly syncing = new Map<number, Promise<void>>();
   /** a change arrived while syncing: run another pass when the current one ends */
   private readonly syncAgain = new Set<number>();
+  private readonly flagSyncAgain = new Set<number>();
   /** plan 25: bumped per account each time a sign-in stores new credentials (a refusal from before doesn't count) */
   private readonly credentials = new Map<number, number>();
   /** plan 25: the Google sign-in in flight per account (a new one aborts it: one flow, one secret written) */
@@ -678,7 +679,11 @@ export class BackendCore {
 
   reconcileFlags(accountIds: readonly number[] | undefined): void {
     if (!accountIds?.length || this.stopped || this.options.autoSync === false) return;
-    for (const id of new Set(accountIds)) if (this.connectivity.canSync(id)) void this.syncAccount(id);
+    for (const id of new Set(accountIds)) {
+      if (!this.connectivity.canSync(id)) continue;
+      if (this.syncing.has(id)) this.flagSyncAgain.add(id);
+      else void this.syncAccount(id);
+    }
   }
 
   static learningSignal(action: ThreadAction) {
@@ -1056,6 +1061,7 @@ export class BackendCore {
     this.unwatch.get(accountId)?.();
     this.unwatch.delete(accountId);
     this.syncAgain.delete(accountId);
+    this.flagSyncAgain.delete(accountId);
     this.syncing.delete(accountId);
     this.providers.delete(accountId);
     // Never wait for a stuck read, factory or close before cancelling its lifetime.
@@ -1218,7 +1224,9 @@ export class BackendCore {
     }).finally(() => {
       if (this.syncing.get(accountId) !== run) return;
       this.syncing.delete(accountId);
-      if (this.syncAgain.delete(accountId) && this.current(life)) void this.syncAccount(accountId);
+      const explicit = this.syncAgain.delete(accountId);
+      const flags = this.flagSyncAgain.delete(accountId);
+      if (this.current(life) && (explicit || (flags && this.connectivity.canSync(accountId)))) void this.syncAccount(accountId);
     });
     this.syncing.set(accountId, run);
     return run;

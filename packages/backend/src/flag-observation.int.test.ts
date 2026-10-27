@@ -17,6 +17,10 @@ async function setup(kind: "SQL" | "IDB" | "IDB instant", automatic = false) {
   const dir = mkdtempSync(join(tmpdir(), "terno-observation-"));
   const captured = gate(), response = gate(), freshResponse = gate();
   let hold = false, blockFresh = false, authoritative = true, emptyHistory = false, requests = 0, history = 10;
+  let historyRefusal: number | undefined;
+  let heldHistory: { captured: ReturnType<typeof gate>; response: ReturnType<typeof gate> } | undefined;
+  let heldMutation: { at: number; captured: ReturnType<typeof gate>; response: ReturnType<typeof gate> } | undefined;
+  let minimalRequests = 0;
   const labels = new Set(["INBOX", "UNREAD"]);
   const mutations: unknown[] = [];
   const raw = Buffer.from("From: sender@example.test\r\nTo: synthetic@example.test\r\nSubject: Synthetic\r\n\r\nExact body\r\n").toString("base64url");
@@ -26,11 +30,18 @@ async function setup(kind: "SQL" | "IDB" | "IDB instant", automatic = false) {
       requests++;
       const url = new URL(String(input));
       if (url.pathname.endsWith("/profile")) return Response.json({ historyId: String(history) });
-      if (url.pathname.endsWith("/history")) return Response.json({ historyId: String(history), history: emptyHistory ? [] : [{ labelsAdded: [{ message: { id: "m" } }] }] });
+      if (url.pathname.endsWith("/history")) {
+        const held = heldHistory;
+        heldHistory = undefined;
+        if (held) { held.captured.release(); await held.response.promise; }
+        if (historyRefusal) return Response.json({ error: { message: "Synthetic refusal" } }, { status: historyRefusal });
+        return Response.json({ historyId: String(history), history: emptyHistory ? [] : [{ labelsAdded: [{ message: { id: "m" } }] }] });
+      }
       if (url.pathname.endsWith("/messages")) return Response.json({ messages: [{ id: "m" }] });
       if (url.pathname.endsWith("/batchModify")) {
         const change = JSON.parse(String(init?.body)) as { addLabelIds: string[]; removeLabelIds: string[] };
         mutations.push(change);
+        if (heldMutation?.at === mutations.length) { heldMutation.captured.release(); await heldMutation.response.promise; }
         for (const label of change.addLabelIds) labels.add(label);
         for (const label of change.removeLabelIds) labels.delete(label);
         history++;
@@ -38,6 +49,7 @@ async function setup(kind: "SQL" | "IDB" | "IDB instant", automatic = false) {
       }
       const snapshot = { id: "m", threadId: "t", labelIds: [...labels], ...(url.searchParams.get("format") === "raw" ? { raw } : {}) };
       if (url.searchParams.get("format") === "minimal") {
+        minimalRequests++;
         if (hold) { hold = false; captured.release(); await response.promise; }
         else if (blockFresh) await freshResponse.promise;
       }
@@ -54,14 +66,76 @@ async function setup(kind: "SQL" | "IDB" | "IDB instant", automatic = false) {
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "synthetic", origin: "renderer" });
   const client = new RpcClient(c);
-  cleanups.push(async () => { response.release(); freshResponse.release(); client.close(); await backend.stop(); rmSync(dir, { recursive: true, force: true }); });
+  cleanups.push(async () => { heldHistory?.response.release(); heldMutation?.response.release(); response.release(); freshResponse.release(); client.close(); await backend.stop(); rmSync(dir, { recursive: true, force: true }); });
   await backend.ready;
   const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
   await backend.syncAccount(account.id);
   expect((await backend.store.accounts.get(account.id))?.syncState).toMatchObject({ status: "idle", lastError: null });
   const threadId = (await backend.store.debug.snapshot()).messages[0]!.threadId;
-  return { backend, account, threadId, client, captured, response, mutations, setEmptyHistory() { emptyHistory = true; }, setRemote(next: string[]) { labels.clear(); for (const label of next) labels.add(label); }, requests: () => requests, setCapable(value: boolean) { authoritative = value; }, remoteLabels: () => [...labels], hold() { hold = true; blockFresh = true; history++; }, releaseFresh() { blockFresh = false; freshResponse.release(); } };
+  return { backend, account, threadId, client, captured, response, mutations,
+    refuseHistory(status: number) { historyRefusal = status; heldHistory = { captured: gate(), response: gate() }; return heldHistory; },
+    allowHistory() { historyRefusal = undefined; },
+    holdMutation(at: number) { heldMutation = { at, captured: gate(), response: gate() }; return heldMutation; },
+    minimalRequests: () => minimalRequests,
+    setEmptyHistory() { emptyHistory = true; }, setRemote(next: string[]) { labels.clear(); for (const label of next) labels.add(label); }, requests: () => requests, setCapable(value: boolean) { authoritative = value; }, remoteLabels: () => [...labels], hold() { hold = true; blockFresh = true; history++; }, releaseFresh() { blockFresh = false; freshResponse.release(); } };
 }
+
+it.each([401, 429])("a queued flag reconciliation rechecks admission after history returns %s", async (status) => {
+  const t = await setup("SQL", true);
+  t.setEmptyHistory();
+  vi.spyOn(t.backend, "kickWorker").mockImplementation(() => {});
+  const sync = vi.spyOn(t.backend, "syncAccount");
+  const held = t.refuseHistory(status);
+  const running = t.backend.syncAccount(t.account.id);
+  try {
+    await held.captured.promise;
+    await t.backend.store.threads.act({ threadIds: [t.threadId], action: "markRead", signal: null, now: 1 });
+    expect(await t.backend.runWorker()).toBe(1);
+  } finally { held.response.release(); await running; }
+  await Promise.all(sync.mock.results.map((result) => result.value));
+  expect.soft(sync).toHaveBeenCalledTimes(1);
+  expect.soft(t.minimalRequests()).toBe(0);
+  expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toHaveLength(1);
+  t.allowHistory();
+  await t.backend.syncAccount(t.account.id);
+  expect(t.minimalRequests()).toBe(1);
+  expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
+});
+
+it("an explicit trailing sync consumes the simultaneous automatic request without another pass", async () => {
+  const t = await setup("SQL", true);
+  vi.spyOn(t.backend, "kickWorker").mockImplementation(() => {});
+  const sync = vi.spyOn(t.backend, "syncAccount");
+  const held = t.refuseHistory(401);
+  const running = t.backend.syncAccount(t.account.id);
+  await held.captured.promise;
+  const explicit = t.backend.syncAccount(t.account.id);
+  try {
+    await t.backend.store.threads.act({ threadIds: [t.threadId], action: "markRead", signal: null, now: 1 });
+    expect(await t.backend.runWorker()).toBe(1);
+  } finally { held.response.release(); await Promise.all([running, explicit]); }
+  expect(sync).toHaveBeenCalledTimes(3);
+  expect(t.minimalRequests()).toBe(1);
+  t.allowHistory();
+});
+
+it("retirement forgets an automatic trailing reconciliation", async () => {
+  const t = await setup("SQL", true);
+  vi.spyOn(t.backend, "kickWorker").mockImplementation(() => {});
+  const sync = vi.spyOn(t.backend, "syncAccount");
+  const held = t.refuseHistory(429);
+  const running = t.backend.syncAccount(t.account.id);
+  try {
+    await held.captured.promise;
+    await t.backend.store.threads.act({ threadIds: [t.threadId], action: "markRead", signal: null, now: 1 });
+    expect(await t.backend.runWorker()).toBe(1);
+    await t.backend.dropAccount(t.account.id);
+  } finally { held.response.release(); await running; }
+  expect(sync).toHaveBeenCalledTimes(1);
+  expect(t.minimalRequests()).toBe(0);
+});
+
+
 
 describe.each(["SQL", "IDB", "IDB instant"] as const)("%s settled flag observation", (kind) => {
   it.each(["markRead", "star", "archive"] as const)("fresh snapshots reconcile acknowledged %s even after its history was consumed", async (action) => {
