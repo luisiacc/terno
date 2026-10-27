@@ -72,7 +72,10 @@ test.describe("reader conversation", { tag: "@design" }, () => {
     await expect(tile).toContainText("1.5 MB");
     const download = tile.getByRole("button", { name: "Download boarding-pass.pdf 1.5 MB · Unavailable offline", exact: true });
     await expect(download).toHaveAttribute("aria-description", "application/pdf");
-    await download.focus();
+    const reply = page.getByTestId("quick-reply");
+    await reply.focus();
+    await expect(reply).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
     await expect(download).toBeFocused();
   });
 
