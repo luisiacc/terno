@@ -160,9 +160,14 @@ export const subscribeComposeFocus = (listener: (threadId: number, fallback: boo
 export function finishComposeFocus(key: string, focusSeq: number, fallback: boolean): boolean {
   const lease = focusLease;
   if (!lease?.valid || lease.intent !== intent || lease.key !== key || lease.seq !== focusSeq) return false;
-  const owner = intent;
-  releaseFocusLease(lease, fallback);
-  return intent === owner && focusLease === null;
+  const owner = intent, revision = getSelectionWriteRevision();
+  let changed = false;
+  const unsubscribe = useApp.subscribe((state, previous) => {
+    if (state.selectedId !== previous.selectedId || state.readerOpen !== previous.readerOpen || state.compose !== previous.compose || state.checked !== previous.checked || state.scope !== previous.scope || state.accountId !== previous.accountId || state.dialog !== previous.dialog || state.fatal !== previous.fatal || state.view !== previous.view || state.categoryId !== previous.categoryId || state.reviewCategoryId !== previous.reviewCategoryId || state.query !== previous.query || state.listFilters !== previous.listFilters) changed = true;
+  });
+  try { releaseFocusLease(lease, fallback); }
+  finally { unsubscribe(); }
+  return !changed && getSelectionWriteRevision() === revision && intent === owner && focusLease === null;
 }
 export const supersedeCompose = (): void => {
   ++intent;
