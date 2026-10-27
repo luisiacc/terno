@@ -99,7 +99,8 @@ export async function readIncomingBody(response: Response, options: { signal: Ab
     return { chunks, bytes, get promoted() { return wasPromoted; }, promote, release };
   } finally {
     signal.removeEventListener("abort", cancel);
-    if (!complete) { cancel(); release(); }
-    reader.releaseLock();
+    try {
+      if (!complete) { cancel(); release(); }
+    } finally { reader.releaseLock(); }
   }
 }

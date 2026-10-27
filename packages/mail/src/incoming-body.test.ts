@@ -246,6 +246,23 @@ it("cleans cancellation listeners when promotion throws synchronously", async ()
   body.release();
 });
 
+it("unlocks a failed reader even when the promoted lease release throws", async () => {
+  const failure = new Error("synthetic release failure");
+  const release = vi.fn(() => { throw failure; });
+  let pulls = 0;
+  const response = new Response(new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (pulls++ === 0) controller.enqueue(new Uint8Array(256 * 1024 + 1));
+      else controller.error(new Error("synthetic read failure"));
+    },
+  }, { highWaterMark: 0 }));
+  const signal = new AbortController().signal;
+  await expect(readIncomingBody(response, { signal, limit: 1024 * 1024, promote: async () => release })).rejects.toBe(failure);
+  expect(release).toHaveBeenCalledOnce();
+  expect(response.body!.locked).toBe(false);
+  expect(getEventListeners(signal, "abort")).toHaveLength(0);
+});
+
 it("keeps the completed promoted lease until an admitted consumer releases it", async () => {
   const abort = new AbortController();
   const released = vi.fn();
