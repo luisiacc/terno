@@ -274,10 +274,14 @@ function showStoredStandalone(key: string, owner: number, allowed: () => boolean
   snapshot = invalidatedPresentation(snapshot);
   const active = typeof document === "undefined" ? null : document.activeElement;
   const selectionRevision = getSelectionWriteRevision();
-  let changed = false, expected = getApp();
+  let changed = false, locationChanged = false, expected = getApp();
+  const baseline = expected;
+  let publicationOwner: typeof expected.compose = null;
+  const sameLocation = (a: typeof expected, b: typeof expected) => a.selectedId === b.selectedId && a.readerOpen === b.readerOpen && a.compose === b.compose && a.checked === b.checked && a.scope === b.scope && a.accountId === b.accountId && a.dialog === b.dialog && a.fatal === b.fatal && a.view === b.view && a.categoryId === b.categoryId && a.reviewCategoryId === b.reviewCategoryId && a.query === b.query && a.listFilters === b.listFilters;
   const observe = (event: FocusEvent) => { if (event.target !== active && event.target !== document.body) changed = true; };
-  const unsubscribe = useApp.subscribe((state) => {
-    if (state.selectedId !== expected.selectedId || state.readerOpen !== expected.readerOpen || state.compose !== expected.compose || state.checked !== expected.checked || state.scope !== expected.scope || state.accountId !== expected.accountId || state.dialog !== expected.dialog || state.fatal !== expected.fatal || state.view !== expected.view || state.categoryId !== expected.categoryId || state.reviewCategoryId !== expected.reviewCategoryId || state.query !== expected.query || state.listFilters !== expected.listFilters) changed = true;
+  const unsubscribe = useApp.subscribe((state, previousState) => {
+    const ownPublication = publicationOwner !== null && state.compose === publicationOwner && sameLocation(previousState, baseline);
+    if (!sameLocation(state, expected) || (!sameLocation(previousState, expected) && !ownPublication)) { changed = true; locationChanged = true; }
   });
   const current = () => !changed && getSelectionWriteRevision() === selectionRevision && permitted();
   if (typeof document !== "undefined") document.addEventListener?.("focusin", observe, true);
@@ -291,11 +295,12 @@ function showStoredStandalone(key: string, owner: number, allowed: () => boolean
     if (!current() || focusLease !== lease || !lease.valid) { releaseFocusLease(lease, false); return null; }
     const publication = { compose, checked: new Set<number>(), scope: null, readerOpen: false, draftFocus: { key, target: "to" as const, seq: compose.storedFocusSeq } };
     expected = { ...getApp(), ...publication };
+    publicationOwner = publication.compose;
     setApp(publication);
     if (!current() || focusLease !== lease || !lease.valid || getApp().compose !== compose) {
       releaseFocusLease(lease, false);
       const state = getApp();
-      if (owner !== intent && state.compose === compose) setApp({ compose: null, ...(state.selectedId === selectedId && state.accountId === accountId ? { readerOpen: previous.readerOpen } : {}) });
+      if (state.compose === compose && (owner !== intent || locationChanged)) setApp({ compose: null, ...(owner !== intent && state.selectedId === selectedId && state.accountId === accountId ? { readerOpen: previous.readerOpen } : {}) });
       return null;
     }
     return lease;
