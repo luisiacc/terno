@@ -812,6 +812,7 @@ const es = {
   "compose.quote.remove": "Quitar la cita",
   "compose.quote.removed": "Sin el mensaje citado · <include>Incluirlo</include>",
   "compose.status.tooLong": "Demasiado largo para guardarlo · <retry>Reintentar</retry>",
+  "compose.forwardAccountMismatch": "Para reenviar estos adjuntos, elige {account} en De.",
   "compose.format.toolbar": "Formato",
   "compose.format.toggle": "Opciones de formato",
   "compose.format.more": "Más formato",

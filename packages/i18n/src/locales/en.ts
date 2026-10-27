@@ -818,6 +818,7 @@ const en = {
   "compose.quote.remove": "Remove quoted text",
   "compose.quote.removed": "Quoted text removed · <include>Add it back</include>",
   "compose.status.tooLong": "Too long to save · <retry>Retry</retry>",
+  "compose.forwardAccountMismatch": "To forward these attachments, choose {account} in From.",
   "compose.format.toolbar": "Formatting",
   "compose.format.toggle": "Formatting options",
   "compose.format.more": "More formatting",
