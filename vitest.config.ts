@@ -12,7 +12,7 @@ export default defineConfig({
         test: {
           name: "unit",
           globalSetup: ["packages/backend/scripts/test-worker-setup.mjs"],
-          include: ["packages/*/src/**/*.test.ts", "apps/*/src/**/*.test.ts"],
+          include: ["packages/*/src/**/*.test.{ts,tsx}", "apps/*/src/**/*.test.{ts,tsx}"],
           exclude: ["**/*.perf.test.ts", "**/node_modules/**"],
           environment: "node",
           testTimeout: 20_000,
