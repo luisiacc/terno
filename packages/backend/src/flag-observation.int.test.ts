@@ -16,7 +16,7 @@ function gate() { let release!: () => void; const promise = new Promise<void>((r
 async function setup(kind: "SQL" | "IDB" | "IDB instant", automatic = false) {
   const dir = mkdtempSync(join(tmpdir(), "terno-observation-"));
   const captured = gate(), response = gate(), freshResponse = gate();
-  let hold = false, blockFresh = false, authoritative = true, requests = 0, history = 10;
+  let hold = false, blockFresh = false, authoritative = true, emptyHistory = false, requests = 0, history = 10;
   const labels = new Set(["INBOX", "UNREAD"]);
   const mutations: unknown[] = [];
   const raw = Buffer.from("From: sender@example.test\r\nTo: synthetic@example.test\r\nSubject: Synthetic\r\n\r\nExact body\r\n").toString("base64url");
@@ -26,7 +26,7 @@ async function setup(kind: "SQL" | "IDB" | "IDB instant", automatic = false) {
       requests++;
       const url = new URL(String(input));
       if (url.pathname.endsWith("/profile")) return Response.json({ historyId: String(history) });
-      if (url.pathname.endsWith("/history")) return Response.json({ historyId: String(history), history: [{ labelsAdded: [{ message: { id: "m" } }] }] });
+      if (url.pathname.endsWith("/history")) return Response.json({ historyId: String(history), history: emptyHistory ? [] : [{ labelsAdded: [{ message: { id: "m" } }] }] });
       if (url.pathname.endsWith("/messages")) return Response.json({ messages: [{ id: "m" }] });
       if (url.pathname.endsWith("/batchModify")) {
         const change = JSON.parse(String(init?.body)) as { addLabelIds: string[]; removeLabelIds: string[] };
@@ -60,10 +60,28 @@ async function setup(kind: "SQL" | "IDB" | "IDB instant", automatic = false) {
   await backend.syncAccount(account.id);
   expect((await backend.store.accounts.get(account.id))?.syncState).toMatchObject({ status: "idle", lastError: null });
   const threadId = (await backend.store.debug.snapshot()).messages[0]!.threadId;
-  return { backend, account, threadId, client, captured, response, mutations, requests: () => requests, setCapable(value: boolean) { authoritative = value; }, remoteLabels: () => [...labels], hold() { hold = true; blockFresh = true; history++; }, releaseFresh() { blockFresh = false; freshResponse.release(); } };
+  return { backend, account, threadId, client, captured, response, mutations, setEmptyHistory() { emptyHistory = true; }, setRemote(next: string[]) { labels.clear(); for (const label of next) labels.add(label); }, requests: () => requests, setCapable(value: boolean) { authoritative = value; }, remoteLabels: () => [...labels], hold() { hold = true; blockFresh = true; history++; }, releaseFresh() { blockFresh = false; freshResponse.release(); } };
 }
 
 describe.each(["SQL", "IDB", "IDB instant"] as const)("%s settled flag observation", (kind) => {
+  it.each(["markRead", "star", "archive"] as const)("fresh snapshots reconcile acknowledged %s even after its history was consumed", async (action) => {
+    const t = await setup(kind);
+    await t.client.call("threads.act", { threadIds: [t.threadId], action });
+    expect(await t.backend.runWorker()).toBe(1);
+    const op = (await t.backend.store.debug.snapshot()).ops.find((row) => row.kind === action)!;
+    expect(op.state).toBe("succeeded");
+    expect(t.mutations).toHaveLength(1);
+    expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toHaveLength(1);
+    t.setEmptyHistory();
+    t.setRemote(["INBOX", "UNREAD"]);
+    const before = t.requests();
+    await t.backend.syncAccount(t.account.id);
+    expect.soft(t.requests() - before).toBe(2);
+    expect.soft((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
+    expect.soft((await t.backend.store.debug.snapshot()).messages[0]).toMatchObject({ isRead: false, isStarred: false, inInbox: true });
+    expect(t.mutations).toHaveLength(1);
+  });
+
   it("refuses non-send dispatch locally when an active protocol loses provider capability", async () => {
     const t = await setup(kind);
     await t.backend.dropAccount(t.account.id);

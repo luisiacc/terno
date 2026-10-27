@@ -605,6 +605,50 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     return gone;
   }
 
+  async function reconcileFlags(sink: SyncSink): Promise<ProviderError | undefined> {
+    if (!ctx.flagObservation) return;
+    const reset = reads.signal;
+    const pass = new AbortController();
+    const preparation = AbortSignal.any([sink.signal, reset, pass.signal]);
+    let failure: { error: unknown } | undefined, malformed: ProviderError | undefined;
+    let after: number | undefined, through: number | undefined;
+    const check = () => {
+      sink.signal.throwIfAborted();
+      if (reset.aborted) throw new ProviderError(L("errors.gmail.requestOffline"), true);
+      if (failure) throw failure.error;
+    };
+    for (;;) {
+      check();
+      const page = await store.pendingFlagSnapshots({ limit: 50, ...(after !== undefined && { afterMessageId: after }), ...(through !== undefined && { throughMessageId: through }) });
+      through ??= page.throughMessageId;
+      if (!page.items.length) break;
+      const updates: FlagUpdate[] = [], gone: number[] = [];
+      try {
+        await download(page.items, async (target) => {
+          try {
+            check();
+            const message = readMessage(await api<unknown>(`/messages/${target.providerMsgId}?format=minimal`, { signal: sink.signal, readReset: reset, preparationSignal: preparation }), target.providerMsgId);
+            updates.push({ messageId: target.id, expectedProviderMsgId: target.providerMsgId, flags: labelState(message.labelIds ?? []), gmailLabels: message.labelIds ?? [] });
+          } catch (error) {
+            if (error instanceof GmailApiError && error.status === 404) { gone.push(target.id); return; }
+            if (error instanceof ProviderError && error.i18n?.key === "errors.gmail.invalidResponse") { malformed ??= error; return; }
+            failure ??= { error: sink.signal.aborted ? sink.signal.reason : reset.aborted ? new ProviderError(L("errors.gmail.requestOffline"), true) : error };
+            pass.abort(failure.error);
+            throw failure.error;
+          }
+        });
+      } catch (error) { failure ??= { error }; }
+      sink.signal.throwIfAborted();
+      if (reset.aborted) throw new ProviderError(L("errors.gmail.requestOffline"), true);
+      if (updates.length) await sink.updateFlags(updates);
+      if (gone.length) await sink.removeMessages(gone);
+      if (failure) throw failure.error;
+      if (!page.hasMore) break;
+      after = page.items[page.items.length - 1]!.id;
+    }
+    return malformed;
+  }
+
   async function fullSync(sink: SyncSink, previousHistory?: string) {
     const baseline = readBaseline(await api<unknown>("/profile"));
     if (previousHistory && earlierHistory(baseline, previousHistory)) throw invalidResponse();
@@ -723,22 +767,21 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     },
 
     async sync(sink) {
+      const malformed = await reconcileFlags(sink);
       const cursor = await ctx.loadCursor<Cursor>();
       if (!isRecord(cursor) || !historyId(cursor.historyId)) {
         await fullSync(sink);
-        return captureAttachments(sink);
-      }
-      try {
-        await incremental(sink, cursor);
-      } catch (e) {
-        // History records expire (~1 week): Google answers 404 and a full resync is required.
-        if (e instanceof ExpiredHistory) {
-          await fullSync(sink, cursor.historyId);
-        } else {
-          throw e;
+      } else {
+        try {
+          await incremental(sink, cursor);
+        } catch (e) {
+          // History records expire (~1 week): Google answers 404 and a full resync is required.
+          if (e instanceof ExpiredHistory) await fullSync(sink, cursor.historyId);
+          else throw e;
         }
       }
       await captureAttachments(sink);
+      if (malformed) throw malformed;
     },
 
     async execute(op: ProviderOp) {
