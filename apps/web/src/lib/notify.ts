@@ -1,5 +1,5 @@
 /**
- * Plan 38 in the page. Desktop: main shows the badge and the notifications,
+ * Plan 41 in the page. Desktop: main shows the badge and the notifications,
  * and a click comes back here to open its conversation. Elsewhere (the web,
  * a browser on the dev backend) the page does both: the unread count on the
  * installed app's icon where the browser has setAppBadge, and a notification

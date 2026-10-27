@@ -1,4 +1,4 @@
-# Plan 38: the Dock's unread count and system notifications for important mail
+# Plan 41: the Dock's unread count and system notifications for important mail
 
 ## Request (verbatim)
 

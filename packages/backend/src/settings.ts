@@ -99,7 +99,7 @@ export const DEFAULT_SETTINGS: General = {
   // plan 22: unset follows the mode (readSettings); this is local mode's answer
   senderIcons: false,
   googlePhotos: {},
-  // plan 38: like Mail, the count and the notifications are on until turned off
+  // plan 41: like Mail, the count and the notifications are on until turned off
   dockBadge: true,
   notifications: true,
   notificationPreview: true,
@@ -196,7 +196,7 @@ export async function readComposeSuggestions(store: SettingsStore): Promise<bool
   return (await stored(store)).composeSuggestions ?? DEFAULT_SETTINGS.composeSuggestions;
 }
 
-/** Plan 38: the Dock badge and notifications, read at start and when settings change. */
+/** Plan 41: the Dock badge and notifications, read at start and when settings change. */
 export async function readAttention(store: SettingsStore): Promise<Pick<AppSettings, "dockBadge" | "notifications" | "notificationPreview">> {
   const s = await stored(store);
   return {

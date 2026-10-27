@@ -508,7 +508,7 @@ export function resetFacts(db: MemDb): void {
   setPhase(db, t(db, "threads").size > 0 ? { phase: "senders", after: 0 } : { phase: "done" });
 }
 
-/** Plan 38: newly inserted messages as they are now (SQLite's arrivalRows): by key, one correspondent per sender. */
+/** Plan 41: newly inserted messages as they are now (SQLite's arrivalRows): by key, one correspondent per sender. */
 export function arrivalRows(db: MemDb, ids: readonly number[]): ArrivalRow[] {
   const messages = t(db, "messages");
   const threads = t(db, "threads");

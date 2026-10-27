@@ -156,7 +156,7 @@ const en = {
   "settings.general.writing": "Writing",
   "settings.general.suggestions": "Suggest text while writing",
   "settings.general.suggestions.hint": "Completes sentences from mail you've sent. It's learned and kept on this device.",
-  // plan 38
+  // plan 41
   "settings.general.notifications": "Notifications",
   "settings.general.notify": "System notifications",
   "settings.general.notify.hint": "New mail from people you’ve written to, replies in your conversations, and mail Gmail marks important, while Terno is running. macOS asks the first time; whether previews show on the lock screen is up to System Settings → Notifications.",
@@ -1517,7 +1517,7 @@ It contains none of your mail, contacts, settings or keys.
   "web.provider.desktopOnly": "IMAP/SMTP needs the desktop app: a browser can’t open IMAP or SMTP connections.",
   "web.provider.gmailInPage": "In the browser, Gmail connects with Google sign-in on this page.",
 
-  // ── system notifications (plan 38)
+  // ── system notifications (plan 41)
   "notify.count": { one: "# new message", other: "# new messages" },
   "notify.new": "New mail",
   "notify.from.two": "From {a} and {b}",

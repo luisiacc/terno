@@ -143,7 +143,7 @@ describe("main: the document and the PDF", () => {
     expect(testSmtpPort({ TERNO_TEST_SMTP_PORT: "2525" }, true, false)).toBeNull();
     expect(testSmtpPort({ TERNO_TEST_SMTP_PORT: "smtp.evil.example:25" }, false, false)).toBeNull();
     expect(testSmtpPort({}, false, true)).toBeNull();
-    // plan 38: plain IMAP for the notification smoke, only in the demo mailbox
+    // plan 41: plain IMAP for the notification smoke, only in the demo mailbox
     expect(testImapInsecure({ TERNO_TEST_IMAP_INSECURE: "1" }, true)).toBe(true);
     expect(testImapInsecure({ TERNO_TEST_IMAP_INSECURE: "1" }, false)).toBe(false);
     expect(testImapInsecure({ TERNO_TEST_IMAP_INSECURE: "true" }, true)).toBe(false);

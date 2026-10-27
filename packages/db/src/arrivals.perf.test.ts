@@ -1,5 +1,5 @@
 /**
- * Plan 38: notifications read new mail back by id (sync.arrivals), 200 ids
+ * Plan 41: notifications read new mail back by id (sync.arrivals), 200 ids
  * per read. What one read costs follows the ids, never the mailbox: at 50k+
  * threads it stays under 5 ms.
  */

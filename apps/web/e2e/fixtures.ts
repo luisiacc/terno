@@ -72,7 +72,7 @@ export interface TestNetwork {
    */
   refused: Set<string>;
   google: string | null;
-  /** plan 38: mail the next sync pass of its account hands over as live (new since the last pass) */
+  /** plan 41: mail the next sync pass of its account hands over as live (new since the last pass) */
   incoming: IncomingMessage[];
 }
 

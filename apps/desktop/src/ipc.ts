@@ -27,6 +27,6 @@ export type BackendToMain =
   | { type: "diag"; entries: unknown[] }
   | { type: "diag-ring"; crumbs: unknown[] }
   | { type: "diag-record"; record: unknown }
-  /** plan 38: the Inbox's unread count for the Dock, and a notice for important new mail (main validates both) */
+  /** plan 41: the Inbox's unread count for the Dock, and a notice for important new mail (main validates both) */
   | { type: "badge"; count: number }
   | { type: "notify"; notice: unknown };

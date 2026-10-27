@@ -1,5 +1,5 @@
 /**
- * Plan 38 in main: the Dock badge and system notifications, from what the
+ * Plan 41 in main: the Dock badge and system notifications, from what the
  * backend reports over the parent port (validated again here), and a
  * notification's click opening its conversation in a window, once that
  * window's page listens. Electron stays behind the deps, so this is tested

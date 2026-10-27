@@ -112,7 +112,7 @@ const density = () =>
   ] as const;
 
 /**
- * Plan 38: system notifications, their preview, and the unread count on the
+ * Plan 41: system notifications, their preview, and the unread count on the
  * Dock (desktop) or the installed app's icon (a browser that has it). In a
  * browser the switch reads on only with the permission granted, and turning
  * it on asks inside the click.

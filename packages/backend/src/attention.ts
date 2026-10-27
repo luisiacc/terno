@@ -1,5 +1,5 @@
 /**
- * Plan 38: the Dock's unread count and system notifications for important
+ * Plan 41: the Dock's unread count and system notifications for important
  * new mail. The badge rides on the sidebar's counts (no query of its own).
  * Notifications take what a sync pass of an already-synced account inserted
  * as live mail and screen it once the pass is over (its flags, Sent and

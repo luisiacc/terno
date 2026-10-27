@@ -675,7 +675,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     const known = async (id: string) => (await store.messageByProviderId(id))?.id;
     const toFetch: string[] = [];
     for (const id of added) if (!deleted.has(id) && !(await known(id))) toFetch.push(id);
-    // plan 38: what history added since the cursor is live mail (a full sync and the attachment re-fetch aren't)
+    // plan 41: what history added since the cursor is live mail (a full sync and the attachment re-fetch aren't)
     const live: SyncSink = { ...sink, ingest: (messages) => sink.ingest(messages, { live: true }) };
     for (let i = 0; i < toFetch.length; i += 50) await fetchFull(toFetch.slice(i, i + 50), live);
 

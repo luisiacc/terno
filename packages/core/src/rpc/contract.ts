@@ -137,11 +137,11 @@ export interface AppSettings {
   senderIcons: boolean;
   /** plan 22: Gmail accounts showing photos from Google, by account id (set through icons.googlePhotos, never settings.update) */
   googlePhotos: Record<string, GooglePhotoState>;
-  /** plan 38: the Inbox's unread count on the Dock icon (the web: the installed app's icon) */
+  /** plan 41: the Inbox's unread count on the Dock icon (the web: the installed app's icon) */
   dockBadge: boolean;
-  /** plan 38: system notifications for important new mail while Terno runs */
+  /** plan 41: system notifications for important new mail while Terno runs */
   notifications: boolean;
-  /** plan 38: notifications name the sender and the subject (off: only how many) */
+  /** plan 41: notifications name the sender and the subject (off: only how many) */
   notificationPreview: boolean;
 }
 
@@ -813,7 +813,7 @@ export interface Events {
   categorized: { categoryId: number; threadIds: number[]; by: "auto" };
   /** plan 22: icons that arrived for addresses asked about; `reset`: forget every icon (turned off, forgotten) */
   icons: { icons: Record<string, IconAnswer>; reset?: boolean };
-  /** plan 38: important new mail, for a host that shows notifications from the page (the web; desktop main shows its own) */
+  /** plan 41: important new mail, for a host that shows notifications from the page (the web; desktop main shows its own) */
   notify: MailNotice;
 }
 export type EventName = keyof Events;

@@ -1,5 +1,5 @@
 /**
- * Plan 38: the notification smoke's synthetic IMAP account talks plain IMAP
+ * Plan 41: the notification smoke's synthetic IMAP account talks plain IMAP
  * and SMTP to the test's own servers on this machine. Behind
  * TERNO_TEST_IMAP_INSECURE in the demo mailbox only (print-policy.ts), and
  * even then only for an account whose two servers are loopback: any other

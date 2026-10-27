@@ -632,7 +632,7 @@ export function createHandlers(b: Backend): Handlers {
         if (next.composeSuggestions !== was.composeSuggestions) await b.autocomplete.setPhrases(next.composeSuggestions);
         // plan 22: website icons turned off (or local mode took the default away): nothing in flight lands, windows forget them
         if (next.senderIcons !== was.senderIcons) b.icons.invalidate();
-        // plan 38: the badge follows at once; notifications turned off drop what was pending
+        // plan 41: the badge follows at once; notifications turned off drop what was pending
         if (next.dockBadge !== was.dockBadge || next.notifications !== was.notifications || next.notificationPreview !== was.notificationPreview) await b.attention.refresh();
         return next;
       } catch (error) {

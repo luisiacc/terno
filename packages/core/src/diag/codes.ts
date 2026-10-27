@@ -93,7 +93,7 @@ export const CODES = {
   "autocomplete.evicted": c("model", "count"),
   "autocomplete.rebuild": c("model", "errorClass"),
   "autocomplete.disabled": c("model", "errorClass"),
-  // notifications (plan 38): how many messages a notice stood for, never a name or a subject
+  // notifications (plan 41): how many messages a notice stood for, never a name or a subject
   "notify.shown": c("count"),
   "notify.failed": c("errorClass"),
   // sender icons (plan 22): counts, sizes and durations only, never a domain, an address or a URL

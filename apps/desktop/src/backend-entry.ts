@@ -148,7 +148,7 @@ parentPort.on("message", async (event) => {
         cipher,
         legacySecrets,
         // the demo mailbox's sends go to the packaged smoke's SMTP server when it asks (main checked it may)
-        // and plan 38's notification smoke adds an IMAP account on its own plain-text servers (the demo mailbox only,
+        // and plan 41's notification smoke adds an IMAP account on its own plain-text servers (the demo mailbox only,
         // and only for an account whose servers are loopback: imap-seam.ts)
         providers: msg.demo && msg.testImapInsecure ? loopbackInsecure(registry, createRegistry({ imap: { allowInsecure: true } })) : registry,
         openExternal: async (url) => send({ type: "open-external", url }),
@@ -156,7 +156,7 @@ parentPort.on("message", async (event) => {
         demo: msg.demo,
         online: msg.online,
         onPolicy: (policy) => send({ type: "policy", ...policy }),
-        // plan 38: main owns the Dock and the notifications (they work with every window closed)
+        // plan 41: main owns the Dock and the notifications (they work with every window closed)
         attention: { badge: (count) => send({ type: "badge", count }), notify: (notice) => send({ type: "notify", notice }) },
         // free-form lines (the store, the search engine): the log keeps that one happened, never its text
         // (it can quote a provider's or a model's answer); a dev build also prints it

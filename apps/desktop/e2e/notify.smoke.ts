@@ -1,5 +1,5 @@
 /**
- * Plan 38 on the PACKAGED app, copied outside the repo: the Dock badge and
+ * Plan 41 on the PACKAGED app, copied outside the repo: the Dock badge and
  * system notifications. The demo mailbox (temp profile) plus a synthetic
  * IMAP account on this test's own plain-text server (imapkit, with a local
  * SMTP server for its verification; plain IMAP is honored only in the demo,

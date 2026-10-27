@@ -313,7 +313,7 @@ export function defineFactsConformance(fresh: () => Promise<MailStore>, reopen: 
       for (const a of snap.accounts) expect(counts.inboxWaitingByAccount?.[a.id] ?? 0).toBe(waiting.filter((t) => t.accountId === a.id).length);
     });
 
-  describe("arrivals: new mail read back for notifications (plan 38)", () => {
+  describe("arrivals: new mail read back for notifications (plan 41)", () => {
     it("reads each message as it is now: its flags, its conversation's Inbox, your conversation, own and written; missing ids skipped", async () => {
       const store = await fresh();
       const [a] = await withAccounts(store);

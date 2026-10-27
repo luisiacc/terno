@@ -45,7 +45,7 @@ export interface DesktopBridge {
   showSaved?(exportId: string): Promise<boolean>;
   /** the menu's commands (Archivo, Ver) */
   onCommand?(listener: (command: "thread.print" | "thread.exportPdf" | "list.toggleUnread" | "updates.check" | "nav.back" | "nav.forward") => void): () => void;
-  /** plan 38: a notification's click opens this conversation (null: the Inbox); older shells don't have it */
+  /** plan 41: a notification's click opens this conversation (null: the Inbox); older shells don't have it */
   onOpenThread?(listener: (threadId: number | null) => void): () => void;
   /** older shells don't have it */
   diag?: DesktopDiag;

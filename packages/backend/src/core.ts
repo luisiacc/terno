@@ -84,7 +84,7 @@ export interface BackendCoreOptions {
   iconTransport?: IconTransport | null;
   /** tests: the icon fetcher's deadlines */
   iconTimeouts?: { requestMs?: number; budgetMs?: number };
-  /** plan 38: a host that shows the Dock badge and notifications itself (desktop main); without one, notices go to the page */
+  /** plan 41: a host that shows the Dock badge and notifications itself (desktop main); without one, notices go to the page */
   attention?: AttentionHost;
 }
 
@@ -194,7 +194,7 @@ export class BackendCore {
   readonly connectivity: Connectivity;
   /** plan 22: sender icons (website icons and Google photos), idle until the first lookup */
   readonly icons: IconService;
-  /** plan 38: the Dock badge and notifications for important new mail */
+  /** plan 41: the Dock badge and notifications for important new mail */
   readonly attention: Attention;
   private warming: Promise<void> | null = null;
   private idleTimer: ReturnType<typeof setInterval> | null = null;
@@ -326,7 +326,7 @@ export class BackendCore {
       if (this.stopped) return;
     }
     if (!this.categorizer.ready) void this.categorizer.rebuild();
-    // plan 38: the badge as it is now (a restarted backend puts it back), before any sync changes it
+    // plan 41: the badge as it is now (a restarted backend puts it back), before any sync changes it
     await this.attention.start().catch((error: unknown) => void captureError(error, { code: "notify.failed" }));
     if (this.stopped) return;
     // plan 17: old mail's facts, and threads requeued before a quit, in slices
@@ -616,7 +616,7 @@ export class BackendCore {
     const counts = await this.store.threads.counts(this.now());
     if (this.stopped) return;
     this.server.emit("counts", counts);
-    // plan 38: the Dock shows the sidebar's Inbox number (no query of its own)
+    // plan 41: the Dock shows the sidebar's Inbox number (no query of its own)
     this.attention.counts(counts);
   }
 
@@ -691,7 +691,7 @@ export class BackendCore {
       const write = () => this.store.sync.ingest(chunk, { applyFilters, now: this.now(), classifier });
       const r = await (life ? this.accountWrite(life, write) : write());
       inserted.push(...r.inserted);
-      // plan 38: each committed slice, so a pass that fails later still hands over what it stored
+      // plan 41: each committed slice, so a pass that fails later still hands over what it stored
       onInserted?.(r.inserted);
       // RAM follows the database, never the other way round
       this.categorizer.apply(r.deltas);
@@ -1088,7 +1088,7 @@ export class BackendCore {
       if (!provider || !this.current(life)) return;
       // an account that syncs is one whose failures are counted (dropAccount untracks it)
       this.connectivity.track(accountId);
-      // plan 38: live mail this pass inserts is news once the account synced in this life (no first sync, no catch-up
+      // plan 41: live mail this pass inserts is news once the account synced in this life (no first sync, no catch-up
       // at launch); it's looked at when the pass is over (its flags, filters and bodies settled)
       const arrivals = this.attention.beginPass(accountId);
       const sink: SyncSink = {
@@ -1131,7 +1131,7 @@ export class BackendCore {
       const started = performance.now();
       try {
         this.assertCurrent(life);
-        // plan 38: the pass is over (done or failed): what it stored as live mail is looked at now
+        // plan 41: the pass is over (done or failed): what it stored as live mail is looked at now
         await provider.sync(sink).finally(() => arrivals.end());
         if (!this.current(life)) return;
         breadcrumb("sync", "sync.done", { accountKind, durationMs: performance.now() - started });

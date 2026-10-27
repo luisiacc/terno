@@ -1,4 +1,4 @@
-/** Plan 38: sync.arrivals on IndexedDB (SQLite's arrivals.perf.test.ts): 200 ids per read, under 5 ms at 50k+ threads. */
+/** Plan 41: sync.arrivals on IndexedDB (SQLite's arrivals.perf.test.ts): 200 ids per read, under 5 ms at 50k+ threads. */
 import "fake-indexeddb/auto";
 import { generateDataset } from "@terno/mock-data";
 import { expect, it } from "vitest";

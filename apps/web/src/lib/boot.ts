@@ -109,7 +109,7 @@ export async function boot(): Promise<void> {
     installPage();
     const reopened = bootPage();
     await reloadList({ keepSelection: reopened !== null });
-    // plan 38: the badge and notifications; a click main held for this window opens now, after the first list
+    // plan 41: the badge and notifications; a click main held for this window opens now, after the first list
     startAttention();
   } catch (error) {
     captureUi(error, { code: "boot.failed" });

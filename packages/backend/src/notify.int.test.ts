@@ -1,5 +1,5 @@
 /**
- * Plan 38 through the real Backend (node:sqlite): a scripted provider hands
+ * Plan 41 through the real Backend (node:sqlite): a scripted provider hands
  * passes of mail to the sync sink, live or not, and a fake host records the
  * badge and the notices. Timing (gather, gap) is unit-tested in attention.test.ts.
  */
@@ -82,7 +82,7 @@ function setup(passes: Parameters<typeof scripted>[0], dir = mkdtempSync(join(tm
 
 const settle = () => new Promise((r) => setTimeout(r, GATHER_MS + 300));
 
-describe("notifications through the backend (plan 38)", () => {
+describe("notifications through the backend (plan 41)", () => {
   it("the first pass notifies nothing (even live mail); the next pass's important mail notifies once; what isn't important or isn't news stays quiet", async () => {
     const t = setup([
       { messages: (a) => [...wroteToCarlos(a), mail(a)], live: true },

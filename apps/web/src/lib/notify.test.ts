@@ -1,5 +1,5 @@
 /**
- * Plan 38: a notification's click in the page (openFromNotice), in Split and
+ * Plan 41: a notification's click in the page (openFromNotice), in Split and
  * List. Node, the RPC client mocked (as page.test.ts).
  */
 import type { ThreadSummary } from "@terno/core";
@@ -41,7 +41,7 @@ beforeEach(async () => {
   useList.setState({ items, index: new Map(items.map((t, i) => [t.id, i])), key: listKey(), itemsKey: listKey() });
 });
 
-describe("a notification's click (plan 38)", () => {
+describe("a notification's click (plan 41)", () => {
   it("from another mailbox, with Settings open: the unified Inbox, the conversation open, the dialog closed", async () => {
     setApp({ view: "archive", accountId: 2, dialog: "settings" });
     openFromNotice(42);

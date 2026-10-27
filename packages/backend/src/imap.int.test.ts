@@ -315,7 +315,7 @@ describe("IMAP provider against ImapKit", () => {
     await expect.poll(async () => (await client.call("threads.list", { view: "inbox" })).items.map((t) => t.subject), { timeout: 8000 }).toContain("¡Llegó por IDLE!");
   });
 
-  it("plan 38: after the first sync, a person's mail arriving through IDLE notifies once; list mail and the first sync never do", async () => {
+  it("plan 41: after the first sync, a person's mail arriving through IDLE notifies once; list mail and the first sync never do", async () => {
     const notices: import("@terno/core").MailNotice[] = [];
     const { imap, backend, client, addAccount } = await setup({ attention: { badge: () => {}, notify: (n) => notices.push(n) } });
     await backend.start();

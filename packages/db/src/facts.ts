@@ -379,7 +379,7 @@ export function resetFacts(db: Db): void {
 }
 
 /**
- * Plan 38: newly inserted messages as they are now, for the notification rule. By primary
+ * Plan 41: newly inserted messages as they are now, for the notification rule. By primary
  * key and one correspondent per sender: what it costs follows the ids, never the mailbox.
  */
 export function arrivalRows(db: Db, ids: readonly number[]): ArrivalRow[] {

@@ -82,7 +82,7 @@ export class ProviderAuthError extends ProviderError {
 /** Where providers deliver synced data. The backend implements it (chunking, filters, events). */
 export interface SyncSink {
   /**
-   * `live` (plan 38): the server says these are new since the last cursor (Gmail's history, IMAP's
+   * `live` (plan 41): the server says these are new since the last cursor (Gmail's history, IMAP's
    * UIDs past a known uidnext), not a first sync, a resync or a re-fetch. Only live mail may notify.
    */
   ingest(messages: IncomingMessage[], o?: { live?: boolean }): Promise<void>;

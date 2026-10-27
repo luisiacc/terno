@@ -231,7 +231,7 @@ describe("app.import", () => {
     expect((await to.client.call("app.bootstrap", {})).settings.remoteImages).toBe("ask");
   });
 
-  it("plan 38 (Codex code review #1): a file carries notifications and their preview off, never on; the badge's switch both ways", async () => {
+  it("plan 41 (Codex code review #1): a file carries notifications and their preview off, never on; the badge's switch both ways", async () => {
     const from = setup();
     await from.client.call("settings.update", { notifications: false, notificationPreview: false, dockBadge: false });
     const off = await from.client.call("app.export", {});

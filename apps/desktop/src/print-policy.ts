@@ -149,7 +149,7 @@ export function testSmtpPort(env: Record<string, string | undefined>, packaged: 
 }
 
 /**
- * Plan 38: the notification smoke adds a synthetic IMAP account on its own
+ * Plan 41: the notification smoke adds a synthetic IMAP account on its own
  * plain-text server on this machine. Honored only in the demo mailbox (never
  * real mail): there, IMAP and SMTP may skip TLS.
  */

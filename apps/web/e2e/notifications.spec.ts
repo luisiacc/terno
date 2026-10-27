@@ -1,5 +1,5 @@
 /**
- * Plan 38 in the page (a browser on the dev backend, like the web build):
+ * Plan 41 in the page (a browser on the dev backend, like the web build):
  * the Notifications settings, the browser's permission, a notification for
  * important new mail while the tab is hidden and its click, and the unread
  * count on the app icon. The browser's Notification, its permission, the tab's
@@ -76,7 +76,7 @@ async function openNotifications(page: Page) {
   return group;
 }
 
-/** Gmail marked it Important: important whoever sent it (plan 38 §8.3). */
+/** Gmail marked it Important: important whoever sent it (plan 41 §8.3). */
 function important(accountId: number, subject: string): IncomingMessage {
   return {
     accountId, providerMsgId: `notify-${subject}`, providerThreadId: null, rfcMessageId: `${subject.replace(/\W/g, "")}@notify.test`, inReplyTo: null, references: [],
@@ -86,7 +86,7 @@ function important(accountId: number, subject: string): IncomingMessage {
   };
 }
 
-test.describe("notifications and the unread count (plan 38)", () => {
+test.describe("notifications and the unread count (plan 41)", () => {
   test("@design Settings → General → Notifications: the switches save, the preview follows the main switch, axe-clean; screenshots", async ({ page, server, design }) => {
     await load(page, server, design);
     const group = await openNotifications(page);

@@ -435,7 +435,7 @@ async function connectWindow(win: BrowserWindow) {
   win.webContents.postMessage("terno:backend-port", null, [port2]);
 }
 
-// ───────────────────────────── Dock badge and notifications (plan 38, attention.ts) ─────────────────────────────
+// ───────────────────────────── Dock badge and notifications (plan 41, attention.ts) ─────────────────────────────
 
 /** A click opens its conversation in the window brought forward, once that window's page listens. */
 const openRelay = new OpenRelay((windowId, threadId) => {

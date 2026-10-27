@@ -25,7 +25,7 @@ const GENERAL_KEYS = [
   "autoCategorize",
   "aiCategorize",
   "language",
-  // plan 38: the badge's switch (notifications and their preview only ever go off: settingsFrom)
+  // plan 41: the badge's switch (notifications and their preview only ever go off: settingsFrom)
   "dockBadge",
 ] as const;
 
@@ -55,7 +55,7 @@ function settingsFrom(raw: Record<string, unknown>, current: { localMode: boolea
   if (raw.senderIcons === false && current.senderIcons) general.senderIcons = false;
   // plan 37: remote images load in either mode now, so "always" only comes from this install's own switch
   if (raw.remoteImages === "ask" && current.remoteImages === "always") general.remoteImages = "ask";
-  // plan 38 (Codex code review #1): notifications and what they show can go off, never on (the web's storage switch keeps them off)
+  // plan 41 (Codex code review #1): notifications and what they show can go off, never on (the web's storage switch keeps them off)
   if (raw.notifications === false && current.notifications) general.notifications = false;
   if (raw.notificationPreview === false && current.notificationPreview) general.notificationPreview = false;
   const ai = raw.ai as { provider?: unknown; model?: unknown; baseURL?: unknown; preset?: unknown } | undefined;

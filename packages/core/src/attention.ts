@@ -1,5 +1,5 @@
 /**
- * Plan 38: what deserves the user's attention outside the window. The Dock's
+ * Plan 41: what deserves the user's attention outside the window. The Dock's
  * number, and which new mail is worth a system notification and how a burst
  * of it is worded. Pure: the backend decides when, main and the page show.
  */
@@ -56,7 +56,7 @@ export function stillNew(m: ArrivalRow, now: number): boolean {
 const GMAIL_STRONG = ["CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "CATEGORY_FORUMS"];
 
 /**
- * Why a message is important, or null (plan 38 §8.3):
+ * Why a message is important, or null (plan 41 §8.3):
  * - "written": someone you have written to, and not a machine (plan 17's automated level 0 or 1);
  * - "reply": a person (level 0, or 1 and written to) in a conversation you took part in;
  * - "gmail": Gmail marked it Important, it isn't list mail and it isn't in Promotions, Social or

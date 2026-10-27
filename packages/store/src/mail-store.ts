@@ -286,7 +286,7 @@ export interface MailStore {
     updateFlags(accountId: number, updates: readonly FlagUpdate[], observation?: FlagObservation): Promise<{ touched: number[] }>;
     remove(messageIds: readonly number[]): Promise<{ touched: number[] }>;
     pendingMessageIds(accountId: number): Promise<Set<number>>;
-    /** plan 38: newly inserted messages as they are now (missing ids left out), for the notification rule; bounded by the caller */
+    /** plan 41: newly inserted messages as they are now (missing ids left out), for the notification rule; bounded by the caller */
     arrivals(messageIds: readonly number[]): Promise<import("@terno/core").ArrivalRow[]>;
   };
 
