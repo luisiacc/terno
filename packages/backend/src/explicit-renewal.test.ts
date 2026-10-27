@@ -135,6 +135,27 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     }
   });
 
+  it.each(["reconnect", "owner"] as const)("%s IMAP snapshot failures stay private and preserve read/send authorization", async (method) => {
+    const t = await setup(kind);
+    for (const authScope of [null, "send"] as const) {
+      const config = { imap: { host: "imap.example.test", port: 993, secure: true, user: "imap@example.test" }, smtp: { host: "smtp.example.test", port: 465, secure: true, user: "imap@example.test" }, senderName: "Synthetic", signature: "Saved signature" };
+      const { account } = await t.backend.store.accounts.create({ kind: "imap", email: `imap-${authScope ?? "read"}@example.test`, displayName: "IMAP", color: "indigo", providerConfig: config, secret: { key: "password", blob: await plaintextCipher.encrypt("old-password") }, now: Date.now() });
+      await t.backend.store.accounts.setSyncState(account.id, { status: "error", authRequired: true, authScope, lastError: "preserved failure" });
+      const before = await t.backend.store.accounts.get(account.id), owner = await t.backend.store.owner.get();
+      const name = `account:${account.id}:password`, get = t.backend.store.secrets.get.bind(t.backend.store.secrets), blob = await get(name);
+      const marker = "PRIVATE_PASSWORD_SECRET private-address@example.test PRIVATE_SUBJECT";
+      const snapshot = vi.spyOn(t.backend.store.secrets, "get").mockImplementation(async (key) => { if (key === name) throw new Error(marker); return get(key); });
+      const result = await outcome<unknown>(method === "reconnect" ? t.client.call("accounts.reconnect", { id: account.id, password: "new-password" }) : t.client.call("identity.changeOwner", { accountId: account.id, password: "new-password" }));
+      expect(result).toHaveProperty("error");
+      expect("error" in result && result.error).toMatchObject({ code: "BAD_REQUEST", message: "Couldn’t save the updated sign-in. Try again.", i18n: { key: "errors.secret.replaceFailed" } });
+      expect(String("error" in result ? result.error : result)).not.toContain(marker);
+      expect(t.logs.flat(Infinity).map(String).join(" ")).not.toContain(marker);
+      snapshot.mockRestore();
+      expect(await get(name)).toEqual(blob); expect(await t.backend.store.accounts.get(account.id)).toEqual(before);
+      expect((await t.backend.store.accounts.config(account.id))?.config).toEqual(config); expect(await t.backend.store.owner.get()).toEqual(owner);
+    }
+  });
+
   it("initial omission and malformed present values save no new account", async () => {
     const t = await setup(kind); const before = (await t.client.call("app.bootstrap", {})).accounts.map((a) => ({ id: a.id, email: a.email }));
     for (const refreshToken of [null, undefined, "", 123]) {

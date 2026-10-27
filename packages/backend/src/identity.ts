@@ -92,14 +92,19 @@ const sameBytes = (a: Uint8Array | null, c: Uint8Array) => !!a && a.length === c
 const invalidRenewal = () => new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
 const persistenceFailed = () => new RpcError("BAD_REQUEST", L("errors.secret.replaceFailed"));
 
+async function credentialSnapshot(b: Backend, accountId: number, flow: AbortController, key: "refreshToken" | "password"): Promise<Uint8Array | null> {
+  let blob: Uint8Array | null;
+  try { blob = await b.store.secrets.get(`account:${accountId}:${key}`); }
+  catch { b.assertSignIn(accountId, flow); throw persistenceFailed(); }
+  b.assertSignIn(accountId, flow);
+  return blob && Uint8Array.from(blob);
+}
+
 /** Called after old provider drain, under the account's finalization owner. */
 export async function googleCredentialIntent(b: Backend, account: Account, stamp: { id: number; email: string; createdAt: number }, result: GmailConnectResult, flow: AbortController, freshBlob?: Uint8Array): Promise<{ intent: SecretIntent; pending?: PendingGmailRenewal }> {
   await sameAccount(b, stamp, flow);
   const name = `account:${account.id}:refreshToken`;
-  let current: Uint8Array | null;
-  try { current = await b.store.secrets.get(name); } catch { throw persistenceFailed(); }
-  b.assertSignIn(account.id, flow);
-  current = current && Uint8Array.from(current);
+  const current = await credentialSnapshot(b, account.id, flow, "refreshToken");
   if (result.refreshToken !== null) {
     b.gmailRenewals.delete(account.id);
     return { intent: { kind: "replace", name, expectedBlob: current, blob: freshBlob! } };
@@ -116,8 +121,7 @@ export async function googleCredentialIntent(b: Backend, account: Account, stamp
     b.assertSignIn(account.id, flow);
     if (!refreshToken) throw invalidRenewal();
     // getSecret honors the keychain migration fingerprint. Assert the exact ciphertext again before exchange.
-    let latest: Uint8Array | null;
-    try { latest = await b.store.secrets.get(name); } catch { throw persistenceFailed(); }
+    const latest = await credentialSnapshot(b, account.id, flow, "refreshToken");
     if (!sameBytes(latest, current)) throw persistenceFailed();
     b.assertSignIn(account.id, flow);
     const settings = await readSettings(b.store);
@@ -206,7 +210,7 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
       await sameAccount(b, stamp, flow);
       await b.dropAccount(accountId);
       b.assertSignIn(accountId, flow);
-      const prepared = result ? await googleCredentialIntent(b, account, stamp, result, flow, blob) : { intent: { kind: "replace" as const, name: `account:${accountId}:password`, expectedBlob: await b.store.secrets.get(`account:${accountId}:password`), blob: blob! } };
+      const prepared = result ? await googleCredentialIntent(b, account, stamp, result, flow, blob) : { intent: { kind: "replace" as const, name: `account:${accountId}:password`, expectedBlob: await credentialSnapshot(b, accountId, flow, "password"), blob: blob! } };
       await commitGoogleCredential(b, accountId, stamp, flow, prepared.intent);
       if (prepared.pending && prepared.pending.proof.expiresAt <= Date.now()) throw invalidRenewal();
       await b.signedIn(accountId, undefined, flow);
@@ -251,7 +255,7 @@ export async function changeOwnerTo(b: Backend, accountId: number, password: str
       await sameAccount(b, stamp, flow);
       await b.dropAccount(accountId);
       b.assertSignIn(accountId, flow);
-      const prepared = result ? await googleCredentialIntent(b, account, stamp, result, flow, blob) : { intent: { kind: "replace" as const, name: `account:${accountId}:password`, expectedBlob: await b.store.secrets.get(`account:${accountId}:password`), blob: blob! } };
+      const prepared = result ? await googleCredentialIntent(b, account, stamp, result, flow, blob) : { intent: { kind: "replace" as const, name: `account:${accountId}:password`, expectedBlob: await credentialSnapshot(b, accountId, flow, "password"), blob: blob! } };
       if (prepared.pending && prepared.pending.proof.expiresAt <= Date.now()) {
         await commitGoogleCredential(b, accountId, stamp, flow, prepared.intent);
         throw invalidRenewal();
