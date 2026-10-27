@@ -2,6 +2,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
+import type { Account } from "@terno/core";
+import { getApp, setApp, useApp } from "~/state/app";
 import { contract, type Draft } from "@terno/core/rpc";
 import { openDatabase, SqlMailStore } from "@terno/db";
 import type { DraftRow } from "@terno/store";
@@ -20,10 +22,13 @@ const apiDraft = (r: DraftRow): Draft => ({
 });
 it.each([false, true])("failed Send materialization retains the source (persistent=%s)", async (persistent) => {
  const dir=mkdtempSync(join(tmpdir(),"terno-r5-source-")), store=new SqlMailStore(openDatabase(join(dir,"mail.db")));
+ const previousApp = getApp();
  let source: ReturnType<typeof attachBody>|undefined;
  let key: string|undefined;
  try {
   const [accountId]=await withAccounts(store);
+  setApp({ accounts: await store.accounts.list(), accountId: accountId! });
+  rpc.call.mockClear();
   setDraftTransport(async (_m,p) => { const row=await store.drafts.save(contract["drafts.save"].params.parse(p),0); return row ? apiDraft(row) : null; });
   key=createDraft({...newFields(accountId!),toText:"ana@example.test",bodyText:"previous saved body"});
   editDraft(key,{}); await flushDraft(key);
@@ -52,19 +57,23 @@ it.each([false, true])("failed Send materialization retains the source (persiste
    expect(row.body_text).toBe("latest authored body");
    expect(row.body_html).toBe("<div><b>latest authored body</b></div>");
   }
- }finally{if(key)forgetDraft(key);source?.dispose();await store.close();rmSync(dir,{recursive:true,force:true});}
+ }finally{try{if(key)forgetDraft(key);source?.dispose();await store.close();rmSync(dir,{recursive:true,force:true});}finally{useApp.setState(previousApp, true);}}
 });
 
 it("does not automatically reread after a failed Send materialization", async () => {
   vi.useFakeTimers();
-  const key = createDraft({ ...newFields(1), toText: "ana@example.test" });
+  const previousApp = getApp();
+  let key: string | undefined, source: ReturnType<typeof attachBody> | undefined;
   const reader = vi.fn(() => { throw new Error("read failed"); });
-  const source = attachBody(key, reader);
   try {
+    setApp({ accounts: [{ id: 1, email: "me@example.test" } as Account], accountId: 1 });
+    rpc.call.mockClear();
+    key = createDraft({ ...newFields(1), toText: "ana@example.test" });
+    source = attachBody(key, reader);
     source.changed();
     expect(await sendDraft(key)).toBe(false);
     await vi.advanceTimersByTimeAsync(10_000);
     expect(reader).toHaveBeenCalledTimes(1);
     expect(rpc.call).not.toHaveBeenCalled();
-  } finally { forgetDraft(key); source.dispose(); vi.useRealTimers(); }
+  } finally { try { if (key) forgetDraft(key); source?.dispose(); } finally { useApp.setState(previousApp, true); vi.useRealTimers(); } }
 });
