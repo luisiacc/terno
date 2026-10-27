@@ -298,6 +298,7 @@ export function validBodyCheckpoint(checkpoint: BodyCheckpoint): boolean {
 export function attachBody(key: string, read: BodyReader, options: { canonical?: boolean; checkpoint?: BodyCheckpoint } = {}): { changed(): void; reset(): void; dispose(snapshot?: { read: BodyReader; state: unknown; version: number }): void } {
   if (options.checkpoint && (options.checkpoint.key !== key || !validBodyCheckpoint(options.checkpoint))) throw new Error("Draft checkpoint is no longer available");
   const prior = sources.get(key);
+  const proof = writers.get(key)?.ackRead; if (proof) endDraftAckRead(proof);
   const source: BodySource = { read, dirty: prior?.dirty ?? false, editVersion: 0, failed: prior?.failed ?? false, detached: false, canonical: options.canonical ?? true };
   sources.set(key, source);
   return {
@@ -307,6 +308,7 @@ export function attachBody(key: string, read: BodyReader, options: { canonical?:
       if (!d || d.sending || draftEditsHeld()) return;
       changeVersion++;
       source.editVersion++;
+      const proof = writers.get(key)?.ackRead; if (proof) endDraftAckRead(proof);
       // an unsaved revision is already pending for this body: the save will serialize the latest document, so only
       // the debounce moves (no store update per keystroke: nothing re-renders while typing)
       if (source.dirty && d.localRev > d.savedRev) return schedule(key);
@@ -318,10 +320,12 @@ export function attachBody(key: string, read: BodyReader, options: { canonical?:
     reset() {
       if (sources.get(key) !== source || source.detached) return;
       source.editVersion++;
+      const proof = writers.get(key)?.ackRead; if (proof) endDraftAckRead(proof);
       source.dirty = false;
     },
     dispose(snapshot) {
       if (sources.get(key) !== source || source.detached) return;
+      const proof = writers.get(key)?.ackRead; if (proof) endDraftAckRead(proof);
       let unread = source.failed && source.dirty;
       if (!unread) { try { materialize(key); } catch { unread = true; } }
       if (unread) {
@@ -390,6 +394,8 @@ interface Writer {
   attempts: number;
   operation: number;
   stopping: "send" | "discard" | null;
+  ackRead?: AckRead;
+  publishing?: number;
 }
 const writers = new Map<string, Writer>();
 const writer = (key: string): Writer => {
@@ -397,6 +403,55 @@ const writer = (key: string): Writer => {
   if (!w) writers.set(key, (w = { timer: null, inflight: null, dirtySince: null, attempts: 0, operation: 0, stopping: null }));
   return w;
 };
+
+declare const ackReadBrand: unique symbol;
+export type DraftAckRead = { readonly [ackReadBrand]: true };
+type AckRead = DraftAckRead & { key: string; writer?: Writer; current?: LocalDraft; source?: BodySource; version: number; edge?: { before: LocalDraft; after: LocalDraft }; stop?: () => void };
+
+/** A conversion may observe only exact, writer-owned acknowledgement publications. */
+export function beginDraftAckRead(expected: LocalDraft): DraftAckRead | undefined {
+  const w = writers.get(expected.key), source = sources.get(expected.key);
+  if (!w || w.publishing || w.stopping || draftEditsHeld() || expected.sending || expected.recovery || get(expected.key) !== expected || source?.dirty || source?.failed || source?.detached) return;
+  if (w.ackRead) endDraftAckRead(w.ackRead);
+  const read = { key: expected.key, writer: w, current: expected, source, version: source?.editVersion ?? 0 } as AckRead;
+  w.ackRead = read;
+  read.stop = useDrafts.subscribe((state, previous) => {
+    const current = read.current, edge = read.edge;
+    if (state.held || previous.held || !current) { endDraftAckRead(read); return; }
+    const next = state.drafts[read.key], before = previous.drafts[read.key];
+    if (next === current && before === current) return;
+    if (!edge || next !== edge.after || before !== edge.before) endDraftAckRead(read);
+  });
+  if (get(expected.key) !== expected || writers.get(expected.key) !== w || sources.get(expected.key) !== source) { endDraftAckRead(read); return; }
+  return read;
+}
+export function readDraftAck(token: DraftAckRead): LocalDraft | undefined {
+  const read = token as AckRead, w = read.writer, source = sources.get(read.key);
+  if (!w || w.ackRead !== read || writers.get(read.key) !== w || !read.current || get(read.key) !== read.current || source !== read.source || (source && (source.editVersion !== read.version || source.dirty || source.failed || source.detached)) || w.stopping || draftEditsHeld() || read.current.sending || read.current.recovery) { endDraftAckRead(read); return; }
+  return read.current;
+}
+export function endDraftAckRead(token: DraftAckRead): void {
+  const read = token as AckRead, w = read.writer;
+  read.stop?.(); read.stop = undefined;
+  if (w?.ackRead === read) w.ackRead = undefined;
+  read.writer = undefined; read.current = undefined; read.source = undefined; read.edge = undefined;
+}
+
+function publishWriter(w: Writer, before: LocalDraft, after: LocalDraft, admitted: boolean): void {
+  const read = w.ackRead;
+  if (read && (!admitted || w.publishing || read.current !== before || get(before.key) !== before)) endDraftAckRead(read);
+  const allowed = w.ackRead;
+  if (allowed) { allowed.edge = { before, after }; allowed.current = after; }
+  w.publishing = (w.publishing ?? 0) + 1;
+  try { put(after); }
+  finally {
+    w.publishing--;
+    if (allowed) {
+      allowed.edge = undefined;
+      if (get(after.key) !== after) endDraftAckRead(allowed);
+    }
+  }
+}
 
 type Call = (method: "drafts.save" | "drafts.delete", params: unknown) => Promise<unknown>;
 let call: Call = (method, params) => client.call(method as "drafts.save", params as never) as Promise<unknown>;
@@ -500,7 +555,7 @@ function save(key: string, copy = false): Promise<void> {
   if (w.timer) clearTimeout(w.timer);
   w.timer = null;
   w.dirtySince = null;
-  put({ ...d, ...(copy ? { recovery: { state: "copying" as const, ...(uncertain ? { uncertain: true as const } : {}) } } : {}), status: "saving", attachmentOwner: d.attachmentOwner || Boolean(d.attachments?.length) });
+  const saving: LocalDraft = { ...d, ...(copy ? { recovery: { state: "copying" as const, ...(uncertain ? { uncertain: true as const } : {}) } } : {}), status: "saving", attachmentOwner: d.attachmentOwner || Boolean(d.attachments?.length) };
   const params = {
     id: copy ? undefined : d.id ?? undefined,
     generation: copy ? undefined : d.generation,
@@ -523,6 +578,12 @@ function save(key: string, copy = false): Promise<void> {
     showSourceContext: d.showSourceContext ?? false,
     uiState: d.uiState,
   };
+  if (get(key) !== d || writers.get(key) !== w || w.operation !== operation) return Promise.resolve();
+  publishWriter(w, d, saving, !copy);
+  if (get(key) !== saving || writers.get(key) !== w || w.operation !== operation) {
+    if (writers.get(key) === w && w.operation === operation && !w.timer) schedule(key);
+    return Promise.resolve();
+  }
   w.inflight = call("drafts.save", params).then(
     (res) => {
       if (w.operation !== operation) return;
@@ -547,7 +608,10 @@ function save(key: string, copy = false): Promise<void> {
             ...(currentMount ? { sourceContextThreadId: saved.showSourceContext ? saved.presentationThreadId ?? null : undefined,
               ...(placement !== null && (saved.threadId !== placement || saved.mode === "new") ? { presentationThreadId: placement } : {}) } : {}) } : {};
       if (cur.id !== saved.id || cur.generation !== saved.generation) retireHydrationIdentity(cur);
-      put({ ...cur, ...context, id: saved.id, generation: saved.generation, revision: saved.revision, savedRev: rev, recovery: undefined, status: done ? "saved" : "dirty", attachmentOwner: Boolean(saved.attachments?.length) });
+      const acknowledged: LocalDraft = { ...cur, ...context, id: saved.id, generation: saved.generation, revision: saved.revision, savedRev: rev, recovery: undefined, status: done ? "saved" : "dirty", attachmentOwner: Boolean(saved.attachments?.length) };
+      const identity = d.id === null ? saved.id != null && typeof saved.generation === "string" && saved.revision === 1 : saved.id === d.id && saved.generation === d.generation && saved.revision === d.revision + 1;
+      const source = saved.mode === cur.mode && saved.threadId === cur.threadId && saved.inReplyToMessageId === cur.inReplyToMessageId && saved.forwardOfMessageId === cur.forwardOfMessageId && (saved.showSourceContext ?? false) === (cur.showSourceContext ?? false) && (!saved.showSourceContext || (cur.threadId !== null && (saved.presentationThreadId ?? null) === placement));
+      publishWriter(w, cur, acknowledged, !copy && sameContext && currentMount && identity && source);
       if (!done && !w.stopping && !sources.get(key)?.failed) {
         const next = save(key);
         if (!copy) return next;
@@ -688,6 +752,7 @@ export function forgetDraft(key: string): void {
   changeVersion++;
   sources.delete(key);
   const w = writers.get(key);
+  if (w?.ackRead) endDraftAckRead(w.ackRead);
   if (w?.timer) clearTimeout(w.timer);
   writers.delete(key);
   drop(key);

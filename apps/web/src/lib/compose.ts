@@ -12,7 +12,7 @@ import { invalidateThreads, loadThread } from "~/state/threads";
 import { registerUndo, snack, useSnack } from "./snack";
 import { answered, convertFields, forwardAccountMismatch, newFields, replyFields, mergeAttachmentRefs } from "./compose-fields";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
-import { beginDraftWork, draftIndex, invalidateDraftPresentation, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, authored, createDraft, createDraftWithReceipt, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type LocalDraft } from "./drafts";
+import { beginDraftAckRead, readDraftAck, endDraftAckRead, beginDraftWork, draftIndex, invalidateDraftPresentation, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, authored, createDraft, createDraftWithReceipt, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type DraftAckRead, type LocalDraft } from "./drafts";
 
 /**
  * Writing mail: which draft a reply, reply-all, forward or new message opens,
@@ -37,7 +37,7 @@ let seq = 0;
  */
 let intent = 0;
 type ReaderDestination = { token: object; active: boolean; generation: number };
-type FocusLease = { intent: number; threadId: number | null; composeSeq?: number; accountId?: number; key?: string; seq?: number; valid: boolean; dispose: () => void; view?: { id: LocalDraft["id"]; generation: LocalDraft["generation"]; revision: number; localRev: number; uiState: LocalDraft["uiState"]; recovery: LocalDraft["recovery"]; missingAccount: boolean }; destination?: ReaderDestination };
+type FocusLease = { ackRead?: DraftAckRead; intent: number; threadId: number | null; composeSeq?: number; accountId?: number; key?: string; seq?: number; valid: boolean; dispose: () => void; view?: { id: LocalDraft["id"]; generation: LocalDraft["generation"]; revision: number; localRev: number; uiState: LocalDraft["uiState"]; recovery: LocalDraft["recovery"]; missingAccount: boolean }; destination?: ReaderDestination };
 const readerDestinations = new Map<number, ReaderDestination>();
 const failedReaderHosts = new Map<object, { threadId: number }>();
 const readerFailed = (threadId: number): boolean => {
@@ -60,6 +60,7 @@ function releaseFocusLease(lease: FocusLease, fallback: boolean, notify = true) 
   if (!lease.valid) return;
   const current = focusLease === lease, releaseIntent = intent;
   lease.valid = false;
+  if (lease.ackRead) { endDraftAckRead(lease.ackRead); lease.ackRead = undefined; }
   lease.dispose();
   if (!current) return;
   focusLease = null;
@@ -94,6 +95,7 @@ export function registerReaderFocusDestination(threadId: number, token: object):
   return () => {
     if (destination.generation !== generation || !destination.active) return;
     destination.active = false;
+    if (focusLease?.destination === destination && focusLease.ackRead) { endDraftAckRead(focusLease.ackRead); focusLease.ackRead = undefined; }
     const captured = focusLease?.destination === destination ? focusLease : null;
     queueMicrotask(() => {
       if (destination.active || destination.generation !== generation || readerDestinations.get(threadId) !== destination) return;
@@ -413,6 +415,7 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
     if (mine === intent && (current.scope !== null || current.checked.size >= 2)) supersedeCompose();
   }) : undefined;
   try { await openComposeNow(mode, threadId, mine, lease ?? null); } finally {
+    if (lease?.ackRead) { endDraftAckRead(lease.ackRead); lease.ackRead = undefined; }
     unsubSelection?.();
     if (lease && lease.seq === undefined) releaseFocusLease(lease, true);
     finish();
@@ -469,6 +472,8 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   // its body as the editor has it now (what "written" and a conversion's undo look at)
   let existing = existingKey ? materialize(existingKey) : undefined;
   if (existing && !sameStoredDraft(existing)) return;
+  let proof = existing && existing.mode !== mode && !existing.presentationExpired && lease ? beginDraftAckRead(existing) : undefined;
+  if (lease && proof) lease.ackRead = proof;
   if (existing?.presentationExpired && activeSourceId(existing) === null && (existing.mode === "new" || (existing.threadId === null && existing.departedThreadId === threadId && authored(existing)))) {
     showStoredStandalone(existing.key, mine, undefined, lease);
     return;
@@ -478,8 +483,8 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     const sourceId = snapshot.mode === "forward" ? snapshot.forwardOfMessageId : snapshot.mode === "new" ? null : snapshot.inReplyToMessageId;
     let context: { threadId: number; accountId: number } | null;
     try { context = sourceId ? await client.call("drafts.sourceContext", { messageId: sourceId }) : null; } catch { return; }
-    const current = existingKey ? materialize(existingKey) : undefined;
-    if (mine !== intent || !destinationAvailable(lease) || getApp().selectedId !== s.selectedId || (lease && !lease.valid) || !current || !sameStoredDraft(snapshot)) return;
+    const current = proof ? readDraftAck(proof) : existingKey ? materialize(existingKey) : undefined;
+    if (mine !== intent || !destinationAvailable(lease) || getApp().selectedId !== s.selectedId || (lease && !lease.valid) || !current || (!proof && !sameStoredDraft(snapshot))) return;
     if (!context || context.threadId !== threadId) {
       showStoredStandalone(current.key, mine, undefined, lease);
       return;
@@ -499,10 +504,10 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   }
   const selected = s.selectedId;
   const detail = loaded === undefined ? await loadThread(threadId) : loaded;
-  const currentIntent = () => mine === intent && destinationAvailable(lease) && getApp().selectedId === selected && shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) === existingKey;
+  const currentIntent = () => mine === intent && destinationAvailable(lease) && (!proof || Boolean(readDraftAck(proof))) && getApp().selectedId === selected && shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) === existingKey;
   if (!detail || !currentIntent()) return;
   takeFocus = focusUnchanged();
-  existing = existingKey ? materialize(existingKey) : undefined;
+  existing = proof ? readDraftAck(proof) : existingKey ? materialize(existingKey) : undefined;
   if (existingKey && (!existing || existing.sending || existing.recovery)) return;
   const accounts = getApp().accounts;
   const source = accounts.find((a) => a.id === detail.thread.accountId);
@@ -533,16 +538,17 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     } catch { if (currentIntent()) unavailable(); return; }
     if (!currentIntent() || await loadThread(threadId) !== detail) return;
     if (parts.length && !getApp().accounts.some((a) => a.id === source!.id)) { snack.error(t("errors.accountGone")); return; }
-    existing = existingKey ? materialize(existingKey) : undefined;
-    if (existingKey && (!existing || existing.sending || existing.recovery || existing.accountId !== snapshot?.accountId || existing.id !== snapshot?.id || existing.generation !== snapshot?.generation || existing.localRev !== snapshot?.localRev)) return;
+    existing = proof ? readDraftAck(proof) : existingKey ? materialize(existingKey) : undefined;
+    if (existingKey && (!existing || existing.sending || existing.recovery || (!proof && (existing.accountId !== snapshot?.accountId || existing.id !== snapshot?.id || existing.generation !== snapshot?.generation || existing.localRev !== snapshot?.localRev)))) return;
     takeFocus = focusUnchanged();
     if (parts.length && existing && !existing.attachments?.length) {
       // Save the empty From transition before introducing that account's attachment owners.
       const active = typeof document === "undefined" ? null : document.activeElement;
+      if (proof) { endDraftAckRead(proof); if (lease?.ackRead === proof) lease.ackRead = undefined; proof = undefined; }
       await flushDraft(existing.key);
       if (!currentIntent() || await loadThread(threadId) !== detail) return;
       takeFocus = takeFocus && (typeof document === "undefined" || document.activeElement === active);
-      existing = materialize(existing.key);
+      existing = proof ? readDraftAck(proof) : materialize(existing.key);
       if (!existing || existing.sending || existing.recovery || existing.savedRev !== existing.localRev) return;
       const pristine = existing.id === null && existing.status === "clean" && existing.localRev === 0 && !authored(existing);
       if (existing.status !== "saved" && !pristine) return;
@@ -555,6 +561,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   }
   const account = source ?? accounts[0]!;
   const before = existing ? fieldsOf(existing) : undefined;
+  if (proof && readDraftAck(proof) !== existing) return;
   const converted = existing && existing.mode !== "new" && written(existing)
     ? convertFields(before!, mode, detail, account, identities)
     : replyFields(mode, detail, account, { identities });
@@ -569,12 +576,13 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   let sourceContext: { threadId: number; accountId: number } | null;
   try { sourceContext = sourceId ? await client.call("drafts.sourceContext", { messageId: sourceId }) : null; } catch { return; }
   if (!currentIntent() || (lease && !lease.valid) || !sourceContext || sourceContext.threadId !== threadId || sourceContext.accountId !== detail.thread.accountId) return;
-  existing = existingKey ? materialize(existingKey) : undefined;
-  if (existingKey && (!existing || existing.sending || existing.recovery || existing.accountId !== snapshot?.accountId || existing.id !== snapshot?.id || existing.generation !== snapshot?.generation || existing.revision !== snapshot?.revision || existing.threadId !== snapshot?.threadId || existing.mode !== snapshot?.mode || existing.inReplyToMessageId !== snapshot?.inReplyToMessageId || existing.forwardOfMessageId !== snapshot?.forwardOfMessageId || existing.showSourceContext !== snapshot?.showSourceContext || existing.presentationEpoch !== snapshot?.presentationEpoch || existing.localRev !== snapshot?.localRev || existing.bodyVersion !== snapshot?.bodyVersion || existing.bodyText !== snapshot?.bodyText || existing.bodyHtml !== snapshot?.bodyHtml)) return;
+  existing = proof ? readDraftAck(proof) : existingKey ? materialize(existingKey) : undefined;
+  if (existingKey && (!existing || existing.sending || existing.recovery || (!proof && (existing.accountId !== snapshot?.accountId || existing.id !== snapshot?.id || existing.generation !== snapshot?.generation || existing.revision !== snapshot?.revision || existing.threadId !== snapshot?.threadId || existing.mode !== snapshot?.mode || existing.inReplyToMessageId !== snapshot?.inReplyToMessageId || existing.forwardOfMessageId !== snapshot?.forwardOfMessageId || existing.showSourceContext !== snapshot?.showSourceContext || existing.presentationEpoch !== snapshot?.presentationEpoch || existing.localRev !== snapshot?.localRev || existing.bodyVersion !== snapshot?.bodyVersion || existing.bodyText !== snapshot?.bodyText || existing.bodyHtml !== snapshot?.bodyHtml)))) return;
   if (!getApp().accounts.some((a) => a.id === converted.accountId)) { snack.error(t("errors.accountGone")); return; }
   if (getApp().accounts.find((a) => a.id === converted.accountId)?.signature !== signature) return;
   if (!admitted) { snack.error(t("attachments.tooLarge")); return; }
   takeFocus = takeFocus && focusUnchanged();
+  if (proof) { if (readDraftAck(proof) !== existing) return; endDraftAckRead(proof); if (lease?.ackRead === proof) lease.ackRead = undefined; proof = undefined; }
   if (existing && existing.mode !== "new") {
     const original = existing;
     if (materialize(original.key) !== original || useDrafts.getState().drafts[original.key] !== original) return;
