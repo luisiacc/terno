@@ -861,6 +861,11 @@ CREATE TRIGGER attachment_unpin AFTER DELETE ON attachment_links BEGIN
  INSERT OR IGNORE INTO attachment_orphans SELECT id, account_id, NULL FROM attachment_assets a WHERE id = old.asset_id AND NOT EXISTS (SELECT 1 FROM attachment_links l WHERE l.asset_id = a.id);
 END;
 ` },
+  { version: 20, name: "terminal draft identities", sql: `
+ALTER TABLE drafts ADD COLUMN generation TEXT NOT NULL DEFAULT '';
+CREATE TABLE draft_counter (id INTEGER PRIMARY KEY CHECK(id = 1), last_id INTEGER NOT NULL);
+INSERT INTO draft_counter VALUES (1, (SELECT COALESCE(MAX(id), 0) FROM drafts));
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

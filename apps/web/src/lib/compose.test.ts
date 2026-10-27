@@ -14,7 +14,7 @@ vi.mock("~/rpc/connection", () => ({
 vi.mock("~/state/threads", () => ({ invalidateThreads: vi.fn(), loadThread: vi.fn() }));
 
 const { bodyParts, sendDraft } = await import("./compose");
-const { createDraft, discardDraft, editDraft, useDrafts } = await import("./drafts");
+const { createDraft, discardDraft, editDraft, markDraftMissing, useDrafts } = await import("./drafts");
 const { newFields } = await import("./compose-fields");
 const { useSnack } = await import("./snack");
 
@@ -26,6 +26,41 @@ beforeEach(() => {
 });
 
 describe("sending a draft", () => {
+  it("unresolved recovery refuses Send before locking and preserves editable work", async () => {
+    const key = createDraft({ ...newFields(1), toText: "ana@example.com", bodyText: "keep" });
+    markDraftMissing(key);
+    const sending = sendDraft(key);
+    expect(useDrafts.getState().drafts[key]!.sending).toBe(false);
+    editDraft(key, { bodyText: "still editable" });
+    expect(await sending).toBe(false);
+    expect(rpc.calls).toHaveLength(0);
+    expect(useDrafts.getState().drafts[key]!.bodyText).toBe("still editable");
+  });
+
+  it("a pending save returning null stops the Send waiting for it", async () => {
+    vi.useFakeTimers();
+    try {
+      const key = createDraft({ ...newFields(1), toText: "ana@example.com", bodyText: "keep" });
+      editDraft(key, {}); await vi.advanceTimersByTimeAsync(800);
+      const sending = sendDraft(key);
+      rpc.calls.find((c) => c.method === "drafts.save")!.resolve(null);
+      expect(await sending).toBe(false);
+      expect(rpc.calls.filter((c) => c.method === "compose.send")).toHaveLength(0);
+      expect(useDrafts.getState().drafts[key]).toMatchObject({ recovery: { state: "missing" }, sending: false, bodyText: "keep" });
+    } finally { vi.useRealTimers(); }
+  });
+
+  it.each(["draftMissing", "draftRevision"])("clean externally changed target reports typed %s without submission retry", async (reason) => {
+    const key = createDraft({ ...newFields(1), toText: "ana@example.com", bodyText: "keep" });
+    useDrafts.setState((s) => ({ drafts: { ...s.drafts, [key]: { ...s.drafts[key]!, id: 42, generation: "identity", revision: 1, status: "saved" } } }));
+    const sending = sendDraft(key); await tick();
+    rpc.calls.find((c) => c.method === "compose.send")!.reject({ code: "STALE", details: { reason } });
+    expect(await sending).toBe(false);
+    expect(useDrafts.getState().drafts[key]!.recovery?.state).toBe(reason === "draftMissing" ? "missing" : undefined);
+    expect(useDrafts.getState().drafts[key]!.sending).toBe(false);
+    expect(rpc.calls.filter((c) => c.method === "compose.send")).toHaveLength(1);
+  });
+
   it("a second send while the first is in flight gets the same outcome; one compose.send goes out", async () => {
     const key = createDraft({ ...newFields(1), toText: "Ana <ana@example.com>", bodyText: "Hola" });
     const first = sendDraft(key);

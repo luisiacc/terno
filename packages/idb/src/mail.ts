@@ -1,4 +1,6 @@
 import { assetError, linkAssets, validateAssets } from "@terno/store";
+import { RpcError } from "@terno/core/rpc";
+import { L } from "@terno/i18n";
 import { idbAssets, replaceAttachments } from "./attachments";
 import {
   LIST_FILTERS,
@@ -1428,6 +1430,7 @@ export function loadUserActions(c: Ctx, since: number) {
 
 const draftRow = (r: R): DraftRow => ({
   id: r.id,
+  generation: r.generation ?? "",
   account_id: r.account_id,
   thread_id: r.thread_id ?? null,
   format: r.format ?? 1,
@@ -1454,16 +1457,23 @@ const draftRow = (r: R): DraftRow => ({
 export function saveDraft(c: Ctx, d: DraftInput, now: number): DraftRow | null {
   const drafts = T(c, "drafts");
   const row = d.id !== undefined ? drafts.get(d.id) : undefined;
-  if (d.id !== undefined && !row) return null;
+  if (d.id !== undefined && (!row || (row.generation ?? "") !== (d.generation ?? ""))) return null;
+  if (!T(c, "accounts").has(d.accountId)) throw new RpcError("NOT_FOUND", L("errors.accountGone"), { reason: "account" });
   const inReplyTo = d.inReplyToMessageId !== undefined ? d.inReplyToMessageId : (row?.in_reply_to_message_id ?? null);
   const replyThread = inReplyTo ? ((T(c, "messages").get(inReplyTo)?.thread_id as number | undefined) ?? null) : null;
   const previous = JSON.parse(row?.attachments_json ?? "[]") as import("@terno/core").AttachmentRef[];
   if (row && row.account_id !== d.accountId && (previous.length || d.attachments?.length)) throw assetError();
-  const attachments = validateAssets(idbAssets(c.db), d.accountId, d.attachments ?? previous);
+  let attachments: import("@terno/core").AttachmentRef[];
+  try { attachments = validateAssets(idbAssets(c.db), d.accountId, d.attachments ?? previous); }
+  catch { throw new RpcError("BAD_REQUEST", L("attachments.unavailable"), { reason: "assets" }); }
+  const threadId = d.threadId !== undefined ? d.threadId : row ? (row.thread_id ?? null) : replyThread;
+  const forwardOf = d.forwardOfMessageId !== undefined ? d.forwardOfMessageId : (row?.forward_of_message_id ?? null);
+  const exists = (id: number | null) => id === null || T(c, "messages").has(id);
+  const lost = (threadId !== null && !T(c, "threads").has(threadId)) || !exists(inReplyTo) || !exists(forwardOf);
   const values = {
     account_id: d.accountId,
-    thread_id: d.threadId !== undefined ? d.threadId : row ? (row.thread_id ?? null) : replyThread,
-    mode: d.mode ?? row?.mode ?? (inReplyTo ? "reply" : "new"),
+    thread_id: lost ? null : threadId,
+    mode: lost ? "new" : d.mode ?? row?.mode ?? (inReplyTo ? "reply" : "new"),
     to_json: JSON.stringify(d.to),
     cc_json: JSON.stringify(d.cc),
     bcc_json: d.bcc !== undefined ? JSON.stringify(d.bcc) : (row?.bcc_json ?? "[]"),
@@ -1474,8 +1484,8 @@ export function saveDraft(c: Ctx, d: DraftInput, now: number): DraftRow | null {
     attachments_json: JSON.stringify(attachments),
     quoted_text: d.quotedText ?? row?.quoted_text ?? "",
     include_quote: d.includeQuote !== undefined ? Number(d.includeQuote) : (row?.include_quote ?? 0),
-    in_reply_to_message_id: inReplyTo,
-    forward_of_message_id: d.forwardOfMessageId !== undefined ? d.forwardOfMessageId : (row?.forward_of_message_id ?? null),
+    in_reply_to_message_id: lost ? null : inReplyTo,
+    forward_of_message_id: lost ? null : forwardOf,
     ui_state: d.uiState ?? row?.ui_state ?? "open",
     updated_at: now,
   };
@@ -1484,7 +1494,10 @@ export function saveDraft(c: Ctx, d: DraftInput, now: number): DraftRow | null {
     linkAssets(idbAssets(c.db), "draft", saved.id, attachments);
     return saved;
   }
-  const fresh: R = { id: undefined, ...values, format: 2, revision: 1 };
+  const counter = T(c, "draft_counter");
+  const id = Math.max(counter.get(1)?.last_id ?? 0, drafts.highestKey()) + 1;
+  counter.put({ id: 1, last_id: id });
+  const fresh: R = { id, generation: c.uuid(), ...values, format: 2, revision: 1 };
   drafts.insert(fresh);
   linkAssets(idbAssets(c.db), "draft", fresh.id, attachments);
   return draftRow(fresh);

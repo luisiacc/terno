@@ -23,6 +23,7 @@ const ACCOUNT_COLORS = ["indigo", "emerald", "amber", "cyan", "violet", "rose", 
 function toDraft(r: DraftRow): Draft {
   return {
     id: r.id,
+    generation: r.generation ?? "",
     revision: r.revision,
     format: r.format === 1 ? 1 : 2,
     accountId: r.account_id,
@@ -404,6 +405,7 @@ export function createHandlers(b: Backend): Handlers {
         inReplyToMessageId: p.inReplyToMessageId,
         draftId: p.draftId,
         draftRevision: p.draftRevision,
+        draftGeneration: p.draftGeneration,
         attachments: p.attachments,
         recordReply: ctx.origin === "renderer",
         now: b.now(),

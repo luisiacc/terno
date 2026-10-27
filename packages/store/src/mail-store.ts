@@ -166,6 +166,7 @@ export interface SendCommand {
   inReplyToMessageId?: number;
   draftId?: number;
   draftRevision?: number;
+  draftGeneration?: string;
   attachments?: import("@terno/core").AttachmentRef[];
   /** explicit user replies feed learned filters; agents' don't */
   recordReply: boolean;

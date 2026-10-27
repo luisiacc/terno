@@ -560,7 +560,7 @@ describe("sending through SMTP", () => {
     const attachments = message.attachments.map((a) => ({ assetId: a.assetId!, filename: a.filename, mime: a.mime, size: a.size, contentId: a.contentId ?? null }));
     expect(await backend.store.attachments.read(account.id, attachments[0]!.assetId, 0)).toBe(Buffer.from(binary).toString("base64"));
     const draft = (await client.call("drafts.save", { accountId: account.id, to: [{ name: "", email: "forward@test.com" }], subject: "Fwd: bytes", bodyText: "forwarded", attachments }))!;
-    await client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "forward@test.com" }], subject: "Fwd: bytes", bodyText: "forwarded", attachments, draftId: draft.id, draftRevision: draft.revision });
+    await client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "forward@test.com" }], subject: "Fwd: bytes", bodyText: "forwarded", attachments, draftId: draft.id, draftGeneration: draft.generation, draftRevision: draft.revision });
     await backend.runWorker();
     expect(smtp.received).toHaveLength(1);
     const transmitted = await parseRaw(smtp.received[0]!.raw);

@@ -167,10 +167,10 @@ export function defineAttachmentConformance(name: string, h: StoreHarness): void
       const incomplete = await store.attachments.create({ accountId: a!, filename: "empty", mime: "text/plain", size: 0, now: 0 });
       const d = await store.drafts.save(draft(a!, [ref]), 0);
       for (const bad of [[incomplete], [ref, { ...ref, assetId: "missing-asset" }]]) {
-        await expect(store.compose.queueSend({ ...send(a!, bad), draftId: d!.id })).rejects.toThrow();
+        await expect(store.compose.queueSend({ ...send(a!, bad), draftId: d!.id, draftGeneration: d!.generation })).rejects.toThrow();
       }
       await expect(store.drafts.save(draft(b!, [ref]), 0)).rejects.toThrow();
-      await expect(store.compose.queueSend({ ...send(b!, []), draftId: d!.id })).rejects.toThrow();
+      await expect(store.compose.queueSend({ ...send(b!, []), draftId: d!.id, draftGeneration: d!.generation })).rejects.toThrow();
       expect(await store.drafts.list()).toHaveLength(1);
       expect(await store.ops.recent(20)).toHaveLength(0);
     });
@@ -178,9 +178,9 @@ export function defineAttachmentConformance(name: string, h: StoreHarness): void
       const [a] = await fresh();
       const ref = await upload(a!);
       const d = (await store.drafts.save(draft(a!, [ref]), 0))!;
-      const edited = (await store.drafts.save({ ...draft(a!, []), id: d.id, baseRevision: d.revision }, 1))!;
-      await expect(store.compose.queueSend({ ...send(a!, [ref]), draftId: d.id, draftRevision: d.revision })).rejects.toThrow();
-      const q = await store.compose.queueSend({ ...send(a!, [ref]), draftId: edited.id, draftRevision: edited.revision });
+      const edited = (await store.drafts.save({ ...draft(a!, []), id: d.id, generation: d.generation, baseRevision: d.revision }, 1))!;
+      await expect(store.compose.queueSend({ ...send(a!, [ref]), draftId: d.id, draftGeneration: d.generation, draftRevision: d.revision })).rejects.toThrow();
+      const q = await store.compose.queueSend({ ...send(a!, [ref]), draftId: edited.id, draftGeneration: edited.generation, draftRevision: edited.revision });
       store = await h.reopen(store);
       expect(JSON.parse((await store.ops.get(q.opId))!.payload_json).attachments).toEqual([ref]);
       expect(await store.drafts.save({ ...draft(a!, []), id: d.id }, 2)).toBeNull();
@@ -260,7 +260,7 @@ export function defineAttachmentConformance(name: string, h: StoreHarness): void
       await expect(store.attachments.append(a!, ref.assetId, 0, "AQ==")).rejects.toThrow();
       await expect(store.attachments.seal(a!, ref.assetId)).rejects.toThrow();
       const d = (await store.drafts.save(draft(a!, []), 0))!;
-      await expect(store.compose.queueSend({ ...send(a!, []), draftId: d.id, bodyText: "界".repeat(7_000_000) })).rejects.toThrow();
+      await expect(store.compose.queueSend({ ...send(a!, []), draftId: d.id, draftGeneration: d.generation, bodyText: "界".repeat(7_000_000) })).rejects.toThrow();
       expect(await store.drafts.list()).toHaveLength(1);
       for (let i = 0; i < 14; i++) await store.attachments.create({ accountId: a!, filename: "reserved", mime: "text/plain", size: 18 * 1024 * 1024, now: 0 });
       await expect(store.attachments.create({ accountId: a!, filename: "over quota", mime: "text/plain", size: 18 * 1024 * 1024, now: 0 })).rejects.toThrow();

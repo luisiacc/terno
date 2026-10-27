@@ -344,7 +344,7 @@ describe("drafts in an export (format 2)", () => {
     expect(drafts.find((d) => d.bodyText.startsWith("Lo vemos"))).toMatchObject({ mode: "new", threadId: null, inReplyToMessageId: null, bodyText: "Lo vemos\n\n> otra", quotedText: "", includeQuote: false });
 
     // sending the imported forward: its Bcc and the forwarded text go out, and the draft is gone
-    const sent = await to.client.call("compose.send", { accountId: here.id, to: fwd.to, cc: fwd.cc, bcc: fwd.bcc, subject: fwd.subject, bodyText: `${fwd.bodyText}\n\n${fwd.quotedText}`, forwardOfMessageId: fwd.forwardOfMessageId!, draftId: fwd.id });
+    const sent = await to.client.call("compose.send", { accountId: here.id, to: fwd.to, cc: fwd.cc, bcc: fwd.bcc, subject: fwd.subject, bodyText: `${fwd.bodyText}\n\n${fwd.quotedText}`, forwardOfMessageId: fwd.forwardOfMessageId!, draftId: fwd.id, draftGeneration: fwd.generation });
     const op = sqlDb(to.backend.store).get<{ payload_json: string }>("SELECT payload_json FROM ops WHERE id = ?", sent.opId)!;
     expect(op.payload_json).toContain("jefe@acme.studio");
     expect(op.payload_json).toContain("Mensaje reenviado");
@@ -391,7 +391,7 @@ describe("rich drafts (plan 16) in an export and over RPC", () => {
     const a = await client.call("accounts.addImap", imap("luis@fastmail.com"));
     const rich = await client.call("drafts.save", { accountId: a.id, to: [], cc: [], subject: "s", bodyText: "Hola", bodyHtml: "<div><b>Hola</b></div>" });
     expect(rich!.bodyHtml).toBe("<div><b>Hola</b></div>");
-    const byAgent = await mcp.call("drafts.save", { id: rich!.id, baseRevision: rich!.revision, accountId: a.id, to: [], cc: [], subject: "s", bodyText: "Otro", bodyHtml: "<img src=x onerror=alert(1)>" });
+    const byAgent = await mcp.call("drafts.save", { id: rich!.id, generation: rich!.generation, baseRevision: rich!.revision, accountId: a.id, to: [], cc: [], subject: "s", bodyText: "Otro", bodyHtml: "<img src=x onerror=alert(1)>" });
     expect(byAgent).toMatchObject({ bodyText: "Otro", bodyHtml: "" });
     await backend.server.invoke("settings.update", { allowAgentSend: true }, { clientId: "setup", origin: "dev" });
     const sent = await mcp.call("compose.send", { accountId: a.id, to: [{ name: "", email: "ana@x.dev" }], subject: "s", bodyText: "texto", bodyHtml: "<b>no</b>" });

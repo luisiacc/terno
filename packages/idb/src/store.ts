@@ -1006,7 +1006,8 @@ export class IdbMailStore implements MailStore {
         const from: Address = { name: cfg.config.senderName || account.displayName, email: account.email };
         // a draft is sent once: sending deletes it, so a second send of the same draft finds nothing
         const draft = p.draftId === undefined ? undefined : T(this.c, "drafts").get(p.draftId);
-        if (p.draftId !== undefined && (!draft || draft.account_id !== p.accountId || (p.draftRevision !== undefined && p.draftRevision !== draft.revision))) throw new RpcError("STALE", L("errors.draftGone"));
+        if (p.draftId !== undefined && (!draft || (draft.generation ?? "") !== (p.draftGeneration ?? ""))) throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftMissing" });
+        if (draft && (draft.account_id !== p.accountId || (p.draftRevision !== undefined && p.draftRevision !== draft.revision))) throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftRevision" });
         if (draft && p.attachments === undefined && JSON.parse(draft.attachments_json ?? "[]").length) throw assetError();
         const attachments = validateAssets(idbAssets(this.db), p.accountId, p.attachments ?? []);
         let inReplyTo: string | null = null;
@@ -1015,11 +1016,12 @@ export class IdbMailStore implements MailStore {
         let replyThreadId: number | null = null;
         if (p.inReplyToMessageId) {
           const original = T(this.c, "messages").get(p.inReplyToMessageId);
-          if (!original) throw new RpcError("NOT_FOUND", L("errors.originalGone"));
-          inReplyTo = original.rfc_message_id;
-          references = [...(JSON.parse(original.references_json) as string[]), ...(original.rfc_message_id ? [original.rfc_message_id] : [])];
-          replyThreadId = original.thread_id;
-          if (original.account_id === p.accountId) providerThreadId = T(this.c, "threads").get(original.thread_id)!.provider_thread_id;
+          if (original) {
+            inReplyTo = original.rfc_message_id;
+            references = [...(JSON.parse(original.references_json) as string[]), ...(original.rfc_message_id ? [original.rfc_message_id] : [])];
+            replyThreadId = original.thread_id;
+            if (original.account_id === p.accountId) providerThreadId = T(this.c, "threads").get(original.thread_id)?.provider_thread_id ?? null;
+          }
         }
         const messageId = `${this.c.uuid()}@${account.email.split("@")[1] || "terno.local"}`;
         const payload = { ...(attachments.length ? { attachments } : {}), from, to: p.to, cc: p.cc, bcc: p.bcc, subject: p.subject, text: p.bodyText, ...(p.bodyHtml ? { html: p.bodyHtml } : {}), messageId, inReplyTo, references, providerThreadId };

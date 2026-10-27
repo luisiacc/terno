@@ -307,6 +307,8 @@ export type DraftAddress = z.infer<typeof address> & { auto?: true };
  */
 export interface Draft {
   id: number;
+  /** Immutable target fence; empty/omitted only for drafts created before schema 20. */
+  generation?: string;
   revision: number;
   format: 1 | 2;
   accountId: number;
@@ -630,6 +632,7 @@ export const contract = {
       inReplyToMessageId: id.optional(),
       forwardOfMessageId: id.optional(),
       draftId: id.optional(),
+      draftGeneration: z.string().max(64).optional(),
       draftRevision: z.number().int().positive().optional(),
       attachments: attachmentRefs.optional(),
     }),
@@ -646,6 +649,7 @@ export const contract = {
   "drafts.save": m<Draft | null>()(
     z.object({
       id: id.optional(),
+      generation: z.string().max(64).optional(),
       baseRevision: z.number().int().min(0).optional(),
       accountId: id,
       threadId: id.nullable().optional(),

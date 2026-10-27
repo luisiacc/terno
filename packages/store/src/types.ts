@@ -228,6 +228,8 @@ export interface OwnerClaim {
 
 export interface DraftRow {
   id: number;
+  /** Immutable target fence; empty/omitted only for drafts created before schema 20. */
+  generation?: string;
   account_id: number;
   /** the conversation (null: new message, or the conversation is gone) */
   thread_id: number | null;
@@ -255,6 +257,8 @@ export interface DraftRow {
 /** What drafts.save writes. Omitted fields keep their stored value on an update, their default on an insert. */
 export interface DraftInput {
   id?: number;
+  /** Immutable target fence; empty/omitted only for drafts created before schema 20. */
+  generation?: string;
   /** the revision this edit was made on: a different stored one means another writer, so this becomes a new draft */
   baseRevision?: number;
   accountId: number;

@@ -9,7 +9,7 @@ import { invalidateThreads, loadThread, useThreads } from "~/state/threads";
 import { registerUndo, snack } from "./snack";
 import { answered, convertFields, forwardAccountMismatch, newFields, replyFields } from "./compose-fields";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
-import { authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, type LocalDraft } from "./drafts";
+import { authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, type LocalDraft } from "./drafts";
 
 /**
  * Writing mail: which draft a reply, reply-all, forward or new message opens,
@@ -80,7 +80,7 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
   const detail = useThreads.getState().details.get(threadId) ?? (await loadThread(threadId));
   if (!detail || mine !== intent) return;
   existing = existingKey ? materialize(existingKey) : undefined;
-  if (existingKey && (!existing || existing.sending)) return;
+  if (existingKey && (!existing || existing.sending || existing.recovery)) return;
   const accounts = getApp().accounts;
   const source = accounts.find((a) => a.id === detail.thread.accountId);
   // none of my addresses is replied to, whichever account the conversation is in (plan 34)
@@ -101,7 +101,7 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
       if (mine !== intent || getApp().selectedId !== selected || shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) !== existing.key) return;
       takeFocus = typeof document === "undefined" || document.activeElement === active;
       existing = materialize(existing.key);
-      if (!existing || existing.sending || existing.savedRev !== existing.localRev) return;
+      if (!existing || existing.sending || existing.recovery || existing.savedRev !== existing.localRev) return;
       const pristine = existing.id === null && existing.status === "clean" && existing.localRev === 0 && !authored(existing);
       if (existing.status !== "saved" && !pristine) return;
       if (!getApp().accounts.some((a) => a.id === source!.id)) { snack.error(t("errors.accountGone")); return; }
@@ -197,12 +197,14 @@ function showRecipient(key: string, field: "to" | "cc" | "bcc") {
 }
 
 async function send(key: string): Promise<boolean> {
+  if (useDrafts.getState().drafts[key]?.recovery) { snack.error(t("compose.recovery.sendBlocked")); return false; }
   if (attachmentUploading(key)) { snack.error(t("attachments.adding")); return false; }
   // read-only from here: nothing typed while the save in flight settles can fall between it and the send
   markSending(key, true);
   const d = await draftForSend(key);
-  if (!d) {
+  if (!d || d.recovery) {
     markSending(key, false);
+    resumeDraft(key);
     return false;
   }
   const to = validRecipients(d.toText);
@@ -233,6 +235,7 @@ async function send(key: string): Promise<boolean> {
       forwardOfMessageId: d.forwardOfMessageId ?? undefined,
       draftId: d.id ?? undefined,
       draftRevision: d.id ? d.revision : undefined,
+      draftGeneration: d.generation,
       attachments: d.attachments ?? [],
     });
     forgetDraft(key);
@@ -242,7 +245,15 @@ async function send(key: string): Promise<boolean> {
     return true;
   } catch (error) {
     markSending(key, false);
+    const e = error as { code?: string; details?: { reason?: string } } | null;
+    if (e?.code === "STALE" && e.details?.reason === "draftMissing") {
+      markDraftMissing(key);
+      resumeDraft(key);
+      snack.error(t("compose.recovery.sendBlocked"));
+      return false;
+    }
     resumeDraft(key);
+    if (e?.code === "STALE") { snack.error(t("compose.recovery.conflict")); return false; }
     captureUi(error, { code: "compose.send_failed" });
     snack.error(t("compose.sendFailed", { error: error instanceof Error ? error.message : String(error) }));
     return false;

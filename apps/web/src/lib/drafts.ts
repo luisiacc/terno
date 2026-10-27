@@ -19,7 +19,8 @@ import { exposeForTests } from "~/lib/render-probe";
  * - Send, discard and flush first cancel the debounce and wait for the save
  *   in flight. The server's revision travels with every save: an edit made on
  *   a revision another writer replaced becomes its own draft, never an
- *   overwrite. A save answered with null means the draft is gone.
+ *   overwrite. A null save makes its storage target terminal; local work
+ *   remains until an explicit copy is acknowledged or deliberately discarded.
  *
  * What can be lost in a crash: edits since the last acknowledgement (≤ 800 ms
  * after a pause, ≤ 5 s while typing).
@@ -43,12 +44,20 @@ export interface AutoRecipients {
 }
 export const NO_AUTO: AutoRecipients = { to: [], cc: [], bcc: [] };
 
+export interface DraftRecovery {
+  state: "missing" | "copying" | "refused" | "unknown";
+  reason?: "assets" | "account" | "context" | "size" | "invalid";
+}
+
 export interface LocalDraft {
   key: string;
   /** server id, once a save was acknowledged */
   id: number | null;
   /** the server revision this draft's content is based on */
   revision: number;
+  generation?: string;
+  /** Independent of save status: typing and UI changes cannot revive a terminal target. */
+  recovery?: DraftRecovery;
   status: DraftStatus;
   /** bumped by every edit; saved = what the server acknowledged */
   localRev: number;
@@ -149,6 +158,7 @@ export function fromServer(d: Draft): LocalDraft {
     key: `srv-${d.id}`,
     id: d.id,
     revision: d.revision,
+    generation: d.generation,
     status: "saved",
     localRev: 0,
     savedRev: 0,
@@ -256,11 +266,13 @@ interface Writer {
   /** when the oldest unsaved edit was made (for the 5 s ceiling) */
   dirtySince: number | null;
   attempts: number;
+  operation: number;
+  stopping: "send" | "discard" | null;
 }
 const writers = new Map<string, Writer>();
 const writer = (key: string): Writer => {
   let w = writers.get(key);
-  if (!w) writers.set(key, (w = { timer: null, inflight: null, dirtySince: null, attempts: 0 }));
+  if (!w) writers.set(key, (w = { timer: null, inflight: null, dirtySince: null, attempts: 0, operation: 0, stopping: null }));
   return w;
 };
 
@@ -296,6 +308,7 @@ export function editDraft(key: string, patch: Partial<DraftFields>): void {
   put({
     ...d,
     ...patch,
+    ...(patch.attachments?.length === 0 && d.recovery && (d.recovery.state === "missing" || d.recovery.state === "refused") ? { attachmentOwner: false } : {}),
     localRev: d.localRev + 1,
     status: d.status === "saving" ? "saving" : "dirty",
     updatedAt: now(),
@@ -321,6 +334,7 @@ export function setDraftUi(key: string, uiState: LocalDraft["uiState"]): void {
 }
 
 function schedule(key: string): void {
+  if (!get(key) || get(key)?.recovery || writers.get(key)?.stopping) return;
   const w = writer(key);
   w.dirtySince ??= now();
   if (w.timer) clearTimeout(w.timer);
@@ -332,18 +346,24 @@ function schedule(key: string): void {
 }
 
 /** Sends the current content unless a save is in flight (it re-saves when that one answers). */
-function save(key: string): Promise<void> {
+function save(key: string, copy = false): Promise<void> {
+  const current = get(key);
+  if (!current || (current.recovery && !copy) || writers.get(key)?.stopping) return Promise.resolve();
   const w = writer(key);
   if (w.inflight) return w.inflight;
   // the editor's body, serialized once for this save (same document as the revision it saves)
   const d = materialize(key);
-  if (!d || !authored(d) || d.savedRev === d.localRev) return Promise.resolve();
+  if (!d || !authored(d) || (!copy && d.savedRev === d.localRev)) return Promise.resolve();
   const rev = d.localRev;
+  const operation = ++w.operation;
+  if (w.timer) clearTimeout(w.timer);
+  w.timer = null;
   w.dirtySince = null;
-  put({ ...d, status: "saving", attachmentOwner: d.attachmentOwner || Boolean(d.attachments?.length) });
+  put({ ...d, ...(copy ? { recovery: { state: "copying" as const } } : {}), status: "saving", attachmentOwner: d.attachmentOwner || Boolean(d.attachments?.length) });
   const params = {
-    id: d.id ?? undefined,
-    baseRevision: d.id !== null ? d.revision : undefined,
+    id: copy ? undefined : d.id ?? undefined,
+    generation: copy ? undefined : d.generation,
+    baseRevision: !copy && d.id !== null ? d.revision : undefined,
     accountId: d.accountId,
     threadId: d.threadId,
     mode: d.mode,
@@ -363,31 +383,44 @@ function save(key: string): Promise<void> {
   };
   w.inflight = call("drafts.save", params).then(
     (res) => {
+      if (w.operation !== operation) return;
       w.inflight = null;
       w.attempts = 0;
       const cur = get(key);
       if (!cur) return;
       const saved = res as Draft | null;
       if (!saved) {
-        // gone (sent or discarded elsewhere): nothing left to save into
-        drop(key);
-        writers.delete(key);
+        if (copy) put({ ...materialize(key)!, status: "error", recovery: { state: "unknown" } });
+        else markDraftMissing(key);
         return;
       }
       const done = cur.localRev === rev;
-      put({ ...cur, id: saved.id, revision: saved.revision, savedRev: rev, status: done ? "saved" : "dirty", attachmentOwner: Boolean(saved.attachments?.length) });
-      if (!done) return save(key);
+      put({ ...cur, id: saved.id, generation: saved.generation, revision: saved.revision, savedRev: rev, recovery: undefined, status: done ? "saved" : "dirty", attachmentOwner: Boolean(saved.attachments?.length) });
+      if (!done && !w.stopping) {
+        const next = save(key);
+        if (!copy) return next;
+      }
     },
     (error: unknown) => {
+      if (w.operation !== operation) return;
       w.inflight = null;
       const cur = get(key);
       if (!cur) return;
+      if (copy) {
+        const e = error as { code?: string; details?: { reason?: string } } | null;
+        const refused = e?.code === "BAD_REQUEST" || e?.code === "NOT_FOUND" || e?.code === "STALE" || e?.code === "FORBIDDEN";
+        const reason = e?.details?.reason;
+        const known = reason === "assets" || reason === "account" || reason === "context" || reason === "size" ? reason : "invalid";
+        put({ ...cur, status: "error", tooLong: false, recovery: refused ? { state: "refused", reason: known } : { state: "unknown" } });
+        return;
+      }
       // refused as invalid (past the size limits): trying again won't help until it changes; Retry stays
       if ((error as { code?: string } | null)?.code === "BAD_REQUEST") {
         put({ ...cur, status: "error", tooLong: true });
         return;
       }
       put({ ...cur, status: "error" });
+      if (w.stopping) return;
       const delay = RETRY_MS[Math.min(w.attempts, RETRY_MS.length - 1)]!;
       w.attempts++;
       if (w.timer) clearTimeout(w.timer);
@@ -400,8 +433,28 @@ function save(key: string): Promise<void> {
   return w.inflight;
 }
 
+/** A missing target is terminal; retain the latest editor source without resetting its document. */
+export function markDraftMissing(key: string): void {
+  const d = materialize(key);
+  if (!d || d.recovery) return;
+  const w = writers.get(key);
+  if (w?.timer) clearTimeout(w.timer);
+  if (w) { w.timer = null; w.dirtySince = null; }
+  put({ ...d, status: "error", tooLong: false, recovery: { state: "missing" }, attachmentOwner: Boolean(d.attachments?.length) });
+}
+
+/** Explicit intent only: an unknown previous copy may already exist, as the action explains. */
+export function copyDraft(key: string): Promise<void> {
+  const d = get(key);
+  if (!d?.recovery || d.sending || writers.get(key)?.stopping) return Promise.resolve();
+  const w = writer(key);
+  if (w.inflight) return w.inflight;
+  return save(key, true);
+}
+
 /** "Retry" after an error: now. */
 export function retryDraft(key: string): void {
+  if (get(key)?.recovery || writers.get(key)?.stopping) return;
   const w = writer(key);
   if (w.timer) clearTimeout(w.timer);
   w.timer = null;
@@ -417,7 +470,7 @@ export async function flushDraft(key: string): Promise<void> {
   for (let i = 0; i < 5; i++) {
     if (w.inflight) await w.inflight;
     const d = get(key);
-    if (!d || d.status === "error" || !authored(d) || d.savedRev === d.localRev) return;
+    if (!d || d.recovery || d.status === "error" || !authored(d) || d.savedRev === d.localRev) return;
     await save(key);
   }
 }
@@ -425,7 +478,8 @@ export async function flushDraft(key: string): Promise<void> {
 /** Every dirty draft, before the page goes away or hands the mailbox over; gives up after `capMs`. */
 export async function flushAllDrafts(capMs = 1000): Promise<void> {
   const all = Promise.all(Object.keys(useDrafts.getState().drafts).map((k) => flushDraft(k).catch(() => {})));
-  await Promise.race([all, new Promise((r) => setTimeout(r, capMs))]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try { await Promise.race([all, new Promise((r) => { timer = setTimeout(r, capMs); })]); } finally { clearTimeout(timer); }
 }
 
 /**
@@ -435,7 +489,7 @@ export async function flushAllDrafts(capMs = 1000): Promise<void> {
  */
 export async function draftsSaved(capMs = 5000): Promise<boolean> {
   await flushAllDrafts(capMs);
-  return Object.values(useDrafts.getState().drafts).every((d) => !authored(d) || (d.savedRev === d.localRev && d.status !== "error"));
+  return Object.values(useDrafts.getState().drafts).every((d) => !authored(d) || (!d.recovery && d.savedRev === d.localRev && d.status !== "error"));
 }
 
 /** Waits for the save in flight (if any) and stops further saves: the draft is about to be sent or discarded. */
@@ -450,7 +504,11 @@ async function settle(key: string): Promise<LocalDraft | undefined> {
 
 /** The draft as it is now, after any save in flight answered, ready to send. */
 export async function draftForSend(key: string): Promise<LocalDraft | undefined> {
-  return settle(key);
+  if (get(key)?.recovery || writers.get(key)?.stopping) return undefined;
+  const w = writer(key);
+  w.stopping = "send";
+  const d = await settle(key);
+  return d?.recovery ? undefined : d;
 }
 
 /** A send started or settled: while it runs the draft can't be edited or discarded. */
@@ -461,6 +519,8 @@ export function markSending(key: string, sending: boolean): void {
 
 /** A send didn't happen (refused or failed): the autosave it paused picks up whatever isn't saved yet. */
 export function resumeDraft(key: string): void {
+  const w = writers.get(key);
+  if (w?.stopping === "send") w.stopping = null;
   const d = get(key);
   if (d && authored(d) && d.savedRev !== d.localRev) schedule(key);
 }
@@ -476,7 +536,9 @@ export function forgetDraft(key: string): void {
 /** Deletes a draft; returns what it was, for "Undo". */
 export async function discardDraft(key: string): Promise<LocalDraft | undefined> {
   // a send in flight decides: sent, it is gone; failed, it stays for another try
-  if (get(key)?.sending) return undefined;
+  if (get(key)?.sending || writers.get(key)?.stopping) return undefined;
+  const w = writer(key);
+  w.stopping = "discard";
   const d = await settle(key);
   if (!d || d.sending) return undefined;
   forgetDraft(key);

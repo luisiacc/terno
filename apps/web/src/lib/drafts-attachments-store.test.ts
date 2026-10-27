@@ -11,7 +11,7 @@ import { IdbMailStore } from "@terno/idb";
 import { SqlMailStore } from "../../../../packages/db/src/sql-store";
 
 vi.mock("~/rpc/connection", () => ({ client: { call: () => Promise.reject(new Error("not in tests")) } }));
-const { createDraft, editDraft, flushDraft, fromServer, forgetDraft, setDraftTransport, useDrafts } = await import("./drafts");
+const { attachBody, copyDraft, draftsSaved, materialize, resumeDraft, retryDraft, createDraft, editDraft, flushDraft, fromServer, forgetDraft, setDraftTransport, useDrafts } = await import("./drafts");
 
 const { openCompose } = await import("./compose");
 const { convertFields, replyFields } = await import("./compose-fields");
@@ -20,7 +20,7 @@ const { useThreads } = await import("~/state/threads");
 const { useSnack } = await import("./snack");
 
 const apiDraft = (r: DraftRow): Draft => ({
-  id: r.id, revision: r.revision, format: 2, accountId: r.account_id, threadId: r.thread_id, mode: r.mode,
+  id: r.id, generation: r.generation ?? "", revision: r.revision, format: 2, accountId: r.account_id, threadId: r.thread_id, mode: r.mode,
   to: JSON.parse(r.to_json), cc: JSON.parse(r.cc_json), bcc: JSON.parse(r.bcc_json), subject: r.subject, subjectEdited: !!r.subject_edited,
   bodyText: r.body_text, bodyHtml: r.body_html, attachments: JSON.parse(r.attachments_json), quotedText: r.quoted_text, includeQuote: !!r.include_quote,
   inReplyToMessageId: r.in_reply_to_message_id, forwardOfMessageId: r.forward_of_message_id, uiState: r.ui_state, updatedAt: r.updated_at,
@@ -118,5 +118,56 @@ for (const adapter of ["SQL", "IDB"] as const) {
       expect(reloaded).toMatchObject({ account_id: b, body_text: "later edit from the other account", attachments_json: "[]" });
       expect(await store.attachments.read(a!, ref.assetId, 0)).toBe("AP+A");
     } finally { await store.close(); rmSync(dir, { recursive: true, force: true }); }
+  });
+}
+
+for (const adapter of ["SQL", "IDB"] as const) {
+  it.each(["delete", "send"] as const)(`${adapter}: terminal %s retains current rich work and exact files through explicit copy and reopen`, async (terminal) => {
+    const dir = mkdtempSync(join(tmpdir(), "terno-recovery-store-"));
+    const name = crypto.randomUUID();
+    const open = (): Promise<MailStore> => adapter === "SQL" ? Promise.resolve(new SqlMailStore(openDatabase(join(dir, "mail.db")), { instantSearch: false })) : IdbMailStore.open({ name, factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+    let store = await open();
+    let body: ReturnType<typeof attachBody> | undefined;
+    try {
+      const [a] = await withAccounts(store);
+      const ref = await store.attachments.create({ accountId: a!, filename: "exact.bin", mime: "application/octet-stream", size: 3, now: 0 });
+      await store.attachments.append(a!, ref.assetId, 0, "AP+A"); await store.attachments.seal(a!, ref.assetId);
+      const saved = (await store.drafts.save({ accountId: a!, to: [], cc: [], subject: "old", bodyText: "old" }, 0))!;
+      const d = fromServer(apiDraft(saved)); useDrafts.setState({ drafts: { [d.key]: d } });
+      if (terminal === "delete") await store.drafts.delete(saved.id);
+      else await store.compose.queueSend({ accountId: a!, to: [], cc: [], bcc: [], subject: "old", bodyText: "old", draftId: saved.id, draftGeneration: saved.generation, draftRevision: 1, recordReply: false, now: 1 });
+      let release!: () => void; let reached!: () => void;
+      const gate = new Promise<void>((r) => { release = r; });
+      const waiting = new Promise<void>((r) => { reached = r; });
+      const ids: (number | undefined)[] = [];
+      setDraftTransport(async (method, params) => {
+        if (method === "drafts.delete") { await store.drafts.delete((params as { id: number }).id); return { ok: true }; }
+        const input = params as DraftInput; ids.push(input.id);
+        if (input.id === saved.id) { reached(); await gate; }
+        const result = await store.drafts.save(input, 2); return result ? apiDraft(result) : null;
+      });
+      editDraft(d.key, { bodyText: "submitted" });
+      const flushing = flushDraft(d.key); await waiting;
+      let text = "latest bold";
+      body = attachBody(d.key, () => ({ html: `<div><b>${text}</b></div>`, text })); body.changed();
+      editDraft(d.key, { toText: '"Pérez, Ana" <ana@example.com>, bob@', subject: "latest", attachments: [ref], quotedText: "> exact quote", includeQuote: true });
+      release(); await flushing;
+      expect(useDrafts.getState().drafts[d.key]).toMatchObject({ recovery: { state: "missing" }, bodyText: text, canonical: true });
+      retryDraft(d.key); resumeDraft(d.key); await flushDraft(d.key);
+      expect(ids).toEqual([saved.id]); expect(await draftsSaved()).toBe(false);
+      text += " plus"; body.changed();
+      const version = useDrafts.getState().drafts[d.key]!.bodyVersion;
+      await copyDraft(d.key); await flushDraft(d.key);
+      const current = materialize(d.key)!;
+      expect(current).toMatchObject({ key: d.key, bodyText: text, bodyVersion: version, canonical: true, toText: '"Pérez, Ana" <ana@example.com>, bob@' });
+      expect(current.recovery).toBeUndefined(); expect(current.id).not.toBe(saved.id);
+      body.dispose(); body = undefined;
+      await store.close(); store = await open();
+      const reloaded = (await store.drafts.list())[0]!;
+      expect(reloaded).toMatchObject({ id: current.id, body_text: text, body_html: `<div><b>${text}</b></div>`, quoted_text: "> exact quote" });
+      expect(apiDraft(reloaded).to).toEqual([{ name: "Pérez, Ana", email: "ana@example.com" }, { name: "", email: "bob@" }]);
+      expect(await store.attachments.read(a!, ref.assetId, 0)).toBe("AP+A");
+      expect((await store.ops.recent(10)).filter((o) => o.kind === "send")).toHaveLength(terminal === "send" ? 1 : 0);
+    } finally { body?.dispose(); await store.close(); rmSync(dir, { recursive: true, force: true }); }
   });
 }

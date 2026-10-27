@@ -46,7 +46,7 @@ async function queue(t: ReturnType<typeof setup>) {
   await t.client.call("attachments.append", { accountId: t.accountId, assetId: ref.assetId, index: 0, dataBase64: "AP+ADQo=" });
   await t.client.call("attachments.seal", { accountId: t.accountId, assetId: ref.assetId });
   const draft = (await t.client.call("drafts.save", { accountId: t.accountId, to: [{ name: "", email: "recipient@example.com" }], subject: "Exact bytes", bodyText: "snapshot", attachments: [ref] }))!;
-  const send = await t.client.call("compose.send", { accountId: t.accountId, to: draft.to, subject: draft.subject, bodyText: "snapshot", draftId: draft.id, draftRevision: draft.revision, attachments: [ref] });
+  const send = await t.client.call("compose.send", { accountId: t.accountId, to: draft.to, subject: draft.subject, bodyText: "snapshot", draftId: draft.id, draftGeneration: draft.generation, draftRevision: draft.revision, attachments: [ref] });
   return { ref, send };
 }
 

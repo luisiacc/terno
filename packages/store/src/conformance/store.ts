@@ -9,6 +9,7 @@ import { backfillFacts, ingest, msg, seedThroughCommands, threadOf, withAccounts
 import { byRecency, VIEW_TEST, type SearchCorpus } from "./oracle";
 import { SearchReplica } from "./replica";
 import { defineSearchConformance } from "./search";
+import { defineDraftRecoveryConformance } from "./draft-recovery";
 import { defineAttachmentConformance } from "./attachments";
 import { defineFactsConformance } from "./facts";
 
@@ -38,6 +39,7 @@ function corpusOf(s: StoreSnapshot): SearchCorpus {
  */
 export function defineStoreConformance(name: string, harness: StoreHarness): void {
   defineAttachmentConformance(name, harness);
+  defineDraftRecoveryConformance(name, harness);
   const open: MailStore[] = [];
   const fresh = async () => {
     const s = await harness.open();
@@ -1458,10 +1460,10 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         const store = await fresh();
         const [a] = await withAccounts(store);
         const d = (await store.drafts.save({ accountId: a!, mode: "forward", forwardOfMessageId: null, to: [], cc: [], subject: "Fwd: x", bodyText: "uno", quotedText: "---- reenviado ----", includeQuote: true }, NOW))!;
-        const d2 = (await store.drafts.save({ id: d.id, baseRevision: 1, accountId: a!, to, cc: [], subject: "Fwd: x", bodyText: "uno dos" }, NOW + 1))!;
+        const d2 = (await store.drafts.save({ id: d.id, generation: d.generation, baseRevision: 1, accountId: a!, to, cc: [], subject: "Fwd: x", bodyText: "uno dos" }, NOW + 1))!;
         expect(d2).toMatchObject({ id: d.id, revision: 2, mode: "forward", quoted_text: "---- reenviado ----", include_quote: 1, body_text: "uno dos" });
         // another writer is at revision 2; an edit made on revision 1 must not overwrite it
-        const stale = (await store.drafts.save({ id: d.id, baseRevision: 1, accountId: a!, to: [], cc: [], subject: "Fwd: x", bodyText: "versión vieja" }, NOW + 2))!;
+        const stale = (await store.drafts.save({ id: d.id, generation: d.generation, baseRevision: 1, accountId: a!, to: [], cc: [], subject: "Fwd: x", bodyText: "versión vieja" }, NOW + 2))!;
         expect(stale.id).not.toBe(d.id);
         expect(stale).toMatchObject({ revision: 1, format: 2, body_text: "versión vieja" });
         expect((await store.drafts.list()).find((x) => x.id === d.id)!.body_text).toBe("uno dos");
@@ -1474,7 +1476,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         const d = (await store.drafts.save({ accountId: a!, to, cc: [], subject: "Rico", bodyText: "Hola Ana", bodyHtml: html }, NOW))!;
         expect(d).toMatchObject({ body_text: "Hola Ana", body_html: html });
         expect((await store.drafts.list()).find((x) => x.id === d.id)).toMatchObject({ body_text: "Hola Ana", body_html: html });
-        const plain = (await store.drafts.save({ id: d.id, baseRevision: d.revision, accountId: a!, to, cc: [], subject: "Rico", bodyText: "Otro texto" }, NOW + 1))!;
+        const plain = (await store.drafts.save({ id: d.id, generation: d.generation, baseRevision: d.revision, accountId: a!, to, cc: [], subject: "Rico", bodyText: "Otro texto" }, NOW + 1))!;
         expect(plain).toMatchObject({ body_text: "Otro texto", body_html: "" });
         const legacy = (await store.drafts.save({ accountId: a!, to, cc: [], subject: "Viejo", bodyText: "texto" }, NOW))!;
         expect(legacy.body_html).toBe("");
@@ -1485,7 +1487,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         const [a] = await withAccounts(store);
         const d = (await store.drafts.save({ accountId: a!, to, cc: [], subject: "s", bodyText: "b" }, NOW))!;
         await store.drafts.delete(d.id);
-        expect(await store.drafts.save({ id: d.id, baseRevision: 1, accountId: a!, to, cc: [], subject: "s", bodyText: "b2" }, NOW)).toBeNull();
+        expect(await store.drafts.save({ id: d.id, generation: d.generation, baseRevision: 1, accountId: a!, to, cc: [], subject: "s", bodyText: "b2" }, NOW)).toBeNull();
         expect(await store.drafts.list()).toEqual([]);
       });
 
@@ -1493,7 +1495,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         const store = await fresh();
         const [a] = await withAccounts(store);
         const d = (await store.drafts.save({ accountId: a!, to, cc: [], subject: "Hola", bodyText: "texto" }, NOW))!;
-        await store.compose.queueSend({ accountId: a!, to: [{ name: "Yuki", email: "yuki@example.com" }], cc: [], bcc: [], subject: "Hola", bodyText: "texto", draftId: d.id, recordReply: false, now: NOW });
+        await store.compose.queueSend({ accountId: a!, to: [{ name: "Yuki", email: "yuki@example.com" }], cc: [], bcc: [], subject: "Hola", bodyText: "texto", draftId: d.id, draftGeneration: d.generation, recordReply: false, now: NOW });
         expect(await store.drafts.list()).toEqual([]);
       });
 
@@ -1501,7 +1503,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         const store = await fresh();
         const [a] = await withAccounts(store);
         const d = (await store.drafts.save({ accountId: a!, to, cc: [], subject: "Una vez", bodyText: "texto" }, NOW))!;
-        const send = { accountId: a!, to: [{ name: "Yuki", email: "yuki@example.com" }], cc: [], bcc: [], subject: "Una vez", bodyText: "texto", draftId: d.id, recordReply: false, now: NOW };
+        const send = { accountId: a!, to: [{ name: "Yuki", email: "yuki@example.com" }], cc: [], bcc: [], subject: "Una vez", bodyText: "texto", draftId: d.id, draftGeneration: d.generation, recordReply: false, now: NOW };
         await store.compose.queueSend(send);
         await expect(store.compose.queueSend(send)).rejects.toThrow(/already sent or discarded/);
         const sends = (await store.ops.recent(10)).filter((o) => o.kind === "send");
@@ -1530,7 +1532,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
           subject: after.subject,
           bodyText: after.body_text,
           inReplyToMessageId: after.in_reply_to_message_id ?? undefined,
-          draftId: after.id,
+          draftId: after.id, draftGeneration: after.generation,
           recordReply: false,
           now: NOW,
         });

@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/rpc/connection", () => ({ client: { call: () => Promise.reject(new Error("not in tests")) } }));
 
-const { attachBody, createDraft, discardDraft, draftForSend, draftSenderLocked, editDraft, fieldsOf, flushDraft, fromServer, loadDrafts, recipients, restoreDiscarded, retryDraft, sendBody, sendHtml, setDraftTransport, threadDraftKey, useDrafts, validRecipients } = await import("./drafts");
+const { attachBody, copyDraft, createDraft, draftsSaved, discardDraft, draftForSend, draftSenderLocked, editDraft, fieldsOf, flushDraft, fromServer, loadDrafts, recipients, restoreDiscarded, resumeDraft, retryDraft, setDraftUi, sendBody, sendHtml, setDraftTransport, threadDraftKey, useDrafts, validRecipients } = await import("./drafts");
 const { convertFields, newFields, replyFields } = await import("./compose-fields");
 
 interface Pending {
@@ -179,17 +179,96 @@ describe("the draft writer", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("a save answered with null (sent or discarded elsewhere) drops the draft", async () => {
+  it("a terminal null retains the latest editor, recipient and asset work and never retries the old target", async () => {
     const k = draft();
-    editDraft(k, { bodyText: "x" });
-    await vi.advanceTimersByTimeAsync(800);
-    await answer();
+    editDraft(k, { bodyText: "old" });
+    await vi.advanceTimersByTimeAsync(800); await answer();
     stored.clear();
-    editDraft(k, { bodyText: "xy" });
+    editDraft(k, { bodyText: "submitted" });
     await vi.advanceTimersByTimeAsync(800);
+    let text = "latest rich body";
+    const read = vi.fn(() => ({ html: `<div><b>${text}</b></div>`, text }));
+    const body = attachBody(k, read);
+    body.changed();
+    const attachments = [{ assetId: "asset", filename: "exact.bin", mime: "application/octet-stream", size: 3 }];
+    editDraft(k, { toText: '"Pérez, Ana" <ana@example.com>, bob@', attachments, subject: "latest" });
     await answer();
-    expect(useDrafts.getState().drafts[k]).toBeUndefined();
+    expect(state(k)).toMatchObject({ id: 10, recovery: { state: "missing" }, bodyText: text, toText: '"Pérez, Ana" <ana@example.com>, bob@', attachments, subject: "latest", canonical: true });
+    expect(read).toHaveBeenCalledTimes(1);
+    text += "!"; body.changed();
+    const map = useDrafts.getState().drafts;
+    text += "?"; body.changed();
+    expect(useDrafts.getState().drafts).toBe(map);
+    setDraftUi(k, "collapsed"); setDraftUi(k, "open");
+    for (let i = 0; i < 3; i++) { resumeDraft(k); retryDraft(k); await flushDraft(k); }
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(calls).toHaveLength(0);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(await draftsSaved()).toBe(false);
+    expect(await draftForSend(k)).toBeUndefined();
+    expect(fieldsOf(state(k)).bodyText).toBe(text);
+    body.dispose();
   });
+
+  async function missing() {
+    const k = draft(); editDraft(k, { bodyText: "keep" });
+    await vi.advanceTimersByTimeAsync(800); await answer(); stored.clear();
+    editDraft(k, { subject: "gone" }); await vi.advanceTimersByTimeAsync(800); await answer();
+    return k;
+  }
+
+  it("explicit copy deduplicates and merges acknowledgement into newer exact fields, then autosaves", async () => {
+    const k = await missing();
+    const before = state(k);
+    const copying = copyDraft(k);
+    const again = copyDraft(k);
+    expect(again).toBe(copying);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.params.id).toBeUndefined();
+    expect(state(k).recovery?.state).toBe("copying");
+    editDraft(k, { toText: "  Ana <ana@example.com>, bob@", bodyText: "newest" });
+    const version = state(k).bodyVersion;
+    await answer();
+    await copying;
+    expect(state(k)).toMatchObject({ key: k, id: 11, bodyText: "newest", bodyVersion: version, toText: "  Ana <ana@example.com>, bob@", canonical: false });
+    expect(state(k).recovery).toBeUndefined();
+    expect(state(k).key).toBe(before.key);
+    expect(calls[0]!.params).toMatchObject({ id: 11, baseRevision: 1, bodyText: "newest" });
+    await answer(); expect(await draftsSaved()).toBe(true);
+  });
+
+  it.each([ [{ code: "BAD_REQUEST", details: { reason: "assets" } }, "refused"], [{ code: "TIMEOUT" }, "unknown"] ])("copy failure %j stays explicit without retry, send or lost work", async (error, expected) => {
+    const k = await missing();
+    const copy = copyDraft(k);
+    calls.shift()!.reject(error); await copy;
+    expect(state(k).recovery?.state).toBe(expected);
+    expect(state(k).tooLong).toBe(false);
+    editDraft(k, { bodyText: "more" }); setDraftUi(k, "collapsed");
+    retryDraft(k); resumeDraft(k); await flushDraft(k);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(calls).toHaveLength(0); expect(await draftsSaved()).toBe(false);
+    expect(await draftForSend(k)).toBeUndefined();
+    expect(state(k).bodyText).toBe("more");
+  });
+
+  it("discard settles one current copy, deletes its acknowledged identity and never schedules successors", async () => {
+    const k = await missing();
+    const copy = copyDraft(k); editDraft(k, { bodyText: "typed during copy" });
+    const gone = discardDraft(k);
+    await answer(); await copy;
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ method: "drafts.delete", params: { id: 11 } });
+    await answer(); expect((await gone)?.bodyText).toBe("typed during copy");
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(calls).toHaveLength(0); expect(stored.size).toBe(0);
+  });
+
+  it("a send waiting for terminal save refuses and keeps latest work", async () => {
+    const k = await missing();
+    expect(await draftForSend(k)).toBeUndefined();
+    expect(state(k).bodyText).toBe("keep");
+  });
+
 });
 
 describe("drafts: helpers and restore", () => {

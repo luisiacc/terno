@@ -10,9 +10,9 @@ import { MemDb, type Committed, type ForeignKey, type Key, type Row, type Table,
  * version 3 is SQL's v9 (drafts v2); version 4 is SQL's v14 (plan 17: correspondents, thread facts); version 5 is SQL's v15 (Reply-To, defaulted on read).
  * Version 6 adds attachment assets (SQL v16); SQL v17 adds an in-memory partial index, with no persisted shape change.
  */
-export const IDB_VERSION = 6;
+export const IDB_VERSION = 7;
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 19;
+export const LOGICAL_SCHEMA = 20;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -48,6 +48,7 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "op_targets", early: true, key: ["op_id", "message_id"], indexes: { ...fk("op_id"), message: ["message_id"] } },
   { name: "user_actions", key: ["id"], autoId: true },
   { name: "dismissed_suggestions", early: true, key: ["key"] },
+  { name: "draft_counter", early: true, key: ["id"] },
   { name: "drafts", early: true, key: ["id"], autoId: true, indexes: { ...fk("account_id"), ...fk("thread_id") } },
   { name: "settings", early: true, key: ["key"] },
   // plan 17: the addresses you send from (own) and have written to (written)
@@ -144,6 +145,7 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       for (const t of PERSISTED) db.createObjectStore(t.name);
       db.createObjectStore("meta");
     } else {
+      if (event.oldVersion < 7) db.createObjectStore("draft_counter");
       if (event.oldVersion < 2) upgradeMoveRows(open.transaction!);
       if (event.oldVersion < 3) upgradeDrafts(open.transaction!);
       if (event.oldVersion < 4) upgradeFacts(db, open.transaction!);
