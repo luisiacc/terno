@@ -93,12 +93,19 @@ const subscribeControllers = (l: () => void) => {
 
 export function registerController(key: string, c: ComposerController): () => void {
   controllers.set(key, c);
-  notify();
-  // a focus asked for before the editor existed (the chunk was still loading)
   const pending = pendingFocus.get(key);
-  if (pending) {
-    pendingFocus.delete(key);
-    c.focus(pending);
+  try {
+    notify();
+    // a focus asked for before the editor existed (the chunk was still loading)
+    if (pending) {
+      pendingFocus.delete(key);
+      c.focus(pending);
+    }
+  } catch (error) {
+    if (controllers.get(key) === c) controllers.delete(key);
+    if (pending && !pendingFocus.has(key)) pendingFocus.set(key, pending);
+    notify();
+    throw error;
   }
   return () => {
     if (controllers.get(key) !== c) return;

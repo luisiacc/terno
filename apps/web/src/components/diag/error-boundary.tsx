@@ -62,9 +62,15 @@ export function TestThrow({ area }: { area: Area }) {
 const shortId = (id: string) => id.slice(0, 8);
 
 const RecoveryWorkspace = lazy(() => import("./recovery-workspace").then((m) => ({ default: m.RecoveryWorkspace })));
+export function RecoveryBoundary({ children }: { children: ReactNode }) {
+  return <Boundary area="app" fallback={() => <main className="flex h-screen flex-col items-center justify-center gap-3" data-testid="recovery-unavailable">
+    <p role="alert">{t("recovery.reload.unsaved")}</p>
+    <Button variant="outline" onClick={() => useDraftRecovery.setState({ open: false, checkpoint: undefined })}>{t("recovery.reload.showError")}</Button>
+  </main>}>{children}</Boundary>;
+}
 function AppFallback({ id }: { id: string | null }) {
   const recovering = useDraftRecovery((s) => s.open);
-  if (recovering) return <Suspense><RecoveryWorkspace /></Suspense>;
+  if (recovering) return <RecoveryBoundary><Suspense><RecoveryWorkspace /></Suspense></RecoveryBoundary>;
   return (
     <main className="flex h-screen items-center justify-center bg-background p-10 text-center" data-testid="app-boundary">
       <div role="alert" className="max-w-sm">

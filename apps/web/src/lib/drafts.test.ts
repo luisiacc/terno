@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/rpc/connection", () => ({ client: { call: () => Promise.reject(new Error("not in tests")) } }));
 
-const { attachBody, copyDraft, createDraft, draftsSaved, discardDraft, draftForSend, draftSenderLocked, editDraft, fieldsOf, flushDraft, forgetDraft, fromServer, loadDrafts, markDraftMissing, recipients, restoreDiscarded, retainedBodyState, resumeDraft, retryDraft, setDraftUi, sendBody, sendHtml, setDraftTransport, threadDraftKey, useDrafts, validRecipients } = await import("./drafts");
+const { attachBody, bodyCheckpoint, copyDraft, createDraft, draftsSaved, discardDraft, draftForSend, draftSenderLocked, editDraft, fieldsOf, flushDraft, forgetDraft, fromServer, loadDrafts, markDraftMissing, materialize, recipients, restoreDiscarded, retainedBodyState, resumeDraft, retryDraft, setDraftUi, sendBody, sendHtml, setDraftTransport, threadDraftKey, useDrafts, validBodyCheckpoint, validRecipients } = await import("./drafts");
 const { convertFields, newFields, replyFields } = await import("./compose-fields");
 
 interface Pending {
@@ -269,8 +269,23 @@ describe("the draft writer", () => {
     await copying;
     expect(state(k).recovery?.state).toBe(outcome === "refused" ? "refused" : "unknown");
     expect(await draftsSaved()).toBe(false);
-    fails = false; body.dispose();
+    fails = false; materialize(k); body.dispose();
     expect(state(k).bodyText).toBe("latest");
+  });
+
+  it.each(["replace", "forget", "body"] as const)("rejects a stale retained checkpoint after %s", (change) => {
+    const k = draft(); let fails = true;
+    const old = attachBody(k, () => { if (fails) throw new Error("read"); return { html: "<b>old</b>", text: "old" }; }); old.changed();
+    old.dispose({ state: { exact: true }, version: state(k).bodyVersion, read: () => { if (fails) throw new Error("read"); return { html: "<b>old</b>", text: "old" }; } });
+    const checkpoint = bodyCheckpoint(k)!; expect(validBodyCheckpoint(checkpoint)).toBe(true);
+    const revision = state(k).localRev; old.changed(); old.reset(); old.dispose();
+    expect(state(k).localRev).toBe(revision); expect(validBodyCheckpoint(checkpoint)).toBe(true);
+    if (change === "forget") forgetDraft(k);
+    else if (change === "replace") attachBody(k, () => ({ html: "<p>other</p>", text: "other" }));
+    else { fails = false; editDraft(k, { bodyText: "replacement", bodyHtml: "<p>replacement</p>" }); }
+    expect(validBodyCheckpoint(checkpoint)).toBe(false);
+    expect(() => attachBody(k, () => ({ html: "", text: "" }), { checkpoint })).toThrow();
+    forgetDraft(k);
   });
 
   it("releases a retained editor state on forget, even if its old handle cleans up later", () => {
@@ -280,6 +295,17 @@ describe("the draft writer", () => {
     expect(retainedBodyState(k, state(k).bodyVersion)).toBe(stateSnapshot);
     forgetDraft(k); source.dispose({ state: stateSnapshot, version: 0, read: () => ({ html: "", text: "" }) });
     expect(retainedBodyState(k, 0)).toBeUndefined();
+  });
+
+  it("does not automatically reread a failed source on edits or disposal", async () => {
+    const k = draft(); let fails = true;
+    const read = vi.fn(() => { if (fails) throw new Error("read"); return { html: "<b>latest</b>", text: "latest" }; });
+    const body = attachBody(k, read); body.changed();
+    expect(() => materialize(k)).toThrow("read");
+    body.changed(); editDraft(k, { subject: "more" }); await vi.advanceTimersByTimeAsync(10_000);
+    body.dispose(); expect(read).toHaveBeenCalledTimes(1); expect(calls).toHaveLength(0);
+    expect(await draftsSaved()).toBe(false);
+    fails = false; expect(materialize(k)?.bodyText).toBe("latest"); body.dispose();
   });
 
   it("ignores stale editor handles after ownership changes", async () => {

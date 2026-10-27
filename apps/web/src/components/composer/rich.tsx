@@ -36,7 +36,8 @@ import { TextSelection, type EditorState } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
-import { attachBody, draftEditsHeld, retainedBodyState, useDrafts } from "~/lib/drafts";
+import { attachBody, bodyCheckpoint, draftEditsHeld, retainedBodyState, useDrafts, validBodyCheckpoint, type BodyCheckpoint } from "~/lib/drafts";
+import { useDraftRecovery } from "~/lib/draft-recovery-ui";
 import { suggestText } from "~/lib/autocomplete";
 import { setApp, useApp } from "~/state/app";
 import { parseAddressList } from "@terno/core";
@@ -125,7 +126,7 @@ interface LinkDraft {
   editing: boolean;
 }
 
-export function RichBody({ draftKey, placeholder, className }: { draftKey: string; placeholder: string; className?: string }) {
+export function RichBody({ draftKey, placeholder, className, checkpoint }: { draftKey: string; placeholder: string; className?: string; checkpoint?: BodyCheckpoint }) {
   const mountRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -137,6 +138,7 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
   const [link, setLink] = useState<LinkDraft | null>(null);
   const [bubble, setBubble] = useState<{ from: number; to: number; href: string; top: number; left: number } | null>(null);
   const bodyRef = useRef<ReturnType<typeof attachBody> | null>(null);
+  const adoptedRef = useRef<{ original: BodyCheckpoint; replay?: BodyCheckpoint } | null>(null);
   const openLinkRef = useRef<() => void>(() => {});
   /** recomputes the toolbar's state (a send starting or ending changes what it may do) */
   const refreshRef = useRef<() => void>(() => {});
@@ -150,8 +152,11 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
     if (!d) return;
     versionRef.current = d.bodyVersion;
     // keys typed into the stand-in while this chunk loaded: the document is what the draft had then, plus them
-    const early = takeEarly(draftKey);
-    const state = early ? newState(appendTyped(docOf(early.base.html, early.base.text), early.text)) : (retainedBodyState<EditorState>(draftKey, d.bodyVersion) ?? keptState(draftKey, d.bodyVersion) ?? newState(docOf(d.bodyHtml, d.bodyText)));
+    const replay = checkpoint && adoptedRef.current?.original === checkpoint ? adoptedRef.current.replay : undefined;
+    const lease = replay ?? checkpoint;
+    if (checkpoint && (!lease || lease.key !== draftKey || !validBodyCheckpoint(lease) || (useDraftRecovery.getState().checkpoint !== checkpoint && (!replay || useDraftRecovery.getState().checkpoint !== undefined)) || !useDraftRecovery.getState().open)) throw new Error("Draft checkpoint is no longer available");
+    const early = checkpoint ? null : takeEarly(draftKey);
+    const state = lease ? lease.retained.state as EditorState : early ? newState(appendTyped(docOf(early.base.html, early.base.text), early.text)) : (retainedBodyState<EditorState>(draftKey, d.bodyVersion) ?? keptState(draftKey, d.bodyVersion) ?? newState(docOf(d.bodyHtml, d.bodyText)));
     let format: FormatState = EMPTY_FORMAT;
     const listeners = new Set<() => void>();
     let frame = 0;
@@ -209,69 +214,81 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
       },
     });
     const view = editor.view;
-    viewRef.current = view;
-    views.add(view);
-    emptyClass(view);
-    bodyRef.current = attachBody(draftKey, () => {
-      // the perf gate counts and times serializations (none per keystroke; one per save)
-      const t0 = performance.now();
-      const out = serialize(view.state.doc);
-      if (import.meta.env.VITE_RENDER_PROBE) probe("serialize", performance.now() - t0);
-      return out;
-    });
-    const focus = (where: "end" | "keep" = "keep") => {
-      if (where === "end" && !focusedOnce) view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)));
-      focusedOnce = true;
-      view.focus();
-    };
-    const controller: ComposerController = {
-      run: (command: FormatCommand) => {
-        // nothing changes under a send in flight (the draft is sending what is there now)
-        if (sendingRef.current || draftEditsHeld()) return;
-        COMMANDS[command](view.state, view.dispatch, view);
+    let unregister: (() => void) | undefined;
+    try {
+      viewRef.current = view;
+      views.add(view);
+      emptyClass(view);
+      const focus = (where: "end" | "keep" = "keep") => {
+        if (where === "end" && !focusedOnce) view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)));
+        focusedOnce = true;
         view.focus();
-      },
-      setFont: (v) => run(setMark(schema.marks.font, v)),
-      setSize: (v) => run(setMark(schema.marks.size, v)),
-      setColor: (v, f) => run(setMark(schema.marks.color, v), f),
-      setHighlight: (v, f) => run(setMark(schema.marks.highlight, v), f),
-      setAlign: (v: Align) => run(setAlign(v)),
-      openLink: () => openLinkRef.current(),
-      focus,
-      dom: view.dom as HTMLElement,
-      getState: () => format,
-      subscribe: (l) => {
-        listeners.add(l);
-        return () => listeners.delete(l);
-      },
-    };
-    function run(cmd: (s: EditorState, d?: EditorView["dispatch"]) => boolean, focusAfter = true) {
-      if (sendingRef.current || draftEditsHeld()) return;
-      cmd(view.state, view.dispatch);
-      if (focusAfter) view.focus();
-    }
-    format = formatState(view.state, !sendingRef.current && !draftEditsHeld());
-    refreshRef.current = schedule;
-    // the stand-in had focus (typed into or not): the editor that replaces it takes it
-    const standInFocused = takeStandInFocus(draftKey);
-    if (early) {
-      // the editor's document now holds what the stand-in saved and would send: it is the source from here
-      if (early.text) bodyRef.current?.changed();
-    }
-    if (early?.focused || standInFocused) focus("end");
-    const unregister = registerController(draftKey, controller);
-    return () => {
+      };
+      const controller: ComposerController = {
+        run: (command: FormatCommand) => {
+          // nothing changes under a send in flight (the draft is sending what is there now)
+          if (sendingRef.current || draftEditsHeld()) return;
+          COMMANDS[command](view.state, view.dispatch, view);
+          view.focus();
+        },
+        setFont: (v) => run(setMark(schema.marks.font, v)),
+        setSize: (v) => run(setMark(schema.marks.size, v)),
+        setColor: (v, f) => run(setMark(schema.marks.color, v), f),
+        setHighlight: (v, f) => run(setMark(schema.marks.highlight, v), f),
+        setAlign: (v: Align) => run(setAlign(v)),
+        openLink: () => openLinkRef.current(),
+        focus,
+        dom: view.dom as HTMLElement,
+        getState: () => format,
+        subscribe: (l) => {
+          listeners.add(l);
+          return () => listeners.delete(l);
+        },
+      };
+      function run(cmd: (s: EditorState, d?: EditorView["dispatch"]) => boolean, focusAfter = true) {
+        if (sendingRef.current || draftEditsHeld()) return;
+        cmd(view.state, view.dispatch);
+        if (focusAfter) view.focus();
+      }
+      format = formatState(view.state, !sendingRef.current && !draftEditsHeld());
+      refreshRef.current = schedule;
+      // the stand-in had focus (typed into or not): the editor that replaces it takes it
+      const standInFocused = takeStandInFocus(draftKey);
+      if (!checkpoint && (early?.focused || standInFocused)) focus("end");
+      unregister = registerController(draftKey, controller);
+      if (checkpoint && ((useDraftRecovery.getState().checkpoint !== checkpoint && (!replay || useDraftRecovery.getState().checkpoint !== undefined)) || !useDraftRecovery.getState().open)) throw new Error("Draft checkpoint is no longer available");
+      bodyRef.current = attachBody(draftKey, () => {
+        const t0 = performance.now();
+        const out = serialize(view.state.doc);
+        if (import.meta.env.VITE_RENDER_PROBE) probe("serialize", performance.now() - t0);
+        return out;
+      }, { checkpoint: lease });
+      if (early?.text) bodyRef.current.changed();
+      if (checkpoint) useDraftRecovery.setState({ checkpoint: undefined });
+      return () => {
+        if (frame) cancelAnimationFrame(frame);
+        // a suggestion is never brought back by a remount
+        const state = withoutGhost(view.state);
+        keepState(draftKey, state, versionRef.current);
+        bodyRef.current?.dispose({ state, version: versionRef.current, read: () => serialize(state.doc) });
+        if (checkpoint) {
+          const next = bodyCheckpoint(draftKey);
+          adoptedRef.current = { original: checkpoint, replay: next?.retained.state === state ? next : undefined };
+        }
+        bodyRef.current = null;
+        unregister?.();
+        viewRef.current = null;
+        views.delete(view);
+        editor.destroy();
+      };
+    } catch (error) {
       if (frame) cancelAnimationFrame(frame);
-      // a suggestion is never brought back by a remount
-      const state = withoutGhost(view.state);
-      keepState(draftKey, state, versionRef.current);
-      bodyRef.current?.dispose({ state, version: versionRef.current, read: () => serialize(state.doc) });
-      bodyRef.current = null;
-      unregister();
+      unregister?.();
       viewRef.current = null;
       views.delete(view);
       editor.destroy();
-    };
+      throw error;
+    }
   }, [draftKey]);
 
   // a body set from elsewhere (a conversion's undo, an import): the editor shows it

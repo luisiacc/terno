@@ -6,7 +6,7 @@ import { cn } from "@terno/ui/lib/utils";
 import { CaseSensitive, Link2 } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import { encodeSpaces, escapeHtml } from "@terno/richtext/quote";
-import { attachBody, useDrafts } from "~/lib/drafts";
+import { attachBody, useDrafts, type BodyCheckpoint } from "~/lib/drafts";
 import { controllerFor, toggleFormatBar, useFormatBar } from "./controller";
 
 /**
@@ -104,29 +104,29 @@ export function takeEarly(key: string): { base: { text: string; html: string }; 
  * disk) a plain editable stand-in in the same place, so keys typed at once are
  * kept and handed to the editor.
  */
-export function ComposerBody({ draftKey, placeholder, className }: { draftKey: string; placeholder: string; className?: string }) {
+export function ComposerBody({ draftKey, placeholder, className, checkpoint }: { draftKey: string; placeholder: string; className?: string; checkpoint?: BodyCheckpoint }) {
   const rich = useRich();
   // read-only under a send in flight, as the editor is (what is typed then couldn't be part of it)
   const sending = useDrafts((s) => s.held || (s.drafts[draftKey]?.sending ?? false));
-  if (rich) return <rich.RichBody draftKey={draftKey} placeholder={placeholder} className={className} />;
+  if (rich) return <rich.RichBody draftKey={draftKey} placeholder={placeholder} className={className} checkpoint={checkpoint} />;
   return (
     <div
       role="textbox"
       aria-multiline="true"
       aria-label={t("compose.body")}
       aria-placeholder={placeholder}
-      contentEditable={sending ? "false" : "plaintext-only"}
+      contentEditable={sending || checkpoint ? "false" : "plaintext-only"}
       suppressContentEditableWarning
       tabIndex={0}
       data-testid="compose-body-loading"
       ref={restoreTyped(draftKey)}
-      onInput={(e) => typedIn(draftKey, e.currentTarget.innerText, true)}
+      onInput={(e) => { if (!checkpoint) typedIn(draftKey, e.currentTarget.innerText, true); }}
       onFocus={() => focusedStandIns.add(draftKey)}
       onBlur={(e) => {
         // an unmount (the editor arriving) blurs too: that focus is the editor's to take
         if (!e.currentTarget.isConnected) return;
         focusedStandIns.delete(draftKey);
-        if (early.has(draftKey)) typedIn(draftKey, e.currentTarget.innerText, false);
+        if (!checkpoint && early.has(draftKey)) typedIn(draftKey, e.currentTarget.innerText, false);
       }}
       className={cn("type-body outline-none whitespace-pre-wrap empty:before:text-muted-foreground empty:before:content-[attr(aria-placeholder)]", className)}
     />

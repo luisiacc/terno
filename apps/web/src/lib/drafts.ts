@@ -256,23 +256,38 @@ export type BodyReader = () => { html: string; text: string };
 interface BodySource {
   read: BodyReader;
   dirty: boolean;
+  failed: boolean;
+  detached: boolean;
   /** its HTML comes from the schema (the editor's): a stand-in carrying a stored body isn't, and is re-read before sending */
   canonical: boolean;
   retained?: { state: unknown; version: number };
 }
 const sources = new Map<string, BodySource>();
+export interface BodyCheckpoint { readonly key: string; readonly version: number; readonly source: BodySource; readonly retained: NonNullable<BodySource["retained"]> }
+
+export function bodyCheckpoint(key: string): BodyCheckpoint | undefined {
+  const draft = get(key), source = sources.get(key), retained = source?.retained;
+  return draft && source?.detached && retained && retained.version === draft.bodyVersion ? { key, version: draft.bodyVersion, source, retained } : undefined;
+}
+
+export function validBodyCheckpoint(checkpoint: BodyCheckpoint): boolean {
+  const draft = get(checkpoint.key), source = sources.get(checkpoint.key);
+  return Boolean(draft && draft.bodyVersion === checkpoint.version && source === checkpoint.source && source.detached && source.retained === checkpoint.retained);
+}
 
 /**
  * The editor of a draft takes its body: `changed()` after each document change
  * (an edit: dirty, saved later), `dispose()` when it unmounts (what it has is
  * written to the draft first). A source of a draft that is gone does nothing.
  */
-export function attachBody(key: string, read: BodyReader, options: { canonical?: boolean } = {}): { changed(): void; reset(): void; dispose(snapshot?: { read: BodyReader; state: unknown; version: number }): void } {
-  const source: BodySource = { read, dirty: sources.get(key)?.dirty ?? false, canonical: options.canonical ?? true };
+export function attachBody(key: string, read: BodyReader, options: { canonical?: boolean; checkpoint?: BodyCheckpoint } = {}): { changed(): void; reset(): void; dispose(snapshot?: { read: BodyReader; state: unknown; version: number }): void } {
+  if (options.checkpoint && (options.checkpoint.key !== key || !validBodyCheckpoint(options.checkpoint))) throw new Error("Draft checkpoint is no longer available");
+  const prior = sources.get(key);
+  const source: BodySource = { read, dirty: prior?.dirty ?? false, failed: prior?.failed ?? false, detached: false, canonical: options.canonical ?? true };
   sources.set(key, source);
   return {
     changed() {
-      if (sources.get(key) !== source) return;
+      if (sources.get(key) !== source || source.detached) return;
       const d = get(key);
       if (!d || d.sending || draftEditsHeld()) return;
       changeVersion++;
@@ -285,16 +300,19 @@ export function attachBody(key: string, read: BodyReader, options: { canonical?:
     },
     // the editor reloaded what the draft has: nothing of its own to write
     reset() {
-      if (sources.get(key) !== source) return;
+      if (sources.get(key) !== source || source.detached) return;
       source.dirty = false;
     },
     dispose(snapshot) {
-      if (sources.get(key) !== source) return;
-      try { materialize(key); } catch {
+      if (sources.get(key) !== source || source.detached) return;
+      let unread = source.failed && source.dirty;
+      if (!unread) { try { materialize(key); } catch { unread = true; } }
+      if (unread) {
         if (snapshot) {
           source.read = snapshot.read;
           source.retained = { state: snapshot.state, version: snapshot.version };
         }
+        source.detached = true;
         return;
       }
       sources.delete(key);
@@ -313,14 +331,23 @@ export function materialize(key: string): LocalDraft | undefined {
   const d = get(key);
   const source = sources.get(key);
   if (!d || !source?.dirty) return d;
-  const { html, text } = source.read();
+  let body: ReturnType<BodyReader>;
+  try { body = source.read(); } catch (error) {
+    source.failed = true;
+    const w = writers.get(key);
+    if (w?.timer) { clearTimeout(w.timer); w.timer = null; }
+    throw error;
+  }
+  const { html, text } = body;
   const next = { ...d, bodyHtml: html, bodyText: text, canonical: source.canonical };
   put(next);
   source.dirty = false;
+  source.failed = false;
   return next;
 }
 
 function materializeOrCurrent(key: string): LocalDraft | undefined {
+  if (sources.get(key)?.failed) return get(key);
   try { return materialize(key); } catch { return get(key); }
 }
 
@@ -416,7 +443,7 @@ export function setDraftUi(key: string, uiState: LocalDraft["uiState"]): void {
 }
 
 function schedule(key: string): void {
-  if (!get(key) || get(key)?.recovery || writers.get(key)?.stopping) return;
+  if (!get(key) || get(key)?.recovery || writers.get(key)?.stopping || sources.get(key)?.failed) return;
   const w = writer(key);
   w.dirtySince ??= now();
   if (w.timer) clearTimeout(w.timer);
@@ -488,7 +515,7 @@ function save(key: string, copy = false): Promise<void> {
       const context = cur.accountId === d.accountId && cur.threadId === d.threadId && cur.mode === d.mode && cur.inReplyToMessageId === d.inReplyToMessageId && cur.forwardOfMessageId === d.forwardOfMessageId
         ? { threadId: saved.threadId, mode: saved.mode, inReplyToMessageId: saved.inReplyToMessageId, forwardOfMessageId: saved.forwardOfMessageId, ...(d.threadId !== null && (saved.threadId !== d.threadId || saved.mode === "new") ? { presentationThreadId: cur.presentationThreadId ?? d.threadId } : {}) } : {};
       put({ ...cur, ...context, id: saved.id, generation: saved.generation, revision: saved.revision, savedRev: rev, recovery: undefined, status: done ? "saved" : "dirty", attachmentOwner: Boolean(saved.attachments?.length) });
-      if (!done && !w.stopping) {
+      if (!done && !w.stopping && !sources.get(key)?.failed) {
         const next = save(key);
         if (!copy) return next;
       }

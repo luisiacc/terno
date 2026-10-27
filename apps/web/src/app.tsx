@@ -25,7 +25,7 @@ import { Sidebar } from "./components/sidebar";
 import { PaneHandle } from "./components/pane-handle";
 import { ThreadList } from "./components/thread-list";
 import { EngineStopped } from "./components/diag/engine-stopped";
-import { PaneBoundary } from "./components/diag/error-boundary";
+import { PaneBoundary, RecoveryBoundary } from "./components/diag/error-boundary";
 import { ReportPreview } from "./components/diag/report-preview";
 
 const RecoveryWorkspace = lazy(() => import("./components/diag/recovery-workspace").then((m) => ({ default: m.RecoveryWorkspace })));
@@ -102,7 +102,7 @@ export function App() {
   );
 
   const recovering = useDraftRecovery((s) => s.open);
-  if (recovering) return <Suspense><RecoveryWorkspace /></Suspense>;
+  if (recovering) return <RecoveryBoundary><Suspense><RecoveryWorkspace /></Suspense></RecoveryBoundary>;
 
   const gate = WebGate && (
     <Suspense>

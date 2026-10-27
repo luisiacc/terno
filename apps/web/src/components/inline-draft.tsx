@@ -9,7 +9,7 @@ import { cn } from "@terno/ui/lib/utils";
 import { ChevronDown, Forward, PenLine, ReplyAll, Send, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { openCompose, sendDraft, supersedeCompose } from "~/lib/compose";
-import { copyDraft, discardDraft, draftSenderLocked, editDraft, flushDraft, restoreDiscarded, retryDraft, setDraftUi, signatureBlock, useDrafts, type DraftFields, type LocalDraft } from "~/lib/drafts";
+import { copyDraft, discardDraft, draftSenderLocked, editDraft, flushDraft, restoreDiscarded, retryDraft, setDraftUi, signatureBlock, useDrafts, type BodyCheckpoint, type DraftFields, type LocalDraft } from "~/lib/drafts";
 import { SenderAvatar } from "./sender-avatar";
 import { RecipientInput, recipientSummary } from "./recipient-input";
 import { warmAutocomplete } from "~/lib/autocomplete";
@@ -302,7 +302,7 @@ function formLabel(forward: boolean, who: string): string {
  * keeps the draft in view; focus moves only on an explicit open or exit.
  */
 /** `icons`: the account's own picture may be asked for (plan 22; never in spam) */
-export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true }: { threadId: number; draftKey: string | null; replyTo: string; account: Account | undefined; icons?: boolean }) {
+export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, checkpoint }: { threadId: number; draftKey: string | null; replyTo: string; account: Account | undefined; icons?: boolean; checkpoint?: BodyCheckpoint }) {
   const d = useDrafts((s) => (draftKey ? s.drafts[draftKey] : undefined));
   const accounts = useApp((s) => s.accounts);
   const focus = useApp((s) => (draftKey && s.draftFocus?.key === draftKey ? s.draftFocus : null));
@@ -407,7 +407,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true }
             }}
           >
             <DraftFieldsForm d={d} accounts={accounts} showSubject={d.mode === "forward" || d.mode === "new"} />
-            <ComposerBody draftKey={d.key} placeholder={d.mode === "new" ? t("compose.bodyPlaceholder.new") : d.mode === "forward" ? t("compose.bodyPlaceholder.forward") : t("compose.bodyPlaceholder.reply")} className="block min-h-[132px] w-full px-3.5 pt-3 pb-1 text-base" />
+            <ComposerBody draftKey={d.key} checkpoint={checkpoint} placeholder={d.mode === "new" ? t("compose.bodyPlaceholder.new") : d.mode === "forward" ? t("compose.bodyPlaceholder.forward") : t("compose.bodyPlaceholder.reply")} className="block min-h-[132px] w-full px-3.5 pt-3 pb-1 text-base" />
             <DraftAttachments d={d} />
             <SignaturePreview accountId={d.accountId} className="px-3.5 pb-2" />
             <Quote d={d} />
