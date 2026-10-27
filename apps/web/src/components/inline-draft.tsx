@@ -206,7 +206,7 @@ export function SaveState({ d }: { d: LocalDraft }) {
       {!recovery && d.status === "error" &&
         richT(d.tooLong ? "compose.status.tooLong" : "compose.status.failed", {
           retry: (text) => (
-            <button type="button" className="font-medium text-primary hover:underline" onClick={() => retryDraft(d.key)}>
+            <button type="button" className="font-medium text-foreground underline underline-offset-2 hover:no-underline" onClick={() => retryDraft(d.key)}>
               {text}
             </button>
           ),
