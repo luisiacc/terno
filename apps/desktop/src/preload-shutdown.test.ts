@@ -12,7 +12,8 @@ vi.stubGlobal("window", new EventTarget());
 await import("./preload");
 afterAll(() => vi.unstubAllGlobals());
 const bridge = expose.mock.calls[0]![1];
-const emit = (name: string, ...args: unknown[]) => { for (const fn of events.get(name) ?? []) fn({}, ...args); };
+const document = () => send.mock.calls.find((call) => call[0] === "terno:flush-ready")![1];
+const emit = (name: string, ...args: unknown[]) => { for (const fn of events.get(name) ?? []) fn({}, ...args, document()); };
 
 it("preload holds synchronously before ACK and only matching release can finish each request", async () => {
   const order: string[] = [], held = new Set<number>(), answers: ((saved: boolean) => void)[] = [];
@@ -23,14 +24,23 @@ it("preload holds synchronously before ACK and only matching release can finish 
   emit("terno:flush-drafts", 10, true); expect(order).toEqual(["hold", "flush"]); expect(held.size).toBe(1);
   emit("terno:flush-release", 10); emit("terno:flush-drafts", 11, true); emit("terno:flush-release", 10);
   expect([...held]).toEqual([2]); answers[0]!(true); await Promise.resolve(); await Promise.resolve();
-  expect([...held]).toEqual([2]); expect(send).toHaveBeenCalledWith("terno:flush-done", 10, true);
+  expect([...held]).toEqual([2]); expect(send).toHaveBeenCalledWith("terno:flush-done", 10, true, document());
   emit("terno:flush-release", 11); expect(held.size).toBe(0); answers[1]!(false); stop();
 });
 
 it("unavailable admission refuses before flush; forced quit still uses the bounded ordinary flush", async () => {
   const flush = vi.fn(async () => true);
   const stop = bridge.onFlushDrafts(flush, () => null);
-  emit("terno:flush-drafts", 20, true); expect(flush).not.toHaveBeenCalled(); expect(send).toHaveBeenCalledWith("terno:flush-done", 20, false);
+  emit("terno:flush-drafts", 20, true); expect(flush).not.toHaveBeenCalled(); expect(send).toHaveBeenCalledWith("terno:flush-done", 20, false, document());
   emit("terno:flush-drafts", 21, false); await Promise.resolve(); await Promise.resolve();
-  expect(flush).toHaveBeenCalledTimes(1); expect(send).toHaveBeenCalledWith("terno:flush-done", 21, true); stop();
+  expect(flush).toHaveBeenCalledTimes(1); expect(send).toHaveBeenCalledWith("terno:flush-done", 21, true, document()); stop();
+});
+
+it("a request or release from a replaced document cannot acquire or unlock this document", () => {
+  const release = vi.fn(), acquire = vi.fn(() => release), flush = vi.fn(async () => true);
+  const stop = bridge.onFlushDrafts(flush, acquire);
+  emit("terno:flush-drafts", 30, true, "old-document"); expect(acquire).not.toHaveBeenCalled();
+  emit("terno:flush-drafts", 31, true); expect(acquire).toHaveBeenCalledTimes(1);
+  emit("terno:flush-release", 31, "old-document"); expect(release).not.toHaveBeenCalled();
+  emit("terno:flush-release", 31); expect(release).toHaveBeenCalledTimes(1); stop();
 });

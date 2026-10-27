@@ -11,7 +11,7 @@ import { MENU_COMMANDS, PRINT_COMMANDS } from "./print-commands";
 
 afterEach(() => setLocale("en", en));
 
-const actions = { appName: "Terno", dev: false, send: () => {}, exportDiagnostics: () => {}, showLogs: () => {}, checkForUpdates: () => {} };
+const actions = { appName: "Terno", dev: false, send: () => {}, reload: () => {}, exportDiagnostics: () => {}, showLogs: () => {}, checkForUpdates: () => {} };
 const sub = (item: MenuItemConstructorOptions) => item.submenu as MenuItemConstructorOptions[];
 /** every label in the menu bar, nested items included */
 const labels = (items: MenuItemConstructorOptions[]): string[] => items.flatMap((i) => [...(i.label ? [i.label] : []), ...(Array.isArray(i.submenu) ? labels(i.submenu) : [])]);
@@ -29,20 +29,20 @@ describe("main: the menu bar", () => {
 
   it("leads View with Mail's message filter on ⌘L, a whitelisted command; dev tools only in development", () => {
     const sent: string[] = [];
-    const items = sub(viewMenu((c) => sent.push(c), false));
+    const items = sub(viewMenu((c) => sent.push(c), false, () => {}));
     expect([items[0]!.label, items[0]!.accelerator]).toEqual(["Filter by Unread", "CmdOrCtrl+L"]);
     (items[0]!.click as () => void)();
     expect(sent).toEqual(["list.toggleUnread"]);
     for (const c of sent) expect(MENU_COMMANDS).toContain(c);
     expect(items.find((i) => i.role === "toggleDevTools")!.visible).toBe(false);
-    expect(sub(viewMenu(() => {}, true)).find((i) => i.role === "toggleDevTools")!.visible).toBe(true);
+    expect(sub(viewMenu(() => {}, true, () => {})).find((i) => i.role === "toggleDevTools")!.visible).toBe(true);
     // no other item claims ⌘L
     expect(items.filter((i) => i.accelerator === "CmdOrCtrl+L")).toHaveLength(1);
   });
 
   it("View has Back (⌘[) and Forward (⌘]) for the List layout, both whitelisted commands (plan 24)", () => {
     const sent: string[] = [];
-    const items = sub(viewMenu((c) => sent.push(c), false));
+    const items = sub(viewMenu((c) => sent.push(c), false, () => {}));
     const back = items.find((i) => i.id === "nav-back")!;
     const forward = items.find((i) => i.id === "nav-forward")!;
     expect([back.label, back.accelerator, forward.label, forward.accelerator]).toEqual(["Back", "CmdOrCtrl+[", "Forward", "CmdOrCtrl+]"]);
@@ -63,6 +63,18 @@ describe("main: the menu bar", () => {
     for (const i of sub(menu)) (i.click as () => void)();
     expect(sent).toEqual(["thread.print", "thread.exportPdf"]);
     for (const c of sent) expect(PRINT_COMMANDS).toContain(c);
+  });
+
+  it("ordinary and cache-bypass reload use guarded callbacks rather than native roles", () => {
+    const requests: boolean[] = [];
+    const items = sub(viewMenu(() => {}, false, (ignoreCache) => requests.push(ignoreCache)));
+    const reload = items.find((i) => i.id === "native-reload")!;
+    const force = items.find((i) => i.id === "native-force-reload")!;
+    expect(items.some((i) => i.role === "reload" || i.role === "forceReload")).toBe(false);
+    expect(reload.accelerator).toBe("CmdOrCtrl+R");
+    expect(force.accelerator).toBe("CmdOrCtrl+Shift+R");
+    (reload.click as () => void)(); (force.click as () => void)();
+    expect(requests).toEqual([false, true]);
   });
 
   it("labels every item, nested ones included, so no Electron default (English) shows; roles keep their behavior", () => {

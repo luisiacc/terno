@@ -16,10 +16,12 @@ import { startDiag } from "~/state/diag";
 import { setBridgeForTests, startUpdates } from "~/lib/updates";
 import { supportedFilters } from "~/lib/unread-filter";
 import { accountsChanged, announceParkedSend } from "~/lib/sign-in";
+import { installNativeReload } from "~/lib/native-reload";
 
 export async function boot(): Promise<void> {
   startDiag();
   trackDraftComposition();
+  installNativeReload();
   // Registered before readiness: an update cannot miss a document still starting.
   window.ternoDesktop?.onFlushDrafts?.(() => draftsSaved(4000), acquireDraftHold);
   try {

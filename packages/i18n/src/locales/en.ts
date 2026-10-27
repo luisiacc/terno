@@ -74,6 +74,8 @@ const en = {
   "recovery.reload.anywayName": "Reload anyway and discard unsaved changes and pending files",
   "recovery.reload.offline": "The app could not continue. Your unsaved work is here to review or copy; the mail connection has not been restarted.",
   "recovery.reload.showError": "Error details",
+  "recovery.reload.held": "Your unsaved work is here. Save a copy or discard it before reloading.",
+  "recovery.reload.back": "Back to Terno",
   "app.boundary.title": "Something went wrong",
   "app.boundary.body": "Terno hit an error and can’t show this window. Your mail is safe.",
   "app.boundary.reload": "Reload",

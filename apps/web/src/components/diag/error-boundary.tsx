@@ -66,9 +66,9 @@ function AppFallback({ id }: { id: string | null }) {
   const recovering = useDraftRecovery((s) => s.open);
   if (recovering) return <Suspense><RecoveryWorkspace /></Suspense>;
   return (
-    <div role="alert" className="flex h-screen items-center justify-center bg-background p-10 text-center" data-testid="app-boundary">
-      <div className="max-w-sm">
-        <p className="text-md font-semibold tracking-tight">{t("app.boundary.title")}</p>
+    <main className="flex h-screen items-center justify-center bg-background p-10 text-center" data-testid="app-boundary">
+      <div role="alert" className="max-w-sm">
+        <h1 className="text-md font-semibold tracking-tight">{t("app.boundary.title")}</h1>
         <p className="mt-1.5 text-sm text-muted-foreground">{t("app.boundary.body")}</p>
         <div className="mt-5 flex flex-col items-center gap-2">
           <RecoveryReload testId="app-boundary-reload" label="app.boundary.reload" />
@@ -76,7 +76,7 @@ function AppFallback({ id }: { id: string | null }) {
         </div>
         {id && <p className="mt-6 text-xs text-muted-foreground tabular-nums select-text">{t("app.boundary.reference", { id: shortId(id) })}</p>}
       </div>
-    </div>
+    </main>
   );
 }
 

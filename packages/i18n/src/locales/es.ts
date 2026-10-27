@@ -68,6 +68,8 @@ const es = {
   "recovery.reload.anywayName": "Recargar de todos modos y descartar los cambios sin guardar y archivos pendientes",
   "recovery.reload.offline": "La aplicación no pudo continuar. Tu trabajo sin guardar sigue aquí para revisarlo o copiarlo; la conexión de correo no se ha reiniciado.",
   "recovery.reload.showError": "Detalles del error",
+  "recovery.reload.held": "Tu trabajo sin guardar sigue aquí. Guarda una copia o descártalo antes de recargar.",
+  "recovery.reload.back": "Volver a Terno",
   "app.boundary.title": "Algo salió mal",
   "app.boundary.body": "Terno encontró un error y no puede mostrar esta ventana. Tu correo está a salvo.",
   "app.boundary.reload": "Recargar",

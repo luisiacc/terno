@@ -22,7 +22,7 @@ export function RecoveryReload({ testId, label }: { testId: string; label: "web.
       <div className="flex flex-wrap justify-center gap-2">
         <Button data-testid={testId} onClick={() => void reload()} aria-disabled={busy} aria-busy={busy}>{t(label)}</Button>
         {warned && <>
-          <Button variant="outline" data-testid="recovery-review" onClick={reviewDrafts}>{t("recovery.reload.review")}</Button>
+          <Button variant="outline" data-testid="recovery-review" onClick={() => reviewDrafts()}>{t("recovery.reload.review")}</Button>
           <Button variant="outline" data-testid="recovery-force" aria-label={t("recovery.reload.anywayName")} onClick={() => location.reload()}>{t("updates.reload.anyway")}</Button>
         </>}
       </div>

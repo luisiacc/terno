@@ -1,5 +1,5 @@
 import { t } from "@terno/i18n";
-import type { MenuItemConstructorOptions } from "electron";
+import type { BaseWindow, MenuItemConstructorOptions } from "electron";
 import type { MenuCommand, PrintCommand } from "./print-commands";
 
 /**
@@ -13,6 +13,7 @@ export interface MenuActions {
   appName: string;
   dev: boolean;
   send: (command: MenuCommand) => void;
+  reload: (ignoreCache: boolean, focusedWindow?: BaseWindow) => void;
   exportDiagnostics: () => void;
   showLogs: () => void;
   checkForUpdates: () => void;
@@ -77,7 +78,7 @@ export function editMenu(): MenuItemConstructorOptions {
  * Ver / View: Mail's message filter first (View → Filter), sent to the
  * renderer, which decides like it does for ⌘L; then the window's own items.
  */
-export function viewMenu(send: (command: MenuCommand) => void, dev: boolean): MenuItemConstructorOptions {
+export function viewMenu(send: (command: MenuCommand) => void, dev: boolean, reload: (ignoreCache: boolean, focusedWindow?: BaseWindow) => void): MenuItemConstructorOptions {
   return {
     label: t("menu.view"),
     submenu: [
@@ -87,7 +88,8 @@ export function viewMenu(send: (command: MenuCommand) => void, dev: boolean): Me
       { id: "nav-back", label: t("menu.back"), accelerator: "CmdOrCtrl+[", click: () => send("nav.back") },
       { id: "nav-forward", label: t("menu.forward"), accelerator: "CmdOrCtrl+]", click: () => send("nav.forward") },
       { type: "separator" },
-      { role: "reload", label: t("menu.reload") },
+      { id: "native-reload", label: t("menu.reload"), accelerator: "CmdOrCtrl+R", click: (_item, window) => reload(false, window) },
+      { id: "native-force-reload", label: t("menu.reload"), accelerator: "CmdOrCtrl+Shift+R", visible: false, acceleratorWorksWhenHidden: true, click: (_item, window) => reload(true, window) },
       { role: "toggleDevTools", label: t("menu.devTools"), visible: dev },
       { type: "separator" },
       { role: "resetZoom", label: t("menu.actualSize") },
@@ -121,5 +123,5 @@ export function helpMenu(o: { exportDiagnostics: () => void; showLogs: () => voi
 }
 
 export function menuTemplate(a: MenuActions): MenuItemConstructorOptions[] {
-  return [appMenu(a.appName, a.checkForUpdates), fileMenu(a.send), editMenu(), viewMenu(a.send, a.dev), windowMenu(), helpMenu(a)];
+  return [appMenu(a.appName, a.checkForUpdates), fileMenu(a.send), editMenu(), viewMenu(a.send, a.dev, a.reload), windowMenu(), helpMenu(a)];
 }

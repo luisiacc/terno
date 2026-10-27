@@ -8,6 +8,7 @@ import { MENU_COMMANDS, type MenuCommand } from "./print-commands";
  */
 let port: MessagePort | null = null;
 let wanted = false;
+const documentToken = crypto.randomUUID();
 
 function deliver() {
   if (port && wanted) {
@@ -74,26 +75,32 @@ contextBridge.exposeInMainWorld("ternoDesktop", {
   // before any quit or update: main asks, the page saves every draft and answers (main waits 5 s at most)
   onFlushDrafts: (flush: () => Promise<boolean>, acquire?: () => (() => void) | null) => {
     const leases = new Map<unknown, () => void>();
-    const release = (_e: unknown, id: unknown) => { leases.get(id)?.(); leases.delete(id); };
-    const relay = (_e: unknown, id: unknown, hold: unknown) => {
+    const release = (_e: unknown, id: unknown, document: unknown) => { if (document === documentToken) { leases.get(id)?.(); leases.delete(id); } };
+    const relay = (_e: unknown, id: unknown, hold: unknown, document: unknown) => {
+      if (document !== documentToken) return;
       try {
         if (hold === true) {
           const lease = acquire?.();
-          if (!lease) { ipcRenderer.send("terno:flush-done", id, false); return; }
+          if (!lease) { ipcRenderer.send("terno:flush-done", id, false, documentToken); return; }
           leases.set(id, lease);
         }
-        void flush().catch(() => false).then((saved) => ipcRenderer.send("terno:flush-done", id, saved === true));
-      } catch { ipcRenderer.send("terno:flush-done", id, false); }
+        void flush().catch(() => false).then((saved) => ipcRenderer.send("terno:flush-done", id, saved === true, documentToken));
+      } catch { ipcRenderer.send("terno:flush-done", id, false, documentToken); }
     };
     ipcRenderer.on("terno:flush-drafts", relay);
     ipcRenderer.on("terno:flush-release", release);
-    ipcRenderer.send("terno:flush-ready");
+    ipcRenderer.send("terno:flush-ready", documentToken);
     return () => {
       ipcRenderer.removeListener("terno:flush-drafts", relay);
       ipcRenderer.removeListener("terno:flush-release", release);
       for (const lease of leases.values()) lease();
       leases.clear();
     };
+  },
+  onReloadRefused: (listener: (anyway: () => void) => void) => {
+    const relay = (_event: unknown, id: unknown) => { if (Number.isSafeInteger(id)) listener(() => ipcRenderer.send("terno:reload-anyway", id)); };
+    ipcRenderer.on("terno:reload-refused", relay);
+    return () => ipcRenderer.removeListener("terno:reload-refused", relay);
   },
   // the Archivo and Ver menus' commands, whitelisted
   onCommand: (listener: (command: MenuCommand) => void) => {

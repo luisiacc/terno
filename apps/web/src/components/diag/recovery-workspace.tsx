@@ -11,6 +11,7 @@ import { focusBody } from "../composer/controller";
 /** Opened only by Review drafts; all authored fields/history stay in their original writer. */
 export function RecoveryWorkspace() {
   const requested = useDraftRecovery((s) => s.key);
+  const reason = useDraftRecovery((s) => s.reason);
   const drafts = useDrafts((s) => s.drafts);
   const accounts = useApp((s) => s.accounts);
   const key = requested && drafts[requested] ? requested : Object.keys(drafts)[0] ?? null;
@@ -19,8 +20,8 @@ export function RecoveryWorkspace() {
   return <TooltipProvider>
     <main className="flex h-screen flex-col bg-background text-foreground" data-testid="recovery-workspace" aria-label={t("recovery.reload.review")}>
       <header className="hairline-b flex flex-wrap items-center gap-3 px-5 py-3">
-        <div className="min-w-0 flex-1"><h1 className="font-semibold">{t("recovery.reload.review")}</h1><p className="text-sm text-muted-foreground">{t("recovery.reload.offline")}</p></div>
-        <Button variant="outline" data-testid="recovery-details" onClick={() => useDraftRecovery.setState({ open: false })}>{t("recovery.reload.showError")}</Button>
+        <div className="min-w-0 flex-1"><h1 className="font-semibold">{t("recovery.reload.review")}</h1><p className="text-sm text-muted-foreground">{t(reason === "reload" ? "recovery.reload.held" : "recovery.reload.offline")}</p></div>
+        <Button variant="outline" data-testid="recovery-details" onClick={() => useDraftRecovery.setState({ open: false })}>{t(reason === "reload" ? "recovery.reload.back" : "recovery.reload.showError")}</Button>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto px-(--reader-pad-x) pb-8">
         <div className="mx-auto max-w-(--reader-max)">

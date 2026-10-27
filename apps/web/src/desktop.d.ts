@@ -51,6 +51,8 @@ export interface DesktopBridge {
   updates?: DesktopUpdates;
   /** before a quit or an update main asks the page to save its drafts, and waits for the promise (5 s at most) */
   onFlushDrafts?(flush: () => Promise<boolean>, acquire?: () => (() => void) | null): () => void;
+  /** A refused native reload; the action is bound to that exact disclosed window/document request. */
+  onReloadRefused?(listener: (anyway: () => void) => void): () => void;
 }
 
 /** In-app updates through main (apps/desktop/src/updates/main.ts validates every call). */

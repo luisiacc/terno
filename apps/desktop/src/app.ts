@@ -17,7 +17,10 @@ import {
   session,
   shell,
   utilityProcess,
+  webContents,
   type UtilityProcess,
+  type WebContents,
+  type BaseWindow,
 } from "electron";
 import { diagSession, log as diagLog } from "@terno/core/diag";
 import { isLanguageSetting } from "@terno/i18n";
@@ -37,6 +40,8 @@ import { readLanguage, switchLanguage, writeLanguage } from "./locale";
 import type { MenuCommand } from "./print-commands";
 import { LEGACY_STORAGE_PENDING } from "./profile";
 import { coordinateShutdown, type BackendOutcome, type ShutdownOutcome } from "./shutdown";
+import { DraftFlushRequests, type DraftFlush } from "./draft-flush";
+import { NativeReloads, nativeReloadKey } from "./native-reload";
 import type { UpdateController } from "./updates/controller";
 import { startUpdates } from "./updates/main";
 
@@ -275,41 +280,80 @@ let shutdownSeq = 0;
 const shutdownWaiters = new Map<number, (outcome: BackendOutcome) => void>();
 const sendsIdleWaiters: (() => void)[] = [];
 /** renderers that flush their drafts when asked (they say so once their page is up) */
-const flushers = new Set<number>();
-let flushSeq = 0;
-const flushWaiters = new Map<string, (saved: boolean) => void>();
-const heldWindows = new Map<string, { window: BrowserWindow; id: number }>();
+const flushRequests = new DraftFlushRequests();
+let shutdownFlushes: DraftFlush[] = [];
 let updates: UpdateController | null = null;
 
-ipcMain.on("terno:flush-ready", (e) => {
-  if (trusted(e)) flushers.add(e.sender.id);
+ipcMain.on("terno:flush-ready", (e, document: unknown) => {
+  if (trusted(e) && ownedContents(e.sender)) flushRequests.ready(e.sender, document);
 });
-ipcMain.on("terno:flush-done", (e, id: unknown, saved: unknown) => {
-  if (!trusted(e) || !Number.isSafeInteger(id)) return;
-  const key = `${e.sender.id}:${String(id)}`;
-  flushWaiters.get(key)?.(saved === true);
-  flushWaiters.delete(key);
+ipcMain.on("terno:flush-done", (e, id: unknown, saved: unknown, document: unknown) => {
+  if (trusted(e)) flushRequests.answer(e.sender, id, saved, document);
 });
 
 function flushWindows(hold: boolean): Promise<boolean>[] {
-  return [...windows]
-    .filter((w) => !w.isDestroyed())
-    .map(
-      (w) =>
-        new Promise<boolean>((resolve) => {
-          if (!flushers.has(w.webContents.id)) { resolve(false); return; }
-          const id = ++flushSeq;
-          const key = `${w.webContents.id}:${id}`;
-          flushWaiters.set(key, resolve);
-          if (hold) heldWindows.set(key, { window: w, id });
-          w.webContents.send("terno:flush-drafts", id, hold);
-        }),
-    );
+  shutdownFlushes = [...windows].filter((w) => !w.isDestroyed()).map((w) => flushRequests.request(w.webContents, hold));
+  return shutdownFlushes.map((request) => request.saved);
 }
 
 function releaseFlushWindows(): void {
-  for (const { window, id } of heldWindows.values()) if (!window.isDestroyed()) window.webContents.send("terno:flush-release", id);
-  heldWindows.clear();
+  for (const request of shutdownFlushes.splice(0)) request.release();
+}
+
+const ownedContents = (target: WebContents) => [...windows].some((w) => !w.isDestroyed() && w.webContents === target);
+const nativeReloads = new NativeReloads<WebContents>({
+  allowed: (target) => quitState === "running" && !target.isDestroyed() && ownedContents(target),
+  ready: (target) => flushRequests.isReady(target),
+  flush: (target) => flushRequests.request(target, true),
+  reload: (target, ignoreCache) => ignoreCache ? target.reloadIgnoringCache() : target.reload(),
+  stop: (target) => { if (!target.isDestroyed()) target.stop(); },
+  warn: (target, id) => target.send("terno:reload-refused", id),
+  watch: (target, events) => {
+    const navigating = (_event: Electron.Event, _url: string, inPlace: boolean, main: boolean) => { if (main && !inPlace) events.navigating(); };
+    const failed = (_event: Electron.Event, _code: number, _description: string, _url: string, main: boolean) => { if (main) events.failed(); };
+    target.on("did-start-navigation", navigating);
+    target.on("did-navigate", events.committed);
+    target.on("did-fail-load", failed);
+    target.on("did-fail-provisional-load", failed);
+    target.on("destroyed", events.destroyed);
+    return () => {
+      target.removeListener("did-start-navigation", navigating);
+      target.removeListener("did-navigate", events.committed);
+      target.removeListener("did-fail-load", failed);
+      target.removeListener("did-fail-provisional-load", failed);
+      target.removeListener("destroyed", events.destroyed);
+    };
+  },
+});
+ipcMain.on("terno:reload-anyway", (event, id: unknown) => {
+  if (trusted(event)) nativeReloads.force(event.sender, id);
+});
+
+function reloadFocused(ignoreCache: boolean, focusedWindow?: BaseWindow): void {
+  if (quitState !== "running") return;
+  const target = webContents.getFocusedWebContents();
+  if (target?.isDestroyed()) return;
+  const owner = [...windows].find((w) => !w.isDestroyed() && (target ? w.webContents === target || w.webContents.devToolsWebContents === target : w === focusedWindow));
+  if (owner) void nativeReloads.request(owner.webContents, ignoreCache);
+}
+
+const reloadKeyBindings = new Map<WebContents, () => void>();
+function bindReloadKeys(source: WebContents, target: WebContents): void {
+  if (reloadKeyBindings.has(source)) return;
+  const input = (event: Electron.Event, input: Electron.Input) => {
+    const ignoreCache = nativeReloadKey(input, process.platform);
+    if (ignoreCache === null) return;
+    event.preventDefault();
+    if (!input.isAutoRepeat && quitState === "running" && ownedContents(target)) void nativeReloads.request(target, ignoreCache);
+  };
+  const cleanup = () => {
+    source.removeListener("before-input-event", input);
+    source.removeListener("destroyed", cleanup); target.removeListener("destroyed", cleanup);
+    reloadKeyBindings.delete(source);
+  };
+  reloadKeyBindings.set(source, cleanup);
+  source.on("before-input-event", input); source.once("destroyed", cleanup);
+  if (source !== target) target.once("destroyed", cleanup);
 }
 
 function shutdownBackend(o: { deadlineMs: number; force: boolean }): Promise<BackendOutcome> | null {
@@ -332,7 +376,7 @@ function stopBackend() {
 async function shutdown(force: boolean, trigger: "quit" | "restart"): Promise<ShutdownOutcome> {
   const started = Date.now();
   const r = await coordinateShutdown({ flushWindows, releaseWindows: releaseFlushWindows, shutdownBackend, setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) }, { force });
-  flushWaiters.clear();
+  for (const request of shutdownFlushes) request.commit();
   shutdownWaiters.clear();
   if (r.draftsTimedOut) diagLog.warn("shutdown.drafts_timeout", { count: r.draftsTimedOut });
   diagLog.info("shutdown.done", { outcome: r.outcome, durationMs: Date.now() - started, trigger });
@@ -342,9 +386,10 @@ async function shutdown(force: boolean, trigger: "quit" | "restart"): Promise<Sh
 }
 
 function enableReload(enabled: boolean): void {
+  if (!enabled) nativeReloads.cancelAll();
   const visit = (menu: Electron.Menu) => {
     for (const item of menu.items) {
-      if (item.role === "reload" || item.role === "forceReload") item.enabled = enabled;
+      if (item.id === "native-reload" || item.id === "native-force-reload") item.enabled = enabled;
       if (item.submenu) visit(item.submenu);
     }
   };
@@ -504,6 +549,13 @@ function createWindow() {
     },
   });
   windows.add(win);
+  bindReloadKeys(win.webContents, win.webContents);
+  win.webContents.on("devtools-opened", () => { const tools = win.webContents.devToolsWebContents; if (tools) bindReloadKeys(tools, win.webContents); });
+  win.webContents.on("devtools-reload-page", () => {
+    // Electron starts this navigation before emitting the noncancelable event.
+    win.webContents.stop(); nativeReloads.cancel(win.webContents);
+    if (flushRequests.resumeStopped(win.webContents)) void nativeReloads.request(win.webContents);
+  });
   win.on("closed", () => windows.delete(win));
   win.once("ready-to-show", () => {
     win.show();
@@ -513,12 +565,11 @@ function createWindow() {
   // Every (re)load gets a fresh port: the previous one died with the old document (and its draft flusher with it).
   // The port goes once the new document is committed (did-navigate: main frame, never in-page): sent when the
   // navigation only starts, it reached the old document, and a reload (⌘R, View → Reload) waited forever (plan 24).
-  const contentsId = win.webContents.id;
   win.webContents.on("did-start-navigation", (_e, _url, isInPlace, isMainFrame) => {
-    if (isMainFrame && !isInPlace) flushers.delete(contentsId);
+    if (isMainFrame && !isInPlace) { flushRequests.navigating(win.webContents); nativeReloads.navigating(win.webContents); }
   });
-  win.webContents.on("did-navigate", () => void connectWindow(win));
-  win.on("closed", () => flushers.delete(contentsId));
+  win.webContents.on("did-navigate", () => { flushRequests.committed(win.webContents); void connectWindow(win); });
+  win.webContents.on("destroyed", () => { nativeReloads.cancel(win.webContents); flushRequests.destroyed(win.webContents); });
 
   // Links never navigate the app window; vetted schemes open in the system browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -552,6 +603,7 @@ function buildMenu() {
     appName: app.getName(),
     dev: isDev,
     send: sendCommand,
+    reload: reloadFocused,
     exportDiagnostics: () => void mainDiag.exportInteractive(BrowserWindow.getFocusedWindow()),
     showLogs: () => mainDiag.showLogs(),
     checkForUpdates,
