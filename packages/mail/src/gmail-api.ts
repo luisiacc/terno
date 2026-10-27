@@ -1,3 +1,4 @@
+import { retainedIncomingBytes } from "./incoming-size";
 import { gmailSendBody } from "./outgoing-wire";
 import { L } from "@terno/i18n";
 import type { IncomingMessage } from "@terno/store";
@@ -352,22 +353,6 @@ function inlineCandidate(bytes: Uint8Array): boolean {
   return true;
 }
 
-function retainedMessageBytes(message: IncomingMessage): number {
-  const seen = new Set<object>();
-  const charge = (value: unknown): number => {
-    if (typeof value === "string") return value.length * 2;
-    if (value === null || value === undefined) return 0;
-    if (typeof value !== "object") return 8;
-    if (seen.has(value)) return 0;
-    seen.add(value);
-    if (value instanceof Uint8Array) return 64 + charge(value.buffer);
-    if (value instanceof ArrayBuffer) return value.byteLength;
-    const values = Object.values(value);
-    return 64 + values.length * 8 + values.reduce<number>((total, child) => total + charge(child), 0);
-  };
-  return charge(message);
-}
-
 /** The Gmail REST client (sync, history, labels, send) over any token source: no Node APIs. */
 export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOptions): MailProvider {
   const ep = { ...GOOGLE_ENDPOINTS, ...options.endpoints };
@@ -499,7 +484,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     };
     const enqueue = (message: IncomingMessage, force = false) => {
       sink.signal.throwIfAborted();
-      const bytes = retainedMessageBytes(message);
+      const bytes = retainedIncomingBytes(message);
       let credit = !force ? ctx.incoming?.retainCompleted?.(bytes) : undefined;
       // Credit refusal flushes this producer instead of waiting on another account's partial batch.
       force ||= Boolean(ctx.incoming?.retainCompleted && !credit);
