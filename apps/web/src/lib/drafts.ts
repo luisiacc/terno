@@ -267,7 +267,7 @@ const sources = new Map<string, BodySource>();
  * written to the draft first). A source of a draft that is gone does nothing.
  */
 export function attachBody(key: string, read: BodyReader, options: { canonical?: boolean } = {}): { changed(): void; reset(): void; dispose(): void } {
-  const source: BodySource = { read, dirty: false, canonical: options.canonical ?? true };
+  const source: BodySource = { read, dirty: sources.get(key)?.dirty ?? false, canonical: options.canonical ?? true };
   sources.set(key, source);
   return {
     changed() {
@@ -287,7 +287,7 @@ export function attachBody(key: string, read: BodyReader, options: { canonical?:
     },
     dispose() {
       if (sources.get(key) !== source) return;
-      materialize(key);
+      try { materialize(key); } catch { return; }
       sources.delete(key);
     },
   };
@@ -298,11 +298,15 @@ export function materialize(key: string): LocalDraft | undefined {
   const d = get(key);
   const source = sources.get(key);
   if (!d || !source?.dirty) return d;
-  source.dirty = false;
   const { html, text } = source.read();
   const next = { ...d, bodyHtml: html, bodyText: text, canonical: source.canonical };
   put(next);
+  source.dirty = false;
   return next;
+}
+
+function materializeOrCurrent(key: string): LocalDraft | undefined {
+  try { return materialize(key); } catch { return get(key); }
 }
 
 /** Has the user written anything worth keeping? A reply only prefilled by Terno isn't saved. */
@@ -414,7 +418,14 @@ function save(key: string, copy = false): Promise<void> {
   const w = writer(key);
   if (w.inflight) return w.inflight;
   // the editor's body, serialized once for this save (same document as the revision it saves)
-  const d = materialize(key);
+  let d: LocalDraft | undefined;
+  try { d = materialize(key); } catch {
+    if (w.timer) clearTimeout(w.timer);
+    w.timer = null;
+    const current = get(key);
+    if (current) put({ ...current, status: "error" });
+    return Promise.resolve();
+  }
   if (!d || !authored(d) || (!copy && d.savedRev === d.localRev)) return Promise.resolve();
   const rev = d.localRev;
   const operation = ++w.operation;
@@ -453,7 +464,7 @@ function save(key: string, copy = false): Promise<void> {
       if (!cur) return;
       const saved = res as Draft | null;
       if (!saved) {
-        if (copy) put({ ...materialize(key)!, status: "error", recovery: { state: "unknown" } });
+        if (copy) put({ ...materializeOrCurrent(key)!, status: "error", recovery: { state: "unknown" } });
         else markDraftMissing(key);
         return;
       }
@@ -469,7 +480,7 @@ function save(key: string, copy = false): Promise<void> {
     (error: unknown) => {
       if (w.operation !== operation) return;
       w.inflight = null;
-      const cur = copy ? materialize(key) : get(key);
+      const cur = copy ? materializeOrCurrent(key) : get(key);
       if (!cur) return;
       if (copy) {
         const e = error as { code?: string; details?: { reason?: string } } | null;
@@ -500,7 +511,7 @@ function save(key: string, copy = false): Promise<void> {
 
 /** A missing target is terminal; retain the latest editor source without resetting its document. */
 export function markDraftMissing(key: string): void {
-  const d = materialize(key);
+  const d = materializeOrCurrent(key);
   if (!d || d.recovery) return;
   changeVersion++;
   const w = writers.get(key);
@@ -609,7 +620,11 @@ export async function discardDraft(key: string): Promise<LocalDraft | undefined>
   if (draftEditsHeld() || get(key)?.sending || writers.get(key)?.stopping) return undefined;
   const w = writer(key);
   w.stopping = "discard";
-  const d = await settle(key);
+  let d: LocalDraft | undefined;
+  try { d = await settle(key); } catch (error) {
+    w.stopping = null;
+    throw error;
+  }
   if (!d || d.sending) return undefined;
   forgetDraft(key);
   if (d.id !== null) await call("drafts.delete", { id: d.id, generation: d.generation ?? "" }).catch(() => {});

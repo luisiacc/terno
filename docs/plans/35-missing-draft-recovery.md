@@ -61,3 +61,11 @@ The read-only critique completed with12concrete points (`/tmp/terno-provider-har
 10. Preserve existing dirty-source coalescing: first edit marks/counts, later keys stay in the editor, scheduling alone is suppressed. Materialize only on the terminal event and explicit operation boundaries, not per keystroke or every rerender.
 11. Audit actual reload callers. Service-worker update, different-build leader takeover and user-requested update restart must honor unresolved recovery. Wire a meaningful saved/not-saved result where needed; distinguish explicit forced quit/crash and existing bounded shutdown policy rather than promising a hold from a predicate nobody checks. Desktop-only wiring needs packaged smoke.
 12. Define matching en/es missing/copying/refused/unknown copy states, action purpose, busy deduplication and acknowledgement. Use named type=button controls and transition-only live announcements. On action removal restore focus only if that action still owns it; never steal focus from continued typing, and keep exact editor selection.
+
+## R5 correction plan
+
+The independent R5 review found a failed Send body read can clear the dirty source before adoption, allowing a stale save and transition; it also found native reload recovery hidden behind healthy Settings and Shortcuts modals. The correction plan and exact evidence are in `/tmp/terno-missing-draft-r5-corrections.md`. Regression tests must demonstrate both failures before their separate fixes. Preserve all twelve revisions above, all earlier corrections, editor continuity, and the existing stopped-engine modality. Shared modal coordination must handle nested and other dialogs, not only these two. The unresolved UI performance failure and aggregate gates remain open.
+
+### Revisions after the R5 source-only Codex review
+
+The fresh critique completed successfully (`/tmp/terno-plan35-r5-critique.txt`). Preserve unread sources on exceptions and settle missing/copy outcomes independently, release failed discard arbitration, and investigate editor cleanup/remount safety. Modal ownership distinguishes fatal and ordinary dialogs, tracks only active committed popups with nested restoration and identity-safe cleanup, and tests Review/Back, focus and StrictMode. The full accepted refinements and approved shared UI seam are in the R5 correction plan.

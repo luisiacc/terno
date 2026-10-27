@@ -243,6 +243,56 @@ describe("the draft writer", () => {
     body.dispose();
   });
 
+  it("keeps a missing outcome and dirty editor when the terminal read fails", async () => {
+    const k = draft(); editDraft(k, { bodyText: "old" });
+    await vi.advanceTimersByTimeAsync(800); await answer(); stored.clear();
+    editDraft(k, { subject: "pending" }); await vi.advanceTimersByTimeAsync(800);
+    let fails = true;
+    const body = attachBody(k, () => { if (fails) throw new Error("read"); return { html: "<b>latest</b>", text: "latest" }; });
+    body.changed(); await answer();
+    expect(state(k).recovery?.state).toBe("missing");
+    expect(await draftsSaved()).toBe(false);
+    await vi.advanceTimersByTimeAsync(10_000); expect(calls).toHaveLength(0);
+    fails = false; const copying = copyDraft(k);
+    expect(calls[0]?.params).toMatchObject({ bodyText: "latest", bodyHtml: "<b>latest</b>" });
+    await answer(); await copying; body.dispose();
+  });
+
+  it.each(["null", "refused", "timeout"] as const)("records %s copy outcome despite a later failed body read", async (outcome) => {
+    const k = draft(); editDraft(k, { bodyText: "old" }); markDraftMissing(k);
+    const copying = copyDraft(k); const pending = calls.shift()!;
+    let fails = true;
+    const body = attachBody(k, () => { if (fails) throw new Error("read"); return { html: "<b>latest</b>", text: "latest" }; });
+    body.changed();
+    if (outcome === "null") pending.resolve(null);
+    else pending.reject(outcome === "refused" ? { code: "NOT_FOUND", details: { reason: "account" } } : new Error("timeout"));
+    await copying;
+    expect(state(k).recovery?.state).toBe(outcome === "refused" ? "refused" : "unknown");
+    expect(await draftsSaved()).toBe(false);
+    fails = false; body.dispose();
+    expect(state(k).bodyText).toBe("latest");
+  });
+
+  it("retains unread work across body disposal and replacement", async () => {
+    const k = draft();
+    const body = attachBody(k, () => { throw new Error("read"); });
+    body.changed(); expect(() => body.dispose()).not.toThrow();
+    expect(await draftsSaved()).toBe(false);
+    const replacement = attachBody(k, () => ({ html: "<b>latest</b>", text: "latest" }));
+    retryDraft(k); expect(calls[0]?.params.bodyText).toBe("latest");
+    await answer(); replacement.dispose();
+    expect(state(k).bodyText).toBe("latest");
+  });
+
+  it("releases discard arbitration after a failed read without deleting work", async () => {
+    const k = draft(); let fails = true;
+    const body = attachBody(k, () => { if (fails) throw new Error("read"); return { html: "<b>latest</b>", text: "latest" }; });
+    body.changed(); await expect(discardDraft(k)).rejects.toThrow("read");
+    expect(state(k)).toBeDefined(); expect(calls).toHaveLength(0);
+    fails = false;
+    expect((await discardDraft(k))?.bodyText).toBe("latest"); body.dispose();
+  });
+
   async function missing() {
     const k = draft(); editDraft(k, { bodyText: "keep" });
     await vi.advanceTimersByTimeAsync(800); await answer(); stored.clear();
