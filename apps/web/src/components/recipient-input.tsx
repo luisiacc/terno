@@ -109,7 +109,7 @@ export function RecipientInput({
 
   const emit = (next: FieldState, added: readonly Address[] = []) => {
     const v = serialize(next);
-    if (v === emitted.current) return;
+    if (v === emitted.current && added.length === 0) return;
     emitted.current = v;
     onChange(v, added.map((a) => a.email.toLowerCase()));
   };

@@ -509,3 +509,7 @@ The six e2e failures:
 - `wrapped-<design>-<theme>.png`: the same list focused, wrapping.
 
 The changed baselines are the inline reply in all three designs (`design-reply.png`), where the recipient is now a chip.
+
+### Authored recipient re-entry during conversion
+
+An actual chip interaction exposed an existing gap in the Plan 34 ownership contract: after removing an automatic recipient and typing the same address again, the input's earlier text update could equal the committed chip serialization. The equality guard suppressed the commit's nonempty authored-address evidence, leaving the re-added address marked automatic. The component RED is `/tmp/terno-recipient-draft-ownership.out`; the accepted forward-author-phase critique is `/tmp/terno-forward-author-phase-critique.out`, actual return 0/DONE. The input now forwards a same-value commit when it carries new authored-address evidence, while unchanged text with no such evidence remains a no-op. `/tmp/terno-recipient-draft-controls-green.out` passes 16 focused cases including chip deletion, Undo, re-entry, unfinished text, empty commit and focus. Scoped type/lint apply to the combined pending forward phase; native, browser, performance, global checks and fresh review remain open.
