@@ -117,6 +117,11 @@ export const useDrafts = create<DraftsState>(() => ({ drafts: {}, held: false })
 
 let changeVersion = 0;
 let presentationNavigation = 0;
+const pendingHydration = new Set<Set<string>>();
+const identityOf = (d: Pick<LocalDraft, "id" | "generation">) => `${d.id}:${d.generation ?? ""}`;
+function retireHydrationIdentity(d: LocalDraft): void {
+  if (d.id !== null) for (const excluded of pendingHydration) excluded.add(identityOf(d));
+}
 /** Constant-time fence for page transitions, including coalesced editor changes. */
 export const draftChangeVersion = (): number => changeVersion;
 
@@ -534,6 +539,7 @@ function save(key: string, copy = false): Promise<void> {
             showSourceContext: saved.showSourceContext ?? false,
             ...(currentMount ? { sourceContextThreadId: saved.showSourceContext ? saved.presentationThreadId ?? null : undefined,
               ...(placement !== null && (saved.threadId !== placement || saved.mode === "new") ? { presentationThreadId: placement } : {}) } : {}) } : {};
+      if (cur.id !== saved.id || cur.generation !== saved.generation) retireHydrationIdentity(cur);
       put({ ...cur, ...context, id: saved.id, generation: saved.generation, revision: saved.revision, savedRev: rev, recovery: undefined, status: done ? "saved" : "dirty", attachmentOwner: Boolean(saved.attachments?.length) });
       if (!done && !w.stopping && !sources.get(key)?.failed) {
         const next = save(key);
@@ -670,6 +676,8 @@ export function resumeDraft(key: string, scheduleSave = true): void {
 
 /** After a successful send (the backend deleted the stored draft with it). */
 export function forgetDraft(key: string): void {
+  const current = get(key);
+  if (current) retireHydrationIdentity(current);
   changeVersion++;
   sources.delete(key);
   const w = writers.get(key);
@@ -707,18 +715,23 @@ export function restoreDiscarded(d: LocalDraft): string {
 
 /** At startup: every stored draft, as the backend has it. */
 export async function loadDrafts(list: () => Promise<Draft[]> = () => client.call("drafts.list", {})): Promise<void> {
-  const before = changeVersion, navigation = presentationNavigation;
-  const stored = await list();
-  if (changeVersion !== before) return;
-  useDrafts.setState((s) => {
-    const drafts = { ...s.drafts };
-    for (const d of stored) if (!Object.values(drafts).some((x) => x.id === d.id)) {
-      changeVersion++;
-      const local = fromServer(d);
-      drafts[local.key] = d.showSourceContext && navigation !== presentationNavigation ? { ...local, presentationExpired: true } : local;
-    }
-    return { drafts };
-  });
+  const navigation = presentationNavigation, excluded = new Set<string>();
+  pendingHydration.add(excluded);
+  try {
+    const stored = await list();
+    useDrafts.setState((s) => {
+      const drafts = { ...s.drafts }, known = new Set(Object.values(s.drafts).map((d) => d.id));
+      for (const d of stored) {
+        if (known.has(d.id) || excluded.has(identityOf(d))) continue;
+        changeVersion++;
+        const local = fromServer(d);
+        if (drafts[local.key]) local.key = newKey();
+        drafts[local.key] = d.showSourceContext && navigation !== presentationNavigation ? { ...local, presentationExpired: true } : local;
+        known.add(d.id);
+      }
+      return { drafts };
+    });
+  } finally { pendingHydration.delete(excluded); }
 }
 
 interface DraftIndex {

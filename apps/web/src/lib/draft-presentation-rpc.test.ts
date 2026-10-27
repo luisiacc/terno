@@ -151,3 +151,41 @@ for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) for (const a
     try { await backend.stop(); } finally { rmSync(dir, { recursive: true, force: true }); }
   }
 });
+
+for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) it(`${adapter}: unrelated local work cannot drop gated RPC hydration`, async () => {
+  const { createDraft, editDraft, setDraftTransport, flushDraft } = await import("./drafts");
+  const { newFields } = await import("./compose-fields");
+  const dir = mkdtempSync(join(tmpdir(), "terno-hydration-r1-"));
+  const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: adapter === "IDB instant", platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+  const backend = new BackendCore({ store, platform: nodePlatform, providers, cipher: plaintextCipher, version: "test", autoSync: false });
+  const [c, s] = createMemoryTransportPair(); backend.connect(s, { clientId: "hydration-r1", origin: "renderer" }); const client = new RpcClient(c);
+  let release!: () => void, reached!: () => void;
+  const gate = new Promise<void>((done) => { release = done; }), waiting = new Promise<void>((done) => { reached = done; });
+  try {
+    const [a] = await withAccounts(store);
+    const first = (await client.call("drafts.save", { accountId: a!, bodyText: "durable A" }))!;
+    const removed = (await client.call("drafts.save", { accountId: a!, bodyText: "durable removed" }))!;
+    const stale = (await client.call("drafts.save", { accountId: a!, bodyText: "stale base" }))!;
+    await client.call("drafts.save", { id: stale.id, generation: stale.generation, baseRevision: stale.revision, accountId: a!, bodyText: "other writer" });
+    setDraftTransport((method, params) => method === "drafts.save" ? client.call(method, contract[method].params.parse(params)) : client.call(method, contract[method].params.parse(params)));
+    useDrafts.setState({ drafts: { [`srv-${removed.id}`]: fromServer(removed), [`srv-${stale.id}`]: fromServer(stale) } });
+    const pending = loadDrafts(async () => { const rows = await client.call("drafts.list", {}); reached(); await gate; return rows; });
+    await waiting;
+    forgetDraft(`srv-${removed.id}`);
+    const unrelated = createDraft(newFields(a!)); editDraft(unrelated, { bodyText: "live B" });
+    editDraft(`srv-${stale.id}`, { bodyText: "local conflict copy" }); await flushDraft(`srv-${stale.id}`);
+    const copied = useDrafts.getState().drafts[`srv-${stale.id}`]!;
+    expect(copied.id).not.toBe(stale.id);
+    release(); await pending;
+    expect(useDrafts.getState().drafts[`srv-${first.id}`]).toMatchObject({ id: first.id, generation: first.generation, bodyText: "durable A" });
+    expect(useDrafts.getState().drafts[`srv-${removed.id}`]).toBeUndefined();
+    expect(useDrafts.getState().drafts[unrelated]?.bodyText).toBe("live B");
+    expect(Object.values(useDrafts.getState().drafts).some((d) => d.id === stale.id)).toBe(false);
+    expect(useDrafts.getState().drafts[`srv-${stale.id}`]).toMatchObject({ id: copied.id, bodyText: "local conflict copy" });
+    // The exclusion belongs to that response; a distinct later explicit load can rediscover a durable row.
+    await loadDrafts(() => client.call("drafts.list", {}));
+    expect(useDrafts.getState().drafts[`srv-${removed.id}`]).toMatchObject({ id: removed.id, generation: removed.generation });
+    expect(useDrafts.getState().drafts[`srv-${stale.id}`]).toMatchObject({ id: copied.id, bodyText: "local conflict copy" });
+    expect(Object.values(useDrafts.getState().drafts).find((d) => d.id === stale.id)?.bodyText).toBe("other writer");
+  } finally { release(); for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); c.close(); try { await backend.stop(); } finally { rmSync(dir, { recursive: true, force: true }); } }
+});
