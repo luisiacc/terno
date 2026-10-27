@@ -21,9 +21,11 @@ import { switchFocus } from "~/lib/i18n";
 import type { SettingsUpdate } from "./settings/parts";
 import { PaneBoundary } from "./diag/error-boundary";
 import { ReportPreview } from "./diag/report-preview";
+import { useNativeReload } from "~/lib/native-reload";
 
 export function SettingsDialog() {
   const open = useApp((s) => s.dialog === "settings");
+  const fatalModal = useNativeReload((s) => s.modalHost !== null);
   const tab = useApp((s) => s.settingsTab);
   const settings = useApp((s) => s.settings);
   const [confirmLocalOff, setConfirmLocalOff] = useState(false);
@@ -40,7 +42,7 @@ export function SettingsDialog() {
   if (!settings) return null;
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && setApp({ dialog: null })}>
+    <Dialog open={open && !fatalModal} onOpenChange={(o) => !o && !fatalModal && setApp({ dialog: null })}>
       <DialogContent className="h-[min(640px,85vh)] max-w-[min(820px,94vw)] grid-rows-1 gap-0 overflow-hidden p-0 sm:max-w-[min(820px,94vw)]" data-testid="settings-dialog" initialFocus={switchFocus}>
         <DialogTitle className="sr-only">{t("common.settings")}</DialogTitle>
         <Tabs value={tab} onValueChange={(v) => setApp({ settingsTab: v as SettingsTab })} orientation="vertical" className="flex h-full flex-row gap-0">

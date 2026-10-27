@@ -1,8 +1,10 @@
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Loader2 } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useDraftRecovery } from "~/lib/draft-recovery-ui";
+import { registerNativeReloadModal } from "~/lib/native-reload";
 import { exportDiagnostics, restartEngine, useDiag } from "~/state/diag";
 
 /**
@@ -12,21 +14,19 @@ import { exportDiagnostics, restartEngine, useDiag } from "~/state/diag";
  */
 export function EngineStopped() {
   const engine = useDiag((s) => s.view?.engine ?? "running");
+  const reviewing = useDraftRecovery((s) => s.open);
   const [retrying, setRetrying] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
-  const stopped = engine === "stopped";
-  useEffect(() => {
+  const stopped = engine === "stopped" && !reviewing;
+  useLayoutEffect(() => {
     if (!stopped) {
       setRetrying(false);
       return;
     }
-    const root = document.getElementById("root");
-    if (root) root.inert = true;
+    const release = registerNativeReloadModal(ref.current!, document.getElementById("root"));
     ref.current?.querySelector<HTMLElement>("button")?.focus();
-    return () => {
-      if (root) root.inert = false;
-    };
+    return release;
   }, [stopped]);
   if (!stopped) return null;
   return createPortal(
