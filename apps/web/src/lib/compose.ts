@@ -1,3 +1,4 @@
+import { shallow } from "zustand/shallow";
 import type { AttachmentRef, ThreadDetail } from "@terno/core";
 import { attachmentUploading, draftAttachmentBudget } from "./attachments";
 import { breadcrumb, captureUi } from "~/lib/diag";
@@ -10,7 +11,7 @@ import { invalidateThreads, loadThread } from "~/state/threads";
 import { registerUndo, snack } from "./snack";
 import { answered, convertFields, forwardAccountMismatch, newFields, replyFields, mergeAttachmentRefs } from "./compose-fields";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
-import { beginDraftWork, draftIndex, invalidateDraftPresentation, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, type LocalDraft } from "./drafts";
+import { beginDraftWork, draftIndex, invalidateDraftPresentation, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, type LocalDraft } from "./drafts";
 
 /**
  * Writing mail: which draft a reply, reply-all, forward or new message opens,
@@ -148,18 +149,24 @@ const written = (d: LocalDraft) => d.bodyText.trim() !== "" || d.subjectEdited |
 const activeSourceId = (d: LocalDraft) => d.mode === "forward" ? d.forwardOfMessageId : d.mode === "new" ? null : d.inReplyToMessageId;
 function sameStoredDraft(snapshot: LocalDraft): boolean {
   const d = materialize(snapshot.key);
-  return Boolean(d && !d.sending && d.recovery === snapshot.recovery && d.id === snapshot.id && d.generation === snapshot.generation && d.revision === snapshot.revision && d.localRev === snapshot.localRev && d.bodyVersion === snapshot.bodyVersion && d.bodyText === snapshot.bodyText && d.bodyHtml === snapshot.bodyHtml && d.accountId === snapshot.accountId && d.mode === snapshot.mode && d.inReplyToMessageId === snapshot.inReplyToMessageId && d.forwardOfMessageId === snapshot.forwardOfMessageId && d.showSourceContext === snapshot.showSourceContext && d.presentationEpoch === snapshot.presentationEpoch);
+  return Boolean(d && d === useDrafts.getState().drafts[snapshot.key] && !d.sending && shallow(d, snapshot));
 }
+const invalidatedPresentation = (d: LocalDraft): LocalDraft => ({ ...d, departedThreadId: d.departedThreadId ?? draftPresentationThread(d) ?? undefined, presentationThreadId: undefined, presentationExpired: true, presentationEpoch: (d.presentationEpoch ?? 0) + 1 });
+const validatedPresentation = (d: LocalDraft, threadId: number): LocalDraft => ({ ...d, presentationThreadId: undefined, sourceContextThreadId: threadId, presentationExpired: false, presentationEpoch: (d.presentationEpoch ?? 0) + 1 });
 
 function showStoredStandalone(key: string, owner: number): FocusLease | null {
-  if (owner !== intent) return null;
+  let snapshot = materialize(key);
+  if (owner !== intent || !snapshot || !sameStoredDraft(snapshot)) return null;
   if (focusLease) releaseFocusLease(focusLease, false, false);
+  if (owner !== intent || !sameStoredDraft(snapshot)) return null;
+  snapshot = invalidatedPresentation(snapshot);
   invalidateDraftPresentation(key);
-  if (owner !== intent) return null;
+  if (owner !== intent || !sameStoredDraft(snapshot)) return null;
   showNewDraft(key);
-  if (owner !== intent) return null;
+  if (owner !== intent || !sameStoredDraft(snapshot)) return null;
   const compose = getApp().compose!;
   const lease = beginFocusLease(owner, null, compose);
+  if (owner !== intent || !sameStoredDraft(snapshot)) { releaseFocusLease(lease, false); return null; }
   focusDraft(key, "to", owner);
   return lease;
 }
@@ -178,7 +185,8 @@ export async function openStoredDraft(key: string): Promise<void> {
   const unsubscribe = useApp.subscribe((state) => {
     if (!navigating && (state.selectedId !== expected.selectedId || state.readerOpen !== expected.readerOpen || state.compose !== expected.compose || state.checked !== expected.checked || state.scope !== expected.scope || state.accountId !== expected.accountId || state.dialog !== expected.dialog || state.fatal !== expected.fatal)) cancelled = true;
   });
-  const current = (d: LocalDraft) => mine === intent && !cancelled && !draftEditsHeld() && !getApp().dialog && !getApp().fatal && destinationAvailable(lease) && (!lease || lease.valid) && (missingFromAtStart || getApp().accounts.some((a) => a.id === d.accountId)) && sameStoredDraft(d);
+  const locationCurrent = () => { const state = getApp(); return state.selectedId === expected.selectedId && state.readerOpen === expected.readerOpen && state.compose === expected.compose && state.checked === expected.checked && state.scope === expected.scope && state.accountId === expected.accountId && state.dialog === expected.dialog && state.fatal === expected.fatal; };
+  const current = (d: LocalDraft) => locationCurrent() && mine === intent && !cancelled && !draftEditsHeld() && !getApp().dialog && !getApp().fatal && destinationAvailable(lease) && (!lease || lease.valid) && (missingFromAtStart || getApp().accounts.some((a) => a.id === d.accountId)) && sameStoredDraft(d);
   try {
     let snapshot = materialize(key);
     if (!snapshot) return;
@@ -192,12 +200,14 @@ export async function openStoredDraft(key: string): Promise<void> {
     const context = canonical !== null ? { threadId: canonical, accountId: snapshot.accountId } : await client.call("drafts.sourceContext", { messageId: sourceId! });
     if (!current(snapshot)) return;
     if (!context) { lease = showStoredStandalone(key, mine); return; }
+    snapshot = invalidatedPresentation(snapshot);
     invalidateDraftPresentation(key);
-    if (mine !== intent) return;
-    snapshot = materialize(key)!;
+    if (!current(snapshot)) return;
     navigating = true;
-    setApp({ selectedId: context.threadId, readerOpen: true, compose: null, checked: new Set(), scope: null });
-    expected = getApp(); navigating = false;
+    const destination = { selectedId: context.threadId, readerOpen: true, compose: null, checked: new Set<number>(), scope: null };
+    expected = { ...getApp(), ...destination };
+    setApp(destination);
+    navigating = false;
     if (!current(snapshot)) return;
     lease = beginFocusLease(mine, context.threadId);
     lease.accountId = snapshot.accountId;
@@ -208,12 +218,15 @@ export async function openStoredDraft(key: string): Promise<void> {
     if (!detail || detail.thread.id !== context.threadId || !latest || latest.threadId !== context.threadId || latest.accountId !== detail.thread.accountId) { lease = showStoredStandalone(key, mine); return; }
     // A settled unavailable pane has no destination to consume this request.
     if (!lease.destination?.active) return;
+    snapshot = validatedPresentation(snapshot, context.threadId);
     validateDraftPresentation(key, context.threadId);
-    if (mine !== intent || !lease.valid) return;
+    if (!current(snapshot)) return;
+    const opening = snapshot.uiState !== "open";
+    snapshot = { ...snapshot, uiState: "open", ...(opening && snapshot.id !== null ? { localRev: snapshot.localRev + 1, status: snapshot.status === "saving" ? "saving" as const : "dirty" as const } : {}) };
     setDraftUi(key, "open");
-    if (mine !== intent || !lease.valid) return;
+    if (!current(snapshot)) return;
     setApp({ draftShown: { threadId: context.threadId, key } });
-    if (mine === intent && lease.valid) focusDraft(key, snapshot.mode === "forward" ? "to" : "body", mine);
+    if (current(snapshot)) focusDraft(key, snapshot.mode === "forward" ? "to" : "body", mine);
   } catch { /* A refused lookup leaves the exact stored work available for another explicit open. */ }
   finally {
     unsubscribe();
@@ -293,6 +306,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   }
   // its body as the editor has it now (what "written" and a conversion's undo look at)
   let existing = existingKey ? materialize(existingKey) : undefined;
+  if (existing && !sameStoredDraft(existing)) return;
   if (existing?.presentationExpired && existing.mode === "new" && activeSourceId(existing) === null) {
     showStoredStandalone(existing.key, mine);
     return;
@@ -303,13 +317,17 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     let context: { threadId: number; accountId: number } | null;
     try { context = sourceId ? await client.call("drafts.sourceContext", { messageId: sourceId }) : null; } catch { return; }
     const current = existingKey ? materialize(existingKey) : undefined;
-    if (mine !== intent || !destinationAvailable(lease) || getApp().selectedId !== s.selectedId || (lease && !lease.valid) || !current || current.id !== snapshot.id || current.generation !== snapshot.generation || current.revision !== snapshot.revision || current.localRev !== snapshot.localRev || current.accountId !== snapshot.accountId || current.mode !== snapshot.mode || current.inReplyToMessageId !== snapshot.inReplyToMessageId || current.forwardOfMessageId !== snapshot.forwardOfMessageId || current.showSourceContext !== snapshot.showSourceContext) return;
+    if (mine !== intent || !destinationAvailable(lease) || getApp().selectedId !== s.selectedId || (lease && !lease.valid) || !current || !sameStoredDraft(snapshot)) return;
     if (!context || context.threadId !== threadId) {
       showStoredStandalone(current.key, mine);
       return;
     }
-    if (current.presentationExpired) validateDraftPresentation(current.key, threadId);
-    existing = materialize(current.key);
+    if (current.presentationExpired) {
+      const validated = validatedPresentation(snapshot, threadId);
+      validateDraftPresentation(current.key, threadId);
+      if (mine !== intent || (lease && !lease.valid) || !sameStoredDraft(validated)) return;
+      existing = validated;
+    } else existing = current;
   }
   if (existing && existing.mode === mode) {
     setDraftUi(existing.key, "open");
