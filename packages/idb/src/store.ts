@@ -141,7 +141,7 @@ import {
 } from "./mail";
 import type { Key, MemDb } from "./mem";
 import { IdbProviderStore } from "./provider-store";
-import { createMemDb, EARLY_TABLES, idbExists, LATE_TABLES, LOGICAL_SCHEMA, loadAll, SEARCH_SCHEMA, openIdb, persist, readAll, readLazy, writeMeta } from "./schema";
+import { createMemDb, EARLY_TABLES, idbExists, LATE_TABLES, LOGICAL_SCHEMA, loadAll, PartialCommit, SEARCH_SCHEMA, openIdb, persist, readAll, readLazy, writeMeta } from "./schema";
 import { answeredThreads, arrivalRows, backfillSlice, FactsQueue, factsReady, ownMailChanged, referencesOfOwn, resetFacts, startRescan } from "./facts";
 import { sameRevision, SearchCancelledError, type AutocompleteSource, type ContactBatch, type ContactMessage, type SentText } from "@terno/store";
 import { contactOf, isLearnable, sentOf } from "./autocomplete";
@@ -190,6 +190,7 @@ export class IdbMailStore implements MailStore {
   private loaded: Promise<void> = Promise.resolve();
   private inflight: Promise<unknown> | null = null;
   private open = true;
+  private unusable = false;
   private seeding = false;
   private readonly providerStores = new Map<number, ProviderStore>();
   private readonly log: NonNullable<IdbMailStoreOptions["log"]>;
@@ -240,29 +241,34 @@ export class IdbMailStore implements MailStore {
   /** Opens (creating) the mailbox and mirrors it in memory. */
   static async open(o: IdbMailStoreOptions): Promise<IdbMailStore> {
     const idb = await openIdb(o.factory, o.name);
-    const db = createMemDb();
-    const timings: Record<string, number> = {};
-    const meta = await loadAll(idb, db, timings, EARLY_TABLES, () => o.platform.yield());
-    if (!db.table("search_state").get(1)) {
-      // a new database: its epoch, the search log's head
-      db.tx(() => db.table("search_state").insert({ id: 1, epoch: o.platform.uuid(), seq: 0, bytes: 0 }));
-      const commit = db.takeCommit()!;
-      await persist(idb, commit, "strict");
-      db.confirm();
+    try {
+      const db = createMemDb();
+      const timings: Record<string, number> = {};
+      const meta = await loadAll(idb, db, timings, EARLY_TABLES, () => o.platform.yield());
+      if (!db.table("search_state").get(1)) {
+        // a new database: its epoch, the search log's head
+        db.tx(() => db.table("search_state").insert({ id: 1, epoch: o.platform.uuid(), seq: 0, bytes: 0 }));
+        const commit = db.takeCommit()!;
+        await persist(idb, commit, "strict");
+        db.confirm();
+      }
+      if (meta.logicalSchema === undefined) await writeMeta(idb, { logicalSchema: LOGICAL_SCHEMA, createdAt: Date.now() });
+      else if (meta.logicalSchema !== LOGICAL_SCHEMA) await writeMeta(idb, { logicalSchema: LOGICAL_SCHEMA });
+      const store = new IdbMailStore(idb, db, o);
+      Object.assign(store.openTimings, timings);
+      // the first screen needs none of it: messages load while it paints (writes to these tables wait for them)
+      store.loaded = loadAll(idb, db, {}, LATE_TABLES, () => o.platform.yield()).then(
+        () => undefined,
+        (error: unknown) => {
+          store.log("error", "could not load the mailbox", error instanceof Error ? error.message : error);
+          throw error;
+        },
+      );
+      return store;
+    } catch (error) {
+      idb.close();
+      throw error instanceof PartialCommit ? error.original : error;
     }
-    if (meta.logicalSchema === undefined) await writeMeta(idb, { logicalSchema: LOGICAL_SCHEMA, createdAt: Date.now() });
-    else if (meta.logicalSchema !== LOGICAL_SCHEMA) await writeMeta(idb, { logicalSchema: LOGICAL_SCHEMA });
-    const store = new IdbMailStore(idb, db, o);
-    Object.assign(store.openTimings, timings);
-    // the first screen needs none of it: messages load while it paints (writes to these tables wait for them)
-    store.loaded = loadAll(idb, db, {}, LATE_TABLES, () => o.platform.yield()).then(
-      () => undefined,
-      (error: unknown) => {
-        store.log("error", "could not load the mailbox", error instanceof Error ? error.message : error);
-        throw error;
-      },
-    );
-    return store;
   }
 
   static exists(factory: IDBFactory, name: string): Promise<boolean> {
@@ -270,7 +276,7 @@ export class IdbMailStore implements MailStore {
   }
 
   get isOpen(): boolean {
-    return this.open;
+    return this.open && !this.unusable;
   }
 
   get name(): string {
@@ -278,16 +284,21 @@ export class IdbMailStore implements MailStore {
   }
 
   /** resolves once every table is in memory (messages load after open) */
-  whenLoaded(): Promise<void> {
-    return this.loaded;
+  async whenLoaded(): Promise<void> {
+    await this.loaded;
+    await this.settled();
   }
 
   async close(): Promise<void> {
     if (!this.open) return;
-    await this.instant?.close();
-    await this.queue.catch(() => {});
-    this.open = false;
-    this.idb.close();
+    try {
+      await this.instant?.close();
+    } finally {
+      await this.queue.catch(() => {});
+      await this.loaded.catch(() => {});
+      this.open = false;
+      this.idb.close();
+    }
   }
 
   // ───────────────────────────── units of work ─────────────────────────────
@@ -297,7 +308,7 @@ export class IdbMailStore implements MailStore {
     // a unit that needs the late tables waits for them before queueing, so it never holds up early units
     const enqueue = () => {
       const run = this.queue.then(async () => {
-        if (!this.open) throw new Error("the store is closed");
+        this.assertUsable();
         try {
           return await fn();
         } finally {
@@ -326,16 +337,22 @@ export class IdbMailStore implements MailStore {
       if (messageIds.size || threadIds.size) this.db.tx(() => appendOutbox(this.c, [...messageIds].sort((a, b) => a - b), [...threadIds].sort((a, b) => a - b), Date.now()));
       const commit = this.db.takeCommit();
       if (commit) {
-        const write = persist(this.idb, commit, o.durability ?? "strict");
-        this.inflight = write;
+        let release!: () => void;
+        this.inflight = new Promise<void>((resolve) => { release = resolve; });
         try {
-          await write;
+          await persist(this.idb, commit, o.durability ?? "strict");
           this.db.confirm();
         } catch (error) {
+          if (error instanceof PartialCommit) {
+            this.unusable = true;
+            this.idb.close();
+            throw error.original;
+          }
           this.db.revert();
           throw error;
         } finally {
           this.inflight = null;
+          release();
         }
         if (messageIds.size || threadIds.size) this.instant?.notify();
       }
@@ -347,6 +364,11 @@ export class IdbMailStore implements MailStore {
   /** Reads see only committed state: they wait for the command whose transaction is in flight. */
   private async settled(): Promise<void> {
     while (this.inflight) await this.inflight.catch(() => {});
+    this.assertUsable();
+  }
+
+  private assertUsable(): void {
+    if (!this.open || this.unusable) throw new Error("the store is closed");
   }
 
   /** `early`: reads only early tables (answers while messages load) */
@@ -704,6 +726,7 @@ export class IdbMailStore implements MailStore {
       page = { items: scanned.items, nextCursor: scanned.nextCursor, strategy: "scan" };
     }
     await this.loaded;
+    await this.settled();
     const messages = T(this.c, "messages");
     const pendingBodies = Math.min(PENDING_BODIES_CAP, messages.count("body_state", "none") + messages.count("body_state", "partial"));
     return { items: page.items, nextCursor: page.nextCursor, revision, strategy: page.strategy, complete: true, pendingBodies };
@@ -1510,8 +1533,8 @@ export class IdbMailStore implements MailStore {
     verify: async () => {
       await this.settled();
       // memory and IndexedDB hold the same rows, and every index agrees with its table
-      const stored = await readAll(this.idb);
       await this.exclusive(async () => {
+        const stored = await readAll(this.idb);
         for (const [name, rows] of stored) {
           const t = this.db.table<R>(name);
           if (rows.length !== t.size) throw new Error(`${name}: ${rows.length} rows in IndexedDB, ${t.size} in memory`);

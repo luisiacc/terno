@@ -125,18 +125,48 @@ export function createMemDb(): MemDb {
 }
 
 function request<T>(r: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
+  const pending = new Promise<T>((resolve, reject) => {
     r.onsuccess = () => resolve(r.result);
     r.onerror = () => reject(r.error);
   });
+  void pending.catch(() => {});
+  return pending;
 }
 
 function done(tx: IDBTransaction): Promise<void> {
   return new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error ?? new Error("IndexedDB transaction failed"));
     tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
   });
+}
+
+/** A write that completed after an error may have persisted only part of a command. */
+export class PartialCommit extends Error {
+  constructor(readonly original: unknown) { super("IndexedDB completed after a write error"); }
+}
+
+async function writeTransaction(tx: IDBTransaction, enqueue: () => void): Promise<void> {
+  let firstError: unknown;
+  const terminal = new Promise<"complete" | "abort">((resolve) => {
+    tx.addEventListener("error", (event) => {
+      const target = event.target as IDBRequest | null;
+      firstError ??= target?.error ?? tx.error ?? new Error("IndexedDB transaction failed");
+    });
+    tx.addEventListener("complete", () => resolve("complete"));
+    tx.addEventListener("abort", () => resolve("abort"));
+  });
+  try {
+    enqueue();
+  } catch (error) {
+    firstError ??= error;
+    try { tx.abort(); } catch { /* Wait for the actual terminal event. */ }
+  }
+  const outcome = await terminal;
+  if (outcome === "complete") {
+    if (firstError !== undefined) throw new PartialCommit(firstError);
+    return;
+  }
+  throw firstError ?? tx.error ?? new Error("IndexedDB transaction aborted");
 }
 
 export const databaseName = (name: string) => `terno-${name}`;
@@ -263,12 +293,20 @@ export async function loadAll(
   const started = performance.now();
   const tx = idb.transaction([...eager, "meta"], "readonly");
   const finished = done(tx);
-  const [tables, metaKeys, metaValues] = await Promise.all([
-    Promise.all(eager.map((name) => request(tx.objectStore(name).getAll() as IDBRequest<Row[]>))),
-    request(tx.objectStore("meta").getAllKeys()),
-    request(tx.objectStore("meta").getAll()),
-  ]);
-  await finished;
+  void finished.catch(() => {});
+  let tables: Row[][], metaKeys: IDBValidKey[], metaValues: unknown[];
+  try {
+    [tables, metaKeys, metaValues] = await Promise.all([
+      Promise.all(eager.map((name) => request(tx.objectStore(name).getAll() as IDBRequest<Row[]>))),
+      request(tx.objectStore("meta").getAllKeys()),
+      request(tx.objectStore("meta").getAll()),
+    ]);
+    await finished;
+  } catch (error) {
+    try { tx.abort(); } catch { /* It may already be terminating. */ }
+    await finished.catch(() => {});
+    throw error;
+  }
   timings.read = performance.now() - started;
   let slice = performance.now();
   for (const [i, name] of eager.entries()) {
@@ -287,8 +325,9 @@ export async function loadAll(
 
 export async function writeMeta(idb: IDBDatabase, values: Record<string, unknown>): Promise<void> {
   const tx = idb.transaction("meta", "readwrite");
-  for (const [k, v] of Object.entries(values)) tx.objectStore("meta").put(v, k);
-  await done(tx);
+  await writeTransaction(tx, () => {
+    for (const [k, v] of Object.entries(values)) tx.objectStore("meta").put(v, k);
+  });
 }
 
 /** One readwrite transaction with every row a store command touched. Resolves once IndexedDB committed it. */
@@ -300,15 +339,15 @@ export async function persist(idb: IDBDatabase, commit: Committed, durability: "
     "readwrite",
     { durability },
   );
-  const finished = done(tx);
-  for (const t of stores) {
-    const store = tx.objectStore(t.spec.name);
-    for (const [key, row] of commit.writes.get(t)!) {
-      if (row) store.put(row, idbKey(t, key));
-      else store.delete(idbKey(t, key));
+  await writeTransaction(tx, () => {
+    for (const t of stores) {
+      const store = tx.objectStore(t.spec.name);
+      for (const [key, row] of commit.writes.get(t)!) {
+        if (row) store.put(row, idbKey(t, key));
+        else store.delete(idbKey(t, key));
+      }
     }
-  }
-  await finished;
+  });
 }
 
 /** Lazy rows (bodies) by key, into memory: absent ones are remembered as absent. */
