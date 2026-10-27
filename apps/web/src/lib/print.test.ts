@@ -159,6 +159,10 @@ describe("the print document", () => {
     expect(build([msg()])).toMatch(/^<!doctype html>/);
   });
 
+  it("smooths text like the app in the on-screen preview", () => {
+    expect(build([msg()])).toContain("-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility");
+  });
+
   it("links URLs in plain text and keeps them escaped", () => {
     const a = shown(build([msg({ bodyText: 'Mira https://acme.studio/a?b=1&c="2" ya' })])).querySelector("a")!;
     expect(a.getAttribute("href")).toBe("https://acme.studio/a?b=1&c=");

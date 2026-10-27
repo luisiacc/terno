@@ -61,7 +61,7 @@ export function HtmlBody({ html, messageId, remoteImages, appearance, attachment
   const doc = useMemo(() => {
     const c = mailColors()[paper ? "paper" : "themed"];
     // the CSP is unchanged by theming
-    return `<!doctype html><html data-mail="${paper ? "paper" : "themed"}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(allowRemote)}"><base target="_blank"><style>html{overflow-y:hidden}html,body{margin:0;padding:0;background:${c.bg};color:${c.fg};font:14px/1.55 -apple-system,BlinkMacSystemFont,"Geist Variable",sans-serif;overflow-wrap:anywhere;color-scheme:${paper ? "light" : mode}}body{padding:${paper ? "16px" : "0"}}img{max-width:100%;height:auto}a{color:${c.link}}table{max-width:100%}</style></head><body>${visibleHtml}</body></html>`;
+    return `<!doctype html><html data-mail="${paper ? "paper" : "themed"}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(allowRemote)}"><base target="_blank"><style>html{overflow-y:hidden}html,body{margin:0;padding:0;background:${c.bg};color:${c.fg};font:14px/1.55 -apple-system,BlinkMacSystemFont,"Geist Variable",sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility;overflow-wrap:anywhere;color-scheme:${paper ? "light" : mode}}body{padding:${paper ? "16px" : "0"}}img{max-width:100%;height:auto}a{color:${c.link}}table{max-width:100%}</style></head><body>${visibleHtml}</body></html>`;
   }, [visibleHtml, allowRemote, paper, themeKey, mode]);
 
   useEffect(() => {

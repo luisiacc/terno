@@ -238,7 +238,7 @@ function css(paper: Paper): string {
     `@page{size:${paper === "a4" ? "A4" : "letter"};margin:${m}}`,
     `:root{color-scheme:light}`,
     `html{background:${INK.paper}}`,
-    `body{margin:0;color:${INK.text};font:10.5pt/1.5 ${FONT};overflow-wrap:anywhere;-webkit-print-color-adjust:exact;print-color-adjust:exact;-webkit-text-size-adjust:none}`,
+    `body{margin:0;color:${INK.text};font:10.5pt/1.5 ${FONT};-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility;overflow-wrap:anywhere;-webkit-print-color-adjust:exact;print-color-adjust:exact;-webkit-text-size-adjust:none}`,
     // a definite printable width on screen too, so the fit pass measures what the page will hold
     `.doc{width:${printableWidth(paper)}mm}`,
     `@media screen{body{padding:${m}}}`,

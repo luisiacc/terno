@@ -125,6 +125,8 @@ test.describe("themes", () => {
     await openRow(page, 0);
     await expect(page.locator("iframe[data-mail=themed]").first()).toBeVisible();
     expect(await bodyBg()).toBe(rgb(toHex(dracula.background)));
+    // the frame is its own document: it smooths text like the app (grayscale on macOS), not the subpixel default
+    expect(await page.frameLocator("iframe[title='Message content']").locator("body").evaluate((b) => getComputedStyle(b).getPropertyValue("-webkit-font-smoothing"))).toBe("antialiased");
 
     // a designed newsletter keeps its colors on the light paper card
     await openRow(page, 2);
