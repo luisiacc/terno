@@ -70,9 +70,37 @@ export interface MessageState {
 
 export interface FlagUpdate {
   messageId: number;
+  expectedProviderMsgId?: string;
   flags: Partial<{ isRead: boolean; isStarred: boolean; inInbox: boolean; isTrash: boolean; isSpam: boolean; isSent: boolean; isDraft: boolean }>;
   /** Gmail: the message's labels now (its category decides who it's from, plan 17); absent: unchanged */
   gmailLabels?: string[];
+}
+
+export interface FlagObservation {
+  accountId: number;
+  protocolId: string;
+  epoch: number;
+}
+
+export interface FlagObservationOptions {
+  authoritativeFlags: boolean;
+  signal?: { readonly aborted: boolean; readonly reason?: unknown };
+}
+
+export interface FlagReconciliation {
+  flagReconcileAccounts?: number[];
+}
+
+export interface FlagSnapshotRequest {
+  afterMessageId?: number;
+  throughMessageId?: number;
+  limit: number;
+}
+
+export interface FlagSnapshotPage {
+  items: { id: number; providerMsgId: string }[];
+  throughMessageId: number;
+  hasMore: boolean;
 }
 
 // ───────────────────────────── lists ─────────────────────────────

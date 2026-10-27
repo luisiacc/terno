@@ -1,6 +1,7 @@
 import { replaceAttachments } from "./attachments";
 import { addressKey, BODY_TAIL_TOKENS, baseSubject, emailDomain, featuresFromBlob, normalizeText, threadFacts, trailingTokens, type Address, type FactContext, type FactRow } from "@terno/core";
-import type { IncomingMessage, ModelDelta } from "@terno/store";
+import { acceptFlagObservation, flagObservationValid, type LocalFlagField, type FlagObservation, type IncomingMessage, type ModelDelta } from "@terno/store";
+import { sqlFlags } from "./flag-intents";
 
 export type { IncomingAttachment, IncomingLocation, IncomingMessage } from "@terno/store";
 import { placeholders, type Db } from "./sqlite";
@@ -218,7 +219,7 @@ export function findIngestMessage(db: Db, msg: Pick<IncomingMessage, "accountId"
 }
 
 /** Upserts and threads one batch atomically; recomputes aggregates once per touched thread. */
-export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now = Date.now()): IngestResult {
+export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now = Date.now(), observation?: FlagObservation): IngestResult {
   const result: IngestResult = { inserted: [], updated: [], touchedThreads: new Set(), mergedThreads: new Map(), bodyCompleted: [], deltas: [] };
   let own: Set<string> | null = null;
   db.tx(() => {
@@ -230,7 +231,7 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
       if (existing && !existing.by_provider) db.run("UPDATE messages SET provider_msg_id = ? WHERE id = ?", msg.providerMsgId, existing.id);
       if (existing) {
         const before = db.get<{ body_state: string; is_sent: number; is_draft: number }>("SELECT body_state, is_sent, is_draft FROM messages WHERE id = ?", existing.id)!;
-        updateExisting(db, existing.id, msg);
+        updateExisting(db, existing.id, msg, observation);
         if (before.body_state !== "full" && msg.bodyState === "full") result.bodyCompleted.push(existing.id);
         // plan 17 (Codex review 1, #4): a draft that comes back sent (or the reverse) is your mail appearing or going
         if (before.is_sent !== b(msg.isSent) || before.is_draft !== b(msg.isDraft)) {
@@ -325,25 +326,26 @@ function b(v: boolean): number {
   return v ? 1 : 0;
 }
 
-function updateExisting(db: Db, id: number, msg: IncomingMessage): void {
+function updateExisting(db: Db, id: number, msg: IncomingMessage, observation?: FlagObservation): void {
   const pending = pendingFlagFields(db, msg.accountId, [id]).get(id);
-  db.run(
+  const protectedField = (field: LocalFlagField) => pending?.has(field) || !acceptFlagObservation(sqlFlags(db), id, field, observation);
+  if (!observation || flagObservationValid(sqlFlags(db), msg.accountId, observation)) db.run(
     `UPDATE messages SET is_read = CASE WHEN ? THEN is_read ELSE ? END,
        is_starred = CASE WHEN ? THEN is_starred ELSE ? END, in_inbox = CASE WHEN ? THEN in_inbox ELSE ? END,
        is_sent = ?, is_draft = ?, is_trash = CASE WHEN ? THEN is_trash ELSE ? END,
        is_spam = CASE WHEN ? THEN is_spam ELSE ? END,
        gmail_labels = coalesce(?, gmail_labels), reply_to_json = coalesce(?, reply_to_json) WHERE id = ?`,
-    b(pending?.has("isRead") ?? false),
+    b(!!protectedField("isRead")),
     b(msg.isRead),
-    b(pending?.has("isStarred") ?? false),
+    b(!!protectedField("isStarred")),
     b(msg.isStarred),
-    b(pending?.has("inInbox") ?? false),
+    b(!!protectedField("inInbox")),
     b(msg.inInbox),
     b(msg.isSent),
     b(msg.isDraft),
-    b(pending?.has("isTrash") ?? false),
+    b(!!protectedField("isTrash")),
     b(msg.isTrash),
-    b(pending?.has("isSpam") ?? false),
+    b(!!protectedField("isSpam")),
     b(msg.isSpam),
     msg.gmailLabels ? JSON.stringify(msg.gmailLabels) : null,
     msg.replyTo === undefined ? null : JSON.stringify(msg.replyTo),

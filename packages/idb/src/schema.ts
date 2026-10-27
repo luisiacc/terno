@@ -10,9 +10,9 @@ import { MemDb, type Committed, type ForeignKey, type Key, type Row, type Table,
  * version 3 is SQL's v9 (drafts v2); version 4 is SQL's v14 (plan 17: correspondents, thread facts); version 5 is SQL's v15 (Reply-To, defaulted on read).
  * Version 6 adds attachment assets (SQL v16); SQL v17 adds an in-memory partial index, with no persisted shape change.
  */
-export const IDB_VERSION = 7;
+export const IDB_VERSION = 8;
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 20;
+export const LOGICAL_SCHEMA = 21;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -25,6 +25,9 @@ const fk = (column: string) => ({ [`fk_${column}`]: [column] as const });
  * and every command and read that needs it waits for it.
  */
 export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boolean })[] = [
+  { name: "flag_clocks", early: true, key: ["account_id"], indexes: fk("account_id") },
+  { name: "message_flag_intents", key: ["message_id", "field"], indexes: { ...fk("account_id"), ...fk("message_id"), snapshot: ["snapshot_account_id"] } },
+  { name: "flag_op_effects", key: ["op_id", "message_id", "field"], indexes: { ...fk("account_id"), ...fk("op_id"), ...fk("message_id") } },
   { name: "accounts", early: true, key: ["id"] },
   { name: "threads", early: true, key: ["id"], autoId: true, indexes: { ...fk("account_id"), provider: ["account_id", "provider_thread_id"] } },
   {
@@ -73,6 +76,12 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
 const c = (table: string, column: string, parent: string): ForeignKey => ({ table, column, parent, onDelete: "cascade" });
 
 export const FOREIGN_KEYS: readonly ForeignKey[] = [
+  c("flag_clocks", "account_id", "accounts"),
+  c("message_flag_intents", "account_id", "accounts"),
+  c("message_flag_intents", "message_id", "messages"),
+  c("flag_op_effects", "account_id", "accounts"),
+  c("flag_op_effects", "message_id", "messages"),
+  c("flag_op_effects", "op_id", "ops"),
   c("threads", "account_id", "accounts"),
   c("messages", "account_id", "accounts"),
   c("messages", "thread_id", "threads"),
@@ -145,6 +154,7 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       for (const t of PERSISTED) db.createObjectStore(t.name);
       db.createObjectStore("meta");
     } else {
+      if (event.oldVersion < 8) for (const name of ["flag_clocks", "message_flag_intents", "flag_op_effects"]) db.createObjectStore(name);
       if (event.oldVersion < 7) db.createObjectStore("draft_counter");
       if (event.oldVersion < 2) upgradeMoveRows(open.transaction!);
       if (event.oldVersion < 3) upgradeDrafts(open.transaction!);
@@ -155,6 +165,10 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
         const cursor = messages.openCursor();
         cursor.onsuccess = () => { const c = cursor.result; if (!c) return; c.update({ ...c.value, attachment_pending: 1 }); c.continue(); };
       }
+    }
+    if (event.oldVersion < 8) {
+      open.transaction!.objectStore("ops").createIndex("flag_account_seq", ["account_id", "seq", "id"]);
+      open.transaction!.objectStore("message_flag_intents").createIndex("flag_snapshots", ["snapshot_account_id", "message_id"]);
     }
   };
   open.onblocked = () => {};

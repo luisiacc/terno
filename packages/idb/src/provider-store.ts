@@ -1,4 +1,4 @@
-import type { ImapLocation, ImapLocationStore, ProviderStore } from "@terno/store";
+import type { FlagSnapshotRequest, FlagSnapshotPage, ImapLocation, ImapLocationStore, ProviderStore } from "@terno/store";
 import { getSetting, T, type Ctx, type R } from "./mail";
 
 type Command = <V>(fn: () => V) => Promise<V>;
@@ -12,9 +12,12 @@ export class IdbProviderStore implements ProviderStore {
     private readonly accountId: number,
     command: Command,
     private readonly read: Command,
+    private readonly flagSnapshots: (request: FlagSnapshotRequest) => Promise<FlagSnapshotPage>,
   ) {
     this.locations = new IdbImapLocations(c, accountId, command, read);
   }
+
+  pendingFlagSnapshots(request: FlagSnapshotRequest) { return this.flagSnapshots(request); }
 
   messageByProviderId(providerMsgId: string) {
     return this.read(() => {

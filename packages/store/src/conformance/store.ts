@@ -13,6 +13,7 @@ import { defineDraftRecoveryConformance } from "./draft-recovery";
 import { defineAttachmentConformance } from "./attachments";
 import { defineFactsConformance } from "./facts";
 import { defineFlagIntentConformance } from "./flag-intents";
+import { defineDurableFlagIntentConformance } from "./durable-flag-intents";
 
 export interface StoreHarness {
   /** a fresh, empty, migrated store */
@@ -42,6 +43,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
   defineAttachmentConformance(name, harness);
   defineDraftRecoveryConformance(name, harness);
   defineFlagIntentConformance(name, harness);
+  defineDurableFlagIntentConformance(name, harness);
   const open: MailStore[] = [];
   const fresh = async () => {
     const s = await harness.open();

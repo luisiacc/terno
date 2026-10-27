@@ -1,4 +1,6 @@
 import { attachmentMessageBudgetAsync } from "@terno/core";
+import { acceptFlagObservation, flagObservationValid, flagTick, initializeFlagStep, startFlagObservation } from "@terno/store";
+import { sqlFlags } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { sqlAssets, replaceAttachments } from "./attachments";
 import { senderVetoed, type Address, type FilterAction, type FilterRule, type ThreadAction, type ThreadSummary } from "@terno/core";
@@ -378,17 +380,27 @@ export class SqlMailStore implements MailStore {
   // ───────────────────────────── sync ─────────────────────────────
 
   readonly sync: MailStore["sync"] = {
+    beginObservation: async (accountId, options) => {
+      const repo = sqlFlags(this.db);
+      const check = () => { if (options.signal?.aborted) throw options.signal.reason ?? new Error("Flag observation cancelled."); };
+      check();
+      const clock = this.db.tx(() => startFlagObservation(repo, accountId, options.authoritativeFlags));
+      if (!clock) return null;
+      while (!repo.clock(accountId)?.phase) { check(); this.db.tx(() => initializeFlagStep(repo, accountId)); await this.yieldTo(); }
+      check();
+      return this.db.tx(() => ({ accountId, protocolId: repo.clock(accountId)!.protocol_id, epoch: flagTick(repo, accountId) }));
+    },
     // Messages, filter claims, filter actions and their ops, and the categorizer's decisions
     // commit together: a crash can't record a filter as applied without its effects, nor an
     // auto-categorization without its message.
-    ingest: async (batch, { applyFilters, now, classifier }) => {
+    ingest: async (batch, { applyFilters, now, classifier, observation }) => {
       const staged: IncomingMessage[] = [];
       for (const m of batch) {
         const existing = !m.captureUnavailable && m.attachments?.length ? findIngestMessage(this.db, m) : undefined;
         staged.push(m.captureUnavailable || m.attachments === undefined ? m : { ...m, attachments: await stageAttachments(this, m.accountId, m.attachments, now, this.yieldTo, existing ? await this.attachments.current(m.accountId, { id: existing.id }) : []) });
       }
       return this.db.tx(() => {
-        const result = ingestMessages(this.db, staged as IncomingMessage[], now);
+        const result = ingestMessages(this.db, staged as IncomingMessage[], now, observation);
         const touched = new Set(result.touchedThreads);
         const opIds: string[] = [];
         if (applyFilters) {
@@ -420,15 +432,16 @@ export class SqlMailStore implements MailStore {
         return { touched: [...touched], deltas: c.deltas, auto: c.auto, opIds };
       });
     },
-    updateFlags: async (accountId, updates) =>
+    updateFlags: async (accountId, updates, observation) =>
       this.db.tx(() => {
         // read inside this unit: a user action committed just before is honoured
         const pending = pendingFlagFields(this.db, accountId, updates.map((u) => u.messageId));
         const threads = new Set<number>();
         for (const u of updates) {
+          if (observation && (!flagObservationValid(sqlFlags(this.db), accountId, observation) || !u.expectedProviderMsgId || !this.db.get("SELECT id FROM messages WHERE id=? AND account_id=? AND provider_msg_id=?", u.messageId, accountId, u.expectedProviderMsgId))) continue;
           const owned = pending.get(u.messageId);
           const sets: [string, number | string][] = Object.entries(u.flags)
-            .filter(([k]) => FLAG_COLUMNS[k] && !owned?.has(k as LocalFlagField))
+            .filter(([k]) => FLAG_COLUMNS[k] && !owned?.has(k as LocalFlagField) && acceptFlagObservation(sqlFlags(this.db), u.messageId, k as LocalFlagField, observation))
             .map(([k, v]) => [FLAG_COLUMNS[k]!, v ? 1 : 0]);
           // plan 17 (Codex review 1, #8): Gmail's category moves (Promotions ↔ Primary) change who a message is from
           if (u.gmailLabels) sets.push(["gmail_labels", JSON.stringify(u.gmailLabels)]);

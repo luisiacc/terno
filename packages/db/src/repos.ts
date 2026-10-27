@@ -1,4 +1,5 @@
-import { assetError, linkAssets, operationFlagFields, validateAssets, type LocalFlagField } from "@terno/store";
+import { assetError, bindFlagTarget, linkAssets, localFlagIntent, operationFlagFields, settleFlagEffects, validateAssets, type LocalFlagField } from "@terno/store";
+import { sqlFlags } from "./flag-intents";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import { sqlAssets } from "./attachments";
@@ -333,8 +334,13 @@ export function enqueueOp(
   const targetJson = JSON.stringify(op.target);
   const group = GROUP[op.kind];
   return db.tx(() => {
+    const flagVersion = localFlagIntent(sqlFlags(db), op.accountId, op.target.messageIds ?? [], op.kind);
     const opposite = OPPOSITE[op.kind];
     if (opposite) {
+      for (const older of db.all<OpRow>("SELECT * FROM ops WHERE account_id=? AND kind=? AND state='queued' AND attempts=0 AND target_json=?", op.accountId, opposite, targetJson)) {
+        for (const id of op.target.messageIds ?? []) bindFlagTarget(sqlFlags(db), older, id, null);
+        settleFlagEffects(sqlFlags(db), older, "removed");
+      }
       const cancelled = db.run(
         "DELETE FROM ops WHERE account_id = ? AND kind = ? AND state = 'queued' AND attempts = 0 AND target_json = ?",
         op.accountId,
@@ -355,6 +361,10 @@ export function enqueueOp(
       for (const older of overlapping) {
         const target = JSON.parse(older.target_json) as { messageIds?: number[] };
         const remaining = (target.messageIds ?? []).filter((m) => !mine.has(m));
+        const old = getOp(db, older.id)!;
+        const removed = (target.messageIds ?? []).filter((m) => mine.has(m));
+        for (const messageId of removed) bindFlagTarget(sqlFlags(db), old, messageId, null);
+        settleFlagEffects(sqlFlags(db), old, "removed", removed);
         if (remaining.length === 0) {
           db.run("DELETE FROM ops WHERE id = ?", older.id);
         } else {
@@ -377,6 +387,7 @@ export function enqueueOp(
     );
     for (const messageId of new Set(op.target.messageIds ?? [])) {
       db.run("INSERT OR IGNORE INTO op_targets (op_id, message_id, grp) VALUES (?, ?, ?)", id, messageId, group ?? op.kind);
+      bindFlagTarget(sqlFlags(db), getOp(db, id)!, messageId, flagVersion);
     }
     return id;
   });
@@ -416,6 +427,11 @@ export function claimReadyOps(db: Db, now = Date.now(), limit = 20, accountId?: 
 }
 
 export function completeOp(db: Db, id: string, now = Date.now()): void {
+  const op = getOp(db, id);
+  if (op && sqlFlags(db).clock(op.account_id) && operationFlagFields(op.kind).length) {
+    if (op.state !== "running") return;
+    settleFlagEffects(sqlFlags(db), op, "success");
+  }
   db.run("UPDATE ops SET state = 'succeeded', last_error = NULL, updated_at = ? WHERE id = ?", now, id);
   db.run("DELETE FROM op_targets WHERE op_id = ?", id); // settled: no longer protects anything
 }
@@ -446,10 +462,12 @@ function yieldToNewerOps(db: Db, id: string): boolean {
   const target = JSON.parse(op.target_json) as { messageIds?: number[] };
   const remaining = (target.messageIds ?? []).filter((m) => !covered.has(m));
   if (remaining.length === 0) {
+    settleFlagEffects(sqlFlags(db), getOp(db, id)!, "removed");
     db.run("DELETE FROM ops WHERE id = ?", id);
     return false;
   }
   db.run("UPDATE ops SET target_json = ? WHERE id = ?", JSON.stringify({ ...target, messageIds: remaining }), id);
+  settleFlagEffects(sqlFlags(db), getOp(db, id)!, "removed", [...covered]);
   db.run(`DELETE FROM op_targets WHERE op_id = ? AND message_id IN (SELECT value FROM json_each(?))`, id, JSON.stringify([...covered]));
   return true;
 }
@@ -505,7 +523,10 @@ export function failOp(db: Db, id: string, error: string, retryable: boolean, no
     now,
     id,
   );
-  if (state === "failed") db.run("DELETE FROM op_targets WHERE op_id = ?", id);
+  if (state === "failed") {
+    settleFlagEffects(sqlFlags(db), getOp(db, id)!, "removed");
+    db.run("DELETE FROM op_targets WHERE op_id = ?", id);
+  }
   else if (!yieldToNewerOps(db, id)) return "succeeded"; // fully superseded: nothing left to do
   return state;
 }
@@ -540,6 +561,8 @@ export function resumeNetworkOps(db: Db, accountId: number | null, now: number):
 
 /** Ambiguous outcome (e.g. connection lost after SMTP DATA). Never retried automatically. */
 export function markOpUnknown(db: Db, id: string, error: string, now = Date.now()): void {
+  const op = getOp(db, id);
+  if (op?.state === "running") settleFlagEffects(sqlFlags(db), op, "unknown");
   db.run("UPDATE ops SET state = 'unknown', last_error = ?, updated_at = ? WHERE id = ? AND state = 'running'", error, now, id);
 }
 

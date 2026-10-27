@@ -44,6 +44,8 @@ import {
   withAccountPrefs,
 } from "@terno/core";
 import type { OwnerIdentity } from "@terno/core/rpc";
+import { acceptFlagObservation, bindFlagTarget, flagObservationValid, localFlagIntent, settleFlagEffects, type FlagObservation } from "@terno/store";
+import { idbFlags } from "./flag-intents";
 import { AWAITING_AUTH, AWAITING_NETWORK, keepInPage, operationFlagFields, type LocalFlagField, type OpPark, type DraftInput, type DraftRow, type IncomingMessage, type ListParams, type ModelDelta, type OpRow, type OwnerClaim, type MessageState, type Page, type ScopeParams, type SearchMessageDoc, type SearchThreadDoc } from "@terno/store";
 import type { MemDb, Row, Table } from "./mem";
 import { answeredThreads, factsReady, noteSentMail, ownAddresses, ownMailChanged, recomputeContext, referencesOfOwn, type FactsQueue } from "./facts";
@@ -458,7 +460,7 @@ export function findIngestMessage(c: Ctx, msg: Pick<IncomingMessage, "accountId"
   return rfcLookup ? messages.by("rfc", msg.accountId, rfcLookup).filter((m) => String(m.provider_msg_id ?? "").startsWith("local:")).sort((x, y) => x.id - y.id)[0] : undefined;
 }
 
-export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: number): IngestResult {
+export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: number, observation?: FlagObservation): IngestResult {
   const result: IngestResult = { inserted: [], updated: [], touchedThreads: new Set(), mergedThreads: new Map(), bodyCompleted: [], deltas: [] };
   const messages = T(c, "messages");
   let own: Set<string> | null = null;
@@ -469,7 +471,7 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
       if (existing && existing.provider_msg_id !== msg.providerMsgId) existing = messages.update(existing, { provider_msg_id: msg.providerMsgId });
       if (existing) {
         const before = existing.body_state;
-        updateExisting(c, existing, msg);
+        updateExisting(c, existing, msg, observation);
         // plan 17 (Codex review 1, #4): a draft that comes back sent (or the reverse) is your mail appearing or going
         if (existing.is_sent !== b(msg.isSent) || existing.is_draft !== b(msg.isDraft)) {
           own = null;
@@ -552,16 +554,17 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
   return result;
 }
 
-function updateExisting(c: Ctx, row: R, msg: IncomingMessage): void {
+function updateExisting(c: Ctx, row: R, msg: IncomingMessage, observation?: FlagObservation): void {
   const pending = pendingFlagFields(c, msg.accountId, row.id);
-  T(c, "messages").update(row, {
-    is_read: pending.has("isRead") ? row.is_read : b(msg.isRead),
-    is_starred: pending.has("isStarred") ? row.is_starred : b(msg.isStarred),
-    in_inbox: pending.has("inInbox") ? row.in_inbox : b(msg.inInbox),
+  const protectedField = (field: LocalFlagField) => pending.has(field) || !acceptFlagObservation(idbFlags(c), row.id, field, observation);
+  if (!observation || flagObservationValid(idbFlags(c), msg.accountId, observation)) T(c, "messages").update(row, {
+    is_read: protectedField("isRead") ? row.is_read : b(msg.isRead),
+    is_starred: protectedField("isStarred") ? row.is_starred : b(msg.isStarred),
+    in_inbox: protectedField("inInbox") ? row.in_inbox : b(msg.inInbox),
     is_sent: b(msg.isSent),
     is_draft: b(msg.isDraft),
-    is_trash: pending.has("isTrash") ? row.is_trash : b(msg.isTrash),
-    is_spam: pending.has("isSpam") ? row.is_spam : b(msg.isSpam),
+    is_trash: protectedField("isTrash") ? row.is_trash : b(msg.isTrash),
+    is_spam: protectedField("isSpam") ? row.is_spam : b(msg.isSpam),
     gmail_labels: msg.gmailLabels ? JSON.stringify(msg.gmailLabels) : row.gmail_labels,
     ...(msg.replyTo === undefined ? {} : { reply_to_json: JSON.stringify(msg.replyTo) }),
   });
@@ -1172,10 +1175,15 @@ export function enqueueOp(c: Ctx, op: { accountId: number; kind: string; target:
   const targetJson = JSON.stringify(op.target);
   const group = GROUP[op.kind];
   return c.db.tx(() => {
+    const flagVersion = localFlagIntent(idbFlags(c), op.accountId, op.target.messageIds ?? [], op.kind);
     const opposite = OPPOSITE[op.kind];
     if (opposite) {
       const cancel = ops.by("fk_account_id", op.accountId).filter((o) => o.kind === opposite && o.state === "queued" && o.attempts === 0 && o.target_json === targetJson);
-      for (const o of cancel) ops.deleteRow(o);
+      for (const o of cancel) {
+        for (const messageId of op.target.messageIds ?? []) bindFlagTarget(idbFlags(c), idbFlags(c).op(o.id)!, messageId, null);
+        settleFlagEffects(idbFlags(c), idbFlags(c).op(o.id)!, "removed");
+        ops.deleteRow(o);
+      }
       if (cancel.length > 0) return null;
     }
     if (group && SUPERSEDABLE.has(group) && op.target.messageIds?.length) {
@@ -1187,6 +1195,9 @@ export function enqueueOp(c: Ctx, op: { accountId: number; kind: string; target:
         if (!older || older.account_id !== op.accountId || older.state !== "queued") continue;
         const target = targetOf(older);
         const remaining = (target.messageIds ?? []).filter((m) => !mine.has(m));
+        const removed = (target.messageIds ?? []).filter((m) => mine.has(m));
+        for (const messageId of removed) bindFlagTarget(idbFlags(c), idbFlags(c).op(older.id)!, messageId, null);
+        settleFlagEffects(idbFlags(c), idbFlags(c).op(older.id)!, "removed", removed);
         if (remaining.length === 0) ops.deleteRow(older);
         else {
           ops.update(older, { target_json: JSON.stringify({ ...target, messageIds: remaining }) });
@@ -1196,7 +1207,10 @@ export function enqueueOp(c: Ctx, op: { accountId: number; kind: string; target:
     }
     const id = c.uuid();
     ops.insert({ id, seq: ops.peak("seq") + 1, account_id: op.accountId, kind: op.kind, target_json: targetJson, payload_json: JSON.stringify(op.payload ?? {}), state: "queued", attempts: 0, next_attempt_at: 0, last_error: null, created_at: now, updated_at: now });
-    for (const messageId of new Set(op.target.messageIds ?? [])) T(c, "op_targets").insert({ op_id: id, message_id: messageId, grp: group ?? op.kind });
+    for (const messageId of new Set(op.target.messageIds ?? [])) {
+      T(c, "op_targets").insert({ op_id: id, message_id: messageId, grp: group ?? op.kind });
+      bindFlagTarget(idbFlags(c), idbFlags(c).op(id)!, messageId, flagVersion);
+    }
     return id;
   });
 }
@@ -1265,6 +1279,10 @@ export function getOp(c: Ctx, id: string): OpRow | null {
 export function completeOp(c: Ctx, id: string, now: number): void {
   const ops = T(c, "ops");
   const r = ops.get(id);
+  if (r && idbFlags(c).clock(r.account_id) && operationFlagFields(r.kind).length) {
+    if (r.state !== "running") return;
+    settleFlagEffects(idbFlags(c), idbFlags(c).op(id)!, "success");
+  }
   if (r) ops.update(r, { state: "succeeded", last_error: null, updated_at: now });
   dropTargets(c, id);
 }

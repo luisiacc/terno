@@ -3,6 +3,11 @@ import type { MessageState } from "./types";
 
 export type LocalFlagField = Exclude<keyof MessageState, "id">;
 
+export class FlagObservationError extends Error {
+  readonly code = "AUTHORITATIVE_FLAGS_UNAVAILABLE";
+  constructor() { super("Authoritative flag snapshots are unavailable."); this.name = "FlagObservationError"; }
+}
+
 const EFFECTS = {
   archive: ["inInbox"],
   trash: ["isTrash", "inInbox"],

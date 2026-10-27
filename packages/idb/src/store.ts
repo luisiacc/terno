@@ -1,4 +1,6 @@
 import { attachmentMessageBudgetAsync } from "@terno/core";
+import { acceptFlagObservation, flagObservationValid, flagTick, initializeFlagStep, startFlagObservation } from "@terno/store";
+import { idbFlags, idbFlagSnapshots, prepareIdbFlagPage } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { idbAssets, replaceAttachments } from "./attachments";
 import { COUNT_CAP, LIST_FILTERS, parseSearch, resolveSearch, senderVetoed, type Address, type FilterAction, type FilterRule, type ListFilter, type ThreadAction, type ThreadFilter, type ThreadSummary } from "@terno/core";
@@ -813,7 +815,27 @@ export class IdbMailStore implements MailStore {
   // ───────────────────────────── sync ─────────────────────────────
 
   readonly sync: MailStore["sync"] = {
-    ingest: async (batch, { applyFilters, now, classifier }) => {
+    beginObservation: async (accountId, options) => {
+      const repo = idbFlags(this.c);
+      const check = () => { if (options.signal?.aborted) throw options.signal.reason ?? new Error("Flag observation cancelled."); };
+      check();
+      const clock = await this.command(() => startFlagObservation(repo, accountId, options.authoritativeFlags));
+      if (!clock) return null;
+      while (!(await this.read(() => repo.clock(accountId)))?.phase) {
+        check();
+        await this.exclusive(async () => {
+          const current = repo.clock(accountId);
+          if (!current || current.phase) return;
+          repo.preparation = await prepareIdbFlagPage(this.idb, repo, current);
+        });
+        check();
+        await this.command(() => { try { return initializeFlagStep(repo, accountId); } finally { repo.preparation = null; } });
+        await this.o.platform.yield();
+      }
+      check();
+      return this.command(() => ({ accountId, protocolId: repo.clock(accountId)!.protocol_id, epoch: flagTick(repo, accountId) }));
+    },
+    ingest: async (batch, { applyFilters, now, classifier, observation }) => {
       const staged: IncomingMessage[] = [];
       for (const m of batch) {
         const existing = !m.captureUnavailable && m.attachments?.length ? await this.read(() => findIngestMessage(this.c, m)) : undefined;
@@ -821,7 +843,7 @@ export class IdbMailStore implements MailStore {
       }
       return this.command(
         () => {
-          const result = ingestMessages(this.c, staged as IncomingMessage[], now);
+          const result = ingestMessages(this.c, staged as IncomingMessage[], now, observation);
           const touched = new Set(result.touchedThreads);
           const opIds: string[] = [];
           if (applyFilters) {
@@ -856,15 +878,17 @@ export class IdbMailStore implements MailStore {
         { durability: "relaxed" },
       );
     },
-    updateFlags: (accountId, updates) =>
+    updateFlags: (accountId, updates, observation) =>
       this.command(
         () => {
           const messages = T(this.c, "messages");
           const threads = new Set<number>();
           for (const u of updates) {
+            const identity = messages.get(u.messageId);
+            if (observation && (!flagObservationValid(idbFlags(this.c), accountId, observation) || !u.expectedProviderMsgId || identity?.account_id !== accountId || identity.provider_msg_id !== u.expectedProviderMsgId)) continue;
             const pending = pendingFlagFields(this.c, accountId, u.messageId);
             const sets: [string, number | string][] = Object.entries(u.flags)
-              .filter(([k]) => FLAG_COLUMNS[k] && !pending.has(k as LocalFlagField))
+              .filter(([k]) => FLAG_COLUMNS[k] && !pending.has(k as LocalFlagField) && acceptFlagObservation(idbFlags(this.c), u.messageId, k as LocalFlagField, observation))
               .map(([k, v]) => [FLAG_COLUMNS[k]!, v ? 1 : 0]);
             // plan 17 (Codex review 1, #8): Gmail's category moves change who a message is from
             if (u.gmailLabels) sets.push(["gmail_labels", JSON.stringify(u.gmailLabels)]);
@@ -1409,7 +1433,7 @@ export class IdbMailStore implements MailStore {
 
   providerStore(accountId: number): ProviderStore {
     let s = this.providerStores.get(accountId);
-    if (!s) this.providerStores.set(accountId, (s = new IdbProviderStore(this.c, accountId, (fn) => this.command(fn), (fn) => this.read(fn))));
+    if (!s) this.providerStores.set(accountId, (s = new IdbProviderStore(this.c, accountId, (fn) => this.command(fn), (fn) => this.read(fn), (request) => this.exclusive(() => idbFlagSnapshots(this.idb, idbFlags(this.c), accountId, request)))));
     return s;
   }
 

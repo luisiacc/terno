@@ -36,6 +36,11 @@ import type {
   DraftRow,
   ExampleKey,
   FlagUpdate,
+  FlagObservation,
+  FlagObservationOptions,
+  FlagReconciliation,
+  FlagSnapshotRequest,
+  FlagSnapshotPage,
   IncomingMessage,
   ListParams,
   ModelDelta,
@@ -137,7 +142,7 @@ export interface ClassifierInput {
   mode: AutoCategorize;
 }
 
-export interface IngestOutcome {
+export interface IngestOutcome extends FlagReconciliation {
   inserted: number[];
   /** threads to announce as changed */
   touched: number[];
@@ -175,6 +180,7 @@ export interface SendCommand {
 
 /** Replaces ProviderContext.db: what providers read and write besides syncing through the backend. */
 export interface ProviderStore {
+  pendingFlagSnapshots(request: FlagSnapshotRequest): Promise<FlagSnapshotPage>;
   messageByProviderId(providerMsgId: string): Promise<{ id: number; subject: string; fromEmail: string } | null>;
   /** synced (non-local) messages of the account */
   syncedMessages(): Promise<{ id: number; providerMsgId: string; date: number }[]>;
@@ -262,21 +268,22 @@ export interface MailStore {
     /** `threadFilter` (`threadAttachments`: its plan 15 name for attachments): the list's thread filters, applied by the engine before paging; waiting reads `now` */
     searchText(p: { query: string; accountId?: number; categoryId?: number; threadAttachments?: boolean; threadFilter?: ThreadFilter; cursor?: Cursor & Partial<Pick<SearchCursor, "revision" | "queryKey">>; limit: number; now: number; signal?: { readonly aborted: boolean } }): Promise<StoreSearchPage>;
     /** local optimistic change + learning signal + provider ops, atomically; `before`: each changed message as it was */
-    act(c: { threadIds: readonly number[]; action: ThreadAction; signal: UserActionKind | null; now: number }): Promise<{ threadIds: number[]; opIds: string[]; before: MessageState[] }>;
+    act(c: { threadIds: readonly number[]; action: ThreadAction; signal: UserActionKind | null; now: number }): Promise<{ threadIds: number[]; opIds: string[]; before: MessageState[] } & FlagReconciliation>;
     /**
      * An undo: every message back to the given state (those still there),
      * with the provider ops that take it there, in order per message; never a
      * learning signal.
      */
-    restore(c: { messages: readonly MessageState[]; now: number }): Promise<{ threadIds: number[]; opIds: string[] }>;
+    restore(c: { messages: readonly MessageState[]; now: number }): Promise<{ threadIds: number[]; opIds: string[] } & FlagReconciliation>;
   };
 
   sync: {
+    beginObservation(accountId: number, options: FlagObservationOptions): Promise<FlagObservation | null>;
     /** threading, aggregates, filters (claims, actions, ops) and classification of one slice */
-    ingest(batch: readonly IncomingMessage[], o: { applyFilters: boolean; now: number; classifier: ClassifierInput | null }): Promise<IngestOutcome>;
-    setBody(messageId: number, text: string | null, html: string | null, o: { now: number; classifier: ClassifierInput | null; attachments?: import("./types").IncomingAttachment[]; captureUnavailable?: "size" }): Promise<{ touched: number[]; deltas: ModelDelta[]; auto: ClassifyResult["auto"]; opIds: string[] }>;
+    ingest(batch: readonly IncomingMessage[], o: { applyFilters: boolean; now: number; classifier: ClassifierInput | null; observation?: FlagObservation }): Promise<IngestOutcome>;
+    setBody(messageId: number, text: string | null, html: string | null, o: { now: number; classifier: ClassifierInput | null; attachments?: import("./types").IncomingAttachment[]; captureUnavailable?: "size" }): Promise<{ touched: number[]; deltas: ModelDelta[]; auto: ClassifyResult["auto"]; opIds: string[] } & FlagReconciliation>;
     /** provider state for existing messages; preserves fields affected by queued/running ops inside the same unit */
-    updateFlags(accountId: number, updates: readonly FlagUpdate[]): Promise<{ touched: number[] }>;
+    updateFlags(accountId: number, updates: readonly FlagUpdate[], observation?: FlagObservation): Promise<{ touched: number[] }>;
     remove(messageIds: readonly number[]): Promise<{ touched: number[] }>;
     pendingMessageIds(accountId: number): Promise<Set<number>>;
   };
@@ -301,7 +308,7 @@ export interface MailStore {
     /** when the next op can actually be claimed (one blocked behind an older op on its messages isn't due) */
     nextAttemptAt(): Promise<number | null>;
     recent(limit: number): Promise<OpRow[]>;
-    resolveUnknown(id: string, resolution: "markSent" | "retry" | "discard", now: number): Promise<{ touched: number[] }>;
+    resolveUnknown(id: string, resolution: "markSent" | "retry" | "discard", now: number): Promise<{ touched: number[] } & FlagReconciliation>;
   };
 
   attachments: {
@@ -332,7 +339,7 @@ export interface MailStore {
     /** messages matching the rule in one id window */
     matchWindow(rule: FilterRule, now: number, window: { from: number; to: number }): Promise<number[]>;
     /** claims + actions + ops for one chunk; refuses (CANCELLED) if the filter changed since `ruleJson` */
-    applyChunk(id: number, ruleJson: string, messageIds: readonly number[], now: number): Promise<{ applied: number; touched: number[]; opIds: string[] }>;
+    applyChunk(id: number, ruleJson: string, messageIds: readonly number[], now: number): Promise<{ applied: number; touched: number[]; opIds: string[] } & FlagReconciliation>;
   };
 
   categories: {

@@ -1,10 +1,13 @@
 import type { ImapLocation, ImapLocationStore, ProviderStore } from "@terno/store";
 import { getSetting } from "./repos";
+import { sqlFlags } from "./flag-intents";
+import type { FlagSnapshotRequest } from "@terno/store";
 import { placeholders, type Db } from "./sqlite";
 
 /** One account's provider-side reads and IMAP identity, as the providers used to run them on the database. */
 export class SqlProviderStore implements ProviderStore {
   readonly locations: ImapLocationStore;
+  async pendingFlagSnapshots(request: FlagSnapshotRequest) { return sqlFlags(this.db).snapshots(this.accountId, request); }
 
   constructor(
     private readonly db: Db,

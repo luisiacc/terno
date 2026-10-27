@@ -866,6 +866,14 @@ ALTER TABLE drafts ADD COLUMN generation TEXT NOT NULL DEFAULT '';
 CREATE TABLE draft_counter (id INTEGER PRIMARY KEY CHECK(id = 1), last_id INTEGER NOT NULL);
 INSERT INTO draft_counter VALUES (1, (SELECT COALESCE(MAX(id), 0) FROM drafts));
 ` },
+  { version: 21, name: "durable authoritative flag ownership", sql: `
+CREATE TABLE flag_clocks (account_id INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE, protocol_id TEXT NOT NULL, epoch INTEGER NOT NULL, phase INTEGER NOT NULL, upper_seq INTEGER NOT NULL, after_seq INTEGER NOT NULL, after_op TEXT NOT NULL, after_message INTEGER NOT NULL);
+CREATE TABLE message_flag_intents (message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, field TEXT NOT NULL, account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, provider_msg_id TEXT NOT NULL, intent_version INTEGER NOT NULL, desired INTEGER NOT NULL, owner_op_id TEXT, barrier_epoch INTEGER NOT NULL, last_observation_epoch INTEGER NOT NULL, pending_count INTEGER NOT NULL, needs_snapshot INTEGER NOT NULL, snapshot_account_id INTEGER, PRIMARY KEY(message_id,field)) WITHOUT ROWID;
+CREATE INDEX flag_snapshots ON message_flag_intents(account_id,message_id) WHERE needs_snapshot=1 AND pending_count=0;
+CREATE TABLE flag_op_effects (op_id TEXT NOT NULL REFERENCES ops(id) ON DELETE CASCADE, message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, field TEXT NOT NULL, account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, intent_version INTEGER, value INTEGER NOT NULL, active INTEGER NOT NULL, PRIMARY KEY(op_id,message_id,field)) WITHOUT ROWID;
+CREATE INDEX flag_effect_message ON flag_op_effects(message_id,field,active);
+CREATE INDEX flag_init_ops ON ops(account_id,seq,id);
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;
