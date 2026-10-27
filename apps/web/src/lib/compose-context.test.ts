@@ -100,3 +100,28 @@ it.each(["revision", "generation", "account", "mode", "source", "body", "discard
     expect(getApp().draftFocus).toBeNull();
   } finally { forgetDraft(key); other.remove(); vi.clearAllMocks(); }
 });
+
+it("discard Undo retains positive intent and Send transfers only the exact message snapshot", async () => {
+  const { discardDraft, restoreDiscarded, flushDraft, setDraftTransport, shownDraftKey } = await import("./drafts");
+  const { sendDraft } = await import("./compose");
+  let id = 40;
+  setDraftTransport(async (method, params) => method === "drafts.delete" ? { ok: true } : { ...(params as object), id: ++id, revision: 1, generation: `gen-${id}`, updatedAt: 0, presentationThreadId: 7 });
+  rpc.call.mockImplementation(async (method: string) => { if (method !== "compose.send") throw new Error(`Unexpected RPC: ${method}`); return { opId: "queued", threadId: 11 }; });
+  const key = createDraft({ ...newFields(2), threadId: null, mode: "reply", inReplyToMessageId: 3, showSourceContext: true, toText: "recipient@example.test", bodyText: "exact authored body\nwith a second line" });
+  setApp({ accounts: [{ id: 2, email: "from@example.test" } as Account], selectedId: 7, checked: new Set(), scope: null, compose: null, draftFocus: null });
+  let restored: string | undefined;
+  try {
+    editDraft(key, {}); await flushDraft(key);
+    const discarded = (await discardDraft(key))!;
+    expect(useDrafts.getState().drafts[key]).toBeUndefined();
+    restored = restoreDiscarded(discarded); await flushDraft(restored);
+    const draft = useDrafts.getState().drafts[restored]!;
+    expect(draft).toMatchObject({ showSourceContext: true, threadId: null, bodyText: discarded.bodyText, inReplyToMessageId: 3 });
+    expect(shownDraftKey(useDrafts.getState().drafts, 7, null)).toBe(restored);
+    expect(await sendDraft(restored)).toBe(true);
+    expect(rpc.call).toHaveBeenCalledWith("compose.send", expect.objectContaining({ accountId: 2, bodyText: discarded.bodyText, inReplyToMessageId: 3, draftId: draft.id, draftGeneration: draft.generation, draftRevision: draft.revision }));
+    const payload = rpc.call.mock.calls[0]![1] as Record<string, unknown>;
+    for (const field of ["showSourceContext", "presentationThreadId", "sourceContextThreadId", "presentationEpoch", "presentationExpired"]) expect(payload).not.toHaveProperty(field);
+    expect(useDrafts.getState().drafts[restored]).toBeUndefined();
+  } finally { forgetDraft(key); if (restored) forgetDraft(restored); vi.clearAllMocks(); }
+});

@@ -10,7 +10,7 @@ import { invalidateThreads, loadThread } from "~/state/threads";
 import { registerUndo, snack } from "./snack";
 import { answered, convertFields, forwardAccountMismatch, newFields, replyFields, mergeAttachmentRefs } from "./compose-fields";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
-import { beginDraftWork, expireDraftPresentation, draftEditsHeld, authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, type LocalDraft } from "./drafts";
+import { beginDraftWork, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, type LocalDraft } from "./drafts";
 
 /**
  * Writing mail: which draft a reply, reply-all, forward or new message opens,
@@ -142,7 +142,13 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   }
   if (s.scope !== null || s.checked.size >= 2) return;
   const target = mode === "forward" ? "to" : "body";
-  const existingKey = shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown);
+  const drafts = useDrafts.getState().drafts;
+  let existingKey = shownDraftKey(drafts, threadId, getApp().draftShown);
+  if (!existingKey) {
+    // An expired association is only a lookup candidate: it never places the body in Reader.
+    const candidates = Object.values(drafts).filter((d) => d.presentationExpired && d.showSourceContext && d.mode !== "new" && d.sourceContextThreadId === threadId);
+    existingKey = candidates.find((d) => d.key === s.draftShown?.key)?.key ?? candidates.sort((a, b) => b.updatedAt - a.updatedAt)[0]?.key ?? null;
+  }
   // its body as the editor has it now (what "written" and a conversion's undo look at)
   let existing = existingKey ? materialize(existingKey) : undefined;
   if (existing?.showSourceContext) {
@@ -157,7 +163,8 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
       showNewDraft(current.key);
       return;
     }
-    existing = current;
+    if (current.presentationExpired) validateDraftPresentation(current.key, threadId);
+    existing = materialize(current.key);
   }
   if (existing && existing.mode === mode) {
     setDraftUi(existing.key, "open");

@@ -61,9 +61,10 @@ export interface LocalDraft {
   recovery?: DraftRecovery;
   /** Session-only editor placement when storage context normalizes to standalone. */
   presentationThreadId?: number;
-  /** Last validated DTO association; null after leaving Reader until an explicit point lookup. */
+  /** Cached DTO association: an expired mount cannot display it without explicit point validation. */
   sourceContextThreadId?: number | null;
   presentationEpoch?: number;
+  presentationExpired?: boolean;
   showSourceContext?: boolean;
   status: DraftStatus;
   /** bumped by every edit; saved = what the server acknowledged */
@@ -422,7 +423,7 @@ export function editDraft(key: string, patch: Partial<DraftFields>): boolean {
   put({
     ...d,
     ...patch,
-    ...(resetContext ? { presentationThreadId: undefined, sourceContextThreadId: undefined, presentationEpoch: (d.presentationEpoch ?? 0) + 1 } : {}),
+    ...(resetContext ? { presentationThreadId: patch.showSourceContext && patch.threadId === null ? draftPresentationThread(d) ?? undefined : undefined, sourceContextThreadId: undefined, presentationExpired: false, presentationEpoch: (d.presentationEpoch ?? 0) + 1 } : {}),
     ...((sourceChanged || patch.threadId === null || mode === "new") && patch.showSourceContext === undefined ? { showSourceContext: false } : {}),
     ...(patch.attachments?.length === 0 && d.recovery && (d.recovery.state === "missing" || d.recovery.state === "refused") ? { attachmentOwner: false } : {}),
     localRev: d.localRev + 1,
@@ -722,7 +723,7 @@ interface DraftIndex {
   written: Set<number>;
 }
 /** Durable context and session editor placement have independent lifetimes. */
-export const draftPresentationThread = (d: LocalDraft): number | null => d.presentationThreadId ?? (d.sourceContextThreadId !== undefined ? d.sourceContextThreadId : d.mode === "new" ? null : d.threadId);
+export const draftPresentationThread = (d: LocalDraft): number | null => d.presentationExpired ? null : d.presentationThreadId ?? (d.sourceContextThreadId !== undefined ? d.sourceContextThreadId : d.mode === "new" ? null : d.threadId);
 
 /** Leaving Reader retires cached placement, not the durable source intent or authored fields. */
 export function expireDraftPresentation(threadId: number): void {
@@ -731,7 +732,7 @@ export function expireDraftPresentation(threadId: number): void {
     for (const d of Object.values(s.drafts)) {
       if (draftPresentationThread(d) !== threadId || (!d.showSourceContext && d.presentationThreadId === undefined)) continue;
       if (drafts === s.drafts) drafts = { ...drafts };
-      drafts[d.key] = { ...d, presentationThreadId: undefined, sourceContextThreadId: null, presentationEpoch: (d.presentationEpoch ?? 0) + 1 };
+      drafts[d.key] = { ...d, presentationThreadId: undefined, sourceContextThreadId: d.sourceContextThreadId ?? threadId, presentationExpired: true, presentationEpoch: (d.presentationEpoch ?? 0) + 1 };
     }
     return drafts === s.drafts ? s : { drafts };
   });
@@ -740,7 +741,7 @@ export function expireDraftPresentation(threadId: number): void {
 /** Explicit strip open has just validated this source; no authored edit or save is needed. */
 export function validateDraftPresentation(key: string, threadId: number): void {
   const d = get(key);
-  if (d) put({ ...d, presentationThreadId: undefined, sourceContextThreadId: threadId, presentationEpoch: (d.presentationEpoch ?? 0) + 1 });
+  if (d) put({ ...d, presentationThreadId: undefined, sourceContextThreadId: threadId, presentationExpired: false, presentationEpoch: (d.presentationEpoch ?? 0) + 1 });
 }
 
 /** One pass per drafts update (the map is replaced on every change), shared by every row, the reader and the strip. */
