@@ -92,14 +92,11 @@ test("a new deployment: offered in the pill, and a tab writing a draft saves it 
   );
   await second.getByTestId("compose-body").focus();
   await second.keyboard.type("Lo que escribía al recargar");
-  let navigated = false;
-  second.once("framenavigated", () => (navigated = true));
-  await page.evaluate(async () => (await navigator.serviceWorker.getRegistration())?.waiting?.postMessage("skip-waiting"));
-  for (let i = 0; i < 100 && !navigated; i++) {
-    await second.keyboard.type(" más").catch(() => {});
-    await second.waitForTimeout(40).catch(() => {});
-  }
-  expect(navigated).toBe(true);
+  await second.keyboard.type(" más");
+  await Promise.all([
+    second.waitForEvent("framenavigated", { predicate: (frame) => frame === second.mainFrame() }),
+    page.evaluate(async () => (await navigator.serviceWorker.getRegistration())?.waiting?.postMessage("skip-waiting")),
+  ]);
   const atReload = () => second.evaluate(() => sessionStorage.getItem("draft-at-reload"));
   await expect.poll(atReload).not.toBeNull();
   const typed = (await atReload())!;
@@ -138,7 +135,7 @@ test("terminal recovery holds repeated deployments and persistent Reload survive
   const body = page.getByTestId("compose-body"); await body.fill("web recovery exact");
   await expect.poll(() => page.evaluate(async () => (await window.__ternoWeb!.client.call("drafts.list", {}))[0]?.bodyText)).toBe("web recovery exact");
   await page.evaluate(async () => { const c = window.__ternoWeb!.client; const d = (await c.call("drafts.list", {}))[0]!; await c.call("drafts.delete", { id: d.id, generation: d.generation }); });
-  await body.press("End"); await page.keyboard.type(" latest");
+  await body.click(); await body.press("ArrowRight"); await body.press("Meta+ArrowRight"); await page.keyboard.type(" latest");
   await expect(page.getByTestId("draft-save-copy")).toBeVisible();
   let navigations = 0; page.on("framenavigated", (frame) => { if (frame === page.mainFrame()) navigations++; });
   await page.evaluate(() => { const c = new BroadcastChannel("terno-tabs"); c.postMessage({ type: "leader", build: "different-synthetic-build" }); c.close(); });
@@ -176,7 +173,7 @@ test("recovery holds storage switching and mailbox handover while the current wo
   const body = page.getByTestId("compose-body"); await body.fill("handover recovery exact");
   await expect.poll(() => page.evaluate(async () => (await window.__ternoWeb!.client.call("drafts.list", {}))[0]?.bodyText)).toBe("handover recovery exact");
   await page.evaluate(async () => { const c = window.__ternoWeb!.client; const d = (await c.call("drafts.list", {}))[0]!; await c.call("drafts.delete", { id: d.id, generation: d.generation }); });
-  await body.press("End"); await page.keyboard.type(" latest"); await expect(page.getByTestId("draft-save-copy")).toBeVisible();
+  await body.click(); await body.press("ArrowRight"); await body.press("Meta+ArrowRight"); await page.keyboard.type(" latest"); await expect(page.getByTestId("draft-save-copy")).toBeVisible();
   let navigations = 0; page.on("framenavigated", (frame) => { if (frame === page.mainFrame()) navigations++; });
   await page.evaluate(() => { const c = new BroadcastChannel("terno-tabs"); c.postMessage({ type: "takeover", from: "synthetic-requesting-tab" }); c.close(); });
   await expect(page.getByTestId("snack-message")).toContainText("Save or discard your unsaved drafts before opening this mailbox in another tab.");
@@ -214,8 +211,11 @@ test("slow storage export cannot commit an earlier snapshot over later recovery"
   await page.getByTestId("storage-switch-dialog-confirm").click();
   await expect.poll(() => page.evaluate(() => "releaseExport" in window)).toBe(true);
   await page.keyboard.press("Escape");
+  await expect(body).toHaveText("storage exact");
   await page.evaluate(async () => { const c = window.__ternoWeb!.client, d = (await c.call("drafts.list", {}))[0]!; await c.call("drafts.delete", { id: d.id, generation: d.generation }); });
-  await body.press("End"); await page.keyboard.type(" latest"); await expect(page.getByTestId("draft-save-copy")).toBeVisible();
+  await page.evaluate("window.__terno.setComposerCaret(0)");
+  await page.keyboard.type(" latest"); await expect(body).toHaveText("storage exact latest");
+  await expect(page.getByTestId("draft-save-copy")).toBeVisible();
   const originalPin = await page.evaluate(() => localStorage.getItem("terno:storage:terno"));
   let navigations = 0; page.on("framenavigated", (f) => { if (f === page.mainFrame()) navigations++; });
   await page.evaluate(() => Reflect.get(window, "releaseExport")());
@@ -239,4 +239,44 @@ test("slow storage export cannot commit an earlier snapshot over later recovery"
   expect(copied.bodyHtml).toContain("<b>"); expect(copied.to.map((a) => a.email)).toContain("bob@");
   expect(copied.attachments).toHaveLength(1);
   expect(await page.evaluate(async (d) => window.__ternoWeb!.client.call("attachments.read", { accountId: d.accountId, assetId: d.attachments![0]!.assetId, index: 0 }), copied)).toEqual({ dataBase64: "AP+A" });
+});
+
+for (const accepted of ["upload", "composition"] as const) test(`accepted ${accepted} holds deployment reload and mailbox takeover until its exact work settles`, async ({ page }) => {
+  serving = dirs.a; await page.goto(`${origin}${URL_}`); await rows(page).first().waitFor({ timeout: 60_000 });
+  await page.evaluate(async () => { await navigator.serviceWorker.ready; if (!navigator.serviceWorker.controller) await new Promise((r) => navigator.serviceWorker.addEventListener("controllerchange", r, { once: true })); });
+  await page.reload(); await rows(page).first().waitFor();
+  await page.getByRole("button", { name: "Compose", exact: true }).click();
+  const body = page.getByTestId("compose-body"); await body.fill("accepted exact work");
+  await body.press("Meta+a"); await body.press("Meta+b"); await body.press("ArrowRight");
+  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  if (accepted === "upload") {
+    await page.evaluate(() => {
+      const c = window.__ternoWeb!.client, call = c.call.bind(c);
+      Object.defineProperty(c, "call", { value: (m: string, p: unknown) => {
+        const result = call(m as "attachments.seal", p as { accountId: number; assetId: string });
+        return m === "attachments.seal" ? result.then((sealed) => new Promise((resolve) => Object.assign(window, { finishSeal: () => resolve(sealed) }))) : result;
+      } });
+    });
+    await page.getByTestId("attachment-input").setInputFiles({ name: "accepted.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 255, 128]) });
+    await expect.poll(() => page.evaluate(() => "finishSeal" in window)).toBe(true);
+  } else await body.dispatchEvent("compositionstart", { data: "pending" });
+  let navigations = 0; page.on("framenavigated", (f) => { if (f === page.mainFrame()) navigations++; });
+  await page.evaluate(() => { const c = new BroadcastChannel("terno-tabs"); c.postMessage({ type: "leader", build: "synthetic-different" }); c.close(); });
+  await page.getByTestId("update-pill").click(); await expect(page.getByRole("button", { name: "Try Again", exact: true })).toBeVisible();
+  serving = dirs.b; await page.evaluate(async () => { await (await navigator.serviceWorker.ready).update(); });
+  await expect.poll(() => page.evaluate(async () => Boolean((await navigator.serviceWorker.ready).waiting))).toBe(true);
+  await page.evaluate(async () => { const changed = new Promise((r) => navigator.serviceWorker.addEventListener("controllerchange", r, { once: true })); (await navigator.serviceWorker.ready).waiting!.postMessage("skip-waiting"); await changed; });
+  await expect(page.getByRole("button", { name: "Try Again", exact: true })).toBeVisible();
+  await page.evaluate(() => { const c = new BroadcastChannel("terno-tabs"); c.postMessage({ type: "takeover", from: "pending-work-tab" }); c.close(); });
+  await expect(page.getByTestId("snack-message")).toContainText("before opening this mailbox in another tab");
+  expect(navigations).toBe(0); await expect(page.getByTestId("web-taken")).toHaveCount(0);
+  if (accepted === "upload") await page.evaluate(() => Reflect.get(window, "finishSeal")());
+  else await body.dispatchEvent("compositionend", { data: "" });
+  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  if (accepted === "upload") await expect(page.getByTestId("draft-attachment")).toContainText("accepted.bin");
+  await Promise.all([page.waitForEvent("framenavigated", { predicate: (f) => f === page.mainFrame() }), page.getByTestId("update-pill").click()]);
+  await rows(page).first().waitFor();
+  const d = (await page.evaluate(() => window.__ternoWeb!.client.call("drafts.list", {})))[0]!;
+  expect(d).toMatchObject({ bodyText: "accepted exact work" }); expect(d.bodyHtml).toContain("<b>");
+  if (accepted === "upload") expect(await page.evaluate(async (d) => window.__ternoWeb!.client.call("attachments.read", { accountId: d.accountId, assetId: d.attachments![0]!.assetId, index: 0 }), d)).toEqual({ dataBase64: "AP+A" });
 });

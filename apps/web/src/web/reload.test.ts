@@ -64,7 +64,8 @@ describe("web updates: reloading only once drafts are saved", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(reloads).toBe(1);
     warning!.anyway();
-    expect(reloads).toBe(2);
+    // An obsolete warning cannot force a second transition after a successful retry.
+    expect(reloads).toBe(1);
   });
 
   it("terminal recovery holds a clean draft too; only an explicitly warned forced reload can continue", async () => {

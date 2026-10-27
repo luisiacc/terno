@@ -555,8 +555,10 @@ export async function flushAllDrafts(capMs = 1000): Promise<void> {
  * slow past `capMs` or failed says false, and the caller doesn't go ahead.
  */
 export async function draftsSaved(capMs = 5000): Promise<boolean> {
+  const version = draftChangeVersion();
+  if (draftWorkPending()) return false;
   await flushAllDrafts(capMs);
-  return Object.values(useDrafts.getState().drafts).every((d) => !authored(d) || (!d.recovery && d.savedRev === d.localRev && d.status !== "error"));
+  return !draftWorkPending() && draftChangeVersion() === version && Object.values(useDrafts.getState().drafts).every((d) => !authored(d) || (!d.recovery && d.savedRev === d.localRev && d.status !== "error"));
 }
 
 /** Waits for the save in flight (if any) and stops further saves: the draft is about to be sent or discarded. */

@@ -159,7 +159,7 @@ class Leadership {
   }
 
   private async receive(m: TabMessage): Promise<void> {
-    if (m.type === "leader" && m.build !== BUILD) setWeb({ update: { apply: () => void whenDraftsSaved(() => location.reload()) } });
+    if (m.type === "leader" && m.build !== BUILD) setWeb({ update: { apply: () => void whenDraftsSaved(() => location.reload(), undefined, { navigation: true }) } });
     if (m.type === "takeover") {
       if (this.leading) {
         if (this.onTakeover) await this.onTakeover(m.from);
@@ -267,7 +267,7 @@ export function takeBack(): void {
   void whenDraftsSaved(() => {
     sessionStorage.setItem(TAKEOVER, "1");
     location.reload();
-  });
+  }, undefined, { navigation: true });
 }
 
 function next(worker: Worker, types: WorkerToPage["type"][], timeoutMs = Infinity): Promise<WorkerToPage | null> {
@@ -339,10 +339,10 @@ async function registerServiceWorker(): Promise<void> {
   let reloading = false;
   navigator.serviceWorker.addEventListener("controllerchange", () => {
     if (!hadController) return;
-    setWeb({ update: { apply: () => void whenDraftsSaved(() => location.reload()) } });
+    setWeb({ update: { apply: () => void whenDraftsSaved(() => location.reload(), undefined, { navigation: true }) } });
     if (reloading) return;
     reloading = true;
-    void whenDraftsSaved(() => location.reload());
+    void whenDraftsSaved(() => location.reload(), undefined, { navigation: true });
   });
   watchDeployments(reg);
 }
@@ -395,14 +395,15 @@ export async function connectWorker(client: RpcClient): Promise<void> {
   /** another tab asked: close every handle, then hand the lock to that tab by name */
   const handOver = async (to: string) => {
     if (stopped) return;
-    if (!await draftsSaved()) { snack.error(t("web.takeover.unsaved")); return; }
-    if (stopped) return;
-    stopped = true;
-    setWeb({ phase: "taken" });
-    worker.postMessage({ type: "close" } satisfies PageToWorker);
-    await next(worker, ["closed"], CLOSE_TIMEOUT_MS);
-    worker.terminate();
-    tabs.release(to);
+    await whenDraftsSaved(async () => {
+      if (stopped) return;
+      stopped = true;
+      setWeb({ phase: "taken" });
+      worker.postMessage({ type: "close" } satisfies PageToWorker);
+      await next(worker, ["closed"], CLOSE_TIMEOUT_MS);
+      worker.terminate();
+      tabs.release(to);
+    }, { saved: () => draftsSaved(), warn: () => snack.error(t("web.takeover.unsaved")) });
   };
 
   const channel = new MessageChannel();

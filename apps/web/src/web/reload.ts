@@ -1,5 +1,5 @@
 import { t } from "@terno/i18n";
-import { draftsSaved } from "~/lib/drafts";
+import { acquireDraftHold, draftsSaved } from "~/lib/drafts";
 import { snack } from "~/lib/snack";
 
 /**
@@ -25,11 +25,32 @@ const live: WhenSavedDeps = {
     }),
 };
 
-export async function whenDraftsSaved(go: () => void, deps: WhenSavedDeps = live): Promise<boolean> {
-  if (await deps.saved()) {
-    go();
-    return true;
-  }
-  deps.warn({ retry: () => void whenDraftsSaved(go, deps), anyway: go });
-  return false;
+let pending: Promise<boolean> | null = null;
+let attempt = 0, navigating = false;
+
+/** An async commit owns admission until it settles; navigation keeps its lease through unload. */
+export function whenDraftsSaved(go: () => unknown | Promise<unknown>, deps: WhenSavedDeps = live, options: { navigation?: boolean } = {}): Promise<boolean> {
+  if (navigating) return Promise.resolve(true);
+  if (pending) return pending;
+  const token = ++attempt;
+  const release = acquireDraftHold();
+  const warn = () => deps.warn({
+    retry: () => { if (token === attempt) void whenDraftsSaved(go, deps, options); },
+    anyway: () => { if (token === attempt) void go(); },
+  });
+  const run = async () => {
+    if (!release) { warn(); return false; }
+    let committed = false;
+    try {
+      if (!await deps.saved()) { release(); warn(); return false; }
+      if (options.navigation) navigating = true;
+      await go();
+      committed = Boolean(options.navigation);
+      return true;
+    } finally {
+      if (!committed) { navigating = false; release(); }
+    }
+  };
+  pending = run().finally(() => { pending = null; });
+  return pending;
 }
