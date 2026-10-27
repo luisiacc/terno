@@ -64,8 +64,8 @@ FLIP needs all of that by hand: a measured inverse for each moving block, a "clo
 - **Slot.** `display: grid; grid-template-rows: 0fr` (hidden) or `1fr` (shown). The inner wrapper is `min-height: 0; overflow: clip; overflow-clip-margin: 3px`. The clip margin is so the 2 px focus ring (offset 1 px) isn't cut off.
 - **Transitions.** `grid-template-rows`, `opacity` and `visibility` transition together:
   - opening uses `--motion-slow` (100 ms at the default setting, the cap) with the drawer curve;
-  - closing uses `--motion-base` (75 ms) with `--motion-ease`;
-  - these are the same pairs `Expand` uses (open slow, close quicker).
+  - closing uses `--motion-base` (75 ms) with `--motion-ease`. That's slower than `Expand`'s close (`fast`, `ease-exit`): here many rows move, and at 50 ms on an ease-in curve they'd read as a jump;
+  - the rows fade in linearly while their slots grow on the curve. On the curve, the first frame would show slivers of each row.
 
   There's no stagger (a delay would count against the cap), and plan 21's `translateY(-2px)` is dropped, because the row is now revealed by its growing slot.
 - **What's below.** Categories and Accounts are wrapped in one `<div data-more-below class="will-change-transform">`. The wrapper adds no box of its own: the first section title's margin collapses through it exactly as before.
@@ -83,13 +83,13 @@ Showing it now costs one row of shift. I considered four options:
 
 Option 1 has one wrinkle: **leaving** that folder by clicking in the sidebar would slide everything up under the pointer right after the click. Your pointer then lands on the neighbouring row, and a quick second click hits the wrong category. So, the refinement: nothing moves under the pointer.
 
-- When you leave a folder that was only shown because you were in it, and the pointer is over the sidebar, its row stays (no longer active) until the pointer leaves the sidebar. Then it collapses, with the transition.
-- With the pointer elsewhere (a shortcut, the palette), it collapses at once.
-- Closing More with a click collapses everything, held rows included: you asked for it.
-- Rows held this way are focusable and clickable like any shown row.
-- The held set is the folders you left this way. It's usually one; two if you jumped Trash → Spam with the palette while hovering.
+- A mouse or pen click in the sidebar, made while More is closed and you're in a hidden folder, **holds** that folder. Its row stays (no longer active) after the click takes you elsewhere.
+- It goes when the pointer leaves the sidebar, or when something covers it, such as a dialog. If the row has keyboard focus at that moment, it goes when focus leaves the group instead.
+- Leaving any other way (a shortcut, the palette, Enter on a focused row, a tap) holds nothing, so the row collapses at once. With no pointer resting on the sidebar, nothing can move under it.
+- Toggling More lets held rows go. The folder you're in always stays.
+- Held rows are focusable and clickable like any shown row.
 
-Pointer presence comes from `pointerenter` and `pointerleave` on the sidebar, written to a module variable. Only a leave with something held updates state, so hovering the sidebar renders nothing.
+This is event logic only. A captured `click` listener on the sidebar adds the current folder to a React state (`held`) before the click navigates. `pointerenter`, `pointerleave` and `focusout` decide when to let go. Nothing is read from the DOM during render, and hovering renders nothing.
 
 ### Everything else from plan 21, unchanged
 
@@ -101,10 +101,14 @@ Pointer presence comes from `pointerenter` and `pointerleave` on the sidebar, wr
 
 ### Scrolling and resizing
 
-- **No jump in scroll position when toggling.** The nav keeps `scrollTop`: More sits above what moves, so it doesn't move.
-  - A reveal above the viewport (a shortcut while scrolled down) is absorbed by the browser's scroll anchoring, so the visible rows stay put.
-  - Closing near the end of a scrolled list clamps `scrollTop` frame by frame, so it eases rather than jumps.
-- **Resizing panes** is untouched. The wrapper is width-agnostic, and a drag's CSS-variable writes don't touch it.
+Nothing you're looking at jumps when More toggles. There are three cases, each tested:
+
+- **More in view.** `scrollTop` is unchanged, and More and everything above it stay put. Opening only adds below.
+- **Rows in view below a change** (a shortcut revealing Trash while scrolled down, or closing while scrolled to the end): the browser's scroll anchoring changes `scrollTop` so the rows in view stay put.
+- **Overflowing only while open,** scrolled to the end, then closed: the content stops overflowing, `scrollTop` clamps to 0 frame by frame, and the sidebar ends at its top with nothing cut off or blank.
+**Resizing panes** is untouched. The wrapper is width-agnostic, and a drag's CSS-variable writes don't touch it.
+
+**Dragging rows onto categories.** A drag caches the targets' boxes and re-measures them when the sidebar scrolls. Now More's group also changes size during a drag (a held row let go, or a key revealing Trash), which moves the categories without any scroll. A `ResizeObserver` on the group, alive only during a drag, re-measures them too.
 
 ## Tests
 
@@ -155,3 +159,50 @@ Closed and open, light and dark, for macOS, Lumen and Atelier, plus a frame stri
 - A dot on More for hidden counts (still none; plan 21 §A.2's rule stands).
 - Reordering folders, or choosing which are pinned.
 - Animating the category rows themselves (added or removed rows still appear at once).
+
+## Revisions after the Codex review
+
+Codex (`codex exec -s read-only`) made 12 points against the plan and the code. All 12 were taken.
+
+1. **No render-time read of pointer state.** The plan read a module variable during render, which is an untracked dependency under React Compiler. Now the hold is event logic: a captured `click` listener adds to the `held` React state before the click navigates, and `pointerleave` and `focusout` let go. Render reads React state only.
+2. **Letting go of a focused held row.** Focus recovery now depends on `held` too, and moves focus with `preventScroll`. A held row with keyboard focus stays when the pointer leaves, and goes when focus leaves the group. Tested.
+3. **The hold's lifecycle.**
+   - Only a mouse or pen click holds. A tap, or Enter on a focused row, holds nothing (both tested).
+   - A dialog covering the sidebar counts as the pointer leaving.
+   - A remount drops the hold, which is harmless: the folder you're in still shows.
+4. **Drag targets go stale when the categories move without a scroll.** A `ResizeObserver` on the group re-measures the targets during a drag. Tested: a key reveals Trash mid-drag, and the highlight follows the category under the pointer. Without the fix, it stays on the old one.
+5. **The scrolling contract,** split into its three cases (§Scrolling and resizing). Two motion-on tests were added: closing at the end of a long list (the rows in view stay put), and a sidebar that overflows only while open (it returns to the top, with nothing cut off or blank).
+6. **Temporary auto-open** (not persisted) was weighed: it still shifts five rows where one suffices, so the one-row reveal stays. The rule is now precise: toggling More lets held rows go, and the folder you're in always stays (tested).
+7. **The geometry assertions.**
+   - Content bounds replace `scrollHeight`, which only grows once the nav overflows.
+   - The gap reference includes the review rows (the category's box).
+   - Empty categories are covered: Categories and their empty note still sit right under More.
+8. **The motion spec.**
+   - The close timing is documented as different from `Expand`'s, and why.
+   - The motion setting is tested at 100 ms (max 100), at 50 (max 67) and at 0 (instant).
+   - Reduced motion turning on mid-slide ends it at once, in place.
+9. **Deterministic motion tests.**
+   - The e2e tests no longer sample frames on the clock. They freeze the transitions (pause, then seek to the middle) and assert the position is strictly between the ends and past halfway (the curve eases out).
+   - Interruption is tested both ways: freeze at 40 %, click, and the new transitions start from the frozen position.
+   - The wall-clock checks (frames between, settled within 100 ms plus two frames) moved to the ui-perf gate.
+10. **The perf gate.**
+    - It asserts zero long animation frames, and counts entries still queued in the observer (`takeRecords`).
+    - NavItem renders are counted apart: the folders, and the rows below (`NavItem:below`), which must be 0.
+    - The injected regression (a category row's prop depending on `open`) was run under React Compiler: the gate failed with 1,700 renders from the rows below (85 rows × 20 toggles).
+11. **The layer.**
+    - The e2e asserts Chromium really promoted the wrapper: a layer whose `backendNodeId` is the wrapper's, in the CDP LayerTree. A computed `will-change` alone proves nothing.
+    - The claim about memory is qualified (above).
+    - The cost was re-measured on the shipped code at DPR 1 and 2 (below).
+    - Focus rings were checked in screenshots: the clip margin keeps them whole. The review badge, the sign-in marker and the popovers are portaled or positioned inside their row, so the layer's containing block doesn't move them; their existing tests pass.
+12. **What the suites really cover.**
+    - The new axe test scans the sidebar closed, open and with a held row, in light and dark.
+    - `navTo` runs with motion on in the perf project.
+    - The Spanish walk, `designs.spec`'s shared parts and the packaged restart smoke are all in the validation run.
+
+## Implementation notes
+
+- **Shipped cost** (the measurement spec on the final code, 80 extra categories, 4× CPU, 20 toggles per run, two runs each): 25–26 ms main-thread rendering per toggle at DPR 1, 24–25 ms at DPR 2. Raster is 0.4 ms, the frame p95 16.7 ms, and there are no long frames. Plain grid rows measured 36–43 ms.
+- **The ui-perf gate on the final code:**
+  - frame p95 of 16.7 ms and no long frames;
+  - 20 of 20 toggles slid through frames between the ends, and all settled within the cap;
+  - 5.0 folder renders per toggle and 0 renders of the rows below.

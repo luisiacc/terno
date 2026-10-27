@@ -423,6 +423,23 @@ test.describe("Part A: More", { tag: "@design" }, () => {
       expect((await row.boundingBox())!.y).toBeCloseTo(before, 0);
     });
 
+    test.describe("with motion on", () => {
+      test.use({ reducedMotion: "no-preference" });
+      test("scrolled to the end, closing keeps the rows in view where they are (Codex review)", async ({ app: page }) => {
+        await more(page).click();
+        await nav(page).evaluate((el) => (el.scrollTop = el.scrollHeight));
+        const row = page.getByText("Long 70", { exact: true });
+        const before = (await row.boundingBox())!.y;
+        await more(page).evaluate((el) => (el as HTMLElement).click());
+        await expect(slot(page, "trash")).toHaveAttribute("inert", "");
+        await page.waitForTimeout(250);
+        expect((await row.boundingBox())!.y).toBeCloseTo(before, 0);
+        // still at the end, with no blank space under the last row
+        const end = await nav(page).evaluate((el) => ({ gap: el.scrollHeight - el.clientHeight - el.scrollTop }));
+        expect(end.gap).toBeLessThanOrEqual(1);
+      });
+    });
+
     test("the sidebar's edge still resizes it with More open", async ({ app: page }) => {
       await more(page).click();
       const h = page.getByTestId("pane-handle-sidebar");
@@ -431,6 +448,28 @@ test.describe("Part A: More", { tag: "@design" }, () => {
       await page.keyboard.press("ArrowRight");
       expect((await page.getByTestId("sidebar").boundingBox())!.width).toBeCloseTo(w0 + 16, 0);
       await page.keyboard.press("Enter");
+    });
+  });
+
+  test.describe("with motion on, a sidebar that overflows only while More is open", () => {
+    test.use({ reducedMotion: "no-preference" });
+    test("scrolled to its end, closing brings it back to the top with nothing cut off or left blank (Codex review)", async ({ app: page }) => {
+      await more(page).click();
+      const nav = page.getByTestId("sidebar").locator("nav");
+      // a window just short enough that the open sidebar overflows by less than the five rows
+      // the room left under the open sidebar's content (its nav pads 12 px at the end)
+      const slack = await nav.evaluate((el) => el.getBoundingClientRect().bottom - el.querySelector("[data-more-below]")!.getBoundingClientRect().bottom - 12);
+      const vp = page.viewportSize()!;
+      await page.setViewportSize({ width: vp.width, height: Math.round(vp.height - slack - 60) });
+      await expect.poll(() => nav.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeGreaterThan(0);
+      await nav.evaluate((el) => (el.scrollTop = el.scrollHeight));
+      await more(page).evaluate((el) => (el as HTMLElement).click());
+      await expect(slot(page, "trash")).toHaveAttribute("inert", "");
+      await page.waitForTimeout(250);
+      const r = await nav.evaluate((el) => ({ top: el.scrollTop, over: el.scrollHeight - el.clientHeight }));
+      expect(r.over).toBe(0);
+      expect(r.top).toBe(0);
+      await expect(page.getByTestId("nav-inbox")).toBeInViewport();
     });
   });
 
