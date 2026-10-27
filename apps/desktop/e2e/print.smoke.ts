@@ -178,24 +178,67 @@ test("native print without a printer says so and suggests the PDF (only where no
   await page.keyboard.press("Escape");
 });
 
-test("main enforces local mode on the print window, whatever the renderer asks for", async () => {
-  // a renderer that lists a remote image (it never would in local mode): main loads the page, not the image
-  await app.evaluate(({ session }) => {
-    const g = globalThis as unknown as { printBlocked: string[] };
-    g.printBlocked = [];
-    session.fromPartition("terno-print").webRequest.onErrorOccurred((d) => {
-      if (d.error === "net::ERR_BLOCKED_BY_CLIENT") g.printBlocked.push(d.url);
+/**
+ * Records, in main, the requests of a session that got past onBeforeRequest (the fence under test) and
+ * cancels them right there, so nothing reaches the network; and what was cancelled at all.
+ */
+async function watchFence(partition: string | null): Promise<void> {
+  await app.evaluate(({ session }, partition) => {
+    const g = globalThis as unknown as { passed: string[]; blocked: string[] };
+    g.passed = [];
+    g.blocked = [];
+    const ses = partition ? session.fromPartition(partition) : session.defaultSession;
+    ses.webRequest.onBeforeSendHeaders({ urls: ["https://*/*", "http://*/*"] }, (d, callback) => {
+      const host = new URL(d.url).hostname;
+      if (host === "127.0.0.1" || host === "localhost") return callback({});
+      g.passed.push(d.url);
+      callback({ cancel: true });
     });
+    ses.webRequest.onErrorOccurred((d) => {
+      if (d.error === "net::ERR_BLOCKED_BY_CLIENT") g.blocked.push(d.url);
+    });
+  }, partition);
+}
+const fence = () =>
+  app.evaluate(() => {
+    const g = globalThis as unknown as { passed: string[]; blocked: string[] };
+    return { passed: [...g.passed], blocked: [...g.blocked] };
   });
-  const url = `https://example.com/print-smoke.png?${Date.now()}`;
+
+test("plan 35: in local mode the print window loads the job's approved images and nothing else", async () => {
+  await expect(page.getByTestId("local-pill")).toHaveText("Local");
+  await watchFence("terno-print");
+  const listed = `https://example.com/print-smoke.png?${Date.now()}`;
+  const unlisted = `https://example.com/print-smoke-unlisted.png?${Date.now()}`;
   const result = await page.evaluate(
-    (src) => (window as unknown as { ternoDesktop: { print(j: unknown): Promise<{ status: string }> } }).ternoDesktop.print({ html: `<!doctype html><html><head></head><body><p>Hola</p><img src="${src}" alt=""></body></html>`, action: "pdf", paper: "letter", subject: "Red", headers: false, remote: [src] }),
-    url,
+    ([src, other]) => (window as unknown as { ternoDesktop: { print(j: unknown): Promise<{ status: string }> } }).ternoDesktop.print({ html: `<!doctype html><html><head></head><body><p>Hola</p><img src="${src}" alt=""><img src="${other}" alt=""></body></html>`, action: "pdf", paper: "letter", subject: "Red", headers: false, remote: [src] }),
+    [listed, unlisted],
   );
   expect(result.status).toBe("saved");
-  await expect.poll(() => app.evaluate(() => (globalThis as unknown as { printBlocked: string[] }).printBlocked)).toContain(url);
+  // the approved image got past the print fence (and was stopped here, before the network); the other never did
+  await expect.poll(async () => (await fence()).passed).toContain(listed);
+  await expect.poll(async () => (await fence()).blocked).toContain(unlisted);
+  expect((await fence()).passed).not.toContain(unlisted);
   // and a job that isn't one is refused outright
   expect(await page.evaluate(() => (window as unknown as { ternoDesktop: { print(j: unknown): Promise<{ status: string }> } }).ternoDesktop.print({ html: 1, action: "fax" }))).toEqual({ status: "failed", reason: "error" });
   // every job's hidden window is gone: only the app's own window is left
   await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
+});
+
+test("plan 35: in local mode “Load content” gets a newsletter's images past main's backstop; the app's own frame still can't", async () => {
+  await expect(page.getByTestId("local-pill")).toHaveText("Local");
+  await watchFence(null);
+  await openThread("newsletter");
+  await page.waitForTimeout(300);
+  // blocked by the frame's CSP until asked: nothing even reaches main
+  expect((await fence()).passed.filter((u) => u.includes("acme.test"))).toEqual([]);
+  await page.getByTestId("remote-load").click();
+  await expect(page.getByTestId("remote-blocked")).toHaveCount(0);
+  await expect.poll(async () => (await fence()).passed).toContain("https://images.acme.test/promo/temporada.png");
+  // the same kind of request from the app's page is cancelled by the backstop
+  const own = `https://example.com/own-frame.png?${Date.now()}`;
+  await page.evaluate((src) => void Object.assign(new Image(), { src }), own);
+  await expect.poll(async () => (await fence()).blocked).toContain(own);
+  expect((await fence()).passed).not.toContain(own);
+  await page.keyboard.press("Escape");
 });

@@ -28,8 +28,9 @@ import { RestartPolicy } from "./diag/supervisor";
 import type { BackendToMain, MainToBackend } from "./ipc";
 import { readLegacySecrets } from "./keychain-helper";
 import { NetworkWatch } from "./network-watch";
+import { backstopAllows, originOf, requestFrame } from "./network-backstop";
 import { DB_FILE } from "./legacy-profile";
-import { printLocalModeChanged, registerPrint } from "./print";
+import { registerPrint } from "./print";
 import { isTrustedSender, testPdfDir, testSmtpPort } from "./print-policy";
 import { menuTemplate } from "./menu";
 import { readLanguage, switchLanguage, writeLanguage } from "./locale";
@@ -106,25 +107,18 @@ function registerAppProtocol() {
 /** Fail closed: until the backend reports the policy, the renderer is treated as in local mode. */
 let localMode = true;
 
-function isLoopbackHost(hostname: string): boolean {
-  const h = hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  return h === "localhost" || h === "::1" || /^127\.\d+\.\d+\.\d+$/.test(h);
-}
-
 /**
- * The backend polices its own connections; this fences the renderer (remote
- * images, fonts, anything a mail or a bug could load). In local mode only
- * loopback is reachable over http(s)/ws(s); app:// and data: never hit the network.
+ * The backend polices its own connections; this fences the renderer over
+ * http(s)/ws(s) (app:// and data: never hit the network). In local mode only
+ * loopback, and images a mail frame loads (plan 35), get through: see backstopAllows.
  */
 function installNetworkBackstop() {
+  const dev = isDev ? originOf(process.env.TERNO_DEV_URL!) : null;
+  const appOrigins = [APP_ORIGIN, ...(dev ? [dev] : [])];
   session.defaultSession.webRequest.onBeforeRequest({ urls: ["http://*/*", "https://*/*", "ws://*/*", "wss://*/*"] }, (details, callback) => {
-    let host = "";
-    try {
-      host = new URL(details.url).hostname;
-    } catch {
-      return callback({ cancel: true });
-    }
-    callback({ cancel: localMode && !isLoopbackHost(host) });
+    // frames are only looked at when they can matter: a local-mode image
+    const frame = localMode && details.resourceType === "image" ? requestFrame(details.frame) : null;
+    callback({ cancel: !backstopAllows({ url: details.url, resourceType: details.resourceType, frame }, { localMode, appOrigins }) });
   });
 }
 
@@ -208,7 +202,6 @@ function startBackend() {
         break;
       case "policy":
         localMode = msg.localMode;
-        printLocalModeChanged(localMode);
         mainDiag.setPolicy(msg);
         updates?.setLocalMode(localMode);
         void followLanguage(msg.language);
@@ -598,7 +591,6 @@ if (!app.requestSingleInstanceLock()) {
     installNetworkBackstop();
     registerPrint({
       trusted,
-      localMode: () => localMode,
       testPdfDir: testPdfDir(process.env, app.isPackaged, demo),
     });
     await switchLanguage(language, systemLanguages());

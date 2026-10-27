@@ -50,22 +50,21 @@ describe("main: what the print window may load", () => {
   const active = { url: "terno-print://job/abc", remote: new Set(["https://img.test/hero.png"]) };
 
   it("its own document, as the top frame, and nothing else of the scheme", () => {
-    expect(requestAllowed({ url: "terno-print://job/abc", resourceType: "mainFrame" }, active, true)).toBe(true);
-    expect(requestAllowed({ url: "terno-print://job/abc", resourceType: "subFrame" }, active, false)).toBe(false);
-    expect(requestAllowed({ url: "terno-print://job/other", resourceType: "mainFrame" }, active, false)).toBe(false);
-    expect(requestAllowed({ url: "terno-print://job/abc", resourceType: "mainFrame" }, null, false)).toBe(false);
+    expect(requestAllowed({ url: "terno-print://job/abc", resourceType: "mainFrame" }, active)).toBe(true);
+    expect(requestAllowed({ url: "terno-print://job/abc", resourceType: "subFrame" }, active)).toBe(false);
+    expect(requestAllowed({ url: "terno-print://job/other", resourceType: "mainFrame" }, active)).toBe(false);
+    expect(requestAllowed({ url: "terno-print://job/abc", resourceType: "mainFrame" }, null)).toBe(false);
   });
 
-  it("approved images only, never in local mode, never anything else", () => {
-    expect(requestAllowed({ url: "https://img.test/hero.png", resourceType: "image" }, active, false)).toBe(true);
-    expect(requestAllowed({ url: "https://img.test/hero.png", resourceType: "image" }, active, true)).toBe(false);
-    expect(requestAllowed({ url: "https://img.test/other.png", resourceType: "image" }, active, false)).toBe(false);
-    expect(requestAllowed({ url: "https://img.test/hero.png", resourceType: "script" }, active, false)).toBe(false);
-    expect(requestAllowed({ url: "https://img.test/hero.png", resourceType: "xhr" }, active, false)).toBe(false);
+  it("approved images only (in either mode, plan 35), never anything else", () => {
+    expect(requestAllowed({ url: "https://img.test/hero.png", resourceType: "image" }, active)).toBe(true);
+    expect(requestAllowed({ url: "https://img.test/other.png", resourceType: "image" }, active)).toBe(false);
+    expect(requestAllowed({ url: "https://img.test/hero.png", resourceType: "script" }, active)).toBe(false);
+    expect(requestAllowed({ url: "https://img.test/hero.png", resourceType: "xhr" }, active)).toBe(false);
     // mixed consent: the list holds the approved messages' URLs only; a blocked message's, even an image, is refused
-    expect(requestAllowed({ url: "https://tracker.test/svg-image.png", resourceType: "image" }, active, false)).toBe(false);
+    expect(requestAllowed({ url: "https://tracker.test/svg-image.png", resourceType: "image" }, active)).toBe(false);
     // a redirect arrives as a new URL: not on the list
-    expect(requestAllowed({ url: "https://tracker.test/pixel.gif", resourceType: "image" }, active, false)).toBe(false);
+    expect(requestAllowed({ url: "https://tracker.test/pixel.gif", resourceType: "image" }, active)).toBe(false);
   });
 
   it("the window's CSP allows web images only when some were approved, and never scripts", () => {

@@ -16,7 +16,7 @@ export interface PrintJob {
   subject: string;
   /** printed with headers; content only gets no footer, and the generic file name as its PDF title */
   headers: boolean;
-  /** remote images the renderer kept (approved messages only): the print window may load these, nothing else */
+  /** remote images the renderer kept (approved messages only, in either mode): the print window may load these, nothing else */
   remote: string[];
 }
 
@@ -57,14 +57,15 @@ export function isTrustedSender(frameUrl: string, isTopFrame: boolean, devUrl: s
 }
 
 /**
- * What the print window may load: its job's exact document, and, outside
- * local mode, the job's approved images. Everything else is cancelled
- * (redirects come back through here, so they meet the same list).
+ * What the print window may load: its job's exact document, and the job's
+ * approved images, in either mode (plan 35: the reader loaded them, so they
+ * print). Everything else is cancelled (redirects come back through here, so
+ * they meet the same list).
  */
-export function requestAllowed(req: { url: string; resourceType: string }, job: { url: string; remote: ReadonlySet<string> } | null, localMode: boolean): boolean {
+export function requestAllowed(req: { url: string; resourceType: string }, job: { url: string; remote: ReadonlySet<string> } | null): boolean {
   if (!job) return false;
   if (req.url === job.url) return req.resourceType === "mainFrame";
-  return !localMode && req.resourceType === "image" && job.remote.has(req.url);
+  return req.resourceType === "image" && job.remote.has(req.url);
 }
 
 /** The window's own policy: no scripts, no frames, images from data: (and the web only if some were approved). */

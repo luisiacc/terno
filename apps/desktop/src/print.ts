@@ -23,15 +23,12 @@ const IMAGE_GRACE_MS = 5_000;
 export interface PrintDeps {
   /** the main window's top frame, on the app's own URL */
   trusted(event: IpcMainInvokeEvent): boolean;
-  /** main's local-mode policy, read on every request */
-  localMode(): boolean;
   /** the packaged smoke's export directory (testPdfDir), else null */
   testPdfDir: string | null;
 }
 
 /** The job being rendered: immutable, looked up by its random URL. */
 let active: { url: string; doc: Uint8Array<ArrayBuffer>; csp: string; remote: ReadonlySet<string> } | null = null;
-let activeWindow: BrowserWindow | null = null;
 let queue: Promise<unknown> = Promise.resolve();
 /** "Mostrar en Finder" may only show a file an export of this session wrote. */
 const exported = new Map<string, string>();
@@ -44,7 +41,7 @@ function serialized<T>(fn: () => Promise<T>): Promise<T> {
 
 let printSession: Session | null = null;
 /** One handler and one filter for the partition, registered once (they read `active`, never a per-job closure). */
-function sessionFor(deps: PrintDeps): Session {
+function sessionFor(): Session {
   if (printSession) return printSession;
   // no "persist:" prefix: in memory only
   const ses = session.fromPartition(PARTITION);
@@ -53,7 +50,7 @@ function sessionFor(deps: PrintDeps): Session {
     if (!job || request.url !== job.url) return new Response(null, { status: 404 });
     return new Response(job.doc, { headers: { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": job.csp, "X-Content-Type-Options": "nosniff" } });
   });
-  ses.webRequest.onBeforeRequest((details, callback) => callback({ cancel: !requestAllowed(details, active, deps.localMode()) }));
+  ses.webRequest.onBeforeRequest((details, callback) => callback({ cancel: !requestAllowed(details, active) }));
   ses.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
   ses.setPermissionCheckHandler(() => false);
   ses.on("will-download", (event) => event.preventDefault());
@@ -68,8 +65,8 @@ function printFailed(error: unknown, action: "print" | "pdf"): void {
 }
 
 /** Loads the job into a fresh hidden window; listeners go on before it navigates. */
-async function load(job: PrintJob, deps: PrintDeps): Promise<BrowserWindow> {
-  const ses = sessionFor(deps);
+async function load(job: PrintJob): Promise<BrowserWindow> {
+  const ses = sessionFor();
   const csp = printCsp(job.remote.length > 0);
   // content only names no subject, not even in the PDF's metadata
   const doc = withHead(job.html, { csp, title: (job.headers && job.subject.trim()) || t("print.fileName") });
@@ -80,7 +77,6 @@ async function load(job: PrintJob, deps: PrintDeps): Promise<BrowserWindow> {
     height: 1200,
     webPreferences: { session: ses, sandbox: true, contextIsolation: true, nodeIntegration: false, javascript: false, webgl: false, spellcheck: false, backgroundThrottling: false },
   });
-  activeWindow = win;
   const wc = win.webContents;
   wc.setWindowOpenHandler(() => ({ action: "deny" }));
   wc.on("will-navigate", (event) => event.preventDefault());
@@ -92,16 +88,15 @@ async function load(job: PrintJob, deps: PrintDeps): Promise<BrowserWindow> {
 /** Forgets the job: window, document buffer, and anything the session kept. */
 async function finish(win: BrowserWindow | null): Promise<void> {
   if (win && !win.isDestroyed()) win.destroy();
-  activeWindow = null;
   active = null;
   await printSession?.clearStorageData().catch(() => {});
   await printSession?.clearCache().catch(() => {});
 }
 
-async function printJob(job: PrintJob, deps: PrintDeps): Promise<PrintResult> {
+async function printJob(job: PrintJob): Promise<PrintResult> {
   let win: BrowserWindow | null = null;
   try {
-    win = await load(job, deps);
+    win = await load(job);
     const wc = win.webContents;
     // the system dialog keeps its own paper choice (the page asks for ours through @page)
     return await new Promise<PrintResult>((resolve) => wc.print({ silent: false, printBackground: true }, (ok, reason) => resolve(printOutcome(ok, reason))));
@@ -113,10 +108,10 @@ async function printJob(job: PrintJob, deps: PrintDeps): Promise<PrintResult> {
   }
 }
 
-async function renderPdf(job: PrintJob, deps: PrintDeps): Promise<Buffer> {
+async function renderPdf(job: PrintJob): Promise<Buffer> {
   let win: BrowserWindow | null = null;
   try {
-    win = await load(job, deps);
+    win = await load(job);
     return await win.webContents.printToPDF({
       pageSize: PDF_PAGE[job.paper],
       margins: PDF_MARGINS,
@@ -162,7 +157,7 @@ async function exportPdf(event: IpcMainInvokeEvent, job: PrintJob, deps: PrintDe
   const target = path;
   return serialized(async () => {
     try {
-      await writeAtomically(target, await renderPdf(job, deps));
+      await writeAtomically(target, await renderPdf(job));
     } catch (error) {
       printFailed(error, "pdf");
       return { status: "failed", reason: "error" } as const;
@@ -178,16 +173,11 @@ export function registerPrint(deps: PrintDeps): void {
   ipcMain.handle("terno:print", async (event, value: unknown): Promise<PrintResult> => {
     const job = deps.trusted(event) ? parsePrintJob(value) : null;
     if (!job) return { status: "failed", reason: "error" };
-    return job.action === "pdf" ? exportPdf(event, job, deps) : serialized(() => printJob(job, deps));
+    return job.action === "pdf" ? exportPdf(event, job, deps) : serialized(() => printJob(job));
   });
   ipcMain.handle("terno:show-saved", (event, exportId: unknown) => {
     const path = deps.trusted(event) && typeof exportId === "string" ? exported.get(exportId) : undefined;
     if (path) shell.showItemInFolder(path);
     return Boolean(path);
   });
-}
-
-/** Local mode turned on mid-job: new requests are already refused; stop the ones in flight too. */
-export function printLocalModeChanged(localMode: boolean): void {
-  if (localMode && activeWindow && !activeWindow.isDestroyed() && activeWindow.webContents.isLoading()) activeWindow.webContents.stop();
 }
