@@ -85,3 +85,11 @@ A genuine ImapKit ACL fixture grants the login only lookup/read in Inbox and ins
 
 
 The read-only source guard passes both native MOVE and UIDPLUS fallback cases together with seven prior controls:9/9 in `imap-readonly-source-green.txt`. Mail, i18n and both backend typechecks plus owned oxlint pass. It prevents the observed duplicate copies before either true-move path and reports a permanent localized refusal; copy-only and All Mail delete-only read-only controls remain to qualify independently. No remote rollback or full-slice clearance.
+
+
+## Read-only delete and copy controls
+
+The All Mail read-only Inbox case is RED only at the specific diagnostic: ImapFlow already returns false without sending a mutation, and the current false-result guard fails permanently with generic change-refused guidance. No additional remote mutation or lost-location defect was observed. Require the precise read-only guidance after lock/epoch validation. The matched read-only All Mail-to-Inbox copy succeeds without MOVE or UIDPLUS and issues only UID COPY; do not apply destructive-write eligibility to copy-only sources. Original paired capture `imap-readonly-delete-red.txt`:1failed/1passed.
+
+
+Both new read-only controls and the nine earlier cases pass11/11 in `imap-readonly-all-green.txt`; mail and both backend typechecks, owned lint and diff check pass. All Mail deletion now reports read-only rather than the generic false-result diagnostic. The copy-only control requires exactly UID COPY, both exact remote copies and a succeeded operation, with local body retained. No broader MOVE ambiguity or final review approval.

@@ -405,6 +405,71 @@ describe("IMAP provider against ImapKit", () => {
     expect((await client.call("threads.get", { threadId: thread.id })).messages[0]?.bodyText).toBe("Exact read-only body\n");
   });
 
+  it("refuses All Mail archive from a read-only Inbox before STORE", async () => {
+    const { imap, backend, client, addAccount } = await setup({ imap: {
+      plugins: ["IDLE", "UIDPLUS", "SPECIAL-USE", "ENABLE", "CONDSTORE", "ACL"],
+      aclOwner: "mailbox-owner", storage: { INBOX: { acl: { testuser: "lr" } }, "": { separator: "/", folders: { All: { "special-use": "\\All", acl: { testuser: "lrswipkxtea" } } } } },
+    } });
+    const ctl = imap.server.control;
+    const targetRaw = raw({ subject: "Read-only All Mail", body: "Exact All Mail readonly body" });
+    const target = ctl.addMessage("INBOX", { raw: targetRaw });
+    ctl.addMessage("All", { raw: targetRaw });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const thread = (await client.call("threads.list", { view: "inbox" })).items.find((t) => t.subject === "Read-only All Mail")!;
+    const message = (await client.call("threads.get", { threadId: thread.id })).messages[0]!;
+    const locations = backend.store.providerStore(account.id).locations!;
+    const before = await locations.of([message.id]);
+    expect(before.map((l) => l.mailbox).sort()).toEqual(["All", "INBOX"]);
+    expect(ctl.sessions().some((session) => session.mailbox === "INBOX" && session.readOnly)).toBe(true);
+    const mutations: string[] = [];
+    imap.server.script.add({ on: "command", run: true, when: (context) => {
+      if (/^(?:UID )?(?:COPY|MOVE|STORE|EXPUNGE)$/.test(context.command ?? "")) {
+        if (mutations.length >= 32) throw new Error("Unexpected unbounded IMAP mutations");
+        mutations.push(context.command!);
+      }
+      return false;
+    } });
+    await client.call("threads.act", { threadIds: [thread.id], action: "archive" });
+    await backend.runWorker();
+    expect.soft(mutations).toEqual([]);
+    expect.soft(ctl.listMessages("INBOX", { raw: true }).map((m) => [m.uid, m.raw?.toString()])).toEqual([[target.uid, targetRaw]]);
+    expect.soft(ctl.listMessages("All", { raw: true }).map((m) => m.raw?.toString())).toEqual([targetRaw]);
+    expect.soft(await locations.of([message.id])).toEqual(before);
+    expect.soft(await client.call("ops.list", {})).toEqual([expect.objectContaining({ kind: "archive", state: "failed", attempts: 1, lastErrorI18n: { key: "errors.imap.readOnly" } })]);
+    expect((await client.call("threads.get", { threadId: thread.id })).messages[0]?.bodyText).toBe("Exact All Mail readonly body\n");
+  });
+
+  it("copies a read-only All Mail source to Inbox without MOVE or UIDPLUS", async () => {
+    const { imap, backend, client, addAccount } = await setup({ imap: {
+      plugins: ["IDLE", "SPECIAL-USE", "ENABLE", "CONDSTORE", "ACL"],
+      aclOwner: "mailbox-owner", storage: { INBOX: { acl: { testuser: "lrswipkxtea" } }, "": { separator: "/", folders: { All: { "special-use": "\\All", acl: { testuser: "lr" } } } } },
+    } });
+    const ctl = imap.server.control;
+    const targetRaw = raw({ subject: "Read-only copy", body: "Exact read-only copy body" });
+    const target = ctl.addMessage("All", { raw: targetRaw });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const thread = (await client.call("threads.list", { view: "all" })).items.find((t) => t.subject === "Read-only copy")!;
+    expect(thread).toBeDefined();
+    expect(ctl.sessions().some((session) => session.mailbox === "All" && session.readOnly)).toBe(true);
+    const mutations: string[] = [];
+    imap.server.script.add({ on: "command", run: true, when: (context) => {
+      if (/^(?:UID )?(?:COPY|MOVE|STORE|EXPUNGE)$/.test(context.command ?? "")) {
+        if (mutations.length >= 32) throw new Error("Unexpected unbounded IMAP mutations");
+        mutations.push(context.command!);
+      }
+      return false;
+    } });
+    await client.call("threads.act", { threadIds: [thread.id], action: "moveToInbox" });
+    await backend.runWorker();
+    expect(mutations).toEqual(["UID COPY"]);
+    expect(ctl.listMessages("All", { raw: true }).map((m) => [m.uid, m.raw?.toString()])).toEqual([[target.uid, targetRaw]]);
+    expect(ctl.listMessages("INBOX", { raw: true }).map((m) => m.raw?.toString())).toEqual([targetRaw]);
+    expect(await client.call("ops.list", {})).toEqual([expect.objectContaining({ kind: "moveToInbox", state: "succeeded", attempts: 1 })]);
+    expect((await client.call("threads.get", { threadId: thread.id })).messages[0]?.bodyText).toBe("Exact read-only copy body\n");
+  });
+
   it("archives on the server with MOVE and keeps the message (now in Archive) after resync", async () => {
     const { imap, backend, client, addAccount } = await setup();
     imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Archívame" }) });

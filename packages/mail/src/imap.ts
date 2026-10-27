@@ -609,6 +609,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             const lock = await c.getMailboxLock(r.inbox!);
             try {
               assertValidity(c, r.inbox!, inbox);
+              if (c.mailbox && c.mailbox.readOnly) throw new ProviderError(L("errors.imap.readOnly"), false);
               const deleted = await c.messageDelete(inbox.map((l) => l.uid), { uid: true });
               if (!deleted) throw new ProviderError(L("errors.imap.changeRefused"), false);
               for (const l of inbox) await locations.remove(l.message_id, r.inbox!);
