@@ -480,7 +480,13 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   // its body as the editor has it now (what "written" and a conversion's undo look at)
   let existing = existingKey ? materialize(existingKey) : undefined;
   if (existing && !sameStoredDraft(existing)) return;
-  let proof = existing && existing.mode !== mode && !existing.presentationExpired && lease ? beginDraftAckRead(existing) : undefined;
+  let proof: DraftAckRead | undefined, noWriter = false;
+  if (existing && existing.mode !== mode && !existing.presentationExpired && lease) {
+    const admission = beginDraftAckRead(existing);
+    if (admission.kind === "refused") return;
+    noWriter = admission.kind === "no-writer";
+    proof = admission.kind === "proof" ? admission.proof : admission.continuity;
+  }
   if (lease && proof) {
     lease.ackRead = proof;
     const owner = lease;
@@ -527,7 +533,18 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   const selectionRevision = getSelectionWriteRevision();
   const detail = loaded === undefined ? await loadThread(threadId) : loaded;
   const currentIntent = () => mine === intent && destinationAvailable(lease) && getSelectionWriteRevision() === selectionRevision && (!proof || Boolean(readDraftAck(proof))) && getApp().selectedId === selected && shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) === existingKey;
-  if (!detail || !currentIntent()) return;
+  if (!detail) return;
+  if (!currentIntent()) {
+    if (mode === "forward" && mine === intent && destinationAvailable(lease) && (!lease || (lease.valid && focusLease === lease)) && getSelectionWriteRevision() === selectionRevision && getApp().selectedId === selected && shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) === existingKey) {
+      const current = existingKey ? useDrafts.getState().drafts[existingKey] : undefined, accounts = getApp().accounts;
+      const message = answered(detail, accounts.map((a) => a.email)), source = accounts.find((a) => a.id === detail.thread.accountId);
+      if (current && message.attachmentState === "complete" && message.attachments.length && message.attachments.every((a) => a.assetId)) {
+        if (!source) snack.error(t("errors.accountGone"));
+        else if (forwardAccountMismatch(current.accountId, detail, accounts.map((a) => a.email))) snack.error(t("compose.forwardAccountMismatch", { account: source.email }));
+      }
+    }
+    return;
+  }
   takeFocus = focusUnchanged();
   existing = proof ? readDraftAck(proof) : existingKey ? materialize(existingKey) : undefined;
   if (existingKey && (!existing || existing.sending || existing.recovery)) return;
@@ -567,7 +584,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
       // Save the empty From transition before introducing that account's attachment owners.
       const active = typeof document === "undefined" ? null : document.activeElement;
       const beforeFlush = existing;
-      if (proof) {
+      if (proof && !noWriter) {
         if (!lease || focusLease !== lease || !lease.valid || lease.ackRead !== proof) return;
         const phase = beginForwardEmptyOwnerRead(proof);
         if (!phase || focusLease !== lease || !lease.valid || lease.ackRead !== proof) { if (phase) endDraftAckRead(phase); return; }
@@ -579,11 +596,12 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
       if (!existing || existing.sending || existing.recovery || existing.savedRev !== existing.localRev) return;
       const pristine = existing.id === null && existing.status === "clean" && existing.localRev === 0 && !authored(existing);
       if (existing.status !== "saved" && !pristine) return;
-      if (proof) {
-        if (!lease || focusLease !== lease || !lease.valid || lease.ackRead !== proof || existing.attachments?.length || existing.attachmentOwner) return;
+      if (proof && (!lease || focusLease !== lease || !lease.valid || lease.ackRead !== proof || existing.attachments?.length || existing.attachmentOwner)) return;
+      if (proof && !noWriter) {
+        if (!lease) return;
         const sealed = beginDraftAckRead(existing);
-        if (!sealed || focusLease !== lease || !lease.valid || lease.ackRead !== proof) { if (sealed) endDraftAckRead(sealed); return; }
-        proof = sealed; lease.ackRead = sealed;
+        if (sealed.kind !== "proof" || focusLease !== lease || !lease.valid || lease.ackRead !== proof) { if (sealed.kind === "proof") endDraftAckRead(sealed.proof); else if (sealed.kind === "no-writer") endDraftAckRead(sealed.continuity); return; }
+        proof = sealed.proof; lease.ackRead = sealed.proof;
       }
       if (await loadThread(threadId) !== detail || !currentIntent()) return;
       takeFocus = takeFocus && (typeof document === "undefined" || document.activeElement === active);

@@ -298,6 +298,7 @@ export function validBodyCheckpoint(checkpoint: BodyCheckpoint): boolean {
  */
 export function attachBody(key: string, read: BodyReader, options: { canonical?: boolean; checkpoint?: BodyCheckpoint } = {}): { changed(): void; reset(): void; dispose(snapshot?: { read: BodyReader; state: unknown; version: number }): void } {
   if (options.checkpoint && (options.checkpoint.key !== key || !validBodyCheckpoint(options.checkpoint))) throw new Error("Draft checkpoint is no longer available");
+  invalidateNoWriterRead(key);
   const prior = sources.get(key);
   const proof = writers.get(key)?.ackRead; if (proof) endDraftAckRead(proof);
   const source: BodySource = { read, dirty: prior?.dirty ?? false, editVersion: 0, failed: prior?.failed ?? false, detached: false, canonical: options.canonical ?? true };
@@ -307,6 +308,7 @@ export function attachBody(key: string, read: BodyReader, options: { canonical?:
       if (sources.get(key) !== source || source.detached) return;
       const d = get(key);
       if (!d || d.sending || draftEditsHeld()) return;
+      invalidateNoWriterRead(key);
       changeVersion++;
       source.editVersion++;
       const w = writer(key), proof = w.ackRead;
@@ -323,12 +325,14 @@ export function attachBody(key: string, read: BodyReader, options: { canonical?:
     // the editor reloaded what the draft has: nothing of its own to write
     reset() {
       if (sources.get(key) !== source || source.detached) return;
+      invalidateNoWriterRead(key);
       source.editVersion++;
       const proof = writers.get(key)?.ackRead; if (proof) endDraftAckRead(proof);
       source.dirty = false;
     },
     dispose(snapshot) {
       if (sources.get(key) !== source || source.detached) return;
+      invalidateNoWriterRead(key);
       const proof = writers.get(key)?.ackRead; if (proof) endDraftAckRead(proof);
       let unread = source.failed && source.dirty;
       if (!unread) { try { materialize(key); } catch { unread = true; } }
@@ -411,24 +415,32 @@ interface Writer {
 const writers = new Map<string, Writer>();
 const writer = (key: string): Writer => {
   let w = writers.get(key);
-  if (!w) writers.set(key, (w = { timer: null, inflight: null, dirtySince: null, attempts: 0, operation: 0, stopping: null }));
+  if (!w) { invalidateNoWriterRead(key); writers.set(key, (w = { timer: null, inflight: null, dirtySince: null, attempts: 0, operation: 0, stopping: null })); }
   return w;
 };
 
 declare const ackReadBrand: unique symbol;
 export type DraftAckRead = { readonly [ackReadBrand]: true };
-type AckRead = DraftAckRead & { key: string; writer?: Writer; current?: LocalDraft; source?: BodySource; version: number; phase: "strict" | "forward"; edge?: { before: LocalDraft; after: LocalDraft }; stop?: () => void };
+type AckRead = DraftAckRead & { key: string; writer?: Writer; noWriter?: true; current?: LocalDraft; source?: BodySource; version: number; phase: "strict" | "forward"; edge?: { before: LocalDraft; after: LocalDraft }; stop?: () => void };
+type AckAdmission = { kind: "proof"; proof: DraftAckRead } | { kind: "no-writer"; continuity: DraftAckRead } | { kind: "refused" };
+let noWriterRead: AckRead | undefined;
+function invalidateNoWriterRead(key: string): void { if (noWriterRead?.key === key) endDraftAckRead(noWriterRead); }
 
 /** A conversion may observe only exact, writer-owned acknowledgement publications. */
-export function beginDraftAckRead(expected: LocalDraft): DraftAckRead | undefined {
-  return beginAckRead(expected, "strict");
-}
-function beginAckRead(expected: LocalDraft, phase: AckRead["phase"]): DraftAckRead | undefined {
+export function beginDraftAckRead(expected: LocalDraft): AckAdmission {
   const w = writers.get(expected.key), source = sources.get(expected.key);
-  if (!w || w.publishing || w.stopping || draftEditsHeld() || expected.sending || expected.recovery || get(expected.key) !== expected || source?.dirty || source?.failed || source?.detached) return;
-  if (w.ackRead) endDraftAckRead(w.ackRead);
-  const read = { key: expected.key, writer: w, current: expected, source, version: source?.editVersion ?? 0, phase } as AckRead;
-  w.ackRead = read;
+  if (draftEditsHeld() || expected.sending || expected.recovery || get(expected.key) !== expected || source?.dirty || source?.failed || source?.detached || w?.publishing || w?.stopping) return { kind: "refused" };
+  const read = beginAckRead(expected, "strict", !w);
+  if (!read) return { kind: "refused" };
+  return w ? { kind: "proof", proof: read } : { kind: "no-writer", continuity: read };
+}
+function beginAckRead(expected: LocalDraft, phase: AckRead["phase"], allowNoWriter = false): DraftAckRead | undefined {
+  const w = writers.get(expected.key), source = sources.get(expected.key);
+  if ((!w && !allowNoWriter) || w?.publishing || w?.stopping || draftEditsHeld() || expected.sending || expected.recovery || get(expected.key) !== expected || source?.dirty || source?.failed || source?.detached) return;
+  if (w?.ackRead) endDraftAckRead(w.ackRead);
+  if (!w && noWriterRead) endDraftAckRead(noWriterRead);
+  const read = { key: expected.key, writer: w, ...(!w ? { noWriter: true as const } : {}), current: expected, source, version: source?.editVersion ?? 0, phase } as AckRead;
+  if (w) w.ackRead = read; else noWriterRead = read;
   read.stop = useDrafts.subscribe((state, previous) => {
     const current = read.current, edge = read.edge;
     if (state.held || previous.held || !current) { endDraftAckRead(read); return; }
@@ -436,7 +448,7 @@ function beginAckRead(expected: LocalDraft, phase: AckRead["phase"]): DraftAckRe
     if (next === current && before === current) return;
     if (!edge || next !== edge.after || before !== edge.before) endDraftAckRead(read);
   });
-  if (get(expected.key) !== expected || writers.get(expected.key) !== w || sources.get(expected.key) !== source) { endDraftAckRead(read); return; }
+  if (get(expected.key) !== expected || writers.get(expected.key) !== w || sources.get(expected.key) !== source || (!w && noWriterRead !== read)) { endDraftAckRead(read); return; }
   return read;
 }
 export function beginForwardEmptyOwnerRead(token: DraftAckRead): DraftAckRead | undefined {
@@ -446,13 +458,14 @@ export function beginForwardEmptyOwnerRead(token: DraftAckRead): DraftAckRead | 
 }
 export function readDraftAck(token: DraftAckRead): LocalDraft | undefined {
   const read = token as AckRead, w = read.writer, source = sources.get(read.key);
-  if (!w || w.ackRead !== read || writers.get(read.key) !== w || !read.current || get(read.key) !== read.current || source !== read.source || (source && (source.editVersion !== read.version || source.dirty || source.failed || source.detached)) || w.stopping || draftEditsHeld() || read.current.sending || read.current.recovery) { endDraftAckRead(read); return; }
+  if ((!w && (!read.noWriter || noWriterRead !== read)) || (w && w.ackRead !== read) || writers.get(read.key) !== w || !read.current || get(read.key) !== read.current || source !== read.source || (source && (source.editVersion !== read.version || source.dirty || source.failed || source.detached)) || w?.stopping || draftEditsHeld() || read.current.sending || read.current.recovery) { endDraftAckRead(read); return; }
   return read.current;
 }
 export function endDraftAckRead(token: DraftAckRead): void {
   const read = token as AckRead, w = read.writer;
   read.stop?.(); read.stop = undefined;
   if (w?.ackRead === read) w.ackRead = undefined;
+  if (noWriterRead === read) noWriterRead = undefined;
   read.writer = undefined; read.current = undefined; read.source = undefined; read.edge = undefined;
 }
 
@@ -791,6 +804,7 @@ export function forgetDraft(key: string): void {
   const current = get(key);
   if (current) retireHydrationIdentity(current);
   changeVersion++;
+  invalidateNoWriterRead(key);
   sources.delete(key);
   const w = writers.get(key);
   if (w?.ackRead) endDraftAckRead(w.ackRead);
