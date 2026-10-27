@@ -100,6 +100,8 @@ export interface SyncSink {
 
 
 export interface ProviderContext {
+  /** The backend owns durable flag observations and committed snapshot paging. */
+  flagObservation?: true;
   /** Shared by this backend; standalone provider callers may retain their own read limit. */
   incoming?: IncomingReadAdmission;
   incomingProcessor?: Pick<IncomingProcessor, "run">;
@@ -126,6 +128,8 @@ export interface ProviderContext {
 }
 
 export interface MailProvider {
+  /** Fresh minimal reads authoritatively represent all user-controlled flags. */
+  flagSnapshots?: true;
   verify(): Promise<void>;
   sync(sink: SyncSink): Promise<void>;
   /** Executes a queued op. For `send`, returns the provider's id of the sent message when known. */

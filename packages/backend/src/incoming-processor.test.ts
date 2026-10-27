@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { IncomingProcessingInput, IncomingProcessingResult, IncomingProcessor, ProviderContext, ProviderRegistry } from "@terno/mail/portable";
 import { afterEach, expect, it, vi } from "vitest";
+import type { ProviderStore } from "@terno/store";
 import { Backend, plaintextCipher } from "./backend";
 
 const cleanups: (() => Promise<void>)[] = [];
@@ -20,6 +21,13 @@ async function setup(processor: IncomingProcessor) {
   };
   const options = { dbPath: join(dir, "synthetic.db"), version: "test", cipher: plaintextCipher, providers, incomingProcessor: processor, autoSync: false, instantSearch: false, iconTransport: null };
   const backend = new Backend(options);
+  const scopes = new Map<number, ProviderStore>();
+  const scope = backend.store.providerStore.bind(backend.store);
+  vi.spyOn(backend.store, "providerStore").mockImplementation((id) => {
+    const value = scope(id);
+    scopes.set(id, value);
+    return value;
+  });
   let stopping: Promise<void> | undefined;
   const stop = () => stopping ??= backend.stop();
   cleanups.push(async () => { await stop(); rmSync(dir, { recursive: true, force: true }); });
@@ -29,7 +37,7 @@ async function setup(processor: IncomingProcessor) {
     accounts.push(account);
     await backend.provider(account.id);
   }
-  return { backend, contexts, accounts, stop };
+  return { backend, contexts, scopes, accounts, stop };
 }
 
 it("shares only the run capability and fences removed/replaced account generations", async () => {
@@ -102,4 +110,30 @@ it("keeps its store open through pending host retirement even when close settles
     expect(t.backend.store.isOpen).toBe(true);
   } finally { retire(); await stopping; }
   expect(t.backend.store.isOpen).toBe(false);
+});
+
+
+it("exposes the durable-store capability and fences captured snapshot pages by account lifetime", async () => {
+  const t = await setup({ async run() { return result; }, async close() {}, async whenIdle() {} });
+  const first = t.accounts[0]!, sibling = t.accounts[1]!;
+  const ctx = t.contexts.get(first.id)!;
+  expect.soft(ctx).toHaveProperty("flagObservation", true);
+  expect(ctx.store).toHaveProperty("pendingFlagSnapshots", expect.any(Function));
+  expect(await ctx.store.pendingFlagSnapshots({ limit: 10 })).toEqual({ items: [], throughMessageId: 0, hasMore: false });
+  let release!: () => void, enter!: () => void;
+  const blocked = new Promise<void>((resolve) => { release = resolve; });
+  const entered = new Promise<void>((resolve) => { enter = resolve; });
+  const read = vi.spyOn(t.scopes.get(first.id)!, "pendingFlagSnapshots").mockImplementationOnce(async () => {
+    enter(); await blocked;
+    return { items: [{ id: 1, providerMsgId: "synthetic" }], throughMessageId: 1, hasMore: false };
+  });
+  const pending = ctx.store.pendingFlagSnapshots({ limit: 10 }).then(() => "published", (error: Error) => error.name);
+  try {
+    await entered;
+    await t.backend.dropAccount(first.id);
+  } finally { release(); }
+  expect(await pending).toBe("AbortError");
+  await expect(ctx.store.pendingFlagSnapshots({ limit: 10 })).rejects.toMatchObject({ name: "AbortError" });
+  expect(read).toHaveBeenCalledOnce();
+  expect(await t.contexts.get(sibling.id)!.store.pendingFlagSnapshots({ limit: 10 })).toEqual({ items: [], throughMessageId: 0, hasMore: false });
 });

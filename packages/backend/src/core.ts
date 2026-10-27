@@ -905,6 +905,7 @@ export class BackendCore {
       messageByProviderId: (id) => read(() => store.messageByProviderId(id)),
       syncedMessages: () => read(() => store.syncedMessages()),
       pendingAttachmentBodies: (limit) => read(() => store.pendingAttachmentBodies(limit)),
+      pendingFlagSnapshots: (request) => read(() => store.pendingFlagSnapshots(request)),
       pendingBodies: (limit) => read(() => store.pendingBodies(limit)),
       countPendingBodies: () => read(() => store.countPendingBodies()),
       providerIds: (ids) => read(() => store.providerIds(ids)),
@@ -938,6 +939,7 @@ export class BackendCore {
       const stamp = await this.store.accounts.stamp(accountId);
       if (!this.current(life) || !stamp) return null;
       const provider = this.options.providers.create({
+        flagObservation: true,
         store: this.providerStore(life), account, config: cfg.config,
         incoming: {
           acquire: (id, signal, reset) => this.incoming.acquire(id, signal, reset),
