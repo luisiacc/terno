@@ -148,8 +148,10 @@ export class PartialCommit extends Error {
 }
 
 const WRITE_MARKER = Object.freeze({ version: 1 });
+type TrackRequest = <T>(request: IDBRequest<T>, success?: (result: T) => void) => void;
+type TrackCursor = (request: IDBRequest<IDBCursorWithValue | null>, visit: (cursor: IDBCursorWithValue) => void) => void;
 
-async function writeTransaction(tx: IDBTransaction, enqueue: (track: (request: IDBRequest) => void) => void): Promise<void> {
+async function writeTransaction(tx: IDBTransaction, enqueue: (track: TrackRequest, scan: TrackCursor) => void, inspected?: () => void): Promise<void> {
   let firstError: unknown, failed = false;
   let enqueued = 0, succeeded = 0, enqueueDone = false, cleared = false, clearQueued = false;
   const record = (error: unknown) => {
@@ -176,22 +178,32 @@ async function writeTransaction(tx: IDBTransaction, enqueue: (track: (request: I
     request.addEventListener("success", guarded(() => { cleared = true; }));
   };
   const bodySucceeded = guarded(() => { succeeded++; clear(); });
-  const track = (request: IDBRequest) => {
+  const track: TrackRequest = (request, success) => {
     enqueued++;
     request.addEventListener("error", observeError);
-    request.addEventListener("success", bodySucceeded);
+    request.addEventListener("success", success ? guarded(() => { success(request.result); bodySucceeded(); }) : bodySucceeded);
+  };
+  const scan: TrackCursor = (request, visit) => {
+    enqueued++;
+    request.addEventListener("error", observeError);
+    request.addEventListener("success", guarded(() => {
+      const cursor = request.result;
+      if (cursor) { visit(cursor); cursor.continue(); }
+      else bodySucceeded();
+    }));
   };
   try {
     const meta = tx.objectStore("meta");
     const guard = meta.getKey(UNCERTAINTY_KEY);
     guard.addEventListener("error", observeError);
     guard.addEventListener("success", guarded(() => {
+      inspected?.();
       if (guard.result !== undefined) { abort(new UncertainWriteError()); return; }
       const marker = meta.put(WRITE_MARKER, UNCERTAINTY_KEY);
       marker.addEventListener("error", observeError);
       marker.addEventListener("success", guarded(() => {
         if (failed) return;
-        enqueue(track);
+        enqueue(track, scan);
         enqueueDone = true;
         clear();
       }));
@@ -220,6 +232,7 @@ export const databaseName = (name: string) => `terno-${name}`;
 export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDatabase> {
   const open = factory.open(databaseName(name), IDB_VERSION);
   let admissionFailure: unknown, admissionFailed = false, upgradeInspected = true;
+  let upgradeWrite: Promise<{ ok: true } | { ok: false; error: unknown }> | undefined;
   open.onupgradeneeded = (event) => {
     const db = open.result, tx = open.transaction!;
     upgradeInspected = false;
@@ -227,21 +240,17 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       if (!admissionFailed) { admissionFailed = true; admissionFailure = error; }
       try { tx.abort(); } catch { /* The open result still must be refused. */ }
     };
-    const upgrade = () => {
-      if (event.oldVersion < 1) {
-        for (const t of PERSISTED) db.createObjectStore(t.name);
-        db.createObjectStore("meta");
-      } else {
+    const upgrade = (track: TrackRequest, scan: TrackCursor) => {
+      if (event.oldVersion >= 1) {
         if (event.oldVersion < 8) for (const name of ["flag_clocks", "message_flag_intents", "flag_op_effects"]) db.createObjectStore(name);
         if (event.oldVersion < 7) db.createObjectStore("draft_counter");
-        if (event.oldVersion < 2) upgradeMoveRows(open.transaction!);
-        if (event.oldVersion < 3) upgradeDrafts(open.transaction!);
-        if (event.oldVersion < 4) upgradeFacts(db, open.transaction!);
+        if (event.oldVersion < 2) upgradeMoveRows(tx, track);
+        if (event.oldVersion < 3) upgradeDrafts(tx, track);
+        if (event.oldVersion < 4) upgradeFacts(db, tx, track);
         if (event.oldVersion < 6) {
           for (const name of ["attachment_assets", "attachment_chunks", "attachment_bytes", "attachment_links"]) db.createObjectStore(name);
           const messages = open.transaction!.objectStore("messages");
-          const cursor = messages.openCursor();
-          cursor.onsuccess = () => { const c = cursor.result; if (!c) return; c.update({ ...c.value, attachment_pending: 1 }); c.continue(); };
+          scan(messages.openCursor(), (cursor) => track(cursor.update({ ...cursor.value, attachment_pending: 1 })));
         }
       }
       if (event.oldVersion < 8) {
@@ -249,38 +258,37 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
         open.transaction!.objectStore("message_flag_intents").createIndex("flag_snapshots", ["snapshot_account_id", "message_id"]);
       }
     };
-    const performUpgrade = () => { try { upgrade(); } catch (error) { refuse(error); } };
     if (!db.objectStoreNames.contains("meta")) {
       if (event.oldVersion !== 0) { refuse(new UncertainWriteError("unreadable")); return; }
-      upgradeInspected = true;
-      performUpgrade();
-      return;
+      try {
+        for (const t of PERSISTED) db.createObjectStore(t.name);
+        db.createObjectStore("meta");
+      } catch (error) { refuse(error); return; }
     }
-    try {
-      const guard = tx.objectStore("meta").getKey(UNCERTAINTY_KEY);
-      guard.addEventListener("error", () => refuse(new UncertainWriteError("unreadable", guard.error)));
-      guard.addEventListener("success", () => {
-        try {
-          upgradeInspected = true;
-          if (guard.result !== undefined) { refuse(new UncertainWriteError()); return; }
-          performUpgrade();
-        } catch (error) { refuse(new UncertainWriteError("unreadable", error)); }
-      });
-    } catch (error) { refuse(new UncertainWriteError("unreadable", error)); }
+    upgradeWrite = writeTransaction(tx, upgrade, () => { upgradeInspected = true; }).then(
+      () => ({ ok: true }), (error: unknown) => ({ ok: false, error }),
+    );
   };
   open.onblocked = () => {};
+  let acquired: IDBDatabase | undefined;
   try {
     const db = await request(open);
+    acquired = db;
     // another tab upgrading: let it (leadership makes this rare); this connection closes
     db.onversionchange = () => db.close();
-    try {
-      if (admissionFailed) throw admissionFailure;
-      if (!upgradeInspected) throw new UncertainWriteError("unreadable");
-      await assertCertain(db);
-      return db;
-    } catch (error) { db.close(); throw error; }
-  } catch (error) {
     if (admissionFailed) throw admissionFailure;
+    const outcome = await upgradeWrite;
+    if (outcome && !outcome.ok) throw outcome.error;
+    if (!upgradeInspected) throw new UncertainWriteError("unreadable");
+    await assertCertain(db);
+    return db;
+  } catch (error) {
+    acquired?.close();
+    const outcome = await upgradeWrite;
+    if (admissionFailed) throw admissionFailure;
+    const failure = outcome && !outcome.ok ? outcome.error : error;
+    if (!upgradeInspected || failure instanceof PartialCommit) throw new UncertainWriteError("unreadable", failure instanceof PartialCommit ? failure.original : failure);
+    if (outcome && !outcome.ok) throw failure;
     if (error instanceof DOMException && error.name === "VersionError") {
       throw new Error(`Database schema is newer than this app (IndexedDB v${IDB_VERSION}). Update Terno.`);
     }
@@ -292,20 +300,18 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
  * Version 2 (SQL v8): journaled move rows are keyed by their category too.
  * Rows of earlier moves came from the batch's single source (`from`).
  */
-function upgradeMoveRows(tx: IDBTransaction): void {
+function upgradeMoveRows(tx: IDBTransaction, track: TrackRequest): void {
   const rows = tx.objectStore("cat_move_rows");
-  const batches = tx.objectStore("cat_batches").getAll() as IDBRequest<Row[]>;
-  batches.onsuccess = () => {
-    const from = new Map(batches.result.map((b) => [b.id as number, (JSON.parse(b.scope_json as string) as { from?: number }).from]));
-    const all = rows.getAll() as IDBRequest<Row[]>;
-    all.onsuccess = () => {
-      rows.clear();
-      for (const r of all.result) {
+  track(tx.objectStore("cat_batches").getAll() as IDBRequest<Row[]>, (batches) => {
+    const from = new Map(batches.map((b) => [b.id as number, (JSON.parse(b.scope_json as string) as { from?: number }).from]));
+    track(rows.getAll() as IDBRequest<Row[]>, (all) => {
+      track(rows.clear());
+      for (const r of all) {
         const categoryId = from.get(r.batch_id as number);
-        if (categoryId !== undefined) rows.put({ ...r, category_id: categoryId }, [r.batch_id as number, r.thread_id as number, categoryId]);
+        if (categoryId !== undefined) track(rows.put({ ...r, category_id: categoryId }, [r.batch_id as number, r.thread_id as number, categoryId]));
       }
-    };
-  };
+    });
+  });
 }
 
 /**
@@ -315,33 +321,32 @@ function upgradeMoveRows(tx: IDBTransaction): void {
  * A mailbox with threads starts it from its first phase; an empty one has
  * nothing to do.
  */
-function upgradeFacts(db: IDBDatabase, tx: IDBTransaction): void {
+function upgradeFacts(db: IDBDatabase, tx: IDBTransaction, track: TrackRequest): void {
   if (!db.objectStoreNames.contains("correspondents")) db.createObjectStore("correspondents");
-  const count = tx.objectStore("threads").count();
-  count.onsuccess = () => {
-    if (count.result > 0) tx.objectStore("settings").put({ key: "facts_backfill", value_json: JSON.stringify({ phase: "senders", after: 0 }) }, "facts_backfill");
-  };
+  track(tx.objectStore("threads").count(), (count) => {
+    if (count > 0) track(tx.objectStore("settings").put({ key: "facts_backfill", value_json: JSON.stringify({ phase: "senders", after: 0 }) }, "facts_backfill"));
+  });
 }
 
 /**
  * Version 3 (SQL v9): drafts v2. Existing drafts are format 1 (bodyText holds
  * everything) and take their conversation from the message they reply to.
  */
-function upgradeDrafts(tx: IDBTransaction): void {
+function upgradeDrafts(tx: IDBTransaction, track: TrackRequest): void {
   const drafts = tx.objectStore("drafts");
   const messages = tx.objectStore("messages");
-  const all = drafts.getAll() as IDBRequest<Row[]>;
-  all.onsuccess = () => {
-    for (const d of all.result) {
+  track(drafts.getAll() as IDBRequest<Row[]>, (all) => {
+    for (const d of all) {
       const v2 = { thread_id: null, format: 1, mode: "new", bcc_json: "[]", subject_edited: 0, quoted_text: "", include_quote: 0, forward_of_message_id: null, ui_state: "open", revision: 1, ...d };
       if (d.in_reply_to_message_id == null) {
-        drafts.put(v2, d.id as number);
+        track(drafts.put(v2, d.id as number));
         continue;
       }
-      const m = messages.get(d.in_reply_to_message_id as number) as IDBRequest<Row | undefined>;
-      m.onsuccess = () => drafts.put({ ...v2, mode: "reply", thread_id: (m.result?.thread_id as number | undefined) ?? null }, d.id as number);
+      track(messages.get(d.in_reply_to_message_id as number) as IDBRequest<Row | undefined>, (m) => {
+        track(drafts.put({ ...v2, mode: "reply", thread_id: (m?.thread_id as number | undefined) ?? null }, d.id as number));
+      });
     }
-  };
+  });
 }
 
 export async function idbExists(factory: IDBFactory, name: string): Promise<boolean> {

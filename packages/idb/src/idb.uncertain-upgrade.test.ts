@@ -121,6 +121,38 @@ it("refuses a completed upgrade whose inspection success was hidden", async () =
   } finally { vi.restoreAllMocks(); raw?.close(); acquired?.close(); await store?.close(); await seed.close(); }
 });
 
+it("classifies an aborted upgrade whose inspection error was hidden as unreadable", async () => {
+  const factory = new IDBFactory(), name = crypto.randomUUID();
+  const seed = await IdbMailStore.open({ factory, name: `${name}-source`, instantSearch: false, platform });
+  let raw: IDBDatabase | undefined, exposed: IdbMailStore | undefined;
+  try {
+    await seed.settings.set("retained", "exact aborted upgrade control"); await seed.close();
+    raw = await request(factory.open(databaseName(`${name}-source`)));
+    const before = await image(raw); raw.close();
+    raw = await copyAsV9(factory, name, before); raw.close(); raw = undefined;
+    const getKey = IDBObjectStore.prototype.getKey, getAll = IDBObjectStore.prototype.getAll;
+    let hits = 0, errors = 0, rowReads = 0, terminal: string | null = null;
+    vi.spyOn(IDBObjectStore.prototype, "getAll").mockImplementation(function (this: IDBObjectStore, ...args) { rowReads++; return getAll.call(this, ...args); });
+    vi.spyOn(IDBObjectStore.prototype, "getKey").mockImplementation(function (this: IDBObjectStore, ...args) {
+      if (this.transaction.mode !== "versionchange" || args[0] !== UNCERTAINTY_KEY) return getKey.call(this, ...args);
+      hits++;
+      const tx = this.transaction;
+      tx.addEventListener("abort", () => { terminal = "abort"; });
+      const first = this.get("logicalSchema");
+      first.addEventListener("success", () => tx.abort());
+      const r = getKey.call(this, ...args);
+      r.addEventListener("error", (event) => { errors++; event.stopImmediatePropagation(); });
+      return r;
+    });
+    const error = await IdbMailStore.open({ factory, name, instantSearch: true, platform }).then((store) => { exposed = store; return null; }, (failure: unknown) => failure);
+    expect({ hits, errors, rowReads, terminal, exposed: exposed !== undefined }).toEqual({ hits: 1, errors: 1, rowReads: 0, terminal: "abort", exposed: false });
+    expect.soft(error).toMatchObject({ name: "UncertainWriteError", reason: "unreadable" });
+    vi.restoreAllMocks();
+    raw = await request(factory.open(databaseName(name)));
+    expect(raw.version).toBe(9); expect(await image(raw)).toEqual(before);
+  } finally { vi.restoreAllMocks(); raw?.close(); await exposed?.close(); await seed.close(); }
+});
+
 async function sentinel(factory: IDBFactory, name: string, version: number, marker: unknown) {
   const open = factory.open(databaseName(name), version);
   open.onupgradeneeded = () => {
