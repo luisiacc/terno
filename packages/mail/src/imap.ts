@@ -277,6 +277,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         state = undefined;
       }
 
+      // plan 38: new UIDs past a uidnext we kept, same UIDVALIDITY, are live mail (not a first sync, not a reset)
+      const live = state !== undefined;
       // 1) messages we haven't seen
       // After a UIDVALIDITY reset every message must be re-identified, including ones older
       // than the sync window that we already have (otherwise they'd be dropped as orphans).
@@ -396,7 +398,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           });
         }
       }
-      if (fresh.length) await sink.ingest(fresh);
+      if (fresh.length) await sink.ingest(fresh, { live });
 
       // 2) flags and expunges for what we already had
       if (state) {

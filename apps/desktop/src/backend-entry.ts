@@ -152,8 +152,8 @@ parentPort.on("message", async (event) => {
         demo: msg.demo,
         online: msg.online,
         onPolicy: (policy) => send({ type: "policy", ...policy }),
-        // plan 38: main owns the Dock (it shows the count with every window closed)
-        attention: { badge: (count) => send({ type: "badge", count }) },
+        // plan 38: main owns the Dock and the notifications (they work with every window closed)
+        attention: { badge: (count) => send({ type: "badge", count }), notify: (notice) => send({ type: "notify", notice }) },
         // free-form lines (the store, the search engine): the log keeps that one happened, never its text
         // (it can quote a provider's or a model's answer); a dev build also prints it
         log: (level, message, extra) => {

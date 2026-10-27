@@ -72,6 +72,8 @@ export interface TestNetwork {
    */
   refused: Set<string>;
   google: string | null;
+  /** plan 38: mail the next sync pass of its account hands over as live (new since the last pass) */
+  incoming: IncomingMessage[];
 }
 
 /** plan 25: the password the fake IMAP server accepts */
@@ -96,6 +98,11 @@ async function networkRegistry(net: TestNetwork): Promise<import("@terno/mail").
           if (net.hold) await net.hold;
           if (net.down) throw ProviderError.network("IMAP: connect ECONNREFUSED");
           if (await refusing(ctx)) throw refusal(ctx);
+          const mine = net.incoming.filter((m) => m.accountId === ctx.account.id);
+          if (mine.length) {
+            net.incoming = net.incoming.filter((m) => m.accountId !== ctx.account.id);
+            await sink.ingest(mine, { live: true });
+          }
           return demo.sync(sink);
         },
         async execute(op) {
@@ -147,7 +154,7 @@ export const test = base.extend<Fixtures>({
       if (existsSync(`${template}.search`)) copyFileSync(`${template}.search`, join(dir, "terno.db.search"));
     }
     const capture = backendOptions.smtpCapture ? await smtpRegistry() : null;
-    const net: TestNetwork = { down: false, hold: null, refused: new Set(), google: null };
+    const net: TestNetwork = { down: false, hold: null, refused: new Set(), google: null, incoming: [] };
     const providers = backendOptions.network ? await networkRegistry(net) : capture?.registry;
     // plan 20: the retry after a first failure comes in a second, then a minute (time enough to look)
     const connectivity = backendOptions.network ? { delays: [1000, 60_000] } : undefined;

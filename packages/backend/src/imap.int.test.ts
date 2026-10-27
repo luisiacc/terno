@@ -136,7 +136,7 @@ async function startDroppingSmtp() {
   return { received: [] as Captured[], port: (server.address() as { port: number }).port };
 }
 
-async function setup(opts: { smtp?: Parameters<typeof startSmtp>[0] } = {}) {
+async function setup(opts: { smtp?: Parameters<typeof startSmtp>[0]; attention?: import("./attention").AttentionHost } = {}) {
   const imap = await startImap();
   const smtp = opts.smtp?.dropDuringData ? await startDroppingSmtp() : await startSmtp(opts.smtp);
   const dir = mkdtempSync(join(tmpdir(), "terno-imap-"));
@@ -146,6 +146,7 @@ async function setup(opts: { smtp?: Parameters<typeof startSmtp>[0] } = {}) {
     cipher: plaintextCipher,
     providers: createRegistry({ imap: { allowInsecure: true } }),
     autoSync: false,
+    attention: opts.attention,
   });
   cleanups.push(async () => {
     await backend.stop();
@@ -312,6 +313,23 @@ describe("IMAP provider against ImapKit", () => {
     await new Promise((r) => setTimeout(r, 500)); // IDLE connection established
     imap.server.control.addMessage("INBOX", { raw: raw({ subject: "¡Llegó por IDLE!" }) });
     await expect.poll(async () => (await client.call("threads.list", { view: "inbox" })).items.map((t) => t.subject), { timeout: 8000 }).toContain("¡Llegó por IDLE!");
+  });
+
+  it("plan 38: after the first sync, a person's mail arriving through IDLE notifies once; list mail and the first sync never do", async () => {
+    const notices: import("@terno/core").MailNotice[] = [];
+    const { imap, backend, client, addAccount } = await setup({ attention: { badge: () => {}, notify: (n) => notices.push(n) } });
+    await backend.start();
+    // you wrote to Ana before; the first sync brings her old mail, which is no news
+    imap.server.control.addMessage("Sent", { raw: raw({ subject: "Hola Ana", from: "Luis <luis@test.local>", to: "Ana Pérez <ana@example.com>" }), flags: ["\\Seen"] });
+    imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Ya estaba" }) });
+    await addAccount(imap.port);
+    await expect.poll(async () => (await client.call("threads.list", { view: "inbox" })).items.length, { timeout: 8000 }).toBe(1);
+    await new Promise((r) => setTimeout(r, 1500)); // the first pass over, IDLE established
+    expect(notices).toEqual([]);
+    imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Boletín", from: "Xataka <boletin@xataka.com>", listId: "boletin.xataka.com" }) });
+    imap.server.control.addMessage("INBOX", { raw: raw({ subject: "¿Comemos?", body: "¿El jueves?" }) });
+    await expect.poll(() => notices.length, { timeout: 10_000 }).toBe(1);
+    expect(notices[0]).toMatchObject({ count: 1, senders: ["Ana Pérez"], subject: "¿Comemos?" });
   });
 });
 

@@ -102,6 +102,13 @@ contextBridge.exposeInMainWorld("ternoDesktop", {
     ipcRenderer.on("terno:reload-refused", relay);
     return () => ipcRenderer.removeListener("terno:reload-refused", relay);
   },
+  // plan 38: a notification's click (a conversation id, or null for the Inbox); main holds it until the page listens
+  onOpenThread: (listener: (threadId: number | null) => void) => {
+    const relay = (_e: unknown, threadId: unknown) => listener(Number.isSafeInteger(threadId) && (threadId as number) > 0 ? (threadId as number) : null);
+    ipcRenderer.on("terno:open-thread", relay);
+    ipcRenderer.send("terno:open-ready");
+    return () => ipcRenderer.removeListener("terno:open-thread", relay);
+  },
   // the Archivo and Ver menus' commands, whitelisted
   onCommand: (listener: (command: MenuCommand) => void) => {
     const relay = (_e: unknown, command: unknown) => {

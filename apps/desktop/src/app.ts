@@ -11,6 +11,7 @@ import {
   MessageChannelMain,
   nativeTheme,
   net,
+  Notification,
   powerMonitor,
   protocol,
   safeStorage,
@@ -25,7 +26,7 @@ import {
 import { diagSession, log as diagLog } from "@terno/core/diag";
 import { isLanguageSetting } from "@terno/i18n";
 import { parseAppearance, windowVibrancy, type Appearance } from "./appearance";
-import { DesktopAttention } from "./attention";
+import { DesktopAttention, OpenRelay } from "./attention";
 import { BUILD_ID } from "./diag/build-info";
 import { mainDiag } from "./diag/main";
 import { RestartPolicy } from "./diag/supervisor";
@@ -214,6 +215,9 @@ function startBackend() {
         break;
       case "badge":
         attention.badge(msg.count);
+        break;
+      case "notify":
+        attention.notify(msg.notice);
         break;
       case "open-external":
         if (/^https:\/\//i.test(msg.url)) void shell.openExternal(msg.url);
@@ -430,9 +434,34 @@ async function connectWindow(win: BrowserWindow) {
   win.webContents.postMessage("terno:backend-port", null, [port2]);
 }
 
-// ───────────────────────────── Dock badge (plan 38, attention.ts) ─────────────────────────────
+// ───────────────────────────── Dock badge and notifications (plan 38, attention.ts) ─────────────────────────────
 
-const attention = new DesktopAttention({ setBadge: (text) => app.dock?.setBadge(text) });
+/** A click opens its conversation in the window brought forward, once that window's page listens. */
+const openRelay = new OpenRelay((windowId, threadId) => {
+  const win = BrowserWindow.fromId(windowId);
+  if (win && windows.has(win) && !win.isDestroyed()) win.webContents.send("terno:open-thread", threadId);
+});
+
+const attention = new DesktopAttention({
+  setBadge: (text) => app.dock?.setBadge(text),
+  supported: () => Notification.isSupported(),
+  create: (options) => new Notification(options),
+  open: (threadId) => {
+    // macOS keeps Terno running with every window closed: a click brings one back
+    const win = BrowserWindow.getFocusedWindow() ?? [...windows].find((w) => !w.isDestroyed()) ?? createWindow();
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    openRelay.want(win.id, threadId);
+  },
+  shown: (count) => diagLog.info("notify.shown", { count }),
+  failed: () => diagLog.warn("notify.failed", { errorClass: "NotificationFailed" }),
+});
+
+ipcMain.on("terno:open-ready", (e) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (win && trusted(e)) openRelay.listening(win.id);
+});
 
 // ───────────────────────────── renderer storage from Única ─────────────────────────────
 
@@ -573,11 +602,13 @@ function createWindow() {
   // Every (re)load gets a fresh port: the previous one died with the old document (and its draft flusher with it).
   // The port goes once the new document is committed (did-navigate: main frame, never in-page): sent when the
   // navigation only starts, it reached the old document, and a reload (⌘R, View → Reload) waited forever (plan 24).
+  const windowId = win.id;
   win.webContents.on("did-start-navigation", (_e, _url, isInPlace, isMainFrame) => {
-    if (isMainFrame && !isInPlace) { flushRequests.navigating(win.webContents); nativeReloads.navigating(win.webContents); }
+    if (isMainFrame && !isInPlace) { flushRequests.navigating(win.webContents); nativeReloads.navigating(win.webContents); openRelay.gone(windowId); }
   });
   win.webContents.on("did-navigate", () => { flushRequests.committed(win.webContents); void connectWindow(win); });
   win.webContents.on("destroyed", () => { nativeReloads.cancel(win.webContents); flushRequests.destroyed(win.webContents); });
+  win.on("closed", () => openRelay.gone(windowId));
 
   // Links never navigate the app window; vetted schemes open in the system browser.
   win.webContents.setWindowOpenHandler(({ url }) => {

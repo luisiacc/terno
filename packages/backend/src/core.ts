@@ -84,7 +84,7 @@ export interface BackendCoreOptions {
   iconTransport?: IconTransport | null;
   /** tests: the icon fetcher's deadlines */
   iconTimeouts?: { requestMs?: number; budgetMs?: number };
-  /** plan 38: a host that shows the Dock badge itself (desktop main) */
+  /** plan 38: a host that shows the Dock badge and notifications itself (desktop main); without one, notices go to the page */
   attention?: AttentionHost;
 }
 
@@ -194,7 +194,7 @@ export class BackendCore {
   readonly connectivity: Connectivity;
   /** plan 22: sender icons (website icons and Google photos), idle until the first lookup */
   readonly icons: IconService;
-  /** plan 38: the Dock badge */
+  /** plan 38: the Dock badge and notifications for important new mail */
   readonly attention: Attention;
   private warming: Promise<void> | null = null;
   private idleTimer: ReturnType<typeof setInterval> | null = null;
@@ -256,7 +256,15 @@ export class BackendCore {
       timeouts: options.iconTimeouts,
     });
     if (options.online === false) this.icons.network(false);
-    this.attention = new Attention({ store: this.store, host: options.attention ?? null, publishCounts: () => this.emitCounts() });
+    this.attention = new Attention({
+      store: this.store,
+      host: options.attention ?? null,
+      // mail for the user's own windows, never for agents
+      emit: (notice) => this.server.emit("notify", notice, { origins: ["renderer", "dev"] }),
+      publishCounts: () => this.emitCounts(),
+      now: () => this.now(),
+      yieldTurn: () => this.platform.yield(),
+    });
     this.ready = this.init();
     this.server = new RpcServer(createHandlers(this), {
       onError: (error, method, payload) => {
@@ -673,7 +681,7 @@ export class BackendCore {
    * Ingests in slices sized to ~sliceBudgetMs and yields between slices so
    * interactive RPCs (list, search, open) interleave with big imports.
    */
-  async ingestSliced(messages: IncomingMessage[], applyFilters = true, life?: AccountLifetime): Promise<{ inserted: number[] }> {
+  async ingestSliced(messages: IncomingMessage[], applyFilters = true, life?: AccountLifetime, onInserted?: (ids: number[]) => void): Promise<{ inserted: number[] }> {
     const inserted: number[] = [];
     await this.runSliced(messages, 50, async (chunk) => {
       // one store command per slice: messages, filter claims and actions with their ops, and
@@ -683,6 +691,8 @@ export class BackendCore {
       const write = () => this.store.sync.ingest(chunk, { applyFilters, now: this.now(), classifier });
       const r = await (life ? this.accountWrite(life, write) : write());
       inserted.push(...r.inserted);
+      // plan 38: each committed slice, so a pass that fails later still hands over what it stored
+      onInserted?.(r.inserted);
       // RAM follows the database, never the other way round
       this.categorizer.apply(r.deltas);
       this.categorizer.noteBackfill(r.backfill);
@@ -1029,6 +1039,7 @@ export class BackendCore {
       this.signIns.delete(accountId);
     }
     this.connectivity.untrack(accountId);
+    this.attention.forget(accountId);
     this.unwatch.get(accountId)?.();
     this.unwatch.delete(accountId);
     this.syncAgain.delete(accountId);
@@ -1077,10 +1088,13 @@ export class BackendCore {
       if (!provider || !this.current(life)) return;
       // an account that syncs is one whose failures are counted (dropAccount untracks it)
       this.connectivity.track(accountId);
+      // plan 38: live mail this pass inserts is news once the account synced in this life (no first sync, no catch-up
+      // at launch); it's looked at when the pass is over (its flags, filters and bodies settled)
+      const arrivals = this.attention.beginPass(accountId);
       const sink: SyncSink = {
         signal: life.abort.signal,
-        ingest: async (messages) => {
-          await this.ingestSliced(messages, true, life);
+        ingest: async (messages, o) => {
+          await this.ingestSliced(messages, true, life, o?.live ? (ids) => arrivals.add(ids) : undefined);
         },
         // the account's own window, else the general one
         windowStart: this.now() - ((await this.store.accounts.get(accountId))?.syncWindowDays ?? (await readSettings(this.store)).syncWindowDays) * 86_400_000,
@@ -1117,9 +1131,11 @@ export class BackendCore {
       const started = performance.now();
       try {
         this.assertCurrent(life);
-        await provider.sync(sink);
+        // plan 38: the pass is over (done or failed): what it stored as live mail is looked at now
+        await provider.sync(sink).finally(() => arrivals.end());
         if (!this.current(life)) return;
         breadcrumb("sync", "sync.done", { accountKind, durationMs: performance.now() - started });
+        this.attention.prime(accountId);
         this.connectivity.succeeded(accountId);
         if (!this.connectivity.online && !startedOffline) {
           // the host went offline while this pass ran: what it fetched is in, the account says offline,

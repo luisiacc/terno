@@ -17,7 +17,7 @@ import { DiagnosticsSection } from "./diagnostics-section";
 import { useHasUpdates } from "~/lib/updates";
 import { UpdatesSection } from "./updates-section";
 import { SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
-import { badgeSupported } from "~/lib/notify";
+import { badgeSupported, pageNotificationsSupported } from "~/lib/notify";
 
 const WEB = import.meta.env.VITE_TARGET === "web";
 
@@ -111,15 +111,44 @@ const density = () =>
     { value: "compact", label: t("settings.general.density.compact") },
   ] as const;
 
-/** Plan 38: the unread count on the Dock (desktop) or the installed app's icon (a browser that has it). */
+/**
+ * Plan 38: system notifications, their preview, and the unread count on the
+ * Dock (desktop) or the installed app's icon (a browser that has it). In a
+ * browser the switch reads on only with the permission granted, and turning
+ * it on asks inside the click.
+ */
 function NotificationsGroup({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
   const desktop = !!window.ternoDesktop;
-  if (!desktop && !badgeSupported()) return null;
+  const page = !desktop && pageNotificationsSupported();
+  const [permission, setPermission] = useState(() => (page ? Notification.permission : "granted"));
+  const badge = desktop || badgeSupported();
+  if (!desktop && !page && !badge) return null;
+  const on = settings.notifications && (desktop || permission === "granted");
+  const toggle = async (next: boolean) => {
+    if (next && page && Notification.permission !== "granted") {
+      const answer = await Notification.requestPermission().catch(() => "denied" as const);
+      setPermission(answer);
+      if (answer !== "granted") return void snack.error(t("settings.general.notify.denied"));
+    }
+    await update({ notifications: next });
+  };
   return (
     <SettingsGroup title={t("settings.general.notifications")} testId="notifications-group">
-      <SettingsRow label={t(desktop ? "settings.general.badge" : "settings.general.badgeWeb")} hint={t(desktop ? "settings.general.badge.hint" : "settings.general.badgeWeb.hint")} testId="badge-row">
-        {(a) => <Switch {...a} data-testid="badge-switch" checked={settings.dockBadge} onCheckedChange={(next) => void update({ dockBadge: next })} />}
-      </SettingsRow>
+      {(desktop || page) && (
+        <SettingsRow label={t("settings.general.notify")} hint={t(desktop ? "settings.general.notify.hint" : "settings.general.notify.hintWeb")} testId="notify-row">
+          {(a) => <Switch {...a} data-testid="notify-switch" checked={on} onCheckedChange={(next) => void toggle(next)} />}
+        </SettingsRow>
+      )}
+      {(desktop || page) && (
+        <SettingsRow label={t("settings.general.notifyPreview")} hint={t("settings.general.notifyPreview.hint")} testId="notify-preview-row">
+          {(a) => <Switch {...a} data-testid="notify-preview-switch" disabled={!on} checked={settings.notificationPreview} onCheckedChange={(next) => void update({ notificationPreview: next })} />}
+        </SettingsRow>
+      )}
+      {badge && (
+        <SettingsRow label={t(desktop ? "settings.general.badge" : "settings.general.badgeWeb")} hint={t(desktop ? "settings.general.badge.hint" : "settings.general.badgeWeb.hint")} testId="badge-row">
+          {(a) => <Switch {...a} data-testid="badge-switch" checked={settings.dockBadge} onCheckedChange={(next) => void update({ dockBadge: next })} />}
+        </SettingsRow>
+      )}
     </SettingsGroup>
   );
 }
