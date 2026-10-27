@@ -487,6 +487,9 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     noWriter = admission.kind === "no-writer";
     proof = admission.kind === "proof" ? admission.proof : admission.continuity;
   }
+  const originalSourceId = existing ? activeSourceId(existing) : null;
+  const canonicalNullSource = Boolean(proof && existing && existing.threadId === null && existing.showSourceContext === true && !existing.presentationExpired && originalSourceId !== null && draftPresentationThread(existing) === threadId);
+  let originalContext: { threadId: number; accountId: number } | null | undefined;
   if (lease && proof) {
     lease.ackRead = proof;
     const owner = lease;
@@ -516,6 +519,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
       showStoredStandalone(current.key, mine, undefined, lease);
       return;
     }
+    if (canonicalNullSource) originalContext = context;
     if (current.presentationExpired) {
       const validated = validatedPresentation(snapshot, threadId);
       validateDraftPresentation(current.key, threadId);
@@ -534,6 +538,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   const detail = loaded === undefined ? await loadThread(threadId) : loaded;
   const currentIntent = () => mine === intent && destinationAvailable(lease) && getSelectionWriteRevision() === selectionRevision && (!proof || Boolean(readDraftAck(proof))) && getApp().selectedId === selected && shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) === existingKey;
   if (!detail) return;
+  if (canonicalNullSource && (!originalContext || detail.thread.id !== threadId || originalContext.threadId !== threadId || originalContext.accountId !== detail.thread.accountId)) return;
   if (!currentIntent()) {
     if (mode === "forward" && mine === intent && destinationAvailable(lease) && (!lease || (lease.valid && focusLease === lease)) && getSelectionWriteRevision() === selectionRevision && getApp().selectedId === selected && shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) === existingKey) {
       const current = existingKey ? useDrafts.getState().drafts[existingKey] : undefined, accounts = getApp().accounts;
@@ -624,11 +629,19 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   const snapshot = existing;
   const signature = getApp().accounts.find((a) => a.id === converted.accountId)?.signature;
   const admitted = await draftAttachmentBudget(converted, signature);
-  if (!currentIntent() || await loadThread(threadId) !== detail) return;
+  if (!currentIntent() || (!canonicalNullSource && await loadThread(threadId) !== detail)) return;
   const sourceId = converted.mode === "forward" ? converted.forwardOfMessageId : converted.inReplyToMessageId;
-  let sourceContext: { threadId: number; accountId: number } | null;
-  try { sourceContext = sourceId ? await client.call("drafts.sourceContext", { messageId: sourceId }) : null; } catch { return; }
+  let sourceContext: { threadId: number; accountId: number } | null, finalOriginalContext: typeof sourceContext;
+  try {
+    sourceContext = sourceId ? await client.call("drafts.sourceContext", { messageId: sourceId }) : null;
+    if (canonicalNullSource && originalSourceId !== sourceId) {
+      if (!currentIntent() || !lease?.valid || focusLease !== lease || lease.ackRead !== proof) return;
+      finalOriginalContext = originalSourceId ? await client.call("drafts.sourceContext", { messageId: originalSourceId }) : null;
+    } else finalOriginalContext = sourceContext;
+  } catch { return; }
   if (!currentIntent() || (lease && !lease.valid) || !sourceContext || sourceContext.threadId !== threadId || sourceContext.accountId !== detail.thread.accountId) return;
+  if (canonicalNullSource && (!finalOriginalContext || finalOriginalContext.threadId !== threadId || finalOriginalContext.accountId !== detail.thread.accountId)) return;
+  if (canonicalNullSource && (await loadThread(threadId) !== detail || !currentIntent() || !lease?.valid || focusLease !== lease || lease.ackRead !== proof)) return;
   existing = proof ? readDraftAck(proof) : existingKey ? materialize(existingKey) : undefined;
   if (existingKey && (!existing || existing.sending || existing.recovery || (!proof && (existing.accountId !== snapshot?.accountId || existing.id !== snapshot?.id || existing.generation !== snapshot?.generation || existing.revision !== snapshot?.revision || existing.threadId !== snapshot?.threadId || existing.mode !== snapshot?.mode || existing.inReplyToMessageId !== snapshot?.inReplyToMessageId || existing.forwardOfMessageId !== snapshot?.forwardOfMessageId || existing.showSourceContext !== snapshot?.showSourceContext || existing.presentationEpoch !== snapshot?.presentationEpoch || existing.localRev !== snapshot?.localRev || existing.bodyVersion !== snapshot?.bodyVersion || existing.bodyText !== snapshot?.bodyText || existing.bodyHtml !== snapshot?.bodyHtml)))) return;
   if (!getApp().accounts.some((a) => a.id === converted.accountId)) { snack.error(t("errors.accountGone")); return; }

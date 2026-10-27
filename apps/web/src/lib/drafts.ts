@@ -659,7 +659,12 @@ function save(key: string, copy = false): Promise<void> {
       if (cur.id !== saved.id || cur.generation !== saved.generation) retireHydrationIdentity(cur);
       const acknowledged: LocalDraft = { ...cur, ...context, id: saved.id, generation: saved.generation, revision: saved.revision, savedRev: rev, recovery: undefined, status: done ? "saved" : "dirty", attachmentOwner: Boolean(saved.attachments?.length) };
       const identity = d.id === null ? saved.id != null && typeof saved.generation === "string" && saved.revision === 1 : saved.id === d.id && saved.generation === d.generation && saved.revision === d.revision + 1;
-      const source = saved.mode === cur.mode && saved.threadId === cur.threadId && saved.inReplyToMessageId === cur.inReplyToMessageId && saved.forwardOfMessageId === cur.forwardOfMessageId && (saved.showSourceContext ?? false) === (cur.showSourceContext ?? false) && (!saved.showSourceContext || (cur.threadId !== null && (saved.presentationThreadId ?? null) === placement));
+      const canonicalNull = d.id !== null && d.threadId === null && cur.threadId === null && saved.threadId === null && saved.accountId === cur.accountId &&
+        d.showSourceContext === true && cur.showSourceContext === true && saved.showSourceContext === true && cur.mode !== "new" &&
+        (cur.mode === "forward" ? cur.forwardOfMessageId : cur.inReplyToMessageId) !== null && !d.presentationExpired && !cur.presentationExpired &&
+        typeof placement === "number" && draftPresentationThread(d) === placement && saved.presentationThreadId === placement &&
+        (d.sourceContextThreadId === undefined || d.sourceContextThreadId === placement) && (cur.sourceContextThreadId === undefined || cur.sourceContextThreadId === placement);
+      const source = saved.mode === cur.mode && saved.threadId === cur.threadId && saved.inReplyToMessageId === cur.inReplyToMessageId && saved.forwardOfMessageId === cur.forwardOfMessageId && (saved.showSourceContext ?? false) === (cur.showSourceContext ?? false) && (!saved.showSourceContext || (cur.threadId !== null && (saved.presentationThreadId ?? null) === placement) || canonicalNull);
       publishWriter(w, cur, acknowledged, !copy && sameContext && currentMount && identity && source);
       if (!done && !w.stopping && !sources.get(key)?.failed) {
         const next = save(key);
