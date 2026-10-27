@@ -9,6 +9,7 @@ Terno is a minimalist, fast email client: Electron (macOS first) plus a web buil
    - hairlines rather than boxes, quiet controls, SF on macOS
    - motion within the `--motion` cap (≤ 100 ms), and none when motion is reduced or off
    - every control keyboard-reachable and named for screen readers (axe-clean in light and dark, AA contrast in all themes)
+   - focus rings only while the user moves with Tab (plan 54): never after a click, a shortcut or a programmatic focus, and never around a whole list or pane (plan 52). Style focus with `focus-visible:` utilities, which are gated on this; text fields keep their rings.
 
    **English is the source language** for all copy (UI, errors, notifications, docs). UI strings go through the i18n catalog: English is the default, and Spanish (`es`) ships alongside it. Every new or changed string updates `en` and `es` together, and the type check fails if a locale is missing a key.
 3. **Performance.**

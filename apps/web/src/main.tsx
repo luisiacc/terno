@@ -11,6 +11,9 @@ import { loadDesignFaces } from "./lib/design";
 import { useApp } from "./state/app";
 import { ModalHostProvider } from "@terno/ui/components/modal-host";
 import { NativeReloadNotice } from "./components/diag/native-reload-notice";
+import { installFocusRing } from "./lib/focus-ring";
+
+installFocusRing();
 
 // the first frame is in the language this window used last (English needs no wait; a failure leaves English),
 // and in the design theme.js painted, with its faces (local files) given up to 150 ms so text doesn't swap under the user

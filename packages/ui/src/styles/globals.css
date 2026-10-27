@@ -24,6 +24,8 @@
 @source "../components";
 
 @custom-variant dark (&:is(.dark *));
+/* plan 54: focus rings only while the user moves with Tab (lib/focus-ring.ts sets the flag); a text field keeps its ring */
+@custom-variant focus-visible (&:focus-visible:where(:root[data-focus-ring] *, input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"], [type="submit"], [type="reset"], [type="file"], [type="color"]), textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]));
 
 @theme inline {
   /*
@@ -248,8 +250,14 @@
       scrollbar-color: var(--scrollbar-thumb) transparent;
     }
   }
-  /* keyboard focus only: a 2 px ring outside controls, inside rows and list items */
+  /* keyboard focus only, and only while moving with Tab (plan 54): never after a click, a shortcut or a focus
+     Terno moves itself; a 2 px ring outside controls, inside rows and list items; text fields keep theirs.
+     The bare rule replaces the browser's own focus outline, which would otherwise show whenever the flag is off. */
   :focus-visible {
+    outline: none;
+  }
+  :root[data-focus-ring] :focus-visible,
+  :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"], [type="submit"], [type="reset"], [type="file"], [type="color"]), textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]):focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 1px;
   }
