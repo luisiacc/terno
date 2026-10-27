@@ -1,5 +1,5 @@
-import { attachmentMessageBudgetAsync } from "@terno/core";
-import { appendAsset, assetError, assetRef, assetRow, createAsset, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
+import { ATTACHMENT_ACCOUNT_BYTES, attachmentMessageBudgetAsync } from "@terno/core";
+import { appendAsset, assetError, assetRef, assetRow, createAsset, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { sqlAssets, replaceAttachments } from "./attachments";
 import { senderVetoed, type Address, type FilterAction, type ThreadAction, type ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
@@ -541,8 +541,13 @@ export class SqlMailStore implements MailStore {
       this.db.run("UPDATE messages SET attachments_captured = 0 WHERE id = ?", messageId);
     }),
     create: async (p) => {
-      // Grace survives a refused reservation; cleanup and quota accounting still commit atomically.
-      this.db.tx(() => sqlAssets(this.db).beginOrphanGrace(p.accountId, p.now));
+      p = { ...p };
+      await this.db.tx(() => { const db = sqlAssets(this.db); validateAssetCreation(db, p); db.beginOrphanGrace(p.accountId, p.now); });
+      // Finite even if another caller adds backdated uploads between maintenance units.
+      for (let remaining = ATTACHMENT_ACCOUNT_BYTES / 1024; remaining > 0; remaining--) {
+        if (!await this.db.tx(() => cleanupAssets(sqlAssets(this.db), p.accountId, p.now))) break;
+        await this.yieldTo();
+      }
       return this.db.tx(() => createAsset(sqlAssets(this.db), () => this.db.uuid(), p));
     },
     append: async (accountId, id, index, data) => this.db.tx(() => appendAsset(sqlAssets(this.db), accountId, id, index, data)),

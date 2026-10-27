@@ -35,10 +35,23 @@ export function assetRow(db: AssetDb, accountId: number, id: string, complete = 
   return row;
 }
 
-export function createAsset(db: AssetDb, uuid: () => string, p: { accountId: number; filename: string; mime: string; size: number; contentId?: string | null; now: number }): AttachmentRef {
+export interface AssetInput { accountId: number; filename: string; mime: string; size: number; contentId?: string | null; now: number }
+
+export function validateAssetCreation(db: AssetDb, p: AssetInput): void {
   if (!db.account(p.accountId)) throw assetError();
-  for (const id of db.orphans(p.accountId, p.now - 86400000)) db.remove(id);
-  if (!Number.isSafeInteger(p.size) || p.size < 0 || p.size > MAX_ATTACHMENT_BYTES || db.used(p.accountId) + p.size + 1024 > ATTACHMENT_ACCOUNT_BYTES) throw new AttachmentLimitError();
+  if (!Number.isSafeInteger(p.size) || p.size < 0 || p.size > MAX_ATTACHMENT_BYTES) throw new AttachmentLimitError();
+}
+
+/** A committed maintenance unit; reservation failure cannot undo safe cleanup progress. */
+export function cleanupAssets(db: AssetDb, accountId: number, now: number): boolean {
+  const ids = db.orphans(accountId, now - 86400000);
+  for (const id of ids) if (!db.pinned(id)) db.remove(id);
+  return ids.length > 0;
+}
+
+export function createAsset(db: AssetDb, uuid: () => string, p: AssetInput): AttachmentRef {
+  validateAssetCreation(db, p);
+  if (db.used(p.accountId) + p.size + 1024 > ATTACHMENT_ACCOUNT_BYTES) throw new AttachmentLimitError();
   const row: AssetRow = { id: uuid(), account_id: p.accountId, filename: attachmentFilename(p.filename), mime: attachmentMime(p.mime), size: p.size, content_id: attachmentCid(p.contentId), received: 0, chunks: 0, complete: 0, created_at: p.now, orphan_grace_started_at: p.now };
   db.insert(row);
   return assetRef(row);

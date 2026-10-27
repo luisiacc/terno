@@ -1,5 +1,5 @@
-import { attachmentMessageBudgetAsync } from "@terno/core";
-import { appendAsset, assetError, assetRef, assetRow, createAsset, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
+import { ATTACHMENT_ACCOUNT_BYTES, attachmentMessageBudgetAsync } from "@terno/core";
+import { appendAsset, assetError, assetRef, assetRow, createAsset, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { idbAssets, replaceAttachments } from "./attachments";
 import { COUNT_CAP, LIST_FILTERS, parseSearch, resolveSearch, senderVetoed, type Address, type FilterAction, type ListFilter, type ThreadAction, type ThreadFilter, type ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
@@ -977,8 +977,13 @@ export class IdbMailStore implements MailStore {
       T(this.c, "messages").update(r, { attachments_captured: 0, attachment_pending: 1 });
     }),
     create: async (p) => {
-      // Persist grace before admission, even if quota refuses the new reservation.
-      await this.command(() => idbAssets(this.db).beginOrphanGrace(p.accountId, p.now));
+      p = { ...p };
+      await this.command(() => { const db = idbAssets(this.db); validateAssetCreation(db, p); db.beginOrphanGrace(p.accountId, p.now); });
+      // Finite even if another caller adds backdated uploads between maintenance units.
+      for (let remaining = ATTACHMENT_ACCOUNT_BYTES / 1024; remaining > 0; remaining--) {
+        if (!await this.command(() => cleanupAssets(idbAssets(this.db), p.accountId, p.now))) break;
+        await this.o.platform.yield();
+      }
       return this.command(() => createAsset(idbAssets(this.db), () => this.c.uuid(), p));
     },
     append: async (accountId, id, index, data) => this.command(() => appendAsset(idbAssets(this.db), accountId, id, index, data), { prefetch: () => readLazy(this.idb, this.db.table("attachment_bytes"), [`${id}:${index}`]) }),

@@ -24,6 +24,31 @@ export function defineAttachmentConformance(name: string, h: StoreHarness): void
     }
   };
   describe(`attachment conformance: ${name}`, () => {
+    it.each([50, 100])("commits bounded cleanup progress for %s expired assets independently of admission and reopen", async (count) => {
+      const [a] = await fresh();
+      const pinned = await upload(a!); const grace = await upload(a!);
+      await store.drafts.save(draft(a!, [pinned]), 0);
+      const undo = (await store.drafts.save(draft(a!, [grace]), 0))!;
+      const size = ATTACHMENT_CHUNK, old: AttachmentRef[] = [], data = bytesBase64(new Uint8Array(size).fill(90));
+      for (let i = 0; i < count; i++) {
+        const ref = await store.attachments.create({ accountId: a!, filename: "abandoned.bin", mime: "application/octet-stream", size, now: 0 });
+        await store.attachments.append(a!, ref.assetId, 0, data); await store.attachments.seal(a!, ref.assetId); old.push(ref);
+      }
+      await store.drafts.delete(undo.id);
+      // The first reservation observes a fresh full Undo grace for the old discarded draft.
+      await fillQuota(a!, count * (size + 1024) + 2054, 86400000);
+      const create = () => store.attachments.create({ accountId: a!, filename: "four MiB", mime: "application/octet-stream", size: 4 * 1024 * 1024, now: 86400001 });
+      if (count === 100) await expect(create()).resolves.toMatchObject({ size: 4 * 1024 * 1024 });
+      else await expect(create()).rejects.toThrow();
+      store = await h.reopen(store);
+      for (const ref of old) await expect(store.attachments.info(a!, ref.assetId)).rejects.toThrow();
+      for (const ref of [pinned, grace]) expect(await store.attachments.read(a!, ref.assetId, 0)).toBe("AP+A");
+      // Exercise the exact remaining quota through public admission after reopening.
+      const used = ATTACHMENT_ACCOUNT_BYTES - count * (size + 1024) + (count === 100 ? 4 * 1024 * 1024 + 1024 : 0);
+      await fillQuota(a!, used, 86400001);
+      await expect(store.attachments.create({ accountId: a!, filename: "full", mime: "text/plain", size: 0, now: 86400001 })).rejects.toThrow();
+      await store.debug.verify();
+    });
     it("re-ingests literal percent CIDs at exact quota without allocating or losing owned bytes", async () => {
       const [a] = await fresh();
       const parts = ["part%25@test", "part%@test"].map((contentId) => ({ filename: "inline.png", mime: "image/png", size: 3, contentId, bytes: new Uint8Array([0, 255, 128]) }));
