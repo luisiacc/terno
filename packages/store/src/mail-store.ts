@@ -275,7 +275,7 @@ export interface MailStore {
     /** threading, aggregates, filters (claims, actions, ops) and classification of one slice */
     ingest(batch: readonly IncomingMessage[], o: { applyFilters: boolean; now: number; classifier: ClassifierInput | null }): Promise<IngestOutcome>;
     setBody(messageId: number, text: string | null, html: string | null, o: { now: number; classifier: ClassifierInput | null; attachments?: import("./types").IncomingAttachment[]; captureUnavailable?: "size" }): Promise<{ touched: number[]; deltas: ModelDelta[]; auto: ClassifyResult["auto"]; opIds: string[] }>;
-    /** provider state for existing messages; skips messages with unsettled ops, read inside the same unit */
+    /** provider state for existing messages; preserves fields affected by queued/running ops inside the same unit */
     updateFlags(accountId: number, updates: readonly FlagUpdate[]): Promise<{ touched: number[] }>;
     remove(messageIds: readonly number[]): Promise<{ touched: number[] }>;
     pendingMessageIds(accountId: number): Promise<Set<number>>;

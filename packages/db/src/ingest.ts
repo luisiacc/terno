@@ -4,7 +4,7 @@ import type { IncomingMessage, ModelDelta } from "@terno/store";
 
 export type { IncomingAttachment, IncomingLocation, IncomingMessage } from "@terno/store";
 import { placeholders, type Db } from "./sqlite";
-import { pruneOpTargets } from "./repos";
+import { pendingFlagFields, pruneOpTargets } from "./repos";
 import { answeredThreads, FACT_COLUMNS, noteSentMail, ownAddresses, ownMailChanged, recomputeContext, referencesOfOwn } from "./facts";
 
 
@@ -326,15 +326,24 @@ function b(v: boolean): number {
 }
 
 function updateExisting(db: Db, id: number, msg: IncomingMessage): void {
+  const pending = pendingFlagFields(db, msg.accountId, [id]).get(id);
   db.run(
-    `UPDATE messages SET is_read = ?, is_starred = ?, in_inbox = ?, is_sent = ?, is_draft = ?, is_trash = ?,
-       is_spam = ?, gmail_labels = coalesce(?, gmail_labels), reply_to_json = coalesce(?, reply_to_json) WHERE id = ?`,
+    `UPDATE messages SET is_read = CASE WHEN ? THEN is_read ELSE ? END,
+       is_starred = CASE WHEN ? THEN is_starred ELSE ? END, in_inbox = CASE WHEN ? THEN in_inbox ELSE ? END,
+       is_sent = ?, is_draft = ?, is_trash = CASE WHEN ? THEN is_trash ELSE ? END,
+       is_spam = CASE WHEN ? THEN is_spam ELSE ? END,
+       gmail_labels = coalesce(?, gmail_labels), reply_to_json = coalesce(?, reply_to_json) WHERE id = ?`,
+    b(pending?.has("isRead") ?? false),
     b(msg.isRead),
+    b(pending?.has("isStarred") ?? false),
     b(msg.isStarred),
+    b(pending?.has("inInbox") ?? false),
     b(msg.inInbox),
     b(msg.isSent),
     b(msg.isDraft),
+    b(pending?.has("isTrash") ?? false),
     b(msg.isTrash),
+    b(pending?.has("isSpam") ?? false),
     b(msg.isSpam),
     msg.gmailLabels ? JSON.stringify(msg.gmailLabels) : null,
     msg.replyTo === undefined ? null : JSON.stringify(msg.replyTo),

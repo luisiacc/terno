@@ -10,6 +10,7 @@ import {
   type ClassifyResult,
   type Cursor,
   type IncomingMessage,
+  type LocalFlagField,
   type IndexBatch,
   type MailStore,
   type ModelDelta,
@@ -110,6 +111,7 @@ import {
   markOpUnknown,
   messageDoc,
   messagesWithPendingOps,
+  pendingFlagFields,
   recomputeThreads,
   recordUserActions,
   recoverOps,
@@ -857,21 +859,12 @@ export class IdbMailStore implements MailStore {
     updateFlags: (accountId, updates) =>
       this.command(
         () => {
-          const pending = messagesWithPendingOps(this.c, accountId);
           const messages = T(this.c, "messages");
           const threads = new Set<number>();
           for (const u of updates) {
-            // optimistic local state wins until its op settles; Gmail's labels aren't optimistic state (Codex review 2, #5)
-            if (pending.has(u.messageId)) {
-              const p = u.gmailLabels ? messages.get(u.messageId) : undefined;
-              if (p && p.account_id === accountId) {
-                messages.update(p, { gmail_labels: JSON.stringify(u.gmailLabels) });
-                threads.add(p.thread_id);
-              }
-              continue;
-            }
+            const pending = pendingFlagFields(this.c, accountId, u.messageId);
             const sets: [string, number | string][] = Object.entries(u.flags)
-              .filter(([k]) => FLAG_COLUMNS[k])
+              .filter(([k]) => FLAG_COLUMNS[k] && !pending.has(k as LocalFlagField))
               .map(([k, v]) => [FLAG_COLUMNS[k]!, v ? 1 : 0]);
             // plan 17 (Codex review 1, #8): Gmail's category moves change who a message is from
             if (u.gmailLabels) sets.push(["gmail_labels", JSON.stringify(u.gmailLabels)]);

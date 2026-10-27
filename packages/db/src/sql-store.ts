@@ -10,6 +10,7 @@ import {
   type ClassifierInput,
   type Cursor,
   type IncomingMessage,
+  type LocalFlagField,
   type IndexBatch,
   type MailStore,
   type ModelDelta,
@@ -101,6 +102,7 @@ import {
   loadUserActions,
   markOpUnknown,
   messagesWithPendingOps,
+  pendingFlagFields,
   putSecret,
   recordUserActions,
   recoverOps,
@@ -421,17 +423,12 @@ export class SqlMailStore implements MailStore {
     updateFlags: async (accountId, updates) =>
       this.db.tx(() => {
         // read inside this unit: a user action committed just before is honoured
-        const pending = messagesWithPendingOps(this.db, accountId);
+        const pending = pendingFlagFields(this.db, accountId, updates.map((u) => u.messageId));
         const threads = new Set<number>();
         for (const u of updates) {
-          // optimistic local state wins until its op settles; Gmail's labels aren't optimistic state (Codex review 2, #5)
-          if (pending.has(u.messageId)) {
-            const r = u.gmailLabels ? this.db.get<{ thread_id: number }>("UPDATE messages SET gmail_labels = ? WHERE id = ? AND account_id = ? RETURNING thread_id", JSON.stringify(u.gmailLabels), u.messageId, accountId) : undefined;
-            if (r) threads.add(r.thread_id);
-            continue;
-          }
+          const owned = pending.get(u.messageId);
           const sets: [string, number | string][] = Object.entries(u.flags)
-            .filter(([k]) => FLAG_COLUMNS[k])
+            .filter(([k]) => FLAG_COLUMNS[k] && !owned?.has(k as LocalFlagField))
             .map(([k, v]) => [FLAG_COLUMNS[k]!, v ? 1 : 0]);
           // plan 17 (Codex review 1, #8): Gmail's category moves (Promotions ↔ Primary) change who a message is from
           if (u.gmailLabels) sets.push(["gmail_labels", JSON.stringify(u.gmailLabels)]);

@@ -12,6 +12,7 @@ import { defineSearchConformance } from "./search";
 import { defineDraftRecoveryConformance } from "./draft-recovery";
 import { defineAttachmentConformance } from "./attachments";
 import { defineFactsConformance } from "./facts";
+import { defineFlagIntentConformance } from "./flag-intents";
 
 export interface StoreHarness {
   /** a fresh, empty, migrated store */
@@ -40,6 +41,7 @@ function corpusOf(s: StoreSnapshot): SearchCorpus {
 export function defineStoreConformance(name: string, harness: StoreHarness): void {
   defineAttachmentConformance(name, harness);
   defineDraftRecoveryConformance(name, harness);
+  defineFlagIntentConformance(name, harness);
   const open: MailStore[] = [];
   const fresh = async () => {
     const s = await harness.open();

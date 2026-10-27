@@ -1,4 +1,4 @@
-import { assetError, linkAssets, validateAssets } from "@terno/store";
+import { assetError, linkAssets, operationFlagFields, validateAssets, type LocalFlagField } from "@terno/store";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import { sqlAssets } from "./attachments";
@@ -19,7 +19,7 @@ import {
 } from "@terno/core";
 import { addToCategory, removeFromCategory, type AddedBy } from "./categorize";
 import { AWAITING_AUTH, AWAITING_NETWORK, type DraftInput, type DraftRow, type OpPark, type OpRow } from "@terno/store";
-import type { Db, Param } from "./sqlite";
+import { placeholders, type Db, type Param } from "./sqlite";
 
 export type { DraftRow, OpRow } from "@terno/store";
 
@@ -587,6 +587,28 @@ export function messagesWithPendingOps(db: Db, accountId: number): Set<number> {
       )
       .map((r) => r.message_id),
   );
+}
+
+/** Only the current messages' unsettled effects, read in the caller's transaction. */
+export function pendingFlagFields(db: Db, accountId: number, messageIds: readonly number[]): Map<number, Set<LocalFlagField>> {
+  const out = new Map<number, Set<LocalFlagField>>();
+  for (let i = 0; i < messageIds.length; i += 500) {
+    const chunk = messageIds.slice(i, i + 500);
+    for (const row of db.all<{ message_id: number; kind: string }>(
+      `SELECT DISTINCT t.message_id, o.kind FROM op_targets t INDEXED BY op_targets_msg
+       JOIN ops o ON o.id = t.op_id
+       WHERE t.message_id IN (${placeholders(chunk.length)}) AND o.account_id = ? AND o.state IN ('queued', 'running')`,
+      ...chunk,
+      accountId,
+    )) {
+      const fields = operationFlagFields(row.kind);
+      if (!fields.length) continue;
+      let pending = out.get(row.message_id);
+      if (!pending) out.set(row.message_id, (pending = new Set()));
+      for (const field of fields) pending.add(field);
+    }
+  }
+  return out;
 }
 
 // ───────────────────────────── user actions (learning) ─────────────────────────────

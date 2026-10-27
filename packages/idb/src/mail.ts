@@ -44,7 +44,7 @@ import {
   withAccountPrefs,
 } from "@terno/core";
 import type { OwnerIdentity } from "@terno/core/rpc";
-import { AWAITING_AUTH, AWAITING_NETWORK, keepInPage, type OpPark, type DraftInput, type DraftRow, type IncomingMessage, type ListParams, type ModelDelta, type OpRow, type OwnerClaim, type MessageState, type Page, type ScopeParams, type SearchMessageDoc, type SearchThreadDoc } from "@terno/store";
+import { AWAITING_AUTH, AWAITING_NETWORK, keepInPage, operationFlagFields, type LocalFlagField, type OpPark, type DraftInput, type DraftRow, type IncomingMessage, type ListParams, type ModelDelta, type OpRow, type OwnerClaim, type MessageState, type Page, type ScopeParams, type SearchMessageDoc, type SearchThreadDoc } from "@terno/store";
 import type { MemDb, Row, Table } from "./mem";
 import { answeredThreads, factsReady, noteSentMail, ownAddresses, ownMailChanged, recomputeContext, referencesOfOwn, type FactsQueue } from "./facts";
 
@@ -553,14 +553,15 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
 }
 
 function updateExisting(c: Ctx, row: R, msg: IncomingMessage): void {
+  const pending = pendingFlagFields(c, msg.accountId, row.id);
   T(c, "messages").update(row, {
-    is_read: b(msg.isRead),
-    is_starred: b(msg.isStarred),
-    in_inbox: b(msg.inInbox),
+    is_read: pending.has("isRead") ? row.is_read : b(msg.isRead),
+    is_starred: pending.has("isStarred") ? row.is_starred : b(msg.isStarred),
+    in_inbox: pending.has("inInbox") ? row.in_inbox : b(msg.inInbox),
     is_sent: b(msg.isSent),
     is_draft: b(msg.isDraft),
-    is_trash: b(msg.isTrash),
-    is_spam: b(msg.isSpam),
+    is_trash: pending.has("isTrash") ? row.is_trash : b(msg.isTrash),
+    is_spam: pending.has("isSpam") ? row.is_spam : b(msg.isSpam),
     gmail_labels: msg.gmailLabels ? JSON.stringify(msg.gmailLabels) : row.gmail_labels,
     ...(msg.replyTo === undefined ? {} : { reply_to_json: JSON.stringify(msg.replyTo) }),
   });
@@ -1403,6 +1404,18 @@ export function messagesWithPendingOps(c: Ctx, accountId: number): Set<number> {
   for (const o of T(c, "ops").by("fk_account_id", accountId)) {
     if (o.state !== "queued" && o.state !== "running") continue;
     for (const t of targets.by("fk_op_id", o.id)) out.add(t.message_id);
+  }
+  return out;
+}
+
+/** Only the current message's targets; unrelated account operations are not scanned. */
+export function pendingFlagFields(c: Ctx, accountId: number, messageId: number): Set<LocalFlagField> {
+  const out = new Set<LocalFlagField>();
+  const ops = T(c, "ops");
+  for (const target of T(c, "op_targets").by("message", messageId)) {
+    const op = ops.get(target.op_id);
+    if (!op || op.account_id !== accountId || (op.state !== "queued" && op.state !== "running")) continue;
+    for (const field of operationFlagFields(op.kind)) out.add(field);
   }
   return out;
 }

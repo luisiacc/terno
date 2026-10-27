@@ -84,11 +84,11 @@ export interface SyncSink {
   ingest(messages: IncomingMessage[]): Promise<void>;
   setBody(messageId: number, text: string | null, html: string | null, attachments?: import("@terno/store").IncomingAttachment[], capture?: { captureUnavailable?: "size" }): Promise<void>;
   removeMessages(messageIds: number[]): Promise<void>;
-  /** Applies provider-side state to existing messages (skips messages with pending local ops). */
+  /** Applies provider state, preserving fields affected by queued/running local operations. */
   updateFlags(updates: FlagUpdate[]): Promise<void>;
   /** Sync window start (ms): only mail newer than this is downloaded initially. */
   windowStart: number;
-  /** message ids with unsettled local ops: don't overwrite their flags */
+  /** Message ids with queued/running local operations; field protection is applied by updateFlags. */
   pendingMessageIds(): Promise<Set<number>>;
   setSyncState(patch: Partial<AccountSyncState>): Promise<void>;
   signal: AbortSignal;
