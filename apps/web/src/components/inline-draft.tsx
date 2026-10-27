@@ -352,7 +352,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true }
 
   const me = account?.displayName || account?.email || "";
   const who = d ? d.toText.split(",")[0]?.replace(/<.*$/, "").replace(/"/g, "").trim() || d.toText : "";
-  const label = !d || d.mode === "new" ? "" : formLabel(d.mode === "forward", who);
+  const label = !d ? "" : d.mode === "new" ? t("compose.newMessage") : formLabel(d.mode === "forward", who);
 
   return (
     <div ref={rootRef} className="mt-5 rounded-xl bg-(--draft-bg) [box-shadow:0_0_0_var(--hairline-w)_var(--draft-ring),var(--draft-shadow)]" data-testid="draft-slot" data-state={state} data-thread={threadId}>
@@ -383,7 +383,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true }
         )}
       </Expand>
       <Expand open={state === "open"} onOpening={(el) => keepInView(el)}>
-        {d && d.mode !== "new" && (
+        {d && (
           <form
             aria-label={label}
             data-testid="composer"
@@ -406,8 +406,8 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true }
               }
             }}
           >
-            <DraftFieldsForm d={d} accounts={accounts} showSubject={d.mode === "forward"} />
-            <ComposerBody draftKey={d.key} placeholder={d.mode === "forward" ? t("compose.bodyPlaceholder.forward") : t("compose.bodyPlaceholder.reply")} className="block min-h-[132px] w-full px-3.5 pt-3 pb-1 text-base" />
+            <DraftFieldsForm d={d} accounts={accounts} showSubject={d.mode === "forward" || d.mode === "new"} />
+            <ComposerBody draftKey={d.key} placeholder={d.mode === "new" ? t("compose.bodyPlaceholder.new") : d.mode === "forward" ? t("compose.bodyPlaceholder.forward") : t("compose.bodyPlaceholder.reply")} className="block min-h-[132px] w-full px-3.5 pt-3 pb-1 text-base" />
             <DraftAttachments d={d} />
             <SignaturePreview accountId={d.accountId} className="px-3.5 pb-2" />
             <Quote d={d} />

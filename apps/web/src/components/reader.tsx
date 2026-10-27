@@ -444,6 +444,10 @@ export function Reader() {
   const draftShown = useApp((s) => s.draftShown);
   const draftKey = useDrafts((s) => (selectedId === null ? null : shownDraftKey(s.drafts, selectedId, draftShown)));
 
+  useEffect(() => {
+    if (draftShown?.threadId === selectedId && draftShown.key !== draftKey) setApp({ draftShown: null });
+  }, [draftShown, selectedId, draftKey]);
+
   const toolbarRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);

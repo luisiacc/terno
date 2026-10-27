@@ -59,6 +59,8 @@ export interface LocalDraft {
   generation?: string;
   /** Independent of save status: typing and UI changes cannot revive a terminal target. */
   recovery?: DraftRecovery;
+  /** Session-only editor placement when storage context normalizes to standalone. */
+  presentationThreadId?: number;
   status: DraftStatus;
   /** bumped by every edit; saved = what the server acknowledged */
   localRev: number;
@@ -365,6 +367,7 @@ export function editDraft(key: string, patch: Partial<DraftFields>): boolean {
   put({
     ...d,
     ...patch,
+    ...(patch.threadId !== undefined ? { presentationThreadId: undefined } : {}),
     ...(patch.attachments?.length === 0 && d.recovery && (d.recovery.state === "missing" || d.recovery.state === "refused") ? { attachmentOwner: false } : {}),
     localRev: d.localRev + 1,
     status: d.status === "saving" ? "saving" : "dirty",
@@ -456,7 +459,7 @@ function save(key: string, copy = false): Promise<void> {
       }
       const done = cur.localRev === rev;
       const context = cur.accountId === d.accountId && cur.threadId === d.threadId && cur.mode === d.mode && cur.inReplyToMessageId === d.inReplyToMessageId && cur.forwardOfMessageId === d.forwardOfMessageId
-        ? { threadId: saved.threadId, mode: saved.mode, inReplyToMessageId: saved.inReplyToMessageId, forwardOfMessageId: saved.forwardOfMessageId } : {};
+        ? { threadId: saved.threadId, mode: saved.mode, inReplyToMessageId: saved.inReplyToMessageId, forwardOfMessageId: saved.forwardOfMessageId, ...(d.threadId !== null && (saved.threadId !== d.threadId || saved.mode === "new") ? { presentationThreadId: cur.presentationThreadId ?? d.threadId } : {}) } : {};
       put({ ...cur, ...context, id: saved.id, generation: saved.generation, revision: saved.revision, savedRev: rev, recovery: undefined, status: done ? "saved" : "dirty", attachmentOwner: Boolean(saved.attachments?.length) });
       if (!done && !w.stopping) {
         const next = save(key);
@@ -637,6 +640,9 @@ interface DraftIndex {
   /** conversations with a draft that has something written in it */
   written: Set<number>;
 }
+/** Durable context and session editor placement have independent lifetimes. */
+export const draftPresentationThread = (d: LocalDraft): number | null => d.presentationThreadId ?? (d.mode === "new" ? null : d.threadId);
+
 /** One pass per drafts update (the map is replaced on every change), shared by every row, the reader and the strip. */
 const indexes = new WeakMap<Record<string, LocalDraft>, DraftIndex>();
 export function draftIndex(drafts: Record<string, LocalDraft>): DraftIndex {
@@ -644,10 +650,11 @@ export function draftIndex(drafts: Record<string, LocalDraft>): DraftIndex {
   if (index) return index;
   index = { newest: new Map(), written: new Set() };
   for (const d of Object.values(drafts)) {
-    if (d.threadId === null || d.mode === "new") continue;
-    const best = index.newest.get(d.threadId);
-    if (!best || d.updatedAt > best.updatedAt) index.newest.set(d.threadId, d);
-    if (authored(d) && (d.bodyText.trim() || d.id !== null || sources.get(d.key)?.dirty)) index.written.add(d.threadId);
+    const threadId = draftPresentationThread(d);
+    if (threadId === null) continue;
+    const best = index.newest.get(threadId);
+    if (!best || d.updatedAt > best.updatedAt) index.newest.set(threadId, d);
+    if (authored(d) && (d.bodyText.trim() || d.id !== null || sources.get(d.key)?.dirty)) index.written.add(threadId);
   }
   indexes.set(drafts, index);
   return index;
@@ -660,7 +667,7 @@ export function threadDraftKey(drafts: Record<string, LocalDraft>, threadId: num
 
 /** The draft a conversation shows inline: the one opened explicitly for it, else its most recent. */
 export function shownDraftKey(drafts: Record<string, LocalDraft>, threadId: number, shown: { threadId: number; key: string } | null): string | null {
-  if (shown && shown.threadId === threadId && drafts[shown.key]) return shown.key;
+  if (shown && shown.threadId === threadId && drafts[shown.key] && draftPresentationThread(drafts[shown.key]!) === threadId) return shown.key;
   return threadDraftKey(drafts, threadId);
 }
 

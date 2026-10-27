@@ -4,7 +4,7 @@ import { PenLine } from "lucide-react";
 import { useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { focusDraft, showNewDraft } from "~/lib/compose";
-import { authored, setDraftUi, shownDraftKey, useDrafts, type LocalDraft } from "~/lib/drafts";
+import { draftPresentationThread, authored, setDraftUi, shownDraftKey, useDrafts, type LocalDraft } from "~/lib/drafts";
 import { loadThread } from "~/state/threads";
 import { setApp, useApp } from "~/state/app";
 import { useList } from "~/state/list";
@@ -35,10 +35,11 @@ export function DraftsStrip() {
     useShallow((s) => {
       const out: LocalDraft[] = [];
       for (const d of Object.values(s.drafts)) {
-        if (d.mode === "new") {
+        const thread = draftPresentationThread(d);
+        if (thread === null) {
           if (authored(d) || d.key === compose) out.push(d);
         } else if (authored(d)) {
-          const inline = d.threadId !== null && index.has(d.threadId) && shownDraftKey(s.drafts, d.threadId, shown) === d.key;
+          const inline = index.has(thread) && shownDraftKey(s.drafts, thread, shown) === d.key;
           if (!inline) out.push(d);
         }
       }
@@ -49,13 +50,14 @@ export function DraftsStrip() {
   const visible = expanded ? items : items.slice(0, SHOWN);
 
   const open = (d: LocalDraft) => {
-    if (d.mode === "new" || d.threadId === null) return showNewDraft(d.key);
+    const threadId = draftPresentationThread(d);
+    if (threadId === null) return showNewDraft(d.key);
     // a conversation's draft: open that conversation (by id: it needn't be in this list) showing exactly this draft
-    setApp({ selectedId: d.threadId, readerOpen: true, compose: null, checked: new Set(), scope: null, draftShown: { threadId: d.threadId, key: d.key } });
+    setApp({ selectedId: threadId, readerOpen: true, compose: null, checked: new Set(), scope: null, draftShown: { threadId: threadId, key: d.key } });
     setDraftUi(d.key, "open");
-    void loadThread(d.threadId).then((detail) => {
+    void loadThread(threadId).then((detail) => {
       const app = useApp.getState();
-      if (app.draftShown?.key !== d.key || app.selectedId !== d.threadId || app.compose) return;
+      if (app.draftShown?.key !== d.key || app.selectedId !== threadId || app.compose) return;
       if (!detail) showNewDraft(d.key);
       else focusDraft(d.key, d.mode === "forward" ? "to" : "body");
     });
