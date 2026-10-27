@@ -22,7 +22,7 @@ function textSql(op: TextOp, column: string, value: string, params: Param[]): st
   }
 }
 
-function conditionSql(c: Condition, now: number, params: Param[], range?: { from: number; to: number }): string {
+function conditionSql(c: Condition, now: number, params: Param[], range?: { from: number; to: number }, scoped = false): string {
   switch (c.field) {
     case "hasAttachment":
       params.push(c.value ? 1 : 0);
@@ -47,21 +47,27 @@ function conditionSql(c: Condition, now: number, params: Param[], range?: { from
       return textSql(c.op, "coalesce(m.list_id, '')", normalizeText(c.value), params);
     case "body": {
       const phrase = c.value.replaceAll('"', '""');
-      // a windowed scan constrains the FTS rowids too, so it never materializes global hits
-      const fts = range
-        ? `m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ? AND rowid BETWEEN ${Math.trunc(range.from)} AND ${Math.trunc(range.to)})`
-        : "m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)";
+      const fts = (query: string) => {
+        params.push(query);
+        // Exact probes also bound sparse batches of repaired, older messages.
+        if (scoped) return "EXISTS (SELECT 1 FROM messages_fts WHERE messages_fts MATCH ? AND rowid = m.id)";
+        if (range) {
+          params.push(Math.trunc(range.from), Math.trunc(range.to));
+          return "m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ? AND rowid BETWEEN ? AND ?)";
+        }
+        return "m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)";
+      };
       switch (c.op) {
         case "contains":
-          params.push(`body : "${phrase}"`);
-          return fts;
+          return fts(`body : "${phrase}"`);
         case "startsWith":
           // FTS5 '^' anchors the phrase at the column's first token: exact, no verification needed
-          params.push(`body : ^ "${phrase}"`);
-          return fts;
-        case "equals":
-          params.push(`body : ^ "${phrase}"`, "equals", c.value);
-          return `(${fts} AND terno_body_match(?, ${BODY}, ?) = 1)`;
+          return fts(`body : ^ "${phrase}"`);
+        case "equals": {
+          const candidate = fts(`body : ^ "${phrase}"`);
+          params.push("equals", c.value);
+          return `(${candidate} AND terno_body_match(?, ${BODY}, ?) = 1)`;
+        }
         case "endsWith": {
           const needle = tokenize(c.value);
           if (needle.length > 0 && needle.length <= BODY_TAIL_TOKENS) {
@@ -70,8 +76,9 @@ function conditionSql(c: Condition, now: number, params: Param[], range?: { from
             params.push(suffix, suffix);
             return "substr(' ' || m.body_tail_norm, -length(?)) = ?";
           }
-          params.push(`body : "${phrase}"`, "endsWith", c.value);
-          return `(${fts} AND terno_body_match(?, ${BODY}, ?) = 1)`;
+          const candidate = fts(`body : "${phrase}"`);
+          params.push("endsWith", c.value);
+          return `(${candidate} AND terno_body_match(?, ${BODY}, ?) = 1)`;
         }
       }
     }
@@ -85,9 +92,13 @@ export interface CompiledRule {
 
 /** Compiles a rule to a predicate over `messages m`. Must agree with core's evaluateRule. */
 export function compileRuleToSql(rule: FilterRule, now: number, range?: { from: number; to: number }): CompiledRule {
+  return compileRule(rule, now, range);
+}
+
+function compileRule(rule: FilterRule, now: number, range?: { from: number; to: number }, scoped = false): CompiledRule {
   const params: Param[] = [];
   const parts = rule.conditions.map((c) => {
-    const sql = conditionSql(c, now, params, range);
+    const sql = conditionSql(c, now, params, range, scoped);
     return c.negate ? `NOT (${sql})` : `(${sql})`;
   });
   const predicate = parts.join(rule.match === "all" ? " AND " : " OR ");
@@ -114,11 +125,11 @@ export function findRuleMatches(
   onlyMessageIds?: readonly number[],
   idRange?: { from: number; to: number },
 ): RuleMatches {
-  const { where, params } = compileRuleToSql(rule, now, idRange);
+  if (onlyMessageIds?.length === 0 || (idRange && idRange.from > idRange.to)) return { messageIds: [], threadIds: [] };
+  const { where, params } = compileRule(rule, now, idRange, onlyMessageIds !== undefined);
   let scope = "";
   const scopeParams: Param[] = [];
   if (onlyMessageIds) {
-    if (onlyMessageIds.length === 0) return { messageIds: [], threadIds: [] };
     scope = ` AND m.id IN (SELECT value FROM json_each(?))`;
     scopeParams.push(JSON.stringify(onlyMessageIds));
   }
