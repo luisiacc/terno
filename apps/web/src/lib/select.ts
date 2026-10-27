@@ -7,7 +7,7 @@ import { listFilterOf, matchesFilter } from "@terno/core";
 import { listScroller } from "~/components/thread-list";
 import type { ThreadScope } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
-import { getApp, setApp, type AppState } from "~/state/app";
+import { getApp, markSelectionIntent, setApp, type AppState } from "~/state/app";
 import { currentScope, listKey, useList } from "~/state/list";
 import { loadThread } from "~/state/threads";
 import { viewLabel } from "~/lib/format";
@@ -61,6 +61,7 @@ export function pressRow(id: number, m: PressModifiers): void {
   if (s.checked.size > 1 && s.checked.has(id)) {
     collapseOnClick = id;
     if (s.selectedId !== id) setApp({ selectedId: id, anchorId: id });
+    else markSelectionIntent();
     return;
   }
   // List (plan 24): the press only moves the cursor; the click that ends it opens (a press may be a drag starting)

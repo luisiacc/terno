@@ -120,7 +120,27 @@ export const useApp = create<AppState>(() => ({
   snackbar: false,
 }));
 
-export const setApp = useApp.setState;
+let selectionWriteRevision = 0;
+export const getSelectionWriteRevision = (): number => selectionWriteRevision;
+export const markSelectionIntent = (): void => { selectionWriteRevision++; };
+
+export function setApp(partial: AppState | Partial<AppState> | ((state: AppState) => AppState | Partial<AppState>), replace?: false): void;
+export function setApp(partial: AppState | ((state: AppState) => AppState), replace: true): void;
+export function setApp(partial: AppState | Partial<AppState> | ((state: AppState) => AppState | Partial<AppState>), replace?: boolean): void {
+  const update = typeof partial === "function" ? (state: AppState) => {
+    const next = partial(state);
+    if (!Object.is(next, useApp.getState()) && next != null && Object.hasOwn(next, "selectedId")) markSelectionIntent();
+    return next;
+  } : partial;
+  if (typeof update !== "function" && !Object.is(update, useApp.getState()) && update != null && Object.hasOwn(update, "selectedId")) markSelectionIntent();
+  if (replace) useApp.setState(update as AppState | ((state: AppState) => AppState), true);
+  else useApp.setState(update, replace);
+}
+
+/** First-page selection is passive; nested explicit writes still use setApp. */
+export function setListAutoSelection(selectedId: number | null): void {
+  useApp.setState({ selectedId });
+}
 export const getApp = useApp.getState;
 
 export function navigate(to: { view?: View; accountId?: number | null; categoryId?: number | null; reviewCategoryId?: number | null }): void {

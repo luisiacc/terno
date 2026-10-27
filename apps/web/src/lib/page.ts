@@ -8,7 +8,7 @@ import { flushSync } from "react-dom";
 import { useAppearance } from "~/lib/appearance";
 import { leaveNewDraft, supersedeCompose } from "~/lib/compose";
 import { createPageHistory, type Page, type PageHistory } from "~/lib/page-history";
-import { getApp, setApp, useApp, type AppState } from "~/state/app";
+import { getApp, markSelectionIntent, setApp, useApp, type AppState } from "~/state/app";
 import { flushDeferredRefresh, listKey, refreshPolicy } from "~/state/list";
 
 export type { Page };
@@ -92,7 +92,7 @@ useAppearance.subscribe((s, p) => {
 /** ⌘[ / the menu's Back / the mouse's back button. */
 export function goBack(): void {
   if (!listLayout()) return;
-  if (currentPage() !== "list") closePage({ focus: true });
+  if (currentPage() !== "list") { markSelectionIntent(); closePage({ focus: true }); }
 }
 
 /** ⌘] / the menu's Forward / the mouse's forward button: the browser's own Forward (our entry above, if there is one). */
@@ -122,7 +122,7 @@ export function installPage(): () => void {
     mailbox: mailboxOf(),
     hash: () => location.hash,
     open: (id) => openThread(id),
-    close: () => closePage({ focus: true }),
+    close: () => { markSelectionIntent(); closePage({ focus: true }); },
     setTimer: (fn, ms) => setTimeout(fn, ms),
     clearTimer: (t) => clearTimeout(t as ReturnType<typeof setTimeout>),
   });
@@ -197,6 +197,7 @@ export function forwardNavKey(e: KeyboardEvent): void {
   const back = (e.key === "Escape" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) || (e.key === "[" && mod && !e.altKey && !e.shiftKey);
   if (!back) return;
   e.preventDefault();
+  markSelectionIntent();
   closePage({ focus: true });
 }
 

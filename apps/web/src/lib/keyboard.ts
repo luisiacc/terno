@@ -3,7 +3,7 @@ import { act, openCompose, toggleRead, toggleStar, undoLast } from "~/lib/action
 import { focusDock } from "~/components/snack-dock";
 import { clearSelection, extendSelection, isMac, selectAll, selectWhere, toggleCurrent } from "~/lib/select";
 import { openMenuForSelection } from "~/components/thread-menu";
-import { getApp, navigate, setApp } from "~/state/app";
+import { getApp, markSelectionIntent, navigate, setApp } from "~/state/app";
 import { loadMore, useList } from "~/state/list";
 import { loadThread, useThreads } from "~/state/threads";
 import { acceptSuggestion, rejectSuggestion } from "~/lib/categorize";
@@ -52,7 +52,7 @@ export function move(delta: number) {
   }
   const next = Math.max(0, Math.min(items.length - 1, current + delta));
   const id = items[next]!.id;
-  if (id === s.selectedId) return;
+  if (id === s.selectedId) { markSelectionIntent(); return; }
   // the cursor moves; in Split that opens it, in List's list page it's only the cursor (Enter opens)
   setApp({ selectedId: id });
   // where it is now: a read row the filter kept may have just left above it
@@ -68,7 +68,7 @@ export function move(delta: number) {
 /** Enter / o: in List the cursor's conversation becomes the page. */
 function openCurrent() {
   const id = getApp().selectedId;
-  if (!listLayout()) return setApp({ readerOpen: true });
+  if (!listLayout()) { if (id !== null) markSelectionIntent(); return setApp({ readerOpen: true }); }
   if (id !== null) openThread(id);
 }
 
@@ -81,7 +81,7 @@ function reply(mode: DraftMode) {
 
 /** Esc: Back from a page (List), else the multi-selection ends. */
 function escape() {
-  if (listLayout() && currentPage() !== "list") closePage({ focus: true });
+  if (listLayout() && currentPage() !== "list") { markSelectionIntent(); closePage({ focus: true }); }
   else clearSelection();
 }
 

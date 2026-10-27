@@ -7,7 +7,7 @@ import { matchesFilter } from "@terno/core";
 import { flushSync } from "react-dom";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
-import { getApp, setApp, useApp } from "./app";
+import { getApp, getSelectionWriteRevision, setApp, setListAutoSelection, useApp } from "./app";
 
 interface ListState {
   key: string;
@@ -141,6 +141,7 @@ function pruneSelection(index: Map<number, number>): void {
 export async function reloadList(options: { keepSelection?: boolean; grow?: boolean; window?: boolean } = {}): Promise<void> {
   const key = listKey();
   const mine = ++seq;
+  const selectionRevision = getSelectionWriteRevision();
   const current = useList.getState();
   const sameView = current.key === key;
   if (!sameView) {
@@ -206,7 +207,7 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
     // the same for a first page that came back empty with more after it
     if (page.items.length === 0 && page.nextCursor) void loadMore();
     const s = getApp();
-    if (!options.keepSelection && !sameView) setApp({ selectedId: page.items[0]?.id ?? null });
+    if (!options.keepSelection && !sameView && mine === seq && key === listKey() && selectionRevision === getSelectionWriteRevision()) setListAutoSelection(page.items[0]?.id ?? null);
     else if (s.selectedId !== null && !page.items.some((t) => t.id === s.selectedId)) {
       // selected thread left this view (archived elsewhere): keep reader stable by not auto-jumping
     }
