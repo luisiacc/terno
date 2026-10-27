@@ -28,18 +28,20 @@ diff --git a/floating-ui-react/components/FloatingFocusManager.mjs b/floating-ui
              floatingFocusElement.focus();
              // If explicitly requested to restore focus to the popup container, do not search
              // for the next/previous tabbable element.
-@@ -278,7 +284,9 @@
+@@ -278,7 +284,11 @@
                // but because it's removed in the same tick, focus is lost instead.
                // Re-focusing asynchronously (next frame) wins that race.
                restoreFocusFrame.request(() => {
 -                floatingFocusElement.focus();
-+                if (openRef.current && floatingFocusElement.isConnected && restoreFocusGeneration === restoreFocusGenerationRef.current) {
++                const currentDocument = ownerDocument(floatingFocusElement);
++                const focusedElement = activeElement(currentDocument);
++                if (openRef.current && floatingFocusElement.isConnected && restoreFocusGeneration === restoreFocusGenerationRef.current && (focusedElement == null || focusedElement === currentDocument.body || focusedElement === floatingFocusElement)) {
 +                  floatingFocusElement.focus();
 +                }
                });
                return;
              }
-@@ -355,6 +363,8 @@
+@@ -355,6 +365,8 @@
  
    // Focus the initial element when the floating element opens.
    useIsoLayoutEffect(() => {
@@ -48,7 +50,7 @@ diff --git a/floating-ui-react/components/FloatingFocusManager.mjs b/floating-ui
      if (!open || disabled || !isHTMLElement(floatingFocusElement)) {
        return;
      }
-@@ -417,7 +427,7 @@
+@@ -417,7 +429,7 @@
          }
        });
      });
@@ -87,18 +89,20 @@ diff --git a/floating-ui-react/components/FloatingFocusManager.js b/floating-ui-
              floatingFocusElement.focus();
              // If explicitly requested to restore focus to the popup container, do not search
              // for the next/previous tabbable element.
-@@ -284,7 +290,9 @@
+@@ -284,7 +290,11 @@
                // but because it's removed in the same tick, focus is lost instead.
                // Re-focusing asynchronously (next frame) wins that race.
                restoreFocusFrame.request(() => {
 -                floatingFocusElement.focus();
-+                if (openRef.current && floatingFocusElement.isConnected && restoreFocusGeneration === restoreFocusGenerationRef.current) {
++                const currentDocument = (0, _owner.ownerDocument)(floatingFocusElement);
++                const focusedElement = (0, _element.activeElement)(currentDocument);
++                if (openRef.current && floatingFocusElement.isConnected && restoreFocusGeneration === restoreFocusGenerationRef.current && (focusedElement == null || focusedElement === currentDocument.body || focusedElement === floatingFocusElement)) {
 +                  floatingFocusElement.focus();
 +                }
                });
                return;
              }
-@@ -361,6 +369,8 @@
+@@ -361,6 +371,8 @@
  
    // Focus the initial element when the floating element opens.
    (0, _useIsoLayoutEffect.useIsoLayoutEffect)(() => {
@@ -107,7 +111,7 @@ diff --git a/floating-ui-react/components/FloatingFocusManager.js b/floating-ui-
      if (!open || disabled || !(0, _dom.isHTMLElement)(floatingFocusElement)) {
        return;
      }
-@@ -423,7 +433,7 @@
+@@ -423,7 +435,7 @@
          }
        });
      });

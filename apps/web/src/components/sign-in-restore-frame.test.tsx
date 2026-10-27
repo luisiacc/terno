@@ -145,6 +145,37 @@ it.each(choices.flatMap((choice) => [false, true].map((strict) => ({ choice, str
   });
 });
 
+for (const destination of ["password", "outside"] as const) {
+  it.each([false, true])(`preserves ${destination} chosen after popup focus passes through body (StrictMode: %s)`, async (strict) => {
+    await fixture(strict, async (f) => {
+      await pending(f);
+      const input = f.query<HTMLInputElement>('[data-testid="sign-in-password"]');
+      await act(async () => f.popup.blur());
+      expect(document.activeElement).toBe(document.body);
+      if (destination === "password") await typePassword(input); else await focus(f.outside);
+      const expected = destination === "password" ? input : f.outside;
+      expect(document.activeElement).toBe(expected);
+      const popupFocus = vi.spyOn(f.popup, "focus");
+      await f.frame();
+      expect(document.activeElement).toBe(expected);
+      expect(popupFocus).not.toHaveBeenCalled();
+      if (destination === "password") intact(input);
+    });
+  });
+}
+
+it.each([false, true])("still restores focus lost to body without a later destination (StrictMode: %s)", async (strict) => {
+  await fixture(strict, async (f) => {
+    await pending(f);
+    await act(async () => f.popup.blur());
+    expect(document.activeElement).toBe(document.body);
+    const popupFocus = vi.spyOn(f.popup, "focus");
+    await f.frame();
+    expect(document.activeElement).toBe(f.popup);
+    expect(popupFocus).toHaveBeenCalledOnce();
+  });
+});
+
 it.each([false, true])("preserves a field revealed before account removal (StrictMode: %s)", async (strict) => {
   await fixture(strict, async (f) => {
     await act(async () => f.query<HTMLButtonElement>('[data-testid="sign-in-password-reveal"]').click());
