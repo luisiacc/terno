@@ -213,13 +213,40 @@
       background: transparent;
     }
   }
-  /* scrollbars: thin, in the theme's ink, and only while their pane is hovered (no idle grey tracks) */
+  /* scrollbars: a hairline thumb in the theme's ink, only while their pane is hovered (no idle grey tracks).
+     Chromium and WebKit get a custom 4 px pill; the standard properties would turn it off there, so they only
+     apply where the pseudo-elements don't exist (Firefox). The color travels in a property set on every element
+     (so a hovered ancestor doesn't light its descendants): Chromium never repaints a :hover::-webkit-scrollbar-thumb
+     rule, but does repaint when the thumb's inherited value changes. */
   * {
-    scrollbar-width: thin;
-    scrollbar-color: transparent transparent;
+    --scrollbar-thumb: transparent;
   }
   *:hover {
-    scrollbar-color: color-mix(in oklab, var(--foreground) 24%, transparent) transparent;
+    --scrollbar-thumb: color-mix(in oklab, var(--foreground) 14%, transparent);
+  }
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+    background: transparent;
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background-clip: padding-box;
+    background-color: var(--scrollbar-thumb);
+  }
+  ::-webkit-scrollbar-thumb:hover,
+  ::-webkit-scrollbar-thumb:active {
+    background-color: color-mix(in oklab, var(--foreground) 28%, transparent);
+  }
+  @supports not selector(::-webkit-scrollbar) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--scrollbar-thumb) transparent;
+    }
   }
   /* keyboard focus only: a 2 px ring outside controls, inside rows and list items */
   :focus-visible {
