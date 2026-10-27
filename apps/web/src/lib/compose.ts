@@ -333,13 +333,15 @@ export async function openStoredDraft(key: string): Promise<void> {
   if (mine !== intent) { finish(); return; }
   let lease: FocusLease | null = null, cancelled = false, missingFromAtStart = false;
   let expected = getApp();
+  let publicationBefore: typeof expected | undefined;
   const active = typeof document === "undefined" ? null : document.activeElement;
   const moved = (event: FocusEvent) => { if (event.target !== active && event.target !== document.body) cancelled = true; };
   if (typeof document !== "undefined") document.addEventListener?.("focusin", moved, true);
-  const unsubscribe = useApp.subscribe((state) => {
-    if (state.selectedId !== expected.selectedId || state.readerOpen !== expected.readerOpen || state.compose !== expected.compose || state.checked !== expected.checked || state.scope !== expected.scope || state.accountId !== expected.accountId || state.dialog !== expected.dialog || state.fatal !== expected.fatal) cancelled = true;
+  const sameLocation = (state: typeof expected, baseline: typeof expected) => state.selectedId === baseline.selectedId && state.readerOpen === baseline.readerOpen && state.compose === baseline.compose && state.checked === baseline.checked && state.scope === baseline.scope && state.accountId === baseline.accountId && state.dialog === baseline.dialog && state.fatal === baseline.fatal && state.view === baseline.view && state.categoryId === baseline.categoryId && state.reviewCategoryId === baseline.reviewCategoryId && state.query === baseline.query && state.listFilters === baseline.listFilters;
+  const unsubscribe = useApp.subscribe((state, previous) => {
+    if (!sameLocation(state, expected) || (!sameLocation(previous, expected) && (!publicationBefore || !sameLocation(previous, publicationBefore)))) cancelled = true;
   });
-  const locationCurrent = () => { const state = getApp(); return state.selectedId === expected.selectedId && state.readerOpen === expected.readerOpen && state.compose === expected.compose && state.checked === expected.checked && state.scope === expected.scope && state.accountId === expected.accountId && state.dialog === expected.dialog && state.fatal === expected.fatal; };
+  const locationCurrent = () => sameLocation(getApp(), expected);
   const current = (d: LocalDraft) => locationCurrent() && mine === intent && !cancelled && !draftEditsHeld() && !getApp().dialog && !getApp().fatal && destinationAvailable(lease) && (!lease || lease.valid) && (missingFromAtStart || getApp().accounts.some((a) => a.id === d.accountId)) && sameStoredDraft(d);
   try {
     let snapshot = materialize(key);
@@ -364,8 +366,9 @@ export async function openStoredDraft(key: string): Promise<void> {
     if (!current(snapshot)) return;
     const selectionRevision = getSelectionWriteRevision();
     const destination = { selectedId: context.threadId, readerOpen: true, compose: null, checked: new Set<number>(), scope: null };
+    publicationBefore = expected;
     expected = { ...getApp(), ...destination };
-    setApp(destination);
+    try { setApp(destination); } finally { publicationBefore = undefined; }
     if (getSelectionWriteRevision() !== selectionRevision + 1 || !current(snapshot)) return;
     lease = beginFocusLease(mine, context.threadId) ?? null;
     if (!lease) return;
