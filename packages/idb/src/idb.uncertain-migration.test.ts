@@ -163,9 +163,88 @@ it.each(["drafts", "settings", "messages"])("retains uncertainty after a real pr
     expect({ hits, errors, terminal }).toEqual({ hits: 1, errors: 1, terminal: "complete" });
     raw = await request(factory.open(databaseName(name)));
     const after = await moveImage(raw);
+    const saved = await image(raw);
+    if (stage === "drafts") {
+      expect(saved.rows.find((s) => s.name === "drafts")!.values).toEqual([
+        expect.objectContaining({ id: 21, mode: "reply", format: 1, body_text: "retained body 21" }),
+        { id: 22, account_id: 1, to_json: "[]", cc_json: "[]", subject: "exact", body_text: "retained body 22", in_reply_to_message_id: null, updated_at: 5 },
+      ]);
+    } else if (stage === "settings") {
+      expect(saved.rows.find((s) => s.name === "settings")!.values).toEqual([{ key: "anchor", value_json: "true" }]);
+    } else {
+      expect(saved.rows.find((s) => s.name === "messages")!.values).toEqual([{ id: 41, thread_id: 9, attachment_pending: 0 }, { id: 42, thread_id: 9, attachment_pending: 1 }]);
+    }
     expect.soft(after.marker).toBe(UNCERTAINTY_KEY);
     expect.soft(exposed !== undefined).toBe(false);
     expect(error).not.toBeNull(); raw.close();
     await expect(openIdb(factory, name)).rejects.toMatchObject({ name: "UncertainWriteError", reason: "dirty" });
   } finally { vi.restoreAllMocks(); raw?.close(); exposed?.close(); }
 });
+
+for (const fixture of ["mixed v1", "last child v2"] as const) {
+  it.each(["healthy", "abort", "prevented"] as const)(`confirms the exact reply-child migration write in ${fixture}: %s`, async (fault) => {
+    const factory = new IDBFactory(), name = crypto.randomUUID();
+    if (fixture === "mixed v1") await version1(factory, name);
+    else {
+      const open = factory.open(databaseName(name), 2);
+      open.onupgradeneeded = () => {
+        for (const store of legacyStores(2)) open.result.createObjectStore(store);
+        open.result.createObjectStore("meta");
+        // No other row work: this missing-source lookup is the last tracked read.
+        open.transaction!.objectStore("drafts").put({ id: 21, account_id: 1, to_json: "[]", cc_json: "[]", subject: "exact", body_text: "retained body 21", in_reply_to_message_id: 41, updated_at: 5 }, 21);
+      };
+      (await request(open)).close();
+    }
+    let raw = await request(factory.open(databaseName(name))), exposed: IDBDatabase | undefined;
+    const before = await image(raw); raw.close();
+    const put = IDBObjectStore.prototype.put, get = IDBObjectStore.prototype.get;
+    let markerSuccess = 0, sourceSuccess = 0, childWrites = 0, directWrites = 0, errors = 0, requestError: unknown, terminal: string | null = null;
+    let childAt: { markerSuccess: number; sourceSuccess: number } | undefined;
+    vi.spyOn(IDBObjectStore.prototype, "get").mockImplementation(function (this: IDBObjectStore, ...args) {
+      const r = get.call(this, ...args);
+      if (this.transaction.mode === "versionchange" && this.name === "messages" && args[0] === 41) r.addEventListener("success", () => { sourceSuccess++; });
+      return r;
+    });
+    vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (this: IDBObjectStore, value, key) {
+      if (this.transaction.mode !== "versionchange") return put.call(this, value, key);
+      if (this.name === "meta" && key === UNCERTAINTY_KEY) {
+        const r = put.call(this, value, key); r.addEventListener("success", () => { markerSuccess++; }); return r;
+      }
+      if (this.name === "drafts" && key === 22) directWrites++;
+      if (this.name !== "drafts" || key !== 21 || value.mode !== "reply" || value.thread_id !== (fixture === "mixed v1" ? 9 : null)) return put.call(this, value, key);
+      childWrites++;
+      childAt = { markerSuccess, sourceSuccess };
+      this.transaction.addEventListener("complete", () => { terminal = "complete"; });
+      this.transaction.addEventListener("abort", () => { terminal = "abort"; });
+      const r = fault === "healthy" ? put.call(this, value, key) : this.add(value, 21);
+      r.addEventListener("error", (event) => { errors++; requestError = r.error; if (fault === "prevented") event.preventDefault(); });
+      return r;
+    });
+    try {
+      const error = await openIdb(factory, name).then((db) => { exposed = db; return null; }, (failure: unknown) => failure);
+      exposed?.close(); vi.restoreAllMocks();
+      expect({ markerSuccess, sourceSuccess, childWrites, directWrites, errors, terminal }).toEqual({ markerSuccess: 1, sourceSuccess: 1, childWrites: 1, directWrites: fixture === "mixed v1" ? 1 : 0, errors: fault === "healthy" ? 0 : 1, terminal: fault === "abort" ? "abort" : "complete" });
+      expect(childAt).toEqual({ markerSuccess: 1, sourceSuccess: 1 });
+      raw = await request(factory.open(databaseName(name)));
+      const after = await image(raw), drafts = after.rows.find((s) => s.name === "drafts")!.values;
+      expect(drafts).toContainEqual(expect.objectContaining({ id: 21, body_text: "retained body 21" }));
+      if (fixture === "mixed v1") expect(drafts).toContainEqual(expect.objectContaining({ id: 22, body_text: "retained body 22" }));
+      if (fault === "healthy") {
+        expect(error).toBeNull();
+        expect(drafts).toContainEqual(expect.objectContaining({ id: 21, mode: "reply", format: 1, thread_id: fixture === "mixed v1" ? 9 : null }));
+        expect(await request(raw.transaction("meta").objectStore("meta").getKey(UNCERTAINTY_KEY))).toBeUndefined();
+      } else if (fault === "abort") {
+        expect(error).toBe(requestError); expect(after).toEqual(before);
+      } else {
+        expect(requestError).toMatchObject({ name: "ConstraintError" });
+        expect(error).toMatchObject({ name: "UncertainWriteError", reason: "unreadable" });
+        expect(exposed !== undefined).toBe(false);
+        expect(await request(raw.transaction("meta").objectStore("meta").getKey(UNCERTAINTY_KEY))).toBe(UNCERTAINTY_KEY);
+        expect(drafts.find((d) => (d as { id: number }).id === 21)).toEqual(before.rows.find((s) => s.name === "drafts")!.values.find((d) => (d as { id: number }).id === 21));
+        if (fixture === "mixed v1") expect(drafts).toContainEqual(expect.objectContaining({ id: 22, mode: "new", format: 1 }));
+        raw.close();
+        await expect(IdbMailStore.open({ factory, name, instantSearch: true, platform })).rejects.toMatchObject({ name: "UncertainWriteError", reason: "dirty" });
+      }
+    } finally { vi.restoreAllMocks(); raw.close(); exposed?.close(); }
+  });
+}
