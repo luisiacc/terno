@@ -758,8 +758,13 @@ const pendingSends = new Map<string, Promise<boolean>>();
 export function sendDraft(key: string): Promise<boolean> {
   const pending = pendingSends.get(key);
   if (pending) return pending;
-  const run = send(key).finally(() => pendingSends.delete(key));
+  let resolve!: (value: boolean) => void;
+  let reject!: (error: unknown) => void;
+  const run = new Promise<boolean>((done, fail) => { resolve = done; reject = fail; });
   pendingSends.set(key, run);
+  const finish = () => { if (pendingSends.get(key) === run) pendingSends.delete(key); };
+  try { void send(key).then((result) => { finish(); resolve(result); }, (error) => { finish(); reject(error); }); }
+  catch (error) { finish(); reject(error); }
   return run;
 }
 
