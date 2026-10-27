@@ -30,7 +30,7 @@ export class SqlFlagRepository implements FlagRepository {
   messageEffects(id: number) { return this.db.all<FlagEffect>("SELECT * FROM flag_op_effects WHERE message_id=?", id); }
   op(id: string) { return this.db.get<FlagOp>("SELECT id,account_id,seq,kind,state FROM ops WHERE id=?", id) ?? null; }
   upperSeq(account: number) { return this.db.get<{seq: number}>("SELECT coalesce(max(seq),0) AS seq FROM ops WHERE account_id=?", account)!.seq; }
-  headers(account: number, seq: number, op: string, through: number, limit: number) { return this.db.all<FlagOp>("SELECT id,account_id,seq,kind,state FROM ops WHERE account_id=? AND seq<=? AND (seq>? OR (seq=? AND id>=?)) ORDER BY seq,id LIMIT ?", account, through, seq, seq, op, limit); }
+  headers(account: number, seq: number, op: string, through: number, limit: number) { return this.db.all<FlagOp>("SELECT id,account_id,seq,kind,state FROM ops WHERE account_id=? AND seq<=? AND (seq,id)>=(?,?) ORDER BY seq,id LIMIT ?", account, through, seq, op, limit); }
   targets(op: string, after: number, limit: number) { return this.db.all<{message_id:number}>("SELECT message_id FROM op_targets WHERE op_id=? AND message_id>? ORDER BY message_id LIMIT ?", op, after, limit).map((r) => r.message_id); }
   hasTarget(op: string, id: number) { return !!this.db.get("SELECT 1 FROM op_targets WHERE op_id=? AND message_id=?", op, id); }
   uuid() { return this.db.uuid(); }

@@ -315,6 +315,29 @@ export function defineDurableFlagIntentConformance(name: string, harness: StoreH
       await expect(store.ops.resolveUnknown(op!.id, "retry", 5)).rejects.toMatchObject({ code: "STALE" });
     });
 
+    it("resumes a partial legacy header and a later header across reopen", async () => {
+      let store = await harness.open(); stores.push(store);
+      const [a] = await withAccounts(store, 1);
+      await ingest(store, Array.from({ length: 130 }, (_, i) => msg({ accountId: a!, providerMsgId: `partial-${i}` })));
+      const threads = (await store.debug.snapshot()).threads;
+      await store.threads.act({ threadIds: threads.slice(0, 129).map((t) => t.id), action: "archive", signal: null, now: 1 });
+      await store.threads.act({ threadIds: [threads[129]!.id], action: "archive", signal: null, now: 1 });
+      await observe(store, a!);
+      for (const op of await store.ops.claimReady(2, 10)) await store.ops.complete(op.id, undefined, 3);
+      store = await harness.reopen(store); stores.push(store);
+      let afterMessageId = 0, count = 0;
+      for (;;) {
+        const page = await store.providerStore(a!).pendingFlagSnapshots({ limit: 50, afterMessageId });
+        count += page.items.length;
+        if (!page.hasMore) break;
+        afterMessageId = page.items[page.items.length - 1]!.id;
+      }
+      expect(count).toBe(130);
+      const messages = (await store.debug.snapshot()).messages;
+      await store.sync.updateFlags(a!, messages.map((m) => ({ messageId: m.id, flags: { inInbox: true } })));
+      expect((await store.debug.snapshot()).messages.every((m) => !m.inInbox)).toBe(true);
+    });
+
     it.each(["complete", "fail", "unknown"] as const)("first activation serializes a concurrent legacy %s before deleting its synthesis source", async (outcome) => {
       let store = await harness.open(); stores.push(store);
       const [a] = await withAccounts(store, 1);
