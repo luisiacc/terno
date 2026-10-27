@@ -1098,3 +1098,110 @@ visiblePolicyCases.push(
     "text": "Tail"
   }
 );
+
+visibleReviewCases.push(...[
+  {
+    "name": "R3-F1 rp default content remains hidden",
+    "html": "<p>Useful</p><rp>phantomneedle</rp>",
+    "text": "Useful",
+    "value": "phantomneedle",
+    "query": "phantomneedle",
+    "matches": false
+  },
+  {
+    "name": "R3-F1 rp invalid display does not expose hidden content",
+    "html": "<p>Useful</p><rp style=\"display:bogus\">phantomneedle</rp>",
+    "text": "Useful",
+    "value": "phantomneedle",
+    "query": "phantomneedle",
+    "matches": false
+  },
+  {
+    "name": "R3-F1 rp authored block exposes useful text",
+    "html": "<rp style=\"display:block\">Useful policy</rp><p>Tail</p>",
+    "text": "Useful policy Tail",
+    "value": "useful policy",
+    "query": "\"useful policy\"",
+    "matches": true
+  },
+  {
+    "name": "R3-F1 rp authored inline restores word join",
+    "html": "<span>un</span><rp style=\"display:inline\">broken</rp>",
+    "text": "unbroken",
+    "value": "unbroken",
+    "query": "unbroken",
+    "matches": true
+  },
+  {
+    "name": "R3-F1 br default ignores max-height clipping preserves phrase",
+    "html": "<span>Visible</span><br style=\"max-height:0;overflow:hidden\"><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": true
+  },
+  {
+    "name": "R3-F1 br default ignores max-height clipping no joined word",
+    "html": "<span>Visible</span><br style=\"max-height:0;overflow:hidden\"><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": false
+  },
+  {
+    "name": "R3-F1 br default preserves phrase control",
+    "html": "<span>Visible</span><br><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": true
+  },
+  {
+    "name": "R3-F1 br display-none preserves join control",
+    "html": "<span>Visible</span><br style=\"display:none\"><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": true
+  },
+  {
+    "name": "R3-F1 rp authored reset/priority initial",
+    "html": "<span>un</span><rp style=\"display:initial\">broken</rp>",
+    "text": "unbroken",
+    "value": "unbroken",
+    "query": "unbroken",
+    "matches": true
+  },
+  {
+    "name": "R3-F1 rp authored reset/priority unset",
+    "html": "<span>un</span><rp style=\"display:unset\">broken</rp>",
+    "text": "unbroken",
+    "value": "unbroken",
+    "query": "unbroken",
+    "matches": true
+  },
+  {
+    "name": "R3-F1 rp authored reset/priority none;display:inline!important;display:none",
+    "html": "<span>un</span><rp style=\"display:none;display:inline!important;display:none\">broken</rp>",
+    "text": "unbroken",
+    "value": "unbroken",
+    "query": "unbroken",
+    "matches": true
+  },
+  {
+    "name": "R3-F1 rp authored reset/priority none!important;display:inline",
+    "html": "<span>un</span><rp style=\"display:none!important;display:inline\">broken</rp>",
+    "text": "un",
+    "value": "unbroken",
+    "query": "unbroken",
+    "matches": false
+  },
+  {
+    "name": "R3-F1 ordinary hidden BR stays removed",
+    "html": "<span>Visible</span><br hidden><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": true
+  }
+]);
