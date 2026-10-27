@@ -34,7 +34,10 @@ let seq = 0;
  * the draft late, focused, and the second "r" went into the text.
  */
 let intent = 0;
-type FocusLease = { intent: number; threadId: number; key?: string; seq?: number; valid: boolean; dispose: () => void };
+type ReaderDestination = { token: object; active: boolean; generation: number };
+type FocusLease = { intent: number; threadId: number; key?: string; seq?: number; valid: boolean; dispose: () => void; destination?: ReaderDestination };
+const readerDestinations = new Map<number, ReaderDestination>();
+const destinationAvailable = (lease: FocusLease | null): boolean => !lease?.destination || lease.destination.active;
 let focusLease: FocusLease | null = null;
 const focusLeaseListeners = new Set<(threadId: number, fallback: boolean) => void>();
 
@@ -47,10 +50,31 @@ function releaseFocusLease(lease: FocusLease, fallback: boolean, notify = true) 
   if (notify) for (const listener of focusLeaseListeners) listener(lease.threadId, fallback);
 }
 
+/** The current Reader owns focus work only until this exact destination leaves. */
+export function registerReaderFocusDestination(threadId: number, token: object): () => void {
+  const previous = readerDestinations.get(threadId);
+  const destination = previous?.token === token ? previous : { token, active: false, generation: 0 };
+  destination.active = true;
+  const generation = ++destination.generation;
+  readerDestinations.set(threadId, destination);
+  if (focusLease?.threadId === threadId && (!focusLease.destination || !focusLease.destination.active)) focusLease.destination = destination;
+  return () => {
+    if (destination.generation !== generation || !destination.active) return;
+    destination.active = false;
+    const captured = focusLease?.destination === destination ? focusLease : null;
+    queueMicrotask(() => {
+      if (destination.active || destination.generation !== generation) return;
+      if (readerDestinations.get(threadId) === destination) readerDestinations.delete(threadId);
+      if (captured && focusLease === captured && captured.destination === destination && captured.intent === intent) supersedeCompose();
+    });
+  };
+}
+
 function beginFocusLease(owner: number, threadId: number): FocusLease {
   if (focusLease) releaseFocusLease(focusLease, false, false);
   const active = typeof document === "undefined" ? null : document.activeElement;
-  const lease: FocusLease = { intent: owner, threadId, valid: true, dispose: () => {} };
+  const destination = readerDestinations.get(threadId);
+  const lease: FocusLease = { intent: owner, threadId, valid: true, dispose: () => {}, destination };
   const moved = (event: FocusEvent) => {
     if (event.target !== active && event.target !== document.body) releaseFocusLease(lease, false);
   };
@@ -69,6 +93,9 @@ function beginFocusLease(owner: number, threadId: number): FocusLease {
     unsubApp(); unsubDrafts();
   };
   focusLease = lease;
+  if (destination && !destination.active) queueMicrotask(() => {
+    if (focusLease === lease && lease.destination === destination && !destination.active && lease.intent === intent) supersedeCompose();
+  });
   return lease;
 }
 
@@ -125,6 +152,10 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
 }
 
 async function openComposeNow(mode: DraftMode, threadId: number | null, mine: number, lease: FocusLease | null): Promise<void> {
+  if (!destinationAvailable(lease)) {
+    await Promise.resolve();
+    if (mine !== intent || !destinationAvailable(lease) || (lease && !lease.valid)) return;
+  }
   let takeFocus = true;
   const active = typeof document === "undefined" ? null : document.activeElement;
   const s = getApp();
@@ -157,7 +188,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     let context: { threadId: number; accountId: number } | null;
     try { context = sourceId ? await client.call("drafts.sourceContext", { messageId: sourceId }) : null; } catch { return; }
     const current = existingKey ? materialize(existingKey) : undefined;
-    if (mine !== intent || getApp().selectedId !== s.selectedId || (lease && !lease.valid) || !current || current.id !== snapshot.id || current.generation !== snapshot.generation || current.revision !== snapshot.revision || current.localRev !== snapshot.localRev || current.accountId !== snapshot.accountId || current.mode !== snapshot.mode || current.inReplyToMessageId !== snapshot.inReplyToMessageId || current.forwardOfMessageId !== snapshot.forwardOfMessageId || current.showSourceContext !== snapshot.showSourceContext) return;
+    if (mine !== intent || !destinationAvailable(lease) || getApp().selectedId !== s.selectedId || (lease && !lease.valid) || !current || current.id !== snapshot.id || current.generation !== snapshot.generation || current.revision !== snapshot.revision || current.localRev !== snapshot.localRev || current.accountId !== snapshot.accountId || current.mode !== snapshot.mode || current.inReplyToMessageId !== snapshot.inReplyToMessageId || current.forwardOfMessageId !== snapshot.forwardOfMessageId || current.showSourceContext !== snapshot.showSourceContext) return;
     if (!context || context.threadId !== threadId) {
       editDraft(current.key, { threadId: null, showSourceContext: false });
       showNewDraft(current.key);
@@ -172,7 +203,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   }
   const selected = s.selectedId;
   const detail = await loadThread(threadId);
-  const currentIntent = () => mine === intent && getApp().selectedId === selected && shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) === existingKey;
+  const currentIntent = () => mine === intent && destinationAvailable(lease) && getApp().selectedId === selected && shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) === existingKey;
   if (!detail || !currentIntent()) return;
   takeFocus = typeof document === "undefined" || document.activeElement === active;
   existing = existingKey ? materialize(existingKey) : undefined;

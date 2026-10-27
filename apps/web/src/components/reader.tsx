@@ -7,14 +7,14 @@ import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { Archive, ChevronDown, ChevronLeft, ChevronUp, Forward, Inbox, Layers, MailOpen, OctagonAlert, Printer, Reply, ReplyAll, Star, Tag, Trash2, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { cancelReaderScroll, keepInView } from "~/lib/reader-scroll";
 import { Expand } from "./expand";
 import { DraftSlot } from "./inline-draft";
 import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { replyName } from "~/lib/compose-fields";
-import { composeFocusPending, subscribeComposeFocus } from "~/lib/compose";
+import { composeFocusPending, registerReaderFocusDestination, subscribeComposeFocus } from "~/lib/compose";
 import { act, cancelMarkRead, openCompose, scheduleMarkRead, toggleStar } from "~/lib/actions";
 import { acceptSuggestion, rejectSuggestion, removeFromCategory } from "~/lib/categorize";
 import { t } from "@terno/i18n";
@@ -409,6 +409,8 @@ export function Reader() {
   // List's page: the dock sits over the conversation's foot, so its end (the reply bar) scrolls clear of it
   const dock = useSnack((s) => (page ? s.inset : 0));
   const sectionRef = useRef<HTMLElement>(null);
+  const destination = useRef({});
+  useLayoutEffect(() => selectedId === null ? undefined : registerReaderFocusDestination(selectedId, destination.current), [selectedId]);
   // List's page opened: focus starts on the conversation (named by its subject), unless something in it already took it (a draft asked for)
   useEffect(() => {
     if (!page) return;
