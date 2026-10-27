@@ -290,3 +290,21 @@ it("fatal Review keeps its warning when the unread source has no detached checkp
     forgetDraft(key); source.dispose(); host.remove(); error.mockRestore();
   }
 });
+
+it.runIf(import.meta.env.VITE_RENDER_PROBE)("the test-only reader fault covers live and retained editor sources without counting toggles", async () => {
+  const probe = (window as unknown as { __terno: { composerReadFault(enabled?: boolean): number } }).__terno;
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+  const key = createDraft(newFields(1));
+  try {
+    await act(async () => root.render(<RichBody draftKey={key} placeholder="Body" />));
+    const view = injection.views.at(-1) as EditorView;
+    await act(async () => view.dispatch(view.state.tr.insertText("probe content")));
+    expect(probe.composerReadFault(true)).toBe(0); expect(probe.composerReadFault()).toBe(0);
+    expect(() => materialize(key)).toThrow("test: composer body read failed");
+    expect(probe.composerReadFault()).toBe(1);
+    await act(async () => root.render(null)); expect(probe.composerReadFault()).toBe(1);
+    expect(() => materialize(key)).toThrow("test: composer body read failed");
+    expect(probe.composerReadFault()).toBe(2); expect(probe.composerReadFault(false)).toBe(2);
+    expect(materialize(key)?.bodyText).toBe("probe content"); expect(probe.composerReadFault()).toBe(2);
+  } finally { probe.composerReadFault(false); await act(async () => root.unmount()); forgetDraft(key); host.remove(); }
+});

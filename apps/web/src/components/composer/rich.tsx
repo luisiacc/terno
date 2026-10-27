@@ -33,6 +33,7 @@ import {
   Unlink,
 } from "lucide-react";
 import { TextSelection, type EditorState } from "prosemirror-state";
+import type { Node as PMNode } from "prosemirror-model";
 import type { EditorView } from "prosemirror-view";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
@@ -88,6 +89,18 @@ const isDark = () => document.documentElement.classList.contains("dark");
 function probe(name: string, value: number) {
   const w = window as unknown as { __composer?: Record<string, number[]> };
   ((w.__composer ??= {})[name] ??= []).push(value);
+}
+
+let readFault = false, failedReads = 0;
+if (import.meta.env.VITE_RENDER_PROBE) exposeForTests({
+  composerReadFault: (enabled?: boolean) => {
+    if (enabled !== undefined) { readFault = enabled; if (enabled) failedReads = 0; }
+    return failedReads;
+  },
+});
+function readBody(doc: PMNode) {
+  if (import.meta.env.VITE_RENDER_PROBE && readFault) { failedReads++; throw new Error("test: composer body read failed"); }
+  return serialize(doc);
 }
 
 /** Test builds: the focused editor's document, and the parser, so a round trip can compare what was written with what arrived. */
@@ -259,7 +272,7 @@ export function RichBody({ draftKey, placeholder, className, checkpoint }: { dra
       if (checkpoint && ((useDraftRecovery.getState().checkpoint !== checkpoint && (!replay || useDraftRecovery.getState().checkpoint !== undefined)) || !useDraftRecovery.getState().open)) throw new Error("Draft checkpoint is no longer available");
       bodyRef.current = attachBody(draftKey, () => {
         const t0 = performance.now();
-        const out = serialize(view.state.doc);
+        const out = readBody(view.state.doc);
         if (import.meta.env.VITE_RENDER_PROBE) probe("serialize", performance.now() - t0);
         return out;
       }, { checkpoint: lease });
@@ -270,7 +283,7 @@ export function RichBody({ draftKey, placeholder, className, checkpoint }: { dra
         // a suggestion is never brought back by a remount
         const state = withoutGhost(view.state);
         keepState(draftKey, state, versionRef.current);
-        bodyRef.current?.dispose({ state, version: versionRef.current, read: () => serialize(state.doc) });
+        bodyRef.current?.dispose({ state, version: versionRef.current, read: () => readBody(state.doc) });
         if (checkpoint) {
           const next = bodyCheckpoint(draftKey);
           adoptedRef.current = { original: checkpoint, replay: next?.retained.state === state ? next : undefined };
