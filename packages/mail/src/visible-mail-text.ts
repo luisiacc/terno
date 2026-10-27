@@ -5,7 +5,7 @@ import { tokenize, tokenTypes } from "css-tree/tokenizer";
 import { ident } from "css-tree/utils";
 import { parse, type DefaultTreeAdapterTypes as Html } from "parse5";
 
-const NON_CONTENT = new Set(["head", "title", "script", "style", "template", "iframe", "object", "embed", "noembed", "noframes", "xmp"]);
+const NON_CONTENT = new Set(["head", "title", "script", "style", "template", "plaintext", "noscript", "iframe", "object", "embed", "noembed", "noframes", "xmp"]);
 const BLOCKS = new Set(["address", "article", "aside", "blockquote", "br", "caption", "dd", "div", "dl", "dt", "fieldset", "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "li", "main", "nav", "ol", "p", "pre", "section", "table", "tbody", "td", "th", "thead", "tr", "ul"]);
 const DISPLAYS = new Set(["none", "contents", "block", "inline", "inline-block", "flow-root", "list-item", "flex", "inline-flex", "grid", "inline-grid", "table", "inline-table", "table-row-group", "table-header-group", "table-footer-group", "table-row", "table-column-group", "table-column", "table-cell", "table-caption"]);
 const INLINE_DISPLAYS = new Set(["inline", "inline-block", "inline-flex", "inline-grid", "inline-table", "contents"]);

@@ -30,7 +30,7 @@ for (const [name, html, expected] of [
   ["case, decoded attributes, CSS escapes and comments", '<div style="D&#73;SPLAY: n&#111;ne">secret</div><div style="d\\69splay: n\\6f ne/**/!important;display:block">secret</div><p>Useful</p>', 'Useful'],
   ["email preheaders with opacity or clipped height", '<div style="opacity:0"><span style="opacity:1">secret</span></div><div style="max-height:0px;overflow:hidden">secret</div><p>Useful</p>', 'Useful'],
   ["malformed nesting", '<div hidden><b>secret</div>Useful</b><p>tail', 'Useful tail'],
-  ["malformed head reparenting and noscript", '<head><p>Useful</p></head><noscript><b>Fallback</b></noscript><p>tail</p>', 'Useful Fallback tail'],
+  ["malformed head reparenting and noscript", '<head><p>Useful</p></head><noscript><b>Fallback</b></noscript><p>tail</p>', 'Useful tail'],
   ["unsupported foreign namespace text is excluded", '<svg><text>secret</text><foreignObject><p>secret</p></foreignObject></svg><math><mtext>secret</mtext></math><p>Useful</p>', 'Useful'],
 ] as const) it(name, async () => {
   expect((await parseRaw(visibleSource(html))).text).toBe(expected);

@@ -70,3 +70,12 @@ visibleReviewCases.push(
   { name: "F5 unset visibility still inherits hiding", html: '<div style="visibility:hidden"><span style="visibility:visible;visibility:unset">phantomneedle</span></div><p>Useful</p>', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false },
   { name: "F5 invalid reset keyword cannot undo hiding", html: '<p style="display:none;display:initial-bogus">phantomneedle</p><p>Useful</p>', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false },
 );
+
+for (const tag of ["plaintext", "xmp", "noembed", "noframes", "title", "script", "style", "iframe", "template"]) visibleReviewCases.push({ name: `R2-F1 sanitizer drops ${tag} content`, html: `<p>Useful</p><${tag} style="display:block">phantomneedle</${tag}>`, text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false });
+visibleReviewCases.push({ name: "R2-F1 untouched plaintext consumes the raw remainder", html: '<p>Useful</p><plaintext>phantomneedle', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false });
+visibleReviewCases.push({ name: "R2-F1 plaintext raw descendants never become body words", html: '<p>Useful</p><PLAINTEXT><b>phantomneedle</b>&#112;hantomneedle', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false });
+visibleReviewCases.push(
+  { name: "R2-F1 body noscript subtree is discarded by reader", html: '<p>Useful</p><noscript>phantomneedle</noscript><p>Tail</p>', text: "Useful Tail", value: "phantomneedle", query: "phantomneedle", matches: false },
+  { name: "R2-F1 body noscript markup is discarded by reader", html: '<p>Useful</p><noscript><b>phantomneedle</b></noscript><p>Tail</p>', text: "Useful Tail", value: "phantomneedle", query: "phantomneedle", matches: false },
+  { name: "R2-F1 head noscript text reparented into body remains useful", html: '<noscript>Useful policy</noscript><p>Tail</p>', text: "Useful policy Tail", value: "useful policy", query: '"useful policy"', matches: true },
+);

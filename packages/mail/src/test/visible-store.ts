@@ -87,16 +87,16 @@ export function defineVisibleStore(name: string, harness: { open(): Promise<Mail
         expect(result.opIds).toEqual([]);
         expect.soft((await store.sync.setBody(id, parsed.text, parsed.html, { now: 0, classifier: null })).opIds).toHaveLength(fixture.matches ? 2 : 0);
       }
-      for (let pass = 0; pass < 2; pass++) {
+      for (let pass = 0; pass < 3; pass++) {
         const snapshot = await store.debug.snapshot();
         const message = snapshot.messages.find((m) => m.id === id)!;
         expect.soft((await store.threads.get(message.threadId))!).toMatchObject({ thread: { inInbox: !fixture.matches }, messages: [{ isStarred: fixture.matches, bodyText: fixture.text }] });
         expect.soft((await store.threads.searchText({ query: fixture.query, now: 0, limit: 10 })).items.map((thread) => thread.id)).toEqual(fixture.matches ? [message.threadId] : []);
         expect.soft(await store.filters.preview(rule, 0, 5)).toMatchObject({ count: fixture.matches ? 1 : 0 });
         expect.soft(snapshot.ops.map((op) => ({ kind: op.kind, messageIds: op.messageIds })).sort((a, b) => a.kind.localeCompare(b.kind))).toEqual(fixture.matches ? [{ kind: "archive", messageIds: [id] }, { kind: "star", messageIds: [id] }] : []);
-        if (!pass) store = await harness.reopen(store);
+        if (pass === 1) expect((await store.sync.setBody(id, parsed.text, parsed.html, { now: 1, classifier: null })).opIds).toEqual([]);
+        if (pass < 2) store = await harness.reopen(store);
       }
-      expect((await store.sync.setBody(id, parsed.text, parsed.html, { now: 1, classifier: null })).opIds).toEqual([]);
       await store.debug.verify();
     });
   });
