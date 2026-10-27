@@ -94,6 +94,32 @@ test.describe("reader conversation", { tag: "@design" }, () => {
     await page.mouse.up();
     expect((await page.evaluate(() => document.getSelection()?.toString() ?? "")).length).toBeGreaterThan(10);
   });
+
+  test("on desktop (no native menu), the message menu copies the selected text; with nothing selected it has no Copy", async ({ app: page, context }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await openRow(page, 0);
+    const body = page.getByTestId("message").locator(".type-body").first();
+    await expect(body).toBeVisible();
+    // only the right-click's wantsNativeMenu reads it
+    await page.evaluate(() => ((window as { ternoDesktop?: unknown }).ternoDesktop = {}));
+    await body.click({ button: "right" });
+    await expect(page.getByTestId("message-menu")).toBeVisible();
+    await expect(page.getByTestId("message-menu-copy")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
+    const selected = await body.evaluate((el) => {
+      const range = document.createRange();
+      range.selectNodeContents(el.firstChild!);
+      range.setEnd(el.firstChild!, 12);
+      document.getSelection()!.removeAllRanges();
+      document.getSelection()!.addRange(range);
+      return document.getSelection()!.toString();
+    });
+    await body.click({ button: "right", position: { x: 4, y: 6 } });
+    await page.getByTestId("message-menu-copy").click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(selected);
+    await page.evaluate(() => delete (window as { ternoDesktop?: unknown }).ternoDesktop);
+  });
 });
 
 test.describe("plan 37: “Load content” for every remote image the frame would block", () => {
