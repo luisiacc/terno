@@ -28,7 +28,7 @@ export async function setup(layout: "list" | "split", reader = false) {
   const { newFields } = await import("~/lib/compose-fields");
   const account = { id: 1, kind: "imap", email: "me@example.test", displayName: "Me", signature: "", color: "blue", syncState: {} } as Account;
   const detail = { thread: { id: 7, accountId: 1, subject: "Source", categoryIds: [], inSpam: false, inTrash: false }, messages: [{ id: 3, accountId: 1, attachmentState: "complete", isSent: false, from: { name: "Sender", email: "sender@example.test" }, to: [], cc: [], subject: "Source", date: 0, bodyText: "Source body", attachments: [] }] } as unknown as ThreadDetail;
-  gate.call.mockImplementation(async (method: string) => { if (method === "drafts.sourceContext") return { threadId: 7, accountId: 1 }; return {}; }); gate.load.mockResolvedValue(detail);
+  gate.call.mockImplementation(async (method: string) => { if (method === "drafts.sourceContext") return { threadId: 7, accountId: 1 }; return {}; }); gate.load.mockImplementation(async (id: number) => { useThreads.setState((s) => ({ details: new Map(s.details).set(id, detail) })); return detail; });
   const key = drafts.createDraft({ ...newFields(1), threadId: null, mode: "reply", inReplyToMessageId: 3, showSourceContext: true, bodyText: "exact authored work" });
   drafts.useDrafts.setState((s) => ({ drafts: { ...s.drafts, [key]: { ...s.drafts[key]!, id: 81, generation: "stable", revision: 4, status: "saved", sourceContextThreadId: 7 } } }));
   useAppearance.setState({ layout, motionMs: 0 }); useList.setState({ items: [], index: new Map() });

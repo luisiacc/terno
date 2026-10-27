@@ -27,7 +27,7 @@ it.each(["source moved", "edit", "navigation", "generation"])("conversion prefli
     const draft = useDrafts.getState().drafts[key]!;
     expect(draft.mode).toBe("reply");
     expect(draft.bodyText).toBe(scenario === "edit" ? "later work" : "authored work");
-    if (scenario === "source moved") { expect(getApp().compose?.key).toBe(key); expect(draft.showSourceContext).toBe(false); }
+    if (scenario === "source moved") { expect(getApp().compose?.key).toBe(key); expect(draft.showSourceContext).toBe(true); }
     else expect(getApp().compose).toBeNull();
   } finally { forgetDraft(key); vi.clearAllMocks(); }
 });

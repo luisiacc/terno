@@ -453,11 +453,8 @@ export function setDraftUi(key: string, uiState: LocalDraft["uiState"]): void {
   const d = get(key);
   if (draftEditsHeld() || !d || d.uiState === uiState) return;
   changeVersion++;
-  put({ ...d, uiState });
-  if (d.id !== null) {
-    put({ ...get(key)!, localRev: d.localRev + 1, status: d.status === "saving" ? "saving" : "dirty" });
-    schedule(key);
-  }
+  put({ ...d, uiState, ...(d.id !== null ? { localRev: d.localRev + 1, status: d.status === "saving" ? "saving" as const : "dirty" as const } : {}) });
+  if (d.id !== null) schedule(key);
 }
 
 function schedule(key: string): void {
@@ -758,6 +755,12 @@ export function expireDraftPresentation(threadId: number): void {
     }
     return drafts === s.drafts ? s : { drafts };
   });
+}
+
+/** Retire one display association without changing its durable fields or editor revision. */
+export function invalidateDraftPresentation(key: string): void {
+  const d = get(key);
+  if (d) put({ ...d, departedThreadId: d.departedThreadId ?? draftPresentationThread(d) ?? undefined, presentationThreadId: undefined, presentationExpired: true, presentationEpoch: (d.presentationEpoch ?? 0) + 1 });
 }
 
 /** Explicit strip open has just validated this source; no authored edit or save is needed. */

@@ -7,9 +7,9 @@ import { cn } from "@terno/ui/lib/utils";
 import { Send, Trash2 } from "lucide-react";
 import { useEffect, useId, useRef } from "react";
 import { registerUndo, snack } from "~/lib/snack";
-import { leaveNewDraft, sendDraft, showNewDraft } from "~/lib/compose";
+import { composeFocusPending, finishComposeFocus, leaveNewDraft, sendDraft, showNewDraft } from "~/lib/compose";
 import { discardDraft, restoreDiscarded, useDrafts } from "~/lib/drafts";
-import { useApp } from "~/state/app";
+import { setApp, useApp } from "~/state/app";
 import { DraftFieldsForm, focusSoon, Quote, SaveState, SignaturePreview } from "./inline-draft";
 import { popupOpen } from "./composer/controller";
 import { ComposerBody, ComposerFormatBar, FormatToggle, LinkButton, preloadComposer } from "./composer/lazy";
@@ -34,12 +34,23 @@ export function NewMessage() {
   const accounts = useApp((s) => s.accounts);
   const rootRef = useRef<HTMLFormElement>(null);
   const formatId = useId();
+  const focusGeneration = useRef(0);
+  const ownedFocus = useRef<{ composeSeq: number; key: string; seq: number } | null>(null);
 
   useEffect(preloadComposer, []);
   // a new message: suggestions get ready (once per session)
   useEffect(warmAutocomplete, []);
   useEffect(() => {
-    if (compose) focusSoon("[data-testid=compose-to]", rootRef.current);
+    if (!compose) return;
+    const generation = ++focusGeneration.current;
+    const focus = useApp.getState().draftFocus;
+    if (ownedFocus.current?.composeSeq !== compose.seq) ownedFocus.current = focus?.key === compose.key && composeFocusPending(null, focus.key, focus.seq) ? { composeSeq: compose.seq, key: focus.key, seq: focus.seq } : null;
+    const owned = ownedFocus.current;
+    focusSoon("[data-testid=compose-to]", rootRef.current, 12, owned ? (fallback) => { if (focusGeneration.current === generation) finishComposeFocus(owned.key, owned.seq, fallback); } : undefined, owned ? () => composeFocusPending(null, owned.key, owned.seq) : undefined);
+    if (owned && useApp.getState().draftFocus?.seq === owned.seq) setApp({ draftFocus: null });
+    return () => {
+      if (owned) queueMicrotask(() => { if (focusGeneration.current === generation) finishComposeFocus(owned.key, owned.seq, false); });
+    };
   }, [compose?.seq]);
 
   if (!compose || !d) return null;
