@@ -1,6 +1,6 @@
 # Plan 53: mail landmarks and command dialog ownership
 
-Status: implemented with scoped component/type/lint checks; root owns independent review, browser/visual qualification and global gates.
+Status: finite landmark/recipient fixture boundary qualified by scoped checks, browser/visual verification and fresh Standards/Spec R1; whole-renderer, native/package, performance and global gates remain open.
 
 ## Request (verbatim)
 
@@ -60,3 +60,13 @@ While this slice ran, root advanced HEAD from the investigation baseline to `e54
 At `17ed002a425aa2f8f6fed36db9f45541ab8d4185`, one fresh repository probe build and15 sequential cases passed actual0 in `/tmp/terno-landmarks-recipient-browser-20261027` (47.618s including build/cleanup). Unchanged root recipient fixture supplies six full-page light/dark axe passes across new/inline and all3designs; its pending chip/text, refusal retention, later replacement and actual retry RPC/SMTP MIME assertions all pass. Existing six main-window/Reader/Settings/palette WCAG tests and three List Reply-focus tests also pass; their existing WCAG exclusions are not represented as the new full-page recipient rule set. The earlier six region failures remain retained separately; no assertion, exclusion, timeout or retry was changed.
 
 Root inspected all12pending recipient PNGs using six labeled light/dark pairs; no apparent layout defect in the shown fields, chips, body or disabled Send controls. Original full-resolution images and SHA mapping are in qualification.json. Alltrackedsource+fixture hashes/135frozenassets/servedHTML+rich/workerbefore-build-seed-after/emitter stayedunchanged. Direct runner reaped, all57sampledPID/startidentities absent, ownedTMPDIRremoved, noLISTEN andboth58371/58372bindfree; sampling is nonexhaustive. Fresh independent Standards/Spec review, full renderer/native/package/performance/global qualification remain open.
+
+## Fresh independent R1 code reviews
+
+Both reviews pin exact `8974aa387d57ab4101b89508fcf4fa27f66e7ec7` against actual parent `e545a4296c004f5e0d9c2b3f6d7d814eb66e705a`, audit both actual commits/footers/full patches/seven-path union, and return Standards0/Spec0 within this finite boundary. Root read both complete authored results and full substantive CLI finals, including all four prior-critique dispositions: correct sole-main/named-region ownership, stable reconciliation/measurement boundaries, popup-owned metadata without new interface, and meaningful real-dialog/App regression scope. Neither review executed project checks or inspected images.
+
+Standards artifacts: `/tmp/terno-provider-hardening.x0emTS/mail-landmarks-review-r1-standards-zpi_0jdh/review.md`, full `codex-final.md`, process/audits/hash indices. Its sole guarded7,835-byte CLI completed actual0/substantive DONE/natural260.547s, PID59646 directly waited/reaped. Spec artifacts: `/tmp/terno-provider-hardening.x0emTS/mail-landmarks-review-r1-spec-krlbvjqe/`, full `final.md`, process/audits/hash indices and full authored terminal response. Its sole guarded5,784-byte CLI completed actual0/substantive DONE/natural213.509s, PID59544 directly waited/reaped. Each verifies all1279 pinned file bytes/Git modes, no missing/extra/link. Direct-process reaping is not an exhaustive helper census. Initial extraction/read-bound deviations and required truncation recovery remain disclosed; no repeat review or optional validation ran.
+
+The reviewers correctly narrow the browser evidence: recipient axe has no rule exclusions, but existing `stabilize()` hides transient SnackDock content, so it covers the stabilized page; older WCAG cases retain their different tags/disabled rule/scoped surfaces. The retry test checks exact To values in RPC and one captured SMTP MIME, not a separate exhaustive envelope/Cc/Bcc matrix. Prior chip-loss/landmark REDs, setup failures and the mistaken progress inference remain recorded. Root alone LOOKED12pending PNGs. Finite15passes is not a repeated33pass or full-renderer gate.
+
+The separate R10 renderer/ACK findings, all global/performance/resource and native/package obligations remain open. No report-wide or release approval follows.
