@@ -1,4 +1,4 @@
-import { assetError, linkAssets, validateAssets } from "@terno/store";
+import { assetError, linkAssets, reaffirmFlagIntent, validateAssets } from "@terno/store";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import { idbAssets, replaceAttachments } from "./attachments";
@@ -686,7 +686,7 @@ export interface ActionResult {
   before: MessageState[];
 }
 
-function plan(action: ThreadAction, msgs: R[], explicit: boolean): { ids: number[]; set: Partial<R> } {
+function plan(action: ThreadAction, msgs: R[], explicit: boolean): { ids: number[]; set: Partial<R>; scope?: number[] } {
   const latestPerThread = new Map<number, R>();
   for (const m of msgs) {
     const cur = latestPerThread.get(m.thread_id);
@@ -706,14 +706,14 @@ function plan(action: ThreadAction, msgs: R[], explicit: boolean): { ids: number
     case "moveToInbox": {
       const scope = new Set(msgs.filter((m) => !m.is_sent).map((m) => m.thread_id));
       const chosen = msgs.filter((m) => !m.is_sent || !scope.has(m.thread_id));
-      return { ids: ids(chosen.filter((m) => !m.in_inbox || m.is_trash || m.is_spam)), set: { in_inbox: 1, is_trash: 0, is_spam: 0 } };
+      return { ids: ids(chosen.filter((m) => !m.in_inbox || m.is_trash || m.is_spam)), set: { in_inbox: 1, is_trash: 0, is_spam: 0 }, scope: ids(chosen) };
     }
     case "markRead":
       return { ids: ids(msgs.filter((m) => !m.is_read)), set: { is_read: 1 } };
     case "markUnread":
-      return { ids: ids(latest.filter((m) => m.is_read)), set: { is_read: 0 } };
+      return { ids: ids(latest.filter((m) => m.is_read)), set: { is_read: 0 }, scope: ids(latest) };
     case "star":
-      return { ids: ids(latest.filter((m) => !m.is_starred)), set: { is_starred: 1 } };
+      return { ids: ids(latest.filter((m) => !m.is_starred)), set: { is_starred: 1 }, scope: ids(latest) };
     case "unstar":
       return { ids: ids(msgs.filter((m) => m.is_starred)), set: { is_starred: 0 } };
   }
@@ -730,7 +730,9 @@ export function applyMessageAction(c: Ctx, messageIds: readonly number[], action
 }
 
 function applyToMessages(c: Ctx, msgs: R[], action: ThreadAction, explicit: boolean): ActionResult {
-  const { ids, set } = plan(action, msgs, explicit);
+  const { ids, set, scope } = plan(action, msgs, explicit);
+  const changed = new Set(ids);
+  reaffirmFlagIntent(idbFlags(c), (scope ?? msgs.map((m) => m.id as number)).filter((id) => !changed.has(id)), action);
   const messages = T(c, "messages");
   const touched = new Set<number>();
   const byAccount = new Map<number, number[]>();

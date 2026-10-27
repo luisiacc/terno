@@ -1,5 +1,6 @@
 import type { ThreadAction } from "@terno/core";
-import type { MessageState } from "@terno/store";
+import { reaffirmFlagIntent, type MessageState } from "@terno/store";
+import { sqlFlags } from "./flag-intents";
 import { recomputeThreads } from "./ingest";
 import { placeholders, type Db } from "./sqlite";
 
@@ -30,7 +31,7 @@ interface Msg {
 }
 
 /** Which messages an action changes, and the column updates applied to them. */
-function plan(action: ThreadAction, msgs: Msg[], explicit = false): { ids: number[]; set: string } {
+function plan(action: ThreadAction, msgs: Msg[], explicit = false): { ids: number[]; set: string; scope?: number[] } {
   const latestPerThread = new Map<number, Msg>();
   for (const m of msgs) {
     const cur = latestPerThread.get(m.thread_id);
@@ -56,14 +57,15 @@ function plan(action: ThreadAction, msgs: Msg[], explicit = false): { ids: numbe
       return {
         ids: ids(chosen.filter((m) => !m.in_inbox || m.is_trash || m.is_spam)),
         set: "in_inbox = 1, is_trash = 0, is_spam = 0",
+        scope: ids(chosen),
       };
     }
     case "markRead":
       return { ids: ids(msgs.filter((m) => !m.is_read)), set: "is_read = 1" };
     case "markUnread":
-      return { ids: ids(latest.filter((m) => m.is_read)), set: "is_read = 0" };
+      return { ids: ids(latest.filter((m) => m.is_read)), set: "is_read = 0", scope: ids(latest) };
     case "star":
-      return { ids: ids(latest.filter((m) => !m.is_starred)), set: "is_starred = 1" };
+      return { ids: ids(latest.filter((m) => !m.is_starred)), set: "is_starred = 1", scope: ids(latest) };
     case "unstar":
       return { ids: ids(msgs.filter((m) => m.is_starred)), set: "is_starred = 0" };
   }
@@ -110,7 +112,9 @@ export function applyMessageAction(db: Db, messageIds: readonly number[], action
 }
 
 function applyToMessages(db: Db, msgs: Msg[], action: ThreadAction, explicit: boolean): ActionResult {
-  const { ids, set } = plan(action, msgs, explicit);
+  const { ids, set, scope } = plan(action, msgs, explicit);
+  const changed = new Set(ids);
+  reaffirmFlagIntent(sqlFlags(db), (scope ?? msgs.map((m) => m.id)).filter((id) => !changed.has(id)), action);
   const byId = new Map(msgs.map((m) => [m.id, m]));
   const touched = new Set<number>();
   const byAccount = new Map<number, number[]>();

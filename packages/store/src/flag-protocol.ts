@@ -28,6 +28,7 @@ export interface FlagRepository {
   putEffect(row: FlagEffect): void;
   deleteEffect(row: FlagEffect): void;
   effects(op: string, messageIds?: readonly number[]): FlagEffect[];
+  messageEffects(id: number): FlagEffect[];
   op(id: string): FlagOp | null;
   upperSeq(account: number): number;
   headers(account: number, afterSeq: number, afterOp: string, through: number, limit: number): FlagOp[];
@@ -116,6 +117,24 @@ export function localFlagIntent(repo: FlagRepository, accountId: number, message
     }
   }
   return generation;
+}
+
+/** A reaffirmed observed value must not later re-arm a conflicting parked mutation. */
+export function reaffirmFlagIntent(repo: FlagRepository, messageIds: readonly number[], kind: string): void {
+  if (!messageIds.length || !repo.clocks().length) return;
+  const fields = operationFlagFields(kind), versions = new Map<number, number>();
+  for (const id of messageIds) {
+    const message = repo.message(id);
+    if (!stable(message) || !repo.clock(message.account_id) || !fields.every((field) => Number(message[FLAG_COLUMNS[field]]) === VALUES[kind]![field])) continue;
+    const conflicting = repo.messageEffects(id).some((effect) => {
+      const row = repo.intent(id, effect.field);
+      return fields.includes(effect.field) && row?.intent_version === (effect.intent_version ?? 0) && effect.value !== VALUES[kind]![effect.field] && repo.op(effect.op_id)?.state === "unknown";
+    });
+    if (!conflicting) continue;
+    let version = versions.get(message.account_id);
+    if (version === undefined) { version = flagTick(repo, message.account_id); versions.set(message.account_id, version); }
+    localFlagIntent(repo, message.account_id, [id], kind, version);
+  }
 }
 
 export function settleFlagEffects(repo: FlagRepository, op: FlagOp, outcome: "success" | "unknown" | "removed", messageIds?: readonly number[]): void {

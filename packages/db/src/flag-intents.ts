@@ -27,6 +27,7 @@ export class SqlFlagRepository implements FlagRepository {
   putEffect(row: FlagEffect) { this.put("flag_op_effects", row); }
   deleteEffect(row: FlagEffect) { this.db.run("DELETE FROM flag_op_effects WHERE op_id=? AND message_id=? AND field=?", row.op_id, row.message_id, row.field); }
   effects(op: string, ids?: readonly number[]) { return ids ? ids.flatMap((id) => this.db.all<FlagEffect>("SELECT * FROM flag_op_effects WHERE op_id=? AND message_id=?", op, id)) : this.db.all<FlagEffect>("SELECT * FROM flag_op_effects WHERE op_id=?", op); }
+  messageEffects(id: number) { return this.db.all<FlagEffect>("SELECT * FROM flag_op_effects WHERE message_id=?", id); }
   op(id: string) { return this.db.get<FlagOp>("SELECT id,account_id,seq,kind,state FROM ops WHERE id=?", id) ?? null; }
   upperSeq(account: number) { return this.db.get<{seq: number}>("SELECT coalesce(max(seq),0) AS seq FROM ops WHERE account_id=?", account)!.seq; }
   headers(account: number, seq: number, op: string, through: number, limit: number) { return this.db.all<FlagOp>("SELECT id,account_id,seq,kind,state FROM ops WHERE account_id=? AND seq<=? AND (seq>? OR (seq=? AND id>=?)) ORDER BY seq,id LIMIT ?", account, through, seq, seq, op, limit); }

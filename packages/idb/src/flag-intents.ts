@@ -30,6 +30,7 @@ export class IdbFlagRepository implements FlagRepository {
     const wanted = new Set(ids);
     return all.filter((row) => wanted.has(row.message_id));
   }
+  messageEffects(id: number) { return this.db.table("flag_op_effects").by("fk_message_id", id) as unknown as FlagEffect[]; }
   op(id: string) {
     const row = this.db.table("ops").get(id);
     return row ? { id: row.id as string, account_id: row.account_id as number, seq: row.seq as number, kind: row.kind as string, state: row.state as string } : null;

@@ -121,6 +121,26 @@ export function defineDurableFlagIntentConformance(name: string, harness: StoreH
       expect((await store.debug.snapshot()).messages.find((message) => message.id === first.id)!.isRead).toBe(true);
     });
 
+    it("an explicit no-op reaffirmation prevents replaying conflicting uncertain work", async () => {
+      const store = await harness.open(); stores.push(store);
+      const [a] = await withAccounts(store, 1);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "reaffirm", isRead: true })]);
+      const threadId = await threadOf(store, "reaffirm");
+      await observe(store, a!);
+      await store.threads.act({ threadIds: [threadId], action: "markUnread", signal: null, now: 1 });
+      const [unknown] = await store.ops.claimReady(2, 20);
+      await store.ops.markUnknown(unknown!.id, "uncertain", 3);
+      const fresh = (await observe(store, a!))!;
+      const id = (await store.debug.snapshot()).messages[0]!.id;
+      await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "reaffirm", flags: { isRead: true } }], fresh);
+      const reaffirmed = await store.threads.act({ threadIds: [threadId], action: "markRead", signal: null, now: 4 });
+      expect(reaffirmed.opIds).toEqual([]);
+      expect(reaffirmed.before).toEqual([]);
+      expect(reaffirmed.flagReconcileAccounts).toEqual([a]);
+      await expect(store.ops.resolveUnknown(unknown!.id, "retry", 5)).rejects.toMatchObject({ code: "STALE" });
+      expect((await store.debug.snapshot()).messages[0]!.isRead).toBe(true);
+    });
+
     it("terminal flag failures retain a drainable snapshot obligation through reopen", async () => {
       let store = await harness.open(); stores.push(store);
       const [a] = await withAccounts(store, 1);
