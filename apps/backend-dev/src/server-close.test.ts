@@ -133,7 +133,6 @@ it.each(["no partial peer", "partial peer", "partial peer after slow setup", "pe
       const bootstrap = client.call("app.bootstrap", {});
       expect(await completed(bootstrap, 2000)).toBe(true);
       expect(await bootstrap).toHaveProperty("accounts");
-      if (scenario === "partial peer after slow setup") vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
       stages.push("bootstrap-finished");
       if (scenario !== "no partial peer") {
         const port = Number(new URL(host.url).port);
@@ -165,8 +164,11 @@ it.each(["no partial peer", "partial peer", "partial peer after slow setup", "pe
         }
       }
       if (scenario === "partial peer after slow setup") {
-        await vi.advanceTimersByTimeAsync(2100);
-        vi.useRealTimers();
+        let timer: ReturnType<typeof realDeadline> | undefined;
+        try {
+          const setup = new Promise<void>((resolve) => { timer = realDeadline(resolve, 2100); });
+          expect(await completed(setup, 3000), "the real slow-setup gate completed").toBe(true);
+        } finally { clearRealDeadline(timer); }
         expect(ws.readyState).toBe(WebSocket.OPEN);
         stages.push("setup-finished-after-old-close-deadline");
       }
