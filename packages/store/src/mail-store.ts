@@ -414,8 +414,12 @@ export interface MailStore {
 
   owner: {
     get(): Promise<OwnerIdentity | null>;
-    /** moves ownership to a re-verified account with its fresh secret, if it is still the same mailbox */
-    change(c: { claim: OwnerClaim; stamp: { createdAt: number; email: string }; secret: SecretIntent; reason: string; now: number }): Promise<boolean>;
+    /**
+     * Moves ownership and its exact credential atomically. eligible is a synchronous, pure predicate
+     * evaluated inside the command before any mutation; false leaves owner/history/secret unchanged.
+     * A thrown predicate aborts the command. It must not start async work or mutate store state.
+     */
+    change(c: { claim: OwnerClaim; stamp: { createdAt: number; email: string }; secret: SecretIntent; reason: string; now: number; eligible?: () => boolean }): Promise<boolean>;
   };
 
   drafts: {

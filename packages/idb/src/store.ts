@@ -1296,11 +1296,12 @@ export class IdbMailStore implements MailStore {
   readonly owner: MailStore["owner"] = {
     get: () => this.early(() => getOwner(this.c)),
     change: (o) => {
-      const stamp = { ...o.stamp }, claim = { ...o.claim, evidence: { ...o.claim.evidence } };
+      const stamp = { ...o.stamp }, claim = { ...o.claim, evidence: { ...o.claim.evidence } }, eligible = o.eligible;
       const secret = o.secret.kind === "retain" ? { ...o.secret, expectedBlob: Uint8Array.from(o.secret.expectedBlob) } : { ...o.secret, expectedBlob: o.secret.expectedBlob && Uint8Array.from(o.secret.expectedBlob), blob: Uint8Array.from(o.secret.blob) };
       return this.command(() => {
         const r = T(this.c, "accounts").get(claim.accountId);
         if (!r || r.created_at !== stamp.createdAt || r.email !== stamp.email) throw new RpcError("NOT_FOUND", L("errors.accountRemovedWhileVerifying", { email: stamp.email }));
+        if (eligible && eligible() !== true) return false;
         if (!this.commitSecret(secret, { ...stamp, id: claim.accountId })) return false;
         changeOwner(this.c, claim, o.reason, o.now);
         return true;

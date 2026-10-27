@@ -1537,6 +1537,23 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
     });
 
     describe("secrets", () => {
+      it("owner eligibility refuses or throws before any owner or secret mutation", async () => {
+        let store = await fresh();
+        const claim = { displayName: "Synthetic", provider: "gmail" as const, verifiedBy: "google_oauth" as const, evidence: { googleSub: "synthetic", emailVerified: true } };
+        const create = (email: string) => store.accounts.create({ kind: "gmail", email, displayName: "Synthetic", color: "indigo", providerConfig: {}, ownerClaim: claim, now: NOW });
+        await create("owner@example.test"); const { account } = await create("target@example.test");
+        const owner = await store.owner.get(), stamp = (await store.accounts.stamp(account.id))!, name = `account:${account.id}:refreshToken`;
+        await store.secrets.put(name, Uint8Array.of(1));
+        const request = { claim: { ...claim, accountId: account.id, email: account.email }, stamp, secret: { kind: "replace" as const, name, expectedBlob: Uint8Array.of(1), blob: Uint8Array.of(2) }, reason: "synthetic", now: NOW };
+        expect(await store.owner.change({ ...request, eligible: () => false })).toBe(false);
+        await expect(store.owner.change({ ...request, eligible: () => { throw new Error("synthetic guard failure"); } })).rejects.toThrow("synthetic guard failure");
+        expect(await store.owner.get()).toEqual(owner); expect(await store.secrets.get(name)).toEqual(Uint8Array.of(1));
+        store = await harness.reopen(store); open.push(store);
+        expect(await store.owner.get()).toEqual(owner); expect(await store.secrets.get(name)).toEqual(Uint8Array.of(1));
+        expect(await store.owner.change({ ...request, eligible: () => true })).toBe(true);
+        expect(await store.owner.get()).toMatchObject({ accountId: account.id }); expect(await store.secrets.get(name)).toEqual(Uint8Array.of(2));
+      });
+
       it("CAS compares byte contents and views, never upserts, and checks the mailbox stamp atomically", async () => {
         let store = await fresh();
         const [id] = await withAccounts(store);

@@ -256,13 +256,17 @@ export async function changeOwnerTo(b: Backend, accountId: number, password: str
         await commitGoogleCredential(b, accountId, stamp, flow, prepared.intent);
         throw invalidRenewal();
       }
+      const expiresAt = prepared.pending?.proof.expiresAt;
       let changed: boolean;
-      try { changed = await b.credentialCommit(accountId, flow, () => b.store.owner.change({ claim: { ...claim, accountId, email: account.email }, stamp, secret: prepared.intent, reason: current ? "changed by user" : "claimed by user", now: b.now() })); }
+      try { changed = await b.credentialCommit(accountId, flow, () => b.store.owner.change({ claim: { ...claim, accountId, email: account.email }, stamp, secret: prepared.intent, reason: current ? "changed by user" : "claimed by user", now: b.now(), eligible: expiresAt === undefined ? undefined : () => Date.now() < expiresAt })); }
       catch { b.assertSignIn(accountId, flow); throw persistenceFailed(); }
       b.assertSignIn(accountId, flow);
-      if (!changed) { b.gmailRenewals.delete(accountId); throw persistenceFailed(); }
+      if (!changed) {
+        // The owner decision refused; a mail-proven rotation can still need separate durability.
+        if (prepared.pending) { await commitGoogleCredential(b, accountId, stamp, flow, prepared.intent); throw invalidRenewal(); }
+        throw persistenceFailed();
+      }
       b.gmailRenewals.delete(accountId);
-      if (prepared.pending && prepared.pending.proof.expiresAt <= Date.now()) throw invalidRenewal();
       await b.signedIn(accountId, undefined, flow);
       await b.emitOwner();
       b.assertSignIn(accountId, flow);

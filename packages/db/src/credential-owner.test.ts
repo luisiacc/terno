@@ -21,6 +21,10 @@ describe("owner credential compound transaction", () => {
     await store.secrets.put(name, old);
     const owner = await store.owner.get();
     const change = (secret: Parameters<typeof store.owner.change>[0]["secret"], expectedStamp = stamp) => store.owner.change({ claim: { ...claim, accountId: target.id, email: target.email }, stamp: expectedStamp, secret, now: 3, reason: "synthetic test" });
+    const guarded = (eligible: () => boolean) => store.owner.change({ claim: { ...claim, accountId: target.id, email: target.email }, stamp, secret: { kind: "replace", name, expectedBlob: old, blob: Uint8Array.of(3) }, reason: "synthetic", now: 3, eligible });
+    expect(await guarded(() => false)).toBe(false);
+    await expect(guarded(() => { throw new Error("synthetic eligibility failure"); })).rejects.toThrow("synthetic eligibility failure");
+    expect(await store.owner.get()).toEqual(owner); expect(ownerHistory(store.db)).toEqual([]); expect(await store.secrets.get(name)).toEqual(old);
     expect(await change({ kind: "retain", name, expectedBlob: Uint8Array.of(9) })).toBe(false);
     expect(await change({ kind: "replace", name, expectedBlob: Uint8Array.of(9), blob: Uint8Array.of(3) })).toBe(false);
     expect(await change({ kind: "replace", name, expectedBlob: null, blob: Uint8Array.of(3) })).toBe(false);

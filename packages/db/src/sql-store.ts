@@ -788,6 +788,7 @@ export class SqlMailStore implements MailStore {
         if (!now || now.createdAt !== c.stamp.createdAt || now.email !== c.stamp.email) {
           throw new RpcError("NOT_FOUND", L("errors.accountRemovedWhileVerifying", { email: c.stamp.email }));
         }
+        if (c.eligible && c.eligible() !== true) return false;
         if (!this.commitSecret(c.secret, { ...c.stamp, id: c.claim.accountId })) return false;
         changeOwner(this.db, c.claim, c.reason, c.now);
         return true;

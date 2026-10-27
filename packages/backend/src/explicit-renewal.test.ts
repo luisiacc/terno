@@ -114,6 +114,27 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     expect(sends).toBe(1); expect((await t.client.call("ops.list", {})).find((row) => row.id === sent.opId)?.state).toBe("succeeded");
   });
 
+  it.each(["execution", "acknowledgement"] as const)("owner proof expiry gates transaction %s without an unreported claim", async (delay) => {
+    const t = await setup(kind), entered = t.gate(), blocked = t.gate();
+    t.answer({ refreshToken: null }); t.rotate("rotated-refresh");
+    const proof: GmailRenewalProof = { scopeSource: "resource-proof", refreshToken: "rotated-refresh", expiresAt: Date.now() + 60_000, inspect: t.inspect, provePhotos: t.photos };
+    t.begin.mockResolvedValueOnce(proof);
+    const change = t.backend.store.owner.change.bind(t.backend.store.owner), owner = await t.backend.store.owner.get();
+    vi.spyOn(t.backend.store.owner, "change").mockImplementationOnce(async (...args) => {
+      if (delay === "execution") { entered.release(); await blocked.promise; return change(...args); }
+      const result = await change(...args); entered.release(); await blocked.promise; return result;
+    });
+    const result = outcome(t.client.call("identity.changeOwner", { accountId: t.account.id })); await entered.promise;
+    vi.spyOn(Date, "now").mockReturnValue(proof.expiresAt + 1); blocked.release();
+    const response = await result;
+    expect(await t.backend.getSecret(t.name)).toBe("rotated-refresh");
+    if (delay === "execution") {
+      expect(response).toHaveProperty("error"); expect(await t.backend.store.owner.get()).toEqual(owner);
+    } else {
+      expect(response).toHaveProperty("value"); expect(await t.backend.store.owner.get()).toMatchObject({ accountId: t.account.id });
+    }
+  });
+
   it("initial omission and malformed present values save no new account", async () => {
     const t = await setup(kind); const before = (await t.client.call("app.bootstrap", {})).accounts.map((a) => ({ id: a.id, email: a.email }));
     for (const refreshToken of [null, undefined, "", 123]) {
