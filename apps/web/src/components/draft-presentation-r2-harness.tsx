@@ -12,7 +12,15 @@ export async function realSetup(adapter: "SQL" | "IDB exact" | "IDB instant") {
   const h = await setup("list"), calls: Promise<unknown>[] = [], methods: string[] = [];
   const call = <M extends keyof typeof contract>(method: M, p: Parameters<typeof client.call<M>>[1]) => { methods.push(method); const pending = client.call(method, p); calls.push(pending.catch(() => undefined)); return pending; };
   gate.call.mockImplementation(call);
-  gate.load.mockImplementation(async (id: number) => { const detail = await call("threads.get", { threadId: id }); h.useThreads.setState((state) => ({ details: new Map(state.details).set(id, detail) })); return detail; });
+  const loading = new Map<number, Promise<import("@terno/core").ThreadDetail | null>>();
+  gate.load.mockImplementation((id: number, force = false) => {
+    if (!force) {
+      const cached = h.useThreads.getState().details.get(id); if (cached) return Promise.resolve(cached);
+      const pending = loading.get(id); if (pending) return pending;
+    }
+    const pending = call("threads.get", { threadId: id }).then((detail) => { h.useThreads.setState((state) => ({ details: new Map(state.details).set(id, detail) })); return detail; }).catch(() => null).finally(() => { if (loading.get(id) === pending) loading.delete(id); });
+    loading.set(id, pending); return pending;
+  });
   h.drafts.setDraftTransport((method, p) => method === "drafts.save" ? call(method, contract[method].params.parse(p)) : call(method, contract[method].params.parse(p)));
   const publish = async (draft: import("@terno/core/rpc").Draft) => act(async () => { const local = h.drafts.fromServer(draft); h.drafts.useDrafts.setState({ drafts: { [h.key]: { ...local, key: h.key } } }); h.app.setApp({ accounts: await store.accounts.list(), accountId: (await store.accounts.list())[0]?.id ?? null, selectedId: null, readerOpen: false, compose: null }); });
   const cleanup = async () => { await h.cleanup(); await Promise.all(calls); c.close(); await backend.stop(); rmSync(dir, { recursive: true, force: true }); };

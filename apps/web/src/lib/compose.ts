@@ -187,8 +187,9 @@ export async function openStoredDraft(key: string): Promise<void> {
     if (!current(snapshot)) return;
     if (snapshot.recovery || missingFromAtStart) { lease = showStoredStandalone(key, mine); return; }
     const sourceId = activeSourceId(snapshot);
-    if (sourceId === null || (!snapshot.showSourceContext && snapshot.threadId === null)) { lease = showStoredStandalone(key, mine); return; }
-    const context = await client.call("drafts.sourceContext", { messageId: sourceId });
+    const canonical = sourceId === null && snapshot.mode !== "new" && !snapshot.showSourceContext ? snapshot.threadId : null;
+    if ((sourceId === null && canonical === null) || (!snapshot.showSourceContext && snapshot.threadId === null)) { lease = showStoredStandalone(key, mine); return; }
+    const context = canonical !== null ? { threadId: canonical, accountId: snapshot.accountId } : await client.call("drafts.sourceContext", { messageId: sourceId! });
     if (!current(snapshot)) return;
     if (!context) { lease = showStoredStandalone(key, mine); return; }
     invalidateDraftPresentation(key);
@@ -200,11 +201,11 @@ export async function openStoredDraft(key: string): Promise<void> {
     if (!current(snapshot)) return;
     lease = beginFocusLease(mine, context.threadId);
     lease.accountId = snapshot.accountId;
-    const detail = await loadThread(context.threadId);
+    const detail = canonical !== null ? await loadThread(context.threadId, true) : await loadThread(context.threadId);
     if (!current(snapshot)) return;
-    const latest = await client.call("drafts.sourceContext", { messageId: sourceId });
+    const latest = canonical !== null ? context : await client.call("drafts.sourceContext", { messageId: sourceId! });
     if (!current(snapshot)) return;
-    if (!detail || !latest || latest.threadId !== context.threadId || latest.accountId !== detail.thread.accountId) { lease = showStoredStandalone(key, mine); return; }
+    if (!detail || detail.thread.id !== context.threadId || !latest || latest.threadId !== context.threadId || latest.accountId !== detail.thread.accountId) { lease = showStoredStandalone(key, mine); return; }
     // A settled unavailable pane has no destination to consume this request.
     if (!lease.destination?.active) return;
     validateDraftPresentation(key, context.threadId);
