@@ -258,6 +258,10 @@
   [data-focus-inset]:focus-visible {
     outline-offset: -2px;
   }
+  /* never around a whole list, menu or scrolling pane: its highlighted row is the focus (plan 52) */
+  :is([role="listbox"], [role="list"], [role="tree"], [role="grid"], [role="treegrid"], [role="menu"], [role="menubar"], [role="tablist"], [role="radiogroup"], [data-slot="scroll-area-viewport"]):focus-visible {
+    outline: none;
+  }
   ::selection {
     background: color-mix(in oklab, var(--primary) 28%, transparent);
   }

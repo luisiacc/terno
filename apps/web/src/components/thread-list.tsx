@@ -743,7 +743,7 @@ export function ThreadList() {
       {/* under tabs the rows are what they control (tabpanel); the listbox is one Tab stop and restores focus when a page closes */}
       <div className="relative flex min-h-0 flex-1 flex-col" {...(tabs ? { role: "tabpanel", id: TAB_PANEL_ID, "aria-labelledby": `list-tab-${tab}` } : {})}>
       <ThreadMenu>
-      <div ref={parentRef} data-keep-scroll="list" role="listbox" tabIndex={0} aria-label={t("list.label")} aria-multiselectable className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset [contain:strict]">
+      <div ref={parentRef} data-keep-scroll="list" role="listbox" tabIndex={0} aria-label={t("list.label")} aria-multiselectable className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none [contain:strict]">
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
         {loading && items.length === 0 ? (
           <div className="space-y-3 p-4">

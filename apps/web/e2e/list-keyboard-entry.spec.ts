@@ -24,7 +24,10 @@ for (const layout of ["list", "split"] as const) {
         }
         expect(reached).toBe(true);
         await expect(list).toBeFocused();
-        expect(await list.evaluate((node) => getComputedStyle(node).boxShadow)).not.toBe("none");
+        // the focus is the highlighted row, never a ring around the whole list (plan 52)
+        expect(await list.evaluate((node) => [getComputedStyle(node).outlineStyle, getComputedStyle(node).boxShadow])).toEqual(["none", "none"]);
+        const active = page.locator(`[id="${await list.getAttribute("aria-activedescendant")}"]`);
+        expect(await active.evaluate((e) => getComputedStyle(e, "::before").backgroundColor)).not.toMatch(/^(transparent|rgba\(0, 0, 0, 0\))$/);
         if (layout === "list") {
           const before = await list.getAttribute("aria-activedescendant");
           const next = rows(page).nth(1);
