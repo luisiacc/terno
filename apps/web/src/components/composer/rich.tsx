@@ -152,6 +152,7 @@ export function RichBody({ draftKey, placeholder, className, checkpoint }: { dra
   const [bubble, setBubble] = useState<{ from: number; to: number; href: string; top: number; left: number } | null>(null);
   const bodyRef = useRef<ReturnType<typeof attachBody> | null>(null);
   const adoptedRef = useRef<{ original: BodyCheckpoint; replay?: BodyCheckpoint } | null>(null);
+  const replayFocusRef = useRef<string | null>(null);
   const openLinkRef = useRef<() => void>(() => {});
   /** recomputes the toolbar's state (a send starting or ending changes what it may do) */
   const refreshRef = useRef<() => void>(() => {});
@@ -267,7 +268,10 @@ export function RichBody({ draftKey, placeholder, className, checkpoint }: { dra
       refreshRef.current = schedule;
       // the stand-in had focus (typed into or not): the editor that replaces it takes it
       const standInFocused = takeStandInFocus(draftKey);
-      if (!checkpoint && (early?.focused || standInFocused)) focus("end");
+      const replayFocus = replayFocusRef.current === draftKey && document.activeElement === document.body;
+      replayFocusRef.current = null;
+      if (replayFocus) focus("keep");
+      else if (!checkpoint && (early?.focused || standInFocused)) focus("end");
       unregister = registerController(draftKey, controller);
       if (checkpoint && ((useDraftRecovery.getState().checkpoint !== checkpoint && (!replay || useDraftRecovery.getState().checkpoint !== undefined)) || !useDraftRecovery.getState().open)) throw new Error("Draft checkpoint is no longer available");
       bodyRef.current = attachBody(draftKey, () => {
@@ -280,6 +284,7 @@ export function RichBody({ draftKey, placeholder, className, checkpoint }: { dra
       if (checkpoint) useDraftRecovery.setState({ checkpoint: undefined });
       return () => {
         if (frame) cancelAnimationFrame(frame);
+        replayFocusRef.current = view.dom.contains(document.activeElement) ? draftKey : null;
         // a suggestion is never brought back by a remount
         const state = withoutGhost(view.state);
         keepState(draftKey, state, versionRef.current);

@@ -26,6 +26,9 @@ it("does not steal focus after reopening when the user moves to another control 
     await act(async () => { collapsed.focus(); collapsed.click(); });
     await act(async () => { other.focus(); const pending = [...frames.values()]; frames.clear(); pending.forEach((cb) => cb(0)); });
     expect(document.activeElement).toBe(other);
+    const { loadComposer } = await import("./composer/lazy");
+    await act(async () => { await loadComposer(); });
+    expect(document.activeElement).toBe(other);
   } finally {
     await act(async () => root.unmount()); forgetDraft(key); host.remove(); other.remove(); raf.mockRestore(); cancel.mockRestore();
   }
