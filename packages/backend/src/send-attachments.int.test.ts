@@ -196,7 +196,7 @@ it("provider body hydration preserves attachment bytes through the public reader
   const thread = (await t.client.call("threads.list", { view: "inbox" })).items[0]!;
   const original = (await t.client.call("threads.get", { threadId: thread.id })).messages[0]!;
   await t.backend.syncAccount(t.accountId);
-  await t.sink().setBody(original.id, "downloaded body", null, [{ filename: "exact.bin", mime: "application/octet-stream", size: 5, bytes: new Uint8Array([0, 255, 128, 13, 10]) }]);
+  await t.sink().setBody(original.id, "downloaded body", "<p>downloaded body</p>", [{ filename: "exact.bin", mime: "application/octet-stream", size: 5, bytes: new Uint8Array([0, 255, 128, 13, 10]) }]);
   const hydrated = (await t.client.call("threads.get", { threadId: thread.id })).messages[0]!;
   expect(hydrated.bodyText).toBe("downloaded body");
   expect(hydrated.attachments).toHaveLength(1);
@@ -204,8 +204,10 @@ it("provider body hydration preserves attachment bytes through the public reader
   expect(await t.client.call("attachments.read", { accountId: t.accountId, assetId: hydrated.attachments[0]!.assetId!, index: 0 })).toEqual({ dataBase64: "AP+ADQo=" });
   await t.sink().setBody(original.id, null, null, undefined, { captureUnavailable: "size" });
   const unavailable = (await t.client.call("threads.get", { threadId: thread.id })).messages[0]!;
-  expect(unavailable.bodyUnavailable).toBe("size");
+  expect(unavailable).toMatchObject({ bodyText: "downloaded body", bodyHtml: "<p>downloaded body</p>", bodyState: "full" });
+  expect(unavailable.bodyUnavailable).toBeUndefined();
   expect(unavailable.attachments).toEqual(hydrated.attachments);
+  expect(await t.client.call("attachments.read", { accountId: t.accountId, assetId: unavailable.attachments[0]!.assetId!, index: 0 })).toEqual({ dataBase64: "AP+ADQo=" });
   await t.sink().setBody(original.id, "downloaded again", null);
   const preserved = (await t.client.call("threads.get", { threadId: thread.id })).messages[0]!;
   expect(preserved.attachments).toEqual(hydrated.attachments);
