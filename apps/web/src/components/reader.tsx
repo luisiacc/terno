@@ -415,11 +415,18 @@ export function Reader() {
   useEffect(() => {
     if (!page) return;
     let unsubscribe = () => {};
+    const activeAtMount = document.activeElement;
+    let focusMoved = false;
+    const moved = (event: FocusEvent) => {
+      if (event.target instanceof Node && event.target.isConnected && event.target !== document.body && event.target !== activeAtMount) focusMoved = true;
+    };
+    document.addEventListener("focusin", moved, true);
     const frame = requestAnimationFrame(() => {
+      document.removeEventListener("focusin", moved, true);
       const section = sectionRef.current;
       const state = useApp.getState();
       const threadId = state.selectedId;
-      if (!section || threadId === null || state.dialog || state.fatal || useDrafts.getState().held || section.closest("[inert]")) return;
+      if (!section || focusMoved || threadId === null || state.dialog || state.fatal || useDrafts.getState().held || section.closest("[inert]")) return;
       if (composeFocusPending(threadId)) {
         const active = document.activeElement;
         unsubscribe = subscribeComposeFocus((finishedThread, fallback) => {
@@ -432,7 +439,7 @@ export function Reader() {
       }
       if (!section.contains(document.activeElement)) section.focus({ preventScroll: true });
     });
-    return () => { cancelAnimationFrame(frame); unsubscribe(); };
+    return () => { cancelAnimationFrame(frame); document.removeEventListener("focusin", moved, true); unsubscribe(); };
   }, [page]);
   const design = useDesign();
   const detail = useThread(selectedId);
