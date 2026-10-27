@@ -1,0 +1,50 @@
+import "fake-indexeddb/auto";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { expect, it, vi } from "vitest";
+import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
+import { nodePlatform, openDatabase, SqlMailStore } from "@terno/db";
+import { IdbMailStore } from "@terno/idb";
+import { BackendCore, plaintextCipher } from "../../../../packages/backend/src/core";
+import { withAccounts, ingest, msg, threadOf } from "@terno/store/conformance";
+const rpc = vi.hoisted(() => ({ call: vi.fn(), loads: vi.fn() }));
+vi.mock("~/rpc/connection", () => ({ client: { call: rpc.call } }));
+vi.mock("~/state/threads", async (original) => {
+  const actual = await original<typeof import("~/state/threads")>();
+  return { ...actual, loadThread: (...args: Parameters<typeof actual.loadThread>) => { rpc.loads(...args); return actual.loadThread(...args); } };
+});
+const { fromServer, expireDraftPresentation, forgetDraft, shownDraftKey, useDrafts } = await import("./drafts");
+const { openCompose, supersedeCompose } = await import("./compose");
+const { setApp, getApp } = await import("~/state/app");
+const { useThreads } = await import("~/state/threads");
+for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) it.each(["newest", "explicit newer", "stale older", "explicit older", "other-thread explicit older"])(`${adapter}: competing hints and merged sources select ${"%s"} work`, async (choice) => {
+  const dir = mkdtempSync(join(tmpdir(), "terno-candidates-r2-"));
+  const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: adapter === "IDB instant", platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
+  const unexpected = async (): Promise<never> => { throw new Error("Unexpected provider"); };
+  let clock = 1;
+  const backend = new BackendCore({ store, platform: nodePlatform, providers: { create: () => { throw new Error("Unexpected provider"); }, connectGmail: unexpected, verifyImap: unexpected }, cipher: plaintextCipher, version: "test", autoSync: false, now: () => clock++ });
+  const [c, s] = createMemoryTransportPair(); backend.connect(s, { clientId: "candidate-r2", origin: "renderer" }); const client = new RpcClient(c);
+  rpc.call.mockImplementation((method, p) => client.call(method, p));
+  try {
+    const [a, b] = await withAccounts(store);
+    await ingest(store, [msg({ accountId: a!, providerMsgId: "survivor", rfcMessageId: "survivor@example.test", attachments: [] }), msg({ accountId: a!, providerMsgId: "newer", rfcMessageId: "newer@example.test", attachments: [] })]);
+    const survivor = await threadOf(store, "survivor"), departed = await threadOf(store, "newer"), oldSource = (await store.threads.get(survivor))!.messages[0]!, newSource = (await store.threads.get(departed))!.messages[0]!;
+    const old = fromServer((await client.call("drafts.save", { accountId: b!, threadId: null, mode: "reply", showSourceContext: true, inReplyToMessageId: oldSource.id, bodyText: "older authored body" }))!);
+    const newer = fromServer((await client.call("drafts.save", { accountId: b!, threadId: null, mode: "reply", showSourceContext: true, inReplyToMessageId: newSource.id, bodyText: "newer exact authored body" }))!);
+    expect(newer.updatedAt).toBeGreaterThan(old.updatedAt);
+    useDrafts.setState({ drafts: { [old.key]: old, [newer.key]: newer } }); expireDraftPresentation(survivor); expireDraftPresentation(departed);
+    await ingest(store, [msg({ accountId: a!, providerMsgId: "bridge", references: ["survivor@example.test", "newer@example.test"], attachments: [] })]);
+    if (choice === "stale older") await store.sync.remove([oldSource.id]);
+    useThreads.setState({ details: new Map([[survivor, (await store.threads.get(survivor))!]]) });
+    const expected = choice === "explicit older" ? old : newer;
+    setApp({ accounts: await store.accounts.list(), accountId: a!, selectedId: survivor, readerOpen: true, compose: null, checked: new Set(), scope: null, draftShown: choice === "other-thread explicit older" ? { threadId: departed, key: old.key } : choice.startsWith("explicit") ? { threadId: survivor, key: expected.key } : null, draftFocus: null, dialog: null, fatal: null });
+    rpc.call.mockClear(); rpc.loads.mockClear(); await openCompose("reply", survivor);
+    expect(getApp().compose).toBeNull();
+    expect(shownDraftKey(useDrafts.getState().drafts, survivor, getApp().draftShown)).toBe(expected.key);
+    expect(useDrafts.getState().drafts[expected.key]).toMatchObject({ id: expected.id, generation: expected.generation, bodyText: expected.bodyText });
+    expect(Object.keys(useDrafts.getState().drafts)).toHaveLength(2);
+    expect(rpc.loads).toHaveBeenCalledTimes(1);
+    expect(rpc.call.mock.calls.filter(([method]) => method === "drafts.sourceContext").map(([, p]) => p.messageId)).toEqual([choice === "explicit older" ? oldSource.id : newSource.id]);
+  } finally { supersedeCompose(); for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); useThreads.setState({ details: new Map(), gone: new Set() }); rpc.call.mockReset(); rpc.loads.mockReset(); c.close(); await backend.stop(); rmSync(dir, { recursive: true, force: true }); }
+});

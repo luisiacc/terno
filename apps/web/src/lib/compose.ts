@@ -278,13 +278,12 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     for (const id of sources) for (const d of index.expiredBySource.get(id) ?? []) matches.set(d.key, d);
     let best: LocalDraft | undefined;
     for (const d of matches.values()) {
-      if (d.key === s.draftShown?.key) return d.key;
+      if (s.draftShown?.threadId === threadId && d.key === s.draftShown.key) return d.key;
       if (!best || d.updatedAt > best.updatedAt) best = d;
     }
     return best?.key ?? null;
   };
   let loaded: ThreadDetail | null | undefined;
-  if (!existingKey) existingKey = candidate();
   if (!existingKey) {
     loaded = await loadThread(threadId);
     if (mine !== intent || !destinationAvailable(lease) || getApp().selectedId !== s.selectedId || (lease && !lease.valid)) return;
