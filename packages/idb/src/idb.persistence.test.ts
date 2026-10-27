@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { IDBFactory } from "fake-indexeddb";
 import { parseSearch, resolveSearch } from "@terno/core";
-import { ingest, msg, withAccounts } from "@terno/store/conformance";
+import { ingest, memoryFiles, msg, withAccounts } from "@terno/store/conformance";
 import { expect, it, vi } from "vitest";
 import { IdbMailStore } from "./store";
 
@@ -302,3 +302,197 @@ for (const boundary of ["early load", "search state", "metadata"] as const) {
     await reopened.close();
   });
 }
+
+it("point reads wait if a write starts after settlement but before the read", async () => {
+  const store = await IdbMailStore.open({ name: crypto.randomUUID(), factory: new IDBFactory(), instantSearch: false, platform });
+  try {
+    await store.whenLoaded();
+    await store.settings.set("race", 0);
+    const transaction = IDBDatabase.prototype.transaction;
+    const spy = vi.spyOn(IDBDatabase.prototype, "transaction").mockImplementation(function (this: IDBDatabase, ...args) {
+      const tx = transaction.call(this, ...args);
+      const names = typeof args[0] === "string" ? [args[0]] : Array.from(args[0]);
+      if (args[1] === "readwrite" && names.includes("settings")) queueMicrotask(() => tx.abort());
+      return tx;
+    });
+    try {
+      const write = store.settings.set("race", 1).then(() => null, (error: unknown) => error);
+      const read = new Promise<number>((resolve, reject) => queueMicrotask(() => queueMicrotask(() => { void store.settings.get("race", 0).then(resolve, reject); })));
+      const [error, value] = await Promise.all([write, read]);
+      expect(error).toBeTruthy();
+      expect(value).toBe(0);
+      await store.debug.verify();
+    } finally { spy.mockRestore(); }
+  } finally { await store.close(); }
+});
+
+it("close joins verification admitted while late loading is pending", async () => {
+  let releaseLoad!: () => void, releaseVerify!: () => void, enteredVerify!: () => void;
+  const loadGate = new Promise<void>((r) => { releaseLoad = r; });
+  const verifyGate = new Promise<void>((r) => { releaseVerify = r; });
+  const verifyStarted = new Promise<void>((r) => { enteredVerify = r; });
+  const getAll = IDBObjectStore.prototype.getAll;
+  let heldLoad = false, holdVerify = false;
+  const spy = vi.spyOn(IDBObjectStore.prototype, "getAll").mockImplementation(function (this: IDBObjectStore, ...args) {
+    const req = getAll.call(this, ...args);
+    const gate = !heldLoad && this.name === "messages" ? (heldLoad = true, loadGate) : holdVerify && this.name === "settings" ? (holdVerify = false, enteredVerify(), verifyGate) : null;
+    if (!gate) return req;
+    return new Proxy(req, {
+      get: (target, key) => Reflect.get(target, key, target),
+      set: (target, key, value) => {
+        if (key === "onsuccess") { target.onsuccess = (event) => { void gate.then(() => value.call(target, event)); }; return true; }
+        return Reflect.set(target, key, value, target);
+      },
+    });
+  });
+  let store: IdbMailStore | undefined, verification: Promise<unknown> | undefined, closing: Promise<unknown> | undefined;
+  try {
+    store = await IdbMailStore.open({ name: crypto.randomUUID(), factory: new IDBFactory(), instantSearch: false, platform });
+    verification = store.debug.verify().then(() => null, (e: unknown) => e);
+    let closeSettled = false;
+    closing = store.close().then(() => { closeSettled = true; }, () => { closeSettled = true; });
+    await new Promise<void>((r) => setImmediate(r));
+    holdVerify = true;
+    releaseLoad();
+    await verifyStarted;
+    await new Promise<void>((r) => setImmediate(r));
+    expect(closeSettled).toBe(false);
+    releaseVerify();
+    expect(await verification).toBeNull();
+    await closing;
+  } finally {
+    releaseLoad(); releaseVerify(); spy.mockRestore();
+    await verification; await closing; await store?.close();
+  }
+});
+
+it("restored instant index rechecks admission after delayed loading", async () => {
+  const name = crypto.randomUUID(), factory = new IDBFactory(), files = memoryFiles(), p = { ...platform, files };
+  let store = await IdbMailStore.open({ name, factory, instantSearch: { settleMs: 0 }, platform: p });
+  await store.secrets.put("probe", new Uint8Array([1]));
+  expect(await store.instant!.settled()).toBe(true);
+  const healthy = await store.threads.search({ search: resolveSearch(parseSearch("example"), "example", {}, { accounts: [], categories: [] }), limit: 10 });
+  expect(healthy.strategy).not.toBe("scan");
+  await store.close();
+  expect(files.files.size).toBeGreaterThan(0);
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  const getAll = IDBObjectStore.prototype.getAll;
+  let delayed = false;
+  const getSpy = vi.spyOn(IDBObjectStore.prototype, "getAll").mockImplementation(function (this: IDBObjectStore, ...args) {
+    const req = getAll.call(this, ...args);
+    if (this.name !== "messages" || delayed) return req;
+    delayed = true;
+    return new Proxy(req, {
+      get: (target, key) => Reflect.get(target, key, target),
+      set: (target, key, value) => {
+        if (key === "onsuccess") { target.onsuccess = (event) => { void gate.then(() => value.call(target, event)); }; return true; }
+        return Reflect.set(target, key, value, target);
+      },
+    });
+  });
+  try {
+    store = await IdbMailStore.open({ name, factory, instantSearch: { settleMs: 0 }, platform: p });
+    expect(await store.instant!.settled()).toBe(true);
+    expect(store.instant!.at(await store.feed.head())).not.toBeNull();
+    const search = store.threads.search({ search: resolveSearch(parseSearch("example"), "example", {}, { accounts: [], categories: [] }), limit: 10 }).then(() => null, (e: unknown) => e);
+    await new Promise<void>((r) => setImmediate(r));
+    const transaction = IDBDatabase.prototype.transaction, put = IDBObjectStore.prototype.put;
+    let target: IDBTransaction | undefined;
+    const injected = new Error("after enqueue");
+    const txSpy = vi.spyOn(IDBDatabase.prototype, "transaction").mockImplementation(function (this: IDBDatabase, ...args) {
+      const tx = transaction.call(this, ...args);
+      const names = typeof args[0] === "string" ? [args[0]] : Array.from(args[0]);
+      if (!target && args[1] === "readwrite" && names.includes("secrets")) { target = tx; vi.spyOn(tx, "abort").mockImplementation(() => { throw new Error("refused"); }); }
+      return tx;
+    });
+    const putSpy = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (this: IDBObjectStore, value, key) {
+      const result = put.call(this, value, key); if (this.transaction === target) throw injected; return result;
+    });
+    try { expect(await store.secrets.replace("probe", new Uint8Array([1]), new Uint8Array([2])).then(() => null, (e: unknown) => e)).toBe(injected); }
+    finally { putSpy.mockRestore(); txSpy.mockRestore(); }
+    release();
+    expect(await search).toEqual(expect.objectContaining({ message: "the store is closed" }));
+  } finally { release(); getSpy.mockRestore(); vi.restoreAllMocks(); await store.close(); }
+});
+
+it.fails("defensive partial body completion must not leave restored search stale", async () => {
+  const name = crypto.randomUUID(), factory = new IDBFactory(), files = memoryFiles(), p = { ...platform, files };
+  let store = await IdbMailStore.open({ name, factory, instantSearch: { settleMs: 0 }, platform: p });
+  try {
+    const [account] = await withAccounts(store, 1);
+    const id = (await ingest(store, [msg({ accountId: account!, providerMsgId: "one" })])).inserted[0]!;
+    expect(await store.instant!.settled()).toBe(true);
+    await store.close();
+    expect(files.files.size).toBeGreaterThan(0);
+    store = await IdbMailStore.open({ name, factory, instantSearch: { settleMs: 0 }, platform: p });
+    expect(await store.instant!.settled()).toBe(true);
+    const revision = await store.feed.head();
+    const transaction = IDBDatabase.prototype.transaction, put = IDBObjectStore.prototype.put;
+    const writes: string[] = [];
+    const injected = new Error("prefix only");
+    let target: IDBTransaction | undefined, terminal: string | null = null;
+    const txSpy = vi.spyOn(IDBDatabase.prototype, "transaction").mockImplementation(function (this: IDBDatabase, ...args) {
+      const tx = transaction.call(this, ...args), names = typeof args[0] === "string" ? [args[0]] : Array.from(args[0]);
+      if (!target && args[1] === "readwrite" && names.includes("message_bodies")) {
+        target = tx; tx.addEventListener("complete", () => { terminal = "complete"; });
+        vi.spyOn(tx, "abort").mockImplementation(() => { throw new Error("refused"); });
+      }
+      return tx;
+    });
+    const putSpy = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (this: IDBObjectStore, value, key) {
+      if (this.transaction === target) { writes.push(this.name); if (this.name === "threads") throw injected; }
+      return put.call(this, value, key);
+    });
+    try { expect(await store.sync.setBody(id, "quartzuniqueword", null, { now: 1, classifier: null }).then(() => null, (e: unknown) => e)).toBe(injected); }
+    finally { putSpy.mockRestore(); txSpy.mockRestore(); }
+    expect(terminal).toBe("complete");
+    expect(writes).toContain("message_bodies");
+    expect(writes).toContain("threads");
+    await store.close();
+    store = await IdbMailStore.open({ name, factory, instantSearch: { settleMs: 0 }, platform: p });
+    expect(await store.instant!.settled()).toBe(true);
+    expect(await store.feed.head()).toEqual(revision);
+    expect((await store.debug.snapshot()).messages[0]!.bodyText).toBe("quartzuniqueword");
+    const query = { search: resolveSearch(parseSearch("quartzuniqueword"), "quartzuniqueword", {}, { accounts: [], categories: [] }), limit: 10 };
+    const indexed = await store.threads.search(query);
+    await store.close();
+    store = await IdbMailStore.open({ name, factory, instantSearch: false, platform: p });
+    const scanned = await store.threads.search(query);
+    expect(scanned.items).toHaveLength(1);
+    expect(indexed.items.map((m) => m.id)).toEqual(scanned.items.map((m) => m.id));
+  } finally { vi.restoreAllMocks(); await store.close(); }
+});
+
+it("close persists a healthy command admitted before late loading finishes", async () => {
+  const name = crypto.randomUUID(), factory = new IDBFactory();
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  const getAll = IDBObjectStore.prototype.getAll;
+  let held = false;
+  const spy = vi.spyOn(IDBObjectStore.prototype, "getAll").mockImplementation(function (this: IDBObjectStore, ...args) {
+    const req = getAll.call(this, ...args);
+    if (held || this.name !== "messages") return req;
+    held = true;
+    return new Proxy(req, {
+      get: (target, key) => Reflect.get(target, key, target),
+      set: (target, key, value) => {
+        if (key === "onsuccess") { target.onsuccess = (event) => { void gate.then(() => value.call(target, event)); }; return true; }
+        return Reflect.set(target, key, value, target);
+      },
+    });
+  });
+  let store: IdbMailStore | undefined, write: Promise<unknown> | undefined, closing: Promise<unknown> | undefined;
+  try {
+    store = await IdbMailStore.open({ name, factory, instantSearch: false, platform });
+    write = store.settings.set("before-close", 7).then(() => null, (e: unknown) => e);
+    closing = store.close();
+    await new Promise<void>((r) => setImmediate(r));
+    release();
+    expect(await write).toBeNull();
+    await closing;
+    spy.mockRestore();
+    store = await IdbMailStore.open({ name, factory, instantSearch: false, platform });
+    expect(await store.settings.get("before-close", 0)).toBe(7);
+  } finally { release(); spy.mockRestore(); await write; await closing; await store?.close(); }
+});

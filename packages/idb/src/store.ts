@@ -294,8 +294,8 @@ export class IdbMailStore implements MailStore {
     try {
       await this.instant?.close();
     } finally {
-      await this.queue.catch(() => {});
       await this.loaded.catch(() => {});
+      await this.queue.catch(() => {});
       this.open = false;
       this.idb.close();
     }
@@ -374,8 +374,12 @@ export class IdbMailStore implements MailStore {
   /** `early`: reads only early tables (answers while messages load) */
   private async read<V>(fn: () => V, early = false): Promise<V> {
     if (!early) await this.loaded;
-    await this.settled();
-    return fn();
+    for (;;) {
+      await this.settled();
+      if (this.inflight) continue;
+      this.assertUsable();
+      return fn();
+    }
   }
 
   private early<V>(fn: () => V): Promise<V> {
@@ -708,13 +712,17 @@ export class IdbMailStore implements MailStore {
 
   private async searchPage(req: SearchRequest, signal?: { readonly aborted: boolean }): Promise<StoreSearchPage> {
     // the index answers from early tables (threads, memberships); a scan or the pending-body count waits for messages
-    await this.settled();
-    let revision = this.revision();
-    const ram = this.instant?.at(revision);
-    let page: { items: ThreadSummary[]; nextCursor: SearchCursor | null; strategy: string };
-    if (ram) {
+    const initial = await this.early(() => {
+      const revision = this.revision();
+      const ram = this.instant?.at(revision);
+      if (!ram) return { revision, page: null };
       const ids = ram.search(req, revision);
-      page = { items: summariesInOrder(this.c, ids.threadIds), nextCursor: ids.nextCursor, strategy: ids.strategy };
+      return { revision, page: { items: summariesInOrder(this.c, ids.threadIds), nextCursor: ids.nextCursor, strategy: ids.strategy } };
+    });
+    let revision = initial.revision;
+    let page: { items: ThreadSummary[]; nextCursor: SearchCursor | null; strategy: string };
+    if (initial.page) {
+      page = initial.page;
     } else {
       const threads = T(this.c, "threads");
       // the page is read in the scan's last unit, at the revision the scan answered for
@@ -725,10 +733,10 @@ export class IdbMailStore implements MailStore {
       revision = scanned.at;
       page = { items: scanned.items, nextCursor: scanned.nextCursor, strategy: "scan" };
     }
-    await this.loaded;
-    await this.settled();
-    const messages = T(this.c, "messages");
-    const pendingBodies = Math.min(PENDING_BODIES_CAP, messages.count("body_state", "none") + messages.count("body_state", "partial"));
+    const pendingBodies = await this.read(() => {
+      const messages = T(this.c, "messages");
+      return Math.min(PENDING_BODIES_CAP, messages.count("body_state", "none") + messages.count("body_state", "partial"));
+    });
     return { items: page.items, nextCursor: page.nextCursor, revision, strategy: page.strategy, complete: true, pendingBodies };
   }
 
@@ -760,10 +768,12 @@ export class IdbMailStore implements MailStore {
     counts: (now) => this.early(() => getCounts(this.c, now)),
     search: (req) => this.searchPage(req),
     searchText: async (p) => {
-      await this.settled();
       // resolving account:/category: reads early tables only
-      const search = this.resolve(p);
-      const cursor = p.cursor ? { lastDate: p.cursor.lastDate, id: p.cursor.id, queryKey: p.cursor.queryKey ?? search.key, revision: p.cursor.revision ?? this.revision() } : undefined;
+      const { search, cursor } = await this.early(() => {
+        const search = this.resolve(p);
+        const cursor = p.cursor ? { lastDate: p.cursor.lastDate, id: p.cursor.id, queryKey: p.cursor.queryKey ?? search.key, revision: p.cursor.revision ?? this.revision() } : undefined;
+        return { search, cursor };
+      });
       return this.searchPage({ search, cursor, limit: p.limit }, p.signal);
     },
     act: ({ threadIds, action, signal, now }) =>
@@ -1285,16 +1295,14 @@ export class IdbMailStore implements MailStore {
     countScope: async (categoryId, scope, now) => countOf((await this.categorize.resolveScope(categoryId, scope, now, COUNT_CAP + 1)).length),
     resolveScope: async (categoryId, scope, now, limit = -1) => {
       // sender/domain/list scopes read the message indexes: the late tables must be in
-      await this.loaded;
-      await this.settled();
-      const direct = scopeThreads(this.c, categoryId, scope);
-      if (direct) return limit < 0 ? direct : direct.slice(0, limit);
-      if (scope.kind !== "query") return [];
-      // the query's own matches, minus what bulk filing never reaches
-      const search = this.resolve({ query: scope.query, now });
-      const ids = this.instant?.at(this.revision())
-        ? this.queryIdsFromIndex(search, categoryId, limit)
-        : await this.scan({ search, limit: limit < 0 ? Number.MAX_SAFE_INTEGER : limit }, (found) => found, (t) => scopeOpen(this.c, categoryId, t), limit);
+      const prepared = await this.read(() => {
+        const direct = scopeThreads(this.c, categoryId, scope);
+        if (direct) return { ids: direct, search: null };
+        if (scope.kind !== "query") return { ids: [], search: null };
+        const search = this.resolve({ query: scope.query, now });
+        return { ids: this.instant?.at(this.revision()) ? this.queryIdsFromIndex(search, categoryId, limit) : null, search };
+      });
+      const ids = prepared.ids ?? await this.scan({ search: prepared.search!, limit: limit < 0 ? Number.MAX_SAFE_INTEGER : limit }, (found) => found, (t) => scopeOpen(this.c, categoryId, t), limit);
       return limit < 0 ? ids : ids.slice(0, limit);
     },
     predict: async (threadId, model, mode, now) => {
