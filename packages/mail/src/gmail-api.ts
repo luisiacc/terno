@@ -324,65 +324,116 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     }
   }
 
-  async function fetchFull(ids: string[]): Promise<IncomingMessage[]> {
-    const out: IncomingMessage[] = [];
-    await download(ids, async (id) => {
-      let m: GmailMessage;
-      try {
-        m = readMessage(await api<unknown>(`/messages/${id}?format=raw`), id, true);
-      } catch (error) {
-        // Enumeration isn't a snapshot: a message may disappear before its download.
-        if (error instanceof GmailApiError && error.status === 404) return;
-        throw error;
+  async function fetchFull(ids: string[], sink: SyncSink, captured?: (id: string) => void): Promise<Set<string>> {
+    const gone = new Set<string>();
+    let batch: IncomingMessage[] = [];
+    let batchBytes = 0;
+    let admission = Promise.resolve();
+    let admissionBusy = false;
+    const flush = async () => {
+      if (!batch.length) return;
+      sink.signal.throwIfAborted();
+      const ready = batch;
+      batch = [];
+      batchBytes = 0;
+      await sink.ingest(ready);
+      for (const message of ready) captured?.(message.providerMsgId!);
+    };
+    const enqueue = (message: IncomingMessage) => {
+      sink.signal.throwIfAborted();
+      const bytes = (message.bodyText?.length ?? 0) * 2 + (message.bodyHtml?.length ?? 0) * 2 + (message.attachments ?? []).reduce((n, part) => n + (part.bytes?.byteLength ?? 0), 0);
+      if (!admissionBusy && batch.length < 49 && batchBytes + bytes < 4 * 1024 * 1024) {
+        batch.push(message);
+        batchBytes += bytes;
+        return;
       }
-      await validateRaw(m.raw!);
-      const raw = m.raw!;
-      const padding = raw.endsWith("==") ? 2 : raw.endsWith("=") ? 1 : 0;
-      const oversized = Math.floor((raw.length - padding) * 3 / 4) > MAX_INCOMING_MIME_BYTES;
-      let bytes: Uint8Array;
-      try {
-        bytes = fromBase64url(oversized ? raw.slice(0, Math.ceil((65536 + 4) / 3) * 4) : raw);
-      } catch {
-        throw invalidResponse();
-      }
-      const parsed = oversized ? await parseRawHeaders(bytes, "size") : await parseRaw(bytes);
-      const labels = m.labelIds ?? [];
-      const st = labelState(labels);
-      out.push({
-        accountId,
-        providerMsgId: m.id,
-        providerThreadId: m.threadId,
-        rfcMessageId: parsed.rfcMessageId,
-        inReplyTo: parsed.inReplyTo,
-        references: parsed.references,
-        from: parsed.from,
-        replyTo: parsed.replyTo,
-        to: parsed.to,
-        cc: parsed.cc,
-        bcc: parsed.bcc,
-        subject: parsed.subject,
-        date: Number(m.internalDate ?? parsed.date ?? Date.now()),
-        snippet: "",
-        bodyText: parsed.text,
-        bodyHtml: parsed.html,
-        bodyState: parsed.captureUnavailable ? "partial" : "full",
-        captureUnavailable: parsed.captureUnavailable,
-        listId: parsed.listId,
-        bulk: parsed.bulk,
-        isRead: st.isRead!,
-        isStarred: st.isStarred!,
-        inInbox: st.inInbox!,
-        isSent: st.isSent!,
-        isDraft: st.isDraft!,
-        isTrash: st.isTrash!,
-        isSpam: st.isSpam!,
-        hasAttachments: parsed.attachments.length > 0,
-        gmailLabels: labels,
-        size: m.sizeEstimate ?? 0,
-        attachments: parsed.captureUnavailable ? undefined : parsed.attachments,
+      // Admission serializes staging without making six producers await an unfilled 50-item batch.
+      admissionBusy = true;
+      admission = admission.then(async () => {
+        sink.signal.throwIfAborted();
+        if (batchBytes + bytes > 4 * 1024 * 1024) await flush();
+        batch.push(message);
+        batchBytes += bytes;
+        if (batch.length >= 50 || batchBytes >= 4 * 1024 * 1024) await flush();
       });
-    });
-    return out;
+      const queued = admission;
+      void queued.then(() => { if (admission === queued) admissionBusy = false; }, () => {});
+      return admission;
+    };
+    let failure: { error: unknown } | undefined;
+    try {
+      await download(ids, async (id) => {
+        sink.signal.throwIfAborted();
+        let m: GmailMessage;
+        try {
+          m = readMessage(await api<unknown>(`/messages/${id}?format=raw`, { signal: sink.signal }), id, true);
+        } catch (error) {
+          // Enumeration isn't a snapshot: a message may disappear before its download.
+          if (error instanceof GmailApiError && error.status === 404) { gone.add(id); return; }
+          throw error;
+        }
+        await validateRaw(m.raw!);
+        const raw = m.raw!;
+        const padding = raw.endsWith("==") ? 2 : raw.endsWith("=") ? 1 : 0;
+        const oversized = Math.floor((raw.length - padding) * 3 / 4) > MAX_INCOMING_MIME_BYTES;
+        let bytes: Uint8Array;
+        try {
+          bytes = fromBase64url(oversized ? raw.slice(0, Math.ceil((65536 + 4) / 3) * 4) : raw);
+        } catch {
+          throw invalidResponse();
+        }
+        const parsed = oversized ? await parseRawHeaders(bytes, "size") : await parseRaw(bytes);
+        const labels = m.labelIds ?? [];
+        const st = labelState(labels);
+        const admitted = enqueue({
+          accountId,
+          providerMsgId: m.id,
+          providerThreadId: m.threadId,
+          rfcMessageId: parsed.rfcMessageId,
+          inReplyTo: parsed.inReplyTo,
+          references: parsed.references,
+          from: parsed.from,
+          replyTo: parsed.replyTo,
+          to: parsed.to,
+          cc: parsed.cc,
+          bcc: parsed.bcc,
+          subject: parsed.subject,
+          date: Number(m.internalDate ?? parsed.date ?? Date.now()),
+          snippet: "",
+          bodyText: parsed.text,
+          bodyHtml: parsed.html,
+          bodyState: parsed.captureUnavailable ? "partial" : "full",
+          captureUnavailable: parsed.captureUnavailable,
+          listId: parsed.listId,
+          bulk: parsed.bulk,
+          isRead: st.isRead!,
+          isStarred: st.isStarred!,
+          inInbox: st.inInbox!,
+          isSent: st.isSent!,
+          isDraft: st.isDraft!,
+          isTrash: st.isTrash!,
+          isSpam: st.isSpam!,
+          hasAttachments: parsed.attachments.length > 0,
+          gmailLabels: labels,
+          size: m.sizeEstimate ?? 0,
+          attachments: parsed.captureUnavailable ? undefined : parsed.attachments,
+        });
+        if (admitted) await admitted;
+      });
+    } catch (error) {
+      failure = { error };
+    }
+    try {
+      await admission;
+      if (!failure) {
+        sink.signal.throwIfAborted();
+        await flush();
+      }
+    } catch (error) {
+      failure ??= { error };
+    }
+    if (failure) throw failure.error;
+    return gone;
   }
 
   async function fullSync(sink: SyncSink, previousHistory?: string) {
@@ -403,8 +454,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       for (let i = 0; i < ids.length; i += 50) {
         if (sink.signal.aborted) return;
         const batch = ids.slice(i, i + 50);
-        await sink.ingest(await fetchFull(batch));
-        for (const id of batch) freshlyIngested.add(id);
+        await fetchFull(batch, sink, (id) => freshlyIngested.add(id));
       }
     } while (pageToken);
     // A resync (history expired) must also refresh what we already had: labels may have
@@ -456,7 +506,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     const known = async (id: string) => (await store.messageByProviderId(id))?.id;
     const toFetch: string[] = [];
     for (const id of added) if (!deleted.has(id) && !(await known(id))) toFetch.push(id);
-    for (let i = 0; i < toFetch.length; i += 50) await sink.ingest(await fetchFull(toFetch.slice(i, i + 50)));
+    for (let i = 0; i < toFetch.length; i += 50) await fetchFull(toFetch.slice(i, i + 50), sink);
 
     const updates: FlagUpdate[] = [];
     for (const gid of changed) {
@@ -485,11 +535,9 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     if (sink.signal.aborted) return;
     const pending = await store.pendingAttachmentBodies(50);
     if (!pending.length || sink.signal.aborted) return;
-    const messages = await fetchFull(pending.map((m) => m.providerMsgId));
+    const missing = await fetchFull(pending.map((m) => m.providerMsgId), sink);
     if (sink.signal.aborted) return;
-    await sink.ingest(messages);
-    const captured = new Set(messages.map((m) => m.providerMsgId));
-    const gone = pending.filter((m) => !captured.has(m.providerMsgId)).map((m) => m.id);
+    const gone = pending.filter((m) => missing.has(m.providerMsgId)).map((m) => m.id);
     if (gone.length) await sink.removeMessages(gone);
   }
 
