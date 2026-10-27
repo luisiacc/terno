@@ -115,25 +115,29 @@ Nothing you're looking at jumps when More toggles. There are three cases, each t
 **e2e (`sidebar-panels.spec.ts`, Part A, `@design`; replaces "nothing below moves"):**
 
 1. **Closed: no gap.** The Categories title starts right under More. `title.top − more.bottom` equals the gap the design puts between sections (`accountsTitle.top − lastCategory.bottom`), to 0.5 px. Open: the same gap under Trash, and the first category is 5 rows (5 × `--nav-h`) lower. The nav's `scrollHeight` grows by 5 rows.
-2. **Animates within the cap.** With motion on, sample the first category's top every frame from the click:
-   - it takes at least one value strictly between closed and open (so it slides rather than jumps);
-   - it reaches the open position within 100 ms plus two frames;
-   - every transition on the group and More is finite and ≤ 100 ms (the existing sampler);
-   - the same holds closing.
+2. **Animates within the cap** (revised after the Codex review: frozen, not sampled on the clock). With motion on, click and freeze More's transitions halfway:
+   - the first category is strictly between closed and open, and past halfway;
+   - every transition is ≤ 100 ms;
+   - the same holds closing;
+   - the motion setting at 100, 50 and 0 caps them at 100, 67 and instant;
+   - the ui-perf gate times the real thing (frames between, settled within 100 ms plus two frames).
 3. **Instant with reduced motion.** In the frame after the click, the first category is already at its open position, the Trash slot is `opacity: 1` and `visibility: visible`, and nothing animates.
-4. **Interruptible.** Two clicks in one frame leave it closed, and the first category back at its closed top with no stray offset.
+4. **Interruptible,** both ways: freeze at 40 % and click again. The new transitions start from the frozen position, and the slide ends where it started. Reduced motion turning on mid-slide ends it at once.
 5. **The folder you're in:**
    - `g #` with More closed shows only Trash, active, focusable; Categories sit one row lower;
    - with the pointer off the sidebar, `g i` collapses it and Categories go back;
    - with the pointer on the sidebar, clicking a category keeps Trash shown (not active, not inert) and Categories don't move; moving the pointer off collapses it;
-   - closing More with a click collapses held rows too;
+   - toggling More lets held rows go (the folder you're in stays);
+   - a held row with keyboard focus stays when the pointer leaves, and goes with focus;
+   - a tap, or Enter on a focused category, holds nothing;
+   - a drag re-measures the categories when the folders change size;
    - a category or its suggestions still never reveal All Mail.
 6. **Keyboard and accessibility:** the existing tests (Tab order, `inert`, More/Less, focus recovery), plus a held row being in the Tab order. axe in light and dark (the existing walk), with More open and closed.
 7. **Scrolling** with 80 categories:
    - scrolled a little (More still visible), toggling keeps `scrollTop` and More's top;
    - scrolled so More is off screen, `g #` keeps the first visible category's top (anchoring);
    - the pane handle still resizes the sidebar.
-8. **The layer:** the below wrapper's computed `will-change` is `transform`. This guards the measured cost.
+8. **The layer:** the wrapper's computed `will-change` is `transform`, and the CDP LayerTree has a layer for it. This guards the measured cost.
 9. **Row seam:** the existing test, unchanged.
 10. **Visual baselines** that show the sidebar, in every design (`e2e`, `e2e-lumen`, `e2e-atelier`), updated and looked at.
 
@@ -206,3 +210,38 @@ Codex (`codex exec -s read-only`) made 12 points against the plan and the code. 
   - frame p95 of 16.7 ms and no long frames;
   - 20 of 20 toggles slid through frames between the ends, and all settled within the cap;
   - 5.0 folder renders per toggle and 0 renders of the rows below.
+
+## What the Codex code review changed
+
+`codex exec -s read-only` reviewed `5a972a3..HEAD` with `-C` pointed at this worktree. It made two findings, both medium. Both are fixed, each with a test that fails without its fix.
+
+1. **A click on the folder you're in held it.** With More closed, `g #`, click the Trash row itself, then `g i`: Trash stayed shown and focused, bypassing focus recovery.
+   - Now a mouse click only *arms* the hold. The hold is taken when that click navigates: an app-store subscription sees the view change inside the click's handler, so the hold joins the same render.
+   - The window disarms it once the click's dispatch ends (it hears the click last), and at the next key or press. An earlier `setTimeout` disarm lost the race to the following keystroke on a loaded machine, because input outranks timers.
+   - New e2e ("a click on the folder you're in holds nothing"). It fails without the fix: Trash stays visible.
+2. **The overflow test measured the sidebar mid-slide.** It now waits for the five rows to finish growing before sizing the window.
+
+Also from the same pass: the scroll tests wait for the slide's animations to end instead of a fixed 250 ms.
+
+## Suite results (this machine, under the user's other load)
+
+- **Passing:**
+  - `pnpm typecheck` and `pnpm lint`;
+  - `pnpm test`: unit 6,626 passed plus db-wasm 1,259 passed. The 4 failures are the known `reply-to.test.ts`;
+  - `pnpm test:web`: 43 passed;
+  - `pnpm dist:mac`.
+- **`pnpm test:e2e`, final full run:** 1,039 passed and 17 failed, all outside this plan.
+  - **Known on main:** `attachments.spec` 11 and 188 (×3 designs), and `reader.spec.ts:66` (×3).
+  - **Failing on the base commit too** (run there 3× each): `list-layout.spec.ts:139` (8 of 9 runs on base), `compose.spec.ts:169` and `resign-in.spec.ts:126`.
+  - **Timing only:** `selection.spec.ts:365`, `dnd.spec.ts:41` and `unread-filter.spec.ts:217` each passed 3 of 3 when run serially on their own.
+  - `sidebar-panels.spec`: 106 passed, then 212 of 212 with `--repeat-each=2`.
+- **`pnpm test:ui-perf`:** 57 passed, 1 failed. The new More gate passes:
+  - frame p95 16.8 ms and no long frames;
+  - 20 of 20 toggles slid through frames between the ends;
+  - 5.0 folder renders per toggle, and 0 renders of the rows below.
+
+  The failure was `autocomplete-perf.spec.ts:317`, at 17 ms against 16.7 ms. It passed 3 of 3 on its own.
+- **Packaged smoke:** 54 passed, 2 failed.
+  - The More restart check passes.
+  - `update.smoke.ts:249` passed 3 of 3 on its own.
+  - `people.smoke.ts:83` (a v13 profile migration) fails 3 of 3, and fails on the base commit's own packaged build too. It's the desktop side of the known legacy-migration failures.
