@@ -25,10 +25,14 @@ export class IdbFlagRepository implements FlagRepository {
   putEffect(row: FlagEffect) { this.db.table("flag_op_effects").put({ ...row }); }
   deleteEffect(row: FlagEffect) { this.db.table("flag_op_effects").delete(row.op_id, row.message_id, row.field); }
   effects(op: string, ids?: readonly number[]) {
-    const all = this.db.table("flag_op_effects").by("fk_op_id", op) as unknown as FlagEffect[];
-    if (!ids) return all;
-    const wanted = new Set(ids);
-    return all.filter((row) => wanted.has(row.message_id));
+    const table = this.db.table("flag_op_effects");
+    if (ids === undefined) return table.by("fk_op_id", op) as unknown as FlagEffect[];
+    const result: FlagEffect[] = [];
+    for (const id of new Set(ids)) for (const field of Object.keys(FLAG_COLUMNS) as LocalFlagField[]) {
+      const row = table.get(op, id, field);
+      if (row) result.push(row as unknown as FlagEffect);
+    }
+    return result;
   }
   messageEffects(id: number) { return this.db.table("flag_op_effects").by("fk_message_id", id) as unknown as FlagEffect[]; }
   op(id: string) {
