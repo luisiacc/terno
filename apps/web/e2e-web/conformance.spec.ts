@@ -55,3 +55,9 @@ test("the incoming processor runs in an emitted nested browser worker", async ({
   expect(failures(results)).toEqual([]);
   expect(results.filter((result) => result.state === "pass")).toHaveLength(4);
 });
+
+test("the uncertainty guard holds on native IndexedDB in a Chromium worker", async ({ page }) => {
+  const results = await runSuite(page, "idb-uncertainty");
+  expect(failures(results)).toEqual([]);
+  expect(results.map((result) => result.state)).toEqual(["pass", "pass", "pass", "pass", "pass", "pass"]);
+});

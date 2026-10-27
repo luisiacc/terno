@@ -12,12 +12,17 @@ import { InstantSearchEngine } from "@terno/store/instant";
 import { IdbMailStore } from "@terno/idb";
 import { describe, expect, it, run, type TestResult } from "./shim";
 import { defineIncomingWorkerConformance } from "./incoming";
+import { defineUncertaintyConformance } from "./uncertainty";
 
 declare const self: DedicatedWorkerGlobalScope;
 
 export type ConformanceMessage = { type: "result"; result: TestResult } | { type: "done"; results: TestResult[] } | { type: "error"; message: string };
 
 async function defineSuites(suite: string): Promise<void> {
+  if (suite === "idb-uncertainty") {
+    defineUncertaintyConformance();
+    return;
+  }
   if (suite === "incoming") {
     defineIncomingWorkerConformance();
     return;
