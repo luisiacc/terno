@@ -154,20 +154,27 @@ function sameStoredDraft(snapshot: LocalDraft): boolean {
 const invalidatedPresentation = (d: LocalDraft): LocalDraft => ({ ...d, departedThreadId: d.departedThreadId ?? draftPresentationThread(d) ?? undefined, presentationThreadId: undefined, presentationExpired: true, presentationEpoch: (d.presentationEpoch ?? 0) + 1 });
 const validatedPresentation = (d: LocalDraft, threadId: number): LocalDraft => ({ ...d, presentationThreadId: undefined, sourceContextThreadId: threadId, presentationExpired: false, presentationEpoch: (d.presentationEpoch ?? 0) + 1 });
 
-function showStoredStandalone(key: string, owner: number): FocusLease | null {
+function showStoredStandalone(key: string, owner: number, allowed: () => boolean = () => true): FocusLease | null {
   let snapshot = materialize(key);
-  if (owner !== intent || !snapshot || !sameStoredDraft(snapshot)) return null;
+  const previous = getApp(), { selectedId, accountId } = previous;
+  const permitted = () => owner === intent && allowed() && !draftEditsHeld() && !getApp().dialog && !getApp().fatal && getApp().selectedId === selectedId && getApp().accountId === accountId && snapshot !== undefined && sameStoredDraft(snapshot);
+  if (!permitted()) return null;
   if (focusLease) releaseFocusLease(focusLease, false, false);
-  if (owner !== intent || !sameStoredDraft(snapshot)) return null;
+  if (!permitted() || !snapshot) return null;
   snapshot = invalidatedPresentation(snapshot);
   invalidateDraftPresentation(key);
-  if (owner !== intent || !sameStoredDraft(snapshot)) return null;
-  showNewDraft(key);
-  if (owner !== intent || !sameStoredDraft(snapshot)) return null;
-  const compose = getApp().compose!;
+  if (!permitted()) return null;
+  const compose = { key, seq: ++seq, storedFocusSeq: ++seq };
   const lease = beginFocusLease(owner, null, compose);
-  if (owner !== intent || !sameStoredDraft(snapshot)) { releaseFocusLease(lease, false); return null; }
-  focusDraft(key, "to", owner);
+  lease.seq = compose.storedFocusSeq;
+  if (!permitted() || focusLease !== lease || !lease.valid) { releaseFocusLease(lease, false); return null; }
+  setApp({ compose, checked: new Set(), scope: null, readerOpen: false, draftFocus: { key, target: "to", seq: compose.storedFocusSeq } });
+  if (!permitted() || focusLease !== lease || !lease.valid || getApp().compose !== compose) {
+    releaseFocusLease(lease, false);
+    const state = getApp();
+    if (owner !== intent && state.compose === compose) setApp({ compose: null, ...(state.selectedId === selectedId && state.accountId === accountId ? { readerOpen: previous.readerOpen } : {}) });
+    return null;
+  }
   return lease;
 }
 
@@ -193,13 +200,18 @@ export async function openStoredDraft(key: string): Promise<void> {
     const fromAccount = snapshot.accountId;
     missingFromAtStart = !getApp().accounts.some((a) => a.id === fromAccount);
     if (!current(snapshot)) return;
-    if (snapshot.recovery || missingFromAtStart) { lease = showStoredStandalone(key, mine); return; }
+    const standalone = () => {
+      if (!snapshot || !current(snapshot)) return;
+      unsubscribe();
+      lease = showStoredStandalone(key, mine, () => !cancelled);
+    };
+    if (snapshot.recovery || missingFromAtStart) { standalone(); return; }
     const sourceId = activeSourceId(snapshot);
     const canonical = sourceId === null && snapshot.mode !== "new" && !snapshot.showSourceContext ? snapshot.threadId : null;
-    if ((sourceId === null && canonical === null) || (!snapshot.showSourceContext && snapshot.threadId === null)) { lease = showStoredStandalone(key, mine); return; }
+    if ((sourceId === null && canonical === null) || (!snapshot.showSourceContext && snapshot.threadId === null)) { standalone(); return; }
     const context = canonical !== null ? { threadId: canonical, accountId: snapshot.accountId } : await client.call("drafts.sourceContext", { messageId: sourceId! });
     if (!current(snapshot)) return;
-    if (!context) { lease = showStoredStandalone(key, mine); return; }
+    if (!context) { standalone(); return; }
     snapshot = invalidatedPresentation(snapshot);
     invalidateDraftPresentation(key);
     if (!current(snapshot)) return;
@@ -215,7 +227,7 @@ export async function openStoredDraft(key: string): Promise<void> {
     if (!current(snapshot)) return;
     const latest = canonical !== null ? context : await client.call("drafts.sourceContext", { messageId: sourceId! });
     if (!current(snapshot)) return;
-    if (!detail || detail.thread.id !== context.threadId || !latest || latest.threadId !== context.threadId || latest.accountId !== detail.thread.accountId) { lease = showStoredStandalone(key, mine); return; }
+    if (!detail || detail.thread.id !== context.threadId || !latest || latest.threadId !== context.threadId || latest.accountId !== detail.thread.accountId) { standalone(); return; }
     // A settled unavailable pane has no destination to consume this request.
     if (!lease.destination?.active) return;
     snapshot = validatedPresentation(snapshot, context.threadId);

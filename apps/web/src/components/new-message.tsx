@@ -35,7 +35,6 @@ export function NewMessage() {
   const rootRef = useRef<HTMLFormElement>(null);
   const formatId = useId();
   const focusGeneration = useRef(0);
-  const ownedFocus = useRef<{ composeSeq: number; key: string; seq: number } | null>(null);
 
   useEffect(preloadComposer, []);
   // a new message: suggestions get ready (once per session)
@@ -43,10 +42,8 @@ export function NewMessage() {
   useEffect(() => {
     if (!compose) return;
     const generation = ++focusGeneration.current;
-    const focus = useApp.getState().draftFocus;
-    if (ownedFocus.current?.composeSeq !== compose.seq) ownedFocus.current = focus?.key === compose.key && composeFocusPending(null, focus.key, focus.seq) ? { composeSeq: compose.seq, key: focus.key, seq: focus.seq } : null;
-    const owned = ownedFocus.current;
-    focusSoon("[data-testid=compose-to]", rootRef.current, 12, owned ? (fallback) => { if (focusGeneration.current === generation) finishComposeFocus(owned.key, owned.seq, fallback); } : undefined, owned ? () => composeFocusPending(null, owned.key, owned.seq) : undefined);
+    const owned = compose.storedFocusSeq === undefined ? null : { key: compose.key, seq: compose.storedFocusSeq };
+    focusSoon("[data-testid=compose-to]", rootRef.current, 12, owned ? (fallback) => { if (focusGeneration.current === generation) finishComposeFocus(owned.key, owned.seq, fallback); } : undefined, owned ? () => focusGeneration.current === generation && useApp.getState().compose === compose && composeFocusPending(null, owned.key, owned.seq) : undefined);
     if (owned && useApp.getState().draftFocus?.seq === owned.seq) setApp({ draftFocus: null });
     return () => {
       if (owned) queueMicrotask(() => { if (focusGeneration.current === generation) finishComposeFocus(owned.key, owned.seq, false); });

@@ -11,6 +11,7 @@ export type SettingsTab = "general" | "appearance" | "accounts" | "categories" |
 export interface ComposeState {
   key: string;
   seq: number;
+  readonly storedFocusSeq?: number;
 }
 
 /** "Select all N": the selection is every thread of the current view or search, acted on by the backend. */
