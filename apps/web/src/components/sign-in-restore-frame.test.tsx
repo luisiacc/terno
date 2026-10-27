@@ -61,10 +61,10 @@ async function mount(strict: boolean, keepMounted: boolean) {
   };
   const drain = async () => { for (let i = 0; i < 3; i++) await frame(); };
   const update = async (next: Account[]) => { accounts = next; await act(async () => render()); };
-  const removeFocused = async (element: HTMLElement, next: Account[]) => {
+  const removeFocused = async (element: HTMLElement, next: Account[], afterRemoval?: () => void) => {
     expect(document.activeElement).toBe(element);
     // Explicit blur + removal models observed native focusout; jsdom removal itself does not.
-    await act(async () => { element.blur(); accounts = next; flushSync(render); });
+    await act(async () => { element.blur(); accounts = next; flushSync(render); afterRemoval?.(); });
     expect(element.isConnected).toBe(false);
   };
   const close = async () => { await act(async () => { open = false; render(); }); };
@@ -164,6 +164,27 @@ for (const destination of ["password", "outside"] as const) {
   });
 }
 
+for (const destination of ["password", "outside"] as const) {
+  it.each([false, true])(`does not revive restoration after body-gap ${destination} focus returns to body (StrictMode: %s)`, async (strict) => {
+    await fixture(strict, async (f) => {
+      await pending(f);
+      const input = f.query<HTMLInputElement>('[data-testid="sign-in-password"]');
+      await act(async () => f.popup.blur());
+      expect(document.activeElement).toBe(document.body);
+      if (destination === "password") await typePassword(input); else await focus(f.outside);
+      const chosen = destination === "password" ? input : f.outside;
+      expect(document.activeElement).toBe(chosen);
+      await act(async () => chosen.blur());
+      expect(document.activeElement).toBe(document.body);
+      const popupFocus = vi.spyOn(f.popup, "focus");
+      await f.frame();
+      expect(document.activeElement).toBe(document.body);
+      expect(popupFocus).not.toHaveBeenCalled();
+      if (destination === "password") intact(input);
+    });
+  });
+}
+
 it.each([false, true])("still restores focus lost to body without a later destination (StrictMode: %s)", async (strict) => {
   await fixture(strict, async (f) => {
     await pending(f);
@@ -231,6 +252,44 @@ it.each([false, true])("honors synchronous popup focus redirection BEFORE frame 
     expect(popupFocus).not.toHaveBeenCalled();
   });
 });
+
+for (const destination of ["password", "outside"] as const) {
+  it.each([false, true])(`honors ${destination} focus and blur before removal's microtask MODEL (StrictMode: %s)`, async (strict) => {
+    await fixture(strict, async (f) => {
+      await act(async () => f.query<HTMLButtonElement>('[data-testid="sign-in-password-reveal"]').click());
+      const input = f.query<HTMLInputElement>('[data-testid="sign-in-password"]');
+      const chosen = destination === "password" ? input : f.outside;
+      const removed = f.query<HTMLButtonElement>('[data-account-id="1"] [data-sign-in-action]');
+      await focus(removed);
+      await f.removeFocused(removed, [second], () => { chosen.focus(); chosen.blur(); });
+      expect(document.activeElement).toBe(document.body);
+      const popupFocus = vi.spyOn(f.popup, "focus");
+      await f.frame();
+      expect(document.activeElement).toBe(document.body);
+      expect(popupFocus).not.toHaveBeenCalled();
+    });
+  });
+}
+
+for (const destination of ["password", "outside"] as const) {
+  it.each([false, true])(`keeps a synchronous body-gap ${destination} choice after it blurs MODEL (StrictMode: %s)`, async (strict) => {
+    await fixture(strict, async (f) => {
+      await act(async () => f.query<HTMLButtonElement>('[data-testid="sign-in-password-reveal"]').click());
+      const input = f.query<HTMLInputElement>('[data-testid="sign-in-password"]');
+      const chosen = destination === "password" ? input : f.outside;
+      const redirect = () => { f.popup.blur(); chosen.focus(); chosen.blur(); };
+      f.popup.addEventListener("focus", redirect, { once: true });
+      const removed = f.query<HTMLButtonElement>('[data-account-id="1"] [data-sign-in-action]');
+      await focus(removed);
+      await f.removeFocused(removed, [second]);
+      expect(document.activeElement).toBe(document.body);
+      const popupFocus = vi.spyOn(f.popup, "focus");
+      await f.frame();
+      expect(document.activeElement).toBe(document.body);
+      expect(popupFocus).not.toHaveBeenCalled();
+    });
+  });
+}
 
 it.each([false, true])("restores again when the later focused control is removed (StrictMode: %s)", async (strict) => {
   await fixture(strict, async (f) => {
