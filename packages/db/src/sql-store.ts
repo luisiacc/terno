@@ -388,7 +388,14 @@ export class SqlMailStore implements MailStore {
       check();
       const clock = this.db.tx(() => startFlagObservation(repo, accountId, options.authoritativeFlags));
       if (!clock) return null;
-      while (!repo.clock(accountId)?.phase) { check(); this.db.tx(() => initializeFlagStep(repo, accountId)); await this.yieldTo(); }
+      for (;;) {
+        check();
+        const current = repo.clock(accountId);
+        if (!current) throw new Error("Account no longer exists.");
+        if (current.phase) break;
+        this.db.tx(() => initializeFlagStep(repo, accountId));
+        await this.yieldTo();
+      }
       check();
       return this.db.tx(() => ({ accountId, protocolId: repo.clock(accountId)!.protocol_id, epoch: flagTick(repo, accountId) }));
     },

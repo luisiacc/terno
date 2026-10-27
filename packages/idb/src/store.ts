@@ -823,8 +823,11 @@ export class IdbMailStore implements MailStore {
       check();
       const clock = await this.command(() => startFlagObservation(repo, accountId, options.authoritativeFlags));
       if (!clock) return null;
-      while (!(await this.read(() => repo.clock(accountId)))?.phase) {
+      for (;;) {
         check();
+        const current = await this.read(() => repo.clock(accountId));
+        if (!current) throw new Error("Account no longer exists.");
+        if (current.phase) break;
         await this.command(() => { try { check(); return initializeFlagStep(repo, accountId); } finally { repo.preparation = null; } }, { prefetch: async () => {
           const current = repo.clock(accountId);
           if (!current) throw new Error("Account no longer exists.");
@@ -833,7 +836,12 @@ export class IdbMailStore implements MailStore {
         await this.o.platform.yield();
       }
       check();
-      return this.command(() => ({ accountId, protocolId: repo.clock(accountId)!.protocol_id, epoch: flagTick(repo, accountId) }));
+      return this.command(() => {
+        check();
+        const current = repo.clock(accountId);
+        if (!current) throw new Error("Account no longer exists.");
+        return { accountId, protocolId: current.protocol_id, epoch: flagTick(repo, accountId) };
+      });
     },
     ingest: async (batch, { applyFilters, now, classifier, observation }) => {
       const staged: IncomingMessage[] = [];
