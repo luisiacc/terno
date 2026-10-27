@@ -61,3 +61,11 @@ The first UIDPLUS-control capture is not sufficient evidence: owned lint caught 
 
 
 The corrected paired system-flag controls pass2/2 in `imap-targeted-expunge-system-flag-green.txt`; both first require the remote unrelated UID to carry the actual system flag. The refusal case preserves both messages with zero mutations. The UIDPLUS case preserves that unrelated UID/flag/raw while UID EXPUNGE names only the target. Corrected owned lint passes. The prior malformed-flag control is retained solely as a disclosed fixture failure of qualification.
+
+
+## All Mail delete-only archive correction
+
+Two public cases independently reproduce the delete-only path's collateral expunge with and without advertised MOVE but no UIDPLUS. Real remote Inbox loses both exact target and unrelated Deleted bytes and the op succeeds; `imap-all-mail-archive-red.txt` retains actual exit1/2failed. All Mail's target copy remains, demonstrating why MOVE permission alone cannot qualify the separate delete operation. Require effective UIDPLUS before locking/mutating Inbox and skip an empty Inbox target set. The false deletion result, role creation/no-op, read-only and reconnect controls remain separate open refinements.
+
+
+The All Mail capability guard passes both new cases plus the original refusal, true UIDPLUS fallback and native MOVE controls:5/5 in `imap-all-mail-archive-green.txt`. Mail and both backend typechecks and scoped oxlint pass. This boundary prevents the observed broad-expunge path; it does not yet fix or qualify false STORE/EXPUNGE results, interrupted application, read-only source handling or the remaining critique cases.

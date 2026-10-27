@@ -601,7 +601,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             return void (await flagOp("\\Flagged", false));
           case "archive": {
             const inbox = inRole("inbox");
+            if (!inbox.length) return;
             if (r.archive || !r.all) return void (await moveLocations(c, inbox, await ensureMailbox(c, "archive", "Archive")));
+            if (!targetedCapability(c, "UIDPLUS")) throw new ProviderError(L("errors.imap.unsafeMove"), false);
             // Gmail-style: archiving = removing the INBOX copy; All Mail keeps it
             const lock = await c.getMailboxLock(r.inbox!);
             try {
