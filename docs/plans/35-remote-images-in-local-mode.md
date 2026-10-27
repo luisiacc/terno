@@ -1,6 +1,6 @@
 # Plan 35: remote images in local mode
 
-- **Status:** proposed.
+- **Status:** implemented (see "What the Codex code review changed" at the end).
 - **Builds on:** `6403163` (main after plan 34).
 - **Request (verbatim):** "the meaning of local is too local, we should be able to load remote images by default with the setting, and it should not block the 'load remove content' button."
 
@@ -140,3 +140,14 @@ These override the sections above where they conflict. The full review is in `/t
 10. **Baselines:** also `settings-general.png`, `es-settings-general.png` and `first-run.png` (copy and the live switch).
 11. **Web build coverage and honest smokes.** An `e2e-web` test covers the button and the setting in the browser build (its own CSP). The packaged checks observe main's fence itself: requests that pass `onBeforeRequest` are recorded in `onBeforeSendHeaders` and cancelled there (no network), so a CSP refusal can't pass for a backstop cancel. The newsletter flow runs in `print.smoke.ts`, which already seeds the print fixtures.
 12. **Images only, in the mail's own CSP.** `csp(true)` no longer opens `style-src` or `font-src` to the web (the web build's parent CSP allows one Google stylesheet origin, so relying on the parent wasn't enough). Nothing else in local mode changes.
+
+## 8. What the Codex code review changed
+
+The review is in `/tmp/unica-scratch/remote-local/plan-35-code-review-codex.txt`. Each fix has a regression test that fails without it.
+
+1. **P1, quadratic detection.** The SVG regex in `hasRemoteContent` rescanned the rest of the mail at every `<image` (about 140 ms for 56 KB of them, on the render path). Detection now parses the markup once (`DOMParser`, skipped when the mail names no URL) and walks the attributes: linear. It is memoized per message in the reader and per input in the print sheet. Test: `reader.spec.ts`, 40,000 `<image ` in under 100 ms.
+2. **P2, images the reader didn't notice.** An entity-encoded scheme (`&#104;ttps:`) and a quoted `>` before the source were missed by the raw-markup regex, so CSP blocked the image with no button. Parsing reads them as the browser does. Tests: the detection cases in `reader.spec.ts`, and a reader regression where such an SVG image gets the row and its button, and the button loads it.
+3. **P2, the print test only counted an `<img>`.** It now checks that the preview actually loaded the routed image (`complete && naturalWidth > 0`).
+4. **P3, a packaged fetch probe.** This one can't be built: a mail frame inherits the app's CSP (`script-src 'self'`, `connect-src 'self'`, style, font and media limits), so no fetch, script, stylesheet, font or media request from it ever reaches main in the packaged app. Main's rule for each of those types is covered by `network-backstop.test.ts`, including the adapter that reads Electron's frames. The packaged smoke proves the adapter on real frames: the mail frame's image passes and the app frame's image is cancelled by main. That reasoning is now a comment in the smoke.
+
+The detection unit tests moved from `mail.test.ts` (Node has no `DOMParser`) to the browser (`reader.spec.ts`, through `exposeForTests`), like `hasOwnColors`.

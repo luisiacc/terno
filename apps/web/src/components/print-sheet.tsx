@@ -117,7 +117,8 @@ function Sheet({ target, onClose }: { target: PrintTarget; onClose: () => void }
   const messages = printMessages(detail, scope, target.messageId, policy, allowed);
   const subject = detail?.thread.subject ?? "";
   const missing = messages.filter((m) => m.bodyHtml === null && m.bodyText === null).length;
-  const blocked = messages.filter((m) => !m.allowRemote && m.bodyHtml && hasRemoteContent(m.bodyHtml, WEB)).length;
+  // parsed only when the messages or their answers change, not per render
+  const blocked = useMemo(() => messages.filter((m) => !m.allowRemote && m.bodyHtml && hasRemoteContent(m.bodyHtml, WEB)).length, [detail, scope, target.messageId, policy.remoteImages, allowed]);
 
   // what the document is built from; a change settles for 120 ms first, so toggling through options builds once
   const inputs = useMemo(() => ({ detail, scope, prefs, allowed, policy }), [detail, scope, prefs, allowed, policy.remoteImages]);

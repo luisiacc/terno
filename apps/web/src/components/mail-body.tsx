@@ -39,11 +39,13 @@ export function HtmlBody({ html, messageId, remoteImages, appearance, attachment
   // the setting or this message's "Load content", in either mode (plan 35)
   const allowRemote = useRemoteConsent((s) => remoteAllowed(messageId, { remoteImages }, s.allowed));
   const [height, setHeight] = useState(() => heights.get(messageId) ?? 120);
-  const blocked = !allowRemote && hasRemoteContent(html, WEB);
   // re-rendered when the painted theme changes (the colors are literals inside the document)
   const themeKey = useAppearance((s) => s.themeKey);
   const mode = useAppearance((s) => s.mode);
   const clean = useMemo(() => DOMPurify.sanitize(html, { WHOLE_DOCUMENT: false, FORBID_TAGS: ["style"], FORBID_ATTR: ["srcset"], ADD_ATTR: ["target"] }), [html]);
+  // read from what the frame gets (parsed once per message, not per render)
+  const remote = useMemo(() => hasRemoteContent(clean, WEB), [clean]);
+  const blocked = !allowRemote && remote;
   const [cidAllowed, setCidAllowed] = useState(false);
   const [cidResult, setCidResult] = useState<{ key: string; html: string } | null>(null);
   const cidKey = `${html}\0${attachments.map((a) => `${a.assetId}:${a.contentId}`).join("|")}`;

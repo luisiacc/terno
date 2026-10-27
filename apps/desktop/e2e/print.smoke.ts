@@ -240,5 +240,7 @@ test("plan 35: in local mode “Load content” gets a newsletter's images past 
   await page.evaluate((src) => void Object.assign(new Image(), { src }), own);
   await expect.poll(async () => (await fence()).blocked).toContain(own);
   expect((await fence()).passed).not.toContain(own);
+  // (other kinds of request can't be probed here: the app's CSP, which a mail frame inherits, refuses fetch, scripts,
+  // styles, fonts and media before they reach main; network-backstop.test.ts covers main's rule for each of them)
   await page.keyboard.press("Escape");
 });

@@ -231,7 +231,10 @@ test.describe("print sheet", { tag: "@design" }, () => {
     await page.keyboard.press("ControlOrMeta+p");
     await ready(page);
     await expect(page.getByTestId("print-note-remote")).toHaveCount(0);
-    await expect(preview(page).locator('img[src="https://images.acme.test/promo/temporada.png"]')).toHaveCount(1);
+    const promo = preview(page).locator('img[src="https://images.acme.test/promo/temporada.png"]');
+    await expect(promo).toHaveCount(1);
+    // loaded in the preview (the routed PNG), not just listed: the preview's CSP let it in
+    await expect.poll(() => promo.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
   });
 
   test("mixed consent: nothing of a blocked message is requested while another's images load", async ({ app: page, server }) => {

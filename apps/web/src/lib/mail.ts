@@ -11,22 +11,32 @@ export function csp(allowRemote: boolean): string {
   return `default-src 'none'; img-src data: cid:${remote}; style-src 'unsafe-inline'; font-src data:; media-src 'none'; frame-src 'none'; form-action 'none'`;
 }
 
-const remoteRules = (scheme: string) => [
-  new RegExp(`\\b(?:src|background|poster)\\s*=\\s*["']?\\s*${scheme}`, "i"),
-  new RegExp(`url\\(\\s*["']?\\s*${scheme}`, "i"),
-  // SVG pulls images through href too (an <a href> is a link, not a load)
-  new RegExp(`<(?:image|use|feImage)\\b[^>]*?\\s(?:xlink:)?href\\s*=\\s*["']?\\s*${scheme}`, "i"),
-];
-const ABSOLUTE = remoteRules("https?:");
-const WITH_PROTOCOL_RELATIVE = remoteRules("(?:https?:)?//");
+/** Attributes that fetch an image (an <a>/<area> href only navigates). */
+const IMAGE_ATTRS = ["src", "background", "poster", "lowsrc", "dynsrc", "href", "xlink:href"];
+const CSS_URL = /url\(\s*(['"]?)([^'")]*)\1\s*\)/gi;
 
 /**
  * Would the mail load something from the web once allowed (so the reader
- * offers "Load content")? `//host/…` counts where it reaches the web: in the
- * browser; the desktop resolves it to app://, which never leaves the Mac.
+ * offers "Load content")? Parsed, so entities and quoting are read as the
+ * browser reads them, and linear in the mail's size (Codex code review: a
+ * regex over raw markup missed `&#104;ttps:` and could go quadratic).
+ * `//host/…` counts where it reaches the web: in the browser; the desktop
+ * resolves it to app://, which never leaves the Mac.
  */
 export function hasRemoteContent(html: string, protocolRelative = false): boolean {
-  return (protocolRelative ? WITH_PROTOCOL_RELATIVE : ABSOLUTE).some((r) => r.test(html));
+  // most mail names no URL at all: no parse
+  if (!/https?:|\/\/|&#|&[a-z]+;/i.test(html)) return false;
+  const remote = protocolRelative ? /^\s*(?:https?:)?\/\//i : /^\s*https?:/i;
+  const doc = new DOMParser().parseFromString(`<!doctype html><body>${html}</body>`, "text/html");
+  for (const el of doc.body.querySelectorAll("*")) {
+    const link = el.localName === "a" || el.localName === "area";
+    for (const { name, value } of el.attributes) {
+      const n = name.toLowerCase();
+      if (IMAGE_ATTRS.includes(n) && !(link && n.endsWith("href")) && remote.test(value)) return true;
+      if (value.includes("url(")) for (const m of value.matchAll(CSS_URL)) if (remote.test(m[2]!)) return true;
+    }
+  }
+  return false;
 }
 
 /** Presentational attributes that set colors (<font color>, <td bgcolor>, <body text/link>…). */
@@ -49,4 +59,4 @@ export function hasOwnColors(cleanHtml: string): boolean {
   return false;
 }
 
-exposeForTests({ hasOwnColors });
+exposeForTests({ hasOwnColors, hasRemoteContent });
