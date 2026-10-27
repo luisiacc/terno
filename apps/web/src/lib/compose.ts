@@ -48,6 +48,13 @@ const destinationAvailable = (lease: FocusLease | null): boolean => !lease ||
 let focusLease: FocusLease | null = null;
 const focusLeaseListeners = new Set<(threadId: number, fallback: boolean) => void>();
 
+function notifyReleased(lease: FocusLease, owner: number, fallback: boolean) {
+  if (lease.threadId !== null) for (const listener of focusLeaseListeners) {
+    if (intent !== owner || focusLease) break;
+    listener(lease.threadId, fallback);
+  }
+}
+
 function releaseFocusLease(lease: FocusLease, fallback: boolean, notify = true) {
   if (!lease.valid) return;
   const current = focusLease === lease, releaseIntent = intent;
@@ -56,19 +63,18 @@ function releaseFocusLease(lease: FocusLease, fallback: boolean, notify = true) 
   if (!current) return;
   focusLease = null;
   if (!fallback && lease.seq !== undefined && getApp().draftFocus?.seq === lease.seq) setApp({ draftFocus: null });
-  if (notify && lease.threadId !== null) for (const listener of focusLeaseListeners) {
-    if (intent !== releaseIntent || focusLease) break;
-    listener(lease.threadId, fallback);
-  }
+  if (notify) notifyReleased(lease, releaseIntent, fallback);
 }
 
 function releaseForAcquisition(lease: FocusLease, notify = false): boolean {
+  const owner = intent;
   const active = typeof document === "undefined" ? null : document.activeElement;
   let moved = false;
   const observe = (event: FocusEvent) => { if (event.target !== active && event.target !== document.body) moved = true; };
   if (typeof document !== "undefined") document.addEventListener?.("focusin", observe, true);
   try { releaseFocusLease(lease, false, notify); }
   finally { if (typeof document !== "undefined") document.removeEventListener?.("focusin", observe, true); }
+  if (moved && !notify) notifyReleased(lease, owner, false);
   return moved;
 }
 
@@ -104,9 +110,13 @@ export function registerReaderPaneFailure(threadId: number, token: object): () =
 function beginFocusLease(owner: number, threadId: number | null, standalone?: { key: string; seq: number }): FocusLease | undefined {
   if (owner !== intent) return;
   const before = getApp();
-  if (focusLease && releaseForAcquisition(focusLease)) return;
+  const previous = focusLease;
+  if (previous && releaseForAcquisition(previous)) return;
   const after = getApp();
-  if (owner !== intent || after.selectedId !== before.selectedId || after.accountId !== before.accountId || after.compose !== before.compose || after.scope !== before.scope || after.checked !== before.checked || after.dialog !== before.dialog || after.fatal !== before.fatal || draftEditsHeld()) return;
+  if (owner !== intent || after.selectedId !== before.selectedId || after.accountId !== before.accountId || after.compose !== before.compose || after.scope !== before.scope || after.checked !== before.checked || after.dialog !== before.dialog || after.fatal !== before.fatal || draftEditsHeld()) {
+    if (previous) notifyReleased(previous, owner, false);
+    return;
+  }
   const active = typeof document === "undefined" ? null : document.activeElement;
   const selected = getApp().selectedId, account = getApp().accountId;
   const destination = threadId === null ? undefined : readerDestinations.get(threadId);
@@ -173,16 +183,22 @@ function sameStoredDraft(snapshot: LocalDraft): boolean {
 const invalidatedPresentation = (d: LocalDraft): LocalDraft => ({ ...d, departedThreadId: d.departedThreadId ?? draftPresentationThread(d) ?? undefined, presentationThreadId: undefined, presentationExpired: true, presentationEpoch: (d.presentationEpoch ?? 0) + 1 });
 const validatedPresentation = (d: LocalDraft, threadId: number): LocalDraft => ({ ...d, presentationThreadId: undefined, sourceContextThreadId: threadId, presentationExpired: false, presentationEpoch: (d.presentationEpoch ?? 0) + 1 });
 
-function showStoredStandalone(key: string, owner: number, allowed: () => boolean = () => true): FocusLease | null {
+function showStoredStandalone(key: string, owner: number, allowed: () => boolean = () => true, transfer?: FocusLease | null): FocusLease | null {
   let snapshot = materialize(key);
   const previous = getApp(), { selectedId, accountId } = previous;
   const permitted = () => owner === intent && allowed() && !draftEditsHeld() && !getApp().dialog && !getApp().fatal && getApp().selectedId === selectedId && getApp().accountId === accountId && snapshot !== undefined && sameStoredDraft(snapshot);
-  if (!permitted()) return null;
-  if (focusLease && releaseForAcquisition(focusLease)) return null;
+  const transferable = () => !transfer || (focusLease === transfer && transfer.valid && destinationAvailable(transfer));
+  if (!permitted() || !transferable()) return null;
+  if (focusLease && focusLease !== transfer && releaseForAcquisition(focusLease)) return null;
   if (!permitted() || !snapshot) return null;
   snapshot = invalidatedPresentation(snapshot);
-  invalidateDraftPresentation(key);
-  if (!permitted()) return null;
+  const active = typeof document === "undefined" ? null : document.activeElement;
+  let moved = false;
+  const observe = (event: FocusEvent) => { if (event.target !== active && event.target !== document.body) moved = true; };
+  if (typeof document !== "undefined") document.addEventListener?.("focusin", observe, true);
+  try { invalidateDraftPresentation(key); }
+  finally { if (typeof document !== "undefined") document.removeEventListener?.("focusin", observe, true); }
+  if (moved || !permitted() || !transferable()) return null;
   const compose = { key, seq: ++seq, storedFocusSeq: ++seq };
   const lease = beginFocusLease(owner, null, compose);
   if (!lease) return null;
@@ -348,7 +364,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   let existing = existingKey ? materialize(existingKey) : undefined;
   if (existing && !sameStoredDraft(existing)) return;
   if (existing?.presentationExpired && existing.mode === "new" && activeSourceId(existing) === null) {
-    showStoredStandalone(existing.key, mine, focusAllowed);
+    showStoredStandalone(existing.key, mine, undefined, lease);
     return;
   }
   if (existing?.showSourceContext) {
@@ -359,7 +375,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     const current = existingKey ? materialize(existingKey) : undefined;
     if (mine !== intent || !destinationAvailable(lease) || getApp().selectedId !== s.selectedId || (lease && !lease.valid) || !current || !sameStoredDraft(snapshot)) return;
     if (!context || context.threadId !== threadId) {
-      showStoredStandalone(current.key, mine, focusAllowed);
+      showStoredStandalone(current.key, mine, undefined, lease);
       return;
     }
     if (current.presentationExpired) {
