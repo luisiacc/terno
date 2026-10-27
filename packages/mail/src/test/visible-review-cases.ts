@@ -861,7 +861,7 @@ for (const tag of ["center", "dir", "menu", "hgroup", "search", "legend", "summa
   visibleReviewCases.push({ name: `R2-F5 retained ${tag} has default block boundaries`, html: `<${tag}>Visible</${tag}><${tag}>phrase</${tag}>`, text: "Visible phrase", value: "visible phrase", query: '"visible phrase"', matches: true });
   for (const display of ["inline", "contents"]) {
     const text = tag === "legend" && display === "inline" ? "un broken" : "unbroken";
-    visibleReviewCases.push({ name: `R2-F5 ${tag} ${display} resolved boundaries`, html: `<${tag} style="display:${display}">un</${tag}><${tag} style="display:${display}">broken</${tag}>`, text, value: text, query: text === "unbroken" ? "unbroken" : '\"un broken\"', matches: true });
+    visibleReviewCases.push({ name: `R2-F5 ${tag} ${display} resolved boundaries`, html: `<${tag} style="display:${display}">un</${tag}><${tag} style="display:${display}">broken</${tag}>`, text, value: text, query: text === "unbroken" ? "unbroken" : '"un broken"', matches: true });
   }
 }
 visibleReviewCases.push({ name: "R2-F5 default center does not override hidden", html: '<center hidden>phantomneedle</center><p>Useful</p>', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false });
@@ -886,7 +886,7 @@ visibleReviewCases.push(
   { name: "R2 legend until found remains excluded", html: '<legend hidden=" until-found " style="display:inline">phantomneedle</legend><p>Useful</p>', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false },
 );
 
-visiblePolicyCases.push(...[
+visiblePolicyCases.push(
   {
     "name": "R2 legend public matrix display none opacity:0",
     "html": "<legend style=\"display:none;opacity:0\"><b>Useful policy</b></legend><p>Tail</p>",
@@ -1097,4 +1097,4 @@ visiblePolicyCases.push(...[
     "html": "<legend style=\"display:table-caption;max-height:0;overflow:hidden\"><b>Useful policy</b></legend><p>Tail</p>",
     "text": "Tail"
   }
-]);
+);
