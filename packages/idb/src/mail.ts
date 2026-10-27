@@ -1465,7 +1465,10 @@ export function saveDraft(c: Ctx, d: DraftInput, now: number): DraftRow | null {
   if (row && row.account_id !== d.accountId && (previous.length || d.attachments?.length)) throw assetError();
   let attachments: import("@terno/core").AttachmentRef[];
   try { attachments = validateAssets(idbAssets(c.db), d.accountId, d.attachments ?? previous); }
-  catch { throw new RpcError("BAD_REQUEST", L("attachments.unavailable"), { reason: "assets" }); }
+  catch (error) {
+    if (error instanceof RpcError && error.i18n?.key === "attachments.tooLarge") throw new RpcError("BAD_REQUEST", L("attachments.tooLarge"), { reason: "size" });
+    throw new RpcError("BAD_REQUEST", L("attachments.unavailable"), { reason: "assets" });
+  }
   const threadId = d.threadId !== undefined ? d.threadId : row ? (row.thread_id ?? null) : replyThread;
   const forwardOf = d.forwardOfMessageId !== undefined ? d.forwardOfMessageId : (row?.forward_of_message_id ?? null);
   const exists = (id: number | null) => id === null || T(c, "messages").has(id);

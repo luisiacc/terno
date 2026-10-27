@@ -251,6 +251,47 @@ describe("the draft writer", () => {
     expect(state(k).bodyText).toBe("more");
   });
 
+  it("copy acknowledgement preserves a loading stand-in's body version, exact source and untrusted canonical state", async () => {
+    const k = await missing();
+    const read = vi.fn(() => ({ html: "<div>stored<img src=x></div><div>typed</div>", text: "stored\ntyped" }));
+    const source = attachBody(k, read, { canonical: false }); source.changed();
+    const version = state(k).bodyVersion;
+    const copy = copyDraft(k); await answer(); await copy;
+    expect(state(k)).toMatchObject({ bodyVersion: version, canonical: false, bodyText: "stored\ntyped", bodyHtml: "<div>stored<img src=x></div><div>typed</div>" });
+    expect(read).toHaveBeenCalledTimes(1); source.dispose();
+  });
+
+  it("RPC size validation is a fixed size refusal, never a private exception or an uncertain create", async () => {
+    const k = await missing();
+    const copy = copyDraft(k);
+    calls.shift()!.reject({ code: "BAD_REQUEST", details: [{ code: "too_big", path: ["bodyText"], message: "private storage details" }] }); await copy;
+    expect(state(k).recovery).toEqual({ state: "refused", reason: "size" });
+    await vi.advanceTimersByTimeAsync(30_000); expect(calls).toHaveLength(0);
+  });
+
+  it("an unknown earlier copy remains disclosed if a later explicit copy is refused", async () => {
+    const k = await missing();
+    let copy = copyDraft(k); calls.shift()!.reject({ code: "TIMEOUT" }); await copy;
+    copy = copyDraft(k); calls.shift()!.reject({ code: "NOT_FOUND", details: { reason: "account" } }); await copy;
+    expect(state(k).recovery).toMatchObject({ state: "unknown", reason: "account" });
+    expect(await draftsSaved()).toBe(false);
+    expect(await draftForSend(k)).toBeUndefined();
+  });
+
+  it("terminal reference removal releases obsolete From ownership, but pending and unknown copies retain it", async () => {
+    const k = await missing();
+    const ref = { assetId: "asset", filename: "x", mime: "text/plain", size: 0 };
+    editDraft(k, { attachments: [ref] });
+    editDraft(k, { attachments: [] }); expect(draftSenderLocked(state(k))).toBe(false);
+    editDraft(k, { accountId: 2 }); expect(state(k).accountId).toBe(2);
+    editDraft(k, { attachments: [ref] });
+    const copy = copyDraft(k);
+    editDraft(k, { attachments: [] }); expect(draftSenderLocked(state(k))).toBe(true);
+    calls.shift()!.reject({ code: "TIMEOUT" }); await copy;
+    editDraft(k, { accountId: 1 }); expect(state(k).accountId).toBe(2);
+    expect(draftSenderLocked(state(k))).toBe(true);
+  });
+
   it("discard settles one current copy, deletes its acknowledged identity and never schedules successors", async () => {
     const k = await missing();
     const copy = copyDraft(k); editDraft(k, { bodyText: "typed during copy" });

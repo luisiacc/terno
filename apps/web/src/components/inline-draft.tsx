@@ -7,9 +7,9 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { ChevronDown, Forward, PenLine, ReplyAll, Send, Trash2 } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { openCompose, sendDraft, supersedeCompose } from "~/lib/compose";
-import { discardDraft, draftSenderLocked, editDraft, flushDraft, restoreDiscarded, retryDraft, setDraftUi, signatureBlock, useDrafts, type DraftFields, type LocalDraft } from "~/lib/drafts";
+import { copyDraft, discardDraft, draftSenderLocked, editDraft, flushDraft, restoreDiscarded, retryDraft, setDraftUi, signatureBlock, useDrafts, type DraftFields, type LocalDraft } from "~/lib/drafts";
 import { SenderAvatar } from "./sender-avatar";
 import { RecipientInput, recipientSummary } from "./recipient-input";
 import { warmAutocomplete } from "~/lib/autocomplete";
@@ -18,7 +18,7 @@ import { keepInView } from "~/lib/reader-scroll";
 import { registerUndo, snack } from "~/lib/snack";
 import { setApp, useApp } from "~/state/app";
 import { Expand } from "./expand";
-import { popupOpen } from "./composer/controller";
+import { controllerFor, popupOpen } from "./composer/controller";
 import { ComposerBody, ComposerFormatBar, FormatToggle, LinkButton, preloadComposer } from "./composer/lazy";
 
 /** The focus move waiting for its element (one at a time: a newer request replaces it). */
@@ -133,7 +133,7 @@ export function DraftFieldsForm({ d, accounts, showSubject, flat }: { d: LocalDr
     );
   return (
     <div className={cn(flat && "hairline-t")} data-draft-key={d.key}>
-      {accounts.length > 1 && (
+      {(accounts.length > 1 || !accounts.some((a) => a.id === d.accountId)) && (
         <Row label={t("compose.from")}>
           <Select disabled={d.sending || draftSenderLocked(d)} value={String(d.accountId)} onValueChange={(v) => update({ accountId: Number(v) })} items={accounts.map((a) => ({ value: String(a.id), label: `${a.displayName} · ${a.email}` }))}>
             <SelectTrigger size="sm" aria-label={t("compose.from")}className="-ml-2 h-7 border-0 bg-transparent shadow-none dark:bg-transparent" data-testid="compose-from" title={draftSenderLocked(d) ? t("attachments.senderLocked") : undefined}>
@@ -172,10 +172,37 @@ export function DraftFieldsForm({ d, accounts, showSubject, flat }: { d: LocalDr
 
 /** What the draft's save state says, for screen readers too: "saved" only for an acknowledged revision. */
 export function SaveState({ d }: { d: LocalDraft }) {
+  const action = useRef<HTMLButtonElement | null>(null);
+  const actionRef = useCallback((node: HTMLButtonElement | null) => {
+    if (!node && action.current === document.activeElement) {
+      const controller = controllerFor(d.key);
+      if (controller) controller.focus("keep");
+      else action.current?.closest("form")?.querySelector<HTMLElement>("[data-testid=compose-body-loading]")?.focus();
+    }
+    action.current = node;
+  }, [d.key]);
+  const recovery = d.recovery;
+  const message = recovery?.state === "refused" ? recovery.reason ?? "invalid" : recovery?.state;
   return (
-    <span aria-live="polite" className="text-xs text-muted-foreground" data-testid="draft-status">
-      {d.status === "saved" && <span className="animate-in fade-in-0 duration-base">{t("compose.status.saved")}</span>}
-      {d.status === "error" &&
+    <span className="inline-flex flex-wrap items-center gap-x-1 text-xs text-muted-foreground" data-testid="draft-status">
+      <span aria-live="polite" aria-atomic="true">
+        {message ? t(`compose.recovery.${message}`) : d.status === "saved" ? t("compose.status.saved") : null}
+        {recovery?.state === "unknown" && recovery.reason && ` ${t(`compose.recovery.${recovery.reason}`)}`}
+      </span>
+      {recovery && (
+        <button
+          ref={actionRef}
+          type="button"
+          data-testid="draft-save-copy"
+          className="font-medium text-foreground underline underline-offset-2 hover:no-underline"
+          aria-busy={recovery.state === "copying"}
+          aria-disabled={recovery.state === "copying"}
+          onClick={() => { if (recovery.state !== "copying") void copyDraft(d.key); }}
+        >
+          {t(recovery.state === "unknown" ? "compose.recovery.another" : "compose.recovery.copy")}
+        </button>
+      )}
+      {!recovery && d.status === "error" &&
         richT(d.tooLong ? "compose.status.tooLong" : "compose.status.failed", {
           retry: (text) => (
             <button type="button" className="font-medium text-primary hover:underline" onClick={() => retryDraft(d.key)}>
@@ -199,7 +226,7 @@ export function SignaturePreview({ accountId, className }: { accountId: number; 
 }
 
 /** The quoted original: kept apart from the text, shown on demand, removable. */
-function Quote({ d }: { d: LocalDraft }) {
+export function Quote({ d }: { d: LocalDraft }) {
   const [show, setShow] = useState(false);
   const id = useId();
   if (!d.quotedText) return null;
@@ -385,13 +412,13 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true }
             <Quote d={d} />
             <ComposerFormatBar draftKey={d.key} id={formatId} className="px-2 pt-1.5" />
             <div className="flex items-center gap-1 px-2.5 pt-2 pb-2.5">
-              <Button type="submit" size="sm" data-testid="compose-send" aria-busy={d.sending} disabled={d.sending} className="mr-1.5 gap-2">
+              <Button type="submit" size="sm" data-testid="compose-send" aria-busy={d.sending} disabled={d.sending || Boolean(d.recovery)} className="mr-1.5 gap-2">
                 <Send /> {t("common.send")} <Shortcut keys="mod+enter" className="[&_kbd]:bg-primary-foreground/15 [&_kbd]:text-primary-foreground [&_kbd]:shadow-none" />
               </Button>
               <FormatToggle controls={formatId} />
               <AttachButton d={d} />
               <LinkButton draftKey={d.key} disabled={d.sending} />
-              <span className="ml-1.5">
+              <span className="ml-1.5 min-w-0">
                 <SaveState d={d} />
               </span>
               <span className="ml-auto flex gap-0.5">

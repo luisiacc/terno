@@ -875,7 +875,7 @@ const en = {
   "compose.link.bubble": "Link to {href}",
   "compose.recovery.missing": "This draft is gone. It may have been sent. Your changes are here; saving a copy won’t send them.",
   "compose.recovery.copying": "Saving a separate copy. Keep writing; Send will be available after it is saved.",
-  "compose.recovery.unknown": "The copy could not be confirmed and may already exist. Check Drafts before saving another copy. Your changes remain here.",
+  "compose.recovery.unknown": "The copy could not be confirmed and may already exist. Saving another copy may leave two drafts. Your changes remain here.",
   "compose.recovery.assets": "The copy was not saved. Remove or replace unavailable files, then save a copy.",
   "compose.recovery.account": "The copy was not saved. Choose a connected From account; remove files first if the old account owns them.",
   "compose.recovery.context": "The copy was not saved because its conversation is unavailable. Your changes remain here.",

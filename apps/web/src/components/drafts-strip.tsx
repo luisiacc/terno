@@ -53,7 +53,12 @@ export function DraftsStrip() {
     // a conversation's draft: open that conversation (by id: it needn't be in this list) showing exactly this draft
     setApp({ selectedId: d.threadId, readerOpen: true, compose: null, checked: new Set(), scope: null, draftShown: { threadId: d.threadId, key: d.key } });
     setDraftUi(d.key, "open");
-    void loadThread(d.threadId).then(() => focusDraft(d.key, d.mode === "forward" ? "to" : "body"));
+    void loadThread(d.threadId).then((detail) => {
+      const app = useApp.getState();
+      if (app.draftShown?.key !== d.key || app.selectedId !== d.threadId || app.compose) return;
+      if (!detail) showNewDraft(d.key);
+      else focusDraft(d.key, d.mode === "forward" ? "to" : "body");
+    });
   };
 
   return (

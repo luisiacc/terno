@@ -869,7 +869,7 @@ const es = {
   "compose.link.bubble": "Enlace a {href}",
   "compose.recovery.missing": "Este borrador ya no existe. Puede haberse enviado. Tus cambios siguen aquí; guardar una copia no los enviará.",
   "compose.recovery.copying": "Guardando una copia independiente. Puedes seguir escribiendo; podrás enviar cuando esté guardada.",
-  "compose.recovery.unknown": "No se pudo confirmar la copia y puede que ya exista. Revisa Borradores antes de guardar otra copia. Tus cambios siguen aquí.",
+  "compose.recovery.unknown": "No se pudo confirmar la copia y puede que ya exista. Guardar otra copia puede dejar dos borradores. Tus cambios siguen aquí.",
   "compose.recovery.assets": "No se guardó la copia. Quita o reemplaza los archivos no disponibles y guarda una copia.",
   "compose.recovery.account": "No se guardó la copia. Elige una cuenta conectada en De; primero quita los archivos si pertenecen a la cuenta anterior.",
   "compose.recovery.context": "No se guardó la copia porque su conversación no está disponible. Tus cambios siguen aquí.",

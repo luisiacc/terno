@@ -10,7 +10,7 @@ import { registerUndo, snack } from "~/lib/snack";
 import { leaveNewDraft, sendDraft, showNewDraft } from "~/lib/compose";
 import { discardDraft, restoreDiscarded, useDrafts } from "~/lib/drafts";
 import { useApp } from "~/state/app";
-import { DraftFieldsForm, focusSoon, SaveState, SignaturePreview } from "./inline-draft";
+import { DraftFieldsForm, focusSoon, Quote, SaveState, SignaturePreview } from "./inline-draft";
 import { popupOpen } from "./composer/controller";
 import { ComposerBody, ComposerFormatBar, FormatToggle, LinkButton, preloadComposer } from "./composer/lazy";
 import { warmAutocomplete } from "~/lib/autocomplete";
@@ -93,7 +93,7 @@ export function NewMessage() {
           <TooltipContent>{t("compose.discard")}</TooltipContent>
         </Tooltip>
         <span className="text-sm text-muted-foreground">{t("compose.newMessage")}</span>
-        <Button type="submit" size="sm" className="no-drag ml-auto gap-2" data-testid="compose-send" aria-busy={d.sending} disabled={d.sending}>
+        <Button type="submit" size="sm" className="no-drag ml-auto gap-2" data-testid="compose-send" aria-busy={d.sending} disabled={d.sending || Boolean(d.recovery)}>
           <Send /> {t("common.send")} <Shortcut keys="mod+enter" className="[&_kbd]:bg-primary-foreground/15 [&_kbd]:text-primary-foreground [&_kbd]:shadow-none" />
         </Button>
       </div>
@@ -107,6 +107,7 @@ export function NewMessage() {
           </div>
           <ComposerBody draftKey={key} placeholder={t("compose.bodyPlaceholder.new")} className="block min-h-[260px] w-full flex-1 pt-4 text-base" />
           <DraftAttachments d={d} />
+          <Quote d={d} />
           <SignaturePreview accountId={d.accountId} className="pt-2" />
         </div>
       </div>

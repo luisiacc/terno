@@ -47,6 +47,7 @@ export const NO_AUTO: AutoRecipients = { to: [], cc: [], bcc: [] };
 export interface DraftRecovery {
   state: "missing" | "copying" | "refused" | "unknown";
   reason?: "assets" | "account" | "context" | "size" | "invalid";
+  uncertain?: true;
 }
 
 export interface LocalDraft {
@@ -356,10 +357,11 @@ function save(key: string, copy = false): Promise<void> {
   if (!d || !authored(d) || (!copy && d.savedRev === d.localRev)) return Promise.resolve();
   const rev = d.localRev;
   const operation = ++w.operation;
+  const uncertain = d.recovery?.state === "unknown" || d.recovery?.uncertain;
   if (w.timer) clearTimeout(w.timer);
   w.timer = null;
   w.dirtySince = null;
-  put({ ...d, ...(copy ? { recovery: { state: "copying" as const } } : {}), status: "saving", attachmentOwner: d.attachmentOwner || Boolean(d.attachments?.length) });
+  put({ ...d, ...(copy ? { recovery: { state: "copying" as const, ...(uncertain ? { uncertain: true as const } : {}) } } : {}), status: "saving", attachmentOwner: d.attachmentOwner || Boolean(d.attachments?.length) });
   const params = {
     id: copy ? undefined : d.id ?? undefined,
     generation: copy ? undefined : d.generation,
@@ -404,14 +406,14 @@ function save(key: string, copy = false): Promise<void> {
     (error: unknown) => {
       if (w.operation !== operation) return;
       w.inflight = null;
-      const cur = get(key);
+      const cur = copy ? materialize(key) : get(key);
       if (!cur) return;
       if (copy) {
         const e = error as { code?: string; details?: { reason?: string } } | null;
         const refused = e?.code === "BAD_REQUEST" || e?.code === "NOT_FOUND" || e?.code === "STALE" || e?.code === "FORBIDDEN";
-        const reason = e?.details?.reason;
+        const reason = Array.isArray(e?.details) && e.details.some((issue: { code?: string }) => issue?.code === "too_big") ? "size" : e?.details?.reason;
         const known = reason === "assets" || reason === "account" || reason === "context" || reason === "size" ? reason : "invalid";
-        put({ ...cur, status: "error", tooLong: false, recovery: refused ? { state: "refused", reason: known } : { state: "unknown" } });
+        put({ ...cur, status: "error", tooLong: false, recovery: refused && !uncertain ? { state: "refused", reason: known } : { state: "unknown", ...(refused ? { reason: known } : {}) } });
         return;
       }
       // refused as invalid (past the size limits): trying again won't help until it changes; Retry stays
