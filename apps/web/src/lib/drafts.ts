@@ -354,10 +354,14 @@ export function materialize(key: string): LocalDraft | undefined {
   const source = sources.get(key);
   if (!d || !source?.dirty) return d;
   const version = source.editVersion, detached = source.detached;
+  const materializingWriter = writers.get(key);
   const fail = (error: unknown): never => {
-    if (sources.get(key) === source) { source.failed = true; source.dirty = true; }
-    const w = writers.get(key);
-    if (w?.timer) { clearTimeout(w.timer); w.timer = null; }
+    if (sources.get(key) === source) {
+      source.failed = true; source.dirty = true;
+      if (materializingWriter && writers.get(key) === materializingWriter && materializingWriter.timer) {
+        clearTimeout(materializingWriter.timer); materializingWriter.timer = null;
+      }
+    }
     throw error;
   };
   let body: ReturnType<BodyReader>;
@@ -543,7 +547,9 @@ function save(key: string, copy = false): Promise<void> {
   if (w.inflight) return w.inflight;
   // the editor's body, serialized once for this save (same document as the revision it saves)
   let d: LocalDraft | undefined;
+  const savingSource = sources.get(key);
   try { d = materialize(key); } catch {
+    if (sources.get(key) !== savingSource || writers.get(key) !== w) return Promise.resolve();
     if (w.timer) clearTimeout(w.timer);
     w.timer = null;
     const current = get(key);
