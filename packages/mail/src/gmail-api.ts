@@ -443,7 +443,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         if (path === "/profile" || path === "/messages/send" || path === ep.userinfo) return JSON.parse(await readResponseText(res, 65_536, deadline.signal)) as T;
         return await untilAborted(res.json(), deadline.signal) as T;
       } catch (e) {
-        if (e instanceof IncomingProcessingError || e instanceof ResponseBodyLimitError) throw processingError(e);
+        if (responseMode === "incoming" && (e instanceof IncomingProcessingError || e instanceof ResponseBodyLimitError)) throw processingError(e);
         // The request was accepted; a send whose answer can't be read has an unknown outcome (no resend).
         if (sending) throw invalidResponse(true);
         if (!deadline.signal.aborted && !isFetchNetworkFailure(e)) throw invalidResponse();
