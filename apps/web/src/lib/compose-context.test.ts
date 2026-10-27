@@ -142,3 +142,22 @@ it("delayed hydration after navigation retains work as an expired lookup candida
     expect(useDrafts.getState().drafts["srv-93"]).toMatchObject({ id: 93, generation: "incoming-generation", revision: 5, bodyText: "exact delayed work", showSourceContext: true, presentationExpired: true });
   } finally { stop(); forgetDraft("srv-93"); }
 });
+
+it("overlapping hydration responses retain independent exclusions and rejection cleanup", async () => {
+  const { loadDrafts, fromServer } = await import("./drafts");
+  const { contract } = await import("@terno/core/rpc");
+  const row = (id: number) => ({ ...contract["drafts.save"].params.parse({ accountId: 1, bodyText: `stored ${id}` }), id, generation: `generation-${id}`, revision: 1, format: 2, mode: "new", threadId: null, subjectEdited: false, quotedText: "", includeQuote: false, inReplyToMessageId: null, forwardOfMessageId: null, uiState: "open", updatedAt: 0 }) as import("@terno/core/rpc").Draft;
+  let first!: (rows: import("@terno/core/rpc").Draft[]) => void, second!: (rows: import("@terno/core/rpc").Draft[]) => void, reject!: (error: Error) => void;
+  useDrafts.setState({ drafts: { "srv-91": fromServer(row(91)) } });
+  try {
+    const a = loadDrafts(() => new Promise((done) => { first = done; })), b = loadDrafts(() => new Promise((done) => { second = done; }));
+    forgetDraft("srv-91"); first([row(91), row(92)]); await a;
+    expect(useDrafts.getState().drafts["srv-91"]).toBeUndefined(); expect(useDrafts.getState().drafts["srv-92"]?.bodyText).toBe("stored 92");
+    forgetDraft("srv-92"); second([row(91), row(92), row(93)]); await b;
+    expect(Object.keys(useDrafts.getState().drafts)).toEqual(["srv-93"]);
+    const c = loadDrafts(() => new Promise((_done, fail) => { reject = fail; }));
+    const rejection = expect(c).rejects.toThrow("list unavailable"); forgetDraft("srv-93"); reject(new Error("list unavailable")); await rejection;
+    await loadDrafts(async () => [row(91), row(92), row(93)]);
+    expect(Object.values(useDrafts.getState().drafts).map((d) => d.bodyText)).toEqual(["stored 91", "stored 92", "stored 93"]);
+  } finally { for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); }
+});

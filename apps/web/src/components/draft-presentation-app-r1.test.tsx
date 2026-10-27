@@ -132,3 +132,19 @@ it("stored open cannot cancel a successor created by its synchronous UI publicat
     expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-to"]'));
   } finally { off(); newerContext.resolve({ threadId: 7, accountId: 1 }); if (newer) await newer; await h.cleanup(); }
 });
+
+it("stored lookup materializes its baseline and preserves later coalesced editor work", async () => {
+  const h = await setup("list"), context = deferred<{ threadId: number; accountId: number }>();
+  let text = "first editor work";
+  const source = h.drafts.attachBody(h.key, () => ({ text, html: `<div>${text}</div>` }));
+  gate.call.mockImplementation((method: string) => method === "drafts.sourceContext" ? context.promise : Promise.resolve({}));
+  try {
+    await act(async () => source.changed());
+    const button = h.host.querySelector<HTMLButtonElement>('[data-testid="strip-item"]')!; button.focus(); await act(async () => button.click());
+    await act(async () => { text = "second editor work"; source.changed(); text = "latest coalesced editor work"; source.changed(); });
+    const revision = h.drafts.useDrafts.getState().drafts[h.key]!.localRev;
+    await act(async () => context.resolve({ threadId: 7, accountId: 1 }));
+    expect(h.app.getApp().selectedId).toBeNull(); expect(h.app.getApp().compose).toBeNull();
+    expect(h.drafts.materialize(h.key)).toMatchObject({ bodyText: text, bodyHtml: `<div>${text}</div>`, localRev: revision, id: 81, generation: "stable" });
+  } finally { context.resolve({ threadId: 7, accountId: 1 }); await h.cleanup(); source.dispose(); }
+});
