@@ -244,25 +244,36 @@ function showStoredStandalone(key: string, owner: number, allowed: () => boolean
   if (!permitted() || !snapshot) return null;
   snapshot = invalidatedPresentation(snapshot);
   const active = typeof document === "undefined" ? null : document.activeElement;
-  let moved = false;
-  const observe = (event: FocusEvent) => { if (event.target !== active && event.target !== document.body) moved = true; };
+  const selectionRevision = getSelectionWriteRevision();
+  let changed = false, expected = getApp();
+  const observe = (event: FocusEvent) => { if (event.target !== active && event.target !== document.body) changed = true; };
+  const unsubscribe = useApp.subscribe((state) => {
+    if (state.selectedId !== expected.selectedId || state.readerOpen !== expected.readerOpen || state.compose !== expected.compose || state.checked !== expected.checked || state.scope !== expected.scope || state.accountId !== expected.accountId || state.dialog !== expected.dialog || state.fatal !== expected.fatal || state.view !== expected.view || state.categoryId !== expected.categoryId || state.reviewCategoryId !== expected.reviewCategoryId || state.query !== expected.query || state.listFilters !== expected.listFilters) changed = true;
+  });
+  const current = () => !changed && getSelectionWriteRevision() === selectionRevision && permitted();
   if (typeof document !== "undefined") document.addEventListener?.("focusin", observe, true);
-  try { invalidateDraftPresentation(key); }
-  finally { if (typeof document !== "undefined") document.removeEventListener?.("focusin", observe, true); }
-  if (moved || !permitted() || !transferable()) return null;
-  const compose = { key, seq: ++seq, storedFocusSeq: ++seq };
-  const lease = beginFocusLease(owner, null, compose);
-  if (!lease) return null;
-  lease.seq = compose.storedFocusSeq;
-  if (!permitted() || focusLease !== lease || !lease.valid) { releaseFocusLease(lease, false); return null; }
-  setApp({ compose, checked: new Set(), scope: null, readerOpen: false, draftFocus: { key, target: "to", seq: compose.storedFocusSeq } });
-  if (!permitted() || focusLease !== lease || !lease.valid || getApp().compose !== compose) {
-    releaseFocusLease(lease, false);
-    const state = getApp();
-    if (owner !== intent && state.compose === compose) setApp({ compose: null, ...(state.selectedId === selectedId && state.accountId === accountId ? { readerOpen: previous.readerOpen } : {}) });
-    return null;
+  try {
+    invalidateDraftPresentation(key);
+    if (!current() || !transferable()) return null;
+    const compose = { key, seq: ++seq, storedFocusSeq: ++seq };
+    const lease = beginFocusLease(owner, null, compose);
+    if (!lease) return null;
+    lease.seq = compose.storedFocusSeq;
+    if (!current() || focusLease !== lease || !lease.valid) { releaseFocusLease(lease, false); return null; }
+    const publication = { compose, checked: new Set<number>(), scope: null, readerOpen: false, draftFocus: { key, target: "to" as const, seq: compose.storedFocusSeq } };
+    expected = { ...getApp(), ...publication };
+    setApp(publication);
+    if (!current() || focusLease !== lease || !lease.valid || getApp().compose !== compose) {
+      releaseFocusLease(lease, false);
+      const state = getApp();
+      if (owner !== intent && state.compose === compose) setApp({ compose: null, ...(state.selectedId === selectedId && state.accountId === accountId ? { readerOpen: previous.readerOpen } : {}) });
+      return null;
+    }
+    return lease;
+  } finally {
+    unsubscribe();
+    if (typeof document !== "undefined") document.removeEventListener?.("focusin", observe, true);
   }
-  return lease;
 }
 
 /** Open stored work under the same private intent and destination ownership as Reply/Forward. */
