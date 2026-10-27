@@ -14,6 +14,7 @@ import { Expand } from "./expand";
 import { DraftSlot } from "./inline-draft";
 import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { replyName } from "~/lib/compose-fields";
+import { composeFocusPending, subscribeComposeFocus } from "~/lib/compose";
 import { act, cancelMarkRead, openCompose, scheduleMarkRead, toggleStar } from "~/lib/actions";
 import { acceptSuggestion, rejectSuggestion, removeFromCategory } from "~/lib/categorize";
 import { t } from "@terno/i18n";
@@ -411,11 +412,25 @@ export function Reader() {
   // List's page opened: focus starts on the conversation (named by its subject), unless something in it already took it (a draft asked for)
   useEffect(() => {
     if (!page) return;
+    let unsubscribe = () => {};
     const frame = requestAnimationFrame(() => {
       const section = sectionRef.current;
-      if (section && !section.contains(document.activeElement)) section.focus({ preventScroll: true });
+      const state = useApp.getState();
+      const threadId = state.selectedId;
+      if (!section || threadId === null || state.dialog || state.fatal || useDrafts.getState().held || section.closest("[inert]")) return;
+      if (composeFocusPending(threadId)) {
+        const active = document.activeElement;
+        unsubscribe = subscribeComposeFocus((finishedThread, fallback) => {
+          if (finishedThread !== threadId) return;
+          unsubscribe();
+          const state = useApp.getState();
+          if (fallback && section.isConnected && !section.closest("[inert]") && state.selectedId === threadId && !state.dialog && !state.fatal && !useDrafts.getState().held && !composeFocusPending(threadId) && document.activeElement === active && !section.contains(active)) section.focus({ preventScroll: true });
+        });
+        return;
+      }
+      if (!section.contains(document.activeElement)) section.focus({ preventScroll: true });
     });
-    return () => cancelAnimationFrame(frame);
+    return () => { cancelAnimationFrame(frame); unsubscribe(); };
   }, [page]);
   const design = useDesign();
   const detail = useThread(selectedId);

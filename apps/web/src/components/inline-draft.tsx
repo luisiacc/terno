@@ -8,7 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { cn } from "@terno/ui/lib/utils";
 import { ChevronDown, Forward, PenLine, ReplyAll, Send, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { openCompose, sendDraft, supersedeCompose } from "~/lib/compose";
+import { finishComposeFocus, openCompose, sendDraft, supersedeCompose } from "~/lib/compose";
 import { copyDraft, discardDraft, draftSenderLocked, editDraft, flushDraft, restoreDiscarded, retryDraft, setDraftUi, signatureBlock, useDrafts, type BodyCheckpoint, type DraftFields, type LocalDraft } from "~/lib/drafts";
 import { SenderAvatar } from "./sender-avatar";
 import { RecipientInput, recipientSummary } from "./recipient-input";
@@ -60,15 +60,20 @@ function keyDuringMove(e: KeyboardEvent) {
  * Puts focus on an element of the draft area once it is rendered and no longer
  * inert (an opening part is inert for a frame).
  */
-export function focusSoon(selector: string, root: HTMLElement | null, frames = 12) {
+export function focusSoon(selector: string, root: HTMLElement | null, frames = 12, onDone?: (fallback: boolean) => void) {
   pendingFocus?.done();
   let raf = 0;
-  const done = () => {
+  let finished = false;
+  const cleanup = () => {
+    if (finished) return false;
+    finished = true;
     cancelAnimationFrame(raf);
     document.removeEventListener("keydown", keyDuringMove, true);
     document.removeEventListener("focusin", moved, true);
     if (pendingFocus === mine) pendingFocus = null;
+    return true;
   };
+  const done = () => { if (cleanup()) onDone?.(false); };
   const moved = (event: FocusEvent) => {
     if (event.target !== document.body) done();
   };
@@ -81,8 +86,9 @@ export function focusSoon(selector: string, root: HTMLElement | null, frames = 1
       if (root && !root.isConnected) return done();
       const el = target(selector, root);
       if (!focusable(el) && left > 0) return tick(left - 1);
-      done();
+      if (!cleanup()) return;
       if (focusable(el)) place(el);
+      onDone?.(true);
     });
   };
   tick(frames);
@@ -326,8 +332,8 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
   // an explicit open (r/a/f, the bar, the menu) asks for focus: honor it once
   useEffect(() => {
     if (!focus || !d) return;
-    focusSoon(focus.target === "to" ? "[data-testid=compose-to]" : "[data-testid=compose-body]", rootRef.current);
-    setApp({ draftFocus: null });
+    focusSoon(focus.target === "to" ? "[data-testid=compose-to]" : "[data-testid=compose-body]", rootRef.current, 12, (fallback) => finishComposeFocus(focus.key, focus.seq, fallback));
+    if (useApp.getState().draftFocus?.seq === focus.seq) setApp({ draftFocus: null });
   }, [focus?.seq]);
 
   const collapse = () => {

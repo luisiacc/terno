@@ -34,11 +34,63 @@ let seq = 0;
  * the draft late, focused, and the second "r" went into the text.
  */
 let intent = 0;
-export const supersedeCompose = (): void => void ++intent;
+type FocusLease = { intent: number; threadId: number; key?: string; seq?: number; valid: boolean; dispose: () => void };
+let focusLease: FocusLease | null = null;
+const focusLeaseListeners = new Set<(threadId: number, fallback: boolean) => void>();
+
+function releaseFocusLease(lease: FocusLease, fallback: boolean, notify = true) {
+  if (focusLease !== lease) return;
+  focusLease = null;
+  lease.valid = false;
+  lease.dispose();
+  if (!fallback && lease.seq !== undefined && getApp().draftFocus?.seq === lease.seq) setApp({ draftFocus: null });
+  if (notify) for (const listener of focusLeaseListeners) listener(lease.threadId, fallback);
+}
+
+function beginFocusLease(owner: number, threadId: number): FocusLease {
+  if (focusLease) releaseFocusLease(focusLease, false, false);
+  const active = typeof document === "undefined" ? null : document.activeElement;
+  const lease: FocusLease = { intent: owner, threadId, valid: true, dispose: () => {} };
+  const moved = (event: FocusEvent) => {
+    if (event.target !== active && event.target !== document.body) releaseFocusLease(lease, false);
+  };
+  if (typeof document !== "undefined") document.addEventListener?.("focusin", moved, true);
+  const unsubApp = useApp.subscribe((state, previous) => {
+    if (state.selectedId !== threadId || (state.dialog !== previous.dialog && state.dialog !== null) || (state.fatal !== previous.fatal && state.fatal !== null)) releaseFocusLease(lease, false);
+  });
+  const unsubDrafts = useDrafts.subscribe((state) => {
+    const draft = lease.key ? state.drafts[lease.key] : undefined;
+    if (state.held || (lease.key && (!draft || draft.uiState !== "open" || draft.sending || draft.recovery))) releaseFocusLease(lease, false);
+  });
+  lease.dispose = () => {
+    if (typeof document !== "undefined") document.removeEventListener?.("focusin", moved, true);
+    unsubApp(); unsubDrafts();
+  };
+  focusLease = lease;
+  return lease;
+}
+
+/** Reader's passive focus must wait for this conversation's explicit compose focus. */
+export const composeFocusPending = (threadId: number): boolean => focusLease?.threadId === threadId && focusLease.valid && getApp().selectedId === threadId;
+export const subscribeComposeFocus = (listener: (threadId: number, fallback: boolean) => void): (() => void) => {
+  focusLeaseListeners.add(listener);
+  return () => { focusLeaseListeners.delete(listener); };
+};
+export function finishComposeFocus(key: string, focusSeq: number, fallback: boolean): void {
+  const lease = focusLease;
+  if (lease?.key === key && lease.seq === focusSeq) releaseFocusLease(lease, fallback);
+}
+export const supersedeCompose = (): void => {
+  ++intent;
+  if (focusLease) releaseFocusLease(focusLease, false);
+};
 
 /** Asks the inline draft to take focus (only an explicit open does; coming back to a thread never does). */
-export function focusDraft(key: string, target: "body" | "to") {
-  setApp({ draftFocus: { key, target, seq: ++seq } });
+export function focusDraft(key: string, target: "body" | "to", owner?: number) {
+  const focusSeq = ++seq;
+  if (focusLease && focusLease.intent === owner) { focusLease.key = key; focusLease.seq = focusSeq; }
+  else if (focusLease) releaseFocusLease(focusLease, false);
+  setApp({ draftFocus: { key, target, seq: focusSeq } });
 }
 
 /** Does a draft carry anything the user wrote? */
@@ -55,11 +107,18 @@ const written = (d: LocalDraft) => d.bodyText.trim() !== "" || d.subjectEdited |
 export async function openCompose(mode: DraftMode = "new", threadId: number | null = getApp().selectedId): Promise<void> {
   const finish = beginDraftWork();
   if (!finish) return;
-  try { await openComposeNow(mode, threadId); } finally { finish(); }
+  const mine = ++intent;
+  const state = getApp();
+  const lease = mode !== "new" && threadId !== null && state.selectedId === threadId && state.scope === null && state.checked.size < 2
+    ? beginFocusLease(mine, threadId) : null;
+  if (!lease && focusLease) releaseFocusLease(focusLease, false);
+  try { await openComposeNow(mode, threadId, mine, lease); } finally {
+    if (lease && lease.seq === undefined) releaseFocusLease(lease, true);
+    finish();
+  }
 }
 
-async function openComposeNow(mode: DraftMode, threadId: number | null): Promise<void> {
-  const mine = ++intent;
+async function openComposeNow(mode: DraftMode, threadId: number | null, mine: number, lease: FocusLease | null): Promise<void> {
   let takeFocus = true;
   const active = typeof document === "undefined" ? null : document.activeElement;
   const s = getApp();
@@ -82,7 +141,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null): Promise
   let existing = existingKey ? materialize(existingKey) : undefined;
   if (existing && existing.mode === mode) {
     setDraftUi(existing.key, "open");
-    return focusDraft(existing.key, target);
+    return focusDraft(existing.key, target, mine);
   }
   const selected = s.selectedId;
   const detail = await loadThread(threadId);
@@ -161,11 +220,11 @@ async function openComposeNow(mode: DraftMode, threadId: number | null): Promise
     if (!written(existing)) {
       // nothing written yet: simply the other mode, fresh
       editDraft(existing.key, converted);
-      if (takeFocus) focusDraft(existing.key, target);
+      if (takeFocus && (!lease || lease.valid)) focusDraft(existing.key, target, mine);
       return;
     }
     editDraft(existing.key, converted);
-    if (takeFocus) focusDraft(existing.key, target);
+    if (takeFocus && (!lease || lease.valid)) focusDraft(existing.key, target, mine);
     // back to what it was, still open where the user is looking
     const undo = registerUndo(() => editDraft(existing.key, { ...before!, uiState: "open" }));
     const [message, name] = CONVERTED[mode];
@@ -173,7 +232,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null): Promise
     return;
   }
   const key = createDraft(converted);
-  if (takeFocus) focusDraft(key, target);
+  if (takeFocus && (!lease || lease.valid)) focusDraft(key, target, mine);
 }
 
 /** Shows a new-message draft in the reader pane again (from the drafts strip). */
