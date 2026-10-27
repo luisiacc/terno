@@ -17,17 +17,19 @@ const DEFAULT_DISPLAY = new Map([["rp", "none"], ["br", "inline"], ["title", "no
 // Chromium's retained legend rendering normalizes these authored values before box decisions.
 const LEGEND_DISPLAY = new Map([["none", "none"], ["contents", "contents"], ["inline", "block"], ["inline-block", "block"], ["block", "block"], ["flow-root", "flow-root"], ["list-item", "list-item"], ["flex", "flex"], ["grid", "grid"], ["inline-flex", "flex"], ["inline-grid", "grid"], ["table", "table"], ["inline-table", "table"], ["table-row-group", "block"], ["table-header-group", "block"], ["table-footer-group", "block"], ["table-row", "block"], ["table-cell", "block"], ["table-column", "block"], ["table-column-group", "block"], ["table-caption", "block"]]);
 const LENGTHS = new Set(["px", "em", "rem", "ex", "ch", "cap", "ic", "lh", "rlh", "vw", "vh", "vmin", "vmax", "svh", "lvh", "dvh", "cm", "mm", "q", "in", "pt", "pc"]);
-const PROPERTIES = new Set(["display", "visibility", "opacity", "max-height", "overflow", "overflow-x", "overflow-y"]);
-const INITIAL = new Map([["display", "inline"], ["opacity", "positive"], ["max-height", "none"], ["overflow", "visible"], ["overflow-x", "visible"], ["overflow-y", "visible"]]);
+const PROPERTIES = new Set(["display", "visibility", "opacity", "max-height", "width", "overflow", "overflow-x", "overflow-y"]);
+const INITIAL = new Map([["display", "inline"], ["opacity", "positive"], ["max-height", "none"], ["width", "auto"], ["overflow", "visible"], ["overflow-x", "visible"], ["overflow-y", "visible"]]);
 const OVERFLOWS = new Set(["visible", "hidden", "clip", "scroll", "auto"]);
 type Style = Map<string, { value: string; important: boolean }>;
-const EMPTY_STYLE: Style = new Map();
+type Inline = { values: Style; uncertainBox: boolean };
+const EMPTY_STYLE: Inline = { values: new Map(), uncertainBox: false };
 
 function scalar(property: string, source: string): string | undefined {
   const tokens: { type: number; value: string }[] = [];
   tokenize(source, (type, start, end) => {
     if (type !== tokenTypes.WhiteSpace && type !== tokenTypes.Comment && tokens.length < 3) tokens.push({ type, value: source.slice(start, end) });
   });
+  if (property === "width" && tokens.some((token) => token.type === tokenTypes.Function)) return "unknown";
   if (property === "overflow" && tokens.length === 2) {
     const values = tokens.map((token) => ident.decode(token.value).toLowerCase());
     if (tokens.every((token) => token.type === tokenTypes.Ident) && values.every((value) => OVERFLOWS.has(value))) return values.join(" ");
@@ -45,12 +47,14 @@ function scalar(property: string, source: string): string | undefined {
     if (property === "visibility" && ["visible", "hidden", "collapse", "inherit", "unset", "initial"].includes(value)) return value;
     if ((property === "overflow" || property === "overflow-x" || property === "overflow-y") && OVERFLOWS.has(value)) return value;
     if (property === "max-height" && value === "none") return value;
+    if (property === "width" && value === "auto") return value;
+    if (property === "width" && ["inherit", "revert", "revert-layer", "min-content", "max-content", "fit-content", "stretch", "contain"].includes(value)) return "unknown";
   }
   if (property === "opacity" && (token.type === tokenTypes.Number || token.type === tokenTypes.Percentage)) {
     const number = Number(token.value.replace(/%$/, ""));
     if (Number.isFinite(number)) return number <= 0 ? "0" : "positive";
   }
-  if (property === "max-height") {
+  if (property === "max-height" || property === "width") {
     if (token.type === tokenTypes.Number && Number(token.value) === 0) return "0";
     if (token.type === tokenTypes.Percentage && Number(token.value.slice(0, -1)) >= 0) return Number(token.value.slice(0, -1)) === 0 ? "0" : "positive";
     if (token.type === tokenTypes.Dimension) {
@@ -65,17 +69,18 @@ function setInlineValue(values: Style, property: string, value: string, importan
   if (!values.get(property)?.important || important) values.set(property, { value, important });
 }
 
-function inlineStyle(source: string): Style {
+function inlineStyle(source: string): Inline {
   const values: Style = new Map();
+  let uncertainBox = false;
   // Values stay Raw: arbitrary nested functions must never recurse through a CSS value parser.
   const ast = parseCss(source, { context: "declarationList", parseValue: false });
-  if (ast.type !== "DeclarationList") return values;
+  if (ast.type !== "DeclarationList") return { values, uncertainBox: true };
   ast.children.forEach((node) => {
     if (node.type !== "Declaration" || node.value.type !== "Raw") return;
     if (typeof node.important === "string" && ident.decode(node.important).toLowerCase() !== "important") return;
     const important = node.important !== false;
     const property = ident.decode(node.property).toLowerCase();
-    if (!PROPERTIES.has(property)) return;
+    if (!PROPERTIES.has(property)) { uncertainBox = true; return; }
     const value = scalar(property, node.value.value);
     if (value === undefined) return;
     if (property === "overflow") {
@@ -84,7 +89,7 @@ function inlineStyle(source: string): Style {
       setInlineValue(values, "overflow-y", space < 0 ? value : value.slice(space + 1), important);
     } else setInlineValue(values, property, value, important);
   });
-  return values;
+  return { values, uncertainBox };
 }
 
 function verticalOverflow(style: Style): string {
@@ -121,28 +126,37 @@ export async function htmlToText(html: string): Promise<string> {
   await ready;
   const document = parse(html, { scriptingEnabled: false });
   const output: string[] = [];
-  const stack: { children: Html.ChildNode[]; index: number; invisible: boolean; suppressed: boolean; block: boolean }[] = [{ children: document.childNodes, index: 0, invisible: false, suppressed: false, block: false }];
+  const stack: { children: Html.ChildNode[]; index: number; invisible: boolean; suppressed: boolean; block: boolean; capture: boolean; occupied: boolean; atomic: boolean; gapless: boolean }[] = [{ children: document.childNodes, index: 0, invisible: false, suppressed: false, block: false, capture: false, occupied: false, atomic: false, gapless: false }];
   while (stack.length) {
     const frame = stack[stack.length - 1]!;
     const node = frame.children[frame.index++];
     if (!node) {
       if (frame.block) output.push(" ");
       stack.pop();
+      const parent = stack[stack.length - 1];
+      if (frame.capture && frame.occupied) {
+        if (parent?.capture) parent.occupied = true;
+        else output.push(" ");
+      }
       continue;
     }
     if (node.nodeName === "#text") {
-      if (!frame.invisible && !frame.suppressed) output.push((node as Html.TextNode).value);
+      const value = (node as Html.TextNode).value;
+      if (frame.capture) frame.occupied ||= /[^\t\n\f\r ]/.test(value);
+      else if (!frame.invisible && !frame.suppressed) output.push(value);
+      else if (!frame.gapless && (frame.atomic ? /[^\t\n\f\r ]/.test(value) : value.length > 0)) output.push(" ");
       continue;
     }
     if (!("tagName" in node)) continue;
     if (node.namespaceURI !== "http://www.w3.org/1999/xhtml" || DROP_CONTENT.has(node.tagName)) continue;
     if (!RETAINED.has(node.tagName)) {
-      if (node.childNodes.length) stack.push({ children: node.childNodes, index: 0, invisible: frame.invisible, suppressed: frame.suppressed, block: false });
+      if (node.childNodes.length) stack.push({ ...frame, children: node.childNodes, index: 0, block: false, occupied: false });
       continue;
     }
     const attrs = relevantAttributes(node.attrs);
     const source = attrs.get("style");
-    const style = source ? inlineStyle(source) : EMPTY_STYLE;
+    const inline = source ? inlineStyle(source) : EMPTY_STYLE;
+    const style = inline.values;
     const authoredDisplay = style.get("display")?.value;
     const specifiedDisplay = authoredDisplay ?? DEFAULT_DISPLAY.get(node.tagName) ?? (DEFAULT_BLOCKS.has(node.tagName) ? "block" : "inline");
     const display = node.tagName === "legend" ? LEGEND_DISPLAY.get(specifiedDisplay) ?? specifiedDisplay : specifiedDisplay;
@@ -152,11 +166,27 @@ export async function htmlToText(html: string): Promise<string> {
     const suppressed = frame.suppressed || hidden === "until-found" || (display !== "contents" && style.get("opacity")?.value === "0") || (HEIGHT_BOXES.has(display) && style.get("max-height")?.value === "0" && overflow !== "visible");
     const visibility = style.get("visibility")?.value;
     const invisible = visibility === "hidden" || visibility === "collapse" || (visibility !== "visible" && visibility !== "initial" && frame.invisible);
+    const atomic = ATOMIC_INLINE.has(display);
+    const width = style.get("width")?.value;
+    const zeroWidth = display === "inline-block" && (node.tagName === "span" || node.tagName === "div") && width === "0" && !inline.uncertainBox;
+    const boxOccupied = display !== "contents" && (inline.uncertainBox || (display !== "inline" && (width === "positive" || width === "unknown" || (atomic && width === "0" && !zeroWidth))));
+    const capture = frame.capture || (suppressed && (atomic || frame.atomic));
+    if (capture) {
+      if (zeroWidth || frame.gapless) continue;
+      if (boxOccupied) {
+        if (frame.capture) frame.occupied = true;
+        else output.push(" ");
+        continue;
+      }
+      // Summarize natural atomic occupancy once; contained block/BR separators never escape.
+      if (node.childNodes.length) stack.push({ children: node.childNodes, index: 0, invisible, suppressed, block: false, capture: true, occupied: false, atomic: true, gapless: false });
+      continue;
+    }
     const block = node.tagName === "br" || !INLINE_DISPLAYS.has(display);
     if (block) output.push(" ");
-    // Suppressed text still occupies known layout; atomic inline boxes contain child boundaries.
-    if (suppressed && (block || ATOMIC_INLINE.has(display))) continue;
-    if (node.childNodes.length) stack.push({ children: node.childNodes, index: 0, invisible, suppressed, block });
+    if (suppressed && block) continue;
+    if (invisible && atomic && boxOccupied) output.push(" ");
+    if (node.childNodes.length) stack.push({ children: node.childNodes, index: 0, invisible, suppressed, block, capture: false, occupied: false, atomic: frame.atomic || atomic, gapless: frame.gapless || zeroWidth });
   }
   return output.join("").replace(/[\t\n\f\r \u00a0]+/g, " ").trim();
 }
