@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
+import { ownerHistory, sqlDb } from "@terno/db";
 import { IdbMailStore } from "@terno/idb";
 import { IDBFactory } from "fake-indexeddb";
 import { ProviderAuthError, type GmailConnectResult, type GmailRenewalProof, type ProviderRegistry } from "@terno/mail";
@@ -32,7 +33,8 @@ async function setup(kind: "SQL" | "IndexedDB") {
   };
   const dir = mkdtempSync(join(tmpdir(), "terno-explicit-renewal-"));
   const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((r) => setImmediate(r)) };
-  const store = kind === "IndexedDB" ? await IdbMailStore.open({ name: "synthetic-renewal", factory: new IDBFactory(), platform }) : undefined;
+  const factory = new IDBFactory();
+  const store = kind === "IndexedDB" ? await IdbMailStore.open({ name: "synthetic-renewal", factory, platform }) : undefined;
   const encrypt = vi.fn(plaintextCipher.encrypt), decrypt = vi.fn(plaintextCipher.decrypt);
   const backend = new Backend({ dbPath: join(dir, "test.db"), store, platform: store ? platform : undefined, version: "test", log: (...args) => { logs.push(args); }, cipher: { encrypt, decrypt }, providers: registry, autoSync: false, iconTransport: null, openExternal: async () => {} });
   const [c, s] = createMemoryTransportPair(); backend.connect(s, { clientId: "renewal", origin: "renderer" }); const client = new RpcClient(c);
@@ -45,6 +47,13 @@ async function setup(kind: "SQL" | "IndexedDB") {
   await backend.syncAccount(account.id);
   const name = `account:${account.id}:refreshToken`;
   return { backend, client, account, name, logs, registry, connect, begin, inspect, photos, encrypt, decrypt, instances,
+    store,
+    async history() {
+      if (!store) return ownerHistory(sqlDb(backend.store));
+      const db = await new Promise<IDBDatabase>((resolve, reject) => { const request = factory.open("terno-synthetic-renewal"); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+      try { return await new Promise<unknown[]>((resolve, reject) => { const request = db.transaction("owner_history").objectStore("owner_history").getAll(); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); }); }
+      finally { db.close(); }
+    },
     answer(value: Partial<GmailConnectResult>) { answer = { ...who, refreshToken: null, ...value }; }, rotate(value: string) { proofToken = value; },
     gate() { const g = gate(); gates.push(g); return g; },
     async mark() { await new Promise<void>((r) => setImmediate(r)); await backend.syncAccount(account.id); await backend.store.accounts.setSyncState(account.id, { status: "error", authRequired: true, lastError: "preserved failure", authScope: null }); },
@@ -52,6 +61,29 @@ async function setup(kind: "SQL" | "IndexedDB") {
 }
 
 describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal", (kind) => {
+  it.each(["omitted", "supplied"] as const)("superseded queued %s owner decision preserves owner and history while recovering credentials", async (credential) => {
+    const t = await setup(kind), entered = t.gate(), blocked = t.gate();
+    const owner = await t.backend.store.owner.get(), history = await t.history(), notifications: unknown[] = [];
+    t.client.on("owner", (value) => notifications.push(value));
+    t.answer({ refreshToken: credential === "omitted" ? null : "admitted-replacement" }); t.rotate("admitted-replacement");
+    const change = t.backend.store.owner.change.bind(t.backend.store.owner);
+    vi.spyOn(t.backend.store.owner, "change").mockImplementationOnce(async (request) => {
+      // Hold the actual IDB command queue; SQL's synchronous transaction is delayed at admission.
+      if (t.store) {
+        const held = t.store["exclusive"](async () => { entered.release(); await blocked.promise; }, true);
+        const queued = change(request); await held; return queued;
+      }
+      entered.release(); await blocked.promise; return change(request);
+    });
+    const result = outcome(t.client.call("identity.changeOwner", { accountId: t.account.id })); await entered.promise;
+    const off = outcome(t.client.call("icons.googlePhotos", { accountId: t.account.id, on: false }));
+    await new Promise<void>((resolve) => setImmediate(resolve)); blocked.release();
+    expect(await result).toHaveProperty("error"); expect(await off).toHaveProperty("value");
+    expect.soft(await t.backend.store.owner.get()).toEqual(owner); expect.soft(await t.history()).toEqual(history);
+    expect(notifications).toEqual([]); expect(await t.backend.getSecret(t.name)).toBe("admitted-replacement");
+    await expect(t.client.call("identity.changeOwner", { accountId: t.account.id })).resolves.toMatchObject({ accountId: t.account.id });
+  });
+
   it("failed newer consent waits for an admitted replacement before reopening", async () => {
     const t = await setup(kind), entered = t.gate(), blocked = t.gate(), declined = t.gate();
     const commit = t.backend.store.secrets.commit.bind(t.backend.store.secrets);

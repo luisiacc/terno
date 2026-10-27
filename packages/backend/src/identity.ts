@@ -261,15 +261,19 @@ export async function changeOwnerTo(b: Backend, accountId: number, password: str
         throw invalidRenewal();
       }
       const expiresAt = prepared.pending?.proof.expiresAt;
-      let changed: boolean;
-      try { changed = await b.credentialCommit(accountId, flow, () => b.store.owner.change({ claim: { ...claim, accountId, email: account.email }, stamp, secret: prepared.intent, reason: current ? "changed by user" : "claimed by user", now: b.now(), eligible: expiresAt === undefined ? undefined : () => Date.now() < expiresAt })); }
-      catch { b.assertSignIn(accountId, flow); throw persistenceFailed(); }
+      let changed = false;
+      try {
+        await b.credentialCommit(accountId, flow, async (active) => {
+          changed = await b.store.owner.change({ claim: { ...claim, accountId, email: account.email }, stamp, secret: prepared.intent, reason: current ? "changed by user" : "claimed by user", now: b.now(), eligible: () => active() && !flow.signal.aborted && b.signIns.get(accountId) === flow && (expiresAt === undefined || Date.now() < expiresAt) });
+          if (changed) return true;
+          // A refused claim must not strand credentials already proven before admission.
+          const recovered = active() && await b.store.secrets.commit(prepared.intent, stamp);
+          if (recovered && b.gmailRenewals.get(accountId) === prepared.pending) b.gmailRenewals.delete(accountId);
+          return recovered;
+        });
+      } catch { b.assertSignIn(accountId, flow); throw persistenceFailed(); }
       b.assertSignIn(accountId, flow);
-      if (!changed) {
-        // The owner decision refused; a mail-proven rotation can still need separate durability.
-        if (prepared.pending) { await commitGoogleCredential(b, accountId, stamp, flow, prepared.intent); throw invalidRenewal(); }
-        throw persistenceFailed();
-      }
+      if (!changed) throw prepared.pending ? invalidRenewal() : persistenceFailed();
       b.gmailRenewals.delete(accountId);
       await b.signedIn(accountId, undefined, flow);
       await b.emitOwner();

@@ -1183,11 +1183,12 @@ export class BackendCore {
   }
 
   /** An acknowledged write retires refusals even if a newer intent owns RPC publication. */
-  credentialCommit(accountId: number, flow: AbortController, write: () => Promise<boolean>): Promise<boolean> {
+  credentialCommit(accountId: number, flow: AbortController, write: (active: () => boolean) => Promise<boolean>): Promise<boolean> {
     const life = this.lifetime(accountId);
+    const active = () => !this.stopped && !this.abort.signal.aborted && !life.removing && this.lifetimes.get(accountId) === life;
     return this.credentialWrite(accountId, flow, async () => {
-      const committed = await write();
-      if (committed && !this.stopped && !this.abort.signal.aborted && !life.removing && this.lifetimes.get(accountId) === life) {
+      const committed = await write(active);
+      if (committed && active()) {
         this.credentials.set(accountId, this.credentialsOf(accountId) + 1);
       }
       return committed;
