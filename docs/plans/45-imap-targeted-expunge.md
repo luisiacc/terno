@@ -69,3 +69,11 @@ Two public cases independently reproduce the delete-only path's collateral expun
 
 
 The All Mail capability guard passes both new cases plus the original refusal, true UIDPLUS fallback and native MOVE controls:5/5 in `imap-all-mail-archive-green.txt`. Mail and both backend typechecks and scoped oxlint pass. This boundary prevents the observed broad-expunge path; it does not yet fix or qualify false STORE/EXPUNGE results, interrupted application, read-only source handling or the remaining critique cases.
+
+
+## Explicit deletion refusal correction
+
+Both actual tagged-NO controls fail before the correction (`imap-all-mail-refusal-red.txt`,2failed): qualified UID STORE refusal or UID EXPUNGE refusal still removes the cached Inbox location and reports succeeded. The latter control explicitly observes the target already marked Deleted, so no remote rollback or untouched-message promise is made. Retain source locations and fail permanently when messageDelete returns false; paired guidance asks the user to inspect their provider before retrying. No automatic replay or inferred remote non-application is permitted by this correction.
+
+
+The explicit-refusal correction passes both tagged-NO cases together with the five prior capability/MOVE controls:7/7 in `imap-all-mail-refusal-green.txt`. Exact local source locations remain after a false deletion result, the op fails once with the new paired guidance, and the EXPUNGE-refusal control truthfully retains the remote Deleted side effect. Mail, i18n, both backend typechecks and scoped lint pass. No remote rollback, partial MOVE recovery or full-slice review approval is implied.

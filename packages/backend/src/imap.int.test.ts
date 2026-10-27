@@ -331,6 +331,49 @@ describe("IMAP provider against ImapKit", () => {
     expect((await client.call("threads.get", { threadId: thread.id })).messages[0]?.bodyText).toBe("Exact All Mail body\n");
   });
 
+  it.each(["UID STORE", "UID EXPUNGE"])("retains All Mail locations after server refuses %s", async (refused) => {
+    const { imap, backend, client, addAccount } = await setup({ imap: {
+      plugins: ["IDLE", "SPECIAL-USE", "ENABLE", "CONDSTORE", "MOVE", "UIDPLUS"],
+      storage: { INBOX: {}, "": { separator: "/", folders: { Sent: { "special-use": "\\Sent" }, All: { "special-use": "\\All" }, Junk: { "special-use": "\\Junk" }, Trash: { "special-use": "\\Trash" } } } },
+    } });
+    const ctl = imap.server.control;
+    const targetRaw = raw({ subject: "All Mail target", body: "Exact All Mail body" });
+    const target = ctl.addMessage("INBOX", { raw: targetRaw });
+    ctl.addMessage("All", { raw: targetRaw });
+    const otherRaw = raw({ subject: "All Mail unrelated", body: "Exact unrelated body" });
+    const other = ctl.addMessage("INBOX", { raw: otherRaw });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const thread = (await client.call("threads.list", { view: "inbox" })).items.find((t) => t.subject === "All Mail target")!;
+    const message = (await client.call("threads.get", { threadId: thread.id })).messages[0]!;
+    const locations = backend.store.providerStore(account.id).locations!;
+    const before = await locations.of([message.id]);
+    expect(before.map((l) => l.mailbox).sort()).toEqual(["All", "INBOX"]);
+    ctl.setFlags("INBOX", [other.uid], ["\\Deleted"], "add");
+    expect(ctl.getMessage("INBOX", other.uid).flags).toContain("\\Deleted");
+    const mutations: string[] = [];
+    imap.server.script.add({ on: "command", run: true, when: (context) => {
+      if (/^(?:UID )?(?:COPY|MOVE|STORE|EXPUNGE|CREATE)$/.test(context.command ?? "")) {
+        if (mutations.length >= 32) throw new Error("Unexpected unbounded IMAP mutations");
+        mutations.push(context.command!);
+      }
+      return false;
+    } });
+    imap.server.script.add({ on: "command", command: refused, send: "$TAG NO change refused\r\n" });
+    await client.call("threads.act", { threadIds: [thread.id], action: "archive" });
+    await backend.runWorker();
+    expect.soft(mutations).toEqual(refused === "UID STORE" ? ["UID STORE"] : ["UID STORE", "UID EXPUNGE"]);
+    const remaining = ctl.listMessages("INBOX", { raw: true });
+    expect.soft(remaining.map((m) => m.uid)).toEqual([target.uid, other.uid]);
+    expect.soft(remaining.find((m) => m.uid === target.uid)?.flags.includes("\\Deleted")).toBe(refused === "UID EXPUNGE");
+    expect.soft(remaining.find((m) => m.uid === target.uid)?.raw?.toString()).toBe(targetRaw);
+    expect.soft(remaining.find((m) => m.uid === other.uid)?.raw?.toString()).toBe(otherRaw);
+    expect.soft(ctl.listMessages("All", { raw: true }).map((m) => m.raw?.toString())).toEqual([targetRaw]);
+    expect.soft(await locations.of([message.id])).toEqual(before);
+    expect.soft(await client.call("ops.list", {})).toEqual([expect.objectContaining({ kind: "archive", state: "failed", attempts: 1, lastErrorI18n: { key: "errors.imap.changeRefused" } })]);
+    expect((await client.call("threads.get", { threadId: thread.id })).messages[0]?.bodyText).toBe("Exact All Mail body\n");
+  });
+
   it("archives on the server with MOVE and keeps the message (now in Archive) after resync", async () => {
     const { imap, backend, client, addAccount } = await setup();
     imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Archívame" }) });
