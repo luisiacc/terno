@@ -93,7 +93,7 @@ test.describe("diagnostics", () => {
     const section = page.getByTestId("diagnostics-section");
     await section.scrollIntoViewIfNeeded();
     await expect(page.getByTestId("error-reports-select")).toBeDisabled();
-    await expect(page.getByTestId("error-reports-row")).toContainText(/Local mode sends nothing|doesn’t send reports/);
+    await expect(page.getByTestId("error-reports-row")).toContainText(/Local mode sends no error reports|doesn’t send reports/);
     await expect(page.getByTestId("build-line")).toContainText(/Terno \d+\.\d+\.\d+ · /);
 
     await page.getByTestId("report-sample").click();

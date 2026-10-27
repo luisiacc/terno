@@ -32,6 +32,8 @@ interface StoredSettings extends Partial<General> {
   aiModel?: string;
   /** plan 15: 2 once the move to designs happened (see migrateAppearance) */
   appearanceVersion?: number;
+  /** plan 35: 1 once local mode stopped deciding remote images (see migrateRemoteImages) */
+  remoteImagesVersion?: number;
 }
 
 export const APPEARANCE_VERSION = 2;
@@ -47,6 +49,25 @@ export function migrateAppearance(s: StoredSettings): StoredSettings {
   const { lightTheme, darkTheme, design: _d, ...rest } = s;
   const previous = (id: string | undefined) => (id && id !== DESIGN_PALETTE ? canonicalThemeId(id) : null);
   return { ...rest, previousLightTheme: previous(lightTheme), previousDarkTheme: previous(darkTheme), appearanceVersion: APPEARANCE_VERSION };
+}
+
+export const REMOTE_IMAGES_VERSION = 1;
+
+/**
+ * Plan 35: local mode no longer decides remote images. A profile in local
+ * mode that stored "always" (chosen while connected) showed the switch off and
+ * loaded nothing; it keeps that: "ask". Pure, like migrateAppearance: reads
+ * apply it until the next write persists it with the marker.
+ */
+export function migrateRemoteImages(s: StoredSettings): StoredSettings {
+  if ((s.remoteImagesVersion ?? 0) >= REMOTE_IMAGES_VERSION) return s;
+  const local = s.localMode ?? DEFAULT_SETTINGS.localMode;
+  return { ...s, ...(local && s.remoteImages === "always" ? { remoteImages: "ask" as const } : {}), remoteImagesVersion: REMOTE_IMAGES_VERSION };
+}
+
+/** Every read-time migration, in order. */
+function migrate(s: StoredSettings): StoredSettings {
+  return migrateRemoteImages(migrateAppearance(s));
 }
 
 export const DEFAULT_SETTINGS: General = {
@@ -145,7 +166,7 @@ export async function pinKeyOrigins(store: SettingsStore): Promise<void> {
 }
 
 async function stored(store: SettingsStore): Promise<StoredSettings> {
-  return migrateAppearance(await store.settings.get<StoredSettings>("app", {}));
+  return migrate(await store.settings.get<StoredSettings>("app", {}));
 }
 
 export function capabilityKey(provider: AiProviderId, profile: AiProfile): string {
@@ -194,7 +215,7 @@ export async function readGooglePhotos(store: SettingsStore): Promise<AppSetting
 /** Plan 22: an account's photo state (null: off), written only by the icons service. */
 export async function setGooglePhotoState(store: SettingsStore, accountId: number, state: AppSettings["googlePhotos"][string] | null): Promise<void> {
   await store.settings.update<StoredSettings, void>("app", {}, (raw) => {
-    const s = migrateAppearance(raw);
+    const s = migrate(raw);
     const next = { ...s.googlePhotos };
     if (state) next[String(accountId)] = state;
     else delete next[String(accountId)];
@@ -246,7 +267,7 @@ function resolveThemes(g: General): General {
 
 export async function readSettings(store: SettingsStore): Promise<AppSettings> {
   const s = await stored(store);
-  const { aiProvider: _p, aiModel: _m, ai: _ai, appearanceVersion: _v, ...general } = s;
+  const { aiProvider: _p, aiModel: _m, ai: _ai, appearanceVersion: _v, remoteImagesVersion: _r, ...general } = s;
   const { provider, profiles, capabilities } = aiState(s, s.aiProvider === undefined && !s.ai?.provider && (await store.secrets.has(keySecretName("anthropic"))));
   const profile = profiles[provider] ?? { model: "" };
   const secret = keySecretName(provider, profile.preset);
@@ -291,7 +312,7 @@ export class SettingsError extends Error {
 export async function updateSettings(store: SettingsStore, patch: SettingsPatch, options: { endpointIsLocal?: boolean } = {}): Promise<AppSettings> {
   if (patch.ai) await pinKeyOrigins(store);
   const hasLegacyKey = await store.secrets.has(keySecretName("anthropic"));
-  await store.settings.update<StoredSettings, void>("app", {}, (s) => ({ value: patchedSettings(migrateAppearance(s), patch, options, hasLegacyKey), result: undefined }));
+  await store.settings.update<StoredSettings, void>("app", {}, (s) => ({ value: patchedSettings(migrate(s), patch, options, hasLegacyKey), result: undefined }));
   return readSettings(store);
 }
 
@@ -341,7 +362,7 @@ function patchedSettings(s: StoredSettings, patch: SettingsPatch, options: { end
 
 export async function saveCapabilities(store: SettingsStore, provider: AiProviderId, profile: AiProfile, capabilities: Capabilities): Promise<void> {
   await store.settings.update<StoredSettings, void>("app", {}, (raw) => {
-    const s = migrateAppearance(raw);
+    const s = migrate(raw);
     const ai = s.ai ?? {};
     return { value: { ...s, ai: { ...ai, capabilities: { ...ai.capabilities, [capabilityKey(provider, profile)]: capabilities } } }, result: undefined };
   });

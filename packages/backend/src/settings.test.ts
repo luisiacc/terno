@@ -85,6 +85,38 @@ describe("appearance settings", () => {
   });
 });
 
+describe("remote images (plan 35)", () => {
+  it("a profile in local mode that stored always reads as ask; the next write persists it, and a later always sticks", async () => {
+    const { backend, client } = setup();
+    setSetting(sqlDb(backend.store), "app", { localMode: true, remoteImages: "always" });
+    expect((await client.call("app.bootstrap", {})).settings.remoteImages).toBe("ask");
+    await client.call("settings.update", { motionMs: 50 });
+    expect(getSetting<Record<string, unknown>>(sqlDb(backend.store), "app", {})).toMatchObject({ remoteImages: "ask", remoteImagesVersion: 1 });
+    // turned on in local mode now: the user's choice, in force
+    expect(await client.call("settings.update", { remoteImages: "always" })).toMatchObject({ localMode: true, remoteImages: "always" });
+    expect((await client.call("app.bootstrap", {})).settings.remoteImages).toBe("always");
+  });
+
+  it("a profile without local mode stored keeps the default (on): always reads as ask", async () => {
+    const { backend, client } = setup();
+    setSetting(sqlDb(backend.store), "app", { remoteImages: "always" });
+    expect((await client.call("app.bootstrap", {})).settings.remoteImages).toBe("ask");
+  });
+
+  it("a connected profile keeps always, also after turning local mode on", async () => {
+    const { backend, client } = setup();
+    setSetting(sqlDb(backend.store), "app", { localMode: false, remoteImages: "always" });
+    expect((await client.call("app.bootstrap", {})).settings.remoteImages).toBe("always");
+    expect(await client.call("settings.update", { localMode: true })).toMatchObject({ localMode: true, remoteImages: "always" });
+  });
+
+  it("the marker never reaches the renderer", async () => {
+    const { client } = setup();
+    await client.call("settings.update", { motionMs: 50 });
+    expect((await client.call("app.bootstrap", {})).settings).not.toHaveProperty("remoteImagesVersion");
+  });
+});
+
 describe("designs (plan 15)", () => {
   it("an install from before designs moves to Lumen in its own colors; its palettes are remembered as previous, not applied", async () => {
     const { backend, client } = setup();

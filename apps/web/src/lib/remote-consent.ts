@@ -11,7 +11,7 @@ export function allowRemoteFor(messageId: number): void {
   if (!allowed.has(messageId)) useRemoteConsent.setState({ allowed: new Set(allowed).add(messageId) });
 }
 
-/** The setting says always, or this message was allowed; local mode never loads remote content, whatever either says. */
-export function remoteAllowed(messageId: number, settings: { remoteImages: "ask" | "always"; localMode: boolean }, allowed: ReadonlySet<number> = useRemoteConsent.getState().allowed): boolean {
-  return !settings.localMode && (settings.remoteImages === "always" || allowed.has(messageId));
+/** The setting says always, or this message was allowed. Local mode doesn't decide this (plan 35): loading is the user's explicit choice in either mode. */
+export function remoteAllowed(messageId: number, settings: { remoteImages: "ask" | "always" }, allowed: ReadonlySet<number> = useRemoteConsent.getState().allowed): boolean {
+  return settings.remoteImages === "always" || allowed.has(messageId);
 }

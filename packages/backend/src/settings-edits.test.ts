@@ -212,6 +212,25 @@ describe("app.import", () => {
     await expect(to.mcp.call("app.import", { data: dump })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
+  it("plan 35: a file can turn remote images to ask, never to always", async () => {
+    const from = setup();
+    await from.client.call("settings.update", { remoteImages: "always" });
+    const always = await from.client.call("app.export", {});
+    const to = setup();
+    await to.client.call("app.import", { data: always });
+    expect((await to.client.call("app.bootstrap", {})).settings.remoteImages).toBe("ask");
+    // this install's own "always" stays through a file that says always, says nothing, or says garbage
+    await to.client.call("settings.update", { remoteImages: "always" });
+    const { remoteImages: _r, ...without } = always.settings;
+    for (const settings of [always.settings, without, { ...always.settings, remoteImages: "sometimes" }]) {
+      await to.client.call("app.import", { data: { ...always, settings: settings as never } });
+      expect((await to.client.call("app.bootstrap", {})).settings.remoteImages).toBe("always");
+    }
+    // a file that says ask turns it off
+    await to.client.call("app.import", { data: { ...always, settings: { ...always.settings, remoteImages: "ask" } } });
+    expect((await to.client.call("app.bootstrap", {})).settings.remoteImages).toBe("ask");
+  });
+
   it("carries the language; an old export without one, or with one Terno doesn't ship, leaves it alone", async () => {
     const from = setup();
     await from.client.call("settings.update", { language: "es" });

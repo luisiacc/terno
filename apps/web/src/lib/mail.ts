@@ -1,14 +1,32 @@
 /** Rules for rendering HTML mail, kept apart from the component (the CSP and remote checks are tested in Node, the color check in the browser). */
 import { exposeForTests } from "~/lib/render-probe";
 
-/** Remote resources are blocked unless the user opts in: tracking pixels, remote CSS and fonts included. */
+/**
+ * Remote images load only once the user opts in (tracking pixels included);
+ * remote CSS and fonts never (plan 35: images are what "Load content" and the
+ * setting promise, in either mode).
+ */
 export function csp(allowRemote: boolean): string {
   const remote = allowRemote ? " https: http:" : "";
-  return `default-src 'none'; img-src data: cid:${remote}; style-src 'unsafe-inline'${remote}; font-src data:${remote}; media-src 'none'; frame-src 'none'; form-action 'none'`;
+  return `default-src 'none'; img-src data: cid:${remote}; style-src 'unsafe-inline'; font-src data:; media-src 'none'; frame-src 'none'; form-action 'none'`;
 }
 
-export function hasRemoteContent(html: string): boolean {
-  return /\b(src|background)\s*=\s*["']?\s*https?:/i.test(html) || /url\(\s*["']?https?:/i.test(html);
+const remoteRules = (scheme: string) => [
+  new RegExp(`\\b(?:src|background|poster)\\s*=\\s*["']?\\s*${scheme}`, "i"),
+  new RegExp(`url\\(\\s*["']?\\s*${scheme}`, "i"),
+  // SVG pulls images through href too (an <a href> is a link, not a load)
+  new RegExp(`<(?:image|use|feImage)\\b[^>]*?\\s(?:xlink:)?href\\s*=\\s*["']?\\s*${scheme}`, "i"),
+];
+const ABSOLUTE = remoteRules("https?:");
+const WITH_PROTOCOL_RELATIVE = remoteRules("(?:https?:)?//");
+
+/**
+ * Would the mail load something from the web once allowed (so the reader
+ * offers "Load content")? `//host/…` counts where it reaches the web: in the
+ * browser; the desktop resolves it to app://, which never leaves the Mac.
+ */
+export function hasRemoteContent(html: string, protocolRelative = false): boolean {
+  return (protocolRelative ? WITH_PROTOCOL_RELATIVE : ABSOLUTE).some((r) => r.test(html));
 }
 
 /** Presentational attributes that set colors (<font color>, <td bgcolor>, <body text/link>…). */

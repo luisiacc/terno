@@ -1,6 +1,9 @@
 import { expect, openRow, test } from "./fixtures";
 import { startOllamaStub } from "./ollama-stub";
 
+/** Anything off this machine: the demo newsletters' images (answered here, never fetched). */
+const remote = (url: URL) => /^https?:$/.test(url.protocol) && url.hostname !== "127.0.0.1" && url.hostname !== "localhost";
+
 test.describe("local mode and AI providers", () => {
   test("AI tab: cloud is disabled in local mode; Ollama lists models from the server and Test shows latency", async ({ app: page }) => {
     const ollama = await startOllamaStub();
@@ -55,13 +58,14 @@ test.describe("local mode and AI providers", () => {
     // it is the first row of General
     await expect(page.locator("[data-testid=settings-dialog] [role=tabpanel] section > div > :first-child").first()).toHaveAttribute("data-testid", "local-mode-row");
     const toggle = page.getByRole("switch", { name: "Local mode" });
-    await expect(toggle).toHaveAccessibleDescription(/Nothing leaves this Mac except mail with your servers/);
+    await expect(toggle).toHaveAccessibleDescription(/Nothing leaves this Mac except mail with your servers and the remote images you load/);
     await expect(toggle).toBeChecked();
 
     await toggle.click();
     const confirm = page.getByTestId("local-mode-confirm");
     await expect(confirm).toContainText("use cloud AI");
-    await expect(confirm).toContainText("load a message’s remote images");
+    // plan 35: remote images aren't local mode's to give
+    await expect(confirm).not.toContainText("remote images");
     await confirm.getByRole("button", { name: "Keep on" }).click();
     await expect(toggle).toBeChecked();
 
@@ -117,15 +121,44 @@ test.describe("local mode and AI providers", () => {
     }
   });
 
-  test("local mode blocks remote images in mail with no way to load them", async ({ app: page }) => {
+  test("plan 35: in local mode “Load content” loads the message's remote images, for the session", async ({ app: page }) => {
+    await expect(page.getByTestId("local-pill")).toHaveText("Local");
+    const hits: string[] = [];
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+    await page.route(remote, (route) => (hits.push(route.request().url()), route.fulfill({ contentType: "image/png", body: png })));
     await openRow(page, 2);
-    await expect(page.getByTestId("remote-blocked")).toContainText("blocked by local mode");
-    await expect(page.getByTestId("remote-load")).toHaveCount(0);
-    // «Load content…» only explains why, and offers the setting
-    await page.getByTestId("remote-why").click();
-    await expect(page.getByTestId("remote-why-popover")).toContainText("Local mode doesn’t load remote content");
+    const row = page.getByTestId("remote-blocked");
+    await expect(row).toHaveText(/Remote content blocked to protect your privacy\./);
+    await page.waitForTimeout(300);
+    expect(hits).toEqual([]);
+    await row.getByRole("button", { name: "Load content" }).click();
+    await expect(row).toHaveCount(0);
+    await expect.poll(() => hits.length).toBeGreaterThan(0);
+    const frame = page.frameLocator("iframe[title='Message content']");
+    await expect.poll(() => frame.locator("img[src^='https:']").first().evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+    // coming back to it, it's still loaded (per message, for the session)
+    await openRow(page, 0);
+    await openRow(page, 2);
+    await expect(page.frameLocator("iframe[title='Message content']").locator("h1")).toBeVisible();
+    await expect(page.getByTestId("remote-blocked")).toHaveCount(0);
+  });
+
+  test("plan 35: in local mode “Always load remote images” loads them without a click", async ({ app: page }) => {
+    const hits: string[] = [];
+    await page.route(remote, (route) => (hits.push(route.request().url()), route.abort()));
+    await page.getByTestId("open-settings").click();
+    const always = page.getByRole("switch", { name: "Always load remote images" });
+    await expect(always).toBeEnabled();
+    await expect(always).not.toBeChecked();
+    await expect(always).toHaveAccessibleDescription(/Blocked by default to prevent tracking/);
+    await always.click();
+    await expect(always).toBeChecked();
+    await expect(page.getByRole("switch", { name: "Local mode" })).toBeChecked();
     await page.keyboard.press("Escape");
-    await expect(page.getByTestId("remote-blocked")).toBeVisible();
+    await openRow(page, 2);
+    await expect(page.frameLocator("iframe[title='Message content']").locator("h1")).toBeVisible();
+    await expect(page.getByTestId("remote-blocked")).toHaveCount(0);
+    await expect.poll(() => hits.length).toBeGreaterThan(0);
   });
 
   test("an HTML mail fits its frame with no inner scroll, and the frame follows the content when the pane resizes", async ({ app: page }) => {

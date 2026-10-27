@@ -46,7 +46,7 @@ function readPrefs(): Prefs {
 }
 
 /** The messages a print takes: the whole conversation, or "this message" (the one it opened on, else the last), each with its remote-content answer. */
-function printMessages(detail: ThreadDetail | undefined, scope: Scope, messageId: number | null, policy: { remoteImages: "ask" | "always"; localMode: boolean }, allowed: ReadonlySet<number>): PrintMessage[] {
+function printMessages(detail: ThreadDetail | undefined, scope: Scope, messageId: number | null, policy: { remoteImages: "ask" | "always" }, allowed: ReadonlySet<number>): PrintMessage[] {
   const all = detail?.messages ?? [];
   const single = all.find((m) => m.id === messageId) ?? all[all.length - 1];
   return (scope === "message" && single ? [single] : all).map((m) => ({
@@ -63,6 +63,7 @@ function printMessages(detail: ThreadDetail | undefined, scope: Scope, messageId
 }
 
 const MM_PX = 96 / 25.4;
+const WEB = import.meta.env.VITE_TARGET === "web";
 /** How long the preview waits for fonts and images before it is printable anyway. */
 const READY_DEADLINE_MS = 4000;
 const desktop = () => (window.ternoDesktop?.print ? window.ternoDesktop : null);
@@ -111,15 +112,15 @@ function Sheet({ target, onClose }: { target: PrintTarget; onClose: () => void }
 
   const settings = useApp((s) => s.settings);
   const allowed = useRemoteConsent((s) => s.allowed);
-  const policy = { remoteImages: settings?.remoteImages ?? "ask", localMode: settings?.localMode ?? true };
+  const policy = { remoteImages: settings?.remoteImages ?? "ask" };
   const all = detail?.messages ?? [];
   const messages = printMessages(detail, scope, target.messageId, policy, allowed);
   const subject = detail?.thread.subject ?? "";
   const missing = messages.filter((m) => m.bodyHtml === null && m.bodyText === null).length;
-  const blocked = messages.filter((m) => !m.allowRemote && m.bodyHtml && hasRemoteContent(m.bodyHtml)).length;
+  const blocked = messages.filter((m) => !m.allowRemote && m.bodyHtml && hasRemoteContent(m.bodyHtml, WEB)).length;
 
   // what the document is built from; a change settles for 120 ms first, so toggling through options builds once
-  const inputs = useMemo(() => ({ detail, scope, prefs, allowed, policy }), [detail, scope, prefs, allowed, policy.remoteImages, policy.localMode]);
+  const inputs = useMemo(() => ({ detail, scope, prefs, allowed, policy }), [detail, scope, prefs, allowed, policy.remoteImages]);
   const [settled, setSettled] = useState(inputs);
   useEffect(() => {
     if (settled === inputs) return;
@@ -253,7 +254,7 @@ function Sheet({ target, onClose }: { target: PrintTarget; onClose: () => void }
             )}
             {blocked > 0 && (
               <Note icon={ImageOff} testId="print-note-remote">
-                {policy.localMode ? t("print.note.remoteLocal") : t("print.note.remote")}
+                {t("print.note.remote")}
               </Note>
             )}
             {web && (

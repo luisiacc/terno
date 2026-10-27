@@ -214,22 +214,17 @@ test.describe("print sheet", { tag: "@design" }, () => {
     expect(await page.title()).toBe(title);
   });
 
-  test("remote images print only where the reader loaded them; local mode never", async ({ app: page, server }) => {
+  test("remote images print only where the reader loaded them, local mode included (plan 35)", async ({ app: page, server }) => {
+    // the e2e profile is in local mode; the images are answered here, never fetched
+    expect((await server.backend.server.invoke("app.bootstrap", {}, { clientId: "setup", origin: "dev" })).settings.localMode).toBe(true);
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+    await page.route(/acme\.test/, (route) => route.fulfill({ contentType: "image/png", body: png }));
     await open(page, server, "newsletter", 'subject:"Boletín Acme"');
     await page.keyboard.press("ControlOrMeta+p");
     await ready(page);
-    await expect(page.getByTestId("print-note-remote")).toContainText("Local mode blocks remote images");
+    await expect(page.getByTestId("print-note-remote")).toContainText("you didn’t load in the reader");
     await expect(preview(page).locator('img[src^="https:"]')).toHaveCount(0);
     await expect(preview(page).locator(".img-alt")).toContainText(["Promoción de temporada"]);
-    await page.keyboard.press("Escape");
-
-    await server.backend.server.invoke("settings.update", { localMode: false }, { clientId: "setup", origin: "dev" });
-    await page.reload();
-    await page.locator("[data-ready]").waitFor();
-    await selectThread(page, sqlDb(server.backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = 'print-newsletter-0'")!.thread_id, 'subject:"Boletín Acme"');
-    await page.keyboard.press("ControlOrMeta+p");
-    await ready(page);
-    await expect(page.getByTestId("print-note-remote")).toContainText("you didn’t load in the reader");
     await page.keyboard.press("Escape");
     // “Load content” in the reader: that message prints them
     await page.getByTestId("remote-load").click();

@@ -130,9 +130,16 @@ test.describe("editable, persisted and in effect", () => {
     await expect(page.getByRole("combobox", { name: "Density" })).toContainText("Compact");
     await expect(page.getByRole("spinbutton", { name: "Sync window" })).toHaveValue("45");
     await expect(rows(page).first()).toHaveCSS("height", "40px");
-    // local mode back on blocks remote images (the switch says so and turns off)
+    // plan 35: local mode back on leaves the choice alone: the switch stays live and on, across a reload too
     await page.getByRole("switch", { name: "Local mode" }).click();
-    await expect(page.getByRole("switch", { name: "Always load remote images" })).toBeDisabled();
+    await expect(page.getByRole("switch", { name: "Local mode" })).toBeChecked();
+    await expect(page.getByRole("switch", { name: "Always load remote images" })).toBeEnabled();
+    await expect(page.getByRole("switch", { name: "Always load remote images" })).toBeChecked();
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await reopen(page, "general");
+    await expect(page.getByRole("switch", { name: "Always load remote images" })).toBeChecked();
+    await expect(page.getByRole("switch", { name: "Always load remote images" })).toHaveAccessibleDescription(/senders can tell when you open their mail/);
     await page.getByTestId("open-shortcuts").click();
     await expect(page.getByRole("dialog", { name: "Keyboard shortcuts" })).toContainText("Settings");
   });

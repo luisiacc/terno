@@ -69,7 +69,6 @@ function Reasons({ title, reasons, hint }: { title: string; reasons: Reason[]; h
 
 function Message({ m, expanded, onToggle, icons }: { m: MessageDetail; expanded: boolean; onToggle: () => void; icons: boolean }) {
   const remoteImages = useApp((s) => s.settings?.remoteImages ?? "ask");
-  const localMode = useApp((s) => s.settings?.localMode ?? true);
   const mailAppearance = useApp((s) => s.settings?.htmlMailAppearance ?? "auto");
   const name = m.from.name || m.from.email;
   const bodyId = `msg-body-${m.id}`;
@@ -126,7 +125,7 @@ function Message({ m, expanded, onToggle, icons }: { m: MessageDetail; expanded:
           <div className="hairline-t ml-[calc(var(--avatar-message)+0.75rem)]" />
           <div className="pt-3.5 pb-5">
             {m.bodyHtml ? (
-              <HtmlBody html={m.bodyHtml} messageId={m.id} accountId={m.accountId} attachments={m.attachments} remoteImages={remoteImages} localMode={localMode} appearance={mailAppearance} />
+              <HtmlBody html={m.bodyHtml} messageId={m.id} accountId={m.accountId} attachments={m.attachments} remoteImages={remoteImages} appearance={mailAppearance} />
             ) : m.bodyText !== null ? (
               <TextBody text={m.bodyText} />
             ) : (

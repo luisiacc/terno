@@ -151,6 +151,37 @@ test("what the browser can't do is said plainly: IMAP and agents locked, honest 
   await expect(add.getByTestId("connect-gmail")).toBeVisible();
 });
 
+test("plan 35: in local mode the browser loads a newsletter's images on “Load content”, and every message's with the setting", async ({ page }) => {
+  // the newsletters' pixels, answered here (never fetched)
+  const hits: string[] = [];
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  await page.route((url) => url.protocol === "https:" && url.pathname.endsWith("/pixel.gif"), (route) => (hits.push(route.request().url()), route.fulfill({ contentType: "image/png", body: png })));
+  await boot(page);
+  await expect(page.getByTestId("local-pill")).toBeVisible();
+  await (await searchBox(page)).fill("Unsubscribe");
+  await expect(rows(page).nth(1)).toBeVisible();
+  await rows(page).first().dispatchEvent("mousedown");
+  const blocked = page.getByTestId("remote-blocked");
+  await expect(blocked).toHaveText(/Remote content blocked to protect your privacy\./);
+  expect(hits).toEqual([]);
+  await blocked.getByRole("button", { name: "Load content" }).click();
+  await expect(blocked).toHaveCount(0);
+  await expect.poll(() => hits.length).toBeGreaterThan(0);
+
+  await page.getByTestId("open-settings").click();
+  const always = page.getByRole("switch", { name: "Always load remote images" });
+  await expect(always).toBeEnabled();
+  await always.click();
+  await expect(always).toBeChecked();
+  await page.keyboard.press("Escape");
+  await rows(page).nth(1).dispatchEvent("mousedown");
+  await expect(page.getByTestId("reader-subject")).toBeVisible();
+  await expect(page.getByTestId("remote-blocked")).toHaveCount(0);
+  // its pixel loaded (from the route, or the cache when it's the same newsletter's)
+  const pixel = page.frameLocator("iframe[title='Message content']").locator("img[src$='/pixel.gif']");
+  await expect.poll(() => pixel.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+});
+
 test("first run in the browser offers the Mac app once, then the usual steps", async ({ page }) => {
   await page.goto("/?demo=0&mailbox=fresh");
   await expect(page.getByTestId("first-run")).toBeVisible();

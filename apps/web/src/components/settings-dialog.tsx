@@ -108,7 +108,6 @@ export function SettingsDialog() {
                 <p>{t("settings.localOff.intro")}</p>
                 <ul className="mt-2 list-disc space-y-1 pl-5 text-left">
                   <li>{t("settings.localOff.cloudAi")}</li>
-                  <li>{t("settings.localOff.remoteImages")}</li>
                 </ul>
                 <p className="mt-2">{t("settings.localOff.mail")}</p>
               </AlertDialogDescription>

@@ -2,10 +2,7 @@ import type { AttachmentInfo } from "@terno/core";
 import DOMPurify from "dompurify";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ImageOff } from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
-import { Button } from "@terno/ui/components/button";
 import { t } from "@terno/i18n";
-import { setApp } from "~/state/app";
 import { mailColors, useAppearance } from "~/lib/appearance";
 import { csp, hasOwnColors, hasRemoteContent } from "~/lib/mail";
 import { splitTextQuote } from "~/lib/quote";
@@ -21,6 +18,7 @@ export function openLink(href: string) {
 }
 
 const MAX_HEIGHT = 20000;
+const WEB = import.meta.env.VITE_TARGET === "web";
 
 /** The last measured height of each message's frame: an expanding message opens to it, not to a guess. */
 const heights = new Map<number, number>();
@@ -36,12 +34,12 @@ function rememberHeight(key: number, h: number) {
  * scripts (sandbox without allow-scripts), strict CSP, links opened externally.
  * allow-same-origin (without scripts) only lets the parent measure the height.
  */
-export function HtmlBody({ html, messageId, remoteImages, localMode, appearance, attachments = [], accountId }: { attachments?: AttachmentInfo[]; accountId?: number; html: string; messageId: number; remoteImages: "ask" | "always"; localMode: boolean; appearance: "auto" | "paper" }) {
+export function HtmlBody({ html, messageId, remoteImages, appearance, attachments = [], accountId }: { attachments?: AttachmentInfo[]; accountId?: number; html: string; messageId: number; remoteImages: "ask" | "always"; appearance: "auto" | "paper" }) {
   const ref = useRef<HTMLIFrameElement>(null);
-  // local mode: remote content is never loaded, whatever the setting or a click says
-  const allowRemote = useRemoteConsent((s) => remoteAllowed(messageId, { remoteImages, localMode }, s.allowed));
+  // the setting or this message's "Load content", in either mode (plan 35)
+  const allowRemote = useRemoteConsent((s) => remoteAllowed(messageId, { remoteImages }, s.allowed));
   const [height, setHeight] = useState(() => heights.get(messageId) ?? 120);
-  const blocked = !allowRemote && hasRemoteContent(html);
+  const blocked = !allowRemote && hasRemoteContent(html, WEB);
   // re-rendered when the painted theme changes (the colors are literals inside the document)
   const themeKey = useAppearance((s) => s.themeKey);
   const mode = useAppearance((s) => s.mode);
@@ -60,7 +58,7 @@ export function HtmlBody({ html, messageId, remoteImages, localMode, appearance,
   const paper = appearance === "paper" || hasOwnColors(clean);
   const doc = useMemo(() => {
     const c = mailColors()[paper ? "paper" : "themed"];
-    // the CSP is unchanged by theming: local mode keeps the strict policy (allowRemote is false there)
+    // the CSP is unchanged by theming
     return `<!doctype html><html data-mail="${paper ? "paper" : "themed"}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(allowRemote)}"><base target="_blank"><style>html{overflow-y:hidden}html,body{margin:0;padding:0;background:${c.bg};color:${c.fg};font:14px/1.55 -apple-system,BlinkMacSystemFont,"Geist Variable",sans-serif;overflow-wrap:anywhere;color-scheme:${paper ? "light" : mode}}body{padding:${paper ? "16px" : "0"}}img{max-width:100%;height:auto}a{color:${c.link}}table{max-width:100%}</style></head><body>${visibleHtml}</body></html>`;
   }, [visibleHtml, allowRemote, paper, themeKey, mode]);
 
@@ -129,7 +127,7 @@ export function HtmlBody({ html, messageId, remoteImages, localMode, appearance,
   return (
     <div>
       {hasCid && !cidAllowed && <button type="button" data-testid="inline-load" className="mb-3 text-xs text-muted-foreground hover:text-foreground" onClick={() => setCidAllowed(true)}>{t("attachments.loadInline")}</button>}
-      {blocked && <RemoteBlocked localMode={localMode} onLoad={() => allowRemoteFor(messageId)} />}
+      {blocked && <RemoteBlocked onLoad={() => allowRemoteFor(messageId)} />}
       {/* themed mail flows on the page with no box; mail with its own colors keeps a borderless paper surface */}
       <div className={paper ? "overflow-hidden rounded-lg bg-[var(--mail-paper)]" : undefined}>
         <iframe
@@ -146,31 +144,15 @@ export function HtmlBody({ html, messageId, remoteImages, localMode, appearance,
   );
 }
 
-/**
- * The remote-content row: a full-width tinted row with a pill on the right.
- * In local mode the pill only explains (nothing remote is ever loaded there).
- */
-function RemoteBlocked({ localMode, onLoad }: { localMode: boolean; onLoad: () => void }) {
-  const pill = "ml-auto h-[22px] shrink-0 rounded-full bg-accent px-2.5 text-[11.5px] font-medium text-accent-foreground transition-colors hover:text-foreground";
+/** The remote-content row: a full-width tinted row with a pill on the right. */
+function RemoteBlocked({ onLoad }: { onLoad: () => void }) {
   return (
     <div className="mb-3 flex h-9 items-center gap-2.5 rounded-lg bg-tint pr-1.5 pl-3 text-xs text-muted-foreground" data-testid="remote-blocked">
       <ImageOff className="size-3.5 shrink-0" />
-      <span className="min-w-0 truncate">{localMode ? t("reader.remote.blockedLocal") : t("reader.remote.blocked")}</span>
-      {localMode ? (
-        <Popover>
-          <PopoverTrigger render={<button type="button" className={pill} data-testid="remote-why" />}>{t("reader.remote.loadMore")}</PopoverTrigger>
-          <PopoverContent align="end" className="w-72 gap-3 text-xs" data-testid="remote-why-popover">
-            <p className="text-sm text-popover-foreground">{t("reader.remote.why")}</p>
-            <Button size="sm" variant="outline" className="self-end" onClick={() => setApp({ dialog: "settings", settingsTab: "general" })}>
-              {t("reader.remote.openSettings")}
-            </Button>
-          </PopoverContent>
-        </Popover>
-      ) : (
-        <button type="button" className={pill} onClick={onLoad} data-testid="remote-load">
-          {t("reader.remote.load")}
-        </button>
-      )}
+      <span className="min-w-0 truncate">{t("reader.remote.blocked")}</span>
+      <button type="button" className="ml-auto h-[22px] shrink-0 rounded-full bg-accent px-2.5 text-[11.5px] font-medium text-accent-foreground transition-colors hover:text-foreground" onClick={onLoad} data-testid="remote-load">
+        {t("reader.remote.load")}
+      </button>
     </div>
   );
 }
