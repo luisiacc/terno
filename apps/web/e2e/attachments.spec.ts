@@ -51,7 +51,7 @@ test("last attachment removal keeps From locked until acknowledgement, then edit
       await page.emulateMedia({ colorScheme: theme });
       await stabilize(page);
       expect((await new AxeBuilder({ page }).include("[data-testid=composer]").analyze()).violations).toEqual([]);
-      await page.screenshot({ path: `/tmp/terno-attachments-r2-evidence/from-${testInfo.project.name}-${theme}.png` });
+      await page.screenshot({ path: testInfo.outputPath(`from-${theme}.png`) });
     }
   } finally { release(); server.backend.store.drafts.save = save; }
 });
@@ -72,7 +72,7 @@ test("attachments attach/remove/reload/send/download exact bytes @design", async
     await expect(page.locator("html")).toHaveClass(theme === "dark" ? /\bdark\b/ : /^(?!.*\bdark\b)/);
     await stabilize(page);
     expect((await new AxeBuilder({ page }).include("[data-testid=composer]").analyze()).violations).toEqual([]);
-    await page.screenshot({ path: `/tmp/terno-attachments-evidence/composer-${testInfo.project.name}-${theme}.png` });
+    await page.screenshot({ path: testInfo.outputPath(`composer-${theme}.png`) });
   }
   await page.getByTestId("compose-send").click();
   await expect(page.getByTestId("composer")).toHaveCount(0);
@@ -83,7 +83,7 @@ test("attachments attach/remove/reload/send/download exact bytes @design", async
   for (const theme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: theme });
     await stabilize(page);
-    await page.screenshot({ path: `/tmp/terno-attachments-evidence/reader-${testInfo.project.name}-${theme}.png` });
+    await page.screenshot({ path: testInfo.outputPath(`reader-${theme}.png`) });
   }
   expect(result.suggestedFilename()).toBe("résumé.bin");
   expect(readFileSync((await result.path())!)).toEqual(bytes);
@@ -178,7 +178,7 @@ test("attachment-only reply survives reload and mode conversion with exact Undo 
   for (const theme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: theme });
     await stabilize(page);
-    await page.screenshot({ path: `/tmp/terno-scoped-fixes-evidence/conversion-${testInfo.project.name}-${theme}.png` });
+    await page.screenshot({ path: testInfo.outputPath(`conversion-${theme}.png`) });
   }
   await page.getByTestId("compose-send").click();
   await expect.poll(() => server.smtp.length).toBe(1);
@@ -215,7 +215,7 @@ test("Forward refuses foreign account refs before changing authored work, with k
     await page.emulateMedia({ colorScheme: theme });
     await page.addStyleTag({ content: "*{caret-color:transparent!important}" });
     expect((await new AxeBuilder({ page }).include("[data-testid=composer]").include('[aria-label="Notifications"]').analyze()).violations).toEqual([]);
-    await page.screenshot({ path: `/tmp/terno-attachments-r3-evidence/forward-${testInfo.project.name}-${theme}.png` });
+    await page.screenshot({ path: testInfo.outputPath(`forward-${theme}.png`) });
   }
   await body.fill("later text remains savable");
   await expect.poll(async () => (await server.backend.store.drafts.list())[0]?.body_text).toBe("later text remains savable");
