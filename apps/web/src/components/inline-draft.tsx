@@ -9,14 +9,14 @@ import { cn } from "@terno/ui/lib/utils";
 import { ChevronDown, Forward, PenLine, ReplyAll, Send, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { collapseInlineDraft, composeFocusPending, finishComposeFocus, openCompose, reopenInlineDraft, sendDraft } from "~/lib/compose";
-import { copyDraft, discardDraft, draftSenderLocked, editDraft, editDraftRecipients, restoreDiscarded, retryDraft, signatureBlock, useDrafts, type BodyCheckpoint, type DraftFields, type LocalDraft } from "~/lib/drafts";
+import { copyDraft, discardDraft, draftEditsHeld, draftSenderLocked, editDraft, editDraftRecipients, restoreDiscarded, retryDraft, signatureBlock, useDrafts, type BodyCheckpoint, type DraftFields, type LocalDraft } from "~/lib/drafts";
 import { SenderAvatar } from "./sender-avatar";
 import { RecipientInput, recipientSummary } from "./recipient-input";
 import { warmAutocomplete } from "~/lib/autocomplete";
 import { richT } from "~/lib/i18n";
 import { keepInView } from "~/lib/reader-scroll";
 import { registerUndo, snack } from "~/lib/snack";
-import { setApp, useApp } from "~/state/app";
+import { getSelectionWriteRevision, setApp, useApp } from "~/state/app";
 import { Expand } from "./expand";
 import { controllerFor, popupOpen } from "./composer/controller";
 import { ComposerBody, ComposerFormatBar, FormatToggle, LinkButton, preloadComposer } from "./composer/lazy";
@@ -335,6 +335,8 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
   const accounts = useApp((s) => s.accounts);
   const focus = useApp((s) => (draftKey && s.draftFocus?.key === draftKey ? s.draftFocus : null));
   const rootRef = useRef<HTMLDivElement>(null);
+  const exitWatches = useRef(new Set<() => void>());
+  useEffect(() => () => { for (const stop of exitWatches.current) stop(); }, []);
   const formatId = useId();
   const state: "bar" | "open" | "collapsed" = !d ? "bar" : d.uiState;
 
@@ -367,18 +369,42 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
     if (!d) return;
     reopenInlineDraft(threadId, d.key, checkpoint, onCheckpointReopen);
   };
+  const exitFocus = () => {
+    const root = rootRef.current, initial = useApp.getState(), active = document.activeElement;
+    const revision = getSelectionWriteRevision();
+    let changed = !root || draftEditsHeld(), stopped = false, expectedRequest = focusRequest, cancel: (() => void) | undefined;
+    const invalidate = () => { changed = true; cancel?.(); };
+    const moved = (event: FocusEvent) => { if (event.target !== active) invalidate(); };
+    const offApp = useApp.subscribe((state, previous) => {
+      if (state.selectedId !== previous.selectedId || state.readerOpen !== previous.readerOpen || state.compose !== previous.compose || state.checked !== previous.checked || state.scope !== previous.scope || state.accountId !== previous.accountId || state.dialog !== previous.dialog || state.fatal !== previous.fatal || state.view !== previous.view || state.categoryId !== previous.categoryId || state.reviewCategoryId !== previous.reviewCategoryId || state.query !== previous.query || state.listFilters !== previous.listFilters || state.draftFocus !== previous.draftFocus || state.draftShown !== previous.draftShown) invalidate();
+    });
+    const offDrafts = useDrafts.subscribe((state, previous) => { if (state.held || previous.held) invalidate(); });
+    document.addEventListener("focusin", moved, true);
+    const stop = () => { if (stopped) return; stopped = true; offApp(); offDrafts(); document.removeEventListener("focusin", moved, true); exitWatches.current.delete(stop); };
+    exitWatches.current.add(stop);
+    const valid = () => !stopped && !changed && rootRef.current === root && !!root?.isConnected && getSelectionWriteRevision() === revision && focusRequest === expectedRequest && useApp.getState().selectedId === initial.selectedId && !draftEditsHeld();
+    return { root, valid, stop, prepare: () => { expectedRequest = focusRequest + 1; }, watch: (onCancel: () => void) => { cancel = onCancel; return stop; } };
+  };
   const send = async () => {
     if (!d) return;
-    const ok = await sendDraft(d.key);
-    if (ok) focusSoon("[data-testid=quick-reply]", rootRef.current);
+    const request = exitFocus();
+    let transferred = false;
+    try {
+      const ok = await sendDraft(d.key);
+      if (ok && request.valid()) { request.prepare(); focusSoon("[data-testid=quick-reply]", request.root, 12, () => true, request.valid, request.watch); transferred = true; }
+    } finally { if (!transferred) request.stop(); }
   };
   const discard = async () => {
     if (!d) return;
-    const gone = await discardDraft(d.key);
-    focusSoon("[data-testid=quick-reply]", rootRef.current);
-    if (!gone) return;
-    const undo = registerUndo(() => restoreDiscarded(gone));
-    snack(t("compose.discarded"), { action: { label: t("common.undo"), name: t("compose.undoDiscard"), undo } });
+    const request = exitFocus();
+    let transferred = false;
+    try {
+      const gone = await discardDraft(d.key);
+      if (!gone) return;
+      const undo = registerUndo(() => restoreDiscarded(gone));
+      snack(t("compose.discarded"), { action: { label: t("common.undo"), name: t("compose.undoDiscard"), undo } });
+      if (request.valid()) { request.prepare(); focusSoon("[data-testid=quick-reply]", request.root, 12, () => true, request.valid, request.watch); transferred = true; }
+    } finally { if (!transferred) request.stop(); }
   };
 
   const me = account?.displayName || account?.email || "";
