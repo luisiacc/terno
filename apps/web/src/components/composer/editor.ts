@@ -1,12 +1,13 @@
-import { blockStyle, emptyDoc, fromPlainText, parseHtml, restoreSlice, cleanPastedHtml, schema, toEmailHtml, toPlainText, urlIn, MAX_INDENT, type Align } from "@terno/richtext";
+import { blockStyle, emptyDoc, fromPlainText, parseHtml, restoreSlice, cleanPastedHtml, schema, spelledHref, spelledSlice, toEmailHtml, toPlainText, urlIn, MAX_INDENT, type Align } from "@terno/richtext";
 import { baseKeymap, chainCommands, createParagraphNear, lift, liftEmptyBlock, newlineInCode, splitBlockAs, toggleMark, wrapIn } from "prosemirror-commands";
 import { closeHistory, history, redo, redoDepth, undo, undoDepth } from "prosemirror-history";
-import { InputRule, inputRules, undoInputRule, wrappingInputRule } from "prosemirror-inputrules";
+import { inputRules, undoInputRule, wrappingInputRule } from "prosemirror-inputrules";
 import { keymap } from "prosemirror-keymap";
-import { Fragment, Slice, type Mark, type MarkType, type Node as PMNode, type ResolvedPos } from "prosemirror-model";
+import { Fragment, type Mark, type MarkType, type Node as PMNode, type ResolvedPos } from "prosemirror-model";
 import { liftListItem, sinkListItem, splitListItem, wrapInList } from "prosemirror-schema-list";
 import { EditorState, Plugin, Selection, TextSelection, type Command, type Transaction } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
+import { autolinkRule, liveLinks, textSlice, withAutolink } from "./autolink";
 import type { FormatCommand, FormatState } from "./controller";
 import { ghostPlugin, type GhostHooks } from "./ghost";
 
@@ -266,10 +267,12 @@ export function linkAt(state: EditorState): { from: number; to: number; href: st
   return { from: start + hit.from, to: start + hit.to, href: hit.mark.attrs.href as string };
 }
 
-/** Links (or relinks) a range; with `text`, the range's text becomes it (keeping the marks at its start). */
+/**
+ * Links (or relinks) a range; with `text`, the range's text becomes it (keeping the marks at its start).
+ * A link whose text spells its href is an autolink (plan 39): it follows its text from then on, as a typed one does.
+ */
 export function applyLink(view: EditorView, range: { from: number; to: number }, href: string, text?: string): void {
   const { state } = view;
-  const link = marks.link.create({ href });
   let tr = state.tr;
   let { from, to } = range;
   // a caret always inserts (the URL itself when no text was given); a range is retyped only when its text changed
@@ -277,10 +280,10 @@ export function applyLink(view: EditorView, range: { from: number; to: number },
     const at = state.doc.resolve(from);
     const kept = (from === to ? (state.storedMarks ?? at.marks()) : (at.nodeAfter?.marks ?? at.marks())).filter((m) => m.type !== marks.link);
     const value = text?.trim() ? text : href.replace(/^mailto:/, "");
-    tr = tr.replaceWith(from, to, schema.text(value, link.addToSet(kept)));
+    tr = tr.replaceWith(from, to, schema.text(value, marks.link.create({ href, auto: spelledHref(value) === href }).addToSet(kept)));
     to = from + value.length;
   } else {
-    tr = tr.removeMark(from, to, marks.link).addMark(from, to, link);
+    tr = tr.removeMark(from, to, marks.link).addMark(from, to, marks.link.create({ href, auto: spelledHref(state.doc.textBetween(from, to, undefined, "￼")) === href }));
   }
   // the caret after the link, typing outside it (links aren't inclusive)
   tr.setSelection(TextSelection.create(tr.doc, to)).setStoredMarks(null);
@@ -290,44 +293,6 @@ export function applyLink(view: EditorView, range: { from: number; to: number },
 export function removeLink(view: EditorView, range: { from: number; to: number }): void {
   view.dispatch(closeHistory(view.state.tr.removeMark(range.from, range.to, marks.link)));
 }
-
-/** A URL just typed, before the caret, becomes a link (on space or Enter). */
-function linkTypedUrl(state: EditorState, end: number, tr: Transaction): boolean {
-  const $end = state.doc.resolve(end);
-  const before = $end.parent.textBetween(Math.max(0, $end.parentOffset - 500), $end.parentOffset, undefined, "￼");
-  const m = /(?:^|\s)((?:https?:\/\/|www\.)\S+)$/.exec(before);
-  if (!m) return false;
-  // trailing punctuation stays outside the link ("see https://x.example.")
-  const url = m[1]!.replace(/[.,;:!?)\]]+$/, "");
-  const href = urlIn(url);
-  if (!href) return false;
-  const from = end - m[1]!.length;
-  const to = from + url.length;
-  if (state.doc.rangeHasMark(from, to, marks.link)) return false;
-  tr.addMark(from, to, marks.link.create({ href }));
-  return true;
-}
-
-/** A space after a URL links it (and types the space, outside the link). */
-const autolink = new InputRule(/\s$/, (state, match, start, end) => {
-  const tr = state.tr;
-  if (!linkTypedUrl(state, start, tr)) return null;
-  return tr.insertText(match[0], start, end);
-});
-
-/** Enter after a typed URL links it, then does what Enter does, from the state with the link (one chain, no stale state). */
-const withAutolink =
-  (enter: Command): Command =>
-  (state, dispatch, view) => {
-    if (dispatch && view && state.selection.empty) {
-      const tr = state.tr;
-      if (linkTypedUrl(state, state.selection.from, tr)) {
-        dispatch(tr);
-        return enter(view.state, dispatch, view) || true;
-      }
-    }
-    return enter(state, dispatch, view);
-  };
 
 // ── the toolbar's state
 
@@ -391,10 +356,12 @@ export interface EditorHooks {
   ghost?: GhostHooks;
 }
 
-/** Plain text pasted keeps its lines: one paragraph per line, empty lines included (as a plain draft opens). */
-function textSlice(text: string): Slice {
-  const lines = text.replace(/\r\n?/g, "\n").replace(/\u00a0/g, " ").split("\n");
-  return Slice.maxOpen(Fragment.from(lines.map((l) => nodes.paragraph.create(null, l ? schema.text(l) : null))));
+/** Whether a copied HTML has a link to anywhere but `href` (an inert parse: nothing in it loads or runs). */
+function linksElsewhere(html: string, href: string): boolean {
+  if (!/<a\b/i.test(html)) return false;
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  for (const a of doc.querySelectorAll("a[href]")) if ((a.getAttribute("href") ?? "").trim() !== href) return true;
+  return false;
 }
 
 const { Escape: _escape, ...BASE_KEYS } = baseKeymap;
@@ -431,10 +398,10 @@ export function createPlugins(): Plugin[] {
     "Shift-Tab": (state, dispatch) => (listAt(state.selection.$from) ? liftListItem(nodes.list_item)(state, dispatch) || true : false),
     // a new line keeps the line's alignment and indent (as Docs and Gmail do)
     Enter: withAutolink(chainCommands(splitListItem(nodes.list_item), newlineInCode, createParagraphNear, liftEmptyBlock, splitBlockAs((node) => (node.type === nodes.paragraph ? { type: nodes.paragraph, attrs: node.attrs } : null)))),
-    "Shift-Enter": (state, dispatch) => {
+    "Shift-Enter": withAutolink((state, dispatch) => {
       if (dispatch) dispatch(state.tr.replaceSelectionWith(nodes.hard_break.create()).scrollIntoView());
       return true;
-    },
+    }),
     Backspace: undoInputRule,
   };
   return [
@@ -445,30 +412,40 @@ export function createPlugins(): Plugin[] {
       rules: [
         wrappingInputRule(/^\s*([-*])\s$/, nodes.bullet_list),
         wrappingInputRule(/^(\d+)\.\s$/, nodes.ordered_list, (m) => ({ start: Number(m[1]) }), (m, node) => node.childCount + (node.attrs.start as number) === Number(m[1])),
-        autolink,
+        autolinkRule,
       ],
     }),
+    // plan 39: an autolink's href follows its text
+    liveLinks(),
     keymap(mod),
     // Esc belongs to the composer (collapse, leave), not to "select the parent node"
     keymap(BASE_KEYS),
     new Plugin({
       props: {
         // NBSP typed (⌥Space) reads as a space: mail encodes runs of spaces with it, and a draft's text stays plain
-        handleTextInput(view, from, to, text) {
+        handleTextInput(view, from, to, text, deflt) {
           if (!text.includes("\u00a0")) return false;
-          view.dispatch(view.state.tr.insertText(text.replace(/\u00a0/g, " "), from, to));
+          const tr = view.state.tr.insertText(text.replace(/\u00a0/g, " "), from, to);
+          // typed while composing (IME), it says so, as ProseMirror's own would: history groups it, autolinks wait for the end
+          const composition = deflt().getMeta("composition");
+          if (composition !== undefined) tr.setMeta("composition", composition);
+          view.dispatch(tr);
           return true;
         },
         transformPastedHTML: (html) => cleanPastedHtml(html),
         transformPasted: (slice) => restoreSlice(slice),
-        clipboardTextParser: (text) => textSlice(text),
+        // what is copied: a part of an autolink goes where its text says (plan 39), in any app it is pasted into
+        transformCopied: (slice) => spelledSlice(slice),
+        // plain text keeps its lines (one paragraph per line, as a plain draft opens); its URLs link, unless pasted as plain (⇧⌘V)
+        clipboardTextParser: (text, _context, plain) => textSlice(text, !plain),
         handlePaste(view, event) {
           // ⇧⌘V (ProseMirror's own plain-paste test): the text goes in as text, a URL included
           const input = (view as unknown as { input?: { shiftKey?: boolean; lastKeyCode?: number } }).input;
           if (input?.shiftKey && input.lastKeyCode !== 45) return false;
           const text = event.clipboardData?.getData("text/plain") ?? "";
           const href = urlIn(text);
-          if (!href) return false;
+          // a copy whose links go elsewhere than its text says (a labelled link, a tracker) pastes as it was copied
+          if (!href || linksElsewhere(event.clipboardData?.getData("text/html") ?? "", href)) return false;
           const { state } = view;
           const { from, to, empty } = state.selection;
           // a URL pasted over a selection links it; alone, it goes in as a link
