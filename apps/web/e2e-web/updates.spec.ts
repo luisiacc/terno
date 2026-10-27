@@ -196,13 +196,16 @@ test("slow storage export cannot commit an earlier snapshot over later recovery"
   serving = dirs.a; await page.goto(`${origin}${URL_}`); await rows(page).first().waitFor({ timeout: 60_000 });
   await page.getByRole("button", { name: "Compose", exact: true }).click();
   const body = page.getByTestId("compose-body"); await body.fill("storage exact");
+  await body.press("Meta+a"); await body.press("Meta+b"); await body.press("ArrowRight");
+  await page.getByTestId("compose-to").fill('"Pérez, Ana" <ana@example.test>, bob@');
+  await page.getByTestId("attachment-input").setInputFiles({ name: "carry.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 255, 128]) });
   await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
   await page.evaluate(() => {
     const client = window.__ternoWeb!.client, call = client.call.bind(client);
     Object.defineProperty(client, "call", { value: (method: string, params: unknown) => {
       const result = call(method as "app.export", params as Record<string, never>);
       if (method !== "app.export") return result;
-      return result.then((dump) => new Promise((resolve) => { Object.assign(window, { releaseExport: () => resolve(dump) }); }));
+      return result.then((dump) => new Promise((resolve) => { Object.assign(window, { exportCalls: (Reflect.get(window, "exportCalls") ?? 0) + 1, releaseExport: () => resolve(dump) }); }));
     } });
   });
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); await page.keyboard.press("Meta+k");
@@ -222,4 +225,18 @@ test("slow storage export cannot commit an earlier snapshot over later recovery"
   expect(await page.evaluate(() => localStorage.getItem("terno:storage:terno"))).toBe(originalPin);
   await expect(body).toHaveText("storage exact latest");
   await page.getByTestId("draft-save-copy").click(); await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  const latest = await page.evaluate(async () => (await window.__ternoWeb!.client.call("drafts.list", {}))[0]!);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); await page.keyboard.press("Meta+k");
+  await page.getByTestId("palette-input").fill("settings data"); await page.keyboard.press("Enter");
+  await page.getByRole("combobox", { name: "Engine" }).click(); await page.getByTestId("storage-engine-idb").click();
+  await page.getByTestId("storage-switch-dialog-confirm").click();
+  await expect.poll(() => page.evaluate(() => Reflect.get(window, "exportCalls"))).toBe(2);
+  await Promise.all([page.waitForEvent("framenavigated", { predicate: (f) => f === page.mainFrame() }), page.evaluate(() => Reflect.get(window, "releaseExport")())]);
+  await rows(page).first().waitFor();
+  expect(await page.evaluate(() => window.__ternoWeb!.storage)).toBe("idb");
+  const copied = await page.evaluate(async () => (await window.__ternoWeb!.client.call("drafts.list", {}))[0]!);
+  expect(copied).toMatchObject({ bodyText: "storage exact latest", bodyHtml: latest.bodyHtml, to: latest.to, subject: latest.subject });
+  expect(copied.bodyHtml).toContain("<b>"); expect(copied.to.map((a) => a.email)).toContain("bob@");
+  expect(copied.attachments).toHaveLength(1);
+  expect(await page.evaluate(async (d) => window.__ternoWeb!.client.call("attachments.read", { accountId: d.accountId, assetId: d.attachments![0]!.assetId, index: 0 }), copied)).toEqual({ dataBase64: "AP+A" });
 });
