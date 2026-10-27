@@ -1,6 +1,7 @@
 // oxlint-disable-next-line typescript/triple-slash-reference -- DefinitelyTyped omits css-tree's public subpath declarations.
 /// <reference path="./css-tree-subpaths.d.ts" />
 import parseCss from "css-tree/parser";
+import { Lexer } from "css-tree/lexer";
 import { tokenize, tokenTypes } from "css-tree/tokenizer";
 import { ident } from "css-tree/utils";
 import { parse, type DefaultTreeAdapterTypes as Html } from "parse5";
@@ -23,6 +24,13 @@ const OVERFLOWS = new Set(["visible", "hidden", "clip", "scroll", "auto"]);
 type Style = Map<string, { value: string; important: boolean }>;
 type Inline = { values: Style; uncertainBox: boolean };
 const EMPTY_STYLE: Inline = { values: new Map(), uncertainBox: false };
+
+let lengthGrammar: import("css-tree").Lexer | undefined;
+
+function validLengthDimension(number: string, unit: string): boolean {
+  lengthGrammar ??= new Lexer({ generic: true, properties: { width: "<length [0,∞]>" } });
+  return lengthGrammar.matchProperty("width", number + unit).matched !== null;
+}
 
 function scalar(property: string, source: string): string | undefined {
   const tokens: { type: number; value: string }[] = [];
@@ -60,7 +68,11 @@ function scalar(property: string, source: string): string | undefined {
     if (token.type === tokenTypes.Dimension) {
       // Tokenization established a dimension; decode its unit, including CSS escapes.
       const dimension = /^([+-]?(?:\d*\.\d+|\d+\.?\d*)(?:e[+-]?\d+)?)([\s\S]+)$/i.exec(token.value);
-      if (dimension && Number(dimension[1]) >= 0 && LENGTHS.has(ident.decode(dimension[2]!).toLowerCase())) return Number(dimension[1]) === 0 ? "0" : "positive";
+      if (dimension && Number(dimension[1]) >= 0) {
+        const unit = ident.decode(dimension[2]!).toLowerCase();
+        if (LENGTHS.has(unit)) return Number(dimension[1]) === 0 ? "0" : "positive";
+        if (validLengthDimension(dimension[1]!, unit)) return property === "width" ? "unknown" : Number(dimension[1]) === 0 ? "0" : "positive";
+      }
     }
   }
 }
