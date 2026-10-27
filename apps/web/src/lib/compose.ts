@@ -246,26 +246,26 @@ async function send(key: string): Promise<boolean> {
   if (attachmentUploading(key)) { snack.error(t("attachments.adding")); return false; }
   // read-only from here: nothing typed while the save in flight settles can fall between it and the send
   markSending(key, true);
-  const d = await draftForSend(key);
-  if (!d || d.recovery) {
-    markSending(key, false);
-    resumeDraft(key);
-    return false;
-  }
-  const to = validRecipients(d.toText);
-  const cc = validRecipients(d.ccText);
-  const bcc = validRecipients(d.bccText);
-  // something typed that isn't an address (or nobody at all): stay, say what is wrong, and show it (plan 34 §2.6)
-  const bad = (["to", "cc", "bcc"] as const).map((field) => ({ field, entry: firstInvalid(d[`${field}Text`]) })).find((b) => b.entry !== null);
-  if (to.length === 0 || bad) {
-    markSending(key, false);
-    resumeDraft(key);
-    snack.error(bad ? t("compose.invalidRecipient", { entry: bad.entry! }) : t("compose.noRecipient"));
-    showRecipient(key, bad?.field ?? "to");
-    return false;
-  }
-  breadcrumb("action", "action.send");
   try {
+    const d = await draftForSend(key);
+    if (!d || d.recovery) {
+      markSending(key, false);
+      resumeDraft(key);
+      return false;
+    }
+    const to = validRecipients(d.toText);
+    const cc = validRecipients(d.ccText);
+    const bcc = validRecipients(d.bccText);
+    // something typed that isn't an address (or nobody at all): stay, say what is wrong, and show it (plan 34 §2.6)
+    const bad = (["to", "cc", "bcc"] as const).map((field) => ({ field, entry: firstInvalid(d[`${field}Text`]) })).find((b) => b.entry !== null);
+    if (to.length === 0 || bad) {
+      markSending(key, false);
+      resumeDraft(key);
+      snack.error(bad ? t("compose.invalidRecipient", { entry: bad.entry! }) : t("compose.noRecipient"));
+      showRecipient(key, bad?.field ?? "to");
+      return false;
+    }
+    breadcrumb("action", "action.send");
     const body = await bodyParts(d);
     const signature = getApp().accounts.find((a) => a.id === d.accountId)?.signature;
     const res = await client.call("compose.send", {
