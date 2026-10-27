@@ -1,6 +1,6 @@
 import { snack } from "~/lib/snack";
 import { adoptSettings } from "~/lib/appearance";
-import { draftsSaved } from "~/lib/drafts";
+import { draftChangeVersion, draftsSaved } from "~/lib/drafts";
 import { setApp } from "~/state/app";
 import { isRpcMessage, type RpcClient, type RpcMessage, type Transport } from "@terno/core/rpc";
 import { diagSession, log } from "@terno/core/diag";
@@ -59,8 +59,10 @@ function mailboxName(): string {
  * where it is (switching back finds it).
  */
 export async function switchStorage(client: RpcClient, target: string): Promise<void> {
-  if (!await draftsSaved()) throw new Error(t("web.storage.unsaved"));
+  const version = draftChangeVersion();
+  if (!await draftsSaved() || draftChangeVersion() !== version) throw new Error(t("web.storage.unsaved"));
   const dump = await client.call("app.export", {});
+  if (draftChangeVersion() !== version) throw new Error(t("web.storage.unsaved"));
   try {
     sessionStorage.setItem(CARRY, JSON.stringify({ to: target, dump }));
   } catch {

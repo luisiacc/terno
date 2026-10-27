@@ -107,6 +107,10 @@ interface DraftsState {
 
 export const useDrafts = create<DraftsState>(() => ({ drafts: {} }));
 
+let changeVersion = 0;
+/** Constant-time fence for page transitions, including coalesced editor changes. */
+export const draftChangeVersion = (): number => changeVersion;
+
 const get = (key: string): LocalDraft | undefined => useDrafts.getState().drafts[key];
 const put = (d: LocalDraft) => useDrafts.setState((s) => ({ drafts: { ...s.drafts, [d.key]: d } }));
 const drop = (key: string) =>
@@ -220,6 +224,7 @@ export function attachBody(key: string, read: BodyReader, options: { canonical?:
     changed() {
       const d = get(key);
       if (!d || d.sending) return;
+      changeVersion++;
       // an unsaved revision is already pending for this body: the save will serialize the latest document, so only
       // the debounce moves (no store update per keystroke: nothing re-renders while typing)
       if (source.dirty && d.localRev > d.savedRev) return schedule(key);
@@ -291,6 +296,7 @@ const newKey = () => `local-${Date.now().toString(36)}-${(++seq).toString(36)}`;
 
 /** A new draft (not saved until the user writes something). Returns its key. */
 export function createDraft(fields: DraftFields): string {
+  changeVersion++;
   const key = newKey();
   put({ key, id: null, revision: 0, status: "clean", localRev: 0, savedRev: 0, updatedAt: now(), sending: false, bodyVersion: 0, canonical: false, tooLong: false, ...fields });
   return key;
@@ -305,6 +311,7 @@ export function editDraft(key: string, patch: Partial<DraftFields>): void {
   // nothing changes under a send in flight (it is sending what is there now)
   if (!d || d.sending) return;
   if (patch.accountId !== undefined && patch.accountId !== d.accountId && draftSenderLocked(d)) return;
+  changeVersion++;
   const bodyChanged = (patch.bodyText !== undefined && patch.bodyText !== d.bodyText) || (patch.bodyHtml !== undefined && patch.bodyHtml !== d.bodyHtml);
   put({
     ...d,
@@ -327,6 +334,7 @@ export function editDraft(key: string, patch: Partial<DraftFields>): void {
 export function setDraftUi(key: string, uiState: LocalDraft["uiState"]): void {
   const d = get(key);
   if (!d || d.uiState === uiState) return;
+  changeVersion++;
   put({ ...d, uiState });
   if (d.id !== null) {
     put({ ...get(key)!, localRev: d.localRev + 1, status: d.status === "saving" ? "saving" : "dirty" });
@@ -441,6 +449,7 @@ function save(key: string, copy = false): Promise<void> {
 export function markDraftMissing(key: string): void {
   const d = materialize(key);
   if (!d || d.recovery) return;
+  changeVersion++;
   const w = writers.get(key);
   if (w?.timer) clearTimeout(w.timer);
   if (w) { w.timer = null; w.dirtySince = null; }
@@ -453,6 +462,7 @@ export function copyDraft(key: string): Promise<void> {
   if (!d?.recovery || d.sending || writers.get(key)?.stopping) return Promise.resolve();
   const w = writer(key);
   if (w.inflight) return w.inflight;
+  changeVersion++;
   return save(key, true);
 }
 
@@ -518,7 +528,7 @@ export async function draftForSend(key: string): Promise<LocalDraft | undefined>
 /** A send started or settled: while it runs the draft can't be edited or discarded. */
 export function markSending(key: string, sending: boolean): void {
   const d = get(key);
-  if (d && d.sending !== sending) put({ ...d, sending });
+  if (d && d.sending !== sending) { changeVersion++; put({ ...d, sending }); }
 }
 
 /** A send didn't happen (refused or failed): the autosave it paused picks up whatever isn't saved yet. */
@@ -531,6 +541,7 @@ export function resumeDraft(key: string): void {
 
 /** After a successful send (the backend deleted the stored draft with it). */
 export function forgetDraft(key: string): void {
+  changeVersion++;
   const w = writers.get(key);
   if (w?.timer) clearTimeout(w.timer);
   writers.delete(key);
@@ -565,7 +576,7 @@ export async function loadDrafts(list: () => Promise<Draft[]> = () => client.cal
   const stored = await list();
   useDrafts.setState((s) => {
     const drafts = { ...s.drafts };
-    for (const d of stored) if (!Object.values(drafts).some((x) => x.id === d.id)) drafts[`srv-${d.id}`] = fromServer(d);
+    for (const d of stored) if (!Object.values(drafts).some((x) => x.id === d.id)) { changeVersion++; drafts[`srv-${d.id}`] = fromServer(d); }
     return { drafts };
   });
 }

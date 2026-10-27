@@ -180,3 +180,35 @@ test("recovery holds storage switching and mailbox handover while the current wo
   await page.getByTestId("draft-save-copy").click(); await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
   expect((await page.evaluate(() => window.__ternoWeb!.client.call("drafts.list", {})))[0]!.bodyText).toBe("handover recovery exact latest");
 });
+
+test("slow storage export cannot commit an earlier snapshot over later recovery", async ({ page }) => {
+  serving = dirs.a; await page.goto(`${origin}${URL_}`); await rows(page).first().waitFor({ timeout: 60_000 });
+  await page.getByRole("button", { name: "Compose", exact: true }).click();
+  const body = page.getByTestId("compose-body"); await body.fill("storage exact");
+  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await page.evaluate(() => {
+    const client = window.__ternoWeb!.client, call = client.call.bind(client);
+    Object.defineProperty(client, "call", { value: (method: string, params: unknown) => {
+      const result = call(method as "app.export", params as Record<string, never>);
+      if (method !== "app.export") return result;
+      return result.then((dump) => new Promise((resolve) => { Object.assign(window, { releaseExport: () => resolve(dump) }); }));
+    } });
+  });
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); await page.keyboard.press("Meta+k");
+  await page.getByTestId("palette-input").fill("settings data"); await page.keyboard.press("Enter");
+  await page.getByRole("combobox", { name: "Engine" }).click(); await page.getByTestId("storage-engine-idb").click();
+  await page.getByTestId("storage-switch-dialog-confirm").click();
+  await expect.poll(() => page.evaluate(() => "releaseExport" in window)).toBe(true);
+  await page.keyboard.press("Escape");
+  await page.evaluate(async () => { const c = window.__ternoWeb!.client, d = (await c.call("drafts.list", {}))[0]!; await c.call("drafts.delete", { id: d.id, generation: d.generation }); });
+  await body.press("End"); await page.keyboard.type(" latest"); await expect(page.getByTestId("draft-save-copy")).toBeVisible();
+  const originalPin = await page.evaluate(() => localStorage.getItem("terno:storage:terno"));
+  let navigations = 0; page.on("framenavigated", (f) => { if (f === page.mainFrame()) navigations++; });
+  await page.evaluate(() => Reflect.get(window, "releaseExport")());
+  await expect(page.getByTestId("snack-message")).toContainText("Save or discard your unsaved drafts before switching storage");
+  expect(navigations).toBe(0);
+  expect(await page.evaluate(() => sessionStorage.getItem("terno:carry"))).toBeNull();
+  expect(await page.evaluate(() => localStorage.getItem("terno:storage:terno"))).toBe(originalPin);
+  await expect(body).toHaveText("storage exact latest");
+  await page.getByTestId("draft-save-copy").click(); await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+});
