@@ -56,6 +56,17 @@ it("normalizes actual Node marked-untransferable buffers without copying or inli
   expect(source.chunks[0]!.byteLength).toBeGreaterThan(0);
 });
 
+it("applies the public V8 old-heap limit and isolates startup flags and environment", async () => {
+  const owned = processor(fixture(`
+    const {parentPort, resourceLimits} = require('node:worker_threads');
+    parentPort.on('message', request => {
+      const valid = resourceLimits.maxOldGenerationSizeMb === 512 && process.execArgv.length === 0 && Object.keys(process.env).length === 0;
+      parentPort.postMessage({type:'result',incarnation:request.incarnation,job:request.job,result:{kind:'mime',message:{subject:valid?'isolated':'invalid',attachments:[]}}});
+    });
+  `));
+  expect((await owned.run(input(), new AbortController().signal)).message.subject).toBe("isolated");
+});
+
 it("cancels an active noncooperative worker and explicitly recreates only after retirement", async () => {
   const owned = processor(fixture("require('node:worker_threads').parentPort.on('message', () => { for (;;) {} });"));
   const abort = new AbortController();
