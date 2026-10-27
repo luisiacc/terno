@@ -125,7 +125,7 @@ export function App() {
           shape across a switch, so the list (and its scroll) survives it. */}
       <div className={cn("grid h-screen overflow-hidden", list ? "app-panes-list" : "app-panes")} data-ready={ready || undefined}>
         <Sidebar />
-        <div id="app-list" className={cn("hairline-l relative min-h-0", !list && "hairline-r hairline-strong")}>
+        <section id="app-list" role={list ? "main" : undefined} aria-label={list ? undefined : t("list.label")} className={cn("hairline-l relative min-h-0", !list && "hairline-r hairline-strong")}>
           {/* under a page the list stays laid out (scroll, measured rows, mounted rows) but isn't painted or reachable */}
           <div
             // test builds only: the perf gate's injected regression (a list remounted by every page change) must fail it
@@ -142,7 +142,7 @@ export function App() {
           {/* plan 21: the panes' edges, over the hairlines; List has no list|reader edge (its width is Split's, kept for it) */}
           <PaneHandle pane="sidebar" />
           {!list && <PaneHandle pane="list" />}
-        </div>
+        </section>
         {!list && (
           <main className="relative min-h-0">
             {/* the reader pane: a bulk selection, else a new message being written, else the conversation; one that fails to render is that pane only */}
