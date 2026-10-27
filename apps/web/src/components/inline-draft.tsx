@@ -66,17 +66,23 @@ export function focusSoon(selector: string, root: HTMLElement | null, frames = 1
   const done = () => {
     cancelAnimationFrame(raf);
     document.removeEventListener("keydown", keyDuringMove, true);
+    document.removeEventListener("focusin", moved, true);
     if (pendingFocus === mine) pendingFocus = null;
+  };
+  const moved = (event: FocusEvent) => {
+    if (event.target !== document.body) done();
   };
   const mine = { find: () => target(selector, root), done };
   pendingFocus = mine;
   document.addEventListener("keydown", keyDuringMove, true);
+  document.addEventListener("focusin", moved, true);
   const tick = (left: number) => {
     raf = requestAnimationFrame(() => {
+      if (root && !root.isConnected) return done();
       const el = target(selector, root);
       if (!focusable(el) && left > 0) return tick(left - 1);
       done();
-      if (el) place(el);
+      if (focusable(el)) place(el);
     });
   };
   tick(frames);

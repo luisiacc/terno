@@ -1,0 +1,63 @@
+# Plan 43: renderer focus intent
+
+Status: investigation; browser qualification and independent final review remain open. Baseline `af555c3b27b1a44ab771f59f850fe620804c3fcf`.
+
+## Request (verbatim, plan 26)
+
+> I want you to go through every item to fix here in this report. For each item that needs fixing you already have, in that report, what needs to be done but for each item you need to:
+> 1. Go for that item.
+> 2. Spec it out a bit more.
+> 3. Do maybe a better investigation on it to see what's truly needed for us.
+> 4. Build a test case reproducing that scenario, that potential scenario, or multiple test cases.
+> 5. Fix it.
+> 6. That will do it.
+> 7. Spawn a subagent with Codex doing a code review of that fix, of that code you have just fixed and/or added.
+> 8. Fix any findings.
+> create atomic commits as you are fixing things.
+> That way there is a double check on what you're doing and this can be better. Of course we need to maintain our performance while doing this and follow the directives that we have. You're going to do this for each and every one of the items that you have done here.
+> Let's not create a separate branch or anything like that. Let's just do the fixes right here in the main branch. You should not stop until everything in that report is done.
+
+## Evidence and scope
+
+The full frozen renderer run (source 6ee115a) has unresolved list, sign-in and conversion failures. Window A's passive observation is `/tmp/terno-renderer-focus-windowA-oolGmG6K`; it introduced round trips and cannot clear the original red. In failing list captures the reader section received focus before the editor existed, with no editor focus or window blur observed. In the sign-in failure, the focused connected password input lost focus to the popover after insertion of a section; its value remained. The conversion observation produced an extra character after a different sequence than the original missing-toast failure. None establishes complete causality. See `/tmp/terno-renderer-focus-triage.md` for details and limits.
+
+`openComposeNow` captures the active element, waits for thread loading and attachment admission, and only requests draft focus if focus has not changed. Reader schedules its own section focus while the conversation opens. This is a source-backed candidate for suppressing intent when that internal focus move occurs; preserving an intervening user-selected control is essential. The draft slot also consumes a sequence only when its effect sees both the request and a draft, but the dependency only contains the sequence. This is a separate hypothesis requiring a behavioral reproduction, not an established cause. `focusSoon` is shared across draft moves and retries by bounded animation frames; the lazy stand-in transfers focus on editor mount. A new request must cancel old moves across drafts and navigation, and unmount must not let an old move steal focus. Native inert, held drafts, collapse handoff, checkpoint and StrictMode must retain their contracts.
+
+The sign-in panel keys accounts by ID and conditionally inserts account headers and forms. Focus loss to the popover does not by itself prove remount or movement. Establish actual node identity and focus transitions through a public StrictMode component test for two→one→two accounts and actual popover ownership before choosing any correction. Preserve password and selection, and never reclaim focus after the user moves elsewhere. For rapid collapse and conversion, establish a keyboard intent failure and its target; do not infer it from the altered observation. `keyDuringMove` only redirects trusted keys while body is active. No assertion is weakened.
+
+## Design and tests
+
+Before production changes write meaningful failing tests exercising public React and keyboard behavior, including lazy readiness rather than mocking the behavior under investigation. Test latest intent superseding prior requests, navigation/unmount, a competing user focus, delayed readiness, stand-in replacement, inert and held states, collapse, and checkpoint/StrictMode as relevant to the demonstrated fix. Correct only independently reproduced mechanisms; preserve explicit intent without unconditional focus on rendering. Reordering changes must prove actual DOM identity/ownership first. Changes outside the authorized owned files require parent acknowledgement before dependent code. Separate each independent fix in an atomic commit and retain every red and green result.
+
+No polling or new timers; use existing bounded frame mechanism and events where appropriate. Preserve lazy loading and O(1) per-keystroke work. A local DOM model is not native browser proof. The parent coordinates real-browser qualification, full checks, performance and fresh review. This slice does not claim the cross-account, reader-fixture, socket or teardown failures, or close existing performance and IndexedDB uncertainties. No pushes, worktrees, branch changes, global checks or browser launches in this window.
+
+## Revisions after the Codex review
+
+The sole read-only `codex exec -s read-only -C /Users/Luis/projects/emailclient -` critique completed with `CODEX_EXIT=0` and `DONE`; `/tmp/terno-focus-plan-critique.out` retains the six points. All are accepted:
+
+1. Gate thread loading and attachment admission independently; reproduce reader-section focus before the active-element check. Separately establish a reachable request-before-draft ordering before touching effect dependencies: `createDraft` publishes first. Never depend on the entire draft object and refocus on edits.
+2. Define ownership and cancellation across frame moves and the controller queue, including user movement away and back, navigation, unmount, stale cleanup and reopening canceled drafts.
+3. Fail closed after focus retry exhaustion: check connected and non-inert at the actual focus attempt and release the frame and listener. Test native inert and held-draft semantics independently.
+4. Qualify rapid Escape/conversion with real consecutive keyboard input and no diagnostic round trips or inserted focus calls. Check exact body, mode, recipients, conversion and Undo, including composition and handled events; preserve the separate original missing-toast RED.
+5. Test sign-in DOM movement and actual Base UI ownership, background recovery and local submission, both RPC/event orderings, surviving selection, final-account removal and the user moving to the composer.
+6. Any editor-aware handoff must preserve checkpoint identity/version, backward selection, stored marks, undo/redo and blocked Send/admission across delayed load, failed serialization and StrictMode; distinguish initial end placement from recovery keep-selection.
+
+## Investigation checkpoint
+
+At baseline `af555c3b27b1a44ab771f59f850fe620804c3fcf`, a serial no-globalSetup jsdom test mounts the actual sign-in panel in Base UI Popover under StrictMode. Two→one→two with the returning account before and after the surviving account preserves the exact connected password node, focus, value and selection (2 passed). This is negative model evidence, not browser qualification; it does not replicate the browser focus transition, prove that no DOM movement occurred there, or clear any original RED. Initial config import and missing fixture state errors were setup errors, subsequently corrected. Owned test lint passed. No production fix, browser launch, build or full check has run. The exact candidate seam `apps/web/src/lib/compose.ts` is outside assigned ownership and has been submitted for coordination before dependent code.
+
+A separate public `DraftSlot` StrictMode regression (`inline-draft-focus.test.tsx`) renders a collapsed draft, clicks reopen, then focuses another control before the queued frame. The first bounded frame instead focuses the actual lazy stand-in; the test is RED at the focus assertion. This establishes a model-level competing-focus bug, not the cause of the original list or conversion failure. A fix must distinguish an explicit later user intent from internal reader and editor focus, cancel old work across drafts and unmount without canceling a newer request, preserve rapid keyboard and stand-in handoff, and be qualified with the tests and native keyboard/inert checks above. No production code has changed yet.
+
+## Focus ownership refinement after scope expansion
+
+The acknowledged additional scope is only the focus-intent and active-element admission blocks in `compose.ts` and `reader.tsx`. Investigate a single current-conversation lease held only while the latest explicit inline compose request awaits its work; release on every completion/error and supersession, and ensure selection/navigation immediately makes a lease for a different thread ineligible. Reader's passive page-focus frame can inspect the lease without subscribing or importing the rich editor. It must still focus normally for other conversations, aborted requests, and no compose request. Do not allow arbitrary active-element changes: preserve the existing focus admission when a user chooses another control during either async boundary, including moving away and back. Require a public component race test that gates actual thread loading and independently attachment admission, advances Reader's real frame, and then verifies editor/stand-in focus and control cases; captured browser timing alone cannot prove the mechanism.
+
+For the separately reproduced reopen bug, cancel an outstanding focus move when focus subsequently moves to another connected control; ensure the move's own placement removes the listener before calling focus, newer moves replace older ones, root removal does not refocus, and retry exhaustion never focuses an ineligible node. A real Reader passive frame must not be mislabeled user intent; use the scoped compose lease to resolve that interaction and test both boundaries. No polling or additional timer. A DOM test cannot establish native inert behavior or trusted rapid keyboard routing; retain browser qualification.
+
+The single new-seam source critique completed `CODEX_EXIT=0`/`DONE` (`/tmp/terno-focus-seam-critique.out`), with three accepted revisions: ownership must hand off from async work through pending placement/cancellation, including synchronous existing-draft paths; a skipped Reader frame needs an event-driven, navigation- and user-intent-guarded fallback after rejection or abort; and user focus movement during async work must invalidate intent persistently even if it returns, including forward attachment-info and save waits (which can currently reset `takeFocus`). Test each ordering and avoid timers, duplicate listeners, stale cleanup and stale cross-conversation leases.
+
+Offline sign-in trace inspection identifies prior focused action node 2 leaving before the first popover focus at 304 ms, password input node 9 focusing at 314 ms, and a second popover focus at 324 ms after a new section insertion; node 9 remains connected at focusout. Base UI `PopoverPopup` passes `restoreFocus="popup"`; its focus manager can schedule a second popup focus on the next frame after a focused element disappears. This ordering is a plausible source-backed mechanism, not proof that that callback fired in the saved trace. The focused jsdom model, including the removed-action ordering, remains green; it cannot reproduce browser visibility/focus-out semantics. No sign-in product change is justified yet.
+
+The reopened-draft regression failed before production at the focus assertion, then passed after `focusSoon` cancels on a subsequent focus move, verifies its root remains connected, and fails closed if the last frame still finds an inert or disconnected target. The move removes its focus listener before its own placement; a newer request cancels the prior frame and listeners. Focused no-globalSetup tests pass 2/2, including newer ownership, ineligible exhaustion and detached-root cases; web typecheck and owned-file lint pass. Browser and trusted-key qualification remain open. The separate real lazy handoff test discovered a StrictMode editor replay loss after the stand-in was focused; it is RED before any rich-editor change and must be fixed separately without disturbing checkpoint selection.
+
+The actual Reader/compose component test independently reproduces the candidate list race: after the real Reader frame focuses the section during gated thread loading, the draft is created but editor focus is suppressed. This is a model RED and does not itself qualify the frozen browser run. The initial timeout and missing `scrollIntoView` were fixture setup errors, subsequently corrected before the assertion RED.
