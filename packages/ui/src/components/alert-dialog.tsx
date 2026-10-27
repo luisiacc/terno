@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { ModalHostPopup } from "@terno/ui/components/modal-host"
 import { AlertDialog as AlertDialogPrimitive } from "@base-ui/react/alert-dialog"
 import { cn } from "cn"
 
@@ -49,6 +50,7 @@ function AlertDialogContent({
     <AlertDialogPortal>
       <AlertDialogOverlay />
       <AlertDialogPrimitive.Popup
+        render={(elementProps, state) => <ModalHostPopup open={state.open} elementProps={elementProps} />}
         data-slot="alert-dialog-content"
         data-size={size}
         className={cn(

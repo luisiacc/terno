@@ -1,4 +1,5 @@
 import { t } from "@terno/i18n";
+import { useModalHost } from "@terno/ui/components/modal-host";
 import { Button } from "@terno/ui/components/button";
 import { useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -8,7 +9,9 @@ import { useNativeReload } from "~/lib/native-reload";
 /** A fatal app or a recovery editor must not hide the native reload warning. */
 export function NativeReloadNotice() {
   const anyway = useNativeReload((s) => s.anyway);
-  const host = useNativeReload((s) => s.modalHost);
+  const fatalHost = useNativeReload((s) => s.modalHost);
+  const healthyHost = useModalHost();
+  const host = fatalHost ?? healthyHost;
   const focusTarget = useNativeReload((s) => s.focusTarget);
   const ref = useRef<HTMLElement>(null), previousFocus = useRef<HTMLElement | null>(null), opened = useRef(false);
   useLayoutEffect(() => {
@@ -32,7 +35,7 @@ export function NativeReloadNotice() {
         const owned = document.activeElement === event.currentTarget;
         const prior = previousFocus.current;
         dismiss();
-        if (owned) (prior?.isConnected && !prior.closest("[inert]") ? prior : host?.querySelector<HTMLElement>("button"))?.focus({ preventScroll: true });
+        if (owned) (prior?.isConnected && !prior.closest('[inert], [aria-hidden="true"]') && (!host || host.contains(prior)) ? prior : host?.querySelector<HTMLElement>("button"))?.focus({ preventScroll: true });
       }}>{t("common.close")}</Button>
     </div>
   </aside>;

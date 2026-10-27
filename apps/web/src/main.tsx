@@ -9,6 +9,7 @@ import { initLocale, installLanguageFollower, LocaleRoot } from "./lib/i18n";
 import { designById } from "@terno/ui/designs/index";
 import { loadDesignFaces } from "./lib/design";
 import { useApp } from "./state/app";
+import { ModalHostProvider } from "@terno/ui/components/modal-host";
 import { NativeReloadNotice } from "./components/diag/native-reload-notice";
 
 // the first frame is in the language this window used last (English needs no wait; a failure leaves English),
@@ -16,14 +17,14 @@ import { NativeReloadNotice } from "./components/diag/native-reload-notice";
 void Promise.all([initLocale(), loadDesignFaces(designById(document.documentElement.dataset.design), 150)]).then(() => {
   installLanguageFollower((listener) => useApp.subscribe((s, prev) => s.settings?.language !== prev.settings?.language && listener(s.settings?.language)));
   createRoot(document.getElementById("root")!).render(
-    <>
+    <ModalHostProvider>
       <AppBoundary>
         <LocaleRoot>
           <App />
         </LocaleRoot>
       </AppBoundary>
       <LocaleRoot><NativeReloadNotice /></LocaleRoot>
-    </>,
+    </ModalHostProvider>,
   );
   void boot();
 });

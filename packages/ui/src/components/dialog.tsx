@@ -1,4 +1,5 @@
 import * as React from "react"
+import { ModalHostPopup } from "@terno/ui/components/modal-host"
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
 import { cn } from "cn"
 import { t } from "@terno/i18n"
@@ -50,6 +51,7 @@ function DialogContent({
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Popup
+        render={(elementProps, state) => <ModalHostPopup open={state.open} elementProps={elementProps} />}
         data-slot="dialog-content"
         className={cn(
           "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-2xl bg-popover p-4 text-sm text-popover-foreground shadow-modal duration-slow ease-drawer data-closed:duration-fast data-closed:ease-exit outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[0.98] data-closed:animate-out data-closed:fade-out-0",
