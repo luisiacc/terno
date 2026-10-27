@@ -5,7 +5,9 @@ import { tokenize, tokenTypes } from "css-tree/tokenizer";
 import { ident } from "css-tree/utils";
 import { parse, type DefaultTreeAdapterTypes as Html } from "parse5";
 
-const NON_CONTENT = new Set(["head", "title", "script", "style", "template", "plaintext", "noscript", "iframe", "object", "embed", "noembed", "noframes", "xmp"]);
+// Public DOMPurify3.4.17 reader policy, audited in Chromium; unknown HTML tags unwrap.
+const RETAINED = new Set("a abbr acronym address area article aside audio b bdi bdo big blink blockquote br button canvas caption center cite code col colgroup content data datalist dd del details dfn dialog dir div dl dt em fieldset figcaption figure font footer form h1 h2 h3 h4 h5 h6 header hgroup hr i image img input ins kbd label legend li main map mark marquee menu menuitem meter nav nobr ol optgroup option output p picture pre progress q rp rt ruby s samp search section select shadow slot small source spacer span strike strong sub summary sup table tbody td textarea tfoot th thead time tr track tt u ul var video wbr".split(" "));
+const DROP_CONTENT = new Set(["head", "title", "script", "style", "template", "plaintext", "noscript", "iframe", "noembed", "noframes", "xmp", "frame", "frameset"]);
 const BLOCKS = new Set(["address", "article", "aside", "blockquote", "br", "caption", "dd", "div", "dl", "dt", "fieldset", "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "li", "main", "nav", "ol", "p", "pre", "section", "table", "tbody", "td", "th", "thead", "tr", "ul"]);
 const DISPLAYS = new Set(["none", "contents", "block", "inline", "inline-block", "flow-root", "list-item", "flex", "inline-flex", "grid", "inline-grid", "table", "inline-table", "table-row-group", "table-header-group", "table-footer-group", "table-row", "table-column-group", "table-column", "table-cell", "table-caption"]);
 const INLINE_DISPLAYS = new Set(["inline", "inline-block", "inline-flex", "inline-grid", "inline-table", "contents"]);
@@ -110,10 +112,12 @@ export async function htmlToText(html: string): Promise<string> {
       continue;
     }
     if (!("tagName" in node)) continue;
-    if (node.namespaceURI !== "http://www.w3.org/1999/xhtml" || NON_CONTENT.has(node.tagName)) continue;
-    // The reader serializes sanitized children into fresh html/body wrappers.
-    const wrapper = node.tagName === "html" || node.tagName === "body";
-    const attrs = new Map((wrapper ? [] : node.attrs).map((attr) => [attr.name, attr.value]));
+    if (node.namespaceURI !== "http://www.w3.org/1999/xhtml" || DROP_CONTENT.has(node.tagName)) continue;
+    if (!RETAINED.has(node.tagName)) {
+      if (node.childNodes.length) stack.push({ children: node.childNodes, index: 0, invisible: frame.invisible, block: false });
+      continue;
+    }
+    const attrs = new Map(node.attrs.map((attr) => [attr.name, attr.value]));
     const source = attrs.get("style");
     const style = source ? inlineStyle(source) : EMPTY_STYLE;
     const display = style.get("display")?.value;

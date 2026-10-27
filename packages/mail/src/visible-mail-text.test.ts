@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vitest";
 import PostalMime from "postal-mime";
 import { parseRaw } from "./mime";
-import { visibleReviewCases } from "./test/visible-review-cases";
+import { visiblePolicyCases, visibleReviewCases } from "./test/visible-review-cases";
 import { visibleSource } from "./test/visible-store";
 
 it("excludes hidden descendants and keeps useful decoded HTML-only text", async () => {
@@ -23,7 +23,7 @@ it("retains visible text after valid inline overrides and ignores invalid traili
 
 for (const [name, html, expected] of [
   ["inline word joins and block boundaries", '<p>un<b>broken</b> &amp;lt; &#x1F600;</p><table><tr><td>two</td><td>words</td></tr></table><div>next<br>line</div>', 'unbroken &lt; 😀 two words next line'],
-  ["metadata and inert subtrees", '<head><title>secret</title><style>.x{content:"secret"}</style></head><body><!--secret--><script>secret</script><template>secret</template><iframe src="https://invalid.test">secret</iframe><object>secret</object><p>Useful</p></body>', 'Useful'],
+  ["metadata and inert subtrees", '<head><title>secret</title><style>.x{content:"secret"}</style></head><body><!--secret--><script>secret</script><template>secret</template><iframe src="https://invalid.test">secret</iframe><object>secret</object><p>Useful</p></body>', 'secret Useful'],
   ["reader ignores stylesheet class and media hiding", '<style>.hidden{display:none}@media screen{p{visibility:hidden}}</style><p class="hidden">Still visible</p>', 'Still visible'],
   ["inherited visibility with visible descendant", '<div style="visibility:hidden">secret<span style="visibility:visible">Shown</span><b>secret</b></div><p>Tail</p>', 'Shown Tail'],
   ["ancestor display cannot be undone", '<div style="display:none"><span style="display:block;visibility:visible">secret</span></div><p>Tail</p>', 'Tail'],
@@ -70,6 +70,6 @@ it("excludes title metadata even when malformed mail places it inside the body",
   expect((await parseRaw(visibleSource('<body><p>Useful</p><title>secret title</title><p>tail</p></body>'))).text).toBe("Useful tail");
 });
 
-for (const fixture of visibleReviewCases) it(fixture.name, async () => {
+for (const fixture of [...visibleReviewCases, ...visiblePolicyCases]) it(fixture.name, async () => {
   expect((await parseRaw(visibleSource(fixture.html))).text).toBe(fixture.text);
 });
