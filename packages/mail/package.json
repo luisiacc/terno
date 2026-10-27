@@ -8,7 +8,8 @@
     ".": "./src/index.ts",
     "./registry": "./src/registry.ts",
     "./portable": "./src/portable.ts",
-    "./incoming-processing": "./src/incoming-processing.ts"
+    "./incoming-processing": "./src/incoming-processing.ts",
+    "./incoming-processing-worker": "./src/incoming-processing-worker.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

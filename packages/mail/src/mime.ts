@@ -1,4 +1,4 @@
-import PostalMime from "postal-mime";
+import PostalMime, { type PostalMimeOptions } from "postal-mime";
 import { MAX_INCOMING_MIME_BYTES, attachmentFilename, attachmentMime, bulkHeaders, parseAddressHeader, repairAddresses, type Address } from "@terno/core";
 import type { IncomingAttachment } from "@terno/store";
 
@@ -130,9 +130,11 @@ function envelopeOnly(raw: Uint8Array | string): Uint8Array | string {
   return typeof raw === "string" ? raw.slice(0, length) : raw.subarray(0, length);
 }
 
-export async function parseRaw(raw: Uint8Array | string, options: { captureUnavailable?: "size" } = {}): Promise<ParsedMessage> {
+export type IncomingMimeLimits = Pick<PostalMimeOptions, "maxPartCount" | "maxNestingDepth" | "maxHeadersSize" | "maxRfc822NestingDepth" | "maxForwardedAddresses">;
+
+export async function parseRaw(raw: Uint8Array | string, options: { captureUnavailable?: "size"; limits?: IncomingMimeLimits } = {}): Promise<ParsedMessage> {
   const unavailable = options.captureUnavailable === "size" || await tooLarge(raw);
-  const email = await PostalMime.parse(unavailable ? envelopeOnly(raw) : raw);
+  const email = await PostalMime.parse(unavailable ? envelopeOnly(raw) : raw, options.limits);
   const header = (name: string) => email.headers.find((h) => h.key.toLowerCase() === name)?.value ?? null;
   const values = (name: string) => email.headers.filter((h) => h.key.toLowerCase() === name).map((h) => h.value);
   const addresses = messageAddresses(values, { from: email.from as PostalAddress | undefined, to: email.to, cc: email.cc, bcc: email.bcc, replyTo: email.replyTo });
@@ -157,6 +159,6 @@ export async function parseRaw(raw: Uint8Array | string, options: { captureUnava
 }
 
 /** Providers can decode only a bounded prefix when the raw source is over the local capture policy. */
-export function parseRawHeaders(prefix: Uint8Array, reason: "size"): Promise<ParsedMessage> {
-  return parseRaw(prefix.subarray(0, 65536), { captureUnavailable: reason });
+export function parseRawHeaders(prefix: Uint8Array, reason: "size", limits?: IncomingMimeLimits): Promise<ParsedMessage> {
+  return parseRaw(prefix.subarray(0, 65536), { captureUnavailable: reason, limits });
 }
