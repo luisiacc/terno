@@ -117,6 +117,49 @@ function relevantAttributes(attributes: Html.Element["attrs"]): Map<string, stri
   return retained;
 }
 
+type Fragment = { value: string; kind: "text" | "gap" | "space" | "break"; previous?: Fragment; next?: Fragment };
+type TextBuffer = { first?: Fragment; last?: Fragment };
+
+function appendText(buffer: TextBuffer, value: string, kind: Fragment["kind"]): void {
+  if (!value) return;
+  const last = buffer.last;
+  if (kind !== "text" && last && last.kind !== "text") {
+    if (kind === "gap" || last.kind === "gap") last.kind = "gap";
+    else if (kind === "break") last.kind = "break";
+    return;
+  }
+  const fragment: Fragment = { value, kind, previous: last };
+  if (last) last.next = fragment;
+  else buffer.first = fragment;
+  buffer.last = fragment;
+}
+
+function trimAtomicEdge(buffer: TextBuffer, leading: boolean, zeroWidth: boolean): void {
+  const edge = leading ? "first" : "last";
+  const opposite = leading ? "last" : "first";
+  let fragment = buffer[edge];
+  while (fragment && (fragment.kind !== "gap" || zeroWidth)) {
+    if (fragment.kind === "text") {
+      let start = 0, end = fragment.value.length;
+      const collapsible = (code: number) => code === 9 || code === 10 || code === 12 || code === 13 || code === 32;
+      if (leading) while (start < end && collapsible(fragment.value.charCodeAt(start))) start++;
+      else while (end > start && collapsible(fragment.value.charCodeAt(end - 1))) end--;
+      if (start < end) { fragment.value = fragment.value.slice(start, end); return; }
+    }
+    fragment = leading ? fragment.next : fragment.previous;
+    buffer[edge] = fragment;
+    if (fragment) fragment[leading ? "previous" : "next"] = undefined;
+    else buffer[opposite] = undefined;
+  }
+}
+
+function spliceText(parent: TextBuffer, child: TextBuffer): void {
+  if (!child.first) return;
+  if (parent.last) { parent.last.next = child.first; child.first.previous = parent.last; }
+  else parent.first = child.first;
+  parent.last = child.last;
+}
+
 let ready: Promise<void> | undefined;
 
 /** Local inline visibility, not computed layout. See plan36 for supported CSS and renderer limits. */
@@ -125,32 +168,45 @@ export async function htmlToText(html: string): Promise<string> {
   ready ??= new Promise<void>((resolve) => setTimeout(resolve, 0));
   await ready;
   const document = parse(html, { scriptingEnabled: false });
-  const output: string[] = [];
-  const stack: { children: Html.ChildNode[]; index: number; invisible: boolean; suppressed: boolean; block: boolean; capture: boolean; occupied: boolean; atomic: boolean; gapless: boolean }[] = [{ children: document.childNodes, index: 0, invisible: false, suppressed: false, block: false, capture: false, occupied: false, atomic: false, gapless: false }];
+  const output: TextBuffer = {};
+  const stack: { children: Html.ChildNode[]; index: number; invisible: boolean; suppressed: boolean; block: boolean; capture: boolean; occupied: boolean; visible: boolean; atomic: boolean; zeroWidth: boolean; buffer: TextBuffer }[] = [{ children: document.childNodes, index: 0, invisible: false, suppressed: false, block: false, capture: false, occupied: false, visible: false, atomic: false, zeroWidth: false, buffer: output }];
   while (stack.length) {
     const frame = stack[stack.length - 1]!;
     const node = frame.children[frame.index++];
     if (!node) {
-      if (frame.block) output.push(" ");
+      if (frame.block && !frame.capture) appendText(frame.buffer, " ", "break");
       stack.pop();
       const parent = stack[stack.length - 1];
-      if (frame.capture && frame.occupied) {
-        if (parent?.capture) parent.occupied = true;
-        else output.push(" ");
+      if (parent) {
+        const occupied = frame.occupied && !(frame.atomic && frame.zeroWidth);
+        if (frame.atomic && !frame.capture) {
+          if (frame.visible) {
+            trimAtomicEdge(frame.buffer, true, frame.zeroWidth);
+            trimAtomicEdge(frame.buffer, false, frame.zeroWidth);
+            spliceText(parent.buffer, frame.buffer);
+          } else if (occupied && !parent.capture) appendText(parent.buffer, " ", "gap");
+        } else if (frame.atomic && occupied && !parent.capture) appendText(parent.buffer, " ", "gap");
+        parent.occupied ||= occupied;
+        parent.visible ||= frame.visible;
       }
       continue;
     }
     if (node.nodeName === "#text") {
       const value = (node as Html.TextNode).value;
-      if (frame.capture) frame.occupied ||= /[^\t\n\f\r ]/.test(value);
-      else if (!frame.invisible && !frame.suppressed) output.push(value);
-      else if (!frame.gapless && (frame.atomic ? /[^\t\n\f\r ]/.test(value) : value.length > 0)) output.push(" ");
+      const occupied = /[^\t\n\f\r ]/.test(value);
+      frame.occupied ||= occupied;
+      if (!frame.capture) {
+        if (!frame.invisible && !frame.suppressed) {
+          appendText(frame.buffer, value, "text");
+          frame.visible ||= occupied;
+        } else appendText(frame.buffer, " ", occupied ? "gap" : "space");
+      }
       continue;
     }
     if (!("tagName" in node)) continue;
     if (node.namespaceURI !== "http://www.w3.org/1999/xhtml" || DROP_CONTENT.has(node.tagName)) continue;
     if (!RETAINED.has(node.tagName)) {
-      if (node.childNodes.length) stack.push({ ...frame, children: node.childNodes, index: 0, block: false, occupied: false });
+      if (node.childNodes.length) stack.push({ ...frame, children: node.childNodes, index: 0, block: false, occupied: false, visible: false, atomic: false, zeroWidth: false });
       continue;
     }
     const attrs = relevantAttributes(node.attrs);
@@ -170,23 +226,20 @@ export async function htmlToText(html: string): Promise<string> {
     const width = style.get("width")?.value;
     const zeroWidth = display === "inline-block" && (node.tagName === "span" || node.tagName === "div") && width === "0" && !inline.uncertainBox;
     const boxOccupied = display !== "contents" && (inline.uncertainBox || (display !== "inline" && (width === "positive" || width === "unknown" || (atomic && width === "0" && !zeroWidth))));
-    const capture = frame.capture || (suppressed && (atomic || frame.atomic));
-    if (capture) {
-      if (zeroWidth || frame.gapless) continue;
-      if (boxOccupied) {
-        if (frame.capture) frame.occupied = true;
-        else output.push(" ");
-        continue;
-      }
-      // Summarize natural atomic occupancy once; contained block/BR separators never escape.
-      if (node.childNodes.length) stack.push({ children: node.childNodes, index: 0, invisible, suppressed, block: false, capture: true, occupied: false, atomic: true, gapless: false });
+    const capture = frame.capture || (suppressed && atomic);
+    if (capture && zeroWidth) continue;
+    if (capture && boxOccupied) {
+      frame.occupied = true;
+      if (!frame.capture) appendText(frame.buffer, " ", "gap");
       continue;
     }
+    const buffer: TextBuffer = atomic && !capture ? {} : frame.buffer;
     const block = node.tagName === "br" || !INLINE_DISPLAYS.has(display);
-    if (block) output.push(" ");
-    if (suppressed && block) continue;
-    if (invisible && atomic && boxOccupied) output.push(" ");
-    if (node.childNodes.length) stack.push({ children: node.childNodes, index: 0, invisible, suppressed, block, capture: false, occupied: false, atomic: frame.atomic || atomic, gapless: frame.gapless || zeroWidth });
+    if (block && !capture) appendText(buffer, " ", "break");
+    // Only a local atomic owns its text buffer; ancestry never suppresses internal separators.
+    stack.push({ children: node.childNodes, index: 0, invisible, suppressed, block, capture, occupied: boxOccupied, visible: false, atomic, zeroWidth, buffer });
   }
-  return output.join("").replace(/[\t\n\f\r \u00a0]+/g, " ").trim();
+  const text: string[] = [];
+  for (let fragment = output.first; fragment; fragment = fragment.next) text.push(fragment.value);
+  return text.join("").replace(/[\t\n\f\r \u00a0]+/g, " ").trim();
 }
