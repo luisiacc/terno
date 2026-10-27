@@ -1,4 +1,4 @@
-import type { MailNotice } from "@terno/core";
+import { redact, type MailNotice } from "@terno/core";
 import { describe, expect, it } from "vitest";
 import { DesktopAttention, MAX_LIVE, OpenRelay, parseBadge, parseNotice, type NotificationLike } from "./attention";
 
@@ -57,7 +57,7 @@ describe("validation of what the backend reports", () => {
     expect(parseNotice(notice())).toEqual(notice());
     expect(parseNotice(notice({ threadId: null }))).toMatchObject({ threadId: null });
     expect(parseNotice({ ...notice(), subject: "x".repeat(5000) })!.subject).toHaveLength(300);
-    for (const bad of [null, "x", { ...notice(), count: 0 }, { ...notice(), threadId: -1 }, { ...notice(), threadId: "42" }, { ...notice(), senders: ["a", "b", "c", "d"] }, { ...notice(), senders: [] }, { ...notice(), senders: [3] }, { ...notice(), subject: 3 }, { ...notice(), id: "" }, { ...notice(), senderCount: 0 }])
+    for (const bad of [null, "x", { ...notice(), count: 0 }, { ...notice(), threadId: -1 }, { ...notice(), threadId: "42" }, { ...notice(), senders: ["a", "b", "c", "d"] }, { ...notice(), senders: [3] }, { ...notice(), subject: 3 }, { ...notice(), id: "" }, { ...notice(), senderCount: 0 }])
       expect(parseNotice(bad)).toBeNull();
   });
 });
@@ -85,6 +85,17 @@ describe("DesktopAttention", () => {
     n!.emit("click");
     expect(t.opened).toEqual([42]);
     expect(t.a.liveCount).toBe(0);
+  });
+
+  it("Codex review #2: a redacted notice (preview off) still shows, saying only how many", () => {
+    const t = setup();
+    t.a.notify(redact(notice()));
+    expect(FakeNotification.made).toHaveLength(1);
+    expect(FakeNotification.made[0]!.options).toEqual({ title: "New mail", body: "", silent: false });
+    t.a.notify(redact(notice({ count: 4, threadId: null, senders: ["Ana", "Bob"], senderCount: 2 })));
+    expect(FakeNotification.made[1]!.options).toEqual({ title: "4 new messages", body: "", silent: false });
+    FakeNotification.made[0]!.emit("click");
+    expect(t.opened).toEqual([42]);
   });
 
   it("several senders: no subtitle, and a click opens the Inbox", () => {

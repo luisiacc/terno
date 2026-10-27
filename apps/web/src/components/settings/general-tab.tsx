@@ -6,7 +6,7 @@ import { Switch } from "@terno/ui/components/switch";
 import { Columns2, Keyboard, Rows3 } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { updateAppearance } from "~/lib/appearance";
-import { Suspense, useRef, useState } from "react";
+import { Suspense, useEffect, useReducer, useRef, useState } from "react";
 import { isLanguageSetting, LOCALE_IDS, LOCALES, resolveLocale, t, type LanguageSetting } from "@terno/i18n";
 import { setApp } from "~/state/app";
 import { commitLanguage } from "~/lib/i18n";
@@ -120,17 +120,31 @@ const density = () =>
 function NotificationsGroup({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
   const desktop = !!window.ternoDesktop;
   const page = !desktop && pageNotificationsSupported();
-  const [permission, setPermission] = useState(() => (page ? Notification.permission : "granted"));
+  // the browser's permission, read live: it can change in the site's settings while this is open (Codex code review #10)
+  const [, repaint] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    if (!page) return;
+    let status: PermissionStatus | null = null;
+    void navigator.permissions
+      ?.query({ name: "notifications" as PermissionName })
+      .then((s) => {
+        status = s;
+        s.addEventListener("change", repaint);
+      })
+      .catch(() => {});
+    return () => status?.removeEventListener("change", repaint);
+  }, [page]);
   const badge = desktop || badgeSupported();
   if (!desktop && !page && !badge) return null;
-  const on = settings.notifications && (desktop || permission === "granted");
+  const on = settings.notifications && (desktop || (page && Notification.permission === "granted"));
   const toggle = async (next: boolean) => {
     if (next && page && Notification.permission !== "granted") {
       const answer = await Notification.requestPermission().catch(() => "denied" as const);
-      setPermission(answer);
+      repaint();
       if (answer !== "granted") return void snack.error(t("settings.general.notify.denied"));
     }
     await update({ notifications: next });
+    repaint();
   };
   return (
     <SettingsGroup title={t("settings.general.notifications")} testId="notifications-group">

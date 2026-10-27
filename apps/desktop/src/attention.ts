@@ -30,7 +30,8 @@ export function parseNotice(v: unknown): MailNotice | null {
   if (!Number.isSafeInteger(n.count) || (n.count as number) < 1) return null;
   if (!Number.isSafeInteger(n.senderCount) || (n.senderCount as number) < 1) return null;
   if (n.threadId !== null && !isId(n.threadId)) return null;
-  if (!Array.isArray(n.senders) || n.senders.length === 0 || n.senders.length > NOTICE_SENDERS) return null;
+  // none: "Show sender and subject" is off (the backend redacted it)
+  if (!Array.isArray(n.senders) || n.senders.length > NOTICE_SENDERS) return null;
   const senders = n.senders.map((s) => text(s));
   if (senders.some((s) => s === null)) return null;
   return { id, count: n.count as number, threadId: n.threadId as number | null, senders: senders as string[], senderCount: n.senderCount as number, subject, snippet };

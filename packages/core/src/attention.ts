@@ -42,6 +42,8 @@ export interface ArrivalRow {
   written: boolean;
   /** its conversation has mail of yours in it (a reply to you, or in a thread you joined) */
   yourConversation: boolean;
+  /** its body is still to come (a filter that reads bodies hasn't seen it yet) */
+  bodyPending: boolean;
 }
 
 /** Still news when looked at: recent, someone else's, unread, in the Inbox (not spam, trash or a filter's archive). */

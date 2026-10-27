@@ -231,6 +231,19 @@ describe("app.import", () => {
     expect((await to.client.call("app.bootstrap", {})).settings.remoteImages).toBe("ask");
   });
 
+  it("plan 38 (Codex code review #1): a file carries notifications and their preview off, never on; the badge's switch both ways", async () => {
+    const from = setup();
+    await from.client.call("settings.update", { notifications: false, notificationPreview: false, dockBadge: false });
+    const off = await from.client.call("app.export", {});
+    const to = setup();
+    await to.client.call("app.import", { data: off });
+    expect((await to.client.call("app.bootstrap", {})).settings).toMatchObject({ notifications: false, notificationPreview: false, dockBadge: false });
+    // a file that says on never turns them back on; the badge follows the file
+    await from.client.call("settings.update", { notifications: true, notificationPreview: true, dockBadge: true });
+    await to.client.call("app.import", { data: await from.client.call("app.export", {}) });
+    expect((await to.client.call("app.bootstrap", {})).settings).toMatchObject({ notifications: false, notificationPreview: false, dockBadge: true });
+  });
+
   it("carries the language; an old export without one, or with one Terno doesn't ship, leaves it alone", async () => {
     const from = setup();
     await from.client.call("settings.update", { language: "es" });

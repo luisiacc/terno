@@ -25,13 +25,15 @@ const GENERAL_KEYS = [
   "autoCategorize",
   "aiCategorize",
   "language",
+  // plan 38: the badge's switch (notifications and their preview only ever go off: settingsFrom)
+  "dockBadge",
 ] as const;
 
 // the same limit drafts are saved with (plan 34, Codex review 6): an export always imports back
 const addresses = draftAddressSchema.array().max(MAX_RECIPIENTS);
 
 /** The settings an export carries, as a patch: each field only if valid on its own; secrets never travel. */
-function settingsFrom(raw: Record<string, unknown>, current: { localMode: boolean; allowAgentSend: boolean; errorReports: string; senderIcons: boolean; remoteImages: string }): { general: SettingsPatch; ai: SettingsPatch["ai"] } {
+function settingsFrom(raw: Record<string, unknown>, current: { localMode: boolean; allowAgentSend: boolean; errorReports: string; senderIcons: boolean; remoteImages: string; notifications: boolean; notificationPreview: boolean }): { general: SettingsPatch; ai: SettingsPatch["ai"] } {
   const general: Record<string, unknown> = {};
   for (const key of GENERAL_KEYS) {
     if (raw[key] === undefined) continue;
@@ -53,6 +55,9 @@ function settingsFrom(raw: Record<string, unknown>, current: { localMode: boolea
   if (raw.senderIcons === false && current.senderIcons) general.senderIcons = false;
   // plan 37: remote images load in either mode now, so "always" only comes from this install's own switch
   if (raw.remoteImages === "ask" && current.remoteImages === "always") general.remoteImages = "ask";
+  // plan 38 (Codex code review #1): notifications and what they show can go off, never on (the web's storage switch keeps them off)
+  if (raw.notifications === false && current.notifications) general.notifications = false;
+  if (raw.notificationPreview === false && current.notificationPreview) general.notificationPreview = false;
   const ai = raw.ai as { provider?: unknown; model?: unknown; baseURL?: unknown; preset?: unknown } | undefined;
   const parsed = ai ? settingsPatchSchema.safeParse({ ai: { provider: ai.provider, model: ai.model, baseURL: ai.baseURL ?? null, preset: ai.preset ?? null } }) : null;
   return { general: general as SettingsPatch, ai: parsed?.success ? parsed.data.ai : undefined };
@@ -385,6 +390,7 @@ export async function importMailbox(b: Backend, file: ExportFile): Promise<Impor
     }
     const after = await readSettings(store);
     if (after.localMode !== before.localMode || after.errorReports !== before.errorReports || after.language !== before.language) await b.publishPolicy();
+    if (after.dockBadge !== before.dockBadge || after.notifications !== before.notifications || after.notificationPreview !== before.notificationPreview) await b.attention.refresh();
   }
   return {
     categories: { added, merged: data.categories.length - added },

@@ -25,6 +25,7 @@ function row(o: Partial<ArrivalRow> = {}): ArrivalRow {
     own: false,
     written: false,
     yourConversation: false,
+    bodyPending: false,
     ...o,
   };
 }

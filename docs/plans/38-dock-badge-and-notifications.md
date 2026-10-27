@@ -277,3 +277,42 @@ The read-only critique (`/tmp/unica-scratch/notify/plan-review.txt`) made 12 poi
     - When it's off, the *backend* redacts the notice before it leaves: `senders: []`, `subject: ""`, `snippet: ""`. The text is then only "New mail" / "3 new messages".
     - A test checks the payload carries no sender, subject or snippet.
     - On macOS the system's own "Show previews" still applies on top.
+
+
+## 9. What the Codex code review changed
+
+The review (`/tmp/unica-scratch/notify/code-review.txt`, on `d47555a..0cd1507`) made 10 findings. Every one was fixed with a regression test that fails without the fix: the renderer ones were checked by running them against the pre-fix files.
+
+1. **Import lost the notification preferences** (the web's storage switch goes through export/import), which could turn previews back on.
+   - **Fix:** a file carries `notifications` and `notificationPreview` *off, never on*, like local mode. `dockBadge` travels both ways.
+   - `Attention` refreshes after an import.
+   - Test: `settings-edits.test.ts`.
+2. **Main rejected redacted notices** (`senders: []`), so turning the preview off silenced desktop notifications.
+   - **Fix:** `parseNotice` accepts zero senders.
+   - Test: `attention.test.ts` (desktop), redacted through `notify()`.
+3. **A pass's end doesn't mean body filters ran:** IMAP fetches at most 500 bodies per pass.
+   - **Fix:** `ArrivalRow.bodyPending` (the body is still to come, the same rule as IMAP's capture). While any enabled filter reads bodies, such mail waits for the account's next pass, up to `BODY_WAITS` (3) passes, then it is let go quietly.
+   - Without such a filter it is said at once.
+   - Tests: backend unit tests and store conformance.
+4. **Removing an account didn't cancel its work.**
+   - **Fix:** an epoch per account, bumped by `forget()`.
+   - A pass that began before it, mail already queued and a screen in flight all drop it. The delivery re-checks the epoch.
+   - Tests: three cases.
+5. **Later newsletters could evict queued important mail**, because the global pending set was trimmed before the rule ran.
+   - **Fix:** each finished pass is *screened* (read in chunks of 200, filtered) into a bounded queue of important mail only (200, newest by date). The queue is read once more when the notice is due.
+   - Test: an important message, then a 2,000-newsletter pass in the gap.
+6. **The smoke's plain-IMAP seam applied to every account.**
+   - **Fix:** `imap-seam.ts` uses the insecure registry only for an account whose IMAP *and* SMTP hosts are loopback. Any other account keeps TLS and certificate checks.
+   - Test: `imap-seam.test.ts`.
+7. **Split, a selection in the Inbox:** the click left the selection bar in the reader.
+   - **Fix:** `openFromNotice` ends the selection (checked and scope).
+   - Test: `notify.test.ts` (web).
+8. **List, a page covering the Inbox:** a summary's click (no thread) left it covered.
+   - **Fix:** `closePage()` (a draft is kept the way Esc keeps it).
+   - Tests: a thread page and a new-message page.
+9. **A browser whose page constructor throws** (mobile) kept the switch on and the backend working.
+   - **Fix:** the first refusal marks page notifications unsupported, saves `notifications: false` and hides the row.
+   - Test: e2e with a throwing stub.
+10. **The switch cached the permission:** a grant in the site's settings while Settings was open left it stuck.
+    - **Fix:** the permission is read live on every render, repainted on the Permissions API's `change` event and after each toggle.
+    - Test: e2e.

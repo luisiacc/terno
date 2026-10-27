@@ -19,7 +19,7 @@ const SHOTS = "/tmp/unica-scratch/notify";
 test.use({ backendOptions: { network: true } });
 
 /** Before the page's scripts: the stubs, steered from the test through window.__notify. */
-async function stubBrowser(page: Page, o: { permission?: NotificationPermission; answer?: NotificationPermission; badge?: boolean } = {}) {
+async function stubBrowser(page: Page, o: { permission?: NotificationPermission; answer?: NotificationPermission; badge?: boolean; refuse?: boolean } = {}) {
   await page.addInitScript((o) => {
     const w = window as unknown as { __notify: { permission: string; answer: string; hidden: boolean; shown: { title: string; body: string; tag: string; click(): void }[]; asked: number; badges: number[] } };
     w.__notify = { permission: o.permission ?? "granted", answer: o.answer ?? "granted", hidden: false, shown: [], asked: 0, badges: [] };
@@ -35,6 +35,8 @@ async function stubBrowser(page: Page, o: { permission?: NotificationPermission;
       onclick: (() => void) | null = null;
       onclose: (() => void) | null = null;
       constructor(readonly title: string, readonly options: { body?: string; tag?: string } = {}) {
+        // a mobile browser: only a service worker may show one
+        if (o.refuse) throw new TypeError("Illegal constructor. Use ServiceWorkerRegistration.showNotification() instead.");
         w.__notify.shown.push({ title, body: options.body ?? "", tag: options.tag ?? "", click: () => this.onclick?.() });
       }
       close() {
@@ -157,6 +159,35 @@ test.describe("notifications and the unread count (plan 38)", () => {
     await server.backend.syncAccount(accountId);
     await page.waitForTimeout(17_000);
     expect((await state(page)).shown).toHaveLength(1);
+  });
+
+  test("Codex code review #9: a browser that refuses to build one from the page: the setting goes off and the row hides", async ({ page, server, design }) => {
+    await load(page, server, design, { refuse: true });
+    const accountId = (await server.backend.store.accounts.list())[0]!.id;
+    await server.backend.syncAccount(accountId);
+    await page.evaluate(() => ((window as unknown as { __notify: { hidden: boolean } }).__notify.hidden = true));
+    server.net.incoming.push(important(accountId, "Refused"));
+    await server.backend.syncAccount(accountId);
+    await expect.poll(async () => (await saved(server)).notifications, { timeout: 10_000 }).toBe(false);
+    await page.evaluate(() => ((window as unknown as { __notify: { hidden: boolean } }).__notify.hidden = false));
+    await openNotifications(page);
+    await expect(page.getByTestId("notify-row")).toHaveCount(0);
+    await expect(page.getByTestId("badge-row")).toBeVisible();
+  });
+
+  test("Codex code review #10: permission granted in the site's settings while Settings is open: the switch turns on and off again", async ({ page, server, design }) => {
+    await load(page, server, design, { permission: "default" });
+    await expect.poll(async () => (await saved(server)).notifications).toBe(false);
+    await openNotifications(page);
+    await expect(page.getByTestId("notify-switch")).toHaveAttribute("aria-checked", "false");
+    await page.evaluate(() => ((window as unknown as { __notify: { permission: string } }).__notify.permission = "granted"));
+    await page.getByTestId("notify-switch").click();
+    await expect(page.getByTestId("notify-switch")).toHaveAttribute("aria-checked", "true");
+    expect((await state(page)).asked).toBe(0);
+    await expect.poll(async () => (await saved(server)).notifications).toBe(true);
+    await page.getByTestId("notify-switch").click();
+    await expect(page.getByTestId("notify-switch")).toHaveAttribute("aria-checked", "false");
+    await expect.poll(async () => (await saved(server)).notifications).toBe(false);
   });
 
   test("the app icon's count follows the Inbox's unread number; turned off, it clears", async ({ page, server, design }) => {

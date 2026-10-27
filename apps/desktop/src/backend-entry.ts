@@ -7,6 +7,7 @@ import { Backend, seedDemo, startAgentSocket, type LegacySecretReader, type Secr
 import { captureError, installDiag, log, type DiagEntry, type DiagOptions } from "@terno/core/diag";
 import { isRpcMessage, type RpcMessage, type Transport } from "@terno/core/rpc";
 import { createRegistry } from "@terno/mail/registry";
+import { loopbackInsecure } from "./imap-seam";
 import type { BackendToMain, MainToBackend } from "./ipc";
 
 type PortMain = {
@@ -140,14 +141,16 @@ parentPort.on("message", async (event) => {
   if (msg.type === "init") {
     installDiag(diagOptions({ version: msg.version, build: msg.diag.build, channel: msg.diag.channel, session: msg.diag.session }));
     try {
+      const registry = createRegistry(msg.demo && msg.testSmtpPort ? { demoSmtpPort: msg.testSmtpPort } : {});
       backend = new Backend({
         dbPath: msg.dbPath,
         version: msg.version,
         cipher,
         legacySecrets,
         // the demo mailbox's sends go to the packaged smoke's SMTP server when it asks (main checked it may)
-        // and plan 38's notification smoke adds an IMAP account on its own plain-text server (the demo mailbox only)
-        providers: createRegistry({ ...(msg.demo && msg.testSmtpPort && { demoSmtpPort: msg.testSmtpPort }), ...(msg.demo && msg.testImapInsecure && { imap: { allowInsecure: true } }) }),
+        // and plan 38's notification smoke adds an IMAP account on its own plain-text servers (the demo mailbox only,
+        // and only for an account whose servers are loopback: imap-seam.ts)
+        providers: msg.demo && msg.testImapInsecure ? loopbackInsecure(registry, createRegistry({ imap: { allowInsecure: true } })) : registry,
         openExternal: async (url) => send({ type: "open-external", url }),
         demoAi: msg.demo || msg.dev,
         demo: msg.demo,

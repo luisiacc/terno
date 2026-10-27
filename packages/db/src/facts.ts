@@ -384,9 +384,9 @@ export function resetFacts(db: Db): void {
  */
 export function arrivalRows(db: Db, ids: readonly number[]): ArrivalRow[] {
   if (ids.length === 0) return [];
-  const rows = db.all<{ id: number; thread_id: number; account_id: number; date: number; from_name: string; from_email: string; subject: string; snippet: string; is_read: number; is_sent: number; is_draft: number; in_inbox: number; thread_inbox: number; thread_sent: number; is_trash: number; is_spam: number; list_id: string | null; is_bulk: number; gmail_labels: string | null }>(
+  const rows = db.all<{ id: number; thread_id: number; account_id: number; date: number; from_name: string; from_email: string; subject: string; snippet: string; is_read: number; is_sent: number; is_draft: number; in_inbox: number; thread_inbox: number; thread_sent: number; body_state: string; attachments_captured: number; is_trash: number; is_spam: number; list_id: string | null; is_bulk: number; gmail_labels: string | null }>(
     `SELECT m.id, m.thread_id, m.account_id, m.date, m.from_name, m.from_email, m.subject, m.snippet, m.is_read, m.is_sent, m.is_draft, m.in_inbox,
-       t.in_inbox AS thread_inbox, t.has_sent AS thread_sent, m.is_trash, m.is_spam, m.list_id, m.is_bulk, m.gmail_labels
+       t.in_inbox AS thread_inbox, t.has_sent AS thread_sent, m.body_state, m.attachments_captured, m.is_trash, m.is_spam, m.list_id, m.is_bulk, m.gmail_labels
      FROM messages m JOIN threads t ON t.id = m.thread_id WHERE m.id IN (SELECT value FROM json_each(?))`,
     JSON.stringify(ids),
   );
@@ -421,6 +421,8 @@ export function arrivalRows(db: Db, ids: readonly number[]): ArrivalRow[] {
       own: own.has(key),
       written: writtenTo(key),
       yourConversation: r.thread_sent === 1,
+      // what IMAP's body capture still wants (a body too big to capture never comes: not pending)
+      bodyPending: r.body_state !== "full" && r.attachments_captured !== 2,
     };
   });
 }

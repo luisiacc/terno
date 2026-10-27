@@ -8,7 +8,7 @@
 import { noticeText, type MailNotice } from "@terno/core";
 import { client } from "~/rpc/connection";
 import { reconcileSettings } from "~/lib/appearance";
-import { openThread } from "~/lib/page";
+import { closePage, listCovered, openThread } from "~/lib/page";
 import { getApp, navigate, setApp, useApp } from "~/state/app";
 import { reloadList } from "~/state/list";
 
@@ -19,8 +19,11 @@ const desktop = () => typeof window !== "undefined" && !!window.ternoDesktop;
 /** The browser can put a number on the installed app's icon. */
 export const badgeSupported = (): boolean => !desktop() && typeof (navigator as BadgeNavigator).setAppBadge === "function";
 
-/** The browser can show a notification from this page (the constructor exists; mobile browsers throw from it, see show()). */
-export const pageNotificationsSupported = (): boolean => !desktop() && typeof Notification === "function";
+/** set when the browser refused to build one (mobile browsers only show them through a service worker) */
+let constructorRefused = false;
+
+/** The browser can show a notification from this page (the constructor exists and didn't refuse; see show()). */
+export const pageNotificationsSupported = (): boolean => !desktop() && typeof Notification === "function" && !constructorRefused;
 
 /**
  * A notification's click: the unified Inbox with that conversation open (or
@@ -31,7 +34,13 @@ export function openFromNotice(threadId: number | null): void {
   const s = getApp();
   if (s.dialog) setApp({ dialog: null });
   if (s.view !== "inbox" || s.accountId !== null || s.categoryId !== null || s.reviewCategoryId !== null || s.query !== "") navigate({ view: "inbox", accountId: null, categoryId: null, reviewCategoryId: null });
-  if (threadId === null) return;
+  // a selection (Split shows its bar in the reader) ends: the conversation is what was asked for (Codex code review #7)
+  else if (s.checked.size || s.scope) setApp({ checked: new Set(), scope: null });
+  if (threadId === null) {
+    // List: the Inbox itself, not the page over it (a draft is kept the way Esc keeps it) (Codex code review #8)
+    if (listCovered()) closePage();
+    return;
+  }
   openThread(threadId);
   // supersedes the navigation's own reload (which would select row 0)
   void reloadList({ keepSelection: true });
@@ -61,7 +70,10 @@ function show(notice: MailNotice): void {
   try {
     n = new Notification(title, { body: [subtitle, body].filter(Boolean).join("\n"), tag: tagOf(notice) });
   } catch {
-    // mobile browsers only show them through a service worker: nothing here
+    // this browser won't build one from a page (mobile: only through a service worker): off, the row hidden, no
+    // more work in the backend (Codex code review #9)
+    constructorRefused = true;
+    void turnOff();
     return;
   }
   live.add(n);
@@ -78,6 +90,10 @@ async function reconcilePermission(): Promise<void> {
   const s = getApp().settings;
   if (desktop() || !s?.notifications) return;
   if (pageNotificationsSupported() && Notification.permission === "granted") return;
+  await turnOff();
+}
+
+async function turnOff(): Promise<void> {
   try {
     setApp({ settings: reconcileSettings(await client.call("settings.update", { notifications: false })) });
   } catch {

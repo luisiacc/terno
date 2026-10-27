@@ -345,6 +345,21 @@ export function defineFactsConformance(fresh: () => Promise<MailStore>, reopen: 
       const [row] = await store.sync.arrivals(r.inserted);
       expect(row).toMatchObject({ inInbox: false });
     });
+
+    it("says whether the body is still to come (a filter that reads bodies hasn't seen it): headers only, yes; a full body or one too big to capture, no", async () => {
+      const store = await fresh();
+      const [a] = await withAccounts(store);
+      const r = await ingest(store, [
+        msg({ accountId: a!, providerMsgId: "headers", from: addr("ana@friends.com"), bodyState: "none", bodyText: null, bodyHtml: null }),
+        msg({ accountId: a!, providerMsgId: "full", from: addr("bob@friends.com"), bodyState: "full", bodyText: "hola" }),
+        msg({ accountId: a!, providerMsgId: "big", from: addr("carla@friends.com"), bodyState: "none", bodyText: null, bodyHtml: null, captureUnavailable: "size" }),
+      ]);
+      const rows = await store.sync.arrivals(r.inserted);
+      const of = (email: string) => rows.find((x) => x.fromEmail === email)!;
+      expect(of("ana@friends.com").bodyPending).toBe(true);
+      expect(of("bob@friends.com").bodyPending).toBe(false);
+      expect(of("carla@friends.com").bodyPending).toBe(false);
+    });
   });
   });
 }

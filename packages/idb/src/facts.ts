@@ -542,6 +542,7 @@ export function arrivalRows(db: MemDb, ids: readonly number[]): ArrivalRow[] {
       own: own.has(key),
       written: correspondents.get(key)?.written === 1,
       yourConversation: thread.has_sent === 1,
+      bodyPending: m.body_state !== "full" && m.attachments_captured !== 2,
     });
   }
   return out;
