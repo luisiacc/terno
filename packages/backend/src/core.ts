@@ -676,6 +676,11 @@ export class BackendCore {
     if (opIds.length) this.kickWorker();
   }
 
+  reconcileFlags(accountIds: readonly number[] | undefined): void {
+    if (!accountIds?.length || this.stopped || this.options.autoSync === false) return;
+    for (const id of new Set(accountIds)) if (this.connectivity.canSync(id)) void this.syncAccount(id);
+  }
+
   static learningSignal(action: ThreadAction) {
     return DESTRUCTIVE_OR_SIGNAL[action];
   }
@@ -705,6 +710,7 @@ export class BackendCore {
       void this.aiAssist.enqueue(r.uncertain);
       this.announceAuto(r.auto);
       this.opsQueued(r.opIds);
+      this.reconcileFlags(r.flagReconcileAccounts);
       this.notifyChanged(r.touched);
     });
     return { inserted };
@@ -1120,6 +1126,7 @@ export class BackendCore {
           this.categorizer.apply(r.deltas);
           this.announceAuto(r.auto);
           this.opsQueued(r.opIds);
+          this.reconcileFlags(r.flagReconcileAccounts);
           this.notifyChanged(r.touched, false);
         },
         removeMessages: async (ids) => {
@@ -1381,7 +1388,7 @@ export class BackendCore {
                         else await this.store.ops.fail(op.id, String(error), true, this.now());
                       }
                       const after = await this.store.ops.get(op.id);
-                      if (after) this.server.emit("op", this.opInfo(after));
+                      if (after) this.announceOp(after);
                     }
                   } catch (recoveryError) {
                     // A running send stays noneligible until storage recovers or startup marks it unknown.
@@ -1445,7 +1452,7 @@ export class BackendCore {
       await this.store.ops.awaitAuth(op.id, encodeText(L("errors.waitingForSignIn")), this.now());
       await this.parkedAcrossSignIn(op.account_id, credentials);
       const after = await this.store.ops.get(op.id);
-      if (after) this.server.emit("op", this.opInfo(after));
+      if (after) this.announceOp(after);
       return;
     }
     // A send owns its drain slot while its immutable attachments are prepared.
@@ -1530,7 +1537,7 @@ export class BackendCore {
     }
     if (this.stopped && !this.store.isOpen) return;
     const after = await this.store.ops.get(op.id);
-    if (after) this.server.emit("op", this.opInfo(after)); // a superseded op is simply gone
+    if (after) this.announceOp(after); // a superseded op is simply gone
   }
 
   /**
@@ -1560,6 +1567,11 @@ export class BackendCore {
     if (credentials === this.credentialsOf(accountId)) return false;
     await this.resumeAuth(accountId);
     return true;
+  }
+
+  private announceOp(op: OpRow): void {
+    this.server.emit("op", this.opInfo(op));
+    if (operationFlagFields(op.kind).length && ["succeeded", "failed", "unknown"].includes(op.state)) this.reconcileFlags([op.account_id]);
   }
 
   opInfo(op: OpRow): OpInfo {

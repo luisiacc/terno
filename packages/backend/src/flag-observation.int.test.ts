@@ -103,6 +103,34 @@ describe.each(["SQL", "IDB", "IDB instant"] as const)("%s settled flag observati
     expect(t.mutations).toEqual([]);
   });
 
+  it("committed inverse cancellation wakes reconciliation even with no new operation", async () => {
+    const t = await setup(kind, true);
+    vi.spyOn(t.backend, "kickWorker").mockImplementation(() => {});
+    await t.backend.store.threads.act({ threadIds: [t.threadId], action: "markRead", signal: null, now: 1 });
+    await t.backend.store.ops.claimReady(2, 20);
+    await t.backend.store.threads.act({ threadIds: [t.threadId], action: "markUnread", signal: null, now: 3 });
+    const sync = vi.spyOn(t.backend, "syncAccount").mockResolvedValue();
+    await t.client.call("threads.act", { threadIds: [t.threadId], action: "markRead" });
+    expect((await t.backend.store.debug.snapshot()).ops.filter((op) => op.state === "queued")).toEqual([]);
+    expect(sync).toHaveBeenCalledWith(t.account.id);
+  });
+
+  it("committed uncertain discard and successful flag delivery each wake reconciliation", async () => {
+    const t = await setup(kind, true);
+    vi.spyOn(t.backend, "kickWorker").mockImplementation(() => {});
+    await t.backend.store.threads.act({ threadIds: [t.threadId], action: "markRead", signal: null, now: 1 });
+    const [uncertain] = await t.backend.store.ops.claimReady(2, 20);
+    await t.backend.store.ops.markUnknown(uncertain!.id, "Synthetic uncertain outcome", 3);
+    const sync = vi.spyOn(t.backend, "syncAccount").mockResolvedValue();
+    await t.client.call("ops.resolveUnknown", { opId: uncertain!.id, resolution: "discard" });
+    expect(sync).toHaveBeenCalledWith(t.account.id);
+    sync.mockClear();
+    await t.backend.store.threads.act({ threadIds: [t.threadId], action: "star", signal: null, now: 4 });
+    expect(await t.backend.runWorker()).toBe(1);
+    expect(t.mutations).toHaveLength(1);
+    expect(sync).toHaveBeenCalledWith(t.account.id);
+  });
+
   it("fails closed locally when a persisted protocol meets an incapable replacement", async () => {
     const t = await setup(kind);
     const token = await t.backend.store.sync.beginObservation(t.account.id, { authoritativeFlags: true });
@@ -154,4 +182,23 @@ describe.each(["SQL", "IDB", "IDB instant"] as const)("%s settled flag observati
     await t.backend.syncAccount(t.account.id);
     expect((await t.backend.store.debug.snapshot()).messages[0]).toMatchObject(expected);
   });
+});
+
+
+it.each(["sign-in", "backoff"] as const)("committed reconciliation respects %s admission until a new allowed action", async (blocked) => {
+  const t = await setup("SQL", true);
+  vi.spyOn(t.backend, "kickWorker").mockImplementation(() => {});
+  await t.backend.store.threads.act({ threadIds: [t.threadId], action: "markRead", signal: null, now: 1 });
+  const [op] = await t.backend.store.ops.claimReady(2, 20);
+  await t.backend.store.ops.markUnknown(op!.id, "Synthetic uncertainty", 3);
+  const sync = vi.spyOn(t.backend, "syncAccount").mockResolvedValue();
+  if (blocked === "sign-in") t.backend.connectivity.waitForSignIn(t.account.id, true);
+  else t.backend.connectivity.failed(t.account.id, t.backend.connectivity.epoch);
+  await t.client.call("ops.resolveUnknown", { opId: op!.id, resolution: "discard" });
+  expect(sync).not.toHaveBeenCalled();
+  expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toHaveLength(1);
+  if (blocked === "sign-in") t.backend.connectivity.waitForSignIn(t.account.id, false);
+  else t.backend.connectivity.succeeded(t.account.id);
+  await t.client.call("threads.act", { threadIds: [t.threadId], action: "star" });
+  expect(sync).toHaveBeenCalledWith(t.account.id);
 });

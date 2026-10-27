@@ -136,6 +136,12 @@ export class Connectivity {
     return Boolean(this.accounts.get(accountId)?.timer);
   }
 
+  /** Local reconciliation follows the account's existing sign-in and retry admission. */
+  canSync(accountId: number): boolean {
+    const account = this.accounts.get(accountId);
+    return Boolean(this.online && account && !account.signIn && !account.timer);
+  }
+
   retryAt(accountId: number): number | null {
     return this.accounts.get(accountId)?.at ?? null;
   }

@@ -95,6 +95,7 @@ export function createHandlers(b: Backend): Handlers {
       for (const t of r.threadIds) changed.add(t);
       for (const m of r.before) before.push(m);
       b.opsQueued(r.opIds);
+      b.reconcileFlags(r.flagReconcileAccounts);
       b.notifyChanged(r.threadIds);
       progress?.((done += chunk.length));
     };
@@ -207,6 +208,7 @@ export function createHandlers(b: Backend): Handlers {
           const r = await store.threads.restore({ messages: chunk, now: b.now() });
           for (const t of r.threadIds) restored.add(t);
           b.opsQueued(r.opIds);
+          b.reconcileFlags(r.flagReconcileAccounts);
           b.notifyChanged(r.threadIds);
           progress((done += chunk.length));
         },
@@ -370,6 +372,7 @@ export function createHandlers(b: Backend): Handlers {
         for (const t of r.touched) touched.add(t);
         applied += r.applied;
         b.opsQueued(r.opIds);
+        b.reconcileFlags(r.flagReconcileAccounts);
       });
       b.notifyChanged(touched);
       return { matchedMessages: applied, affectedThreads: touched.size };
@@ -664,6 +667,7 @@ export function createHandlers(b: Backend): Handlers {
     "ops.list": async () => (await store.ops.recent(100)).map((op) => b.opInfo(op)),
     "ops.resolveUnknown": async ({ opId, resolution }) => {
       const r = await store.ops.resolveUnknown(opId, resolution, b.now());
+      b.reconcileFlags(r.flagReconcileAccounts);
       if (resolution === "retry") b.kickWorker();
       if (r.touched.length) b.notifyChanged(r.touched);
       return { ok: true as const };
