@@ -6,7 +6,7 @@ import { firstInvalid, SELECT_INVALID } from "./recipient-field";
 import type { DraftMode } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
-import { getApp, markSelectionIntent, setApp, useApp } from "~/state/app";
+import { getApp, getSelectionWriteRevision, markSelectionIntent, setApp, useApp } from "~/state/app";
 import { invalidateThreads, loadThread } from "~/state/threads";
 import { registerUndo, snack } from "./snack";
 import { answered, convertFields, forwardAccountMismatch, newFields, replyFields, mergeAttachmentRefs } from "./compose-fields";
@@ -67,15 +67,19 @@ function releaseFocusLease(lease: FocusLease, fallback: boolean, notify = true) 
 }
 
 function releaseForAcquisition(lease: FocusLease, notify = false): boolean {
-  const owner = intent;
+  const owner = intent, revision = getSelectionWriteRevision();
   const active = typeof document === "undefined" ? null : document.activeElement;
-  let moved = false;
-  const observe = (event: FocusEvent) => { if (event.target !== active && event.target !== document.body) moved = true; };
+  let changed = false;
+  const observe = (event: FocusEvent) => { if (event.target !== active && event.target !== document.body) changed = true; };
+  const unsubscribe = useApp.subscribe((state, previous) => {
+    if (state.selectedId !== previous.selectedId || state.readerOpen !== previous.readerOpen || state.compose !== previous.compose || state.checked !== previous.checked || state.scope !== previous.scope || state.accountId !== previous.accountId || state.dialog !== previous.dialog || state.fatal !== previous.fatal || state.view !== previous.view || state.categoryId !== previous.categoryId || state.query !== previous.query) changed = true;
+  });
   if (typeof document !== "undefined") document.addEventListener?.("focusin", observe, true);
   try { releaseFocusLease(lease, false, notify); }
-  finally { if (typeof document !== "undefined") document.removeEventListener?.("focusin", observe, true); }
-  if (moved && !notify) notifyReleased(lease, owner, false);
-  return moved;
+  finally { unsubscribe(); if (typeof document !== "undefined") document.removeEventListener?.("focusin", observe, true); }
+  changed ||= getSelectionWriteRevision() !== revision;
+  if (changed && !notify) notifyReleased(lease, owner, false);
+  return changed;
 }
 
 /** The current Reader owns focus work only until this exact destination leaves. */
@@ -250,13 +254,13 @@ export async function openStoredDraft(key: string): Promise<void> {
   const mine = ++intent;
   if (focusLease && releaseForAcquisition(focusLease)) { finish(); return; }
   if (mine !== intent) { finish(); return; }
-  let lease: FocusLease | null = null, cancelled = false, navigating = false, missingFromAtStart = false;
+  let lease: FocusLease | null = null, cancelled = false, missingFromAtStart = false;
   let expected = getApp();
   const active = typeof document === "undefined" ? null : document.activeElement;
   const moved = (event: FocusEvent) => { if (event.target !== active && event.target !== document.body) cancelled = true; };
   if (typeof document !== "undefined") document.addEventListener?.("focusin", moved, true);
   const unsubscribe = useApp.subscribe((state) => {
-    if (!navigating && (state.selectedId !== expected.selectedId || state.readerOpen !== expected.readerOpen || state.compose !== expected.compose || state.checked !== expected.checked || state.scope !== expected.scope || state.accountId !== expected.accountId || state.dialog !== expected.dialog || state.fatal !== expected.fatal)) cancelled = true;
+    if (state.selectedId !== expected.selectedId || state.readerOpen !== expected.readerOpen || state.compose !== expected.compose || state.checked !== expected.checked || state.scope !== expected.scope || state.accountId !== expected.accountId || state.dialog !== expected.dialog || state.fatal !== expected.fatal) cancelled = true;
   });
   const locationCurrent = () => { const state = getApp(); return state.selectedId === expected.selectedId && state.readerOpen === expected.readerOpen && state.compose === expected.compose && state.checked === expected.checked && state.scope === expected.scope && state.accountId === expected.accountId && state.dialog === expected.dialog && state.fatal === expected.fatal; };
   const current = (d: LocalDraft) => locationCurrent() && mine === intent && !cancelled && !draftEditsHeld() && !getApp().dialog && !getApp().fatal && destinationAvailable(lease) && (!lease || lease.valid) && (missingFromAtStart || getApp().accounts.some((a) => a.id === d.accountId)) && sameStoredDraft(d);
@@ -281,12 +285,11 @@ export async function openStoredDraft(key: string): Promise<void> {
     snapshot = invalidatedPresentation(snapshot);
     invalidateDraftPresentation(key);
     if (!current(snapshot)) return;
-    navigating = true;
+    const selectionRevision = getSelectionWriteRevision();
     const destination = { selectedId: context.threadId, readerOpen: true, compose: null, checked: new Set<number>(), scope: null };
     expected = { ...getApp(), ...destination };
     setApp(destination);
-    navigating = false;
-    if (!current(snapshot)) return;
+    if (getSelectionWriteRevision() !== selectionRevision + 1 || !current(snapshot)) return;
     lease = beginFocusLease(mine, context.threadId) ?? null;
     if (!lease) return;
     lease.accountId = snapshot.accountId;

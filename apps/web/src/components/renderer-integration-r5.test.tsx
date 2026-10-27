@@ -3,7 +3,7 @@ import { act } from "react";
 import { expect, it } from "vitest";
 import { setup, gate } from "./draft-presentation-r1-harness";
 
-it.each(["departure", "round trip", "ordinary"] as const)("does not adopt navigation during lease release: %s", async (scenario) => {
+it.each(["departure", "round trip", "same id", "dialog", "harmless", "ordinary"] as const)("does not adopt navigation during lease release: %s", async (scenario) => {
   const h = await setup("split", true);
   const { openCompose, openStoredDraft, composeFocusPending } = await import("~/lib/compose");
   const { pressRow } = await import("~/lib/select");
@@ -20,10 +20,12 @@ it.each(["departure", "round trip", "ordinary"] as const)("does not adopt naviga
       const off = h.app.useApp.subscribe((state, previous) => {
         if (!triggered && previous.draftFocus && !state.draftFocus) {
           triggered = true;
-          if (scenario !== "ordinary") {
+          if (scenario === "departure" || scenario === "round trip") {
             pressRow(8, { shift: false, meta: false, ctrl: false });
             if (scenario === "round trip") pressRow(7, { shift: false, meta: false, ctrl: false });
-          }
+          } else if (scenario === "same id") pressRow(7, { shift: false, meta: false, ctrl: false });
+          else if (scenario === "dialog") { h.app.setApp({ dialog: "addAccount" }); h.app.setApp({ dialog: null }); }
+          else if (scenario === "harmless") h.app.setApp({ snackbar: true });
         }
       });
       if (scenario === "round trip") await openCompose("reply", 7);
@@ -33,6 +35,9 @@ it.each(["departure", "round trip", "ordinary"] as const)("does not adopt naviga
     expect(triggered).toBe(true);
     if (scenario === "departure") {
       expect(h.app.getApp().selectedId).toBe(8);
+      expect(h.app.getApp().compose).toBeNull();
+      expect(h.app.getApp().draftFocus).toBeNull();
+    } else if (scenario === "same id" || scenario === "dialog") {
       expect(h.app.getApp().compose).toBeNull();
       expect(h.app.getApp().draftFocus).toBeNull();
     } else if (scenario === "round trip") {
