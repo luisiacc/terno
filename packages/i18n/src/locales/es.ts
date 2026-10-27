@@ -813,6 +813,7 @@ const es = {
   "compose.quote.removed": "Sin el mensaje citado · <include>Incluirlo</include>",
   "compose.status.tooLong": "Demasiado largo para guardarlo · <retry>Reintentar</retry>",
   "compose.forwardAccountMismatch": "Para reenviar estos adjuntos, elige {account} en De.",
+  "compose.forwardUnavailable": "Los archivos originales aún no están listos para reenviar. Espera a que se descarguen o reinténtalo desde el mensaje original y vuelve a elegir Reenviar.",
   "compose.format.toolbar": "Formato",
   "compose.format.toggle": "Opciones de formato",
   "compose.format.more": "Más formato",
