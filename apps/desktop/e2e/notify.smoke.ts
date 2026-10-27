@@ -57,6 +57,8 @@ test.beforeAll(async () => {
   test.skip(!existsSync(SOURCE_APP), "run `pnpm dist:mac` first");
   imap = imapkit({
     plugins: ["IDLE", "MOVE", "UIDPLUS", "SPECIAL-USE", "ENABLE", "CONDSTORE"],
+    // the form signs in with the address as the user name
+    users: { [ME]: { password: "smoke-password" } },
     storage: { INBOX: {}, "": { separator: "/", folders: { Sent: { "special-use": "\\Sent" }, Archive: { "special-use": "\\Archive" }, Junk: { "special-use": "\\Junk" }, Trash: { "special-use": "\\Trash" }, Drafts: { "special-use": "\\Drafts" } } } },
   });
   imapPort = await imap.start(0, "127.0.0.1");
