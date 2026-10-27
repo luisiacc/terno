@@ -254,10 +254,10 @@ export function defineDurableFlagIntentConformance(name: string, harness: StoreH
       if (repeat) {
         const result = await store.threads.act({ threadIds: [thread], action: "archive", signal: null, now: 10 });
         expect(result.opIds).toEqual([]);
-        expect.soft(result.flagReconcileAccounts).toBeUndefined();
+        expect(result.flagReconcileAccounts).toBeUndefined();
       }
       const after = (await observe(store, a!))!;
-      expect.soft(after.epoch).toBe(before.epoch + 1);
+      expect(after.epoch).toBe(before.epoch + 1);
       store = await harness.reopen(store); stores.push(store);
       await expect(store.ops.resolveUnknown(archive!.id, "retry", 11)).resolves.toBeDefined();
       expect((await store.debug.snapshot()).messages[0]).toMatchObject({ inInbox: false, isTrash: false, isSpam: false });
@@ -338,9 +338,9 @@ export function defineDurableFlagIntentConformance(name: string, harness: StoreH
       await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "undo-park", flags: { isRead: false, isStarred: false } }], fresh);
       const undone = await store.threads.restore({ messages: changed.before, now: 4 });
       expect(undone.opIds).toEqual([]);
-      expect.soft(undone.flagReconcileAccounts).toEqual([a]);
+      expect(undone.flagReconcileAccounts).toEqual([a]);
       store = await harness.reopen(store); stores.push(store);
-      await expect.soft(store.ops.resolveUnknown(op!.id, "retry", 5)).rejects.toMatchObject({ code: "STALE" });
+      await expect(store.ops.resolveUnknown(op!.id, "retry", 5)).rejects.toMatchObject({ code: "STALE" });
       expect((await store.debug.snapshot()).messages[0]).toMatchObject({ isRead: false, isStarred: false });
     });
 
@@ -436,7 +436,7 @@ export function defineDurableFlagIntentConformance(name: string, harness: StoreH
       await Promise.all([activation, settled]);
       store = await harness.reopen(store); stores.push(store);
       const id = (await store.debug.snapshot()).messages[0]!.id;
-      expect.soft((await store.providerStore(a!).pendingFlagSnapshots({ limit: 1 })).items).toEqual([{ id, providerMsgId: "first-activation" }]);
+      expect((await store.providerStore(a!).pendingFlagSnapshots({ limit: 1 })).items).toEqual([{ id, providerMsgId: "first-activation" }]);
       await store.sync.updateFlags(a!, [{ messageId: id, flags: { inInbox: true } }]);
       expect((await store.debug.snapshot()).messages[0]!.inInbox).toBe(false);
       const fresh = (await observe(store, a!))!;
