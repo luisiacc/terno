@@ -20,7 +20,7 @@ export async function readIncomingBody(response: Response, options: { signal: Ab
   const reader = response.body?.getReader();
   if (!reader) { signal.throwIfAborted(); throw new SyntaxError("Missing response body"); }
   const chunks: Uint8Array[] = [];
-  let buffer = new Uint8Array(CHUNK_BYTES);
+  let buffer = new Uint8Array();
   let filled = 0, bytes = 0, reads = 0, copied = 0;
   let complete = false, released = false, wasPromoted = false;
   let largeRelease: (() => void) | undefined;
@@ -77,6 +77,12 @@ export async function readIncomingBody(response: Response, options: { signal: Ab
       if (bytes > limit) throw new ResponseBodyLimitError(limit);
       if (bytes > PREFIX_BYTES) await promote();
       for (let offset = 0; offset < value.byteLength;) {
+        if (!buffer.length) buffer = new Uint8Array(Math.min(CHUNK_BYTES, Math.max(256, value.byteLength - offset)));
+        if (filled === buffer.length) {
+          const grown = new Uint8Array(Math.min(CHUNK_BYTES, buffer.length * 2));
+          grown.set(buffer);
+          buffer = grown;
+        }
         const count = Math.min(buffer.length - filled, value.byteLength - offset);
         buffer.set(value.subarray(offset, offset + count), filled);
         filled += count;
@@ -87,7 +93,7 @@ export async function readIncomingBody(response: Response, options: { signal: Ab
       }
       if (++reads % 128 === 0) await yieldTo();
     }
-    if (filled) append(buffer.slice(0, filled));
+    if (filled) append(filled === buffer.length ? buffer : buffer.slice(0, filled));
     buffer = new Uint8Array();
     complete = true;
     return { chunks, bytes, get promoted() { return wasPromoted; }, promote, release };

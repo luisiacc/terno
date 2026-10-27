@@ -1,7 +1,7 @@
 import { getEventListeners } from "node:events";
 import { expect, it, vi } from "vitest";
 import { IncomingPipeline } from "./incoming";
-import { readIncomingBody } from "./incoming-body";
+import { readIncomingBody, type IncomingBody } from "./incoming-body";
 
 const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
 const chunkBytes = 65536;
@@ -11,6 +11,19 @@ function stream(chunks: Uint8Array[], pulled = () => {}) {
     pull(controller) { pulled(); if (next < chunks.length) controller.enqueue(chunks[next++]!); else controller.close(); },
   }, { highWaterMark: 0 }));
 }
+
+it("does not allocate a64KiB transfer buffer for each ordinary tiny resource", async () => {
+  const response = stream([new Uint8Array(190)]);
+  const nativePrototype = Uint8Array.prototype;
+  const constructors = vi.spyOn(globalThis, "Uint8Array");
+  Object.defineProperty(constructors, "prototype", { value: nativePrototype });
+  let body: IncomingBody | undefined;
+  try {
+    body = await readIncomingBody(response, { signal: new AbortController().signal, limit: 1024, promote: async () => () => {} });
+    expect(constructors.mock.calls.every((args) => { const size: unknown = args.at(0); return typeof size !== "number" || size <= 1024; }), "tiny resources must not churn a64KiB allocation before final transfer").toBe(true);
+    expect(body.chunks.map((chunk) => chunk.byteLength)).toEqual([190]);
+  } finally { constructors.mockRestore(); body?.release(); }
+});
 
 it("coalesces fragmented input into exact transferable buffers and ignores a lying length", async () => {
   const bytes = Uint8Array.from({ length: chunkBytes + 123 }, (_, index) => index % 256);
