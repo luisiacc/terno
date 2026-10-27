@@ -180,6 +180,8 @@ function sameStoredDraft(snapshot: LocalDraft): boolean {
   const d = materialize(snapshot.key);
   return Boolean(d && d === useDrafts.getState().drafts[snapshot.key] && !d.sending && shallow(d, snapshot));
 }
+const openedDraft = (d: LocalDraft): LocalDraft => d.uiState === "open" ? d : { ...d, uiState: "open", ...(d.id !== null ? { localRev: d.localRev + 1, status: d.status === "saving" ? "saving" : "dirty" } : {}) };
+
 const invalidatedPresentation = (d: LocalDraft): LocalDraft => ({ ...d, departedThreadId: d.departedThreadId ?? draftPresentationThread(d) ?? undefined, presentationThreadId: undefined, presentationExpired: true, presentationEpoch: (d.presentationEpoch ?? 0) + 1 });
 const validatedPresentation = (d: LocalDraft, threadId: number): LocalDraft => ({ ...d, presentationThreadId: undefined, sourceContextThreadId: threadId, presentationExpired: false, presentationEpoch: (d.presentationEpoch ?? 0) + 1 });
 
@@ -388,8 +390,9 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     } else existing = current;
   }
   if (existing && existing.mode === mode) {
+    const expected = openedDraft(existing);
     setDraftUi(existing.key, "open");
-    if (focusAllowed()) focusDraft(existing.key, target, mine);
+    if (focusAllowed() && sameStoredDraft(expected)) focusDraft(existing.key, target, mine);
     return;
   }
   const selected = s.selectedId;
