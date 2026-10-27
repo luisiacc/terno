@@ -160,14 +160,16 @@ export const subscribeComposeFocus = (listener: (threadId: number, fallback: boo
 export function finishComposeFocus(key: string, focusSeq: number, fallback: boolean): boolean {
   const lease = focusLease;
   if (!lease?.valid || lease.intent !== intent || lease.key !== key || lease.seq !== focusSeq) return false;
-  const owner = intent, revision = getSelectionWriteRevision();
-  let changed = false;
+  const owner = intent, revision = getSelectionWriteRevision(), focusRevision = seq;
+  let changed = draftEditsHeld();
+  const unsubscribeDrafts = useDrafts.subscribe((state, previous) => { if (state.held || previous.held) changed = true; });
   const unsubscribe = useApp.subscribe((state, previous) => {
+    if (state.draftFocus !== previous.draftFocus && !(state.draftFocus === null && previous.draftFocus?.seq === focusSeq)) changed = true;
     if (state.selectedId !== previous.selectedId || state.readerOpen !== previous.readerOpen || state.compose !== previous.compose || state.checked !== previous.checked || state.scope !== previous.scope || state.accountId !== previous.accountId || state.dialog !== previous.dialog || state.fatal !== previous.fatal || state.view !== previous.view || state.categoryId !== previous.categoryId || state.reviewCategoryId !== previous.reviewCategoryId || state.query !== previous.query || state.listFilters !== previous.listFilters) changed = true;
   });
   try { releaseFocusLease(lease, fallback); }
-  finally { unsubscribe(); }
-  return !changed && getSelectionWriteRevision() === revision && intent === owner && focusLease === null;
+  finally { unsubscribe(); unsubscribeDrafts(); }
+  return !changed && !draftEditsHeld() && seq === focusRevision && getSelectionWriteRevision() === revision && intent === owner && focusLease === null;
 }
 export const supersedeCompose = (): void => {
   ++intent;
