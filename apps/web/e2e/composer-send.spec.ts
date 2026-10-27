@@ -253,8 +253,12 @@ test("plan 39: an autolink edited after it was linked is sent with the href its 
   await body(page).click();
   await page.keyboard.type("Mira https://santo.com y dime");
   await expect(body(page).locator("a")).toHaveAttribute("href", "https://santo.com");
-  // back to the end of the link (past the words after it), ".com" deleted, "qwe.com" typed
-  for (let i = 0; i < " y dime".length; i++) await page.keyboard.press("ArrowLeft");
+  // the caret at the end of the link (a DOM caret the editor reads: arrow presses race a loaded machine), ".com" deleted, "qwe.com" typed
+  await body(page).evaluate((root) => {
+    const text = root.querySelector("a")!.firstChild as Text;
+    getSelection()!.collapse(text, text.data.length);
+  });
+  await page.waitForTimeout(50);
   for (let i = 0; i < 4; i++) await page.keyboard.press("Backspace");
   await page.keyboard.type("qwe.com");
   await expect(body(page).locator("a")).toHaveAttribute("href", "https://santoqwe.com");
