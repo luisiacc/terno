@@ -32,7 +32,7 @@ interface StoredSettings extends Partial<General> {
   aiModel?: string;
   /** plan 15: 2 once the move to designs happened (see migrateAppearance) */
   appearanceVersion?: number;
-  /** plan 35: 1 once local mode stopped deciding remote images (see migrateRemoteImages) */
+  /** plan 37: 1 once local mode stopped deciding remote images (see migrateRemoteImages) */
   remoteImagesVersion?: number;
 }
 
@@ -54,7 +54,7 @@ export function migrateAppearance(s: StoredSettings): StoredSettings {
 export const REMOTE_IMAGES_VERSION = 1;
 
 /**
- * Plan 35: local mode no longer decides remote images. A profile in local
+ * Plan 37: local mode no longer decides remote images. A profile in local
  * mode that stored "always" (chosen while connected) showed the switch off and
  * loaded nothing; it keeps that: "ask". Pure, like migrateAppearance: reads
  * apply it until the next write persists it with the marker.

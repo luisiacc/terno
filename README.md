@@ -64,7 +64,7 @@ The same renderer, built as a static site: the backend (the same code as the Mac
 - **Settings → AI** picks the provider. Local servers are discovered automatically (model, size, context, loaded state); *Test connection* checks latency and whether the model supports structured output, JSON mode or only text, and the app adapts.
 - API keys are encrypted with the macOS Keychain and never reach the renderer (it only sees the last 4 characters).
 - For filters, the AI receives your description, account emails and names, category names and today's date — never message content.
-- **Local mode** (Settings → General, first row; "Local" pill in the sidebar): the backend's network policy allows only mail with your servers and AI on loopback (resolved and pinned), and main blocks the renderer's remote requests except the images a mail frame loads once you ask ([plan 35](docs/plans/35-remote-images-in-local-mode.md)). Turning it off asks first. Existing installs keep local mode off until you turn it on.
+- **Local mode** (Settings → General, first row; "Local" pill in the sidebar): the backend's network policy allows only mail with your servers and AI on loopback (resolved and pinned), and main blocks the renderer's remote requests except the images a mail frame loads once you ask ([plan 37](docs/plans/37-remote-images-in-local-mode.md)). Turning it off asks first. Existing installs keep local mode off until you turn it on.
 - **Your Terno account**: the first verified mailbox becomes the owner of this install (shown in Settings → Accounts). Removing that mailbox keeps it; changing it requires verifying the new mailbox again.
 
 ## Architecture (short version)

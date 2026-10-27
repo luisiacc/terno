@@ -153,7 +153,7 @@ These revisions override the sections above where they conflict. The full review
 
 1. **Remote-image consent is per message.** "Cargar contenido" moves from `HtmlBody`'s local state into a small store keyed by message id: `remoteAllowed`, kept for the session.
    - The print builder strips remote resources from every message that isn't allowed. Allowed means the setting is "always" or the message is in the set, and local mode is off.
-   - Main enforces local mode on the print session itself, using the same source of truth as the existing `defaultSession` backstop in `app.ts`. When local mode is on, every non-document request is cancelled, including requests already in flight. *Superseded by plan 35: the print window loads the job's approved images in either mode, since the reader loaded them.*
+   - Main enforces local mode on the print session itself, using the same source of truth as the existing `defaultSession` backstop in `app.ts`. When local mode is on, every non-document request is cancelled, including requests already in flight. *Superseded by plan 37: the print window loads the job's approved images in either mode, since the reader loaded them.*
 2. **Native print from a hidden window must be proven on the pinned Electron version first.** Test cancel, no printer configured, and the system PDF menu, and keep a fallback to a visible print window.
    - There is no destroy timer while the native dialog is open. The 20 s limit applies only to loading the document.
    - The result is reported as "submitted" or "cancelled" or "failed", never "printed".

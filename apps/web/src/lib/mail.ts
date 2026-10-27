@@ -3,7 +3,7 @@ import { exposeForTests } from "~/lib/render-probe";
 
 /**
  * Remote images load only once the user opts in (tracking pixels included);
- * remote CSS and fonts never (plan 35: images are what "Load content" and the
+ * remote CSS and fonts never (plan 37: images are what "Load content" and the
  * setting promise, in either mode).
  */
 export function csp(allowRemote: boolean): string {

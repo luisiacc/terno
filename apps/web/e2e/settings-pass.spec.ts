@@ -130,7 +130,7 @@ test.describe("editable, persisted and in effect", () => {
     await expect(page.getByRole("combobox", { name: "Density" })).toContainText("Compact");
     await expect(page.getByRole("spinbutton", { name: "Sync window" })).toHaveValue("45");
     await expect(rows(page).first()).toHaveCSS("height", "40px");
-    // plan 35: local mode back on leaves the choice alone: the switch stays live and on, across a reload too
+    // plan 37: local mode back on leaves the choice alone: the switch stays live and on, across a reload too
     await page.getByRole("switch", { name: "Local mode" }).click();
     await expect(page.getByRole("switch", { name: "Local mode" })).toBeChecked();
     await expect(page.getByRole("switch", { name: "Always load remote images" })).toBeEnabled();

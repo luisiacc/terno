@@ -212,7 +212,7 @@ describe("app.import", () => {
     await expect(to.mcp.call("app.import", { data: dump })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
-  it("plan 35: a file can turn remote images to ask, never to always", async () => {
+  it("plan 37: a file can turn remote images to ask, never to always", async () => {
     const from = setup();
     await from.client.call("settings.update", { remoteImages: "always" });
     const always = await from.client.call("app.export", {});

@@ -56,7 +56,7 @@ describe("main: what the print window may load", () => {
     expect(requestAllowed({ url: "terno-print://job/abc", resourceType: "mainFrame" }, null)).toBe(false);
   });
 
-  it("approved images only (in either mode, plan 35), never anything else", () => {
+  it("approved images only (in either mode, plan 37), never anything else", () => {
     expect(requestAllowed({ url: "https://img.test/hero.png", resourceType: "image" }, active)).toBe(true);
     expect(requestAllowed({ url: "https://img.test/other.png", resourceType: "image" }, active)).toBe(false);
     expect(requestAllowed({ url: "https://img.test/hero.png", resourceType: "script" }, active)).toBe(false);

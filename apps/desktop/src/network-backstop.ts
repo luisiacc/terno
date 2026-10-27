@@ -1,5 +1,5 @@
 /**
- * Main's fence around the renderer's own requests (plan 05, plan 35), kept
+ * Main's fence around the renderer's own requests (plan 05, plan 37), kept
  * apart from Electron so it's unit-tested in Node. The backend polices its own
  * connections; this covers remote images, fonts, anything a mail or a bug
  * could load from the app's session.
@@ -66,7 +66,7 @@ export function isMailFrame(frame: RequestFrame | null, appOrigins: readonly str
 /**
  * Loopback is always reachable (backend-dev, local AI from a dev renderer).
  * Outside local mode everything else is too. In local mode only an image a
- * mail frame asks for passes (plan 35): the user loaded it, with "Load
+ * mail frame asks for passes (plan 37): the user loaded it, with "Load
  * content" or the setting, and the frame's CSP is that per-message gate
  * (img-src opens only for an approved message). Scripts, fetch/XHR, sockets,
  * stylesheets, fonts, media and anything from the app's own frame stay

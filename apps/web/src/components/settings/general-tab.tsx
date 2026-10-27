@@ -175,7 +175,7 @@ export function GeneralTab({ settings, update, onLocalOff }: { settings: AppSett
         >
           {(a) => <Switch {...a} data-testid="local-mode-switch" checked={settings.localMode} onCheckedChange={(on) => (on ? void update({ localMode: true }) : onLocalOff())} />}
         </SettingsRow>
-        {/* plan 35: the same in both modes; local mode doesn't decide remote images */}
+        {/* plan 37: the same in both modes; local mode doesn't decide remote images */}
         <SettingsRow label={t("settings.general.remoteImages")} hint={t(settings.remoteImages === "always" ? "settings.general.remoteImages.hintOn" : "settings.general.remoteImages.hint")}>
           {(a) => <Switch {...a} data-testid="remote-images-switch" checked={settings.remoteImages === "always"} onCheckedChange={(on) => void update({ remoteImages: on ? "always" : "ask" })} />}
         </SettingsRow>

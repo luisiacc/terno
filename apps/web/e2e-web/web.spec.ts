@@ -151,7 +151,7 @@ test("what the browser can't do is said plainly: IMAP and agents locked, honest 
   await expect(add.getByTestId("connect-gmail")).toBeVisible();
 });
 
-test("plan 35: in local mode the browser loads a newsletter's images on “Load content”, and every message's with the setting", async ({ page }) => {
+test("plan 37: in local mode the browser loads a newsletter's images on “Load content”, and every message's with the setting", async ({ page }) => {
   // the newsletters' pixels, answered here (never fetched)
   const hits: string[] = [];
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");

@@ -214,7 +214,7 @@ test.describe("print sheet", { tag: "@design" }, () => {
     expect(await page.title()).toBe(title);
   });
 
-  test("remote images print only where the reader loaded them, local mode included (plan 35)", async ({ app: page, server }) => {
+  test("remote images print only where the reader loaded them, local mode included (plan 37)", async ({ app: page, server }) => {
     // the e2e profile is in local mode; the images are answered here, never fetched
     expect((await server.backend.server.invoke("app.bootstrap", {}, { clientId: "setup", origin: "dev" })).settings.localMode).toBe(true);
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");

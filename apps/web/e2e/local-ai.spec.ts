@@ -64,7 +64,7 @@ test.describe("local mode and AI providers", () => {
     await toggle.click();
     const confirm = page.getByTestId("local-mode-confirm");
     await expect(confirm).toContainText("use cloud AI");
-    // plan 35: remote images aren't local mode's to give
+    // plan 37: remote images aren't local mode's to give
     await expect(confirm).not.toContainText("remote images");
     await confirm.getByRole("button", { name: "Keep on" }).click();
     await expect(toggle).toBeChecked();
@@ -121,7 +121,7 @@ test.describe("local mode and AI providers", () => {
     }
   });
 
-  test("plan 35: in local mode “Load content” loads the message's remote images, for the session", async ({ app: page }) => {
+  test("plan 37: in local mode “Load content” loads the message's remote images, for the session", async ({ app: page }) => {
     await expect(page.getByTestId("local-pill")).toHaveText("Local");
     const hits: string[] = [];
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
@@ -143,7 +143,7 @@ test.describe("local mode and AI providers", () => {
     await expect(page.getByTestId("remote-blocked")).toHaveCount(0);
   });
 
-  test("plan 35: in local mode “Always load remote images” loads them without a click", async ({ app: page }) => {
+  test("plan 37: in local mode “Always load remote images” loads them without a click", async ({ app: page }) => {
     const hits: string[] = [];
     await page.route(remote, (route) => (hits.push(route.request().url()), route.abort()));
     await page.getByTestId("open-settings").click();

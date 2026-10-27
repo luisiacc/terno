@@ -9,7 +9,7 @@ describe("HTML mail rules", () => {
     expect(csp(false)).not.toMatch(/https?:/);
     expect(csp(true)).toContain("img-src data: cid: https: http:;");
     expect(csp(false)).toContain("default-src 'none'");
-    // plan 35 (Codex review): remote stylesheets and fonts stay closed even when images are allowed
+    // plan 37 (Codex review): remote stylesheets and fonts stay closed even when images are allowed
     expect(csp(true)).toContain("style-src 'unsafe-inline';");
     expect(csp(true)).toContain("font-src data:;");
   });

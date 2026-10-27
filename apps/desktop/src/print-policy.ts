@@ -58,7 +58,7 @@ export function isTrustedSender(frameUrl: string, isTopFrame: boolean, devUrl: s
 
 /**
  * What the print window may load: its job's exact document, and the job's
- * approved images, in either mode (plan 35: the reader loaded them, so they
+ * approved images, in either mode (plan 37: the reader loaded them, so they
  * print). Everything else is cancelled (redirects come back through here, so
  * they meet the same list).
  */

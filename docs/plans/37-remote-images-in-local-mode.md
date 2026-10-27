@@ -1,7 +1,8 @@
-# Plan 35: remote images in local mode
+# Plan 37: remote images in local mode
 
 - **Status:** implemented (see "What the Codex code review changed" at the end).
 - **Builds on:** `6403163` (main after plan 34).
+- **Numbering:** written as 35; main then took 35 (missing draft recovery) and 36 (visible mail text), so this is 37.
 - **Request (verbatim):** "the meaning of local is too local, we should be able to load remote images by default with the setting, and it should not block the 'load remove content' button."
 
 ## 1. What it means

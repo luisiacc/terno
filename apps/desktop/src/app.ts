@@ -110,7 +110,7 @@ let localMode = true;
 /**
  * The backend polices its own connections; this fences the renderer over
  * http(s)/ws(s) (app:// and data: never hit the network). In local mode only
- * loopback, and images a mail frame loads (plan 35), get through: see backstopAllows.
+ * loopback, and images a mail frame loads (plan 37), get through: see backstopAllows.
  */
 function installNetworkBackstop() {
   const dev = isDev ? originOf(process.env.TERNO_DEV_URL!) : null;

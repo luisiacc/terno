@@ -205,7 +205,7 @@ const fence = () =>
     return { passed: [...g.passed], blocked: [...g.blocked] };
   });
 
-test("plan 35: in local mode the print window loads the job's approved images and nothing else", async () => {
+test("plan 37: in local mode the print window loads the job's approved images and nothing else", async () => {
   await expect(page.getByTestId("local-pill")).toHaveText("Local");
   await watchFence("terno-print");
   const listed = `https://example.com/print-smoke.png?${Date.now()}`;
@@ -225,7 +225,7 @@ test("plan 35: in local mode the print window loads the job's approved images an
   await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
 });
 
-test("plan 35: in local mode “Load content” gets a newsletter's images past main's backstop; the app's own frame still can't", async () => {
+test("plan 37: in local mode “Load content” gets a newsletter's images past main's backstop; the app's own frame still can't", async () => {
   await expect(page.getByTestId("local-pill")).toHaveText("Local");
   await watchFence(null);
   await openThread("newsletter");

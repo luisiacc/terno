@@ -36,7 +36,7 @@ function rememberHeight(key: number, h: number) {
  */
 export function HtmlBody({ html, messageId, remoteImages, appearance, attachments = [], accountId }: { attachments?: AttachmentInfo[]; accountId?: number; html: string; messageId: number; remoteImages: "ask" | "always"; appearance: "auto" | "paper" }) {
   const ref = useRef<HTMLIFrameElement>(null);
-  // the setting or this message's "Load content", in either mode (plan 35)
+  // the setting or this message's "Load content", in either mode (plan 37)
   const allowRemote = useRemoteConsent((s) => remoteAllowed(messageId, { remoteImages }, s.allowed));
   const [height, setHeight] = useState(() => heights.get(messageId) ?? 120);
   // re-rendered when the painted theme changes (the colors are literals inside the document)

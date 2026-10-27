@@ -85,7 +85,7 @@ describe("appearance settings", () => {
   });
 });
 
-describe("remote images (plan 35)", () => {
+describe("remote images (plan 37)", () => {
   it("a profile in local mode that stored always reads as ask; the next write persists it, and a later always sticks", async () => {
     const { backend, client } = setup();
     setSetting(sqlDb(backend.store), "app", { localMode: true, remoteImages: "always" });

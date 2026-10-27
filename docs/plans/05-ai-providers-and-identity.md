@@ -174,7 +174,7 @@ interface NetworkPolicy {
 3. **Renderer backstop:**
    - The backend tells main `{type:"policy", localMode}` at startup and whenever it changes.
    - Main sets `session.defaultSession.webRequest.onBeforeRequest` to cancel `http(s)/ws(s)` to anything except loopback (needed in dev).
-   - The mail iframe always gets `csp(false)`, and the "show images" button is hidden. *Superseded by plan 35: remote images load in local mode too when the user asks (per message, or with the setting); main lets only images from a mail frame through.*
+   - The mail iframe always gets `csp(false)`, and the "show images" button is hidden. *Superseded by plan 37: remote images load in local mode too when the user asks (per message, or with the setting); main lets only images from a mail frame through.*
 4. Turning local mode on keeps the cloud AI config dormant. AI reports "en pausa por el modo local" and turning local mode off restores it. Turning local mode off needs a confirmation that lists what becomes allowed.
 
 **Indicator:** a "Local" pill (laptop-shield icon) in the sidebar footer. Tooltip: "Nada sale de este Mac salvo el correo con tus servidores". Clicking it opens General, where the **first row** is the switch. When local mode is off and a cloud AI is active, the pill reads "IA: OpenAI (nube)".

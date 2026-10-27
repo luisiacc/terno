@@ -83,7 +83,7 @@ test.describe("reader conversation", { tag: "@design" }, () => {
   });
 });
 
-test.describe("plan 35: “Load content” for every remote image the frame would block", () => {
+test.describe("plan 37: “Load content” for every remote image the frame would block", () => {
   type Probe = { __terno: { hasRemoteContent(h: string, protocolRelative?: boolean): boolean } };
   test("detection reads the markup as the browser does, and stays linear on hostile input", async ({ app: page }) => {
     const cases: [string, boolean, boolean?][] = [

@@ -14,7 +14,7 @@ describe("main: the renderer's network backstop", () => {
     expect(isLoopbackHost("128.0.0.1")).toBe(false);
   });
 
-  it("plan 35: in local mode an image a mail frame asks for passes (the frame's CSP is the per-message gate)", () => {
+  it("plan 37: in local mode an image a mail frame asks for passes (the frame's CSP is the per-message gate)", () => {
     expect(backstopAllows(image(mail), local)).toBe(true);
     expect(backstopAllows(image(mail, "http://tracker.test/pixel.gif"), local)).toBe(true);
     // the dev renderer's page is a mail frame's top too
