@@ -156,9 +156,12 @@ export const subscribeComposeFocus = (listener: (threadId: number, fallback: boo
   focusLeaseListeners.add(listener);
   return () => { focusLeaseListeners.delete(listener); };
 };
-export function finishComposeFocus(key: string, focusSeq: number, fallback: boolean): void {
+export function finishComposeFocus(key: string, focusSeq: number, fallback: boolean): boolean {
   const lease = focusLease;
-  if (lease?.key === key && lease.seq === focusSeq) releaseFocusLease(lease, fallback);
+  if (!lease?.valid || lease.intent !== intent || lease.key !== key || lease.seq !== focusSeq) return false;
+  const owner = intent;
+  releaseFocusLease(lease, fallback);
+  return intent === owner && focusLease === null;
 }
 export const supersedeCompose = (): void => {
   ++intent;

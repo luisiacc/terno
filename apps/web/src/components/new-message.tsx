@@ -43,7 +43,7 @@ export function NewMessage() {
     if (!compose) return;
     const generation = ++focusGeneration.current;
     const owned = compose.storedFocusSeq === undefined ? null : { key: compose.key, seq: compose.storedFocusSeq };
-    focusSoon("[data-testid=compose-to]", rootRef.current, 12, owned ? (fallback) => { if (focusGeneration.current === generation) finishComposeFocus(owned.key, owned.seq, fallback); } : undefined, owned ? () => focusGeneration.current === generation && useApp.getState().compose === compose && composeFocusPending(null, owned.key, owned.seq) : undefined);
+    focusSoon("[data-testid=compose-to]", rootRef.current, 12, owned ? (fallback) => focusGeneration.current === generation && finishComposeFocus(owned.key, owned.seq, fallback) : undefined, owned ? () => focusGeneration.current === generation && useApp.getState().compose === compose && composeFocusPending(null, owned.key, owned.seq) : undefined);
     if (owned && useApp.getState().draftFocus?.seq === owned.seq) setApp({ draftFocus: null });
     return () => {
       if (owned) queueMicrotask(() => { if (focusGeneration.current === generation) finishComposeFocus(owned.key, owned.seq, false); });

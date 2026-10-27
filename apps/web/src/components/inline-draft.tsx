@@ -22,7 +22,8 @@ import { controllerFor, popupOpen } from "./composer/controller";
 import { ComposerBody, ComposerFormatBar, FormatToggle, LinkButton, preloadComposer } from "./composer/lazy";
 
 /** The focus move waiting for its element (one at a time: a newer request replaces it). */
-let pendingFocus: { find: () => HTMLElement | null; done: () => void } | null = null;
+let focusRequest = 0;
+let pendingFocus: { find: () => HTMLElement | null; current: (el: HTMLElement) => boolean; done: () => boolean } | null = null;
 
 const target = (selector: string, root: HTMLElement | null) =>
   // while the editor's chunk loads, its stand-in takes the keys (and hands them over)
@@ -48,7 +49,12 @@ function keyDuringMove(e: KeyboardEvent) {
   if (active && active !== document.body) return;
   const el = p.find();
   if (!focusable(el)) return;
-  p.done();
+  let moved = false;
+  const observe = (event: FocusEvent) => { if (event.target !== active && event.target !== document.body) moved = true; };
+  document.addEventListener("focusin", observe, true);
+  let allowed: boolean;
+  try { allowed = p.done(); } finally { document.removeEventListener("focusin", observe, true); }
+  if (!allowed || moved || !p.current(el) || !focusable(el)) return;
   place(el);
   if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) return;
   e.preventDefault();
@@ -60,8 +66,10 @@ function keyDuringMove(e: KeyboardEvent) {
  * Puts focus on an element of the draft area once it is rendered and no longer
  * inert (an opening part is inert for a frame).
  */
-export function focusSoon(selector: string, root: HTMLElement | null, frames = 12, onDone?: (fallback: boolean) => void, valid?: () => boolean) {
+export function focusSoon(selector: string, root: HTMLElement | null, frames = 12, onDone?: (fallback: boolean) => boolean | void, valid?: () => boolean) {
+  const request = ++focusRequest;
   pendingFocus?.done();
+  if (request !== focusRequest) return;
   let raf = 0;
   let finished = false;
   const cleanup = () => {
@@ -73,11 +81,15 @@ export function focusSoon(selector: string, root: HTMLElement | null, frames = 1
     if (pendingFocus === mine) pendingFocus = null;
     return true;
   };
-  const done = () => { if (cleanup()) onDone?.(false); };
+  const done = () => {
+    if (!cleanup()) return false;
+    const result = onDone?.(false);
+    return request === focusRequest && (!valid || result === true);
+  };
   const moved = (event: FocusEvent) => {
     if (event.target !== document.body) done();
   };
-  const mine = { find: () => valid && !valid() ? null : target(selector, root), done };
+  const mine = { find: () => valid && !valid() ? null : target(selector, root), current: (el: HTMLElement) => request === focusRequest && (!root || root.isConnected) && target(selector, root) === el, done };
   pendingFocus = mine;
   document.addEventListener("keydown", keyDuringMove, true);
   document.addEventListener("focusin", moved, true);
@@ -333,7 +345,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
   useEffect(() => {
     if (!focus || !d || useApp.getState().draftFocus?.seq !== focus.seq) return;
     const owned = composeFocusPending(threadId, focus.key, focus.seq);
-    focusSoon(focus.target === "to" ? "[data-testid=compose-to]" : "[data-testid=compose-body]", rootRef.current, 12, (fallback) => finishComposeFocus(focus.key, focus.seq, fallback), owned ? () => composeFocusPending(threadId, focus.key, focus.seq) : undefined);
+    focusSoon(focus.target === "to" ? "[data-testid=compose-to]" : "[data-testid=compose-body]", rootRef.current, 12, owned ? (fallback) => finishComposeFocus(focus.key, focus.seq, fallback) : undefined, owned ? () => composeFocusPending(threadId, focus.key, focus.seq) : undefined);
     if (useApp.getState().draftFocus?.seq === focus.seq) setApp({ draftFocus: null });
   }, [focus?.seq]);
 
