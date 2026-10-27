@@ -1088,11 +1088,13 @@ export class IdbMailStore implements MailStore {
           return message?.body_state === "full" && !message.is_trash;
         }) : candidates;
         if (needsBody && slice.length) await this.readBodies(slice);
-        else if (needsBody && i + SLICE < ids.length) await this.o.platform.yield();
         const m = findRuleMatches(this.c, rule, now, slice);
         out.messageIds.push(...m.messageIds);
         for (const t of m.threadIds) out.threadIds.add(t);
-        if (needsBody) this.evictBodies();
+        if (needsBody) {
+          this.evictBodies();
+          if (i + SLICE < ids.length) await this.o.platform.yield();
+        }
       }
       return out;
     });

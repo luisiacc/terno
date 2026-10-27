@@ -43,3 +43,39 @@ for (const instantSearch of [false, true]) describe(`incomplete body reads (inst
     } finally { if (store.isOpen) await store.close(); }
   });
 });
+
+for (const instantSearch of [false, true]) describe(`mixed cached body slices (instant=${instantSearch})`, () => {
+  it("gives task callbacks a turn while skipping cold incomplete bodies around cached matches", async () => {
+    const name = `body-mixed-${crypto.randomUUID()}`;
+    let turns = 0;
+    const mixedPlatform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setTimeout(() => { turns++; resolve(); }, 0)) };
+    let store = await IdbMailStore.open({ name, factory: indexedDB, platform: mixedPlatform, instantSearch });
+    try {
+      const [accountId] = await withAccounts(store, 1);
+      const incoming = Array.from({ length: 5003 }, (_, i) => msg({ accountId: accountId!, providerMsgId: `mixed-${i}`, bodyState: i % 500 === 0 ? "full" : "partial", bodyText: "visible needle" }));
+      const ingested = await store.sync.ingest(incoming, { now: 0, classifier: null, applyFilters: false });
+      await store.close();
+      store = await IdbMailStore.open({ name, factory: indexedDB, platform: mixedPlatform, instantSearch });
+      if (store.instant) expect(await store.instant.settled()).toBe(true);
+      const eligible = ingested.inserted.filter((_, i) => i % 500 === 0);
+      const snap = await store.debug.snapshot();
+      for (const id of eligible) await store.threads.get(snap.messages.find((m) => m.id === id)!.threadId);
+      const reads: unknown[] = [];
+      const get = IDBObjectStore.prototype.get;
+      const spy = vi.spyOn(IDBObjectStore.prototype, "get").mockImplementation(function (this: IDBObjectStore, key) {
+        if (this.name === "message_bodies") reads.push(key);
+        return get.call(this, key);
+      });
+      let heartbeat = false;
+      const callback = setTimeout(() => { heartbeat = true; }, 0);
+      turns = 0;
+      try {
+        const matched = await store.filters.matchWindow({ match: "all", conditions: [{ field: "body", op: "contains", value: "needle" }], actions: [{ type: "star" }] }, 0, { from: ingested.inserted[0]!, to: ingested.inserted.at(-1)! });
+        expect(matched).toEqual(eligible);
+        expect(reads).toEqual([]);
+        expect(heartbeat).toBe(true);
+        expect(turns).toBeGreaterThan(0);
+      } finally { clearTimeout(callback); spy.mockRestore(); }
+    } finally { if (store.isOpen) await store.close(); }
+  });
+});
