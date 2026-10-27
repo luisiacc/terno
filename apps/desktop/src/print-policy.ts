@@ -148,6 +148,15 @@ export function testSmtpPort(env: Record<string, string | undefined>, packaged: 
   return Number.isInteger(port) && port > 0 && port < 65536 && (!packaged || demo) ? port : null;
 }
 
+/**
+ * Plan 38: the notification smoke adds a synthetic IMAP account on its own
+ * plain-text server on this machine. Honored only in the demo mailbox (never
+ * real mail): there, IMAP and SMTP may skip TLS.
+ */
+export function testImapInsecure(env: Record<string, string | undefined>, demo: boolean): boolean {
+  return demo && env.TERNO_TEST_IMAP_INSECURE === "1";
+}
+
 export class PrintTimeoutError extends Error {
   constructor() {
     super("the print document didn't load in time");

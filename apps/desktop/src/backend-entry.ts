@@ -146,7 +146,8 @@ parentPort.on("message", async (event) => {
         cipher,
         legacySecrets,
         // the demo mailbox's sends go to the packaged smoke's SMTP server when it asks (main checked it may)
-        providers: createRegistry(msg.demo && msg.testSmtpPort ? { demoSmtpPort: msg.testSmtpPort } : {}),
+        // and plan 38's notification smoke adds an IMAP account on its own plain-text server (the demo mailbox only)
+        providers: createRegistry({ ...(msg.demo && msg.testSmtpPort && { demoSmtpPort: msg.testSmtpPort }), ...(msg.demo && msg.testImapInsecure && { imap: { allowInsecure: true } }) }),
         openExternal: async (url) => send({ type: "open-external", url }),
         demoAi: msg.demo || msg.dev,
         demo: msg.demo,

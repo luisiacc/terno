@@ -282,6 +282,9 @@ importers:
       esbuild:
         specifier: 'catalog:'
         version: 0.28.2
+      imapkit:
+        specifier: 5.1.0
+        version: 5.1.0
       smtp-server:
         specifier: ^3.21.0
         version: 3.21.0

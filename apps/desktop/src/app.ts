@@ -36,7 +36,7 @@ import { NetworkWatch } from "./network-watch";
 import { backstopAllows, originOf, requestFrame } from "./network-backstop";
 import { DB_FILE } from "./legacy-profile";
 import { registerPrint } from "./print";
-import { isTrustedSender, testPdfDir, testSmtpPort } from "./print-policy";
+import { isTrustedSender, testImapInsecure, testPdfDir, testSmtpPort } from "./print-policy";
 import { menuTemplate } from "./menu";
 import { readLanguage, switchLanguage, writeLanguage } from "./locale";
 import type { MenuCommand } from "./print-commands";
@@ -275,6 +275,7 @@ function startBackend() {
     version: app.getVersion(),
     diag: { session: diagSession(), build: BUILD_ID, channel: mainDiag.channel },
     testSmtpPort: testSmtpPort(process.env, app.isPackaged, demo) ?? undefined,
+    testImapInsecure: testImapInsecure(process.env, demo) || undefined,
     // a restarted backend starts from what the network is now
     online: net.isOnline(),
   } satisfies MainToBackend);

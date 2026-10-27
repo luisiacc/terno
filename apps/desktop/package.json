@@ -33,6 +33,7 @@
     "electron": "catalog:",
     "electron-builder": "catalog:",
     "esbuild": "catalog:",
+    "imapkit": "5.1.0",
     "smtp-server": "^3.21.0"
   }
 }
