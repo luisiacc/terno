@@ -477,12 +477,12 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     return c.capabilities.has(capability) || c.enabled.has("IMAP4REV2") || (c.capabilities.has("IMAP4rev2") && !c.capabilities.has("IMAP4rev1"));
   }
 
-  async function moveLocations(c: ImapFlow, locs: Loc[], target: string, mode: "move" | "copy" = "move") {
-    const moving = locs.filter((l) => l.mailbox !== target);
-    if (!moving.length) return;
+  async function moveLocations(c: ImapFlow, locs: Loc[], destination: string | (() => Promise<string>), mode: "move" | "copy" = "move") {
+    if (!locs.some((l) => typeof destination !== "string" || l.mailbox !== destination)) return;
     if (mode === "move" && !targetedCapability(c, "MOVE") && !targetedCapability(c, "UIDPLUS")) throw new ProviderError(L("errors.imap.unsafeMove"), false);
+    const target = typeof destination === "string" ? destination : await destination();
     const byMailbox = new Map<string, typeof locs>();
-    for (const l of moving) byMailbox.set(l.mailbox, [...(byMailbox.get(l.mailbox) ?? []), l]);
+    for (const l of locs) if (l.mailbox !== target) byMailbox.set(l.mailbox, [...(byMailbox.get(l.mailbox) ?? []), l]);
     for (const [mailbox, items] of byMailbox) {
       const lock = await c.getMailboxLock(mailbox);
       try {
@@ -603,7 +603,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           case "archive": {
             const inbox = inRole("inbox");
             if (!inbox.length) return;
-            if (r.archive || !r.all) return void (await moveLocations(c, inbox, await ensureMailbox(c, "archive", "Archive")));
+            if (r.archive || !r.all) return void (await moveLocations(c, inbox, r.archive ?? (() => ensureMailbox(c, "archive", "Archive"))));
             if (!targetedCapability(c, "UIDPLUS")) throw new ProviderError(L("errors.imap.unsafeMove"), false);
             // Gmail-style: archiving = removing the INBOX copy; All Mail keeps it
             const lock = await c.getMailboxLock(r.inbox!);
@@ -619,9 +619,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             return;
           }
           case "trash":
-            return void (await moveLocations(c, locs.filter((l) => l.mailbox !== r.trash), await ensureMailbox(c, "trash", "Trash")));
+            return void (await moveLocations(c, locs.filter((l) => l.mailbox !== r.trash), r.trash ?? (() => ensureMailbox(c, "trash", "Trash"))));
           case "spam":
-            return void (await moveLocations(c, locs.filter((l) => l.mailbox !== r.junk && l.mailbox !== r.sent), await ensureMailbox(c, "junk", "Junk")));
+            return void (await moveLocations(c, locs.filter((l) => l.mailbox !== r.junk && l.mailbox !== r.sent), r.junk ?? (() => ensureMailbox(c, "junk", "Junk"))));
           case "notSpam":
             return void (await moveLocations(c, inRole("junk"), r.inbox!));
           case "moveToInbox": {

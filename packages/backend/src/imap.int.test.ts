@@ -470,6 +470,85 @@ describe("IMAP provider against ImapKit", () => {
     expect((await client.call("threads.get", { threadId: thread.id })).messages[0]?.bodyText).toBe("Exact read-only copy body\n");
   });
 
+  it.each(["archive", "trash", "spam"] as const)("refuses unsupported %s before creating its missing destination", async (action) => {
+    const { imap, backend, client, addAccount } = await setup({ imap: {
+      plugins: ["IDLE", "SPECIAL-USE", "ENABLE", "CONDSTORE"], storage: { INBOX: {}, "": { separator: "/", folders: { Sent: { "special-use": "\\Sent" } } } },
+    } });
+    const ctl = imap.server.control;
+    const targetRaw = raw({ subject: "Missing destination", body: "Exact destination body" });
+    const target = ctl.addMessage("INBOX", { raw: targetRaw });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const thread = (await client.call("threads.list", { view: "inbox" })).items.find((t) => t.subject === "Missing destination")!;
+    const mutations: string[] = [];
+    imap.server.script.add({ on: "command", run: true, when: (context) => {
+      if (/^(?:UID )?(?:COPY|MOVE|STORE|EXPUNGE|CREATE)$/.test(context.command ?? "")) {
+        if (mutations.length >= 32) throw new Error("Unexpected unbounded IMAP mutations");
+        mutations.push(context.command!);
+      }
+      return false;
+    } });
+    await client.call("threads.act", { threadIds: [thread.id], action });
+    await backend.runWorker();
+    expect.soft(mutations).toEqual([]);
+    expect.soft(ctl.listMessages("INBOX", { raw: true }).map((m) => [m.uid, m.raw?.toString()])).toEqual([[target.uid, targetRaw]]);
+    expect.soft(await client.call("ops.list", {})).toEqual([expect.objectContaining({ kind: action, state: "failed", attempts: 1, lastErrorI18n: { key: "errors.imap.unsafeMove" } })]);
+    expect((await client.call("threads.get", { threadId: thread.id })).messages[0]?.bodyText).toBe("Exact destination body\n");
+  });
+
+  it.each([false, true])("creates a missing Archive only for an admitted move (MOVE %s)", async (move) => {
+    const { imap, backend, client, addAccount } = await setup({ imap: {
+      plugins: ["IDLE", "UIDPLUS", "SPECIAL-USE", "ENABLE", "CONDSTORE", ...(move ? ["MOVE"] : [])], storage: { INBOX: {}, "": { separator: "/", folders: { Sent: { "special-use": "\\Sent" } } } },
+    } });
+    const ctl = imap.server.control;
+    const targetRaw = raw({ subject: "Create admitted Archive", body: "Exact admitted body" });
+    ctl.addMessage("INBOX", { raw: targetRaw });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const thread = (await client.call("threads.list", { view: "inbox" })).items.find((t) => t.subject === "Create admitted Archive")!;
+    const mutations: string[] = [];
+    imap.server.script.add({ on: "command", run: true, when: (context) => {
+      if (/^(?:UID )?(?:COPY|MOVE|STORE|EXPUNGE|CREATE)$/.test(context.command ?? "")) {
+        if (mutations.length >= 32) throw new Error("Unexpected unbounded IMAP mutations");
+        mutations.push(context.command!);
+      }
+      return false;
+    } });
+    await client.call("threads.act", { threadIds: [thread.id], action: "archive" });
+    await backend.runWorker();
+    expect(mutations).toEqual(move ? ["CREATE", "UID MOVE"] : ["CREATE", "UID COPY", "UID STORE", "UID EXPUNGE"]);
+    expect(ctl.listMessages("INBOX")).toHaveLength(0);
+    expect(ctl.listMessages("Archive", { raw: true }).map((m) => m.raw?.toString())).toEqual([targetRaw]);
+    expect(await client.call("ops.list", {})).toEqual([expect.objectContaining({ kind: "archive", state: "succeeded", attempts: 1 })]);
+    expect((await client.call("threads.get", { threadId: thread.id })).messages[0]?.bodyText).toBe("Exact admitted body\n");
+  });
+
+  it("does not create Junk when spam has no movable Sent source", async () => {
+    const { imap, backend, client, addAccount } = await setup({ imap: {
+      plugins: ["IDLE", "SPECIAL-USE", "ENABLE", "CONDSTORE"], storage: { INBOX: {}, "": { separator: "/", folders: { Sent: { "special-use": "\\Sent" } } } },
+    } });
+    const ctl = imap.server.control;
+    const targetRaw = raw({ subject: "Sent-only no-op", from: "Luis <luis@test.local>", body: "Exact Sent body" });
+    const target = ctl.addMessage("Sent", { raw: targetRaw });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const thread = (await client.call("threads.list", { view: "sent" })).items.find((t) => t.subject === "Sent-only no-op")!;
+    const mutations: string[] = [];
+    imap.server.script.add({ on: "command", run: true, when: (context) => {
+      if (/^(?:UID )?(?:COPY|MOVE|STORE|EXPUNGE|CREATE)$/.test(context.command ?? "")) {
+        if (mutations.length >= 32) throw new Error("Unexpected unbounded IMAP mutations");
+        mutations.push(context.command!);
+      }
+      return false;
+    } });
+    await client.call("threads.act", { threadIds: [thread.id], action: "spam" });
+    await backend.runWorker();
+    expect.soft(mutations).toEqual([]);
+    expect.soft(ctl.listMessages("Sent", { raw: true }).map((m) => [m.uid, m.raw?.toString()])).toEqual([[target.uid, targetRaw]]);
+    expect.soft(await client.call("ops.list", {})).toEqual([expect.objectContaining({ kind: "spam", state: "succeeded", attempts: 1 })]);
+    expect((await client.call("threads.get", { threadId: thread.id })).messages[0]?.bodyText).toBe("Exact Sent body\n");
+  });
+
   it("archives on the server with MOVE and keeps the message (now in Archive) after resync", async () => {
     const { imap, backend, client, addAccount } = await setup();
     imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Archívame" }) });

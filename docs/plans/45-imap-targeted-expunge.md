@@ -93,3 +93,11 @@ The All Mail read-only Inbox case is RED only at the specific diagnostic: ImapFl
 
 
 Both new read-only controls and the nine earlier cases pass11/11 in `imap-readonly-all-green.txt`; mail and both backend typechecks, owned lint and diff check pass. All Mail deletion now reports read-only rather than the generic false-result diagnostic. The copy-only control requires exactly UID COPY, both exact remote copies and a succeeded operation, with local body retained. No broader MOVE ambiguity or final review approval.
+
+
+## Lazy role creation correction
+
+Four public REDs in `imap-empty-role-red.txt` show CREATE before unsupported archive/trash/spam failure, plus CREATE Junk for an operation whose only source is Sent and deliberately excluded from spam. Exact original remote/local bodies and final operation outcomes otherwise hold. Resolve missing role destinations lazily inside moveLocations after nonempty-target/capability admission. Known destinations still skip already-present locations without requiring destructive capabilities. This also avoids the extra moving-array snapshot; existing grouping costs are unchanged and remain outside a throughput claim.
+
+
+Lazy role creation passes the four new RED cases and eleven preceding controls15/15 (`imap-empty-role-green.txt`). Two additional positive controls require CREATE followed by native UID MOVE or the UIDPLUS COPY/STORE/UID EXPUNGE fallback and verify exact destination bytes and succeeded operation (`imap-empty-role-positive.txt`,2/2). Scoped mail/backend types, lint and diff check pass. Existing target and unsupported/no-op paths are qualified without weakening the original remote-content assertions. Capability/session matrix and fresh whole-slice review remain pending.
