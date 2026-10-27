@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { MailStore } from "../mail-store";
 import type { StoreHarness } from "./store";
-import { withAccounts } from "./fixtures";
+import { ingest, msg, withAccounts } from "./fixtures";
 
 export function defineDraftRecoveryConformance(name: string, harness: StoreHarness): void {
   const opened: MailStore[] = [];
@@ -41,6 +41,18 @@ export function defineDraftRecoveryConformance(name: string, harness: StoreHarne
       await expect(store.compose.queueSend(send)).rejects.toMatchObject({ details: { reason: "draftMissing" } });
       await expect(store.compose.queueSend({ ...send, draftGeneration: d.generation })).rejects.toMatchObject({ details: { reason: "draftRevision" } });
       expect((await store.debug.snapshot()).ops.length).toBe(0);
+    });
+
+    it("standalone cross-account replies retain valid RFC context through copy and reopen without a foreign provider thread", async () => {
+      let store = await open(); const [a, b] = await withAccounts(store);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "source", providerThreadId: "foreign-provider-thread", rfcMessageId: "<source@example.test>" })]);
+      const source = (await store.debug.snapshot()).messages[0]!;
+      const saved = (await store.drafts.save({ accountId: b!, threadId: null, mode: "reply", inReplyToMessageId: source.id, to: [], cc: [], subject: "reply", bodyText: "exact", quotedText: "> quote", includeQuote: true }, 0))!;
+      expect((await store.drafts.list())[0]).toMatchObject({ mode: "reply", thread_id: null, in_reply_to_message_id: source.id });
+      store = await harness.reopen(store); opened.push(store);
+      expect((await store.drafts.list())[0]).toMatchObject({ mode: "reply", in_reply_to_message_id: source.id });
+      const sent = await store.compose.queueSend({ accountId: b!, to: [], cc: [], bcc: [], subject: "reply", bodyText: "exact\n\n> quote", inReplyToMessageId: source.id, draftId: saved.id, draftGeneration: saved.generation, draftRevision: 1, recordReply: false, now: 1 });
+      expect(JSON.parse((await store.ops.get(sent.opId))!.payload_json)).toMatchObject({ inReplyTo: "source@example.test", providerThreadId: null });
     });
 
     it("normalizes vanished local context atomically, retains authored fields, and classifies account/assets refusal", async () => {

@@ -1512,7 +1512,7 @@ export function listDrafts(c: Ctx): DraftRow[] {
     .map(draftRow)
     .map((d) => {
       if (d.mode === "new") return d;
-      const lost = d.thread_id === null || (d.in_reply_to_message_id !== null && !exists(d.in_reply_to_message_id)) || (d.forward_of_message_id !== null && !exists(d.forward_of_message_id));
+      const lost = (d.thread_id === null && d.in_reply_to_message_id === null && d.forward_of_message_id === null) || (d.in_reply_to_message_id !== null && !exists(d.in_reply_to_message_id)) || (d.forward_of_message_id !== null && !exists(d.forward_of_message_id));
       return lost ? { ...d, mode: "new" as const, thread_id: null, in_reply_to_message_id: null, forward_of_message_id: null } : d;
     });
 }
