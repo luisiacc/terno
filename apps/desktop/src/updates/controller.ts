@@ -256,6 +256,12 @@ export class UpdateController {
       this.deps.log("update.deferred", { reason: "drafts" });
       return this.state;
     }
+    if (outcome === "forced") {
+      this.dispatch({ type: "install-failed", kind: "unknown" });
+      this.deps.log("update.deferred", { reason: "other" });
+      this.deps.recover();
+      return this.state;
+    }
     // only a clean close goes ahead; a send still running, or a backend that didn't answer (it may be mid-send), waits
     if (outcome !== "closed") {
       this.dispatch({ type: "install-deferred", reason: "sending" });
@@ -269,9 +275,9 @@ export class UpdateController {
       }
       return this.state;
     }
-    this.recordPending(ready.version);
-    this.deps.log("update.install", { toVersion: ready.version, trigger: "restart" });
     try {
+      this.recordPending(ready.version);
+      this.deps.log("update.install", { toVersion: ready.version, trigger: "restart" });
       this.ensureEngine().quitAndInstall();
     } catch (error) {
       this.failInstall(error, errorKind(error));
@@ -280,10 +286,12 @@ export class UpdateController {
   }
 
   private failInstall(error: unknown, kind: ReturnType<typeof errorKind>): void {
-    this.deps.pending.clear();
-    this.dispatch({ type: "install-failed", kind });
-    this.deps.capture(error, "update.failed", { stage: "install" }, expectedKind(kind));
-    this.deps.recover();
+    try {
+      try { this.deps.pending.clear(); }
+      catch (cleanup) { this.deps.capture(cleanup, "update.failed", { stage: "install" }, false); }
+      this.dispatch({ type: "install-failed", kind });
+      this.deps.capture(error, "update.failed", { stage: "install" }, expectedKind(kind));
+    } finally { this.deps.recover(); }
   }
 
   private recordPending(to: string): void {

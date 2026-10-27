@@ -5,10 +5,10 @@ const { acquireDraftHold, beginDraftWork, createDraft, draftsSaved, editDraft, f
 const { newFields } = await import("./compose-fields");
 afterEach(() => { for (const k of Object.keys(useDrafts.getState().drafts)) forgetDraft(k); });
 
-it.each(["closed", "sending", "timeout"] as const)("saved ACK holds editing/creation throughout backend drain and releases on %s", async (outcome) => {
+it.each(["closed", "sending", "timeout", "forced"] as const)("saved ACK holds editing/creation throughout backend drain and releases on %s", async (outcome) => {
   setDraftTransport(async (_m, p) => ({ ...(p as object), id: 10, revision: 1 }));
   const key = createDraft(newFields(1)); editDraft(key, { bodyText: "exact saved" }); await draftsSaved();
-  let finish!: (result: "closed" | "sending") => void, reached!: () => void;
+  let finish!: (result: "closed" | "sending" | "forced") => void, reached!: () => void;
   const draining = new Promise<void>((r) => { reached = r; });
   let release = () => {};
   const done = coordinateShutdown({

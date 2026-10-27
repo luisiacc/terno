@@ -246,6 +246,41 @@ test("saved renderer ACK holds editing throughout a real active-send drain, then
   } finally { releaseSmtp(); await new Promise<void>((r) => smtp.close(() => r())); }
 });
 
+test("unexpected backend exit after a saved ACK restores editing without installing or waiting for another idle event", async () => {
+  let releaseSmtp = () => {}, received = false;
+  const smtp = new SMTPServer({ authOptional: true, disabledCommands: ["STARTTLS"], logger: false,
+    onAuth: (_auth, _session, callback) => callback(null, { user: "synthetic" }),
+    onData(stream, _session, callback) { stream.resume(); stream.on("end", () => { let released = false; releaseSmtp = () => { if (!released) { released = true; callback(); } }; received = true; }); },
+  });
+  await new Promise<void>((r) => smtp.listen(0, "127.0.0.1", r));
+  try {
+    stage({ tamper: false });
+    await launch({ TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_TEST_SMTP_PORT: String((smtp.server.address() as AddressInfo).port) });
+    await updates("check"); await updates("download"); await expect.poll(async () => (await state()).status, { timeout: 180_000 }).toBe("ready");
+    await page.getByTestId("thread-row").first().click(); await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); await page.keyboard.press("r");
+    const body = page.getByTestId("compose-body"); await body.fill("synthetic send awaiting ACK"); await body.press("Meta+Enter");
+    await expect.poll(() => received, { timeout: 20_000 }).toBe(true);
+    await page.getByRole("button", { name: "Compose", exact: true }).click(); await body.fill("retained after backend exit");
+    await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+    await page.getByTestId("update-pill").click(); await page.getByTestId("update-restart").click();
+    await expect(page.getByTestId("draft-status")).toHaveText("Preparing to restart. Draft editing is paused.");
+    const metrics = await app!.evaluate(({ app: a }) => a.getAppMetrics().map(({ pid, type, name }) => ({ pid, type, name })));
+    console.info("synthetic app processes", metrics);
+    const engines = metrics.filter((m) => m.type === "Utility" && m.name === "Terno Mail Engine");
+    expect(engines).toHaveLength(1);
+    const pid = engines[0]!.pid;
+    expect(pid).toBeGreaterThan(0); process.kill(pid, "SIGKILL");
+    await expect.poll(async () => (await state()).error?.kind, { timeout: 20_000 }).toBe("unknown");
+    expect(bundleVersion()).toBe("0.1.0");
+    await page.keyboard.press("Escape"); await body.click(); await body.press("Meta+ArrowRight"); await page.keyboard.type(" editing restored");
+    await expect(body).toHaveText("retained after backend exit editing restored");
+    await expect(page.getByTestId("draft-status")).toHaveText("Draft saved", { timeout: 20_000 });
+    expect((await state()).status).toBe("ready");
+    const db = new DatabaseSync(join(profile(), "terno.db"));
+    try { expect(db.prepare("SELECT body_text FROM drafts LIMIT 1").get()?.body_text).toBe("retained after backend exit editing restored"); } finally { db.close(); }
+  } finally { releaseSmtp(); await new Promise<void>((r) => smtp.close(() => r())); }
+});
+
 test("an update downloads, Squirrel swaps the bundle and relaunches it, the profile is intact and the new version acknowledges", async () => {
   stage({ tamper: false });
   await launch({ TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US" });

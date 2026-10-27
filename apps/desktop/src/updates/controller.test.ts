@@ -43,7 +43,7 @@ interface FakeEngine extends Engine {
 
 const release = (version: string): EngineInfo => ({ version, releaseNotes: "<p>Faster</p>", releaseDate: null, size: 1000 });
 
-function harness(o: { localMode?: boolean; prefs?: Partial<UpdatePrefs>; unsupported?: "dmg" | null; shutdown?: InstallShutdown[]; pending?: PendingInstall | null; version?: string } = {}): Harness {
+function harness(o: { localMode?: boolean; prefs?: Partial<UpdatePrefs>; unsupported?: "dmg" | null; shutdown?: InstallShutdown[]; pending?: PendingInstall | null; version?: string; pendingFailure?: boolean } = {}): Harness {
   const engine: FakeEngine = {
     handlers: null,
     allowed: null,
@@ -107,7 +107,7 @@ function harness(o: { localMode?: boolean; prefs?: Partial<UpdatePrefs>; unsuppo
     },
     probe: async () => o.unsupported ?? null,
     prefs: { read: () => h.prefs, write: (p) => (h.prefs = p) },
-    pending: { read: () => h.pending, write: (p) => (h.pending = p), clear: () => (h.pending = null) },
+    pending: { read: () => h.pending, write: (p) => { if (o.pendingFailure) throw new Error("synthetic write"); h.pending = p; }, clear: () => { if (o.pendingFailure) throw new Error("synthetic clear"); h.pending = null; } },
     shutdown: async () => {
       h.shutdowns++;
       return outcomes.shift() ?? "closed";
@@ -300,6 +300,14 @@ describe("main: the update controller", () => {
       await h.ctl.install(); expect(h.engine.installs).toBe(1);
     });
 
+    it("a backend exit during nonforced shutdown releases recovery and requires an explicit Restart attempt", async () => {
+      const h = harness({ shutdown: ["forced", "closed"] });
+      await ready(h); await h.ctl.install();
+      expect(h.ctl.view).toMatchObject({ status: "ready", deferred: null, error: { stage: "install", kind: "unknown" } });
+      expect(h.recovered).toBe(1); expect(h.engine.installs).toBe(0); expect(h.sendsIdle).toHaveLength(0);
+      await h.ctl.install(); expect(h.engine.installs).toBe(1);
+    });
+
     it("a send past the deadline defers it (never forced); it goes ahead once sends are idle", async () => {
       const h = harness({ shutdown: ["sending", "closed"] });
       await ready(h);
@@ -315,6 +323,13 @@ describe("main: the update controller", () => {
       await flush();
       expect(h.engine.installs).toBe(1);
       expect(h.pending?.to).toBe("0.2.0");
+    });
+
+    it("failed pending-record writes and cleanup still restore the closed backend and renderer editing", async () => {
+      const h = harness({ pendingFailure: true }); await ready(h);
+      await h.ctl.install();
+      expect(h.recovered).toBe(1); expect(h.engine.installs).toBe(0);
+      expect(h.ctl.view).toMatchObject({ status: "ready", error: { stage: "install", kind: "unknown" } });
     });
 
     it("Squirrel failing at install: still ready with an install error, the record cleared, the backend brought back", async () => {

@@ -67,7 +67,7 @@ export async function coordinateShutdown(deps: ShutdownDeps, o: ShutdownOptions)
     const backend = deps.shutdownBackend({ deadlineMs: sendMs, force: o.force });
     if (!backend) { committed = true; return { outcome: "closed", draftsTimedOut }; }
     const outcome = await within<ShutdownOutcome>(deps, backend.catch(() => "timeout" as const), sendMs + graceMs, "timeout");
-    committed = outcome === "closed" || outcome === "forced";
+    committed = outcome === "closed" || (o.force && outcome === "forced");
     return { outcome, draftsTimedOut };
   } catch {
     return { outcome: "timeout", draftsTimedOut: 0 };
