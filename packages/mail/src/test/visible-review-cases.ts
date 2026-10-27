@@ -856,3 +856,14 @@ visibleReviewCases.push(
   { name: "R2-F4 inline block clipping remains hidden", html: '<div style="display:inline-block;max-height:0;overflow:hidden">phantomneedle</div><p>Useful</p>', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false },
   { name: "R2-F4 ordinary inline opacity remains hidden", html: '<span style="opacity:0">phantomneedle</span><p>Useful</p>', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false },
 );
+
+for (const tag of ["center", "dir", "menu", "hgroup", "search", "legend", "summary"]) {
+  visibleReviewCases.push({ name: `R2-F5 retained ${tag} has default block boundaries`, html: `<${tag}>Visible</${tag}><${tag}>phrase</${tag}>`, text: "Visible phrase", value: "visible phrase", query: '"visible phrase"', matches: true });
+  for (const display of ["inline", "contents"]) visibleReviewCases.push({ name: `R2-F5 ${tag} ${display} overrides default boundaries`, html: `<${tag} style="display:${display}">un</${tag}><${tag} style="display:${display}">broken</${tag}>`, text: "unbroken", value: "unbroken", query: "unbroken", matches: true });
+}
+visibleReviewCases.push({ name: "R2-F5 default center does not override hidden", html: '<center hidden>phantomneedle</center><p>Useful</p>', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false });
+visiblePolicyCases.push(
+  { name: "R2-F5 footer table groups preserve row boundaries", html: '<table><tfoot><tr><td>Visible</td></tr><tr><td>phrase</td></tr></tfoot></table>', text: "Visible phrase" },
+  { name: "R2-F5 retained open details has block boundaries", html: '<details open>Visible</details><details open>phrase</details>', text: "Visible phrase" },
+  { name: "R2-F5 retained open dialog has block boundaries", html: '<dialog open>Visible</dialog><dialog open>phrase</dialog>', text: "Visible phrase" },
+);
