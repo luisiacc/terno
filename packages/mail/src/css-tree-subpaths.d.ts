@@ -13,3 +13,7 @@ declare module "css-tree/utils" {
   import type * as Css from "css-tree";
   export const ident: typeof Css.ident;
 }
+declare module "css-tree/lexer" {
+  import type * as Css from "css-tree";
+  export const Lexer: { new(config?: Css.SyntaxConfig): Css.Lexer };
+}
