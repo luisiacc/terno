@@ -5,6 +5,7 @@ import { connect, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setImmediate as nextTurn } from "node:timers/promises";
+import { setTimeout as nodeTimeout, clearTimeout as nodeClearTimeout } from "node:timers";
 import { RpcClient } from "@terno/core/rpc";
 import { webSocketTransport } from "@terno/backend";
 import { expect, it, vi } from "vitest";
@@ -26,20 +27,21 @@ vi.mock("node:http", async (original) => {
   } };
 });
 const { startDevServer } = await import("./server");
+const realDeadline = nodeTimeout, clearRealDeadline = nodeClearTimeout;
 
 async function completed(promise: Promise<unknown>, ms: number): Promise<boolean> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    return await Promise.race([promise.then(() => true), new Promise<false>((resolve) => { timer = setTimeout(() => resolve(false), ms); })]);
-  } finally { clearTimeout(timer); }
+    return await Promise.race([promise.then(() => true), new Promise<false>((resolve) => { timer = realDeadline(() => resolve(false), ms); })]);
+  } finally { clearRealDeadline(timer); }
 }
 
 function eventScope() {
   const pending = new Map<AbortController, Promise<unknown[]>>();
   const watch = (emitter: EventEmitter, name: string) => {
     const abort = new AbortController();
-    const timer = setTimeout(() => abort.abort(new Error(`missing ${name}`)), 2000);
-    const result = once(emitter, name, { signal: abort.signal }).finally(() => { clearTimeout(timer); pending.delete(abort); });
+    const timer = realDeadline(() => abort.abort(new Error(`missing ${name}`)), 2000);
+    const result = once(emitter, name, { signal: abort.signal }).finally(() => { clearRealDeadline(timer); pending.delete(abort); });
     pending.set(abort, result);
     void result.catch(() => {});
     return result;
@@ -57,6 +59,10 @@ async function settleCloses(promises: Promise<void>[], ms = 5000): Promise<Promi
   return await completed(joined, ms) ? await joined : undefined;
 }
 
+async function closeResult(promise: Promise<void>, ms = 5000): Promise<PromiseSettledResult<void> | undefined> {
+  return (await settleCloses([promise], ms))?.[0];
+}
+
 const header = "GET /?token=shutdown-fixture HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n";
 
 async function withHost(body: (fixture: {
@@ -64,18 +70,19 @@ async function withHost(body: (fixture: {
   own: <T extends Socket | WebSocket>(peer: T) => T; release: (() => void)[];
   failure: { expected?: unknown };
   watch: ReturnType<typeof eventScope>["watch"];
+  dir: string;
 }) => Promise<void>): Promise<void> {
   const dir = mkdtempSync(join(tmpdir(), "terno-dev-close-control-"));
   const peers: (Socket | WebSocket)[] = [], release: (() => void)[] = [];
   const failure: { expected?: unknown } = {};
   const { watch, dispose } = eventScope();
-  let host: Awaited<ReturnType<typeof startDevServer>> | undefined, storeClosed = false;
+  let host: Awaited<ReturnType<typeof startDevServer>> | undefined, storeClosed = false, hostJoined = false;
   try {
     const index = observed.servers.length, sockets = observed.sockets.length;
     host = await startDevServer({ port: 0, dataDir: dir, token: "shutdown-fixture", seed: false, autoSync: false, iconTransport: null });
     const close = host.backend.store.close.bind(host.backend.store);
     vi.spyOn(host.backend.store, "close").mockImplementation(async () => { await close(); storeClosed = true; });
-    await body({ host, server: observed.servers[index]!, wss: observed.sockets[sockets]!, own: (peer) => { peers.push(peer); return peer; }, release, failure, watch });
+    await body({ host, server: observed.servers[index]!, wss: observed.sockets[sockets]!, own: (peer) => { peers.push(peer); return peer; }, release, failure, watch, dir });
   } finally {
     await dispose();
     for (const done of release) done();
@@ -83,13 +90,15 @@ async function withHost(body: (fixture: {
     try {
       if (host) {
         const result = host.close().then(() => ({ error: undefined }), (error: unknown) => ({ error }));
-        expect(await completed(result, 5000), "owned host cleanup completed").toBe(true);
+        hostJoined = await completed(result, 5000);
+        expect(hostJoined, "owned host cleanup completed").toBe(true);
         expect((await result).error).toBe(failure.expected);
       }
     } finally {
       vi.restoreAllMocks();
       if (storeClosed) rmSync(dir, { recursive: true, force: true });
-      console.info("DEV_CLOSE_CONTROL_CLEANUP", JSON.stringify({ dir, storeClosed, removed: !existsSync(dir) }));
+      console.info("DEV_CLOSE_CONTROL_CLEANUP", JSON.stringify({ dir, storeClosed, hostJoined, removed: !existsSync(dir) }));
+      if (hostJoined) expect(storeClosed, "the real store must close before deleting its fixture").toBe(true);
     }
   }
 }
@@ -217,6 +226,59 @@ it("disposes an abandoned event observation when its owned fixture closes", asyn
   } finally { await pending?.catch(() => {}); }
 }, 10_000);
 
+it("keeps a missed real setup event bounded while the fake clock is frozen", async () => {
+  await withHost(async ({ server, watch }) => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      let rejected = false;
+      void watch(server, "upgrade").catch(() => { rejected = true; });
+      await new Promise<void>((resolve) => realDeadline(resolve, 2100));
+      expect(rejected, "real setup deadline must fire without advancing the fake clock").toBe(true);
+    } finally { vi.useRealTimers(); }
+  });
+}, 10_000);
+
+it("bounds body outcome observation before owned cleanup starts", async () => {
+  await withHost(async ({ host, server, release }) => {
+    let reached!: () => void, unblock!: () => void;
+    const entered = new Promise<void>((resolve) => { reached = resolve; });
+    const gate = new Promise<void>((resolve) => { unblock = resolve; }); release.push(unblock);
+    const close = server.close.bind(server);
+    vi.spyOn(server, "close").mockImplementation((callback) => close((error) => { reached(); void gate.then(() => callback?.(error)); }));
+    const closing = host.close();
+    expect(await completed(entered, 2000)).toBe(true);
+    const outcome = closeResult(closing, 20);
+    expect(await completed(outcome, 100), "a stalled body observation must reach finally").toBe(true);
+    expect(await outcome).toBeUndefined();
+  });
+}, 10_000);
+
+it("reports an unclosed real store even when the transport rejection was expected", async () => {
+  let stop: (() => Promise<void>) | undefined, dir: string | undefined;
+  try {
+    await expect(withHost(async ({ host, server, failure, dir: owned }) => {
+      dir = owned; stop = host.backend.stop.bind(host.backend);
+      vi.spyOn(host.backend, "stop").mockResolvedValue();
+      const error = new Error("owned transport failure"), closeConnections = server.closeAllConnections.bind(server);
+      vi.spyOn(server, "closeAllConnections").mockImplementation(() => { closeConnections(); throw error; });
+      const result = await closeResult(host.close());
+      expect(result).toEqual({ status: "rejected", reason: error }); failure.expected = error;
+    })).rejects.toThrow("real store");
+  } finally {
+    let closed = false;
+    try {
+      if (stop) {
+        const result = await closeResult(stop());
+        closed = result?.status === "fulfilled";
+        expect(result, "controlled stop must restore the actual store").toEqual({ status: "fulfilled", value: undefined });
+      }
+    } finally {
+      if (closed && dir) rmSync(dir, { recursive: true, force: true });
+      console.info("DEV_CLOSE_ORACLE_CLEANUP", JSON.stringify({ dir, closed, removed: dir ? !existsSync(dir) : false }));
+    }
+  }
+}, 10_000);
+
 it.each(["late headers", "close inside headers"])("rejects upgrade admission during %s", async (scenario) => {
   await withHost(async ({ host, server, wss, own, watch: event }) => {
     const admitted = vi.spyOn(host.backend, "connect");
@@ -273,7 +335,8 @@ it("joins a reentrant close before cleanup reaches the backend", async () => {
     expect(await completed(entered, 2000)).toBe(true);
     expect(nested).toBe(first);
     expect(await completed(nested!, 20)).toBe(false);
-    unblock(); await first; await host.close();
+    unblock(); expect(await closeResult(first)).toEqual({ status: "fulfilled", value: undefined });
+    expect(await closeResult(host.close())).toEqual({ status: "fulfilled", value: undefined });
     expect(storeClose).toHaveBeenCalledTimes(1);
   });
 }, 10_000);
@@ -288,14 +351,15 @@ it.each([false, true])("preserves cleanup errors while closing the store (multip
       vi.spyOn(host.backend, "stop").mockImplementation(async () => { await stop(); throw backendError; });
     }
     const closing = host.close();
-    const error = await closing.then(() => undefined, (reason: unknown) => reason);
+    const result = await closeResult(closing);
+    const error = result?.status === "rejected" ? result.reason : undefined;
     if (multiple) {
       expect(error).toBeInstanceOf(AggregateError);
       expect((error as AggregateError).errors).toEqual([transportError, backendError]);
     } else expect(error).toBe(transportError);
     failure.expected = error;
     expect(host.close()).toBe(closing);
-    await expect(host.close()).rejects.toBe(error);
+    expect(await closeResult(host.close())).toEqual({ status: "rejected", reason: error });
   });
 }, 10_000);
 
