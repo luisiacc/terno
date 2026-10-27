@@ -101,3 +101,15 @@ Four public REDs in `imap-empty-role-red.txt` show CREATE before unsupported arc
 
 
 Lazy role creation passes the four new RED cases and eleven preceding controls15/15 (`imap-empty-role-green.txt`). Two additional positive controls require CREATE followed by native UID MOVE or the UIDPLUS COPY/STORE/UID EXPUNGE fallback and verify exact destination bytes and succeeded operation (`imap-empty-role-positive.txt`,2/2). Scoped mail/backend types, lint and diff check pass. Existing target and unsupported/no-op paths are qualified without weakening the original remote-content assertions. Capability/session matrix and fresh whole-slice review remain pending.
+
+
+## Capability and recovery qualification
+
+Six real-wire rev2 cases pass in `imap-rev2-matrix.txt`: missing standalone MOVE/UIDPLUS tokens, dual-advertised but unenabled refusal, dual-enabled and rev2-only success, each for true MOVE and All Mail UID-targeted deletion. ImapKit runs its real rev2/folded handlers; capability output removes explicit MOVE/UIDPLUS, the rev2-only fixture omits rev1 in every CAPABILITY response, and the unenabled case receives no ENABLE grant. Exact remote content/unrelated system Deleted flag, public operation and local body remain asserted. These are qualification controls, not newly observed old-product defects.
+
+Both safe-to-unsafe and unsafe-to-safe reconnect cases pass in `imap-reconnect-capabilities-corrected.txt`, requiring a new server session identity and the new session capability outcome. The first reconnect capture used the wrong public session property (`id` rather than `session`), failing its fixture precondition; it is retained as setup failure, not a product RED.
+
+Refusal/Undo/reopen qualification passes in `imap-refusal-reopen-undo-corrected.txt`: exact same message/body/location, restored Inbox, remote target/unrelated system Deleted bytes, and persisted operation records. The initial test attempted an old in-memory Undo handle after restart and then double-stopped the already closed backend; both failures are retained in `imap-refusal-reopen-undo.txt`, not claimed product defects. The corrected oracle performs explicit Undo within its originating session and verifies its durable result across reopen. The synthetic fixture now has an exact stop guard and sequential cleanup continues all registered disposers while collecting errors. No durable cross-restart Undo window is claimed.
+
+
+The complete existing real IMAP/SMTP integration file passes52/52 with no globalSetup or worker emission in12.86seconds (`imap-targeted-expunge-full.txt`), including all new capability/ACL/Create/reconnect/refusal/Undo/reopen controls and the pre-existing send/SMTP cases. Mail, i18n and both backend typechecks, all four changed-code-path lint targets and diff check pass. This is finite correctness evidence, not fresh browser/native/performance/global approval. Independent whole-slice Standards and Spec review is required next; partial MOVE/ambiguous replay, missing UID mappings, arbitrary folders and broader IMAP remain open.

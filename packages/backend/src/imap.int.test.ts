@@ -32,7 +32,15 @@ const STORAGE = {
 
 const cleanups: (() => Promise<unknown> | unknown)[] = [];
 afterEach(async () => {
-  for (const c of cleanups.splice(0).reverse()) await c();
+  const errors: unknown[] = [];
+  for (const c of cleanups.splice(0).reverse()) {
+    try {
+      await c();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length) throw new AggregateError(errors, "IMAP fixture cleanup failed");
 });
 
 let seq = 0;
@@ -148,8 +156,14 @@ async function setup(opts: { smtp?: Parameters<typeof startSmtp>[0]; imap?: Reco
     autoSync: false,
     attention: opts.attention,
   });
-  cleanups.push(async () => {
+  let stopped = false;
+  const stop = async () => {
+    if (stopped) return;
     await backend.stop();
+    stopped = true;
+  };
+  cleanups.push(async () => {
+    await stop();
     rmSync(dir, { recursive: true, force: true });
   });
   const [c, s] = createMemoryTransportPair();
@@ -163,7 +177,7 @@ async function setup(opts: { smtp?: Parameters<typeof startSmtp>[0]; imap?: Reco
       smtp: { host: "127.0.0.1", port: smtp.port, secure: false, user: "testuser" },
       password: "testpass",
     });
-  return { imap, smtp, backend, client, addAccount };
+  return { imap, smtp, backend, client, addAccount, dir, stop };
 }
 
 const count = (backend: Backend, sql: string, ...p: (string | number)[]) => sqlDb(backend.store).get<{ c: number }>(`SELECT count(*) AS c FROM (${sql})`, ...p)!.c;
@@ -222,7 +236,7 @@ describe("IMAP provider against ImapKit", () => {
   });
 
   it("refuses archive without targeted expunge support and preserves unrelated Deleted mail", async () => {
-    const { imap, backend, client, addAccount } = await setup({ imap: { plugins: ["IDLE", "SPECIAL-USE", "ENABLE", "CONDSTORE"] } });
+    const { imap, backend, client, addAccount, dir, stop } = await setup({ imap: { plugins: ["IDLE", "SPECIAL-USE", "ENABLE", "CONDSTORE"] } });
     const ctl = imap.server.control;
     const targetRaw = raw({ subject: "Keep target", body: "Exact target body" });
     const otherRaw = raw({ subject: "Keep unrelated", body: "Exact unrelated body" });
@@ -232,6 +246,8 @@ describe("IMAP provider against ImapKit", () => {
     await backend.syncAccount(account.id);
     const thread = (await client.call("threads.list", { view: "inbox" })).items.find((t) => t.subject === "Keep target")!;
     expect(thread).toBeDefined();
+    const original = (await client.call("threads.get", { threadId: thread.id })).messages[0]!;
+    const beforeLocations = await backend.store.providerStore(account.id).locations!.of([original.id]);
     ctl.setFlags("INBOX", [other.uid], ["\\Deleted"], "add");
     expect(ctl.getMessage("INBOX", other.uid).flags).toContain("\\Deleted");
     const mutations: string[] = [];
@@ -242,7 +258,7 @@ describe("IMAP provider against ImapKit", () => {
       }
       return false;
     } });
-    await client.call("threads.act", { threadIds: [thread.id], action: "archive" });
+    const action = await client.call("threads.act", { threadIds: [thread.id], action: "archive" });
     await backend.runWorker();
     expect.soft(mutations).toEqual([]);
     const remaining = ctl.listMessages("INBOX", { raw: true });
@@ -253,6 +269,26 @@ describe("IMAP provider against ImapKit", () => {
     expect.soft(ctl.listMessages("Archive")).toHaveLength(0);
     expect.soft(await client.call("ops.list", {})).toEqual([expect.objectContaining({ kind: "archive", state: "failed", attempts: 1, lastErrorI18n: { key: "errors.imap.unsafeMove" } })]);
     expect((await client.call("threads.get", { threadId: thread.id })).messages[0]?.bodyText).toBe("Exact target body\n");
+    expect(action.undoId).not.toBeNull();
+    expect(await client.call("threads.undo", { undoId: action.undoId! })).toEqual({ restored: 1 });
+    await backend.runWorker();
+    const restored = await client.call("threads.get", { threadId: thread.id });
+    expect(restored.thread.inInbox).toBe(true);
+    expect(restored.messages[0]).toMatchObject({ id: original.id, bodyText: original.bodyText });
+    const persisted = await client.call("ops.list", {});
+    await stop();
+    const reopened = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: createRegistry({ imap: { allowInsecure: true } }), autoSync: false });
+    cleanups.push(() => reopened.stop());
+    const [c, s] = createMemoryTransportPair();
+    reopened.connect(s, { clientId: "reopen", origin: "renderer" });
+    const next = new RpcClient(c);
+    expect(await next.call("ops.list", {})).toEqual(persisted);
+    expect(await reopened.store.providerStore(account.id).locations!.of([original.id])).toEqual(beforeLocations);
+    expect((await next.call("threads.get", { threadId: thread.id })).messages[0]).toMatchObject({ id: original.id, bodyText: original.bodyText });
+    expect((await next.call("threads.get", { threadId: thread.id })).thread.inInbox).toBe(true);
+    expect(mutations).toEqual([]);
+    expect(ctl.listMessages("INBOX", { raw: true }).map((m) => [m.uid, m.raw?.toString()])).toEqual([[target.uid, targetRaw], [other.uid, otherRaw]]);
+    expect(ctl.getMessage("INBOX", other.uid).flags).toContain("\\Deleted");
   });
 
   it("uses UIDPLUS fallback without expunging unrelated Deleted mail", async () => {
@@ -547,6 +583,104 @@ describe("IMAP provider against ImapKit", () => {
     expect.soft(ctl.listMessages("Sent", { raw: true }).map((m) => [m.uid, m.raw?.toString()])).toEqual([[target.uid, targetRaw]]);
     expect.soft(await client.call("ops.list", {})).toEqual([expect.objectContaining({ kind: "spam", state: "succeeded", attempts: 1 })]);
     expect((await client.call("threads.get", { threadId: thread.id })).messages[0]?.bodyText).toBe("Exact Sent body\n");
+  });
+
+  it.each([
+    { revision: "dual-unenabled", allMail: false },
+    { revision: "dual-enabled", allMail: false },
+    { revision: "rev2-only", allMail: false },
+    { revision: "dual-unenabled", allMail: true },
+    { revision: "dual-enabled", allMail: true },
+    { revision: "rev2-only", allMail: true },
+  ])("matches folded capability wire semantics ($revision, All Mail $allMail)", async ({ revision, allMail }) => {
+    const destination = allMail ? "All" : "Archive";
+    const { imap, backend, client, addAccount } = await setup({ imap: {
+      plugins: ["IMAP4rev2", "SPECIAL-USE", "ENABLE"], storage: { INBOX: {}, "": { separator: "/", folders: { [destination]: { "special-use": allMail ? "\\All" : "\\Archive" } } } },
+    } });
+    imap.server.registerCapability("MOVE", () => false);
+    imap.server.registerCapability("UIDPLUS", () => false);
+    const capabilities: string[][] = [];
+    imap.server.script.add({ on: "response", description: "CAPABILITY LIST", mutate: (response) => {
+      if (revision === "rev2-only") response.attributes = response.attributes.filter((attribute: { value: string }) => attribute.value !== "IMAP4rev1");
+      if (capabilities.length >= 16) throw new Error("Unexpected unbounded capability responses");
+      capabilities.push(response.attributes.map((attribute: { value: string }) => attribute.value));
+    } });
+    if (revision === "dual-unenabled") imap.server.script.add({ on: "command", command: "ENABLE", send: "$TAG OK no extensions enabled\r\n" });
+    const ctl = imap.server.control;
+    const targetRaw = raw({ subject: "Folded capabilities", body: "Exact folded body" });
+    const otherRaw = raw({ subject: "Folded unrelated", body: "Exact folded unrelated" });
+    const target = ctl.addMessage("INBOX", { raw: targetRaw });
+    const other = ctl.addMessage("INBOX", { raw: otherRaw });
+    if (allMail) ctl.addMessage("All", { raw: targetRaw });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    expect(capabilities.length).toBeGreaterThan(0);
+    for (const tokens of capabilities) {
+      expect(tokens).not.toContain("MOVE");
+      expect(tokens).not.toContain("UIDPLUS");
+      expect(tokens).toContain("IMAP4rev2");
+      expect(tokens.includes("IMAP4rev1")).toBe(revision !== "rev2-only");
+    }
+    expect(ctl.sessions().some((session) => session.enabled.includes("IMAP4rev2"))).toBe(revision !== "dual-unenabled");
+    const thread = (await client.call("threads.list", { view: "inbox" })).items.find((t) => t.subject === "Folded capabilities")!;
+    ctl.setFlags("INBOX", [other.uid], ["\\Deleted"], "add");
+    expect(ctl.getMessage("INBOX", other.uid).flags).toContain("\\Deleted");
+    const mutations: string[] = [];
+    imap.server.script.add({ on: "command", run: true, when: (context) => {
+      if (/^(?:UID )?(?:COPY|MOVE|STORE|EXPUNGE|CREATE)$/.test(context.command ?? "")) {
+        if (mutations.length >= 32) throw new Error("Unexpected unbounded IMAP mutations");
+        mutations.push(context.command!);
+      }
+      return false;
+    } });
+    await client.call("threads.act", { threadIds: [thread.id], action: "archive" });
+    await backend.runWorker();
+    const allowed = revision !== "dual-unenabled";
+    expect(mutations).toEqual(allowed ? allMail ? ["UID STORE", "UID EXPUNGE"] : ["UID MOVE"] : []);
+    expect(ctl.listMessages("INBOX", { raw: true }).map((m) => [m.uid, m.raw?.toString()])).toEqual(allowed ? [[other.uid, otherRaw]] : [[target.uid, targetRaw], [other.uid, otherRaw]]);
+    expect(ctl.getMessage("INBOX", other.uid).flags).toContain("\\Deleted");
+    expect(ctl.listMessages(destination, { raw: true }).map((m) => m.raw?.toString())).toEqual(allowed || allMail ? [targetRaw] : []);
+    expect(await client.call("ops.list", {})).toEqual([expect.objectContaining({ kind: "archive", state: allowed ? "succeeded" : "failed", attempts: 1 })]);
+    expect((await client.call("threads.get", { threadId: thread.id })).messages[0]?.bodyText).toBe("Exact folded body\n");
+  });
+
+  it.each([false, true])("uses the reconnected session's move capabilities (initial safe %s)", async (initial) => {
+    const { imap, backend, client, addAccount } = await setup();
+    let safe = initial;
+    imap.server.registerCapability("MOVE", () => safe);
+    imap.server.registerCapability("UIDPLUS", () => safe);
+    const ctl = imap.server.control;
+    const targetRaw = raw({ subject: "Reconnected target", body: "Exact reconnect body" });
+    const otherRaw = raw({ subject: "Reconnected unrelated", body: "Exact reconnect unrelated" });
+    const target = ctl.addMessage("INBOX", { raw: targetRaw });
+    const other = ctl.addMessage("INBOX", { raw: otherRaw });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const thread = (await client.call("threads.list", { view: "inbox" })).items.find((t) => t.subject === "Reconnected target")!;
+    const priorSessions = ctl.sessions().map((session) => session.session);
+    expect(priorSessions.length).toBeGreaterThan(0);
+    safe = !initial;
+    expect(ctl.disconnect({ user: "testuser" })).toBeGreaterThan(0);
+    await backend.syncAccount(account.id);
+    expect(ctl.sessions().some((session) => !priorSessions.includes(session.session))).toBe(true);
+    ctl.setFlags("INBOX", [other.uid], ["\\Deleted"], "add");
+    expect(ctl.getMessage("INBOX", other.uid).flags).toContain("\\Deleted");
+    const mutations: string[] = [];
+    imap.server.script.add({ on: "command", run: true, when: (context) => {
+      if (/^(?:UID )?(?:COPY|MOVE|STORE|EXPUNGE|CREATE)$/.test(context.command ?? "")) {
+        if (mutations.length >= 32) throw new Error("Unexpected unbounded IMAP mutations");
+        mutations.push(context.command!);
+      }
+      return false;
+    } });
+    await client.call("threads.act", { threadIds: [thread.id], action: "archive" });
+    await backend.runWorker();
+    expect(mutations).toEqual(safe ? ["UID MOVE"] : []);
+    expect(ctl.listMessages("INBOX", { raw: true }).map((m) => [m.uid, m.raw?.toString()])).toEqual(safe ? [[other.uid, otherRaw]] : [[target.uid, targetRaw], [other.uid, otherRaw]]);
+    expect(ctl.getMessage("INBOX", other.uid).flags).toContain("\\Deleted");
+    expect(ctl.listMessages("Archive", { raw: true }).map((m) => m.raw?.toString())).toEqual(safe ? [targetRaw] : []);
+    expect(await client.call("ops.list", {})).toEqual([expect.objectContaining({ kind: "archive", state: safe ? "succeeded" : "failed", attempts: 1 })]);
+    expect((await client.call("threads.get", { threadId: thread.id })).messages[0]?.bodyText).toBe("Exact reconnect body\n");
   });
 
   it("archives on the server with MOVE and keeps the message (now in Archive) after resync", async () => {
