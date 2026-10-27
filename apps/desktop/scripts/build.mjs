@@ -69,6 +69,7 @@ const common = {
 const entries = [
   { in: join(root, "src/main.ts"), out: "main" },
   { in: join(root, "src/backend-entry.ts"), out: "backend" },
+  { in: join(repo, "packages/backend/src/incoming.worker.ts"), out: "incoming.worker" },
   { in: join(root, "src/preload.ts"), out: "preload" },
   // the Sentry pipe, required by main only when a report is about to go
   { in: join(root, "src/diag/reporter.ts"), out: "reporter" },

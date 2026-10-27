@@ -10,7 +10,8 @@
     "./demo": "./src/demo.ts"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.lifecycle.json"
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.lifecycle.json",
+    "build:incoming-worker": "node scripts/build-incoming-worker.mjs"
   },
   "dependencies": {
     "@terno/ai": "workspace:*",
@@ -29,6 +30,7 @@
     "@types/node": "catalog:",
     "@types/smtp-server": "^3.5.13",
     "@types/ws": "^8.18.1",
+    "esbuild": "catalog:",
     "fake-indexeddb": "6.2.6",
     "imapflow": "^2.8.0",
     "imapkit": "5.1.0",

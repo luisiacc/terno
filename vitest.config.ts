@@ -11,6 +11,7 @@ export default defineConfig({
         resolve: { alias: [{ find: /^~\//, replacement: webSrc }] },
         test: {
           name: "unit",
+          globalSetup: ["packages/backend/scripts/test-worker-setup.mjs"],
           include: ["packages/*/src/**/*.test.ts", "apps/*/src/**/*.test.ts"],
           exclude: ["**/*.perf.test.ts", "**/node_modules/**"],
           environment: "node",
@@ -35,6 +36,7 @@ export default defineConfig({
         resolve: { alias: [{ find: /^~\//, replacement: webSrc }] },
         test: {
           name: "perf",
+          globalSetup: ["packages/backend/scripts/test-worker-setup.mjs"],
           include: ["packages/*/src/**/*.perf.test.ts", "apps/*/src/**/*.perf.test.ts"],
           // memory gates measure the heap after a full collection
           execArgv: ["--expose-gc"],
