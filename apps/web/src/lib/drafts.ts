@@ -258,6 +258,7 @@ interface BodySource {
   dirty: boolean;
   /** its HTML comes from the schema (the editor's): a stand-in carrying a stored body isn't, and is re-read before sending */
   canonical: boolean;
+  retained?: { state: unknown; version: number };
 }
 const sources = new Map<string, BodySource>();
 
@@ -266,11 +267,12 @@ const sources = new Map<string, BodySource>();
  * (an edit: dirty, saved later), `dispose()` when it unmounts (what it has is
  * written to the draft first). A source of a draft that is gone does nothing.
  */
-export function attachBody(key: string, read: BodyReader, options: { canonical?: boolean } = {}): { changed(): void; reset(): void; dispose(): void } {
+export function attachBody(key: string, read: BodyReader, options: { canonical?: boolean } = {}): { changed(): void; reset(): void; dispose(snapshot?: { read: BodyReader; state: unknown; version: number }): void } {
   const source: BodySource = { read, dirty: sources.get(key)?.dirty ?? false, canonical: options.canonical ?? true };
   sources.set(key, source);
   return {
     changed() {
+      if (sources.get(key) !== source) return;
       const d = get(key);
       if (!d || d.sending || draftEditsHeld()) return;
       changeVersion++;
@@ -283,14 +285,27 @@ export function attachBody(key: string, read: BodyReader, options: { canonical?:
     },
     // the editor reloaded what the draft has: nothing of its own to write
     reset() {
+      if (sources.get(key) !== source) return;
       source.dirty = false;
     },
-    dispose() {
+    dispose(snapshot) {
       if (sources.get(key) !== source) return;
-      try { materialize(key); } catch { return; }
+      try { materialize(key); } catch {
+        if (snapshot) {
+          source.read = snapshot.read;
+          source.retained = { state: snapshot.state, version: snapshot.version };
+        }
+        return;
+      }
       sources.delete(key);
     },
   };
+}
+
+/** A failed editor disposal retains its exact state until that editor takes ownership again. */
+export function retainedBodyState<T>(key: string, version: number): T | undefined {
+  const retained = sources.get(key)?.retained;
+  return retained?.version === version ? retained.state as T : undefined;
 }
 
 /** Writes a dirty editor body into the draft (same revision: the edit was counted when it was made). */
@@ -381,7 +396,8 @@ export function editDraft(key: string, patch: Partial<DraftFields>): boolean {
   });
   if (bodyChanged) {
     const source = sources.get(key);
-    if (source) source.dirty = false;
+    if (source?.retained) sources.delete(key);
+    else if (source) source.dirty = false;
   }
   schedule(key);
   return true;
@@ -608,6 +624,7 @@ export function resumeDraft(key: string, scheduleSave = true): void {
 /** After a successful send (the backend deleted the stored draft with it). */
 export function forgetDraft(key: string): void {
   changeVersion++;
+  sources.delete(key);
   const w = writers.get(key);
   if (w?.timer) clearTimeout(w.timer);
   writers.delete(key);

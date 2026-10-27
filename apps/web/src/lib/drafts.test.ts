@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/rpc/connection", () => ({ client: { call: () => Promise.reject(new Error("not in tests")) } }));
 
-const { attachBody, copyDraft, createDraft, draftsSaved, discardDraft, draftForSend, draftSenderLocked, editDraft, fieldsOf, flushDraft, fromServer, loadDrafts, markDraftMissing, recipients, restoreDiscarded, resumeDraft, retryDraft, setDraftUi, sendBody, sendHtml, setDraftTransport, threadDraftKey, useDrafts, validRecipients } = await import("./drafts");
+const { attachBody, copyDraft, createDraft, draftsSaved, discardDraft, draftForSend, draftSenderLocked, editDraft, fieldsOf, flushDraft, forgetDraft, fromServer, loadDrafts, markDraftMissing, recipients, restoreDiscarded, retainedBodyState, resumeDraft, retryDraft, setDraftUi, sendBody, sendHtml, setDraftTransport, threadDraftKey, useDrafts, validRecipients } = await import("./drafts");
 const { convertFields, newFields, replyFields } = await import("./compose-fields");
 
 interface Pending {
@@ -271,6 +271,27 @@ describe("the draft writer", () => {
     expect(await draftsSaved()).toBe(false);
     fails = false; body.dispose();
     expect(state(k).bodyText).toBe("latest");
+  });
+
+  it("releases a retained editor state on forget, even if its old handle cleans up later", () => {
+    const k = draft(); const stateSnapshot = { document: "retained" };
+    const source = attachBody(k, () => { throw new Error("read"); }); source.changed();
+    source.dispose({ state: stateSnapshot, version: state(k).bodyVersion, read: () => ({ html: "<b>retained</b>", text: "retained" }) });
+    expect(retainedBodyState(k, state(k).bodyVersion)).toBe(stateSnapshot);
+    forgetDraft(k); source.dispose({ state: stateSnapshot, version: 0, read: () => ({ html: "", text: "" }) });
+    expect(retainedBodyState(k, 0)).toBeUndefined();
+  });
+
+  it("ignores stale editor handles after ownership changes", async () => {
+    const k = draft();
+    const old = attachBody(k, () => ({ html: "<p>old</p>", text: "old" }));
+    const current = attachBody(k, () => ({ html: "<b>current</b>", text: "current" }));
+    current.changed(); const revision = state(k).localRev;
+    old.changed(); old.reset(); old.dispose();
+    expect(state(k).localRev).toBe(revision);
+    const saved = flushDraft(k);
+    expect(calls[0]?.params).toMatchObject({ bodyText: "current", bodyHtml: "<b>current</b>" });
+    await answer(); await saved; current.dispose();
   });
 
   it("retains unread work across body disposal and replacement", async () => {

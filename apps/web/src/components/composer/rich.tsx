@@ -36,7 +36,7 @@ import { TextSelection, type EditorState } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
-import { attachBody, draftEditsHeld, useDrafts } from "~/lib/drafts";
+import { attachBody, draftEditsHeld, retainedBodyState, useDrafts } from "~/lib/drafts";
 import { suggestText } from "~/lib/autocomplete";
 import { setApp, useApp } from "~/state/app";
 import { parseAddressList } from "@terno/core";
@@ -151,7 +151,7 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
     versionRef.current = d.bodyVersion;
     // keys typed into the stand-in while this chunk loaded: the document is what the draft had then, plus them
     const early = takeEarly(draftKey);
-    const state = early ? newState(appendTyped(docOf(early.base.html, early.base.text), early.text)) : (keptState(draftKey, d.bodyVersion) ?? newState(docOf(d.bodyHtml, d.bodyText)));
+    const state = early ? newState(appendTyped(docOf(early.base.html, early.base.text), early.text)) : (retainedBodyState<EditorState>(draftKey, d.bodyVersion) ?? keptState(draftKey, d.bodyVersion) ?? newState(docOf(d.bodyHtml, d.bodyText)));
     let format: FormatState = EMPTY_FORMAT;
     const listeners = new Set<() => void>();
     let frame = 0;
@@ -263,8 +263,9 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
     return () => {
       if (frame) cancelAnimationFrame(frame);
       // a suggestion is never brought back by a remount
-      keepState(draftKey, withoutGhost(view.state), versionRef.current);
-      bodyRef.current?.dispose();
+      const state = withoutGhost(view.state);
+      keepState(draftKey, state, versionRef.current);
+      bodyRef.current?.dispose({ state, version: versionRef.current, read: () => serialize(state.doc) });
       bodyRef.current = null;
       unregister();
       viewRef.current = null;
