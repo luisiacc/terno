@@ -148,7 +148,7 @@ function mergePending(a: Pending, b: Pending): Pending {
  */
 async function attachmentKeys(b: Backend, accountId: number, refs: import("@terno/core").AttachmentRef[]): Promise<unknown[]> {
   const keys = [];
-  for (const ref of refs) keys.push([ref.filename, ref.mime, ref.size, ref.contentId ?? null, await attachmentFingerprint(b.store, accountId, ref, () => b.yieldTurn())]);
+  for (const ref of refs) keys.push([attachmentFilename(ref.filename), attachmentMime(ref.mime), ref.size, attachmentCid(ref.contentId), await attachmentFingerprint(b.store, accountId, ref, () => b.yieldTurn())]);
   return keys;
 }
 

@@ -111,6 +111,41 @@ it.each(["", "AP+A"])("repeated attached-draft import at full quota is a reserva
   client.close();
 });
 
+it.each(["long", "unicode", "legacy"])("canonical %s filenames re-import at full quota without rewriting persisted metadata", async (kind) => {
+  const backend = new Backend({ dbPath: ":memory:", version: "test", cipher: plaintextCipher, providers: demoRegistry, autoSync: false });
+  cleanups.push(() => backend.stop());
+  const accountId = (await backend.store.accounts.create({ kind: "gmail", email: "a@test.com", displayName: "A", color: "indigo", now: 0 })).account.id;
+  let ref = await backend.store.attachments.create({ accountId, filename: kind === "unicode" ? "../résumé 📨. " : "a".repeat(119) + ".b", mime: "application/octet-stream", size: 3, now: Date.now() });
+  await backend.store.attachments.append(accountId, ref.assetId, 0, "AP+A"); await backend.store.attachments.seal(accountId, ref.assetId);
+  const db = sqlDb(backend.store);
+  if (kind === "legacy") {
+    // An immutable filename already emitted by the previous truncation policy.
+    ref = { ...ref, filename: "a".repeat(119) + "." };
+    db.run("UPDATE attachment_assets SET filename = ? WHERE id = ?", ref.filename, ref.assetId);
+  }
+  await backend.store.drafts.save({ accountId, to: [], cc: [], subject: "same", bodyText: "same", attachments: [ref] }, 0);
+  const [c, s] = createMemoryTransportPair(); backend.connect(s, { clientId: "names", origin: "renderer" }); const client = new RpcClient(c);
+  const dump = await client.call("app.export", {});
+  for (let left = 256 * 1024 * 1024 - 1027; left >= 1024;) {
+    const size = Math.min(18 * 1024 * 1024, left - 1024);
+    await backend.store.attachments.create({ accountId, filename: "reserved", mime: "text/plain", size, now: Date.now() });
+    left -= size + 1024;
+  }
+  const before = await backend.store.drafts.list();
+  const assets = db.all("SELECT * FROM attachment_assets ORDER BY id");
+  const create = vi.spyOn(backend.store.attachments, "create");
+  try {
+    expect((await client.call("app.import", { data: dump })).drafts).toBe(0);
+    expect((await client.call("app.import", { data: dump })).drafts).toBe(0);
+    expect(create).not.toHaveBeenCalled();
+    expect(await backend.store.drafts.list()).toEqual(before);
+    expect(db.all("SELECT * FROM attachment_assets ORDER BY id")).toEqual(assets);
+    expect(await backend.store.attachments.info(accountId, ref.assetId)).toEqual(ref);
+    expect(await backend.store.attachments.read(accountId, ref.assetId, 0)).toBe("AP+A");
+    expect(ref.filename).toBe(kind === "legacy" ? "a".repeat(119) + "." : kind === "unicode" ? "résumé 📨" : "a".repeat(119));
+  } finally { client.close(); create.mockRestore(); }
+});
+
 it("a reply-all to 250 people saves, exports and imports back with its body (plan 34: one recipient limit)", async () => {
   const open = async (name: string) => {
     const dir = mkdtempSync(join(tmpdir(), `terno-${name}-`));

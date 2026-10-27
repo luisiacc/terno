@@ -21,7 +21,7 @@ export const ATTACHMENT_ACCOUNT_BYTES = 256 * 1024 * 1024;
 export function attachmentFilename(value: string): string {
   const leaf = value.replace(/\\/g, "/").split("/").pop() ?? "";
   // oxlint-disable-next-line no-control-regex -- filenames exclude control characters
-  return leaf.replace(/[\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069]/g, "").replace(/^\.+|\.+$/g, "").trim().slice(0, 120) || "attachment";
+  return leaf.replace(/[\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069]/g, "").replace(/^[.\s]+|[.\s]+$/gu, "").slice(0, 120).replace(/[\ud800-\udbff]$/u, "").replace(/[.\s]+$/gu, "") || "attachment";
 }
 
 export function attachmentMime(value: string): string {
