@@ -8,7 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { cn } from "@terno/ui/lib/utils";
 import { ChevronDown, Forward, PenLine, ReplyAll, Send, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { composeFocusPending, finishComposeFocus, openCompose, sendDraft, supersedeCompose } from "~/lib/compose";
+import { composeFocusPending, finishComposeFocus, openCompose, reopenInlineDraft, sendDraft, supersedeCompose } from "~/lib/compose";
 import { copyDraft, discardDraft, draftSenderLocked, editDraft, flushDraft, restoreDiscarded, retryDraft, setDraftUi, signatureBlock, useDrafts, type BodyCheckpoint, type DraftFields, type LocalDraft } from "~/lib/drafts";
 import { SenderAvatar } from "./sender-avatar";
 import { RecipientInput, recipientSummary } from "./recipient-input";
@@ -346,8 +346,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
   };
   const reopen = () => {
     if (!d) return;
-    setDraftUi(d.key, "open");
-    focusSoon("[data-testid=compose-body]", rootRef.current);
+    reopenInlineDraft(threadId, d.key);
   };
   const send = async () => {
     if (!d) return;

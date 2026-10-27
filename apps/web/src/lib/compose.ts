@@ -182,6 +182,32 @@ function sameStoredDraft(snapshot: LocalDraft): boolean {
 }
 const openedDraft = (d: LocalDraft): LocalDraft => d.uiState === "open" ? d : { ...d, uiState: "open", ...(d.id !== null ? { localRev: d.localRev + 1, status: d.status === "saving" ? "saving" : "dirty" } : {}) };
 
+/** Reopen the visible collapsed draft under the same focus ownership as an explicit compose. */
+export function reopenInlineDraft(threadId: number, key: string): void {
+  const finish = beginDraftWork();
+  if (!finish) return;
+  markSelectionIntent();
+  const mine = ++intent;
+  const leased = getApp().selectedId === threadId;
+  const lease = leased ? beginFocusLease(mine, threadId) : null;
+  if (leased && !lease) { finish(); return; }
+  const active = typeof document === "undefined" ? null : document.activeElement;
+  let moved = false;
+  const observe = (event: FocusEvent) => { if (event.target !== active && event.target !== document.body) moved = true; };
+  if (typeof document !== "undefined") document.addEventListener?.("focusin", observe, true);
+  try {
+    const draft = materialize(key);
+    if (!draft || !sameStoredDraft(draft)) return;
+    const expected = openedDraft(draft);
+    setDraftUi(key, "open");
+    if (!moved && mine === intent && (!lease || (lease.valid && focusLease === lease && destinationAvailable(lease))) && sameStoredDraft(expected)) focusDraft(key, "body", mine);
+  } finally {
+    if (typeof document !== "undefined") document.removeEventListener?.("focusin", observe, true);
+    if (lease && lease.seq === undefined) releaseFocusLease(lease, true);
+    finish();
+  }
+}
+
 const invalidatedPresentation = (d: LocalDraft): LocalDraft => ({ ...d, departedThreadId: d.departedThreadId ?? draftPresentationThread(d) ?? undefined, presentationThreadId: undefined, presentationExpired: true, presentationEpoch: (d.presentationEpoch ?? 0) + 1 });
 const validatedPresentation = (d: LocalDraft, threadId: number): LocalDraft => ({ ...d, presentationThreadId: undefined, sourceContextThreadId: threadId, presentationExpired: false, presentationEpoch: (d.presentationEpoch ?? 0) + 1 });
 
@@ -327,6 +353,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   }
   let takeFocus = true;
   const active = typeof document === "undefined" ? null : document.activeElement;
+  const focusUnchanged = () => typeof document === "undefined" || document.activeElement === active || Boolean(lease?.valid && active && !active.isConnected && document.activeElement === document.body);
   const s = getApp();
   const defaultAccount = s.accountId ?? s.accounts[0]?.id;
   if (!defaultAccount) {
@@ -399,7 +426,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   const detail = loaded === undefined ? await loadThread(threadId) : loaded;
   const currentIntent = () => mine === intent && destinationAvailable(lease) && getApp().selectedId === selected && shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) === existingKey;
   if (!detail || !currentIntent()) return;
-  takeFocus = typeof document === "undefined" || document.activeElement === active;
+  takeFocus = focusUnchanged();
   existing = existingKey ? materialize(existingKey) : undefined;
   if (existingKey && (!existing || existing.sending || existing.recovery)) return;
   const accounts = getApp().accounts;
@@ -433,7 +460,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     if (parts.length && !getApp().accounts.some((a) => a.id === source!.id)) { snack.error(t("errors.accountGone")); return; }
     existing = existingKey ? materialize(existingKey) : undefined;
     if (existingKey && (!existing || existing.sending || existing.recovery || existing.accountId !== snapshot?.accountId || existing.id !== snapshot?.id || existing.generation !== snapshot?.generation || existing.localRev !== snapshot?.localRev)) return;
-    takeFocus = typeof document === "undefined" || document.activeElement === active;
+    takeFocus = focusUnchanged();
     if (parts.length && existing && !existing.attachments?.length) {
       // Save the empty From transition before introducing that account's attachment owners.
       const active = typeof document === "undefined" ? null : document.activeElement;
@@ -472,7 +499,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   if (!getApp().accounts.some((a) => a.id === converted.accountId)) { snack.error(t("errors.accountGone")); return; }
   if (getApp().accounts.find((a) => a.id === converted.accountId)?.signature !== signature) return;
   if (!admitted) { snack.error(t("attachments.tooLarge")); return; }
-  takeFocus = takeFocus && (typeof document === "undefined" || document.activeElement === active);
+  takeFocus = takeFocus && focusUnchanged();
   if (existing && existing.mode !== "new") {
     if (!written(existing)) {
       // nothing written yet: simply the other mode, fresh
