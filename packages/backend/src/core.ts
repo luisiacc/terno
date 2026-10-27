@@ -5,7 +5,7 @@ import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/di
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import { AWAITING_AUTH, type ClassifierInput, type IncomingMessage, type MailStore, type OpRow, type Platform, type ProviderStore } from "@terno/store";
-import { IncomingReads, ProviderAuthError, ProviderError, RequestNotDispatchedError, type MailProvider, type ProviderRegistry, type SendPayload, type SyncSink } from "@terno/mail/portable";
+import { IncomingReads, ProviderAuthError, ProviderError, RequestNotDispatchedError, type IncomingProcessor, type MailProvider, type ProviderRegistry, type SendPayload, type SyncSink } from "@terno/mail/portable";
 import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_PHRASE_CAPS, WEB_AUTOCOMPLETE_PEAK, WEB_CONTACT_CAPS, WEB_PHRASE_CAPS } from "@terno/store/autocomplete";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { Connectivity, type ConnectivityOptions, type NetReason } from "./connectivity";
@@ -48,6 +48,8 @@ export interface BackendCoreOptions {
   version: string;
   cipher: SecretCipher;
   providers: ProviderRegistry;
+  /** Lazy host worker; only a lifetime-fenced run capability reaches providers. */
+  incomingProcessor?: IncomingProcessor;
   aiFactory?: AiFactory;
   /** offer the offline demo model in Settings (dev, demo and test hosts) */
   demoAi?: boolean;
@@ -456,6 +458,7 @@ export class BackendCore {
     this.signIns.clear();
     this.abort.abort();
     this.incoming.close();
+    await this.options.incomingProcessor?.close();
     this.connectivity.stop();
     const accountsClosed = Promise.allSettled([...this.lifetimes.values()].map((life) => this.dropAccount(life.id, { remove: life.removing })));
     if (this.syncTimer) clearInterval(this.syncTimer);
@@ -904,6 +907,7 @@ export class BackendCore {
       const provider = this.options.providers.create({
         store: this.providerStore(life), account, config: cfg.config,
         incoming: { acquire: (id, signal, reset) => this.incoming.acquire(id, signal, reset) },
+        incomingProcessor: this.processing(life),
         getSecret: (name) => this.accountRead(life, () =>
           this.getSecret(`account:${accountId}:${name}`).catch((error: unknown) => {
             throw error instanceof SecretUnreadableError ? new ProviderAuthError(messageOf(error)) : error;
@@ -940,6 +944,17 @@ export class BackendCore {
       if (!p) forget();
     }, forget);
     return created;
+  }
+
+  private processing(life: AccountLifetime): Pick<IncomingProcessor, "run"> | undefined {
+    const processor = this.options.incomingProcessor;
+    if (!processor) return;
+    return { run: async (input, signal) => {
+      this.assertCurrent(life);
+      const result = await processor.run(input, AbortSignal.any([signal, life.abort.signal]));
+      this.assertCurrent(life);
+      return result;
+    } };
   }
 
   startAccount(account: Account): void {

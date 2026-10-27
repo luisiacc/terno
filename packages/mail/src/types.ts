@@ -1,4 +1,5 @@
 import type { IncomingReadAdmission } from "./incoming";
+import type { IncomingProcessor } from "./incoming-processing";
 import { textRef, type Account, type AccountSyncState, type Address, type TextRef } from "@terno/core";
 import type { Localized } from "@terno/i18n";
 import type { FlagUpdate, IncomingMessage, ProviderStore } from "@terno/store";
@@ -97,6 +98,7 @@ export interface SyncSink {
 export interface ProviderContext {
   /** Shared by this backend; standalone provider callers may retain their own read limit. */
   incoming?: IncomingReadAdmission;
+  incomingProcessor?: Pick<IncomingProcessor, "run">;
   /** the provider's reads and IMAP identity (never the database itself) */
   store: ProviderStore;
   account: Account;
