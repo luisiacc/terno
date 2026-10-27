@@ -12,7 +12,7 @@ import { MemDb, type Committed, type ForeignKey, type Key, type Row, type Table,
  */
 export const IDB_VERSION = 8;
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 21;
+export const LOGICAL_SCHEMA = 22;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -27,7 +27,7 @@ const fk = (column: string) => ({ [`fk_${column}`]: [column] as const });
 export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boolean })[] = [
   { name: "flag_clocks", early: true, key: ["account_id"], indexes: fk("account_id") },
   { name: "message_flag_intents", key: ["message_id", "field"], indexes: { ...fk("account_id"), ...fk("message_id"), snapshot: ["snapshot_account_id"] } },
-  { name: "flag_op_effects", key: ["op_id", "message_id", "field"], indexes: { ...fk("account_id"), ...fk("op_id"), ...fk("message_id") } },
+  { name: "flag_op_effects", key: ["op_id", "message_id", "field"], indexes: { ...fk("account_id"), ...fk("op_id"), ...fk("message_id"), parked_version: { columns: ["message_id", "field", "intent_version", "value"], where: (r) => r.active === 0 && r.intent_version != null && r.intent_version !== 0 }, parked_zero: { columns: ["message_id", "field", "value"], where: (r) => r.active === 0 && (r.intent_version == null || r.intent_version === 0) } } },
   { name: "accounts", early: true, key: ["id"] },
   { name: "threads", early: true, key: ["id"], autoId: true, indexes: { ...fk("account_id"), provider: ["account_id", "provider_thread_id"] } },
   {

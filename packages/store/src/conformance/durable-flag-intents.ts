@@ -164,6 +164,45 @@ export function defineDurableFlagIntentConformance(name: string, harness: StoreH
       expect((await store.debug.snapshot()).messages[0]).toMatchObject({ isRead: true, isStarred: true });
     });
 
+    it("ignores active effects on no-op reaffirmation and isolates account cascades", async () => {
+      const store = await harness.open(); stores.push(store);
+      const [a, b] = await withAccounts(store, 2);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "active-a" }), msg({ accountId: b!, providerMsgId: "active-b" })]);
+      await observe(store, a!); await observe(store, b!);
+      const snapshot = await store.debug.snapshot();
+      const first = snapshot.messages.find((message) => message.providerMsgId === "active-a")!;
+      const second = snapshot.messages.find((message) => message.providerMsgId === "active-b")!;
+      await store.threads.act({ threadIds: [first.threadId], action: "markRead", signal: null, now: 1 });
+      await store.threads.act({ threadIds: [second.threadId], action: "markRead", signal: null, now: 2 });
+      const before = (await observe(store, a!))!;
+      expect((await store.threads.act({ threadIds: [first.threadId], action: "markRead", signal: null, now: 3 })).flagReconcileAccounts).toBeUndefined();
+      expect((await observe(store, a!))!.epoch).toBe(before.epoch + 1);
+      const claimed = await store.ops.claimReady(4, 10);
+      const other = claimed.find((op) => op.account_id === b)!;
+      await store.ops.markUnknown(other.id, "uncertain", 5);
+      await store.sync.remove([first.id]);
+      await expect(store.ops.resolveUnknown(other.id, "retry", 6)).resolves.toBeDefined();
+      expect((await store.debug.snapshot()).messages.find((message) => message.id === second.id)?.isRead).toBe(true);
+    });
+
+    it("does not reaffirm one field when the whole location action differs", async () => {
+      const store = await harness.open(); stores.push(store);
+      const [a] = await withAccounts(store, 1);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "location-guard" })]);
+      await observe(store, a!);
+      const thread = await threadOf(store, "location-guard");
+      await store.threads.act({ threadIds: [thread], action: "spam", signal: null, now: 1 });
+      const [op] = await store.ops.claimReady(2, 10);
+      await store.ops.markUnknown(op!.id, "uncertain", 3);
+      const id = (await store.debug.snapshot()).messages[0]!.id;
+      const fresh = (await observe(store, a!))!;
+      await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "location-guard", flags: { isSpam: false, inInbox: false } }], fresh);
+      const result = await store.threads.act({ threadIds: [thread], action: "notSpam", signal: null, now: 4 });
+      expect(result.flagReconcileAccounts).toBeUndefined();
+      expect((await observe(store, a!))!.epoch).toBe(fresh.epoch + 1);
+      await expect(store.ops.resolveUnknown(op!.id, "retry", 5)).resolves.toBeDefined();
+    });
+
     it.each(["success", "failure"] as const)("representable Undo tracks each field's final step through final archive %s", async (outcome) => {
       let store = await harness.open(); stores.push(store);
       const [a] = await withAccounts(store, 1);
@@ -328,6 +367,22 @@ export function defineDurableFlagIntentConformance(name: string, harness: StoreH
       await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "one", flags: { isStarred: true } }], after);
       expect((await store.debug.snapshot()).messages.find((m) => m.id === id)!.isStarred).toBe(true);
       await expect(store.ops.resolveUnknown(unrelated!.id, "retry", 8)).resolves.toBeDefined();
+    });
+
+    it("reaffirms a current legacy zero-generation parked effect after a fresh reversal", async () => {
+      let store = await harness.open(); stores.push(store);
+      const [a] = await withAccounts(store, 1);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "legacy-current" })]);
+      const thread = await threadOf(store, "legacy-current");
+      await store.threads.act({ threadIds: [thread], action: "markRead", signal: null, now: 1 });
+      const [op] = await store.ops.claimReady(2, 10);
+      await store.ops.markUnknown(op!.id, "uncertain", 3);
+      const id = (await store.debug.snapshot()).messages[0]!.id;
+      const fresh = (await observe(store, a!))!;
+      await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "legacy-current", flags: { isRead: false } }], fresh);
+      expect((await store.threads.act({ threadIds: [thread], action: "markUnread", signal: null, now: 4 })).flagReconcileAccounts).toEqual([a]);
+      store = await harness.reopen(store); stores.push(store);
+      await expect(store.ops.resolveUnknown(op!.id, "retry", 5)).rejects.toMatchObject({ code: "STALE" });
     });
 
     it("does not reaffirm an already stale legacy unknown binding", async () => {

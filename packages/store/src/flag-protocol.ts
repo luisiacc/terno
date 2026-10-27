@@ -28,7 +28,7 @@ export interface FlagRepository {
   putEffect(row: FlagEffect): void;
   deleteEffect(row: FlagEffect): void;
   effects(op: string, messageIds?: readonly number[]): FlagEffect[];
-  messageEffects(id: number): FlagEffect[];
+  hasCurrentUnknownEffect(id: number, field: LocalFlagField, version: number, value: number): boolean;
   op(id: string): FlagOp | null;
   upperSeq(account: number): number;
   headers(account: number, afterSeq: number, afterOp: string, through: number, limit: number): FlagOp[];
@@ -126,9 +126,9 @@ export function reaffirmFlagIntent(repo: FlagRepository, messageIds: readonly nu
   for (const id of messageIds) {
     const message = repo.message(id);
     if (!stable(message) || !repo.clock(message.account_id) || !fields.every((field) => Number(message[FLAG_COLUMNS[field]]) === VALUES[kind]![field])) continue;
-    const conflicting = repo.messageEffects(id).some((effect) => {
-      const row = repo.intent(id, effect.field);
-      return fields.includes(effect.field) && row?.intent_version === (effect.intent_version ?? 0) && row.desired === effect.value && effect.value !== VALUES[kind]![effect.field] && repo.op(effect.op_id)?.state === "unknown";
+    const conflicting = fields.some((field) => {
+      const row = repo.intent(id, field);
+      return !!row && row.desired !== VALUES[kind]![field] && repo.hasCurrentUnknownEffect(id, field, row.intent_version, row.desired);
     });
     if (!conflicting) continue;
     let version = versions.get(message.account_id);
@@ -142,9 +142,9 @@ export function reaffirmSavedFlagIntent(repo: FlagRepository, saved: readonly Me
   for (const state of saved) {
     const message = repo.message(state.id);
     if (!stable(message) || !repo.clock(message.account_id)) continue;
-    for (const effect of repo.messageEffects(message.id)) {
-      const field = effect.field, row = repo.intent(message.id, field);
-      if (!row || Number(state[field]) !== Number(message[FLAG_COLUMNS[field]]) || effect.value === Number(state[field]) || row.intent_version !== (effect.intent_version ?? 0) || row.desired !== effect.value || repo.op(effect.op_id)?.state !== "unknown") continue;
+    for (const field of Object.keys(FLAG_COLUMNS) as LocalFlagField[]) {
+      const row = repo.intent(message.id, field);
+      if (!row || Number(state[field]) !== Number(message[FLAG_COLUMNS[field]]) || row.desired === Number(state[field]) || !repo.hasCurrentUnknownEffect(message.id, field, row.intent_version, row.desired)) continue;
       let version = versions.get(message.account_id);
       if (version === undefined) { version = flagTick(repo, message.account_id); versions.set(message.account_id, version); }
       putFlagIntent(repo, { ...row, intent_version: version, desired: Number(state[field]), owner_op_id: null, barrier_epoch: Math.max(row.barrier_epoch, version), needs_snapshot: 1 });

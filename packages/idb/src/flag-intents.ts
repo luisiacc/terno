@@ -34,7 +34,10 @@ export class IdbFlagRepository implements FlagRepository {
     }
     return result;
   }
-  messageEffects(id: number) { return this.db.table("flag_op_effects").by("fk_message_id", id) as unknown as FlagEffect[]; }
+  hasCurrentUnknownEffect(id: number, field: LocalFlagField, version: number, value: number) {
+    const table = this.db.table("flag_op_effects");
+    return version === 0 ? table.count("parked_zero", id, field, value) > 0 : table.count("parked_version", id, field, version, value) > 0;
+  }
   op(id: string) {
     const row = this.db.table("ops").get(id);
     return row ? { id: row.id as string, account_id: row.account_id as number, seq: row.seq as number, kind: row.kind as string, state: row.state as string } : null;

@@ -874,6 +874,9 @@ CREATE TABLE flag_op_effects (op_id TEXT NOT NULL REFERENCES ops(id) ON DELETE C
 CREATE INDEX flag_effect_message ON flag_op_effects(message_id,field,active);
 CREATE INDEX flag_init_ops ON ops(account_id,seq,id);
 ` },
+  { version: 22, name: "current parked flag effect lookup", sql: `
+CREATE INDEX flag_effect_parked_current ON flag_op_effects(message_id,field,coalesce(intent_version,0),value) WHERE active=0;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;
