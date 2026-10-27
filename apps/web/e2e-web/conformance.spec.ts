@@ -49,3 +49,9 @@ test("the instant engine's conformance holds in a Chromium worker", async ({ pag
   expect(failures(results)).toEqual([]);
   expect(results.filter((r) => r.state === "pass").length).toBeGreaterThan(50);
 });
+
+test("the incoming processor runs in an emitted nested browser worker", async ({ page }) => {
+  const results = await runSuite(page, "incoming");
+  expect(failures(results)).toEqual([]);
+  expect(results.filter((result) => result.state === "pass")).toHaveLength(4);
+});

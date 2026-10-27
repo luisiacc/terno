@@ -11,12 +11,17 @@ import { corpusFromDataset, defineEngineConformance, defineStoreConformance } fr
 import { InstantSearchEngine } from "@terno/store/instant";
 import { IdbMailStore } from "@terno/idb";
 import { describe, expect, it, run, type TestResult } from "./shim";
+import { defineIncomingWorkerConformance } from "./incoming";
 
 declare const self: DedicatedWorkerGlobalScope;
 
 export type ConformanceMessage = { type: "result"; result: TestResult } | { type: "done"; results: TestResult[] } | { type: "error"; message: string };
 
 async function defineSuites(suite: string): Promise<void> {
+  if (suite === "incoming") {
+    defineIncomingWorkerConformance();
+    return;
+  }
   if (suite === "opfs-sqlite") {
     const sqlite3 = await sqlite3InitModule();
     const pool = await sqlite3.installOpfsSAHPoolVfs({ name: "terno-conformance", directory: ".terno-conformance", clearOnInit: true, initialCapacity: 16 });
