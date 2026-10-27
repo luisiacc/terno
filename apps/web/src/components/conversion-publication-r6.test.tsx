@@ -44,3 +44,26 @@ it.each(["focus publication", "undo registration"] as const)("conversion stops s
     } finally { off(); }
   } finally { await h.cleanup(); }
 });
+
+it.each(["target round trip", "unrelated draft"] as const)("conversion receipt distinguishes %s", async (scenario) => {
+  const h = await setup("split", true), { openCompose, composeFocusPending } = await import("~/lib/compose"), { newFields } = await import("~/lib/compose-fields");
+  let triggered = false;
+  try {
+    h.other.focus();
+    const off = h.drafts.useDrafts.subscribe((state, previous) => {
+      if (!triggered && previous.drafts[h.key]?.mode === "reply" && state.drafts[h.key]?.mode === "replyAll") {
+        triggered = true;
+        if (scenario === "target round trip") {
+          h.drafts.editDraft(h.key, { inReplyToMessageId: 4 });
+          h.drafts.editDraft(h.key, { inReplyToMessageId: 3 });
+        } else h.drafts.createDraft(newFields(1));
+      }
+    });
+    try {
+      await act(async () => { await openCompose("replyAll", 7); });
+      expect(triggered).toBe(true);
+      if (scenario === "target round trip") { expect(h.app.getApp().draftFocus).toBeNull(); expect(composeFocusPending(7)).toBe(false); }
+      else { for (let i = 0; i < 5; i++) await h.flush(); expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]')); }
+    } finally { off(); }
+  } finally { await h.cleanup(); }
+});

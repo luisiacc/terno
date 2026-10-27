@@ -21,12 +21,14 @@ if (!Range.prototype.getBoundingClientRect) Range.prototype.getBoundingClientRec
 
 it("opens a valid collapsed checkpoint while its serializer still fails", async () => {
   const { DraftSlot } = await import("../inline-draft"), { AppBoundary } = await import("../diag/error-boundary"), { loadComposer } = await import("./lazy"), { controllerFor } = await import("./controller"), drafts = await import("~/lib/drafts"), { useDraftRecovery } = await import("~/lib/draft-recovery-ui"), { newFields } = await import("~/lib/compose-fields"), { sendDraft } = await import("~/lib/compose"), { client } = await import("~/rpc/connection");
-  const { useAppearance } = await import("~/lib/appearance");
+  const { useAppearance } = await import("~/lib/appearance"), app = await import("~/state/app");
+  const previousApp = app.getApp();
+  app.setApp({ selectedId: 7, readerOpen: true });
   useAppearance.setState({ motionMs: 0 });
   await loadComposer(); await import("../diag/recovery-workspace");
   const host = document.createElement("div"); host.id = "root"; document.body.append(host); const root = createRoot(host);
   const error = vi.spyOn(console, "error").mockImplementation(() => {});
-  const key = drafts.createDraft({ ...newFields(1), mode: "reply", toText: "unfinished@", attachments: [{ assetId: "asset", filename: "exact.bin", mime: "application/octet-stream", size: 3 }] });
+  const key = drafts.createDraft({ ...newFields(1), mode: "reply", threadId: 7, toText: "unfinished@", attachments: [{ assetId: "asset", filename: "exact.bin", mime: "application/octet-stream", size: 3 }] });
   drafts.setDraftTransport(async (_method, params) => ({ ...(params as object), id: 1, generation: "test", revision: 1 }));
   function Screen({ fatal }: { fatal: boolean }) { if (fatal) throw new Error("synthetic fatal render"); return <DraftSlot threadId={7} draftKey={key} replyTo="" account={undefined} />; }
   try {
@@ -50,5 +52,5 @@ it("opens a valid collapsed checkpoint while its serializer still fails", async 
     await act(async () => { expect(redo(restored.state, restored.dispatch)).toBe(true); expect(undo(restored.state, restored.dispatch)).toBe(true); });
     expect(drafts.useDrafts.getState().drafts[key]).toMatchObject({ key, bodyVersion: version, toText: "unfinished@", attachments: [{ assetId: "asset", filename: "exact.bin", mime: "application/octet-stream", size: 3 }] });
     expect(await sendDraft(key)).toBe(false); expect(vi.mocked(client.call).mock.calls.some(([method]) => method === "compose.send")).toBe(false);
-  } finally { probe.fail = false; await act(async () => root.unmount()); useDraftRecovery.setState({ open: false, key: null, reason: "error", checkpoint: undefined }); drafts.forgetDraft(key); host.remove(); error.mockRestore(); }
+  } finally { probe.fail = false; await act(async () => root.unmount()); useDraftRecovery.setState({ open: false, key: null, reason: "error", checkpoint: undefined }); drafts.forgetDraft(key); app.setApp(previousApp, true); host.remove(); error.mockRestore(); }
 });
