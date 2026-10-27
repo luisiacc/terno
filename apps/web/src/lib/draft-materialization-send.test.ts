@@ -54,3 +54,17 @@ it.each([false, true])("failed Send materialization retains the source (persiste
   }
  }finally{if(key)forgetDraft(key);source?.dispose();await store.close();rmSync(dir,{recursive:true,force:true});}
 });
+
+it("does not automatically reread after a failed Send materialization", async () => {
+  vi.useFakeTimers();
+  const key = createDraft({ ...newFields(1), toText: "ana@example.test" });
+  const reader = vi.fn(() => { throw new Error("read failed"); });
+  const source = attachBody(key, reader);
+  try {
+    source.changed();
+    expect(await sendDraft(key)).toBe(false);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(reader).toHaveBeenCalledTimes(1);
+    expect(rpc.call).not.toHaveBeenCalled();
+  } finally { forgetDraft(key); source.dispose(); vi.useRealTimers(); }
+});

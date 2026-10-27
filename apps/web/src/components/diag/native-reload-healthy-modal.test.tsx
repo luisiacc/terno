@@ -47,3 +47,17 @@ it.each([["settings","missing"],["settings","unknown"],["shortcuts","missing"],[
   expect(useApp.getState().dialog).toBe(dialog);
  }finally{await act(async()=>mounted.unmount());useApp.setState({dialog:null,settings:null});useNativeReload.setState({anyway:null});useDraftRecovery.setState({open:false,key:null,reason:"error"});forgetDraft(key);document.body.replaceChildren();}
 });
+
+it("keeps the reload warning when Review cannot read the editor", async () => {
+ const { attachBody } = await import("~/lib/drafts");
+ const key=createDraft(newFields(1)); editDraft(key,{bodyText:"old"}); markDraftMissing(key);
+ const source=attachBody(key,()=>{throw new Error("read failed");}); source.changed();
+ const root=document.createElement("div"); root.id="root"; document.body.append(root); const mounted=createRoot(root);
+ try {
+  await act(async()=>mounted.render(createElement(ModalHostProvider,null,createElement(NativeReloadNotice))));
+  await act(async()=>useNativeReload.setState({anyway:vi.fn()}));
+  await act(async()=>document.querySelector<HTMLButtonElement>('[data-testid="native-reload-review"]')!.click());
+  expect(document.querySelector('[data-testid="native-reload-notice"]')).not.toBeNull();
+  expect(useDraftRecovery.getState().open).toBe(false);
+ } finally { await act(async()=>mounted.unmount()); useNativeReload.setState({anyway:null}); forgetDraft(key); source.dispose(); root.remove(); }
+});

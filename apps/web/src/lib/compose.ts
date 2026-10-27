@@ -246,8 +246,10 @@ async function send(key: string): Promise<boolean> {
   if (attachmentUploading(key)) { snack.error(t("attachments.adding")); return false; }
   // read-only from here: nothing typed while the save in flight settles can fall between it and the send
   markSending(key, true);
+  let preparing = true;
   try {
     const d = await draftForSend(key);
+    preparing = false;
     if (!d || d.recovery) {
       markSending(key, false);
       resumeDraft(key);
@@ -297,7 +299,7 @@ async function send(key: string): Promise<boolean> {
       snack.error(t("compose.recovery.sendBlocked"));
       return false;
     }
-    resumeDraft(key);
+    resumeDraft(key, !preparing);
     if (e?.code === "STALE") { snack.error(t("compose.recovery.conflict")); return false; }
     captureUi(error, { code: "compose.send_failed" });
     snack.error(t("compose.sendFailed", { error: error instanceof Error ? error.message : String(error) }));

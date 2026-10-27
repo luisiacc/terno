@@ -598,11 +598,11 @@ export function markSending(key: string, sending: boolean): void {
 }
 
 /** A send didn't happen (refused or failed): the autosave it paused picks up whatever isn't saved yet. */
-export function resumeDraft(key: string): void {
+export function resumeDraft(key: string, scheduleSave = true): void {
   const w = writers.get(key);
   if (w?.stopping === "send") w.stopping = null;
   const d = get(key);
-  if (d && authored(d) && d.savedRev !== d.localRev) schedule(key);
+  if (scheduleSave && d && authored(d) && d.savedRev !== d.localRev) schedule(key);
 }
 
 /** After a successful send (the backend deleted the stored draft with it). */
