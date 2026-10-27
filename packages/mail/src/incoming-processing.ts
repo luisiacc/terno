@@ -24,6 +24,7 @@ export interface IncomingProcessingLimits {
 
 export interface IncomingProcessor {
   run(input: IncomingProcessingInput, signal: AbortSignal): Promise<IncomingProcessingResult>;
+  whenIdle(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -131,20 +132,34 @@ export function createIncomingProcessor(factory: IncomingWorkerFactory, options:
   let active: Job | undefined;
   let closed = false;
   let closing: Promise<void> | undefined;
+  let idleEpisode: { promise: Promise<void>; resolve(): void; reject(error: Error): void } | undefined;
+  const notifyIdle = () => {
+    if (!idleEpisode) return;
+    if (slot?.retirementFailed) {
+      const waiting = idleEpisode;
+      idleEpisode = undefined;
+      waiting.reject(new IncomingProcessingError("worker-unavailable"));
+    } else if (!active && !slot?.retiring) {
+      const waiting = idleEpisode;
+      idleEpisode = undefined;
+      waiting.resolve();
+    }
+  };
 
   const retire = (owned: WorkerSlot): Promise<void> => {
     owned.retiring = true;
     if (owned.termination) return owned.termination;
     // A canceled startup keeps its slot until the factory answers.
     if (!owned.host) return Promise.resolve();
-    const clear = () => { if (slot === owned) slot = undefined; };
+    const clear = () => { if (slot === owned) slot = undefined; notifyIdle(); };
     try {
       const ending = owned.host.terminate();
       if (!ending) { clear(); return Promise.resolve(); }
-      owned.termination = ending.then(clear, () => { owned.retirementFailed = true; });
+      owned.termination = ending.then(clear, () => { owned.retirementFailed = true; notifyIdle(); });
     } catch {
       owned.retirementFailed = true;
       owned.termination = Promise.resolve();
+      notifyIdle();
     }
     return owned.termination;
   };
@@ -156,10 +171,12 @@ export function createIncomingProcessor(factory: IncomingWorkerFactory, options:
     if (!job.slot.retiring) job.slot.host?.setActive?.(false);
     if (error) job.reject(error);
     else job.resolve(result!);
+    notifyIdle();
   };
   const fault = (owned: WorkerSlot) => {
     if (slot !== owned || owned.retiring) return;
     const job = active;
+    owned.retiring = true;
     if (job?.slot === owned) finish(job, undefined, new IncomingProcessingError("worker-fault"));
     void retire(owned);
   };
@@ -171,8 +188,10 @@ export function createIncomingProcessor(factory: IncomingWorkerFactory, options:
     if (value.incarnation !== owned.incarnation || value.job !== job.id) return;
     if (job.signal.aborted) { job.abort(); return; }
     if (value.type === "error" && isIncomingFailureCode(value.code)) {
+      const broken = value.code === "worker-fault" || value.code === "worker-unavailable";
+      if (broken) owned.retiring = true;
       finish(job, undefined, new IncomingProcessingError(value.code));
-      if (value.code === "worker-fault" || value.code === "worker-unavailable") void retire(owned);
+      if (broken) void retire(owned);
       return;
     }
     const result = value.result;
@@ -201,8 +220,9 @@ export function createIncomingProcessor(factory: IncomingWorkerFactory, options:
   };
   const unavailable = (owned: WorkerSlot) => {
     if (slot !== owned) return;
-    if (active?.slot === owned) finish(active, undefined, new IncomingProcessingError("worker-unavailable"));
     slot = undefined;
+    if (active?.slot === owned) finish(active, undefined, new IncomingProcessingError("worker-unavailable"));
+    notifyIdle();
   };
 
   return {
@@ -222,6 +242,7 @@ export function createIncomingProcessor(factory: IncomingWorkerFactory, options:
           id: ++jobId, slot: owned, input: projected, signal, resolve, reject,
           abort: () => {
             if (active !== job) return;
+            owned.retiring = true;
             finish(job, undefined, canceled());
             void retire(owned);
           },
@@ -237,11 +258,26 @@ export function createIncomingProcessor(factory: IncomingWorkerFactory, options:
         } catch { unavailable(owned); }
       });
     },
+    whenIdle() {
+      if (slot?.retirementFailed) return Promise.reject(new IncomingProcessingError("worker-unavailable"));
+      if (!active && !slot?.retiring) return Promise.resolve();
+      if (!idleEpisode) {
+        let resolve!: () => void;
+        let reject!: (error: Error) => void;
+        const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
+        idleEpisode = { promise, resolve, reject };
+      }
+      return idleEpisode.promise;
+    },
     close() {
       if (closing) return closing;
       closed = true;
+      if (slot) slot.retiring = true;
       if (active) finish(active, undefined, new IncomingProcessingError("worker-closed"));
-      closing = slot ? retire(slot) : Promise.resolve();
+      const owned = slot;
+      closing = (owned ? retire(owned) : Promise.resolve()).then(() => {
+        if (owned?.retirementFailed) throw new IncomingProcessingError("worker-unavailable");
+      });
       return closing;
     },
   };

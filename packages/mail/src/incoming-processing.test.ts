@@ -129,12 +129,19 @@ describe("incoming processor client", () => {
     const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" });
     cancel.abort();
     await rejected;
+    const idle = processor.whenIdle();
+    expect(processor.whenIdle()).toBe(idle);
+    let reusable = false;
+    void idle.then(() => { reusable = true; });
     await expect(processor.run(input(), new AbortController().signal)).rejects.toMatchObject({ code: "worker-busy" });
     started({ postMessage: () => {}, terminate: () => new Promise<void>((resolve) => { retired = resolve; }) });
     await turn();
     await expect(processor.run(input(), new AbortController().signal)).rejects.toMatchObject({ code: "worker-busy" });
     expect(factory).toHaveBeenCalledTimes(1);
+    expect(reusable).toBe(false);
     retired();
+    await idle;
+    expect(reusable).toBe(true);
     await turn();
     await processor.close();
   });
@@ -202,6 +209,18 @@ describe("incoming processor client", () => {
     await turn();
     expect(terminate).toHaveBeenCalledTimes(1);
     await expect(processor.run(input(), new AbortController().signal)).rejects.toMatchObject({ code: "worker-closed" });
+  });
+
+  it("quarantines failed retirement and reports fixed owner readiness failures", async () => {
+    const processor = createIncomingProcessor(() => ({ postMessage: () => {}, terminate: () => Promise.reject(new Error("private-token-marker")) }));
+    const abort = new AbortController();
+    const pending = processor.run(input(), abort.signal);
+    const canceled = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    abort.abort();
+    await canceled;
+    await expect(processor.whenIdle()).rejects.toMatchObject({ code: "worker-unavailable", message: "Incoming processing failed (worker-unavailable)" });
+    await expect(processor.run(input(), new AbortController().signal)).rejects.toMatchObject({ code: "worker-unavailable" });
+    await expect(processor.close()).rejects.toMatchObject({ code: "worker-unavailable" });
   });
 
   it("settles startup rejection and postMessage exceptions without leaking private details", async () => {
