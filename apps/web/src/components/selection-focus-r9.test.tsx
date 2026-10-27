@@ -4,8 +4,8 @@ import { expect, it } from "vitest";
 import type { ThreadSummary } from "@terno/core";
 import { setup } from "./draft-presentation-r1-harness";
 
-it.each([true, false])("queued Reply respects clamped selection intent (move=%s)", async (move) => {
-  const h = await setup("split", true);
+it.each([["split", true], ["split", false], ["list", true], ["list", false]] as const)("%s queued Reply respects clamped selection intent (move=%s)", async (layout, move) => {
+  const h = await setup(layout, true);
   const { openCompose } = await import("~/lib/compose"), { useList } = await import("~/state/list");
   const previous = useList.getState();
   try {
@@ -18,8 +18,12 @@ it.each([true, false])("queued Reply respects clamped selection intent (move=%s)
     if (move) await act(async () => { h.other.dispatchEvent(new KeyboardEvent("keydown", { key: "k", bubbles: true, cancelable: true })); });
     expect(h.app.getSelectionWriteRevision()).toBe(revision + (move ? 1 : 0));
     for (let i = 0; i < 4; i++) await h.flush();
-    if (move) expect(document.activeElement).toBe(h.other);
-    else expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+    if (move) {
+      expect(document.activeElement).toBe(h.other);
+      await act(async () => { await openCompose("reply", 7); });
+      for (let i = 0; i < 4; i++) await h.flush();
+    }
+    expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
   } finally { await act(async () => { useList.setState(previous, true); }); await h.cleanup(); }
 });
 

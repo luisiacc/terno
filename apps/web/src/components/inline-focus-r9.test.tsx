@@ -104,3 +104,28 @@ it("a real transient hold cancels pending inline Discard focus", async () => {
     expect(document.activeElement).not.toBe(h.host.querySelector('[data-testid="quick-reply"]'));
   } finally { hold.release?.(); deletion.resolve(); h.drafts.setDraftTransport(async () => null); await h.cleanup(); }
 });
+
+it.each(["split", "list"] as const)("an earlier inline Send does not consume a newer %s compose focus", async (layout) => {
+  const h = await setup(layout, true);
+  const { openCompose } = await import("~/lib/compose"), { gate, deferred } = await import("./draft-presentation-r1-harness");
+  const send = deferred<{ threadId: number }>(), entered = deferred<void>();
+  gate.call.mockImplementation(async (method: string) => {
+    if (method === "drafts.sourceContext") return { threadId: 7, accountId: 1 };
+    if (method === "compose.send") { entered.resolve(); return send.promise; }
+    return {};
+  });
+  h.drafts.setDraftTransport(async (_method, params) => ({ ...params as object, id: 81, generation: "stable", revision: 5, updatedAt: 0 }));
+  try {
+    await act(async () => { await openCompose("reply", 7); });
+    for (let i = 0; i < 4; i++) await h.flush();
+    await act(async () => { h.drafts.editDraft(h.key, { toText: "person@example.test" }); });
+    await act(async () => { h.host.querySelector<HTMLButtonElement>('[data-testid="compose-send"]')!.click(); });
+    await entered.promise;
+    await act(async () => { await openCompose("new"); });
+    const successor = h.app.getApp().compose; expect(successor).not.toBeNull();
+    await act(async () => { send.resolve({ threadId: 7 }); await send.promise; });
+    for (let i = 0; i < 4; i++) await h.flush();
+    expect(h.app.getApp().compose).toBe(successor);
+    expect(document.activeElement).toBe(h.host.querySelector('[data-testid="composer"] [data-testid="compose-to"]'));
+  } finally { send.resolve({ threadId: 7 }); h.drafts.setDraftTransport(async () => null); await h.cleanup(); }
+});
