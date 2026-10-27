@@ -28,8 +28,13 @@ const EMPTY_STYLE: Inline = { values: new Map(), uncertainBox: false };
 let lengthGrammar: import("css-tree").Lexer | undefined;
 
 function validLengthDimension(number: string, unit: string): boolean {
+  const candidate = number + ident.encode(unit);
+  const value = parseCss(candidate, { context: "value" });
+  const dimension = value.type === "Value" && value.children.size === 1 ? value.children.first : null;
+  // Identifier encoding alone can still absorb an exponent-like unit into the number.
+  if (dimension?.type !== "Dimension" || dimension.value !== number || ident.decode(dimension.unit).toLowerCase() !== unit) return false;
   lengthGrammar ??= new Lexer({ generic: true, properties: { width: "<length [0,∞]>" } });
-  return lengthGrammar.matchProperty("width", number + unit).matched !== null;
+  return lengthGrammar.matchProperty("width", candidate).matched !== null;
 }
 
 function scalar(property: string, source: string): string | undefined {
