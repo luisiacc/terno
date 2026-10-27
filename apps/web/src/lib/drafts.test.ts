@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/rpc/connection", () => ({ client: { call: () => Promise.reject(new Error("not in tests")) } }));
 
-const { attachBody, copyDraft, createDraft, draftsSaved, discardDraft, draftForSend, draftSenderLocked, editDraft, fieldsOf, flushDraft, fromServer, loadDrafts, recipients, restoreDiscarded, resumeDraft, retryDraft, setDraftUi, sendBody, sendHtml, setDraftTransport, threadDraftKey, useDrafts, validRecipients } = await import("./drafts");
+const { attachBody, copyDraft, createDraft, draftsSaved, discardDraft, draftForSend, draftSenderLocked, editDraft, fieldsOf, flushDraft, fromServer, loadDrafts, markDraftMissing, recipients, restoreDiscarded, resumeDraft, retryDraft, setDraftUi, sendBody, sendHtml, setDraftTransport, threadDraftKey, useDrafts, validRecipients } = await import("./drafts");
 const { convertFields, newFields, replyFields } = await import("./compose-fields");
 
 interface Pending {
@@ -56,6 +56,16 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("the draft writer", () => {
+  it.each([false, true])("copy ACK normalizes current context without replacing newer fields (new context %s)", async (changedContext) => {
+    const k = draft(); editDraft(k, { threadId: 99, mode: "reply", inReplyToMessageId: 2, bodyText: "old" }); markDraftMissing(k);
+    const copying = copyDraft(k); const pending = calls.shift()!;
+    editDraft(k, { bodyText: "latest", toText: "exact unfinished@", ...(changedContext ? { threadId: 77, inReplyToMessageId: 3 } : {}) });
+    const version = state(k).bodyVersion;
+    pending.resolve({ ...pending.params, id: 50, generation: "copy", revision: 1, threadId: 1, inReplyToMessageId: 2 });
+    await copying;
+    expect(state(k)).toMatchObject({ key: k, bodyText: "latest", bodyVersion: version, toText: "exact unfinished@", threadId: changedContext ? 77 : 1, inReplyToMessageId: changedContext ? 3 : 2 });
+    await answer();
+  });
   it.each(["account", "assets", "unknown", "earlier unknown"] as const)("removal during copy releases only confirmed obsolete ownership: %s", async (outcome) => {
     const k = draft();
     editDraft(k, { bodyText: "exact work", ccText: "unfinished@", attachments: [{ assetId: "asset", filename: "x", mime: "text/plain", size: 0 }] });

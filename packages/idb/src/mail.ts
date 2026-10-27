@@ -1461,7 +1461,7 @@ export function saveDraft(c: Ctx, d: DraftInput, now: number): DraftRow | null {
   if (d.id !== undefined && (!row || (row.generation ?? "") !== (d.generation ?? ""))) return null;
   if (!T(c, "accounts").has(d.accountId)) throw new RpcError("NOT_FOUND", L("errors.accountGone"), { reason: "account" });
   const inReplyTo = d.inReplyToMessageId !== undefined ? d.inReplyToMessageId : (row?.in_reply_to_message_id ?? null);
-  const replyThread = inReplyTo ? ((T(c, "messages").get(inReplyTo)?.thread_id as number | undefined) ?? null) : null;
+  const original = inReplyTo ? T(c, "messages").get(inReplyTo) : undefined;
   const previous = JSON.parse(row?.attachments_json ?? "[]") as import("@terno/core").AttachmentRef[];
   if (row && row.account_id !== d.accountId && (previous.length || d.attachments?.length)) throw assetError();
   let attachments: import("@terno/core").AttachmentRef[];
@@ -1470,13 +1470,18 @@ export function saveDraft(c: Ctx, d: DraftInput, now: number): DraftRow | null {
     if (error instanceof RpcError && error.i18n?.key === "attachments.tooLarge") throw new RpcError("BAD_REQUEST", L("attachments.tooLarge"), { reason: "size" });
     throw new RpcError("BAD_REQUEST", L("attachments.unavailable"), { reason: "assets" });
   }
-  const threadId = d.threadId !== undefined ? d.threadId : row ? (row.thread_id ?? null) : replyThread;
+  const requestedThread = d.threadId !== undefined ? d.threadId : row ? (row.thread_id ?? null) : original?.thread_id ?? null;
   const forwardOf = d.forwardOfMessageId !== undefined ? d.forwardOfMessageId : (row?.forward_of_message_id ?? null);
   const exists = (id: number | null) => id === null || T(c, "messages").has(id);
-  const lost = (threadId !== null && !T(c, "threads").has(threadId)) || !exists(inReplyTo) || !exists(forwardOf);
+  const reply = exists(inReplyTo) ? inReplyTo : null;
+  const forward = exists(forwardOf) ? forwardOf : null;
+  const source = original ?? (forward ? T(c, "messages").get(forward) : undefined);
+  const thread = requestedThread !== null ? T(c, "threads").get(requestedThread) : undefined;
+  const threadId = requestedThread === null ? null : thread?.account_id === d.accountId ? thread.id : source?.account_id === d.accountId ? source.thread_id : null;
+  const lost = !reply && !forward && (requestedThread !== threadId || !exists(inReplyTo) || !exists(forwardOf));
   const values = {
     account_id: d.accountId,
-    thread_id: lost ? null : threadId,
+    thread_id: threadId,
     mode: lost ? "new" : d.mode ?? row?.mode ?? (inReplyTo ? "reply" : "new"),
     to_json: JSON.stringify(d.to),
     cc_json: JSON.stringify(d.cc),
@@ -1488,8 +1493,8 @@ export function saveDraft(c: Ctx, d: DraftInput, now: number): DraftRow | null {
     attachments_json: JSON.stringify(attachments),
     quoted_text: d.quotedText ?? row?.quoted_text ?? "",
     include_quote: d.includeQuote !== undefined ? Number(d.includeQuote) : (row?.include_quote ?? 0),
-    in_reply_to_message_id: lost ? null : inReplyTo,
-    forward_of_message_id: lost ? null : forwardOf,
+    in_reply_to_message_id: reply,
+    forward_of_message_id: forward,
     ui_state: d.uiState ?? row?.ui_state ?? "open",
     updated_at: now,
   };

@@ -662,7 +662,6 @@ export function saveDraft(db: Db, d: DraftInput, now = Date.now()): DraftRow | n
   const row = d.id !== undefined ? db.get<DraftRow>("SELECT * FROM drafts WHERE id = ?", d.id) : undefined;
   if (d.id !== undefined && (!row || (row.generation ?? "") !== (d.generation ?? ""))) return null;
   if (!getAccount(db, d.accountId)) throw new RpcError("NOT_FOUND", L("errors.accountGone"), { reason: "account" });
-  const replyThread = (msgId: number | null | undefined) => (msgId ? (db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", msgId)?.thread_id ?? null) : null);
   const inReplyTo = d.inReplyToMessageId !== undefined ? d.inReplyToMessageId : (row?.in_reply_to_message_id ?? null);
   const previous = JSON.parse(row?.attachments_json ?? "[]") as import("@terno/core").AttachmentRef[];
   if (row && row.account_id !== d.accountId && (previous.length || d.attachments?.length)) throw assetError();
@@ -672,13 +671,19 @@ export function saveDraft(db: Db, d: DraftInput, now = Date.now()): DraftRow | n
     if (error instanceof RpcError && error.i18n?.key === "attachments.tooLarge") throw new RpcError("BAD_REQUEST", L("attachments.tooLarge"), { reason: "size" });
     throw new RpcError("BAD_REQUEST", L("attachments.unavailable"), { reason: "assets" });
   }
-  const threadId = d.threadId !== undefined ? d.threadId : row ? row.thread_id : replyThread(inReplyTo);
+  const original = inReplyTo ? db.get<{ thread_id: number; account_id: number }>("SELECT thread_id, account_id FROM messages WHERE id = ?", inReplyTo) : undefined;
+  const requestedThread = d.threadId !== undefined ? d.threadId : row ? row.thread_id : original?.thread_id ?? null;
   const forwardOf = d.forwardOfMessageId !== undefined ? d.forwardOfMessageId : (row?.forward_of_message_id ?? null);
   const exists = (id: number | null) => id === null || Boolean(db.get("SELECT 1 FROM messages WHERE id = ?", id));
-  const lost = (threadId !== null && !db.get("SELECT 1 FROM threads WHERE id = ?", threadId)) || !exists(inReplyTo) || !exists(forwardOf);
+  const reply = exists(inReplyTo) ? inReplyTo : null;
+  const forward = exists(forwardOf) ? forwardOf : null;
+  const source = original ?? (forward ? db.get<{ thread_id: number; account_id: number }>("SELECT thread_id, account_id FROM messages WHERE id = ?", forward) : undefined);
+  const thread = requestedThread !== null ? db.get<{ id: number; account_id: number }>("SELECT id, account_id FROM threads WHERE id = ?", requestedThread) : undefined;
+  const threadId = requestedThread === null ? null : thread?.account_id === d.accountId ? thread.id : source?.account_id === d.accountId ? source.thread_id : null;
+  const lost = !reply && !forward && (requestedThread !== threadId || !exists(inReplyTo) || !exists(forwardOf));
   const values = {
     account_id: d.accountId,
-    thread_id: lost ? null : threadId,
+    thread_id: threadId,
     mode: lost ? "new" : d.mode ?? row?.mode ?? (inReplyTo ? "reply" : "new"),
     to_json: JSON.stringify(d.to),
     cc_json: JSON.stringify(d.cc),
@@ -690,8 +695,8 @@ export function saveDraft(db: Db, d: DraftInput, now = Date.now()): DraftRow | n
     attachments_json: JSON.stringify(attachments),
     quoted_text: d.quotedText ?? row?.quoted_text ?? "",
     include_quote: d.includeQuote !== undefined ? Number(d.includeQuote) : (row?.include_quote ?? 0),
-    in_reply_to_message_id: lost ? null : inReplyTo,
-    forward_of_message_id: lost ? null : forwardOf,
+    in_reply_to_message_id: reply,
+    forward_of_message_id: forward,
     ui_state: d.uiState ?? row?.ui_state ?? "open",
   };
   const cols = Object.keys(values);

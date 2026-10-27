@@ -397,7 +397,9 @@ function save(key: string, copy = false): Promise<void> {
         return;
       }
       const done = cur.localRev === rev;
-      put({ ...cur, id: saved.id, generation: saved.generation, revision: saved.revision, savedRev: rev, recovery: undefined, status: done ? "saved" : "dirty", attachmentOwner: Boolean(saved.attachments?.length) });
+      const context = cur.accountId === d.accountId && cur.threadId === d.threadId && cur.mode === d.mode && cur.inReplyToMessageId === d.inReplyToMessageId && cur.forwardOfMessageId === d.forwardOfMessageId
+        ? { threadId: saved.threadId, mode: saved.mode, inReplyToMessageId: saved.inReplyToMessageId, forwardOfMessageId: saved.forwardOfMessageId } : {};
+      put({ ...cur, ...context, id: saved.id, generation: saved.generation, revision: saved.revision, savedRev: rev, recovery: undefined, status: done ? "saved" : "dirty", attachmentOwner: Boolean(saved.attachments?.length) });
       if (!done && !w.stopping) {
         const next = save(key);
         if (!copy) return next;
