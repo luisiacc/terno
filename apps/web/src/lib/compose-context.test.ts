@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { expect, it, vi } from "vitest";
 import type { Account } from "@terno/core";
 
@@ -66,4 +67,36 @@ it.each(["source", "mode", "false"])("a local %s change cannot reuse positive so
     expect(shownDraftKey(useDrafts.getState().drafts, 7, null)).toBeNull();
     expect(useDrafts.getState().drafts[key]?.showSourceContext).toBe(false);
   } finally { forgetDraft(key); }
+});
+
+
+it.each(["revision", "generation", "account", "mode", "source", "body", "discard", "navigation", "focus"])("a delayed accepted-source lookup fences a newer %s", async (scenario) => {
+  const { loadThread } = await import("~/state/threads");
+  const { replyFields } = await import("./compose-fields");
+  const account = { id: 1, email: "from@example.test" } as Account;
+  const detail = { thread: { id: 7, accountId: 1, subject: "source" }, messages: [{ id: 3, accountId: 1, isSent: false, from: { name: "Sender", email: "sender@example.test" }, to: [], cc: [], subject: "source", date: 0, bodyText: "source body", attachmentState: "complete", attachments: [] }] } as unknown as import("@terno/core").ThreadDetail;
+  vi.mocked(loadThread).mockResolvedValue(detail);
+  let release!: (value: { threadId: number; accountId: number }) => void, reached!: () => void;
+  const waiting = new Promise<void>((done) => { reached = done; });
+  rpc.call.mockImplementation(() => { reached(); return new Promise((done) => { release = done; }); });
+  const key = createDraft(replyFields("reply", detail, account));
+  editDraft(key, { bodyText: "exact existing work" });
+  setApp({ accounts: [account], accountId: 1, selectedId: 7, checked: new Set(), scope: null, compose: null, draftShown: { threadId: 7, key }, draftFocus: null, dialog: null, fatal: null });
+  const other = document.createElement("button"); document.body.append(other);
+  try {
+    const opening = openCompose("forward", 7);
+    await waiting;
+    if (scenario === "revision" || scenario === "generation") useDrafts.setState((s) => ({ drafts: { ...s.drafts, [key]: { ...s.drafts[key]!, ...(scenario === "revision" ? { revision: 12 } : { generation: "new generation" }) } } }));
+    if (scenario === "account") editDraft(key, { accountId: 2 });
+    if (scenario === "mode") editDraft(key, { mode: "new" });
+    if (scenario === "source") editDraft(key, { inReplyToMessageId: 4 });
+    if (scenario === "body") editDraft(key, { bodyText: "later authored work" });
+    if (scenario === "discard") forgetDraft(key);
+    if (scenario === "navigation") { setApp({ selectedId: 8 }); setApp({ selectedId: 7 }); }
+    if (scenario === "focus") other.focus();
+    const before = useDrafts.getState().drafts[key];
+    release({ threadId: 7, accountId: 1 }); await opening;
+    expect(useDrafts.getState().drafts[key]).toEqual(before);
+    expect(getApp().draftFocus).toBeNull();
+  } finally { forgetDraft(key); other.remove(); vi.clearAllMocks(); }
 });
