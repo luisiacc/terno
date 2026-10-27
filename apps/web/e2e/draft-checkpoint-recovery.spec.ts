@@ -86,7 +86,10 @@ test("fatal Review restores a persistently unread rich checkpoint @design", asyn
     expect(copy.to_json).toContain("Pérez, Ana"); expect(copy.to_json).toContain("bob@");
     const copiedRef = JSON.parse(copy.attachments_json)[0]; expect(await server.backend.store.attachments.read(copy.account_id, copiedRef.assetId, 0)).toBe("AP+A");
     expect((await server.backend.store.ops.recent(10)).filter((op) => op.kind === "send")).toEqual([]); expect(navigations).toBe(0);
+    await page.getByTestId("recovery-details").click(); await expect(page.getByTestId("app-boundary")).toBeVisible();
+    await Promise.all([page.waitForEvent("framenavigated", { predicate: (frame) => frame === page.mainFrame() }), page.getByTestId("app-boundary-reload").click()]);
+    expect(navigations).toBe(1);
   } finally {
-    await fault(page, false);
+    await page.evaluate(() => (window as unknown as { __terno?: Partial<Probe> }).__terno?.composerReadFault?.(false)).catch(() => {});
   }
 });
