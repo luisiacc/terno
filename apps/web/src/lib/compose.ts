@@ -56,7 +56,9 @@ function beginFocusLease(owner: number, threadId: number): FocusLease {
   };
   if (typeof document !== "undefined") document.addEventListener?.("focusin", moved, true);
   const unsubApp = useApp.subscribe((state, previous) => {
-    if (state.selectedId !== threadId || (state.dialog !== previous.dialog && state.dialog !== null) || (state.fatal !== previous.fatal && state.fatal !== null)) releaseFocusLease(lease, false);
+    if (state.scope !== null || state.checked.size >= 2) {
+      if (focusLease === lease && lease.intent === intent) supersedeCompose();
+    } else if (state.selectedId !== threadId || (state.dialog !== previous.dialog && state.dialog !== null) || (state.fatal !== previous.fatal && state.fatal !== null)) releaseFocusLease(lease, false);
   });
   const unsubDrafts = useDrafts.subscribe((state) => {
     const draft = lease.key ? state.drafts[lease.key] : undefined;
@@ -112,7 +114,11 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
   const lease = mode !== "new" && threadId !== null && state.selectedId === threadId && state.scope === null && state.checked.size < 2
     ? beginFocusLease(mine, threadId) : null;
   if (!lease && focusLease) releaseFocusLease(focusLease, false);
+  const unsubSelection = !lease && mode !== "new" && threadId !== null ? useApp.subscribe((current) => {
+    if (mine === intent && (current.scope !== null || current.checked.size >= 2)) supersedeCompose();
+  }) : undefined;
   try { await openComposeNow(mode, threadId, mine, lease); } finally {
+    unsubSelection?.();
     if (lease && lease.seq === undefined) releaseFocusLease(lease, true);
     finish();
   }

@@ -240,3 +240,29 @@ it("keeps a newer same-draft move when the older move completes, then releases a
     expect(composeFocusPending(7)).toBe(false); expect(document.activeElement).toBe(toolbar);
   } finally { unsubscribe(); await h.cleanup(); }
 });
+
+it("cancels a compose open when bulk selection interrupts attachment admission", async () => {
+  const h = await setup(), waiting = deferred<void>(), entered = deferred<void>();
+  let opening: Promise<void> | undefined;
+  try {
+    await act(async () => { h.publish(); }); await h.flushFrame();
+    gate.budget = async () => { entered.resolve(); await waiting.promise; };
+    h.anchor.focus(); await act(async () => { opening = h.openCompose("reply", 7); }); await entered.promise;
+    await act(async () => { h.setApp({ checked: new Set([7, 8]) }); h.setApp({ checked: new Set() }); });
+    await act(async () => { waiting.resolve(); await opening; }); await h.flushFrame();
+    expect(document.activeElement).toBe(h.anchor);
+    expect(Object.values(h.useDrafts.getState().drafts)).toHaveLength(0);
+  } finally { waiting.resolve(); if (opening) await opening; await h.cleanup(); }
+});
+
+it("an old bulk-canceled lookup cannot cancel a newer deliberate open", async () => {
+  const h = await setup(), old = deferred<ThreadDetail>(); gate.load.mockReturnValueOnce(old.promise).mockResolvedValue(h.detail);
+  try {
+    let opening!: Promise<void>; await act(async () => { opening = h.openCompose("reply", 7); });
+    await act(async () => { h.setApp({ checked: new Set([7, 8]) }); h.setApp({ checked: new Set() }); });
+    await act(async () => { h.publish(); await h.openCompose("reply", 7); });
+    await act(async () => { old.resolve(h.detail); await opening; }); await h.flushFrame();
+    expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+    expect(Object.values(h.useDrafts.getState().drafts)).toHaveLength(1);
+  } finally { old.resolve(h.detail); await h.cleanup(); }
+});
