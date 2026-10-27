@@ -1077,15 +1077,22 @@ export class IdbMailStore implements MailStore {
   private async matchAll(rule: Parameters<typeof findRuleMatches>[1], now: number, window?: { from: number; to: number }) {
     await this.settled();
     return this.exclusive(async () => {
-      const ids = [...T(this.c, "messages").rows.keys()].map(Number).filter((id) => !window || (id >= window.from && id <= window.to)).sort((a, b) => a - b);
+      const messages = T(this.c, "messages");
+      const needsBody = ruleNeedsBody(rule);
+      const ids = [...messages.rows.keys()].map(Number).filter((id) => !window || (id >= window.from && id <= window.to)).sort((a, b) => a - b);
       const out = { messageIds: [] as number[], threadIds: new Set<number>() };
       for (let i = 0; i < ids.length; i += SLICE) {
-        const slice = ids.slice(i, i + SLICE);
-        if (ruleNeedsBody(rule)) await this.readBodies(slice);
+        const candidates = ids.slice(i, i + SLICE);
+        const slice = needsBody ? candidates.filter((id) => {
+          const message = messages.get(id);
+          return message?.body_state === "full" && !message.is_trash;
+        }) : candidates;
+        if (needsBody && slice.length) await this.readBodies(slice);
+        else if (needsBody && i + SLICE < ids.length) await this.o.platform.yield();
         const m = findRuleMatches(this.c, rule, now, slice);
         out.messageIds.push(...m.messageIds);
         for (const t of m.threadIds) out.threadIds.add(t);
-        if (ruleNeedsBody(rule)) this.evictBodies();
+        if (needsBody) this.evictBodies();
       }
       return out;
     });
