@@ -184,7 +184,7 @@ catalogs:
       version: 5.0.16
 
 patchedDependencies:
-  '@base-ui/react@1.9.0': 54ba8dbd6cfe16c3638dabf5768d7e47c9304d8da0ce2d2602b9428dd4e1be8c
+  '@base-ui/react@1.9.0': 89a0144c866a52efadbae6a2ebf2cb3d114b9237defdbf5ac002509446134d31
 
 importers:
 
@@ -661,7 +661,7 @@ importers:
     dependencies:
       '@base-ui/react':
         specifier: ^1.9.0
-        version: 1.9.0(patch_hash=54ba8dbd6cfe16c3638dabf5768d7e47c9304d8da0ce2d2602b9428dd4e1be8c)(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        version: 1.9.0(patch_hash=89a0144c866a52efadbae6a2ebf2cb3d114b9237defdbf5ac002509446134d31)(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@fontsource-variable/figtree':
         specifier: ^5.3.0
         version: 5.3.0
@@ -5038,7 +5038,7 @@ snapshots:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
 
-  '@base-ui/react@1.9.0(patch_hash=54ba8dbd6cfe16c3638dabf5768d7e47c9304d8da0ce2d2602b9428dd4e1be8c)(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@base-ui/react@1.9.0(patch_hash=89a0144c866a52efadbae6a2ebf2cb3d114b9237defdbf5ac002509446134d31)(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
       '@babel/runtime': 7.29.10
       '@base-ui/utils': 0.5.0(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
