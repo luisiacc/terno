@@ -8,6 +8,7 @@ import { parse, type DefaultTreeAdapterTypes as Html } from "parse5";
 const NON_CONTENT = new Set(["head", "title", "script", "style", "template", "iframe", "object", "embed", "noembed", "noframes", "xmp"]);
 const BLOCKS = new Set(["address", "article", "aside", "blockquote", "br", "caption", "dd", "div", "dl", "dt", "fieldset", "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "li", "main", "nav", "ol", "p", "pre", "section", "table", "tbody", "td", "th", "thead", "tr", "ul"]);
 const DISPLAYS = new Set(["none", "contents", "block", "inline", "inline-block", "flow-root", "list-item", "flex", "inline-flex", "grid", "inline-grid", "table", "inline-table", "table-row-group", "table-header-group", "table-footer-group", "table-row", "table-column-group", "table-column", "table-cell", "table-caption"]);
+const INLINE_DISPLAYS = new Set(["inline", "inline-block", "inline-flex", "inline-grid", "inline-table", "contents"]);
 const LENGTHS = new Set(["px", "em", "rem", "ex", "ch", "cap", "ic", "lh", "rlh", "vw", "vh", "vmin", "vmax", "svh", "lvh", "dvh", "cm", "mm", "q", "in", "pt", "pc"]);
 const PROPERTIES = new Set(["display", "visibility", "opacity", "max-height", "overflow", "overflow-x", "overflow-y"]);
 const OVERFLOWS = new Set(["visible", "hidden", "clip", "scroll", "auto"]);
@@ -116,7 +117,7 @@ export async function htmlToText(html: string): Promise<string> {
     if (display === "none" || (attrs.has("hidden") && (!display || hidden?.toLowerCase() === "until-found")) || style.get("opacity")?.value === "0" || (style.get("max-height")?.value === "0" && overflow !== "visible")) continue;
     const visibility = style.get("visibility")?.value;
     const invisible = visibility === "hidden" || visibility === "collapse" || (visibility !== "visible" && visibility !== "initial" && frame.invisible);
-    const block = BLOCKS.has(node.tagName);
+    const block = node.tagName === "br" || (display ? !INLINE_DISPLAYS.has(display) : BLOCKS.has(node.tagName));
     if (block) output.push(" ");
     if (node.childNodes.length) stack.push({ children: node.childNodes, index: 0, invisible, block });
   }
