@@ -86,3 +86,7 @@ Primary specification checks: [CSS Overflow axes](https://drafts.csswg.org/css-o
 ### F1 correction: CSS priority validation
 
 Observed red:21F1cases failed in unit/nativeSQL/IDB (with49controls passing), plus6WASMcases failed (14controls passing), including hidden archive/star/search and false-hidden visible policy through both ingest and partial completion/reopen. Public css-tree priority boolean|string is now validated before the declaration enters cascade selection; only decoded case-insensitive important is accepted. Ordinary priority order and valid escaped/comment/uppercase important remain. Green:70unit/native/IDB plus20WASM F1cases pass, no timeout/budget changes. Evidence `/tmp/terno-visible-F1-{red-full,green,wasm-red-full,wasm-green}.txt`. Parent Round2 review pending.
+
+### F2 correction: source wrapper attributes
+
+Observed red:49unit/nativeSQL/IDB cases and14WASM cases failed; ordinary descendant visibility controls passed. html/body attributes are now ignored before pruning or inherited visibility, matching the reader's WHOLE_DOCUMENT:false fresh-wrapper serialization. Ordinary descendants retain their own hidden/style attributes. Green:56unit/native/IDB plus16WASM cases pass, covering both ingest and partial completion, actions/flags/preview/search/reopen. Evidence `/tmp/terno-visible-F2-{red,green,wasm-red,wasm-green}.txt`; actual reader Chromium reference retained in the independent verdict, with fresh expanded oracle pending parent window. No MIME/parser option changes.

@@ -86,7 +86,9 @@ export async function htmlToText(html: string): Promise<string> {
     }
     if (!("tagName" in node)) continue;
     if (node.namespaceURI !== "http://www.w3.org/1999/xhtml" || NON_CONTENT.has(node.tagName)) continue;
-    const attrs = new Map(node.attrs.map((attr) => [attr.name, attr.value]));
+    // The reader serializes sanitized children into fresh html/body wrappers.
+    const wrapper = node.tagName === "html" || node.tagName === "body";
+    const attrs = new Map((wrapper ? [] : node.attrs).map((attr) => [attr.name, attr.value]));
     const source = attrs.get("style");
     const style = source ? inlineStyle(source) : EMPTY_STYLE;
     const display = style.get("display")?.value;
