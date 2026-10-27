@@ -492,6 +492,8 @@ export function editDraft(key: string, patch: Partial<DraftFields>): boolean {
   const sourceChanged = mode !== d.mode || (mode === "forward" ? patch.forwardOfMessageId !== undefined && patch.forwardOfMessageId !== d.forwardOfMessageId : patch.inReplyToMessageId !== undefined && patch.inReplyToMessageId !== d.inReplyToMessageId);
   const resetContext = patch.threadId !== undefined || sourceChanged || patch.showSourceContext === false;
   const bodyChanged = (patch.bodyText !== undefined && patch.bodyText !== d.bodyText) || (patch.bodyHtml !== undefined && patch.bodyHtml !== d.bodyHtml);
+  const bodySource = bodyChanged ? sources.get(key) : undefined;
+  const bodySourceVersion = bodySource?.editVersion;
   put({
     ...d,
     ...patch,
@@ -504,10 +506,9 @@ export function editDraft(key: string, patch: Partial<DraftFields>): boolean {
     tooLong: false,
     ...(bodyChanged ? { bodyVersion: d.bodyVersion + 1, canonical: false } : {}),
   });
-  if (bodyChanged) {
-    const source = sources.get(key);
-    if (source?.retained) sources.delete(key);
-    else if (source) source.dirty = false;
+  if (bodySource && sources.get(key) === bodySource && bodySource.editVersion === bodySourceVersion) {
+    if (bodySource.retained) sources.delete(key);
+    else bodySource.dirty = false;
   }
   schedule(key);
   return true;
