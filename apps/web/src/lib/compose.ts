@@ -10,7 +10,7 @@ import { invalidateThreads, loadThread } from "~/state/threads";
 import { registerUndo, snack } from "./snack";
 import { answered, convertFields, forwardAccountMismatch, newFields, replyFields, mergeAttachmentRefs } from "./compose-fields";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
-import { beginDraftWork, draftEditsHeld, authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, type LocalDraft } from "./drafts";
+import { beginDraftWork, expireDraftPresentation, draftEditsHeld, authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, type LocalDraft } from "./drafts";
 
 /**
  * Writing mail: which draft a reply, reply-all, forward or new message opens,
@@ -145,6 +145,20 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   const existingKey = shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown);
   // its body as the editor has it now (what "written" and a conversion's undo look at)
   let existing = existingKey ? materialize(existingKey) : undefined;
+  if (existing?.showSourceContext) {
+    const snapshot = existing;
+    const sourceId = snapshot.mode === "forward" ? snapshot.forwardOfMessageId : snapshot.mode === "new" ? null : snapshot.inReplyToMessageId;
+    let context: { threadId: number; accountId: number } | null;
+    try { context = sourceId ? await client.call("drafts.sourceContext", { messageId: sourceId }) : null; } catch { return; }
+    const current = existingKey ? materialize(existingKey) : undefined;
+    if (mine !== intent || getApp().selectedId !== s.selectedId || (lease && !lease.valid) || !current || current.id !== snapshot.id || current.generation !== snapshot.generation || current.revision !== snapshot.revision || current.localRev !== snapshot.localRev || current.accountId !== snapshot.accountId || current.mode !== snapshot.mode || current.inReplyToMessageId !== snapshot.inReplyToMessageId || current.forwardOfMessageId !== snapshot.forwardOfMessageId || current.showSourceContext !== snapshot.showSourceContext) return;
+    if (!context || context.threadId !== threadId) {
+      editDraft(current.key, { threadId: null, showSourceContext: false });
+      showNewDraft(current.key);
+      return;
+    }
+    existing = current;
+  }
   if (existing && existing.mode === mode) {
     setDraftUi(existing.key, "open");
     return focusDraft(existing.key, target, mine);
@@ -211,11 +225,16 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     ? convertFields(before!, mode, detail, account, identities)
     : replyFields(mode, detail, account, { identities });
   if (converted === before) { snack.error(t("attachments.tooLarge")); return; }
+  converted.showSourceContext = true;
   converted.attachments = mergeAttachmentRefs([], converted.attachments ?? []);
   const snapshot = existing;
   const signature = getApp().accounts.find((a) => a.id === converted.accountId)?.signature;
   const admitted = await draftAttachmentBudget(converted, signature);
   if (!currentIntent() || await loadThread(threadId) !== detail) return;
+  const sourceId = converted.mode === "forward" ? converted.forwardOfMessageId : converted.inReplyToMessageId;
+  let sourceContext: { threadId: number; accountId: number } | null;
+  try { sourceContext = sourceId ? await client.call("drafts.sourceContext", { messageId: sourceId }) : null; } catch { return; }
+  if (!currentIntent() || (lease && !lease.valid) || !sourceContext || sourceContext.threadId !== threadId || sourceContext.accountId !== detail.thread.accountId) return;
   existing = existingKey ? materialize(existingKey) : undefined;
   if (existingKey && (!existing || existing.sending || existing.recovery || existing.accountId !== snapshot?.accountId || existing.id !== snapshot?.id || existing.generation !== snapshot?.generation || existing.localRev !== snapshot?.localRev || existing.bodyVersion !== snapshot?.bodyVersion || existing.bodyText !== snapshot?.bodyText || existing.bodyHtml !== snapshot?.bodyHtml)) return;
   if (!getApp().accounts.some((a) => a.id === converted.accountId)) { snack.error(t("errors.accountGone")); return; }
@@ -262,6 +281,7 @@ export function leaveNewDraft(): void {
 /** Opening a conversation (j/k, a click, the menu) while a new message is shown: the reader follows the conversation. */
 export function installComposeFollowsSelection(): () => void {
   return useApp.subscribe((s, prev) => {
+    if (prev.selectedId !== null && (s.selectedId !== prev.selectedId || (!prev.compose && s.compose) || (prev.checked.size < 2 && s.checked.size >= 2) || (prev.scope === null && s.scope !== null))) expireDraftPresentation(prev.selectedId);
     if (s.compose && s.compose === prev.compose && s.selectedId !== prev.selectedId) leaveNewDraft();
   });
 }

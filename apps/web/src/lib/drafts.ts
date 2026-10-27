@@ -61,6 +61,10 @@ export interface LocalDraft {
   recovery?: DraftRecovery;
   /** Session-only editor placement when storage context normalizes to standalone. */
   presentationThreadId?: number;
+  /** Last validated DTO association; null after leaving Reader until an explicit point lookup. */
+  sourceContextThreadId?: number | null;
+  presentationEpoch?: number;
+  showSourceContext?: boolean;
   status: DraftStatus;
   /** bumped by every edit; saved = what the server acknowledged */
   localRev: number;
@@ -100,7 +104,7 @@ export interface LocalDraft {
 
 export type DraftFields = Pick<
   LocalDraft,
-  "attachments" | "accountId" | "threadId" | "mode" | "toText" | "ccText" | "bccText" | "auto" | "subject" | "subjectEdited" | "bodyText" | "bodyHtml" | "quotedText" | "includeQuote" | "inReplyToMessageId" | "forwardOfMessageId" | "uiState"
+  "showSourceContext" | "attachments" | "accountId" | "threadId" | "mode" | "toText" | "ccText" | "bccText" | "auto" | "subject" | "subjectEdited" | "bodyText" | "bodyHtml" | "quotedText" | "includeQuote" | "inReplyToMessageId" | "forwardOfMessageId" | "uiState"
 >;
 
 interface DraftsState {
@@ -218,6 +222,8 @@ export function fromServer(d: Draft): LocalDraft {
     savedRev: 0,
     accountId: d.accountId,
     threadId: d.threadId,
+    showSourceContext: d.showSourceContext ?? false,
+    ...(d.showSourceContext ? { sourceContextThreadId: d.presentationThreadId ?? null } : {}),
     mode: d.mode,
     toText: text(d.to),
     ccText: text(d.cc),
@@ -245,8 +251,8 @@ export function fromServer(d: Draft): LocalDraft {
 /** A draft's content, without its identity or save state (its body as the editor has it now). */
 export function fieldsOf(d: LocalDraft): DraftFields {
   const cur = materialize(d.key) ?? d;
-  const { attachments, accountId, threadId, mode, toText, ccText, bccText, auto, subject, subjectEdited, bodyText, bodyHtml, quotedText, includeQuote, inReplyToMessageId, forwardOfMessageId, uiState } = cur;
-  return { attachments, accountId, threadId, mode, toText, ccText, bccText, auto, subject, subjectEdited, bodyText, bodyHtml, quotedText, includeQuote, inReplyToMessageId, forwardOfMessageId, uiState };
+  const { showSourceContext, attachments, accountId, threadId, mode, toText, ccText, bccText, auto, subject, subjectEdited, bodyText, bodyHtml, quotedText, includeQuote, inReplyToMessageId, forwardOfMessageId, uiState } = cur;
+  return { showSourceContext, attachments, accountId, threadId, mode, toText, ccText, bccText, auto, subject, subjectEdited, bodyText, bodyHtml, quotedText, includeQuote, inReplyToMessageId, forwardOfMessageId, uiState };
 }
 
 // ───────────────────────────── the editor's body ─────────────────────────────
@@ -409,11 +415,15 @@ export function editDraft(key: string, patch: Partial<DraftFields>): boolean {
   if (!d || d.sending) return false;
   if (patch.accountId !== undefined && patch.accountId !== d.accountId && draftSenderLocked(d)) return false;
   changeVersion++;
+  const mode = patch.mode ?? d.mode;
+  const sourceChanged = mode !== d.mode || (mode === "forward" ? patch.forwardOfMessageId !== undefined && patch.forwardOfMessageId !== d.forwardOfMessageId : patch.inReplyToMessageId !== undefined && patch.inReplyToMessageId !== d.inReplyToMessageId);
+  const resetContext = patch.threadId !== undefined || sourceChanged || patch.showSourceContext === false;
   const bodyChanged = (patch.bodyText !== undefined && patch.bodyText !== d.bodyText) || (patch.bodyHtml !== undefined && patch.bodyHtml !== d.bodyHtml);
   put({
     ...d,
     ...patch,
-    ...(patch.threadId !== undefined ? { presentationThreadId: undefined } : {}),
+    ...(resetContext ? { presentationThreadId: undefined, sourceContextThreadId: undefined, presentationEpoch: (d.presentationEpoch ?? 0) + 1 } : {}),
+    ...((sourceChanged || patch.threadId === null || mode === "new") && patch.showSourceContext === undefined ? { showSourceContext: false } : {}),
     ...(patch.attachments?.length === 0 && d.recovery && (d.recovery.state === "missing" || d.recovery.state === "refused") ? { attachmentOwner: false } : {}),
     localRev: d.localRev + 1,
     status: d.status === "saving" ? "saving" : "dirty",
@@ -496,6 +506,7 @@ function save(key: string, copy = false): Promise<void> {
     includeQuote: d.includeQuote,
     inReplyToMessageId: d.inReplyToMessageId,
     forwardOfMessageId: d.forwardOfMessageId,
+    showSourceContext: d.showSourceContext ?? false,
     uiState: d.uiState,
   };
   w.inflight = call("drafts.save", params).then(
@@ -512,8 +523,15 @@ function save(key: string, copy = false): Promise<void> {
         return;
       }
       const done = cur.localRev === rev;
-      const context = cur.accountId === d.accountId && cur.threadId === d.threadId && cur.mode === d.mode && cur.inReplyToMessageId === d.inReplyToMessageId && cur.forwardOfMessageId === d.forwardOfMessageId
-        ? { threadId: saved.threadId, mode: saved.mode, inReplyToMessageId: saved.inReplyToMessageId, forwardOfMessageId: saved.forwardOfMessageId, ...(d.threadId !== null && (saved.threadId !== d.threadId || saved.mode === "new") ? { presentationThreadId: cur.presentationThreadId ?? d.threadId } : {}) } : {};
+      if (cur.id !== d.id || cur.generation !== d.generation) return;
+      const sameContext = cur.accountId === d.accountId && cur.threadId === d.threadId && cur.mode === d.mode && cur.inReplyToMessageId === d.inReplyToMessageId && cur.forwardOfMessageId === d.forwardOfMessageId && cur.showSourceContext === d.showSourceContext;
+      const placement = draftPresentationThread(cur);
+      const currentMount = cur.presentationEpoch === d.presentationEpoch;
+      const context = sameContext
+        ? { threadId: saved.threadId, mode: saved.mode, inReplyToMessageId: saved.inReplyToMessageId, forwardOfMessageId: saved.forwardOfMessageId,
+            showSourceContext: saved.showSourceContext ?? false,
+            ...(currentMount ? { sourceContextThreadId: saved.showSourceContext ? saved.presentationThreadId ?? null : undefined,
+              ...(placement !== null && (saved.threadId !== placement || saved.mode === "new") ? { presentationThreadId: placement } : {}) } : {}) } : {};
       put({ ...cur, ...context, id: saved.id, generation: saved.generation, revision: saved.revision, savedRev: rev, recovery: undefined, status: done ? "saved" : "dirty", attachmentOwner: Boolean(saved.attachments?.length) });
       if (!done && !w.stopping && !sources.get(key)?.failed) {
         const next = save(key);
@@ -687,7 +705,9 @@ export function restoreDiscarded(d: LocalDraft): string {
 
 /** At startup: every stored draft, as the backend has it. */
 export async function loadDrafts(list: () => Promise<Draft[]> = () => client.call("drafts.list", {})): Promise<void> {
+  const before = changeVersion;
   const stored = await list();
+  if (changeVersion !== before) return;
   useDrafts.setState((s) => {
     const drafts = { ...s.drafts };
     for (const d of stored) if (!Object.values(drafts).some((x) => x.id === d.id)) { changeVersion++; drafts[`srv-${d.id}`] = fromServer(d); }
@@ -702,7 +722,26 @@ interface DraftIndex {
   written: Set<number>;
 }
 /** Durable context and session editor placement have independent lifetimes. */
-export const draftPresentationThread = (d: LocalDraft): number | null => d.presentationThreadId ?? (d.mode === "new" ? null : d.threadId);
+export const draftPresentationThread = (d: LocalDraft): number | null => d.presentationThreadId ?? (d.sourceContextThreadId !== undefined ? d.sourceContextThreadId : d.mode === "new" ? null : d.threadId);
+
+/** Leaving Reader retires cached placement, not the durable source intent or authored fields. */
+export function expireDraftPresentation(threadId: number): void {
+  useDrafts.setState((s) => {
+    let drafts = s.drafts;
+    for (const d of Object.values(s.drafts)) {
+      if (draftPresentationThread(d) !== threadId || (!d.showSourceContext && d.presentationThreadId === undefined)) continue;
+      if (drafts === s.drafts) drafts = { ...drafts };
+      drafts[d.key] = { ...d, presentationThreadId: undefined, sourceContextThreadId: null, presentationEpoch: (d.presentationEpoch ?? 0) + 1 };
+    }
+    return drafts === s.drafts ? s : { drafts };
+  });
+}
+
+/** Explicit strip open has just validated this source; no authored edit or save is needed. */
+export function validateDraftPresentation(key: string, threadId: number): void {
+  const d = get(key);
+  if (d) put({ ...d, presentationThreadId: undefined, sourceContextThreadId: threadId, presentationEpoch: (d.presentationEpoch ?? 0) + 1 });
+}
 
 /** One pass per drafts update (the map is replaced on every change), shared by every row, the reader and the strip. */
 const indexes = new WeakMap<Record<string, LocalDraft>, DraftIndex>();

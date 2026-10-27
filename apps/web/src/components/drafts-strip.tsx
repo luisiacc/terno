@@ -1,11 +1,12 @@
 import { t } from "@terno/i18n";
 import { cn } from "@terno/ui/lib/utils";
 import { PenLine } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { focusDraft, showNewDraft } from "~/lib/compose";
-import { draftPresentationThread, authored, setDraftUi, shownDraftKey, useDrafts, type LocalDraft } from "~/lib/drafts";
+import { draftPresentationThread, authored, editDraft, validateDraftPresentation, setDraftUi, shownDraftKey, useDrafts, type LocalDraft } from "~/lib/drafts";
 import { loadThread } from "~/state/threads";
+import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
 import { useList } from "~/state/list";
 
@@ -31,6 +32,8 @@ export function DraftsStrip() {
   const shown = useApp((s) => s.draftShown);
   const index = useList((s) => s.index);
   const [expanded, setExpanded] = useState(false);
+  const cancelOpen = useRef<(() => void) | null>(null);
+  useEffect(() => () => cancelOpen.current?.(), []);
   const items = useDrafts(
     useShallow((s) => {
       const out: LocalDraft[] = [];
@@ -50,16 +53,55 @@ export function DraftsStrip() {
   const visible = expanded ? items : items.slice(0, SHOWN);
 
   const open = (d: LocalDraft) => {
-    const threadId = draftPresentationThread(d);
-    if (threadId === null) return showNewDraft(d.key);
-    // a conversation's draft: open that conversation (by id: it needn't be in this list) showing exactly this draft
-    setApp({ selectedId: threadId, readerOpen: true, compose: null, checked: new Set(), scope: null, draftShown: { threadId: threadId, key: d.key } });
-    setDraftUi(d.key, "open");
-    void loadThread(threadId).then((detail) => {
-      const app = useApp.getState();
-      if (app.draftShown?.key !== d.key || app.selectedId !== threadId || app.compose) return;
-      if (!detail) showNewDraft(d.key);
-      else focusDraft(d.key, d.mode === "forward" ? "to" : "body");
+    cancelOpen.current?.();
+    const sourceId = d.mode === "forward" ? d.forwardOfMessageId : d.mode === "new" ? null : d.inReplyToMessageId;
+    if (draftPresentationThread(d) === null && !d.showSourceContext) return showNewDraft(d.key);
+    let expected = useApp.getState();
+    const active = document.activeElement;
+    let superseded = false;
+    const unsubscribe = useApp.subscribe((state) => {
+      if (state.selectedId !== expected.selectedId || state.compose !== expected.compose || state.readerOpen !== expected.readerOpen || state.checked !== expected.checked || state.scope !== expected.scope || state.dialog !== expected.dialog || state.fatal !== expected.fatal || state.accountId !== expected.accountId) superseded = true;
+    });
+    const moved = () => { if (document.activeElement !== active) superseded = true; };
+    const cancel = () => { superseded = true; unsubscribe(); document.removeEventListener("focusin", moved, true); };
+    cancelOpen.current = cancel;
+    document.addEventListener("focusin", moved, true);
+    const unchanged = (snapshot: LocalDraft) => {
+      const current = useDrafts.getState().drafts[d.key];
+      return !superseded && current && !current.sending && !current.recovery && current.id === snapshot.id && current.generation === snapshot.generation && current.revision === snapshot.revision && current.localRev === snapshot.localRev && current.presentationEpoch === snapshot.presentationEpoch && current.accountId === snapshot.accountId && current.mode === snapshot.mode && current.inReplyToMessageId === snapshot.inReplyToMessageId && current.forwardOfMessageId === snapshot.forwardOfMessageId && current.showSourceContext === snapshot.showSourceContext;
+    };
+    const context = sourceId ? client.call("drafts.sourceContext", { messageId: sourceId }) : Promise.resolve(null);
+    void context.then(async (result) => {
+      if (!unchanged(d)) return;
+      if (!result) {
+        editDraft(d.key, { threadId: null, showSourceContext: false });
+        showNewDraft(d.key);
+        return;
+      }
+      const threadId = result.threadId;
+      // The navigation is ours; every subsequent navigation permanently retires this request.
+      unsubscribe();
+      setApp({ selectedId: threadId, readerOpen: true, compose: null, checked: new Set(), scope: null, draftShown: { threadId, key: d.key } });
+      expected = useApp.getState();
+      const watch = useApp.subscribe((state) => {
+        if (state.selectedId !== expected.selectedId || state.compose !== expected.compose || state.readerOpen !== expected.readerOpen || state.checked !== expected.checked || state.scope !== expected.scope || state.dialog !== expected.dialog || state.fatal !== expected.fatal || state.accountId !== expected.accountId) superseded = true;
+      });
+      const finish = () => { watch(); cancel(); };
+      cancelOpen.current = finish;
+      try {
+        validateDraftPresentation(d.key, threadId);
+        setDraftUi(d.key, "open");
+        const opened = useDrafts.getState().drafts[d.key]!;
+        const detail = await loadThread(threadId);
+        if (!unchanged(opened)) return;
+        if (!detail) {
+          editDraft(d.key, { threadId: null, showSourceContext: false });
+          showNewDraft(d.key);
+        } else focusDraft(d.key, d.mode === "forward" ? "to" : "body");
+      } finally { finish(); }
+    }).catch(() => {}).finally(() => {
+      cancel();
+      if (cancelOpen.current === cancel) cancelOpen.current = null;
     });
   };
 
