@@ -25,6 +25,112 @@ it("does not allocate a64KiB transfer buffer for each ordinary tiny resource", a
   } finally { constructors.mockRestore(); body?.release(); }
 });
 
+it.each([0, 190, chunkBytes])("allocates only owned fill storage for a whole %s-byte delivery and release", async (size) => {
+  const source = Uint8Array.from({ length: size }, (_, index) => index % 256);
+  const expected = source.slice();
+  const response = stream([source]);
+  const signal = new AbortController().signal;
+  const options = { signal, limit: chunkBytes, promote: vi.fn(async () => () => {}) };
+  const nativePrototype = Uint8Array.prototype;
+  const constructors = vi.spyOn(globalThis, "Uint8Array");
+  Object.defineProperty(constructors, "prototype", { value: nativePrototype });
+  const subarray = vi.spyOn(source, "subarray");
+  let body: IncomingBody | undefined;
+  try {
+    body = await readIncomingBody(response, options);
+    source.fill(255);
+    expect(body.bytes).toBe(size);
+    expect(body.chunks.map((chunk) => chunk.byteLength)).toEqual(size ? [size] : []);
+    if (size) {
+      expect(body.chunks[0]).toEqual(expected);
+      expect(body.chunks[0]!.buffer).not.toBe(source.buffer);
+      expect(body.chunks[0]!.byteOffset).toBe(0);
+      expect(body.chunks[0]!.buffer.byteLength).toBe(size);
+    }
+    body.release(); body.release();
+    expect(body.chunks).toEqual([]);
+    expect(constructors.mock.calls.map((args) => args.at(0)), "no empty or speculative next fill buffers").toEqual(size ? [Math.max(256, size)] : []);
+    expect(subarray, "a whole delivered value can be copied directly without a temporary view").not.toHaveBeenCalled();
+    expect(options.promote).not.toHaveBeenCalled();
+    expect(response.body!.locked).toBe(false);
+    expect(getEventListeners(signal, "abort")).toHaveLength(0);
+  } finally { constructors.mockRestore(); subarray.mockRestore(); body?.release(); }
+});
+
+it.each([97, chunkBytes + 123])("copies a %s-byte producer view and following delivery into independent exact chunks", async (size) => {
+  const backing = Uint8Array.from({ length: size + 74 }, (_, index) => index % 251);
+  const first = backing.subarray(37, 37 + size);
+  const second = Uint8Array.from({ length: 100 }, (_, index) => index % 127);
+  const expected = Buffer.concat([first, second]);
+  const firstSubarray = vi.spyOn(first, "subarray");
+  const secondSubarray = vi.spyOn(second, "subarray");
+  const body = await readIncomingBody(stream([first, second]), { signal: new AbortController().signal, limit: size + 100, promote: async () => () => {} });
+  try {
+    backing.fill(255); second.fill(255);
+    expect(Buffer.concat(body.chunks)).toEqual(expected);
+    expect(body.chunks.map((chunk) => chunk.byteLength)).toEqual(size < chunkBytes ? [size + 100] : [chunkBytes, 223]);
+    expect(body.chunks.every((chunk) => chunk.byteOffset === 0 && chunk.byteLength === chunk.buffer.byteLength && chunk.buffer !== backing.buffer && chunk.buffer !== second.buffer)).toBe(true);
+    expect(firstSubarray.mock.calls).toEqual(size < chunkBytes ? [] : [[0, chunkBytes], [chunkBytes, size]]);
+    expect(secondSubarray).not.toHaveBeenCalled();
+  } finally { body.release(); firstSubarray.mockRestore(); secondSubarray.mockRestore(); }
+});
+
+it("yields after256KiB copied within one allowed1MiB delivery and checks cancellation before continuing", async () => {
+  const response = stream([new Uint8Array(1024 * 1024)]);
+  const abort = new AbortController();
+  const release = vi.fn();
+  vi.useFakeTimers();
+  const copies = vi.spyOn(Uint8Array.prototype, "set");
+  try {
+    const work = readIncomingBody(response, { signal: abort.signal, limit: 1024 * 1024, promote: async () => release });
+    const settled = work.then(() => "resolved", (error: Error) => error.name);
+    for (let index = 0; index < 32 && !vi.getTimerCount(); index++) await Promise.resolve();
+    expect(vi.getTimerCount()).toBe(1);
+    expect(copies.mock.calls.reduce((bytes, [value]) => bytes + value.length, 0)).toBe(256 * 1024);
+    abort.abort();
+    await vi.runAllTimersAsync();
+    expect(await settled).toBe("AbortError");
+    expect(copies.mock.calls.reduce((bytes, [value]) => bytes + value.length, 0)).toBe(256 * 1024);
+    expect(release).toHaveBeenCalledOnce();
+    expect(response.body!.locked).toBe(false);
+    expect(getEventListeners(abort.signal, "abort")).toHaveLength(0);
+  } finally { copies.mockRestore(); vi.useRealTimers(); }
+});
+
+it("releases an ignored-abort late prefix grant after canceling collection with a populated tail", async () => {
+  const abort = new AbortController();
+  let entered!: () => void;
+  const entering = new Promise<void>((resolve) => { entered = resolve; });
+  let grant!: (release: () => void) => void;
+  let promotionSignal: AbortSignal | undefined;
+  const release = vi.fn();
+  const canceled = vi.fn();
+  let pulls = 0;
+  const response = new Response(new ReadableStream<Uint8Array>({
+    pull(controller) { pulls++; controller.enqueue(new Uint8Array(pulls === 1 ? 256 * 1024 - 1 : 2)); },
+    cancel: canceled,
+  }, { highWaterMark: 0 }));
+  const work = readIncomingBody(response, { signal: abort.signal, limit: 1024 * 1024, promote(signal) {
+    promotionSignal = signal;
+    entered();
+    return new Promise<() => void>((resolve) => { grant = resolve; });
+  } });
+  const settled = work.then(() => "resolved", (error: Error) => error.name);
+  await entering;
+  expect(pulls).toBe(2);
+  abort.abort();
+  expect(await settled).toBe("AbortError");
+  expect(promotionSignal!.aborted).toBe(true);
+  expect(response.body!.locked).toBe(false);
+  expect(canceled).toHaveBeenCalledOnce();
+  expect(getEventListeners(abort.signal, "abort")).toHaveLength(0);
+  expect(getEventListeners(promotionSignal!, "abort")).toHaveLength(0);
+  grant(release);
+  await turn();
+  expect(pulls).toBe(2);
+  expect(release).toHaveBeenCalledOnce();
+});
+
 it("coalesces fragmented input into exact transferable buffers and ignores a lying length", async () => {
   const bytes = Uint8Array.from({ length: chunkBytes + 123 }, (_, index) => index % 256);
   const response = stream(Array.from({ length: Math.ceil(bytes.length / 97) }, (_, index) => bytes.subarray(index * 97, Math.min(bytes.length, (index + 1) * 97))));

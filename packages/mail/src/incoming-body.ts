@@ -20,7 +20,7 @@ export async function readIncomingBody(response: Response, options: { signal: Ab
   const reader = response.body?.getReader();
   if (!reader) { signal.throwIfAborted(); throw new SyntaxError("Missing response body"); }
   const chunks: Uint8Array[] = [];
-  let buffer = new Uint8Array();
+  let buffer: Uint8Array | undefined;
   let filled = 0, bytes = 0, reads = 0, copied = 0;
   let complete = false, released = false, wasPromoted = false;
   let largeRelease: (() => void) | undefined;
@@ -33,7 +33,7 @@ export async function readIncomingBody(response: Response, options: { signal: Ab
     released = true;
     promotionAbort?.abort(canceled());
     chunks.length = 0;
-    buffer = new Uint8Array();
+    buffer = undefined;
     largeRelease?.();
     largeRelease = undefined;
   };
@@ -77,24 +77,24 @@ export async function readIncomingBody(response: Response, options: { signal: Ab
       if (bytes > limit) throw new ResponseBodyLimitError(limit);
       if (bytes > PREFIX_BYTES) await promote();
       for (let offset = 0; offset < value.byteLength;) {
-        if (!buffer.length) buffer = new Uint8Array(Math.min(CHUNK_BYTES, Math.max(256, value.byteLength - offset)));
+        if (!buffer) buffer = new Uint8Array(Math.min(CHUNK_BYTES, Math.max(256, value.byteLength - offset)));
         if (filled === buffer.length) {
           const grown = new Uint8Array(Math.min(CHUNK_BYTES, buffer.length * 2));
           grown.set(buffer);
           buffer = grown;
         }
         const count = Math.min(buffer.length - filled, value.byteLength - offset);
-        buffer.set(value.subarray(offset, offset + count), filled);
+        buffer.set(offset === 0 && count === value.byteLength ? value : value.subarray(offset, offset + count), filled);
         filled += count;
         offset += count;
         copied += count;
-        if (filled === CHUNK_BYTES) { append(buffer); buffer = new Uint8Array(CHUNK_BYTES); filled = 0; }
+        if (filled === CHUNK_BYTES) { append(buffer); buffer = undefined; filled = 0; }
         if (copied >= PREFIX_BYTES) await yieldTo();
       }
       if (++reads % 128 === 0) await yieldTo();
     }
-    if (filled) append(filled === buffer.length ? buffer : buffer.slice(0, filled));
-    buffer = new Uint8Array();
+    if (buffer && filled) append(filled === buffer.length ? buffer : buffer.slice(0, filled));
+    buffer = undefined;
     complete = true;
     return { chunks, bytes, get promoted() { return wasPromoted; }, promote, release };
   } finally {
