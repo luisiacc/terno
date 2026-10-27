@@ -50,7 +50,7 @@ export interface DesktopBridge {
   /** in-app updates (main owns the state and the install); older shells don't have it */
   updates?: DesktopUpdates;
   /** before a quit or an update main asks the page to save its drafts, and waits for the promise (5 s at most) */
-  onFlushDrafts?(flush: () => Promise<void>): () => void;
+  onFlushDrafts?(flush: () => Promise<boolean>): () => void;
 }
 
 /** In-app updates through main (apps/desktop/src/updates/main.ts validates every call). */

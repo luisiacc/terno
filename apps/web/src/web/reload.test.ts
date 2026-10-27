@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/rpc/connection", () => ({ client: { call: () => Promise.reject(new Error("not in tests")) } }));
 
-const { createDraft, draftsSaved, editDraft, setDraftTransport, useDrafts } = await import("~/lib/drafts");
+const { createDraft, draftsSaved, editDraft, markDraftMissing, setDraftTransport, useDrafts } = await import("~/lib/drafts");
 const { newFields } = await import("~/lib/compose-fields");
 const { whenDraftsSaved } = await import("./reload");
 
@@ -65,6 +65,15 @@ describe("web updates: reloading only once drafts are saved", () => {
     expect(reloads).toBe(1);
     warning!.anyway();
     expect(reloads).toBe(2);
+  });
+
+  it("terminal recovery holds a clean draft too; only an explicitly warned forced reload can continue", async () => {
+    const k = dirtyDraft(); await draftsSaved(); markDraftMissing(k);
+    let reloads = 0; let warning: { retry(): void; anyway(): void } | undefined;
+    const deps = { saved: () => draftsSaved(), warn: (w: typeof warning) => { warning = w; } };
+    expect(await whenDraftsSaved(() => reloads++, deps)).toBe(false);
+    expect(reloads).toBe(0); warning!.retry(); await vi.advanceTimersByTimeAsync(0);
+    expect(reloads).toBe(0); warning!.anyway(); expect(reloads).toBe(1);
   });
 
   it("saved: reloads at once, no warning", async () => {

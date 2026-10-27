@@ -97,7 +97,7 @@ function UpdateDetails({ pill, close }: { pill: Exclude<PillModel, { kind: "hidd
   if (!state) return null;
   const version = info?.version ?? "";
   const subtitle =
-    pill.kind === "ready"
+    state.error?.kind === "unsaved" ? errorText("unsaved") : pill.kind === "ready"
       ? pill.deferred
         ? t("updates.popover.deferred")
         : t("updates.popover.ready")

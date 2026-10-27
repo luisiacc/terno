@@ -61,7 +61,7 @@ export const FIELD_TYPES = {
   /** plan 20: what the host says about the network */
   online: bool,
   /** how a quit ended: the database closed, a send kept it open (deferred), or the deadline passed */
-  outcome: enumOf("closed", "sending", "forced", "timeout", "other"),
+  outcome: enumOf("closed", "sending", "forced", "timeout", "other", "unsaved"),
   op: enumOf("encrypt", "decrypt", "legacy", "sync", "send", "move", "import", "export", "persist", "rebuild", "restore", "generate", "test", "classify", "other"),
   opKind: enumOf(...THREAD_ACTIONS, "send", "move", "other"),
   packaged: bool,

@@ -6,7 +6,7 @@ afterEach(() => vi.useRealTimers());
 
 const later = <T>(ms: number, value: T) => new Promise<T>((r) => setTimeout(() => r(value), ms));
 
-function deps(o: { windows: (() => Promise<void>)[]; backend: ((force: boolean, deadlineMs: number) => Promise<BackendOutcome>) | null; order?: string[] }): ShutdownDeps {
+function deps(o: { windows: (() => Promise<void | boolean>)[]; backend: ((force: boolean, deadlineMs: number) => Promise<BackendOutcome>) | null; order?: string[] }): ShutdownDeps {
   return {
     flushWindows: () => o.windows.map((w) => w()),
     shutdownBackend: ({ force, deadlineMs }) => {
@@ -19,6 +19,16 @@ function deps(o: { windows: (() => Promise<void>)[]; backend: ((force: boolean, 
 }
 
 describe("main: the coordinated shutdown", () => {
+  it.each(["unsaved", "failed", "timeout"] as const)("ordinary update holds a %s renderer before shutting down its backend", async (result) => {
+    const order: string[] = [];
+    const window = () => result === "unsaved" ? Promise.resolve(false) : result === "failed" ? Promise.reject(new Error("synthetic")) : new Promise<boolean>(() => {});
+    const done = coordinateShutdown(deps({ windows: [window], backend: async () => "closed", order }), { force: false });
+    await vi.advanceTimersByTimeAsync(DRAFTS_DEADLINE_MS);
+    expect(await done).toEqual({ outcome: "unsaved", draftsTimedOut: result === "timeout" ? 1 : 0 });
+    expect(order).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("flushes every window's drafts before asking the backend to close (it saves them)", async () => {
     const order: string[] = [];
     const flush = (name: string, ms: number) => () => later(ms, undefined).then(() => void order.push(name));

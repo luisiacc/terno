@@ -17,7 +17,7 @@ import { errorKind, expectedKind, Grants, installOutcome, mayCheck, mayDownload,
 export const STARTUP_CHECK_DELAY_MS = 30_000;
 export const CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
 
-export type InstallShutdown = "closed" | "forced" | "sending" | "timeout";
+export type InstallShutdown = "closed" | "forced" | "sending" | "timeout" | "unsaved";
 
 export interface ControllerDeps {
   version: string;
@@ -251,6 +251,11 @@ export class UpdateController {
     if (!ready || this.state.status === "installing") return this.state;
     this.dispatch({ type: "install-start" });
     const outcome = await this.deps.shutdown();
+    if (outcome === "unsaved") {
+      this.dispatch({ type: "install-failed", kind: "unsaved" });
+      this.deps.log("update.deferred", { reason: "drafts" });
+      return this.state;
+    }
     // only a clean close goes ahead; a send still running, or a backend that didn't answer (it may be mid-send), waits
     if (outcome !== "closed") {
       this.dispatch({ type: "install-deferred", reason: "sending" });

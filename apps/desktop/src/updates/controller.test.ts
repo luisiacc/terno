@@ -292,6 +292,14 @@ describe("main: the update controller", () => {
       expect(h.ctl.view.status).toBe("installing");
     });
 
+    it("unsaved drafts hold Restart with a fixed explanation and require a new explicit attempt", async () => {
+      const h = harness({ shutdown: ["unsaved", "closed"] });
+      await ready(h); await h.ctl.install();
+      expect(h.ctl.view).toMatchObject({ status: "ready", error: { stage: "install", kind: "unsaved" } });
+      expect(h.engine.installs).toBe(0); expect(h.pending).toBeNull(); expect(h.sendsIdle).toHaveLength(0);
+      await h.ctl.install(); expect(h.engine.installs).toBe(1);
+    });
+
     it("a send past the deadline defers it (never forced); it goes ahead once sends are idle", async () => {
       const h = harness({ shutdown: ["sending", "closed"] });
       await ready(h);

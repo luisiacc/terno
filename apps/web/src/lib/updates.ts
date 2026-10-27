@@ -130,6 +130,7 @@ export function unsupportedText(reason: UnsupportedReason): string {
 }
 
 const ERRORS = {
+  unsaved: "updates.error.unsaved",
   offline: "updates.error.offline",
   server: "updates.error.server",
   integrity: "updates.error.integrity",

@@ -19,11 +19,11 @@ export const SEND_DEADLINE_MS = 30_000;
 export const BACKEND_GRACE_MS = 5_000;
 
 export type BackendOutcome = "closed" | "forced" | "sending";
-export type ShutdownOutcome = BackendOutcome | "timeout";
+export type ShutdownOutcome = BackendOutcome | "timeout" | "unsaved";
 
 export interface ShutdownDeps {
   /** one promise per window that can flush, resolved by its acknowledgement */
-  flushWindows(): Promise<void>[];
+  flushWindows(): Promise<void | boolean>[];
   /** asks the backend to shut down; null when there is no backend running */
   shutdownBackend(o: { deadlineMs: number; force: boolean }): Promise<BackendOutcome> | null;
   setTimeout(fn: () => void, ms: number): unknown;
@@ -55,8 +55,10 @@ export async function coordinateShutdown(deps: ShutdownDeps, o: ShutdownOptions)
   const sendMs = o.sendDeadlineMs ?? SEND_DEADLINE_MS;
   const graceMs = o.graceMs ?? BACKEND_GRACE_MS;
 
-  const acks = deps.flushWindows().map((p) => within(deps, p.then(() => true, () => true), draftsMs, false));
-  const draftsTimedOut = (await Promise.all(acks)).filter((ok) => !ok).length;
+  const acks = deps.flushWindows().map((p) => within<"saved" | "unsaved" | "timeout">(deps, p.then((saved) => saved === false ? "unsaved" : "saved", () => "unsaved"), draftsMs, "timeout"));
+  const results = await Promise.all(acks);
+  const draftsTimedOut = results.filter((result) => result === "timeout").length;
+  if (!o.force && results.some((result) => result !== "saved")) return { outcome: "unsaved", draftsTimedOut };
 
   const backend = deps.shutdownBackend({ deadlineMs: sendMs, force: o.force });
   if (!backend) return { outcome: "closed", draftsTimedOut };

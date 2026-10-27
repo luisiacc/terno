@@ -43,9 +43,9 @@ function signingIdentity(): string | null {
 }
 
 function cleanSquirrel() {
-  for (const dir of CACHES) rmSync(dir, { recursive: true, force: true });
-  // only the test bundle id's job, never dev.terno.mail's
+  // Stop the test helper before removing the cache it writes.
   spawnSync("launchctl", ["remove", `${APP_ID}.ShipIt`]);
+  for (const dir of CACHES) rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }
 
 const identity = signingIdentity();
@@ -181,6 +181,35 @@ test("a corrupted download is refused (sha512): an integrity error, and the app 
   // no staged-rollout id, cookie or credential went out, and no id file was made in the profile
   for (const name of ["x-user-staging-id", "cookie", "authorization"]) expect(headerNames).not.toContain(name);
   expect(existsSync(join(profile(), ".updaterId"))).toBe(false);
+});
+
+test("unsaved recovery holds a packaged update restart and a deliberate copy keeps exact work", async () => {
+  stage({ tamper: false });
+  await launch({ TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US" });
+  expect((await updates<{ status: string }>("check")).status).toBe("available");
+  await updates("download");
+  await expect.poll(async () => (await state()).status, { timeout: 180_000 }).toBe("ready");
+  await page.getByRole("button", { name: "Compose", exact: true }).click();
+  const body = page.getByTestId("compose-body"); await body.fill("packaged exact work");
+  const db = new DatabaseSync(join(profile(), "terno.db"));
+  try {
+    await expect.poll(() => db.prepare("SELECT body_text FROM drafts LIMIT 1").get()?.body_text).toBe("packaged exact work");
+    const original = db.prepare("SELECT id FROM drafts LIMIT 1").get()!.id;
+    db.prepare("DELETE FROM drafts WHERE id = ?").run(original!);
+    await body.press("End"); await page.keyboard.type(" latest");
+    await expect(page.getByTestId("draft-save-copy")).toBeVisible();
+    await page.getByTestId("update-pill").click(); await page.getByTestId("update-restart").click();
+    await expect(page.getByTestId("update-subtitle")).toContainText("Save or discard your unsaved drafts");
+    expect((await state()).error).toMatchObject({ kind: "unsaved", stage: "install" });
+    expect(bundleVersion()).toBe("0.1.0");
+    expect((await app!.evaluate(({ app: a }) => a.getAppMetrics())).some((m) => m.type === "Utility")).toBe(true);
+    await expect.poll(() => logLines().some((l) => l.code === "shutdown.done" && l.fields?.outcome === "unsaved")).toBe(true);
+    await page.keyboard.press("Escape");
+    await page.getByTestId("draft-save-copy").focus(); await page.keyboard.press("Enter");
+    await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+    const copy = db.prepare("SELECT id, body_text FROM drafts LIMIT 1").get()!;
+    expect(copy.id).not.toBe(original); expect(copy.body_text).toBe("packaged exact work latest");
+  } finally { db.close(); }
 });
 
 test("an update downloads, Squirrel swaps the bundle and relaunches it, the profile is intact and the new version acknowledges", async () => {

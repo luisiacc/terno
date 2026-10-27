@@ -122,3 +122,61 @@ test("a new deployment: offered in the pill, and a tab writing a draft saves it 
   });
   expect(build).toMatch(/-next$/);
 });
+
+
+test("terminal recovery holds different-build Reload and service-worker controller changes until explicit copy", async ({ page }) => {
+  serving = dirs.a;
+  await page.goto(`${origin}${URL_}`); await rows(page).first().waitFor({ timeout: 60_000 });
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+    if (!navigator.serviceWorker.controller) await new Promise((resolve) => navigator.serviceWorker.addEventListener("controllerchange", resolve, { once: true }));
+  });
+  await page.reload(); await rows(page).first().waitFor();
+  await page.getByRole("button", { name: "Compose", exact: true }).click();
+  const body = page.getByTestId("compose-body"); await body.fill("web recovery exact");
+  await expect.poll(() => page.evaluate(async () => (await window.__ternoWeb!.client.call("drafts.list", {}))[0]?.bodyText)).toBe("web recovery exact");
+  await page.evaluate(async () => { const c = window.__ternoWeb!.client; const d = (await c.call("drafts.list", {}))[0]!; await c.call("drafts.delete", { id: d.id, generation: d.generation }); });
+  await body.press("End"); await page.keyboard.type(" latest");
+  await expect(page.getByTestId("draft-save-copy")).toBeVisible();
+  let navigations = 0; page.on("framenavigated", (frame) => { if (frame === page.mainFrame()) navigations++; });
+  await page.evaluate(() => { const c = new BroadcastChannel("terno-tabs"); c.postMessage({ type: "leader", build: "different-synthetic-build" }); c.close(); });
+  await expect(page.getByTestId("update-pill")).toBeVisible(); await page.getByTestId("update-pill").click();
+  await expect(page.getByRole("button", { name: "Try Again", exact: true })).toBeVisible();
+  expect(navigations).toBe(0); await expect(body).toHaveText("web recovery exact latest");
+  serving = dirs.b;
+  await page.evaluate(async () => { await (await navigator.serviceWorker.ready).update(); });
+  await expect.poll(() => page.evaluate(async () => Boolean((await navigator.serviceWorker.ready).waiting))).toBe(true);
+  await page.evaluate(async () => {
+    const changed = new Promise<void>((resolve) => navigator.serviceWorker.addEventListener("controllerchange", () => resolve(), { once: true }));
+    (await navigator.serviceWorker.ready).waiting!.postMessage("skip-waiting"); await changed;
+  });
+  await expect(page.getByRole("button", { name: "Try Again", exact: true })).toBeVisible();
+  expect(navigations).toBe(0); await expect(body).toHaveText("web recovery exact latest");
+  await page.getByTestId("draft-save-copy").click(); await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await Promise.all([page.waitForEvent("framenavigated", { predicate: (frame) => frame === page.mainFrame(), timeout: 5000 }), page.getByTestId("update-pill").click()]);
+  await rows(page).first().waitFor();
+  await page.getByTestId("strip-item").first().click(); await expect(body).toHaveText("web recovery exact latest");
+});
+
+
+test("recovery holds storage switching and mailbox handover while the current worker remains usable", async ({ page }) => {
+  serving = dirs.a; await page.goto(`${origin}${URL_}`); await rows(page).first().waitFor({ timeout: 60_000 });
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); await page.keyboard.press("c");
+  const body = page.getByTestId("compose-body"); await body.fill("handover recovery exact");
+  await expect.poll(() => page.evaluate(async () => (await window.__ternoWeb!.client.call("drafts.list", {}))[0]?.bodyText)).toBe("handover recovery exact");
+  await page.evaluate(async () => { const c = window.__ternoWeb!.client; const d = (await c.call("drafts.list", {}))[0]!; await c.call("drafts.delete", { id: d.id, generation: d.generation }); });
+  await body.press("End"); await page.keyboard.type(" latest"); await expect(page.getByTestId("draft-save-copy")).toBeVisible();
+  let navigations = 0; page.on("framenavigated", (frame) => { if (frame === page.mainFrame()) navigations++; });
+  await page.evaluate(() => { const c = new BroadcastChannel("terno-tabs"); c.postMessage({ type: "takeover", from: "synthetic-requesting-tab" }); c.close(); });
+  await expect(page.getByTestId("snack-message")).toContainText("Save or discard your unsaved drafts before opening this mailbox in another tab.");
+  await expect(page.getByTestId("web-taken")).toHaveCount(0);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); await page.keyboard.press("Meta+k");
+  await page.getByTestId("palette-input").fill("settings data"); await page.keyboard.press("Enter");
+  await page.getByRole("combobox", { name: "Engine" }).click(); await page.getByTestId("storage-engine-idb").click();
+  await page.getByTestId("storage-switch-dialog-confirm").click();
+  await expect(page.getByTestId("snack-message")).toContainText("Save or discard your unsaved drafts before switching storage. Your work is still here.");
+  expect(navigations).toBe(0); expect(await page.evaluate(() => window.__ternoWeb!.storage)).toBe("opfs-sqlite");
+  await page.keyboard.press("Escape"); await expect(body).toHaveText("handover recovery exact latest");
+  await page.getByTestId("draft-save-copy").click(); await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  expect((await page.evaluate(() => window.__ternoWeb!.client.call("drafts.list", {})))[0]!.bodyText).toBe("handover recovery exact latest");
+});

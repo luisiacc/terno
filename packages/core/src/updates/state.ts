@@ -14,7 +14,7 @@ export type UpdateChannel = "stable" | "nightly";
 export type UpdateMode = "auto" | "manual";
 export type UnsupportedReason = "dev" | "unsigned" | "dmg" | "translocated" | "read-only" | "not-writable" | "translated";
 export type UpdateErrorStage = "check" | "download" | "verify" | "install";
-export type UpdateErrorKind = "offline" | "server" | "integrity" | "disk" | "blocked" | "not-applied" | "unknown";
+export type UpdateErrorKind = "offline" | "server" | "integrity" | "disk" | "blocked" | "not-applied" | "unknown" | "unsaved";
 
 export interface UpdateInfo {
   version: string;

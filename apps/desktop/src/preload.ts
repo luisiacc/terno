@@ -72,12 +72,12 @@ contextBridge.exposeInMainWorld("ternoDesktop", {
     },
   },
   // before any quit or update: main asks, the page saves every draft and answers (main waits 5 s at most)
-  onFlushDrafts: (flush: () => Promise<void>) => {
+  onFlushDrafts: (flush: () => Promise<boolean>) => {
     const relay = (_e: unknown, id: unknown) => {
       void Promise.resolve()
         .then(flush)
-        .catch(() => {})
-        .then(() => ipcRenderer.send("terno:flush-done", id));
+        .catch(() => false)
+        .then((saved) => ipcRenderer.send("terno:flush-done", id, saved === true));
     };
     ipcRenderer.on("terno:flush-drafts", relay);
     ipcRenderer.send("terno:flush-ready");

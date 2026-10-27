@@ -1,6 +1,6 @@
 import { snack } from "~/lib/snack";
 import { adoptSettings } from "~/lib/appearance";
-import { flushAllDrafts } from "~/lib/drafts";
+import { draftsSaved } from "~/lib/drafts";
 import { setApp } from "~/state/app";
 import { isRpcMessage, type RpcClient, type RpcMessage, type Transport } from "@terno/core/rpc";
 import { diagSession, log } from "@terno/core/diag";
@@ -59,7 +59,7 @@ function mailboxName(): string {
  * where it is (switching back finds it).
  */
 export async function switchStorage(client: RpcClient, target: string): Promise<void> {
-  await flushAllDrafts();
+  if (!await draftsSaved()) throw new Error(t("web.storage.unsaved"));
   const dump = await client.call("app.export", {});
   try {
     sessionStorage.setItem(CARRY, JSON.stringify({ to: target, dump }));
@@ -157,7 +157,7 @@ class Leadership {
   }
 
   private async receive(m: TabMessage): Promise<void> {
-    if (m.type === "leader" && m.build !== BUILD) setWeb({ update: { apply: () => void flushAllDrafts().then(() => location.reload()) } });
+    if (m.type === "leader" && m.build !== BUILD) setWeb({ update: { apply: () => void whenDraftsSaved(() => location.reload()) } });
     if (m.type === "takeover") {
       if (this.leading) {
         if (this.onTakeover) await this.onTakeover(m.from);
@@ -262,8 +262,10 @@ async function requestPersistence(): Promise<void> {
 
 /** From a tab whose mailbox was taken: start over and take it back. */
 export function takeBack(): void {
-  sessionStorage.setItem(TAKEOVER, "1");
-  location.reload();
+  void whenDraftsSaved(() => {
+    sessionStorage.setItem(TAKEOVER, "1");
+    location.reload();
+  });
 }
 
 function next(worker: Worker, types: WorkerToPage["type"][], timeoutMs = Infinity): Promise<WorkerToPage | null> {
@@ -336,6 +338,7 @@ async function registerServiceWorker(): Promise<void> {
   navigator.serviceWorker.addEventListener("controllerchange", () => {
     if (!hadController || reloading) return;
     reloading = true;
+    setWeb({ update: { apply: () => void whenDraftsSaved(() => location.reload()) } });
     void whenDraftsSaved(() => location.reload());
   });
   watchDeployments(reg);
@@ -388,10 +391,10 @@ export async function connectWorker(client: RpcClient): Promise<void> {
   });
   /** another tab asked: close every handle, then hand the lock to that tab by name */
   const handOver = async (to: string) => {
-    if (stopped) return tabs.release(to);
+    if (stopped) return;
+    if (!await draftsSaved()) { snack.error(t("web.takeover.unsaved")); return; }
+    if (stopped) return;
     stopped = true;
-    // what is being written reaches the worker before it closes (≤ 1 s)
-    await flushAllDrafts();
     setWeb({ phase: "taken" });
     worker.postMessage({ type: "close" } satisfies PageToWorker);
     await next(worker, ["closed"], CLOSE_TIMEOUT_MS);

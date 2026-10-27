@@ -284,24 +284,25 @@ const sendsIdleWaiters: (() => void)[] = [];
 /** renderers that flush their drafts when asked (they say so once their page is up) */
 const flushers = new Set<number>();
 let flushSeq = 0;
-const flushWaiters = new Map<string, () => void>();
+const flushWaiters = new Map<string, (saved: boolean) => void>();
 let updates: UpdateController | null = null;
 
 ipcMain.on("terno:flush-ready", (e) => {
   if (trusted(e)) flushers.add(e.sender.id);
 });
-ipcMain.on("terno:flush-done", (e, id: unknown) => {
+ipcMain.on("terno:flush-done", (e, id: unknown, saved: unknown) => {
+  if (!trusted(e) || !Number.isSafeInteger(id)) return;
   const key = `${e.sender.id}:${String(id)}`;
-  flushWaiters.get(key)?.();
+  flushWaiters.get(key)?.(saved === true);
   flushWaiters.delete(key);
 });
 
-function flushWindows(): Promise<void>[] {
+function flushWindows(): Promise<boolean>[] {
   return [...windows]
     .filter((w) => !w.isDestroyed() && flushers.has(w.webContents.id))
     .map(
       (w) =>
-        new Promise<void>((resolve) => {
+        new Promise<boolean>((resolve) => {
           const id = ++flushSeq;
           flushWaiters.set(`${w.webContents.id}:${id}`, resolve);
           w.webContents.send("terno:flush-drafts", id);
@@ -329,6 +330,7 @@ function stopBackend() {
 async function shutdown(force: boolean, trigger: "quit" | "restart"): Promise<ShutdownOutcome> {
   const started = Date.now();
   const r = await coordinateShutdown({ flushWindows, shutdownBackend, setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) }, { force });
+  flushWaiters.clear();
   if (r.draftsTimedOut) diagLog.warn("shutdown.drafts_timeout", { count: r.draftsTimedOut });
   diagLog.info("shutdown.done", { outcome: r.outcome, durationMs: Date.now() - started, trigger });
   // an update's restart never kills a backend that didn't answer (it may be mid-send): the install waits instead
