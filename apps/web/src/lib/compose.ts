@@ -275,6 +275,7 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
 }
 
 async function openComposeNow(mode: DraftMode, threadId: number | null, mine: number, lease: FocusLease | null): Promise<void> {
+  const focusAllowed = () => !lease || (lease.valid && focusLease === lease && destinationAvailable(lease));
   if (mine !== intent || (lease && !lease.valid)) return;
   if (!destinationAvailable(lease)) {
     await Promise.resolve();
@@ -323,7 +324,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   let existing = existingKey ? materialize(existingKey) : undefined;
   if (existing && !sameStoredDraft(existing)) return;
   if (existing?.presentationExpired && existing.mode === "new" && activeSourceId(existing) === null) {
-    showStoredStandalone(existing.key, mine);
+    showStoredStandalone(existing.key, mine, focusAllowed);
     return;
   }
   if (existing?.showSourceContext) {
@@ -334,7 +335,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     const current = existingKey ? materialize(existingKey) : undefined;
     if (mine !== intent || !destinationAvailable(lease) || getApp().selectedId !== s.selectedId || (lease && !lease.valid) || !current || !sameStoredDraft(snapshot)) return;
     if (!context || context.threadId !== threadId) {
-      showStoredStandalone(current.key, mine);
+      showStoredStandalone(current.key, mine, focusAllowed);
       return;
     }
     if (current.presentationExpired) {
@@ -346,7 +347,8 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   }
   if (existing && existing.mode === mode) {
     setDraftUi(existing.key, "open");
-    return focusDraft(existing.key, target, mine);
+    if (focusAllowed()) focusDraft(existing.key, target, mine);
+    return;
   }
   const selected = s.selectedId;
   const detail = loaded === undefined ? await loadThread(threadId) : loaded;
@@ -430,11 +432,11 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     if (!written(existing)) {
       // nothing written yet: simply the other mode, fresh
       editDraft(existing.key, converted);
-      if (takeFocus && (!lease || lease.valid)) focusDraft(existing.key, target, mine);
+      if (takeFocus && focusAllowed()) focusDraft(existing.key, target, mine);
       return;
     }
     editDraft(existing.key, converted);
-    if (takeFocus && (!lease || lease.valid)) focusDraft(existing.key, target, mine);
+    if (takeFocus && focusAllowed()) focusDraft(existing.key, target, mine);
     // back to what it was, still open where the user is looking
     const undo = registerUndo(() => editDraft(existing.key, { ...before!, uiState: "open" }));
     const [message, name] = CONVERTED[mode];
@@ -442,7 +444,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     return;
   }
   const key = createDraft(converted);
-  if (takeFocus && (!lease || lease.valid)) focusDraft(key, target, mine);
+  if (takeFocus && focusAllowed()) focusDraft(key, target, mine);
 }
 
 /** Shows a new-message draft in the reader pane again (from the drafts strip). */
