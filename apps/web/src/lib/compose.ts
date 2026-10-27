@@ -2,6 +2,7 @@ import { shallow } from "zustand/shallow";
 import type { AttachmentRef, ThreadDetail } from "@terno/core";
 import { attachmentUploading, draftAttachmentBudget } from "./attachments";
 import { breadcrumb, captureUi } from "~/lib/diag";
+import { useDraftRecovery } from "~/lib/draft-recovery-ui";
 import { firstInvalid, SELECT_INVALID } from "./recipient-field";
 import type { DraftMode } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
@@ -11,7 +12,7 @@ import { invalidateThreads, loadThread } from "~/state/threads";
 import { registerUndo, snack } from "./snack";
 import { answered, convertFields, forwardAccountMismatch, newFields, replyFields, mergeAttachmentRefs } from "./compose-fields";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
-import { beginDraftWork, draftIndex, invalidateDraftPresentation, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, type LocalDraft } from "./drafts";
+import { beginDraftWork, draftIndex, invalidateDraftPresentation, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type LocalDraft } from "./drafts";
 
 /**
  * Writing mail: which draft a reply, reply-all, forward or new message opens,
@@ -190,11 +191,21 @@ function sameStoredDraft(snapshot: LocalDraft): boolean {
 const openedDraft = (d: LocalDraft): LocalDraft => d.uiState === "open" ? d : { ...d, uiState: "open", ...(d.id !== null ? { localRev: d.localRev + 1, status: d.status === "saving" ? "saving" : "dirty" } : {}) };
 
 /** Reopen the visible collapsed draft under the same focus ownership as an explicit compose. */
-export function reopenInlineDraft(threadId: number, key: string): void {
+export function reopenInlineDraft(threadId: number, key: string, checkpoint?: BodyCheckpoint): void {
   const finish = beginDraftWork();
   if (!finish) return;
   markSelectionIntent();
   const mine = ++intent;
+  if (checkpoint) {
+    try {
+      const recovery = useDraftRecovery.getState(), draft = useDrafts.getState().drafts[key];
+      if (!recovery.open || recovery.key !== key || recovery.checkpoint !== checkpoint || checkpoint.key !== key || !validBodyCheckpoint(checkpoint) || !draft) return;
+      const expected = openedDraft(draft);
+      setDraftUi(key, "open");
+      if (mine !== intent || !validBodyCheckpoint(checkpoint) || !shallow(useDrafts.getState().drafts[key], expected)) return;
+    } finally { finish(); }
+    return;
+  }
   const leased = getApp().selectedId === threadId;
   const lease = leased ? beginFocusLease(mine, threadId) : null;
   if (leased && !lease) { finish(); return; }

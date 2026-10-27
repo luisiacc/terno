@@ -358,7 +358,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
   };
   const reopen = () => {
     if (!d) return;
-    reopenInlineDraft(threadId, d.key);
+    reopenInlineDraft(threadId, d.key, checkpoint);
   };
   const send = async () => {
     if (!d) return;
