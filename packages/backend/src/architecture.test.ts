@@ -100,3 +100,12 @@ describe("architecture: every outbound connection goes through the network polic
     }
   });
 });
+
+// A browser reads a script served without a charset as Windows-1252: a literal "Â-ô" range in a
+// regex then turns into an out-of-order one and the whole bundle fails to load (gmail-wire.spec).
+it("the address code is ASCII outside comments, so it parses however its bundle is decoded", () => {
+  for (const file of ["packages/core/src/address.ts", "packages/core/src/encoded-words.ts"]) {
+    const code = readFileSync(join(ROOT, file), "utf8").split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*\*)/.test(l));
+    expect(code.filter((l) => /[^\t -~]/.test(l)), file).toEqual([]);
+  }
+});

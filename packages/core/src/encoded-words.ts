@@ -150,7 +150,7 @@ const CP1252_HIGH: Record<number, number> = {
 };
 
 /** A UTF-8 lead byte read as CP1252, then a continuation byte read the same way: "Ã©" is how "é" looks then. */
-export const MOJIBAKE = /[Â-ô][\u0080-¿ŒœŠšŸŽžƒˆ˜–—‘-‚“-„†-•…‰‹›€™]/;
+export const MOJIBAKE = /[\u00C2-\u00F4][\u0080-\u00BF\u0152\u0153\u0160\u0161\u0178\u017D\u017E\u0192\u02C6\u02DC\u2013\u2014\u2018-\u201A\u201C-\u201E\u2020-\u2022\u2026\u2030\u2039\u203A\u20AC\u2122]/;
 
 /**
  * UTF-8 that went through a Latin-1/CP1252 reading on the way ("JosÃ© PÃ©rez"):

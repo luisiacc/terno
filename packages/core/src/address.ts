@@ -349,10 +349,10 @@ export const isNoReply = (email: string): boolean => NO_REPLY_LOCAL.test(email.s
 
 /** Anything in a name that needs a closer look; most names have none of it. */
 // oxlint-disable-next-line no-control-regex -- control characters are among what is looked for
-const SUSPECT_NAME = /[<>"'“”‘’«»„\\[\]=?@()\u0000-\u001f\u007f-\u009f\u{200B}\u{200E}\u{200F}\u{202A}-\u{202E}\u{2060}\u{2066}-\u{2069}\u{FEFF}]|^\s|\s$|\s\s/u;
+const SUSPECT_NAME = /[<>"'\u201C\u201D\u2018\u2019\u00AB\u00BB\u201E\\[\]=?@()\u0000-\u001f\u007f-\u009f\u{200B}\u{200E}\u{200F}\u{202A}-\u{202E}\u{2060}\u{2066}-\u{2069}\u{FEFF}]|^\s|\s$|\s\s/u;
 const PLAIN_EMAIL = /^[^\s<>"'@:()[\],;]+@[^\s<>"'@:()[\],;]+\.[^\s<>"'@:()[\],;.]+$/;
 const ANGLED = /<([^<>\s]+@[^<>\s]+)>/;
-const QUOTE_PAIRS: [string, string][] = [['"', '"'], ["'", "'"], ["“", "”"], ["‘", "’"], ["«", "»"], ["„", "“"], ["„", "”"], ["”", "”"]];
+const QUOTE_PAIRS: [string, string][] = [['"', '"'], ["'", "'"], ["\u201C", "\u201D"], ["\u2018", "\u2019"], ["\u00AB", "\u00BB"], ["\u201E", "\u201C"], ["\u201E", "\u201D"], ["\u201D", "\u201D"]];
 
 /** A display name longer than this is cut, after any recovery (Codex review 7). */
 const NAME_MAX = 256;
