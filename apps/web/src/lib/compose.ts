@@ -49,12 +49,27 @@ let focusLease: FocusLease | null = null;
 const focusLeaseListeners = new Set<(threadId: number, fallback: boolean) => void>();
 
 function releaseFocusLease(lease: FocusLease, fallback: boolean, notify = true) {
-  if (focusLease !== lease) return;
-  focusLease = null;
+  if (!lease.valid) return;
+  const current = focusLease === lease, releaseIntent = intent;
   lease.valid = false;
   lease.dispose();
+  if (!current) return;
+  focusLease = null;
   if (!fallback && lease.seq !== undefined && getApp().draftFocus?.seq === lease.seq) setApp({ draftFocus: null });
-  if (notify && lease.threadId !== null) for (const listener of focusLeaseListeners) listener(lease.threadId, fallback);
+  if (notify && lease.threadId !== null) for (const listener of focusLeaseListeners) {
+    if (intent !== releaseIntent || focusLease) break;
+    listener(lease.threadId, fallback);
+  }
+}
+
+function releaseForAcquisition(lease: FocusLease, notify = false): boolean {
+  const active = typeof document === "undefined" ? null : document.activeElement;
+  let moved = false;
+  const observe = (event: FocusEvent) => { if (event.target !== active && event.target !== document.body) moved = true; };
+  if (typeof document !== "undefined") document.addEventListener?.("focusin", observe, true);
+  try { releaseFocusLease(lease, false, notify); }
+  finally { if (typeof document !== "undefined") document.removeEventListener?.("focusin", observe, true); }
+  return moved;
 }
 
 /** The current Reader owns focus work only until this exact destination leaves. */
@@ -86,8 +101,12 @@ export function registerReaderPaneFailure(threadId: number, token: object): () =
   return () => { if (failedReaderHosts.get(token) === host) failedReaderHosts.delete(token); };
 }
 
-function beginFocusLease(owner: number, threadId: number | null, standalone?: { key: string; seq: number }): FocusLease {
-  if (focusLease) releaseFocusLease(focusLease, false, false);
+function beginFocusLease(owner: number, threadId: number | null, standalone?: { key: string; seq: number }): FocusLease | undefined {
+  if (owner !== intent) return;
+  const before = getApp();
+  if (focusLease && releaseForAcquisition(focusLease)) return;
+  const after = getApp();
+  if (owner !== intent || after.selectedId !== before.selectedId || after.accountId !== before.accountId || after.compose !== before.compose || after.scope !== before.scope || after.checked !== before.checked || after.dialog !== before.dialog || after.fatal !== before.fatal || draftEditsHeld()) return;
   const active = typeof document === "undefined" ? null : document.activeElement;
   const selected = getApp().selectedId, account = getApp().accountId;
   const destination = threadId === null ? undefined : readerDestinations.get(threadId);
@@ -159,13 +178,14 @@ function showStoredStandalone(key: string, owner: number, allowed: () => boolean
   const previous = getApp(), { selectedId, accountId } = previous;
   const permitted = () => owner === intent && allowed() && !draftEditsHeld() && !getApp().dialog && !getApp().fatal && getApp().selectedId === selectedId && getApp().accountId === accountId && snapshot !== undefined && sameStoredDraft(snapshot);
   if (!permitted()) return null;
-  if (focusLease) releaseFocusLease(focusLease, false, false);
+  if (focusLease && releaseForAcquisition(focusLease)) return null;
   if (!permitted() || !snapshot) return null;
   snapshot = invalidatedPresentation(snapshot);
   invalidateDraftPresentation(key);
   if (!permitted()) return null;
   const compose = { key, seq: ++seq, storedFocusSeq: ++seq };
   const lease = beginFocusLease(owner, null, compose);
+  if (!lease) return null;
   lease.seq = compose.storedFocusSeq;
   if (!permitted() || focusLease !== lease || !lease.valid) { releaseFocusLease(lease, false); return null; }
   setApp({ compose, checked: new Set(), scope: null, readerOpen: false, draftFocus: { key, target: "to", seq: compose.storedFocusSeq } });
@@ -183,7 +203,8 @@ export async function openStoredDraft(key: string): Promise<void> {
   const finish = beginDraftWork();
   if (!finish) return;
   const mine = ++intent;
-  if (focusLease) releaseFocusLease(focusLease, false, false);
+  if (focusLease && releaseForAcquisition(focusLease)) { finish(); return; }
+  if (mine !== intent) { finish(); return; }
   let lease: FocusLease | null = null, cancelled = false, navigating = false, missingFromAtStart = false;
   let expected = getApp();
   const active = typeof document === "undefined" ? null : document.activeElement;
@@ -221,7 +242,8 @@ export async function openStoredDraft(key: string): Promise<void> {
     setApp(destination);
     navigating = false;
     if (!current(snapshot)) return;
-    lease = beginFocusLease(mine, context.threadId);
+    lease = beginFocusLease(mine, context.threadId) ?? null;
+    if (!lease) return;
     lease.accountId = snapshot.accountId;
     const detail = canonical !== null ? await loadThread(context.threadId, true) : await loadThread(context.threadId);
     if (!current(snapshot)) return;
@@ -261,13 +283,15 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
   if (!finish) return;
   const mine = ++intent;
   const state = getApp();
-  const lease = mode !== "new" && threadId !== null && state.selectedId === threadId && state.scope === null && state.checked.size < 2
-    ? beginFocusLease(mine, threadId) : null;
-  if (!lease && focusLease) releaseFocusLease(focusLease, false);
+  const wantsLease = mode !== "new" && threadId !== null && state.selectedId === threadId && state.scope === null && state.checked.size < 2;
+  const lease = wantsLease ? beginFocusLease(mine, threadId) : null;
+  if (wantsLease && !lease) { finish(); return; }
+  if (!lease && focusLease && releaseForAcquisition(focusLease, true)) { finish(); return; }
+  if (mine !== intent) { finish(); return; }
   const unsubSelection = !lease && mode !== "new" && threadId !== null ? useApp.subscribe((current) => {
     if (mine === intent && (current.scope !== null || current.checked.size >= 2)) supersedeCompose();
   }) : undefined;
-  try { await openComposeNow(mode, threadId, mine, lease); } finally {
+  try { await openComposeNow(mode, threadId, mine, lease ?? null); } finally {
     unsubSelection?.();
     if (lease && lease.seq === undefined) releaseFocusLease(lease, true);
     finish();
