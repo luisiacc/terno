@@ -199,3 +199,10 @@ Round 1 (`codex exec -s read-only`, review of `5a972a3..a2fc1a6`, 4 findings), e
 2. **High: a line of thousands of links reconciled quadratically** (every token filtered every run: ~2.5 s for 16,000 URLs). One cursor walks the runs with the tokens. Test: 4× the links costs under 9× the time (the quadratic version measured ~16×) and 8,000 links under 300 ms.
 3. **Medium: a link right after a long unbroken word was removed** (the token was cut by the window, which also disabled the fallback). An autolink wholly inside the window is still read. Test: a dialog link after 9,000 letters stays, and follows an edit inside it.
 4. **Low: the 30,000-run paragraph's gate had no tail.** A p95 gate relative to plain keys in the same line (an absolute `HUGE_MS` would gate ProseMirror's own plain keys there, 25–35 ms p95 measured on this machine).
+
+Round 2 (re-review of the whole feature after `fcc6e03`, 4 findings), each fixed with a regression test that fails without it:
+
+1. **High: correcting many autolinks in one line was quadratic** (two mark steps per link, each copying the line: 5 s for 8,000 stale links pasted). A line's corrections are one replace step built in one pass (the same text, so positions don't move; the selection and stored marks are put back). Test: 8,000 stale links put right in one step, linear scaling. The plugin's own work per key dropped to 0.3 ms p50 in the 2 MB draft.
+2. **Medium: a link split by formatting whose first part lay before the window** was read as a fragment, and its tail removed, leaving the head linked. Runs are collected whole, and an autolink reaching out of the window that the change isn't in is left as it is (a token edge). Test.
+3. **Medium: the round-1 cap made an oversized forged autolink manual, keeping its lying href** in what was sent. It stays an autolink: the live links unlink it on paste, and the mail and copies never write it as a link. Tests in the parser and the editor.
+4. **Medium: a long composition piled up pending ranges** (one per update, all mapped on each). Overlapping ranges merge. Test: 8,000 updates of one character keep one range.

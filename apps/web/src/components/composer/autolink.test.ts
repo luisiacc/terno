@@ -551,6 +551,61 @@ describe("Codex code review", () => {
   });
 });
 
+describe("Codex re-review", () => {
+  it("a line of thousands of stale autolinks is put right in one step, in linear time", () => {
+    const time = (n: number) => {
+      const kids: PMNode[] = [];
+      for (let i = 0; i < n; i++) kids.push(t(`https://x.com/${i}`, auto(`https://old.example/${i}`)), schema.text(" "));
+      const doc = nodes.doc.create(null, [nodes.paragraph.create(null, kids)]);
+      const state = EditorState.create({ doc, plugins });
+      const tr = state.tr;
+      const t0 = performance.now();
+      reconcile(tr, [0, doc.content.size]);
+      const ms = performance.now() - t0;
+      expect(tr.steps.length).toBe(1);
+      const after = state.apply(tr);
+      expect(links(after).every((l) => l.href === l.text)).toBe(true);
+      return ms;
+    };
+    time(500);
+    const small = Math.min(time(2000), time(2000));
+    const big = Math.min(time(8000), time(8000));
+    expect(big).toBeLessThan(500);
+    expect(big).toBeLessThan(Math.max(small, 2) * 9);
+  });
+
+  it("an autolink split by formatting, starting outside the window, is left whole by an edit far along its token", () => {
+    const bold = marks.bold.create();
+    const v = editor(p(t("https://", auto("https://x.com")), t("x.com", auto("https://x.com"), bold), "a".repeat(10_000)));
+    v.dispatch(v.state.tr.insertText("b", 8203));
+    expect(links(v.state)).toEqual([{ text: "https://x.com", href: "https://x.com", auto: true }]);
+  });
+
+  it("a pasted autolink past the cap is unlinked (not kept as a manual link with its href)", () => {
+    const long = `https://x.com/${"a".repeat(9000)}`;
+    const v = editor(p("a  b"));
+    v.dispatch(v.state.tr.insertText("", 2).replaceWith(2, 2, t(long, auto("https://old.example"))));
+    expect(links(v.state)).toEqual([]);
+  });
+
+  it("a composition retyping one character thousands of times keeps one pending range", () => {
+    let state = EditorState.create({ doc: nodes.doc.create(null, [p("x")]), plugins });
+    const t0 = performance.now();
+    for (let i = 0; i < 8000; i++) state = state.apply(state.tr.insertText(i % 2 ? "a" : "b", 1, 2).setMeta("composition", 1));
+    expect(performance.now() - t0).toBeLessThan(2000);
+    expect(liveKey.getState(state)!.ranges.length).toBe(2);
+  });
+
+  it("the selection inside a link being edited stays where it is (one replace step, positions put back)", () => {
+    const v = editor();
+    type(v, "ver https://example.com fin");
+    caret(v, after(v, "https://exa"));
+    type(v, "Z");
+    expect(v.state.selection.from).toBe(after(v, "https://exaZ"));
+    expect(links(v.state)).toEqual([{ text: "https://exaZmple.com", href: "https://exaZmple.com", auto: true }]);
+  });
+});
+
 describe("work per keystroke", () => {
   it("typing far from any link reconciles nothing; next to one, one line", () => {
     const lines = Array.from({ length: 2000 }, (_, i) => p(`${i} Hola, te paso las notas de la reunión.`));

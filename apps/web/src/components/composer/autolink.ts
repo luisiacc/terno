@@ -1,7 +1,7 @@
 import { isDelimiter, linkIn, linksIn, MAX_URL_LENGTH, schema, spelledHref } from "@terno/richtext";
 import { InputRule } from "prosemirror-inputrules";
 import { Fragment, Slice, type Mark, type Node as PMNode } from "prosemirror-model";
-import { Plugin, PluginKey, type Command, type EditorState, type Transaction } from "prosemirror-state";
+import { Plugin, PluginKey, Selection, type Command, type EditorState, type Transaction } from "prosemirror-state";
 import { AddMarkStep, Mapping, RemoveMarkStep } from "prosemirror-transform";
 import type { EditorView } from "prosemirror-view";
 
@@ -28,22 +28,27 @@ interface Run {
   mark: Mark;
 }
 
-/** The link runs of a line that reach into [from, to) (offsets in the line), adjacent children with the same link merged. */
+/**
+ * The link runs of a line that reach into [from, to) (offsets in the line), whole: adjacent children with the same
+ * link merged, a run that starts before `from` (its first child formatted apart, say) from where it starts.
+ */
 function linkRuns(block: PMNode, from: number, to: number): Run[] {
   const runs: Run[] = [];
   let offset = 0;
   for (let i = 0, n = block.childCount; i < n && offset < to; i++) {
     const child = block.child(i);
     const end = offset + child.nodeSize;
-    if (end > from) {
-      const m = child.marks.find((x) => x.type === marks.link);
-      const last = runs[runs.length - 1];
-      if (m && last && last.to === offset && last.mark.eq(m)) last.to = end;
-      else if (m) runs.push({ from: offset, to: end, mark: m });
+    const m = child.marks.find((x) => x.type === marks.link);
+    const last = runs[runs.length - 1];
+    if (m && last && last.to === offset && last.mark.eq(m)) last.to = end;
+    else if (m) {
+      // before the window only the run that may reach into it is kept
+      if (last && last.to <= from) runs.pop();
+      runs.push({ from: offset, to: end, mark: m });
     }
     offset = end;
   }
-  return runs;
+  return runs.filter((r) => r.to > from);
 }
 
 const isAuto = (m: Mark) => m.attrs.auto === true;
@@ -187,6 +192,21 @@ function mapRanges(ranges: Ranges, tr: Transaction): Ranges {
   return out;
 }
 
+/** Overlapping or touching ranges as one (a composition retyping one character thousands of times keeps one range). */
+function mergeRanges(ranges: Ranges): Ranges {
+  if (ranges.length <= 2) return ranges;
+  const pairs: [number, number][] = [];
+  for (let i = 0; i < ranges.length; i += 2) pairs.push([ranges[i]!, ranges[i + 1]!]);
+  pairs.sort((x, y) => x[0] - y[0]);
+  const out: Ranges = [];
+  for (const [from, to] of pairs) {
+    const last = out.length - 1;
+    if (last > 0 && from <= out[last]!) out[last] = Math.max(out[last]!, to);
+    else out.push(from, to);
+  }
+  return out;
+}
+
 /** Lines touched by the ranges, each once: its content's start and the touched offsets in it. */
 function touchedLines(doc: PMNode, ranges: Ranges): Map<number, { block: PMNode; a: number; b: number }> {
   const lines = new Map<number, { block: PMNode; a: number; b: number }>();
@@ -238,12 +258,15 @@ function reconcileLine(tr: Transaction, block: PMNode, start: number, a: number,
   liveStats.slow++;
   const auto: Run[] = [];
   const manual: Run[] = [];
+  // manual links promoted here (their marks go in the rebuild below)
+  const promoted: Mark[] = [];
   for (const r of runs) {
-    if (isAuto(r.mark)) auto.push(r);
-    else if (r.from <= b && r.to >= a && r.to - r.from <= MAX_URL_LENGTH && spelledHref(block.textBetween(r.from, r.to, undefined, LEAF)) === r.mark.attrs.href) {
-      const promoted = autoLink(r.mark.attrs.href as string);
-      tr.removeMark(start + r.from, start + r.to, r.mark).addMark(start + r.from, start + r.to, promoted);
-      auto.push({ ...r, mark: promoted });
+    const touched = r.from <= b && r.to >= a;
+    // an autolink reaching out of the window and not edited can't be read whole here: left as it is, a token edge
+    if (isAuto(r.mark) && (touched || (r.from >= lo && r.to <= hi))) auto.push(r);
+    else if (!isAuto(r.mark) && touched && r.to - r.from <= MAX_URL_LENGTH && spelledHref(block.textBetween(r.from, r.to, undefined, LEAF)) === r.mark.attrs.href) {
+      promoted.push(r.mark);
+      auto.push({ ...r, mark: autoLink(r.mark.attrs.href as string) });
     } else manual.push(r);
   }
   if (!auto.length) return;
@@ -302,16 +325,54 @@ function reconcileLine(tr: Transaction, block: PMNode, start: number, a: number,
       if (href) desired.push({ from, to, href });
     }
   }
-  const same = current.length === desired.length && current.every((r, i) => r.from === desired[i]!.from && r.to === desired[i]!.to && r.mark.attrs.href === desired[i]!.href);
+  const same = !promoted.length && current.length === desired.length && current.every((r, i) => r.from === desired[i]!.from && r.to === desired[i]!.to && r.mark.attrs.href === desired[i]!.href);
   if (same) return;
-  for (const r of current) tr.removeMark(start + r.from, start + r.to, r.mark);
-  for (const d of desired) tr.addMark(start + d.from, start + d.to, autoLink(d.href));
+  // one step for the line, built in one pass: two mark steps per link, each copying the line, were quadratic in a line of
+  // many links. The same text, so positions don't move (reconcile puts the selection back).
+  const from = Math.min(current[0]!.from, desired[0]?.from ?? Infinity);
+  const to = Math.max(current[current.length - 1]!.to, desired[desired.length - 1]?.to ?? -Infinity);
+  tr.replaceWith(start + from, start + to, Fragment.fromArray(relinked(block, from, to, desired, promoted)));
+}
+
+/**
+ * A line's inline content in [from, to) with its autolinks redone in one pass: every autolink (and each promoted
+ * manual link) off, the desired ones on; other marks and manual links as they are.
+ */
+function relinked(block: PMNode, from: number, to: number, desired: { from: number; to: number; href: string }[], promoted: Mark[]): PMNode[] {
+  const out: PMNode[] = [];
+  let d = 0;
+  let offset = 0;
+  for (let i = 0, n = block.childCount; i < n && offset < to; i++) {
+    const child = block.child(i);
+    const cs = offset;
+    offset += child.nodeSize;
+    if (offset <= from) continue;
+    const base = child.marks.filter((m) => !(m.type === marks.link && (isAuto(m) || promoted.some((p) => p.eq(m)))));
+    const end = Math.min(offset, to);
+    for (let pos = Math.max(cs, from); pos < end; ) {
+      while (d < desired.length && desired[d]!.to <= pos) d++;
+      const next = desired[d];
+      const inside = next !== undefined && next.from <= pos;
+      const cut = inside ? Math.min(end, next.to) : Math.min(end, next ? next.from : end);
+      const set = inside ? autoLink(next.href).addToSet(base) : base;
+      out.push(child.isText ? schema.text(child.text!.slice(pos - cs, cut - cs), set) : child.mark(set));
+      pos = cut;
+    }
+  }
+  return out;
 }
 
 /** Brings the autolinks in the changed ranges in line with their text. */
 export function reconcile(tr: Transaction, ranges: Ranges): void {
   if (!ranges.length) return;
+  const selection = tr.selection.toJSON();
+  const stored = tr.storedMarks;
+  const steps = tr.steps.length;
   for (const [start, { block, a, b }] of touchedLines(tr.doc, ranges)) reconcileLine(tr, block, start, a, b);
+  if (tr.steps.length === steps) return;
+  // a replace maps positions inside it to its edges: the selection (in a link being edited) goes back where it was
+  tr.setSelection(Selection.fromJSON(tr.doc, selection));
+  if (stored) tr.setStoredMarks(stored);
 }
 
 /** What changed while composing (IME), waiting for the composition to end, and the composition's id (its undo step). */
@@ -356,7 +417,7 @@ export function liveLinks(probe?: (name: string, value: number) => void): Plugin
       apply(tr, pending) {
         if (tr.getMeta(liveKey) === "flush") return NONE;
         const ranges = pending.ranges.length && tr.docChanged ? mapRanges(pending.ranges, tr) : pending.ranges;
-        if (isComposition(tr)) return { ranges: ranges.concat(changedRanges([tr], () => true)), composition: tr.getMeta("composition") };
+        if (isComposition(tr)) return { ranges: mergeRanges(ranges.concat(changedRanges([tr], () => true))), composition: tr.getMeta("composition") };
         return ranges === pending.ranges ? pending : { ranges, composition: pending.composition };
       },
     },

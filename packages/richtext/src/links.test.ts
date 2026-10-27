@@ -249,9 +249,12 @@ describe("the link mark's auto attribute", () => {
     expect(links(paste('<a href="https://santo.com" data-rt-auto="">https://santo.co</a>'))).toEqual([{ text: "https://santo.co", href: "https://santo.com", auto: true }]);
     expect(links(paste('<a href="https://x.com" data-rt-manual="">https://x.com</a>'))).toEqual([{ text: "https://x.com", href: "https://x.com", auto: false }]);
     expect(links(parseHtml('<a href="javascript:alert(1)" data-rt-auto="">https://x.com</a>', impl))).toEqual([]);
-    // past the cap the editor never draws one: a manual link (Codex review: the live links looped on one)
+    // past the cap it stays an autolink (Codex re-review: a manual one kept a lying href): spelling nothing, it isn't sent as a link
     const long = `https://x.com/${"a".repeat(MAX_URL_LENGTH)}`;
-    expect(links(paste(`<a href="${long}" data-rt-auto="">${long}</a>`))[0]!.auto).toBe(false);
+    const forged = paste(`<a href="https://old.example" data-rt-auto="">${long}</a>`);
+    expect(links(forged)[0]!.auto).toBe(true);
+    expect(toEmailHtml(forged)).not.toContain("old.example");
+    expect(toEmailHtml(forged)).not.toContain("<a");
   });
 
   it("parse: a link with a line break in it spells nothing (a break ends a token)", () => {
