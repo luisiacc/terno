@@ -16,14 +16,9 @@ import { ComposerBody, ComposerFormatBar, FormatToggle, LinkButton, preloadCompo
 import { warmAutocomplete } from "~/lib/autocomplete";
 
 /** Esc and sending leave the new message; focus goes to its strip item (kept) or back to the list. */
-function leave(key: string, focusStrip: boolean) {
-  if (focusStrip) {
-    const request = leaveNewDraftWithFocus(key);
-    if (request?.valid()) focusSoon(`[data-testid=strip-item][data-key="${key}"]`, null, 12, () => true, request.valid, request.watch);
-  } else {
-    leaveNewDraft();
-    (document.activeElement as HTMLElement | null)?.blur();
-  }
+function leave(key: string) {
+  const request = leaveNewDraftWithFocus(key);
+  if (request?.valid()) focusSoon(`[data-testid=strip-item][data-key="${key}"]`, null, 12, () => true, request.valid, request.watch);
 }
 
 /**
@@ -37,10 +32,12 @@ export function NewMessage() {
   const d = useDrafts((s) => (compose ? s.drafts[compose.key] : undefined));
   const accounts = useApp((s) => s.accounts);
   const rootRef = useRef<HTMLFormElement>(null);
+  const sendWatches = useRef(new Set<() => void>());
   const formatId = useId();
   const focusGeneration = useRef(0);
 
   useEffect(preloadComposer, []);
+  useEffect(() => () => { for (const stop of sendWatches.current) stop(); }, []);
   // a new message: suggestions get ready (once per session)
   useEffect(warmAutocomplete, []);
   useEffect(() => {
@@ -57,8 +54,19 @@ export function NewMessage() {
   if (!compose || !d) return null;
   const key = compose.key;
   const send = async () => {
-    const ok = await sendDraft(key);
-    if (ok) leave(key, false);
+    const original = compose, form = rootRef.current, active = document.activeElement;
+    let changed = false, stopped = false;
+    const observe = (event: FocusEvent) => { if (event.target !== active) changed = true; };
+    const unsubscribe = useApp.subscribe((state, previous) => {
+      if (state.compose !== previous.compose || state.selectedId !== previous.selectedId || state.readerOpen !== previous.readerOpen || state.accountId !== previous.accountId || state.view !== previous.view || state.categoryId !== previous.categoryId || state.reviewCategoryId !== previous.reviewCategoryId || state.query !== previous.query || state.listFilters !== previous.listFilters || state.checked !== previous.checked || state.scope !== previous.scope || state.dialog !== previous.dialog || state.fatal !== previous.fatal) changed = true;
+    });
+    document.addEventListener("focusin", observe, true);
+    const stop = () => { if (stopped) return; stopped = true; unsubscribe(); document.removeEventListener("focusin", observe, true); sendWatches.current.delete(stop); };
+    sendWatches.current.add(stop);
+    try {
+      const ok = await sendDraft(key);
+      if (ok && !stopped && !changed && useApp.getState().compose === original && rootRef.current === form && document.activeElement === active) leaveNewDraft();
+    } finally { stop(); }
   };
   const discard = async () => {
     leaveNewDraft();
@@ -89,7 +97,7 @@ export function NewMessage() {
         } else if (e.key === "Escape" && !popupOpen()) {
           e.preventDefault();
           e.stopPropagation();
-          leave(key, true);
+          leave(key);
         }
       }}
     >
