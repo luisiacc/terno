@@ -39,6 +39,7 @@ for (const position of ["backward range", "italic caret"] as const) test(`fatal 
       el.focus(); const node = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode()!;
       const s = window.getSelection()!; s.setBaseAndExtent(node, 6, node, 2); document.dispatchEvent(new Event("selectionchange"));
     });
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     await expect(page.getByTestId("format-italic")).toHaveAttribute("aria-pressed", position === "backward range" ? "false" : "true");
     const beforeSelection = await selection(page);
     if (position === "backward range") expect(beforeSelection.anchor).toBeGreaterThan(beforeSelection.focus!);
@@ -61,7 +62,12 @@ for (const position of ["backward range", "italic caret"] as const) test(`fatal 
     expect(await page.evaluate(() => (window as unknown as { __terno: Probe }).__terno.composerDoc())).toEqual(doc);
     await expect(page.getByTestId("format-italic")).toHaveAttribute("aria-pressed", italic!);
     await page.clock.setFixedTime(new Date((await page.evaluate(() => Date.now())) + 1000));
-    await page.keyboard.type("X"); await body.press("Meta+z"); expect(await body.innerHTML()).toBe(html);
+    await page.keyboard.type("X");
+    const editedHtml = await body.innerHTML();
+    if (position === "italic caret") await expect(body.locator("i")).toHaveText("X");
+    await body.press("Meta+z"); expect(await body.innerHTML()).toBe(html);
+    await body.press("Meta+Shift+z"); expect(await body.innerHTML()).toBe(editedHtml);
+    await body.press("Meta+z"); expect(await body.innerHTML()).toBe(html);
     await expect(page.getByTestId("recovery-workspace")).toContainText("Pérez, Ana");
     await expect(page.getByTestId("recovery-workspace")).toContainText("bob@");
     await expect(page.getByTestId("recovery-workspace")).toContainText("checkpoint.bin");
