@@ -32,6 +32,28 @@ export function defineDurableFlagIntentConformance(name: string, harness: StoreH
       expect((await store.debug.snapshot()).messages[0]).toMatchObject({ isRead: false, isStarred: false, inInbox: true });
     });
 
+    it.each(["flags", "ingest"] as const)("confirmed ownership rejects old %s replay after reopen but allows a later remote reversal", async (source) => {
+      let store = await harness.open(); stores.push(store);
+      const [a] = await withAccounts(store, 1);
+      const original = msg({ accountId: a!, providerMsgId: "confirmed" });
+      await ingest(store, [original]);
+      const old = (await observe(store, a!))!;
+      await store.threads.act({ threadIds: [await threadOf(store, "confirmed")], action: "archive", signal: null, now: 1 });
+      const [op] = await store.ops.claimReady(2, 20);
+      await store.ops.complete(op!.id, undefined, 3);
+      const id = (await store.debug.snapshot()).messages[0]!.id;
+      const confirmed = (await observe(store, a!))!;
+      await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "confirmed", flags: { inInbox: false } }], confirmed);
+      expect((await store.providerStore(a!).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
+      store = await harness.reopen(store); stores.push(store);
+      if (source === "flags") await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "confirmed", flags: { inInbox: true, isStarred: true } }], old);
+      else await store.sync.ingest([{ ...original, isStarred: true }], { applyFilters: true, now: 4, classifier: null, observation: old });
+      expect((await store.debug.snapshot()).messages[0]).toMatchObject({ inInbox: false, isStarred: true });
+      const later = (await observe(store, a!))!;
+      await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "confirmed", flags: { inInbox: true } }], later);
+      expect((await store.debug.snapshot()).messages[0]!.inInbox).toBe(true);
+    });
+
     it("keeps incapable accounts inactive but refuses downgrade after durable activation", async () => {
       let store = await harness.open(); stores.push(store);
       const [accountId] = await withAccounts(store, 1);
@@ -196,6 +218,30 @@ export function defineDurableFlagIntentConformance(name: string, harness: StoreH
       store = await harness.reopen(store); stores.push(store);
       const id = (await store.debug.snapshot()).messages[0]!.id;
       expect((await store.providerStore(a!).pendingFlagSnapshots({ limit: 50 })).items).toEqual([{ id, providerMsgId: "failed" }]);
+    });
+
+    it("discarding uncertain flag work commits a snapshot wakeup and ignores stale terminal callbacks", async () => {
+      let store = await harness.open(); stores.push(store);
+      const [a] = await withAccounts(store, 1);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "discard" })]);
+      await observe(store, a!);
+      await store.threads.act({ threadIds: [await threadOf(store, "discard")], action: "markRead", signal: null, now: 1 });
+      const [op] = await store.ops.claimReady(2, 20);
+      await store.ops.markUnknown(op!.id, "uncertain", 3);
+      const beforeDiscard = (await observe(store, a!))!;
+      const discarded = await store.ops.resolveUnknown(op!.id, "discard", 4);
+      expect(discarded.flagReconcileAccounts).toEqual([a]);
+      store = await harness.reopen(store); stores.push(store);
+      const id = (await store.debug.snapshot()).messages[0]!.id;
+      await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "discard", flags: { isRead: false } }], beforeDiscard);
+      expect((await store.debug.snapshot()).messages[0]!.isRead).toBe(true);
+      const fresh = (await observe(store, a!))!;
+      await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "discard", flags: { isRead: false } }], fresh);
+      await store.ops.complete(op!.id, undefined, 5);
+      expect((await store.ops.get(op!.id))?.state).toBe("failed");
+      expect((await store.providerStore(a!).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
+      expect(await store.ops.claimReady(6, 20)).toEqual([]);
+      expect((await store.debug.snapshot()).messages[0]!.isRead).toBe(false);
     });
 
     it("epoch-bearing observations require the captured stable provider identity for every effect", async () => {
