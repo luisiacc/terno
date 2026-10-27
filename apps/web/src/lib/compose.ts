@@ -6,7 +6,7 @@ import { firstInvalid, SELECT_INVALID } from "./recipient-field";
 import type { DraftMode } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
-import { getApp, setApp, useApp } from "~/state/app";
+import { getApp, markSelectionIntent, setApp, useApp } from "~/state/app";
 import { invalidateThreads, loadThread } from "~/state/threads";
 import { registerUndo, snack } from "./snack";
 import { answered, convertFields, forwardAccountMismatch, newFields, replyFields, mergeAttachmentRefs } from "./compose-fields";
@@ -218,6 +218,7 @@ function showStoredStandalone(key: string, owner: number, allowed: () => boolean
 export async function openStoredDraft(key: string): Promise<void> {
   const finish = beginDraftWork();
   if (!finish) return;
+  markSelectionIntent();
   const mine = ++intent;
   if (focusLease && releaseForAcquisition(focusLease)) { finish(); return; }
   if (mine !== intent) { finish(); return; }
@@ -297,6 +298,7 @@ export async function openStoredDraft(key: string): Promise<void> {
 export async function openCompose(mode: DraftMode = "new", threadId: number | null = getApp().selectedId): Promise<void> {
   const finish = beginDraftWork();
   if (!finish) return;
+  markSelectionIntent();
   const mine = ++intent;
   const state = getApp();
   const wantsLease = mode !== "new" && threadId !== null && state.selectedId === threadId && state.scope === null && state.checked.size < 2;
@@ -489,6 +491,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
 
 /** Shows a new-message draft in the reader pane again (from the drafts strip). */
 export function showNewDraft(key: string): void {
+  markSelectionIntent();
   setApp({ compose: { key, seq: ++seq }, checked: new Set(), scope: null, readerOpen: false });
 }
 
