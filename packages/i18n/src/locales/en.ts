@@ -819,7 +819,7 @@ const en = {
   "compose.quote.removed": "Quoted text removed · <include>Add it back</include>",
   "compose.status.tooLong": "Too long to save · <retry>Retry</retry>",
   "compose.forwardAccountMismatch": "To forward these attachments, choose {account} in From.",
-  "compose.forwardUnavailable": "The original files are not ready to forward. Wait for the download, or retry it from the original message, then try Forward again.",
+  "compose.forwardUnavailable": "The original files are not ready. Wait for the download or choose Retry, then try Forward again.",
   "compose.format.toolbar": "Formatting",
   "compose.format.toggle": "Formatting options",
   "compose.format.more": "More formatting",
