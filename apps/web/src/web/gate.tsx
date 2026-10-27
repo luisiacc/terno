@@ -1,4 +1,4 @@
-import { flushAllDrafts } from "~/lib/drafts";
+import { RecoveryReload } from "~/components/diag/recovery-reload";
 import { t, type TextKey } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { TernoMark } from "@terno/ui/brand/terno-mark";
@@ -108,9 +108,7 @@ export function WebGate() {
           </>
         }
       >
-        <Button data-testid="web-reload" onClick={() => void flushAllDrafts().then(() => location.reload())}>
-          {stale ? t("web.gate.reload") : t("common.retry")}
-        </Button>
+        <RecoveryReload testId="web-reload" label={stale ? "web.gate.reload" : "common.retry"} />
       </Screen>
     );
   }

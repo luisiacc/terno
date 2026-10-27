@@ -69,6 +69,11 @@ const en = {
   // ── app shell
   // @app
   "app.fatal.title": "Couldn’t connect to the mail engine",
+  "recovery.reload.unsaved": "Your unsaved changes and pending files are still in this window. Review your drafts, or reload anyway and discard them.",
+  "recovery.reload.review": "Review drafts",
+  "recovery.reload.anywayName": "Reload anyway and discard unsaved changes and pending files",
+  "recovery.reload.offline": "The app could not continue. Your unsaved work is here to review or copy; the mail connection has not been restarted.",
+  "recovery.reload.showError": "Error details",
   "app.boundary.title": "Something went wrong",
   "app.boundary.body": "Terno hit an error and can’t show this window. Your mail is safe.",
   "app.boundary.reload": "Reload",

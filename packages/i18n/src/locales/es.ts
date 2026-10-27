@@ -63,6 +63,11 @@ const es = {
   // ── app shell
   // @app
   "app.fatal.title": "No se pudo conectar con el motor de correo",
+  "recovery.reload.unsaved": "Tus cambios sin guardar y archivos pendientes siguen en esta ventana. Revisa los borradores o recarga de todos modos para descartarlos.",
+  "recovery.reload.review": "Revisar borradores",
+  "recovery.reload.anywayName": "Recargar de todos modos y descartar los cambios sin guardar y archivos pendientes",
+  "recovery.reload.offline": "La aplicación no pudo continuar. Tu trabajo sin guardar sigue aquí para revisarlo o copiarlo; la conexión de correo no se ha reiniciado.",
+  "recovery.reload.showError": "Detalles del error",
   "app.boundary.title": "Algo salió mal",
   "app.boundary.body": "Terno encontró un error y no puede mostrar esta ventana. Tu correo está a salvo.",
   "app.boundary.reload": "Recargar",

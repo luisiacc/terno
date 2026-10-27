@@ -1,7 +1,9 @@
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
-import { Component, type ReactNode } from "react";
+import { Component, lazy, Suspense, type ReactNode } from "react";
 import { create } from "zustand";
+import { useDraftRecovery } from "~/lib/draft-recovery-ui";
+import { RecoveryReload } from "./recovery-reload";
 import { captureUi } from "~/lib/diag";
 import { exposeForTests } from "~/lib/render-probe";
 import { exportDiagnostics } from "~/state/diag";
@@ -59,28 +61,31 @@ export function TestThrow({ area }: { area: Area }) {
 
 const shortId = (id: string) => id.slice(0, 8);
 
+const RecoveryWorkspace = lazy(() => import("./recovery-workspace").then((m) => ({ default: m.RecoveryWorkspace })));
+function AppFallback({ id }: { id: string | null }) {
+  const recovering = useDraftRecovery((s) => s.open);
+  if (recovering) return <Suspense><RecoveryWorkspace /></Suspense>;
+  return (
+    <div role="alert" className="flex h-screen items-center justify-center bg-background p-10 text-center" data-testid="app-boundary">
+      <div className="max-w-sm">
+        <p className="text-md font-semibold tracking-tight">{t("app.boundary.title")}</p>
+        <p className="mt-1.5 text-sm text-muted-foreground">{t("app.boundary.body")}</p>
+        <div className="mt-5 flex flex-col items-center gap-2">
+          <RecoveryReload testId="app-boundary-reload" label="app.boundary.reload" />
+          <Button variant="outline" data-testid="app-boundary-export" onClick={() => void exportDiagnostics()}>{t("diag.exportButton")}</Button>
+        </div>
+        {id && <p className="mt-6 text-xs text-muted-foreground tabular-nums select-text">{t("app.boundary.reference", { id: shortId(id) })}</p>}
+      </div>
+    </div>
+  );
+}
+
 /** The whole window: a calm screen, a reload, and the diagnostics to send if it keeps happening. */
 export function AppBoundary({ children }: { children: ReactNode }) {
   return (
     <Boundary
       area="app"
-      fallback={({ id }) => (
-        <div role="alert" className="flex h-screen items-center justify-center bg-background p-10 text-center" data-testid="app-boundary">
-          <div className="max-w-sm">
-            <p className="text-md font-semibold tracking-tight">{t("app.boundary.title")}</p>
-            <p className="mt-1.5 text-sm text-muted-foreground">{t("app.boundary.body")}</p>
-            <div className="mt-5 flex justify-center gap-2">
-              <Button data-testid="app-boundary-reload" onClick={() => location.reload()}>
-                {t("app.boundary.reload")}
-              </Button>
-              <Button variant="outline" data-testid="app-boundary-export" onClick={() => void exportDiagnostics()}>
-                {t("diag.exportButton")}
-              </Button>
-            </div>
-            {id && <p className="mt-6 text-xs text-muted-foreground tabular-nums select-text">{t("app.boundary.reference", { id: shortId(id) })}</p>}
-          </div>
-        </div>
-      )}
+      fallback={({ id }) => <AppFallback id={id} />}
     >
       <TestThrow area="app" />
       {children}

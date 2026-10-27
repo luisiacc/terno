@@ -2,6 +2,7 @@ import { t } from "@terno/i18n";
 import { TooltipProvider } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { lazy, Suspense, useEffect } from "react";
+import { useDraftRecovery } from "~/lib/draft-recovery-ui";
 import { useAppearance } from "~/lib/appearance";
 import { usePage } from "~/lib/page";
 import { useSnack } from "~/lib/snack";
@@ -26,6 +27,8 @@ import { ThreadList } from "./components/thread-list";
 import { EngineStopped } from "./components/diag/engine-stopped";
 import { PaneBoundary } from "./components/diag/error-boundary";
 import { ReportPreview } from "./components/diag/report-preview";
+
+const RecoveryWorkspace = lazy(() => import("./components/diag/recovery-workspace").then((m) => ({ default: m.RecoveryWorkspace })));
 
 // rarely used, heavier surfaces stay out of the startup bundle
 const FiltersDialog = lazy(() => import("./components/filters-dialog").then((m) => ({ default: m.FiltersDialog })));
@@ -97,6 +100,9 @@ export function App() {
       }),
     [],
   );
+
+  const recovering = useDraftRecovery((s) => s.open);
+  if (recovering) return <Suspense><RecoveryWorkspace /></Suspense>;
 
   const gate = WebGate && (
     <Suspense>
