@@ -365,7 +365,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   // its body as the editor has it now (what "written" and a conversion's undo look at)
   let existing = existingKey ? materialize(existingKey) : undefined;
   if (existing && !sameStoredDraft(existing)) return;
-  if (existing?.presentationExpired && existing.mode === "new" && activeSourceId(existing) === null) {
+  if (existing?.presentationExpired && activeSourceId(existing) === null && (existing.mode === "new" || (existing.threadId === null && existing.departedThreadId === threadId && authored(existing)))) {
     showStoredStandalone(existing.key, mine, undefined, lease);
     return;
   }
