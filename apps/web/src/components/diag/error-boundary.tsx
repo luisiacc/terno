@@ -102,10 +102,15 @@ export function AppBoundary({ children }: { children: ReactNode }) {
 
 const PANE_TITLE = { reader: "app.boundary.reader", settings: "app.boundary.settings" } as const;
 
-function ReaderFailure({ threadId, children }: { threadId: unknown; children: ReactNode }) {
-  const failedThread = useRef(threadId).current;
+function ReaderFailure({ threadId, resetKey, children }: { threadId: unknown; resetKey: unknown; children: ReactNode }) {
   const token = useRef({}).current;
-  useLayoutEffect(() => typeof failedThread === "number" ? registerReaderPaneFailure(failedThread, token) : undefined, [failedThread, token]);
+  const host = useRef<{ resetKey: unknown; threadId: unknown; unregister?: () => void }>({ resetKey, threadId });
+  useLayoutEffect(() => {
+    const current = host.current;
+    if (typeof current.threadId !== "number" && current.resetKey === resetKey && typeof threadId === "number") current.threadId = threadId;
+    if (typeof current.threadId === "number" && !current.unregister) current.unregister = registerReaderPaneFailure(current.threadId, token);
+  });
+  useLayoutEffect(() => () => { host.current.unregister?.(); host.current.unregister = undefined; }, []);
   return children;
 }
 
@@ -128,7 +133,7 @@ export function PaneBoundary({ area, resetKey, readerThreadId, title, children }
           </div>
         </div>
         );
-        return area === "reader" ? <ReaderFailure threadId={readerThreadId}>{content}</ReaderFailure> : content;
+        return area === "reader" ? <ReaderFailure threadId={readerThreadId} resetKey={resetKey}>{content}</ReaderFailure> : content;
       }}
     >
       <TestThrow area={area} />
