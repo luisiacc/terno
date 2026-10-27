@@ -58,3 +58,33 @@ it.each(["reset", "close", "caller"] as const)("cancels queued raw preparation o
     await result; await provider.close();
   }
 });
+
+it("does not dispatch queued siblings after a systemic raw failure", async () => {
+  const incoming = new IncomingReads(1);
+  const downloads: string[] = [], checkpoints: unknown[] = [];
+  const raw = toBase64url(new TextEncoder().encode("From: sender@example.test\r\nSubject: Synthetic\r\n\r\nExact body"));
+  const ctx = {
+    account: { id: 1 }, config: {}, incoming,
+    store: { messageByProviderId: async () => null, syncedMessages: async () => [], pendingAttachmentBodies: async () => [] },
+    loadCursor: async () => null, saveCursor: async (cursor: unknown) => { checkpoints.push(cursor); },
+    fetch: async (input: string | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/profile")) return Response.json({ historyId: "10" });
+      if (url.pathname.endsWith("/messages")) return Response.json({ messages: ["bad", "later-1", "later-2"].map((id) => ({ id })) });
+      const id = url.pathname.split("/").at(-1)!;
+      downloads.push(id);
+      return Response.json({ id: id === "bad" ? "wrong-id" : id, threadId: id, raw });
+    },
+  } as unknown as ProviderContext;
+  const sink: SyncSink = {
+    signal: new AbortController().signal, windowStart: 0,
+    async ingest() {}, async updateFlags() {}, async removeMessages() {}, async setBody() {}, async setSyncState() {}, async pendingMessageIds() { return new Set(); },
+  };
+  const provider = createGmailApiProvider(ctx, { tokens: { get: async () => "synthetic", invalidate() {} }, buildRaw: async () => new Uint8Array() });
+  try {
+    await expect(provider.sync(sink)).rejects.toMatchObject({ name: "ProviderError", retryable: true });
+    expect(downloads).toEqual(["bad"]);
+    expect(checkpoints).toEqual([]);
+    (await incoming.acquire(2, new AbortController().signal))();
+  } finally { incoming.close(); await provider.close(); }
+});

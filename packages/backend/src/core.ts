@@ -902,7 +902,8 @@ export class BackendCore {
       const stamp = await this.store.accounts.stamp(accountId);
       if (!this.current(life) || !stamp) return null;
       const provider = this.options.providers.create({
-        store: this.providerStore(life), account, config: cfg.config, incoming: this.incoming,
+        store: this.providerStore(life), account, config: cfg.config,
+        incoming: { acquire: (id, signal, reset) => this.incoming.acquire(id, signal, reset) },
         getSecret: (name) => this.accountRead(life, () =>
           this.getSecret(`account:${accountId}:${name}`).catch((error: unknown) => {
             throw error instanceof SecretUnreadableError ? new ProviderAuthError(messageOf(error)) : error;

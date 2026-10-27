@@ -361,19 +361,21 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       return admission;
     };
     let failure: { error: unknown } | undefined;
+    const pass = new AbortController();
+    const canceled = () => pass.abort(sink.signal.reason);
+    if (sink.signal.aborted) canceled();
+    else sink.signal.addEventListener("abort", canceled, { once: true });
     try {
       await download(ids, async (id) => {
         const reset = reads.signal;
         const check = () => {
           sink.signal.throwIfAborted();
-          if (!reset.aborted) return;
-          throw new ProviderError(L("errors.gmail.requestOffline"), true);
+          if (reset.aborted) throw new ProviderError(L("errors.gmail.requestOffline"), true);
+          if (failure) throw failure.error;
         };
         let release: (() => void) | undefined;
         try {
-          release = ctx.incoming ? await ctx.incoming.acquire(accountId, sink.signal, reset) : undefined;
-        } catch (error) { check(); throw error; }
-        try {
+          release = ctx.incoming ? await ctx.incoming.acquire(accountId, pass.signal, reset) : undefined;
           check();
           let m: GmailMessage;
           try {
@@ -383,6 +385,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
             if (error instanceof GmailApiError && error.status === 404) { gone.add(id); return; }
             throw error;
           }
+          check();
           await validateRaw(m.raw!);
           const raw = m.raw!;
           const padding = raw.endsWith("==") ? 2 : raw.endsWith("=") ? 1 : 0;
@@ -431,10 +434,16 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
             attachments: parsed.captureUnavailable ? undefined : parsed.attachments,
           });
           if (admitted) await admitted;
+        } catch (error) {
+          failure ??= { error: sink.signal.aborted ? sink.signal.reason : reset.aborted ? new ProviderError(L("errors.gmail.requestOffline"), true) : error };
+          pass.abort();
+          throw failure.error;
         } finally { release?.(); }
       });
     } catch (error) {
-      failure = { error };
+      failure ??= { error };
+    } finally {
+      sink.signal.removeEventListener("abort", canceled);
     }
     try {
       await admission;
