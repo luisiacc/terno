@@ -1160,8 +1160,10 @@ test("a 250 KB paragraph with a mark on every other word and an autolink at its 
   expect(await editor.evaluate((el) => el.querySelector("a[data-rt-auto]")!.getAttribute("href"))).toBe(`${url}/version-dos`);
   const own = stat("250 KB dense paragraph: the live-link reconciliation per key", LINKS_MS, ((await composerProbe(page)).links ?? []).slice(before));
   expect(own.p95).toBeLessThanOrEqual(LINKS_MS * MULT);
-  // ProseMirror's redraw of the line for the changed mark included: within a frame and a half of a plain key
+  // ProseMirror's redraw of the line for the changed mark included: within a frame and a half of a plain key, the
+  // median and the tail (an absolute HUGE_MS would gate ProseMirror's own plain keys in this line, ~25–35 ms p95 measured)
   expect(inLink.p50).toBeLessThanOrEqual(plain.p50 + 25 * MULT);
+  expect(inLink.p95).toBeLessThanOrEqual(plain.p95 + 25 * MULT);
 });
 
 // ───────────────────────────── plan 24: the List layout ─────────────────────────────

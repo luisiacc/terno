@@ -11,7 +11,7 @@ import type { Mark, Node as PMNode } from "prosemirror-model";
 import { EditorState, TextSelection, type Transaction } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { describe, expect, it } from "vitest";
-import { flushLinks, linkTypedUrl, liveKey, liveStats, textSlice } from "./autolink";
+import { flushLinks, linkTypedUrl, liveKey, liveStats, reconcile, textSlice } from "./autolink";
 import { applyLink, createPlugins } from "./editor";
 
 const { marks, nodes } = schema;
@@ -508,6 +508,46 @@ describe("IME composition", () => {
     expect(liveKey.getState(v.state)!.composition).toBe(9);
     v.dispatch(flushLinks(v.state)!);
     expect(links(v.state)).toEqual([{ text: "https://x.co", href: "https://x.co", auto: true }]);
+  });
+});
+
+describe("Codex code review", () => {
+  it("an autolink longer than the window (from a forged paste): typing near its start ends, and it is unlinked", () => {
+    const url = `https://x.com/${"a".repeat(20_000)}`;
+    // (not through the stand-in view: its invariant check refuses such a link before any edit)
+    const doc = nodes.doc.create(null, [p("ver ", t(url, auto(url)))]);
+    let state = EditorState.create({ doc, plugins });
+    state = state.apply(state.tr.insertText("y", 1 + "ver https://x".length));
+    expect(links(state)).toEqual([]);
+  });
+
+  it("a line of thousands of links is reconciled in linear time", () => {
+    const time = (n: number) => {
+      const kids: PMNode[] = [];
+      for (let i = 0; i < n; i++) kids.push(t(`https://x.com/${i}`, auto(`https://x.com/${i}`)), schema.text(" "));
+      const v = editor(nodes.paragraph.create(null, kids));
+      const tr = v.state.tr;
+      const t0 = performance.now();
+      reconcile(tr, [0, v.state.doc.content.size]);
+      const ms = performance.now() - t0;
+      expect(tr.steps.length).toBe(0);
+      return ms;
+    };
+    time(500);
+    const small = Math.min(time(2000), time(2000));
+    const big = Math.min(time(8000), time(8000));
+    expect(big).toBeLessThan(300);
+    // 4× the links: ~4× the time (it was ~16×)
+    expect(big).toBeLessThan(Math.max(small, 2) * 9);
+  });
+
+  it("a link made right after a long unbroken word stays, and still follows edits inside it", () => {
+    const v = editor(p("a".repeat(9000)));
+    applyLink(v, { from: 9001, to: 9001 }, "https://x.com", "https://x.com");
+    expect(links(v.state)).toEqual([{ text: "https://x.com", href: "https://x.com", auto: true }]);
+    caret(v, after(v, "x.co"));
+    type(v, "o");
+    expect(links(v.state)).toEqual([{ text: "https://x.coom", href: "https://x.coom", auto: true }]);
   });
 });
 

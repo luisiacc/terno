@@ -1,5 +1,5 @@
 import { Schema, type Attrs, type DOMOutputSpec, type Mark, type Node as PMNode } from "prosemirror-model";
-import { isSafeHref, spelledHref } from "./links";
+import { isSafeHref, MAX_URL_LENGTH, spelledHref } from "./links";
 import { FONT_CSS, fontOf, fontSizeAttrOf, HIGHLIGHT_HEX, HIGHLIGHT_INK, highlightOf, INDENT_PX, MAX_INDENT, SIZE_CSS, sizeOf, TEXT_HEX, textColorOf, type Font, type Highlight, type Size, type TextColor } from "./palette";
 
 /**
@@ -179,7 +179,8 @@ export const schema = new Schema({
 function linkAttrs(dom: HTMLElement) {
   const href = (dom.getAttribute("href") ?? "").trim();
   if (!isSafeHref(href)) return false;
-  if (dom.hasAttribute("data-rt-auto")) return { href, auto: true };
+  // (the editor never draws an autolink past the cap: a longer one from elsewhere is a manual link)
+  if (dom.hasAttribute("data-rt-auto")) return { href, auto: (dom.textContent ?? "").length <= MAX_URL_LENGTH };
   if (dom.hasAttribute("data-rt-manual")) return { href, auto: false };
   // a line break in it is a delimiter, as in the editor: such a link spells nothing
   return { href, auto: !dom.querySelector("br") && spelledHref(dom.textContent ?? "") === href };

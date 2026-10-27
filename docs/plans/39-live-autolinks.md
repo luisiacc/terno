@@ -190,3 +190,12 @@ Also found by the tests while implementing: `<https://x.com>` and `"https://x.co
 - **Reading a link back from the DOM.** The first version derived an autolink's href from its text when parsing an `<a data-rt-auto>`. ProseMirror re-reads an edited range from the DOM: with the caret inside the `<a>` at its end (where a click at a link's end puts it), Backspace re-read the link with a new href, the re-read mark differed from the drawn one, and ProseMirror retyped the whole link through `insertText`, whose `marksAcross` drops a non-inclusive mark. The link vanished on the first key. Parsing now returns exactly the drawn mark (`data-rt-auto`, `data-rt-manual`); the e2e for the report places the caret that way.
 - **A letter typed right before an autolink** leaves it linked (rule 4's fallback), instead of the plan's first "unlinked".
 - **The e2e clock.** The e2e fixture freezes `Date.now`, so prosemirror-history never starts an undo step by time there; the undo/redo e2e runs with the real clock.
+
+## What the Codex code review changed
+
+Round 1 (`codex exec -s read-only`, review of `5a972a3..a2fc1a6`, 4 findings), each fixed with a regression test that fails without it:
+
+1. **High: an autolink longer than the window looped forever.** The span's growth was flagged even when clamping to the window left it where it was. Growth now continues only while the bounds move, and a `data-rt-auto` link past the cap parses as manual (the editor never draws a longer one). Tests: typing near the start of a 20,000-character autolink ends and unlinks it; the parse test.
+2. **High: a line of thousands of links reconciled quadratically** (every token filtered every run: ~2.5 s for 16,000 URLs). One cursor walks the runs with the tokens. Test: 4× the links costs under 9× the time (the quadratic version measured ~16×) and 8,000 links under 300 ms.
+3. **Medium: a link right after a long unbroken word was removed** (the token was cut by the window, which also disabled the fallback). An autolink wholly inside the window is still read. Test: a dialog link after 9,000 letters stays, and follows an edit inside it.
+4. **Low: the 30,000-run paragraph's gate had no tail.** A p95 gate relative to plain keys in the same line (an absolute `HUGE_MS` would gate ProseMirror's own plain keys there, 25–35 ms p95 measured on this machine).

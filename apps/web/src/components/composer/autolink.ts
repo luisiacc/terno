@@ -256,33 +256,41 @@ function reconcileLine(tr: Transaction, block: PMNode, start: number, a: number,
   // the span: [a, b] out to token edges, and out to every autolink it meets
   let s = a;
   let e = b;
+  // (only while it moves: clamped to the window, an autolink reaching past it would otherwise grow it forever)
   for (;;) {
     while (s > lo && !stop(s - 1)) s--;
     while (e < hi && !stop(e)) e++;
-    let grew = false;
+    let ns = s;
+    let ne = e;
     for (const r of auto)
-      if (r.from <= e && r.to >= s && (r.from < s || r.to > e)) {
-        s = Math.max(lo, Math.min(s, r.from));
-        e = Math.min(hi, Math.max(e, r.to));
-        grew = true;
+      if (r.from <= e && r.to >= s) {
+        ns = Math.min(ns, Math.max(lo, r.from));
+        ne = Math.max(ne, Math.min(hi, r.to));
       }
-    if (!grew) break;
+    if (ns === s && ne === e) break;
+    s = ns;
+    e = ne;
   }
   const current = auto.filter((r) => r.from <= e && r.to >= s);
   if (!current.length) return;
   // what each token should carry: the link it spells over its autolink text; failing that, each autolink part that
-  // still spells a URL keeps one ("a" typed before "https://x.com" leaves the link as it is)
+  // still spells a URL keeps one ("a" typed before "https://x.com" leaves the link as it is). The runs are in order and
+  // apart: one cursor walks them with the tokens (a line of thousands of links stays linear).
   const desired: { from: number; to: number; href: string }[] = [];
+  const cutAt = (from: number, to: number) => (from === lo && lo > 0) || (to === hi && hi < size);
+  let j = 0;
   for (let i = s; i < e; ) {
     while (i < e && stop(i)) i++;
     const ts = i;
     while (i < e && !stop(i)) i++;
     const te = i;
-    const inToken = current.filter((r) => r.from < te && r.to > ts);
-    if (te === ts || !inToken.length) continue;
-    // a token cut by the window is longer than any link
-    const cut = (ts === lo && lo > 0) || (te === hi && hi < size);
-    const found = cut ? null : linkIn(text.slice(ts - lo, te - lo));
+    if (te === ts) continue;
+    while (j < current.length && current[j]!.to <= ts) j++;
+    const inToken: Run[] = [];
+    for (let k = j; k < current.length && current[k]!.from < te; k++) inToken.push(current[k]!);
+    if (!inToken.length) continue;
+    // a token cut by the window is longer than any link; an autolink wholly inside the window can still be read
+    const found = cutAt(ts, te) ? null : linkIn(text.slice(ts - lo, te - lo));
     if (found && inToken.some((r) => r.from < ts + found.end && r.to > ts + found.start)) {
       desired.push({ from: ts + found.start, to: ts + found.end, href: found.href });
       continue;
@@ -290,7 +298,7 @@ function reconcileLine(tr: Transaction, block: PMNode, start: number, a: number,
     for (const r of inToken) {
       const from = Math.max(r.from, ts);
       const to = Math.min(r.to, te);
-      const href = cut ? null : spelledHref(text.slice(from - lo, to - lo));
+      const href = cutAt(from, to) ? null : spelledHref(text.slice(from - lo, to - lo));
       if (href) desired.push({ from, to, href });
     }
   }
