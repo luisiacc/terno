@@ -267,9 +267,11 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
   /** reads in flight listen here: reset() aborts them all at once (a send never does) */
   let reads = new AbortController();
 
-  async function api<T>(path: string, init: RequestInit & { ambiguousOnFailure?: boolean; responseMode?: "json" | "void"; readReset?: AbortSignal } = {}, retried = false): Promise<T> {
-    const { ambiguousOnFailure, responseMode = "json", readReset, ...request } = init;
-    const token = await tokens.get();
+  async function api<T>(path: string, init: RequestInit & { ambiguousOnFailure?: boolean; responseMode?: "json" | "void"; readReset?: AbortSignal; preparationSignal?: AbortSignal } = {}, retried = false): Promise<T> {
+    const { ambiguousOnFailure, responseMode = "json", readReset, preparationSignal, ...request } = init;
+    preparationSignal?.throwIfAborted();
+    const token = preparationSignal ? await untilAborted(tokens.get(), preparationSignal) : await tokens.get();
+    preparationSignal?.throwIfAborted();
     const sending = Boolean(ambiguousOnFailure);
     // Plan 20: a read on a socket a network change killed fails fast, by its deadline or by reset(), and
     // the sync goes again on a fresh one. A send isn't reset and has a long deadline; its failure is ambiguous.
@@ -362,12 +364,15 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     };
     let failure: { error: unknown } | undefined;
     const pass = new AbortController();
+    const reset = reads.signal;
+    const resetCanceled = () => pass.abort(reset.reason);
+    if (reset.aborted) resetCanceled();
+    else reset.addEventListener("abort", resetCanceled, { once: true });
     const canceled = () => pass.abort(sink.signal.reason);
     if (sink.signal.aborted) canceled();
     else sink.signal.addEventListener("abort", canceled, { once: true });
     try {
       await download(ids, async (id) => {
-        const reset = reads.signal;
         const check = () => {
           sink.signal.throwIfAborted();
           if (reset.aborted) throw new ProviderError(L("errors.gmail.requestOffline"), true);
@@ -379,7 +384,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
           check();
           let m: GmailMessage;
           try {
-            m = readMessage(await api<unknown>(`/messages/${id}?format=raw`, { signal: sink.signal, readReset: reset }), id, true);
+            m = readMessage(await api<unknown>(`/messages/${id}?format=raw`, { signal: sink.signal, readReset: reset, preparationSignal: pass.signal }), id, true);
           } catch (error) {
             // Enumeration isn't a snapshot: a message may disappear before its download.
             if (error instanceof GmailApiError && error.status === 404) { gone.add(id); return; }
@@ -444,6 +449,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       failure ??= { error };
     } finally {
       sink.signal.removeEventListener("abort", canceled);
+      reset.removeEventListener("abort", resetCanceled);
     }
     try {
       await admission;
