@@ -151,7 +151,7 @@ const es = {
   "settings.general.suggestions": "Sugerir texto mientras escribes",
   "settings.general.suggestions.hint": "Completa frases a partir del correo que has enviado. Se aprende y se guarda en este dispositivo.",
   // plan 41
-  "settings.general.notifications": "Notificaciones",
+  "settings.general.notifications": "Ajustes de notificaciones",
   "settings.general.notify": "Notificaciones del sistema",
   "settings.general.notify.hint": "Correo nuevo de personas a las que has escrito, respuestas en tus conversaciones y lo que Gmail marca como importante, mientras Terno está abierto. macOS pide permiso la primera vez; si se ven en la pantalla bloqueada lo decide Ajustes del Sistema → Notificaciones.",
   "settings.general.notify.hintWeb": "Correo nuevo de personas a las que has escrito, respuestas en tus conversaciones y lo que Gmail marca como importante, mientras esta pestaña está abierta en segundo plano.",

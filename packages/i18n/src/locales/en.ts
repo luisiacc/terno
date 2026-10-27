@@ -157,7 +157,7 @@ const en = {
   "settings.general.suggestions": "Suggest text while writing",
   "settings.general.suggestions.hint": "Completes sentences from mail you've sent. It's learned and kept on this device.",
   // plan 41
-  "settings.general.notifications": "Notifications",
+  "settings.general.notifications": "Notification settings",
   "settings.general.notify": "System notifications",
   "settings.general.notify.hint": "New mail from people you’ve written to, replies in your conversations, and mail Gmail marks important, while Terno is running. macOS asks the first time; whether previews show on the lock screen is up to System Settings → Notifications.",
   "settings.general.notify.hintWeb": "New mail from people you’ve written to, replies in your conversations, and mail Gmail marks important, while this tab is open in the background.",
