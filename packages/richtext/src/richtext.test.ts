@@ -347,7 +347,16 @@ function randomDoc(seed: number): PMNode {
   const inline = (): PMNode[] => {
     const out: PMNode[] = [];
     const n = Math.floor(r() * 6);
-    for (let i = 0; i < n; i++) out.push(r() < 0.12 ? br(...marks()) : t(pick(WORDS), ...marks()));
+    for (let i = 0; i < n; i++) {
+      // plan 39: an autolink (its text spells its href), other formatting on it, a space after it so no run runs into it
+      if (r() < 0.1) {
+        const url = pick(["https://e.com/a?b=1&c=2", "www.e.com", "ana@example.com", "http://x.example/(a)"]);
+        const href = url.startsWith("www.") ? `https://${url}` : url.includes("@") ? `mailto:${url}` : url;
+        out.push(t(url, schema.marks.link.create({ href, auto: true }), ...marks().filter((mk) => mk.type !== schema.marks.link)), schema.text(" "));
+        continue;
+      }
+      out.push(r() < 0.12 ? br(...marks()) : t(pick(WORDS), ...marks()));
+    }
     return out;
   };
   const para = () => schema.node("paragraph", { align: r() < 0.8 ? "left" : pick(["center", "right"]), indent: r() < 0.85 ? 0 : Math.floor(r() * 4) }, inline());

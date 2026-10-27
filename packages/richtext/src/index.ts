@@ -6,3 +6,4 @@ export * from "./quote";
 export * from "./html";
 export * from "./text";
 export * from "./parse";
+export * from "./autolinks";

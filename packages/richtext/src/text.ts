@@ -1,5 +1,6 @@
-import type { Node as PMNode } from "prosemirror-model";
-import { hrefLabel } from "./links";
+import type { Mark, Node as PMNode } from "prosemirror-model";
+import { spelledLinks } from "./autolinks";
+import { hrefLabel, spelledHref } from "./links";
 import { schema } from "./schema";
 
 /**
@@ -10,22 +11,23 @@ import { schema } from "./schema";
 
 const INDENT = "    ";
 
-/** The inline content of a textblock as text: links as "text (url)" (the URL alone when that is the text). */
+/** The inline content of a textblock as text: links as "text (url)" (the URL alone when that is the text, or spells it). */
 function inlineText(block: PMNode): string {
   let out = "";
-  let link: { href: string; text: string } | null = null;
+  let link: { mark: Mark; href: string; text: string } | null = null;
   const flush = () => {
     if (!link) return;
     const label = hrefLabel(link.href);
-    out += link.text.trim() === "" || link.text === link.href || link.text === label ? link.text || label : `${link.text} (${label})`;
+    out += link.text.trim() === "" || link.text === link.href || link.text === label || spelledHref(link.text) === link.href ? link.text || label : `${link.text} (${label})`;
     link = null;
   };
-  block.forEach((child) => {
-    const href = child.marks.find((m) => m.type === schema.marks.link)?.attrs.href as string | undefined;
-    if (link && link.href !== href) flush();
+  // an autolink goes where its text says (plan 39); a link is a run of the same mark (an autolink and a manual one to one place are two)
+  spelledLinks(block).forEach((child) => {
+    const mark = child.marks.find((m) => m.type === schema.marks.link);
+    if (link && !(mark && link.mark.eq(mark))) flush();
     const text = child.isText ? child.text! : child.type === schema.nodes.hard_break ? "\n" : "";
-    if (href) {
-      link ??= { href, text: "" };
+    if (mark) {
+      link ??= { mark, href: mark.attrs.href as string, text: "" };
       link.text += text;
     } else out += text;
   });

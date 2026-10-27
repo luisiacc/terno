@@ -1,5 +1,5 @@
 import { Schema, type Attrs, type DOMOutputSpec, type Mark, type Node as PMNode } from "prosemirror-model";
-import { isSafeHref } from "./links";
+import { isSafeHref, spelledHref } from "./links";
 import { FONT_CSS, fontOf, fontSizeAttrOf, HIGHLIGHT_HEX, HIGHLIGHT_INK, highlightOf, INDENT_PX, MAX_INDENT, SIZE_CSS, sizeOf, TEXT_HEX, textColorOf, type Font, type Highlight, type Size, type TextColor } from "./palette";
 
 /**
@@ -92,11 +92,12 @@ export const schema = new Schema({
   },
   // nesting order, outermost first: a highlight's ink sits outside a chosen color, so the color wins
   marks: {
+    // auto (plan 39): Terno made it from typed or pasted text that spells its href, which then follows the text
     link: {
-      attrs: { href: {} },
+      attrs: { href: {}, auto: { default: false } },
       inclusive: false,
-      parseDOM: [{ tag: "a[href]", getAttrs: (dom: HTMLElement) => (isSafeHref(dom.getAttribute("href") ?? "") ? { href: dom.getAttribute("href")!.trim() } : false) }],
-      toDOM: (mark) => ["a", { href: mark.attrs.href, rel: "noopener noreferrer nofollow" }, 0],
+      parseDOM: [{ tag: "a[href]", getAttrs: linkAttrs }],
+      toDOM: (mark) => ["a", mark.attrs.auto ? { href: mark.attrs.href, rel: "noopener noreferrer nofollow", "data-rt-auto": "" } : { href: mark.attrs.href, rel: "noopener noreferrer nofollow" }, 0],
     },
     bold: {
       parseDOM: [
@@ -165,6 +166,22 @@ export const schema = new Schema({
     },
   },
 });
+
+/**
+ * A link read from HTML. Mail HTML carries only href, so a link whose text
+ * spells its href is an autolink again on reopen (the same document back).
+ * Terno's own copy marks autolinks (data-rt-auto): one gets the href its
+ * text spells, or no link when the copied part spells none (a part of
+ * "https://santo.com" never points to santo.com).
+ */
+function linkAttrs(dom: HTMLElement) {
+  const href = (dom.getAttribute("href") ?? "").trim();
+  if (!isSafeHref(href)) return false;
+  // a line break in it is a delimiter, as in the editor: such a link spells nothing
+  const spelled = dom.querySelector("br") ? null : spelledHref(dom.textContent ?? "");
+  if (dom.hasAttribute("data-rt-auto")) return spelled ? { href: spelled, auto: true } : false;
+  return { href, auto: spelled === href };
+}
 
 function fontAttrs(font: Font | null) {
   return font ? { value: font } : false;

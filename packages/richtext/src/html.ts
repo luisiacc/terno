@@ -1,4 +1,5 @@
 import type { Mark, Node as PMNode } from "prosemirror-model";
+import { spelledLinks } from "./autolinks";
 import { FONT_CSS, HIGHLIGHT_HEX, HIGHLIGHT_INK, SIZE_CSS, TEXT_HEX, type Font, type Highlight, type Size, type TextColor } from "./palette";
 import { encodeSpaces, escapeHtml, QUOTE_STYLE } from "./quote";
 import { blockStyle } from "./schema";
@@ -46,7 +47,9 @@ const CLOSE: Record<string, string> = { link: "</a>", bold: "</b>", italic: "</i
 const closeTag = (mark: Mark) => CLOSE[mark.type.name] ?? "</span>";
 
 /** A textblock's inline content; "" when it has none. A break carries marks too (typed inside bold, it is bold). */
-function inlineHtml(block: PMNode): string {
+function inlineHtml(textblock: PMNode): string {
+  // an autolink goes where its text says (plan 39)
+  const block = spelledLinks(textblock);
   let out = "";
   const open: Mark[] = [];
   let lineStart = true;
