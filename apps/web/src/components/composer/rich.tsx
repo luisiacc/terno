@@ -139,7 +139,7 @@ interface LinkDraft {
   editing: boolean;
 }
 
-export function RichBody({ draftKey, placeholder, className, checkpoint }: { draftKey: string; placeholder: string; className?: string; checkpoint?: BodyCheckpoint }) {
+export function RichBody({ draftKey, placeholder, className, checkpoint, focusOwner }: { draftKey: string; placeholder: string; className?: string; checkpoint?: BodyCheckpoint; focusOwner?: object }) {
   const mountRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -169,7 +169,7 @@ export function RichBody({ draftKey, placeholder, className, checkpoint }: { dra
     const replay = checkpoint && adoptedRef.current?.original === checkpoint ? adoptedRef.current.replay : undefined;
     const lease = replay ?? checkpoint;
     if (checkpoint && (!lease || lease.key !== draftKey || !validBodyCheckpoint(lease) || (useDraftRecovery.getState().checkpoint !== checkpoint && (!replay || useDraftRecovery.getState().checkpoint !== undefined)) || !useDraftRecovery.getState().open)) throw new Error("Draft checkpoint is no longer available");
-    const early = checkpoint ? null : takeEarly(draftKey);
+    const early = checkpoint ? null : takeEarly(draftKey, focusOwner);
     const state = lease ? lease.retained.state as EditorState : early ? newState(appendTyped(docOf(early.base.html, early.base.text), early.text)) : (retainedBodyState<EditorState>(draftKey, d.bodyVersion) ?? keptState(draftKey, d.bodyVersion) ?? newState(docOf(d.bodyHtml, d.bodyText)));
     let format: FormatState = EMPTY_FORMAT;
     const listeners = new Set<() => void>();
@@ -267,11 +267,11 @@ export function RichBody({ draftKey, placeholder, className, checkpoint }: { dra
       format = formatState(view.state, !sendingRef.current && !draftEditsHeld());
       refreshRef.current = schedule;
       // the stand-in had focus (typed into or not): the editor that replaces it takes it
-      const standInFocused = takeStandInFocus(draftKey);
+      const standInFocused = takeStandInFocus(draftKey, focusOwner);
       const replayFocus = replayFocusRef.current === draftKey && document.activeElement === document.body;
       replayFocusRef.current = null;
       if (replayFocus) focus("keep");
-      else if (!checkpoint && (early?.focused || standInFocused)) focus("end");
+      else if (!checkpoint && (early?.focused || standInFocused) && (document.activeElement === document.body || mount.contains(document.activeElement))) focus("end");
       unregister = registerController(draftKey, controller);
       if (checkpoint && ((useDraftRecovery.getState().checkpoint !== checkpoint && (!replay || useDraftRecovery.getState().checkpoint !== undefined)) || !useDraftRecovery.getState().open)) throw new Error("Draft checkpoint is no longer available");
       bodyRef.current = attachBody(draftKey, () => {

@@ -4,7 +4,7 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { CaseSensitive, Link2 } from "lucide-react";
-import { useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { encodeSpaces, escapeHtml } from "@terno/richtext/quote";
 import { attachBody, useDrafts, type BodyCheckpoint } from "~/lib/drafts";
 import { controllerFor, toggleFormatBar, useFormatBar } from "./controller";
@@ -51,7 +51,7 @@ interface Early {
   /** the draft's body when typing started */
   base: { text: string; html: string };
   text: string;
-  focused: boolean;
+  focusOwner?: object;
   body: ReturnType<typeof attachBody>;
 }
 const early = new Map<string, Early>();
@@ -65,19 +65,20 @@ export function withTyped(base: { text: string; html: string }, typed: string): 
   return { text: base.text ? `${base.text}\n${lines}` : lines, html: base.html ? `${base.html}${html}` : "" };
 }
 
-function typedIn(key: string, text: string, focused: boolean) {
+function typedIn(key: string, text: string, focused: boolean, owner: object) {
   let e = early.get(key);
   if (!e) {
     const d = useDrafts.getState().drafts[key];
     const base = { text: d?.bodyText ?? "", html: d?.bodyHtml ?? "" };
     // a stored body that never went through the schema stays untrusted: the send re-reads it
     const canonical = !base.html || d?.canonical === true;
-    const entry: Early = { base, text: "", focused, body: attachBody(key, () => withTyped(entry.base, entry.text), { canonical }) };
+    const entry: Early = { base, text: "", focusOwner: focused ? owner : undefined, body: attachBody(key, () => withTyped(entry.base, entry.text), { canonical }) };
     early.set(key, (e = entry));
   }
   const changed = e.text !== text;
   e.text = text;
-  e.focused = focused;
+  if (focused) e.focusOwner = owner;
+  else if (e.focusOwner === owner) e.focusOwner = undefined;
   if (changed) e.body.changed();
 }
 
@@ -88,15 +89,24 @@ const restoreTyped = (key: string) => (el: HTMLDivElement | null) => {
 };
 
 /** Stand-ins that have focus: the editor replacing one takes it (typed into or not). */
-const focusedStandIns = new Set<string>();
-export const takeStandInFocus = (key: string): boolean => focusedStandIns.delete(key);
+const focusedStandIns = new Map<string, object>();
+function clearStandInFocus(key: string, owner: object) {
+  if (focusedStandIns.get(key) === owner) focusedStandIns.delete(key);
+  const e = early.get(key);
+  if (e?.focusOwner === owner) e.focusOwner = undefined;
+}
+export function takeStandInFocus(key: string, owner?: object): boolean {
+  if (!owner || focusedStandIns.get(key) !== owner) return false;
+  focusedStandIns.delete(key);
+  return true;
+}
 
 /** For the editor, once: what the stand-in got (its source is the editor's from now on). */
-export function takeEarly(key: string): { base: { text: string; html: string }; text: string; focused: boolean } | null {
+export function takeEarly(key: string, owner?: object): { base: { text: string; html: string }; text: string; focused: boolean } | null {
   const e = early.get(key);
   if (!e) return null;
   early.delete(key);
-  return { base: e.base, text: e.text, focused: e.focused };
+  return { base: e.base, text: e.text, focused: Boolean(owner && e.focusOwner === owner) };
 }
 
 /**
@@ -106,9 +116,18 @@ export function takeEarly(key: string): { base: { text: string; html: string }; 
  */
 export function ComposerBody({ draftKey, placeholder, className, checkpoint }: { draftKey: string; placeholder: string; className?: string; checkpoint?: BodyCheckpoint }) {
   const rich = useRich();
+  const lifetimeRef = useRef<{ key: string; owner: object; generation: number } | null>(null);
+  if (!lifetimeRef.current || lifetimeRef.current.key !== draftKey) lifetimeRef.current = { key: draftKey, owner: {}, generation: 0 };
+  const lifetime = lifetimeRef.current;
+  useEffect(() => {
+    const generation = ++lifetime.generation;
+    return () => queueMicrotask(() => {
+      if (lifetime.generation === generation) clearStandInFocus(lifetime.key, lifetime.owner);
+    });
+  }, [lifetime]);
   // read-only under a send in flight, as the editor is (what is typed then couldn't be part of it)
   const sending = useDrafts((s) => s.held || (s.drafts[draftKey]?.sending ?? false));
-  if (rich) return <rich.RichBody draftKey={draftKey} placeholder={placeholder} className={className} checkpoint={checkpoint} />;
+  if (rich) return <rich.RichBody draftKey={draftKey} placeholder={placeholder} className={className} checkpoint={checkpoint} focusOwner={lifetime.owner} />;
   return (
     <div
       role="textbox"
@@ -120,13 +139,13 @@ export function ComposerBody({ draftKey, placeholder, className, checkpoint }: {
       tabIndex={0}
       data-testid="compose-body-loading"
       ref={restoreTyped(draftKey)}
-      onInput={(e) => { if (!checkpoint) typedIn(draftKey, e.currentTarget.innerText, true); }}
-      onFocus={() => focusedStandIns.add(draftKey)}
+      onInput={(e) => { if (!checkpoint) typedIn(draftKey, e.currentTarget.innerText, true, lifetime.owner); }}
+      onFocus={() => focusedStandIns.set(draftKey, lifetime.owner)}
       onBlur={(e) => {
         // an unmount (the editor arriving) blurs too: that focus is the editor's to take
         if (!e.currentTarget.isConnected) return;
-        focusedStandIns.delete(draftKey);
-        if (!checkpoint && early.has(draftKey)) typedIn(draftKey, e.currentTarget.innerText, false);
+        if (focusedStandIns.get(draftKey) === lifetime.owner) focusedStandIns.delete(draftKey);
+        if (!checkpoint && early.get(draftKey)?.focusOwner === lifetime.owner) typedIn(draftKey, e.currentTarget.innerText, false, lifetime.owner);
       }}
       className={cn("type-body outline-none whitespace-pre-wrap empty:before:text-muted-foreground empty:before:content-[attr(aria-placeholder)]", className)}
     />
