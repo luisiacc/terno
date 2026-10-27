@@ -266,3 +266,22 @@ it("an old bulk-canceled lookup cannot cancel a newer deliberate open", async ()
     expect(Object.values(h.useDrafts.getState().drafts)).toHaveLength(1);
   } finally { old.resolve(h.detail); await h.cleanup(); }
 });
+
+it("cancels an existing draft open when bulk selection interrupts source-context validation", async () => {
+  const h = await setup(), waiting = deferred<void>(), entered = deferred<void>();
+  let opening: Promise<void> | undefined;
+  try {
+    await act(async () => { h.publish(); }); await h.flushFrame();
+    await act(async () => { await h.openCompose("reply", 7); }); await h.flushFrame();
+    gate.call.mockImplementation(async (method: string) => {
+      if (method === "drafts.sourceContext") { entered.resolve(); await waiting.promise; return { threadId: 7, accountId: 1 }; }
+      return {};
+    });
+    h.anchor.focus(); await act(async () => { opening = h.openCompose("forward", 7); }); await entered.promise;
+    await act(async () => { h.setApp({ checked: new Set([7, 8]) }); h.setApp({ checked: new Set() }); });
+    await act(async () => { waiting.resolve(); await opening; }); await h.flushFrame();
+    expect(document.activeElement).toBe(h.anchor);
+    const drafts = Object.values(h.useDrafts.getState().drafts);
+    expect(drafts).toHaveLength(1); expect(drafts[0]?.mode).toBe("reply");
+  } finally { waiting.resolve(); if (opening) await opening; await h.cleanup(); }
+});
