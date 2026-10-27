@@ -8,8 +8,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { cn } from "@terno/ui/lib/utils";
 import { ChevronDown, Forward, PenLine, ReplyAll, Send, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { composeFocusPending, finishComposeFocus, openCompose, reopenInlineDraft, sendDraft, supersedeCompose } from "~/lib/compose";
-import { copyDraft, discardDraft, draftSenderLocked, editDraft, flushDraft, restoreDiscarded, retryDraft, setDraftUi, signatureBlock, useDrafts, type BodyCheckpoint, type DraftFields, type LocalDraft } from "~/lib/drafts";
+import { collapseInlineDraft, composeFocusPending, finishComposeFocus, openCompose, reopenInlineDraft, sendDraft } from "~/lib/compose";
+import { copyDraft, discardDraft, draftSenderLocked, editDraft, restoreDiscarded, retryDraft, signatureBlock, useDrafts, type BodyCheckpoint, type DraftFields, type LocalDraft } from "~/lib/drafts";
 import { SenderAvatar } from "./sender-avatar";
 import { RecipientInput, recipientSummary } from "./recipient-input";
 import { warmAutocomplete } from "~/lib/autocomplete";
@@ -66,16 +66,20 @@ function keyDuringMove(e: KeyboardEvent) {
  * Puts focus on an element of the draft area once it is rendered and no longer
  * inert (an opening part is inert for a frame).
  */
-export function focusSoon(selector: string, root: HTMLElement | null, frames = 12, onDone?: (fallback: boolean) => boolean | void, valid?: () => boolean) {
+export function focusSoon(selector: string, root: HTMLElement | null, frames = 12, onDone?: (fallback: boolean) => boolean | void, valid?: () => boolean, watch?: (cancel: () => void) => () => void) {
   const request = ++focusRequest;
+  let cancelled = false;
+  let cancelWatch = () => { cancelled = true; };
+  const stopWatching = watch?.(() => cancelWatch()) ?? (() => {});
   pendingFocus?.done();
-  if (request !== focusRequest) return;
+  if (request !== focusRequest || cancelled) { stopWatching(); return; }
   let raf = 0;
   let finished = false;
   const cleanup = () => {
     if (finished) return false;
     finished = true;
     cancelAnimationFrame(raf);
+    stopWatching();
     document.removeEventListener("keydown", keyDuringMove, true);
     document.removeEventListener("focusin", moved, true);
     if (pendingFocus === mine) pendingFocus = null;
@@ -93,6 +97,7 @@ export function focusSoon(selector: string, root: HTMLElement | null, frames = 1
   pendingFocus = mine;
   document.addEventListener("keydown", keyDuringMove, true);
   document.addEventListener("focusin", moved, true);
+  cancelWatch = () => { done(); };
   const tick = (left: number) => {
     raf = requestAnimationFrame(() => {
       if ((valid && !valid()) || (root && !root.isConnected)) return done();
@@ -351,10 +356,9 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
 
   const collapse = () => {
     if (!d) return;
-    supersedeCompose();
-    setDraftUi(d.key, "collapsed");
-    void flushDraft(d.key);
-    focusSoon("[data-testid=draft-collapsed]", rootRef.current);
+    const valid = collapseInlineDraft(d.key);
+    if (!valid || !valid()) return;
+    focusSoon("[data-testid=draft-collapsed]", rootRef.current, 12, () => true, valid, (cancel) => useApp.subscribe(() => { if (!valid()) cancel(); }));
   };
   const reopen = () => {
     if (!d) return;

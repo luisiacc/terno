@@ -195,6 +195,33 @@ function sameStoredDraft(snapshot: LocalDraft): boolean {
 }
 const openedDraft = (d: LocalDraft): LocalDraft => d.uiState === "open" ? d : { ...d, uiState: "open", ...(d.id !== null ? { localRev: d.localRev + 1, status: d.status === "saving" ? "saving" : "dirty" } : {}) };
 
+/** Collapse one draft without letting its exit focus overtake a newer choice. */
+export function collapseInlineDraft(key: string): (() => boolean) | undefined {
+  const baseline = getApp(), revision = getSelectionWriteRevision();
+  const active = typeof document === "undefined" ? null : document.activeElement;
+  let changed = false;
+  const owner = ++intent;
+  const observe = (event: FocusEvent) => { if (event.target !== active && event.target !== document.body) changed = true; };
+  const unsubscribe = useApp.subscribe((state, previous) => {
+    if (state.selectedId !== previous.selectedId || state.readerOpen !== previous.readerOpen || state.compose !== previous.compose || state.checked !== previous.checked || state.scope !== previous.scope || state.accountId !== previous.accountId || state.dialog !== previous.dialog || state.fatal !== previous.fatal || state.view !== previous.view || state.categoryId !== previous.categoryId || state.reviewCategoryId !== previous.reviewCategoryId || state.query !== previous.query || state.listFilters !== previous.listFilters) changed = true;
+  });
+  if (typeof document !== "undefined") document.addEventListener?.("focusin", observe, true);
+  try {
+    if (focusLease) releaseFocusLease(focusLease, false);
+    if (owner !== intent || changed || getSelectionWriteRevision() !== revision) return;
+    setDraftUi(key, "collapsed");
+    void flushDraft(key);
+  } finally {
+    unsubscribe();
+    if (typeof document !== "undefined") document.removeEventListener?.("focusin", observe, true);
+  }
+  if (changed) return;
+  return () => {
+    const state = getApp(), draft = useDrafts.getState().drafts[key];
+    return owner === intent && getSelectionWriteRevision() === revision && !draftEditsHeld() && Boolean(draft && !draft.sending && draft.uiState === "collapsed") && state.selectedId === baseline.selectedId && state.readerOpen === baseline.readerOpen && state.compose === baseline.compose && state.checked === baseline.checked && state.scope === baseline.scope && state.accountId === baseline.accountId && state.dialog === baseline.dialog && state.fatal === baseline.fatal && state.view === baseline.view && state.categoryId === baseline.categoryId && state.reviewCategoryId === baseline.reviewCategoryId && state.query === baseline.query && state.listFilters === baseline.listFilters;
+  };
+}
+
 /** Reopen the visible collapsed draft under the same focus ownership as an explicit compose. */
 export function reopenInlineDraft(threadId: number, key: string, checkpoint?: BodyCheckpoint): void {
   const finish = beginDraftWork();
