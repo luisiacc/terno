@@ -1,4 +1,4 @@
-import type { AttachmentRef } from "@terno/core";
+import type { AttachmentRef, ThreadDetail } from "@terno/core";
 import { attachmentUploading, draftAttachmentBudget } from "./attachments";
 import { breadcrumb, captureUi } from "~/lib/diag";
 import { firstInvalid, SELECT_INVALID } from "./recipient-field";
@@ -10,7 +10,7 @@ import { invalidateThreads, loadThread } from "~/state/threads";
 import { registerUndo, snack } from "./snack";
 import { answered, convertFields, forwardAccountMismatch, newFields, replyFields, mergeAttachmentRefs } from "./compose-fields";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
-import { beginDraftWork, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, type LocalDraft } from "./drafts";
+import { beginDraftWork, draftIndex, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, type LocalDraft } from "./drafts";
 
 /**
  * Writing mail: which draft a reply, reply-all, forward or new message opens,
@@ -174,12 +174,26 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   }
   if (s.scope !== null || s.checked.size >= 2) return;
   const target = mode === "forward" ? "to" : "body";
-  const drafts = useDrafts.getState().drafts;
+  let drafts = useDrafts.getState().drafts;
   let existingKey = shownDraftKey(drafts, threadId, getApp().draftShown);
+  const candidate = (sources: readonly number[] = []) => {
+    const index = draftIndex(useDrafts.getState().drafts);
+    const matches = new Map((index.expiredByThread.get(threadId) ?? []).map((d) => [d.key, d]));
+    for (const id of sources) for (const d of index.expiredBySource.get(id) ?? []) matches.set(d.key, d);
+    let best: LocalDraft | undefined;
+    for (const d of matches.values()) {
+      if (d.key === s.draftShown?.key) return d.key;
+      if (!best || d.updatedAt > best.updatedAt) best = d;
+    }
+    return best?.key ?? null;
+  };
+  let loaded: ThreadDetail | null | undefined;
+  if (!existingKey) existingKey = candidate();
   if (!existingKey) {
-    // An expired association is only a lookup candidate: it never places the body in Reader.
-    const candidates = Object.values(drafts).filter((d) => d.presentationExpired && d.showSourceContext && d.mode !== "new" && d.sourceContextThreadId === threadId);
-    existingKey = candidates.find((d) => d.key === s.draftShown?.key)?.key ?? candidates.sort((a, b) => b.updatedAt - a.updatedAt)[0]?.key ?? null;
+    loaded = await loadThread(threadId);
+    if (mine !== intent || !destinationAvailable(lease) || getApp().selectedId !== s.selectedId || (lease && !lease.valid)) return;
+    drafts = useDrafts.getState().drafts;
+    existingKey = shownDraftKey(drafts, threadId, getApp().draftShown) ?? candidate(loaded?.messages.map((m) => m.id));
   }
   // its body as the editor has it now (what "written" and a conversion's undo look at)
   let existing = existingKey ? materialize(existingKey) : undefined;
@@ -203,7 +217,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     return focusDraft(existing.key, target, mine);
   }
   const selected = s.selectedId;
-  const detail = await loadThread(threadId);
+  const detail = loaded === undefined ? await loadThread(threadId) : loaded;
   const currentIntent = () => mine === intent && destinationAvailable(lease) && getApp().selectedId === selected && shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) === existingKey;
   if (!detail || !currentIntent()) return;
   takeFocus = typeof document === "undefined" || document.activeElement === active;

@@ -63,6 +63,7 @@ export interface LocalDraft {
   presentationThreadId?: number;
   /** Cached DTO association: an expired mount cannot display it without explicit point validation. */
   sourceContextThreadId?: number | null;
+  departedThreadId?: number;
   presentationEpoch?: number;
   presentationExpired?: boolean;
   showSourceContext?: boolean;
@@ -429,7 +430,7 @@ export function editDraft(key: string, patch: Partial<DraftFields>): boolean {
   put({
     ...d,
     ...patch,
-    ...(resetContext ? { presentationThreadId: patch.showSourceContext && patch.threadId === null ? draftPresentationThread(d) ?? undefined : undefined, sourceContextThreadId: undefined, presentationExpired: false, presentationEpoch: (d.presentationEpoch ?? 0) + 1 } : {}),
+    ...(resetContext ? { departedThreadId: undefined, presentationThreadId: patch.showSourceContext && patch.threadId === null ? draftPresentationThread(d) ?? undefined : undefined, sourceContextThreadId: undefined, presentationExpired: false, presentationEpoch: (d.presentationEpoch ?? 0) + 1 } : {}),
     ...((sourceChanged || patch.threadId === null || mode === "new") && patch.showSourceContext === undefined ? { showSourceContext: false } : {}),
     ...(patch.attachments?.length === 0 && d.recovery && (d.recovery.state === "missing" || d.recovery.state === "refused") ? { attachmentOwner: false } : {}),
     localRev: d.localRev + 1,
@@ -735,6 +736,8 @@ export async function loadDrafts(list: () => Promise<Draft[]> = () => client.cal
 }
 
 interface DraftIndex {
+  expiredBySource: Map<number, LocalDraft[]>;
+  expiredByThread: Map<number, LocalDraft[]>;
   /** each conversation's most recently edited draft */
   newest: Map<number, LocalDraft>;
   /** conversations with a draft that has something written in it */
@@ -751,7 +754,7 @@ export function expireDraftPresentation(threadId: number): void {
     for (const d of Object.values(s.drafts)) {
       if (draftPresentationThread(d) !== threadId || (!d.showSourceContext && d.presentationThreadId === undefined)) continue;
       if (drafts === s.drafts) drafts = { ...drafts };
-      drafts[d.key] = { ...d, presentationThreadId: undefined, sourceContextThreadId: d.sourceContextThreadId ?? threadId, presentationExpired: true, presentationEpoch: (d.presentationEpoch ?? 0) + 1 };
+      drafts[d.key] = { ...d, departedThreadId: threadId, presentationThreadId: undefined, sourceContextThreadId: d.sourceContextThreadId ?? threadId, presentationExpired: true, presentationEpoch: (d.presentationEpoch ?? 0) + 1 };
     }
     return drafts === s.drafts ? s : { drafts };
   });
@@ -768,8 +771,16 @@ const indexes = new WeakMap<Record<string, LocalDraft>, DraftIndex>();
 export function draftIndex(drafts: Record<string, LocalDraft>): DraftIndex {
   let index = indexes.get(drafts);
   if (index) return index;
-  index = { newest: new Map(), written: new Set() };
+  index = { newest: new Map(), written: new Set(), expiredBySource: new Map(), expiredByThread: new Map() };
   for (const d of Object.values(drafts)) {
+    if (d.presentationExpired && d.showSourceContext && d.mode !== "new") {
+      const source = d.mode === "forward" ? d.forwardOfMessageId : d.inReplyToMessageId;
+      if (source !== null) {
+        const add = (map: Map<number, LocalDraft[]>, id: number) => { const rows = map.get(id); if (rows) rows.push(d); else map.set(id, [d]); };
+        add(index.expiredBySource, source);
+        for (const hint of new Set([d.departedThreadId, d.sourceContextThreadId])) if (hint != null) add(index.expiredByThread, hint);
+      }
+    }
     const threadId = draftPresentationThread(d);
     if (threadId === null) continue;
     const best = index.newest.get(threadId);

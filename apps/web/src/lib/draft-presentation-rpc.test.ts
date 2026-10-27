@@ -102,7 +102,7 @@ for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) it(`${adapte
 });
 
 
-for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) for (const action of ["forward", "reply", "missing", "moved"] as const) it(`${adapter}: expired inline draft is reused by ${action} without a strip click`, async () => {
+for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) for (const action of ["forward", "reply", "missing", "moved", "survivor", "saved merge"] as const) it(`${adapter}: expired inline draft is reused by ${action} without a strip click`, async () => {
   const { openCompose, installComposeFollowsSelection } = await import("./compose");
   const { flushDraft, setDraftTransport } = await import("./drafts");
   const { setApp, getApp } = await import("~/state/app");
@@ -127,21 +127,31 @@ for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) for (const a
     useThreads.setState({ details: new Map([[threadId, detail]]) });
     setApp({ accounts: await store.accounts.list(), accountId: a!, selectedId: threadId, readerOpen: true, compose: null, checked: new Set(), scope: null, draftShown: { threadId, key: local.key }, draftFocus: null, dialog: null, fatal: null });
     stop = installComposeFollowsSelection();
+    if (action === "saved merge") {
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "bridge", references: ["anchor@example.test", "source@example.test"], attachments: [] })]);
+      const { editDraft } = await import("./drafts"); editDraft(local.key, { bodyText: saved.bodyText }); await flushDraft(local.key);
+      expect(useDrafts.getState().drafts[local.key]).toMatchObject({ presentationThreadId: threadId, sourceContextThreadId: await threadOf(store, "bridge") });
+    }
     setApp({ selectedId: null }); setApp({ selectedId: threadId });
     expect(shownDraftKey(useDrafts.getState().drafts, threadId, null)).toBeNull();
     if (action === "missing") await store.sync.remove([source.id]);
     if (action === "moved") await ingest(store, [msg({ accountId: a!, providerMsgId: "bridge", references: ["anchor@example.test", "source@example.test"], attachments: [] })]);
-    await openCompose(action === "reply" ? "reply" : "forward", threadId);
+    let target = threadId;
+    if (action === "survivor") {
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "bridge", references: ["anchor@example.test", "source@example.test"], attachments: [] })]);
+      target = await threadOf(store, "bridge"); useThreads.setState({ details: new Map([[target, (await store.threads.get(target))!]]) }); setApp({ selectedId: target });
+    }
+    await openCompose(action === "reply" ? "reply" : "forward", target);
     expect(rendererRpc.call).toHaveBeenCalledWith("drafts.sourceContext", { messageId: source.id });
     expect(Object.keys(useDrafts.getState().drafts)).toEqual([local.key]);
     const after = useDrafts.getState().drafts[local.key]!;
     expect(after).toMatchObject({ id: foreign.id, generation: foreign.generation, bodyText: saved.bodyText, bodyHtml: saved.bodyHtml });
-    if (action === "missing" || action === "moved") {
+    if (action === "missing" || action === "moved" || action === "saved merge") {
       expect(getApp().compose?.key).toBe(local.key);
       expect(shownDraftKey(useDrafts.getState().drafts, threadId, null)).toBeNull();
     } else {
-      expect(after.mode).toBe(action);
-      expect(shownDraftKey(useDrafts.getState().drafts, threadId, null)).toBe(local.key);
+      expect(after.mode).toBe(action === "survivor" ? "forward" : action);
+      expect(shownDraftKey(useDrafts.getState().drafts, target, null)).toBe(local.key);
       await flushDraft(local.key);
       expect((await client.call("drafts.list", {}))[0]).toMatchObject({ id: foreign.id, generation: foreign.generation, threadId: null, showSourceContext: true, bodyText: saved.bodyText, bodyHtml: saved.bodyHtml });
     }
