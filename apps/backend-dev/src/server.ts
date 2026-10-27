@@ -79,7 +79,10 @@ export async function startDevServer(o: DevServerOptions): Promise<DevServer> {
   });
   const wss = new WebSocketServer({ noServer: true });
   let clients = 0;
+  let closing = false;
+  let closePromise: Promise<void> | undefined;
   http.on("upgrade", (req, socket, head) => {
+    if (closing) { socket.destroy(); return; }
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
     const origin = req.headers.origin ?? "";
     const okOrigin = !origin || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
@@ -89,6 +92,7 @@ export async function startDevServer(o: DevServerOptions): Promise<DevServer> {
       return;
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
+      if (closing) { ws.terminate(); return; }
       backend.connect(webSocketTransport(ws), { clientId: `ws-${++clients}`, origin: "renderer" });
     });
   });
@@ -99,11 +103,30 @@ export async function startDevServer(o: DevServerOptions): Promise<DevServer> {
     backend,
     url: `ws://127.0.0.1:${port}`,
     agents: agents ? { socketPath: agents.socketPath, tokenPath: agents.tokenPath } : null,
-    close: async () => {
-      for (const c of wss.clients) c.terminate();
-      await new Promise<void>((r) => http.close(() => r()));
-      await agents?.close();
-      await backend.stop();
+    close: () => {
+      closing = true;
+      return closePromise ??= Promise.resolve().then(async () => {
+        const errors: unknown[] = [];
+        const attempt = async (cleanup: () => unknown) => {
+          try { await cleanup(); } catch (error) { errors.push(error); }
+        };
+        await Promise.all([
+          attempt(async () => {
+            const finished = new Promise<void>((resolve, reject) => http.close((error) => error ? reject(error) : resolve()));
+            await attempt(() => http.closeAllConnections());
+            await finished;
+          }),
+          attempt(async () => {
+            const finished = new Promise<void>((resolve, reject) => wss.close((error) => error ? reject(error) : resolve()));
+            for (const client of wss.clients) await attempt(() => client.terminate());
+            await finished;
+          }),
+        ]);
+        await attempt(() => agents?.close());
+        await attempt(() => backend.stop());
+        if (errors.length === 1) throw errors[0];
+        if (errors.length) throw new AggregateError(errors);
+      });
     },
   };
 }
