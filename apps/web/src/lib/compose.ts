@@ -37,7 +37,7 @@ let seq = 0;
  */
 let intent = 0;
 type ReaderDestination = { token: object; active: boolean; generation: number };
-type FocusLease = { ackRead?: DraftAckRead; stopSelection?: () => void; stopContext?: () => void; intent: number; threadId: number | null; composeSeq?: number; accountId?: number; key?: string; seq?: number; valid: boolean; dispose: () => void; view?: { id: LocalDraft["id"]; generation: LocalDraft["generation"]; revision: number; localRev: number; uiState: LocalDraft["uiState"]; recovery: LocalDraft["recovery"]; missingAccount: boolean }; destination?: ReaderDestination };
+type FocusLease = { selectionRevision: number; ackRead?: DraftAckRead; stopSelection?: () => void; stopContext?: () => void; intent: number; threadId: number | null; composeSeq?: number; accountId?: number; key?: string; seq?: number; valid: boolean; dispose: () => void; view?: { id: LocalDraft["id"]; generation: LocalDraft["generation"]; revision: number; localRev: number; uiState: LocalDraft["uiState"]; recovery: LocalDraft["recovery"]; missingAccount: boolean }; destination?: ReaderDestination };
 const readerDestinations = new Map<number, ReaderDestination>();
 const failedReaderHosts = new Map<object, { threadId: number }>();
 const readerFailed = (threadId: number): boolean => {
@@ -131,7 +131,7 @@ function beginFocusLease(owner: number, threadId: number | null, standalone?: { 
   const selected = getApp().selectedId, account = getApp().accountId;
   const destination = threadId === null ? undefined : readerDestinations.get(threadId);
   const viewed = standalone ? useDrafts.getState().drafts[standalone.key] : undefined;
-  const lease: FocusLease = { intent: owner, threadId, valid: true, dispose: () => {}, destination, ...(viewed ? { view: { id: viewed.id, generation: viewed.generation, revision: viewed.revision, localRev: viewed.localRev, uiState: viewed.uiState, recovery: viewed.recovery, missingAccount: !getApp().accounts.some((a) => a.id === viewed.accountId) } } : {}), ...(standalone ? { key: standalone.key, composeSeq: standalone.seq, accountId: useDrafts.getState().drafts[standalone.key]?.accountId } : {}) };
+  const lease: FocusLease = { intent: owner, threadId, selectionRevision: getSelectionWriteRevision(), valid: true, dispose: () => {}, destination, ...(viewed ? { view: { id: viewed.id, generation: viewed.generation, revision: viewed.revision, localRev: viewed.localRev, uiState: viewed.uiState, recovery: viewed.recovery, missingAccount: !getApp().accounts.some((a) => a.id === viewed.accountId) } } : {}), ...(standalone ? { key: standalone.key, composeSeq: standalone.seq, accountId: useDrafts.getState().drafts[standalone.key]?.accountId } : {}) };
   const moved = (event: FocusEvent) => {
     if (event.target !== active && event.target !== document.body) releaseFocusLease(lease, false);
   };
@@ -157,7 +157,7 @@ function beginFocusLease(owner: number, threadId: number | null, standalone?: { 
 }
 
 /** Reader's passive focus must wait for this conversation's explicit compose focus. */
-export const composeFocusPending = (threadId: number | null, key?: string, focusSeq?: number): boolean => focusLease?.threadId === threadId && focusLease.valid && (threadId === null ? getApp().compose?.key === focusLease.key && getApp().compose?.seq === focusLease.composeSeq : getApp().selectedId === threadId) && (key === undefined || (focusLease.key === key && focusLease.seq === focusSeq));
+export const composeFocusPending = (threadId: number | null, key?: string, focusSeq?: number): boolean => focusLease?.threadId === threadId && focusLease.valid && focusLease.selectionRevision === getSelectionWriteRevision() && (threadId === null ? getApp().compose?.key === focusLease.key && getApp().compose?.seq === focusLease.composeSeq : getApp().selectedId === threadId) && (key === undefined || (focusLease.key === key && focusLease.seq === focusSeq));
 export const subscribeComposeFocus = (listener: (threadId: number, fallback: boolean) => void): (() => void) => {
   focusLeaseListeners.add(listener);
   return () => { focusLeaseListeners.delete(listener); };
@@ -166,13 +166,13 @@ export function finishComposeFocus(key: string, focusSeq: number, fallback: bool
   const lease = focusLease;
   if (!lease?.valid || lease.intent !== intent || lease.key !== key || lease.seq !== focusSeq) return false;
   const owner = intent, revision = getSelectionWriteRevision(), focusRevision = seq;
-  let changed = draftEditsHeld();
+  let changed = draftEditsHeld() || lease.selectionRevision !== revision;
   const unsubscribeDrafts = useDrafts.subscribe((state, previous) => { if (state.held || previous.held) changed = true; });
   const unsubscribe = useApp.subscribe((state, previous) => {
     if (state.draftFocus !== previous.draftFocus && !(state.draftFocus === null && previous.draftFocus?.seq === focusSeq)) changed = true;
     if (state.selectedId !== previous.selectedId || state.readerOpen !== previous.readerOpen || state.compose !== previous.compose || state.checked !== previous.checked || state.scope !== previous.scope || state.accountId !== previous.accountId || state.dialog !== previous.dialog || state.fatal !== previous.fatal || state.view !== previous.view || state.categoryId !== previous.categoryId || state.reviewCategoryId !== previous.reviewCategoryId || state.query !== previous.query || state.listFilters !== previous.listFilters) changed = true;
   });
-  try { releaseFocusLease(lease, fallback); }
+  try { releaseFocusLease(lease, changed ? false : fallback); }
   finally { unsubscribe(); unsubscribeDrafts(); }
   return !changed && !draftEditsHeld() && seq === focusRevision && getSelectionWriteRevision() === revision && intent === owner && focusLease === null;
 }
@@ -431,7 +431,7 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
 }
 
 async function openComposeNow(mode: DraftMode, threadId: number | null, mine: number, lease: FocusLease | null): Promise<void> {
-  const focusAllowed = () => !lease || (lease.valid && focusLease === lease && destinationAvailable(lease));
+  const focusAllowed = () => !lease || (lease.valid && focusLease === lease && lease.selectionRevision === getSelectionWriteRevision() && destinationAvailable(lease));
   if (mine !== intent || (lease && !lease.valid)) return;
   if (!destinationAvailable(lease)) {
     await Promise.resolve();
