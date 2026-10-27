@@ -99,6 +99,28 @@ export function defineDurableFlagIntentConformance(name: string, harness: StoreH
       expect((await store.debug.snapshot()).messages[0]!.isRead).toBe(true);
     });
 
+    it("partial unknown retry releases superseded queue targets for fresh independent observations", async () => {
+      const store = await harness.open(); stores.push(store);
+      const [a] = await withAccounts(store, 1);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "superseded" }), msg({ accountId: a!, providerMsgId: "retry" })]);
+      await observe(store, a!);
+      const firstThread = await threadOf(store, "superseded"), secondThread = await threadOf(store, "retry");
+      await store.threads.act({ threadIds: [firstThread, secondThread], action: "markRead", signal: null, now: 1 });
+      const [unknown] = await store.ops.claimReady(2, 20);
+      await store.ops.markUnknown(unknown!.id, "uncertain", 3);
+      await store.threads.act({ threadIds: [firstThread], action: "markUnread", signal: null, now: 4 });
+      const [newer] = await store.ops.claimReady(5, 20);
+      await store.ops.complete(newer!.id, undefined, 6);
+      await store.ops.resolveUnknown(unknown!.id, "retry", 7);
+      const snapshot = await store.debug.snapshot();
+      const first = snapshot.messages.find((message) => message.providerMsgId === "superseded")!;
+      const second = snapshot.messages.find((message) => message.providerMsgId === "retry")!;
+      expect(JSON.parse((await store.ops.claimReady(8, 20))[0]!.target_json).messageIds).toEqual([second.id]);
+      const fresh = (await observe(store, a!))!;
+      await store.sync.updateFlags(a!, [{ messageId: first.id, expectedProviderMsgId: "superseded", flags: { isRead: true } }], fresh);
+      expect((await store.debug.snapshot()).messages.find((message) => message.id === first.id)!.isRead).toBe(true);
+    });
+
     it("terminal flag failures retain a drainable snapshot obligation through reopen", async () => {
       let store = await harness.open(); stores.push(store);
       const [a] = await withAccounts(store, 1);

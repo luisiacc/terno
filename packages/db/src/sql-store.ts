@@ -554,7 +554,10 @@ export class SqlMailStore implements MailStore {
           if (op.kind !== "send" && sqlFlags(this.db).clock(op.account_id)) {
             const ids = rearmFlagEffects(sqlFlags(this.db), op);
             if (ids === null) throw new RpcError("STALE", L("errors.opResolved"));
-            if (ids.length) this.db.run("UPDATE ops SET target_json=? WHERE id=?", JSON.stringify({ ...JSON.parse(op.target_json), messageIds: ids }), id);
+            if (ids.length) {
+              this.db.run("UPDATE ops SET target_json=? WHERE id=?", JSON.stringify({ ...JSON.parse(op.target_json), messageIds: ids }), id);
+              this.db.run("DELETE FROM op_targets WHERE op_id=? AND message_id NOT IN (SELECT value FROM json_each(?))", id, JSON.stringify(ids));
+            }
           }
           this.db.run("UPDATE ops SET state = 'queued', next_attempt_at = 0, last_error = NULL WHERE id = ?", id);
           const touched = this.db.all<{thread_id:number}>("SELECT DISTINCT m.thread_id FROM messages m JOIN op_targets t ON t.message_id=m.id WHERE t.op_id=?", id).map((r) => r.thread_id);

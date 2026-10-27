@@ -1003,7 +1003,11 @@ export class IdbMailStore implements MailStore {
           if (op.kind !== "send" && idbFlags(this.c).clock(op.account_id)) {
             const ids = rearmFlagEffects(idbFlags(this.c), op);
             if (ids === null) throw new RpcError("STALE", L("errors.opResolved"));
-            if (ids.length) ops.update(ops.get(id)!, { target_json: JSON.stringify({ ...JSON.parse(op.target_json), messageIds: ids }) });
+            if (ids.length) {
+              ops.update(ops.get(id)!, { target_json: JSON.stringify({ ...JSON.parse(op.target_json), messageIds: ids }) });
+              const remaining = new Set(ids), targets = T(this.c, "op_targets");
+              for (const target of targets.by("fk_op_id", id)) if (!remaining.has(target.message_id as number)) targets.deleteRow(target);
+            }
           }
           ops.update(ops.get(id)!, { state: "queued", next_attempt_at: 0, last_error: null });
           const touched = [...new Set(T(this.c, "op_targets").by("fk_op_id", id).map((target) => T(this.c, "messages").get(target.message_id)?.thread_id as number).filter(Boolean))];
