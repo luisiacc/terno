@@ -81,6 +81,19 @@ test.describe("reader conversation", { tag: "@design" }, () => {
     await page.getByTestId("compose-show-subject").click();
     await expect(page.getByTestId("compose-subject")).toHaveValue(`Re: ${subject}`);
   });
+
+  test("a message's text, subject and sender are selectable by dragging", async ({ app: page }) => {
+    await openRow(page, 0);
+    const body = page.getByTestId("message").locator(".type-body").first();
+    await expect(body).toBeVisible();
+    for (const el of [body, page.getByTestId("reader-subject")]) expect(await el.evaluate((e) => getComputedStyle(e).userSelect)).not.toBe("none");
+    const box = (await body.boundingBox())!;
+    await page.mouse.move(box.x + 2, box.y + 6);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width - 4, box.y + 30, { steps: 8 });
+    await page.mouse.up();
+    expect((await page.evaluate(() => document.getSelection()?.toString() ?? "")).length).toBeGreaterThan(10);
+  });
 });
 
 test.describe("plan 37: “Load content” for every remote image the frame would block", () => {

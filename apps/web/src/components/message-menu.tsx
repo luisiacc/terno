@@ -15,8 +15,10 @@ export function MessageMenu({ threadId, children }: { threadId: number; children
   const print = (intent: PrintIntent) => messageId !== null && openPrint({ threadId, messageId, intent });
   return (
     <ContextMenu onOpenChange={(open) => setApp({ menuOpen: open })}>
+      {/* the trigger wraps the whole conversation: mail stays selectable (the primitive defaults to select-none) */}
       <ContextMenuTrigger
         render={children}
+        className="select-text"
         onContextMenu={(e) => {
           const el = (e.target as Element).closest<HTMLElement>("[data-message-id]");
           if (!el || wantsNativeMenu(e.target, window.getSelection()?.toString() ?? "")) {
