@@ -53,6 +53,38 @@ function scan(): string[] {
   return hits;
 }
 
+/**
+ * Plan 54: focus-visible: is gated on Tab navigation, so it may only paint focus (a ring, an outline, a border, a
+ * shadow, the stacking that keeps a ring unclipped). Anything that makes a control appear (opacity, visibility,
+ * display, size) uses the ungated focus-reveal: so a focused control never vanishes when a shortcut clears the flag.
+ */
+/** file → why a gated focus-visible: style other than a ring is still only focus paint there */
+const FOCUS_PAINT: Record<string, string> = {
+  // the resize handle's bar is its focus ring
+  "apps/web/src/components/pane-handle.tsx": "the bar is the handle's focus ring",
+};
+
+function gatedReveals(): string[] {
+  const hits: string[] = [];
+  for (const dir of SCANNED) {
+    for (const file of files(dir).filter((f) => /\.tsx?$/.test(f))) {
+      const rel = relative(ROOT, join(ROOT, file));
+      readFileSync(join(ROOT, file), "utf8").split("\n").forEach((line, i) => {
+        for (const m of line.matchAll(/(?<![\w-])(?:(?:group|peer)-)?focus-visible(?:\/[\w-]+)?:([\w[\]/.%-]+)/g)) {
+          if (!/^(ring|outline|border|shadow|z-)/.test(m[1]!) && !FOCUS_PAINT[rel]) hits.push(`${rel}:${i + 1} ${m[0]}: focus-visible: only paints focus; reveal with focus-reveal:`);
+        }
+      });
+    }
+  }
+  return hits;
+}
+
+describe("focus styles (plan 54)", () => {
+  it("gated focus-visible: utilities only paint focus; reveals use focus-reveal:", () => {
+    expect(gatedReveals()).toEqual([]);
+  });
+});
+
 describe("designs reach every surface (plan 15)", () => {
   it("no raw pixel radii above 4 px, font families or unlisted pixel text sizes outside designs", () => {
     expect(scan()).toEqual([]);

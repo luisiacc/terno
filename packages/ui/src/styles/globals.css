@@ -25,6 +25,8 @@
 
 @custom-variant dark (&:is(.dark *));
 /* plan 54: focus rings only while the user moves with Tab (lib/focus-ring.ts sets the flag); a text field keeps its ring */
+/* a control that only appears with keyboard focus (opacity-0 until focused) must stay visible however focus came: ungated */
+@custom-variant focus-reveal (&:focus-visible);
 @custom-variant focus-visible (&:focus-visible:where(:root[data-focus-ring] *, input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"], [type="submit"], [type="reset"], [type="file"], [type="color"]), textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]));
 
 @theme inline {

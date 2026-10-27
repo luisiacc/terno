@@ -96,7 +96,7 @@ function Message({ m, expanded, onToggle, icons }: { m: MessageDetail; expanded:
               <span className="min-w-0 flex-1">
                 <span className="flex items-baseline gap-2">
                   <span className="type-sender-name truncate">{name}</span>
-                  {m.from.name && <span className="truncate text-xs text-muted-foreground opacity-0 group-hover/mh:opacity-100 group-focus-visible/mh:opacity-100">{m.from.email}</span>}
+                  {m.from.name && <span className="truncate text-xs text-muted-foreground opacity-0 group-hover/mh:opacity-100 group-focus-reveal/mh:opacity-100">{m.from.email}</span>}
                   <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular">{listDate(m.date)}</span>
                 </span>
                 <span className="mt-px block truncate text-xs text-muted-foreground">

@@ -49,3 +49,16 @@ Two capture listeners. An attribute flip happens only when the state changes, so
 ## Out of scope
 
 Focus inside sandboxed HTML mail frames (their own documents).
+
+## Revisions after the Codex review
+
+Round 1 found one problem (medium): gating the whole `focus-visible` variant also gated *reveals*. New Category (`opacity-0 … focus-visible:opacity-100`) vanished while it still had focus once a non-navigating key cleared the flag. The fix:
+
+- A new ungated `focus-reveal:` variant (`&:focus-visible`), used for New Category and for the reader's sender email (`group-focus-reveal/mh:`).
+- `source-scan.test.ts` now requires every gated `focus-visible:`, `group-focus-visible:` and `peer-focus-visible:` utility to be focus paint (ring, outline, border, shadow, z). The pane handle's bar is allowlisted because the bar is its focus ring.
+- An e2e Tabs onto New Category, presses F8, and requires opacity 1. The e2e and the scan both fail without the fix.
+
+`first-run.png` was re-recorded:
+
+- The selected Local card no longer carries the autofocus ring.
+- The old baseline also showed a stale gap under More, a paint artifact of the below-More layer. The layout probe measured a 0 px group in both builds, and main's own screenshot of the sidebar shows no gap.

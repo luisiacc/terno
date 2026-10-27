@@ -53,4 +53,17 @@ test.describe("focus rings @design", () => {
     await expect(page.locator("html")).not.toHaveAttribute("data-focus-ring");
     expect((await ringed(page))!.ring).toBe(true);
   });
+
+  test("a control revealed by keyboard focus stays visible when a key clears the ring", async ({ app: page }) => {
+    const add = page.getByTestId("new-category");
+    await page.mouse.move(1200, 600); // not over the sidebar: hover doesn't reveal it
+    await page.getByTestId("nav-inbox").focus();
+    for (let step = 0; step < 40 && !(await add.evaluate((el) => el === document.activeElement)); step++) await page.keyboard.press("Tab");
+    await expect(add).toBeFocused();
+    await expect(add).toHaveCSS("opacity", "1");
+    await page.keyboard.press("F8"); // not navigating: the ring goes away
+    await expect(page.locator("html")).not.toHaveAttribute("data-focus-ring");
+    await expect(add).toBeFocused();
+    await expect(add).toHaveCSS("opacity", "1");
+  });
 });
