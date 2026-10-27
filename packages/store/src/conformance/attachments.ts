@@ -24,6 +24,26 @@ export function defineAttachmentConformance(name: string, h: StoreHarness): void
     }
   };
   describe(`attachment conformance: ${name}`, () => {
+    it("re-ingests literal percent CIDs at exact quota without allocating or losing owned bytes", async () => {
+      const [a] = await fresh();
+      const parts = ["part%25@test", "part%@test"].map((contentId) => ({ filename: "inline.png", mime: "image/png", size: 3, contentId, bytes: new Uint8Array([0, 255, 128]) }));
+      const message = msg({ accountId: a!, providerMsgId: "percent-cids", attachments: parts });
+      await ingest(store, [message]);
+      const thread = await threadOf(store, "percent-cids");
+      const original = (await store.threads.get(thread))!.messages[0]!.attachments;
+      expect(original.map((p) => p.contentId)).toEqual(["part%25@test", "part%@test"]);
+      await fillQuota(a!, 2 * 1027);
+      for (let i = 0; i < 2; i++) {
+        store = await h.reopen(store);
+        await ingest(store, [message], i + 1);
+        const repeated = (await store.threads.get(thread))!.messages[0]!.attachments;
+        expect(repeated.map((p) => p.assetId)).toEqual(original.map((p) => p.assetId));
+        for (const ref of repeated) expect(await store.attachments.read(a!, ref.assetId!, 0)).toBe("AP+A");
+      }
+      await store.attachments.create({ accountId: a!, filename: "cleanup", mime: "text/plain", size: 0, now: 172800000 });
+      store = await h.reopen(store);
+      for (const ref of original) expect(await store.attachments.read(a!, ref.assetId!, 0)).toBe("AP+A");
+    });
     it("gives an old discarded draft a persisted full Undo grace, reset after each last unlink", async () => {
       const [a] = await fresh();
       const ref = await upload(a!);

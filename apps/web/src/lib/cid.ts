@@ -1,4 +1,4 @@
-import { attachmentCid, bytesBase64, type AttachmentInfo } from "@terno/core";
+import { attachmentCid, attachmentCidUri, bytesBase64, type AttachmentInfo } from "@terno/core";
 import { attachmentBlob } from "./attachments";
 
 /** Raster dimensions before decoding: inline mail cannot allocate an unbounded bitmap. */
@@ -71,7 +71,7 @@ async function resolve(html: string, accountId: number, attachments: AttachmentI
     const src = img.getAttribute("src") ?? "";
     if (!/^cid:/i.test(src)) continue;
     img.removeAttribute("src");
-    const a = refs.get(attachmentCid(src) ?? "");
+    const a = refs.get(attachmentCidUri(src) ?? "");
     if (!current() || !a?.assetId || !Number.isSafeInteger(a.size) || a.size < 0 || a.size > 4 * 1024 * 1024 || !["image/png", "image/gif", "image/jpeg"].includes(a.mime)) continue;
     if (!resolved.has(a.assetId)) {
       resolved.set(a.assetId, null);

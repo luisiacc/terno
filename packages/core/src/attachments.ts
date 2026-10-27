@@ -30,10 +30,15 @@ export function attachmentMime(value: string): string {
 
 export function attachmentCid(value: string | null | undefined): string | null {
   if (!value) return null;
-  let cid = value.replace(/^cid:/i, "").replace(/^<|>$/g, "");
-  try { cid = decodeURIComponent(cid); } catch { return null; }
+  const cid = value.replace(/^<|>$/g, "");
   // oxlint-disable-next-line no-control-regex -- content IDs cannot contain header controls
   return cid.length <= 300 && !/[\x00-\x20\x7f<>]/.test(cid) ? cid.toLowerCase() : null;
+}
+
+/** URI escaping belongs only to a renderer reference, never stored Content-ID metadata. */
+export function attachmentCidUri(value: string): string | null {
+  if (!/^cid:/i.test(value)) return null;
+  try { return attachmentCid(decodeURIComponent(value.slice(4))); } catch { return null; }
 }
 
 export function bytesBase64(bytes: Uint8Array): string {

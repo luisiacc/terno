@@ -49,3 +49,16 @@ it("dense JPEG metadata keeps the same raster policy and stops validation when t
     expect(yields).toBe(1);
   } finally { vi.restoreAllMocks(); }
 });
+
+it("decodes CID URI references once while preserving literal percent header IDs", async () => {
+  attachmentBlob.mockClear();
+  attachmentBlob.mockResolvedValue({ arrayBuffer: async () => png.buffer });
+  const literal = { ...part, contentId: "part%25@test" };
+  expect(await resolveCidHtml('<img src="cid:part%2525%40test">', 7, [literal], () => true)).toContain("data:image/png;base64,");
+  expect(attachmentBlob).toHaveBeenCalledTimes(1);
+  attachmentBlob.mockClear();
+  expect(await resolveCidHtml('<img src="cid:part%25%40test">', 7, [literal], () => true)).not.toContain("data:image");
+  expect(await resolveCidHtml('<img src="cid:part%broken">', 7, [literal], () => true)).not.toContain("data:image");
+  expect(attachmentBlob).not.toHaveBeenCalled();
+  expect(await resolveCidHtml('<img src="CID:part%25%40test">', 7, [{ ...part, contentId: "part%@test" }], () => true)).toContain("data:image/png;base64,");
+});

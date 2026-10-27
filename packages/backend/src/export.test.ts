@@ -88,7 +88,7 @@ it.each(["", "AP+A"])("repeated attached-draft import at full quota is a reserva
   cleanups.push(async () => { await backend.stop(); rmSync(dir, { recursive: true, force: true }); });
   const accountId = (await backend.store.accounts.create({ kind: "gmail", email: "a@test.com", displayName: "A", color: "indigo", now: 0 })).account.id;
   const size = dataBase64 ? 3 : 0;
-  const ref = await backend.store.attachments.create({ accountId, filename: "same.bin", mime: "application/octet-stream", size, now: Date.now() });
+  const ref = await backend.store.attachments.create({ accountId, filename: "same.bin", mime: "application/octet-stream", contentId: "part%25@test", size, now: Date.now() });
   if (size) await backend.store.attachments.append(accountId, ref.assetId, 0, dataBase64);
   await backend.store.attachments.seal(accountId, ref.assetId);
   await backend.store.drafts.save({ accountId, to: [], cc: [], subject: "same", bodyText: "same", attachments: [ref] }, 0);
