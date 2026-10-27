@@ -8,3 +8,4 @@ export * from "./gmail-api";
 export * from "./gmail-web";
 export * from "./google-photos";
 export * from "./incoming";
+export type { IncomingProcessor, IncomingProcessingInput, IncomingProcessingResult, IncomingProcessingLimits, IncomingProcessingFailureCode, IncomingGmailMetadata } from "./incoming-processing";
