@@ -459,8 +459,14 @@ export class BackendCore {
     this.signIns.clear();
     this.abort.abort();
     this.incoming.close();
-    await this.options.incomingProcessor?.close();
-    await this.options.incomingProcessor?.whenIdle();
+    const retirement = (async () => {
+      let failed: { error: unknown } | undefined;
+      try { await this.options.incomingProcessor?.close(); }
+      catch (error) { failed = { error }; }
+      try { await this.options.incomingProcessor?.whenIdle(); }
+      catch (error) { failed ??= { error }; }
+      return failed;
+    })();
     this.connectivity.stop();
     const accountsClosed = Promise.allSettled([...this.lifetimes.values()].map((life) => this.dropAccount(life.id, { remove: life.removing })));
     if (this.syncTimer) clearInterval(this.syncTimer);
@@ -487,7 +493,9 @@ export class BackendCore {
       captureError(error, { code: "categorize.persist_failed" });
       this.log("warn", "could not persist the categorization model", error instanceof Error ? error.message : error);
     }
+    const failedRetirement = await retirement;
     await this.store.close();
+    if (failedRetirement) throw failedRetirement.error;
   }
 
   // ───────────────────────────── permissions ─────────────────────────────
