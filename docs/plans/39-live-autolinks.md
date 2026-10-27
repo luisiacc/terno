@@ -50,8 +50,8 @@ What sets `auto: true`:
 
 `linkIn(token)` finds the link in a **token**, a run of text between delimiters, and returns `{ start, end, href }` or null. Delimiters: whitespace (NBSP included), a non-text leaf (a line break: U+FFFC in the text), `< > "` and the curly quotes `“ ” ‘ ’ « »`, and, in the editor, the edges of a manual link.
 
-- **Start:** the first `http://`, `https://`, `www.` or `mailto:` (any case) at the token's start or after a character that can't precede a URL in a word. Letters, digits and `_ @ . / - + : # = & ? % ~ $` block a start; `( [ { ' * ¿ ¡` and other punctuation allow it. Without a scheme, a token that is an email address once its opening and closing punctuation is trimmed becomes `mailto:`.
-- **End:** the token's end, then trailing `. , ; : ! ? ' * _ ~` trimmed, and `)`, `]`, `}` trimmed only while unbalanced inside the URL. Balanced parentheses stay (`…/Foo_(bar)`), `(https://x.com)` loses its `)`.
+- **Start:** the first `http://`, `https://`, `www.` or `mailto:` (any case) at the token's start or after a character that can't precede a URL in a word. Letters, digits and `@ . / - + : # = & ? % $` block a start; `( [ { ' * _ ~ ¿ ¡` and other punctuation allow it. Without a scheme, a token that is an email address once its opening punctuation is off becomes `mailto:`.
+- **End:** the token's end, then trailing `. , ; : ! ? …` trimmed; `)`, `]`, `}` trimmed only while unbalanced inside the URL (`…/Foo_(bar)` keeps its `)`, `(https://x.com)` loses it); `* _ ~ '` trimmed only when the same mark stands right before the URL (`_https://x.com/a_` loses it, `https://x.com/user_` keeps it).
 - **Valid:** http(s) with a host that has a letter or digit (`isSafeHref`: `new URL` parses it, hostname not empty); `www.` followed by a dotted host (href `https://` + text); `mailto:` followed by an address; an address `local@domain.tld`. The href is the text as typed (uppercase schemes, IDN, punycode, ports, userinfo, IPv4, `[::1]`, localhost all link as typed, so the href always matches what the reader sees). At most `MAX_URL_LENGTH` (8,192) characters.
 - **Never:** `javascript:`, `data:`, `file:`, `ftp:`, `vbscript:` (no allowed scheme starts them), bare hosts (`example.com`, `file.txt`, `node.js`: too many false positives; the link dialog still completes them).
 - **Linear:** one pass with char-code checks; only anchored, non-nested regexes on fixed-length pieces. A hostile token (100 k of `.`, `(`, `www.www.…`, `a@a@a…`, `http://http://…`) is scanned in O(n), and only the first candidate start is validated.
@@ -72,18 +72,19 @@ A URL becomes a link where the user ends the word, as in Docs, Gmail and Notion:
 | Paste a URL alone | yes (auto) |
 | Paste plain text containing URLs (⌘V, text only) | each URL (auto) |
 | ⇧⌘V | never (plain means plain) |
-| Paste HTML | the HTML's own links only; bare URLs in it stay text |
+| Paste HTML | the HTML's own links only; bare URLs in it stay text. A URL alone in the plain text is linked by the paste-a-URL path only when the HTML has no link to anywhere else (a labelled or tracking `<a>` pastes as copied) |
 
-`linkTypedUrl(state, end, tr)` reads the token before `end` (bounded: at most `MAX_URL_LENGTH` + 1 characters back, cut at a manual link's edge), runs `linkIn`, and links the result when it ends at the token's end (after trimming), has no link on it already, and isn't in fixed-width text (`font: mono`, the composer's code).
+`linkTypedUrl(state, end, tr)` reads the word before `end` (back to whitespace or a link's edge, at most `MAX_URL_LENGTH` + 1 characters), splits it into tokens at quotes and angle brackets, and links what each spells (`linksIn`) unless it is in fixed-width text (`font: mono`, the composer's code). Enter and ⇧Enter link and break the line in one transaction (one undo step, as a space's link is).
 
 ### Keeping auto links live (`liveLinks` plugin, `appendTransaction`)
 
 For each transaction that changed the document, the plugin collects the **changed ranges**: every replace step's mapped range, plus the range of any `AddMarkStep`/`RemoveMarkStep` of the link type (a manual link applied over part of an auto link). Ranges are mapped to the final document and merged. For each textblock a range touches:
 
-1. **Fast path:** look at the textblock's children within `MAX_URL_LENGTH` of the range. No auto link there → nothing to do. This is the cost per keystroke almost always: a handful of children, never the document.
-2. **Tokens:** expand the range to token boundaries (delimiters, manual link edges), and further to cover any auto link run it meets, within a window of `MAX_URL_LENGTH` + 1 characters each side (`textBetween` with U+FFFC for leaves). A token longer than the window spells nothing.
-3. **Desired links:** each token that contained auto-link text gets the link `linkIn` finds in it now (auto), or none. A token without auto-link text is left alone: plain text never links without a trigger.
-4. **Apply only differences:** compare the desired runs with the auto runs there now (same range and href → nothing). Otherwise remove those auto marks and add the desired ones. The plugin's own transaction then changes nothing on its next pass, so `appendTransaction` converges in one round.
+1. **Fast path:** look at the textblock's children within `MAX_URL_LENGTH` of the range. No link there → nothing to do. This is the cost per keystroke almost always: one walk over the line's children (ProseMirror's own position lookups already walk them), never the document, no text read.
+2. **Promotion:** a manual link the change touches whose text now spells its own href becomes an autolink: what reopening the draft would make of it (the mail HTML can't carry the attribute), so a session and a reopen behave the same.
+3. **Tokens:** expand the range to token boundaries (delimiters, manual link edges), and further to cover any auto link run it meets, within a window of `MAX_URL_LENGTH` + 1 characters each side (`textBetween` with U+FFFC for leaves). A token longer than the window spells nothing.
+4. **Desired links:** each token that contained auto-link text gets the link `linkIn` finds in it now when that link covers the autolink text; failing that, each autolink part in it that still spells a URL keeps a link to that URL ("a" typed right before "https://x.com" leaves the link alone), and the rest is unlinked. A token without auto-link text is left alone: plain text never links without a trigger.
+5. **Apply only differences:** compare the desired runs with the auto runs there now (same range and href → nothing). Otherwise remove those auto marks and add the desired ones. The plugin's own transaction then changes nothing on its next pass, so `appendTransaction` converges in one round.
 
 Consequences:
 
@@ -92,7 +93,7 @@ Consequences:
 - Typing inside the link (the mark is inherited there), deleting, replacing a selection: the href follows.
 - The appended transaction joins the user's history event (prosemirror-history groups appended transactions), so undo and redo restore text and href together. An undo or redo is itself a change, reconciled the same way.
 
-**IME composition.** Changing marks around the text being composed would end the composition (ProseMirror redraws the node). A transaction carrying `composition` meta (ProseMirror marks those) is not reconciled; its ranges accumulate in the plugin's state, mapped through later transactions. The plugin's view, on an update with `view.composing` false and ranges pending, reconciles them in a microtask as a transaction with `addToHistory: false` (undoing the composition is a text change, reconciled again, so history never needs the mark steps).
+**IME composition.** Changing marks around the text being composed would end the composition (ProseMirror redraws the node). A transaction carrying `composition` meta (ProseMirror marks those; the NBSP handler copies it from ProseMirror's default transaction) is not reconciled; its ranges accumulate in the plugin's state, mapped through later transactions, with the composition's id. Once the composition is over (the plugin view's next update with `view.composing` false, and a one-shot check after `compositionend`, since ProseMirror may end one without dispatching), they are reconciled in a transaction carrying the composition's id: prosemirror-history groups it with the composition, so undoing the composition puts back a link the reconciliation removed.
 
 ### What is sent
 
@@ -116,14 +117,15 @@ Consequences:
 | type inside ("exa" + "X" + "mple") | href follows |
 | delete "s" of https | `http://santo.com` |
 | delete the whole scheme | "santo.com" spells nothing: unlinked |
-| delete the scheme of `https://www.x.com` | `https://www.x.com` (the www. form) |
+| delete the scheme of `https://www.x.com` (selected) | `https://www.x.com` (the www. form); backspaced one character at a time it passes through "https:/www…", which spells nothing, and the link goes |
 | backspace through the link | gone; nothing left over |
 | select "santo" and type "x" | `https://x.com` |
 | space typed inside | the left part keeps a link if it is still a URL; the right part is plain |
-| a letter typed before it ("ahttps://…") | unlinked (a URL starts a word) |
-| "(" typed before it | unchanged |
+| a letter or a bracket typed right before it ("ahttps://…", "(https://…") | the link stays as it was, the letter outside |
 | undo / redo of each | text and href restored together, exactly |
-| `https://x.com.` `,` `;` `:` `!` `?` `'` `*` `_` `~` | the punctuation stays outside |
+| `https://x.com.` `,` `;` `:` `!` `?` `…` | the punctuation stays outside |
+| `'https://x.com'` `*https://x.com*` `_https://x.com/a_` | the URL only (the mark closes one before it) |
+| `https://x.com/user_` `https://x.com/a'` | the whole URL (nothing opened before it) |
 | `https://en.wikipedia.org/wiki/Foo_(bar)` | whole URL, `)` included |
 | `(https://x.com)` `<https://x.com>` `"https://x.com"` `“https://x.com”` | the URL only |
 | `www.x.com` | `https://www.x.com` |
@@ -163,3 +165,21 @@ Consequences:
 - Bare domains and other schemes (tel:, sms:).
 - Linking bare URLs inside pasted HTML.
 - The quoted history's linker (`quote.ts`): unchanged in behaviour.
+
+## Revisions after the Codex review
+
+Codex (`codex exec -s read-only`, 11 points) against the plan and the code. What changed:
+
+1. **Composition and undo.** Reconciling a composition's changes outside history couldn't put back a link it removed (undo restores the text, and with no autolink left nothing relinks). The flush now carries the composition's id and joins its undo step. Test: a composition that breaks a link, flushed, then one undo gives the exact document back.
+2. **Enter was two undo steps** (the link, then the split, as separate root transactions). One transaction now: the key's command runs on the linked state and its steps follow the link's. ⇧Enter too. Test: one undo restores the document before Enter.
+3. **A composition can end without a dispatch** (ProseMirror clears `composing` in `compositionend`; its later update is conditional). A one-shot check after `compositionend` flushes what is pending. E2E with a CDP composition and no edit after it.
+4. **Edits during a composition that bypass ProseMirror's transaction** (the NBSP handler) weren't tagged. The handler copies the `composition` meta from ProseMirror's default transaction. Test.
+5. **Partial copies left the app with the old href.** `transformCopied` writes every autolink in the slice with the href its text spells (or none), so the clipboard HTML is honest for any app. Tests on the slice and in e2e on the clipboard.
+6. **A manual link edited until its text spells its href** was manual in the session and auto after reopening. Such a link is promoted when touched, so both behave the same. Test.
+7. **Paste precedence.** The paste-a-URL path read `text/plain` even when the HTML had a labelled or tracking link, replacing it with a link to the text. It now steps aside when the HTML links anywhere other than the URL the text spells. E2E with both flavours.
+8. **Run equality.** The plain text grouped links by href; it now groups by the whole mark (an autolink and a manual link to one place are two). A link containing a line break spells nothing, in parsing and serializing alike. Tests.
+9. **Traversal.** A character window doesn't bound a walk over a line's children. ProseMirror's own position lookups (`resolve`, `findIndex`) and `Fragment.replaceChild` already walk them on every keystroke, so ours adds a constant factor; the fast path reads no text, and the perf suite gains a densely formatted 250 KB paragraph with an autolink near the end.
+10. **Trailing `_ ~ * '` trimmed from whole URLs** (`https://x.com/user_` pasted lost its `_`). They come off only when the same mark opens before the URL. Tests.
+11. **`normalizeHref`'s address regex was quadratic** ("a@" + "a." × n + ":": 380 ms at 32 k). Labels are dot-separated now (linear). The hostile-input suite covers it.
+
+Also found by the tests while implementing: `<https://x.com>` and `"https://x.com"` typed then a space didn't link (the closing mark is a delimiter, so the token before the caret was empty). `linkTypedUrl` now takes the word back to whitespace and links each token in it. A link made in the dialog right after a word (`hola` + `www.x.com`) was removed at once (the token "holawww.x.com" spells nothing). Hence rule 4's fallback: an autolink whose own text still spells a URL keeps it.
