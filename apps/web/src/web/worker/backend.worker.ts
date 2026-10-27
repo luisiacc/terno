@@ -14,6 +14,7 @@ import { L } from "@terno/i18n";
 import type { MailStore, Platform } from "@terno/store";
 import type { PageToWorker, WorkerInit, WorkerToPage } from "../protocol";
 import { webCipher } from "./cipher";
+import { createBrowserIncomingProcessor } from "./incoming-runtime";
 import { migrateLegacyFiles, migrateLegacyIdb, migrateLegacyPool } from "./legacy-storage";
 import { opfsFiles, webPlatform } from "./platform";
 import { webRegistry } from "./providers";
@@ -179,6 +180,7 @@ async function start(init: WorkerInit): Promise<void> {
     version: BUILD,
     cipher,
     providers: webRegistry(),
+    incomingProcessor: createBrowserIncomingProcessor(),
     host: WEB_HOST,
     // a web commit costs 3–7 ms (OPFS, IndexedDB): 20 ms slices keep imports moving, interactions still interleave
     sliceBudgetMs: 20,

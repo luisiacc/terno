@@ -4,6 +4,7 @@ import type { MailStore } from "@terno/store";
 import { BackendCore, type BackendCoreOptions } from "./core";
 import type { LookupAll } from "./net-policy";
 import { nodeIconTransport } from "./icons/node-transport";
+import { createNodeIncomingProcessor } from "./incoming-worker";
 
 export * from "./core";
 
