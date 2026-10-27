@@ -270,6 +270,7 @@ export type BodyReader = () => { html: string; text: string };
 interface BodySource {
   read: BodyReader;
   dirty: boolean;
+  editVersion: number;
   failed: boolean;
   detached: boolean;
   /** its HTML comes from the schema (the editor's): a stand-in carrying a stored body isn't, and is re-read before sending */
@@ -297,7 +298,7 @@ export function validBodyCheckpoint(checkpoint: BodyCheckpoint): boolean {
 export function attachBody(key: string, read: BodyReader, options: { canonical?: boolean; checkpoint?: BodyCheckpoint } = {}): { changed(): void; reset(): void; dispose(snapshot?: { read: BodyReader; state: unknown; version: number }): void } {
   if (options.checkpoint && (options.checkpoint.key !== key || !validBodyCheckpoint(options.checkpoint))) throw new Error("Draft checkpoint is no longer available");
   const prior = sources.get(key);
-  const source: BodySource = { read, dirty: prior?.dirty ?? false, failed: prior?.failed ?? false, detached: false, canonical: options.canonical ?? true };
+  const source: BodySource = { read, dirty: prior?.dirty ?? false, editVersion: 0, failed: prior?.failed ?? false, detached: false, canonical: options.canonical ?? true };
   sources.set(key, source);
   return {
     changed() {
@@ -305,6 +306,7 @@ export function attachBody(key: string, read: BodyReader, options: { canonical?:
       const d = get(key);
       if (!d || d.sending || draftEditsHeld()) return;
       changeVersion++;
+      source.editVersion++;
       // an unsaved revision is already pending for this body: the save will serialize the latest document, so only
       // the debounce moves (no store update per keystroke: nothing re-renders while typing)
       if (source.dirty && d.localRev > d.savedRev) return schedule(key);
@@ -315,6 +317,7 @@ export function attachBody(key: string, read: BodyReader, options: { canonical?:
     // the editor reloaded what the draft has: nothing of its own to write
     reset() {
       if (sources.get(key) !== source || source.detached) return;
+      source.editVersion++;
       source.dirty = false;
     },
     dispose(snapshot) {
@@ -345,16 +348,20 @@ export function materialize(key: string): LocalDraft | undefined {
   const d = get(key);
   const source = sources.get(key);
   if (!d || !source?.dirty) return d;
-  let body: ReturnType<BodyReader>;
-  try { body = source.read(); } catch (error) {
-    source.failed = true;
+  const version = source.editVersion, detached = source.detached;
+  const fail = (error: unknown): never => {
+    if (sources.get(key) === source) { source.failed = true; source.dirty = true; }
     const w = writers.get(key);
     if (w?.timer) { clearTimeout(w.timer); w.timer = null; }
     throw error;
-  }
+  };
+  let body: ReturnType<BodyReader>;
+  try { body = source.read(); } catch (error) { return fail(error); }
+  if (sources.get(key) !== source || source.detached !== detached || source.editVersion !== version || get(key) !== d) return fail(new Error("Draft body changed while reading"));
   const { html, text } = body;
   const next = { ...d, bodyHtml: html, bodyText: text, canonical: source.canonical };
   put(next);
+  if (sources.get(key) !== source || source.detached !== detached || source.editVersion !== version || get(key) !== next) return fail(new Error("Draft body changed while reading"));
   source.dirty = false;
   source.failed = false;
   return next;
