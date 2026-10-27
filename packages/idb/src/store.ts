@@ -924,29 +924,40 @@ export class IdbMailStore implements MailStore {
 
   // ───────────────────────────── ops ─────────────────────────────
 
-  private async preparedFlagOutcome<T>(id: string, run: () => Promise<T>): Promise<T> {
-    const state = await this.early(() => { const op = getOp(this.c, id); return op && op.kind !== "send" ? { accountId: op.account_id, clock: idbFlags(this.c).clock(op.account_id) } : null; });
-    if (state?.clock) {
-      await this.loaded;
-      if (!state.clock.phase) await this.sync.beginObservation(state.accountId, { authoritativeFlags: true });
+  private async preparedFlagOutcome<T>(id: string, run: () => T): Promise<T> {
+    for (;;) {
+      const result = await this.command(() => {
+        const op = getOp(this.c, id);
+        const clock = op && op.kind !== "send" ? idbFlags(this.c).clock(op.account_id) : null;
+        if (clock && !clock.phase) return { kind: "prepare", accountId: op!.account_id } as const;
+        return { kind: "value", value: run() } as const;
+      });
+      if (result.kind === "value") return result.value;
+      await this.sync.beginObservation(result.accountId, { authoritativeFlags: true });
     }
-    return run();
   }
 
   private async recoverFlagOperations(now: number) {
-    const clocks = await this.early(() => idbFlags(this.c).clocks());
-    if (clocks.length) {
-      await this.loaded;
-      for (const clock of clocks) if (!clock.phase) await this.sync.beginObservation(clock.account_id, { authoritativeFlags: true });
+    let loaded = false;
+    for (;;) {
+      const result = await this.command(() => {
+        const clocks = idbFlags(this.c).clocks();
+        if (!loaded && clocks.length) return { kind: "load" } as const;
+        const initializing = clocks.find((clock) => !clock.phase);
+        if (initializing) return { kind: "prepare", accountId: initializing.account_id } as const;
+        return { kind: "value", value: recoverOps(this.c, now) } as const;
+      }, { early: !loaded });
+      if (result.kind === "value") return result.value;
+      if (result.kind === "load") { await this.loaded; loaded = true; }
+      else await this.sync.beginObservation(result.accountId, { authoritativeFlags: true });
     }
-    return this.command(() => recoverOps(this.c, now), { early: clocks.length === 0 });
   }
 
   readonly ops: MailStore["ops"] = {
     claimReady: (now, limit) => this.command(() => claimReadyOps(this.c, now, limit), { early: true }),
     get: (id) => this.early(() => getOp(this.c, id)),
     complete: (id, result, now) =>
-      this.preparedFlagOutcome(id, () => this.command(() => {
+      this.preparedFlagOutcome(id, () => {
         const op = getOp(this.c, id);
         completeOp(this.c, id, now);
         const touched: number[] = [];
@@ -966,9 +977,9 @@ export class IdbMailStore implements MailStore {
           }
         }
         return { touched, deltas };
-      })),
+      }),
     fail: (id, error, retryable, now, park) =>
-      this.preparedFlagOutcome(id, () => this.command(() => {
+      this.preparedFlagOutcome(id, () => {
         const current = getOp(this.c, id);
         if (current && current.state !== "running") return current.state;
         const state = failOp(this.c, id, error, retryable, now, park);
@@ -980,8 +991,8 @@ export class IdbMailStore implements MailStore {
           recomputeThreads(this.c, new Set([...(m ? [m.thread_id as number] : []), ...answeredThreads(this.db, referencesOfOwn(this.db, [localId]))]));
         }
         return state;
-      })),
-    markUnknown: (id, error, now) => this.preparedFlagOutcome(id, () => this.command(() => markOpUnknown(this.c, id, error, now))),
+      }),
+    markUnknown: (id, error, now) => this.preparedFlagOutcome(id, () => markOpUnknown(this.c, id, error, now)),
     awaitAuth: (id, error, now) => this.command(() => awaitAuthOp(this.c, id, error, now), { early: true }),
     release: (id, now) => this.command(() => releaseOp(this.c, id, now), { early: true }),
     resumeAuth: (accountId, now) => this.command(() => resumeAuthOps(this.c, accountId, now), { early: true }),
@@ -990,7 +1001,7 @@ export class IdbMailStore implements MailStore {
     nextAttemptAt: () => this.read(() => nextOpAttemptAt(this.c)),
     recent: (limit) => this.early(() => listRecentOps(this.c, limit)),
     resolveUnknown: (id, resolution, now) =>
-      this.preparedFlagOutcome(id, () => this.command(() => {
+      this.preparedFlagOutcome(id, () => {
         const flagBefore = flagEpochs(idbFlags(this.c));
         const op = getOp(this.c, id);
         if (!op || op.state !== "unknown") throw new RpcError("NOT_FOUND", L("errors.opResolved"));
@@ -1024,7 +1035,7 @@ export class IdbMailStore implements MailStore {
           if (local && String(local.provider_msg_id ?? "").startsWith("local:")) return { touched: [...deleteMessages(this.c, [local.id])] };
         }
         return { touched: [], ...flagReconciliation(idbFlags(this.c), flagBefore) };
-      })),
+      }),
   };
 
   // ───────────────────────────── compose ─────────────────────────────

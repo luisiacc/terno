@@ -254,6 +254,25 @@ export function defineDurableFlagIntentConformance(name: string, harness: StoreH
       expect((await store.debug.snapshot()).messages[0]).toMatchObject({ isRead: false, isSent: false, gmailLabels: '["INBOX"]' });
     });
 
+    it.each(["complete", "fail", "unknown"] as const)("first activation serializes a concurrent legacy %s before deleting its synthesis source", async (outcome) => {
+      let store = await harness.open(); stores.push(store);
+      const [a] = await withAccounts(store, 1);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "first-activation" })]);
+      await store.threads.act({ threadIds: [await threadOf(store, "first-activation")], action: "archive", signal: null, now: 1 });
+      const [op] = await store.ops.claimReady(2, 20);
+      const activation = observe(store, a!);
+      const settled = outcome === "complete" ? store.ops.complete(op!.id, undefined, 3) : outcome === "fail" ? store.ops.fail(op!.id, "synthetic terminal refusal", false, 3) : store.ops.markUnknown(op!.id, "synthetic uncertainty", 3);
+      await Promise.all([activation, settled]);
+      store = await harness.reopen(store); stores.push(store);
+      const id = (await store.debug.snapshot()).messages[0]!.id;
+      expect.soft((await store.providerStore(a!).pendingFlagSnapshots({ limit: 1 })).items).toEqual([{ id, providerMsgId: "first-activation" }]);
+      await store.sync.updateFlags(a!, [{ messageId: id, flags: { inInbox: true } }]);
+      expect((await store.debug.snapshot()).messages[0]!.inInbox).toBe(false);
+      const fresh = (await observe(store, a!))!;
+      await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "first-activation", flags: { inInbox: true } }], fresh);
+      expect((await store.debug.snapshot()).messages[0]!.inInbox).toBe(true);
+    });
+
     it("a legacy acknowledgement after cancelled INIT retains fresh snapshot ownership", async () => {
       const store = await harness.open(); stores.push(store);
       const [a] = await withAccounts(store, 1);
