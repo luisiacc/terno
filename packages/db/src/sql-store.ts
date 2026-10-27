@@ -1,7 +1,7 @@
 import { attachmentMessageBudgetAsync } from "@terno/core";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { sqlAssets, replaceAttachments } from "./attachments";
-import { senderVetoed, type Address, type FilterAction, type ThreadAction, type ThreadSummary } from "@terno/core";
+import { senderVetoed, type Address, type FilterAction, type FilterRule, type ThreadAction, type ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { MockDataset } from "@terno/mock-data";
@@ -403,7 +403,7 @@ export class SqlMailStore implements MailStore {
       const accountId = this.db.get<{ account_id: number }>("SELECT account_id FROM messages WHERE id = ?", messageId)?.account_id;
       const staged = !captureUnavailable && attachments !== undefined && accountId !== undefined ? await stageAttachments(this, accountId, attachments, now, this.yieldTo, await this.attachments.current(accountId, { id: messageId })) : undefined;
       return this.db.tx(() => {
-        setMessageBody(this.db, messageId, text, html, captureUnavailable ? "partial" : "full");
+        if (!captureUnavailable) setMessageBody(this.db, messageId, text, html, "full");
         if (staged !== undefined && !captureUnavailable) replaceAttachments(this.db, messageId, staged);
         const owner = this.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", messageId);
         if (captureUnavailable) this.db.run("UPDATE messages SET attachments_captured = 2 WHERE id = ?", messageId);
@@ -668,8 +668,11 @@ export class SqlMailStore implements MailStore {
         // edited (or deleted) while it was being applied: stop, don't recreate stale claims
         const current = this.db.get<{ rule_json: string }>("SELECT rule_json FROM filters WHERE id = ?", id);
         if (!current || current.rule_json !== ruleJson) throw new RpcError("CANCELLED", L("errors.filterChanged"));
-        const rule = JSON.parse(ruleJson) as { actions: FilterAction[] };
-        const ids = claimFilterApplications(this.db, id, messageIds, now);
+        const rule = JSON.parse(ruleJson) as FilterRule;
+        const eligible = rule.conditions.some((c) => c.field === "body")
+          ? this.db.all<{ id: number }>("SELECT id FROM messages WHERE body_state = 'full' AND id IN (SELECT value FROM json_each(?))", JSON.stringify(messageIds)).map((m) => m.id)
+          : messageIds;
+        const ids = claimFilterApplications(this.db, id, eligible, now);
         const opIds: string[] = [];
         const touched = this.runFilterActions(rule.actions, ids, now, opIds);
         return { applied: ids.length, touched: [...touched], opIds };

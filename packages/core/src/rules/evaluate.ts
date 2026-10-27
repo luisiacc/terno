@@ -12,6 +12,8 @@ export interface RuleMessage {
   recipients: string;
   subject: string;
   bodyText: string | null;
+  /** Omitted when the caller supplies a complete body. */
+  bodyComplete?: boolean;
   listId: string | null;
   hasAttachments: boolean;
   date: number;
@@ -183,6 +185,7 @@ function evaluateCondition(c: Condition, msg: RuleMessage, now: number): boolean
 }
 
 export function evaluateRule(rule: FilterRule, msg: RuleMessage, now: number): boolean {
+  if (msg.bodyComplete === false && rule.conditions.some((c) => c.field === "body")) return false;
   const test = (c: Condition) => evaluateCondition(c, msg, now) !== Boolean(c.negate);
   return rule.match === "all" ? rule.conditions.every(test) : rule.conditions.some(test);
 }

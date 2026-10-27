@@ -90,7 +90,8 @@ export function compileRuleToSql(rule: FilterRule, now: number, range?: { from: 
     const sql = conditionSql(c, now, params, range);
     return c.negate ? `NOT (${sql})` : `(${sql})`;
   });
-  return { where: parts.join(rule.match === "all" ? " AND " : " OR "), params };
+  const predicate = parts.join(rule.match === "all" ? " AND " : " OR ");
+  return { where: rule.conditions.some((c) => c.field === "body") ? `m.body_state = 'full' AND (${predicate})` : predicate, params };
 }
 
 /** Registers SQL functions the rule compiler relies on. Called once per connection. */

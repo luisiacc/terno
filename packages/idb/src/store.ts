@@ -1,7 +1,7 @@
 import { attachmentMessageBudgetAsync } from "@terno/core";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { idbAssets, replaceAttachments } from "./attachments";
-import { COUNT_CAP, LIST_FILTERS, parseSearch, resolveSearch, senderVetoed, type Address, type FilterAction, type ListFilter, type ThreadAction, type ThreadFilter, type ThreadSummary } from "@terno/core";
+import { COUNT_CAP, LIST_FILTERS, parseSearch, resolveSearch, senderVetoed, type Address, type FilterAction, type FilterRule, type ListFilter, type ThreadAction, type ThreadFilter, type ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { MockDataset } from "@terno/mock-data";
@@ -838,7 +838,7 @@ export class IdbMailStore implements MailStore {
       const staged = !captureUnavailable && attachments !== undefined && accountId !== undefined ? await stageAttachments(this, accountId, attachments, now, this.o.platform.yield, await this.attachments.current(accountId, { id: messageId })) : undefined;
       return this.command(
         () => {
-          setMessageBody(this.c, messageId, text, html, captureUnavailable ? "partial" : "full");
+          if (!captureUnavailable) setMessageBody(this.c, messageId, text, html, "full");
           if (staged !== undefined && !captureUnavailable) replaceAttachments(this.db, messageId, staged);
           const owner = T(this.c, "messages").get(messageId);
           if (captureUnavailable && owner) T(this.c, "messages").update(owner, { attachments_captured: 2, attachment_pending: 0 });
@@ -1123,8 +1123,9 @@ export class IdbMailStore implements MailStore {
       this.command(() => {
         const current = T(this.c, "filters").get(id);
         if (!current || current.rule_json !== ruleJson) throw new RpcError("CANCELLED", L("errors.filterChanged"));
-        const rule = JSON.parse(ruleJson) as { actions: FilterAction[] };
-        const ids = claimFilterApplications(this.c, id, messageIds, now);
+        const rule = JSON.parse(ruleJson) as FilterRule;
+        const eligible = ruleNeedsBody(rule) ? messageIds.filter((messageId) => T(this.c, "messages").get(messageId)?.body_state === "full") : messageIds;
+        const ids = claimFilterApplications(this.c, id, eligible, now);
         const opIds: string[] = [];
         const touched = this.runFilterActions(rule.actions, ids, now, opIds);
         return { applied: ids.length, touched: [...touched], opIds };

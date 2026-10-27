@@ -49,6 +49,17 @@ describe("evaluateRule", () => {
     expect(evaluateRule(rule([{ field: "body", op: "contains", value: "hola", negate: true }]), noList, NOW)).toBe(true);
   });
 
+  it("defers body rules for incomplete captures, including negation and matching header alternatives", () => {
+    const incomplete = msg({ bodyComplete: false });
+    const body: FilterRule["conditions"][number] = { field: "body", op: "contains", value: "hola" };
+    expect(evaluateRule(rule([body]), incomplete, NOW)).toBe(false);
+    expect(evaluateRule(rule([{ ...body, negate: true }]), msg({ bodyText: null, bodyComplete: false }), NOW)).toBe(false);
+    const header: FilterRule["conditions"][number] = { field: "subject", op: "contains", value: "oferta" };
+    expect(evaluateRule(rule([body, header], "any"), incomplete, NOW)).toBe(false);
+    expect(evaluateRule(rule([header]), incomplete, NOW)).toBe(true);
+    expect(evaluateRule(rule([{ ...body, negate: true }]), msg({ bodyText: null, bodyComplete: true }), NOW)).toBe(true);
+  });
+
   it("ageDays compares against the supplied clock", () => {
     expect(evaluateRule(rule([{ field: "ageDays", op: "gt", value: 2 }]), msg(), NOW)).toBe(true);
     expect(evaluateRule(rule([{ field: "ageDays", op: "gt", value: 5 }]), msg(), NOW)).toBe(false);

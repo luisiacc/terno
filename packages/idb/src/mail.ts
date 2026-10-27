@@ -1129,7 +1129,7 @@ export function claimFilterApplications(c: Ctx, filterId: number, messageIds: re
 
 /** core's evaluator per message (the SQL compiler is held to it by the parity suite; here it is the implementation). */
 export function ruleMessage(m: R, bodyText: string | null): RuleMessage {
-  return { accountId: m.account_id, fromName: m.from_name, fromEmail: m.from_email, recipients: m.recipients_text, subject: m.subject, bodyText, listId: m.list_id, hasAttachments: m.has_attachments === 1, date: m.date };
+  return { accountId: m.account_id, fromName: m.from_name, fromEmail: m.from_email, recipients: m.recipients_text, subject: m.subject, bodyText, bodyComplete: m.body_state === "full", listId: m.list_id, hasAttachments: m.has_attachments === 1, date: m.date };
 }
 
 export const ruleNeedsBody = (rule: FilterRule) => rule.conditions.some((cond) => cond.field === "body");
@@ -1142,7 +1142,7 @@ export function findRuleMatches(c: Ctx, rule: FilterRule, now: number, messageId
   const threads = new Set<number>();
   for (const id of messageIds) {
     const m = messages.get(id);
-    if (!m || m.is_trash) continue;
+    if (!m || m.is_trash || (needsBody && m.body_state !== "full")) continue;
     if (!evaluateRule(rule, ruleMessage(m, needsBody ? (c.body(id)?.body_text ?? null) : null), now)) continue;
     ids.push(id);
     threads.add(m.thread_id);

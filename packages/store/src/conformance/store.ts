@@ -825,6 +825,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
           recipients: m.recipients,
           subject: m.subject,
           bodyText: m.bodyText,
+          bodyComplete: m.bodyState === "full",
           listId: m.listId,
           hasAttachments: m.hasAttachments,
           date: m.date,
