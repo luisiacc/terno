@@ -13,7 +13,7 @@ const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
 function gate() { let release!: () => void; const promise = new Promise<void>((resolve) => { release = resolve; }); return { promise, release }; }
 
-async function setup(kind: "SQL" | "IDB" | "IDB instant") {
+async function setup(kind: "SQL" | "IDB" | "IDB instant", automatic = false) {
   const dir = mkdtempSync(join(tmpdir(), "terno-observation-"));
   const captured = gate(), response = gate(), freshResponse = gate();
   let hold = false, blockFresh = false, authoritative = true, requests = 0, history = 10;
@@ -50,7 +50,7 @@ async function setup(kind: "SQL" | "IDB" | "IDB instant") {
   };
   const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
   const store = kind === "SQL" ? undefined : await IdbMailStore.open({ name: "synthetic-observation", factory: new IDBFactory(), platform, instantSearch: kind === "IDB instant" });
-  const backend = new Backend({ dbPath: join(dir, "synthetic.db"), store, platform: store ? platform : undefined, providers, cipher: plaintextCipher, version: "test", autoSync: false, instantSearch: false, iconTransport: null });
+  const backend = new Backend({ dbPath: join(dir, "synthetic.db"), store, platform: store ? platform : undefined, providers, cipher: plaintextCipher, version: "test", autoSync: automatic, instantSearch: false, iconTransport: null });
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "synthetic", origin: "renderer" });
   const client = new RpcClient(c);
@@ -64,6 +64,45 @@ async function setup(kind: "SQL" | "IDB" | "IDB instant") {
 }
 
 describe.each(["SQL", "IDB", "IDB instant"] as const)("%s settled flag observation", (kind) => {
+  it("refuses non-send dispatch locally when an active protocol loses provider capability", async () => {
+    const t = await setup(kind);
+    await t.backend.dropAccount(t.account.id);
+    t.setCapable(false);
+    await t.backend.signedIn(t.account.id);
+    await t.client.call("threads.act", { threadIds: [t.threadId], action: "markRead" });
+    const op = (await t.backend.store.debug.snapshot()).ops.find((row) => row.kind === "markRead")!;
+    const requests = t.requests();
+    expect(await t.backend.runWorker()).toBe(1);
+    expect(t.requests()).toBe(requests);
+    expect(t.mutations).toEqual([]);
+    const after = await t.backend.store.ops.get(op.id);
+    expect(after?.state).toBe("failed");
+    expect(await t.backend.store.ops.nextAttemptAt()).toBeNull();
+    expect(await t.backend.runWorker()).toBe(0);
+    expect((await t.backend.store.debug.snapshot()).messages[0]!.isRead).toBe(true);
+    expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toHaveLength(1);
+    expect((await t.backend.store.accounts.get(t.account.id))?.syncState).toMatchObject({ authRequired: false, connection: null });
+  });
+
+  it("quiesce returns an undispatched flag claim while bounded preparation awaits", async () => {
+    const t = await setup(kind);
+    await t.backend.store.threads.act({ threadIds: [t.threadId], action: "markRead", signal: null, now: 1 });
+    const entered = gate(), blocked = gate();
+    const begin = t.backend.store.sync.beginObservation.bind(t.backend.store.sync);
+    vi.spyOn(t.backend.store.sync, "beginObservation").mockImplementationOnce(async (...args) => {
+      entered.release(); await blocked.promise;
+      return begin(...args);
+    });
+    const worker = t.backend.runWorker();
+    try {
+      await Promise.race([entered.promise, worker.then(() => { throw new Error("Flag transport ran before preparation"); })]);
+      expect(await t.backend.quiesce(100)).toBe("idle");
+      const op = (await t.backend.store.debug.snapshot()).ops.find((row) => row.kind === "markRead")!;
+      expect(op).toMatchObject({ state: "queued", attempts: 0 });
+    } finally { blocked.release(); await worker; }
+    expect(t.mutations).toEqual([]);
+  });
+
   it("fails closed locally when a persisted protocol meets an incapable replacement", async () => {
     const t = await setup(kind);
     const token = await t.backend.store.sync.beginObservation(t.account.id, { authoritativeFlags: true });

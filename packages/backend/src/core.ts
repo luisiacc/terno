@@ -4,7 +4,7 @@ import { decodeText, encodeText, messageOf, textRef, type Account, type AccountS
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
-import { AWAITING_AUTH, FlagObservationError, type FlagObservation, type ClassifierInput, type IncomingMessage, type MailStore, type OpRow, type Platform, type ProviderStore } from "@terno/store";
+import { AWAITING_AUTH, FlagObservationError, operationFlagFields, type FlagObservation, type ClassifierInput, type IncomingMessage, type MailStore, type OpRow, type Platform, type ProviderStore } from "@terno/store";
 import { IncomingPipeline, ProviderAuthError, ProviderError, RequestNotDispatchedError, type IncomingProcessor, type MailProvider, type ProviderRegistry, type SendPayload, type SyncSink } from "@terno/mail/portable";
 import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_PHRASE_CAPS, WEB_AUTOCOMPLETE_PEAK, WEB_CONTACT_CAPS, WEB_PHRASE_CAPS } from "@terno/store/autocomplete";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
@@ -1425,8 +1425,9 @@ export class BackendCore {
   private async executeOp(claimed: OpRow, recovery: { record?: () => Promise<void> }): Promise<void> {
     // Re-read right before dispatch: while earlier ops of the batch ran, this one may have
     // been superseded (deleted), pruned (deleted messages) or narrowed.
-    const op = await this.store.ops.get(claimed.id);
-    if (!op || op.state !== "running") return void this.undispatched.delete(claimed.id);
+    const stored = await this.store.ops.get(claimed.id);
+    if (!stored || stored.state !== "running") return void this.undispatched.delete(claimed.id);
+    let op = stored;
     // quitting (or offline, plan 20): an op that hasn't reached its server waits, as it was (the attempt given back)
     const hold = () => this.draining || this.stopped || !this.connectivity.online;
     if (hold()) return void (this.undispatched.delete(op.id), await this.store.ops.release(op.id, this.now()));
@@ -1438,7 +1439,7 @@ export class BackendCore {
     const account = await this.store.accounts.get(op.account_id);
     if (hold()) return void (this.undispatched.delete(op.id), await this.store.ops.release(op.id, this.now()));
     if (!this.current(life)) return this.parkClosedOp(op);
-    this.undispatched.delete(op.id);
+    if (op.kind === "send") this.undispatched.delete(op.id);
     // plan 25: the account waits for a sign-in: so does the op, without knocking with the refused credentials
     if (account && heldBySignIn(account.syncState, op.kind)) {
       await this.store.ops.awaitAuth(op.id, encodeText(L("errors.waitingForSignIn")), this.now());
@@ -1447,14 +1448,27 @@ export class BackendCore {
       if (after) this.server.emit("op", this.opInfo(after));
       return;
     }
-    // from here it is on its way (synchronously after the last check: quiesce can't release it now)
+    // A send owns its drain slot while its immutable attachments are prepared.
     const sending = op.kind === "send";
     if (sending) this.sendsInFlight.add(op.id);
-    const target = JSON.parse(op.target_json) as { messageIds?: number[] };
+    let target = JSON.parse(op.target_json) as { messageIds?: number[] };
     const started = performance.now();
-    let accepted = false;
+    let accepted = false, transportStarted = false;
     try {
       if (!provider) throw new ProviderError(L("errors.accountGone"), false);
+      if (operationFlagFields(op.kind).length) {
+        await this.accountWrite(life, () => this.store.sync.beginObservation(life.id, { authoritativeFlags: provider.flagSnapshots === true, signal: life.abort.signal }));
+        if (!this.current(life)) return this.parkClosedOp(op);
+        const current = await this.store.ops.get(op.id);
+        if (!current || current.state !== "running") return void this.undispatched.delete(op.id);
+        op = current;
+        target = JSON.parse(op.target_json) as { messageIds?: number[] };
+        if (hold() || this.providers.get(op.account_id) !== opening || credentials !== this.credentialsOf(op.account_id)) {
+          this.undispatched.delete(op.id);
+          await this.store.ops.release(op.id, this.now());
+          return;
+        }
+      }
       let payload: unknown;
       try {
         payload = JSON.parse(op.payload_json);
@@ -1471,6 +1485,9 @@ export class BackendCore {
         await this.store.ops.release(op.id, this.now());
         return;
       }
+      // No await between the final admission check and provider dispatch.
+      this.undispatched.delete(op.id);
+      transportStarted = true;
       const execution = await provider.execute({ id: op.id, kind: op.kind, target, payload });
       accepted = true;
       const { warning, ...result } = execution || {};
@@ -1480,7 +1497,9 @@ export class BackendCore {
       const done = await this.store.ops.complete(op.id, warning === undefined ? result : { ...result, warning: encodeText(warning) }, this.now());
       this.categorizer.apply(done.deltas);
       if (done.touched.length) this.notifyChanged(done.touched);
-    } catch (error) {
+    } catch (caught) {
+      if (!sending && !transportStarted && !this.current(life)) return this.parkClosedOp(op);
+      const error = caught instanceof FlagObservationError ? new FlagConnectionError() : caught;
       // a message in Terno's words is kept as a catalog message (see opInfo)
       const message = encodeText(messageOf(error));
       const pe = error instanceof ProviderError ? error : null;
