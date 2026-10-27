@@ -115,3 +115,18 @@ it.each([1, 49, 50])("cancellation during the last admitted write of %i messages
     expect(t.checkpoints).toEqual([]);
   } finally { release(); await result; await t.p.close(); }
 });
+
+it.each([1, 49, 50])("reset during the last admitted write of %i messages finishes it without a checkpoint", async (count) => {
+  let entered!: () => void, release!: () => void;
+  const started = new Promise<void>((resolve) => { entered = resolve; });
+  const blocked = new Promise<void>((resolve) => { release = resolve; });
+  const t = setup(count, "ordinary small mail", async () => { entered(); await blocked; });
+  const result = Promise.allSettled([t.sync()]);
+  try {
+    await started;
+    t.p.reset?.(); release();
+    expect((await result)[0]).toMatchObject({ status: "rejected" });
+    expect(t.batches.flat()).toHaveLength(count);
+    expect(t.checkpoints).toEqual([]);
+  } finally { release(); await result; await t.p.close(); }
+});

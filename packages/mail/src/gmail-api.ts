@@ -455,8 +455,10 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       await admission;
       if (!failure) {
         sink.signal.throwIfAborted();
+        if (reset.aborted) throw new ProviderError(L("errors.gmail.requestOffline"), true);
         await flush();
         sink.signal.throwIfAborted();
+        if (reset.aborted) throw new ProviderError(L("errors.gmail.requestOffline"), true);
       }
     } catch (error) {
       failure ??= { error };
