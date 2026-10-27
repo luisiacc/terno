@@ -29,3 +29,12 @@ Plan 48 made the conversation listbox Tab-reachable (`tabIndex=0`) and gave it `
 ## Perf
 
 CSS only.
+
+## Revisions after the Codex review
+
+Codex had one finding (medium): an empty list kept keyboard focus with nothing visible, for example after trashing the last conversation or after Tabbing into an empty search. The fix:
+
+- An empty listbox is no longer a Tab stop (`tabIndex=-1`).
+- If it holds focus as it empties, or receives focus later (a page closing), focus moves to a visible control: the empty state's Clear button when there is one, otherwise the sidebar's current view.
+
+Regression tests in `list-focus.spec.ts` cover trashing a search's only result and Tab or programmatic focus into an empty search. Both fail without the fix.

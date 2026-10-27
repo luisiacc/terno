@@ -1,5 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
-import { expect, rows, test } from "./fixtures";
+import { expect, rows, search, test } from "./fixtures";
 
 // plan 52: a list, menu or scrolling pane never paints a focus effect around itself; its highlighted row is the focus
 const CONTAINERS = '[role="listbox"], [role="list"], [role="tree"], [role="grid"], [role="treegrid"], [role="menu"], [role="menubar"], [role="tablist"], [role="radiogroup"], [data-slot="scroll-area-viewport"]';
@@ -56,5 +56,35 @@ test.describe("no focus ring around the conversation list @design", () => {
     await expect(menu).toBeVisible();
     await page.keyboard.press("Shift");
     expect(await sweep()).toEqual([]);
+  });
+
+  test("trashing the last conversation hands keyboard focus to a visible control, not the empty list", async ({ app: page }) => {
+    const list = page.getByRole("listbox", { name: "Conversations", exact: true });
+    await search(page, "291 gadgets");
+    await expect(rows(page)).toHaveCount(1);
+    await rows(page).first().click();
+    await page.keyboard.press("#");
+    await expect(page.getByTestId("list-empty")).toBeVisible();
+    await expect(list).not.toBeFocused();
+    expect(await page.evaluate(() => {
+      const el = document.activeElement as HTMLElement | null;
+      return !!el && el !== document.body && el.checkVisibility() && el.closest("#app-sidebar") !== null;
+    })).toBe(true);
+    expect(await list.getAttribute("tabindex")).toBe("-1");
+  });
+
+  test("Tab skips an empty list", async ({ app: page }) => {
+    const list = page.getByRole("listbox", { name: "Conversations", exact: true });
+    await search(page, "zzqx-no-such-mail");
+    await expect(page.getByTestId("list-empty")).toBeVisible();
+    await expect(list).toHaveAttribute("tabindex", "-1");
+    await page.getByTestId("nav-inbox").focus();
+    for (let step = 0; step < 40; step++) {
+      await page.keyboard.press("Tab");
+      expect(await list.evaluate((node) => node === document.activeElement)).toBe(false);
+    }
+    // a programmatic focus (a page closing) is handed on too
+    await list.evaluate((node) => node.focus());
+    await expect(list).not.toBeFocused();
   });
 });

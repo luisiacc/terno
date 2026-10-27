@@ -547,6 +547,15 @@ function UnreadEmptyState({ filter }: { filter: QuickFilter }) {
   );
 }
 
+/**
+ * An empty list has no row to carry its focus (and draws no ring, plan 52): keyboard focus moves to a visible
+ * control instead, the empty state's own action first, else the view it is in.
+ */
+function leaveEmptyList() {
+  const visible = (el: HTMLElement | null) => (el && el.checkVisibility?.() !== false && !el.closest("[inert]") ? el : null);
+  (visible(document.querySelector<HTMLElement>("[data-testid=unread-empty-clear]")) ?? visible(document.querySelector<HTMLElement>("#app-sidebar button[data-active]")))?.focus({ preventScroll: true });
+}
+
 function EmptyState() {
   const query = useApp((s) => s.query);
   const view = useApp((s) => s.view);
@@ -585,6 +594,10 @@ export function ThreadList() {
   const tabs = useApp((s) => list && tabsShown(s));
   const tab = useApp(selectedTab);
   const parentRef = useRef<HTMLDivElement>(null);
+  const empty = !loading && items.length === 0;
+  useEffect(() => {
+    if (empty && document.activeElement === parentRef.current) leaveEmptyList();
+  }, [empty]);
   const anchorRef = useRef<(() => (() => void) | void) | null>(null);
   const wideRef = useRef(false);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -743,7 +756,7 @@ export function ThreadList() {
       {/* under tabs the rows are what they control (tabpanel); the listbox is one Tab stop and restores focus when a page closes */}
       <div className="relative flex min-h-0 flex-1 flex-col" {...(tabs ? { role: "tabpanel", id: TAB_PANEL_ID, "aria-labelledby": `list-tab-${tab}` } : {})}>
       <ThreadMenu>
-      <div ref={parentRef} data-keep-scroll="list" role="listbox" tabIndex={0} aria-label={t("list.label")} aria-multiselectable className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none [contain:strict]">
+      <div ref={parentRef} data-keep-scroll="list" role="listbox" tabIndex={empty ? -1 : 0} onFocus={(e) => empty && e.target === e.currentTarget && leaveEmptyList()} aria-label={t("list.label")} aria-multiselectable className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none [contain:strict]">
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
         {loading && items.length === 0 ? (
           <div className="space-y-3 p-4">
