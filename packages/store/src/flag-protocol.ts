@@ -128,7 +128,7 @@ export function reaffirmFlagIntent(repo: FlagRepository, messageIds: readonly nu
     if (!stable(message) || !repo.clock(message.account_id) || !fields.every((field) => Number(message[FLAG_COLUMNS[field]]) === VALUES[kind]![field])) continue;
     const conflicting = repo.messageEffects(id).some((effect) => {
       const row = repo.intent(id, effect.field);
-      return fields.includes(effect.field) && row?.intent_version === (effect.intent_version ?? 0) && effect.value !== VALUES[kind]![effect.field] && repo.op(effect.op_id)?.state === "unknown";
+      return fields.includes(effect.field) && row?.intent_version === (effect.intent_version ?? 0) && row.desired === effect.value && effect.value !== VALUES[kind]![effect.field] && repo.op(effect.op_id)?.state === "unknown";
     });
     if (!conflicting) continue;
     let version = versions.get(message.account_id);

@@ -143,24 +143,25 @@ export function defineDurableFlagIntentConformance(name: string, harness: StoreH
       expect((await store.debug.snapshot()).messages.find((message) => message.id === first.id)!.isRead).toBe(true);
     });
 
-    it("an explicit no-op reaffirmation prevents replaying conflicting uncertain work", async () => {
-      const store = await harness.open(); stores.push(store);
+    it.each(["read", "star"] as const)("an explicit no-op %s reaffirmation prevents replaying conflicting uncertain work", async (field) => {
+      let store = await harness.open(); stores.push(store);
       const [a] = await withAccounts(store, 1);
-      await ingest(store, [msg({ accountId: a!, providerMsgId: "reaffirm", isRead: true })]);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "reaffirm", isRead: true, isStarred: true })]);
       const threadId = await threadOf(store, "reaffirm");
       await observe(store, a!);
-      await store.threads.act({ threadIds: [threadId], action: "markUnread", signal: null, now: 1 });
+      await store.threads.act({ threadIds: [threadId], action: field === "read" ? "markUnread" : "unstar", signal: null, now: 1 });
       const [unknown] = await store.ops.claimReady(2, 20);
       await store.ops.markUnknown(unknown!.id, "uncertain", 3);
       const fresh = (await observe(store, a!))!;
       const id = (await store.debug.snapshot()).messages[0]!.id;
-      await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "reaffirm", flags: { isRead: true } }], fresh);
-      const reaffirmed = await store.threads.act({ threadIds: [threadId], action: "markRead", signal: null, now: 4 });
+      await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "reaffirm", flags: { isRead: true, isStarred: true } }], fresh);
+      const reaffirmed = await store.threads.act({ threadIds: [threadId], action: field === "read" ? "markRead" : "star", signal: null, now: 4 });
       expect(reaffirmed.opIds).toEqual([]);
       expect(reaffirmed.before).toEqual([]);
       expect(reaffirmed.flagReconcileAccounts).toEqual([a]);
+      store = await harness.reopen(store); stores.push(store);
       await expect(store.ops.resolveUnknown(unknown!.id, "retry", 5)).rejects.toMatchObject({ code: "STALE" });
-      expect((await store.debug.snapshot()).messages[0]!.isRead).toBe(true);
+      expect((await store.debug.snapshot()).messages[0]).toMatchObject({ isRead: true, isStarred: true });
     });
 
     it.each(["success", "failure"] as const)("representable Undo tracks each field's final step through final archive %s", async (outcome) => {
@@ -190,6 +191,37 @@ export function defineDurableFlagIntentConformance(name: string, harness: StoreH
       const fresh = (await observe(store, a!))!;
       await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "undo-place", flags: { inInbox: true, isTrash: false, isSpam: false } }], fresh);
       expect((await store.debug.snapshot()).messages[0]).toMatchObject({ inInbox: true, isTrash: false, isSpam: false });
+    });
+
+    it.each([false, true])("final Undo archive retry remains eligible after repeat=%s", async (repeat) => {
+      let store = await harness.open(); stores.push(store);
+      const [a] = await withAccounts(store, 1);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "undo-final-retry", inInbox: false })]);
+      await observe(store, a!);
+      const thread = await threadOf(store, "undo-final-retry");
+      const trashed = await store.threads.act({ threadIds: [thread], action: "trash", signal: null, now: 1 });
+      await store.ops.claimReady(2, 20);
+      await store.ops.complete(trashed.opIds[0]!, undefined, 3);
+      const restored = await store.threads.restore({ messages: trashed.before, now: 4 });
+      expect(restored.opIds).toHaveLength(2);
+      const [move] = await store.ops.claimReady(5, 20);
+      expect(move!.id).toBe(restored.opIds[0]);
+      await store.ops.markUnknown(move!.id, "uncertain", 6);
+      const [archive] = await store.ops.claimReady(7, 20);
+      expect(archive!.id).toBe(restored.opIds[1]);
+      await store.ops.markUnknown(archive!.id, "uncertain", 8);
+      await expect(store.ops.resolveUnknown(move!.id, "retry", 9)).rejects.toMatchObject({ code: "STALE" });
+      const before = (await observe(store, a!))!;
+      if (repeat) {
+        const result = await store.threads.act({ threadIds: [thread], action: "archive", signal: null, now: 10 });
+        expect(result.opIds).toEqual([]);
+        expect.soft(result.flagReconcileAccounts).toBeUndefined();
+      }
+      const after = (await observe(store, a!))!;
+      expect.soft(after.epoch).toBe(before.epoch + 1);
+      store = await harness.reopen(store); stores.push(store);
+      await expect(store.ops.resolveUnknown(archive!.id, "retry", 11)).resolves.toBeDefined();
+      expect((await store.debug.snapshot()).messages[0]).toMatchObject({ inInbox: false, isTrash: false, isSpam: false });
     });
 
     it("uncertain intermediate Undo steps cannot replay over their final location intent", async () => {
