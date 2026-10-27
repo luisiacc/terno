@@ -51,3 +51,22 @@ export const visibleReviewCases: VisibleReviewCase[] = [
   { name: "F4 br is suppressed before line handling", html: '<span>un</span><br style="display:none"><span>broken</span>', text: "unbroken", value: "unbroken", query: "unbroken", matches: true },
   { name: "F4 visible br retains a phrase boundary", html: '<span>Visible</span><br><span>phrase</span>', text: "Visible phrase", value: "visible phrase", query: '"visible phrase"', matches: true },
 ];
+
+const resetCases = [
+  { property: "display", hiding: "display:none", protected: "display:none!important" },
+  { property: "opacity", hiding: "opacity:0", protected: "opacity:0!important" },
+  { property: "max-height", hiding: "max-height:0;overflow:hidden", protected: "max-height:0!important;overflow:hidden" },
+  { property: "overflow", hiding: "max-height:0;overflow:hidden", protected: "max-height:0;overflow:hidden!important" },
+  { property: "overflow-x", hiding: "max-height:0;overflow:hidden;overflow-y:visible", protected: "max-height:0;overflow-x:hidden!important;overflow-y:visible" },
+  { property: "overflow-y", hiding: "max-height:0;overflow:hidden;overflow-x:visible", protected: "max-height:0;overflow-y:hidden!important;overflow-x:visible" },
+];
+for (const fixture of resetCases) {
+  for (const reset of ["initial", "unset"]) visibleReviewCases.push({ name: `F5 ${fixture.property} ${reset} restores visible content`, html: `<p style="${fixture.hiding};${fixture.property}:${reset}">Useful policy</p>`, text: "Useful policy", value: "useful policy", query: '"useful policy"', matches: true });
+  visibleReviewCases.push({ name: `F5 ${fixture.property} important hiding beats lower priority reset`, html: `<p style="${fixture.protected};${fixture.property}:initial">phantomneedle</p><p>Useful</p>`, text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false });
+  visibleReviewCases.push({ name: `F5 ${fixture.property} equal important reset restores content`, html: `<p style="${fixture.protected};${fixture.property}:initial!important">Useful policy</p>`, text: "Useful policy", value: "useful policy", query: '"useful policy"', matches: true });
+}
+visibleReviewCases.push(
+  { name: "F5 initial visibility overrides inherited hiding", html: '<div style="visibility:hidden"><span style="visibility:initial">Useful policy</span></div>', text: "Useful policy", value: "useful policy", query: '"useful policy"', matches: true },
+  { name: "F5 unset visibility still inherits hiding", html: '<div style="visibility:hidden"><span style="visibility:visible;visibility:unset">phantomneedle</span></div><p>Useful</p>', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false },
+  { name: "F5 invalid reset keyword cannot undo hiding", html: '<p style="display:none;display:initial-bogus">phantomneedle</p><p>Useful</p>', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false },
+);

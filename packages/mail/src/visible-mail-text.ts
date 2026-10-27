@@ -11,6 +11,7 @@ const DISPLAYS = new Set(["none", "contents", "block", "inline", "inline-block",
 const INLINE_DISPLAYS = new Set(["inline", "inline-block", "inline-flex", "inline-grid", "inline-table", "contents"]);
 const LENGTHS = new Set(["px", "em", "rem", "ex", "ch", "cap", "ic", "lh", "rlh", "vw", "vh", "vmin", "vmax", "svh", "lvh", "dvh", "cm", "mm", "q", "in", "pt", "pc"]);
 const PROPERTIES = new Set(["display", "visibility", "opacity", "max-height", "overflow", "overflow-x", "overflow-y"]);
+const INITIAL = new Map([["display", "inline"], ["opacity", "positive"], ["max-height", "none"], ["overflow", "visible"], ["overflow-x", "visible"], ["overflow-y", "visible"]]);
 const OVERFLOWS = new Set(["visible", "hidden", "clip", "scroll", "auto"]);
 type Style = Map<string, { value: string; important: boolean }>;
 const EMPTY_STYLE: Style = new Map();
@@ -29,6 +30,10 @@ function scalar(property: string, source: string): string | undefined {
   const token = tokens[0]!;
   if (token.type === tokenTypes.Ident) {
     const value = ident.decode(token.value).toLowerCase();
+    if (value === "initial" || value === "unset") {
+      if (property === "visibility") return value === "initial" ? "visible" : "inherit";
+      return INITIAL.get(property);
+    }
     if (property === "display" && DISPLAYS.has(value)) return value;
     if (property === "visibility" && ["visible", "hidden", "collapse", "inherit", "unset", "initial"].includes(value)) return value;
     if ((property === "overflow" || property === "overflow-x" || property === "overflow-y") && OVERFLOWS.has(value)) return value;
