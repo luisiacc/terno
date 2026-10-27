@@ -94,6 +94,24 @@ function verticalOverflow(style: Style): string {
   return y === "visible" ? "auto" : y === "clip" ? "hidden" : y;
 }
 
+// Only these two reader-retained values affect this helper's supported inline policy.
+function relevantAttributes(attributes: Html.Element["attrs"]): Map<string, string> {
+  const retained = new Map<string, string>();
+  for (const { name, value } of attributes) {
+    if (name !== "style" && name !== "hidden") continue;
+    const normalized = value.trim();
+    // Pinned public sanitize/isValidAttribute behavior; this checks values, never HTML syntax.
+    if (/(?:--!?|\])>|<\/(?:style|script|title|xmp|textarea|noscript|iframe|noembed|noframes)/i.test(normalized)) continue;
+    if (name === "hidden" && normalized) {
+      // oxlint-disable-next-line no-control-regex -- Reader URI validation ignores controls without changing the retained value.
+      const uriProbe = normalized.replace(/[\u0000-\u0020\u00a0\u1680\u180e\u2000-\u2029\u205f\u3000]/g, "");
+      if (!/^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix):|[^a-z]|[a-z+.-]+(?:[^a-z+.:-]|$))/i.test(uriProbe)) continue;
+    }
+    retained.set(name, normalized);
+  }
+  return retained;
+}
+
 let ready: Promise<void> | undefined;
 
 /** Local inline visibility, not computed layout. See plan36 for supported CSS and renderer limits. */
@@ -122,7 +140,7 @@ export async function htmlToText(html: string): Promise<string> {
       if (node.childNodes.length) stack.push({ children: node.childNodes, index: 0, invisible: frame.invisible, suppressed: frame.suppressed, block: false });
       continue;
     }
-    const attrs = new Map(node.attrs.map((attr) => [attr.name, attr.value]));
+    const attrs = relevantAttributes(node.attrs);
     const source = attrs.get("style");
     const style = source ? inlineStyle(source) : EMPTY_STYLE;
     const authoredDisplay = style.get("display")?.value;
