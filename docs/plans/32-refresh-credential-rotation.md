@@ -89,3 +89,12 @@ The independent phase3 review pinned `5f86abb`, passed293existing focused tests 
 - `07f7c31` shares sanitized exact credential snapshots for IMAP and Google. Four dual-store reconnect/owner private-marker cases failed before correction; saved blobs, owner, config and read/send auth state remain intact.
 
 The latest original eight backend suites pass225tests; five affected package typechecks and changed-file lint/diff checks pass. Final mail/store qualification is being reported by the correction owner. A fresh phase3 round2 remains required. No full release/performance/package gate is claimed.
+
+
+### Phase3 second review and final corrections
+
+The fresh round2 review pinned `07f7c31`, independently passed320focused tests and reproduced six additional failures. Its exact-source CLI completed exit0/DONE. Two medium findings remained: the owner transaction checked expiry but not supersession at execution, and uncertain persist-then-throw acknowledgement could still leave the old provider's refusal generation active.
+
+`9f66c27` checks current flow, lifetime, removal/shutdown and expiry inside every atomic owner decision. A rejected owner decision may still preserve separately proven rotated credentials without changing owner/history. `96b9c44` confirms uncertain writes against exact stamped durable state before retiring old refusals. Owner confirmation is a read-only atomic match of the intended owner decision and secret; a mismatch, failed confirmation or invalidated lifetime never advances refusal ownership or publishes stale success. The admitted persistence boundary also sanitizes errors before removal drains, closing four private-marker regressions. Actual queued retries, accepted-send non-resubmission, before/after-commit failures, mismatch, confirmation failure, removal, privacy and unchanged history are covered.339focused cases, repository typecheck and lint passed before the fresh review. Exact boundaries and evidence are in `/tmp/terno-explicit-renewal-r2-corrections.md`.
+
+Fresh round3 independently reviewed the two correction pairs at `96b9c44`, passed348focused tests, five affected package typechecks, changed-file lint and diff checks, and completed the mandatory pinned CLI with underlying/wrapper exit0 and DONE. No substantiated important findings remain in this explicit-renewal series. The detailed verdict is `/tmp/terno-explicit-renewal-r3-findings.md`. This closes its code-review loop; full release, performance and desktop packaging gates remain unapproved.
