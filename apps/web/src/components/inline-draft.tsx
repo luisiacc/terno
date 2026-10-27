@@ -371,10 +371,15 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
 
   // an explicit open (r/a/f, the bar, the menu) asks for focus: honor it once
   useEffect(() => {
-    if (!focus || !d || useApp.getState().draftFocus?.seq !== focus.seq) return;
-    const owned = composeFocusPending(threadId, focus.key, focus.seq);
-    focusSoon(focus.target === "to" ? "[data-testid=compose-to]" : "[data-testid=compose-body]", rootRef.current, 12, owned ? (fallback) => finishComposeFocus(focus.key, focus.seq, fallback) : undefined, owned ? () => composeFocusPending(threadId, focus.key, focus.seq) : undefined);
-    if (useApp.getState().draftFocus?.seq === focus.seq) setApp({ draftFocus: null });
+    if (!focus || !d || useApp.getState().draftFocus !== focus) return;
+    const eligible = composeFocusPending(threadId, focus.key, focus.seq);
+    if (focus.leased && !eligible) {
+      finishComposeFocus(focus.key, focus.seq, false);
+      if (useApp.getState().draftFocus === focus) setApp({ draftFocus: null });
+      return;
+    }
+    focusSoon(focus.target === "to" ? "[data-testid=compose-to]" : "[data-testid=compose-body]", rootRef.current, 12, focus.leased ? (fallback) => finishComposeFocus(focus.key, focus.seq, fallback) : undefined, focus.leased ? () => composeFocusPending(threadId, focus.key, focus.seq) : undefined);
+    if (useApp.getState().draftFocus === focus) setApp({ draftFocus: null });
   }, [focus?.seq]);
 
   const collapse = () => {

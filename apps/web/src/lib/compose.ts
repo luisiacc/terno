@@ -188,8 +188,9 @@ export function focusDraft(key: string, target: "body" | "to", owner?: number) {
   if (focusLease && focusLease.intent !== owner) releaseFocusLease(focusLease, false);
   if (intent !== current) return;
   const focusSeq = ++seq;
-  if (focusLease && focusLease.intent === owner) { focusLease.key = key; focusLease.seq = focusSeq; }
-  setApp({ draftFocus: { key, target, seq: focusSeq } });
+  const leased = !!focusLease && focusLease.intent === owner;
+  if (leased) { focusLease!.key = key; focusLease!.seq = focusSeq; }
+  setApp({ draftFocus: { key, target, seq: focusSeq, ...(leased ? { leased: true as const } : {}) } });
 }
 
 /** Does a draft carry anything the user wrote? */
@@ -306,7 +307,7 @@ function showStoredStandalone(key: string, owner: number, allowed: () => boolean
     if (!lease) return null;
     lease.seq = compose.storedFocusSeq;
     if (!current() || focusLease !== lease || !lease.valid) { releaseFocusLease(lease, false); return null; }
-    const publication = { compose, checked: new Set<number>(), scope: null, readerOpen: false, draftFocus: { key, target: "to" as const, seq: compose.storedFocusSeq } };
+    const publication = { compose, checked: new Set<number>(), scope: null, readerOpen: false, draftFocus: { key, target: "to" as const, seq: compose.storedFocusSeq, leased: true as const } };
     expected = { ...getApp(), ...publication };
     publicationOwner = publication.compose;
     setApp(publication);
