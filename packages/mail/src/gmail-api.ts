@@ -309,6 +309,15 @@ function inlineCandidate(bytes: Uint8Array): boolean {
   let lines = 0, line = 0, parts = 0, tags = 0, entities = 0, nesting = 0, declarations = 0;
   for (let index = 0; index < bytes.length; index++) {
     const value = bytes[index]!;
+    if ((value | 32) === 99) {
+      const field = "content-transfer-encoding";
+      let end = index;
+      while (end - index < field.length && (bytes[end]! | 32) === field.charCodeAt(end - index)) end++;
+      if (end - index === field.length) {
+        while (bytes[end] === 32 || bytes[end] === 9 || bytes[end] === 10 || bytes[end] === 13) end++;
+        if (bytes[end] === 58) return false;
+      }
+    }
     if (value === 10) {
       if (++lines > 128) return false;
       line = 0;

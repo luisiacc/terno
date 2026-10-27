@@ -125,3 +125,17 @@ it("rejects an oversized delivered backing allocation before processing and canc
     expect(t.checkpoints).toEqual([]);
   } finally { await t.close(); }
 });
+
+it.each(["base64", "quoted-printable"] as const)("never falls back inline when encoded %s content requires an unavailable processor", async (encoding) => {
+  const html = "<p>Exact body</p>".repeat(80);
+  const encoded = encoding === "base64" ? Buffer.from(html).toString("base64") : html.replace(/</g, "=3C").replace(/>/g, "=3E");
+  const raw = toBase64url(new TextEncoder().encode(`From: sender@example.test\r\nContent-Type: text/html\r\nContent-Transfer-Encoding: ${encoding}\r\n\r\n${encoded}`));
+  let calls = 0;
+  const t = setup(async () => Response.json({ id: "m", threadId: "t", raw }), async () => { calls++; throw new IncomingProcessingError("worker-unavailable"); });
+  try {
+    await expect(t.sync()).rejects.toMatchObject({ code: "worker-unavailable", retryable: false, network: false });
+    expect(calls).toBe(1);
+    expect(t.writes).toEqual([]);
+    expect(t.checkpoints).toEqual([]);
+  } finally { await t.close(); }
+});
