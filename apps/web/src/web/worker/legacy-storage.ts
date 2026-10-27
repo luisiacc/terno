@@ -40,19 +40,30 @@ function request<T>(r: IDBRequest<T>): Promise<T> {
   });
 }
 
-async function committed(tx: IDBTransaction, enqueue: () => void): Promise<void> {
+async function committed(tx: IDBTransaction, enqueue: (track: (request: IDBRequest) => void) => void): Promise<void> {
   let failed = false, failure: unknown;
+  let accepted = 0, succeeded = 0, enqueueDone = false;
   const record = (error: unknown) => { if (!failed) { failed = true; failure = error; } };
+  const observeError = (event: Event) => record((event.target as IDBRequest | null)?.error ?? tx.error);
   const ended = new Promise<"complete" | "abort">((resolve) => {
-    tx.addEventListener("error", (event) => record((event.target as IDBRequest | null)?.error ?? tx.error), true);
+    tx.addEventListener("error", observeError, true);
     tx.addEventListener("complete", () => resolve("complete"));
     tx.addEventListener("abort", () => resolve("abort"));
   });
-  try { enqueue(); }
+  const success = () => { succeeded++; };
+  try {
+    enqueue((request) => {
+      accepted++;
+      request.addEventListener("error", observeError);
+      request.addEventListener("success", success);
+    });
+    enqueueDone = true;
+  }
   catch (error) { record(error); try { tx.abort(); } catch { /* Wait before copy cleanup. */ } }
   const outcome = await ended;
   if (failed) throw failure;
   if (outcome === "abort") throw tx.error ?? new Error("IndexedDB transaction aborted");
+  if (!enqueueDone || succeeded !== accepted) throw new Error("IndexedDB transaction did not confirm every request");
 }
 
 /** Whether a database exists, without creating it (browsers without databases() get an aborted open). */
@@ -96,7 +107,15 @@ async function certainDatabases(factory: IDBFactory, ...names: string[]): Promis
       const open = factory.open(name);
       open.onupgradeneeded = () => open.transaction!.abort();
       const db = await request(open);
-      try { if (db.objectStoreNames.contains("meta")) await assertCertain(db); }
+      try {
+        if (db.objectStoreNames.contains("meta")) await assertCertain(db);
+        else {
+          const keysOnly = (name === "unica-keys" || name === "terno-keys") && db.objectStoreNames.length === 1 && db.objectStoreNames.contains("keys");
+          if (!keysOnly) throw new UncertainWriteError("unreadable");
+          const keys = db.transaction("keys").objectStore("keys");
+          if (keys.keyPath !== null || keys.autoIncrement || keys.indexNames.length) throw new UncertainWriteError("unreadable");
+        }
+      }
       finally { db.close(); }
     } catch (error) {
       throw error instanceof UncertainWriteError ? error : new UncertainWriteError("unreadable", error);
@@ -140,8 +159,8 @@ export async function copyIdbDatabase(factory: IDBFactory, from: string, to: str
           if (keys.length === 0) break;
           const tx = target.transaction(s.name, "readwrite");
           const write = tx.objectStore(s.name);
-          await committed(tx, () => {
-            for (let i = 0; i < keys.length; i++) write.put(values[i], s.keyPath === null ? keys[i] : undefined);
+          await committed(tx, (track) => {
+            for (let i = 0; i < keys.length; i++) track(write.put(values[i], s.keyPath === null ? keys[i] : undefined));
           });
           await afterBatch?.();
           after = keys[keys.length - 1];
@@ -188,9 +207,9 @@ async function openJournal(factory: IDBFactory): Promise<IDBDatabase> {
 
 async function journalWrite(journal: IDBDatabase, to: string, value: CopyState | null): Promise<void> {
   const tx = journal.transaction("copies", "readwrite");
-  await committed(tx, () => {
-    if (value) tx.objectStore("copies").put(value, to);
-    else tx.objectStore("copies").delete(to);
+  await committed(tx, (track) => {
+    if (value) track(tx.objectStore("copies").put(value, to));
+    else track(tx.objectStore("copies").delete(to));
   });
 }
 
