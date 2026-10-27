@@ -428,6 +428,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       if (!failure) {
         sink.signal.throwIfAborted();
         await flush();
+        sink.signal.throwIfAborted();
       }
     } catch (error) {
       failure ??= { error };

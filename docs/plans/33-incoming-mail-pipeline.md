@@ -122,3 +122,9 @@ The pre-change source is pinned at `1eb419e`. Two initial paired50kprovider/synt
 This qualifies provider batching, not a real-store50kthroughput or whole-pipeline memory ceiling. Up to six active producers still retain their response/decode/parse state; raw JSON, parser expansion, metadata, storage copies and large text remain phasesB/C. The4MiB estimate is completed body/attachment data, not complete heap accounting. Real SQL/WASM/IDB throughput, foreground RPC latency, admission/worker memory and full release/perf gates remain open. A distinct code review is required for this batching slice.
 
 Final serial batch/response/real-backend-Gmail/send-attachment run passes139tests. Mail typecheck, owned lint and diff checks pass. The checked-in50kCPU/transaction gate passes separately. These complete the scoped pre-review checks; no full performance/release qualification is inferred.
+
+### PhaseA.2 review and final-tail cancellation
+
+The independent review pinned `6403163`, passed139scoped tests plus the checked-in50kprovider gate, and completed its exact-snapshot CLI with exit0/DONE. One low finding: cancellation while the final partial batch's sink write was awaiting could still promote a cursor. The existing50-message regression only exercised a count-triggered flush. Two added1/49-message cases reproduced the missed final-tail boundary;50remained a passing control.
+
+The durable barrier now rechecks cancellation after the final awaited flush. Already-admitted ingestion finishes, but sync rejects before checkpoint promotion for1,49and50messages.128batch/response/real-Gmail integration tests pass serially; mail typecheck, changed lint and the50kCPU/count gate pass. A fresh correction review follows. Backend lifetime fences already protected account removal/reconnect; this correction also completes the public sink cancellation contract. Whole-runtime memory, real-store throughput and full release/perf gates remain unqualified.
