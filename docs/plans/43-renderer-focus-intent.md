@@ -190,3 +190,8 @@ The user authorized a narrow continuation for explicit compose and stored-draft 
 ### Root disposition of the historical passive-list diagnostic
 
 The untracked original list-selection-handoff-oracle.test.tsx was preserved byte-for-byte outside default unit discovery at /tmp/terno-list-selection-oracle/historical-list-selection-handoff-oracle.test.tsx. Its passive arm intentionally required the old overwrite BEFORE testing the failed fallback, so after the fix that intermediate precondition is obsolete. The tracked list-selection-handoff-qualified.test.tsx differs at exactly that one selection precondition; all actual gated requests, draft ID/generation/revision/text/HTML and final same-key/focus assertions are identical. Root verified that exact single-delta relationship and recorded both hashes/path/disposition in archive-disposition.json. No product assertion was removed or weakened to hide a failure. Original RED/timeout/setup correction logs remain untouched; the separate foreign sign-in fixture is still preserved.
+
+
+### Integrated browser checkpoint at8e1f4fc3
+
+All three original List focus cases pass at8e1f4fc3, but rapid conversion fails in all three designs and Lumen sign-in loses password focus (value retained). Actual selected run20passed/4failed, no retries. Full source/artifact/worker-emission/cleanup evidence and exact failure stages are in plan26’s integrated renderer checkpoint and /tmp/terno-renderer-selected-3lxpci3l/findings.md. These browser failures remain OPEN despite component/source review progress.
