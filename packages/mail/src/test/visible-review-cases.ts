@@ -79,3 +79,9 @@ visibleReviewCases.push(
   { name: "R2-F1 body noscript markup is discarded by reader", html: '<p>Useful</p><noscript><b>phantomneedle</b></noscript><p>Tail</p>', text: "Useful Tail", value: "phantomneedle", query: "phantomneedle", matches: false },
   { name: "R2-F1 head noscript text reparented into body remains useful", html: '<noscript>Useful policy</noscript><p>Tail</p>', text: "Useful policy Tail", value: "useful policy", query: '"useful policy"', matches: true },
 );
+for (const hidden of [" until-found ", "&#32;until-found&#32;", "&#9;UNTIL-FOUND&#10;", "&nbsp;until-found&nbsp;", "until-found"]) visibleReviewCases.push({ name: `R2-F2 normalized hidden ${hidden}`, html: `<div hidden="${hidden}" style="display:block">phantomneedle</div><p>Useful</p>`, text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false });
+visibleReviewCases.push(
+  { name: "R2-F2 ordinary hidden still permits authored display", html: '<div hidden=" ordinary " style="display:block">Useful policy</div>', text: "Useful policy", value: "useful policy", query: '"useful policy"', matches: true },
+  { name: "R2-F2 absent display never overrides ordinary hidden", html: '<div hidden>phantomneedle</div><p>Useful</p>', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false },
+  { name: "R2-F2 invalid display never overrides ordinary hidden", html: '<div hidden style="display:bogus">phantomneedle</div><p>Useful</p>', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false },
+);

@@ -117,9 +117,9 @@ export async function htmlToText(html: string): Promise<string> {
     const source = attrs.get("style");
     const style = source ? inlineStyle(source) : EMPTY_STYLE;
     const display = style.get("display")?.value;
-    const hidden = attrs.get("hidden");
+    const hidden = attrs.get("hidden")?.trim().toLowerCase();
     const overflow = verticalOverflow(style);
-    if (display === "none" || (attrs.has("hidden") && (!display || hidden?.toLowerCase() === "until-found")) || style.get("opacity")?.value === "0" || (style.get("max-height")?.value === "0" && overflow !== "visible")) continue;
+    if (display === "none" || (attrs.has("hidden") && (!display || hidden === "until-found")) || style.get("opacity")?.value === "0" || (style.get("max-height")?.value === "0" && overflow !== "visible")) continue;
     const visibility = style.get("visibility")?.value;
     const invisible = visibility === "hidden" || visibility === "collapse" || (visibility !== "visible" && visibility !== "initial" && frame.invisible);
     const block = node.tagName === "br" || (display ? !INLINE_DISPLAYS.has(display) : BLOCKS.has(node.tagName));
