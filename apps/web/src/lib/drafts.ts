@@ -145,10 +145,10 @@ export function sendBody(d: Pick<LocalDraft, "bodyText" | "quotedText" | "includ
 }
 
 /** sendBody's HTML twin (plan 16): the written part's mail HTML (trailing empty lines dropped), the signature, the quote. */
-export function sendHtml(bodyHtml: string, d: Pick<LocalDraft, "quotedText" | "includeQuote">, signature = ""): string {
+export function sendHtml(bodyHtml: string, d: Pick<LocalDraft, "quotedText" | "includeQuote">, signature = "", quotedHtml?: string): string {
   const body = bodyHtml.replace(/(<div><br><\/div>)+$/, "");
   let html = [body, signatureHtml(signature)].filter(Boolean).join(GAP);
-  if (d.includeQuote && d.quotedText) html += (html ? GAP : "") + textToHtml(d.quotedText);
+  if (d.includeQuote && d.quotedText) html += (html ? GAP : "") + (quotedHtml ?? textToHtml(d.quotedText));
   return emailDocument(html);
 }
 

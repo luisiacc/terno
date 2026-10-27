@@ -10,7 +10,8 @@ import { openDatabase } from "@terno/db";
 import { IdbMailStore } from "@terno/idb";
 import { SqlMailStore } from "../../../../packages/db/src/sql-store";
 
-vi.mock("~/rpc/connection", () => ({ client: { call: () => Promise.reject(new Error("not in tests")) } }));
+const { attachmentRpc } = vi.hoisted(() => ({ attachmentRpc: vi.fn() }));
+vi.mock("~/rpc/connection", () => ({ client: { call: attachmentRpc } }));
 const { attachBody, copyDraft, draftsSaved, materialize, resumeDraft, retryDraft, createDraft, editDraft, flushDraft, fromServer, forgetDraft, setDraftTransport, useDrafts } = await import("./drafts");
 
 const { openCompose } = await import("./compose");
@@ -25,7 +26,7 @@ const apiDraft = (r: DraftRow): Draft => ({
   bodyText: r.body_text, bodyHtml: r.body_html, attachments: JSON.parse(r.attachments_json), quotedText: r.quoted_text, includeQuote: !!r.include_quote,
   inReplyToMessageId: r.in_reply_to_message_id, forwardOfMessageId: r.forward_of_message_id, uiState: r.ui_state, updatedAt: r.updated_at,
 });
-afterEach(() => { for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); });
+afterEach(() => { for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); attachmentRpc.mockReset(); });
 
 for (const adapter of ["SQL", "IDB"] as const) {
   it.each(["binary", "empty", "unavailable", "none"])(`${adapter}: From-B Forward refusal preserves exact work and subsequent autosave/reload (%s)`, async (kind) => {
@@ -35,6 +36,10 @@ for (const adapter of ["SQL", "IDB"] as const) {
     let store = await open();
     try {
       const [a, b] = await withAccounts(store);
+      attachmentRpc.mockImplementation(async (method: string, p: { accountId: number; assetId: string }) => {
+        if (method === "attachments.info") return store.attachments.info(p.accountId, p.assetId);
+        throw new Error("Unexpected fixture RPC");
+      });
       const accounts = await store.accounts.list(), account = accounts.find((x) => x.id === a)!;
       const bytes = kind === "empty" ? new Uint8Array() : new Uint8Array([0, 255, 128]);
       await ingest(store, [msg({ accountId: a!, providerMsgId: "source", attachments: kind === "none" ? [] : [{ filename: "source.bin", mime: "application/octet-stream", size: bytes.length, ...(kind === "unavailable" ? {} : { bytes }) }] })]);
@@ -55,7 +60,7 @@ for (const adapter of ["SQL", "IDB"] as const) {
       await openCompose("forward", detail.thread.id);
       if (kind !== "none") {
         expect(useDrafts.getState().drafts[key]).toEqual(before);
-        expect(useSnack.getState().current?.message).toBe(kind === "unavailable" ? "This attachment is unavailable. Reattach the file before sending." : `To forward these attachments, choose ${account.email} in From.`);
+        expect(useSnack.getState().current?.message).toBe(kind === "unavailable" ? "The original files are not ready. Wait for the download or choose Retry, then try Forward again." : `To forward these attachments, choose ${account.email} in From.`);
         if (kind !== "unavailable") expect(convertFields({ ...fields, accountId: b! }, "forward", detail, account)).toEqual({ ...fields, accountId: b! });
       } else expect(useDrafts.getState().drafts[key]!.mode).toBe("forward");
       await acknowledged;

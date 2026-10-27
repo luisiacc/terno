@@ -1,0 +1,50 @@
+import AxeBuilder from "@axe-core/playwright";
+import { msg } from "@terno/store/conformance";
+import { expect, selectThread, test } from "./fixtures";
+
+test("Forward refuses 101 files before mutation; continued typing and the 100-file boundary stay durable @design", async ({ app: page, server }, testInfo) => {
+  const store = server.backend.store, [account] = await store.accounts.list();
+  const { touched } = await store.sync.ingest([msg({ accountId: account!.id, providerMsgId: "capacity-forward", subject: "Forward capacity fixture", attachments: [{ filename: "source-empty.txt", mime: "text/plain", size: 0, bytes: new Uint8Array() }] })], { applyFilters: false, now: Date.now(), classifier: null });
+  await page.reload(); await selectThread(page, touched[0]!, 'subject:"Forward capacity fixture"');
+  await page.getByTestId("quick-reply").click();
+  await page.getByTestId("attachment-input").setInputFiles(Array.from({ length: 100 }, (_, i) => ({ name: `f${i}.txt`, mimeType: "text/plain", buffer: Buffer.alloc(0) })));
+  await expect(page.getByTestId("draft-attachment")).toHaveCount(100);
+  const body = page.getByTestId("compose-body"), forward = page.getByTestId("action-forward");
+  await body.fill("Every file and this reply must stay saved");
+  await expect.poll(async () => (await store.drafts.list())[0]?.body_text).toBe("Every file and this reply must stay saved");
+  const before = (await store.drafts.list())[0]!;
+  await forward.focus(); await page.keyboard.press("Enter");
+  await expect(forward).toBeFocused();
+  await expect(page.getByTestId("snack-message")).toContainText("This message is too large. Remove an attachment or shorten the message.");
+  await expect(body).toHaveText(before.body_text);
+  await expect(page.getByTestId("draft-attachment")).toHaveCount(100);
+  expect(await store.drafts.list()).toEqual([before]);
+  await page.getByTestId("snack-dock").hover();
+  for (const theme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: theme });
+    expect((await new AxeBuilder({ page }).include("[data-testid=composer]").include('[aria-label="Notifications"]').analyze()).violations).toEqual([]);
+    await page.screenshot({ path: `/tmp/terno-attachments-r4-evidence/capacity-${testInfo.project.name}-${theme}.png` });
+  }
+  await page.keyboard.press("Meta+Comma");
+  await page.getByTestId("language-select").click(); await page.getByTestId("language-es").click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "es-MX");
+  await page.keyboard.press("Escape");
+  await forward.click();
+  await expect(page.getByTestId("snack-message")).toContainText("Este mensaje es demasiado grande.");
+  await page.getByTestId("snack-dock").hover();
+  expect((await new AxeBuilder({ page }).include("[data-testid=composer]").include('[aria-label="Notificaciones"]').analyze()).violations).toEqual([]);
+  await body.fill("Later body is still durably saved");
+  await expect.poll(async () => (await store.drafts.list())[0]?.body_text).toBe("Later body is still durably saved");
+  await page.reload(); await selectThread(page, touched[0]!, 'subject:"Forward capacity fixture"');
+  await expect(body).toHaveText("Later body is still durably saved");
+  await expect(page.getByTestId("draft-attachment")).toHaveCount(100);
+  await page.getByRole("button", { name: "Quitar f0.txt", exact: true }).click();
+  await expect.poll(async () => JSON.parse((await store.drafts.list())[0]!.attachments_json).length).toBe(99);
+  await forward.click();
+  await expect(page.getByTestId("draft-attachment")).toHaveCount(100);
+  await expect.poll(async () => (await store.drafts.list())[0]?.mode).toBe("forward");
+  await page.getByTestId("snack-action").click();
+  await expect(page.getByTestId("draft-attachment")).toHaveCount(99);
+  await expect.poll(async () => (await store.drafts.list())[0]?.mode).toBe("reply");
+  await expect(body).toHaveText("Later body is still durably saved");
+});

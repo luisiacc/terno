@@ -1,4 +1,4 @@
-import { formatAddressList, parseAddressList, repairAddress, repairAddresses, type Account, type Address, type MessageDetail, type ThreadDetail } from "@terno/core";
+import { attachmentMessageBudget, type AttachmentRef, formatAddressList, parseAddressList, repairAddress, repairAddresses, type Account, type Address, type MessageDetail, type ThreadDetail } from "@terno/core";
 import type { DraftMode } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import type { DraftFields } from "./drafts";
@@ -139,6 +139,13 @@ export function newFields(accountId: number): DraftFields {
 }
 
 
+/** Authored refs win; forwarding the same immutable asset never adds a duplicate part. */
+export function mergeAttachmentRefs(current: readonly AttachmentRef[], incoming: readonly AttachmentRef[]): AttachmentRef[] {
+  const refs = new Map<string, AttachmentRef>();
+  for (const ref of [...current, ...incoming]) if (!refs.has(ref.assetId)) refs.set(ref.assetId, ref);
+  return [...refs.values()];
+}
+
 export function forwardAccountMismatch(accountId: number, detail: ThreadDetail, identities: readonly string[] = []): boolean {
   return accountId !== detail.thread.accountId && answered(detail, identities).attachments.some((a) => !!a.assetId);
 }
@@ -152,6 +159,8 @@ export function forwardAccountMismatch(accountId: number, detail: ThreadDetail, 
 export function convertFields(d: DraftFields, mode: Exclude<DraftMode, "new">, detail: ThreadDetail, account: Account, identities: readonly string[] = []): DraftFields {
   if (mode === "forward" && forwardAccountMismatch(d.accountId, detail, identities)) return d;
   const fresh = replyFields(mode, detail, account, { identities });
+  const attachments = mergeAttachmentRefs(d.attachments ?? [], mode === "forward" ? fresh.attachments ?? [] : []);
+  if (!attachmentMessageBudget("", undefined, attachments)) return d;
   const lower = (e: string) => e.toLowerCase();
   // what the user typed, field by field (Terno's own entries in that field excluded)
   const typed = (text: string, auto: readonly string[]) => {
@@ -168,7 +177,7 @@ export function convertFields(d: DraftFields, mode: Exclude<DraftMode, "new">, d
   const autoCc = parseAddressList(fresh.ccText).filter((a) => !taken.has(lower(a.email)));
   return {
     ...d,
-    attachments: [...new Map([...(d.attachments ?? []), ...(mode === "forward" ? fresh.attachments ?? [] : [])].map((a) => [a.assetId, a])).values()],
+    attachments,
     mode,
     toText: formatAddressList([...typedTo, ...autoTo]),
     ccText: formatAddressList([...typedCc, ...autoCc]),

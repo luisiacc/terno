@@ -5,10 +5,12 @@ vi.mock("./snack", () => ({ snack: Object.assign(vi.fn(), { error }) }));
 const { attachFiles, attachmentUploading } = await import("./attachments");
 const { createDraft, discardDraft, editDraft, forgetDraft, setDraftTransport, useDrafts } = await import("./drafts");
 const { newFields } = await import("./compose-fields");
+const { setApp } = await import("~/state/app");
 
 afterEach(() => { for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); call.mockReset(); error.mockReset(); });
 
 function upload() {
+  setApp({ accounts: [{ id: 1 } as import("@terno/core").Account] });
   let release!: () => void; let reached!: () => void;
   const gate = new Promise<void>((r) => { release = r; });
   const sealing = new Promise<void>((r) => { reached = r; });

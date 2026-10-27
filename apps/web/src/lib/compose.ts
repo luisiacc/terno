@@ -1,5 +1,5 @@
 import type { AttachmentRef } from "@terno/core";
-import { attachmentUploading } from "./attachments";
+import { attachmentUploading, draftAttachmentBudget } from "./attachments";
 import { breadcrumb, captureUi } from "~/lib/diag";
 import { firstInvalid, SELECT_INVALID } from "./recipient-field";
 import type { DraftMode } from "@terno/core/rpc";
@@ -8,7 +8,7 @@ import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";
 import { invalidateThreads, loadThread } from "~/state/threads";
 import { registerUndo, snack } from "./snack";
-import { answered, convertFields, forwardAccountMismatch, newFields, replyFields } from "./compose-fields";
+import { answered, convertFields, forwardAccountMismatch, newFields, replyFields, mergeAttachmentRefs } from "./compose-fields";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
 import { authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, type LocalDraft } from "./drafts";
 
@@ -135,24 +135,39 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
     }
   }
   const account = source ?? accounts[0]!;
+  const before = existing ? fieldsOf(existing) : undefined;
+  const converted = existing && existing.mode !== "new" && written(existing)
+    ? convertFields(before!, mode, detail, account, identities)
+    : replyFields(mode, detail, account, { identities });
+  if (converted === before) { snack.error(t("attachments.tooLarge")); return; }
+  converted.attachments = mergeAttachmentRefs([], converted.attachments ?? []);
+  const snapshot = existing;
+  const signature = getApp().accounts.find((a) => a.id === converted.accountId)?.signature;
+  const admitted = await draftAttachmentBudget(converted, signature);
+  if (!currentIntent() || await loadThread(threadId) !== detail) return;
+  existing = existingKey ? materialize(existingKey) : undefined;
+  if (existingKey && (!existing || existing.sending || existing.recovery || existing.accountId !== snapshot?.accountId || existing.id !== snapshot?.id || existing.generation !== snapshot?.generation || existing.localRev !== snapshot?.localRev || existing.bodyVersion !== snapshot?.bodyVersion || existing.bodyText !== snapshot?.bodyText || existing.bodyHtml !== snapshot?.bodyHtml)) return;
+  if (!getApp().accounts.some((a) => a.id === converted.accountId)) { snack.error(t("errors.accountGone")); return; }
+  if (getApp().accounts.find((a) => a.id === converted.accountId)?.signature !== signature) return;
+  if (!admitted) { snack.error(t("attachments.tooLarge")); return; }
+  takeFocus = takeFocus && (typeof document === "undefined" || document.activeElement === active);
   if (existing && existing.mode !== "new") {
-    const before = fieldsOf(existing);
     if (!written(existing)) {
       // nothing written yet: simply the other mode, fresh
-      editDraft(existing.key, { ...replyFields(mode, detail, account, { identities }) });
+      editDraft(existing.key, converted);
       if (takeFocus) focusDraft(existing.key, target);
       return;
     }
-    editDraft(existing.key, convertFields(before, mode, detail, account, identities));
+    editDraft(existing.key, converted);
     if (takeFocus) focusDraft(existing.key, target);
     // back to what it was, still open where the user is looking
-    const undo = registerUndo(() => editDraft(existing.key, { ...before, uiState: "open" }));
+    const undo = registerUndo(() => editDraft(existing.key, { ...before!, uiState: "open" }));
     const [message, name] = CONVERTED[mode];
     snack(t(message), { action: { label: t("common.undo"), name: t(name), undo } });
     return;
   }
-  const key = createDraft(replyFields(mode, detail, account, { identities }));
-  focusDraft(key, target);
+  const key = createDraft(converted);
+  if (takeFocus) focusDraft(key, target);
 }
 
 /** Shows a new-message draft in the reader pane again (from the drafts strip). */
