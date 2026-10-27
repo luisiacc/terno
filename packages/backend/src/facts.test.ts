@@ -7,6 +7,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setImmediate as nextTurn } from "node:timers/promises";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { seedDataset, sqlDb } from "@terno/db";
 import { demoRegistry } from "@terno/mail";
@@ -82,21 +83,31 @@ describe("the facts backfill (plan 17)", () => {
       return result;
     });
     const stop = backend.facts.stop.bind(backend.facts);
-    vi.spyOn(backend.facts, "stop").mockImplementation(async () => { stopEntered.release(); await stop(); });
+    let runnerStop: Promise<void> | undefined;
+    let runnerSettled = false;
+    vi.spyOn(backend.facts, "stop").mockImplementation(() => {
+      runnerStop = stop();
+      void runnerStop.then(() => { runnerSettled = true; }, () => { runnerSettled = true; });
+      stopEntered.release();
+      return runnerStop;
+    });
     const started = backend.start();
     let stopping: Promise<void> | undefined;
+    let joined: PromiseSettledResult<void | undefined>[] = [];
     try {
       await entered.promise;
       let stopped = false;
       stopping = backend.stop().then(() => { stopped = true; });
       await stopEntered.promise;
+      await nextTurn();
+      expect(runnerSettled).toBe(false);
       expect(stopped).toBe(false);
       expect(slices).toBe(4);
     } finally {
       release.release();
-      await stopping;
-      await started;
+      joined = await Promise.allSettled([runnerStop, stopping, started]);
     }
+    expect(joined.every((result) => result.status === "fulfilled")).toBe(true);
     const done = slices;
     expect(progress).not.toBeNull();
     expect(progress!.after).toBeGreaterThan(0);
