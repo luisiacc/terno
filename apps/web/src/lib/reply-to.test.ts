@@ -68,7 +68,7 @@ for (const engine of ["sql", "idb"] as const) {
     const [restored] = await target.client.call("drafts.list", {});
     expect(restored).toMatchObject({ mode, to, cc, bcc });
     const local = fromServer(restored!);
-    const { opId } = await target.client.call("compose.send", { accountId: targetAccount.id, to: validRecipients(local.toText), cc: validRecipients(local.ccText), bcc: validRecipients(local.bccText), subject: local.subject, bodyText: local.bodyText, inReplyToMessageId: local.inReplyToMessageId!, draftId: restored!.id });
+    const { opId } = await target.client.call("compose.send", { accountId: targetAccount.id, to: validRecipients(local.toText), cc: validRecipients(local.ccText), bcc: validRecipients(local.bccText), subject: local.subject, bodyText: local.bodyText, inReplyToMessageId: local.inReplyToMessageId!, draftId: restored!.id, draftGeneration: restored!.generation });
     const payload = JSON.parse((await target.backend.store.ops.get(opId))!.payload_json);
     expect(payload.to).toEqual([{ name: "Support, Session", email: "session@help.test" }, { name: "List", email: "list@help.test" }, { name: "Manual", email: "manual@help.test" }]);
     expect(payload.cc).toEqual(mode === "replyAll" ? [{ name: "Other", email: "other@help.test" }] : []);
