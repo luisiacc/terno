@@ -1,6 +1,6 @@
-import { createIncomingProcessor, type IncomingProcessingLimits, type IncomingProcessor } from "@terno/mail/incoming-processing";
+import { createIncomingProcessor, type IncomingProcessorOptions, type IncomingProcessor } from "@terno/mail/incoming-processing";
 
-export function createBrowserIncomingProcessor(limits: IncomingProcessingLimits = {}): IncomingProcessor {
+export function createBrowserIncomingProcessor(options: IncomingProcessorOptions = {}): IncomingProcessor {
   return createIncomingProcessor((events) => {
     const worker = new Worker(new URL("./incoming.worker.ts", import.meta.url), { type: "module", name: "terno-incoming" });
     worker.onmessage = (event) => events.message(event.data);
@@ -15,5 +15,5 @@ export function createBrowserIncomingProcessor(limits: IncomingProcessingLimits 
         worker.onerror = null;
       },
     };
-  }, limits);
+  }, options);
 }

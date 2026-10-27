@@ -22,6 +22,10 @@ export interface IncomingProcessingLimits {
   maxResultMetadataCodeUnits?: number;
 }
 
+export interface IncomingProcessorOptions extends IncomingProcessingLimits {
+  jobTimeoutMs?: number;
+}
+
 export interface IncomingProcessor {
   run(input: IncomingProcessingInput, signal: AbortSignal): Promise<IncomingProcessingResult>;
   whenIdle(): Promise<void>;
@@ -32,7 +36,7 @@ export const INCOMING_GMAIL_WIRE_BYTES = 4 * Math.ceil(MAX_INCOMING_MIME_BYTES /
 const FAILURE_CODES = [
   "malformed-json", "malformed-resource", "malformed-base64", "envelope-unavailable",
   "mime-limit-parts", "mime-limit-depth", "mime-limit-headers", "mime-limit-addresses",
-  "input-limit", "result-limit", "worker-unavailable", "worker-fault", "worker-busy", "worker-closed",
+  "input-limit", "result-limit", "worker-unavailable", "worker-fault", "worker-timeout", "worker-busy", "worker-closed",
 ] as const;
 export type IncomingProcessingFailureCode = typeof FAILURE_CODES[number];
 
@@ -119,14 +123,17 @@ interface Job {
   id: number;
   slot: WorkerSlot;
   input?: IncomingProcessingInput;
+  timer?: ReturnType<typeof setTimeout>;
   signal: AbortSignal;
   abort(): void;
   resolve(result: IncomingProcessingResult): void;
   reject(error: Error): void;
 }
 
-export function createIncomingProcessor(factory: IncomingWorkerFactory, options: IncomingProcessingLimits = {}): IncomingProcessor {
+export function createIncomingProcessor(factory: IncomingWorkerFactory, options: IncomingProcessorOptions = {}): IncomingProcessor {
   const limits = processingLimits(options);
+  const jobTimeoutMs = options.jobTimeoutMs ?? 30_000;
+  if (!Number.isInteger(jobTimeoutMs) || jobTimeoutMs < 1 || jobTimeoutMs > 2_147_483_647) throw new IncomingProcessingError("input-limit");
   let incarnation = 0;
   let jobId = 0;
   let slot: WorkerSlot | undefined;
@@ -167,6 +174,7 @@ export function createIncomingProcessor(factory: IncomingWorkerFactory, options:
   const finish = (job: Job, result?: IncomingProcessingResult, error?: Error) => {
     if (active !== job) return;
     active = undefined;
+    if (job.timer !== undefined) { clearTimeout(job.timer); job.timer = undefined; }
     job.input = undefined;
     job.signal.removeEventListener("abort", job.abort);
     if (!job.slot.retiring) job.slot.host?.setActive?.(false);
@@ -190,7 +198,7 @@ export function createIncomingProcessor(factory: IncomingWorkerFactory, options:
     if (value.incarnation !== owned.incarnation || value.job !== job.id) return;
     if (job.signal.aborted) { job.abort(); return; }
     if (value.type === "error" && isIncomingFailureCode(value.code)) {
-      const broken = value.code === "worker-fault" || value.code === "worker-unavailable";
+      const broken = value.code === "worker-fault" || value.code === "worker-unavailable" || value.code === "worker-timeout";
       if (broken) owned.retiring = true;
       finish(job, undefined, new IncomingProcessingError(value.code));
       if (broken) void retire(owned);
@@ -250,6 +258,12 @@ export function createIncomingProcessor(factory: IncomingWorkerFactory, options:
           },
         };
         active = job;
+        job.timer = setTimeout(() => {
+          if (active !== job) return;
+          owned.retiring = true;
+          finish(job, undefined, new IncomingProcessingError("worker-timeout"));
+          void retire(owned);
+        }, jobTimeoutMs);
         signal.addEventListener("abort", job.abort, { once: true });
         if (signal.aborted) { job.abort(); return; }
         if (!fresh) { post(job); return; }

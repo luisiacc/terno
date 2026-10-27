@@ -1,10 +1,10 @@
 import { Worker } from "node:worker_threads";
-import { createIncomingProcessor, type IncomingProcessingLimits, type IncomingProcessor } from "@terno/mail/incoming-processing";
+import { createIncomingProcessor, type IncomingProcessorOptions, type IncomingProcessor } from "@terno/mail/incoming-processing";
 
 /** Source launchers emit dist first; packaged backend and worker are siblings. */
 const defaultWorkerUrl = new URL(import.meta.url.endsWith(".ts") ? "../dist/incoming.worker.cjs" : "./incoming.worker.cjs", import.meta.url);
 
-export function createNodeIncomingProcessor(workerUrl: URL = defaultWorkerUrl, limits: IncomingProcessingLimits = {}): IncomingProcessor {
+export function createNodeIncomingProcessor(workerUrl: URL = defaultWorkerUrl, options: IncomingProcessorOptions = {}): IncomingProcessor {
   return createIncomingProcessor((events) => {
     const worker = new Worker(workerUrl, {
       execArgv: [],
@@ -24,5 +24,5 @@ export function createNodeIncomingProcessor(workerUrl: URL = defaultWorkerUrl, l
       setActive: (active) => { if (active) worker.ref(); else worker.unref(); },
       terminate: () => ending ??= worker.terminate().then(() => {}),
     };
-  }, limits);
+  }, options);
 }

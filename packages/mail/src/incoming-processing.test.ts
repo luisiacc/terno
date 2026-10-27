@@ -23,12 +23,14 @@ function harness() {
   return { hosts, factory, processor, answer };
 }
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 describe("incoming processor client", () => {
   it("starts lazily, transfers exact owned bytes and reuses idle worker without timers", async () => {
+    vi.useFakeTimers();
     const timers = vi.spyOn(globalThis, "setTimeout");
     const h = harness();
     expect(h.factory).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
     const first = input();
     const pending = h.processor.run(first, new AbortController().signal);
     await turn();
@@ -42,7 +44,8 @@ describe("incoming processor client", () => {
     await next;
     expect(h.factory).toHaveBeenCalledTimes(1);
     expect(h.hosts[0]!.active).toEqual([true, false, true, false]);
-    expect(timers).not.toHaveBeenCalled();
+    expect(timers).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
     await h.processor.close();
     expect(h.hosts[0]!.terminated).toBe(1);
   });
