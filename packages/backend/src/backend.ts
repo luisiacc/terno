@@ -62,6 +62,6 @@ export class Backend extends BackendCore {
     }
     // plan 22: website icons over node:https (public addresses only) unless the host says otherwise (null: none)
     const iconTransport = options.iconTransport === undefined ? nodeIconTransport() : options.iconTransport;
-    super({ ...options, store, platform, lookup: options.lookup ?? nodeLookup, onNetworkReset: options.onNetworkReset ?? resetFetchSockets, iconTransport });
+    super({ ...options, store, platform, lookup: options.lookup ?? nodeLookup, onNetworkReset: options.onNetworkReset ?? resetFetchSockets, iconTransport, incomingProcessor: options.incomingProcessor ?? createNodeIncomingProcessor() });
   }
 }
