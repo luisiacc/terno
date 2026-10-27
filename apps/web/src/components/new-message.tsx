@@ -7,7 +7,7 @@ import { cn } from "@terno/ui/lib/utils";
 import { Send, Trash2 } from "lucide-react";
 import { useEffect, useId, useRef } from "react";
 import { registerUndo, snack } from "~/lib/snack";
-import { composeFocusPending, finishComposeFocus, leaveNewDraft, sendDraft, showNewDraft } from "~/lib/compose";
+import { composeFocusPending, finishComposeFocus, leaveNewDraft, leaveNewDraftWithFocus, sendDraft, showNewDraft } from "~/lib/compose";
 import { discardDraft, restoreDiscarded, useDrafts } from "~/lib/drafts";
 import { setApp, useApp } from "~/state/app";
 import { DraftFieldsForm, focusSoon, Quote, SaveState, SignaturePreview } from "./inline-draft";
@@ -17,9 +17,13 @@ import { warmAutocomplete } from "~/lib/autocomplete";
 
 /** Esc and sending leave the new message; focus goes to its strip item (kept) or back to the list. */
 function leave(key: string, focusStrip: boolean) {
-  leaveNewDraft();
-  if (focusStrip) focusSoon(`[data-testid=strip-item][data-key="${key}"]`, null);
-  else (document.activeElement as HTMLElement | null)?.blur();
+  if (focusStrip) {
+    const request = leaveNewDraftWithFocus(key);
+    if (request?.valid()) focusSoon(`[data-testid=strip-item][data-key="${key}"]`, null, 12, () => true, request.valid, request.watch);
+  } else {
+    leaveNewDraft();
+    (document.activeElement as HTMLElement | null)?.blur();
+  }
 }
 
 /**

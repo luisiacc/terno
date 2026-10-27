@@ -622,6 +622,42 @@ export function leaveNewDraft(): void {
   else void flushDraft(key);
 }
 
+/** The explicit Escape exit owns its pending strip focus until another choice. */
+export function leaveNewDraftWithFocus(key: string): { valid: () => boolean; watch: (cancel: () => void) => () => void } | undefined {
+  const baseline = getApp(), compose = baseline.compose;
+  if (!compose || compose.key !== key) return;
+  const owner = ++intent, revision = getSelectionWriteRevision(), focusRevision = seq;
+  const active = typeof document === "undefined" ? null : document.activeElement;
+  let changed = draftEditsHeld(), clearing = false;
+  const sameLocation = (a: typeof baseline, b: typeof baseline) => a.selectedId === b.selectedId && a.readerOpen === b.readerOpen && a.compose === b.compose && a.checked === b.checked && a.scope === b.scope && a.accountId === b.accountId && a.dialog === b.dialog && a.fatal === b.fatal && a.view === b.view && a.categoryId === b.categoryId && a.reviewCategoryId === b.reviewCategoryId && a.query === b.query && a.listFilters === b.listFilters;
+  const expected = { ...baseline, compose: null };
+  const observe = (event: FocusEvent) => { if (event.target !== active && event.target !== document.body) changed = true; };
+  const app = useApp.subscribe((state, previous) => {
+    const ownClear = clearing && sameLocation(state, expected) && sameLocation(previous, baseline);
+    if ((!sameLocation(state, baseline) || !sameLocation(previous, baseline)) && !ownClear && !(clearing && sameLocation(state, expected) && sameLocation(previous, expected))) changed = true;
+    if (state.draftFocus !== previous.draftFocus && !(state.draftFocus === null && previous.draftFocus?.seq === compose.storedFocusSeq)) changed = true;
+  });
+  const drafts = useDrafts.subscribe((state, previous) => { if (state.held || previous.held) changed = true; });
+  if (typeof document !== "undefined") document.addEventListener?.("focusin", observe, true);
+  try {
+    if (focusLease) releaseFocusLease(focusLease, false);
+    if (owner !== intent || changed || getSelectionWriteRevision() !== revision || seq !== focusRevision || getApp().compose !== compose) return;
+    clearing = true;
+    leaveNewDraft();
+  } finally {
+    app(); drafts();
+    if (typeof document !== "undefined") document.removeEventListener?.("focusin", observe, true);
+  }
+  if (changed || owner !== intent || seq !== focusRevision || getSelectionWriteRevision() !== revision) return;
+  const valid = () => owner === intent && seq === focusRevision && getSelectionWriteRevision() === revision && !draftEditsHeld() && sameLocation(getApp(), expected) && Boolean(useDrafts.getState().drafts[key]);
+  const watch = (cancel: () => void) => {
+    const stopApp = useApp.subscribe((state, previous) => { if (!valid() || !sameLocation(state, previous) || state.draftFocus !== previous.draftFocus) cancel(); });
+    const stopDrafts = useDrafts.subscribe((state, previous) => { if (state.held || previous.held || !valid()) cancel(); });
+    return () => { stopApp(); stopDrafts(); };
+  };
+  return { valid, watch };
+}
+
 /** Opening a conversation (j/k, a click, the menu) while a new message is shown: the reader follows the conversation. */
 export function installComposeFollowsSelection(): () => void {
   return useApp.subscribe((s, prev) => {
