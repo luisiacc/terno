@@ -126,7 +126,7 @@ describe("IndexedDB version 2 (SQL v8)", () => {
     // version 1 as the previous adapter left it: out-of-line keys, [batch, thread] for move rows
     const v1 = indexedDB.open(databaseName(name), 1);
     v1.onupgradeneeded = () => {
-      for (const t of TABLES.filter((t) => !t.memoryOnly)) v1.result.createObjectStore(t.name);
+      for (const t of TABLES.filter((t) => !t.memoryOnly && !["draft_counter", "attachment_assets", "attachment_chunks", "attachment_bytes", "attachment_links"].includes(t.name))) v1.result.createObjectStore(t.name);
       v1.result.createObjectStore("meta");
       const tx = v1.transaction!;
       tx.objectStore("cat_batches").put({ id: 5, category_id: 2, source: "dnd", scope_json: JSON.stringify({ kind: "move", from: 1, phase: "done" }), added: 1, created_at: 0, undone_at: null }, 5);
@@ -151,7 +151,7 @@ describe("IndexedDB version 3 (SQL v9): drafts v2", () => {
       const req = (r: IDBRequest | IDBOpenDBRequest) => new Promise((resolve, reject) => ((r.onsuccess = () => resolve(r.result)), (r.onerror = () => reject(r.error))));
       const old = indexedDB.open(databaseName(name), from);
       old.onupgradeneeded = () => {
-        for (const t of TABLES.filter((t) => !t.memoryOnly)) old.result.createObjectStore(t.name);
+        for (const t of TABLES.filter((t) => !t.memoryOnly && !["draft_counter", "attachment_assets", "attachment_chunks", "attachment_bytes", "attachment_links"].includes(t.name))) old.result.createObjectStore(t.name);
         old.result.createObjectStore("meta");
         const tx = old.transaction!;
         tx.objectStore("messages").put({ id: 40, thread_id: 7, account_id: 1 }, 40);
@@ -178,7 +178,7 @@ describe("an undo of a version-1 move left half-restored", () => {
     const ex = (t: number, cat: number, label: number, source: string) => ({ thread_id: t, category_id: cat, label, weight: 1, source, at: 1, sender: "s", content: 1, batch_id: null, features: new Uint8Array([1]) });
     const v1 = indexedDB.open(databaseName(name), 1);
     v1.onupgradeneeded = () => {
-      for (const t of TABLES.filter((t) => !t.memoryOnly)) v1.result.createObjectStore(t.name);
+      for (const t of TABLES.filter((t) => !t.memoryOnly && !["draft_counter", "attachment_assets", "attachment_chunks", "attachment_bytes", "attachment_links"].includes(t.name))) v1.result.createObjectStore(t.name);
       v1.result.createObjectStore("meta");
       const tx = v1.transaction!;
       const put = (store: string, row: Record<string, unknown>, key: IDBValidKey) => tx.objectStore(store).put(row, key);
@@ -251,7 +251,7 @@ it("version 4 messages default Reply-To on read without rewriting persisted mail
   const name = `${store.name}-v4`;
   const legacy = indexedDB.open(databaseName(name), 4);
   legacy.onupgradeneeded = () => {
-    for (const { table, rows: saved, keys } of rows) {
+    for (const { table, rows: saved, keys } of rows.filter(({ table }) => !["draft_counter", "attachment_assets", "attachment_chunks", "attachment_bytes", "attachment_links"].includes(table))) {
       const target = legacy.result.createObjectStore(table);
       saved.forEach((row: Record<string, unknown>, i: number) => {
         if (table === "messages") delete row.reply_to_json;

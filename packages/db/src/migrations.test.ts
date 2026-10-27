@@ -403,7 +403,7 @@ describe("migration v13: rich drafts", () => {
     db.run("INSERT INTO drafts (id, account_id, format, mode, to_json, cc_json, subject, body_text, quoted_text, include_quote, updated_at) VALUES (1, 1, 2, 'new', '[]', '[]', 'Plano', ?, 'cita', 1, 5)", text);
     const before = db.get<Record<string, unknown>>("SELECT * FROM drafts WHERE id = 1")!;
     expect(migrate(db)).toEqual({ from: 12, to: SCHEMA_VERSION });
-    expect(db.get<Record<string, unknown>>("SELECT * FROM drafts WHERE id = 1")).toEqual({ ...before, body_html: "" });
+    expect(db.get<Record<string, unknown>>("SELECT * FROM drafts WHERE id = 1")).toEqual({ ...before, body_html: "", attachments_json: "[]", generation: "" });
     const saved = saveDraft(db, { id: 1, baseRevision: 1, accountId: 1, to: [], cc: [], subject: "Plano", bodyText: "Hola", bodyHtml: "<div><b>Hola</b></div>" }, 6)!;
     expect(saved).toMatchObject({ body_text: "Hola", body_html: "<div><b>Hola</b></div>", revision: 2 });
   });
