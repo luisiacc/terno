@@ -1,4 +1,5 @@
 import { parseRaw } from "@terno/mail";
+import { msg } from "@terno/store/conformance";
 import type { IncomingMessage } from "@terno/store";
 import AxeBuilder from "@axe-core/playwright";
 import { readFileSync } from "node:fs";
@@ -182,4 +183,60 @@ test("attachment-only reply survives reload and mode conversion with exact Undo 
   await page.getByTestId("compose-send").click();
   await expect.poll(() => server.smtp.length).toBe(1);
   expect((await parseRaw(server.smtp[0]!.raw)).attachments[0]!.bytes).toEqual(new Uint8Array(bytes));
+});
+
+test("Forward refuses foreign account refs before changing authored work, with keyboard recovery @design", async ({ app: page, server }, testInfo) => {
+  const accounts = await server.backend.store.accounts.list();
+  const source = accounts[0]!, other = accounts[1]!;
+  const { touched } = await server.backend.store.sync.ingest([msg({ accountId: source.id, providerMsgId: "from-convert", subject: "From conversion fixture", attachments: [
+    { filename: "binary.bin", mime: "application/octet-stream", size: 3, bytes: new Uint8Array([0, 255, 128]) },
+    { filename: "empty.txt", mime: "text/plain", size: 0, bytes: new Uint8Array() },
+  ] })], { applyFilters: false, now: Date.now(), classifier: null });
+  await page.reload();
+  await selectThread(page, touched[0]!, 'subject:"From conversion fixture"');
+  await page.getByTestId("quick-reply").click();
+  const from = page.getByTestId("compose-from");
+  await from.focus(); await page.keyboard.press("Space");
+  await page.getByRole("option", { name: `${other.displayName} · ${other.email}`, exact: true }).focus();
+  await page.keyboard.press("Enter");
+  const body = page.getByTestId("compose-body");
+  await body.fill("work from the selected account");
+  await expect.poll(async () => (await server.backend.store.drafts.list())[0]?.body_text).toBe("work from the selected account");
+  const before = (await server.backend.store.drafts.list())[0]!;
+  const forward = page.getByTestId("action-forward");
+  await forward.focus(); await page.keyboard.press("Enter");
+  await expect(page.getByTestId("draft-attachment")).toHaveCount(0);
+  await expect(body).toHaveText("work from the selected account");
+  await expect(from).toContainText(other.email);
+  await expect(page.getByTestId("snack-message").getByText(`To forward these attachments, choose ${source.email} in From.`, { exact: true })).toBeVisible();
+  expect(await server.backend.store.drafts.list()).toEqual([before]);
+  await page.getByTestId("snack-dock").hover();
+  for (const theme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: theme });
+    await page.addStyleTag({ content: "*{caret-color:transparent!important}" });
+    expect((await new AxeBuilder({ page }).include("[data-testid=composer]").include('[aria-label="Notifications"]').analyze()).violations).toEqual([]);
+    await page.screenshot({ path: `/tmp/terno-attachments-r3-evidence/forward-${testInfo.project.name}-${theme}.png` });
+  }
+  await body.fill("later text remains savable");
+  await expect.poll(async () => (await server.backend.store.drafts.list())[0]?.body_text).toBe("later text remains savable");
+  await page.reload();
+  await selectThread(page, touched[0]!, 'subject:"From conversion fixture"');
+  await expect(body).toHaveText("later text remains savable");
+  await expect(from).toContainText(other.email);
+  // Follow the explanation using only keyboard controls.
+  await from.focus(); await page.keyboard.press("Space");
+  await page.getByRole("option", { name: `${source.displayName} · ${source.email}`, exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await forward.focus(); await page.keyboard.press("Enter");
+  await expect(page.getByTestId("draft-attachment")).toHaveCount(2);
+  await expect(body).toHaveText("later text remains savable");
+  await expect.poll(async () => (await server.backend.store.drafts.list())[0]?.mode).toBe("forward");
+  await page.reload();
+  await selectThread(page, touched[0]!, 'subject:"From conversion fixture"');
+  const saved = (await server.backend.store.drafts.list())[0]!;
+  const refs = JSON.parse(saved.attachments_json);
+  expect(refs.map((p: { filename: string }) => p.filename)).toEqual(["binary.bin", "empty.txt"]);
+  expect(await server.backend.store.attachments.read(source.id, refs[0].assetId, 0)).toBe("AP+A");
+  expect(await server.backend.store.attachments.read(source.id, refs[1].assetId, 0)).toBe(null);
+  await expect(body).toHaveText("later text remains savable");
 });

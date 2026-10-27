@@ -5,13 +5,19 @@ import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import type { Draft } from "@terno/core/rpc";
 import type { DraftInput, DraftRow, MailStore } from "@terno/store";
-import { withAccounts } from "@terno/store/conformance";
+import { withAccounts, msg, ingest, threadOf } from "@terno/store/conformance";
 import { openDatabase } from "@terno/db";
 import { IdbMailStore } from "@terno/idb";
 import { SqlMailStore } from "../../../../packages/db/src/sql-store";
 
 vi.mock("~/rpc/connection", () => ({ client: { call: () => Promise.reject(new Error("not in tests")) } }));
-const { editDraft, flushDraft, fromServer, forgetDraft, setDraftTransport, useDrafts } = await import("./drafts");
+const { createDraft, editDraft, flushDraft, fromServer, forgetDraft, setDraftTransport, useDrafts } = await import("./drafts");
+
+const { openCompose } = await import("./compose");
+const { convertFields, replyFields } = await import("./compose-fields");
+const { setApp } = await import("~/state/app");
+const { useThreads } = await import("~/state/threads");
+const { useSnack } = await import("./snack");
 
 const apiDraft = (r: DraftRow): Draft => ({
   id: r.id, revision: r.revision, format: 2, accountId: r.account_id, threadId: r.thread_id, mode: r.mode,
@@ -22,6 +28,58 @@ const apiDraft = (r: DraftRow): Draft => ({
 afterEach(() => { for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); });
 
 for (const adapter of ["SQL", "IDB"] as const) {
+  it.each(["binary", "empty", "unavailable", "none"])(`${adapter}: From-B Forward refusal preserves exact work and subsequent autosave/reload (%s)`, async (kind) => {
+    const dir = mkdtempSync(join(tmpdir(), "terno-convert-attachment-"));
+    const name = crypto.randomUUID();
+    const open = (): Promise<MailStore> => adapter === "SQL" ? Promise.resolve(new SqlMailStore(openDatabase(join(dir, "mail.db")), { instantSearch: false })) : IdbMailStore.open({ name, factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: () => new Promise((r) => setImmediate(r)) } });
+    let store = await open();
+    try {
+      const [a, b] = await withAccounts(store);
+      const accounts = await store.accounts.list(), account = accounts.find((x) => x.id === a)!;
+      const bytes = kind === "empty" ? new Uint8Array() : new Uint8Array([0, 255, 128]);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "source", attachments: kind === "none" ? [] : [{ filename: "source.bin", mime: "application/octet-stream", size: bytes.length, ...(kind === "unavailable" ? {} : { bytes }) }] })]);
+      const detail = (await store.threads.get(await threadOf(store, "source")))!;
+      const fields = replyFields("reply", detail, account);
+      const key = createDraft(fields);
+      useThreads.setState({ details: new Map([[detail.thread.id, detail]]) });
+      setApp({ accounts, selectedId: detail.thread.id, checked: new Set(), scope: null, draftShown: { threadId: detail.thread.id, key } });
+      const errors: unknown[] = [];
+      let acknowledge!: () => void;
+      const acknowledged = new Promise<void>((r) => { acknowledge = r; });
+      setDraftTransport(async (_method, params) => {
+        try { const row = await store.drafts.save(params as DraftInput, Date.now()); acknowledge(); return row ? apiDraft(row) : null; }
+        catch (e) { errors.push(e); throw e; }
+      });
+      editDraft(key, { accountId: b!, bodyText: "exact authored work", bodyHtml: "<div>exact authored <b>work</b></div>", subject: "my subject", subjectEdited: true, bccText: "manual@test.com" });
+      const before = useDrafts.getState().drafts[key]!;
+      await openCompose("forward", detail.thread.id);
+      if (kind !== "none") {
+        expect(useDrafts.getState().drafts[key]).toEqual(before);
+        expect(useSnack.getState().current?.message).toBe(kind === "unavailable" ? "This attachment is unavailable. Reattach the file before sending." : `To forward these attachments, choose ${account.email} in From.`);
+        if (kind !== "unavailable") expect(convertFields({ ...fields, accountId: b! }, "forward", detail, account)).toEqual({ ...fields, accountId: b! });
+      } else expect(useDrafts.getState().drafts[key]!.mode).toBe("forward");
+      await acknowledged;
+      await flushDraft(key);
+      editDraft(key, { bodyText: "later work stays savable", bodyHtml: "<div>later work stays <b>savable</b></div>" });
+      await flushDraft(key);
+      expect(errors).toEqual([]);
+      await store.close(); store = await open();
+      expect((await store.drafts.list())[0]).toMatchObject({ account_id: b, mode: kind === "none" ? "forward" : "reply", subject: "my subject", body_text: "later work stays savable", body_html: "<div>later work stays <b>savable</b></div>", attachments_json: "[]" });
+      if (kind === "binary" || kind === "empty") {
+        editDraft(key, { accountId: a! });
+        // Immediate Forward must acknowledge the empty account change before adding source refs.
+        await openCompose("forward", detail.thread.id);
+        await flushDraft(key);
+        expect(errors).toEqual([]);
+        expect((await store.drafts.list())[0]).toMatchObject({ account_id: a, mode: "forward", body_text: "later work stays savable" });
+      }
+      const ref = detail.messages[0]!.attachments[0];
+      if (ref?.assetId) {
+        expect(await store.attachments.info(a!, ref.assetId)).toMatchObject({ size: bytes.length });
+        expect(await store.attachments.read(a!, ref.assetId, 0)).toBe(kind === "empty" ? null : "AP+A");
+      }
+    } finally { for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); await store.close(); rmSync(dir, { recursive: true, force: true }); }
+  });
   it(`${adapter}: removal keeps From locked through the real autosave acknowledgement, then switching and later edits survive reopen`, async () => {
     const dir = mkdtempSync(join(tmpdir(), "terno-draft-attachment-"));
     const name = crypto.randomUUID();

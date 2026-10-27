@@ -7,7 +7,7 @@ import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";
 import { invalidateThreads, loadThread, useThreads } from "~/state/threads";
 import { registerUndo, snack } from "./snack";
-import { answered, convertFields, newFields, replyFields } from "./compose-fields";
+import { answered, convertFields, forwardAccountMismatch, newFields, replyFields } from "./compose-fields";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
 import { authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, type LocalDraft } from "./drafts";
 
@@ -52,6 +52,8 @@ const written = (d: LocalDraft) => d.bodyText.trim() !== "" || d.subjectEdited |
  * target: nothing happens.
  */
 export async function openCompose(mode: DraftMode = "new", threadId: number | null = getApp().selectedId): Promise<void> {
+  const mine = ++intent;
+  let takeFocus = true;
   const s = getApp();
   const defaultAccount = s.accountId ?? s.accounts[0]?.id;
   if (!defaultAccount) {
@@ -69,28 +71,57 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
   const target = mode === "forward" ? "to" : "body";
   const existingKey = shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown);
   // its body as the editor has it now (what "written" and a conversion's undo look at)
-  const existing = existingKey ? materialize(existingKey) : undefined;
+  let existing = existingKey ? materialize(existingKey) : undefined;
   if (existing && existing.mode === mode) {
     setDraftUi(existing.key, "open");
     return focusDraft(existing.key, target);
   }
-  const mine = ++intent;
   // the open conversation is loaded: no wait, so nothing can come in between
   const detail = useThreads.getState().details.get(threadId) ?? (await loadThread(threadId));
   if (!detail || mine !== intent) return;
-  if (mode === "forward" && answered(detail).attachments.some((a) => !a.assetId)) { snack.error(t("attachments.unavailable")); return; }
-  const account = s.accounts.find((a) => a.id === detail.thread.accountId) ?? s.accounts[0]!;
+  existing = existingKey ? materialize(existingKey) : undefined;
+  if (existingKey && (!existing || existing.sending)) return;
+  const accounts = getApp().accounts;
+  const source = accounts.find((a) => a.id === detail.thread.accountId);
   // none of my addresses is replied to, whichever account the conversation is in (plan 34)
-  const identities = s.accounts.map((a) => a.email);
+  const identities = accounts.map((a) => a.email);
+  if (mode === "forward") {
+    const parts = answered(detail, identities).attachments;
+    if (parts.some((a) => !a.assetId)) { snack.error(t("attachments.unavailable")); return; }
+    if (parts.length && !source) { snack.error(t("errors.accountGone")); return; }
+    if (existing && forwardAccountMismatch(existing.accountId, detail, identities)) {
+      snack.error(t("compose.forwardAccountMismatch", { account: source!.email }));
+      return;
+    }
+    if (parts.length && existing && !existing.attachments?.length) {
+      // Save the empty From transition before introducing that account's attachment owners.
+      const active = typeof document === "undefined" ? null : document.activeElement;
+      const selected = getApp().selectedId;
+      await flushDraft(existing.key);
+      if (mine !== intent || getApp().selectedId !== selected || shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) !== existing.key) return;
+      takeFocus = typeof document === "undefined" || document.activeElement === active;
+      existing = materialize(existing.key);
+      if (!existing || existing.sending || existing.savedRev !== existing.localRev) return;
+      const pristine = existing.id === null && existing.status === "clean" && existing.localRev === 0 && !authored(existing);
+      if (existing.status !== "saved" && !pristine) return;
+      if (!getApp().accounts.some((a) => a.id === source!.id)) { snack.error(t("errors.accountGone")); return; }
+      if (forwardAccountMismatch(existing.accountId, detail, getApp().accounts.map((a) => a.email))) {
+        snack.error(t("compose.forwardAccountMismatch", { account: source!.email }));
+        return;
+      }
+    }
+  }
+  const account = source ?? accounts[0]!;
   if (existing && existing.mode !== "new") {
     const before = fieldsOf(existing);
     if (!written(existing)) {
       // nothing written yet: simply the other mode, fresh
       editDraft(existing.key, { ...replyFields(mode, detail, account, { identities }) });
-      return focusDraft(existing.key, target);
+      if (takeFocus) focusDraft(existing.key, target);
+      return;
     }
     editDraft(existing.key, convertFields(before, mode, detail, account, identities));
-    focusDraft(existing.key, target);
+    if (takeFocus) focusDraft(existing.key, target);
     // back to what it was, still open where the user is looking
     const undo = registerUndo(() => editDraft(existing.key, { ...before, uiState: "open" }));
     const [message, name] = CONVERTED[mode];

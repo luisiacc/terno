@@ -139,6 +139,10 @@ export function newFields(accountId: number): DraftFields {
 }
 
 
+export function forwardAccountMismatch(accountId: number, detail: ThreadDetail, identities: readonly string[] = []): boolean {
+  return accountId !== detail.thread.accountId && answered(detail, identities).attachments.some((a) => !!a.assetId);
+}
+
 /**
  * A draft turned into another mode (r → a, a → f, …), keeping what the user
  * wrote: the body, every recipient they typed, and a subject they edited.
@@ -146,6 +150,7 @@ export function newFields(accountId: number): DraftFields {
  * recomputed for the new mode.
  */
 export function convertFields(d: DraftFields, mode: Exclude<DraftMode, "new">, detail: ThreadDetail, account: Account, identities: readonly string[] = []): DraftFields {
+  if (mode === "forward" && forwardAccountMismatch(d.accountId, detail, identities)) return d;
   const fresh = replyFields(mode, detail, account, { identities });
   const lower = (e: string) => e.toLowerCase();
   // what the user typed, field by field (Terno's own entries in that field excluded)
