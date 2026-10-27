@@ -1,5 +1,5 @@
 import { attachmentMessageBudgetAsync } from "@terno/core";
-import { acceptFlagObservation, flagEpochs, flagReconciliation, flagObservationValid, flagTick, initializeFlagStep, rearmFlagEffects, settleFlagEffects, startFlagObservation } from "@terno/store";
+import { reaffirmSavedFlagIntent, acceptFlagObservation, flagEpochs, flagReconciliation, flagObservationValid, flagTick, initializeFlagStep, rearmFlagEffects, settleFlagEffects, startFlagObservation } from "@terno/store";
 import { idbFlags, idbFlagSnapshots, prepareIdbFlagPage } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { idbAssets, replaceAttachments } from "./attachments";
@@ -756,6 +756,7 @@ export class IdbMailStore implements MailStore {
         const r = restoreMessages(this.c, messages);
         const opIds: string[] = [];
         const versions = new Map<number, number>();
+        reaffirmSavedFlagIntent(idbFlags(this.c), messages, versions);
         for (const op of r.ops) {
           if (!versions.has(op.accountId) && idbFlags(this.c).clock(op.accountId)) versions.set(op.accountId, flagTick(idbFlags(this.c), op.accountId));
           const id = enqueueOp(this.c, { accountId: op.accountId, kind: op.kind, target: { messageIds: op.messageIds } }, now, versions.get(op.accountId));

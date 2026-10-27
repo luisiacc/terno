@@ -1,5 +1,5 @@
 import { attachmentMessageBudgetAsync } from "@terno/core";
-import { acceptFlagObservation, flagEpochs, flagReconciliation, flagObservationValid, flagTick, initializeFlagStep, rearmFlagEffects, settleFlagEffects, startFlagObservation } from "@terno/store";
+import { reaffirmSavedFlagIntent, acceptFlagObservation, flagEpochs, flagReconciliation, flagObservationValid, flagTick, initializeFlagStep, rearmFlagEffects, settleFlagEffects, startFlagObservation } from "@terno/store";
 import { sqlFlags } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { sqlAssets, replaceAttachments } from "./attachments";
@@ -315,6 +315,7 @@ export class SqlMailStore implements MailStore {
         const r = restoreMessages(this.db, messages);
         const opIds: string[] = [];
         const versions = new Map<number, number>();
+        reaffirmSavedFlagIntent(sqlFlags(this.db), messages, versions);
         for (const op of r.ops) {
           if (!versions.has(op.accountId) && sqlFlags(this.db).clock(op.accountId)) versions.set(op.accountId, flagTick(sqlFlags(this.db), op.accountId));
           const id = enqueueOp(this.db, { accountId: op.accountId, kind: op.kind, target: { messageIds: op.messageIds } }, now, versions.get(op.accountId));

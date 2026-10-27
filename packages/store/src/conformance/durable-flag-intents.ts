@@ -254,6 +254,67 @@ export function defineDurableFlagIntentConformance(name: string, harness: StoreH
       expect((await store.debug.snapshot()).messages[0]).toMatchObject({ isRead: false, isSent: false, gmailLabels: '["INBOX"]' });
     });
 
+    it.each(["markRead", "star"] as const)("saved %s Undo invalidates a conflicting parked retry after remote reversal", async (action) => {
+      let store = await harness.open(); stores.push(store);
+      const [a] = await withAccounts(store, 1);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "undo-park" })]);
+      await observe(store, a!);
+      const changed = await store.threads.act({ threadIds: [await threadOf(store, "undo-park")], action, signal: null, now: 1 });
+      const [op] = await store.ops.claimReady(2, 10);
+      await store.ops.markUnknown(op!.id, "uncertain", 3);
+      const id = (await store.debug.snapshot()).messages[0]!.id;
+      const fresh = (await observe(store, a!))!;
+      await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "undo-park", flags: { isRead: false, isStarred: false } }], fresh);
+      const undone = await store.threads.restore({ messages: changed.before, now: 4 });
+      expect(undone.opIds).toEqual([]);
+      expect.soft(undone.flagReconcileAccounts).toEqual([a]);
+      store = await harness.reopen(store); stores.push(store);
+      await expect.soft(store.ops.resolveUnknown(op!.id, "retry", 5)).rejects.toMatchObject({ code: "STALE" });
+      expect((await store.debug.snapshot()).messages[0]).toMatchObject({ isRead: false, isStarred: false });
+    });
+
+    it("shares the saved Undo generation with actual restore work without expanding fields or targets", async () => {
+      const store = await harness.open(); stores.push(store);
+      const [a] = await withAccounts(store, 1);
+      await ingest(store, ["one", "two", "other"].map((providerMsgId) => msg({ accountId: a!, providerMsgId })));
+      await observe(store, a!);
+      const one = await threadOf(store, "one"), two = await threadOf(store, "two"), other = await threadOf(store, "other");
+      const changed = await store.threads.act({ threadIds: [one, two], action: "markRead", signal: null, now: 1 });
+      const [parked] = await store.ops.claimReady(2, 10);
+      await store.ops.markUnknown(parked!.id, "uncertain", 3);
+      await store.threads.act({ threadIds: [other], action: "star", signal: null, now: 4 });
+      const [unrelated] = await store.ops.claimReady(5, 10);
+      await store.ops.markUnknown(unrelated!.id, "uncertain", 6);
+      const id = (await store.debug.snapshot()).messages.find((m) => m.providerMsgId === "one")!.id;
+      const before = (await observe(store, a!))!;
+      await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "one", flags: { isRead: false } }], before);
+      const restored = await store.threads.restore({ messages: changed.before, now: 7 });
+      expect(restored.opIds).toHaveLength(1);
+      expect(restored.flagReconcileAccounts).toEqual([a]);
+      const after = (await observe(store, a!))!;
+      expect(after.epoch).toBe(before.epoch + 2);
+      await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "one", flags: { isStarred: true } }], after);
+      expect((await store.debug.snapshot()).messages.find((m) => m.id === id)!.isStarred).toBe(true);
+      await expect(store.ops.resolveUnknown(unrelated!.id, "retry", 8)).resolves.toBeDefined();
+    });
+
+    it("does not reaffirm an already stale legacy unknown binding", async () => {
+      const store = await harness.open(); stores.push(store);
+      const [a] = await withAccounts(store, 1);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "legacy-stale" })]);
+      const changed = await store.threads.act({ threadIds: [await threadOf(store, "legacy-stale")], action: "markRead", signal: null, now: 1 });
+      const [op] = await store.ops.claimReady(2, 10);
+      await store.ops.markUnknown(op!.id, "uncertain", 3);
+      const id = (await store.debug.snapshot()).messages[0]!.id;
+      await store.sync.updateFlags(a!, [{ messageId: id, flags: { isRead: false } }]);
+      const before = (await observe(store, a!))!;
+      const restored = await store.threads.restore({ messages: changed.before, now: 4 });
+      expect(restored.opIds).toEqual([]);
+      expect(restored.flagReconcileAccounts).toBeUndefined();
+      expect((await observe(store, a!))!.epoch).toBe(before.epoch + 1);
+      await expect(store.ops.resolveUnknown(op!.id, "retry", 5)).rejects.toMatchObject({ code: "STALE" });
+    });
+
     it.each(["complete", "fail", "unknown"] as const)("first activation serializes a concurrent legacy %s before deleting its synthesis source", async (outcome) => {
       let store = await harness.open(); stores.push(store);
       const [a] = await withAccounts(store, 1);

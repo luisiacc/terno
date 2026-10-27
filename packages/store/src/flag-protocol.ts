@@ -1,5 +1,5 @@
 import { FlagObservationError, operationFlagFields, type LocalFlagField } from "./flag-intents";
-import type { FlagObservation, FlagReconciliation, FlagSnapshotRequest } from "./types";
+import type { FlagObservation, FlagReconciliation, FlagSnapshotRequest, MessageState } from "./types";
 
 export interface FlagClock { account_id: number; protocol_id: string; epoch: number; phase: number; upper_seq: number; after_seq: number; after_op: string; after_message: number }
 export interface FlagIntent { message_id: number; field: LocalFlagField; account_id: number; provider_msg_id: string; intent_version: number; desired: number; owner_op_id: string | null; barrier_epoch: number; last_observation_epoch: number; pending_count: number; needs_snapshot: number; snapshot_account_id?: number }
@@ -134,6 +134,21 @@ export function reaffirmFlagIntent(repo: FlagRepository, messageIds: readonly nu
     let version = versions.get(message.account_id);
     if (version === undefined) { version = flagTick(repo, message.account_id); versions.set(message.account_id, version); }
     localFlagIntent(repo, message.account_id, [id], kind, version);
+  }
+}
+
+/** Reaffirm saved values only when a current parked effect would reverse them. */
+export function reaffirmSavedFlagIntent(repo: FlagRepository, saved: readonly MessageState[], versions: Map<number, number>): void {
+  for (const state of saved) {
+    const message = repo.message(state.id);
+    if (!stable(message) || !repo.clock(message.account_id)) continue;
+    for (const effect of repo.messageEffects(message.id)) {
+      const field = effect.field, row = repo.intent(message.id, field);
+      if (!row || Number(state[field]) !== Number(message[FLAG_COLUMNS[field]]) || effect.value === Number(state[field]) || row.intent_version !== (effect.intent_version ?? 0) || row.desired !== effect.value || repo.op(effect.op_id)?.state !== "unknown") continue;
+      let version = versions.get(message.account_id);
+      if (version === undefined) { version = flagTick(repo, message.account_id); versions.set(message.account_id, version); }
+      putFlagIntent(repo, { ...row, intent_version: version, desired: Number(state[field]), owner_op_id: null, barrier_epoch: Math.max(row.barrier_epoch, version), needs_snapshot: 1 });
+    }
   }
 }
 
