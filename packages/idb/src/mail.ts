@@ -1487,6 +1487,8 @@ const draftRow = (r: R): DraftRow => ({
   include_quote: r.include_quote ?? 0,
   in_reply_to_message_id: r.in_reply_to_message_id ?? null,
   forward_of_message_id: r.forward_of_message_id ?? null,
+  show_source_context: r.show_source_context === 1 ? 1 : 0,
+  presentation_thread_id: null,
   ui_state: r.ui_state ?? "open",
   revision: r.revision ?? 1,
   updated_at: r.updated_at,
@@ -1513,15 +1515,25 @@ export function saveDraft(c: Ctx, d: DraftInput, now: number): DraftRow | null {
   const exists = (id: number | null) => id === null || T(c, "messages").has(id);
   const reply = exists(inReplyTo) ? inReplyTo : null;
   const forward = exists(forwardOf) ? forwardOf : null;
-  const source = original ?? (forward ? T(c, "messages").get(forward) : undefined);
+  const sourceMode = d.mode ?? row?.mode ?? (inReplyTo ? "reply" : "new");
+  const source = sourceMode === "forward" ? (forward ? T(c, "messages").get(forward) : undefined) : sourceMode === "new" ? undefined : original;
   const thread = requestedThread !== null ? T(c, "threads").get(requestedThread) : undefined;
   const sourceThread = source?.thread_id === requestedThread ? thread : source ? T(c, "threads").get(source.thread_id) : undefined;
   const threadId = requestedThread === null ? null : source ? (source.account_id === d.accountId && sourceThread?.account_id === d.accountId ? sourceThread.id : null) : thread?.account_id === d.accountId ? thread.id : null;
   const lost = !reply && !forward && (requestedThread !== threadId || !exists(inReplyTo) || !exists(forwardOf));
+  const mode = lost ? "new" : d.mode ?? row?.mode ?? (inReplyTo ? "reply" : "new");
+  const selected = mode === "forward" ? forward : mode === "new" ? null : reply;
+  const selectedSource = selected ? T(c, "messages").get(selected) : undefined;
+  const selectedThread = selectedSource ? T(c, "threads").get(selectedSource.thread_id) : undefined;
+  const sameRevision = row && (d.baseRevision === undefined || d.baseRevision === row.revision);
+  const priorSource = row?.mode === "forward" ? row.forward_of_message_id : row?.in_reply_to_message_id;
+  const intent = d.showSourceContext ?? Boolean(sameRevision && row?.show_source_context === 1 && row.mode === mode && priorSource === selected);
+  const showSourceContext = Boolean(intent && selectedSource && selectedThread && selectedSource.account_id === selectedThread.account_id);
   const values = {
     account_id: d.accountId,
     thread_id: threadId,
-    mode: lost ? "new" : d.mode ?? row?.mode ?? (inReplyTo ? "reply" : "new"),
+    mode,
+    show_source_context: Number(showSourceContext),
     to_json: JSON.stringify(d.to),
     cc_json: JSON.stringify(d.cc),
     bcc_json: d.bcc !== undefined ? JSON.stringify(d.bcc) : (row?.bcc_json ?? "[]"),
@@ -1540,7 +1552,7 @@ export function saveDraft(c: Ctx, d: DraftInput, now: number): DraftRow | null {
   if (row && (d.baseRevision === undefined || d.baseRevision === row.revision)) {
     const saved = draftRow(drafts.update(row, { ...values, revision: (row.revision ?? 1) + 1 }));
     linkAssets(idbAssets(c.db), "draft", saved.id, attachments);
-    return saved;
+    return projectDraft(c, saved, false);
   }
   const counter = T(c, "draft_counter");
   const id = Math.max(counter.get(1)?.last_id ?? 0, drafts.highestKey()) + 1;
@@ -1548,21 +1560,24 @@ export function saveDraft(c: Ctx, d: DraftInput, now: number): DraftRow | null {
   const fresh: R = { id, generation: c.uuid(), ...values, format: 2, revision: 1 };
   drafts.insert(fresh);
   linkAssets(idbAssets(c.db), "draft", fresh.id, attachments);
-  return draftRow(fresh);
+  return projectDraft(c, draftRow(fresh), false);
 }
 
 /** Every draft, newest first; a reply or forward whose conversation or original is gone comes back as a new message (as in SQL). */
+function projectDraft(c: Ctx, d: DraftRow, normalize = true): DraftRow {
+  const sourceId = d.mode === "forward" ? d.forward_of_message_id : d.mode === "new" ? null : d.in_reply_to_message_id;
+  const source = sourceId ? T(c, "messages").get(sourceId) : undefined;
+  const thread = source ? T(c, "threads").get(source.thread_id) : undefined;
+  const presentation = d.show_source_context === 1 && source && thread && source.account_id === thread.account_id ? thread.id : null;
+  const lost = d.mode !== "new" && !source && (d.thread_id === null || sourceId !== null);
+  return normalize && lost ? { ...d, mode: "new", thread_id: null, in_reply_to_message_id: null, forward_of_message_id: null, presentation_thread_id: null } : { ...d, presentation_thread_id: presentation };
+}
+
 export function listDrafts(c: Ctx): DraftRow[] {
-  const messages = T(c, "messages");
-  const exists = (id: number | null) => id !== null && messages.get(id) !== undefined;
   return [...T(c, "drafts").all()]
     .sort((x, y) => y.updated_at - x.updated_at || y.id - x.id)
     .map(draftRow)
-    .map((d) => {
-      if (d.mode === "new") return d;
-      const lost = (d.thread_id === null && d.in_reply_to_message_id === null && d.forward_of_message_id === null) || (d.in_reply_to_message_id !== null && !exists(d.in_reply_to_message_id)) || (d.forward_of_message_id !== null && !exists(d.forward_of_message_id));
-      return lost ? { ...d, mode: "new" as const, thread_id: null, in_reply_to_message_id: null, forward_of_message_id: null } : d;
-    });
+    .map((d) => projectDraft(c, d));
 }
 
 // ───────────────────────────── owner ─────────────────────────────

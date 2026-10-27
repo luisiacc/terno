@@ -1,0 +1,70 @@
+# Plan 44: durable draft presentation
+
+## Request (verbatim)
+
+> I want you to go through every item to fix here in this report. For each item that needs fixing you already have, in that report, what needs to be done but for each item you need to:
+> 1. Go for that item.
+> 2. Spec it out a bit more.
+> 3. Do maybe a better investigation on it to see what's truly needed for us.
+> 4. Build a test case reproducing that scenario, that potential scenario, or multiple test cases.
+> 5. Fix it.
+> 6. That will do it.
+> 7. Spawn a subagent with Codex doing a code review of that fix, of that code you have just fixed and/or added.
+> 8. Fix any findings.
+> create atomic commits as you are fixing things.
+> That way there is a double check on what you're doing and this can be better. Of course we need to maintain our performance while doing this and follow the directives that we have. You're going to do this for each and every one of the items that you have done here.
+> Let's not create a separate branch or anything like that. Let's just do the fixes right here in the main branch. You should not stop until everything in that report is done.
+
+## Existing behavior and scope
+
+Plan 26 records six frozen browser failures after cross-account From changes: drafts and content survive, but their source-conversation placement does not. Canonical thread IDs must remain null for foreign From. Plans 29, 35, 42 and 43 govern attachments, generation fencing, IDB command fences and focus. Existing source message references are not foreign keys. Normal ingestion uses a message ID high-water mark; this does not establish safety against arbitrary corrupt ID reuse or cross-database identity. The six browser assertions remain unchanged. Outlook is deferred.
+
+## Design
+
+Persist one boolean inline intent `show_source_context`, default false, SQL integer 0/1 and IDB numeric 0/1. SQL logical 23 adds `INTEGER NOT NULL DEFAULT 0 CHECK (show_source_context IN (0, 1))`; IDB physical 9/logical 23 provides the downgrade barrier without bulk rewriting legacy rows. Older adapters must refuse these versions. No new source FK, index, or bulk backfill. Legacy rows and omitted inserts are false. Omitted updates preserve a valid prior bit only if mode and mode-specific source remain unchanged; explicit false clears it. Mode or source changes require explicit reaffirmation. New mode never projects context.
+
+Compute a read-only nullable presentationThreadId only when the explicit bit is true and the mode-selected source (reply/replyAll: in-reply-to; forward: forward-of) and its current thread exist and have matching account IDs. Both references may exist; the opposite source cannot select presentation. Deleted sources fail closed; merges follow the live source thread, never a reused old thread. Save validates source before persisting positive intent. SQL lists obtain draft, sources and threads in one LEFT JOIN statement or read snapshot, including for external writers; save projects inside its existing transaction. IDB uses synchronous point reads inside existing command/read fences, without await gaps. DTO projection is transient and contains no body or assets.
+
+Inline creation and accepted conversion explicitly affirm the bit with their mode-selected source. Fields, Undo and stale copies carry the intent only with a valid source. A mounted editor retains session placement; passive list/save hydration never moves or focuses it and is guarded by identity, generation, revision, source, mode, account and newer edits. Before strip open and forward conversion, revalidate latest context and intent; invalid association opens standalone without losing body or duplicating a draft. Existing focus lease blocks remain untouched. Send payload contains neither bit nor projection. Backup/import and storage switch omit local numeric identity and default false; cross-identity position is not promised. No network, timers, polling or heavy entry imports.
+
+## Tests and performance
+
+First establish public RED via real SQL and IDB stores, backend DTO and renderer hydration/shownDraftKey: exact body and same identity/generation survive foreign From with canonical null, but current association is missing. Standalone with the same source must remain standalone. Preserve existing six browser REDs. Cover SQL/native/WASM and IDB upgrade/reopen/downgrade; modes, dual and mismatched references, omitted and false, source/account deletion, merge, old-thread reuse and normal message HWM, stale revision/copy/Undo/send/reopen, external SQL snapshots and IDB command fences. Test delayed hydration and explicit reopen separately. Do not claim arbitrary corrupted message ID reuse protection. Existing body/envelope/attachments and send semantics remain unchanged.
+
+Storage cost is one integer per draft and bounded indexed source/thread point reads. No claim of 2,000-draft performance, global gates, IDB uncertainty or whole flag settlement until parent qualification. Parent owns browser/native/build/performance/global runs and fresh code review; this slice uses serial focused no-globalSetup tests, types and lint only.
+
+## Out of scope
+
+Portable source identity, guessed legacy associations, unrelated migrations, focus lease changes, providers, locales, UI styling and full report closure.
+
+## Critique findings and gate status
+
+The sole source-only Codex critique returned six findings in `/tmp/terno-plan44-critique.out`. The invoking zsh wrapper attempted to assign its exit code to the read-only variable `status`, so the CLI exit code and requested DONE footer were not captured. The critique text is available but the required actual exit-0/DONE gate is **not established**. Production and migrations remain blocked pending parent direction on that procedural failure.
+
+All six findings are accepted for design refinement: (1) distinguish existing canonical-thread placement from the new bit, explicitly handle inactive source deletion and dual references; (2) a version bump proves reopen refusal only, not fencing an already-open older adapter; test and qualify both; (3) stale saves with omitted intent must not inherit the newer writer's bit, and explicit true/false govern conflict copies; (4) session placement needs a defined mounted-editor lifetime and safe navigation after merge/reuse; (5) generation and intent ownership must fence asynchronous hydration and reopen, including away-and-back and focus movement, and cached thread detail is not fresh validation; (6) point lookups do not establish end-to-end resource bounds, and revalidation must not transfer all draft bodies or fan out RPCs. No performance or live-adapter downgrade guarantee is established.
+
+## Public reproduction
+
+`pnpm exec vitest run --config /tmp/terno-focus-vitest.config.mts apps/web/src/lib/draft-presentation-rpc.test.ts` failed all three cases at `shownDraftKey`: SQL, IDB exact and IDB instant return null rather than the same saved draft key. Each uses real store and backend RPC, and first verifies the same ID, generation, canonical null thread and exact authored body after foreign From. No production interface or storage changes have been made. The test predates the optional bit and must be amended to send explicit intent after the critique gate is resolved; the unchanged six browser REDs retain their original evidence.
+
+## Replacement critique and revisions
+
+The explicitly authorized replacement critique completed with actual `CODEX_EXIT=0` and `DONE` via Python subprocess return code. Its complete output is `/tmp/terno-plan44-critique-replacement.out`; the first transcript remains intact with exit unknown. All six replacement findings and the first six are accepted. Canonical thread fallback remains for legacy same-account drafts; explicit standalone uses canonical null plus false, and false alone does not erase a valid canonical placement. Source and thread accounts must match each other, not necessarily the From account. A stale conflict copy with omitted bit defaults false; explicit intent follows the submitted source. Mode-specific orphan normalization must not discard a valid active source merely because an inactive source disappeared.
+
+The SQL projection uses one LEFT JOIN statement, not an immediate write transaction for list. IDB read fencing is local to its adapter; physical-version upgrade establishes reopen refusal, not a guarantee that previously open old adapters are fenced. That and cross-adapter IDB freshness remain open and cannot be claimed from this version bump. Mounted placement requires an explicit lifetime, and delayed hydration/open must fence deletion, generation, user navigation and focus ownership. Cached thread data is not fresh revalidation. Full-list body transfers are not an acceptable new revalidation mechanism; end-to-end 2,000-draft performance and resource claims remain open. No solution or test is claimed merely by accepting these findings.
+
+## Implementation in progress — not qualified
+
+The explicit positive-intent RPC reproduction now passes in SQL, IDB exact and IDB instant, with same ID/generation, canonical null and exact body. The focused fixture also exercises explicit standalone, false clearing, omitted stale conflict copy, new mode, active forward source when both references exist, and source deletion. Selected shared draft conformance initially found save responses unexpectedly normalized; the projection now preserves save response semantics and all 72 selected cases pass. Existing renderer draft tests and focused presentation tests pass (65 cases). Package web/DB/IDB/backend typechecks, scoped lint and diff check pass.
+
+The existing SQL migration test's exact pre/post row equality fails because schema 23 adds the default-zero column; 35 other migration/IDB store tests passed. That test file is outside the assigned ownership and is pending coordination. Actual old-client upgrade/reopen controls, SQL WASM, external writer consistency and HWM exact-boundary proof remain unrun. Revalidation and mounted-session expiry, delayed hydration, conversion races, Undo/send/reopen coverage and review remain incomplete. The working tree is uncommitted and must not be treated as a finished feature. Parent owns browser, native, full and perf gates.
+
+A delayed list hydration after local forget was observed RED in SQL and both IDB modes; a local-change fence now rejects that stale response, and the 65 focused renderer tests pass. The public RPC fixture also checks normal ingestion assigns later message IDs above the deleted sources and the deleted forward source remains unprojected. This does not establish the precise HWM boundary across reopen, arbitrary corruption, or cross-database safety.
+
+## Approved metadata lookup
+
+The parent approved `drafts.sourceContext(messageId)` as a bounded, read-only lookup returning only current thread and source account, or null. SQL uses one message/thread join; IDB uses synchronous primary-key reads within its existing read fence. The caller chooses the mode-specific source and separately guards draft and user intent. Source account need not equal From. The parent also approved the exact schema-23 default-column adjustment and meaningful migration controls in the existing SQL migration test. No general message API or IDB fence change is authorized.
+
+## Storage and API boundary qualification
+
+The approved source-context RPC returns only the current message's thread/account or null, using one SQL JOIN or two synchronous IDB primary-key reads under the existing read fence. The actual RPC tests exercise foreign From, explicit standalone, source merge and deletion on native SQL and both IDB modes. The 72 shared draft conformance cases and three source-context RPC cases pass, as do 24 SQLite-WASM draft conformance cases. The SQL migration suite and source-context RPC suite pass 28 tests, including v22-to-v23 default, exact legacy identity/content, the 0/1 constraint and newer-than-current rejection. These checks do not demonstrate old-version reopen or an already-open old adapter's behavior. All four affected package typechecks, scoped lint and diff check pass. Renderer session expiry, fresh conversion validation, broader lifecycle and final review are still open; the subsequent renderer changes are not included in this boundary.

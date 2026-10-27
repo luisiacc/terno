@@ -335,6 +335,8 @@ export interface Draft {
   includeQuote: boolean;
   inReplyToMessageId: number | null;
   forwardOfMessageId: number | null;
+  showSourceContext?: boolean;
+  presentationThreadId?: number | null;
   uiState: "open" | "collapsed";
   updatedAt: number;
 }
@@ -677,6 +679,7 @@ export const contract = {
       includeQuote: z.boolean().optional(),
       inReplyToMessageId: id.nullable().optional(),
       forwardOfMessageId: id.nullable().optional(),
+      showSourceContext: z.boolean().optional(),
       uiState: z.enum(["open", "collapsed"]).optional(),
     }),
   ),
@@ -705,6 +708,7 @@ export const contract = {
     { timeoutMs: 2000 },
   ),
   "drafts.list": m<Draft[]>()(empty),
+  "drafts.sourceContext": m<{ threadId: number; accountId: number } | null>()(z.object({ messageId: id }).strict()),
   "drafts.delete": m<{ ok: true }>()(z.object({ id, generation: z.string().max(64).optional() })),
 
   "accounts.addImap": m<Account>()(

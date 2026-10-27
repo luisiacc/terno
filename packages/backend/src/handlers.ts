@@ -41,6 +41,8 @@ function toDraft(r: DraftRow): Draft {
     includeQuote: r.include_quote === 1,
     inReplyToMessageId: r.in_reply_to_message_id,
     forwardOfMessageId: r.forward_of_message_id,
+    showSourceContext: r.show_source_context === 1,
+    presentationThreadId: r.presentation_thread_id ?? null,
     uiState: r.ui_state,
     updatedAt: r.updated_at,
   };
@@ -460,6 +462,7 @@ export function createHandlers(b: Backend): Handlers {
       return { text: b.autocomplete.suggestText({ before, names, me }) };
     },
     "drafts.list": async () => (await store.drafts.list()).map(toDraft),
+    "drafts.sourceContext": ({ messageId }) => store.drafts.sourceContext(messageId),
     "drafts.delete": async ({ id, generation }) => {
       await store.drafts.delete(id, generation ?? "");
       return { ok: true as const };

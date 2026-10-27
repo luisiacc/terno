@@ -863,6 +863,7 @@ export class SqlMailStore implements MailStore {
   readonly drafts: MailStore["drafts"] = {
     save: async (d, now) => this.db.tx(() => saveDraft(this.db, d, now)),
     list: async () => listDrafts(this.db),
+    sourceContext: async (id) => this.db.get<{ threadId: number; accountId: number }>("SELECT t.id AS threadId, t.account_id AS accountId FROM messages m JOIN threads t ON t.id = m.thread_id AND t.account_id = m.account_id WHERE m.id = ?", id) ?? null,
     delete: async (id, generation) => deleteDraft(this.db, id, generation),
     messageRef: async (id) => messageRef(this.db, id),
     findMessage: async (accountId, rfc) => findMessageByRef(this.db, accountId, rfc),

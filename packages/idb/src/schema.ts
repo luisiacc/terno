@@ -10,9 +10,9 @@ import { MemDb, type Committed, type ForeignKey, type Key, type Row, type Table,
  * version 3 is SQL's v9 (drafts v2); version 4 is SQL's v14 (plan 17: correspondents, thread facts); version 5 is SQL's v15 (Reply-To, defaulted on read).
  * Version 6 adds attachment assets (SQL v16); SQL v17 adds an in-memory partial index, with no persisted shape change.
  */
-export const IDB_VERSION = 8;
+export const IDB_VERSION = 9;
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 22;
+export const LOGICAL_SCHEMA = 23;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 

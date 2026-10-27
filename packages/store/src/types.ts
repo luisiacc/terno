@@ -277,6 +277,8 @@ export interface DraftRow {
   include_quote: number;
   in_reply_to_message_id: number | null;
   forward_of_message_id: number | null;
+  show_source_context?: number;
+  presentation_thread_id?: number | null;
   ui_state: "open" | "collapsed";
   revision: number;
   updated_at: number;
@@ -307,5 +309,6 @@ export interface DraftInput {
   includeQuote?: boolean;
   inReplyToMessageId?: number | null;
   forwardOfMessageId?: number | null;
+  showSourceContext?: boolean;
   uiState?: "open" | "collapsed";
 }

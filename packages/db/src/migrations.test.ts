@@ -403,7 +403,7 @@ describe("migration v13: rich drafts", () => {
     db.run("INSERT INTO drafts (id, account_id, format, mode, to_json, cc_json, subject, body_text, quoted_text, include_quote, updated_at) VALUES (1, 1, 2, 'new', '[]', '[]', 'Plano', ?, 'cita', 1, 5)", text);
     const before = db.get<Record<string, unknown>>("SELECT * FROM drafts WHERE id = 1")!;
     expect(migrate(db)).toEqual({ from: 12, to: SCHEMA_VERSION });
-    expect(db.get<Record<string, unknown>>("SELECT * FROM drafts WHERE id = 1")).toEqual({ ...before, body_html: "", attachments_json: "[]", generation: "" });
+    expect(db.get<Record<string, unknown>>("SELECT * FROM drafts WHERE id = 1")).toEqual({ ...before, body_html: "", attachments_json: "[]", generation: "", show_source_context: 0 });
     const saved = saveDraft(db, { id: 1, baseRevision: 1, accountId: 1, to: [], cc: [], subject: "Plano", bodyText: "Hola", bodyHtml: "<div><b>Hola</b></div>" }, 6)!;
     expect(saved).toMatchObject({ body_text: "Hola", body_html: "<div><b>Hola</b></div>", revision: 2 });
   });
@@ -531,4 +531,26 @@ it("migration v15 opens legacy messages with empty Reply-To and preserves their 
   expect(message.replyTo).toEqual([]);
   expect(message.bodyText).toBeTruthy();
   expect(migrate(db)).toEqual({ from: SCHEMA_VERSION, to: SCHEMA_VERSION });
+});
+
+describe("migration v23: durable draft source context", () => {
+  it("defaults existing drafts without changing their content or identity and constrains new values", () => {
+    const dir = mkdtempSync(join(tmpdir(), "terno-mig23-"));
+    dirs.push(dir);
+    const db = new Db(nodeSqliteDriver, join(dir, "v22.db"));
+    dbs.push(db);
+    for (const m of MIGRATIONS.filter((m) => m.version <= 22)) db.exec(m.sql);
+    db.exec("PRAGMA user_version = 22");
+    db.run("INSERT INTO accounts (id, kind, email, display_name, provider_config, created_at) VALUES (1, 'imap', 'synthetic@example.test', '', '{}', 0)");
+    db.run("INSERT INTO drafts (id, generation, account_id, format, mode, to_json, cc_json, subject, body_text, body_html, updated_at) VALUES (1, 'generation', 1, 2, 'reply', '[]', '[]', 'subject', 'exact text', '<b>exact</b>', 5)");
+    const before = db.get<Record<string, unknown>>("SELECT * FROM drafts WHERE id = 1")!;
+    expect(migrate(db)).toEqual({ from: 22, to: 23 });
+    expect(db.get("SELECT * FROM drafts WHERE id = 1")).toEqual({ ...before, show_source_context: 0 });
+    expect(() => db.run("UPDATE drafts SET show_source_context = 2 WHERE id = 1")).toThrow();
+    db.run("UPDATE drafts SET show_source_context = 1 WHERE id = 1");
+    expect(db.get("SELECT generation, body_text, body_html, show_source_context FROM drafts WHERE id = 1")).toEqual({ generation: "generation", body_text: "exact text", body_html: "<b>exact</b>", show_source_context: 1 });
+    expect(migrate(db)).toEqual({ from: 23, to: 23 });
+    db.exec("PRAGMA user_version = 24");
+    expect(() => migrate(db)).toThrow(/newer than this app/);
+  });
 });

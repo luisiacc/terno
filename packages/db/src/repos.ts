@@ -723,15 +723,25 @@ export function saveDraft(db: Db, d: DraftInput, now = Date.now()): DraftRow | n
   const exists = (id: number | null) => id === null || Boolean(db.get("SELECT 1 FROM messages WHERE id = ?", id));
   const reply = exists(inReplyTo) ? inReplyTo : null;
   const forward = exists(forwardOf) ? forwardOf : null;
-  const source = original ?? (forward ? db.get<{ thread_id: number; account_id: number }>("SELECT thread_id, account_id FROM messages WHERE id = ?", forward) : undefined);
+  const sourceMode = d.mode ?? row?.mode ?? (inReplyTo ? "reply" : "new");
+  const source = sourceMode === "forward" ? (forward ? db.get<{ thread_id: number; account_id: number }>("SELECT thread_id, account_id FROM messages WHERE id = ?", forward) : undefined) : sourceMode === "new" ? undefined : original;
   const thread = requestedThread !== null ? db.get<{ id: number; account_id: number }>("SELECT id, account_id FROM threads WHERE id = ?", requestedThread) : undefined;
   const sourceThread = source?.thread_id === requestedThread ? thread : source ? db.get<{ id: number; account_id: number }>("SELECT id, account_id FROM threads WHERE id = ?", source.thread_id) : undefined;
   const threadId = requestedThread === null ? null : source ? (source.account_id === d.accountId && sourceThread?.account_id === d.accountId ? sourceThread.id : null) : thread?.account_id === d.accountId ? thread.id : null;
   const lost = !reply && !forward && (requestedThread !== threadId || !exists(inReplyTo) || !exists(forwardOf));
+  const mode = lost ? "new" : d.mode ?? row?.mode ?? (inReplyTo ? "reply" : "new");
+  const selected = mode === "forward" ? forward : mode === "new" ? null : reply;
+  const selectedSource = selected ? db.get<{ thread_id: number; account_id: number }>("SELECT thread_id, account_id FROM messages WHERE id = ?", selected) : undefined;
+  const selectedThread = selectedSource ? db.get<{ account_id: number }>("SELECT account_id FROM threads WHERE id = ?", selectedSource.thread_id) : undefined;
+  const sameRevision = row && (d.baseRevision === undefined || d.baseRevision === row.revision);
+  const priorSource = row?.mode === "forward" ? row.forward_of_message_id : row?.in_reply_to_message_id;
+  const intent = d.showSourceContext ?? Boolean(sameRevision && row?.show_source_context === 1 && row.mode === mode && priorSource === selected);
+  const showSourceContext = Boolean(intent && selectedSource && selectedThread && selectedSource.account_id === selectedThread.account_id);
   const values = {
     account_id: d.accountId,
     thread_id: threadId,
-    mode: lost ? "new" : d.mode ?? row?.mode ?? (inReplyTo ? "reply" : "new"),
+    mode,
+    show_source_context: Number(showSourceContext),
     to_json: JSON.stringify(d.to),
     cc_json: JSON.stringify(d.cc),
     bcc_json: d.bcc !== undefined ? JSON.stringify(d.bcc) : (row?.bcc_json ?? "[]"),
@@ -750,7 +760,7 @@ export function saveDraft(db: Db, d: DraftInput, now = Date.now()): DraftRow | n
   if (row && (d.baseRevision === undefined || d.baseRevision === row.revision)) {
     db.run(`UPDATE drafts SET ${cols.map((c) => `${c} = ?`).join(", ")}, revision = revision + 1, updated_at = ? WHERE id = ?`, ...(Object.values(values) as Param[]), now, row.id);
     linkAssets(sqlAssets(db), "draft", row.id, attachments);
-    return db.get<DraftRow>("SELECT * FROM drafts WHERE id = ?", row.id)!;
+    return projectDrafts(db, "WHERE d.id = ?", row.id, false)[0]!;
   }
   // new (or edited from a revision another writer replaced): its own draft, format 2
   db.run("UPDATE draft_counter SET last_id = MAX(last_id, (SELECT COALESCE(MAX(id), 0) FROM drafts)) + 1 WHERE id = 1");
@@ -760,7 +770,7 @@ export function saveDraft(db: Db, d: DraftInput, now = Date.now()): DraftRow | n
     id, db.uuid(), ...(Object.values(values) as Param[]), now,
   );
   linkAssets(sqlAssets(db), "draft", id, attachments);
-  return db.get<DraftRow>("SELECT * FROM drafts WHERE id = ?", id)!;
+  return projectDrafts(db, "WHERE d.id = ?", id, false)[0]!;
 }
 
 /**
@@ -768,16 +778,25 @@ export function saveDraft(db: Db, d: DraftInput, now = Date.now()): DraftRow | n
  * original message is gone comes back as a new message (threading ids
  * cleared): it keeps its recipients and text and can be sent.
  */
-export function listDrafts(db: Db): DraftRow[] {
-  const exists = (id: number | null) => id !== null && db.get("SELECT 1 FROM messages WHERE id = ?", id) !== undefined;
-  return db.all<DraftRow>("SELECT * FROM drafts ORDER BY updated_at DESC").map((d) => normalizeOrphan(d, exists));
+function projectDrafts(db: Db, where = "", id?: number, normalize = true): DraftRow[] {
+  return db.all<DraftRow & { reply_exists: number | null; forward_exists: number | null }>(`SELECT d.*,
+    r.id AS reply_exists, f.id AS forward_exists,
+    CASE WHEN d.show_source_context = 1 AND d.mode != 'new' AND st.id IS NOT NULL AND sm.account_id = st.account_id THEN st.id ELSE NULL END AS presentation_thread_id
+    FROM drafts d
+    LEFT JOIN messages r ON r.id = d.in_reply_to_message_id
+    LEFT JOIN messages f ON f.id = d.forward_of_message_id
+    LEFT JOIN messages sm ON sm.id = CASE WHEN d.mode = 'forward' THEN d.forward_of_message_id WHEN d.mode IN ('reply', 'replyAll') THEN d.in_reply_to_message_id END
+    LEFT JOIN threads st ON st.id = sm.thread_id
+    ${where} ORDER BY d.updated_at DESC`, ...(id === undefined ? [] : [id])).map((d) => {
+    const active = d.mode === "forward" ? d.forward_exists : d.mode === "new" ? 1 : d.reply_exists;
+    const lost = d.mode !== "new" && !active && (d.thread_id === null || (d.mode === "forward" ? d.forward_of_message_id : d.in_reply_to_message_id) !== null);
+    const { reply_exists: _reply, forward_exists: _forward, ...draft } = d;
+    return normalize && lost ? { ...draft, mode: "new" as const, thread_id: null, in_reply_to_message_id: null, forward_of_message_id: null, presentation_thread_id: null } : draft;
+  });
 }
 
-/** A draft whose conversation or original message is gone, as a new message (IdbMailStore applies the same rule). */
-export function normalizeOrphan(d: DraftRow, exists: (messageId: number | null) => boolean): DraftRow {
-  if (d.mode === "new") return d;
-  const lost = (d.thread_id === null && d.in_reply_to_message_id === null && d.forward_of_message_id === null) || (d.in_reply_to_message_id !== null && !exists(d.in_reply_to_message_id)) || (d.forward_of_message_id !== null && !exists(d.forward_of_message_id));
-  return lost ? { ...d, mode: "new", thread_id: null, in_reply_to_message_id: null, forward_of_message_id: null } : d;
+export function listDrafts(db: Db): DraftRow[] {
+  return projectDrafts(db);
 }
 
 /** Message-IDs are stored as ingestion normalizes them: no <>, lower case. */

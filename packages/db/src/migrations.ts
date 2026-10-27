@@ -877,6 +877,9 @@ CREATE INDEX flag_init_ops ON ops(account_id,seq,id);
   { version: 22, name: "current parked flag effect lookup", sql: `
 CREATE INDEX flag_effect_parked_current ON flag_op_effects(message_id,field,coalesce(intent_version,0),value) WHERE active=0;
 ` },
+  { version: 23, name: "durable draft source context", sql: `
+ALTER TABLE drafts ADD COLUMN show_source_context INTEGER NOT NULL DEFAULT 0 CHECK (show_source_context IN (0, 1));
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

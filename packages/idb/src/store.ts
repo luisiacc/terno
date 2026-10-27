@@ -1446,6 +1446,11 @@ export class IdbMailStore implements MailStore {
     save: (d, now) => this.command(() => saveDraft(this.c, d, now)),
     // waits for the messages: an orphan (its original gone) is told apart from a draft whose original is loading
     list: () => this.read(() => listDrafts(this.c)),
+    sourceContext: (id) => this.read(() => {
+      const message = T(this.c, "messages").get(id);
+      const thread = message ? T(this.c, "threads").get(message.thread_id) : undefined;
+      return message && thread && message.account_id === thread.account_id ? { threadId: thread.id, accountId: thread.account_id } : null;
+    }),
     delete: (id, generation) => this.command(() => {
       const drafts = T(this.c, "drafts");
       const row = drafts.get(id);
