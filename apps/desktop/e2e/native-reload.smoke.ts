@@ -161,6 +161,45 @@ test.beforeEach(async () => {
 test.afterEach(async () => { await app?.close(); });
 test.afterAll(() => { if (work) rmSync(work, { recursive: true, force: true }); });
 
+for (const dialog of ["settings", "shortcuts"] as const) for (const state of ["missing", "unknown"] as const) test(`healthy ${dialog} exposes native ${state} Review and preserves intent`, async () => {
+  await page.getByTestId("compose-button").click(); const body = page.getByTestId("compose-body");
+  await body.click(); await body.press("Meta+b"); await page.keyboard.type("healthy exact work");
+  await page.getByTestId("compose-to").fill('"Pérez, Ana" <ana@example.test>, bob@');
+  await page.getByTestId("attachment-input").setInputFiles({ name: "healthy.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 255, 128]) });
+  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  const original = (await store((s) => s.drafts.list()))[0]!; await store((s) => s.drafts.delete(original.id, original.generation));
+  await endOfBody(body); await page.keyboard.type(" latest"); await expect(page.getByTestId("draft-save-copy")).toBeVisible();
+  if (state === "unknown") {
+    await page.evaluate(() => { window.nativeReloadProbe.dropCopy = true; }); await page.getByTestId("draft-save-copy").click();
+    await expect.poll(() => page.evaluate(() => window.nativeReloadProbe.copyCommitted)).toBe(true);
+    await expect(page.getByTestId("draft-status")).toContainText("may already exist", { timeout: 35_000 });
+  }
+  await endOfBody(body); await body.press("ArrowLeft"); await page.getByTestId("format-italic").click();
+  const html = await body.innerHTML(), caret = await page.evaluate(() => ({ offset: getSelection()?.anchorOffset, text: getSelection()?.anchorNode?.textContent }));
+  await page.getByTestId("open-settings").click(); await page.getByTestId("tab-general").click();
+  if (dialog === "shortcuts") await page.getByTestId("open-shortcuts").click();
+  const modal = page.getByTestId(`${dialog}-dialog`); await expect(modal).toBeVisible();
+  let navigations = 0; page.on("framenavigated", (frame) => { if (frame === page.mainFrame()) navigations++; });
+  await menu(); await shortcut(); await shortcut(true);
+  const notice = modal.getByTestId("native-reload-notice"); await expect(notice).toBeVisible();
+  expect(await notice.evaluate((el) => Boolean(el.closest('[aria-hidden="true"], [inert]')))).toBe(false);
+  expect(navigations).toBe(0); await expect(page.getByTestId("native-reload-notice")).toHaveCount(1);
+  for (const theme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: theme }); await axe();
+    await page.screenshot({ path: join(shots, `healthy-${dialog}-${state}-${theme}.png`) });
+  }
+  await notice.getByTestId("native-reload-review").focus(); await page.keyboard.press("Enter");
+  await expect(page.getByTestId("recovery-workspace")).toBeVisible(); await expect(modal).toHaveCount(0);
+  await expect(body).toHaveCount(1); await expect(body).toBeFocused(); expect(await body.innerHTML()).toBe(html);
+  expect(await page.evaluate(() => ({ offset: getSelection()?.anchorOffset, text: getSelection()?.anchorNode?.textContent }))).toEqual(caret);
+  await expect(page.getByTestId("format-italic")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("recovery-workspace")).toContainText("Pérez, Ana");
+  await expect(page.getByTestId("recovery-workspace")).toContainText("bob@");
+  await expect(page.getByTestId("recovery-workspace")).toContainText("healthy.bin");
+  const ref = JSON.parse(original.attachments_json)[0]; expect(await store((s) => s.attachments.read(original.account_id, ref.assetId, 0))).toBe("AP+A");
+  await page.getByTestId("recovery-details").click(); await expect(modal).toBeVisible(); expect(navigations).toBe(0);
+});
+
 for (const state of ["missing", "unknown"] as const) test(`native menu and CmdR/CmdShiftR retain ${state} work, and only disclosed override discards it`, async () => {
   await page.getByTestId("compose-button").click(); const body = page.getByTestId("compose-body");
   await body.click(); await body.press("Meta+b"); await page.keyboard.type("native exact work");
