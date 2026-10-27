@@ -1,12 +1,13 @@
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
-import { Component, lazy, Suspense, type ReactNode } from "react";
+import { Component, lazy, Suspense, useLayoutEffect, useRef, type ReactNode } from "react";
 import { create } from "zustand";
 import { useDraftRecovery } from "~/lib/draft-recovery-ui";
 import { RecoveryReload } from "./recovery-reload";
 import { captureUi } from "~/lib/diag";
 import { exposeForTests } from "~/lib/render-probe";
 import { exportDiagnostics } from "~/state/diag";
+import { registerReaderPaneFailure } from "~/lib/compose";
 
 type Area = "app" | "reader" | "settings";
 
@@ -101,13 +102,21 @@ export function AppBoundary({ children }: { children: ReactNode }) {
 
 const PANE_TITLE = { reader: "app.boundary.reader", settings: "app.boundary.settings" } as const;
 
+function ReaderFailure({ threadId, children }: { threadId: unknown; children: ReactNode }) {
+  const failedThread = useRef(threadId).current;
+  const token = useRef({}).current;
+  useLayoutEffect(() => typeof failedThread === "number" ? registerReaderPaneFailure(failedThread, token) : undefined, [failedThread, token]);
+  return children;
+}
+
 /** One pane (the reader, a settings section): the rest of the window keeps working. Its title follows the area unless given. */
-export function PaneBoundary({ area, resetKey, title, children }: { area: keyof typeof PANE_TITLE; resetKey?: unknown; title?: string; children: ReactNode }) {
+export function PaneBoundary({ area, resetKey, readerThreadId, title, children }: { area: keyof typeof PANE_TITLE; resetKey?: unknown; readerThreadId?: number | null; title?: string; children: ReactNode }) {
   return (
     <Boundary
       area={area}
       resetKey={resetKey}
-      fallback={({ id, reset }) => (
+      fallback={({ id, reset }) => {
+        const content = (
         <div role="alert" className="flex h-full min-h-48 items-center justify-center p-8 text-center" data-testid={`${area}-boundary`}>
           <div className="max-w-xs">
             <p className="text-sm font-medium">{title ?? t(PANE_TITLE[area])}</p>
@@ -118,7 +127,9 @@ export function PaneBoundary({ area, resetKey, title, children }: { area: keyof 
             {id && <p className="mt-4 text-xs text-muted-foreground tabular-nums select-text">{t("app.boundary.reference", { id: shortId(id) })}</p>}
           </div>
         </div>
-      )}
+        );
+        return area === "reader" ? <ReaderFailure threadId={readerThreadId}>{content}</ReaderFailure> : content;
+      }}
     >
       <TestThrow area={area} />
       {children}

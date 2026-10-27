@@ -37,7 +37,13 @@ let intent = 0;
 type ReaderDestination = { token: object; active: boolean; generation: number };
 type FocusLease = { intent: number; threadId: number | null; composeSeq?: number; accountId?: number; key?: string; seq?: number; valid: boolean; dispose: () => void; destination?: ReaderDestination };
 const readerDestinations = new Map<number, ReaderDestination>();
-const destinationAvailable = (lease: FocusLease | null): boolean => !lease?.destination || lease.destination.active;
+const failedReaderHosts = new Map<object, { threadId: number }>();
+const readerFailed = (threadId: number): boolean => {
+  for (const host of failedReaderHosts.values()) if (host.threadId === threadId) return true;
+  return false;
+};
+const destinationAvailable = (lease: FocusLease | null): boolean => !lease ||
+  ((lease.threadId === null || !readerFailed(lease.threadId)) && (!lease.destination || lease.destination.active));
 let focusLease: FocusLease | null = null;
 const focusLeaseListeners = new Set<(threadId: number, fallback: boolean) => void>();
 
@@ -69,6 +75,14 @@ export function registerReaderFocusDestination(threadId: number, token: object):
       if (captured && focusLease === captured && captured.destination === destination && captured.intent === intent) supersedeCompose();
     });
   };
+}
+
+/** A failed Reader cannot accept focus work until this exact fallback leaves. */
+export function registerReaderPaneFailure(threadId: number, token: object): () => void {
+  const host = { threadId };
+  failedReaderHosts.set(token, host);
+  if (focusLease?.threadId === threadId && focusLease.intent === intent) supersedeCompose();
+  return () => { if (failedReaderHosts.get(token) === host) failedReaderHosts.delete(token); };
 }
 
 function beginFocusLease(owner: number, threadId: number | null, standalone?: { key: string; seq: number }): FocusLease {

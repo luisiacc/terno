@@ -69,7 +69,7 @@ function PageLayer({ page }: { page: "thread" | "compose" }) {
   const inset = useSnack((s) => (page === "compose" ? s.inset : 0));
   return (
     <div data-testid="list-page" data-page={page} className="absolute inset-0 z-[5] flex flex-col bg-background animate-in fade-in-0 slide-in-from-right-1 duration-base" style={inset ? { paddingBottom: inset } : undefined}>
-      <PaneBoundary area="reader" resetKey={selectedId}>
+      <PaneBoundary area="reader" resetKey={selectedId} readerThreadId={page === "thread" ? selectedId : null}>
         {page === "compose" ? <NewMessage /> : <Reader />}
       </PaneBoundary>
     </div>
@@ -146,7 +146,7 @@ export function App() {
         {!list && (
           <main className="relative min-h-0">
             {/* the reader pane: a bulk selection, else a new message being written, else the conversation; one that fails to render is that pane only */}
-            <PaneBoundary area="reader" resetKey={selectedId}>
+            <PaneBoundary area="reader" resetKey={selectedId} readerThreadId={!many && !composing ? selectedId : null}>
               {many ? <SelectionBar /> : composing ? <NewMessage /> : <Reader />}
             </PaneBoundary>
           </main>
