@@ -1295,6 +1295,14 @@ export class IdbMailStore implements MailStore {
 
   readonly owner: MailStore["owner"] = {
     get: () => this.early(() => getOwner(this.c)),
+    confirm: (o) => {
+      const stamp = { ...o.stamp }, claim = { ...o.claim, evidence: { ...o.claim.evidence } }, now = o.now;
+      const secret = { kind: "retain" as const, name: o.secret.name, expectedBlob: Uint8Array.from(o.secret.kind === "retain" ? o.secret.expectedBlob : o.secret.blob) };
+      return this.early(() => {
+        const r = T(this.c, "owner").get(1);
+        return !!r && r.account_id === claim.accountId && r.email === claim.email.toLowerCase() && r.display_name === claim.displayName && r.provider === claim.provider && r.verified_by === claim.verifiedBy && r.evidence_json === JSON.stringify(claim.evidence) && r.verified_at === now && r.updated_at === now && this.commitSecret(secret, { ...stamp, id: claim.accountId });
+      });
+    },
     change: (o) => {
       const stamp = { ...o.stamp }, claim = { ...o.claim, evidence: { ...o.claim.evidence } }, eligible = o.eligible;
       const secret = o.secret.kind === "retain" ? { ...o.secret, expectedBlob: Uint8Array.from(o.secret.expectedBlob) } : { ...o.secret, expectedBlob: o.secret.expectedBlob && Uint8Array.from(o.secret.expectedBlob), blob: Uint8Array.from(o.secret.blob) };

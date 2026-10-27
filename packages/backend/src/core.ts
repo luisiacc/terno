@@ -1182,12 +1182,21 @@ export class BackendCore {
     if (!needsWholeSignIn(account.syncState) && !this.gmailRenewals.has(accountId)) this.startAccount(account);
   }
 
-  /** An acknowledged write retires refusals even if a newer intent owns RPC publication. */
-  credentialCommit(accountId: number, flow: AbortController, write: (active: () => boolean) => Promise<boolean>): Promise<boolean> {
+  /** Durable writes retire refusals independently of permission to publish RPC success. */
+  credentialCommit(accountId: number, flow: AbortController, write: (active: () => boolean) => Promise<boolean>, confirm?: () => Promise<boolean>): Promise<boolean> {
     const life = this.lifetime(accountId);
     const active = () => !this.stopped && !this.abort.signal.aborted && !life.removing && this.lifetimes.get(accountId) === life;
     return this.credentialWrite(accountId, flow, async () => {
-      const committed = await write(active);
+      let committed: boolean;
+      try { committed = await write(active); }
+      catch {
+        if (active() && confirm) {
+          try {
+            if (await confirm() && active()) this.credentials.set(accountId, this.credentialsOf(accountId) + 1);
+          } catch { /* An unreadable result proves neither commit nor rollback. */ }
+        }
+        throw new RpcError("BAD_REQUEST", L("errors.secret.replaceFailed"));
+      }
       if (committed && active()) {
         this.credentials.set(accountId, this.credentialsOf(accountId) + 1);
       }

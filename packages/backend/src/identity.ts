@@ -1,7 +1,7 @@
 import { isValidEmail, messageOf, type Account } from "@terno/core";
 import { RpcError, type OwnerIdentity } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
-import type { OwnerClaim, SecretIntent } from "@terno/store";
+import type { OwnerClaim, OwnerDecision, SecretIntent } from "@terno/store";
 import type { GmailAccountConfig, GmailConnectResult, GmailRenewalProof, ImapAccountConfig } from "@terno/mail";
 import type { BackendCore as Backend } from "./core";
 import { readSettings } from "./settings";
@@ -158,10 +158,14 @@ export async function googleCredentialIntent(b: Backend, account: Account, stamp
   return { intent: { kind: "replace", name, expectedBlob: pending.expectedBlob, blob: pending.blob }, pending };
 }
 
+async function confirmCredential(b: Backend, stamp: { id: number; email: string; createdAt: number }, intent: SecretIntent, owner?: OwnerDecision): Promise<boolean> {
+  return owner ? b.store.owner.confirm(owner) : b.store.secrets.commit({ kind: "retain", name: intent.name, expectedBlob: intent.kind === "retain" ? intent.expectedBlob : intent.blob }, stamp);
+}
+
 export async function commitGoogleCredential(b: Backend, accountId: number, stamp: { id: number; email: string; createdAt: number }, flow: AbortController, intent: SecretIntent): Promise<void> {
   await sameAccount(b, stamp, flow);
   let committed: boolean;
-  try { committed = await b.credentialCommit(accountId, flow, () => b.store.secrets.commit(intent, stamp)); }
+  try { committed = await b.credentialCommit(accountId, flow, () => b.store.secrets.commit(intent, stamp), () => confirmCredential(b, stamp, intent)); }
   catch { b.assertSignIn(accountId, flow); throw persistenceFailed(); }
   b.assertSignIn(accountId, flow);
   if (!committed) { b.gmailRenewals.delete(accountId); throw persistenceFailed(); }
@@ -261,16 +265,18 @@ export async function changeOwnerTo(b: Backend, accountId: number, password: str
         throw invalidRenewal();
       }
       const expiresAt = prepared.pending?.proof.expiresAt;
-      let changed = false;
+      const decision: OwnerDecision = { claim: { ...claim, accountId, email: account.email }, stamp, secret: prepared.intent, reason: current ? "changed by user" : "claimed by user", now: b.now() };
+      let changed = false, ownerAttempt = true;
       try {
         await b.credentialCommit(accountId, flow, async (active) => {
-          changed = await b.store.owner.change({ claim: { ...claim, accountId, email: account.email }, stamp, secret: prepared.intent, reason: current ? "changed by user" : "claimed by user", now: b.now(), eligible: () => active() && !flow.signal.aborted && b.signIns.get(accountId) === flow && (expiresAt === undefined || Date.now() < expiresAt) });
+          changed = await b.store.owner.change({ ...decision, eligible: () => active() && !flow.signal.aborted && b.signIns.get(accountId) === flow && (expiresAt === undefined || Date.now() < expiresAt) });
           if (changed) return true;
+          ownerAttempt = false;
           // A refused claim must not strand credentials already proven before admission.
           const recovered = active() && await b.store.secrets.commit(prepared.intent, stamp);
           if (recovered && b.gmailRenewals.get(accountId) === prepared.pending) b.gmailRenewals.delete(accountId);
           return recovered;
-        });
+        }, () => confirmCredential(b, stamp, prepared.intent, ownerAttempt ? decision : undefined));
       } catch { b.assertSignIn(accountId, flow); throw persistenceFailed(); }
       b.assertSignIn(accountId, flow);
       if (!changed) throw prepared.pending ? invalidRenewal() : persistenceFailed();

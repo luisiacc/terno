@@ -782,6 +782,10 @@ export class SqlMailStore implements MailStore {
 
   readonly owner: MailStore["owner"] = {
     get: async () => getOwner(this.db),
+    confirm: async (c) => this.db.tx(() => {
+      const owner = this.db.get(`SELECT 1 FROM owner WHERE id = 1 AND account_id = ? AND email = ? AND display_name = ? AND provider = ? AND verified_by = ? AND evidence_json = ? AND verified_at = ? AND updated_at = ?`, c.claim.accountId, c.claim.email.toLowerCase(), c.claim.displayName, c.claim.provider, c.claim.verifiedBy, JSON.stringify(c.claim.evidence), c.now, c.now);
+      return !!owner && this.commitSecret({ kind: "retain", name: c.secret.name, expectedBlob: c.secret.kind === "retain" ? c.secret.expectedBlob : c.secret.blob }, { ...c.stamp, id: c.claim.accountId });
+    }),
     change: async (c) =>
       this.db.tx(() => {
         const now = accountStamp(this.db, c.claim.accountId);

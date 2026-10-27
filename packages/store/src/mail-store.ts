@@ -215,6 +215,14 @@ export type SecretIntent =
   | { kind: "retain"; name: string; expectedBlob: Uint8Array }
   | { kind: "replace"; name: string; expectedBlob: Uint8Array | null; blob: Uint8Array };
 
+export interface OwnerDecision {
+  claim: OwnerClaim;
+  stamp: { createdAt: number; email: string };
+  secret: SecretIntent;
+  reason: string;
+  now: number;
+}
+
 /**
  * The storage boundary the backend uses. Every method is ONE atomic unit of
  * work; there is no generic cross-call transaction. Returned model deltas and
@@ -419,7 +427,9 @@ export interface MailStore {
      * evaluated inside the command before any mutation; false leaves owner/history/secret unchanged.
      * A thrown predicate aborts the command. It must not start async work or mutate store state.
      */
-    change(c: { claim: OwnerClaim; stamp: { createdAt: number; email: string }; secret: SecretIntent; reason: string; now: number; eligible?: () => boolean }): Promise<boolean>;
+    change(c: OwnerDecision & { eligible?: () => boolean }): Promise<boolean>;
+    /** Read-only atomic confirmation of the resulting owner, proof, credential bytes and account stamp. */
+    confirm(c: OwnerDecision): Promise<boolean>;
   };
 
   drafts: {

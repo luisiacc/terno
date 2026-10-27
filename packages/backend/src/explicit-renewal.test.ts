@@ -61,11 +61,19 @@ async function setup(kind: "SQL" | "IndexedDB") {
 }
 
 describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal", (kind) => {
-  it.each(["omitted", "supplied"] as const)("superseded queued %s owner decision preserves owner and history while recovering credentials", async (credential) => {
+  it.each([
+    { credential: "omitted", uncertain: false }, { credential: "supplied", uncertain: false },
+    { credential: "omitted", uncertain: true }, { credential: "supplied", uncertain: true },
+  ] as const)("superseded queued $credential owner decision preserves owner/history with uncertain recovery=$uncertain", async ({ credential, uncertain }) => {
     const t = await setup(kind), entered = t.gate(), blocked = t.gate();
     const owner = await t.backend.store.owner.get(), history = await t.history(), notifications: unknown[] = [];
     t.client.on("owner", (value) => notifications.push(value));
     t.answer({ refreshToken: credential === "omitted" ? null : "admitted-replacement" }); t.rotate("admitted-replacement");
+    const generation = t.backend.credentialsOf(t.account.id);
+    if (uncertain) {
+      const commit = t.backend.store.secrets.commit.bind(t.backend.store.secrets);
+      vi.spyOn(t.backend.store.secrets, "commit").mockImplementationOnce(async (...args) => { await commit(...args); throw new Error("synthetic recovered credential acknowledgement lost"); });
+    }
     const change = t.backend.store.owner.change.bind(t.backend.store.owner);
     vi.spyOn(t.backend.store.owner, "change").mockImplementationOnce(async (request) => {
       // Hold the actual IDB command queue; SQL's synchronous transaction is delayed at admission.
@@ -81,6 +89,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     expect(await result).toHaveProperty("error"); expect(await off).toHaveProperty("value");
     expect.soft(await t.backend.store.owner.get()).toEqual(owner); expect.soft(await t.history()).toEqual(history);
     expect(notifications).toEqual([]); expect(await t.backend.getSecret(t.name)).toBe("admitted-replacement");
+    expect(t.backend.credentialsOf(t.account.id)).toBeGreaterThan(generation);
     await expect(t.client.call("identity.changeOwner", { accountId: t.account.id })).resolves.toMatchObject({ accountId: t.account.id });
   });
 
@@ -143,6 +152,129 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     const sending = t.backend.runWorker(); await accepted.promise;
     await t.client.call("accounts.reconnect", { id: t.account.id });
     settle.release(); await sending; await t.backend.runWorker();
+    expect(sends).toBe(1); expect((await t.client.call("ops.list", {})).find((row) => row.id === sent.opId)?.state).toBe("succeeded");
+  });
+
+  it.each(["reconnect", "owner"] as const)("uncertain %s persistence retires old refusals only after a durable commit", async (method) => {
+    for (const stage of ["before", "after"] as const) {
+      const t = await setup(kind), entered = t.gate(), blocked = t.gate();
+      const inserted = await t.backend.store.sync.ingest([{ accountId: t.account.id, providerMsgId: "uncertain-archive", providerThreadId: null, rfcMessageId: "uncertain@example.test", inReplyTo: null, references: [], from: { name: "", email: "sender@example.test" }, to: [], cc: [], bcc: [], subject: "Synthetic", date: 1, snippet: "", bodyText: "Synthetic", bodyHtml: null, bodyState: "full", listId: null, isRead: false, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 9 }], { applyFilters: false, now: Date.now(), classifier: null });
+      await t.client.call("threads.act", { threadIds: inserted.touched, action: "archive" });
+      const provider = (await t.backend.provider(t.account.id))!;
+      provider.execute = async () => { entered.release(); await blocked.promise; throw new ProviderAuthError("synthetic retired refusal"); };
+      const worker = t.backend.runWorker(); await entered.promise;
+      const generation = t.backend.credentialsOf(t.account.id), notifications: unknown[] = [];
+      t.client.on("owner", (value) => notifications.push(value));
+      if (method === "reconnect") {
+        const commit = t.backend.store.secrets.commit.bind(t.backend.store.secrets);
+        vi.spyOn(t.backend.store.secrets, "commit").mockImplementationOnce(async (...args) => { if (stage === "after") await commit(...args); throw new Error("PRIVATE_AFTER_COMMIT"); });
+      } else {
+        const change = t.backend.store.owner.change.bind(t.backend.store.owner);
+        vi.spyOn(t.backend.store.owner, "change").mockImplementationOnce(async (...args) => { if (stage === "after") await change(...args); throw new Error("PRIVATE_AFTER_COMMIT"); });
+      }
+      t.answer({ refreshToken: "uncertain-replacement" });
+      const result = await outcome<unknown>(method === "reconnect" ? t.client.call("accounts.reconnect", { id: t.account.id }) : t.client.call("identity.changeOwner", { accountId: t.account.id }));
+      expect(result).toHaveProperty("error"); expect(String("error" in result && result.error)).not.toContain("PRIVATE_AFTER_COMMIT");
+      expect(notifications).toEqual([]); expect(await t.backend.getSecret(t.name)).toBe(stage === "after" ? "uncertain-replacement" : "old-refresh");
+      expect(await t.history()).toHaveLength(method === "owner" && stage === "after" ? 1 : 0);
+      await t.backend.syncAccount(t.account.id);
+      expect((await t.backend.store.accounts.get(t.account.id))?.syncState.authRequired).toBe(false);
+      blocked.release(); await worker;
+      if (stage === "after") {
+        expect.soft(t.backend.credentialsOf(t.account.id)).toBeGreaterThan(generation);
+        expect.soft((await t.client.call("ops.list", {})).find((row) => row.kind === "archive")?.awaitingAuth).not.toBe(true);
+        await t.backend.runWorker();
+        expect.soft((await t.client.call("ops.list", {})).find((row) => row.kind === "archive")?.state).toBe("succeeded");
+      } else {
+        expect(t.backend.credentialsOf(t.account.id)).toBe(generation);
+        expect((await t.client.call("ops.list", {})).find((row) => row.kind === "archive")).toMatchObject({ awaitingAuth: true, state: "queued" });
+      }
+    }
+  });
+
+  it.each(["reconnect", "owner"] as const)("uncertain %s confirmation cannot count unreadable or conflicting durable state", async (method) => {
+    for (const conflict of ["unreadable", "credential", "owner"] as const) {
+      if (method === "reconnect" && conflict === "owner") continue;
+      const t = await setup(kind); await t.mark();
+      const before = (await t.backend.store.accounts.get(t.account.id))!.syncState, generation = t.backend.credentialsOf(t.account.id);
+      t.answer({ refreshToken: "uncertain-replacement" });
+      if (method === "reconnect") {
+        const commit = t.backend.store.secrets.commit.bind(t.backend.store.secrets);
+        const fault = vi.spyOn(t.backend.store.secrets, "commit").mockImplementationOnce(async (...args) => {
+          await commit(...args);
+          if (conflict === "credential") await t.backend.store.secrets.put(t.name, await plaintextCipher.encrypt("newer-different-grant"));
+          throw new Error("PRIVATE_WRITE_FAILURE");
+        });
+        if (conflict === "unreadable") fault.mockRejectedValueOnce(new Error("PRIVATE_CONFIRM_FAILURE"));
+      } else {
+        const change = t.backend.store.owner.change.bind(t.backend.store.owner);
+        vi.spyOn(t.backend.store.owner, "change").mockImplementationOnce(async (request) => {
+          await change(request);
+          if (conflict === "credential") await t.backend.store.secrets.put(t.name, await plaintextCipher.encrypt("newer-different-grant"));
+          if (conflict === "owner") await change({ ...request, claim: { ...request.claim, displayName: "Newer owner proof" }, secret: { kind: "retain", name: t.name, expectedBlob: request.secret.kind === "retain" ? request.secret.expectedBlob : request.secret.blob }, now: request.now + 1 });
+          throw new Error("PRIVATE_WRITE_FAILURE");
+        });
+        if (conflict === "unreadable") vi.spyOn(t.backend.store.owner, "confirm").mockRejectedValueOnce(new Error("PRIVATE_CONFIRM_FAILURE"));
+      }
+      const result = await outcome<unknown>(method === "reconnect" ? t.client.call("accounts.reconnect", { id: t.account.id }) : t.client.call("identity.changeOwner", { accountId: t.account.id }));
+      expect(result).toHaveProperty("error"); expect(String("error" in result && result.error)).not.toContain("PRIVATE_");
+      expect(t.logs.flat(Infinity).map(String).join(" ")).not.toContain("PRIVATE_");
+      expect(t.backend.credentialsOf(t.account.id)).toBe(generation);
+      expect((await t.backend.store.accounts.get(t.account.id))!.syncState).toEqual(before);
+      expect(await t.backend.getSecret(t.name)).toBe(conflict === "credential" ? "newer-different-grant" : "uncertain-replacement");
+      if (conflict === "owner") expect(await t.backend.store.owner.get()).toMatchObject({ displayName: "Newer owner proof" });
+    }
+  });
+
+  it.each(["reconnect", "owner"] as const)("removal wins during uncertain %s durable confirmation", async (method) => {
+    const t = await setup(kind), entered = t.gate(), blocked = t.gate();
+    const generation = t.backend.credentialsOf(t.account.id);
+    if (method === "reconnect") {
+      const commit = t.backend.store.secrets.commit.bind(t.backend.store.secrets);
+      vi.spyOn(t.backend.store.secrets, "commit")
+        .mockImplementationOnce(async (...args) => { await commit(...args); throw new Error("PRIVATE_UNCERTAIN_COMMIT"); })
+        .mockImplementationOnce(async (...args) => { const confirmed = await commit(...args); entered.release(); await blocked.promise; return confirmed; });
+    } else {
+      const change = t.backend.store.owner.change.bind(t.backend.store.owner), confirm = t.backend.store.owner.confirm.bind(t.backend.store.owner);
+      vi.spyOn(t.backend.store.owner, "change").mockImplementationOnce(async (...args) => { await change(...args); throw new Error("PRIVATE_UNCERTAIN_COMMIT"); });
+      vi.spyOn(t.backend.store.owner, "confirm").mockImplementationOnce(async (...args) => { const confirmed = await confirm(...args); entered.release(); await blocked.promise; return confirmed; });
+    }
+    t.answer({ refreshToken: "uncertain-replacement" });
+    const result = outcome<unknown>(method === "reconnect" ? t.client.call("accounts.reconnect", { id: t.account.id }) : t.client.call("identity.changeOwner", { accountId: t.account.id })); await entered.promise;
+    const created = t.instances.length, removed = outcome(t.client.call("accounts.remove", { id: t.account.id }));
+    await new Promise<void>((resolve) => setImmediate(resolve)); blocked.release();
+    expect(await result).toHaveProperty("error");
+    const removal = await removed; expect(removal).toHaveProperty("error");
+    expect(String("error" in removal && removal.error)).not.toContain("PRIVATE_UNCERTAIN_COMMIT");
+    expect(t.backend.credentialsOf(t.account.id)).toBe(generation);
+    expect(t.instances).toHaveLength(created); expect(await t.backend.provider(t.account.id)).toBeNull();
+    await t.client.call("accounts.remove", { id: t.account.id });
+    expect(await t.backend.store.accounts.get(t.account.id)).toBeNull(); expect(await t.backend.getSecret(t.name)).toBeNull();
+    expect(t.instances).toHaveLength(created); expect(await t.backend.provider(t.account.id)).toBeNull();
+  });
+
+  it.each(["reconnect", "owner"] as const)("superseded uncertain %s accounts durable credentials without resubmitting accepted send", async (method) => {
+    const t = await setup(kind), accepted = t.gate(), settle = t.gate(), entered = t.gate(), blocked = t.gate(); let sends = 0;
+    const provider = (await t.backend.provider(t.account.id))!;
+    provider.execute = async () => { sends++; accepted.release(); await settle.promise; return { providerMsgId: "accepted-once" }; };
+    const sent = await t.client.call("compose.send", { accountId: t.account.id, to: [{ name: "", email: "recipient@example.test" }], subject: "Synthetic", bodyText: "Synthetic" });
+    const worker = t.backend.runWorker(); await accepted.promise;
+    const generation = t.backend.credentialsOf(t.account.id), notifications: unknown[] = [];
+    t.client.on("owner", (value) => notifications.push(value));
+    if (method === "reconnect") {
+      const commit = t.backend.store.secrets.commit.bind(t.backend.store.secrets);
+      vi.spyOn(t.backend.store.secrets, "commit").mockImplementationOnce(async (...args) => { await commit(...args); entered.release(); await blocked.promise; throw new Error("synthetic uncertain commit"); });
+    } else {
+      const change = t.backend.store.owner.change.bind(t.backend.store.owner);
+      vi.spyOn(t.backend.store.owner, "change").mockImplementationOnce(async (...args) => { await change(...args); entered.release(); await blocked.promise; throw new Error("synthetic uncertain commit"); });
+    }
+    t.answer({ refreshToken: "uncertain-replacement" });
+    const result = outcome<unknown>(method === "reconnect" ? t.client.call("accounts.reconnect", { id: t.account.id }) : t.client.call("identity.changeOwner", { accountId: t.account.id })); await entered.promise;
+    const off = outcome(t.client.call("icons.googlePhotos", { accountId: t.account.id, on: false }));
+    await new Promise<void>((resolve) => setImmediate(resolve)); blocked.release();
+    expect(await result).toHaveProperty("error"); expect(await off).toHaveProperty("value");
+    expect(await t.backend.getSecret(t.name)).toBe("uncertain-replacement"); expect(t.backend.credentialsOf(t.account.id)).toBeGreaterThan(generation);
+    expect(notifications).toEqual([]); settle.release(); await worker; await t.backend.runWorker();
     expect(sends).toBe(1); expect((await t.client.call("ops.list", {})).find((row) => row.id === sent.opId)?.state).toBe("succeeded");
   });
 

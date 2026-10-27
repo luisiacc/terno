@@ -1572,6 +1572,35 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
     });
 
     describe("secrets", () => {
+      it("owner confirmation checks the complete stamped credential decision without mutation", async () => {
+        let store = await fresh();
+        const claim = { displayName: "Synthetic", provider: "gmail" as const, verifiedBy: "google_oauth" as const, evidence: { googleSub: "synthetic", emailVerified: true } };
+        await store.accounts.create({ kind: "gmail", email: "owner@example.test", displayName: "Synthetic", color: "indigo", providerConfig: {}, ownerClaim: claim, now: NOW });
+        const { account } = await store.accounts.create({ kind: "gmail", email: "target@example.test", displayName: "Synthetic", color: "indigo", providerConfig: {}, now: NOW });
+        const stamp = (await store.accounts.stamp(account.id))!, name = `account:${account.id}:refreshToken`;
+        await store.secrets.put(name, Uint8Array.of(1));
+        const request = { claim: { ...claim, accountId: account.id, email: account.email }, stamp, secret: { kind: "replace" as const, name, expectedBlob: Uint8Array.of(1), blob: Uint8Array.of(2) }, reason: "synthetic", now: NOW + 1 };
+        expect(await store.owner.confirm(request)).toBe(false);
+        expect(await store.owner.change(request)).toBe(true);
+        const owner = await store.owner.get();
+        expect(await store.owner.confirm(request)).toBe(true);
+        for (const mismatch of [
+          { ...request, stamp: { ...stamp, createdAt: stamp.createdAt + 1 } },
+          { ...request, stamp: { ...stamp, email: "other@example.test" } },
+          { ...request, now: NOW + 2 },
+          { ...request, claim: { ...request.claim, displayName: "Other" } },
+          { ...request, claim: { ...request.claim, evidence: { googleSub: "other", emailVerified: true } } },
+          { ...request, secret: { kind: "retain" as const, name, expectedBlob: Uint8Array.of(1) } },
+        ]) expect(await store.owner.confirm(mismatch)).toBe(false);
+        expect(await store.owner.get()).toEqual(owner); expect(await store.secrets.get(name)).toEqual(Uint8Array.of(2));
+        store = await harness.reopen(store); open.push(store);
+        expect(await store.owner.confirm(request)).toBe(true);
+        await store.secrets.put(name, Uint8Array.of(3));
+        expect(await store.owner.confirm(request)).toBe(false);
+        await store.accounts.remove(account.id);
+        expect(await store.owner.confirm(request)).toBe(false);
+      });
+
       it("owner eligibility refuses or throws before any owner or secret mutation", async () => {
         let store = await fresh();
         const claim = { displayName: "Synthetic", provider: "gmail" as const, verifiedBy: "google_oauth" as const, evidence: { googleSub: "synthetic", emailVerified: true } };
