@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import type { IncomingProcessor } from "@terno/mail/portable";
+import { demoRegistry, type IncomingProcessor } from "@terno/mail/portable";
 import { Backend, plaintextCipher } from "./backend";
 import * as incoming from "./incoming-worker";
 
@@ -10,7 +10,7 @@ afterEach(async () => {
 });
 const fake = (): IncomingProcessor => ({ run: vi.fn(), whenIdle: vi.fn(async () => {}), close: vi.fn(async () => {}) });
 function backend(processor?: IncomingProcessor) {
-  const owned = new Backend({ dbPath: ":memory:", version: "synthetic", cipher: plaintextCipher, autoSync: false, instantSearch: false, iconTransport: null, incomingProcessor: processor });
+  const owned = new Backend({ dbPath: ":memory:", version: "synthetic", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, instantSearch: false, iconTransport: null, incomingProcessor: processor });
   backends.push(owned);
   return owned;
 }
