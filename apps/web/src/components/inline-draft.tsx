@@ -9,7 +9,7 @@ import { cn } from "@terno/ui/lib/utils";
 import { ChevronDown, Forward, PenLine, ReplyAll, Send, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { collapseInlineDraft, composeFocusPending, finishComposeFocus, openCompose, reopenInlineDraft, sendDraft } from "~/lib/compose";
-import { copyDraft, discardDraft, draftSenderLocked, editDraft, restoreDiscarded, retryDraft, signatureBlock, useDrafts, type BodyCheckpoint, type DraftFields, type LocalDraft } from "~/lib/drafts";
+import { copyDraft, discardDraft, draftSenderLocked, editDraft, editDraftRecipients, restoreDiscarded, retryDraft, signatureBlock, useDrafts, type BodyCheckpoint, type DraftFields, type LocalDraft } from "~/lib/drafts";
 import { SenderAvatar } from "./sender-avatar";
 import { RecipientInput, recipientSummary } from "./recipient-input";
 import { warmAutocomplete } from "~/lib/autocomplete";
@@ -141,8 +141,7 @@ export function DraftFieldsForm({ d, accounts, showSubject, flat }: { d: LocalDr
   const update = (patch: Partial<DraftFields>) => editDraft(d.key, patch);
   /** a recipient field's change: the addresses the user put in are theirs now, no longer Terno's (Codex review 9) */
   const recipients = (field: "to" | "cc" | "bcc", text: string, authored: readonly string[]) => {
-    const auto = authored.length ? { ...d.auto, [field]: d.auto[field].filter((e) => !authored.includes(e.toLowerCase())) } : d.auto;
-    update({ [`${field}Text`]: text, ...(auto !== d.auto ? { auto } : {}) } as Partial<DraftFields>);
+    editDraftRecipients(d.key, field, text, authored);
   };
   const toggle = (open: boolean, set: (v: boolean) => void, label: string, field: string, testId: string) =>
     !open && (

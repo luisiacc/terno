@@ -7,12 +7,12 @@ import { firstInvalid, SELECT_INVALID } from "./recipient-field";
 import type { DraftMode } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
-import { getApp, getSelectionWriteRevision, markSelectionIntent, setApp, useApp } from "~/state/app";
+import { getApp, getSelectionWriteRevision, markSelectionIntent, setApp, subscribeComposeSelectionIntent, useApp } from "~/state/app";
 import { invalidateThreads, loadThread } from "~/state/threads";
 import { registerUndo, snack, useSnack } from "./snack";
 import { answered, convertFields, forwardAccountMismatch, newFields, replyFields, mergeAttachmentRefs } from "./compose-fields";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
-import { beginDraftAckRead, readDraftAck, endDraftAckRead, beginDraftWork, draftIndex, invalidateDraftPresentation, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, authored, createDraft, createDraftWithReceipt, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type DraftAckRead, type LocalDraft } from "./drafts";
+import { beginDraftAckRead, beginForwardEmptyOwnerRead, readDraftAck, endDraftAckRead, beginDraftWork, draftIndex, invalidateDraftPresentation, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, authored, createDraft, createDraftWithReceipt, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type DraftAckRead, type LocalDraft } from "./drafts";
 
 /**
  * Writing mail: which draft a reply, reply-all, forward or new message opens,
@@ -37,7 +37,7 @@ let seq = 0;
  */
 let intent = 0;
 type ReaderDestination = { token: object; active: boolean; generation: number };
-type FocusLease = { ackRead?: DraftAckRead; intent: number; threadId: number | null; composeSeq?: number; accountId?: number; key?: string; seq?: number; valid: boolean; dispose: () => void; view?: { id: LocalDraft["id"]; generation: LocalDraft["generation"]; revision: number; localRev: number; uiState: LocalDraft["uiState"]; recovery: LocalDraft["recovery"]; missingAccount: boolean }; destination?: ReaderDestination };
+type FocusLease = { ackRead?: DraftAckRead; stopSelection?: () => void; stopContext?: () => void; intent: number; threadId: number | null; composeSeq?: number; accountId?: number; key?: string; seq?: number; valid: boolean; dispose: () => void; view?: { id: LocalDraft["id"]; generation: LocalDraft["generation"]; revision: number; localRev: number; uiState: LocalDraft["uiState"]; recovery: LocalDraft["recovery"]; missingAccount: boolean }; destination?: ReaderDestination };
 const readerDestinations = new Map<number, ReaderDestination>();
 const failedReaderHosts = new Map<object, { threadId: number }>();
 const readerFailed = (threadId: number): boolean => {
@@ -60,6 +60,8 @@ function releaseFocusLease(lease: FocusLease, fallback: boolean, notify = true) 
   if (!lease.valid) return;
   const current = focusLease === lease, releaseIntent = intent;
   lease.valid = false;
+  lease.stopSelection?.(); lease.stopSelection = undefined;
+  lease.stopContext?.(); lease.stopContext = undefined;
   if (lease.ackRead) { endDraftAckRead(lease.ackRead); lease.ackRead = undefined; }
   lease.dispose();
   if (!current) return;
@@ -95,6 +97,7 @@ export function registerReaderFocusDestination(threadId: number, token: object):
   return () => {
     if (destination.generation !== generation || !destination.active) return;
     destination.active = false;
+    if (focusLease?.destination === destination) { focusLease.stopSelection?.(); focusLease.stopSelection = undefined; focusLease.stopContext?.(); focusLease.stopContext = undefined; }
     if (focusLease?.destination === destination && focusLease.ackRead) { endDraftAckRead(focusLease.ackRead); focusLease.ackRead = undefined; }
     const captured = focusLease?.destination === destination ? focusLease : null;
     queueMicrotask(() => {
@@ -415,6 +418,8 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
     if (mine === intent && (current.scope !== null || current.checked.size >= 2)) supersedeCompose();
   }) : undefined;
   try { await openComposeNow(mode, threadId, mine, lease ?? null); } finally {
+    lease?.stopSelection?.(); if (lease) lease.stopSelection = undefined;
+    lease?.stopContext?.(); if (lease) lease.stopContext = undefined;
     if (lease?.ackRead) { endDraftAckRead(lease.ackRead); lease.ackRead = undefined; }
     unsubSelection?.();
     if (lease && lease.seq === undefined) releaseFocusLease(lease, true);
@@ -473,7 +478,20 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   let existing = existingKey ? materialize(existingKey) : undefined;
   if (existing && !sameStoredDraft(existing)) return;
   let proof = existing && existing.mode !== mode && !existing.presentationExpired && lease ? beginDraftAckRead(existing) : undefined;
-  if (lease && proof) lease.ackRead = proof;
+  if (lease && proof) {
+    lease.ackRead = proof;
+    const owner = lease;
+    const retire = () => {
+      if (focusLease !== owner || !owner.ackRead) return;
+      endDraftAckRead(owner.ackRead); owner.ackRead = undefined;
+      owner.stopSelection?.(); owner.stopSelection = undefined;
+      owner.stopContext?.(); owner.stopContext = undefined;
+    };
+    owner.stopSelection = subscribeComposeSelectionIntent(retire);
+    owner.stopContext = useApp.subscribe((state, previous) => {
+      if (state.selectedId !== previous.selectedId || state.readerOpen !== previous.readerOpen || state.compose !== previous.compose || state.checked !== previous.checked || state.scope !== previous.scope || state.accountId !== previous.accountId || state.dialog !== previous.dialog || state.fatal !== previous.fatal || state.view !== previous.view || state.categoryId !== previous.categoryId || state.reviewCategoryId !== previous.reviewCategoryId || state.query !== previous.query || state.listFilters !== previous.listFilters) retire();
+    });
+  }
   if (existing?.presentationExpired && activeSourceId(existing) === null && (existing.mode === "new" || (existing.threadId === null && existing.departedThreadId === threadId && authored(existing)))) {
     showStoredStandalone(existing.key, mine, undefined, lease);
     return;
@@ -503,8 +521,9 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     return;
   }
   const selected = s.selectedId;
+  const selectionRevision = getSelectionWriteRevision();
   const detail = loaded === undefined ? await loadThread(threadId) : loaded;
-  const currentIntent = () => mine === intent && destinationAvailable(lease) && (!proof || Boolean(readDraftAck(proof))) && getApp().selectedId === selected && shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) === existingKey;
+  const currentIntent = () => mine === intent && destinationAvailable(lease) && getSelectionWriteRevision() === selectionRevision && (!proof || Boolean(readDraftAck(proof))) && getApp().selectedId === selected && shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) === existingKey;
   if (!detail || !currentIntent()) return;
   takeFocus = focusUnchanged();
   existing = proof ? readDraftAck(proof) : existingKey ? materialize(existingKey) : undefined;
@@ -544,14 +563,27 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     if (parts.length && existing && !existing.attachments?.length) {
       // Save the empty From transition before introducing that account's attachment owners.
       const active = typeof document === "undefined" ? null : document.activeElement;
-      if (proof) { endDraftAckRead(proof); if (lease?.ackRead === proof) lease.ackRead = undefined; proof = undefined; }
+      const beforeFlush = existing;
+      if (proof) {
+        if (!lease || focusLease !== lease || !lease.valid || lease.ackRead !== proof) return;
+        const phase = beginForwardEmptyOwnerRead(proof);
+        if (!phase || focusLease !== lease || !lease.valid || lease.ackRead !== proof) { if (phase) endDraftAckRead(phase); return; }
+        proof = phase; lease.ackRead = phase;
+      }
       await flushDraft(existing.key);
-      if (!currentIntent() || await loadThread(threadId) !== detail) return;
-      takeFocus = takeFocus && (typeof document === "undefined" || document.activeElement === active);
-      existing = proof ? readDraftAck(proof) : materialize(existing.key);
+      if (!currentIntent()) return;
+      existing = proof ? readDraftAck(proof) : sameStoredDraft(beforeFlush) ? beforeFlush : undefined;
       if (!existing || existing.sending || existing.recovery || existing.savedRev !== existing.localRev) return;
       const pristine = existing.id === null && existing.status === "clean" && existing.localRev === 0 && !authored(existing);
       if (existing.status !== "saved" && !pristine) return;
+      if (proof) {
+        if (!lease || focusLease !== lease || !lease.valid || lease.ackRead !== proof || existing.attachments?.length || existing.attachmentOwner) return;
+        const sealed = beginDraftAckRead(existing);
+        if (!sealed || focusLease !== lease || !lease.valid || lease.ackRead !== proof) { if (sealed) endDraftAckRead(sealed); return; }
+        proof = sealed; lease.ackRead = sealed;
+      }
+      if (await loadThread(threadId) !== detail || !currentIntent()) return;
+      takeFocus = takeFocus && (typeof document === "undefined" || document.activeElement === active);
       if (!getApp().accounts.some((a) => a.id === source!.id)) { snack.error(t("errors.accountGone")); return; }
       if (forwardAccountMismatch(existing.accountId, detail, getApp().accounts.map((a) => a.email))) {
         snack.error(t("compose.forwardAccountMismatch", { account: source!.email }));

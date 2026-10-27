@@ -121,8 +121,14 @@ export const useApp = create<AppState>(() => ({
 }));
 
 let selectionWriteRevision = 0;
+let composeSelectionRetirement: { retire: () => void } | undefined;
 export const getSelectionWriteRevision = (): number => selectionWriteRevision;
-export const markSelectionIntent = (): void => { selectionWriteRevision++; };
+export const markSelectionIntent = (): void => { selectionWriteRevision++; composeSelectionRetirement?.retire(); };
+export function subscribeComposeSelectionIntent(retire: () => void): () => void {
+  const registration = { retire };
+  composeSelectionRetirement = registration;
+  return () => { if (composeSelectionRetirement === registration) composeSelectionRetirement = undefined; };
+}
 
 export function setApp(partial: AppState | Partial<AppState> | ((state: AppState) => AppState | Partial<AppState>), replace?: false): void;
 export function setApp(partial: AppState | ((state: AppState) => AppState), replace: true): void;

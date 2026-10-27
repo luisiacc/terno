@@ -44,7 +44,7 @@ it.each(["edit", "focus", "account", "discard", "navigation", "new intent", "fai
     const input = params as Record<string, unknown>;
     if (++calls === 1) { reached(); await gate; }
     if (scenario === "failed save") throw { code: "BAD_REQUEST" };
-    return { ...input, id: 9, revision: calls, updatedAt: 0 };
+    return { ...input, id: 9, generation: "stable", revision: calls, updatedAt: 0 };
   });
   const document = { activeElement: {} };
   vi.stubGlobal("document", document);

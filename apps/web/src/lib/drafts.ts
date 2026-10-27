@@ -309,12 +309,15 @@ export function attachBody(key: string, read: BodyReader, options: { canonical?:
       if (!d || d.sending || draftEditsHeld()) return;
       changeVersion++;
       source.editVersion++;
-      const proof = writers.get(key)?.ackRead; if (proof) endDraftAckRead(proof);
+      const w = writer(key), proof = w.ackRead;
+      if (proof?.phase === "forward" && proof.source === source && proof.current === d && !w.publishing) proof.version = source.editVersion;
+      else if (proof) endDraftAckRead(proof);
       // an unsaved revision is already pending for this body: the save will serialize the latest document, so only
       // the debounce moves (no store update per keystroke: nothing re-renders while typing)
       if (source.dirty && d.localRev > d.savedRev) return schedule(key);
       source.dirty = true;
-      put({ ...d, localRev: d.localRev + 1, status: d.status === "saving" ? "saving" : "dirty", updatedAt: now(), tooLong: false });
+      const changed: LocalDraft = { ...d, localRev: d.localRev + 1, status: d.status === "saving" ? "saving" : "dirty", updatedAt: now(), tooLong: false };
+      publishWriter(w, d, changed, w.ackRead?.phase === "forward");
       schedule(key);
     },
     // the editor reloaded what the draft has: nothing of its own to write
@@ -355,7 +358,9 @@ export function materialize(key: string): LocalDraft | undefined {
   if (!d || !source?.dirty) return d;
   const version = source.editVersion, detached = source.detached;
   const materializingWriter = writers.get(key);
+  const materializingRead = materializingWriter?.ackRead;
   const fail = (error: unknown): never => {
+    if (materializingRead) endDraftAckRead(materializingRead);
     if (sources.get(key) === source) {
       source.failed = true; source.dirty = true;
       if (materializingWriter && writers.get(key) === materializingWriter && materializingWriter.timer) {
@@ -369,7 +374,8 @@ export function materialize(key: string): LocalDraft | undefined {
   if (sources.get(key) !== source || source.detached !== detached || source.editVersion !== version || get(key) !== d) return fail(new Error(t("compose.readChanged")));
   const { html, text } = body;
   const next = { ...d, bodyHtml: html, bodyText: text, canonical: source.canonical };
-  put(next);
+  const w = writers.get(key);
+  if (w) publishWriter(w, d, next, w.ackRead?.phase === "forward" && w.ackRead.source === source && w.ackRead.version === version); else put(next);
   if (sources.get(key) !== source || source.detached !== detached || source.editVersion !== version || get(key) !== next) return fail(new Error(t("compose.readChanged")));
   source.dirty = false;
   source.failed = false;
@@ -411,14 +417,17 @@ const writer = (key: string): Writer => {
 
 declare const ackReadBrand: unique symbol;
 export type DraftAckRead = { readonly [ackReadBrand]: true };
-type AckRead = DraftAckRead & { key: string; writer?: Writer; current?: LocalDraft; source?: BodySource; version: number; edge?: { before: LocalDraft; after: LocalDraft }; stop?: () => void };
+type AckRead = DraftAckRead & { key: string; writer?: Writer; current?: LocalDraft; source?: BodySource; version: number; phase: "strict" | "forward"; edge?: { before: LocalDraft; after: LocalDraft }; stop?: () => void };
 
 /** A conversion may observe only exact, writer-owned acknowledgement publications. */
 export function beginDraftAckRead(expected: LocalDraft): DraftAckRead | undefined {
+  return beginAckRead(expected, "strict");
+}
+function beginAckRead(expected: LocalDraft, phase: AckRead["phase"]): DraftAckRead | undefined {
   const w = writers.get(expected.key), source = sources.get(expected.key);
   if (!w || w.publishing || w.stopping || draftEditsHeld() || expected.sending || expected.recovery || get(expected.key) !== expected || source?.dirty || source?.failed || source?.detached) return;
   if (w.ackRead) endDraftAckRead(w.ackRead);
-  const read = { key: expected.key, writer: w, current: expected, source, version: source?.editVersion ?? 0 } as AckRead;
+  const read = { key: expected.key, writer: w, current: expected, source, version: source?.editVersion ?? 0, phase } as AckRead;
   w.ackRead = read;
   read.stop = useDrafts.subscribe((state, previous) => {
     const current = read.current, edge = read.edge;
@@ -429,6 +438,11 @@ export function beginDraftAckRead(expected: LocalDraft): DraftAckRead | undefine
   });
   if (get(expected.key) !== expected || writers.get(expected.key) !== w || sources.get(expected.key) !== source) { endDraftAckRead(read); return; }
   return read;
+}
+export function beginForwardEmptyOwnerRead(token: DraftAckRead): DraftAckRead | undefined {
+  const read = token as AckRead, current = readDraftAck(read);
+  if (!current || read.phase !== "strict" || current.attachments?.length || current.attachmentOwner) return;
+  return beginAckRead(current, "forward");
 }
 export function readDraftAck(token: DraftAckRead): LocalDraft | undefined {
   const read = token as AckRead, w = read.writer, source = sources.get(read.key);
@@ -485,6 +499,15 @@ export const draftSenderLocked = (d: LocalDraft): boolean => Boolean(d.attachmen
 
 /** An edit: the content changes now, the save follows (800 ms after the last edit, ≤ 5 s while typing). */
 export function editDraft(key: string, patch: Partial<DraftFields>): boolean {
+  return editDraftFields(key, patch, false);
+}
+export function editDraftRecipients(key: string, field: "to" | "cc" | "bcc", text: string, authored: readonly string[]): boolean {
+  const d = get(key);
+  if (!d) return false;
+  const auto = authored.length ? { ...d.auto, [field]: d.auto[field].filter((email) => !authored.includes(email.toLowerCase())) } : d.auto;
+  return editDraftFields(key, { [`${field}Text`]: text, ...(auto !== d.auto ? { auto } : {}) }, true);
+}
+function editDraftFields(key: string, patch: Partial<DraftFields>, recipients: boolean): boolean {
   if (draftEditsHeld()) return false;
   // a body patch is compared with the body as the editor has it now
   const d = "bodyText" in patch || "bodyHtml" in patch ? materialize(key) : get(key);
@@ -498,7 +521,7 @@ export function editDraft(key: string, patch: Partial<DraftFields>): boolean {
   const bodyChanged = (patch.bodyText !== undefined && patch.bodyText !== d.bodyText) || (patch.bodyHtml !== undefined && patch.bodyHtml !== d.bodyHtml);
   const bodySource = bodyChanged ? sources.get(key) : undefined;
   const bodySourceVersion = bodySource?.editVersion;
-  put({
+  const next: LocalDraft = {
     ...d,
     ...patch,
     ...(resetContext ? { departedThreadId: undefined, presentationThreadId: patch.showSourceContext && patch.threadId === null ? draftPresentationThread(d) ?? undefined : undefined, sourceContextThreadId: undefined, presentationExpired: false, presentationEpoch: (d.presentationEpoch ?? 0) + 1 } : {}),
@@ -509,7 +532,12 @@ export function editDraft(key: string, patch: Partial<DraftFields>): boolean {
     updatedAt: now(),
     tooLong: false,
     ...(bodyChanged ? { bodyVersion: d.bodyVersion + 1, canonical: false } : {}),
-  });
+  };
+  const w = writer(key);
+  if (w?.ackRead) {
+    const allowed = w.ackRead.phase === "forward" && Object.keys(patch).every((field) => ["bodyText", "bodyHtml", "toText", "ccText", "bccText", "subject", "subjectEdited"].includes(field) || (recipients && field === "auto"));
+    publishWriter(w, d, next, allowed);
+  } else publishWriter(w, d, next, false);
   if (bodySource && sources.get(key) === bodySource && bodySource.editVersion === bodySourceVersion) {
     if (bodySource.retained) sources.delete(key);
     else bodySource.dirty = false;
