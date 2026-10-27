@@ -211,6 +211,22 @@ describe("incoming processor client", () => {
     await expect(processor.run(input(), new AbortController().signal)).rejects.toMatchObject({ code: "worker-closed" });
   });
 
+  it("retires an idle worker after a sanitized global failure notification", async () => {
+    const h = harness();
+    const first = h.processor.run(input(), new AbortController().signal);
+    await turn();
+    h.answer();
+    await first;
+    h.hosts[0]!.events.message({ type: "fault", code: "worker-fault" });
+    await h.processor.whenIdle();
+    const next = h.processor.run(input(), new AbortController().signal);
+    await turn();
+    expect(h.factory).toHaveBeenCalledTimes(2);
+    h.answer();
+    await next;
+    await h.processor.close();
+  });
+
   it("quarantines failed retirement and reports fixed owner readiness failures", async () => {
     const processor = createIncomingProcessor(() => ({ postMessage: () => {}, terminate: () => Promise.reject(new Error("private-token-marker")) }));
     const abort = new AbortController();

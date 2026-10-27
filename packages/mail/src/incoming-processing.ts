@@ -51,6 +51,7 @@ export interface IncomingWorkerRequest {
   limits?: IncomingProcessingLimits;
 }
 export type IncomingWorkerReply =
+  | { type: "fault"; code: "worker-fault" }
   | { type: "result"; incarnation: number; job: number; result: IncomingProcessingResult }
   | { type: "error"; incarnation: number; job: number; code: IncomingProcessingFailureCode };
 
@@ -181,6 +182,7 @@ export function createIncomingProcessor(factory: IncomingWorkerFactory, options:
     void retire(owned);
   };
   const reply = (owned: WorkerSlot, value: unknown) => {
+    if (slot === owned && !owned.retiring && record(value) && value.type === "fault" && value.code === "worker-fault") { fault(owned); return; }
     const job = active;
     if (slot !== owned || owned.retiring || !job || job.slot !== owned) return;
     if (!record(value)) { fault(owned); return; }
