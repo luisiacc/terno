@@ -386,7 +386,7 @@ test.describe("List layout: accessibility and look", { tag: "@design" }, () => {
     test(`axe-clean and on baseline (${mode}): the list with tabs, a conversation, a new message`, async ({ app: page }) => {
       await page.emulateMedia({ colorScheme: mode });
       await stabilize(page);
-      const wcag = () => new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).disableRules(["scrollable-region-focusable"]).exclude("iframe");
+      const wcag = () => new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).exclude("iframe");
       const check = async () => expect((await wcag().analyze()).violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 160)).join(", ")}`)).toEqual([]);
       await check();
       await expect(page).toHaveScreenshot(`list-${mode}.png`);

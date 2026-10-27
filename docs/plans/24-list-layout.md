@@ -606,3 +606,8 @@ Round 4's findings were narrower edge cases than round 1's; I stopped there.
 - **List:** the list, a conversation, a new message, a selection with its toolbar, and the 1,000 px window with More.
 
 The List baselines in `apps/web/e2e/__screenshots__/{,lumen/,atelier/}list-layout.spec.ts/` cover the list and a conversation in light and dark for each design. The two Settings General baselines changed on purpose (the Layout row). I looked at all of them.
+
+
+## 2026-10-27: keyboard entry revision (Plan 48)
+
+Plan 48 supersedes the old no-Tab policy in §1 and §2.5: Conversations is one keyboard Tab stop in both layouts, with an inset token focus indicator. Virtual rows remain outside Tab order. Back still restores the same listbox. Selection and scroll are preserved on keyboard entry; aria-activedescendant is omitted while the selected option is virtualized out and restored when it mounts. The list-page accessibility test no longer suppresses scrollable-region-focusable. Historical suppressed passes above remain historical and do not establish full-page clearance. See Plan 48 for observed failures, source critique, actual later qualification and remaining gates.

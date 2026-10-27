@@ -45,6 +45,14 @@ import { renderProbe } from "~/lib/render-probe";
 export const searchInputRef: { current: HTMLInputElement | null } = { current: null };
 export const listScroller: { scrollToIndex?: (i: number) => void } = {};
 
+/** A virtualized-out option cannot be the listbox's active descendant. */
+function pointListCursor(el: HTMLElement | null, id: number | null) {
+  if (!el) return;
+  const option = id === null ? null : el.ownerDocument.getElementById(`thread-${Math.trunc(id)}`);
+  if (option && el.contains(option)) el.setAttribute("aria-activedescendant", option.id);
+  else el.removeAttribute("aria-activedescendant");
+}
+
 /** The quick filters' control in effect: List's tabs carry All and Unread, so every design keeps the filter button there (plan 24 §2.7). */
 function useQuickFilters(): "menu" | "chips" {
   const design = useDesign();
@@ -690,17 +698,10 @@ export function ThreadList() {
     listScroller.scrollToIndex = (i) => virtualizer.scrollToIndex(i, { align: "auto" });
   }, [virtualizer]);
 
-  // the open thread is the listbox's active descendant; set on the element directly so moving it renders nothing
-  useEffect(() => {
-    const point = (id: number | null) => {
-      const el = parentRef.current;
-      if (!el) return;
-      if (id === null) el.removeAttribute("aria-activedescendant");
-      else el.setAttribute("aria-activedescendant", `thread-${Math.trunc(id)}`);
-    };
-    point(getApp().selectedId);
-    return useApp.subscribe((s, prev) => s.selectedId !== prev.selectedId && point(s.selectedId));
-  }, []);
+  // Selection changes update the attribute directly without rendering the list.
+  useEffect(() => useApp.subscribe((s, prev) => {
+    if (s.selectedId !== prev.selectedId) pointListCursor(parentRef.current, s.selectedId);
+  }), []);
 
   // the filter toggled (the same mailbox and query otherwise): the open thread, kept, comes into view
   const shownKey = useRef(itemsKey);
@@ -716,6 +717,9 @@ export function ThreadList() {
   }, [itemsKey]);
 
   const virtualItems = virtualizer.getVirtualItems();
+  useLayoutEffect(() => {
+    pointListCursor(parentRef.current, getApp().selectedId);
+  }, [virtualItems]);
   const last = virtualItems[virtualItems.length - 1];
   // a new list (itemsKey) asks too: one that arrives while the old one sat at its end has the same length and last row
   useEffect(() => {
@@ -736,10 +740,10 @@ export function ThreadList() {
       {list && many && <SelectionBar variant="toolbar" />}
       <SelectAllBanner />
       <DraftsStrip />
-      {/* under tabs the rows are what they control (tabpanel); the listbox takes focus when a page closes (it's never a tab stop) */}
+      {/* under tabs the rows are what they control (tabpanel); the listbox is one Tab stop and restores focus when a page closes */}
       <div className="relative flex min-h-0 flex-1 flex-col" {...(tabs ? { role: "tabpanel", id: TAB_PANEL_ID, "aria-labelledby": `list-tab-${tab}` } : {})}>
       <ThreadMenu>
-      <div ref={parentRef} data-keep-scroll="list" role="listbox" tabIndex={-1} aria-label={t("list.label")} aria-multiselectable className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none [contain:strict]">
+      <div ref={parentRef} data-keep-scroll="list" role="listbox" tabIndex={0} aria-label={t("list.label")} aria-multiselectable className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset [contain:strict]">
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
         {loading && items.length === 0 ? (
           <div className="space-y-3 p-4">
