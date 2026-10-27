@@ -472,11 +472,18 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     }
   }
 
+  function targetedCapability(c: ImapFlow, capability: "MOVE" | "UIDPLUS"): boolean {
+    // IMAP4rev2 folds both extensions into the active base protocol.
+    return c.capabilities.has(capability) || c.enabled.has("IMAP4REV2") || (c.capabilities.has("IMAP4rev2") && !c.capabilities.has("IMAP4rev1"));
+  }
+
   async function moveLocations(c: ImapFlow, locs: Loc[], target: string, mode: "move" | "copy" = "move") {
+    const moving = locs.filter((l) => l.mailbox !== target);
+    if (!moving.length) return;
+    if (mode === "move" && !targetedCapability(c, "MOVE") && !targetedCapability(c, "UIDPLUS")) throw new ProviderError(L("errors.imap.unsafeMove"), false);
     const byMailbox = new Map<string, typeof locs>();
-    for (const l of locs) byMailbox.set(l.mailbox, [...(byMailbox.get(l.mailbox) ?? []), l]);
+    for (const l of moving) byMailbox.set(l.mailbox, [...(byMailbox.get(l.mailbox) ?? []), l]);
     for (const [mailbox, items] of byMailbox) {
-      if (mailbox === target) continue;
       const lock = await c.getMailboxLock(mailbox);
       try {
         assertValidity(c, mailbox, items);

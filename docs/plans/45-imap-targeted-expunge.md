@@ -1,0 +1,54 @@
+# Plan 45: prevent collateral IMAP expunge
+
+## Request (verbatim)
+
+> I want you to go through every item to fix here in this report. For each item that needs fixing you already have, in that report, what needs to be done but for each item you need to:
+> 1. Go for that item.
+> 2. Spec it out a bit more.
+> 3. Do maybe a better investigation on it to see what's truly needed for us.
+> 4. Build a test case reproducing that scenario, that potential scenario, or multiple test cases.
+> 5. Fix it.
+> 6. That will do it.
+> 7. Spawn a subagent with Codex doing a code review of that fix, of that code you have just fixed and/or added.
+> 8. Fix any findings.
+> create atomic commits as you are fixing things.
+> That way there is a double check on what you're doing and this can be better. Of course we need to maintain our performance while doing this and follow the directives that we have. You're going to do this for each and every one of the items that you have done here.
+> Let's not create a separate branch or anything like that. Let's just do the fixes right here in the main branch. You should not stop until everything in that report is done.
+
+
+## Existing behavior and first slice
+
+Read plans03/04,20 and26 and the installed ImapFlow2.8.0 implementation. The source investigation is `/tmp/terno-imap-capability-investigation.md`, including its correction: the installed pnpm package is valid, and effective IMAP4rev2 folds MOVE and UIDPLUS only under the library's active-version rules. ImapFlow messageMove falls back to COPY, STORE Deleted and messageDelete when MOVE is unavailable. Without effective UIDPLUS, UID-targeted messageDelete issues ordinary EXPUNGE, which also removes unrelated messages already marked Deleted. Terno currently enters that fallback and the Gmail-style All Mail path ignores false deletion outcomes.
+
+Use the real Backend/RPC, installed ImapFlow and in-process ImapKit with private synthetic mail, dynamic loopback ports and temporary SQL profile. Existing `imap.int.test.ts` owns this public fixture seam; extending its setup only supplies server capabilities. Observe server-side command names and remote UID/raw/flags, not a mock of the provider method. Capture the original behavioral RED before production.
+
+## Contract
+
+A true move with targets requires effective MOVE or UIDPLUS on the exact connected session before any implicit destructive fallback. A delete-only Gmail-style archive requires effective UIDPLUS. Refuse permanently with calm paired English/Spanish guidance before COPY, STORE, EXPUNGE or local location removal if safe targeted semantics are unavailable. Empty target sets do nothing, including when no Inbox locations remain. A false qualified delete result is a failure and does not remove local locations. Preflight capability requirements for the operation before beginning any source mutation; UIDVALIDITY is still verified after each mailbox lock. Capability checks must match installed library semantics, including rev2-only, dual-advertised and enabled-rev2 cases, without a private deep import.
+
+Retain native MOVE and UIDPLUS-targeted fallback. This is prevention of collateral expunge only. Partial MOVE/COPYUID, ambiguous application and automatic retry, orphan recovery, durable per-folder authority, arbitrary folders, UIDVALIDITY reset, IDLE fairness and broader report work remain open. This slice must not claim safe general MOVE or activate IMAP plan38 flag observation.
+
+## Design, bounds and qualification
+
+A constant-time capability preflight uses existing session capability/enabled sets; no new request, index, migration, timer, scan or network outside the action. A tiny helper may encode the pinned public session semantics with parity tests, but tests must observe actual ImapFlow wire choices. Error strings use existing provider-error localization conventions in both catalogs. Read all mutation paths before editing.
+
+First public RED: archive on a rev1 server without MOVE or UIDPLUS while another Inbox message is Deleted; require both exact remote messages untouched, no destructive wire command and a permanent failed public operation, with local body retained. Follow with UIDPLUS fallback, native MOVE, no-target and Gmail-style All Mail refusal/false-result controls. Account for multiple source mailboxes and do not mistake a truthful partial failure for atomic remote rollback. Reopen checks retain local target identity/content and failed operation. Keep normal test timeouts, synthetic credentials only, bounded command transcript and unconditional backend/server/profile cleanup.
+
+Before production, one read-only Codex plan critique of at most8points must complete with Python-recorded actual exit0/DONE, and revisions are recorded here. Each behavior fix gets an observed RED and atomic commit with the required footer; fresh independent Standards and Spec code reviews follow. Root owns any later browser/native/global/performance windows. No current gate or performance failure is waived. Existing .879296 incoming ratio,102.4ms UI median,19.6ms coldSQL, unbounded terminal flag settlement and IDB uncertainty remain open.
+
+
+## Initial observed RED
+
+The real Backend/RPC + ImapFlow + capability-limited ImapKit case fails at the intended safety boundary. Archiving one target issues `UID COPY`, `UID STORE`, then plain `EXPUNGE`; target and unrelated Deleted UID both disappear from Inbox, one target appears in Archive, and ops.list reports succeeded. Exact local target body remains readable. Log `/tmp/terno-provider-hardening.x0emTS/imap-targeted-expunge-red.txt`, actual Vitest exit1. The preceding initial capture failed at test setup because an observational script rule lacked the required action; that setup log is retained separately and is not behavioral RED. The rule now has `run:true` and its false predicate observes names without intercepting protocol behavior. No production fix has been applied.
+
+
+## Revisions after the Codex review
+
+The sole source critique completed with Python-recorded actual `CODEX_EXIT=0`, `CODEX_EXIT0` and `DONE` in `imap-targeted-expunge-critique.txt`. All eight refinements are accepted: mirror exact rev2 capability folding; preflight actual nonempty destructive targets before destination creation and preserve copy-only paths; retain epoch checks and explicitly reject read-only sources before fallback copy; independently guard All Mail delete and false results; do not infer no remote work from a false/ambiguous outcome; qualify public localized refusal, identity/location/reopen and Undo rather than claim optimistic Inbox rollback; use each callback's exact live session; and script consistent wire capabilities with failure-safe cleanup. Only the new capability predicate is constant-time. The existing grouping/sync/resource costs and partial-application retry problem remain open.
+
+The first vertical correction addresses the observed true-MOVE fallback refusal. Subsequent empty-role/Create, All Mail delete, read-only, reconnect, rev2 and refusal/Undo qualification remain required; this first commit must not be reported as the completed IMAP slice.
+
+
+## First atomic correction qualification
+
+The true-move guard refuses the reproduced unsupported fallback before COPY/STORE/EXPUNGE and preserves exact target/unrelated raw bytes, the unrelated Deleted flag, local target body and a failed public operation. The existing native MOVE control also passes:2focused cases in `imap-targeted-expunge-first-green.txt` (normal test budget, no globalSetup/worker emission). Mail, i18n and both backend typechecks, owned oxlint and scoped diff check pass. This first boundary adds the paired localized refusal and matches pinned ImapFlow's effective rev2 semantics without a deep import. No ordinary-path request or migration is added. The capability matrix, UIDPLUS wire fallback, empty-role/Create, read-only sources, All Mail delete, refusal/reopen/Undo and reconnect qualification remain open; fresh independent whole-slice review follows those corrections. No broader IMAP or performance approval.

@@ -1377,6 +1377,7 @@ It contains none of your mail, contacts, settings or keys.
   "errors.network.changed": "The network changed; trying again.",
   "errors.imap.badLogin": "Incorrect username or password (IMAP).",
   "errors.imap.loginFailed": "IMAP login failed: {detail}",
+  "errors.imap.unsafeMove": "Your mail server can’t safely move these messages without affecting other mail. Make this change in your provider’s app.",
   "errors.imap.noPassword": "The IMAP password is missing.",
   "errors.imap.cannotConnect": "Couldn’t connect to {host}: {detail}",
   "errors.smtp.cannotConnect": "Couldn’t connect to the SMTP server {host}: {detail}",

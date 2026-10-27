@@ -136,8 +136,8 @@ async function startDroppingSmtp() {
   return { received: [] as Captured[], port: (server.address() as { port: number }).port };
 }
 
-async function setup(opts: { smtp?: Parameters<typeof startSmtp>[0]; attention?: import("./attention").AttentionHost } = {}) {
-  const imap = await startImap();
+async function setup(opts: { smtp?: Parameters<typeof startSmtp>[0]; imap?: Record<string, unknown>; attention?: import("./attention").AttentionHost } = {}) {
+  const imap = await startImap(opts.imap);
   const smtp = opts.smtp?.dropDuringData ? await startDroppingSmtp() : await startSmtp(opts.smtp);
   const dir = mkdtempSync(join(tmpdir(), "terno-imap-"));
   const backend = new Backend({
@@ -219,6 +219,39 @@ describe("IMAP provider against ImapKit", () => {
     // a second sync is a no-op (no duplicates)
     await backend.syncAccount(account.id);
     expect(count(backend, "SELECT 1 FROM messages")).toBe(5);
+  });
+
+  it("refuses archive without targeted expunge support and preserves unrelated Deleted mail", async () => {
+    const { imap, backend, client, addAccount } = await setup({ imap: { plugins: ["IDLE", "SPECIAL-USE", "ENABLE", "CONDSTORE"] } });
+    const ctl = imap.server.control;
+    const targetRaw = raw({ subject: "Keep target", body: "Exact target body" });
+    const otherRaw = raw({ subject: "Keep unrelated", body: "Exact unrelated body" });
+    const target = ctl.addMessage("INBOX", { raw: targetRaw });
+    const other = ctl.addMessage("INBOX", { raw: otherRaw });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const thread = (await client.call("threads.list", { view: "inbox" })).items.find((t) => t.subject === "Keep target")!;
+    expect(thread).toBeDefined();
+    ctl.setFlags("INBOX", [other.uid], ["\\Deleted"], "add");
+    const mutations: string[] = [];
+    imap.server.script.add({ on: "command", run: true, when: (context) => {
+      if (/^(?:UID )?(?:COPY|MOVE|STORE|EXPUNGE)$/.test(context.command ?? "")) {
+        if (mutations.length >= 32) throw new Error("Unexpected unbounded IMAP mutations");
+        mutations.push(context.command!);
+      }
+      return false;
+    } });
+    await client.call("threads.act", { threadIds: [thread.id], action: "archive" });
+    await backend.runWorker();
+    expect.soft(mutations).toEqual([]);
+    const remaining = ctl.listMessages("INBOX", { raw: true });
+    expect.soft(remaining.map((m) => m.uid)).toEqual([target.uid, other.uid]);
+    expect.soft(remaining.find((m) => m.uid === target.uid)?.raw?.toString()).toBe(targetRaw);
+    expect.soft(remaining.find((m) => m.uid === other.uid)?.raw?.toString()).toBe(otherRaw);
+    expect.soft(remaining.find((m) => m.uid === other.uid)?.flags).toContain("\\Deleted");
+    expect.soft(ctl.listMessages("Archive")).toHaveLength(0);
+    expect.soft(await client.call("ops.list", {})).toEqual([expect.objectContaining({ kind: "archive", state: "failed", attempts: 1, lastErrorI18n: { key: "errors.imap.unsafeMove" } })]);
+    expect((await client.call("threads.get", { threadId: thread.id })).messages[0]?.bodyText).toBe("Exact target body\n");
   });
 
   it("archives on the server with MOVE and keeps the message (now in Archive) after resync", async () => {
