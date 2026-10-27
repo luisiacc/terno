@@ -1000,14 +1000,14 @@ export class IdbMailStore implements MailStore {
       p = structuredClone(p);
       if (!await attachmentMessageBudgetAsync(p.bodyText, p.bodyHtml, p.attachments ?? [], this.o.platform.yield)) throw new RpcError("BAD_REQUEST", L("attachments.tooLarge"));
       return this.command(() => {
-        const account = getAccount(this.c, p.accountId);
-        if (!account) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
-        const cfg = getAccountConfig<{ senderName?: string }>(this.c, p.accountId)!;
-        const from: Address = { name: cfg.config.senderName || account.displayName, email: account.email };
         // a draft is sent once: sending deletes it, so a second send of the same draft finds nothing
         const draft = p.draftId === undefined ? undefined : T(this.c, "drafts").get(p.draftId);
         if (p.draftId !== undefined && (!draft || (draft.generation ?? "") !== (p.draftGeneration ?? ""))) throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftMissing" });
         if (draft && (draft.account_id !== p.accountId || (p.draftRevision !== undefined && p.draftRevision !== draft.revision))) throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftRevision" });
+        const account = getAccount(this.c, p.accountId);
+        if (!account) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
+        const cfg = getAccountConfig<{ senderName?: string }>(this.c, p.accountId)!;
+        const from: Address = { name: cfg.config.senderName || account.displayName, email: account.email };
         if (draft && p.attachments === undefined && JSON.parse(draft.attachments_json ?? "[]").length) throw assetError();
         const attachments = validateAssets(idbAssets(this.db), p.accountId, p.attachments ?? []);
         let inReplyTo: string | null = null;
@@ -1338,7 +1338,12 @@ export class IdbMailStore implements MailStore {
     save: (d, now) => this.command(() => saveDraft(this.c, d, now)),
     // waits for the messages: an orphan (its original gone) is told apart from a draft whose original is loading
     list: () => this.read(() => listDrafts(this.c)),
-    delete: (id) => this.command(() => void T(this.c, "drafts").delete(id)),
+    delete: (id, generation) => this.command(() => {
+      const drafts = T(this.c, "drafts");
+      const row = drafts.get(id);
+      if (row && generation !== undefined && (row.generation ?? "") !== generation) throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftMissing" });
+      drafts.delete(id);
+    }),
     messageRef: (id) => this.read(() => (T(this.c, "messages").get(id)?.rfc_message_id as string | null | undefined) ?? null),
     findMessage: (accountId, rfc) =>
       this.read(() => {

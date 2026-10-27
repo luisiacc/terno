@@ -695,7 +695,7 @@ export const contract = {
     { timeoutMs: 2000 },
   ),
   "drafts.list": m<Draft[]>()(empty),
-  "drafts.delete": m<{ ok: true }>()(z.object({ id })),
+  "drafts.delete": m<{ ok: true }>()(z.object({ id, generation: z.string().max(64).optional() })),
 
   "accounts.addImap": m<Account>()(
     z.object({

@@ -58,6 +58,17 @@ const until = async (check: () => boolean) => {
   for (let i = 0; i < 100 && !check(); i++) await new Promise((r) => setTimeout(r, 5));
 };
 
+it("draft discard RPC requires the acknowledged generation for fresh targets, while repeated exact deletion is idempotent", async () => {
+  const { client } = setup(); const a = await client.call("accounts.addImap", imap("synthetic-discard@example.test"));
+  const d = (await client.call("drafts.save", { accountId: a.id, to: [], subject: "exact", bodyText: "keep" }))!;
+  await expect(client.call("drafts.delete", { id: d.id })).rejects.toMatchObject({ code: "STALE", details: { reason: "draftMissing" } });
+  await expect(client.call("drafts.delete", { id: d.id, generation: "old-generation" })).rejects.toMatchObject({ code: "STALE", details: { reason: "draftMissing" } });
+  expect((await client.call("drafts.list", {}))[0]).toMatchObject({ id: d.id, bodyText: "keep" });
+  await client.call("drafts.delete", { id: d.id, generation: d.generation });
+  await expect(client.call("drafts.delete", { id: d.id, generation: d.generation })).resolves.toEqual({ ok: true });
+  expect(await client.call("drafts.list", {})).toEqual([]);
+});
+
 describe("accounts.update", () => {
   it("renames, recolors and sets the sender name, signature and sync window; announces it; null goes back to the general window", async () => {
     const { client, windows } = setup();

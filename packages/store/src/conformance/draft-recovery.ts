@@ -30,6 +30,8 @@ export function defineDraftRecoveryConformance(name: string, harness: StoreHarne
       const store = await open(); const [a] = await withAccounts(store);
       const input = { accountId: a!, to: [], cc: [], subject: "s", bodyText: "keep" };
       const d = (await store.drafts.save(input, 0))!;
+      await expect(store.drafts.delete(d.id, "old-generation")).rejects.toMatchObject({ code: "STALE", details: { reason: "draftMissing" } });
+      expect((await store.drafts.list())[0]!.id).toBe(d.id);
       expect(await store.drafts.save({ ...input, id: d.id, baseRevision: 1 }, 1)).toBeNull();
       expect(await store.drafts.save({ ...input, id: d.id, generation: "other", baseRevision: 1 }, 1)).toBeNull();
       const next = (await store.drafts.save({ ...input, id: d.id, generation: d.generation, baseRevision: 1 }, 1))!;
@@ -41,6 +43,14 @@ export function defineDraftRecoveryConformance(name: string, harness: StoreHarne
       await expect(store.compose.queueSend(send)).rejects.toMatchObject({ details: { reason: "draftMissing" } });
       await expect(store.compose.queueSend({ ...send, draftGeneration: d.generation })).rejects.toMatchObject({ details: { reason: "draftRevision" } });
       expect((await store.debug.snapshot()).ops.length).toBe(0);
+    });
+
+    it("a clean target removed with its account reports terminal missing before any send is queued", async () => {
+      const store = await open(); const [a] = await withAccounts(store);
+      const d = (await store.drafts.save({ accountId: a!, to: [], cc: [], subject: "keep", bodyText: "exact" }, 0))!;
+      await store.accounts.remove(a!);
+      await expect(store.compose.queueSend({ accountId: a!, to: [], cc: [], bcc: [], subject: "keep", bodyText: "exact", draftId: d.id, draftGeneration: d.generation, draftRevision: 1, recordReply: false, now: 1 })).rejects.toMatchObject({ code: "STALE", details: { reason: "draftMissing" } });
+      expect(await store.ops.recent(10)).toEqual([]);
     });
 
     it("standalone cross-account replies retain valid RFC context through copy and reopen without a foreign provider thread", async () => {

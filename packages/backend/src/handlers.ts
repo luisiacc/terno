@@ -457,8 +457,8 @@ export function createHandlers(b: Backend): Handlers {
       return { text: b.autocomplete.suggestText({ before, names, me }) };
     },
     "drafts.list": async () => (await store.drafts.list()).map(toDraft),
-    "drafts.delete": async ({ id }) => {
-      await store.drafts.delete(id);
+    "drafts.delete": async ({ id, generation }) => {
+      await store.drafts.delete(id, generation ?? "");
       return { ok: true as const };
     },
 

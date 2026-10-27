@@ -563,14 +563,14 @@ export class SqlMailStore implements MailStore {
       p = structuredClone(p);
       if (!await attachmentMessageBudgetAsync(p.bodyText, p.bodyHtml, p.attachments ?? [], this.yieldTo)) throw new RpcError("BAD_REQUEST", L("attachments.tooLarge"));
       return this.db.tx(() => {
-        const account = getAccount(this.db, p.accountId);
-        if (!account) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
-        const cfg = getAccountConfig<{ senderName?: string }>(this.db, p.accountId)!;
-        const from: Address = { name: cfg.config.senderName || account.displayName, email: account.email };
         // a draft is sent once: sending deletes it, so a second send of the same draft finds nothing
         const draft = p.draftId === undefined ? undefined : this.db.get<{ account_id: number; revision: number; generation: string; attachments_json: string }>("SELECT account_id, revision, generation, attachments_json FROM drafts WHERE id = ?", p.draftId);
         if (p.draftId !== undefined && (!draft || (draft.generation ?? "") !== (p.draftGeneration ?? ""))) throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftMissing" });
         if (draft && (draft.account_id !== p.accountId || (p.draftRevision !== undefined && p.draftRevision !== draft.revision))) throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftRevision" });
+        const account = getAccount(this.db, p.accountId);
+        if (!account) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
+        const cfg = getAccountConfig<{ senderName?: string }>(this.db, p.accountId)!;
+        const from: Address = { name: cfg.config.senderName || account.displayName, email: account.email };
         if (draft && p.attachments === undefined && JSON.parse(draft.attachments_json ?? "[]").length) throw assetError();
         const attachments = validateAssets(sqlAssets(this.db), p.accountId, p.attachments ?? []);
         let inReplyTo: string | null = null;
@@ -812,7 +812,7 @@ export class SqlMailStore implements MailStore {
   readonly drafts: MailStore["drafts"] = {
     save: async (d, now) => this.db.tx(() => saveDraft(this.db, d, now)),
     list: async () => listDrafts(this.db),
-    delete: async (id) => deleteDraft(this.db, id),
+    delete: async (id, generation) => deleteDraft(this.db, id, generation),
     messageRef: async (id) => messageRef(this.db, id),
     findMessage: async (accountId, rfc) => findMessageByRef(this.db, accountId, rfc),
   };

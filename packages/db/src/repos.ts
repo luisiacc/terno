@@ -740,6 +740,8 @@ export function findMessageByRef(db: Db, accountId: number, rfcMessageId: string
   return r ? { id: r.id, threadId: r.thread_id } : null;
 }
 
-export function deleteDraft(db: Db, id: number): void {
-  db.run("DELETE FROM drafts WHERE id = ?", id);
+export function deleteDraft(db: Db, id: number, generation?: string): void {
+  if (generation === undefined) { db.run("DELETE FROM drafts WHERE id = ?", id); return; }
+  const removed = db.run("DELETE FROM drafts WHERE id = ? AND generation = ?", id, generation);
+  if (!removed.changes && db.get("SELECT 1 FROM drafts WHERE id = ?", id)) throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftMissing" });
 }

@@ -437,7 +437,8 @@ export interface MailStore {
     /** null: `id` no longer exists (sent or deleted); a stale baseRevision inserts a new draft instead of overwriting */
     save(d: DraftInput, now: number): Promise<DraftRow | null>;
     list(): Promise<DraftRow[]>;
-    delete(id: number): Promise<void>;
+    /** The RPC boundary always supplies its immutable generation; internal maintenance may delete by numeric id. */
+    delete(id: number, generation?: string): Promise<void>;
     /** a message's Message-ID (what a draft answers or forwards, portably, in an export) */
     messageRef(messageId: number): Promise<string | null>;
     /** the newest message of an account with that Message-ID (any case, with or without <>), for an import */

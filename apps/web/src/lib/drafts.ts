@@ -544,7 +544,7 @@ export async function discardDraft(key: string): Promise<LocalDraft | undefined>
   const d = await settle(key);
   if (!d || d.sending) return undefined;
   forgetDraft(key);
-  if (d.id !== null) await call("drafts.delete", { id: d.id }).catch(() => {});
+  if (d.id !== null) await call("drafts.delete", { id: d.id, generation: d.generation ?? "" }).catch(() => {});
   return d;
 }
 
