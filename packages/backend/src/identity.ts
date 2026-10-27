@@ -157,12 +157,11 @@ export async function googleCredentialIntent(b: Backend, account: Account, stamp
 export async function commitGoogleCredential(b: Backend, accountId: number, stamp: { id: number; email: string; createdAt: number }, flow: AbortController, intent: SecretIntent): Promise<void> {
   await sameAccount(b, stamp, flow);
   let committed: boolean;
-  try { committed = await b.credentialWrite(accountId, flow, () => b.store.secrets.commit(intent, stamp)); }
+  try { committed = await b.credentialCommit(accountId, flow, () => b.store.secrets.commit(intent, stamp)); }
   catch { b.assertSignIn(accountId, flow); throw persistenceFailed(); }
   b.assertSignIn(accountId, flow);
   if (!committed) { b.gmailRenewals.delete(accountId); throw persistenceFailed(); }
   b.gmailRenewals.delete(accountId);
-  b.credentialStored(accountId, flow);
 }
 
 export async function connectExistingGoogle(b: Backend, account: Account, flow: AbortController, scopes?: string[]): Promise<GmailConnectResult> {
@@ -258,12 +257,11 @@ export async function changeOwnerTo(b: Backend, accountId: number, password: str
         throw invalidRenewal();
       }
       let changed: boolean;
-      try { changed = await b.credentialWrite(accountId, flow, () => b.store.owner.change({ claim: { ...claim, accountId, email: account.email }, stamp, secret: prepared.intent, reason: current ? "changed by user" : "claimed by user", now: b.now() })); }
+      try { changed = await b.credentialCommit(accountId, flow, () => b.store.owner.change({ claim: { ...claim, accountId, email: account.email }, stamp, secret: prepared.intent, reason: current ? "changed by user" : "claimed by user", now: b.now() })); }
       catch { b.assertSignIn(accountId, flow); throw persistenceFailed(); }
       b.assertSignIn(accountId, flow);
       if (!changed) { b.gmailRenewals.delete(accountId); throw persistenceFailed(); }
       b.gmailRenewals.delete(accountId);
-      b.credentialStored(accountId, flow);
       if (prepared.pending && prepared.pending.proof.expiresAt <= Date.now()) throw invalidRenewal();
       await b.signedIn(accountId, undefined, flow);
       await b.emitOwner();

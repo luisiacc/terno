@@ -76,6 +76,44 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     expect(recoveredEarly).toBe(false); expect(premature).toBe(0);
   });
 
+  it.each(["reconnect", "owner"] as const)("superseded acknowledged %s retires old refusals without resending accepted mail", async (method) => {
+    const t = await setup(kind), opEntered = t.gate(), opBlocked = t.gate(), commitEntered = t.gate(), commitBlocked = t.gate();
+    const inserted = await t.backend.store.sync.ingest([{ accountId: t.account.id, providerMsgId: "archive-source", providerThreadId: null, rfcMessageId: "archive@example.test", inReplyTo: null, references: [], from: { name: "", email: "sender@example.test" }, to: [], cc: [], bcc: [], subject: "Synthetic", date: 1, snippet: "", bodyText: "Synthetic", bodyHtml: null, bodyState: "full", listId: null, isRead: false, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 9 }], { applyFilters: false, now: Date.now(), classifier: null });
+    await t.client.call("threads.act", { threadIds: inserted.touched, action: "archive" });
+    const oldProvider = (await t.backend.provider(t.account.id))!;
+    oldProvider.execute = async () => { opEntered.release(); await opBlocked.promise; throw new ProviderAuthError("synthetic old grant refusal"); };
+    const worker = t.backend.runWorker(); await opEntered.promise;
+    const generation = t.backend.credentialsOf(t.account.id);
+    if (method === "reconnect") {
+      const commit = t.backend.store.secrets.commit.bind(t.backend.store.secrets);
+      vi.spyOn(t.backend.store.secrets, "commit").mockImplementationOnce(async (...args) => { commitEntered.release(); await commitBlocked.promise; return commit(...args); });
+    } else {
+      const change = t.backend.store.owner.change.bind(t.backend.store.owner);
+      vi.spyOn(t.backend.store.owner, "change").mockImplementationOnce(async (...args) => { commitEntered.release(); await commitBlocked.promise; return change(...args); });
+    }
+    t.answer({ refreshToken: "admitted-replacement" });
+    const reconnect = outcome<unknown>(method === "reconnect" ? t.client.call("accounts.reconnect", { id: t.account.id }) : t.client.call("identity.changeOwner", { accountId: t.account.id })); await commitEntered.promise;
+    const off = outcome(t.client.call("icons.googlePhotos", { accountId: t.account.id, on: false }));
+    await new Promise<void>((r) => setImmediate(r)); commitBlocked.release();
+    expect(await reconnect).toHaveProperty("error"); expect(await off).toHaveProperty("value");
+    await t.backend.syncAccount(t.account.id);
+    expect(await t.backend.getSecret(t.name)).toBe("admitted-replacement");
+    opBlocked.release(); await worker;
+    expect.soft(t.backend.credentialsOf(t.account.id)).toBeGreaterThan(generation);
+    expect.soft((await t.client.call("ops.list", {})).find((row) => row.kind === "archive")?.awaitingAuth).not.toBe(true);
+    await t.backend.runWorker();
+    expect((await t.client.call("ops.list", {})).find((row) => row.kind === "archive")?.state).toBe("succeeded");
+
+    const accepted = t.gate(), settle = t.gate(); let sends = 0;
+    const provider = (await t.backend.provider(t.account.id))!;
+    provider.execute = async () => { sends++; accepted.release(); await settle.promise; return { providerMsgId: "accepted-once" }; };
+    const sent = await t.client.call("compose.send", { accountId: t.account.id, to: [{ name: "", email: "recipient@example.test" }], subject: "Synthetic", bodyText: "Synthetic" });
+    const sending = t.backend.runWorker(); await accepted.promise;
+    await t.client.call("accounts.reconnect", { id: t.account.id });
+    settle.release(); await sending; await t.backend.runWorker();
+    expect(sends).toBe(1); expect((await t.client.call("ops.list", {})).find((row) => row.id === sent.opId)?.state).toBe("succeeded");
+  });
+
   it("initial omission and malformed present values save no new account", async () => {
     const t = await setup(kind); const before = (await t.client.call("app.bootstrap", {})).accounts.map((a) => ({ id: a.id, email: a.email }));
     for (const refreshToken of [null, undefined, "", 123]) {

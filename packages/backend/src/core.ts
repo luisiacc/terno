@@ -1182,9 +1182,16 @@ export class BackendCore {
     if (!needsWholeSignIn(account.syncState) && !this.gmailRenewals.has(accountId)) this.startAccount(account);
   }
 
-  credentialStored(accountId: number, flow: AbortController): void {
-    this.assertSignIn(accountId, flow);
-    this.credentials.set(accountId, this.credentialsOf(accountId) + 1);
+  /** An acknowledged write retires refusals even if a newer intent owns RPC publication. */
+  credentialCommit(accountId: number, flow: AbortController, write: () => Promise<boolean>): Promise<boolean> {
+    const life = this.lifetime(accountId);
+    return this.credentialWrite(accountId, flow, async () => {
+      const committed = await write();
+      if (committed && !this.stopped && !this.abort.signal.aborted && !life.removing && this.lifetimes.get(accountId) === life) {
+        this.credentials.set(accountId, this.credentialsOf(accountId) + 1);
+      }
+      return committed;
+    });
   }
 
   /** Explicit writes may follow a deliberate drop; deletion still drains every admitted command. */
