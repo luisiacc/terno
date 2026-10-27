@@ -36,7 +36,7 @@ let seq = 0;
  */
 let intent = 0;
 type ReaderDestination = { token: object; active: boolean; generation: number };
-type FocusLease = { intent: number; threadId: number | null; composeSeq?: number; accountId?: number; key?: string; seq?: number; valid: boolean; dispose: () => void; view?: { id: LocalDraft["id"]; generation: LocalDraft["generation"]; revision: number; recovery: LocalDraft["recovery"]; missingAccount: boolean }; destination?: ReaderDestination };
+type FocusLease = { intent: number; threadId: number | null; composeSeq?: number; accountId?: number; key?: string; seq?: number; valid: boolean; dispose: () => void; view?: { id: LocalDraft["id"]; generation: LocalDraft["generation"]; revision: number; localRev: number; uiState: LocalDraft["uiState"]; recovery: LocalDraft["recovery"]; missingAccount: boolean }; destination?: ReaderDestination };
 const readerDestinations = new Map<number, ReaderDestination>();
 const failedReaderHosts = new Map<object, { threadId: number }>();
 const readerFailed = (threadId: number): boolean => {
@@ -121,7 +121,7 @@ function beginFocusLease(owner: number, threadId: number | null, standalone?: { 
   const selected = getApp().selectedId, account = getApp().accountId;
   const destination = threadId === null ? undefined : readerDestinations.get(threadId);
   const viewed = standalone ? useDrafts.getState().drafts[standalone.key] : undefined;
-  const lease: FocusLease = { intent: owner, threadId, valid: true, dispose: () => {}, destination, ...(viewed ? { view: { id: viewed.id, generation: viewed.generation, revision: viewed.revision, recovery: viewed.recovery, missingAccount: !getApp().accounts.some((a) => a.id === viewed.accountId) } } : {}), ...(standalone ? { key: standalone.key, composeSeq: standalone.seq, accountId: useDrafts.getState().drafts[standalone.key]?.accountId } : {}) };
+  const lease: FocusLease = { intent: owner, threadId, valid: true, dispose: () => {}, destination, ...(viewed ? { view: { id: viewed.id, generation: viewed.generation, revision: viewed.revision, localRev: viewed.localRev, uiState: viewed.uiState, recovery: viewed.recovery, missingAccount: !getApp().accounts.some((a) => a.id === viewed.accountId) } } : {}), ...(standalone ? { key: standalone.key, composeSeq: standalone.seq, accountId: useDrafts.getState().drafts[standalone.key]?.accountId } : {}) };
   const moved = (event: FocusEvent) => {
     if (event.target !== active && event.target !== document.body) releaseFocusLease(lease, false);
   };
@@ -133,7 +133,7 @@ function beginFocusLease(owner: number, threadId: number | null, standalone?: { 
   });
   const unsubDrafts = useDrafts.subscribe((state) => {
     const draft = lease.key ? state.drafts[lease.key] : undefined;
-    if (state.held || (lease.key && (!draft || draft.uiState !== "open" || draft.sending || (lease.view ? draft.id !== lease.view.id || draft.generation !== lease.view.generation || draft.revision !== lease.view.revision || draft.recovery !== lease.view.recovery : draft.recovery) || (lease.accountId !== undefined && draft.accountId !== lease.accountId)))) releaseFocusLease(lease, false);
+    if (state.held || (lease.key && (!draft || draft.sending || (lease.view ? draft.uiState !== lease.view.uiState || draft.localRev !== lease.view.localRev || draft.id !== lease.view.id || draft.generation !== lease.view.generation || draft.revision !== lease.view.revision || draft.recovery !== lease.view.recovery : draft.uiState !== "open" || draft.recovery) || (lease.accountId !== undefined && draft.accountId !== lease.accountId)))) releaseFocusLease(lease, false);
   });
   lease.dispose = () => {
     if (typeof document !== "undefined") document.removeEventListener?.("focusin", moved, true);
