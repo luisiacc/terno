@@ -24,7 +24,7 @@
 - **Terno is an email client.** No subject, body, address, name, file name, search query, AI prompt, token or key may ever leave the machine in a report.
   - Scrubbing is done by construction: logs take a message code and *typed, allowlisted* fields. Free-form strings are dropped or reduced to a length and hash.
   - A regex scrubber (emails, bearer tokens, `?query`, long base64) is a second line of defence on everything, including stack-trace messages.
-- **Local mode** (the default) promises that Terno talks only to the user's mail servers. In local mode nothing is ever sent to Sentry, whatever the other settings say. Diagnostics stay on disk, and the user can export them by hand.
+- **Local mode** (the default) promises that Terno talks only to the user's mail servers (plus what the user explicitly asks for, such as remote images they load: plan 35). In local mode nothing is ever sent to Sentry, whatever the other settings say. Diagnostics stay on disk, and the user can export them by hand.
 - **Consent.** Setting `errorReports: "ask" | "always" | "never"`, default `"ask"`.
   - **ask:** nothing is sent automatically. After a crash or an unexpected error, Terno shows a quiet row on the next start (or in place, for non-fatal errors): "Terno tuvo un problema. ¿Enviar un informe anónimo?" with **Enviar**, **Siempre**, **Ver qué se envía** (the exact JSON) and **Ahora no**.
   - **always:** reports are sent automatically.
