@@ -106,3 +106,33 @@ export class IncomingCapacityError extends ProviderError {
   constructor() { super(L("errors.mail.processingBusy"), false); this.name = "IncomingCapacityError"; }
   override get expected(): boolean { return true; }
 }
+
+/** One backend owns read slots, a promoted pipeline and completed-small byte credits. */
+export class IncomingPipeline extends IncomingReads {
+  private readonly promoted = new IncomingReads(1);
+  private retained = 0;
+  private pipelineClosed = false;
+
+  promote(accountId: number, signal: AbortSignal, reset?: AbortSignal): Promise<() => void> {
+    return this.promoted.acquire(accountId, signal, reset);
+  }
+
+  retainCompleted(bytes: number): (() => void) | undefined {
+    if (this.pipelineClosed) throw new DOMException("Mail processing stopped", "AbortError");
+    if (!Number.isSafeInteger(bytes) || bytes < 0) throw new RangeError("Invalid incoming byte charge");
+    if (this.retained + bytes > 4 * 1024 * 1024) return;
+    this.retained += bytes;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.retained -= bytes;
+    };
+  }
+
+  override close(): void {
+    this.pipelineClosed = true;
+    this.promoted.close();
+    super.close();
+  }
+}
