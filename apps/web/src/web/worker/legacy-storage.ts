@@ -1,4 +1,5 @@
 import type { SAHPoolUtil, Sqlite3Static } from "@sqlite.org/sqlite-wasm";
+import { assertCertain, UncertainWriteError } from "@terno/idb/uncertainty";
 
 /**
  * The web build was called Única: its IndexedDB databases were "unica-<name>"
@@ -39,12 +40,19 @@ function request<T>(r: IDBRequest<T>): Promise<T> {
   });
 }
 
-function committed(tx: IDBTransaction): Promise<void> {
-  return new Promise((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error ?? new Error("IndexedDB transaction failed"));
-    tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
+async function committed(tx: IDBTransaction, enqueue: () => void): Promise<void> {
+  let failed = false, failure: unknown;
+  const record = (error: unknown) => { if (!failed) { failed = true; failure = error; } };
+  const ended = new Promise<"complete" | "abort">((resolve) => {
+    tx.addEventListener("error", (event) => record((event.target as IDBRequest | null)?.error ?? tx.error), true);
+    tx.addEventListener("complete", () => resolve("complete"));
+    tx.addEventListener("abort", () => resolve("abort"));
   });
+  try { enqueue(); }
+  catch (error) { record(error); try { tx.abort(); } catch { /* Wait before copy cleanup. */ } }
+  const outcome = await ended;
+  if (failed) throw failure;
+  if (outcome === "abort") throw tx.error ?? new Error("IndexedDB transaction aborted");
 }
 
 /** Whether a database exists, without creating it (browsers without databases() get an aborted open). */
@@ -81,12 +89,28 @@ async function legacyIdbNames(factory: IDBFactory, mailbox: string): Promise<str
 
 const BATCH = 500;
 
+async function certainDatabases(factory: IDBFactory, ...names: string[]): Promise<void> {
+  for (const name of names) {
+    try {
+      if (!(await idbExists(factory, name))) continue;
+      const open = factory.open(name);
+      open.onupgradeneeded = () => open.transaction!.abort();
+      const db = await request(open);
+      try { if (db.objectStoreNames.contains("meta")) await assertCertain(db); }
+      finally { db.close(); }
+    } catch (error) {
+      throw error instanceof UncertainWriteError ? error : new UncertainWriteError("unreadable", error);
+    }
+  }
+}
+
 /**
  * Copies a whole database: same version, same object stores and indexes,
  * every record (in batches, so no transaction holds a whole mailbox), then
  * checks every store's count. The target must not exist.
  */
 export async function copyIdbDatabase(factory: IDBFactory, from: string, to: string, afterBatch?: () => Promise<void>): Promise<Record<string, number>> {
+  await certainDatabases(factory, from, to);
   const source = await request(factory.open(from));
   try {
     const stores = [...source.objectStoreNames].map((name) => {
@@ -116,8 +140,9 @@ export async function copyIdbDatabase(factory: IDBFactory, from: string, to: str
           if (keys.length === 0) break;
           const tx = target.transaction(s.name, "readwrite");
           const write = tx.objectStore(s.name);
-          for (let i = 0; i < keys.length; i++) write.put(values[i], s.keyPath === null ? keys[i] : undefined);
-          await committed(tx);
+          await committed(tx, () => {
+            for (let i = 0; i < keys.length; i++) write.put(values[i], s.keyPath === null ? keys[i] : undefined);
+          });
           await afterBatch?.();
           after = keys[keys.length - 1];
           if (keys.length < BATCH) break;
@@ -126,6 +151,7 @@ export async function copyIdbDatabase(factory: IDBFactory, from: string, to: str
         if (a !== b) throw new Error(`${from} → ${to}: ${s.name} has ${b} of ${a} records`);
         counts[s.name] = b;
       }
+      await certainDatabases(factory, from, to);
       return counts;
     } finally {
       target.close();
@@ -162,9 +188,10 @@ async function openJournal(factory: IDBFactory): Promise<IDBDatabase> {
 
 async function journalWrite(journal: IDBDatabase, to: string, value: CopyState | null): Promise<void> {
   const tx = journal.transaction("copies", "readwrite");
-  if (value) tx.objectStore("copies").put(value, to);
-  else tx.objectStore("copies").delete(to);
-  await committed(tx);
+  await committed(tx, () => {
+    if (value) tx.objectStore("copies").put(value, to);
+    else tx.objectStore("copies").delete(to);
+  });
 }
 
 async function journalEntries(journal: IDBDatabase): Promise<Map<string, CopyState>> {
@@ -179,12 +206,14 @@ export async function migrateLegacyIdb(factory: IDBFactory, mailbox: string, log
   const names = (await legacyIdbNames(factory, mailbox)).sort((a, b) => Number(b.endsWith("-keys")) - Number(a.endsWith("-keys")));
   const hadJournal = await idbExists(factory, MIGRATION_JOURNAL);
   if (names.length === 0 && !hadJournal) return report;
+  for (const from of names) await certainDatabases(factory, from, idbName(from)!);
   const journal = await openJournal(factory);
   try {
     const entries = await journalEntries(journal);
     for (const from of names) {
       const to = idbName(from)!;
       const state = entries.get(to)?.state;
+      await certainDatabases(factory, from, to);
       if (state === "copied") {
         // verified before the tab went away: only the cleanup was left
         await deleteIdb(factory, from);
@@ -204,17 +233,21 @@ export async function migrateLegacyIdb(factory: IDBFactory, mailbox: string, log
       try {
         counts = await copyIdbDatabase(factory, from, to, options.afterBatch && (() => options.afterBatch!(to)));
       } catch (error) {
+        if (error instanceof UncertainWriteError) throw error;
+        await certainDatabases(factory, from, to);
         // a partial copy goes (and its record after it); the legacy database stays as it was
-        await deleteIdb(factory, to).catch(() => {});
-        await journalWrite(journal, to, null).catch(() => {});
+        await deleteIdb(factory, to);
+        await journalWrite(journal, to, null);
         throw new Error(`${from}: ${error instanceof Error ? error.message : String(error)}`);
       }
+      await certainDatabases(factory, from, to);
       await journalWrite(journal, to, { from, state: "copied" });
       await deleteIdb(factory, from);
       await journalWrite(journal, to, null);
       report.push(`IndexedDB ${from} → ${to} (${Object.values(counts).reduce((a, b) => a + b, 0)} records)`);
     }
     for (const [to, { from, state }] of await journalEntries(journal)) {
+      await certainDatabases(factory, from, to);
       // a record whose legacy database is gone: a verified copy is simply done; an unverified one is kept and reported
       if (state === "copied") await journalWrite(journal, to, null);
       else log(`IndexedDB ${to}: an interrupted copy of ${from}, which no longer exists; kept as it is`);

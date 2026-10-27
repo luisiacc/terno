@@ -1456,6 +1456,8 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "web.gate.stale.body": "Tu buzón ya usa una versión más nueva. Recarga para actualizar; no se ha cambiado nada.",
   "web.gate.unavailable.title": "Este navegador no puede guardar tu correo",
   "web.gate.openFailed.title": "No se pudo abrir tu buzón",
+  "web.gate.uncertain.title": "No se pudo abrir tu buzón de forma segura",
+  "web.gate.uncertain.body": "Puede que no se haya completado un guardado local. Tus datos locales se han conservado. No borres el almacenamiento de este navegador. Restaura una copia de seguridad que sepas que está bien o busca ayuda para recuperarlos antes de volver a intentarlo.",
   "web.gate.crashed.title": "El motor de correo se detuvo",
   "web.gate.kept": "Tu correo sigue guardado tal como estaba; no se creó un buzón nuevo.",
   "web.gate.reload": "Recargar",

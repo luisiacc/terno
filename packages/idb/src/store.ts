@@ -142,6 +142,7 @@ import {
 import type { Key, MemDb } from "./mem";
 import { IdbProviderStore } from "./provider-store";
 import { createMemDb, EARLY_TABLES, idbExists, LATE_TABLES, LOGICAL_SCHEMA, loadAll, PartialCommit, SEARCH_SCHEMA, openIdb, persist, readAll, readLazy, writeMeta } from "./schema";
+import { UncertainWriteError } from "./uncertainty";
 import { answeredThreads, arrivalRows, backfillSlice, FactsQueue, factsReady, ownMailChanged, referencesOfOwn, resetFacts, startRescan } from "./facts";
 import { sameRevision, SearchCancelledError, type AutocompleteSource, type ContactBatch, type ContactMessage, type SentText } from "@terno/store";
 import { contactOf, isLearnable, sentOf } from "./autocomplete";
@@ -343,10 +344,10 @@ export class IdbMailStore implements MailStore {
           await persist(this.idb, commit, o.durability ?? "strict");
           this.db.confirm();
         } catch (error) {
-          if (error instanceof PartialCommit) {
+          if (error instanceof PartialCommit || error instanceof UncertainWriteError) {
             this.unusable = true;
             this.idb.close();
-            throw error.original;
+            throw error instanceof PartialCommit ? error.original : error;
           }
           this.db.revert();
           throw error;

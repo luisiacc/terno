@@ -19,6 +19,7 @@ import { migrateLegacyFiles, migrateLegacyIdb, migrateLegacyPool } from "./legac
 import { opfsFiles, webPlatform } from "./platform";
 import { webRegistry } from "./providers";
 import { webStores } from "./stores";
+import { uncertainStoreFailure } from "./storage-error";
 
 declare const self: DedicatedWorkerGlobalScope;
 
@@ -119,7 +120,7 @@ async function start(init: WorkerInit): Promise<void> {
   }
   // Única's storage takes its Terno names first (this tab holds both Web Locks); a failure deletes nothing and opens nothing
   const migrationFailed = (error: unknown) =>
-    post({ type: "fatal", code: "OPEN_FAILED", message: L("web.worker.migrationFailed", { error: error instanceof Error ? error.message : String(error) }) });
+    post(uncertainStoreFailure(error) ?? { type: "fatal", code: "OPEN_FAILED", message: L("web.worker.migrationFailed", { error: error instanceof Error ? error.message : String(error) }) });
   const moved: string[] = [];
   const note = (message: string) => console.warn(`[storage] ${message}`);
   try {
@@ -167,7 +168,7 @@ async function start(init: WorkerInit): Promise<void> {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     // the mailbox stays exactly as it was: no fallback to another (empty) adapter, no repair attempt
-    post({ type: "fatal", code: /newer than this app/.test(message) ? "SCHEMA_NEWER" : "OPEN_FAILED", message });
+    post(uncertainStoreFailure(error) ?? { type: "fatal", code: /newer than this app/.test(message) ? "SCHEMA_NEWER" : "OPEN_FAILED", message });
     return;
   }
   mark("open");
@@ -244,7 +245,7 @@ self.onmessage = (event: MessageEvent<PageToWorker>) => {
   if (m.type === "init") {
     void start(m).catch((error) => {
       captureError(error, { code: "worker.open_failed", fields: { fatalCode: "OPEN_FAILED", engine: "wasm-opfs" } });
-      post({ type: "fatal", code: "OPEN_FAILED", message: error instanceof Error ? error.message : String(error) });
+      post(uncertainStoreFailure(error) ?? { type: "fatal", code: "OPEN_FAILED", message: error instanceof Error ? error.message : String(error) });
     });
   } else if (m.type === "close") {
     void close();

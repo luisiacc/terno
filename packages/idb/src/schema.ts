@@ -1,5 +1,6 @@
 import { installAssetAccounting } from "./asset-accounting";
 import { MemDb, type Committed, type ForeignKey, type Key, type Row, type Table, type TableSpec } from "./mem";
+import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertainty";
 
 /**
  * The IndexedDB schema: one object store per table of the SQL schema (same
@@ -9,8 +10,9 @@ import { MemDb, type Committed, type ForeignKey, type Key, type Row, type Table,
  * is SQL's v8 (the move journal keeps each removed row with its category);
  * version 3 is SQL's v9 (drafts v2); version 4 is SQL's v14 (plan 17: correspondents, thread facts); version 5 is SQL's v15 (Reply-To, defaulted on read).
  * Version 6 adds attachment assets (SQL v16); SQL v17 adds an in-memory partial index, with no persisted shape change.
+ * Version 10 fences older adapters from mailboxes with incomplete-save markers.
  */
-export const IDB_VERSION = 9;
+export const IDB_VERSION = 10;
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
 export const LOGICAL_SCHEMA = 23;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
@@ -145,28 +147,67 @@ export class PartialCommit extends Error {
   constructor(readonly original: unknown) { super("IndexedDB completed after a write error"); }
 }
 
-async function writeTransaction(tx: IDBTransaction, enqueue: () => void): Promise<void> {
-  let firstError: unknown;
+const WRITE_MARKER = Object.freeze({ version: 1 });
+
+async function writeTransaction(tx: IDBTransaction, enqueue: (track: (request: IDBRequest) => void) => void): Promise<void> {
+  let firstError: unknown, failed = false;
+  let enqueued = 0, succeeded = 0, enqueueDone = false, cleared = false, clearQueued = false;
+  const record = (error: unknown) => {
+    if (!failed) { failed = true; firstError = error; }
+  };
+  const abort = (error: unknown) => {
+    record(error);
+    try { tx.abort(); } catch { /* Wait for the actual terminal event. */ }
+  };
+  const guarded = (fn: () => void) => () => {
+    try { fn(); } catch (error) { abort(error); }
+  };
+  const observeError = (event: Event) => record((event.target as IDBRequest | null)?.error ?? tx.error ?? new Error("IndexedDB transaction failed"));
   const terminal = new Promise<"complete" | "abort">((resolve) => {
-    tx.addEventListener("error", (event) => {
-      const target = event.target as IDBRequest | null;
-      firstError ??= target?.error ?? tx.error ?? new Error("IndexedDB transaction failed");
-    });
+    tx.addEventListener("error", observeError, true);
     tx.addEventListener("complete", () => resolve("complete"));
     tx.addEventListener("abort", () => resolve("abort"));
   });
+  const clear = () => {
+    if (failed || !enqueueDone || succeeded !== enqueued || clearQueued) return;
+    clearQueued = true;
+    const request = tx.objectStore("meta").delete(UNCERTAINTY_KEY);
+    request.addEventListener("error", observeError);
+    request.addEventListener("success", guarded(() => { cleared = true; }));
+  };
+  const bodySucceeded = guarded(() => { succeeded++; clear(); });
+  const track = (request: IDBRequest) => {
+    enqueued++;
+    request.addEventListener("error", observeError);
+    request.addEventListener("success", bodySucceeded);
+  };
   try {
-    enqueue();
+    const meta = tx.objectStore("meta");
+    const guard = meta.getKey(UNCERTAINTY_KEY);
+    guard.addEventListener("error", observeError);
+    guard.addEventListener("success", guarded(() => {
+      if (guard.result !== undefined) { abort(new UncertainWriteError()); return; }
+      const marker = meta.put(WRITE_MARKER, UNCERTAINTY_KEY);
+      marker.addEventListener("error", observeError);
+      marker.addEventListener("success", guarded(() => {
+        if (failed) return;
+        enqueue(track);
+        enqueueDone = true;
+        clear();
+      }));
+    }));
   } catch (error) {
-    firstError ??= error;
-    try { tx.abort(); } catch { /* Wait for the actual terminal event. */ }
+    abort(error);
   }
   const outcome = await terminal;
+  if (firstError instanceof UncertainWriteError) throw firstError;
   if (outcome === "complete") {
-    if (firstError !== undefined) throw new PartialCommit(firstError);
+    if (failed) throw new PartialCommit(firstError);
+    if (!enqueueDone || succeeded !== enqueued || !cleared) throw new PartialCommit(new Error("IndexedDB write did not confirm every request"));
     return;
   }
-  throw firstError ?? tx.error ?? new Error("IndexedDB transaction aborted");
+  if (failed) throw firstError;
+  throw tx.error ?? new Error("IndexedDB transaction aborted");
 }
 
 export const databaseName = (name: string) => `terno-${name}`;
@@ -178,36 +219,68 @@ export const databaseName = (name: string) => `terno-${name}`;
  */
 export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDatabase> {
   const open = factory.open(databaseName(name), IDB_VERSION);
+  let admissionFailure: unknown, admissionFailed = false, upgradeInspected = true;
   open.onupgradeneeded = (event) => {
-    const db = open.result;
-    if (event.oldVersion < 1) {
-      for (const t of PERSISTED) db.createObjectStore(t.name);
-      db.createObjectStore("meta");
-    } else {
-      if (event.oldVersion < 8) for (const name of ["flag_clocks", "message_flag_intents", "flag_op_effects"]) db.createObjectStore(name);
-      if (event.oldVersion < 7) db.createObjectStore("draft_counter");
-      if (event.oldVersion < 2) upgradeMoveRows(open.transaction!);
-      if (event.oldVersion < 3) upgradeDrafts(open.transaction!);
-      if (event.oldVersion < 4) upgradeFacts(db, open.transaction!);
-      if (event.oldVersion < 6) {
-        for (const name of ["attachment_assets", "attachment_chunks", "attachment_bytes", "attachment_links"]) db.createObjectStore(name);
-        const messages = open.transaction!.objectStore("messages");
-        const cursor = messages.openCursor();
-        cursor.onsuccess = () => { const c = cursor.result; if (!c) return; c.update({ ...c.value, attachment_pending: 1 }); c.continue(); };
+    const db = open.result, tx = open.transaction!;
+    upgradeInspected = false;
+    const refuse = (error: unknown) => {
+      if (!admissionFailed) { admissionFailed = true; admissionFailure = error; }
+      try { tx.abort(); } catch { /* The open result still must be refused. */ }
+    };
+    const upgrade = () => {
+      if (event.oldVersion < 1) {
+        for (const t of PERSISTED) db.createObjectStore(t.name);
+        db.createObjectStore("meta");
+      } else {
+        if (event.oldVersion < 8) for (const name of ["flag_clocks", "message_flag_intents", "flag_op_effects"]) db.createObjectStore(name);
+        if (event.oldVersion < 7) db.createObjectStore("draft_counter");
+        if (event.oldVersion < 2) upgradeMoveRows(open.transaction!);
+        if (event.oldVersion < 3) upgradeDrafts(open.transaction!);
+        if (event.oldVersion < 4) upgradeFacts(db, open.transaction!);
+        if (event.oldVersion < 6) {
+          for (const name of ["attachment_assets", "attachment_chunks", "attachment_bytes", "attachment_links"]) db.createObjectStore(name);
+          const messages = open.transaction!.objectStore("messages");
+          const cursor = messages.openCursor();
+          cursor.onsuccess = () => { const c = cursor.result; if (!c) return; c.update({ ...c.value, attachment_pending: 1 }); c.continue(); };
+        }
       }
+      if (event.oldVersion < 8) {
+        open.transaction!.objectStore("ops").createIndex("flag_account_seq", ["account_id", "seq", "id"]);
+        open.transaction!.objectStore("message_flag_intents").createIndex("flag_snapshots", ["snapshot_account_id", "message_id"]);
+      }
+    };
+    const performUpgrade = () => { try { upgrade(); } catch (error) { refuse(error); } };
+    if (!db.objectStoreNames.contains("meta")) {
+      if (event.oldVersion !== 0) { refuse(new UncertainWriteError("unreadable")); return; }
+      upgradeInspected = true;
+      performUpgrade();
+      return;
     }
-    if (event.oldVersion < 8) {
-      open.transaction!.objectStore("ops").createIndex("flag_account_seq", ["account_id", "seq", "id"]);
-      open.transaction!.objectStore("message_flag_intents").createIndex("flag_snapshots", ["snapshot_account_id", "message_id"]);
-    }
+    try {
+      const guard = tx.objectStore("meta").getKey(UNCERTAINTY_KEY);
+      guard.addEventListener("error", () => refuse(new UncertainWriteError("unreadable", guard.error)));
+      guard.addEventListener("success", () => {
+        try {
+          upgradeInspected = true;
+          if (guard.result !== undefined) { refuse(new UncertainWriteError()); return; }
+          performUpgrade();
+        } catch (error) { refuse(new UncertainWriteError("unreadable", error)); }
+      });
+    } catch (error) { refuse(new UncertainWriteError("unreadable", error)); }
   };
   open.onblocked = () => {};
   try {
     const db = await request(open);
     // another tab upgrading: let it (leadership makes this rare); this connection closes
     db.onversionchange = () => db.close();
-    return db;
+    try {
+      if (admissionFailed) throw admissionFailure;
+      if (!upgradeInspected) throw new UncertainWriteError("unreadable");
+      await assertCertain(db);
+      return db;
+    } catch (error) { db.close(); throw error; }
   } catch (error) {
+    if (admissionFailed) throw admissionFailure;
     if (error instanceof DOMException && error.name === "VersionError") {
       throw new Error(`Database schema is newer than this app (IndexedDB v${IDB_VERSION}). Update Terno.`);
     }
@@ -324,9 +397,11 @@ export async function loadAll(
 }
 
 export async function writeMeta(idb: IDBDatabase, values: Record<string, unknown>): Promise<void> {
+  if (Object.hasOwn(values, UNCERTAINTY_KEY)) throw new Error("The IndexedDB save marker is reserved");
+  if (!Object.keys(values).length) return;
   const tx = idb.transaction("meta", "readwrite");
-  await writeTransaction(tx, () => {
-    for (const [k, v] of Object.entries(values)) tx.objectStore("meta").put(v, k);
+  await writeTransaction(tx, (track) => {
+    for (const [k, v] of Object.entries(values)) track(tx.objectStore("meta").put(v, k));
   });
 }
 
@@ -334,17 +409,19 @@ export async function writeMeta(idb: IDBDatabase, values: Record<string, unknown
 export async function persist(idb: IDBDatabase, commit: Committed, durability: "strict" | "relaxed"): Promise<void> {
   const stores = [...commit.writes.keys()].filter((t) => !TABLES.find((s) => s.name === t.spec.name)?.memoryOnly);
   if (stores.length === 0) return;
+  const names = stores.map((t) => t.spec.name);
+  names.push("meta");
   const tx = idb.transaction(
-    stores.map((t) => t.spec.name),
+    names,
     "readwrite",
     { durability },
   );
-  await writeTransaction(tx, () => {
+  await writeTransaction(tx, (track) => {
     for (const t of stores) {
       const store = tx.objectStore(t.spec.name);
       for (const [key, row] of commit.writes.get(t)!) {
-        if (row) store.put(row, idbKey(t, key));
-        else store.delete(idbKey(t, key));
+        if (row) track(store.put(row, idbKey(t, key)));
+        else track(store.delete(idbKey(t, key)));
       }
     }
   });

@@ -1464,6 +1464,8 @@ It contains none of your mail, contacts, settings or keys.
   "web.gate.stale.body": "Your mailbox already uses a newer version. Reload to update; nothing has changed.",
   "web.gate.unavailable.title": "This browser can’t store your mail",
   "web.gate.openFailed.title": "Couldn’t open your mailbox",
+  "web.gate.uncertain.title": "Couldn’t safely open your mailbox",
+  "web.gate.uncertain.body": "A local save may be incomplete. Your local data has been kept. Don’t clear this browser’s storage. Restore a known-good backup or get help recovering it before trying again.",
   "web.gate.crashed.title": "The mail engine stopped",
   "web.gate.kept": "Your mail is still stored as it was; no new mailbox was created.",
   "web.gate.reload": "Reload",

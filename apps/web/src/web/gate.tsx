@@ -60,6 +60,7 @@ const FATAL_TITLE = {
   BUILD_MISMATCH: "web.gate.stale.title",
   UNAVAILABLE: "web.gate.unavailable.title",
   OPEN_FAILED: "web.gate.openFailed.title",
+  UNCERTAIN_STORE: "web.gate.uncertain.title",
   CRASHED: "web.gate.crashed.title",
 } as const satisfies Record<NonNullable<WebLifecycle["code"]>, TextKey>;
 
@@ -97,18 +98,19 @@ export function WebGate() {
   }
   if (phase === "fatal") {
     const stale = code === "SCHEMA_NEWER" || code === "BUILD_MISMATCH";
+    const uncertain = code === "UNCERTAIN_STORE";
     return (
       <Screen
         testId="web-fatal"
         title={t(FATAL_TITLE[code ?? "OPEN_FAILED"])}
         body={
           <>
-            <p>{stale ? t("web.gate.stale.body") : t("web.gate.kept")}</p>
-            {message && !stale && <p className="mt-2 font-mono text-xs break-words">{showText(message)}</p>}
+            <p>{stale ? t("web.gate.stale.body") : uncertain ? t("web.gate.uncertain.body") : t("web.gate.kept")}</p>
+            {message && !stale && !uncertain && <p className="mt-2 font-mono text-xs break-words">{showText(message)}</p>}
           </>
         }
       >
-        <RecoveryReload testId="web-reload" label={stale ? "web.gate.reload" : "common.retry"} />
+        <RecoveryReload testId="web-reload" label={stale || uncertain ? "web.gate.reload" : "common.retry"} />
       </Screen>
     );
   }

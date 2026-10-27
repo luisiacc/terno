@@ -49,7 +49,7 @@ export const FIELD_TYPES = {
   exitCode: int(-2_147_483_648, 4_294_967_295),
   expected: bool,
   fromVersion: id,
-  fatalCode: enumOf("SCHEMA_NEWER", "OPEN_FAILED", "UNAVAILABLE", "BUILD_MISMATCH", "CRASHED", "other"),
+  fatalCode: enumOf("SCHEMA_NEWER", "OPEN_FAILED", "UNAVAILABLE", "BUILD_MISMATCH", "UNCERTAIN_STORE", "CRASHED", "other"),
   kind: enumOf("error", "crash", "unclean_exit", "renderer_gone", "backend_exit", "child_gone", "other"),
   // an RPC method name (threads.list): an id, so main's bundle doesn't need the contract (and zod) to check it
   method: id,

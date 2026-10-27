@@ -4,6 +4,8 @@ import { parseSearch, resolveSearch } from "@terno/core";
 import { ingest, memoryFiles, msg, withAccounts } from "@terno/store/conformance";
 import { expect, it, vi } from "vitest";
 import { IdbMailStore } from "./store";
+import { databaseName } from "./schema";
+import { UncertainWriteError } from "./uncertainty";
 
 const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
 
@@ -28,7 +30,7 @@ for (const instantSearch of [false, true]) {
         return tx;
       });
       const putSpy = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (this: IDBObjectStore, value, key) {
-        if (this.transaction === target && ++writes === 2) return put.call(this, { ...value, uncloneable: () => {} }, key);
+        if (this.transaction === target && this.name === "messages" && ++writes === 2) return put.call(this, { ...value, uncloneable: () => {} }, key);
         return put.call(this, value, key);
       });
       let terminalWhenRejected: typeof terminal;
@@ -95,10 +97,18 @@ for (const instantSearch of [false, true]) {
         expect(store.isOpen).toBe(false);
         putSpy.mockRestore(); txSpy.mockRestore();
         await store.close();
-        store = await IdbMailStore.open({ name, factory, instantSearch, platform });
-        const reopened = await store.debug.snapshot();
-        expect(reopened.messages.map((m) => m.isRead)).toEqual([true, false]);
-        await store.debug.verify();
+        const raw = await new Promise<IDBDatabase>((resolve, reject) => {
+          const open = factory.open(databaseName(name));
+          open.onsuccess = () => resolve(open.result); open.onerror = () => reject(open.error);
+        });
+        try {
+          const rows = await new Promise<{ is_read: number }[]>((resolve, reject) => {
+            const request = raw.transaction("messages").objectStore("messages").getAll();
+            request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+          });
+          expect(rows.map((m) => m.is_read === 1)).toEqual([true, false]);
+        } finally { raw.close(); }
+        await expect(IdbMailStore.open({ name, factory, instantSearch, platform })).rejects.toBeInstanceOf(UncertainWriteError);
       } finally { vi.restoreAllMocks(); await store.close(); }
     });
   }
@@ -127,7 +137,7 @@ for (const boundary of ["early load", "search state", "metadata"] as const) {
     const closeSpy = vi.spyOn(IDBDatabase.prototype, "close").mockImplementation(function (this: IDBDatabase) { closed = true; return close.call(this); });
     const txSpy = vi.spyOn(IDBDatabase.prototype, "transaction").mockImplementation(function (this: IDBDatabase, ...args) {
       const names = typeof args[0] === "string" ? [args[0]] : Array.from(args[0]);
-      if ((boundary === "early load" && args[1] === "readonly") || (boundary === "search state" && args[1] === "readwrite" && names.includes("search_state")) || (boundary === "metadata" && args[1] === "readwrite" && names.includes("meta"))) throw injected;
+      if ((boundary === "early load" && args[1] === "readonly" && names.includes("accounts")) || (boundary === "search state" && args[1] === "readwrite" && names.includes("search_state")) || (boundary === "metadata" && args[1] === "readwrite" && names.length === 1 && names[0] === "meta")) throw injected;
       return transaction.call(this, ...args);
     });
     try {
@@ -277,7 +287,7 @@ for (const boundary of ["early load", "search state", "metadata"] as const) {
     const txSpy = vi.spyOn(IDBDatabase.prototype, "transaction").mockImplementation(function (this: IDBDatabase, ...args) {
       const tx = transaction.call(this, ...args);
       const names = typeof args[0] === "string" ? [args[0]] : Array.from(args[0]);
-      if (!target && ((boundary === "early load" && args[1] === "readonly") || (boundary === "search state" && args[1] === "readwrite" && names.includes("search_state")) || (boundary === "metadata" && args[1] === "readwrite" && names.includes("meta")))) {
+      if (!target && ((boundary === "early load" && args[1] === "readonly" && names.includes("accounts")) || (boundary === "search state" && args[1] === "readwrite" && names.includes("search_state")) || (boundary === "metadata" && args[1] === "readwrite" && names.length === 1 && names[0] === "meta"))) {
         target = tx;
         tx.addEventListener("abort", () => { terminal = "abort"; });
       }
@@ -291,7 +301,7 @@ for (const boundary of ["early load", "search state", "metadata"] as const) {
     });
     const putSpy = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (this: IDBObjectStore, value, key) {
       const result = put.call(this, value, key);
-      if (boundary !== "early load" && this.transaction === target) throw injected;
+      if (this.transaction === target && (boundary === "search state" && this.name === "search_state" || boundary === "metadata" && key === "logicalSchema")) throw injected;
       return result;
     });
     try {
@@ -416,7 +426,7 @@ it("restored instant index rechecks admission after delayed loading", async () =
   } finally { release(); getSpy.mockRestore(); vi.restoreAllMocks(); await store.close(); }
 });
 
-it.fails("defensive partial body completion must not leave restored search stale", async () => {
+it("refuses reopening a defensive partial body completion before restoring search", async () => {
   const name = crypto.randomUUID(), factory = new IDBFactory(), files = memoryFiles(), p = { ...platform, files };
   let store = await IdbMailStore.open({ name, factory, instantSearch: { settleMs: 0 }, platform: p });
   try {
@@ -427,7 +437,6 @@ it.fails("defensive partial body completion must not leave restored search stale
     expect(files.files.size).toBeGreaterThan(0);
     store = await IdbMailStore.open({ name, factory, instantSearch: { settleMs: 0 }, platform: p });
     expect(await store.instant!.settled()).toBe(true);
-    const revision = await store.feed.head();
     const transaction = IDBDatabase.prototype.transaction, put = IDBObjectStore.prototype.put;
     const writes: string[] = [];
     const injected = new Error("prefix only");
@@ -450,17 +459,7 @@ it.fails("defensive partial body completion must not leave restored search stale
     expect(writes).toContain("message_bodies");
     expect(writes).toContain("threads");
     await store.close();
-    store = await IdbMailStore.open({ name, factory, instantSearch: { settleMs: 0 }, platform: p });
-    expect(await store.instant!.settled()).toBe(true);
-    expect(await store.feed.head()).toEqual(revision);
-    expect((await store.debug.snapshot()).messages[0]!.bodyText).toBe("quartzuniqueword");
-    const query = { search: resolveSearch(parseSearch("quartzuniqueword"), "quartzuniqueword", {}, { accounts: [], categories: [] }), limit: 10 };
-    const indexed = await store.threads.search(query);
-    await store.close();
-    store = await IdbMailStore.open({ name, factory, instantSearch: false, platform: p });
-    const scanned = await store.threads.search(query);
-    expect(scanned.items).toHaveLength(1);
-    expect(indexed.items.map((m) => m.id)).toEqual(scanned.items.map((m) => m.id));
+    await expect(IdbMailStore.open({ name, factory, instantSearch: { settleMs: 0 }, platform: p })).rejects.toBeInstanceOf(UncertainWriteError);
   } finally { vi.restoreAllMocks(); await store.close(); }
 });
 

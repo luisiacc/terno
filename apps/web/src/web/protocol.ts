@@ -37,7 +37,7 @@ export type PageToWorker =
   /** demo builds (perf): ingest a generated batch through the backend's sliced import, as a sync would */
   | { type: "dev-import"; threads: number; seed: number };
 
-export type FatalCode = "SCHEMA_NEWER" | "OPEN_FAILED" | "UNAVAILABLE" | "BUILD_MISMATCH";
+export type FatalCode = "SCHEMA_NEWER" | "OPEN_FAILED" | "UNAVAILABLE" | "BUILD_MISMATCH" | "UNCERTAIN_STORE";
 
 export type WorkerToPage =
   | { type: "progress"; message: Localized }

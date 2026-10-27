@@ -97,7 +97,7 @@ describe("web storage from when the app was called Única", () => {
     // the worker dies after the destination's first batch: its next write never commits, and every connection goes
     const connections: IDBDatabase[] = [];
     let writes = 0;
-    const hang = { objectStore: () => ({ put() {} }) } as unknown as IDBTransaction;
+    const hang = Object.assign(new EventTarget(), { objectStore: () => ({ put() {} }) }) as unknown as IDBTransaction;
     const dying = new Proxy(indexedDB, {
       get(target, prop) {
         if (prop !== "open") return Reflect.get(target, prop, target).bind?.(target) ?? Reflect.get(target, prop, target);
@@ -114,9 +114,12 @@ describe("web storage from when the app was called Única", () => {
         };
       },
     }) as IDBFactory;
-    void migrateLegacyIdb(dying, "terno");
+    let migrationSettled = false;
+    void migrateLegacyIdb(dying, "terno").then(() => { migrationSettled = true; }, () => { migrationSettled = true; });
     for (let i = 0; i < 200 && writes < 2; i++) await new Promise((r) => setTimeout(r, 5));
     expect(writes).toBe(2);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(migrationSettled).toBe(false);
     for (const db of connections) db.close();
     const partial = await request(indexedDB.open("terno-terno"));
     const copied = await request(partial.transaction("threads").objectStore("threads").count());
