@@ -77,3 +77,11 @@ Both actual tagged-NO controls fail before the correction (`imap-all-mail-refusa
 
 
 The explicit-refusal correction passes both tagged-NO cases together with the five prior capability/MOVE controls:7/7 in `imap-all-mail-refusal-green.txt`. Exact local source locations remain after a false deletion result, the op fails once with the new paired guidance, and the EXPUNGE-refusal control truthfully retains the remote Deleted side effect. Mail, i18n, both backend typechecks and scoped lint pass. No remote rollback, partial MOVE recovery or full-slice review approval is implied.
+
+
+## Read-only true-move source correction
+
+A genuine ImapKit ACL fixture grants the login only lookup/read in Inbox and insertion into Archive. The public precondition confirms a selected read-only source. The actual fallback case issues COPY/STORE twice, creates two Archive copies, and remains queued; `imap-readonly-source-red.txt` retains the original RED. Adding the native MOVE variant also fails at the intended no-mutation/permanent-failure boundary (`imap-readonly-source-both-red.txt`,2failed). Require selected-source writability after each lock and UIDVALIDITY validation, before a true move. This applies per source; a later source refusal remains a truthful partial failure rather than remote rollback. Copy-only actions are not blocked by this predicate; their matched qualification remains required.
+
+
+The read-only source guard passes both native MOVE and UIDPLUS fallback cases together with seven prior controls:9/9 in `imap-readonly-source-green.txt`. Mail, i18n and both backend typechecks plus owned oxlint pass. It prevents the observed duplicate copies before either true-move path and reports a permanent localized refusal; copy-only and All Mail delete-only read-only controls remain to qualify independently. No remote rollback or full-slice clearance.

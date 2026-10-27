@@ -1377,6 +1377,7 @@ It contains none of your mail, contacts, settings or keys.
   "errors.network.changed": "The network changed; trying again.",
   "errors.imap.badLogin": "Incorrect username or password (IMAP).",
   "errors.imap.loginFailed": "IMAP login failed: {detail}",
+  "errors.imap.readOnly": "The source folder is read-only. Make this change in your provider’s app.",
   "errors.imap.changeRefused": "Your mail server refused this change. Check your messages in your provider’s app before trying again.",
   "errors.imap.unsafeMove": "Your mail server can’t safely move these messages without affecting other mail. Make this change in your provider’s app.",
   "errors.imap.noPassword": "The IMAP password is missing.",

@@ -1369,6 +1369,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.network.changed": "La red cambió; reintentando.",
   "errors.imap.badLogin": "Usuario o contraseña incorrectos (IMAP)",
   "errors.imap.loginFailed": "Falló el inicio de sesión IMAP: {detail}",
+  "errors.imap.readOnly": "La carpeta de origen es de solo lectura. Haz este cambio en la aplicación de tu proveedor.",
   "errors.imap.changeRefused": "Tu servidor de correo rechazó este cambio. Revisa los mensajes en la aplicación de tu proveedor antes de volver a intentarlo.",
   "errors.imap.unsafeMove": "Tu servidor de correo no puede mover estos mensajes de forma segura sin afectar a otros. Haz este cambio en la aplicación de tu proveedor.",
   "errors.imap.noPassword": "Falta la contraseña IMAP.",

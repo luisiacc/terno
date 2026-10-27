@@ -487,6 +487,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       const lock = await c.getMailboxLock(mailbox);
       try {
         assertValidity(c, mailbox, items);
+        if (mode === "move" && c.mailbox && c.mailbox.readOnly) throw new ProviderError(L("errors.imap.readOnly"), false);
         const uids = items.map((i) => i.uid);
         const res = mode === "move" ? await c.messageMove(uids, target, { uid: true }) : await c.messageCopy(uids, target, { uid: true });
         if (!res) throw new ProviderError(`Could not ${mode} messages to ${target}`, true);
