@@ -44,7 +44,7 @@ What sets `auto: true`:
 - the autolink (whitespace, Enter, ⇧Enter), a URL pasted alone, the URLs in a pasted plain text;
 - `applyLink` (the dialog) when the final text spells the href exactly (`www.x.com` → `https://www.x.com`, `ana@x.com` → `mailto:ana@x.com`), so a link made in the dialog and one typed behave the same, and save/reopen gives the same document;
 - parsing: `<a href=H>T</a>` is auto when T spells H. The stored draft is mail HTML, which carries only `href` (plan 16 §3), so the attribute is derived on reopen; the rule above makes `parseHtml(toEmailHtml(doc))` the same document.
-- Terno's own copies carry `data-rt-auto` on the `<a>` (`toDOM`, the editor's DOM and the clipboard; never the mail HTML). On parse, an `<a data-rt-auto>` gets the href its text spells, or no link when it spells none. This makes a partial copy of an auto link ("https://santo.co" out of "https://santo.com") a link to what it shows, not a deceptive one. A foreign `data-rt-auto` can only make a link follow its text, never point elsewhere, so the attribute is kept on any paste.
+- The editor's DOM and Terno's copies say which kind a link is: `data-rt-auto` or `data-rt-manual` on the `<a>` (`toDOM`; never the mail HTML). Parsing reads them back as drawn, so a link ProseMirror re-reads from the DOM while it is edited is the mark it drew (see Implementation notes). What a copy carries is made honest before it leaves (`transformCopied`: a partial copy of "https://santo.com" as "https://santo.co" links to santo.co), and a pasted autolink whose href its text doesn't spell is put right by the live links like any edit. A foreign `data-rt-auto` can only make a link follow its text, never point elsewhere, so the attribute is kept on any paste.
 
 ### One scanner (`links.ts`, pure)
 
@@ -154,7 +154,8 @@ Consequences:
 
 ## Performance and resources
 
-- Per keystroke: the fast path reads the children of one textblock near the caret; with an auto link near, one token of at most 8 k characters is scanned once. Nothing walks the document.
+- Per keystroke: the fast path reads the children of one textblock near the caret; with an auto link near, one token of at most 8 k characters is scanned once. Nothing walks the document. Measured (test builds time the plugin, `window.__composer.links`): 0.4–0.5 ms p50 in a 2 MB draft with an autolink on every line, 1.3 ms p50 / 3 ms p95 on a paragraph of 30,000 formatted runs; gated at 4 ms.
+- ProseMirror's view redraws a line's children whenever a mark in it changes (as ⌘B on a word does), and an autolink's href changes with each key typed in it. On an ordinary line that is nothing; on the 30,000-run paragraph it is ~7 ms over a plain key (gated: a key in the link within 25 ms of a plain key's p50). A custom link mark view that updates its attributes in place was tried: ProseMirror still marks the line changed and walks it, so it bought nothing and was left out.
 - Paste and whole-document commands (indent everything) visit the changed textblocks once (linear, already the cost of the change itself).
 - No timers; the composition flush is one microtask after a composition ends.
 - Nothing new in the entry chunk: the scanner is in `links.ts`, already imported by `quote.ts`; the plugin lives in the lazy composer chunk.
@@ -183,3 +184,9 @@ Codex (`codex exec -s read-only`, 11 points) against the plan and the code. What
 11. **`normalizeHref`'s address regex was quadratic** ("a@" + "a." × n + ":": 380 ms at 32 k). Labels are dot-separated now (linear). The hostile-input suite covers it.
 
 Also found by the tests while implementing: `<https://x.com>` and `"https://x.com"` typed then a space didn't link (the closing mark is a delimiter, so the token before the caret was empty). `linkTypedUrl` now takes the word back to whitespace and links each token in it. A link made in the dialog right after a word (`hola` + `www.x.com`) was removed at once (the token "holawww.x.com" spells nothing). Hence rule 4's fallback: an autolink whose own text still spells a URL keeps it.
+
+## Implementation notes (what differs from the plan above)
+
+- **Reading a link back from the DOM.** The first version derived an autolink's href from its text when parsing an `<a data-rt-auto>`. ProseMirror re-reads an edited range from the DOM: with the caret inside the `<a>` at its end (where a click at a link's end puts it), Backspace re-read the link with a new href, the re-read mark differed from the drawn one, and ProseMirror retyped the whole link through `insertText`, whose `marksAcross` drops a non-inclusive mark. The link vanished on the first key. Parsing now returns exactly the drawn mark (`data-rt-auto`, `data-rt-manual`); the e2e for the report places the caret that way.
+- **A letter typed right before an autolink** leaves it linked (rule 4's fallback), instead of the plan's first "unlinked".
+- **The e2e clock.** The e2e fixture freezes `Date.now`, so prosemirror-history never starts an undo step by time there; the undo/redo e2e runs with the real clock.
