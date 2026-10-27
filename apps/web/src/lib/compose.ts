@@ -275,6 +275,7 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
 }
 
 async function openComposeNow(mode: DraftMode, threadId: number | null, mine: number, lease: FocusLease | null): Promise<void> {
+  if (mine !== intent || (lease && !lease.valid)) return;
   if (!destinationAvailable(lease)) {
     await Promise.resolve();
     if (mine !== intent || !destinationAvailable(lease) || (lease && !lease.valid)) return;
@@ -291,7 +292,9 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   if (mode === "new" || threadId === null) {
     // a new message takes the reader pane; a bulk selection steps aside for it
     // (List: the new message is the page, and leaving it lands on the list, not on the conversation it was opened over; plan 24, R1)
-    setApp({ compose: { key: createDraft(newFields(defaultAccount)), seq: ++seq }, checked: new Set(), scope: null, readerOpen: false });
+    const key = createDraft(newFields(defaultAccount));
+    if (mine !== intent) return;
+    setApp({ compose: { key, seq: ++seq }, checked: new Set(), scope: null, readerOpen: false });
     return;
   }
   if (s.scope !== null || s.checked.size >= 2) return;
