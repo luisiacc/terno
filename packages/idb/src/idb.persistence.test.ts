@@ -8,6 +8,7 @@ import { databaseName } from "./schema";
 import { UncertainWriteError } from "./uncertainty";
 
 const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
+const request = <T,>(r: IDBRequest<T>) => new Promise<T>((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
 
 for (const instantSearch of [false, true]) {
   it(`a synchronous enqueue failure aborts before admission and preserves durable flags (instant=${instantSearch})`, async () => {
@@ -183,22 +184,29 @@ for (const instantSearch of [false, true]) {
       const injected = new Error("after enqueue");
       const transaction = IDBDatabase.prototype.transaction, put = IDBObjectStore.prototype.put;
       let target: IDBTransaction | undefined;
+      let markers = 0, bodies = 0, refused = 0, terminal: string | null = null;
       const txSpy = vi.spyOn(IDBDatabase.prototype, "transaction").mockImplementation(function (this: IDBDatabase, ...args) {
         const tx = transaction.call(this, ...args);
         const names = typeof args[0] === "string" ? [args[0]] : Array.from(args[0]);
         if (!target && args[1] === "readwrite" && names.includes("secrets")) {
           target = tx;
-          vi.spyOn(tx, "abort").mockImplementation(() => { throw new Error("abort refused"); });
+          tx.addEventListener("complete", () => { terminal = "complete"; });
+          vi.spyOn(tx, "abort").mockImplementation(() => { refused++; throw new Error("abort refused"); });
         }
         return tx;
       });
       const putSpy = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (this: IDBObjectStore, value, key) {
         const result = put.call(this, value, key);
-        if (this.transaction === target) throw injected;
+        if (this.transaction === target && this.name === "meta" && key === "uncertainWrite") result.addEventListener("success", () => { markers++; });
+        if (this.transaction === target && this.name === "secrets") { bodies++; throw injected; }
         return result;
       });
       expect(await store.secrets.replace("probe", new Uint8Array([1]), new Uint8Array([2])).then(() => null, (e: unknown) => e)).toBe(injected);
       putSpy.mockRestore(); txSpy.mockRestore();
+      expect({ markers, bodies, refused, terminal }).toEqual({ markers: 1, bodies: 1, refused: 1, terminal: "complete" });
+      const raw = await request(factory.open(databaseName(name)));
+      try { expect(await request(raw.transaction("meta").objectStore("meta").getKey("uncertainWrite"))).toBe("uncertainWrite"); }
+      finally { raw.close(); }
       let closed = false;
       const closing = store.close().then(() => { closed = true; });
       await Promise.resolve();
@@ -409,18 +417,26 @@ it("restored instant index rechecks admission after delayed loading", async () =
     await new Promise<void>((r) => setImmediate(r));
     const transaction = IDBDatabase.prototype.transaction, put = IDBObjectStore.prototype.put;
     let target: IDBTransaction | undefined;
+    let markers = 0, bodies = 0, refused = 0, terminal: string | null = null;
     const injected = new Error("after enqueue");
     const txSpy = vi.spyOn(IDBDatabase.prototype, "transaction").mockImplementation(function (this: IDBDatabase, ...args) {
       const tx = transaction.call(this, ...args);
       const names = typeof args[0] === "string" ? [args[0]] : Array.from(args[0]);
-      if (!target && args[1] === "readwrite" && names.includes("secrets")) { target = tx; vi.spyOn(tx, "abort").mockImplementation(() => { throw new Error("refused"); }); }
+      if (!target && args[1] === "readwrite" && names.includes("secrets")) { target = tx; tx.addEventListener("complete", () => { terminal = "complete"; }); vi.spyOn(tx, "abort").mockImplementation(() => { refused++; throw new Error("refused"); }); }
       return tx;
     });
     const putSpy = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (this: IDBObjectStore, value, key) {
-      const result = put.call(this, value, key); if (this.transaction === target) throw injected; return result;
+      const result = put.call(this, value, key);
+      if (this.transaction === target && this.name === "meta" && key === "uncertainWrite") result.addEventListener("success", () => { markers++; });
+      if (this.transaction === target && this.name === "secrets") { bodies++; throw injected; }
+      return result;
     });
     try { expect(await store.secrets.replace("probe", new Uint8Array([1]), new Uint8Array([2])).then(() => null, (e: unknown) => e)).toBe(injected); }
     finally { putSpy.mockRestore(); txSpy.mockRestore(); }
+    expect({ markers, bodies, refused, terminal }).toEqual({ markers: 1, bodies: 1, refused: 1, terminal: "complete" });
+    const raw = await request(factory.open(databaseName(name)));
+    try { expect(await request(raw.transaction("meta").objectStore("meta").getKey("uncertainWrite"))).toBe("uncertainWrite"); }
+    finally { raw.close(); }
     release();
     expect(await search).toEqual(expect.objectContaining({ message: "the store is closed" }));
   } finally { release(); getSpy.mockRestore(); vi.restoreAllMocks(); await store.close(); }
