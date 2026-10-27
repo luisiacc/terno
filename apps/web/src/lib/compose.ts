@@ -9,7 +9,7 @@ import { t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
 import { getApp, getSelectionWriteRevision, markSelectionIntent, setApp, useApp } from "~/state/app";
 import { invalidateThreads, loadThread } from "~/state/threads";
-import { registerUndo, snack } from "./snack";
+import { registerUndo, snack, useSnack } from "./snack";
 import { answered, convertFields, forwardAccountMismatch, newFields, replyFields, mergeAttachmentRefs } from "./compose-fields";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
 import { beginDraftWork, draftIndex, invalidateDraftPresentation, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type LocalDraft } from "./drafts";
@@ -534,16 +534,32 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   if (!admitted) { snack.error(t("attachments.tooLarge")); return; }
   takeFocus = takeFocus && focusUnchanged();
   if (existing && existing.mode !== "new") {
-    if (!written(existing)) {
-      // nothing written yet: simply the other mode, fresh
-      editDraft(existing.key, converted);
-      if (takeFocus && focusAllowed()) focusDraft(existing.key, target, mine);
-      return;
-    }
-    editDraft(existing.key, converted);
-    if (takeFocus && focusAllowed()) focusDraft(existing.key, target, mine);
-    // back to what it was, still open where the user is looking
-    const undo = registerUndo(() => editDraft(existing.key, { ...before!, uiState: "open" }));
+    const original = existing;
+    if (materialize(original.key) !== original || useDrafts.getState().drafts[original.key] !== original) return;
+    let count = 0, receipt: LocalDraft | undefined;
+    const unsubscribe = useDrafts.subscribe((state, previous) => {
+      if (state.drafts[original.key] !== previous.drafts[original.key]) { count++; receipt = state.drafts[original.key]; }
+    });
+    let edited = false;
+    try { edited = editDraft(original.key, converted); } finally { unsubscribe(); }
+    if (!edited || count !== 1 || !receipt || useDrafts.getState().drafts[original.key] !== receipt) return;
+    const sourceChanged = converted.mode !== original.mode || (converted.mode === "forward" ? converted.forwardOfMessageId !== undefined && converted.forwardOfMessageId !== original.forwardOfMessageId : converted.inReplyToMessageId !== undefined && converted.inReplyToMessageId !== original.inReplyToMessageId);
+    const resetContext = converted.threadId !== undefined || sourceChanged;
+    const bodyChanged = (converted.bodyText !== undefined && converted.bodyText !== original.bodyText) || (converted.bodyHtml !== undefined && converted.bodyHtml !== original.bodyHtml);
+    const expected: LocalDraft = {
+      ...original, ...converted,
+      ...(resetContext ? { departedThreadId: undefined, presentationThreadId: converted.showSourceContext && converted.threadId === null ? draftPresentationThread(original) ?? undefined : undefined, sourceContextThreadId: undefined, presentationExpired: false, presentationEpoch: (original.presentationEpoch ?? 0) + 1 } : {}),
+      ...(converted.attachments?.length === 0 && original.recovery && (original.recovery.state === "missing" || original.recovery.state === "refused") ? { attachmentOwner: false } : {}),
+      localRev: original.localRev + 1, status: original.status === "saving" ? "saving" : "dirty", updatedAt: receipt.updatedAt, tooLong: false,
+      ...(bodyChanged ? { bodyVersion: original.bodyVersion + 1, canonical: false } : {}),
+    };
+    const fresh = () => mine === intent && currentIntent() && sameStoredDraft(expected);
+    if (!shallow(receipt, expected) || !fresh()) return;
+    if (takeFocus && focusAllowed()) focusDraft(original.key, target, mine);
+    if (!fresh()) { if (lease && focusLease === lease) releaseFocusLease(lease, false); return; }
+    if (!written(original)) return;
+    const undo = registerUndo(() => editDraft(original.key, { ...before!, uiState: "open" }));
+    if (!fresh()) { if (lease && focusLease === lease) releaseFocusLease(lease, false); if (useSnack.getState().undo === undo) useSnack.setState({ undo: null }); return; }
     const [message, name] = CONVERTED[mode];
     snack(t(message), { action: { label: t("common.undo"), name: t(name), undo } });
     return;
