@@ -147,6 +147,7 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
   const sending = useDrafts((s) => s.held || (s.drafts[draftKey]?.sending ?? false));
   const sendingRef = useRef(sending);
   sendingRef.current = sending;
+  const canMutate = () => { const current = useDrafts.getState().drafts[draftKey]; return !!current && !current.sending && !draftEditsHeld(); };
   const versionRef = useRef(version);
   const [link, setLink] = useState<LinkDraft | null>(null);
   const [bubble, setBubble] = useState<{ from: number; to: number; href: string; top: number; left: number } | null>(null);
@@ -199,7 +200,7 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
     };
     const editor = createEditor(mount, {
       state,
-      editable: () => !sendingRef.current && !draftEditsHeld(),
+      editable: canMutate,
       attributes: {
         role: "textbox",
         "aria-multiline": "true",
@@ -221,7 +222,7 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
         onUpdate: schedule,
         onLink: () => openLinkRef.current(),
         openLink,
-        ghost: ghostHooks(draftKey, () => !sendingRef.current && !draftEditsHeld(), (text) => {
+        ghost: ghostHooks(draftKey, canMutate, (text) => {
           const el = announceRef.current;
           if (el) el.textContent = t("compose.suggest.announce", { text: text.trim() });
         }),
@@ -234,6 +235,7 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
       views.add(view);
       emptyClass(view);
       const focus = (where: "end" | "keep" = "keep") => {
+        if (!canMutate()) return;
         if (where === "end" && !focusedOnce) view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)));
         focusedOnce = true;
         view.focus();
@@ -241,7 +243,7 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
       const controller: ComposerController = {
         run: (command: FormatCommand) => {
           // nothing changes under a send in flight (the draft is sending what is there now)
-          if (sendingRef.current || draftEditsHeld()) return;
+          if (!canMutate()) return;
           COMMANDS[command](view.state, view.dispatch, view);
           view.focus();
         },
@@ -260,7 +262,7 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
         },
       };
       function run(cmd: (s: EditorState, d?: EditorView["dispatch"]) => boolean, focusAfter = true) {
-        if (sendingRef.current || draftEditsHeld()) return;
+        if (!canMutate()) return;
         cmd(view.state, view.dispatch);
         if (focusAfter) view.focus();
       }
@@ -323,7 +325,7 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
 
   // read-only while its send is in flight (edits would be dropped)
   useEffect(() => {
-    viewRef.current?.setProps({ editable: () => !sending });
+    viewRef.current?.setProps({ editable: canMutate });
     if (sending && viewRef.current) dismissGhost(viewRef.current);
     refreshRef.current();
   }, [sending]);
@@ -349,7 +351,7 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
 
   openLinkRef.current = () => {
     const view = viewRef.current;
-    if (!view || sendingRef.current) return;
+    if (!view || !canMutate()) return;
     const { state } = view;
     const existing = linkAt(state);
     const { from, to, $from, $to } = state.selection;
@@ -370,7 +372,7 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
       {/* the ghost layer's containing block (beside the editor's own element) */}
       <div ref={mountRef} className="relative" />
       <span ref={announceRef} className="sr-only" aria-live="polite" data-testid="compose-ghost-announce" />
-      {link && viewRef.current && <LinkPopover view={viewRef.current} draft={link} onClose={closeLink} />}
+      {link && viewRef.current && <LinkPopover view={viewRef.current} draft={link} onClose={closeLink} canEdit={canMutate} />}
       {bubble && !link && viewRef.current && (
         <LinkBubble
           href={bubble.href}
@@ -379,6 +381,7 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
           onOpen={() => openLink(bubble.href)}
           onEdit={() => openLinkRef.current()}
           onRemove={() => {
+            if (!canMutate()) return;
             removeLink(viewRef.current!, bubble);
             viewRef.current!.focus();
           }}
@@ -424,7 +427,7 @@ const serializeEmpty = (state: EditorState): boolean => isEmpty(state.doc);
 
 // ── links
 
-function LinkPopover({ view, draft, onClose }: { view: EditorView; draft: LinkDraft; onClose: () => void }) {
+function LinkPopover({ view, draft, onClose, canEdit }: { view: EditorView; draft: LinkDraft; onClose: () => void; canEdit: () => boolean }) {
   const id = useId();
   const [text, setText] = useState(draft.text);
   const [href, setHref] = useState(draft.href);
@@ -443,6 +446,7 @@ function LinkPopover({ view, draft, onClose }: { view: EditorView; draft: LinkDr
   }).current;
 
   const apply = () => {
+    if (!canEdit()) return;
     const normalized = normalizeHref(href);
     if (!normalized) {
       setError(true);
