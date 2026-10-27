@@ -30,7 +30,7 @@ import { useDesign, variant } from "~/lib/design";
 import { Kbd } from "@terno/ui/components/kbd";
 import { renderProbe } from "~/lib/render-probe";
 import { useAppearance } from "~/lib/appearance";
-import { closePage } from "~/lib/page";
+import { goBack } from "~/lib/page";
 import { move } from "~/lib/keyboard";
 import { viewLabel } from "~/lib/format";
 import { useList } from "~/state/list";
@@ -379,7 +379,7 @@ function useListTitle(): string {
 function BackButton() {
   const title = useListTitle();
   return (
-    <ToolButton label={t("reader.back", { mailbox: title })} keys="escape" onClick={() => closePage({ focus: true })} testId="reader-back">
+    <ToolButton label={t("reader.back", { mailbox: title })} keys="escape" onClick={goBack} testId="reader-back">
       <ChevronLeft />
     </ToolButton>
   );
