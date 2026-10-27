@@ -10,7 +10,7 @@ const here = dirname(fileURLToPath(import.meta.url)), repo = join(here, "../../.
 const DEV = process.env.TERNO_RELOAD_SMOKE_DEV === "1", source = join(here, "../release/mac-arm64/Terno.app");
 const requireWeb = createRequire(join(repo, "apps/web/package.json"));
 const axeSource = readFileSync(requireWeb.resolve("axe-core/axe.min.js"), "utf8");
-const shots = "/tmp/terno-missing-draft-r3-shots";
+const shots = process.env.TERNO_RELOAD_SMOKE_SHOTS ?? mkdtempSync("/tmp/terno-native-reload-shots-");
 let work: string, profile: string, app: ElectronApplication, page: Page, sequence = 0;
 declare global { interface Window { nativeReloadProbe: { nonce: string; pagehides: number; dropCopy: boolean; copyCommitted: boolean; gateSave: boolean; reached: boolean; release?: () => void } } }
 
@@ -50,6 +50,7 @@ async function endOfBody(body: Locator) {
 }
 test.beforeAll(() => {
   test.skip(!DEV && !existsSync(source), "run pnpm dist:mac first"); work = mkdtempSync("/tmp/terno-native-reload-"); mkdirSync(shots, { recursive: true });
+  console.info("native reload screenshot directory", shots);
   if (DEV) {
     const bundle = join(work, "Electron.app"), info = join(bundle, "Contents/Info.plist");
     execFileSync("ditto", [join(here, "../node_modules/electron/dist/Electron.app"), bundle]);
@@ -58,6 +59,68 @@ test.beforeAll(() => {
   } else {
     execFileSync("ditto", [source, join(work, "Terno.app")]); execFileSync("codesign", ["--verify", "--deep", "--strict", join(work, "Terno.app")]);
   }
+});
+
+const stoppedCases: [string, "missing" | "unknown"][] = DEV ? [["macos", "missing"], ["lumen", "missing"], ["atelier", "missing"], ["lumen", "unknown"]] : [["lumen", "missing"], ["lumen", "unknown"]];
+for (const [design, state] of stoppedCases) test(`real stopped-engine modal permits keyboard Review of ${state} work (${design})`, async () => {
+  await page.getByTestId("open-settings").click(); await page.getByTestId("tab-appearance").click();
+  await page.getByTestId(`design-card-${design}`).click(); await page.getByTestId("mode-system").click(); await page.keyboard.press("Escape");
+  await page.getByTestId("compose-button").click(); const body = page.getByTestId("compose-body");
+  await body.click(); await body.press("Meta+b"); await page.keyboard.type("stopped exact work");
+  await page.getByTestId("compose-to").fill('"Pérez, Ana" <ana@example.test>, bob@');
+  await page.getByTestId("attachment-input").setInputFiles({ name: "stopped.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 255, 128]) });
+  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  const original = (await store((s) => s.drafts.list()))[0]!; await store((s) => s.drafts.delete(original.id, original.generation));
+  await endOfBody(body); await page.keyboard.type(" latest"); await expect(page.getByTestId("draft-save-copy")).toBeVisible();
+  if (state === "unknown") {
+    await page.evaluate(() => { window.nativeReloadProbe.dropCopy = true; }); await page.getByTestId("draft-save-copy").click();
+    await expect.poll(() => page.evaluate(() => window.nativeReloadProbe.copyCommitted)).toBe(true);
+    await expect(page.getByTestId("draft-status")).toContainText("may already exist", { timeout: 35_000 });
+  }
+  await endOfBody(body); await body.press("ArrowLeft"); await page.getByTestId("format-italic").click();
+  const html = await body.innerHTML(), caret = await page.evaluate(() => ({ offset: getSelection()?.anchorOffset, text: getSelection()?.anchorNode?.textContent }));
+  await page.getByTestId("open-settings").click(); await page.getByTestId("tab-general").click();
+  await expect(page.getByTestId("settings-dialog")).toBeVisible();
+  const backendPid = () => app.evaluate(({ app: a }) => a.getAppMetrics().find((m) => m.type === "Utility" && m.name === "Terno Mail Engine")?.pid ?? null);
+  const killed: number[] = [];
+  for (let i = 0; i < 6 && !(await page.getByTestId("engine-stopped").isVisible()); i++) {
+    await expect.poll(backendPid, { timeout: 20_000 }).not.toBeNull(); const pid = (await backendPid())!;
+    console.info("captured own backend PID", pid); killed.push(pid); process.kill(pid, "SIGKILL");
+    await expect.poll(async () => (await backendPid()) !== pid || await page.getByTestId("engine-stopped").isVisible(), { timeout: 20_000 }).toBe(true);
+    if (!(await page.getByTestId("engine-stopped").isVisible())) await expect.poll(async () => (await backendPid()) !== null || await page.getByTestId("engine-stopped").isVisible(), { timeout: 20_000 }).toBe(true);
+  }
+  await expect(page.getByTestId("engine-stopped")).toBeVisible(); expect(await backendPid()).toBeNull();
+  console.info("stopped-policy owned PIDs", killed);
+  await expect(page.getByTestId("settings-dialog")).toHaveCount(0);
+  const dialog = page.getByTestId("engine-stopped"); await expect(page.locator("#root")).toHaveJSProperty("inert", true);
+  let navigations = 0; page.on("framenavigated", (f) => { if (f === page.mainFrame()) navigations++; });
+  await menu(); await shortcut(); await shortcut(true);
+  await expect(dialog.getByTestId("native-reload-notice")).toBeVisible();
+  await expect(page.getByTestId("native-reload-notice")).toHaveCount(1); expect(navigations).toBe(0);
+  await page.getByTestId("engine-retry").focus(); await page.keyboard.press("Tab"); await page.keyboard.press("Tab"); await expect(page.getByTestId("native-reload-review")).toBeFocused();
+  for (const theme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: theme });
+    await expect(page.locator("html")).toHaveAttribute("data-theme", `${design === "macos" ? "terno" : design}-${theme}`);
+    await axe(); await page.screenshot({ path: join(shots, `stopped-${DEV ? "source" : "packaged"}-${design}-${state}-${theme}.png`) });
+  }
+  await page.keyboard.press("Enter"); await expect(page.getByTestId("recovery-workspace")).toBeVisible();
+  await expect(dialog).toHaveCount(0); await expect(page.locator("#root")).toHaveJSProperty("inert", false);
+  await expect(body).toHaveCount(1); await expect(body).toBeFocused(); expect(await body.innerHTML()).toBe(html);
+  expect(await page.evaluate(() => ({ offset: getSelection()?.anchorOffset, text: getSelection()?.anchorNode?.textContent }))).toEqual(caret);
+  await expect(page.getByTestId("format-italic")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("recovery-workspace")).toContainText("Pérez, Ana"); await expect(page.getByTestId("recovery-workspace")).toContainText("bob@");
+  await expect(page.getByTestId("recovery-workspace")).toContainText("stopped.bin"); expect(await backendPid()).toBeNull();
+  await page.clock.setFixedTime(new Date((await page.evaluate(() => Date.now())) + 1000)); await page.keyboard.type("X"); await body.press("Meta+z"); expect(await body.innerHTML()).toBe(html);
+  const ref = JSON.parse(original.attachments_json)[0]; expect(await store((s) => s.attachments.read(original.account_id, ref.assetId, 0))).toBe("AP+A");
+  for (const theme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: theme });
+    await expect(page.locator("html")).toHaveAttribute("data-theme", `${design === "macos" ? "terno" : design}-${theme}`);
+    await axe(); await page.screenshot({ path: join(shots, `stopped-review-${DEV ? "source" : "packaged"}-${design}-${state}-${theme}.png`) });
+  }
+  await page.getByTestId("recovery-details").click(); await expect(dialog).toBeVisible(); expect(await backendPid()).toBeNull();
+  await menu(); await expect(dialog.getByTestId("native-reload-anyway")).toHaveAccessibleName("Reload anyway and discard unsaved changes and pending files");
+  await Promise.all([page.waitForEvent("framenavigated", { predicate: (f) => f === page.mainFrame() }), dialog.getByTestId("native-reload-anyway").click()]);
+  expect(navigations).toBe(1);
 });
 test.beforeEach(async () => {
   profile = join(work, `profile-${++sequence}`);
