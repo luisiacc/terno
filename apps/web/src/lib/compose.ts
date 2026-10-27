@@ -35,7 +35,7 @@ let seq = 0;
  */
 let intent = 0;
 type ReaderDestination = { token: object; active: boolean; generation: number };
-type FocusLease = { intent: number; threadId: number | null; composeSeq?: number; accountId?: number; key?: string; seq?: number; valid: boolean; dispose: () => void; destination?: ReaderDestination };
+type FocusLease = { intent: number; threadId: number | null; composeSeq?: number; accountId?: number; key?: string; seq?: number; valid: boolean; dispose: () => void; view?: { id: LocalDraft["id"]; generation: LocalDraft["generation"]; revision: number; recovery: LocalDraft["recovery"]; missingAccount: boolean }; destination?: ReaderDestination };
 const readerDestinations = new Map<number, ReaderDestination>();
 const failedReaderHosts = new Map<object, { threadId: number }>();
 const readerFailed = (threadId: number): boolean => {
@@ -90,7 +90,8 @@ function beginFocusLease(owner: number, threadId: number | null, standalone?: { 
   const active = typeof document === "undefined" ? null : document.activeElement;
   const selected = getApp().selectedId, account = getApp().accountId;
   const destination = threadId === null ? undefined : readerDestinations.get(threadId);
-  const lease: FocusLease = { intent: owner, threadId, valid: true, dispose: () => {}, destination, ...(standalone ? { key: standalone.key, composeSeq: standalone.seq, accountId: useDrafts.getState().drafts[standalone.key]?.accountId } : {}) };
+  const viewed = standalone ? useDrafts.getState().drafts[standalone.key] : undefined;
+  const lease: FocusLease = { intent: owner, threadId, valid: true, dispose: () => {}, destination, ...(viewed ? { view: { id: viewed.id, generation: viewed.generation, revision: viewed.revision, recovery: viewed.recovery, missingAccount: !getApp().accounts.some((a) => a.id === viewed.accountId) } } : {}), ...(standalone ? { key: standalone.key, composeSeq: standalone.seq, accountId: useDrafts.getState().drafts[standalone.key]?.accountId } : {}) };
   const moved = (event: FocusEvent) => {
     if (event.target !== active && event.target !== document.body) releaseFocusLease(lease, false);
   };
@@ -98,11 +99,11 @@ function beginFocusLease(owner: number, threadId: number | null, standalone?: { 
   const unsubApp = useApp.subscribe((state, previous) => {
     if (state.scope !== null || state.checked.size >= 2) {
       if (focusLease === lease && lease.intent === intent) supersedeCompose();
-    } else if ((threadId === null ? state.selectedId !== selected || state.compose?.key !== lease.key || state.compose?.seq !== lease.composeSeq : state.selectedId !== threadId) || state.accountId !== account || (lease.accountId !== undefined && !state.accounts.some((a) => a.id === lease.accountId)) || (state.dialog !== previous.dialog && state.dialog !== null) || (state.fatal !== previous.fatal && state.fatal !== null)) releaseFocusLease(lease, false);
+    } else if ((threadId === null ? state.selectedId !== selected || state.compose?.key !== lease.key || state.compose?.seq !== lease.composeSeq : state.selectedId !== threadId) || state.accountId !== account || (!lease.view?.missingAccount && lease.accountId !== undefined && !state.accounts.some((a) => a.id === lease.accountId)) || (state.dialog !== previous.dialog && state.dialog !== null) || (state.fatal !== previous.fatal && state.fatal !== null)) releaseFocusLease(lease, false);
   });
   const unsubDrafts = useDrafts.subscribe((state) => {
     const draft = lease.key ? state.drafts[lease.key] : undefined;
-    if (state.held || (lease.key && (!draft || draft.uiState !== "open" || draft.sending || draft.recovery || (lease.accountId !== undefined && draft.accountId !== lease.accountId)))) releaseFocusLease(lease, false);
+    if (state.held || (lease.key && (!draft || draft.uiState !== "open" || draft.sending || (lease.view ? draft.id !== lease.view.id || draft.generation !== lease.view.generation || draft.revision !== lease.view.revision || draft.recovery !== lease.view.recovery : draft.recovery) || (lease.accountId !== undefined && draft.accountId !== lease.accountId)))) releaseFocusLease(lease, false);
   });
   lease.dispose = () => {
     if (typeof document !== "undefined") document.removeEventListener?.("focusin", moved, true);
@@ -147,7 +148,7 @@ const written = (d: LocalDraft) => d.bodyText.trim() !== "" || d.subjectEdited |
 const activeSourceId = (d: LocalDraft) => d.mode === "forward" ? d.forwardOfMessageId : d.mode === "new" ? null : d.inReplyToMessageId;
 function sameStoredDraft(snapshot: LocalDraft): boolean {
   const d = materialize(snapshot.key);
-  return Boolean(d && !d.sending && !d.recovery && d.id === snapshot.id && d.generation === snapshot.generation && d.revision === snapshot.revision && d.localRev === snapshot.localRev && d.bodyVersion === snapshot.bodyVersion && d.bodyText === snapshot.bodyText && d.bodyHtml === snapshot.bodyHtml && d.accountId === snapshot.accountId && d.mode === snapshot.mode && d.inReplyToMessageId === snapshot.inReplyToMessageId && d.forwardOfMessageId === snapshot.forwardOfMessageId && d.showSourceContext === snapshot.showSourceContext && d.presentationEpoch === snapshot.presentationEpoch);
+  return Boolean(d && !d.sending && d.recovery === snapshot.recovery && d.id === snapshot.id && d.generation === snapshot.generation && d.revision === snapshot.revision && d.localRev === snapshot.localRev && d.bodyVersion === snapshot.bodyVersion && d.bodyText === snapshot.bodyText && d.bodyHtml === snapshot.bodyHtml && d.accountId === snapshot.accountId && d.mode === snapshot.mode && d.inReplyToMessageId === snapshot.inReplyToMessageId && d.forwardOfMessageId === snapshot.forwardOfMessageId && d.showSourceContext === snapshot.showSourceContext && d.presentationEpoch === snapshot.presentationEpoch);
 }
 
 function showStoredStandalone(key: string, owner: number): FocusLease | null {
@@ -169,7 +170,7 @@ export async function openStoredDraft(key: string): Promise<void> {
   if (!finish) return;
   const mine = ++intent;
   if (focusLease) releaseFocusLease(focusLease, false, false);
-  let lease: FocusLease | null = null, cancelled = false, navigating = false;
+  let lease: FocusLease | null = null, cancelled = false, navigating = false, missingFromAtStart = false;
   let expected = getApp();
   const active = typeof document === "undefined" ? null : document.activeElement;
   const moved = (event: FocusEvent) => { if (event.target !== active && event.target !== document.body) cancelled = true; };
@@ -177,10 +178,14 @@ export async function openStoredDraft(key: string): Promise<void> {
   const unsubscribe = useApp.subscribe((state) => {
     if (!navigating && (state.selectedId !== expected.selectedId || state.readerOpen !== expected.readerOpen || state.compose !== expected.compose || state.checked !== expected.checked || state.scope !== expected.scope || state.accountId !== expected.accountId || state.dialog !== expected.dialog || state.fatal !== expected.fatal)) cancelled = true;
   });
-  const current = (d: LocalDraft) => mine === intent && !cancelled && !draftEditsHeld() && !getApp().dialog && !getApp().fatal && destinationAvailable(lease) && (!lease || lease.valid) && getApp().accounts.some((a) => a.id === d.accountId) && sameStoredDraft(d);
+  const current = (d: LocalDraft) => mine === intent && !cancelled && !draftEditsHeld() && !getApp().dialog && !getApp().fatal && destinationAvailable(lease) && (!lease || lease.valid) && (missingFromAtStart || getApp().accounts.some((a) => a.id === d.accountId)) && sameStoredDraft(d);
   try {
     let snapshot = materialize(key);
-    if (!snapshot || !current(snapshot)) return;
+    if (!snapshot) return;
+    const fromAccount = snapshot.accountId;
+    missingFromAtStart = !getApp().accounts.some((a) => a.id === fromAccount);
+    if (!current(snapshot)) return;
+    if (snapshot.recovery || missingFromAtStart) { lease = showStoredStandalone(key, mine); return; }
     const sourceId = activeSourceId(snapshot);
     if (sourceId === null || (!snapshot.showSourceContext && snapshot.threadId === null)) { lease = showStoredStandalone(key, mine); return; }
     const context = await client.call("drafts.sourceContext", { messageId: sourceId });
@@ -471,6 +476,8 @@ function showRecipient(key: string, field: "to" | "cc" | "bcc") {
 async function send(key: string): Promise<boolean> {
   if (draftEditsHeld()) return false;
   if (useDrafts.getState().drafts[key]?.recovery) { snack.error(t("compose.recovery.sendBlocked")); return false; }
+  const draft = useDrafts.getState().drafts[key];
+  if (draft && !getApp().accounts.some((a) => a.id === draft.accountId)) { snack.error(t("errors.accountGone")); return false; }
   if (attachmentUploading(key)) { snack.error(t("attachments.adding")); return false; }
   // read-only from here: nothing typed while the save in flight settles can fall between it and the send
   markSending(key, true);

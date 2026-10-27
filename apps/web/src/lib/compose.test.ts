@@ -17,10 +17,12 @@ const { bodyParts, sendDraft } = await import("./compose");
 const { createDraft, discardDraft, editDraft, markDraftMissing, useDrafts } = await import("./drafts");
 const { newFields } = await import("./compose-fields");
 const { useSnack } = await import("./snack");
+const { setApp } = await import("~/state/app");
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 beforeEach(() => {
+  setApp({ accounts: [{ id: 1, email: "me@example.test" } as import("@terno/core").Account] });
   rpc.calls.length = 0;
   useDrafts.setState({ drafts: {} });
 });
