@@ -204,15 +204,27 @@ function MoreFolders({ view, folder }: { view: View | null; folder: (f: (typeof 
     const group = groupRef.current;
     if (!aside || !group) return;
     let over = false;
+    /** the hidden folder you were in when a mouse click landed here; held only if that click takes you elsewhere */
+    let armed: View | null = null;
     const drop = () => setHeld((h) => (h.length ? [] : h));
-    // captured, so it runs before the click navigates: with a mouse or pen (a keyboard's click or a tap has no pointer resting here)
+    // captured, so it runs before the click's own handler: with a mouse or pen (a keyboard's click or a tap has no pointer resting here)
     const click = (e: MouseEvent) => {
       const type = (e as PointerEvent).pointerType;
       if ((type !== "mouse" && type !== "pen") || useSidebarMore.getState().open) return;
       const { view: v, categoryId, reviewCategoryId } = getApp();
       if (categoryId !== null || reviewCategoryId !== null || !MORE_VIEWS.includes(v)) return;
-      setHeld((h) => (h.includes(v) ? h : [...h, v]));
+      armed = v;
     };
+    // the click's dispatch is over (the window hears it last): one that went nowhere (the folder's own row, the + of
+    // Categories) holds nothing. A key or a press disarms too, in case a handler stopped the click on its way up
+    const disarm = () => (armed = null);
+    // the click navigated (synchronously, inside its handler): the hold joins that render
+    const unsubscribe = useApp.subscribe((s) => {
+      if (armed === null || (s.categoryId === null && s.reviewCategoryId === null && s.view === armed)) return;
+      const left = armed;
+      armed = null;
+      setHeld((h) => (h.includes(left) ? h : [...h, left]));
+    });
     const enter = (e: PointerEvent) => (over = e.pointerType !== "touch");
     // the pointer left, or something covered the sidebar (a dialog): they go, except under keyboard focus (then on blur)
     const leave = () => {
@@ -223,11 +235,18 @@ function MoreFolders({ view, folder }: { view: View | null; folder: (f: (typeof 
       if (!over && !group.contains(e.relatedTarget as Node | null)) drop();
     };
     aside.addEventListener("click", click, true);
+    window.addEventListener("click", disarm);
+    window.addEventListener("keydown", disarm, true);
+    window.addEventListener("pointerdown", disarm, true);
     aside.addEventListener("pointerenter", enter);
     aside.addEventListener("pointerleave", leave);
     group.addEventListener("focusout", blur);
     return () => {
+      unsubscribe();
       aside.removeEventListener("click", click, true);
+      window.removeEventListener("click", disarm);
+      window.removeEventListener("keydown", disarm, true);
+      window.removeEventListener("pointerdown", disarm, true);
       aside.removeEventListener("pointerenter", enter);
       aside.removeEventListener("pointerleave", leave);
       group.removeEventListener("focusout", blur);

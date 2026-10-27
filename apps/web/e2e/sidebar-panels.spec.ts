@@ -298,6 +298,18 @@ test.describe("Part A: More", { tag: "@design" }, () => {
     await expect(page.getByTestId("nav-trash")).toHaveAttribute("data-active");
   };
 
+  test("a click on the folder you're in holds nothing: leaving it by a key then hides it (Codex review)", async ({ app: page }) => {
+    await intoTrash(page);
+    await page.getByTestId("nav-trash").click();
+    await expect(page.getByTestId("nav-trash")).toBeFocused();
+    await page.keyboard.press("g");
+    await page.keyboard.press("i");
+    await expect(page.getByTestId("nav-inbox")).toHaveAttribute("data-active");
+    await expect(page.getByTestId("nav-trash")).toBeHidden();
+    await expect(slot(page, "trash")).toHaveAttribute("inert", "");
+    await expect(more(page)).toBeFocused();
+  });
+
   test("toggling More lets a held folder go: closing it on purpose closes it (the one you're in stays)", async ({ app: page }) => {
     await intoTrash(page);
     await page.locator("[data-testid^=nav-category-]").first().click();
@@ -432,7 +444,8 @@ test.describe("Part A: More", { tag: "@design" }, () => {
         const before = (await row.boundingBox())!.y;
         await more(page).evaluate((el) => (el as HTMLElement).click());
         await expect(slot(page, "trash")).toHaveAttribute("inert", "");
-        await page.waitForTimeout(250);
+        // the slide over (on a loaded machine a fixed wait isn't)
+        await expect.poll(() => page.evaluate(() => document.getElementById("sidebar-more-folders")!.getAnimations({ subtree: true }).length)).toBe(0);
         expect((await row.boundingBox())!.y).toBeCloseTo(before, 0);
         // still at the end, with no blank space under the last row
         const end = await nav(page).evaluate((el) => ({ gap: el.scrollHeight - el.clientHeight - el.scrollTop }));
@@ -456,6 +469,10 @@ test.describe("Part A: More", { tag: "@design" }, () => {
     test("scrolled to its end, closing brings it back to the top with nothing cut off or left blank (Codex review)", async ({ app: page }) => {
       await more(page).click();
       const nav = page.getByTestId("sidebar").locator("nav");
+      // fully open before measuring (Codex review: mid-slide, the room left looks larger than it is)
+      const rowH = (await more(page).boundingBox())!.height;
+      await expect.poll(async () => (await slot(page, "trash").boundingBox())?.height).toBeCloseTo(rowH, 0);
+      await page.waitForTimeout(150);
       // a window just short enough that the open sidebar overflows by less than the five rows
       // the room left under the open sidebar's content (its nav pads 12 px at the end)
       const slack = await nav.evaluate((el) => el.getBoundingClientRect().bottom - el.querySelector("[data-more-below]")!.getBoundingClientRect().bottom - 12);
@@ -465,7 +482,7 @@ test.describe("Part A: More", { tag: "@design" }, () => {
       await nav.evaluate((el) => (el.scrollTop = el.scrollHeight));
       await more(page).evaluate((el) => (el as HTMLElement).click());
       await expect(slot(page, "trash")).toHaveAttribute("inert", "");
-      await page.waitForTimeout(250);
+      await expect.poll(() => page.evaluate(() => document.getElementById("sidebar-more-folders")!.getAnimations({ subtree: true }).length)).toBe(0);
       const r = await nav.evaluate((el) => ({ top: el.scrollTop, over: el.scrollHeight - el.clientHeight }));
       expect(r.over).toBe(0);
       expect(r.top).toBe(0);
