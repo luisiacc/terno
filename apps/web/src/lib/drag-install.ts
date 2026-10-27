@@ -190,6 +190,7 @@ export function installDragController(list: HTMLElement): () => void {
 
   const point = (e: PointerEvent): PointerLike => ({ x: e.clientX, y: e.clientY, button: e.button, pointerId: e.pointerId, metaKey: e.metaKey, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey });
 
+  let folders: ResizeObserver | null = null;
   const cleanup = () => {
     window.removeEventListener("pointermove", onMove, true);
     window.removeEventListener("pointerup", onUp, true);
@@ -197,6 +198,8 @@ export function installDragController(list: HTMLElement): () => void {
     window.removeEventListener("keydown", onKey, true);
     window.removeEventListener("blur", onCancel);
     for (const s of scrollers()) s.removeEventListener("scroll", onScroll);
+    folders?.disconnect();
+    folders = null;
     if (frame) cancelAnimationFrame(frame);
     frame = 0;
     latest = null;
@@ -213,6 +216,9 @@ export function installDragController(list: HTMLElement): () => void {
         /* the pointer is already gone */
       }
       for (const s of scrollers()) s.addEventListener("scroll", onScroll, { passive: true });
+      // More's folders growing or shrinking (plan 40: a held folder let go as the pointer left) slide the categories without a scroll
+      const group = document.getElementById("sidebar-more-folders");
+      if (group) (folders = new ResizeObserver(onScroll)).observe(group);
       if (PROBE) {
         performance.measure("drag:start", { start: t0, end: performance.now() });
         // the frame that shows the ghost: its rAF runs before style, layout and paint; a message

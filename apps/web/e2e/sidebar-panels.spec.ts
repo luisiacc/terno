@@ -1,10 +1,11 @@
 /**
  * Plan 21. Part A: only Inbox and Starred are always in the sidebar; Sent,
- * Archive, All Mail, Spam and Trash wait behind a quiet More, in slots that
- * keep their space (nothing below moves). Part B: the sidebar's and the
+ * Archive, All Mail, Spam and Trash wait behind a quiet More, which takes no
+ * space while closed: opening slides what's below down (plan 40). Part B: the sidebar's and the
  * list's widths follow their edges (pointer and keyboard), clamp to the
  * window, and are remembered. Both run in every design (@design).
  */
+import AxeBuilder from "@axe-core/playwright";
 import type { Locator, Page } from "@playwright/test";
 import { DESIGNS } from "../../../packages/ui/src/designs/index";
 import type { DesignDefinition } from "../../../packages/ui/src/designs/types";
@@ -61,71 +62,183 @@ test.describe("Part A: More", { tag: "@design" }, () => {
     await expect(page.getByTestId("nav-trash")).toBeHidden();
   });
 
+  /** the boxes that tell where things sit: More, the Categories and Accounts titles, the first and last category, Trash's slot */
+  const layout = (page: Page) =>
+    page.evaluate(() => {
+      const sidebar = document.querySelector("[data-testid=sidebar]")!;
+      const title = (text: string) => [...sidebar.querySelectorAll("span")].find((s) => s.textContent === text)!.getBoundingClientRect();
+      const cats = [...sidebar.querySelectorAll("[data-testid^=nav-category-]")];
+      const more = document.querySelector("[data-testid=nav-more]")!.getBoundingClientRect();
+      return {
+        moreBottom: more.bottom,
+        rowH: more.height,
+        categoriesTop: title("Categories").top,
+        accountsTop: title("Accounts").top,
+        firstCategoryTop: cats[0]!.getBoundingClientRect().top,
+        // a category's box includes its review row (macOS draws it under the row)
+        lastCategoryBottom: cats.at(-1)!.parentElement!.getBoundingClientRect().bottom,
+        trashBottom: document.querySelector('[data-more-slot="trash"]')!.getBoundingClientRect().bottom,
+        // the end of the sidebar's content (the nav's scrollHeight only grows once it overflows)
+        contentBottom: sidebar.querySelector("[data-more-below]")!.getBoundingClientRect().bottom,
+      };
+    });
+
+  test("closed, the group takes no space: Categories sit under More at the gap between sections; open, under Trash, five rows lower (plan 40)", async ({ app: page }) => {
+    const closed = await layout(page);
+    // the design's gap between sections: the same as between the last category and Accounts
+    const gap = closed.accountsTop - closed.lastCategoryBottom;
+    expect(gap).toBeGreaterThan(0);
+    expect(closed.categoriesTop - closed.moreBottom).toBeCloseTo(gap, 0);
+    await more(page).click();
+    await expect(page.getByTestId("nav-trash")).toBeVisible();
+    const open = await layout(page);
+    expect(open.categoriesTop - open.trashBottom).toBeCloseTo(gap, 0);
+    expect(open.firstCategoryTop - closed.firstCategoryTop).toBeCloseTo(5 * closed.rowH, 0);
+    expect(open.contentBottom - closed.contentBottom).toBeCloseTo(5 * closed.rowH, 0);
+    expect(open.moreBottom).toBe(closed.moreBottom);
+    await more(page).click();
+    await expect(page.getByTestId("nav-trash")).toBeHidden();
+    expect((await layout(page)).firstCategoryTop).toBeCloseTo(closed.firstCategoryTop, 1);
+  });
+
+  test("what's below is its own compositor layer, so the slide moves it without repainting it (the measured cost, plan 40)", async ({ app: page }) => {
+    const below = page.locator("[data-more-below]");
+    await expect(below).toHaveCSS("will-change", "transform");
+    // it holds both sections
+    await expect(below.locator("[data-testid^=nav-category-]").first()).toBeAttached();
+    await expect(below.getByTestId("nav-account-all")).toBeAttached();
+    // and Chromium really promoted it (a hint alone proves nothing): a layer of its own in the layer tree
+    const cdp = await page.context().newCDPSession(page);
+    const layers = new Promise<{ backendNodeId?: number }[]>((resolve) => cdp.on("LayerTree.layerTreeDidChange", (e) => e.layers && resolve(e.layers)));
+    await cdp.send("DOM.getDocument");
+    const { root } = await cdp.send("DOM.getDocument");
+    const { nodeId } = await cdp.send("DOM.querySelector", { nodeId: root.nodeId, selector: "[data-more-below]" });
+    const { node } = await cdp.send("DOM.describeNode", { nodeId });
+    await cdp.send("LayerTree.enable");
+    await page.evaluate(() => document.querySelector<HTMLElement>("[data-testid=nav-more]")!.click());
+    expect((await layers).some((l) => l.backendNodeId === node.backendNodeId)).toBe(true);
+  });
+
   test.describe("with motion on", () => {
     test.use({ reducedMotion: "no-preference" });
-    test("nothing below moves, in any frame of the transition; the transition stays within the motion cap", async ({ app: page }) => {
-      await page.evaluate(() => {
-        const w = window as unknown as { __boxes: string[]; __durations: number[]; __stop: boolean };
-        w.__boxes = [];
-        w.__durations = [];
-        w.__stop = false;
-        const seen = new WeakSet<Animation>();
-        const ids = ["nav-account-all", "new-category"];
-        const tick = () => {
-          const first = document.querySelector("[data-testid^=nav-category-]")!;
-          const nav = document.querySelector("[data-testid=sidebar] nav")!;
-          const box = [...ids.map((id) => document.querySelector(`[data-testid=${id}]`)!), first].map((el) => {
-            const r = el.getBoundingClientRect();
-            return `${r.x.toFixed(1)},${r.y.toFixed(1)},${r.width.toFixed(1)},${r.height.toFixed(1)}`;
-          });
-          w.__boxes.push(`${box.join("|")}|${nav.scrollHeight}`);
-          for (const a of document.getAnimations()) {
-            if (seen.has(a)) continue;
-            seen.add(a);
-            // More's own (an account's sync ping elsewhere in the sidebar is a loop, not this transition)
-            const target = (a.effect as KeyframeEffect | null)?.target;
-            if (!(target instanceof Element) || !target.closest("#sidebar-more-folders, [data-testid=nav-more]")) continue;
-            const t = a.effect?.getTiming();
-            if (t) w.__durations.push(Number(t.duration) + Number(t.delay ?? 0));
+    /**
+     * Clicks More (or not) and freezes its transitions at `at` of their duration: what's below is where that moment
+     * puts it. Deterministic, unlike sampling frames on a loaded machine (the ui-perf gate times the real thing).
+     */
+    const freeze = (page: Page, at: number, click = true) =>
+      page.evaluate(
+        async ({ at, click }) => {
+          if (click) document.querySelector<HTMLButtonElement>("[data-testid=nav-more]")!.click();
+          const group = document.getElementById("sidebar-more-folders")!;
+          let anims: Animation[] = [];
+          // React commits the click in a microtask; the transitions exist from the next style read
+          for (let i = 0; i < 10 && !anims.length; i++) {
+            await Promise.resolve();
+            anims = group.getAnimations({ subtree: true });
           }
-          if (!w.__stop) requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(tick);
-      });
-      await more(page).click();
-      await expect(page.getByTestId("nav-spam")).toBeVisible();
-      await page.waitForTimeout(250);
-      await more(page).click();
-      await expect(page.getByTestId("nav-spam")).toBeHidden();
-      await page.waitForTimeout(250);
-      const r = await page.evaluate(() => {
-        const w = window as unknown as { __boxes: string[]; __durations: number[]; __stop: boolean };
-        w.__stop = true;
-        return { boxes: [...new Set(w.__boxes)], durations: w.__durations };
-      });
-      expect(r.boxes, "Categories and Accounts never moved").toHaveLength(1);
-      expect(r.durations.length, "the reveal animates with motion on").toBeGreaterThan(0);
-      expect(Math.max(...r.durations)).toBeLessThanOrEqual(100);
+          for (const a of anims) {
+            a.pause();
+            a.currentTime = Number(a.effect!.getTiming().duration) * at;
+          }
+          return {
+            durations: anims.map((a) => Number(a.effect!.getTiming().duration) + Number(a.effect!.getTiming().delay ?? 0)),
+            top: document.querySelector("[data-testid^=nav-category-]")!.getBoundingClientRect().top,
+          };
+        },
+        { at, click },
+      );
+    const finish = (page: Page) => page.evaluate(() => document.getElementById("sidebar-more-folders")!.getAnimations({ subtree: true }).forEach((a) => a.finish()));
+
+    test("opening and closing slide what's below through the positions between, within the motion cap", async ({ app: page }) => {
+      const { firstCategoryTop: closed, rowH } = await layout(page);
+      const opened = closed + 5 * rowH;
+      for (const [from, to] of [
+        [closed, opened],
+        [opened, closed],
+      ] as const) {
+        const mid = await freeze(page, 0.5);
+        expect(mid.durations.length, "it animates with motion on").toBeGreaterThan(0);
+        expect(Math.max(...mid.durations)).toBeLessThanOrEqual(100);
+        // halfway in time: strictly between, and (an ease-out curve) past the middle
+        expect(mid.top).toBeGreaterThan(Math.min(from, to) + 1);
+        expect(mid.top).toBeLessThan(Math.max(from, to) - 1);
+        expect(Math.abs(mid.top - from)).toBeGreaterThan(Math.abs(to - from) / 2);
+        await finish(page);
+        expect((await layout(page)).firstCategoryTop).toBeCloseTo(to, 0);
+      }
+    });
+
+    test("a click mid-way turns it back from where it is, both ways, and it ends exactly where it started", async ({ app: page }) => {
+      const { firstCategoryTop: closed, rowH } = await layout(page);
+      for (const end of [closed, closed + 5 * rowH]) {
+        const mid = await freeze(page, 0.4);
+        // the second click: the new transitions start from the frozen position, not from either end
+        const back = await freeze(page, 0);
+        expect(back.top).toBeCloseTo(mid.top, 0);
+        await finish(page);
+        expect((await layout(page)).firstCategoryTop).toBeCloseTo(end, 0);
+        if (end === closed) {
+          // then open it for the other direction
+          await more(page).click();
+          await finish(page);
+          await expect.poll(async () => (await layout(page)).firstCategoryTop).toBeCloseTo(closed + 5 * rowH, 0);
+        }
+      }
+    });
+
+    test("the user's motion setting scales it: at 100 ms the slowest is 100, at 50 it's 67; at 0 it's instant", async ({ app: page, server }) => {
+      for (const [ms, cap] of [
+        [100, 100],
+        [50, 67],
+        [0, 0],
+      ] as const) {
+        await server.backend.server.invoke("settings.update", { motionMs: ms }, { clientId: "setup", origin: "dev" as const });
+        await reload(page);
+        const closed = await layout(page);
+        const r = await freeze(page, 0);
+        if (cap) expect(Math.max(...r.durations), `at ${ms}`).toBeLessThanOrEqual(cap);
+        else {
+          expect(r.durations, "nothing animates at 0").toEqual([]);
+          expect(r.top).toBeCloseTo(closed.firstCategoryTop + 5 * closed.rowH, 0);
+        }
+        await finish(page);
+        await more(page).click();
+        await finish(page);
+      }
+    });
+
+    test("the OS asking for reduced motion mid-slide ends it at once, in place", async ({ app: page }) => {
+      const closed = await layout(page);
+      await freeze(page, 0.3);
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await expect.poll(() => page.evaluate(() => document.getElementById("sidebar-more-folders")!.getAnimations({ subtree: true }).length)).toBe(0);
+      expect((await layout(page)).firstCategoryTop).toBeCloseTo(closed.firstCategoryTop + 5 * closed.rowH, 0);
     });
   });
 
-  test("with reduced motion the folders appear in the same frame, with nothing animating", async ({ app: page }) => {
+  test("with reduced motion it opens in the same frame: what's below already at its place, nothing animating", async ({ app: page }) => {
+    const closed = await layout(page);
     const r = await page.evaluate(() => {
       document.querySelector<HTMLButtonElement>("[data-testid=nav-more]")!.click();
-      return new Promise<{ opacity: string; visibility: string; animations: number }>((resolve) =>
+      return new Promise<{ opacity: string; visibility: string; top: number; animations: number }>((resolve) =>
         requestAnimationFrame(() => {
           const el = document.querySelector<HTMLElement>('[data-more-slot="trash"]')!;
           const cs = getComputedStyle(el);
-          resolve({ opacity: cs.opacity, visibility: cs.visibility, animations: document.getAnimations().filter((a) => (a.effect as KeyframeEffect | null)?.target instanceof Element && ((a.effect as KeyframeEffect).target as Element).closest("#sidebar-more-folders, [data-testid=nav-more]")).length });
+          resolve({
+            opacity: cs.opacity,
+            visibility: cs.visibility,
+            top: document.querySelector("[data-testid^=nav-category-]")!.getBoundingClientRect().top,
+            animations: document.getAnimations().filter((a) => (a.effect as KeyframeEffect | null)?.target instanceof Element && ((a.effect as KeyframeEffect).target as Element).closest("#sidebar-more-folders, [data-testid=nav-more]")).length,
+          });
         }),
       );
     });
-    expect(r).toEqual({ opacity: "1", visibility: "visible", animations: 0 });
+    expect(r).toEqual({ opacity: "1", visibility: "visible", top: expect.closeTo(closed.firstCategoryTop + 5 * closed.rowH, 0), animations: 0 });
   });
 
-  test("the folder you're in stays shown while More is closed (by a shortcut), in its own slot; the others stay hidden", async ({ app: page }) => {
-    const firstCategory = page.locator("[data-testid^=nav-category-]").first();
-    const before = await firstCategory.boundingBox();
+  test("the folder you're in shows alone while More is closed (one row lower for what's below); reached by a key, it goes when you leave", async ({ app: page }) => {
+    const closed = await layout(page);
+    await page.mouse.move(900, 400); // the pointer over the list, not the sidebar
     await focusList(page);
     await page.keyboard.press("g");
     await page.keyboard.press("#");
@@ -134,7 +247,7 @@ test.describe("Part A: More", { tag: "@design" }, () => {
     await expect(page.getByTestId("nav-trash")).toHaveAttribute("data-active");
     await expect(slot(page, "trash")).not.toHaveAttribute("inert");
     for (const v of ["sent", "archive", "all", "spam"]) await expect(page.getByTestId(`nav-${v}`)).toBeHidden();
-    expect(await firstCategory.boundingBox()).toEqual(before);
+    expect((await layout(page)).firstCategoryTop).toBeCloseTo(closed.firstCategoryTop + closed.rowH, 0);
     // the shortcuts keep working with More closed
     for (const [key, title] of [["t", "Sent"], ["a", "Archive"]] as const) {
       await page.keyboard.press("g");
@@ -142,11 +255,203 @@ test.describe("Part A: More", { tag: "@design" }, () => {
       await expect(page.getByTestId("list-title")).toHaveText(title);
       await expect(page.getByTestId(`nav-${title.toLowerCase()}`)).toBeVisible();
     }
+    await expect(page.getByTestId("nav-trash")).toBeHidden();
     await page.keyboard.press("g");
     await page.keyboard.press("i");
     await expect(page.getByTestId("nav-archive")).toBeHidden();
     await expect(more(page)).toHaveAttribute("aria-expanded", "false");
+    expect((await layout(page)).firstCategoryTop).toBeCloseTo(closed.firstCategoryTop, 1);
   });
+
+  test("leaving that folder with a click in the sidebar moves nothing under the pointer: it stays (in the Tab order) until the pointer leaves the sidebar", async ({ app: page }) => {
+    await page.mouse.move(900, 400);
+    await focusList(page);
+    await page.keyboard.press("g");
+    await page.keyboard.press("#");
+    await expect(page.getByTestId("nav-trash")).toHaveAttribute("data-active");
+    const category = page.locator("[data-testid^=nav-category-]").first();
+    const before = (await category.boundingBox())!;
+    await category.click();
+    await expect(category).toHaveAttribute("data-active");
+    await expect(page.getByTestId("nav-trash")).toBeVisible();
+    await expect(page.getByTestId("nav-trash")).not.toHaveAttribute("data-active");
+    await expect(slot(page, "trash")).not.toHaveAttribute("inert");
+    expect(await category.boundingBox()).toEqual(before);
+    // reachable like any shown row
+    await more(page).focus();
+    await page.keyboard.press("Tab");
+    await expect(page.getByTestId("nav-trash")).toBeFocused();
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    // the pointer leaves: it goes, and what's below moves up a row
+    await page.mouse.move(900, 400);
+    await expect(page.getByTestId("nav-trash")).toBeHidden();
+    await expect(slot(page, "trash")).toHaveAttribute("inert", "");
+    expect((await category.boundingBox())!.y).toBeCloseTo(before.y - before.height, 0);
+  });
+
+  /** with the pointer over the list, `g #`: Trash is the folder you're in, shown alone */
+  const intoTrash = async (page: Page) => {
+    await page.mouse.move(900, 400);
+    await focusList(page);
+    await page.keyboard.press("g");
+    await page.keyboard.press("#");
+    await expect(page.getByTestId("nav-trash")).toHaveAttribute("data-active");
+  };
+
+  test("toggling More lets a held folder go: closing it on purpose closes it (the one you're in stays)", async ({ app: page }) => {
+    await intoTrash(page);
+    await page.locator("[data-testid^=nav-category-]").first().click();
+    await expect(page.getByTestId("nav-trash")).toBeVisible();
+    await more(page).click();
+    await expect(page.getByTestId("nav-sent")).toBeVisible();
+    await more(page).click();
+    // the pointer is still on the sidebar, and Trash is gone with the rest
+    await expect(page.getByTestId("nav-trash")).toBeHidden();
+    await expect(page.getByTestId("nav-sent")).toBeHidden();
+    // the folder you're in stays through a close
+    await intoTrash(page);
+    await more(page).click();
+    await more(page).click();
+    await expect(page.getByTestId("nav-trash")).toBeVisible();
+  });
+
+  test("a held folder with keyboard focus stays when the pointer leaves, and goes when focus does (Codex review)", async ({ app: page }) => {
+    await intoTrash(page);
+    await page.locator("[data-testid^=nav-category-]").first().click();
+    await more(page).focus();
+    await page.keyboard.press("Tab");
+    await expect(page.getByTestId("nav-trash")).toBeFocused();
+    await page.mouse.move(900, 400);
+    await expect(page.getByTestId("nav-trash")).toBeVisible();
+    await expect(page.getByTestId("nav-trash")).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(more(page)).toBeFocused();
+    await expect(page.getByTestId("nav-trash")).toBeHidden();
+  });
+
+  test("only a mouse or pen click holds: Enter on a category, with the mouse resting on the sidebar, lets the folder go (Codex review)", async ({ app: page }) => {
+    await intoTrash(page);
+    const category = page.locator("[data-testid^=nav-category-]").first();
+    await category.hover();
+    await category.focus();
+    await page.keyboard.press("Enter");
+    await expect(category).toHaveAttribute("data-active");
+    await expect(page.getByTestId("nav-trash")).toBeHidden();
+  });
+
+  test.describe("on a touch screen", () => {
+    test.use({ hasTouch: true });
+    test("a tap holds nothing: no pointer rests on the sidebar (Codex review)", async ({ app: page }) => {
+      await intoTrash(page);
+      await page.locator("[data-testid^=nav-category-]").first().tap();
+      await expect(page.locator("[data-testid^=nav-category-]").first()).toHaveAttribute("data-active");
+      await expect(page.getByTestId("nav-trash")).toBeHidden();
+    });
+  });
+
+  test("dragging a row while More's folders change size: the highlighted category is the one under the pointer (Codex review)", async ({ app: page, server }) => {
+    const db = sqlDb(server.backend.store);
+    const viajes = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id;
+    const target = page.getByTestId(`nav-category-${viajes}`);
+    const row = page.locator(`[data-testid=thread-row]:not(:has([data-cat-dot="${viajes}"]))`).first();
+    const r = (await row.boundingBox())!;
+    const t = (await target.boundingBox())!;
+    await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(r.x + r.width / 2 + 6, r.y + r.height / 2 + 2, { steps: 2 });
+    await page.mouse.move(t.x + t.width / 2, t.y + t.height / 2, { steps: 8 });
+    await expect(target).toHaveAttribute("data-drop-state", "over");
+    // Trash appears above (a key mid-drag), sliding the categories a row down without any scroll
+    await page.keyboard.press("g");
+    await page.keyboard.press("#");
+    await expect(page.getByTestId("nav-trash")).toBeVisible();
+    await page.mouse.move(t.x + t.width / 2 + 1, t.y + t.height / 2);
+    // under the pointer now: the category that was a row above Viajes, not Viajes at its old place
+    const under = await page.evaluate(([x, y]) => (document.elementFromPoint(x!, y!) as HTMLElement | null)?.closest("[data-drop-target]")?.getAttribute("data-testid"), [t.x + t.width / 2 + 1, t.y + t.height / 2]);
+    expect(under).not.toBe(`nav-category-${viajes}`);
+    await expect(target).not.toHaveAttribute("data-drop-state", "over");
+    await expect(page.getByTestId(under!)).toHaveAttribute("data-drop-state", /over|already/);
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
+  });
+
+  test("with no categories, Categories (its empty note) still sits right under More at the gap between sections", async ({ app: page, server }) => {
+    const db = sqlDb(server.backend.store);
+    db.run("DELETE FROM thread_categories");
+    db.run("DELETE FROM cls_decisions");
+    db.run("DELETE FROM categories");
+    await reload(page);
+    await expect(page.locator("[data-testid^=nav-category-]")).toHaveCount(0);
+    const g = await page.evaluate(() => {
+      const sidebar = document.querySelector("[data-testid=sidebar]")!;
+      const span = (text: string) => [...sidebar.querySelectorAll("span")].find((s) => s.textContent === text)!.getBoundingClientRect();
+      const empty = sidebar.querySelector("nav p")!.getBoundingClientRect();
+      return { underMore: span("Categories").top - document.querySelector("[data-testid=nav-more]")!.getBoundingClientRect().bottom, betweenSections: span("Accounts").top - empty.bottom };
+    });
+    expect(g.underMore).toBeCloseTo(g.betweenSections, 0);
+  });
+
+  test.describe("a long sidebar (80 more categories)", () => {
+    test.beforeEach(async ({ app: page, server }) => {
+      const db = sqlDb(server.backend.store);
+      for (let i = 0; i < 80; i++) db.run("INSERT INTO categories (name, color, position) VALUES (?, 'cyan', ?)", `Long ${String(i).padStart(2, "0")}`, 100 + i);
+      await reload(page);
+      await page.getByText("Long 79").waitFor({ state: "attached" });
+    });
+    const nav = (page: Page) => page.getByTestId("sidebar").locator("nav");
+
+    test("scrolled a little, toggling keeps the scroll position and More where it is", async ({ app: page }) => {
+      await nav(page).evaluate((el) => (el.scrollTop = 30));
+      const top = (await more(page).boundingBox())!.y;
+      for (let i = 0; i < 2; i++) {
+        await more(page).click();
+        expect(await nav(page).evaluate((el) => el.scrollTop)).toBe(30);
+        expect((await more(page).boundingBox())!.y).toBe(top);
+      }
+    });
+
+    test("scrolled past More, a folder appearing above (a shortcut) doesn't move the rows in view", async ({ app: page }) => {
+      await nav(page).evaluate((el) => (el.scrollTop = 600));
+      const row = page.getByText("Long 40", { exact: true });
+      const before = (await row.boundingBox())!.y;
+      await page.mouse.move(900, 400);
+      await focusList(page);
+      await page.keyboard.press("g");
+      await page.keyboard.press("#");
+      await expect(page.getByTestId("list-title")).toHaveText("Trash");
+      await expect(slot(page, "trash")).toHaveAttribute("data-shown");
+      expect((await row.boundingBox())!.y).toBeCloseTo(before, 0);
+    });
+
+    test("the sidebar's edge still resizes it with More open", async ({ app: page }) => {
+      await more(page).click();
+      const h = page.getByTestId("pane-handle-sidebar");
+      const w0 = (await page.getByTestId("sidebar").boundingBox())!.width;
+      await h.focus();
+      await page.keyboard.press("ArrowRight");
+      expect((await page.getByTestId("sidebar").boundingBox())!.width).toBeCloseTo(w0 + 16, 0);
+      await page.keyboard.press("Enter");
+    });
+  });
+
+  for (const mode of ["light", "dark"] as const) {
+    test(`axe in ${mode}: the sidebar with More open and closed`, async ({ app: page, server }) => {
+      await server.backend.server.invoke("settings.update", { theme: mode }, { clientId: "setup", origin: "dev" as const });
+      await reload(page);
+      const wcag = () => new AxeBuilder({ page }).include("[data-testid=sidebar]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).disableRules(["scrollable-region-focusable"]);
+      expect((await wcag().analyze()).violations.map((v) => v.id)).toEqual([]);
+      await more(page).click();
+      await expect(page.getByTestId("nav-trash")).toBeVisible();
+      expect((await wcag().analyze()).violations.map((v) => v.id)).toEqual([]);
+      // closed again, with Trash held after a click took you elsewhere
+      await more(page).click();
+      await page.keyboard.press("g");
+      await page.keyboard.press("#");
+      await page.locator("[data-testid^=nav-category-]").first().click();
+      await expect(page.getByTestId("nav-trash")).toBeVisible();
+      expect((await wcag().analyze()).violations.map((v) => v.id)).toEqual([]);
+    });
+  }
 
   test("a category (\"all\" underneath) or its suggestions never reveal All Mail", async ({ app: page, server }) => {
     const db = sqlDb(server.backend.store);

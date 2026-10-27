@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { create } from "zustand";
 import type { CategoryColor, View } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
@@ -12,7 +12,7 @@ import { openCompose } from "~/lib/actions";
 import { useDesign, variant } from "~/lib/design";
 import { formatNumber, t } from "@terno/i18n";
 import { viewLabel } from "~/lib/format";
-import { navigate, setApp, useApp } from "~/state/app";
+import { getApp, navigate, setApp, useApp } from "~/state/app";
 import { createCategory as createNamedCategory } from "~/lib/tabs";
 import { renderProbe } from "~/lib/render-probe";
 import { useDropState } from "~/state/drag";
@@ -33,6 +33,7 @@ const VIEWS: { view: View; icon: typeof Inbox; keys?: string }[] = [
 ];
 /** always shown; the rest wait behind More (plan 21) */
 const PINNED = 2;
+const MORE_VIEWS = VIEWS.slice(PINNED).map((f) => f.view);
 
 // ── More: open or closed, remembered on this device (like the format bar)
 
@@ -87,6 +88,8 @@ function NavItem({
   reserveEnd?: boolean | "icon";
 }) {
   renderProbe("NavItem");
+  // the perf gates tell the rows below More (which only slide when it toggles) from the folders
+  if (import.meta.env.VITE_RENDER_PROBE) renderProbe(testId?.startsWith("nav-category-") || testId?.startsWith("nav-account-") ? "NavItem:below" : "NavItem:folder");
   // only the item under the pointer (and the one it left) re-renders during a drag
   const drop = useDropState(dropTarget);
   return (
@@ -181,19 +184,60 @@ function ReviewBadge({ id, name, n, active }: { id: number; name: string; n: num
 }
 
 /**
- * Sent, Archive, All Mail, Spam and Trash behind a quiet More (plan 21). Their
- * slots keep their height while hidden, so nothing below moves when they fade
- * in or out; the folder you're in stays shown, in its own slot. A hidden slot
- * is inert: not focusable, not clickable, not in the accessibility tree.
+ * Sent, Archive, All Mail, Spam and Trash behind a quiet More (plan 21). Closed,
+ * the group takes no space (plan 40): each slot is a 0fr grid row that grows to
+ * its row when shown, and what's below slides with it (CSS transitions only;
+ * the content below sits on its own layer, so the slide re-records nothing).
+ * The folder you're in is shown while More is closed; one you leave with a
+ * click in the sidebar stays until the pointer leaves it, so nothing moves
+ * under the pointer. A hidden slot is inert: not focusable, not clickable, not
+ * in the accessibility tree.
  */
 function MoreFolders({ view, folder }: { view: View | null; folder: (f: (typeof VIEWS)[number]) => React.ReactNode }) {
   const open = useSidebarMore((s) => s.open);
   const toggleRef = useRef<HTMLButtonElement>(null);
-  // a focused folder just hidden (More closed over it, or a key went elsewhere): focus goes to More, not to the
-  // document (the browser drops focus from an inert node only at the next frame, so it's still there now)
+  const groupRef = useRef<HTMLDivElement>(null);
+  // folders shown only because you were in them, kept after a click in the sidebar took you elsewhere
+  const [held, setHeld] = useState<View[]>([]);
+  useEffect(() => {
+    const aside = toggleRef.current?.closest("aside");
+    const group = groupRef.current;
+    if (!aside || !group) return;
+    let over = false;
+    const drop = () => setHeld((h) => (h.length ? [] : h));
+    // captured, so it runs before the click navigates: with a mouse or pen (a keyboard's click or a tap has no pointer resting here)
+    const click = (e: MouseEvent) => {
+      const type = (e as PointerEvent).pointerType;
+      if ((type !== "mouse" && type !== "pen") || useSidebarMore.getState().open) return;
+      const { view: v, categoryId, reviewCategoryId } = getApp();
+      if (categoryId !== null || reviewCategoryId !== null || !MORE_VIEWS.includes(v)) return;
+      setHeld((h) => (h.includes(v) ? h : [...h, v]));
+    };
+    const enter = (e: PointerEvent) => (over = e.pointerType !== "touch");
+    // the pointer left, or something covered the sidebar (a dialog): they go, except under keyboard focus (then on blur)
+    const leave = () => {
+      over = false;
+      if (!group.contains(document.activeElement)) drop();
+    };
+    const blur = (e: FocusEvent) => {
+      if (!over && !group.contains(e.relatedTarget as Node | null)) drop();
+    };
+    aside.addEventListener("click", click, true);
+    aside.addEventListener("pointerenter", enter);
+    aside.addEventListener("pointerleave", leave);
+    group.addEventListener("focusout", blur);
+    return () => {
+      aside.removeEventListener("click", click, true);
+      aside.removeEventListener("pointerenter", enter);
+      aside.removeEventListener("pointerleave", leave);
+      group.removeEventListener("focusout", blur);
+    };
+  }, []);
+  // a focused folder just hidden (More closed over it, a key went elsewhere, a held one let go): focus goes to More,
+  // not to the document (the browser drops focus from an inert node only at the next frame, so it's still there now)
   useLayoutEffect(() => {
-    if (document.activeElement?.closest("[data-more-slot][inert]")) toggleRef.current?.focus();
-  }, [open, view]);
+    if (document.activeElement?.closest("[data-more-slot][inert]")) toggleRef.current?.focus({ preventScroll: true });
+  }, [open, view, held]);
   return (
     <>
       <button
@@ -202,7 +246,11 @@ function MoreFolders({ view, folder }: { view: View | null; folder: (f: (typeof 
         data-testid="nav-more"
         aria-expanded={open}
         aria-controls="sidebar-more-folders"
-        onClick={toggleMore}
+        onClick={() => {
+          // toggling on purpose lets held folders go (the one you're in stays)
+          setHeld([]);
+          toggleMore();
+        }}
         className={cn("group/more type-nav flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-left text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground", ROW_SEAM)}
       >
         <span className="flex size-4 items-center justify-center">
@@ -210,10 +258,10 @@ function MoreFolders({ view, folder }: { view: View | null; folder: (f: (typeof 
         </span>
         <span className="min-w-0 flex-1 truncate">{open ? t("sidebar.less") : t("sidebar.more")}</span>
       </button>
-      <div id="sidebar-more-folders" role="group" aria-label={t("sidebar.moreFolders")}>
+      <div ref={groupRef} id="sidebar-more-folders" role="group" aria-label={t("sidebar.moreFolders")}>
         {VIEWS.slice(PINNED).map((f) => {
           const active = view === f.view;
-          const shown = open || active;
+          const shown = open || active || held.includes(f.view);
           return (
             <div
               key={f.view}
@@ -221,9 +269,12 @@ function MoreFolders({ view, folder }: { view: View | null; folder: (f: (typeof 
               data-active-slot={active || undefined}
               data-shown={shown || undefined}
               inert={!shown}
-              className="invisible -translate-y-0.5 opacity-0 transition-[opacity,translate,visibility] duration-base ease-motion data-shown:visible data-shown:translate-y-0 data-shown:opacity-100"
+              // opening at slow on the drawer curve, the rows fading in linearly (on the curve they'd show as slivers of
+              // themselves in the first frame); closing at base (many rows move: at fast it would read as a jump);
+              // the 3 px clip margin keeps the focus ring (2 px, 1 px out)
+              className="invisible grid grid-rows-[0fr] opacity-0 transition-[grid-template-rows,opacity,visibility] duration-base ease-motion data-shown:visible data-shown:grid-rows-[1fr] data-shown:opacity-100 data-shown:duration-slow data-shown:[transition-timing-function:var(--ease-drawer),linear,var(--ease-drawer)]"
             >
-              {folder(f)}
+              <div className="min-h-0 overflow-clip [overflow-clip-margin:3px]">{folder(f)}</div>
             </div>
           );
         })}
@@ -283,95 +334,98 @@ export function Sidebar() {
         {VIEWS.slice(0, PINNED).map(folder)}
         <MoreFolders view={folderView} folder={folder} />
 
-        <SectionTitle
-          action={
-            <button type="button" data-testid="new-category" aria-label={t("sidebar.newCategory")} onClick={() => setCreating(true)} className="rounded p-0.5 text-muted-foreground opacity-0 group-hover/section:opacity-100 hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:opacity-100">
-              <Plus className="size-3.5" />
-            </button>
-          }
-        >
-          {t("sidebar.categories")}
-        </SectionTitle>
-        {categories.map((c) => (
-          <div key={c.id} className="relative">
-            <NavItem
-              testId={`nav-category-${c.id}`}
-              dropTarget={c.id}
-              active={categoryId === c.id && reviewCategoryId === null}
-              onClick={() => navigate({ categoryId: c.id })}
-              icon={<CategoryDot color={c.color as CategoryColor} />}
-              label={c.name}
-              count={counts.categoryUnread[c.id] || undefined}
-              reserveEnd={inlineReview && (counts.categorySuggestions[c.id] ?? 0) > 0}
-            />
-            {inlineReview && (counts.categorySuggestions[c.id] ?? 0) > 0 && (
-              <ReviewBadge id={c.id} name={c.name} n={counts.categorySuggestions[c.id]!} active={reviewCategoryId === c.id} />
-            )}
-            {!inlineReview && (counts.categorySuggestions[c.id] ?? 0) > 0 && (
-              <button
-                type="button"
-                data-testid={`nav-review-${c.id}`}
-                data-active={reviewCategoryId === c.id || undefined}
-                onClick={() => navigate({ view: "all", reviewCategoryId: c.id })}
-                className={cn("flex h-6 w-full items-center gap-2 rounded-md pr-2 pl-8 text-left text-xs text-muted-foreground tabular hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground", ROW_SEAM)}
-              >
-                <Sparkles className="size-3 text-sidebar-glyph" />
-                <span className="flex-1">{t("sidebar.review")}</span>
-                <span className="text-xs tabular">{formatNumber(counts.categorySuggestions[c.id]!)}</span>
+        {/* what slides when More opens or closes: its own layer, so the slide moves it without repainting it (plan 40) */}
+        <div data-more-below className="will-change-transform">
+          <SectionTitle
+            action={
+              <button type="button" data-testid="new-category" aria-label={t("sidebar.newCategory")} onClick={() => setCreating(true)} className="rounded p-0.5 text-muted-foreground opacity-0 group-hover/section:opacity-100 hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:opacity-100">
+                <Plus className="size-3.5" />
               </button>
-            )}
-          </div>
-        ))}
-        {creating && (
-          <input
-            autoFocus
-            data-testid="new-category-input"
-            placeholder={t("sidebar.categoryName")}
-            className="mt-0.5 h-7 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-            onBlur={(e) => void createCategory(e.currentTarget.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void createCategory(e.currentTarget.value);
-              if (e.key === "Escape") setCreating(false);
-            }}
-          />
-        )}
-        {categories.length === 0 && !creating && <p className="px-2 py-1 text-xs text-muted-foreground">{t("sidebar.categoriesEmpty")}</p>}
-
-        <SectionTitle>{t("sidebar.accounts")}</SectionTitle>
-        <NavItem
-          testId="nav-account-all"
-          active={accountId === null}
-          onClick={() => navigate({ accountId: null, view })}
-          icon={<Layers className="size-3.5" />}
-          label={t("sidebar.allAccounts")}
-        />
-        {accounts.map((a) => (
-          <div key={a.id} className="relative">
-            <NavItem
-              testId={`nav-account-${a.id}`}
-              active={accountId === a.id}
-              onClick={() => navigate({ accountId: a.id, view: categoryId ? "inbox" : view })}
-              icon={
-                <span className="relative">
-                  <CategoryDot color={a.color as CategoryColor} />
-                  {a.syncState.status === "syncing" && <span className="absolute -inset-0.5 animate-ping rounded-full bg-sidebar-primary/40" />}
-                </span>
-              }
-              label={a.displayName}
-              count={counts.inboxUnreadByAccount[a.id] || undefined}
-              reserveEnd={a.syncState.authRequired ? "icon" : undefined}
+            }
+          >
+            {t("sidebar.categories")}
+          </SectionTitle>
+          {categories.map((c) => (
+            <div key={c.id} className="relative">
+              <NavItem
+                testId={`nav-category-${c.id}`}
+                dropTarget={c.id}
+                active={categoryId === c.id && reviewCategoryId === null}
+                onClick={() => navigate({ categoryId: c.id })}
+                icon={<CategoryDot color={c.color as CategoryColor} />}
+                label={c.name}
+                count={counts.categoryUnread[c.id] || undefined}
+                reserveEnd={inlineReview && (counts.categorySuggestions[c.id] ?? 0) > 0}
+              />
+              {inlineReview && (counts.categorySuggestions[c.id] ?? 0) > 0 && (
+                <ReviewBadge id={c.id} name={c.name} n={counts.categorySuggestions[c.id]!} active={reviewCategoryId === c.id} />
+              )}
+              {!inlineReview && (counts.categorySuggestions[c.id] ?? 0) > 0 && (
+                <button
+                  type="button"
+                  data-testid={`nav-review-${c.id}`}
+                  data-active={reviewCategoryId === c.id || undefined}
+                  onClick={() => navigate({ view: "all", reviewCategoryId: c.id })}
+                  className={cn("flex h-6 w-full items-center gap-2 rounded-md pr-2 pl-8 text-left text-xs text-muted-foreground tabular hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground", ROW_SEAM)}
+                >
+                  <Sparkles className="size-3 text-sidebar-glyph" />
+                  <span className="flex-1">{t("sidebar.review")}</span>
+                  <span className="text-xs tabular">{formatNumber(counts.categorySuggestions[c.id]!)}</span>
+                </button>
+              )}
+            </div>
+          ))}
+          {creating && (
+            <input
+              autoFocus
+              data-testid="new-category-input"
+              placeholder={t("sidebar.categoryName")}
+              className="mt-0.5 h-7 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+              onBlur={(e) => void createCategory(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void createCategory(e.currentTarget.value);
+                if (e.key === "Escape") setCreating(false);
+              }}
             />
-            {/* plan 25: a sibling of the row (the row still navigates) */}
-            {a.syncState.authRequired && <SignInMarker account={a} />}
-          </div>
-        ))}
-        <button
-          type="button"
-          onClick={() => setApp({ dialog: "addAccount" })}
-          className="mt-0.5 flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
-        >
-          <Plus className="size-4" /> {t("sidebar.addAccount")}
-        </button>
+          )}
+          {categories.length === 0 && !creating && <p className="px-2 py-1 text-xs text-muted-foreground">{t("sidebar.categoriesEmpty")}</p>}
+
+          <SectionTitle>{t("sidebar.accounts")}</SectionTitle>
+          <NavItem
+            testId="nav-account-all"
+            active={accountId === null}
+            onClick={() => navigate({ accountId: null, view })}
+            icon={<Layers className="size-3.5" />}
+            label={t("sidebar.allAccounts")}
+          />
+          {accounts.map((a) => (
+            <div key={a.id} className="relative">
+              <NavItem
+                testId={`nav-account-${a.id}`}
+                active={accountId === a.id}
+                onClick={() => navigate({ accountId: a.id, view: categoryId ? "inbox" : view })}
+                icon={
+                  <span className="relative">
+                    <CategoryDot color={a.color as CategoryColor} />
+                    {a.syncState.status === "syncing" && <span className="absolute -inset-0.5 animate-ping rounded-full bg-sidebar-primary/40" />}
+                  </span>
+                }
+                label={a.displayName}
+                count={counts.inboxUnreadByAccount[a.id] || undefined}
+                reserveEnd={a.syncState.authRequired ? "icon" : undefined}
+              />
+              {/* plan 25: a sibling of the row (the row still navigates) */}
+              {a.syncState.authRequired && <SignInMarker account={a} />}
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => setApp({ dialog: "addAccount" })}
+            className="mt-0.5 flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          >
+            <Plus className="size-4" /> {t("sidebar.addAccount")}
+          </button>
+        </div>
       </nav>
       <SignInNotice />
       <ConnectionPill />
