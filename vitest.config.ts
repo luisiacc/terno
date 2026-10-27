@@ -32,9 +32,10 @@ export default defineConfig({
       },
       {
         // timing gates: `pnpm test:perf` runs this project alone (`pnpm test` leaves it out so nothing competes for CPU)
+        resolve: { alias: [{ find: /^~\//, replacement: webSrc }] },
         test: {
           name: "perf",
-          include: ["packages/*/src/**/*.perf.test.ts"],
+          include: ["packages/*/src/**/*.perf.test.ts", "apps/*/src/**/*.perf.test.ts"],
           // memory gates measure the heap after a full collection
           execArgv: ["--expose-gc"],
           environment: "node",

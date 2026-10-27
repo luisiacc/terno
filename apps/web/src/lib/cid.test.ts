@@ -30,3 +30,22 @@ it("inline raster policy refuses SVG, fake signatures, huge dimensions and stale
   expect(await resolveCidHtml('<img src="cid:photo@test">', 7, [part], () => false)).not.toContain("data:image");
   expect(attachmentBlob).not.toHaveBeenCalled();
 });
+
+it("dense JPEG metadata keeps the same raster policy and stops validation when the render is stale", async () => {
+  const bytes = new Uint8Array(128 * 1024);
+  bytes.set([255,216]);
+  for (let offset = 2; offset < bytes.length - 10; offset += 4) bytes.set([255,224,0,2], offset);
+  bytes.set([255,192,0,8,8,0,1,0,1,0], bytes.length - 10);
+  expect(inlineRaster("image/jpeg", bytes)).toBe(true);
+  const ref = { ...part, mime: "image/jpeg", size: bytes.length };
+  attachmentBlob.mockResolvedValue({ arrayBuffer: async () => bytes.buffer });
+  let active = true;
+  const timer = globalThis.setTimeout;
+  let yields = 0;
+  vi.spyOn(globalThis, "setTimeout").mockImplementation((fn, delay) => timer(() => { yields++; active = false; if (typeof fn === "function") fn(); }, delay));
+  const input = '<img src="cid:photo@test">';
+  try {
+    expect(await resolveCidHtml(input, 7, [ref], () => active)).toBe(input);
+    expect(yields).toBe(1);
+  } finally { vi.restoreAllMocks(); }
+});

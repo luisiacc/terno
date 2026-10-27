@@ -49,3 +49,16 @@ it("unique invalid assets share the read reservation and successful repetitions 
   expect(result.length).toBeLessThanOrEqual(8 * 1024 * 1024 + html.length);
   expect(call.mock.calls.filter(([m]) => m === "attachments.read")).toHaveLength(Math.ceil(size / ATTACHMENT_CHUNK));
 });
+
+it("cancels a successful encoding after its final byte read, without publishing partial images or reading another asset", async () => {
+  resource(true);
+  let active = true; let slices = 0;
+  const timer = globalThis.setTimeout;
+  vi.spyOn(globalThis, "setTimeout").mockImplementation((fn, delay) => timer(() => { if (++slices === 2) active = false; if (typeof fn === "function") fn(); }, delay));
+  const input = '<img src="cid:photo"><img src="cid:other">';
+  try {
+    expect(await resolveCidHtml(input, 7, [part, { ...part, assetId: "other", contentId: "other" }], () => active)).toBe(input);
+    expect(slices).toBe(2);
+    expect(call.mock.calls.filter(([m]) => m === "attachments.read")).toHaveLength(Math.ceil(size / ATTACHMENT_CHUNK));
+  } finally { vi.restoreAllMocks(); }
+});

@@ -1,5 +1,4 @@
 import type { AttachmentInfo } from "@terno/core";
-import { resolveCidHtml } from "~/lib/cid";
 import DOMPurify from "dompurify";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ImageOff } from "lucide-react";
@@ -54,7 +53,7 @@ export function HtmlBody({ html, messageId, remoteImages, localMode, appearance,
   useEffect(() => {
     if (!cidAllowed || accountId === undefined) return;
     let active = true;
-    void resolveCidHtml(clean, accountId, attachments, () => active).then((html) => { if (active) setCidResult({ key: cidKey, html }); });
+    void import("~/lib/cid").then(({ resolveCidHtml }) => active ? resolveCidHtml(clean, accountId, attachments, () => active) : clean).then((html) => { if (active) setCidResult({ key: cidKey, html }); });
     return () => { active = false; };
   }, [cidAllowed, accountId, cidKey, clean]);
   const visibleHtml = cidAllowed && cidResult?.key === cidKey ? cidResult.html : clean;
