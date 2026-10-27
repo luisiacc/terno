@@ -292,6 +292,10 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   }
   // its body as the editor has it now (what "written" and a conversion's undo look at)
   let existing = existingKey ? materialize(existingKey) : undefined;
+  if (existing?.presentationExpired && existing.mode === "new" && activeSourceId(existing) === null) {
+    showStoredStandalone(existing.key, mine);
+    return;
+  }
   if (existing?.showSourceContext) {
     const snapshot = existing;
     const sourceId = snapshot.mode === "forward" ? snapshot.forwardOfMessageId : snapshot.mode === "new" ? null : snapshot.inReplyToMessageId;

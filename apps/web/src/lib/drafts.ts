@@ -776,14 +776,17 @@ export function draftIndex(drafts: Record<string, LocalDraft>): DraftIndex {
   if (index) return index;
   index = { newest: new Map(), written: new Set(), expiredBySource: new Map(), expiredByThread: new Map() };
   for (const d of Object.values(drafts)) {
+    const add = (map: Map<number, LocalDraft[]>, id: number) => { const rows = map.get(id); if (rows) rows.push(d); else map.set(id, [d]); };
+    const hints = new Set<number>();
+    if (d.presentationExpired && authored(d) && d.departedThreadId != null) hints.add(d.departedThreadId);
     if (d.presentationExpired && d.showSourceContext && d.mode !== "new") {
       const source = d.mode === "forward" ? d.forwardOfMessageId : d.inReplyToMessageId;
       if (source !== null) {
-        const add = (map: Map<number, LocalDraft[]>, id: number) => { const rows = map.get(id); if (rows) rows.push(d); else map.set(id, [d]); };
         add(index.expiredBySource, source);
-        for (const hint of new Set([d.departedThreadId, d.sourceContextThreadId])) if (hint != null) add(index.expiredByThread, hint);
+        if (d.sourceContextThreadId != null) hints.add(d.sourceContextThreadId);
       }
     }
+    for (const hint of hints) add(index.expiredByThread, hint);
     const threadId = draftPresentationThread(d);
     if (threadId === null) continue;
     const best = index.newest.get(threadId);
