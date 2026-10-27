@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 import PostalMime from "postal-mime";
 import { parseRaw } from "./mime";
+import { visibleReviewCases } from "./test/visible-review-cases";
 import { visibleSource } from "./test/visible-store";
 
 it("excludes hidden descendants and keeps useful decoded HTML-only text", async () => {
@@ -67,4 +68,8 @@ it("never fetches or activates resources while extracting hostile HTML", async (
 
 it("excludes title metadata even when malformed mail places it inside the body", async () => {
   expect((await parseRaw(visibleSource('<body><p>Useful</p><title>secret title</title><p>tail</p></body>'))).text).toBe("Useful tail");
+});
+
+for (const fixture of visibleReviewCases) it(fixture.name, async () => {
+  expect((await parseRaw(visibleSource(fixture.html))).text).toBe(fixture.text);
 });

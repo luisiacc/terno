@@ -3,6 +3,7 @@ import type { FilterRule } from "@terno/core";
 import type { MailStore } from "@terno/store";
 import { ingest, msg, withAccounts } from "../../../store/src/conformance/fixtures";
 import { parseRaw } from "../mime";
+import { visibleReviewCases } from "./visible-review-cases";
 
 export const visibleSource = (html: string) => `From: Sender <sender@example.test>\r\nSubject: Normalization\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=utf-8\r\n\r\n${html}`;
 
@@ -71,6 +72,31 @@ export function defineVisibleStore(name: string, harness: { open(): Promise<Mail
       expect((await store.threads.searchText({ query: "phantomneedle", now: 4, limit: 5 })).items).toEqual([]);
       expect((await store.threads.searchText({ query: "useful", now: 4, limit: 5 })).items).toHaveLength(1);
       expect((await store.debug.snapshot()).ops).toHaveLength(2);
+      await store.debug.verify();
+    });
+    for (const fixture of visibleReviewCases) for (const capture of ["ingest", "setBody"]) it(`${fixture.name}: ${capture} exact actions/search through reopen`, async () => {
+      store = await harness.open();
+      const [accountId] = await withAccounts(store, 1);
+      const rule: FilterRule = { match: "all", conditions: [{ field: "body", op: "contains", value: fixture.value }], actions: [{ type: "archive" }, { type: "star" }] };
+      await store.filters.save({ name: "reader policy", enabled: true, source: "manual", rule }, 0);
+      const parsed = await parseRaw(visibleSource(fixture.html));
+      const result = await ingest(store, [msg({ accountId: accountId!, providerMsgId: fixture.name, subject: parsed.subject, bodyState: capture === "ingest" ? "full" : "partial", bodyText: capture === "ingest" ? parsed.text : null, bodyHtml: capture === "ingest" ? parsed.html : null })]);
+      const id = result.inserted[0]!;
+      if (capture === "ingest") expect.soft(result.opIds).toHaveLength(fixture.matches ? 2 : 0);
+      else {
+        expect(result.opIds).toEqual([]);
+        expect.soft((await store.sync.setBody(id, parsed.text, parsed.html, { now: 0, classifier: null })).opIds).toHaveLength(fixture.matches ? 2 : 0);
+      }
+      for (let pass = 0; pass < 2; pass++) {
+        const snapshot = await store.debug.snapshot();
+        const message = snapshot.messages.find((m) => m.id === id)!;
+        expect.soft((await store.threads.get(message.threadId))!).toMatchObject({ thread: { inInbox: !fixture.matches }, messages: [{ isStarred: fixture.matches, bodyText: fixture.text }] });
+        expect.soft((await store.threads.searchText({ query: fixture.query, now: 0, limit: 10 })).items.map((thread) => thread.id)).toEqual(fixture.matches ? [message.threadId] : []);
+        expect.soft(await store.filters.preview(rule, 0, 5)).toMatchObject({ count: fixture.matches ? 1 : 0 });
+        expect.soft(snapshot.ops.map((op) => ({ kind: op.kind, messageIds: op.messageIds })).sort((a, b) => a.kind.localeCompare(b.kind))).toEqual(fixture.matches ? [{ kind: "archive", messageIds: [id] }, { kind: "star", messageIds: [id] }] : []);
+        if (!pass) store = await harness.reopen(store);
+      }
+      expect((await store.sync.setBody(id, parsed.text, parsed.html, { now: 1, classifier: null })).opIds).toEqual([]);
       await store.debug.verify();
     });
   });

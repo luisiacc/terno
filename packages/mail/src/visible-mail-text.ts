@@ -49,13 +49,15 @@ function inlineStyle(source: string): Style {
   if (ast.type !== "DeclarationList") return values;
   ast.children.forEach((node) => {
     if (node.type !== "Declaration" || node.value.type !== "Raw") return;
+    if (typeof node.important === "string" && ident.decode(node.important).toLowerCase() !== "important") return;
+    const important = node.important !== false;
     const property = ident.decode(node.property).toLowerCase();
     if (!PROPERTIES.has(property)) return;
     const value = scalar(property, node.value.value);
     if (value === undefined) return;
     const key = property === "overflow" ? "overflow-y" : property;
     const old = values.get(key);
-    if (!old?.important || node.important) values.set(key, { value, important: !!node.important });
+    if (!old?.important || important) values.set(key, { value, important });
   });
   return values;
 }
