@@ -4,12 +4,14 @@ import { generateDataset } from "@terno/mock-data";
 import type { Platform } from "@terno/store";
 import { ingest, msg, withAccounts } from "@terno/store/conformance";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createMemDb, databaseName, IDB_VERSION, openIdb, TABLES } from "./schema";
+import { createMemDb, databaseName, IDB_VERSION, openIdb } from "./schema";
 import { IdbMailStore } from "./store";
+import { legacyStores } from "./test/legacy-stores";
 
 const platform: Pick<Platform, "uuid" | "yield"> = { uuid: () => crypto.randomUUID(), yield: () => new Promise((r) => setTimeout(r, 0)) };
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
 const opened: IdbMailStore[] = [];
+const raw: IDBDatabase[] = [];
 let n = 0;
 const open = async (name = `store-${Date.now()}-${++n}`, instantSearch = false) => {
   const s = await IdbMailStore.open({ name, factory: indexedDB, platform, instantSearch });
@@ -18,6 +20,7 @@ const open = async (name = `store-${Date.now()}-${++n}`, instantSearch = false) 
 };
 afterEach(async () => {
   vi.restoreAllMocks();
+  for (const db of raw.splice(0)) db.close();
   for (const s of opened.splice(0)) await s.close();
 });
 
@@ -126,7 +129,7 @@ describe("IndexedDB version 2 (SQL v8)", () => {
     // version 1 as the previous adapter left it: out-of-line keys, [batch, thread] for move rows
     const v1 = indexedDB.open(databaseName(name), 1);
     v1.onupgradeneeded = () => {
-      for (const t of TABLES.filter((t) => !t.memoryOnly && !["draft_counter", "attachment_assets", "attachment_chunks", "attachment_bytes", "attachment_links"].includes(t.name))) v1.result.createObjectStore(t.name);
+      for (const table of legacyStores(1)) v1.result.createObjectStore(table);
       v1.result.createObjectStore("meta");
       const tx = v1.transaction!;
       tx.objectStore("cat_batches").put({ id: 5, category_id: 2, source: "dnd", scope_json: JSON.stringify({ kind: "move", from: 1, phase: "done" }), added: 1, created_at: 0, undone_at: null }, 5);
@@ -135,6 +138,7 @@ describe("IndexedDB version 2 (SQL v8)", () => {
     const old = (await req(v1)) as IDBDatabase;
     old.close();
     const db = await openIdb(indexedDB, name);
+    raw.push(db);
     expect(db.version).toBe(IDB_VERSION);
     const tx = db.transaction("cat_move_rows");
     const [keys, rows] = await Promise.all([req(tx.objectStore("cat_move_rows").getAllKeys()), req(tx.objectStore("cat_move_rows").getAll())]);
@@ -145,13 +149,13 @@ describe("IndexedDB version 2 (SQL v8)", () => {
 });
 
 describe("IndexedDB version 3 (SQL v9): drafts v2", () => {
-  for (const from of [1, 2]) {
+  for (const from of [1, 2] as const) {
     it(`upgrades a version-${from} database's drafts to format 1 with their conversation`, async () => {
       const name = `drafts-v${from}-${Date.now()}`;
       const req = (r: IDBRequest | IDBOpenDBRequest) => new Promise((resolve, reject) => ((r.onsuccess = () => resolve(r.result)), (r.onerror = () => reject(r.error))));
       const old = indexedDB.open(databaseName(name), from);
       old.onupgradeneeded = () => {
-        for (const t of TABLES.filter((t) => !t.memoryOnly && !["draft_counter", "attachment_assets", "attachment_chunks", "attachment_bytes", "attachment_links"].includes(t.name))) old.result.createObjectStore(t.name);
+        for (const table of legacyStores(from)) old.result.createObjectStore(table);
         old.result.createObjectStore("meta");
         const tx = old.transaction!;
         tx.objectStore("messages").put({ id: 40, thread_id: 7, account_id: 1 }, 40);
@@ -160,6 +164,7 @@ describe("IndexedDB version 3 (SQL v9): drafts v2", () => {
       };
       ((await req(old)) as IDBDatabase).close();
       const db = await openIdb(indexedDB, name);
+    raw.push(db);
       expect(db.version).toBe(IDB_VERSION);
       const rows = (await req(db.transaction("drafts").objectStore("drafts").getAll())) as Record<string, unknown>[];
       expect(rows.map((r) => ({ id: r.id, format: r.format, mode: r.mode, thread_id: r.thread_id, body_text: r.body_text, quoted_text: r.quoted_text, include_quote: r.include_quote, revision: r.revision }))).toEqual([
@@ -178,7 +183,7 @@ describe("an undo of a version-1 move left half-restored", () => {
     const ex = (t: number, cat: number, label: number, source: string) => ({ thread_id: t, category_id: cat, label, weight: 1, source, at: 1, sender: "s", content: 1, batch_id: null, features: new Uint8Array([1]) });
     const v1 = indexedDB.open(databaseName(name), 1);
     v1.onupgradeneeded = () => {
-      for (const t of TABLES.filter((t) => !t.memoryOnly && !["draft_counter", "attachment_assets", "attachment_chunks", "attachment_bytes", "attachment_links"].includes(t.name))) v1.result.createObjectStore(t.name);
+      for (const table of legacyStores(1)) v1.result.createObjectStore(table);
       v1.result.createObjectStore("meta");
       const tx = v1.transaction!;
       const put = (store: string, row: Record<string, unknown>, key: IDBValidKey) => tx.objectStore(store).put(row, key);
@@ -244,6 +249,7 @@ it("version 4 messages default Reply-To on read without rewriting persisted mail
   const req = <T>(r: IDBRequest<T>) => new Promise<T>((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
   await store.close();
   const source = await req(indexedDB.open(databaseName(store.name)));
+  raw.push(source);
   const names = Array.from(source.objectStoreNames);
   const tx = source.transaction(names, "readonly");
   const rows = await Promise.all(names.map(async (table) => ({ table, rows: await req(tx.objectStore(table).getAll()), keys: await req(tx.objectStore(table).getAllKeys()) })));
@@ -251,7 +257,7 @@ it("version 4 messages default Reply-To on read without rewriting persisted mail
   const name = `${store.name}-v4`;
   const legacy = indexedDB.open(databaseName(name), 4);
   legacy.onupgradeneeded = () => {
-    for (const { table, rows: saved, keys } of rows.filter(({ table }) => !["draft_counter", "attachment_assets", "attachment_chunks", "attachment_bytes", "attachment_links"].includes(table))) {
+    for (const { table, rows: saved, keys } of rows.filter(({ table }) => table === "meta" || legacyStores(4).includes(table))) {
       const target = legacy.result.createObjectStore(table);
       saved.forEach((row: Record<string, unknown>, i: number) => {
         if (table === "messages") delete row.reply_to_json;
@@ -262,6 +268,12 @@ it("version 4 messages default Reply-To on read without rewriting persisted mail
   (await req(legacy)).close();
   const reopened = await open(name);
   expect((await reopened.threads.get(message.threadId))!.messages[0]!.replyTo).toEqual([]);
+  const persisted = await req(indexedDB.open(databaseName(name)));
+  raw.push(persisted);
+  try {
+    const row = await req(persisted.transaction("messages").objectStore("messages").get(message.id)) as Record<string, unknown>;
+    expect(row).not.toHaveProperty("reply_to_json");
+  } finally { persisted.close(); }
   await reopened.debug.verify();
   await reopened.close();
   const again = await open(name);
