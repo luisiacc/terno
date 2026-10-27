@@ -63,13 +63,17 @@ test.describe("reader conversation", { tag: "@design" }, () => {
     await expect(frames).toHaveCount(1);
   });
 
-  test("attachments are view-only tiles: name, type and size, no download control", async ({ app: page }) => {
+  test("attachment metadata names its download control and unavailable bytes", async ({ app: page }) => {
     await search(page, "has:attachment");
     await openRow(page, 0);
     const tile = page.getByTestId("attachment").first();
     await expect(tile).toBeVisible();
-    await expect(tile).toContainText(/\d/);
-    await expect(page.getByTestId("attachment").getByRole("button")).toHaveCount(0);
+    await expect(tile).toContainText("boarding-pass.pdf");
+    await expect(tile).toContainText("1.5 MB");
+    const download = tile.getByRole("button", { name: "Download boarding-pass.pdf 1.5 MB · Unavailable offline", exact: true });
+    await expect(download).toHaveAttribute("aria-description", "application/pdf");
+    await download.focus();
+    await expect(download).toBeFocused();
   });
 
   test("the reply bar after the last message starts a reply to who wrote last", async ({ app: page }) => {
