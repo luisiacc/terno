@@ -1,3 +1,4 @@
+import { IncomingReads } from "./incoming";
 import { expect, it } from "vitest";
 import { BUDGET_MULTIPLIER } from "../../db/src/test/perf";
 import { threadCpuMs } from "../../db/src/test/timing";
@@ -12,6 +13,7 @@ it("keeps 50k small-message processing within its qualified CPU and transaction 
   const ids = new Set<string>();
   new Response();
   const ctx = {
+    incoming: new IncomingReads(),
     account: { id: 1 }, config: {},
     store: { messageByProviderId: async () => null, syncedMessages: async () => [], pendingAttachmentBodies: async () => [] },
     loadCursor: async () => null, saveCursor: async (value: unknown) => { saved = value; },

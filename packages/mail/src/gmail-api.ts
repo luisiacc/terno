@@ -267,13 +267,13 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
   /** reads in flight listen here: reset() aborts them all at once (a send never does) */
   let reads = new AbortController();
 
-  async function api<T>(path: string, init: RequestInit & { ambiguousOnFailure?: boolean; responseMode?: "json" | "void" } = {}, retried = false): Promise<T> {
-    const { ambiguousOnFailure, responseMode = "json", ...request } = init;
+  async function api<T>(path: string, init: RequestInit & { ambiguousOnFailure?: boolean; responseMode?: "json" | "void"; readReset?: AbortSignal } = {}, retried = false): Promise<T> {
+    const { ambiguousOnFailure, responseMode = "json", readReset, ...request } = init;
     const token = await tokens.get();
     const sending = Boolean(ambiguousOnFailure);
     // Plan 20: a read on a socket a network change killed fails fast, by its deadline or by reset(), and
     // the sync goes again on a fresh one. A send isn't reset and has a long deadline; its failure is ambiguous.
-    const deadline = deadlineSignal(sending ? NEVER : reads.signal, request.signal ?? undefined, sending ? (options.sendTimeoutMs ?? SEND_TIMEOUT_MS) : (options.readTimeoutMs ?? READ_TIMEOUT_MS));
+    const deadline = deadlineSignal(sending ? NEVER : (readReset ?? reads.signal), request.signal ?? undefined, sending ? (options.sendTimeoutMs ?? SEND_TIMEOUT_MS) : (options.readTimeoutMs ?? READ_TIMEOUT_MS));
     const failed = (e: unknown) => {
       if (e instanceof RequestNotDispatchedError) return e;
       const detail = L("errors.gmail.requestOffline");
@@ -363,62 +363,75 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     let failure: { error: unknown } | undefined;
     try {
       await download(ids, async (id) => {
-        sink.signal.throwIfAborted();
-        let m: GmailMessage;
+        const reset = reads.signal;
+        const check = () => {
+          sink.signal.throwIfAborted();
+          if (!reset.aborted) return;
+          throw new ProviderError(L("errors.gmail.requestOffline"), true);
+        };
+        let release: (() => void) | undefined;
         try {
-          m = readMessage(await api<unknown>(`/messages/${id}?format=raw`, { signal: sink.signal }), id, true);
-        } catch (error) {
-          // Enumeration isn't a snapshot: a message may disappear before its download.
-          if (error instanceof GmailApiError && error.status === 404) { gone.add(id); return; }
-          throw error;
-        }
-        await validateRaw(m.raw!);
-        const raw = m.raw!;
-        const padding = raw.endsWith("==") ? 2 : raw.endsWith("=") ? 1 : 0;
-        const oversized = Math.floor((raw.length - padding) * 3 / 4) > MAX_INCOMING_MIME_BYTES;
-        let bytes: Uint8Array;
+          release = ctx.incoming ? await ctx.incoming.acquire(accountId, sink.signal, reset) : undefined;
+        } catch (error) { check(); throw error; }
         try {
-          bytes = fromBase64url(oversized ? raw.slice(0, Math.ceil((65536 + 4) / 3) * 4) : raw);
-        } catch {
-          throw invalidResponse();
-        }
-        const parsed = oversized ? await parseRawHeaders(bytes, "size") : await parseRaw(bytes);
-        const labels = m.labelIds ?? [];
-        const st = labelState(labels);
-        const admitted = enqueue({
-          accountId,
-          providerMsgId: m.id,
-          providerThreadId: m.threadId,
-          rfcMessageId: parsed.rfcMessageId,
-          inReplyTo: parsed.inReplyTo,
-          references: parsed.references,
-          from: parsed.from,
-          replyTo: parsed.replyTo,
-          to: parsed.to,
-          cc: parsed.cc,
-          bcc: parsed.bcc,
-          subject: parsed.subject,
-          date: Number(m.internalDate ?? parsed.date ?? Date.now()),
-          snippet: "",
-          bodyText: parsed.text,
-          bodyHtml: parsed.html,
-          bodyState: parsed.captureUnavailable ? "partial" : "full",
-          captureUnavailable: parsed.captureUnavailable,
-          listId: parsed.listId,
-          bulk: parsed.bulk,
-          isRead: st.isRead!,
-          isStarred: st.isStarred!,
-          inInbox: st.inInbox!,
-          isSent: st.isSent!,
-          isDraft: st.isDraft!,
-          isTrash: st.isTrash!,
-          isSpam: st.isSpam!,
-          hasAttachments: parsed.attachments.length > 0,
-          gmailLabels: labels,
-          size: m.sizeEstimate ?? 0,
-          attachments: parsed.captureUnavailable ? undefined : parsed.attachments,
-        });
-        if (admitted) await admitted;
+          check();
+          let m: GmailMessage;
+          try {
+            m = readMessage(await api<unknown>(`/messages/${id}?format=raw`, { signal: sink.signal, readReset: reset }), id, true);
+          } catch (error) {
+            // Enumeration isn't a snapshot: a message may disappear before its download.
+            if (error instanceof GmailApiError && error.status === 404) { gone.add(id); return; }
+            throw error;
+          }
+          await validateRaw(m.raw!);
+          const raw = m.raw!;
+          const padding = raw.endsWith("==") ? 2 : raw.endsWith("=") ? 1 : 0;
+          const oversized = Math.floor((raw.length - padding) * 3 / 4) > MAX_INCOMING_MIME_BYTES;
+          let bytes: Uint8Array;
+          try {
+            bytes = fromBase64url(oversized ? raw.slice(0, Math.ceil((65536 + 4) / 3) * 4) : raw);
+          } catch {
+            throw invalidResponse();
+          }
+          const parsed = oversized ? await parseRawHeaders(bytes, "size") : await parseRaw(bytes);
+          check();
+          const labels = m.labelIds ?? [];
+          const st = labelState(labels);
+          const admitted = enqueue({
+            accountId,
+            providerMsgId: m.id,
+            providerThreadId: m.threadId,
+            rfcMessageId: parsed.rfcMessageId,
+            inReplyTo: parsed.inReplyTo,
+            references: parsed.references,
+            from: parsed.from,
+            replyTo: parsed.replyTo,
+            to: parsed.to,
+            cc: parsed.cc,
+            bcc: parsed.bcc,
+            subject: parsed.subject,
+            date: Number(m.internalDate ?? parsed.date ?? Date.now()),
+            snippet: "",
+            bodyText: parsed.text,
+            bodyHtml: parsed.html,
+            bodyState: parsed.captureUnavailable ? "partial" : "full",
+            captureUnavailable: parsed.captureUnavailable,
+            listId: parsed.listId,
+            bulk: parsed.bulk,
+            isRead: st.isRead!,
+            isStarred: st.isStarred!,
+            inInbox: st.inInbox!,
+            isSent: st.isSent!,
+            isDraft: st.isDraft!,
+            isTrash: st.isTrash!,
+            isSpam: st.isSpam!,
+            hasAttachments: parsed.attachments.length > 0,
+            gmailLabels: labels,
+            size: m.sizeEstimate ?? 0,
+            attachments: parsed.captureUnavailable ? undefined : parsed.attachments,
+          });
+          if (admitted) await admitted;
+        } finally { release?.(); }
       });
     } catch (error) {
       failure = { error };

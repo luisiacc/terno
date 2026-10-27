@@ -1,3 +1,4 @@
+import { IncomingReads } from "./incoming";
 import { expect, it } from "vitest";
 import type { IncomingMessage } from "@terno/store";
 import { createGmailApiProvider, toBase64url } from "./gmail-api";
@@ -12,6 +13,7 @@ function setup(count: number, text: string, consume?: (batch: IncomingMessage[])
   let downloads = 0, firstIngestAt = 0, activeSink = 0, maxSink = 0;
   let gate: Promise<void> | undefined;
   const ctx = {
+    incoming: new IncomingReads(),
     account: { id: 1 }, config: {},
     store: { messageByProviderId: async () => null, syncedMessages: async () => [], pendingAttachmentBodies: async () => [] },
     loadCursor: async () => null, saveCursor: async (cursor: unknown) => { checkpoints.push(cursor); },

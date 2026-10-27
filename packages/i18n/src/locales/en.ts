@@ -1369,6 +1369,7 @@ It contains none of your mail, contacts, settings or keys.
   "errors.smtp.recipientRejected": "Recipient rejected: {detail}",
   "errors.smtp.connectionLost": "Connection lost while sending: {detail}",
   "errors.smtp.notDeliveredTo": "Not delivered to: {recipients}",
+  "errors.mail.processingBusy": "Mail processing is busy. Try again shortly.",
   "errors.gmail.invalidResponse": "Gmail returned an incomplete response.",
   "errors.gmail.requestFailed": "Gmail couldn’t complete the request ({status}). Try again or check this account’s access.",
   "errors.gmail.requestOffline": "Couldn’t reach Gmail. Check your connection and try again.",

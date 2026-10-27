@@ -1361,6 +1361,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.smtp.recipientRejected": "Destinatario rechazado: {detail}",
   "errors.smtp.connectionLost": "Se perdió la conexión durante el envío: {detail}",
   "errors.smtp.notDeliveredTo": "No se entregó a: {recipients}",
+  "errors.mail.processingBusy": "El procesamiento del correo está ocupado. Inténtalo de nuevo en unos instantes.",
   "errors.gmail.invalidResponse": "Gmail devolvió una respuesta incompleta.",
   "errors.gmail.requestFailed": "Gmail no pudo completar la solicitud ({status}). Inténtalo de nuevo o revisa el acceso de esta cuenta.",
   "errors.gmail.requestOffline": "No se pudo contactar a Gmail. Revisa tu conexión e inténtalo de nuevo.",

@@ -5,7 +5,7 @@ import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/di
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import { AWAITING_AUTH, type ClassifierInput, type IncomingMessage, type MailStore, type OpRow, type Platform, type ProviderStore } from "@terno/store";
-import { ProviderAuthError, ProviderError, RequestNotDispatchedError, type MailProvider, type ProviderRegistry, type SendPayload, type SyncSink } from "@terno/mail/portable";
+import { IncomingReads, ProviderAuthError, ProviderError, RequestNotDispatchedError, type MailProvider, type ProviderRegistry, type SendPayload, type SyncSink } from "@terno/mail/portable";
 import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_PHRASE_CAPS, WEB_AUTOCOMPLETE_PEAK, WEB_CONTACT_CAPS, WEB_PHRASE_CAPS } from "@terno/store/autocomplete";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { Connectivity, type ConnectivityOptions, type NetReason } from "./connectivity";
@@ -141,6 +141,7 @@ export class BackendCore {
   readonly store: MailStore;
   readonly server: RpcServer;
   readonly options: Required<Pick<BackendCoreOptions, "now" | "sliceBudgetMs" | "syncIntervalMs">> & BackendCoreOptions;
+  private readonly incoming = new IncomingReads();
   private readonly providers = new Map<number, Promise<MailProvider | null>>();
   private readonly lifetimes = new Map<number, AccountLifetime>();
   private readonly syncing = new Map<number, Promise<void>>();
@@ -454,6 +455,7 @@ export class BackendCore {
     for (const flow of this.signIns.values()) flow.abort();
     this.signIns.clear();
     this.abort.abort();
+    this.incoming.close();
     this.connectivity.stop();
     const accountsClosed = Promise.allSettled([...this.lifetimes.values()].map((life) => this.dropAccount(life.id, { remove: life.removing })));
     if (this.syncTimer) clearInterval(this.syncTimer);
@@ -900,7 +902,7 @@ export class BackendCore {
       const stamp = await this.store.accounts.stamp(accountId);
       if (!this.current(life) || !stamp) return null;
       const provider = this.options.providers.create({
-        store: this.providerStore(life), account, config: cfg.config,
+        store: this.providerStore(life), account, config: cfg.config, incoming: this.incoming,
         getSecret: (name) => this.accountRead(life, () =>
           this.getSecret(`account:${accountId}:${name}`).catch((error: unknown) => {
             throw error instanceof SecretUnreadableError ? new ProviderAuthError(messageOf(error)) : error;

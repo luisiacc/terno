@@ -1,3 +1,4 @@
+import { IncomingReads } from "./incoming";
 import { describe, expect, it, vi } from "vitest";
 import type { IncomingMessage } from "@terno/store";
 import { MAX_INCOMING_MIME_BYTES } from "@terno/core";
@@ -24,6 +25,7 @@ function mailbox(options: { cursor?: unknown; cached?: boolean | number; respond
   const methods: string[] = [];
   const cached = Array.from({ length: options.cached === true ? 1 : options.cached || 0 }, (_, i) => ({ id: i + 1, providerMsgId: `m${i + 1}` }));
   const ctx = {
+    incoming: new IncomingReads(),
     account: { id: 1, email: "me@example.com" }, config: {},
     store: {
       messageByProviderId: async (id: string) => cached.find((m) => m.providerMsgId === id),
