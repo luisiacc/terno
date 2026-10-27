@@ -24,6 +24,7 @@ if (!Range.prototype.getClientRects) Range.prototype.getClientRects = () => [] a
 if (!Range.prototype.getBoundingClientRect) Range.prototype.getBoundingClientRect = () => new DOMRect();
 
 async function setup() {
+  gate.call.mockImplementation((method: string) => Promise.resolve(method === "drafts.sourceContext" ? { threadId: 7, accountId: 1 } : {}));
   const { Reader } = await import("./reader");
   const { openCompose, supersedeCompose } = await import("~/lib/compose");
   const { useThreads } = await import("~/state/threads");
@@ -163,7 +164,7 @@ it("preserves a focus round trip while forwarding checks attachment information"
   gate.load.mockResolvedValue(h.detail);
   gate.call.mockImplementation((method: string) => {
     if (method === "attachments.info") { entered.resolve(); return info.promise; }
-    return Promise.resolve({});
+    return Promise.resolve(method === "drafts.sourceContext" ? { threadId: 7, accountId: 1 } : {});
   });
   let opening: Promise<void> | undefined;
   try {
@@ -172,4 +173,70 @@ it("preserves a focus round trip while forwarding checks attachment information"
     await act(async () => { h.publish(); info.resolve({ filename: "file.txt", mime: "text/plain", size: 0 }); await opening; }); await h.flushFrame();
     expect(document.activeElement).toBe(h.anchor);
   } finally { info.resolve({ filename: "file.txt", mime: "text/plain", size: 0 }); if (opening) await opening; await h.cleanup(); }
+});
+
+it.each([false, true])("a pending reply focus %s a newer gated forward", async (forward) => {
+  const h = await setup(), waiting = deferred<void>(), entered = deferred<void>();
+  gate.call.mockImplementation((method: string) => Promise.resolve(method === "drafts.sourceContext" ? { threadId: 7, accountId: 1 } : {}));
+  let opening: Promise<void> | undefined;
+  try {
+    await act(async () => { h.publish(); }); await h.flushFrame();
+    await act(async () => { await h.openCompose("reply", 7); }); await h.flushFrame();
+    const body = h.host.querySelector<HTMLElement>('[data-testid="compose-body"]') ?? h.host.querySelector<HTMLElement>('[data-testid="compose-body-loading"]');
+    const toolbar = h.host.querySelector<HTMLButtonElement>('[data-testid="action-reply"]');
+    expect(body).not.toBeNull(); expect(toolbar).not.toBeNull();
+    toolbar!.focus(); expect(document.activeElement).toBe(toolbar);
+    await act(async () => { await h.openCompose("reply", 7); });
+    if (forward) {
+      gate.budget = async () => { entered.resolve(); await waiting.promise; };
+      await act(async () => { opening = h.openCompose("forward", 7); });
+      await entered.promise;
+    }
+    await h.flushFrame();
+    expect(document.activeElement).toBe(forward ? toolbar : body);
+    if (forward) {
+      await act(async () => { waiting.resolve(); await opening; });
+      await h.flushFrame();
+      expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-to"]'));
+    }
+  } finally { waiting.resolve(); if (opening) await opening; await h.cleanup(); }
+});
+
+it("does not place a consumed draft focus after editing is held", async () => {
+  const h = await setup();
+  gate.call.mockImplementation((method: string) => Promise.resolve(method === "drafts.sourceContext" ? { threadId: 7, accountId: 1 } : {}));
+  try {
+    await act(async () => { h.publish(); }); await h.flushFrame();
+    await act(async () => { await h.openCompose("reply", 7); }); await h.flushFrame();
+    const toolbar = h.host.querySelector<HTMLButtonElement>('[data-testid="action-reply"]')!;
+    toolbar.focus(); expect(document.activeElement).toBe(toolbar);
+    await act(async () => { await h.openCompose("reply", 7); });
+    await act(async () => { h.useDrafts.setState({ held: true }); });
+    await h.flushFrame();
+    expect(document.activeElement).toBe(toolbar);
+  } finally { h.useDrafts.setState({ held: false }); await h.cleanup(); }
+});
+
+it("keeps a newer same-draft move when the older move completes, then releases a later aborted open", async () => {
+  const h = await setup(), { useApp } = await import("~/state/app"), { composeFocusPending } = await import("~/lib/compose");
+  const seen: { key: string; seq: number }[] = [];
+  const unsubscribe = useApp.subscribe((state) => { if (state.draftFocus && seen.at(-1)?.seq !== state.draftFocus.seq) seen.push(state.draftFocus); });
+  gate.call.mockImplementation((method: string) => Promise.resolve(method === "drafts.sourceContext" ? { threadId: 7, accountId: 1 } : {}));
+  try {
+    await act(async () => { h.publish(); }); await h.flushFrame();
+    await act(async () => { await h.openCompose("reply", 7); }); await h.flushFrame();
+    const toolbar = h.host.querySelector<HTMLButtonElement>('[data-testid="action-reply"]')!;
+    toolbar.focus();
+    await act(async () => { await h.openCompose("reply", 7); });
+    const older = seen.at(-1)!;
+    await act(async () => { await h.openCompose("reply", 7); });
+    const newer = seen.at(-1)!;
+    expect(newer.key).toBe(older.key); expect(newer.seq).toBeGreaterThan(older.seq);
+    expect(composeFocusPending(7, newer.key, newer.seq)).toBe(true);
+    await h.flushFrame();
+    expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+    toolbar.focus(); gate.load.mockResolvedValue(null);
+    await act(async () => { await h.openCompose("forward", 7); });
+    expect(composeFocusPending(7)).toBe(false); expect(document.activeElement).toBe(toolbar);
+  } finally { unsubscribe(); await h.cleanup(); }
 });

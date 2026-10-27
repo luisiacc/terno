@@ -71,7 +71,7 @@ function beginFocusLease(owner: number, threadId: number): FocusLease {
 }
 
 /** Reader's passive focus must wait for this conversation's explicit compose focus. */
-export const composeFocusPending = (threadId: number): boolean => focusLease?.threadId === threadId && focusLease.valid && getApp().selectedId === threadId;
+export const composeFocusPending = (threadId: number, key?: string, focusSeq?: number): boolean => focusLease?.threadId === threadId && focusLease.valid && getApp().selectedId === threadId && (key === undefined || (focusLease.key === key && focusLease.seq === focusSeq));
 export const subscribeComposeFocus = (listener: (threadId: number, fallback: boolean) => void): (() => void) => {
   focusLeaseListeners.add(listener);
   return () => { focusLeaseListeners.delete(listener); };

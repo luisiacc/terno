@@ -8,7 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { cn } from "@terno/ui/lib/utils";
 import { ChevronDown, Forward, PenLine, ReplyAll, Send, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { finishComposeFocus, openCompose, sendDraft, supersedeCompose } from "~/lib/compose";
+import { composeFocusPending, finishComposeFocus, openCompose, sendDraft, supersedeCompose } from "~/lib/compose";
 import { copyDraft, discardDraft, draftSenderLocked, editDraft, flushDraft, restoreDiscarded, retryDraft, setDraftUi, signatureBlock, useDrafts, type BodyCheckpoint, type DraftFields, type LocalDraft } from "~/lib/drafts";
 import { SenderAvatar } from "./sender-avatar";
 import { RecipientInput, recipientSummary } from "./recipient-input";
@@ -60,7 +60,7 @@ function keyDuringMove(e: KeyboardEvent) {
  * Puts focus on an element of the draft area once it is rendered and no longer
  * inert (an opening part is inert for a frame).
  */
-export function focusSoon(selector: string, root: HTMLElement | null, frames = 12, onDone?: (fallback: boolean) => void) {
+export function focusSoon(selector: string, root: HTMLElement | null, frames = 12, onDone?: (fallback: boolean) => void, valid?: () => boolean) {
   pendingFocus?.done();
   let raf = 0;
   let finished = false;
@@ -77,13 +77,13 @@ export function focusSoon(selector: string, root: HTMLElement | null, frames = 1
   const moved = (event: FocusEvent) => {
     if (event.target !== document.body) done();
   };
-  const mine = { find: () => target(selector, root), done };
+  const mine = { find: () => valid && !valid() ? null : target(selector, root), done };
   pendingFocus = mine;
   document.addEventListener("keydown", keyDuringMove, true);
   document.addEventListener("focusin", moved, true);
   const tick = (left: number) => {
     raf = requestAnimationFrame(() => {
-      if (root && !root.isConnected) return done();
+      if ((valid && !valid()) || (root && !root.isConnected)) return done();
       const el = target(selector, root);
       if (!focusable(el) && left > 0) return tick(left - 1);
       if (!cleanup()) return;
@@ -331,8 +331,9 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
 
   // an explicit open (r/a/f, the bar, the menu) asks for focus: honor it once
   useEffect(() => {
-    if (!focus || !d) return;
-    focusSoon(focus.target === "to" ? "[data-testid=compose-to]" : "[data-testid=compose-body]", rootRef.current, 12, (fallback) => finishComposeFocus(focus.key, focus.seq, fallback));
+    if (!focus || !d || useApp.getState().draftFocus?.seq !== focus.seq) return;
+    const owned = composeFocusPending(threadId, focus.key, focus.seq);
+    focusSoon(focus.target === "to" ? "[data-testid=compose-to]" : "[data-testid=compose-body]", rootRef.current, 12, (fallback) => finishComposeFocus(focus.key, focus.seq, fallback), owned ? () => composeFocusPending(threadId, focus.key, focus.seq) : undefined);
     if (useApp.getState().draftFocus?.seq === focus.seq) setApp({ draftFocus: null });
   }, [focus?.seq]);
 
