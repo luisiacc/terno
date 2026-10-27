@@ -632,6 +632,8 @@ export function createHandlers(b: Backend): Handlers {
         if (next.composeSuggestions !== was.composeSuggestions) await b.autocomplete.setPhrases(next.composeSuggestions);
         // plan 22: website icons turned off (or local mode took the default away): nothing in flight lands, windows forget them
         if (next.senderIcons !== was.senderIcons) b.icons.invalidate();
+        // plan 38: the badge follows at once
+        if (next.dockBadge !== was.dockBadge) await b.attention.refresh();
         return next;
       } catch (error) {
         if (error instanceof SettingsError) throw new RpcError("BAD_REQUEST", messageOf(error));

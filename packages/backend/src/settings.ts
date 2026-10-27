@@ -99,6 +99,8 @@ export const DEFAULT_SETTINGS: General = {
   // plan 22: unset follows the mode (readSettings); this is local mode's answer
   senderIcons: false,
   googlePhotos: {},
+  // plan 38: like Mail, the count is on until turned off
+  dockBadge: true,
 };
 
 const DEFAULT_PROVIDER: AiProviderId = "none";
@@ -190,6 +192,12 @@ export async function readAutoCategorize(store: SettingsStore): Promise<AppSetti
 /** Body suggestions (plan 18), read when autocomplete warms and when the setting changes. */
 export async function readComposeSuggestions(store: SettingsStore): Promise<boolean> {
   return (await stored(store)).composeSuggestions ?? DEFAULT_SETTINGS.composeSuggestions;
+}
+
+/** Plan 38: the Dock badge, read at start and when settings change. */
+export async function readAttention(store: SettingsStore): Promise<Pick<AppSettings, "dockBadge">> {
+  const s = await stored(store);
+  return { dockBadge: s.dockBadge ?? DEFAULT_SETTINGS.dockBadge };
 }
 
 /** Local mode alone: read on every outbound request, so it skips everything else. */

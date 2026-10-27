@@ -10,6 +10,7 @@ import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { Connectivity, type ConnectivityOptions, type NetReason } from "./connectivity";
 import { AiAssist } from "./ai-assist";
+import { Attention, type AttentionHost } from "./attention";
 import { hydrateSendAttachments } from "./attachments";
 import { Categorizer } from "./categorizer";
 import { FactsBackfill } from "./facts";
@@ -83,6 +84,8 @@ export interface BackendCoreOptions {
   iconTransport?: IconTransport | null;
   /** tests: the icon fetcher's deadlines */
   iconTimeouts?: { requestMs?: number; budgetMs?: number };
+  /** plan 38: a host that shows the Dock badge itself (desktop main) */
+  attention?: AttentionHost;
 }
 
 interface AccountLifetime {
@@ -191,6 +194,8 @@ export class BackendCore {
   readonly connectivity: Connectivity;
   /** plan 22: sender icons (website icons and Google photos), idle until the first lookup */
   readonly icons: IconService;
+  /** plan 38: the Dock badge */
+  readonly attention: Attention;
   private warming: Promise<void> | null = null;
   private idleTimer: ReturnType<typeof setInterval> | null = null;
   /** auto-filed threads waiting to be announced, per category */
@@ -251,6 +256,7 @@ export class BackendCore {
       timeouts: options.iconTimeouts,
     });
     if (options.online === false) this.icons.network(false);
+    this.attention = new Attention({ store: this.store, host: options.attention ?? null, publishCounts: () => this.emitCounts() });
     this.ready = this.init();
     this.server = new RpcServer(createHandlers(this), {
       onError: (error, method, payload) => {
@@ -312,6 +318,9 @@ export class BackendCore {
       if (this.stopped) return;
     }
     if (!this.categorizer.ready) void this.categorizer.rebuild();
+    // plan 38: the badge as it is now (a restarted backend puts it back), before any sync changes it
+    await this.attention.start().catch((error: unknown) => void captureError(error, { code: "notify.failed" }));
+    if (this.stopped) return;
     // plan 17: old mail's facts, and threads requeued before a quit, in slices
     this.facts.wake();
     // a resume that fails waits for the next start (its journal is intact); it must never crash the backend
@@ -472,6 +481,7 @@ export class BackendCore {
     if (this.syncTimer) clearInterval(this.syncTimer);
     if (this.idleTimer) clearInterval(this.idleTimer);
     if (this.countsTimer) clearTimeout(this.countsTimer);
+    this.attention.stop();
     for (const n of this.autoNotices.values()) if (n.timer) clearTimeout(n.timer);
     this.categorizer.stop();
     // the slice in flight finishes; the next start resumes where the store's progress says
@@ -596,7 +606,10 @@ export class BackendCore {
 
   private async sendCounts(): Promise<void> {
     const counts = await this.store.threads.counts(this.now());
-    if (!this.stopped) this.server.emit("counts", counts);
+    if (this.stopped) return;
+    this.server.emit("counts", counts);
+    // plan 38: the Dock shows the sidebar's Inbox number (no query of its own)
+    this.attention.counts(counts);
   }
 
   async emitAccounts(): Promise<void> {

@@ -136,6 +136,8 @@ export interface AppSettings {
   senderIcons: boolean;
   /** plan 22: Gmail accounts showing photos from Google, by account id (set through icons.googlePhotos, never settings.update) */
   googlePhotos: Record<string, GooglePhotoState>;
+  /** plan 38: the Inbox's unread count on the Dock icon (the web: the installed app's icon) */
+  dockBadge: boolean;
 }
 
 /** Plan 22: what Google granted an account for photos (each contacts scope on its own), and whether its project's People API is off. */
@@ -388,6 +390,7 @@ const settingsPatch = z.object({
   language: z.enum(LANGUAGE_SETTINGS).optional(),
   composeSuggestions: z.boolean().optional(),
   senderIcons: z.boolean().optional(),
+  dockBadge: z.boolean().optional(),
 });
 export type SettingsPatch = z.output<typeof settingsPatch>;
 export { settingsPatch as settingsPatchSchema, draftAddress as draftAddressSchema };

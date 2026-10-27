@@ -93,6 +93,8 @@ export const CODES = {
   "autocomplete.evicted": c("model", "count"),
   "autocomplete.rebuild": c("model", "errorClass"),
   "autocomplete.disabled": c("model", "errorClass"),
+  // the Dock badge and notifications (plan 38): counts only, never a name or a subject
+  "notify.failed": c("errorClass"),
   // sender icons (plan 22): counts, sizes and durations only, never a domain, an address or a URL
   "icons.batch": c("count", "durationMs"),
   "icons.trimmed": c("count", "bytes"),

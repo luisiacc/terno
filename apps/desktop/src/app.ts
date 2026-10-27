@@ -25,6 +25,7 @@ import {
 import { diagSession, log as diagLog } from "@terno/core/diag";
 import { isLanguageSetting } from "@terno/i18n";
 import { parseAppearance, windowVibrancy, type Appearance } from "./appearance";
+import { DesktopAttention } from "./attention";
 import { BUILD_ID } from "./diag/build-info";
 import { mainDiag } from "./diag/main";
 import { RestartPolicy } from "./diag/supervisor";
@@ -210,6 +211,9 @@ function startBackend() {
         mainDiag.setPolicy(msg);
         updates?.setLocalMode(localMode);
         void followLanguage(msg.language);
+        break;
+      case "badge":
+        attention.badge(msg.count);
         break;
       case "open-external":
         if (/^https:\/\//i.test(msg.url)) void shell.openExternal(msg.url);
@@ -425,6 +429,10 @@ async function connectWindow(win: BrowserWindow) {
   backend.postMessage({ type: "port", clientId: `renderer-${++clientSeq}` } satisfies MainToBackend, [port1]);
   win.webContents.postMessage("terno:backend-port", null, [port2]);
 }
+
+// ───────────────────────────── Dock badge (plan 38, attention.ts) ─────────────────────────────
+
+const attention = new DesktopAttention({ setBadge: (text) => app.dock?.setBadge(text) });
 
 // ───────────────────────────── renderer storage from Única ─────────────────────────────
 

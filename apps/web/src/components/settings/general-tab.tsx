@@ -17,6 +17,7 @@ import { DiagnosticsSection } from "./diagnostics-section";
 import { useHasUpdates } from "~/lib/updates";
 import { UpdatesSection } from "./updates-section";
 import { SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
+import { badgeSupported } from "~/lib/notify";
 
 const WEB = import.meta.env.VITE_TARGET === "web";
 
@@ -109,6 +110,19 @@ const density = () =>
     { value: "comfortable", label: t("settings.general.density.comfortable") },
     { value: "compact", label: t("settings.general.density.compact") },
   ] as const;
+
+/** Plan 38: the unread count on the Dock (desktop) or the installed app's icon (a browser that has it). */
+function NotificationsGroup({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
+  const desktop = !!window.ternoDesktop;
+  if (!desktop && !badgeSupported()) return null;
+  return (
+    <SettingsGroup title={t("settings.general.notifications")} testId="notifications-group">
+      <SettingsRow label={t(desktop ? "settings.general.badge" : "settings.general.badgeWeb")} hint={t(desktop ? "settings.general.badge.hint" : "settings.general.badgeWeb.hint")} testId="badge-row">
+        {(a) => <Switch {...a} data-testid="badge-switch" checked={settings.dockBadge} onCheckedChange={(next) => void update({ dockBadge: next })} />}
+      </SettingsRow>
+    </SettingsGroup>
+  );
+}
 
 /** Language: System (what it resolves to now), then each language by its own name. */
 function LanguageRow({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
@@ -232,6 +246,8 @@ export function GeneralTab({ settings, update, onLocalOff }: { settings: AppSett
           {(a) => <DaysField a11y={a} testId="sync-window" value={settings.syncWindowDays} onSave={(days) => update({ syncWindowDays: days ?? settings.syncWindowDays }, { quiet: true })} />}
         </SettingsRow>
       </SettingsGroup>
+
+      <NotificationsGroup settings={settings} update={update} />
 
       <SettingsGroup title={t("settings.general.writing")}>
         <SettingsRow label={t("settings.general.suggestions")} hint={t("settings.general.suggestions.hint")} testId="suggestions-row">

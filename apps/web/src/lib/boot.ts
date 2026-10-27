@@ -17,6 +17,7 @@ import { setBridgeForTests, startUpdates } from "~/lib/updates";
 import { supportedFilters } from "~/lib/unread-filter";
 import { accountsChanged, announceParkedSend } from "~/lib/sign-in";
 import { installNativeReload } from "~/lib/native-reload";
+import { startAttention } from "~/lib/notify";
 
 export async function boot(): Promise<void> {
   startDiag();
@@ -108,6 +109,8 @@ export async function boot(): Promise<void> {
     installPage();
     const reopened = bootPage();
     await reloadList({ keepSelection: reopened !== null });
+    // plan 38: the unread count on the app icon (the web; desktop main shows the Dock's)
+    startAttention();
   } catch (error) {
     captureUi(error, { code: "boot.failed" });
     setApp({ fatal: error instanceof Error ? error.message : String(error) });

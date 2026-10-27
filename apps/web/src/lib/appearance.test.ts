@@ -45,6 +45,7 @@ const SERVER: AppSettings = {
   composeSuggestions: true,
   senderIcons: false,
   googlePhotos: {},
+  dockBadge: true,
   theme: "dark",
   design: "macos",
   lightTheme: "terno-light",

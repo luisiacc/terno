@@ -156,6 +156,12 @@ const en = {
   "settings.general.writing": "Writing",
   "settings.general.suggestions": "Suggest text while writing",
   "settings.general.suggestions.hint": "Completes sentences from mail you've sent. It's learned and kept on this device.",
+  // plan 38
+  "settings.general.notifications": "Notifications",
+  "settings.general.badge": "Show unread count in the Dock",
+  "settings.general.badge.hint": "Unread conversations in the Inbox of every account, the same number as in the sidebar.",
+  "settings.general.badgeWeb": "Show unread count on the app icon",
+  "settings.general.badgeWeb.hint": "When Terno is installed as an app: unread conversations in the Inbox, the same number as in the sidebar.",
   "settings.syncWindow.invalid": "Enter a number of days from {min} to {max}.",
   "settings.agents.copy": "Copy: {label}",
   "settings.copyFailed": "Couldn’t copy",

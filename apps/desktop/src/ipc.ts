@@ -26,4 +26,6 @@ export type BackendToMain =
   /** diagnostics: log entries (batched), the breadcrumb mirror, and records; main validates all of it again */
   | { type: "diag"; entries: unknown[] }
   | { type: "diag-ring"; crumbs: unknown[] }
-  | { type: "diag-record"; record: unknown };
+  | { type: "diag-record"; record: unknown }
+  /** plan 38: the Inbox's unread count for the Dock (main validates it) */
+  | { type: "badge"; count: number };

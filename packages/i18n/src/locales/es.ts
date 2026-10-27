@@ -150,6 +150,12 @@ const es = {
   "settings.general.writing": "Redacción",
   "settings.general.suggestions": "Sugerir texto mientras escribes",
   "settings.general.suggestions.hint": "Completa frases a partir del correo que has enviado. Se aprende y se guarda en este dispositivo.",
+  // plan 38
+  "settings.general.notifications": "Notificaciones",
+  "settings.general.badge": "Mostrar los no leídos en el Dock",
+  "settings.general.badge.hint": "Conversaciones sin leer en Entrada de todas las cuentas, el mismo número que en la barra lateral.",
+  "settings.general.badgeWeb": "Mostrar los no leídos en el icono de la app",
+  "settings.general.badgeWeb.hint": "Si Terno está instalado como app: conversaciones sin leer en Entrada, el mismo número que en la barra lateral.",
   "settings.syncWindow.invalid": "Escribe un número de días entre {min} y {max}.",
   "settings.agents.copy": "Copiar: {label}",
   "settings.copyFailed": "No se pudo copiar",
