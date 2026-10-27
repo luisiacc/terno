@@ -358,7 +358,11 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
     if (!d) return;
     const valid = collapseInlineDraft(d.key);
     if (!valid || !valid()) return;
-    focusSoon("[data-testid=draft-collapsed]", rootRef.current, 12, () => true, valid, (cancel) => useApp.subscribe(() => { if (!valid()) cancel(); }));
+    focusSoon("[data-testid=draft-collapsed]", rootRef.current, 12, () => true, valid, (cancel) => {
+      const app = useApp.subscribe(() => { if (!valid()) cancel(); });
+      const drafts = useDrafts.subscribe((state, previous) => { if (state.held || previous.held) cancel(); });
+      return () => { app(); drafts(); };
+    });
   };
   const reopen = () => {
     if (!d) return;

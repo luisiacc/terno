@@ -204,6 +204,7 @@ export function collapseInlineDraft(key: string): (() => boolean) | undefined {
   let changed = false;
   const owner = ++intent;
   const observe = (event: FocusEvent) => { if (event.target !== active && event.target !== document.body) changed = true; };
+  const unsubscribeDrafts = useDrafts.subscribe((state, previous) => { if (state.held || previous.held) changed = true; });
   const unsubscribe = useApp.subscribe((state, previous) => {
     if (state.selectedId !== previous.selectedId || state.readerOpen !== previous.readerOpen || state.compose !== previous.compose || state.checked !== previous.checked || state.scope !== previous.scope || state.accountId !== previous.accountId || state.dialog !== previous.dialog || state.fatal !== previous.fatal || state.view !== previous.view || state.categoryId !== previous.categoryId || state.reviewCategoryId !== previous.reviewCategoryId || state.query !== previous.query || state.listFilters !== previous.listFilters) changed = true;
   });
@@ -214,7 +215,7 @@ export function collapseInlineDraft(key: string): (() => boolean) | undefined {
     setDraftUi(key, "collapsed");
     void flushDraft(key);
   } finally {
-    unsubscribe();
+    unsubscribe(); unsubscribeDrafts();
     if (typeof document !== "undefined") document.removeEventListener?.("focusin", observe, true);
   }
   if (changed) return;
