@@ -9,19 +9,19 @@ diff --git a/floating-ui-react/components/FloatingFocusManager.mjs b/floating-ui
    const isInsidePortal = portalContext != null;
    const floatingFocusElement = getFloatingFocusElement(floating);
    const getTabbableContent = useStableCallback((container = floatingFocusElement) => {
-@@ -229,6 +230,29 @@
+@@ -229,6 +230,33 @@
      }
      const doc = ownerDocument(floatingFocusElement);
  
 +    let disposed = false;
-+    let restoringPopup = false;
++    let ownFocusPending = false;
 +    function focusPopup() {
-+      const previous = restoringPopup;
-+      restoringPopup = true;
++      const previous = ownFocusPending;
++      ownFocusPending = true;
 +      try {
 +        floatingFocusElement.focus();
 +      } finally {
-+        restoringPopup = previous;
++        ownFocusPending = previous;
 +      }
 +    }
 +    function recordFocusChoice(event) {
@@ -29,7 +29,11 @@ diff --git a/floating-ui-react/components/FloatingFocusManager.mjs b/floating-ui
 +        return;
 +      }
 +      const target = getTarget(event);
-+      if (target == null || target === doc.body || target === floatingFocusElement && restoringPopup) {
++      if (target == null || target === doc.body) {
++        return;
++      }
++      if (target === floatingFocusElement && ownFocusPending) {
++        ownFocusPending = false;
 +        return;
 +      }
 +      restoreFocusGenerationRef.current += 1;
@@ -39,7 +43,7 @@ diff --git a/floating-ui-react/components/FloatingFocusManager.mjs b/floating-ui
      // In Safari, buttons lose focus when pressing them.
      function handlePointerDown() {
        isPointerDownRef.current = true;
-@@ -244,6 +268,11 @@
+@@ -244,6 +272,11 @@
      }
      function handleFocusOutside(event) {
        const relatedTarget = event.relatedTarget;
@@ -51,7 +55,7 @@ diff --git a/floating-ui-react/components/FloatingFocusManager.mjs b/floating-ui
        const currentTarget = event.currentTarget;
        const target = getTarget(event);
  
-@@ -254,6 +283,9 @@
+@@ -254,6 +287,9 @@
          addPreviouslyFocusedElement(target);
        }
        queueMicrotask(() => {
@@ -61,7 +65,7 @@ diff --git a/floating-ui-react/components/FloatingFocusManager.mjs b/floating-ui
          const nodeId = getNodeId();
          const triggers = store.context.triggerElements;
          const insideElements = getResolvedInsideElements();
-@@ -265,11 +297,14 @@
+@@ -265,11 +301,14 @@
  
          // Restore focus to the previously focused tabbable element to prevent
          // focus from being lost outside the floating tree.
@@ -78,7 +82,7 @@ diff --git a/floating-ui-react/components/FloatingFocusManager.mjs b/floating-ui
              // If explicitly requested to restore focus to the popup container, do not search
              // for the next/previous tabbable element.
              if (restoreFocus === 'popup') {
-@@ -278,7 +313,11 @@
+@@ -278,7 +317,11 @@
                // but because it's removed in the same tick, focus is lost instead.
                // Re-focusing asynchronously (next frame) wins that race.
                restoreFocusFrame.request(() => {
@@ -91,7 +95,7 @@ diff --git a/floating-ui-react/components/FloatingFocusManager.mjs b/floating-ui
                });
                return;
              }
-@@ -326,8 +365,12 @@
+@@ -326,8 +369,12 @@
      if (!floating && !domReferenceElement) {
        return undefined;
      }
@@ -101,12 +105,12 @@ diff --git a/floating-ui-react/components/FloatingFocusManager.mjs b/floating-ui
 +      disposed = true;
 +      restoreFocusGenerationRef.current += 1;
 +      restoreFocusFrame.cancel();
-+    }, open && restoreFocus === 'popup' && addEventListener(doc, 'focusin', recordFocusChoice, true), domReferenceElement && addEventListener(domReferenceElement, 'focusout', handleFocusOutside), domReferenceElement && addEventListener(domReferenceElement, 'pointerdown', handlePointerDown), floating && addEventListener(floating, 'focusin', handleFocusIn), floating && addEventListener(floating, 'focusout', handleFocusOutside), floating && portalContext && addEventListener(floating, 'focusout', markInsideReactTree, true));
++    }, open && restoreFocus === 'popup' && addEventListener(doc, 'focus', recordFocusChoice, true), domReferenceElement && addEventListener(domReferenceElement, 'focusout', handleFocusOutside), domReferenceElement && addEventListener(domReferenceElement, 'pointerdown', handlePointerDown), floating && addEventListener(floating, 'focusin', handleFocusIn), floating && addEventListener(floating, 'focusout', handleFocusOutside), floating && portalContext && addEventListener(floating, 'focusout', markInsideReactTree, true));
 +  }, [disabled, open, domReference, floating, floatingFocusElement, modal, tree, portalContext, store, closeOnFocusOut, restoreFocus, getTabbableContent, isUntrappedTypeableCombobox, getNodeId, dataRef, blurTimeout, pointerDownTimeout, restoreFocusFrame, nextFocusableElement, previousFocusableElement, getResolvedInsideElements]);
  
    // Hide everything outside the floating tree from assistive tech while open.
    React.useEffect(() => {
-@@ -355,6 +398,8 @@
+@@ -355,6 +402,8 @@
  
    // Focus the initial element when the floating element opens.
    useIsoLayoutEffect(() => {
@@ -115,7 +119,7 @@ diff --git a/floating-ui-react/components/FloatingFocusManager.mjs b/floating-ui
      if (!open || disabled || !isHTMLElement(floatingFocusElement)) {
        return;
      }
-@@ -417,7 +462,7 @@
+@@ -417,7 +466,7 @@
          }
        });
      });
@@ -135,19 +139,19 @@ diff --git a/floating-ui-react/components/FloatingFocusManager.js b/floating-ui-
    const isInsidePortal = portalContext != null;
    const floatingFocusElement = (0, _element.getFloatingFocusElement)(floating);
    const getTabbableContent = (0, _useStableCallback.useStableCallback)((container = floatingFocusElement) => {
-@@ -235,6 +236,29 @@
+@@ -235,6 +236,33 @@
      }
      const doc = (0, _owner.ownerDocument)(floatingFocusElement);
  
 +    let disposed = false;
-+    let restoringPopup = false;
++    let ownFocusPending = false;
 +    function focusPopup() {
-+      const previous = restoringPopup;
-+      restoringPopup = true;
++      const previous = ownFocusPending;
++      ownFocusPending = true;
 +      try {
 +        floatingFocusElement.focus();
 +      } finally {
-+        restoringPopup = previous;
++        ownFocusPending = previous;
 +      }
 +    }
 +    function recordFocusChoice(event) {
@@ -155,7 +159,11 @@ diff --git a/floating-ui-react/components/FloatingFocusManager.js b/floating-ui-
 +        return;
 +      }
 +      const target = (0, _element.getTarget)(event);
-+      if (target == null || target === doc.body || target === floatingFocusElement && restoringPopup) {
++      if (target == null || target === doc.body) {
++        return;
++      }
++      if (target === floatingFocusElement && ownFocusPending) {
++        ownFocusPending = false;
 +        return;
 +      }
 +      restoreFocusGenerationRef.current += 1;
@@ -165,7 +173,7 @@ diff --git a/floating-ui-react/components/FloatingFocusManager.js b/floating-ui-
      // In Safari, buttons lose focus when pressing them.
      function handlePointerDown() {
        isPointerDownRef.current = true;
-@@ -250,6 +274,11 @@
+@@ -250,6 +278,11 @@
      }
      function handleFocusOutside(event) {
        const relatedTarget = event.relatedTarget;
@@ -177,7 +185,7 @@ diff --git a/floating-ui-react/components/FloatingFocusManager.js b/floating-ui-
        const currentTarget = event.currentTarget;
        const target = (0, _element.getTarget)(event);
  
-@@ -260,6 +289,9 @@
+@@ -260,6 +293,9 @@
          addPreviouslyFocusedElement(target);
        }
        queueMicrotask(() => {
@@ -187,7 +195,7 @@ diff --git a/floating-ui-react/components/FloatingFocusManager.js b/floating-ui-
          const nodeId = getNodeId();
          const triggers = store.context.triggerElements;
          const insideElements = getResolvedInsideElements();
-@@ -271,11 +303,14 @@
+@@ -271,11 +307,14 @@
  
          // Restore focus to the previously focused tabbable element to prevent
          // focus from being lost outside the floating tree.
@@ -204,7 +212,7 @@ diff --git a/floating-ui-react/components/FloatingFocusManager.js b/floating-ui-
              // If explicitly requested to restore focus to the popup container, do not search
              // for the next/previous tabbable element.
              if (restoreFocus === 'popup') {
-@@ -284,7 +319,11 @@
+@@ -284,7 +323,11 @@
                // but because it's removed in the same tick, focus is lost instead.
                // Re-focusing asynchronously (next frame) wins that race.
                restoreFocusFrame.request(() => {
@@ -217,7 +225,7 @@ diff --git a/floating-ui-react/components/FloatingFocusManager.js b/floating-ui-
                });
                return;
              }
-@@ -332,8 +371,12 @@
+@@ -332,8 +375,12 @@
      if (!floating && !domReferenceElement) {
        return undefined;
      }
@@ -227,12 +235,12 @@ diff --git a/floating-ui-react/components/FloatingFocusManager.js b/floating-ui-
 +      disposed = true;
 +      restoreFocusGenerationRef.current += 1;
 +      restoreFocusFrame.cancel();
-+    }, open && restoreFocus === 'popup' && (0, _addEventListener.addEventListener)(doc, 'focusin', recordFocusChoice, true), domReferenceElement && (0, _addEventListener.addEventListener)(domReferenceElement, 'focusout', handleFocusOutside), domReferenceElement && (0, _addEventListener.addEventListener)(domReferenceElement, 'pointerdown', handlePointerDown), floating && (0, _addEventListener.addEventListener)(floating, 'focusin', handleFocusIn), floating && (0, _addEventListener.addEventListener)(floating, 'focusout', handleFocusOutside), floating && portalContext && (0, _addEventListener.addEventListener)(floating, 'focusout', markInsideReactTree, true));
++    }, open && restoreFocus === 'popup' && (0, _addEventListener.addEventListener)(doc, 'focus', recordFocusChoice, true), domReferenceElement && (0, _addEventListener.addEventListener)(domReferenceElement, 'focusout', handleFocusOutside), domReferenceElement && (0, _addEventListener.addEventListener)(domReferenceElement, 'pointerdown', handlePointerDown), floating && (0, _addEventListener.addEventListener)(floating, 'focusin', handleFocusIn), floating && (0, _addEventListener.addEventListener)(floating, 'focusout', handleFocusOutside), floating && portalContext && (0, _addEventListener.addEventListener)(floating, 'focusout', markInsideReactTree, true));
 +  }, [disabled, open, domReference, floating, floatingFocusElement, modal, tree, portalContext, store, closeOnFocusOut, restoreFocus, getTabbableContent, isUntrappedTypeableCombobox, getNodeId, dataRef, blurTimeout, pointerDownTimeout, restoreFocusFrame, nextFocusableElement, previousFocusableElement, getResolvedInsideElements]);
  
    // Hide everything outside the floating tree from assistive tech while open.
    React.useEffect(() => {
-@@ -361,6 +404,8 @@
+@@ -361,6 +408,8 @@
  
    // Focus the initial element when the floating element opens.
    (0, _useIsoLayoutEffect.useIsoLayoutEffect)(() => {
@@ -241,7 +249,7 @@ diff --git a/floating-ui-react/components/FloatingFocusManager.js b/floating-ui-
      if (!open || disabled || !(0, _dom.isHTMLElement)(floatingFocusElement)) {
        return;
      }
-@@ -423,7 +468,7 @@
+@@ -423,7 +472,7 @@
          }
        });
      });

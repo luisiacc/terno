@@ -197,6 +197,77 @@ it.each([false, true])("still restores focus lost to body without a later destin
   });
 });
 
+for (const event of ["focus", "focusin"] as const) {
+  for (const choice of ["return and blur", "blur only"] as const) {
+    it.each([false, true])(`honors synchronous popup ${choice} during ${event} MODEL (StrictMode: %s)`, async (strict) => {
+      await fixture(strict, async (f) => {
+        const removed = f.query<HTMLButtonElement>('[data-account-id="1"] [data-sign-in-action]');
+        await focus(removed);
+        let calls = 0;
+        f.popup.addEventListener(event, () => {
+          calls++;
+          f.popup.blur();
+          expect(document.activeElement).toBe(document.body);
+          if (choice === "return and blur") {
+            f.popup.focus();
+            expect(document.activeElement).toBe(f.popup);
+            f.popup.blur();
+          }
+        }, { once: true });
+        await f.removeFocused(removed, [second]);
+        expect(calls).toBe(1);
+        expect(document.activeElement).toBe(document.body);
+        const popupFocus = vi.spyOn(f.popup, "focus");
+        await f.frame();
+        expect(document.activeElement).toBe(choice === "blur only" ? f.popup : document.body);
+        expect(popupFocus).toHaveBeenCalledTimes(choice === "blur only" ? 1 : 0);
+      });
+    });
+  }
+}
+
+it.each([false, true])("honors a popup return and blur after the manager focus call MODEL (StrictMode: %s)", async (strict) => {
+  await fixture(strict, async (f) => {
+    await pending(f);
+    await act(async () => { f.popup.blur(); f.popup.focus(); f.popup.blur(); });
+    expect(document.activeElement).toBe(document.body);
+    const popupFocus = vi.spyOn(f.popup, "focus");
+    await f.frame();
+    expect(document.activeElement).toBe(document.body);
+    expect(popupFocus).not.toHaveBeenCalled();
+  });
+});
+
+for (const choice of ["return and blur", "blur only"] as const) {
+  it.each([false, true])(`honors an earlier document capture ${choice} MODEL (StrictMode: %s)`, async (strict) => {
+    let armed = false, calls = 0;
+    const redirect = (event: FocusEvent) => {
+      const popup = event.target;
+      if (!armed || !(popup instanceof HTMLElement) || popup.dataset.testid !== "restoration-popup") return;
+      document.removeEventListener("focus", redirect, true);
+      calls++;
+      popup.blur();
+      expect(document.activeElement).toBe(document.body);
+      if (choice === "return and blur") { popup.focus(); popup.blur(); }
+    };
+    document.addEventListener("focus", redirect, true);
+    try {
+      await fixture(strict, async (f) => {
+        const removed = f.query<HTMLButtonElement>('[data-account-id="1"] [data-sign-in-action]');
+        await focus(removed);
+        armed = true;
+        await f.removeFocused(removed, [second]);
+        expect(calls).toBe(1);
+        expect(document.activeElement).toBe(document.body);
+        const popupFocus = vi.spyOn(f.popup, "focus");
+        await f.frame();
+        expect(document.activeElement).toBe(choice === "blur only" ? f.popup : document.body);
+        expect(popupFocus).toHaveBeenCalledTimes(choice === "blur only" ? 1 : 0);
+      });
+    } finally { document.removeEventListener("focus", redirect, true); }
+  });
+}
+
 it.each([false, true])("preserves a field revealed before account removal (StrictMode: %s)", async (strict) => {
   await fixture(strict, async (f) => {
     await act(async () => f.query<HTMLButtonElement>('[data-testid="sign-in-password-reveal"]').click());
