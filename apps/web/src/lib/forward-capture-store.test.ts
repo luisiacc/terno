@@ -38,6 +38,7 @@ for (const adapter of ["SQL", "IDB"] as const) {
       let retried = false, refreshed = false;
       rpc.mockImplementation(async (method: string, p: { accountId: number; assetId: string; messageId: number; threadId: number }) => {
         if (method === "attachments.info") return store.attachments.info(p.accountId, p.assetId);
+        if (method === "drafts.sourceContext") return store.drafts.sourceContext(p.messageId);
         if (method === "attachments.retry") { await store.attachments.retry(p.accountId, p.messageId); retried = true; return { ok: true }; }
         if (method === "threads.get") { const current = await store.threads.get(p.threadId); refreshed = true; return current; }
         throw new Error("Unexpected fixture RPC");
