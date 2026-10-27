@@ -404,13 +404,15 @@ let seq = 0;
 const newKey = () => `local-${Date.now().toString(36)}-${(++seq).toString(36)}`;
 
 /** A new draft (not saved until the user writes something). Returns its key. */
-export function createDraft(fields: DraftFields): string {
+export function createDraftWithReceipt(fields: DraftFields): { key: string; created: LocalDraft } {
   if (draftEditsHeld()) throw new Error("Draft editing is held for shutdown");
   changeVersion++;
   const key = newKey();
-  put({ key, id: null, revision: 0, status: "clean", localRev: 0, savedRev: 0, updatedAt: now(), sending: false, bodyVersion: 0, canonical: false, tooLong: false, ...fields });
-  return key;
+  const created: LocalDraft = { key, id: null, revision: 0, status: "clean", localRev: 0, savedRev: 0, updatedAt: now(), sending: false, bodyVersion: 0, canonical: false, tooLong: false, ...fields };
+  put(created);
+  return { key, created };
 }
+export function createDraft(fields: DraftFields): string { return createDraftWithReceipt(fields).key; }
 
 export const draftSenderLocked = (d: LocalDraft): boolean => Boolean(d.attachments?.length || d.attachmentOwner);
 

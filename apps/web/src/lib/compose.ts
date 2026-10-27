@@ -12,7 +12,7 @@ import { invalidateThreads, loadThread } from "~/state/threads";
 import { registerUndo, snack, useSnack } from "./snack";
 import { answered, convertFields, forwardAccountMismatch, newFields, replyFields, mergeAttachmentRefs } from "./compose-fields";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
-import { beginDraftWork, draftIndex, invalidateDraftPresentation, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type LocalDraft } from "./drafts";
+import { beginDraftWork, draftIndex, invalidateDraftPresentation, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, authored, createDraft, createDraftWithReceipt, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type LocalDraft } from "./drafts";
 
 /**
  * Writing mail: which draft a reply, reply-all, forward or new message opens,
@@ -593,8 +593,8 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     snack(t(message), { action: { label: t("common.undo"), name: t(name), undo } });
     return;
   }
-  const key = createDraft(converted);
-  if (takeFocus && focusAllowed()) focusDraft(key, target, mine);
+  const { key, created } = createDraftWithReceipt(converted);
+  if (takeFocus && mine === intent && destinationAvailable(lease) && focusAllowed() && getApp().selectedId === selected && useDrafts.getState().drafts[key] === created && shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) === key) focusDraft(key, target, mine);
 }
 
 /** Shows a new-message draft in the reader pane again (from the drafts strip). */
