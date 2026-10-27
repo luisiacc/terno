@@ -1,5 +1,5 @@
-import { ATTACHMENT_ACCOUNT_BYTES, attachmentMessageBudgetAsync } from "@terno/core";
-import { appendAsset, assetError, assetRef, assetRow, createAsset, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
+import { attachmentMessageBudgetAsync } from "@terno/core";
+import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { sqlAssets, replaceAttachments } from "./attachments";
 import { senderVetoed, type Address, type FilterAction, type ThreadAction, type ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
@@ -544,7 +544,7 @@ export class SqlMailStore implements MailStore {
       p = { ...p };
       await this.db.tx(() => { const db = sqlAssets(this.db); validateAssetCreation(db, p); db.beginOrphanGrace(p.accountId, p.now); });
       // Finite even if another caller adds backdated uploads between maintenance units.
-      for (let remaining = ATTACHMENT_ACCOUNT_BYTES / 1024; remaining > 0; remaining--) {
+      for (let remaining = ASSET_CLEANUP_STEPS; remaining > 0; remaining--) {
         if (!await this.db.tx(() => cleanupAssets(sqlAssets(this.db), p.accountId, p.now))) break;
         await this.yieldTo();
       }

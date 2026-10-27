@@ -1,5 +1,5 @@
-import { ATTACHMENT_ACCOUNT_BYTES, attachmentMessageBudgetAsync } from "@terno/core";
-import { appendAsset, assetError, assetRef, assetRow, createAsset, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
+import { attachmentMessageBudgetAsync } from "@terno/core";
+import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { idbAssets, replaceAttachments } from "./attachments";
 import { COUNT_CAP, LIST_FILTERS, parseSearch, resolveSearch, senderVetoed, type Address, type FilterAction, type ListFilter, type ThreadAction, type ThreadFilter, type ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
@@ -360,6 +360,8 @@ export class IdbMailStore implements MailStore {
     if (this.seeding || this.db.inTransaction) return;
     const chunks = this.db.table("attachment_bytes");
     chunks.evict([...chunks.rows.keys()]);
+    // No pending undo remains here; cold-delete keys need not outlive their committed unit.
+    chunks.absent.clear();
     const bodies = this.db.table<R>("message_bodies");
     let { count, bytes } = this.bodyCache();
     if (count <= BODY_CACHE && bytes <= BODY_CACHE_BYTES) return;
@@ -980,7 +982,7 @@ export class IdbMailStore implements MailStore {
       p = { ...p };
       await this.command(() => { const db = idbAssets(this.db); validateAssetCreation(db, p); db.beginOrphanGrace(p.accountId, p.now); });
       // Finite even if another caller adds backdated uploads between maintenance units.
-      for (let remaining = ATTACHMENT_ACCOUNT_BYTES / 1024; remaining > 0; remaining--) {
+      for (let remaining = ASSET_CLEANUP_STEPS; remaining > 0; remaining--) {
         if (!await this.command(() => cleanupAssets(idbAssets(this.db), p.accountId, p.now))) break;
         await this.o.platform.yield();
       }

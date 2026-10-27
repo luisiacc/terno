@@ -4,7 +4,7 @@ import { L } from "@terno/i18n";
 
 export interface AssetRow {
   id: string; account_id: number; filename: string; mime: string; size: number; content_id: string | null;
-  received: number; chunks: number; complete: number; created_at: number;
+  received: number; chunks: number; complete: number; created_at: number; // -1: committed reclamation claim
   /** IDB persists grace here; SQL keeps it in attachment_orphans. Missing legacy values start fresh grace. */
   orphan_grace_started_at?: number | null;
 }
@@ -14,6 +14,7 @@ export interface AssetDb {
   insert(row: AssetRow): void;
   update(row: AssetRow): void;
   remove(id: string): void;
+  removeChunks(id: string, limit: number): boolean;
   used(accountId: number): number;
   beginOrphanGrace(accountId: number, now: number): void;
   orphans(accountId: number, before: number): string[];
@@ -31,9 +32,12 @@ export const assetError = () => new RpcError("BAD_REQUEST", L("attachments.unava
 
 export function assetRow(db: AssetDb, accountId: number, id: string, complete = true): AssetRow {
   const row = db.get(id);
-  if (!row || row.account_id !== accountId || (complete && !row.complete)) throw assetError();
+  if (!row || row.account_id !== accountId || (row.complete < 0 || (complete && row.complete !== 1))) throw assetError();
   return row;
 }
+
+/** Worst case: one unit per empty asset plus eight physical chunks per unit. */
+export const ASSET_CLEANUP_STEPS = ATTACHMENT_ACCOUNT_BYTES / 1024 + Math.ceil(ATTACHMENT_ACCOUNT_BYTES / (8 * ATTACHMENT_CHUNK));
 
 export interface AssetInput { accountId: number; filename: string; mime: string; size: number; contentId?: string | null; now: number }
 
@@ -44,9 +48,14 @@ export function validateAssetCreation(db: AssetDb, p: AssetInput): void {
 
 /** A committed maintenance unit; reservation failure cannot undo safe cleanup progress. */
 export function cleanupAssets(db: AssetDb, accountId: number, now: number): boolean {
-  const ids = db.orphans(accountId, now - 86400000);
-  for (const id of ids) if (!db.pinned(id)) db.remove(id);
-  return ids.length > 0;
+  const id = db.orphans(accountId, now - 86400000)[0];
+  if (!id) return false;
+  const row = db.get(id);
+  if (!row || row.account_id !== accountId || db.pinned(id)) return false;
+  // Claim and physical deletion share a transaction; nobody can acquire a partial asset.
+  if (row.complete >= 0) db.update({ ...row, complete: -1 });
+  if (!db.removeChunks(id, 8)) db.remove(id);
+  return true;
 }
 
 export function createAsset(db: AssetDb, uuid: () => string, p: AssetInput): AttachmentRef {

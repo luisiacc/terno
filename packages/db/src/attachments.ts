@@ -8,6 +8,11 @@ export function sqlAssets(db: Db): AssetDb {
     insert: (r) => { db.run("INSERT INTO attachment_assets (id, account_id, filename, mime, size, content_id, received, chunks, complete, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)", r.id, r.account_id, r.filename, r.mime, r.size, r.content_id, r.received, r.chunks, r.complete, r.created_at); },
     update: (r) => { db.run("UPDATE attachment_assets SET received = ?, chunks = ?, complete = ? WHERE id = ?", r.received, r.chunks, r.complete, r.id); },
     remove: (id) => { db.run("DELETE FROM attachment_assets WHERE id = ?", id); },
+    removeChunks: (id, limit) => {
+      const rows = db.all<{ id: string }>("SELECT id FROM attachment_chunks WHERE asset_id = ? ORDER BY position LIMIT ?", id, limit);
+      for (const row of rows) db.run("DELETE FROM attachment_chunks WHERE id = ?", row.id);
+      return !!db.get("SELECT 1 FROM attachment_chunks WHERE asset_id = ? LIMIT 1", id);
+    },
     used: (id) => db.get<{ bytes: number }>("SELECT bytes FROM attachment_usage WHERE account_id = ?", id)?.bytes ?? 0,
     beginOrphanGrace: (id, now) => { db.run("UPDATE attachment_orphans SET grace_started_at = ? WHERE asset_id IN (SELECT asset_id FROM attachment_orphans WHERE account_id = ? AND grace_started_at IS NULL ORDER BY asset_id LIMIT 50)", now, id); },
     orphans: (id, before) => db.all<{ id: string }>("SELECT asset_id AS id FROM attachment_orphans WHERE account_id = ? AND grace_started_at < ? ORDER BY grace_started_at, asset_id LIMIT 50", id, before).map((a) => a.id),

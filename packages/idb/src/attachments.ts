@@ -11,6 +11,12 @@ export function idbAssets(db: MemDb): AssetDb {
     insert: (r) => { assets.insert(r as unknown as Row); },
     update: (r) => { assets.update(assets.get(r.id)!, r as unknown as Row); },
     remove: (id) => { assets.delete(id); },
+    removeChunks: (id, limit) => {
+      const chunks = db.table("attachment_chunks");
+      let count = 0;
+      for (const key of chunks.keysBy("fk_asset_id", id)) { chunks.delete(key); if (++count === limit) break; }
+      return chunks.count("fk_asset_id", id) > 0;
+    },
     used: (id) => assetAccounting(db).used(id),
     beginOrphanGrace: (id, now) => assetAccounting(db).beginGrace(id, now),
     orphans: (id, before) => assetAccounting(db).aged(id, before),
