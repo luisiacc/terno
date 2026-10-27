@@ -450,6 +450,8 @@ const attention = new DesktopAttention({
   open: (threadId) => {
     // macOS keeps Terno running with every window closed: a click brings one back
     const win = BrowserWindow.getFocusedWindow() ?? [...windows].find((w) => !w.isDestroyed()) ?? createWindow();
+    // quitting: no window comes back for it
+    if (!win) return;
     if (win.isMinimized()) win.restore();
     win.show();
     win.focus();
