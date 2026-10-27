@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { IncomingCapacityError, IncomingReads } from "./incoming";
+import { IncomingCapacityError, IncomingPipeline, IncomingReads } from "./incoming";
 
 const signal = () => new AbortController().signal;
 const turn = () => Promise.resolve();
@@ -78,4 +78,22 @@ describe("incoming read admission", () => {
     await expect(reads.acquire(1, ctl.signal)).rejects.toBe(ctl.signal.reason);
     (await reads.acquire(2, signal()))(); reads.close();
   });
+});
+
+it("retains promoted capacity until the captured processor has actually retired", async () => {
+  let finish!: () => void, retiring = false;
+  const retired = new Promise<void>((resolve) => { finish = resolve; });
+  const pipeline = new IncomingPipeline({ whenIdle: () => retiring ? retired : Promise.resolve() });
+  const release = await pipeline.promote(1, new AbortController().signal);
+  retiring = true;
+  release(); release();
+  let entered = false;
+  const next = pipeline.promote(2, new AbortController().signal).then((owned) => { entered = true; return owned; });
+  try {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(entered).toBe(false);
+    finish();
+    (await next)();
+    expect(entered).toBe(true);
+  } finally { finish(); pipeline.close(); }
 });
