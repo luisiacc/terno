@@ -39,3 +39,6 @@ minimumReleaseAgeExclude:
   - '@tanstack/react-virtual@3.14.22'
   - '@tanstack/virtual-core@3.19.7'
   - openai@7.43.0
+
+patchedDependencies:
+  '@base-ui/react@1.9.0': patches/@base-ui__react@1.9.0.patch
