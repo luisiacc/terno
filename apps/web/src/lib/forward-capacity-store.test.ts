@@ -31,7 +31,13 @@ for (const adapter of ["SQL", "IDB"] as const) {
       await ingest(store, [msg({ accountId: a!, providerMsgId: "source", attachments: [{ filename: "source-empty.txt", mime: "text/plain", size: 0, bytes: new Uint8Array() }] })]);
       const detail = (await store.threads.get(await threadOf(store, "source")))!;
       const refs: AttachmentRef[] = [];
-      rpc.mockImplementation(async (_method: string, p: { accountId: number; assetId: string }) => store.attachments.info(p.accountId, p.assetId));
+      rpc.mockImplementation(async (method: string, p: { accountId: number; assetId: string; messageId: number }) => {
+        if (method === "drafts.sourceContext") {
+          expect(p.messageId).toBe(detail.messages[0]!.id);
+          return { threadId: detail.thread.id, accountId: detail.thread.accountId };
+        }
+        return store.attachments.info(p.accountId, p.assetId);
+      });
       for (let i = 0; i < count; i++) {
         const ref = await store.attachments.create({ accountId: a!, filename: `authored-${i}.txt`, mime: "text/plain", size: 0, now: 0 });
         await store.attachments.seal(a!, ref.assetId); refs.push(ref);
@@ -88,7 +94,13 @@ for (const adapter of ["SQL", "IDB"] as const) {
       useThreads.setState({ details: new Map([[detail.thread.id, detail]]) });
       setApp({ accounts, selectedId: detail.thread.id, checked: new Set(), scope: null, draftShown: null });
       setDraftTransport(async (_method, p) => { const row = await store.drafts.save(p as DraftInput, 1); return row ? apiDraft(row) : null; });
-      rpc.mockImplementation(async (_method: string, p: { accountId: number; assetId: string }) => store.attachments.info(p.accountId, p.assetId));
+      rpc.mockImplementation(async (method: string, p: { accountId: number; assetId: string; messageId: number }) => {
+        if (method === "drafts.sourceContext") {
+          expect(p.messageId).toBe(detail.messages[0]!.id);
+          return { threadId: detail.thread.id, accountId: detail.thread.accountId };
+        }
+        return store.attachments.info(p.accountId, p.assetId);
+      });
       editDraft(key, { bodyText: "preserved", attachments: [authored] }); await flushDraft(key);
       const before = fieldsOf(useDrafts.getState().drafts[key]!);
       await openCompose("forward", detail.thread.id);

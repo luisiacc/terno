@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { Account, MessageDetail, ThreadDetail } from "@terno/core";
 import type { DraftInput } from "@terno/store";
 const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }));
-vi.mock("~/rpc/connection", () => ({ client: { call: rpc } }));
+vi.mock("~/rpc/connection", () => ({ client: { call: (method: string, params: unknown) => method === "drafts.sourceContext" ? Promise.resolve({ threadId: 7, accountId: 1 }) : rpc(method, params) } }));
 const { openCompose } = await import("./compose");
 const { replyFields } = await import("./compose-fields");
 const { createDraft, editDraft, fieldsOf, forgetDraft, setDraftTransport, useDrafts } = await import("./drafts");
