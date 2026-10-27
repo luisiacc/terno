@@ -71,7 +71,7 @@ visibleReviewCases.push(
   { name: "F5 invalid reset keyword cannot undo hiding", html: '<p style="display:none;display:initial-bogus">phantomneedle</p><p>Useful</p>', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false },
 );
 
-for (const tag of ["plaintext", "xmp", "noembed", "noframes", "title", "script", "style", "iframe", "template"]) visibleReviewCases.push({ name: `R2-F1 sanitizer drops ${tag} content`, html: `<p>Useful</p><${tag} style="display:block">phantomneedle</${tag}>`, text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false });
+for (const tag of ["plaintext", "xmp", "noembed", "noframes", "script", "style", "iframe", "template"]) visibleReviewCases.push({ name: `R2-F1 sanitizer drops ${tag} content`, html: `<p>Useful</p><${tag} style="display:block">phantomneedle</${tag}>`, text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false });
 visibleReviewCases.push({ name: "R2-F1 untouched plaintext consumes the raw remainder", html: '<p>Useful</p><plaintext>phantomneedle', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false });
 visibleReviewCases.push({ name: "R2-F1 plaintext raw descendants never become body words", html: '<p>Useful</p><PLAINTEXT><b>phantomneedle</b>&#112;hantomneedle', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false });
 visibleReviewCases.push(
@@ -866,4 +866,8 @@ visiblePolicyCases.push(
   { name: "R2-F5 footer table groups preserve row boundaries", html: '<table><tfoot><tr><td>Visible</td></tr><tr><td>phrase</td></tr></tfoot></table>', text: "Visible phrase" },
   { name: "R2-F5 retained open details has block boundaries", html: '<details open>Visible</details><details open>phrase</details>', text: "Visible phrase" },
   { name: "R2-F5 retained open dialog has block boundaries", html: '<dialog open>Visible</dialog><dialog open>phrase</dialog>', text: "Visible phrase" },
+);
+visibleReviewCases.push(
+  { name: "R2-F3 body title authored display is retained", html: '<p>Useful</p><title style="display:block">phantomneedle</title>', text: "Useful phantomneedle", value: "phantomneedle", query: "phantomneedle", matches: true },
+  { name: "R2-F3 head title stays outside reader body", html: '<head><title style="display:block">phantomneedle</title></head><body><p>Useful</p></body>', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false },
 );
