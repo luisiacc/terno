@@ -41,7 +41,7 @@ export function ReaderAttachments({ accountId, messageId, attachments }: { accou
   const [busy, setBusy] = useState<string | null>(null);
   return <ul aria-label={t("reader.attachments")} className="mt-4 flex flex-wrap gap-2">
     {attachments.map((a) => <li key={a.id} data-testid="attachment" className="min-w-0 max-w-full">
-      <button type="button" aria-label={t("attachments.download", { name: a.filename })} aria-busy={busy === a.assetId} disabled={busy !== null} className="flex h-14 w-[260px] max-w-full items-center gap-3 rounded-lg bg-tint px-3 text-left hover:bg-accent disabled:opacity-60" onClick={async () => {
+      <button type="button" aria-label={t("attachments.download", { name: `${a.filename} ${formatBytes(a.size)}${!a.assetId ? ` · ${t("attachments.notCached")}` : ""}` })} aria-description={a.mime} aria-busy={busy === a.assetId} disabled={busy !== null} className="flex h-14 w-[260px] max-w-full items-center gap-3 rounded-lg bg-tint px-3 text-left hover:bg-accent disabled:opacity-60" onClick={async () => {
         if (!a.assetId) {
           setBusy(`retry:${a.id}`);
           try { await client.call("attachments.retry", { accountId, messageId }); snack(t("attachments.retryRequested")); }
@@ -52,7 +52,7 @@ export function ReaderAttachments({ accountId, messageId, attachments }: { accou
         setBusy(a.assetId);
         try { await downloadAttachment(accountId, { ...a, assetId: a.assetId }); } catch (error) { snack.error(error instanceof Error ? error.message : t("attachments.unavailable")); } finally { setBusy(null); }
       }}>
-        <Paperclip className="size-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1"><span className="line-clamp-2 text-sm leading-4 font-medium break-all">{a.filename}</span><span className="block text-xs text-muted-foreground tabular">{formatBytes(a.size)}{!a.assetId && ` · ${t("attachments.notCached")}`}</span></span><Download className="size-3.5 shrink-0 text-muted-foreground" />
+        <Paperclip className="size-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1"><span className="line-clamp-2 text-sm leading-4 font-medium break-all">{a.filename}</span>{" "}<span className="block text-xs text-muted-foreground tabular">{formatBytes(a.size)}{!a.assetId && ` · ${t("attachments.notCached")}`}</span></span><Download className="size-3.5 shrink-0 text-muted-foreground" />
       </button>
     </li>)}
   </ul>;
