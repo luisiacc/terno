@@ -671,15 +671,20 @@ function save(key: string, copy = false): Promise<void> {
         put({ ...cur, status: "error", tooLong: true });
         return;
       }
-      put({ ...cur, status: "error" });
-      if (w.stopping) return;
+      const rejectedSource = sources.get(key), rejectedTimer = w.timer;
+      const failed: LocalDraft = { ...cur, status: "error" };
+      put(failed);
+      if (writers.get(key) !== w || w.operation !== operation || get(key) !== failed || sources.get(key) !== rejectedSource || rejectedSource?.failed || w.stopping || w.timer !== rejectedTimer) return;
       const delay = RETRY_MS[Math.min(w.attempts, RETRY_MS.length - 1)]!;
       w.attempts++;
       if (w.timer) clearTimeout(w.timer);
-      w.timer = setTimeout(() => {
+      const timer = setTimeout(() => {
+        if (writers.get(key) !== w || w.timer !== timer) return;
         w.timer = null;
+        if (sources.get(key)?.failed) return;
         void save(key);
       }, delay);
+      w.timer = timer;
     },
   );
   return w.inflight;
