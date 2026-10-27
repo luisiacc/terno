@@ -1,8 +1,11 @@
 import { L } from "@terno/i18n";
+import type { IncomingProcessor } from "./incoming-processing";
 import { ProviderError } from "./types";
 
 export interface IncomingReadAdmission {
   acquire(accountId: number, signal: AbortSignal, reset?: AbortSignal): Promise<() => void>;
+  promote?(accountId: number, signal: AbortSignal, reset?: AbortSignal): Promise<() => void>;
+  retainCompleted?(bytes: number): (() => void) | undefined;
 }
 
 interface Waiter {
@@ -113,8 +116,23 @@ export class IncomingPipeline extends IncomingReads {
   private retained = 0;
   private pipelineClosed = false;
 
-  promote(accountId: number, signal: AbortSignal, reset?: AbortSignal): Promise<() => void> {
-    return this.promoted.acquire(accountId, signal, reset);
+  constructor(private readonly processor?: Pick<IncomingProcessor, "whenIdle">) { super(); }
+
+  async promote(accountId: number, signal: AbortSignal, reset?: AbortSignal): Promise<() => void> {
+    const release = await this.promoted.acquire(accountId, signal, reset);
+    try {
+      await this.processor?.whenIdle();
+      signal.throwIfAborted();
+      reset?.throwIfAborted();
+    } catch (error) { release(); throw error; }
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      // Run cancellation precedes host retirement; the next owner must not allocate yet.
+      if (this.processor) void this.processor.whenIdle().then(release, release);
+      else release();
+    };
   }
 
   retainCompleted(bytes: number): (() => void) | undefined {

@@ -89,3 +89,17 @@ it("closes the processor on shutdown before closing its store", async () => {
   await stopping;
   expect(t.backend.store.isOpen).toBe(false);
 });
+
+it("keeps its store open through pending host retirement even when close settles promptly", async () => {
+  let retire!: () => void;
+  const retirement = new Promise<void>((resolve) => { retire = resolve; });
+  const whenIdle = vi.fn(() => retirement);
+  const t = await setup({ async run() { return result; }, async close() {}, whenIdle });
+  const stopping = t.stop();
+  try {
+    await turn();
+    expect(whenIdle).toHaveBeenCalledOnce();
+    expect(t.backend.store.isOpen).toBe(true);
+  } finally { retire(); await stopping; }
+  expect(t.backend.store.isOpen).toBe(false);
+});

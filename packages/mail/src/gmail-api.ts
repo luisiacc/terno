@@ -1,10 +1,11 @@
 import { gmailSendBody } from "./outgoing-wire";
 import { L } from "@terno/i18n";
-import { MAX_INCOMING_MIME_BYTES } from "@terno/core";
 import type { IncomingMessage } from "@terno/store";
 import { collectGooglePhotos, type GoogleFailureReason } from "./google-photos";
-import { parseRaw, parseRawHeaders } from "./mime";
-import { cancelResponse, readResponseText, untilAborted } from "./http-body";
+import type { ParsedMessage } from "./mime";
+import { cancelResponse, readResponseText, ResponseBodyLimitError, untilAborted } from "./http-body";
+import { readIncomingBody, type IncomingBody } from "./incoming-body";
+import { IncomingProcessingError, INCOMING_GMAIL_WIRE_BYTES } from "./incoming-processing";
 import { failedBeforeRequest, isFetchNetworkFailure, RequestNotDispatchedError } from "./net-errors";
 import { ProviderAuthError, ProviderError, type FlagUpdate, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
 
@@ -236,24 +237,110 @@ const NEVER = new AbortController().signal;
  * One request's signal: aborted by its deadline, by reset (`reset`) or by the caller. `done()`
  * clears the timer and the listeners (an `AbortSignal.timeout` would keep a timer per request alive).
  */
-function deadlineSignal(reset: AbortSignal, caller: AbortSignal | undefined, ms: number): { signal: AbortSignal; done(): void } {
+interface RequestDeadline {
+  signal: AbortSignal;
+  pause(): () => void;
+  stopClock(): void;
+  done(): void;
+}
+
+function deadlineSignal(reset: AbortSignal, caller: AbortSignal | undefined, ms: number): RequestDeadline {
   const ctl = new AbortController();
   const abort = (reason: unknown) => ctl.abort(reason);
   const onReset = () => abort(reset.reason);
   const onCaller = () => abort(caller?.reason);
-  const timer = setTimeout(() => abort(new DOMException(`no answer in ${ms} ms`, "TimeoutError")), ms);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let remaining = ms, started = 0, paused = 0;
+  let finished = false;
+  const stopClock = () => {
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    timer = undefined;
+    remaining = Math.max(0, remaining - (performance.now() - started));
+  };
+  const arm = () => {
+    if (finished || paused || ctl.signal.aborted) return;
+    started = performance.now();
+    timer = setTimeout(() => { timer = undefined; abort(new DOMException(`no answer in ${ms} ms`, "TimeoutError")); }, remaining);
+  };
   if (reset.aborted) onReset();
   else reset.addEventListener("abort", onReset, { once: true });
   if (caller?.aborted) onCaller();
   else caller?.addEventListener("abort", onCaller, { once: true });
+  arm();
   return {
     signal: ctl.signal,
+    pause() {
+      if (finished) return () => {};
+      stopClock(); paused++;
+      let resumed = false;
+      return () => { if (!resumed) { resumed = true; paused--; arm(); } };
+    },
+    stopClock() { stopClock(); finished = true; },
     done() {
-      clearTimeout(timer);
+      stopClock(); finished = true;
       reset.removeEventListener("abort", onReset);
       caller?.removeEventListener("abort", onCaller);
     },
   };
+}
+
+interface IncomingResource {
+  metadata: GmailMessage;
+  parsed: ParsedMessage;
+  promoted: boolean;
+  release(): void;
+}
+
+class IncomingResourceError extends ProviderError {
+  constructor(readonly code: string, message: ReturnType<typeof L>) { super(message, false); }
+  override get expected(): boolean { return true; }
+}
+
+function processingError(error: IncomingProcessingError | ResponseBodyLimitError): ProviderError {
+  if (error instanceof ResponseBodyLimitError || error.code === "input-limit" || error.code === "result-limit") return new IncomingResourceError("input-limit", L("errors.mail.processingLimit"));
+  if (error.code.startsWith("malformed-")) return invalidResponse();
+  if (error.code === "worker-timeout") return new IncomingResourceError(error.code, L("errors.mail.processingTimedOut"));
+  if (error.code.startsWith("mime-limit-") || error.code === "envelope-unavailable") return new IncomingResourceError(error.code, L("errors.mail.processingComplex"));
+  return new IncomingResourceError(error.code, L("errors.mail.processingUnavailable"));
+}
+
+function inlineCandidate(bytes: Uint8Array): boolean {
+  let lines = 0, line = 0, parts = 0, tags = 0, entities = 0, nesting = 0, declarations = 0;
+  for (let index = 0; index < bytes.length; index++) {
+    const value = bytes[index]!;
+    if (value === 10) {
+      if (++lines > 128) return false;
+      line = 0;
+      if (bytes[index + 1] === 45 && bytes[index + 2] === 45 && ++parts > 16) return false;
+    } else if (++line > 4096) return false;
+    if (value === 60 && ++tags > 32) return false;
+    if (value === 38 && ++entities > 256) return false;
+    if ((value === 40 || value === 123 || value === 91) && ++nesting > 32) return false;
+    if ((value === 58 || value === 59) && ++declarations > 64) return false;
+    if ((value | 32) === 109 && (bytes[index + 1]! | 32) === 101 && (bytes[index + 2]! | 32) === 115 && (bytes[index + 3]! | 32) === 115 && (bytes[index + 4]! | 32) === 97 && (bytes[index + 5]! | 32) === 103 && (bytes[index + 6]! | 32) === 101) {
+      let end = index + 7;
+      while (bytes[end] === 32 || bytes[end] === 9 || bytes[end] === 10 || bytes[end] === 13) end++;
+      if (bytes[end] === 47) return false;
+    }
+  }
+  return true;
+}
+
+function retainedMessageBytes(message: IncomingMessage): number {
+  const seen = new Set<object>();
+  const charge = (value: unknown): number => {
+    if (typeof value === "string") return value.length * 2;
+    if (value === null || value === undefined) return 0;
+    if (typeof value !== "object") return 8;
+    if (seen.has(value)) return 0;
+    seen.add(value);
+    if (value instanceof Uint8Array) return 64 + charge(value.buffer);
+    if (value instanceof ArrayBuffer) return value.byteLength;
+    const values = Object.values(value);
+    return 64 + values.length * 8 + values.reduce<number>((total, child) => total + charge(child), 0);
+  };
+  return charge(message);
 }
 
 /** The Gmail REST client (sync, history, labels, send) over any token source: no Node APIs. */
@@ -266,9 +353,48 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
 
   /** reads in flight listen here: reset() aborts them all at once (a send never does) */
   let reads = new AbortController();
+  let parser: Promise<typeof import("./mime")> | undefined;
 
-  async function api<T>(path: string, init: RequestInit & { ambiguousOnFailure?: boolean; responseMode?: "json" | "void"; readReset?: AbortSignal; preparationSignal?: AbortSignal } = {}, retried = false): Promise<T> {
-    const { ambiguousOnFailure, responseMode = "json", readReset, preparationSignal, ...request } = init;
+  async function incomingResponse(response: Response, expectedId: string, deadline: RequestDeadline, preparation?: AbortSignal): Promise<IncomingResource> {
+    let body: IncomingBody | undefined;
+    try {
+      body = await readIncomingBody(response, {
+        signal: deadline.signal, limit: INCOMING_GMAIL_WIRE_BYTES,
+        async promote(signal) {
+          const resume = deadline.pause();
+          try {
+            if (!ctx.incoming?.promote) throw new IncomingProcessingError("worker-unavailable");
+            return await ctx.incoming.promote(accountId, signal);
+          } finally { resume(); }
+        },
+      });
+      deadline.stopClock();
+      preparation?.throwIfAborted();
+      if (body.bytes <= 65536) {
+        const m = readMessage(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body.chunks[0])) as unknown, expectedId, true);
+        await validateRaw(m.raw!);
+        const bytes = fromBase64url(m.raw!);
+        if (inlineCandidate(bytes)) {
+          const mime = await (parser ??= import("./mime").then(async (loaded) => {
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
+            return loaded;
+          }));
+          deadline.signal.throwIfAborted();
+          const parsed = await mime.parseRaw(bytes);
+          return { metadata: m, parsed, promoted: false, release: body.release };
+        }
+      }
+      await body.promote();
+      preparation?.throwIfAborted();
+      if (!ctx.incomingProcessor) throw new IncomingProcessingError("worker-unavailable");
+      const result = await ctx.incomingProcessor.run({ kind: "gmail", expectedId, chunks: body.chunks }, deadline.signal);
+      if (result.kind !== "gmail") throw new IncomingProcessingError("worker-fault");
+      return { metadata: result.metadata, parsed: result.message, promoted: true, release: body.release };
+    } catch (error) { body?.release(); throw error; }
+  }
+
+  async function api<T>(path: string, init: RequestInit & { ambiguousOnFailure?: boolean; responseMode?: "json" | "void" | "incoming"; incomingId?: string; readReset?: AbortSignal; preparationSignal?: AbortSignal } = {}, retried = false): Promise<T> {
+    const { ambiguousOnFailure, responseMode = "json", incomingId, readReset, preparationSignal, ...request } = init;
     preparationSignal?.throwIfAborted();
     const token = preparationSignal ? await untilAborted(tokens.get(), preparationSignal) : await tokens.get();
     preparationSignal?.throwIfAborted();
@@ -297,6 +423,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       }
       if (res.status === 401) {
         cancelResponse(res);
+        deadline.done();
         tokens.invalidate(token);
         // a fresh token refused as well: the grant is gone, the user signs in again (ops wait for it)
         if (retried) throw new ProviderAuthError(L("errors.gmail.revoked"));
@@ -312,9 +439,11 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         return undefined as T;
       }
       try {
+        if (responseMode === "incoming") return await incomingResponse(res, incomingId!, deadline, preparationSignal) as T;
         if (path === "/profile" || path === "/messages/send" || path === ep.userinfo) return JSON.parse(await readResponseText(res, 65_536, deadline.signal)) as T;
         return await untilAborted(res.json(), deadline.signal) as T;
       } catch (e) {
+        if (e instanceof IncomingProcessingError || e instanceof ResponseBodyLimitError) throw processingError(e);
         // The request was accepted; a send whose answer can't be read has an unknown outcome (no resend).
         if (sending) throw invalidResponse(true);
         if (!deadline.signal.aborted && !isFetchNetworkFailure(e)) throw invalidResponse();
@@ -328,7 +457,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
 
   async function fetchFull(ids: string[], sink: SyncSink, captured?: (id: string) => void): Promise<Set<string>> {
     const gone = new Set<string>();
-    let batch: IncomingMessage[] = [];
+    let batch: { message: IncomingMessage; release?: () => void }[] = [];
     let batchBytes = 0;
     let admission = Promise.resolve();
     let admissionBusy = false;
@@ -338,14 +467,19 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       const ready = batch;
       batch = [];
       batchBytes = 0;
-      await sink.ingest(ready);
-      for (const message of ready) captured?.(message.providerMsgId!);
+      try {
+        await sink.ingest(ready.map((entry) => entry.message));
+        for (const { message } of ready) captured?.(message.providerMsgId!);
+      } finally { for (const entry of ready) entry.release?.(); }
     };
-    const enqueue = (message: IncomingMessage) => {
+    const enqueue = (message: IncomingMessage, force = false) => {
       sink.signal.throwIfAborted();
-      const bytes = (message.bodyText?.length ?? 0) * 2 + (message.bodyHtml?.length ?? 0) * 2 + (message.attachments ?? []).reduce((n, part) => n + (part.bytes?.byteLength ?? 0), 0);
-      if (!admissionBusy && batch.length < 49 && batchBytes + bytes < 4 * 1024 * 1024) {
-        batch.push(message);
+      const bytes = retainedMessageBytes(message);
+      let credit = !force ? ctx.incoming?.retainCompleted?.(bytes) : undefined;
+      // Credit refusal flushes this producer instead of waiting on another account's partial batch.
+      force ||= Boolean(ctx.incoming?.retainCompleted && !credit);
+      if (!force && !admissionBusy && batch.length < 49 && batchBytes + bytes < 4 * 1024 * 1024) {
+        batch.push({ message, release: credit });
         batchBytes += bytes;
         return;
       }
@@ -353,11 +487,12 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       admissionBusy = true;
       admission = admission.then(async () => {
         sink.signal.throwIfAborted();
-        if (batchBytes + bytes > 4 * 1024 * 1024) await flush();
-        batch.push(message);
+        if (force || batchBytes + bytes > 4 * 1024 * 1024) await flush();
+        batch.push({ message, release: credit });
+        credit = undefined;
         batchBytes += bytes;
-        if (batch.length >= 50 || batchBytes >= 4 * 1024 * 1024) await flush();
-      });
+        if (force || batch.length >= 50 || batchBytes >= 4 * 1024 * 1024) await flush();
+      }).finally(() => { credit?.(); });
       const queued = admission;
       void queued.then(() => { if (admission === queued) admissionBusy = false; }, () => {});
       return admission;
@@ -379,29 +514,21 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
           if (failure) throw failure.error;
         };
         let release: (() => void) | undefined;
+        let resource: IncomingResource | undefined;
         try {
           release = ctx.incoming ? await ctx.incoming.acquire(accountId, pass.signal, reset) : undefined;
           check();
           let m: GmailMessage;
           try {
-            m = readMessage(await api<unknown>(`/messages/${id}?format=raw`, { signal: sink.signal, readReset: reset, preparationSignal: pass.signal }), id, true);
+            resource = await api<IncomingResource>(`/messages/${id}?format=raw`, { signal: sink.signal, readReset: reset, preparationSignal: pass.signal, responseMode: "incoming", incomingId: id });
+            m = resource.metadata;
           } catch (error) {
             // Enumeration isn't a snapshot: a message may disappear before its download.
             if (error instanceof GmailApiError && error.status === 404) { gone.add(id); return; }
             throw error;
           }
           check();
-          await validateRaw(m.raw!);
-          const raw = m.raw!;
-          const padding = raw.endsWith("==") ? 2 : raw.endsWith("=") ? 1 : 0;
-          const oversized = Math.floor((raw.length - padding) * 3 / 4) > MAX_INCOMING_MIME_BYTES;
-          let bytes: Uint8Array;
-          try {
-            bytes = fromBase64url(oversized ? raw.slice(0, Math.ceil((65536 + 4) / 3) * 4) : raw);
-          } catch {
-            throw invalidResponse();
-          }
-          const parsed = oversized ? await parseRawHeaders(bytes, "size") : await parseRaw(bytes);
+          const parsed = resource.parsed;
           check();
           const labels = m.labelIds ?? [];
           const st = labelState(labels);
@@ -437,13 +564,13 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
             gmailLabels: labels,
             size: m.sizeEstimate ?? 0,
             attachments: parsed.captureUnavailable ? undefined : parsed.attachments,
-          });
+          }, resource.promoted);
           if (admitted) await admitted;
         } catch (error) {
           failure ??= { error: sink.signal.aborted ? sink.signal.reason : reset.aborted ? new ProviderError(L("errors.gmail.requestOffline"), true) : error };
           pass.abort();
           throw failure.error;
-        } finally { release?.(); }
+        } finally { resource?.release(); release?.(); }
       });
     } catch (error) {
       failure ??= { error };
@@ -463,6 +590,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     } catch (error) {
       failure ??= { error };
     }
+    for (const entry of batch) entry.release?.();
     if (failure) throw failure.error;
     return gone;
   }

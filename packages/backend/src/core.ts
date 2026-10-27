@@ -5,7 +5,7 @@ import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/di
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import { AWAITING_AUTH, type ClassifierInput, type IncomingMessage, type MailStore, type OpRow, type Platform, type ProviderStore } from "@terno/store";
-import { IncomingReads, ProviderAuthError, ProviderError, RequestNotDispatchedError, type IncomingProcessor, type MailProvider, type ProviderRegistry, type SendPayload, type SyncSink } from "@terno/mail/portable";
+import { IncomingPipeline, ProviderAuthError, ProviderError, RequestNotDispatchedError, type IncomingProcessor, type MailProvider, type ProviderRegistry, type SendPayload, type SyncSink } from "@terno/mail/portable";
 import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_PHRASE_CAPS, WEB_AUTOCOMPLETE_PEAK, WEB_CONTACT_CAPS, WEB_PHRASE_CAPS } from "@terno/store/autocomplete";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { Connectivity, type ConnectivityOptions, type NetReason } from "./connectivity";
@@ -143,7 +143,7 @@ export class BackendCore {
   readonly store: MailStore;
   readonly server: RpcServer;
   readonly options: Required<Pick<BackendCoreOptions, "now" | "sliceBudgetMs" | "syncIntervalMs">> & BackendCoreOptions;
-  private readonly incoming = new IncomingReads();
+  private readonly incoming: IncomingPipeline;
   private readonly providers = new Map<number, Promise<MailProvider | null>>();
   private readonly lifetimes = new Map<number, AccountLifetime>();
   private readonly syncing = new Map<number, Promise<void>>();
@@ -200,6 +200,7 @@ export class BackendCore {
     // explicit `undefined` must not clobber defaults
     const defined = Object.fromEntries(Object.entries(options).filter(([, v]) => v !== undefined)) as BackendCoreOptions;
     this.options = { now: Date.now, sliceBudgetMs: 8, syncIntervalMs: 120_000, ...defined };
+    this.incoming = new IncomingPipeline(options.incomingProcessor);
     this.platform = options.platform;
     this.store = options.store;
     this.net = createNetworkPolicy({ localMode: () => readLocalMode(this.store), siteIcons: () => readSiteIcons(this.store), lookup: options.lookup });
@@ -459,6 +460,7 @@ export class BackendCore {
     this.abort.abort();
     this.incoming.close();
     await this.options.incomingProcessor?.close();
+    await this.options.incomingProcessor?.whenIdle();
     this.connectivity.stop();
     const accountsClosed = Promise.allSettled([...this.lifetimes.values()].map((life) => this.dropAccount(life.id, { remove: life.removing })));
     if (this.syncTimer) clearInterval(this.syncTimer);
@@ -906,7 +908,11 @@ export class BackendCore {
       if (!this.current(life) || !stamp) return null;
       const provider = this.options.providers.create({
         store: this.providerStore(life), account, config: cfg.config,
-        incoming: { acquire: (id, signal, reset) => this.incoming.acquire(id, signal, reset) },
+        incoming: {
+          acquire: (id, signal, reset) => this.incoming.acquire(id, signal, reset),
+          promote: (id, signal, reset) => this.promote(life, id, signal, reset),
+          retainCompleted: (bytes) => { this.assertCurrent(life); return this.incoming.retainCompleted(bytes); },
+        },
         incomingProcessor: this.processing(life),
         getSecret: (name) => this.accountRead(life, () =>
           this.getSecret(`account:${accountId}:${name}`).catch((error: unknown) => {
@@ -951,10 +957,21 @@ export class BackendCore {
     if (!processor) return;
     return { run: async (input, signal) => {
       this.assertCurrent(life);
-      const result = await processor.run(input, AbortSignal.any([signal, life.abort.signal]));
+      const result = await processor.run(input, AbortSignal.any([signal, life.abort.signal, this.abort.signal]));
       this.assertCurrent(life);
       return result;
     } };
+  }
+
+  private async promote(life: AccountLifetime, accountId: number, signal: AbortSignal, reset?: AbortSignal): Promise<() => void> {
+    this.assertCurrent(life);
+    const stop = AbortSignal.any(reset ? [signal, reset, life.abort.signal, this.abort.signal] : [signal, life.abort.signal, this.abort.signal]);
+    const release = await this.incoming.promote(accountId, stop);
+    try {
+      stop.throwIfAborted();
+      this.assertCurrent(life);
+    } catch (error) { release(); throw error; }
+    return release;
   }
 
   startAccount(account: Account): void {

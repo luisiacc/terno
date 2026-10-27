@@ -1,5 +1,6 @@
-import { IncomingReads } from "./incoming";
-import { describe, expect, it, vi } from "vitest";
+import { IncomingPipeline } from "./incoming";
+import { createNodeIncomingProcessor } from "../../backend/src/incoming-worker";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { IncomingMessage } from "@terno/store";
 import { MAX_INCOMING_MIME_BYTES } from "@terno/core";
 import { createGmailApiProvider, toBase64url } from "./gmail-api";
@@ -15,7 +16,22 @@ function oversizedRaw() {
   return prefix + "A".repeat(Math.ceil((MAX_INCOMING_MIME_BYTES + 3) / 3) * 4 - prefix.length);
 }
 
+const close: (() => Promise<void>)[] = [];
+afterEach(async () => { for (const cleanup of close.splice(0)) await cleanup(); });
+
+function wireResponse(value: unknown): Response {
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  let offset = 0;
+  return new Response(new ReadableStream<Uint8Array>({ pull(controller) {
+    if (offset === bytes.length) return controller.close();
+    const end = Math.min(bytes.length, offset + 65536);
+    controller.enqueue(bytes.slice(offset, end)); offset = end;
+  } }, { highWaterMark: 0 }));
+}
+
 function mailbox(options: { cursor?: unknown; cached?: boolean | number; respond?: (url: URL) => unknown | Promise<unknown>; onIngest?: () => void } = {}) {
+  const processor = createNodeIncomingProcessor();
+  const incoming = new IncomingPipeline(processor);
   let cursor: unknown = options.cursor ?? null;
   const checkpoints: unknown[] = [];
   const ingested: IncomingMessage[] = [];
@@ -25,7 +41,7 @@ function mailbox(options: { cursor?: unknown; cached?: boolean | number; respond
   const methods: string[] = [];
   const cached = Array.from({ length: options.cached === true ? 1 : options.cached || 0 }, (_, i) => ({ id: i + 1, providerMsgId: `m${i + 1}` }));
   const ctx = {
-    incoming: new IncomingReads(),
+    incoming, incomingProcessor: processor,
     account: { id: 1, email: "me@example.com" }, config: {},
     store: {
       messageByProviderId: async (id: string) => cached.find((m) => m.providerMsgId === id),
@@ -42,7 +58,7 @@ function mailbox(options: { cursor?: unknown; cached?: boolean | number; respond
       if (requests.length > 20) throw new Error("unexpected continuation loop");
       const value = await options.respond?.(url);
       if (value instanceof Response) return value;
-      if (value !== undefined) return Response.json(value);
+      if (value !== undefined) return wireResponse(value);
       if (url.pathname.endsWith("/profile")) return Response.json({ emailAddress: "me@example.com", historyId: "10" });
       if (url.pathname.endsWith("/history")) return Response.json({ historyId: "11", history: [{ labelsAdded: [{ message: { id: "m1" } }] }] });
       if (url.pathname.endsWith("/messages")) return Response.json({ messages: [{ id: "m1" }] });
@@ -62,6 +78,7 @@ function mailbox(options: { cursor?: unknown; cached?: boolean | number; respond
     signal: new AbortController().signal, windowStart: 0,
   };
   const provider = createGmailApiProvider(ctx, { tokens: { get: async () => "token", invalidate() {} }, buildRaw: async () => new Uint8Array([1]) });
+  close.push(async () => { await provider.close(); await processor.close(); incoming.close(); });
   return { provider, sync: () => provider.sync(sink), checkpoints, ingested, flags, removed, requests, methods };
 }
 
@@ -257,12 +274,8 @@ describe("Gmail successful response validation", () => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const box = mailbox({ respond: (url) => {
       if (url.searchParams.get("format") !== "raw") return;
-      const response = new Response();
-      Object.defineProperty(response, "json", { value: async () => {
-        timer = setTimeout(() => { responsive = true; }, 0);
-        return { ...message, raw: source };
-      } });
-      return response;
+      timer = setTimeout(() => { responsive = true; }, 0);
+      return wireResponse({ ...message, raw: source });
     }, onIngest: () => expect(responsive).toBe(true) });
     try {
       await box.sync();
@@ -277,9 +290,7 @@ describe("Gmail successful response validation", () => {
     const box = mailbox({ respond: (url) => {
       if (url.pathname.endsWith("/messages")) return { messages: [{ id: "m1" }, { id: "large" }] };
       if (url.pathname.endsWith("/messages/large")) {
-        const response = new Response();
-        Object.defineProperty(response, "json", { value: async () => ({ id: "large", threadId: "large-thread", raw: source, labelIds: ["INBOX"] }) });
-        return response;
+        return wireResponse({ id: "large", threadId: "large-thread", raw: source, labelIds: ["INBOX"] });
       }
     } });
     await box.sync();
@@ -293,9 +304,7 @@ describe("Gmail successful response validation", () => {
     const source = oversizedRaw() + "==";
     const box = mailbox({ respond: (url) => {
       if (url.searchParams.get("format") !== "raw") return;
-      const response = new Response();
-      Object.defineProperty(response, "json", { value: async () => ({ ...message, raw: source }) });
-      return response;
+      return wireResponse({ ...message, raw: source });
     } });
     await rejectedRead(box);
     expect(box.ingested).toEqual([]);
