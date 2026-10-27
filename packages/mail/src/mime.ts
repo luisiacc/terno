@@ -104,24 +104,6 @@ export function parseListId(value: string | null | undefined): string | null {
   return (m ? m[1]! : value).trim().toLowerCase() || null;
 }
 
-/** Plain-text fallback for HTML-only mail (used for search, snippets and filters). */
-export function htmlToText(html: string): string {
-  return html
-    .replace(/<(script|style|head)[\s\S]*?<\/\1>/gi, " ")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/(p|div|li|tr|h[1-6]|table)>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n\s*\n\s*\n+/g, "\n\n")
-    .trim();
-}
-
 async function tooLarge(raw: Uint8Array | string): Promise<boolean> {
   if (typeof raw !== "string") return raw.byteLength > MAX_INCOMING_MIME_BYTES;
   if (raw.length > MAX_INCOMING_MIME_BYTES) return true;
@@ -165,7 +147,7 @@ export async function parseRaw(raw: Uint8Array | string, options: { captureUnava
     listId: parseListId(header("list-id")),
     bulk: bulkHeaders({ listUnsubscribe: header("list-unsubscribe"), precedence: header("precedence"), autoSubmitted: header("auto-submitted") }),
     ...(unavailable ? { captureUnavailable: "size" as const } : {}),
-    text: unavailable ? null : email.text ?? (email.html ? htmlToText(email.html) : null),
+    text: unavailable ? null : email.text ?? (email.html ? await (await import("./visible-mail-text")).htmlToText(email.html) : null),
     html: unavailable ? null : email.html ?? null,
     attachments: (unavailable ? [] : email.attachments).map((a) => {
       const bytes = typeof a.content === "string" ? new TextEncoder().encode(a.content) : new Uint8Array(a.content);

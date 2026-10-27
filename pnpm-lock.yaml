@@ -572,16 +572,25 @@ importers:
       '@terno/store':
         specifier: workspace:*
         version: link:../store
+      css-tree:
+        specifier: 3.2.1
+        version: 3.2.1
       imapflow:
         specifier: ^2.8.0
         version: 2.8.0
       nodemailer:
         specifier: ^10.2.0
         version: 10.2.0
+      parse5:
+        specifier: 8.0.1
+        version: 8.0.1
       postal-mime:
         specifier: ^4.1.3
         version: 4.1.3
     devDependencies:
+      '@types/css-tree':
+        specifier: 3.2.0
+        version: 3.2.0
       '@types/node':
         specifier: 'catalog:'
         version: 24.19.2
@@ -2071,6 +2080,9 @@ packages:
 
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
+
+  '@types/css-tree@3.2.0':
+    resolution: {integrity: sha512-J5KXmk6BFIepOT7280FdFyNs4c5fh0Uee0otjKEvzchrRs38Ii9qminqc4ds0L19X8Zd/rT+brR9jkBthygjWw==}
 
   '@types/debug@4.1.13':
     resolution: {integrity: sha512-KSVgmQmzMwPlmtljOomayoR89W4FynCAi3E8PPs7vmDVPe84hT+vGPKkJfThkmXs0x0jAaa9U8uW8bbfyS2fWw==}
@@ -5959,6 +5971,8 @@ snapshots:
     dependencies:
       '@types/deep-eql': 4.0.2
       assertion-error: 2.0.1
+
+  '@types/css-tree@3.2.0': {}
 
   '@types/debug@4.1.13':
     dependencies:
