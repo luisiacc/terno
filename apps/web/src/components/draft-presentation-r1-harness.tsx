@@ -3,7 +3,7 @@ import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { vi } from "vitest";
 import type { Account, ThreadDetail } from "@terno/core";
-export const gate = vi.hoisted(() => ({ load: vi.fn(), call: vi.fn() }));
+const gate = vi.hoisted(() => ({ load: vi.fn(), call: vi.fn() }));
 vi.mock("~/rpc/connection", () => ({ client: { call: gate.call } }));
 vi.mock("~/state/threads", async (original) => ({ ...await original<typeof import("~/state/threads")>(), loadThread: gate.load }));
 vi.mock("./sidebar", () => ({ Sidebar: () => null }));
@@ -43,3 +43,5 @@ export async function setup(layout: "list" | "split", reader = false) {
   const cleanup = async () => { await act(async () => root.unmount()); for (const id of Object.keys(drafts.useDrafts.getState().drafts)) drafts.forgetDraft(id); useThreads.setState({ details: new Map(), gone: new Set() }); app.setApp({ compose: null, fatal: null }); host.remove(); other.remove(); raf.mockRestore(); cancel.mockRestore(); gate.call.mockReset(); gate.load.mockReset(); };
   return { App, drafts, app, useThreads, detail, key, host, other, root, flush, cleanup };
 }
+
+export { gate };
