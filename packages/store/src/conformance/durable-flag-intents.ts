@@ -141,6 +141,50 @@ export function defineDurableFlagIntentConformance(name: string, harness: StoreH
       expect((await store.debug.snapshot()).messages[0]!.isRead).toBe(true);
     });
 
+    it.each(["success", "failure"] as const)("representable Undo tracks each field's final step through final archive %s", async (outcome) => {
+      let store = await harness.open(); stores.push(store);
+      const [a] = await withAccounts(store, 1);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "undo-place", inInbox: false })]);
+      await observe(store, a!);
+      const trashed = await store.threads.act({ threadIds: [await threadOf(store, "undo-place")], action: "trash", signal: null, now: 1 });
+      await store.ops.claimReady(2, 20);
+      await store.ops.complete(trashed.opIds[0]!, undefined, 3);
+      const restored = await store.threads.restore({ messages: trashed.before, now: 4 });
+      const [first] = await store.ops.claimReady(5, 20);
+      expect(first!.kind).toBe("moveToInbox");
+      await store.ops.complete(first!.id, undefined, 6);
+      const intermediate = (await observe(store, a!))!;
+      const id = (await store.debug.snapshot()).messages[0]!.id;
+      await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "undo-place", flags: { inInbox: true, isTrash: false, isSpam: false, isStarred: true } }], intermediate);
+      expect((await store.debug.snapshot()).messages[0]).toMatchObject({ inInbox: false, isTrash: false, isSpam: false, isStarred: true });
+      store = await harness.reopen(store); stores.push(store);
+      const [last] = await store.ops.claimReady(7, 20);
+      expect(last!.id).toBe(restored.opIds[1]);
+      expect(last!.kind).toBe("archive");
+      if (outcome === "success") await store.ops.complete(last!.id, undefined, 8);
+      else await store.ops.fail(last!.id, "synthetic archive refusal", false, 8);
+      await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "undo-place", flags: { inInbox: true } }], intermediate);
+      expect((await store.debug.snapshot()).messages[0]!.inInbox).toBe(false);
+      const fresh = (await observe(store, a!))!;
+      await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "undo-place", flags: { inInbox: true, isTrash: false, isSpam: false } }], fresh);
+      expect((await store.debug.snapshot()).messages[0]).toMatchObject({ inInbox: true, isTrash: false, isSpam: false });
+    });
+
+    it("uncertain intermediate Undo steps cannot replay over their final location intent", async () => {
+      const store = await harness.open(); stores.push(store);
+      const [a] = await withAccounts(store, 1);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "undo-uncertain", inInbox: false })]);
+      await observe(store, a!);
+      const trashed = await store.threads.act({ threadIds: [await threadOf(store, "undo-uncertain")], action: "trash", signal: null, now: 1 });
+      await store.ops.claimReady(2, 20);
+      await store.ops.complete(trashed.opIds[0]!, undefined, 3);
+      await store.threads.restore({ messages: trashed.before, now: 4 });
+      const [first] = await store.ops.claimReady(5, 20);
+      await store.ops.markUnknown(first!.id, "synthetic ambiguous move", 6);
+      await expect(store.ops.resolveUnknown(first!.id, "retry", 7)).rejects.toMatchObject({ code: "STALE" });
+      expect((await store.debug.snapshot()).messages[0]).toMatchObject({ inInbox: false, isTrash: false, isSpam: false });
+    });
+
     it("terminal flag failures retain a drainable snapshot obligation through reopen", async () => {
       let store = await harness.open(); stores.push(store);
       const [a] = await withAccounts(store, 1);

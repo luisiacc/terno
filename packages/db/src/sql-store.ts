@@ -314,8 +314,10 @@ export class SqlMailStore implements MailStore {
         const flagBefore = flagEpochs(sqlFlags(this.db));
         const r = restoreMessages(this.db, messages);
         const opIds: string[] = [];
+        const versions = new Map<number, number>();
         for (const op of r.ops) {
-          const id = enqueueOp(this.db, { accountId: op.accountId, kind: op.kind, target: { messageIds: op.messageIds } }, now);
+          if (!versions.has(op.accountId) && sqlFlags(this.db).clock(op.accountId)) versions.set(op.accountId, flagTick(sqlFlags(this.db), op.accountId));
+          const id = enqueueOp(this.db, { accountId: op.accountId, kind: op.kind, target: { messageIds: op.messageIds } }, now, versions.get(op.accountId));
           if (id) opIds.push(id);
         }
         return { threadIds: r.threadIds, opIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };

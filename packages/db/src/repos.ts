@@ -330,11 +330,12 @@ export function enqueueOp(
   db: Db,
   op: { accountId: number; kind: string; target: { messageIds?: number[] } & Record<string, unknown>; payload?: unknown },
   now = Date.now(),
+  intentVersion?: number,
 ): string | null {
   const targetJson = JSON.stringify(op.target);
   const group = GROUP[op.kind];
   return db.tx(() => {
-    const flagVersion = localFlagIntent(sqlFlags(db), op.accountId, op.target.messageIds ?? [], op.kind);
+    const flagVersion = localFlagIntent(sqlFlags(db), op.accountId, op.target.messageIds ?? [], op.kind, intentVersion);
     const opposite = OPPOSITE[op.kind];
     if (opposite) {
       for (const older of db.all<OpRow>("SELECT * FROM ops WHERE account_id=? AND kind=? AND state='queued' AND attempts=0 AND target_json=?", op.accountId, opposite, targetJson)) {

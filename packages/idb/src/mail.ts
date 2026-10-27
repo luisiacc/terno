@@ -1172,12 +1172,12 @@ function dropTargets(c: Ctx, opId: string, messageIds?: Iterable<number>): void 
   else for (const m of messageIds) targets.delete(opId, m);
 }
 
-export function enqueueOp(c: Ctx, op: { accountId: number; kind: string; target: { messageIds?: number[] } & Record<string, unknown>; payload?: unknown }, now: number): string | null {
+export function enqueueOp(c: Ctx, op: { accountId: number; kind: string; target: { messageIds?: number[] } & Record<string, unknown>; payload?: unknown }, now: number, intentVersion?: number): string | null {
   const ops = T(c, "ops");
   const targetJson = JSON.stringify(op.target);
   const group = GROUP[op.kind];
   return c.db.tx(() => {
-    const flagVersion = localFlagIntent(idbFlags(c), op.accountId, op.target.messageIds ?? [], op.kind);
+    const flagVersion = localFlagIntent(idbFlags(c), op.accountId, op.target.messageIds ?? [], op.kind, intentVersion);
     const opposite = OPPOSITE[op.kind];
     if (opposite) {
       const cancel = ops.by("fk_account_id", op.accountId).filter((o) => o.kind === opposite && o.state === "queued" && o.attempts === 0 && o.target_json === targetJson);

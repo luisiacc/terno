@@ -179,7 +179,7 @@ export function rearmFlagEffects(repo: FlagRepository, op: FlagOp): number[] | n
   const eligible = new Set<number>(), superseded = new Set<number>();
   for (const effect of effects) {
     const row = repo.intent(effect.message_id, effect.field);
-    if (!row || row.intent_version !== (effect.intent_version ?? 0)) superseded.add(effect.message_id);
+    if (!row || row.intent_version !== (effect.intent_version ?? 0) || row.desired !== effect.value) superseded.add(effect.message_id);
     else eligible.add(effect.message_id);
   }
   if (superseded.size && ["archive", "trash", "spam", "notSpam", "moveToInbox"].includes(op.kind)) return null;

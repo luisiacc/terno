@@ -755,8 +755,10 @@ export class IdbMailStore implements MailStore {
         const flagBefore = flagEpochs(idbFlags(this.c));
         const r = restoreMessages(this.c, messages);
         const opIds: string[] = [];
+        const versions = new Map<number, number>();
         for (const op of r.ops) {
-          const id = enqueueOp(this.c, { accountId: op.accountId, kind: op.kind, target: { messageIds: op.messageIds } }, now);
+          if (!versions.has(op.accountId) && idbFlags(this.c).clock(op.accountId)) versions.set(op.accountId, flagTick(idbFlags(this.c), op.accountId));
+          const id = enqueueOp(this.c, { accountId: op.accountId, kind: op.kind, target: { messageIds: op.messageIds } }, now, versions.get(op.accountId));
           if (id) opIds.push(id);
         }
         return { threadIds: r.threadIds, opIds, ...flagReconciliation(idbFlags(this.c), flagBefore) };
