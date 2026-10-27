@@ -73,3 +73,12 @@ it("excludes title metadata even when malformed mail places it inside the body",
 for (const fixture of [...visibleReviewCases, ...visiblePolicyCases]) it(fixture.name, async () => {
   expect((await parseRaw(visibleSource(fixture.html))).text).toBe(fixture.text);
 });
+
+for (const [name, html, expected] of [
+  ["visibility block descendants can restore text", '<div style="visibility:hidden">secret<span style="visibility:visible">Shown</span></div>', "Shown"],
+  ["visibility atomic descendants can restore text", '<span style="visibility:hidden;display:inline-block"><div style="visibility:visible">Shown</div></span>', "Shown"],
+  ["opacity block descendants cannot restore text", '<div style="opacity:0">secret<span style="opacity:1;visibility:visible">secret</span></div><p>Shown</p>', "Shown"],
+  ["clipped block descendants cannot restore text", '<div style="max-height:0;overflow:hidden">secret<span style="visibility:visible">secret</span></div><p>Shown</p>', "Shown"],
+] as const) it(`R3-F2 ${name}`, async () => {
+  expect((await parseRaw(visibleSource(html))).text).toBe(expected);
+});

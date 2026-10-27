@@ -1099,7 +1099,7 @@ visiblePolicyCases.push(
   }
 );
 
-visibleReviewCases.push(...[
+visibleReviewCases.push(
   {
     "name": "R3-F1 rp default content remains hidden",
     "html": "<p>Useful</p><rp>phantomneedle</rp>",
@@ -1204,4 +1204,631 @@ visibleReviewCases.push(...[
     "query": "visiblephrase",
     "matches": true
   }
-]);
+);
+
+visibleReviewCases.push(
+  {
+    "name": "R3-F2 opacity zero block preserves phrase",
+    "html": "<span>Visible</span><div style=\"opacity:0\">phantomneedle</div><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 opacity zero block does not invent joined word",
+    "html": "<span>Visible</span><div style=\"opacity:0\">phantomneedle</div><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 zero height clipped block preserves phrase",
+    "html": "<span>Visible</span><div style=\"max-height:0;overflow:hidden\">phantomneedle</div><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 zero height clipped block does not invent joined word",
+    "html": "<span>Visible</span><div style=\"max-height:0;overflow:hidden\">phantomneedle</div><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity zero inline with descendant block preserves phrase",
+    "html": "<span>Visible</span><span style=\"opacity:0\"><div>phantomneedle</div></span><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 opacity zero inline with descendant block does not invent joined word",
+    "html": "<span>Visible</span><span style=\"opacity:0\"><div>phantomneedle</div></span><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 display none remains boundary free",
+    "html": "<span>Visible</span><div style=\"display:none\">phantomneedle</div><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 inline opacity remains boundary free",
+    "html": "<span>Visible</span><span style=\"opacity:0\">phantomneedle</span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 visibility hidden block preserves phrase",
+    "html": "<span>Visible</span><div style=\"visibility:hidden\">phantomneedle</div><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 opacity block visible phrase",
+    "html": "<span>Visible</span><div style=\"opacity:0\">phantomneedle</div><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 opacity block visiblephrase",
+    "html": "<span>Visible</span><div style=\"opacity:0\">phantomneedle</div><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity block phantomneedle",
+    "html": "<span>Visible</span><div style=\"opacity:0\">phantomneedle</div><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "phantomneedle",
+    "query": "phantomneedle",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 clipped block visible phrase",
+    "html": "<span>Visible</span><div style=\"max-height:0;overflow:hidden\">phantomneedle</div><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 clipped block visiblephrase",
+    "html": "<span>Visible</span><div style=\"max-height:0;overflow:hidden\">phantomneedle</div><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 clipped block phantomneedle",
+    "html": "<span>Visible</span><div style=\"max-height:0;overflow:hidden\">phantomneedle</div><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "phantomneedle",
+    "query": "phantomneedle",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity inline descendant block visible phrase",
+    "html": "<span>Visible</span><span style=\"opacity:0\"><div>phantomneedle</div></span><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 opacity inline descendant block visiblephrase",
+    "html": "<span>Visible</span><span style=\"opacity:0\"><div>phantomneedle</div></span><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity inline descendant block phantomneedle",
+    "html": "<span>Visible</span><span style=\"opacity:0\"><div>phantomneedle</div></span><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "phantomneedle",
+    "query": "phantomneedle",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity inline descendant BR visible phrase",
+    "html": "<span>Visible</span><span style=\"opacity:0\">phantom<br>needle</span><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 opacity inline descendant BR visiblephrase",
+    "html": "<span>Visible</span><span style=\"opacity:0\">phantom<br>needle</span><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity inline descendant BR phantomneedle",
+    "html": "<span>Visible</span><span style=\"opacity:0\">phantom<br>needle</span><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "phantomneedle",
+    "query": "phantomneedle",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity inline unwrapped descendant block visible phrase",
+    "html": "<span>Visible</span><span style=\"opacity:0\"><unknown style=\"display:none\"><div>phantomneedle</div></unknown></span><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 opacity inline unwrapped descendant block visiblephrase",
+    "html": "<span>Visible</span><span style=\"opacity:0\"><unknown style=\"display:none\"><div>phantomneedle</div></unknown></span><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity inline unwrapped descendant block phantomneedle",
+    "html": "<span>Visible</span><span style=\"opacity:0\"><unknown style=\"display:none\"><div>phantomneedle</div></unknown></span><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "phantomneedle",
+    "query": "phantomneedle",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity inline unwrapped atomic descendant visible phrase",
+    "html": "<span>Visible</span><span style=\"opacity:0\"><unknown><span style=\"display:inline-block\"><div>phantomneedle</div></span></unknown></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity inline unwrapped atomic descendant visiblephrase",
+    "html": "<span>Visible</span><span style=\"opacity:0\"><unknown><span style=\"display:inline-block\"><div>phantomneedle</div></span></unknown></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 opacity inline unwrapped atomic descendant phantomneedle",
+    "html": "<span>Visible</span><span style=\"opacity:0\"><unknown><span style=\"display:inline-block\"><div>phantomneedle</div></span></unknown></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "phantomneedle",
+    "query": "phantomneedle",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity atomic inline block containment visible phrase",
+    "html": "<span>Visible</span><span style=\"opacity:0;display:inline-block\"><div>phantomneedle</div><br></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity atomic inline block containment visiblephrase",
+    "html": "<span>Visible</span><span style=\"opacity:0;display:inline-block\"><div>phantomneedle</div><br></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 opacity atomic inline block containment phantomneedle",
+    "html": "<span>Visible</span><span style=\"opacity:0;display:inline-block\"><div>phantomneedle</div><br></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "phantomneedle",
+    "query": "phantomneedle",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 clipped atomic inline containment visible phrase",
+    "html": "<span>Visible</span><span style=\"max-height:0;overflow:hidden;display:inline-block\"><div>phantomneedle</div></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 clipped atomic inline containment visiblephrase",
+    "html": "<span>Visible</span><span style=\"max-height:0;overflow:hidden;display:inline-block\"><div>phantomneedle</div></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 clipped atomic inline containment phantomneedle",
+    "html": "<span>Visible</span><span style=\"max-height:0;overflow:hidden;display:inline-block\"><div>phantomneedle</div></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "phantomneedle",
+    "query": "phantomneedle",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity atomic inline flex containment visible phrase",
+    "html": "<span>Visible</span><span style=\"opacity:0;display:inline-flex\"><div>phantomneedle</div></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity atomic inline flex containment visiblephrase",
+    "html": "<span>Visible</span><span style=\"opacity:0;display:inline-flex\"><div>phantomneedle</div></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 opacity atomic inline flex containment phantomneedle",
+    "html": "<span>Visible</span><span style=\"opacity:0;display:inline-flex\"><div>phantomneedle</div></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "phantomneedle",
+    "query": "phantomneedle",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity atomic inline grid containment visible phrase",
+    "html": "<span>Visible</span><span style=\"opacity:0;display:inline-grid\"><div>phantomneedle</div></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity atomic inline grid containment visiblephrase",
+    "html": "<span>Visible</span><span style=\"opacity:0;display:inline-grid\"><div>phantomneedle</div></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 opacity atomic inline grid containment phantomneedle",
+    "html": "<span>Visible</span><span style=\"opacity:0;display:inline-grid\"><div>phantomneedle</div></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "phantomneedle",
+    "query": "phantomneedle",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity atomic inline table containment visible phrase",
+    "html": "<span>Visible</span><span style=\"opacity:0;display:inline-table\"><div>phantomneedle</div></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity atomic inline table containment visiblephrase",
+    "html": "<span>Visible</span><span style=\"opacity:0;display:inline-table\"><div>phantomneedle</div></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 opacity atomic inline table containment phantomneedle",
+    "html": "<span>Visible</span><span style=\"opacity:0;display:inline-table\"><div>phantomneedle</div></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "phantomneedle",
+    "query": "phantomneedle",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity inline descendant removed block visible phrase",
+    "html": "<span>Visible</span><span style=\"opacity:0\"><div style=\"display:none\">phantomneedle</div></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity inline descendant removed block visiblephrase",
+    "html": "<span>Visible</span><span style=\"opacity:0\"><div style=\"display:none\">phantomneedle</div></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 opacity inline descendant removed block phantomneedle",
+    "html": "<span>Visible</span><span style=\"opacity:0\"><div style=\"display:none\">phantomneedle</div></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "phantomneedle",
+    "query": "phantomneedle",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity inline descendant ordinary hidden block visible phrase",
+    "html": "<span>Visible</span><span style=\"opacity:0\"><div hidden>phantomneedle</div></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity inline descendant ordinary hidden block visiblephrase",
+    "html": "<span>Visible</span><span style=\"opacity:0\"><div hidden>phantomneedle</div></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 opacity inline descendant ordinary hidden block phantomneedle",
+    "html": "<span>Visible</span><span style=\"opacity:0\"><div hidden>phantomneedle</div></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "phantomneedle",
+    "query": "phantomneedle",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity inline discarded wrapper display ignored visible phrase",
+    "html": "<span>Visible</span><span style=\"opacity:0\"><unknown style=\"display:block\">phantomneedle</unknown></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity inline discarded wrapper display ignored visiblephrase",
+    "html": "<span>Visible</span><span style=\"opacity:0\"><unknown style=\"display:block\">phantomneedle</unknown></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 opacity inline discarded wrapper display ignored phantomneedle",
+    "html": "<span>Visible</span><span style=\"opacity:0\"><unknown style=\"display:block\">phantomneedle</unknown></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "phantomneedle",
+    "query": "phantomneedle",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity inline visible descendant cannot restore text visible phrase",
+    "html": "<span>Visible</span><span style=\"opacity:0\"><div style=\"opacity:1;visibility:visible\">phantomneedle</div></span><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 opacity inline visible descendant cannot restore text visiblephrase",
+    "html": "<span>Visible</span><span style=\"opacity:0\"><div style=\"opacity:1;visibility:visible\">phantomneedle</div></span><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity inline visible descendant cannot restore text phantomneedle",
+    "html": "<span>Visible</span><span style=\"opacity:0\"><div style=\"opacity:1;visibility:visible\">phantomneedle</div></span><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "phantomneedle",
+    "query": "phantomneedle",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity inline contents descendant block visible phrase",
+    "html": "<span>Visible</span><span style=\"opacity:0\"><span style=\"display:contents\"><div>phantomneedle</div></span></span><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 opacity inline contents descendant block visiblephrase",
+    "html": "<span>Visible</span><span style=\"opacity:0\"><span style=\"display:contents\"><div>phantomneedle</div></span></span><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 opacity inline contents descendant block phantomneedle",
+    "html": "<span>Visible</span><span style=\"opacity:0\"><span style=\"display:contents\"><div>phantomneedle</div></span></span><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "phantomneedle",
+    "query": "phantomneedle",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 visibility hidden block visible phrase",
+    "html": "<span>Visible</span><div style=\"visibility:hidden\">phantomneedle</div><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 visibility hidden block visiblephrase",
+    "html": "<span>Visible</span><div style=\"visibility:hidden\">phantomneedle</div><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 visibility hidden block phantomneedle",
+    "html": "<span>Visible</span><div style=\"visibility:hidden\">phantomneedle</div><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "phantomneedle",
+    "query": "phantomneedle",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 display none block visible phrase",
+    "html": "<span>Visible</span><div style=\"display:none\">phantomneedle</div><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 display none block visiblephrase",
+    "html": "<span>Visible</span><div style=\"display:none\">phantomneedle</div><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 display none block phantomneedle",
+    "html": "<span>Visible</span><div style=\"display:none\">phantomneedle</div><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "phantomneedle",
+    "query": "phantomneedle",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 ordinary hidden block visible phrase",
+    "html": "<span>Visible</span><div hidden>phantomneedle</div><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 ordinary hidden block visiblephrase",
+    "html": "<span>Visible</span><div hidden>phantomneedle</div><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 ordinary hidden block phantomneedle",
+    "html": "<span>Visible</span><div hidden>phantomneedle</div><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "phantomneedle",
+    "query": "phantomneedle",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 until found block visible phrase",
+    "html": "<span>Visible</span><div hidden=\" Until-Found \" style=\"display:block\">phantomneedle</div><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 until found block visiblephrase",
+    "html": "<span>Visible</span><div hidden=\" Until-Found \" style=\"display:block\">phantomneedle</div><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 until found block phantomneedle",
+    "html": "<span>Visible</span><div hidden=\" Until-Found \" style=\"display:block\">phantomneedle</div><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "phantomneedle",
+    "query": "phantomneedle",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 until found inline descendant block visible phrase",
+    "html": "<span>Visible</span><span hidden=\"until-found\" style=\"display:inline\"><div>phantomneedle</div></span><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 until found inline descendant block visiblephrase",
+    "html": "<span>Visible</span><span hidden=\"until-found\" style=\"display:inline\"><div>phantomneedle</div></span><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 until found inline descendant block phantomneedle",
+    "html": "<span>Visible</span><span hidden=\"until-found\" style=\"display:inline\"><div>phantomneedle</div></span><span>phrase</span>",
+    "text": "Visible phrase",
+    "value": "phantomneedle",
+    "query": "phantomneedle",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 until found atomic containment visible phrase",
+    "html": "<span>Visible</span><span hidden=\"until-found\" style=\"display:inline-block\"><div>phantomneedle</div></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 until found atomic containment visiblephrase",
+    "html": "<span>Visible</span><span hidden=\"until-found\" style=\"display:inline-block\"><div>phantomneedle</div></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 until found atomic containment phantomneedle",
+    "html": "<span>Visible</span><span hidden=\"until-found\" style=\"display:inline-block\"><div>phantomneedle</div></span><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "phantomneedle",
+    "query": "phantomneedle",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 until found display none removed visible phrase",
+    "html": "<span>Visible</span><div hidden=\"until-found\" style=\"display:none\">phantomneedle</div><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visible phrase",
+    "query": "\"visible phrase\"",
+    "matches": false
+  },
+  {
+    "name": "R3-F2 until found display none removed visiblephrase",
+    "html": "<span>Visible</span><div hidden=\"until-found\" style=\"display:none\">phantomneedle</div><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "visiblephrase",
+    "query": "visiblephrase",
+    "matches": true
+  },
+  {
+    "name": "R3-F2 until found display none removed phantomneedle",
+    "html": "<span>Visible</span><div hidden=\"until-found\" style=\"display:none\">phantomneedle</div><span>phrase</span>",
+    "text": "Visiblephrase",
+    "value": "phantomneedle",
+    "query": "phantomneedle",
+    "matches": false
+  }
+);

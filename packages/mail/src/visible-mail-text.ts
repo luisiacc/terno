@@ -11,6 +11,7 @@ const DROP_CONTENT = new Set(["head", "script", "style", "template", "plaintext"
 const DEFAULT_BLOCKS = new Set(["center", "dir", "menu", "hgroup", "search", "legend", "summary", "details", "dialog", "optgroup", "option", "address", "article", "aside", "blockquote", "caption", "dd", "div", "dl", "dt", "fieldset", "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "li", "main", "nav", "ol", "p", "pre", "section", "table", "tbody", "td", "th", "thead", "tr", "ul"]);
 const DISPLAYS = new Set(["none", "contents", "block", "inline", "inline-block", "flow-root", "list-item", "flex", "inline-flex", "grid", "inline-grid", "table", "inline-table", "table-row-group", "table-header-group", "table-footer-group", "table-row", "table-column-group", "table-column", "table-cell", "table-caption"]);
 const INLINE_DISPLAYS = new Set(["inline", "inline-block", "inline-flex", "inline-grid", "inline-table", "contents"]);
+const ATOMIC_INLINE = new Set(["inline-block", "inline-flex", "inline-grid", "inline-table"]);
 const HEIGHT_BOXES = new Set(["block", "flow-root", "list-item", "inline-block", "flex", "inline-flex", "grid", "inline-grid", "table-caption"]);
 const DEFAULT_DISPLAY = new Map([["rp", "none"], ["br", "inline"], ["title", "none"], ["slot", "contents"], ["button", "inline-block"], ["input", "inline-block"], ["marquee", "inline-block"], ["meter", "inline-block"], ["progress", "inline-block"], ["select", "inline-block"], ["textarea", "inline-block"], ["table", "table"], ["caption", "table-caption"], ["thead", "table-header-group"], ["tbody", "table-row-group"], ["tfoot", "table-footer-group"], ["tr", "table-row"], ["td", "table-cell"], ["th", "table-cell"], ["col", "table-column"], ["colgroup", "table-column-group"]]);
 // Chromium's retained legend rendering normalizes these authored values before box decisions.
@@ -102,7 +103,7 @@ export async function htmlToText(html: string): Promise<string> {
   await ready;
   const document = parse(html, { scriptingEnabled: false });
   const output: string[] = [];
-  const stack: { children: Html.ChildNode[]; index: number; invisible: boolean; block: boolean }[] = [{ children: document.childNodes, index: 0, invisible: false, block: false }];
+  const stack: { children: Html.ChildNode[]; index: number; invisible: boolean; suppressed: boolean; block: boolean }[] = [{ children: document.childNodes, index: 0, invisible: false, suppressed: false, block: false }];
   while (stack.length) {
     const frame = stack[stack.length - 1]!;
     const node = frame.children[frame.index++];
@@ -112,13 +113,13 @@ export async function htmlToText(html: string): Promise<string> {
       continue;
     }
     if (node.nodeName === "#text") {
-      if (!frame.invisible) output.push((node as Html.TextNode).value);
+      if (!frame.invisible && !frame.suppressed) output.push((node as Html.TextNode).value);
       continue;
     }
     if (!("tagName" in node)) continue;
     if (node.namespaceURI !== "http://www.w3.org/1999/xhtml" || DROP_CONTENT.has(node.tagName)) continue;
     if (!RETAINED.has(node.tagName)) {
-      if (node.childNodes.length) stack.push({ children: node.childNodes, index: 0, invisible: frame.invisible, block: false });
+      if (node.childNodes.length) stack.push({ children: node.childNodes, index: 0, invisible: frame.invisible, suppressed: frame.suppressed, block: false });
       continue;
     }
     const attrs = new Map(node.attrs.map((attr) => [attr.name, attr.value]));
@@ -129,12 +130,15 @@ export async function htmlToText(html: string): Promise<string> {
     const display = node.tagName === "legend" ? LEGEND_DISPLAY.get(specifiedDisplay) ?? specifiedDisplay : specifiedDisplay;
     const hidden = attrs.get("hidden")?.trim().toLowerCase();
     const overflow = verticalOverflow(style);
-    if (display === "none" || display === "table-column" || display === "table-column-group" || (attrs.has("hidden") && (!authoredDisplay || hidden === "until-found")) || (display !== "contents" && style.get("opacity")?.value === "0") || (HEIGHT_BOXES.has(display) && style.get("max-height")?.value === "0" && overflow !== "visible")) continue;
+    if (display === "none" || display === "table-column" || display === "table-column-group" || (attrs.has("hidden") && hidden !== "until-found" && !authoredDisplay)) continue;
+    const suppressed = frame.suppressed || hidden === "until-found" || (display !== "contents" && style.get("opacity")?.value === "0") || (HEIGHT_BOXES.has(display) && style.get("max-height")?.value === "0" && overflow !== "visible");
     const visibility = style.get("visibility")?.value;
     const invisible = visibility === "hidden" || visibility === "collapse" || (visibility !== "visible" && visibility !== "initial" && frame.invisible);
     const block = node.tagName === "br" || !INLINE_DISPLAYS.has(display);
     if (block) output.push(" ");
-    if (node.childNodes.length) stack.push({ children: node.childNodes, index: 0, invisible, block });
+    // Suppressed text still occupies known layout; atomic inline boxes contain child boundaries.
+    if (suppressed && (block || ATOMIC_INLINE.has(display))) continue;
+    if (node.childNodes.length) stack.push({ children: node.childNodes, index: 0, invisible, suppressed, block });
   }
   return output.join("").replace(/[\t\n\f\r \u00a0]+/g, " ").trim();
 }
