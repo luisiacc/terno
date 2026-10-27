@@ -1389,6 +1389,7 @@ It contains none of your mail, contacts, settings or keys.
   "errors.mail.processingComplex": "This message is too complex to read. Open it in your mail provider.",
   "errors.mail.processingTimedOut": "Reading this message took too long. Try syncing again or open it in your mail provider.",
   "errors.mail.processingUnavailable": "Couldn’t process this message. Restart Terno and try syncing again.",
+  "errors.mail.flagConnection": "This connection cannot safely refresh your local changes. Restore the original connection and try again.",
   "errors.gmail.invalidResponse": "Gmail returned an incomplete response.",
   "errors.gmail.requestFailed": "Gmail couldn’t complete the request ({status}). Try again or check this account’s access.",
   "errors.gmail.requestOffline": "Couldn’t reach Gmail. Check your connection and try again.",

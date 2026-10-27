@@ -4,7 +4,7 @@ import { decodeText, encodeText, messageOf, textRef, type Account, type AccountS
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
-import { AWAITING_AUTH, type ClassifierInput, type IncomingMessage, type MailStore, type OpRow, type Platform, type ProviderStore } from "@terno/store";
+import { AWAITING_AUTH, FlagObservationError, type FlagObservation, type ClassifierInput, type IncomingMessage, type MailStore, type OpRow, type Platform, type ProviderStore } from "@terno/store";
 import { IncomingPipeline, ProviderAuthError, ProviderError, RequestNotDispatchedError, type IncomingProcessor, type MailProvider, type ProviderRegistry, type SendPayload, type SyncSink } from "@terno/mail/portable";
 import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_PHRASE_CAPS, WEB_AUTOCOMPLETE_PEAK, WEB_CONTACT_CAPS, WEB_PHRASE_CAPS } from "@terno/store/autocomplete";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
@@ -22,6 +22,11 @@ import { readAutoCategorize, readComposeSuggestions, readGooglePhotos, readLocal
 import { IconService } from "./icons/service";
 import type { IconTransport } from "./icons/transport";
 import { BULK_SLICE, SliceSizer, type SliceBudget } from "./slicer";
+
+class FlagConnectionError extends ProviderError {
+  constructor() { super(L("errors.mail.flagConnection"), false); }
+  override get expected(): boolean { return true; }
+}
 
 export interface SecretCipher {
   encrypt(plain: string): Promise<Uint8Array>;
@@ -681,14 +686,14 @@ export class BackendCore {
    * Ingests in slices sized to ~sliceBudgetMs and yields between slices so
    * interactive RPCs (list, search, open) interleave with big imports.
    */
-  async ingestSliced(messages: IncomingMessage[], applyFilters = true, life?: AccountLifetime, onInserted?: (ids: number[]) => void): Promise<{ inserted: number[] }> {
+  async ingestSliced(messages: IncomingMessage[], applyFilters = true, life?: AccountLifetime, onInserted?: (ids: number[]) => void, observation?: FlagObservation): Promise<{ inserted: number[] }> {
     const inserted: number[] = [];
     await this.runSliced(messages, 50, async (chunk) => {
       // one store command per slice: messages, filter claims and actions with their ops, and
       // the categorizer's decisions commit together
       if (life) this.assertCurrent(life);
       const classifier = await this.classifier();
-      const write = () => this.store.sync.ingest(chunk, { applyFilters, now: this.now(), classifier });
+      const write = () => this.store.sync.ingest(chunk, { applyFilters, now: this.now(), classifier, observation });
       const r = await (life ? this.accountWrite(life, write) : write());
       inserted.push(...r.inserted);
       // plan 41: each committed slice, so a pass that fails later still hands over what it stored
@@ -1093,17 +1098,18 @@ export class BackendCore {
       // plan 41: live mail this pass inserts is news once the account synced in this life (no first sync, no catch-up
       // at launch); it's looked at when the pass is over (its flags, filters and bodies settled)
       const arrivals = this.attention.beginPass(accountId);
+      let observation: FlagObservation | null = null;
       const sink: SyncSink = {
         signal: life.abort.signal,
         ingest: async (messages, o) => {
-          await this.ingestSliced(messages, true, life, o?.live ? (ids) => arrivals.add(ids) : undefined);
+          await this.ingestSliced(messages, true, life, o?.live ? (ids) => arrivals.add(ids) : undefined, observation ?? undefined);
         },
         // the account's own window, else the general one
         windowStart: this.now() - ((await this.store.accounts.get(accountId))?.syncWindowDays ?? (await readSettings(this.store)).syncWindowDays) * 86_400_000,
         updateFlags: async (updates) => {
           const touched = new Set<number>();
           await this.runSliced(updates, 200, async (chunk) => {
-            for (const t of (await this.accountWrite(life, () => this.store.sync.updateFlags(accountId, chunk))).touched) touched.add(t);
+            for (const t of (await this.accountWrite(life, () => this.store.sync.updateFlags(accountId, chunk, observation ?? undefined))).touched) touched.add(t);
           });
           this.notifyChanged(touched);
         },
@@ -1132,9 +1138,13 @@ export class BackendCore {
       await setState({ status: "syncing", ...(wasDown && { connection: { state: "reconnecting", retryAt: null } }) });
       const started = performance.now();
       try {
-        this.assertCurrent(life);
         // plan 41: the pass is over (done or failed): what it stored as live mail is looked at now
-        await provider.sync(sink).finally(() => arrivals.end());
+        try {
+          this.assertCurrent(life);
+          observation = await this.accountWrite(life, () => this.store.sync.beginObservation(accountId, { authoritativeFlags: provider.flagSnapshots === true, signal: life.abort.signal }));
+          this.assertCurrent(life);
+          await provider.sync(sink);
+        } finally { arrivals.end(); }
         if (!this.current(life)) return;
         breadcrumb("sync", "sync.done", { accountKind, durationMs: performance.now() - started });
         this.attention.prime(accountId);
@@ -1160,8 +1170,9 @@ export class BackendCore {
           captureError(error, { code: "import.restore_failed" });
           this.log("warn", "restoring imported items failed", error instanceof Error ? error.message : error);
         });
-      } catch (error) {
+      } catch (caught) {
         if (!this.current(life)) return;
+        const error = caught instanceof FlagObservationError ? new FlagConnectionError() : caught;
         const message = error instanceof Error ? error.message : String(error);
         const lastErrorI18n = textRef((error as { i18n?: unknown } | null)?.i18n) ?? null;
         const retryable = error instanceof ProviderError && error.retryable;
@@ -1169,6 +1180,10 @@ export class BackendCore {
         captureError(error, { code: "sync.failed", fields: { accountKind, retryable } });
         this.log("warn", `sync failed for account ${accountId}`, message);
         if (!this.store.isOpen) return;
+        if (error instanceof FlagConnectionError) {
+          await setState({ status: "error", lastError: message, lastErrorI18n });
+          return;
+        }
         if (!retryable) {
           const auth = error instanceof ProviderAuthError;
           // plan 25: refused with the credentials a sign-in has since replaced: it says nothing, the next pass decides

@@ -636,7 +636,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     await download(cached.filter((m) => !freshlyIngested.has(m.providerMsgId)), async (m) => {
       try {
         const full = readMessage(await api<unknown>(`/messages/${m.providerMsgId}?format=minimal`), m.providerMsgId);
-        updates.push({ messageId: m.id, flags: labelState(full.labelIds ?? []), gmailLabels: full.labelIds ?? [] });
+        updates.push({ messageId: m.id, expectedProviderMsgId: m.providerMsgId, flags: labelState(full.labelIds ?? []), gmailLabels: full.labelIds ?? [] });
       } catch (e) {
         if (e instanceof GmailApiError && e.status === 404) gone.push(m.id);
         else throw e;
@@ -686,7 +686,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       if (!local) continue;
       try {
         const m = readMessage(await api<unknown>(`/messages/${gid}?format=minimal`), gid);
-        updates.push({ messageId: local, flags: labelState(m.labelIds ?? []), gmailLabels: m.labelIds ?? [] });
+        updates.push({ messageId: local, expectedProviderMsgId: gid, flags: labelState(m.labelIds ?? []), gmailLabels: m.labelIds ?? [] });
       } catch (e) {
         if (e instanceof GmailApiError && e.status === 404) deleted.add(gid);
         else throw e;
@@ -713,6 +713,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
   }
 
   return {
+    flagSnapshots: true,
     async verify() {
       readBaseline(await api<unknown>("/profile"));
     },

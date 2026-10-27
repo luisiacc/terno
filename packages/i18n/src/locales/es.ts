@@ -1381,6 +1381,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.mail.processingComplex": "Este mensaje es demasiado complejo para leerlo. Ábrelo en tu proveedor de correo.",
   "errors.mail.processingTimedOut": "La lectura de este mensaje tardó demasiado. Vuelve a sincronizar o ábrelo en tu proveedor de correo.",
   "errors.mail.processingUnavailable": "No se pudo procesar este mensaje. Reinicia Terno y vuelve a sincronizar.",
+  "errors.mail.flagConnection": "Esta conexión no puede actualizar tus cambios locales de forma segura. Restablece la conexión original y vuelve a intentarlo.",
   "errors.gmail.invalidResponse": "Gmail devolvió una respuesta incompleta.",
   "errors.gmail.requestFailed": "Gmail no pudo completar la solicitud ({status}). Inténtalo de nuevo o revisa el acceso de esta cuenta.",
   "errors.gmail.requestOffline": "No se pudo contactar a Gmail. Revisa tu conexión e inténtalo de nuevo.",
