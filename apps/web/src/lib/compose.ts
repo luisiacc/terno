@@ -1,3 +1,4 @@
+import type { AttachmentRef } from "@terno/core";
 import { attachmentUploading } from "./attachments";
 import { breadcrumb, captureUi } from "~/lib/diag";
 import { firstInvalid, SELECT_INVALID } from "./recipient-field";
@@ -5,7 +6,7 @@ import type { DraftMode } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";
-import { invalidateThreads, loadThread, useThreads } from "~/state/threads";
+import { invalidateThreads, loadThread } from "~/state/threads";
 import { registerUndo, snack } from "./snack";
 import { answered, convertFields, forwardAccountMismatch, newFields, replyFields } from "./compose-fields";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
@@ -54,6 +55,7 @@ const written = (d: LocalDraft) => d.bodyText.trim() !== "" || d.subjectEdited |
 export async function openCompose(mode: DraftMode = "new", threadId: number | null = getApp().selectedId): Promise<void> {
   const mine = ++intent;
   let takeFocus = true;
+  const active = typeof document === "undefined" ? null : document.activeElement;
   const s = getApp();
   const defaultAccount = s.accountId ?? s.accounts[0]?.id;
   if (!defaultAccount) {
@@ -76,9 +78,11 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
     setDraftUi(existing.key, "open");
     return focusDraft(existing.key, target);
   }
-  // the open conversation is loaded: no wait, so nothing can come in between
-  const detail = useThreads.getState().details.get(threadId) ?? (await loadThread(threadId));
-  if (!detail || mine !== intent) return;
+  const selected = s.selectedId;
+  const detail = await loadThread(threadId);
+  const currentIntent = () => mine === intent && getApp().selectedId === selected && shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) === existingKey;
+  if (!detail || !currentIntent()) return;
+  takeFocus = typeof document === "undefined" || document.activeElement === active;
   existing = existingKey ? materialize(existingKey) : undefined;
   if (existingKey && (!existing || existing.sending || existing.recovery)) return;
   const accounts = getApp().accounts;
@@ -86,20 +90,39 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
   // none of my addresses is replied to, whichever account the conversation is in (plan 34)
   const identities = accounts.map((a) => a.email);
   if (mode === "forward") {
-    const parts = answered(detail, identities).attachments;
-    if (parts.some((a) => !a.assetId)) { snack.error(t("attachments.unavailable")); return; }
+    const message = answered(detail, identities);
+    const parts = message.attachments;
+    const unavailable = () => snack.error(t("compose.forwardUnavailable"), { action: { label: t("common.retry"), onClick: () => {
+      void client.call("attachments.retry", { accountId: message.accountId, messageId: message.id })
+        .then(() => loadThread(threadId, true))
+        .catch(() => snack.error(t("attachments.readerUnavailable")));
+    } } });
+    if (message.attachmentState !== "complete" || parts.some((a) => !a.assetId)) { unavailable(); return; }
     if (parts.length && !source) { snack.error(t("errors.accountGone")); return; }
     if (existing && forwardAccountMismatch(existing.accountId, detail, identities)) {
       snack.error(t("compose.forwardAccountMismatch", { account: source!.email }));
       return;
     }
+    const snapshot = existing;
+    try {
+      const checked = new Map<string, AttachmentRef>();
+      for (const part of parts) {
+        const info = checked.get(part.assetId!) ?? await client.call("attachments.info", { accountId: message.accountId, assetId: part.assetId! });
+        checked.set(part.assetId!, info);
+        if (info.filename !== part.filename || info.mime !== part.mime || info.size !== part.size || (info.contentId ?? null) !== (part.contentId ?? null)) { unavailable(); return; }
+      }
+    } catch { if (currentIntent()) unavailable(); return; }
+    if (!currentIntent() || await loadThread(threadId) !== detail) return;
+    if (parts.length && !getApp().accounts.some((a) => a.id === source!.id)) { snack.error(t("errors.accountGone")); return; }
+    existing = existingKey ? materialize(existingKey) : undefined;
+    if (existingKey && (!existing || existing.sending || existing.recovery || existing.accountId !== snapshot?.accountId || existing.id !== snapshot?.id || existing.generation !== snapshot?.generation || existing.localRev !== snapshot?.localRev)) return;
+    takeFocus = typeof document === "undefined" || document.activeElement === active;
     if (parts.length && existing && !existing.attachments?.length) {
       // Save the empty From transition before introducing that account's attachment owners.
       const active = typeof document === "undefined" ? null : document.activeElement;
-      const selected = getApp().selectedId;
       await flushDraft(existing.key);
-      if (mine !== intent || getApp().selectedId !== selected || shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) !== existing.key) return;
-      takeFocus = typeof document === "undefined" || document.activeElement === active;
+      if (!currentIntent() || await loadThread(threadId) !== detail) return;
+      takeFocus = takeFocus && (typeof document === "undefined" || document.activeElement === active);
       existing = materialize(existing.key);
       if (!existing || existing.sending || existing.recovery || existing.savedRev !== existing.localRev) return;
       const pristine = existing.id === null && existing.status === "clean" && existing.localRev === 0 && !authored(existing);

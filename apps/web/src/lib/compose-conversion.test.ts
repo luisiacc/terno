@@ -1,9 +1,9 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Account, ThreadDetail } from "@terno/core";
 
 const { loadThread, details } = vi.hoisted(() => ({ loadThread: vi.fn(), details: new Map<number, ThreadDetail>() }));
 vi.mock("~/state/threads", () => ({ loadThread, invalidateThreads: vi.fn(), useThreads: { getState: () => ({ details }) } }));
-vi.mock("~/rpc/connection", () => ({ client: { call: () => Promise.reject(new Error("offline fixture")) } }));
+vi.mock("~/rpc/connection", () => ({ client: { call: async () => ({ assetId: "source-asset", filename: "empty", mime: "text/plain", size: 0 }) } }));
 const { openCompose } = await import("./compose");
 const { replyFields } = await import("./compose-fields");
 const { createDraft, editDraft, forgetDraft, setDraftTransport, useDrafts } = await import("./drafts");
@@ -12,14 +12,15 @@ const { useSnack } = await import("./snack");
 
 const source = { id: 1, email: "source@test.com" } as Account;
 const other = { id: 2, email: "other@test.com" } as Account;
-const detail = { thread: { id: 7, accountId: 1, subject: "source" }, messages: [{ id: 3, isSent: false, from: { name: "Sender", email: "sender@test.com" }, to: [], cc: [], subject: "source", date: 0, bodyText: "source bytes", attachments: [{ id: 1, assetId: "source-asset", filename: "empty", mime: "text/plain", size: 0 }] }] } as unknown as ThreadDetail;
+const detail = { thread: { id: 7, accountId: 1, subject: "source" }, messages: [{ id: 3, accountId: 1, attachmentState: "complete", isSent: false, from: { name: "Sender", email: "sender@test.com" }, to: [], cc: [], subject: "source", date: 0, bodyText: "source bytes", attachments: [{ id: 1, assetId: "source-asset", filename: "empty", mime: "text/plain", size: 0 }] }] } as unknown as ThreadDetail;
+beforeEach(() => { loadThread.mockImplementation(async (id: number) => details.get(id)); });
 afterEach(() => { for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); details.clear(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
 
 it.each(["latest account", "missing source", "discard"])("a late conversation lookup preserves the current work on %s", async (scenario) => {
   const key = createDraft(replyFields("reply", detail, source));
   setApp({ accounts: [source, other], selectedId: 7, checked: new Set(), scope: null, draftShown: { threadId: 7, key } });
   let complete!: (value: ThreadDetail) => void;
-  loadThread.mockReturnValue(new Promise<ThreadDetail>((r) => { complete = r; }));
+  loadThread.mockReturnValueOnce(new Promise<ThreadDetail>((r) => { complete = r; }));
   const opening = openCompose("forward", 7);
   editDraft(key, { bodyText: "typed while loading", bodyHtml: "<div><b>typed while loading</b></div>", accountId: 2 });
   if (scenario === "missing source") setApp({ accounts: [other] });

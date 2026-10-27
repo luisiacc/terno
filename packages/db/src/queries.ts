@@ -287,6 +287,7 @@ export function getThread(db: Db, threadId: number): ThreadDetail | null {
         bodyText: m.body_text,
         bodyHtml: m.body_html,
         bodyState: m.body_state,
+        attachmentState: m.attachments_captured === 1 ? "complete" : m.attachments_captured === 2 ? "unavailable" : "pending",
         ...(m.attachments_captured === 2 && m.body_state !== "full" ? { bodyUnavailable: "size" as const } : {}),
         isRead: m.is_read === 1,
         isStarred: m.is_starred === 1,

@@ -124,6 +124,8 @@ export interface MessageDetail {
   bodyHtml: string | null;
   bodyState: "none" | "partial" | "full";
   bodyUnavailable?: "size";
+  /** Independent of body completeness; absent legacy projections are unknown. */
+  attachmentState?: "pending" | "complete" | "unavailable";
   isRead: boolean;
   isStarred: boolean;
   isSent: boolean;
