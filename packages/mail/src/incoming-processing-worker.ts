@@ -74,8 +74,7 @@ function decode(raw: string, size: number): Uint8Array {
 
 function completeHeader(prefix: Uint8Array): boolean {
   for (let i = 0; i + 1 < prefix.byteLength; i++) {
-    if (prefix[i] === 10 && prefix[i + 1] === 10) return true;
-    if (i + 3 < prefix.byteLength && prefix[i] === 13 && prefix[i + 1] === 10 && prefix[i + 2] === 13 && prefix[i + 3] === 10) return true;
+    if (prefix[i] === 10 && (prefix[i + 1] === 10 || (i + 2 < prefix.byteLength && prefix[i + 1] === 13 && prefix[i + 2] === 10))) return true;
   }
   return false;
 }
