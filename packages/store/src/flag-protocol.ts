@@ -1,5 +1,5 @@
 import { FlagObservationError, operationFlagFields, type LocalFlagField } from "./flag-intents";
-import type { FlagObservation, FlagSnapshotRequest } from "./types";
+import type { FlagObservation, FlagReconciliation, FlagSnapshotRequest } from "./types";
 
 export interface FlagClock { account_id: number; protocol_id: string; epoch: number; phase: number; upper_seq: number; after_seq: number; after_op: string; after_message: number }
 export interface FlagIntent { message_id: number; field: LocalFlagField; account_id: number; provider_msg_id: string; intent_version: number; desired: number; owner_op_id: string | null; barrier_epoch: number; last_observation_epoch: number; pending_count: number; needs_snapshot: number; snapshot_account_id?: number }
@@ -21,6 +21,7 @@ export interface FlagRepository {
   clocks(): FlagClock[];
   putClock(row: FlagClock): void;
   message(id: number): FlagMessage | null;
+  setMessageFlags(id: number, values: Partial<Record<LocalFlagField, number>>): void;
   intent(id: number, field: LocalFlagField): FlagIntent | null;
   putIntent(row: FlagIntent): void;
   effect(op: string, id: number, field: LocalFlagField): FlagEffect | null;
@@ -144,4 +145,34 @@ export function acceptFlagObservation(repo: FlagRepository, messageId: number, f
 export function flagSnapshotBounds(request: FlagSnapshotRequest): { after: number; through?: number; limit: number } {
   for (const value of [request.limit, request.afterMessageId ?? 0, request.throughMessageId ?? 0]) if (!Number.isSafeInteger(value) || value < 0) throw new Error("Invalid flag snapshot page.");
   return { after: request.afterMessageId ?? 0, through: request.throughMessageId, limit: Math.max(1, Math.min(50, request.limit)) };
+}
+
+export function flagEpochs(repo: FlagRepository): Map<number, number> { return new Map(repo.clocks().map((clock) => [clock.account_id, clock.epoch])); }
+export function flagReconciliation(repo: FlagRepository, before: ReadonlyMap<number, number>): FlagReconciliation {
+  const changed = repo.clocks().filter((clock) => clock.epoch > (before.get(clock.account_id) ?? clock.epoch)).map((clock) => clock.account_id);
+  return changed.length ? { flagReconcileAccounts: changed } : {};
+}
+
+/** Explicit retry is a new local intention only where the parked binding is still current. */
+export function rearmFlagEffects(repo: FlagRepository, op: FlagOp): number[] | null {
+  const effects = repo.effects(op.id);
+  if (!effects.length) return [];
+  const eligible = new Set<number>(), superseded = new Set<number>();
+  for (const effect of effects) {
+    const row = repo.intent(effect.message_id, effect.field);
+    if (!row || row.intent_version !== (effect.intent_version ?? 0)) superseded.add(effect.message_id);
+    else eligible.add(effect.message_id);
+  }
+  if (superseded.size && ["archive", "trash", "spam", "notSpam", "moveToInbox"].includes(op.kind)) return null;
+  for (const id of superseded) eligible.delete(id);
+  if (!eligible.size) return null;
+  const version = flagTick(repo, op.account_id);
+  for (const effect of effects) {
+    if (!eligible.has(effect.message_id)) { repo.deleteEffect(effect); continue; }
+    const row = repo.intent(effect.message_id, effect.field)!;
+    putFlagIntent(repo, { ...row, intent_version: version, desired: effect.value, owner_op_id: op.id, barrier_epoch: version, pending_count: row.pending_count + (1 - effect.active), needs_snapshot: 1 });
+    repo.putEffect({ ...effect, intent_version: version, active: 1 });
+    repo.setMessageFlags(effect.message_id, { [effect.field]: effect.value });
+  }
+  return [...eligible];
 }

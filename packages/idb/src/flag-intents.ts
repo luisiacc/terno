@@ -1,4 +1,4 @@
-import { FlagObservationError, flagSnapshotBounds, operationFlagFields, type FlagClock, type FlagEffect, type FlagIntent, type FlagMessage, type FlagOp, type FlagRepository, type FlagSnapshotRequest, type LocalFlagField } from "@terno/store";
+import { FlagObservationError, FLAG_COLUMNS, flagSnapshotBounds, operationFlagFields, type FlagClock, type FlagEffect, type FlagIntent, type FlagMessage, type FlagOp, type FlagRepository, type FlagSnapshotRequest, type LocalFlagField } from "@terno/store";
 import type { MemDb, Row } from "./mem";
 
 const repositories = new WeakMap<MemDb, IdbFlagRepository>();
@@ -15,6 +15,10 @@ export class IdbFlagRepository implements FlagRepository {
   clocks() { return [...this.db.table("flag_clocks").all()] as unknown as FlagClock[]; }
   putClock(row: FlagClock) { this.db.table("flag_clocks").put({ ...row }); }
   message(id: number) { return this.db.table("messages").get(id) as unknown as FlagMessage ?? null; }
+  setMessageFlags(id: number, values: Partial<Record<LocalFlagField, number>>) {
+    const messages = this.db.table("messages"), row = messages.get(id);
+    if (row) messages.update(row, Object.fromEntries(Object.entries(values).map(([field, value]) => [FLAG_COLUMNS[field as LocalFlagField], value])));
+  }
   intent(id: number, field: LocalFlagField) { return this.db.table("message_flag_intents").get(id, field) as unknown as FlagIntent ?? null; }
   putIntent(row: FlagIntent) { this.db.table("message_flag_intents").put({ ...row }); }
   effect(op: string, id: number, field: LocalFlagField) { return this.db.table("flag_op_effects").get(op, id, field) as unknown as FlagEffect ?? null; }

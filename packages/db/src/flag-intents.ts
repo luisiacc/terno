@@ -1,4 +1,4 @@
-import { FlagObservationError, flagSnapshotBounds, type FlagClock, type FlagEffect, type FlagIntent, type FlagMessage, type FlagOp, type FlagRepository, type FlagSnapshotRequest, type LocalFlagField } from "@terno/store";
+import { FlagObservationError, FLAG_COLUMNS, flagSnapshotBounds, type FlagClock, type FlagEffect, type FlagIntent, type FlagMessage, type FlagOp, type FlagRepository, type FlagSnapshotRequest, type LocalFlagField } from "@terno/store";
 import type { Db, Param } from "./sqlite";
 
 const repositories = new WeakMap<Db, SqlFlagRepository>();
@@ -18,6 +18,9 @@ export class SqlFlagRepository implements FlagRepository {
   clocks() { return this.db.all<FlagClock>("SELECT * FROM flag_clocks"); }
   putClock(row: FlagClock) { this.put("flag_clocks", row); }
   message(id: number) { return this.db.get<FlagMessage>("SELECT id,account_id,provider_msg_id,is_read,is_starred,in_inbox,is_trash,is_spam FROM messages WHERE id=?", id) ?? null; }
+  setMessageFlags(id: number, values: Partial<Record<LocalFlagField, number>>) {
+    for (const [field, value] of Object.entries(values)) this.db.run(`UPDATE messages SET ${FLAG_COLUMNS[field as LocalFlagField]}=? WHERE id=?`, value, id);
+  }
   intent(id: number, field: LocalFlagField) { return this.db.get<FlagIntent>("SELECT * FROM message_flag_intents WHERE message_id=? AND field=?", id, field) ?? null; }
   putIntent(row: FlagIntent) { this.put("message_flag_intents", row); }
   effect(op: string, id: number, field: LocalFlagField) { return this.db.get<FlagEffect>("SELECT * FROM flag_op_effects WHERE op_id=? AND message_id=? AND field=?", op, id, field) ?? null; }

@@ -1305,10 +1305,12 @@ function yieldToNewerOps(c: Ctx, id: string): boolean {
   const target = targetOf(op);
   const remaining = (target.messageIds ?? []).filter((m) => !covered.has(m));
   if (remaining.length === 0) {
+    settleFlagEffects(idbFlags(c), idbFlags(c).op(id)!, "removed");
     ops.deleteRow(op);
     return false;
   }
   ops.update(op, { target_json: JSON.stringify({ ...target, messageIds: remaining }) });
+  settleFlagEffects(idbFlags(c), idbFlags(c).op(id)!, "removed", [...covered]);
   dropTargets(c, id, covered);
   return true;
 }
@@ -1341,7 +1343,7 @@ export function failOp(c: Ctx, id: string, error: string, retryable: boolean, no
   const delay = Math.min(1000 * 2 ** (op.attempts - 1), 300_000);
   const attempts = park?.keepAttempt ? Math.max(op.attempts - 1, 0) : op.attempts;
   ops.update(op, { state, attempts, last_error: error, next_attempt_at: park && state === "queued" ? AWAITING_NETWORK : now + delay, updated_at: now });
-  if (state === "failed") dropTargets(c, id);
+  if (state === "failed") { settleFlagEffects(idbFlags(c), idbFlags(c).op(id)!, "removed"); dropTargets(c, id); }
   else if (!yieldToNewerOps(c, id)) return "succeeded";
   return state;
 }
@@ -1385,7 +1387,10 @@ export function resumeNetworkOps(c: Ctx, accountId: number | null, now: number):
 export function markOpUnknown(c: Ctx, id: string, error: string, now: number): void {
   const ops = T(c, "ops");
   const op = ops.get(id);
-  if (op && op.state === "running") ops.update(op, { state: "unknown", last_error: error, updated_at: now });
+  if (op && op.state === "running") {
+    settleFlagEffects(idbFlags(c), idbFlags(c).op(id)!, "unknown");
+    ops.update(op, { state: "unknown", last_error: error, updated_at: now });
+  }
 }
 
 export function recoverOps(c: Ctx, now: number): { requeued: number; unknown: number } {

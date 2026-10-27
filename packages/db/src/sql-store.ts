@@ -1,5 +1,5 @@
 import { attachmentMessageBudgetAsync } from "@terno/core";
-import { acceptFlagObservation, flagObservationValid, flagTick, initializeFlagStep, startFlagObservation } from "@terno/store";
+import { acceptFlagObservation, flagEpochs, flagReconciliation, flagObservationValid, flagTick, initializeFlagStep, rearmFlagEffects, settleFlagEffects, startFlagObservation } from "@terno/store";
 import { sqlFlags } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { sqlAssets, replaceAttachments } from "./attachments";
@@ -303,20 +303,22 @@ export class SqlMailStore implements MailStore {
     },
     act: async ({ threadIds, action, signal, now }) =>
       this.db.tx(() => {
+        const flagBefore = flagEpochs(sqlFlags(this.db));
         const r = applyThreadAction(this.db, [...new Set(threadIds)], action);
         // only actions that changed something feed learned filters (repeats must not manufacture support)
         if (signal && r.threadIds.length) recordUserActions(this.db, r.threadIds, signal, now);
-        return { threadIds: r.threadIds, opIds: this.queueActionOps(r, action, now), before: r.before };
+        return { threadIds: r.threadIds, opIds: this.queueActionOps(r, action, now), before: r.before, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
       }),
     restore: async ({ messages, now }) =>
       this.db.tx(() => {
+        const flagBefore = flagEpochs(sqlFlags(this.db));
         const r = restoreMessages(this.db, messages);
         const opIds: string[] = [];
         for (const op of r.ops) {
           const id = enqueueOp(this.db, { accountId: op.accountId, kind: op.kind, target: { messageIds: op.messageIds } }, now);
           if (id) opIds.push(id);
         }
-        return { threadIds: r.threadIds, opIds };
+        return { threadIds: r.threadIds, opIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
       }),
   };
 
@@ -400,6 +402,7 @@ export class SqlMailStore implements MailStore {
         staged.push(m.captureUnavailable || m.attachments === undefined ? m : { ...m, attachments: await stageAttachments(this, m.accountId, m.attachments, now, this.yieldTo, existing ? await this.attachments.current(m.accountId, { id: existing.id }) : []) });
       }
       return this.db.tx(() => {
+        const flagBefore = flagEpochs(sqlFlags(this.db));
         const result = ingestMessages(this.db, staged as IncomingMessage[], now, observation);
         const touched = new Set(result.touchedThreads);
         const opIds: string[] = [];
@@ -410,13 +413,14 @@ export class SqlMailStore implements MailStore {
         }
         const c = this.classify(classifier, result.inserted, result.bodyCompleted, now);
         for (const t of c.touched) touched.add(t);
-        return { inserted: result.inserted, touched: [...touched], deltas: [...result.deltas, ...c.deltas], auto: c.auto, backfill: c.backfill, uncertain: c.uncertain, opIds };
+        return { inserted: result.inserted, touched: [...touched], deltas: [...result.deltas, ...c.deltas], auto: c.auto, backfill: c.backfill, uncertain: c.uncertain, opIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
       });
     },
     setBody: async (messageId, text, html, { now, classifier, attachments, captureUnavailable }) => {
       const accountId = this.db.get<{ account_id: number }>("SELECT account_id FROM messages WHERE id = ?", messageId)?.account_id;
       const staged = !captureUnavailable && attachments !== undefined && accountId !== undefined ? await stageAttachments(this, accountId, attachments, now, this.yieldTo, await this.attachments.current(accountId, { id: messageId })) : undefined;
       return this.db.tx(() => {
+        const flagBefore = flagEpochs(sqlFlags(this.db));
         if (!captureUnavailable) setMessageBody(this.db, messageId, text, html, "full");
         if (staged !== undefined && !captureUnavailable) replaceAttachments(this.db, messageId, staged);
         const owner = this.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", messageId);
@@ -429,7 +433,7 @@ export class SqlMailStore implements MailStore {
         const c = this.classify(classifier, [], [messageId], now);
         for (const t of c.touched) touched.add(t);
         if (owner) touched.add(owner.thread_id);
-        return { touched: [...touched], deltas: c.deltas, auto: c.auto, opIds };
+        return { touched: [...touched], deltas: c.deltas, auto: c.auto, opIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
       });
     },
     updateFlags: async (accountId, updates, observation) =>
@@ -517,17 +521,27 @@ export class SqlMailStore implements MailStore {
     recent: async (limit) => listRecentOps(this.db, limit),
     resolveUnknown: async (id, resolution, now) =>
       this.db.tx(() => {
+        const flagBefore = flagEpochs(sqlFlags(this.db));
         const op = getOp(this.db, id);
         if (!op || op.state !== "unknown") throw new RpcError("NOT_FOUND", L("errors.opResolved"));
         if (resolution === "markSent") {
+          if (op.kind !== "send" && sqlFlags(this.db).clock(op.account_id)) throw new RpcError("STALE", L("errors.opResolved"));
           completeOp(this.db, id, now);
           if (op.kind === "send") sqlAssets(this.db).unlink("op", id);
           return { touched: [] };
         }
         if (resolution === "retry") {
+          if (op.kind !== "send" && sqlFlags(this.db).clock(op.account_id)) {
+            const ids = rearmFlagEffects(sqlFlags(this.db), op);
+            if (ids === null) throw new RpcError("STALE", L("errors.opResolved"));
+            if (ids.length) this.db.run("UPDATE ops SET target_json=? WHERE id=?", JSON.stringify({ ...JSON.parse(op.target_json), messageIds: ids }), id);
+          }
           this.db.run("UPDATE ops SET state = 'queued', next_attempt_at = 0, last_error = NULL WHERE id = ?", id);
-          return { touched: [] };
+          const touched = this.db.all<{thread_id:number}>("SELECT DISTINCT m.thread_id FROM messages m JOIN op_targets t ON t.message_id=m.id WHERE t.op_id=?", id).map((r) => r.thread_id);
+          recomputeThreads(this.db, touched);
+          return { touched, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
         }
+        settleFlagEffects(sqlFlags(this.db), op, "removed");
         this.db.run("UPDATE ops SET state = 'failed', last_error = 'Discarded by user' WHERE id = ?", id);
         const target = JSON.parse(op.target_json) as { messageIds?: number[] };
         if (op.kind === "send" && target.messageIds?.length) {
@@ -535,7 +549,7 @@ export class SqlMailStore implements MailStore {
           // deleteMessages recomputes (or deletes) the thread so no empty Sent entry remains
           if (local) return { touched: [...deleteMessages(this.db, [local.id])] };
         }
-        return { touched: [] };
+        return { touched: [], ...flagReconciliation(sqlFlags(this.db), flagBefore) };
       }),
   };
 
@@ -675,6 +689,7 @@ export class SqlMailStore implements MailStore {
     matchWindow: async (rule, now, window) => findRuleMatches(this.db, rule, now, undefined, window).messageIds,
     applyChunk: async (id, ruleJson, messageIds, now) =>
       this.db.tx(() => {
+        const flagBefore = flagEpochs(sqlFlags(this.db));
         // edited (or deleted) while it was being applied: stop, don't recreate stale claims
         const current = this.db.get<{ rule_json: string }>("SELECT rule_json FROM filters WHERE id = ?", id);
         if (!current || current.rule_json !== ruleJson) throw new RpcError("CANCELLED", L("errors.filterChanged"));
@@ -685,7 +700,7 @@ export class SqlMailStore implements MailStore {
         const ids = claimFilterApplications(this.db, id, eligible, now);
         const opIds: string[] = [];
         const touched = this.runFilterActions(rule.actions, ids, now, opIds);
-        return { applied: ids.length, touched: [...touched], opIds };
+        return { applied: ids.length, touched: [...touched], opIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
       }),
   };
 

@@ -1,5 +1,5 @@
 import { attachmentMessageBudgetAsync } from "@terno/core";
-import { acceptFlagObservation, flagObservationValid, flagTick, initializeFlagStep, startFlagObservation } from "@terno/store";
+import { acceptFlagObservation, flagEpochs, flagReconciliation, flagObservationValid, flagTick, initializeFlagStep, rearmFlagEffects, settleFlagEffects, startFlagObservation } from "@terno/store";
 import { idbFlags, idbFlagSnapshots, prepareIdbFlagPage } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { idbAssets, replaceAttachments } from "./attachments";
@@ -745,19 +745,21 @@ export class IdbMailStore implements MailStore {
     },
     act: ({ threadIds, action, signal, now }) =>
       this.command(() => {
+        const flagBefore = flagEpochs(idbFlags(this.c));
         const r = applyThreadAction(this.c, [...new Set(threadIds)], action);
         if (signal && r.threadIds.length) recordUserActions(this.c, r.threadIds, signal, now);
-        return { threadIds: r.threadIds, opIds: this.queueActionOps(r, action, now), before: r.before };
+        return { threadIds: r.threadIds, opIds: this.queueActionOps(r, action, now), before: r.before, ...flagReconciliation(idbFlags(this.c), flagBefore) };
       }),
     restore: ({ messages, now }) =>
       this.command(() => {
+        const flagBefore = flagEpochs(idbFlags(this.c));
         const r = restoreMessages(this.c, messages);
         const opIds: string[] = [];
         for (const op of r.ops) {
           const id = enqueueOp(this.c, { accountId: op.accountId, kind: op.kind, target: { messageIds: op.messageIds } }, now);
           if (id) opIds.push(id);
         }
-        return { threadIds: r.threadIds, opIds };
+        return { threadIds: r.threadIds, opIds, ...flagReconciliation(idbFlags(this.c), flagBefore) };
       }),
   };
 
@@ -843,6 +845,7 @@ export class IdbMailStore implements MailStore {
       }
       return this.command(
         () => {
+          const flagBefore = flagEpochs(idbFlags(this.c));
           const result = ingestMessages(this.c, staged as IncomingMessage[], now, observation);
           const touched = new Set(result.touchedThreads);
           const opIds: string[] = [];
@@ -852,7 +855,7 @@ export class IdbMailStore implements MailStore {
           }
           const c = this.classify(classifier, result.inserted, result.bodyCompleted, now);
           for (const t of c.touched) touched.add(t);
-          return { inserted: result.inserted, touched: [...touched], deltas: [...result.deltas, ...c.deltas], auto: c.auto, backfill: c.backfill, uncertain: c.uncertain, opIds };
+          return { inserted: result.inserted, touched: [...touched], deltas: [...result.deltas, ...c.deltas], auto: c.auto, backfill: c.backfill, uncertain: c.uncertain, opIds, ...flagReconciliation(idbFlags(this.c), flagBefore) };
         },
         { durability: "relaxed" },
       );
@@ -862,6 +865,7 @@ export class IdbMailStore implements MailStore {
       const staged = !captureUnavailable && attachments !== undefined && accountId !== undefined ? await stageAttachments(this, accountId, attachments, now, this.o.platform.yield, await this.attachments.current(accountId, { id: messageId })) : undefined;
       return this.command(
         () => {
+          const flagBefore = flagEpochs(idbFlags(this.c));
           if (!captureUnavailable) setMessageBody(this.c, messageId, text, html, "full");
           if (staged !== undefined && !captureUnavailable) replaceAttachments(this.db, messageId, staged);
           const owner = T(this.c, "messages").get(messageId);
@@ -873,7 +877,7 @@ export class IdbMailStore implements MailStore {
           const c = this.classify(classifier, [], [messageId], now);
           for (const t of c.touched) touched.add(t);
           if (owner) touched.add(owner.thread_id);
-          return { touched: [...touched], deltas: c.deltas, auto: c.auto, opIds };
+          return { touched: [...touched], deltas: c.deltas, auto: c.auto, opIds, ...flagReconciliation(idbFlags(this.c), flagBefore) };
         },
         { durability: "relaxed" },
       );
@@ -960,25 +964,35 @@ export class IdbMailStore implements MailStore {
     recent: (limit) => this.early(() => listRecentOps(this.c, limit)),
     resolveUnknown: (id, resolution, now) =>
       this.command(() => {
+        const flagBefore = flagEpochs(idbFlags(this.c));
         const op = getOp(this.c, id);
         if (!op || op.state !== "unknown") throw new RpcError("NOT_FOUND", L("errors.opResolved"));
         const ops = T(this.c, "ops");
         if (resolution === "markSent") {
+          if (op.kind !== "send" && idbFlags(this.c).clock(op.account_id)) throw new RpcError("STALE", L("errors.opResolved"));
           completeOp(this.c, id, now);
           if (op.kind === "send") idbAssets(this.db).unlink("op", id);
           return { touched: [] };
         }
         if (resolution === "retry") {
+          if (op.kind !== "send" && idbFlags(this.c).clock(op.account_id)) {
+            const ids = rearmFlagEffects(idbFlags(this.c), op);
+            if (ids === null) throw new RpcError("STALE", L("errors.opResolved"));
+            if (ids.length) ops.update(ops.get(id)!, { target_json: JSON.stringify({ ...JSON.parse(op.target_json), messageIds: ids }) });
+          }
           ops.update(ops.get(id)!, { state: "queued", next_attempt_at: 0, last_error: null });
-          return { touched: [] };
+          const touched = [...new Set(T(this.c, "op_targets").by("fk_op_id", id).map((target) => T(this.c, "messages").get(target.message_id)?.thread_id as number).filter(Boolean))];
+          recomputeThreads(this.c, touched);
+          return { touched, ...flagReconciliation(idbFlags(this.c), flagBefore) };
         }
+        settleFlagEffects(idbFlags(this.c), op, "removed");
         ops.update(ops.get(id)!, { state: "failed", last_error: "Discarded by user" });
         const target = JSON.parse(op.target_json) as { messageIds?: number[] };
         if (op.kind === "send" && target.messageIds?.length) {
           const local = T(this.c, "messages").get(target.messageIds[0]!);
           if (local && String(local.provider_msg_id ?? "").startsWith("local:")) return { touched: [...deleteMessages(this.c, [local.id])] };
         }
-        return { touched: [] };
+        return { touched: [], ...flagReconciliation(idbFlags(this.c), flagBefore) };
       }),
   };
 
@@ -1147,6 +1161,7 @@ export class IdbMailStore implements MailStore {
     matchWindow: async (rule, now, window) => (await this.matchAll(rule, now, window)).messageIds,
     applyChunk: (id, ruleJson, messageIds, now) =>
       this.command(() => {
+        const flagBefore = flagEpochs(idbFlags(this.c));
         const current = T(this.c, "filters").get(id);
         if (!current || current.rule_json !== ruleJson) throw new RpcError("CANCELLED", L("errors.filterChanged"));
         const rule = JSON.parse(ruleJson) as FilterRule;
@@ -1154,7 +1169,7 @@ export class IdbMailStore implements MailStore {
         const ids = claimFilterApplications(this.c, id, eligible, now);
         const opIds: string[] = [];
         const touched = this.runFilterActions(rule.actions, ids, now, opIds);
-        return { applied: ids.length, touched: [...touched], opIds };
+        return { applied: ids.length, touched: [...touched], opIds, ...flagReconciliation(idbFlags(this.c), flagBefore) };
       }),
   };
 
