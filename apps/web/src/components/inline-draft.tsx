@@ -331,7 +331,7 @@ function formLabel(forward: boolean, who: string): string {
  * keeps the draft in view; focus moves only on an explicit open or exit.
  */
 /** `icons`: the account's own picture may be asked for (plan 22; never in spam) */
-export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, checkpoint }: { threadId: number; draftKey: string | null; replyTo: string; account: Account | undefined; icons?: boolean; checkpoint?: BodyCheckpoint }) {
+export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, checkpoint, onCheckpointReopen }: { threadId: number; draftKey: string | null; replyTo: string; account: Account | undefined; icons?: boolean; checkpoint?: BodyCheckpoint; onCheckpointReopen?: () => () => void }) {
   const d = useDrafts((s) => (draftKey ? s.drafts[draftKey] : undefined));
   const accounts = useApp((s) => s.accounts);
   const focus = useApp((s) => (draftKey && s.draftFocus?.key === draftKey ? s.draftFocus : null));
@@ -366,7 +366,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
   };
   const reopen = () => {
     if (!d) return;
-    reopenInlineDraft(threadId, d.key, checkpoint);
+    reopenInlineDraft(threadId, d.key, checkpoint, onCheckpointReopen);
   };
   const send = async () => {
     if (!d) return;

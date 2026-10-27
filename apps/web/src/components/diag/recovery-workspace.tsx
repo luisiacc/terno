@@ -19,9 +19,13 @@ export function RecoveryWorkspace() {
   const d = key ? drafts[key] : undefined;
   const valid = !checkpoint || (key === checkpoint.key && validBodyCheckpoint(checkpoint));
   const rootRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (!key || !valid) return;
+  const focusOwner = useRef<{ generation: number; cancel: () => void } | null>(null);
+  const focusGeneration = useRef(0);
+  const queueKeep = () => {
+    if (!key || !valid) return () => {};
+    const generation = ++focusGeneration.current;
     const active = document.activeElement;
+    focusOwner.current?.cancel();
     let disposed = false;
     const cancel = focusBody(key, "keep", (cancelPending) => {
       const ownBody = (node: EventTarget | null) => node instanceof Element && Boolean(rootRef.current?.contains(node)) && Boolean(node.closest('[data-testid="compose-body"], [data-testid="compose-body-loading"]'));
@@ -32,7 +36,15 @@ export function RecoveryWorkspace() {
       document.addEventListener("focusin", moved, true);
       return () => document.removeEventListener("focusin", moved, true);
     });
-    return () => { disposed = true; cancel(); };
+    if (focusGeneration.current !== generation) { disposed = true; cancel(); return () => {}; }
+    const owner = { generation, cancel: () => { disposed = true; cancel(); } };
+    focusOwner.current = owner;
+    return () => { if (focusOwner.current === owner) { focusOwner.current = null; owner.cancel(); } };
+  };
+  useEffect(() => {
+    if (!key || !valid) return;
+    queueKeep();
+    return () => { focusGeneration.current++; const owner = focusOwner.current; focusOwner.current = null; owner?.cancel(); };
   }, [key, valid]);
   return <TooltipProvider>
     <main ref={rootRef} className="flex h-screen flex-col bg-background text-foreground" data-testid="recovery-workspace" aria-label={t("recovery.reload.review")}>
@@ -48,7 +60,7 @@ export function RecoveryWorkspace() {
             </select>
           </label>
           {!valid && <p role="alert">{t("recovery.reload.unsaved")}</p>}
-          {valid && d && <DraftSlot threadId={draftPresentationThread(d) ?? 0} draftKey={d.key} replyTo="" account={accounts.find((a) => a.id === d.accountId)} checkpoint={checkpoint} />}
+          {valid && d && <DraftSlot threadId={draftPresentationThread(d) ?? 0} draftKey={d.key} replyTo="" account={accounts.find((a) => a.id === d.accountId)} checkpoint={checkpoint} onCheckpointReopen={checkpoint ? queueKeep : undefined} />}
         </div>
       </div>
     </main>

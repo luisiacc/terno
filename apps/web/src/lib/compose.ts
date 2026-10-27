@@ -226,7 +226,7 @@ export function collapseInlineDraft(key: string): (() => boolean) | undefined {
 }
 
 /** Reopen the visible collapsed draft under the same focus ownership as an explicit compose. */
-export function reopenInlineDraft(threadId: number, key: string, checkpoint?: BodyCheckpoint): void {
+export function reopenInlineDraft(threadId: number, key: string, checkpoint?: BodyCheckpoint, beforeCheckpointOpen?: () => () => void): void {
   const finish = beginDraftWork();
   if (!finish) return;
   markSelectionIntent();
@@ -236,8 +236,15 @@ export function reopenInlineDraft(threadId: number, key: string, checkpoint?: Bo
       const recovery = useDraftRecovery.getState(), draft = useDrafts.getState().drafts[key];
       if (!recovery.open || recovery.key !== key || recovery.checkpoint !== checkpoint || checkpoint.key !== key || !validBodyCheckpoint(checkpoint) || !draft) return;
       const expected = openedDraft(draft);
-      setDraftUi(key, "open");
-      if (mine !== intent || !validBodyCheckpoint(checkpoint) || !shallow(useDrafts.getState().drafts[key], expected)) return;
+      const cancel = beforeCheckpointOpen?.();
+      let accepted = false;
+      try {
+        const current = () => { const state = useDraftRecovery.getState(); return mine === intent && state.open && state.key === key && state.checkpoint === checkpoint && validBodyCheckpoint(checkpoint); };
+        if (!current() || useDrafts.getState().drafts[key] !== draft) return;
+        setDraftUi(key, "open");
+        if (!current() || !shallow(useDrafts.getState().drafts[key], expected)) return;
+        accepted = true;
+      } finally { if (!accepted) cancel?.(); }
     } finally { finish(); }
     return;
   }
