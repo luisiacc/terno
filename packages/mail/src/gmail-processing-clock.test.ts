@@ -139,3 +139,26 @@ it.each(["base64", "quoted-printable"] as const)("never falls back inline when e
     expect(t.checkpoints).toEqual([]);
   } finally { await t.close(); }
 });
+
+it.each(["caller", "reset", "close"] as const)("cancels a tiny MIME-triggered queued promotion on %s without dispatching the processor", async (action) => {
+  const pipeline = new IncomingPipeline();
+  const active = await pipeline.promote(99, new AbortController().signal);
+  let enter!: () => void, calls = 0;
+  const entered = new Promise<void>((resolve) => { enter = resolve; });
+  const raw = toBase64url(new TextEncoder().encode("From: sender@example.test\r\nContent-Type: application/octet-stream\r\n\r\nExact bounded bytes"));
+  const t = setup(async () => Response.json({ id: "m", threadId: "t", raw }), async () => { calls++; throw new Error("Must not dispatch canceled local work"); }, (signal) => { enter(); return pipeline.promote(1, signal); });
+  const work = t.sync().then(() => undefined, (error: unknown) => error);
+  try {
+    await Promise.race([entered, work.then(() => { throw new Error("MIME route did not queue for promotion"); })]);
+    if (action === "caller") t.abort.abort();
+    else if (action === "reset") t.provider.reset!();
+    else await t.provider.close();
+    const error = await work;
+    if (action === "caller") expect(error).toBe(t.abort.signal.reason);
+    else expect(error).toMatchObject({ retryable: true, network: false });
+    expect(calls).toBe(0);
+    expect(t.writes).toEqual([]); expect(t.checkpoints).toEqual([]);
+    active();
+    (await pipeline.promote(2, new AbortController().signal))();
+  } finally { active(); await t.close(); await work; pipeline.close(); }
+});

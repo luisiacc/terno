@@ -305,17 +305,33 @@ function processingError(error: IncomingProcessingError | ResponseBodyLimitError
   return new IncomingResourceError(error.code, L("errors.mail.processingUnavailable"));
 }
 
+function afterMimeField(bytes: Uint8Array, start: number, field: string): number {
+  let end = start;
+  while (end - start < field.length && (bytes[end]! | 32) === field.charCodeAt(end - start)) end++;
+  if (end - start !== field.length) return -1;
+  while (bytes[end] === 32 || bytes[end] === 9 || bytes[end] === 10 || bytes[end] === 13) end++;
+  return bytes[end] === 58 ? end + 1 : -1;
+}
+
+function literalMimeTypeEnd(bytes: Uint8Array, start: number, type: string): number {
+  for (let offset = 0; offset < type.length; offset++) if ((bytes[start + offset]! | 32) !== type.charCodeAt(offset)) return -1;
+  return start + type.length;
+}
+
 function inlineCandidate(bytes: Uint8Array): boolean {
   let lines = 0, line = 0, parts = 0, tags = 0, entities = 0, nesting = 0, declarations = 0;
   for (let index = 0; index < bytes.length; index++) {
     const value = bytes[index]!;
     if ((value | 32) === 99) {
-      const field = "content-transfer-encoding";
-      let end = index;
-      while (end - index < field.length && (bytes[end]! | 32) === field.charCodeAt(end - index)) end++;
-      if (end - index === field.length) {
-        while (bytes[end] === 32 || bytes[end] === 9 || bytes[end] === 10 || bytes[end] === 13) end++;
-        if (bytes[end] === 58) return false;
+      if (afterMimeField(bytes, index, "content-transfer-encoding") >= 0) return false;
+      let start = afterMimeField(bytes, index, "content-type");
+      if (start >= 0) {
+        while (bytes[start] === 32 || bytes[start] === 9 || bytes[start] === 10 || bytes[start] === 13) start++;
+        const plain = literalMimeTypeEnd(bytes, start, "text/plain");
+        let end = plain >= 0 ? plain : literalMimeTypeEnd(bytes, start, "text/html");
+        if (end < 0) return false;
+        while (bytes[end] === 32 || bytes[end] === 9) end++;
+        if (end !== bytes.length && bytes[end] !== 59 && bytes[end] !== 10 && bytes[end] !== 13) return false;
       }
     }
     if (value === 10) {
