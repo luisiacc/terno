@@ -15,6 +15,7 @@ function person(id: number, o: Partial<ArrivalRow> = {}): ArrivalRow {
 
 /** A fake clock and timers, a fake store answering from `rows`, and the host's calls. */
 function setup(o: { settings?: Record<string, unknown>; host?: boolean; rows?: Map<number, ArrivalRow>; bodyFilter?: boolean } = {}) {
+  const filters = { body: o.bodyFilter ?? false };
   let now = NOW;
   const timers: { at: number; fn: () => void; id: number }[] = [];
   let seq = 0;
@@ -30,7 +31,7 @@ function setup(o: { settings?: Record<string, unknown>; host?: boolean; rows?: M
     store: {
       settings: { get: async (key: string, dflt: unknown) => (key === "app" ? app : dflt) },
       secrets: {},
-      filters: { list: async () => (o.bodyFilter ? [{ enabled: true, rule: { match: "all", conditions: [{ field: "body", op: "contains", value: "x" }], actions: [{ type: "archive" }] } }] : []) },
+      filters: { list: async () => (filters.body ? [{ enabled: true, rule: { match: "all", conditions: [{ field: "body", op: "contains", value: "x" }], actions: [{ type: "archive" }] } }] : []) },
       sync: {
         arrivals: async (ids: readonly number[]) => {
           reads.push([...ids]);
@@ -72,7 +73,7 @@ function setup(o: { settings?: Record<string, unknown>; host?: boolean; rows?: M
     await settle();
   };
   return {
-    attention, app, rows, reads, badges, notices, emitted, advance,
+    attention, app, rows, reads, badges, notices, emitted, advance, filters,
     timers: () => timers.length,
     published: () => published,
     hold: (p: Promise<void> | null) => (hold = p),
@@ -318,6 +319,83 @@ describe("notifications", () => {
     const pass = t.attention.beginPass(1);
     pass.add([1]);
     pass.end();
+    await t.advance(GATHER_MS);
+    expect(t.notices).toHaveLength(1);
+  });
+
+  it("Codex re-review #1: two passes ending back to back never retry the same waiting message twice (once said, it isn't said again)", async () => {
+    const t = setup({ rows: new Map([[1, person(1, { bodyPending: true })]]), bodyFilter: true });
+    await primed(t);
+    const first = t.attention.beginPass(1);
+    first.add([1]);
+    first.end();
+    await t.advance(1);
+    expect(t.reads).toHaveLength(1);
+    // its body came; two passes end back to back; the second's screen is slow, the first's notice goes meanwhile
+    t.rows.set(1, person(1, { bodyPending: false }));
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const sync = (t.attention as unknown as { o: { store: { sync: { arrivals(ids: readonly number[]): Promise<ArrivalRow[]> } } } }).o.store.sync;
+    const original = sync.arrivals.bind(sync);
+    let calls = 1;
+    sync.arrivals = async (ids) => {
+      if (++calls === 3) await gate;
+      return original(ids);
+    };
+    t.attention.beginPass(1).end();
+    // the second pass brought something of its own (not important), so its screen reads too
+    const second = t.attention.beginPass(1);
+    second.add([50]);
+    second.end();
+    await t.advance(GATHER_MS);
+    expect(t.notices).toHaveLength(1);
+    release();
+    await t.advance(NOTICE_GAP_MS * 3);
+    expect(t.notices).toHaveLength(1);
+  });
+
+  it("Codex re-review #2: a flush due while a big screen runs never sees more than the bound", async () => {
+    const rows = new Map<number, ArrivalRow>([[1, person(1, { date: NOW - 5000 })]]);
+    for (let id = 100; id < 100 + 300; id++) rows.set(id, person(id, { date: NOW - 1000 + id }));
+    const t = setup({ rows });
+    await primed(t);
+    const first = t.attention.beginPass(1);
+    first.add([1]);
+    first.end();
+    await t.advance(1);
+    // the timer is armed; a pass of 300 important ones is screened in two chunks, the second one slow
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const sync = (t.attention as unknown as { o: { store: { sync: { arrivals(ids: readonly number[]): Promise<ArrivalRow[]> } } } }).o.store.sync;
+    const original = sync.arrivals.bind(sync);
+    sync.arrivals = async (ids) => {
+      if (ids.length === 100) await gate;
+      return original(ids);
+    };
+    const big = t.attention.beginPass(1);
+    big.add([...rows.keys()].filter((id) => id >= 100));
+    big.end();
+    await t.advance(GATHER_MS);
+    release();
+    await t.advance(NOTICE_GAP_MS * 2);
+    expect(t.reads.every((r) => r.length <= READ_CHUNK)).toBe(true);
+    expect(t.notices.length).toBeGreaterThan(0);
+    expect(t.notices.every((n) => n.count <= READ_CHUNK)).toBe(true);
+  });
+
+  it("Codex re-review #3: a body filter turned on during the gap holds mail whose body hasn't come", async () => {
+    const t = setup({ rows: new Map([[1, person(1, { bodyPending: true })]]) });
+    await primed(t);
+    const pass = t.attention.beginPass(1);
+    pass.add([1]);
+    pass.end();
+    await t.advance(1);
+    t.filters.body = true;
+    await t.advance(GATHER_MS);
+    expect(t.notices).toEqual([]);
+    // its body arrives with the next pass, no filter took it: now it's said
+    t.rows.set(1, person(1, { bodyPending: false }));
+    t.attention.beginPass(1).end();
     await t.advance(GATHER_MS);
     expect(t.notices).toHaveLength(1);
   });

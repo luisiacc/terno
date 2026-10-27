@@ -147,10 +147,8 @@ export class Attention {
         ended = true;
         if (generation !== this.generation || epoch !== this.epochOf(accountId)) return;
         trim(ids);
-        // what waited for its body is looked at again after this account's pass (it may have come)
-        for (const [id, w] of this.waiting) if (w.accountId === accountId) ids.add(id);
-        if (ids.size === 0) return;
-        const screen = () => this.screen(accountId, epoch, generation, [...ids].sort((a, b) => b - a));
+        if (ids.size === 0 && ![...this.waiting.values()].some((w) => w.accountId === accountId)) return;
+        const screen = () => this.screen(accountId, epoch, generation, ids);
         this.screening = this.screening.then(screen, screen).catch((error: unknown) => void captureError(error, { code: "notify.failed" }));
       },
     };
@@ -173,11 +171,36 @@ export class Attention {
     return this.epochs.get(accountId) ?? 0;
   }
 
-  /** A finished pass's ids, read back in chunks: what's still news and important joins the queue (bounded, newest kept). */
-  private async screen(accountId: number, epoch: number, generation: number, ids: number[]): Promise<void> {
+  /** Whether an enabled filter reads bodies (it may still archive or read mail whose body hasn't come). */
+  private async bodyFilters(): Promise<boolean> {
+    return (await this.o.store.filters.list()).some((f) => f.enabled && f.rule.conditions.some((c) => c.field === "body"));
+  }
+
+  /** Keeps it waiting for its body (one more pass), or lets it go quietly after BODY_WAITS. */
+  private wait(id: number, accountId: number, waits: number): void {
+    if (waits + 1 < BODY_WAITS) this.waiting.set(id, { accountId, waits: waits + 1 });
+  }
+
+  /**
+   * A finished pass's ids, plus what waited for its body (taken when this
+   * screen runs: two screens never both retry it, Codex re-review #1), read
+   * back in chunks; what's still news and important is merged into the
+   * queue at the end, trimmed in the same step (a flush never sees more than
+   * the bound, re-review #2).
+   */
+  private async screen(accountId: number, epoch: number, generation: number, passIds: ReadonlySet<number>): Promise<void> {
     const current = () => generation === this.generation && epoch === this.epochOf(accountId) && !this.stopped;
     if (!current()) return;
-    const bodyFilters = (await this.o.store.filters.list()).some((f) => f.enabled && f.rule.conditions.some((c) => c.field === "body"));
+    const retries = new Map<number, number>();
+    for (const [id, w] of this.waiting) {
+      if (w.accountId !== accountId) continue;
+      retries.set(id, w.waits);
+      this.waiting.delete(id);
+    }
+    const ids = [...new Set([...passIds, ...retries.keys()])].sort((a, b) => b - a);
+    if (ids.length === 0) return;
+    const bodyFilters = await this.bodyFilters();
+    const found = new Map<number, { accountId: number; epoch: number; date: number }>();
     for (let i = 0; i < ids.length; i += READ_CHUNK) {
       if (i > 0) await this.o.yieldTurn?.();
       if (!current()) return;
@@ -185,19 +208,15 @@ export class Attention {
       const rows = await this.o.store.sync.arrivals(chunk);
       if (!current()) return;
       const now = this.o.now();
-      for (const id of chunk) if (!rows.some((m) => m.id === id)) this.waiting.delete(id);
       for (const m of rows) {
-        const was = this.waiting.get(m.id);
-        this.waiting.delete(m.id);
         if (!stillNew(m, now) || importance(m) === null) continue;
-        if (bodyFilters && m.bodyPending) {
-          // a filter may still archive or read it once its body is here
-          if ((was?.waits ?? 0) + 1 < BODY_WAITS) this.waiting.set(m.id, { accountId, waits: (was?.waits ?? 0) + 1 });
-          continue;
-        }
-        this.important.set(m.id, { accountId, epoch, date: m.date });
+        // a filter may still archive or read it once its body is here
+        if (bodyFilters && m.bodyPending) this.wait(m.id, accountId, retries.get(m.id) ?? 0);
+        else found.set(m.id, { accountId, epoch, date: m.date });
       }
     }
+    if (!current()) return;
+    for (const [id, m] of found) this.important.set(id, m);
     if (this.important.size > MAX_IMPORTANT) {
       const keep = [...this.important].sort((a, b) => b[1].date - a[1].date || b[0] - a[0]).slice(0, MAX_IMPORTANT);
       this.important.clear();
@@ -229,13 +248,19 @@ export class Attention {
     const queued = new Map(this.important);
     this.important.clear();
     const rows = await this.o.store.sync.arrivals([...queued.keys()]);
+    // a filter that reads bodies, turned on since the screen: mail whose body hasn't come waits for it (Codex re-review #3)
+    const bodyFilters = await this.bodyFilters();
     if (generation !== this.generation || this.stopped) return;
     const now = this.o.now();
-    const live = (id: number) => {
-      const q = queued.get(id);
-      return !!q && q.epoch === this.epochOf(q.accountId);
-    };
-    const news = rows.filter((m) => live(m.id) && stillNew(m, now) && importance(m) !== null);
+    const news = rows.filter((m) => {
+      const q = queued.get(m.id);
+      if (!q || q.epoch !== this.epochOf(q.accountId) || !stillNew(m, now) || importance(m) === null) return false;
+      if (bodyFilters && m.bodyPending) {
+        this.wait(m.id, q.accountId, 0);
+        return false;
+      }
+      return true;
+    });
     const notice = summarize(news, `mail-${now.toString(36)}-${++this.seq}`);
     if (!notice) return;
     this.lastNoticeAt = this.timers.now();

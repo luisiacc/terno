@@ -316,3 +316,9 @@ The review (`/tmp/unica-scratch/notify/code-review.txt`, on `d47555a..0cd1507`) 
 10. **The switch cached the permission:** a grant in the site's settings while Settings was open left it stuck.
     - **Fix:** the permission is read live on every render, repainted on the Permissions API's `change` event and after each toggle.
     - Test: e2e.
+
+**Re-review of the fixes** (`/tmp/unica-scratch/notify/code-review2.txt`, on `12ef459`) found 3 more, all medium. Each is fixed with a regression test, and each test fails on `12ef459`:
+
+1. **Two passes ending back to back both retried the same body-waiting message**, which could produce a second notice. Now a screen takes the waiting ids when it *runs*, so only the first retries it.
+2. **A flush due between a screen's chunks saw the queue past its bound** (201 ids). Now a screen collects privately and merges and trims in one step.
+3. **A body filter turned on during the gap was ignored at delivery.** Now `flush()` checks the filters again and puts body-pending mail back to wait.
