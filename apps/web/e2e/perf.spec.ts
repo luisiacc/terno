@@ -1092,6 +1092,78 @@ test("a 250 KB single paragraph (a long paste without line breaks): typing in it
   expect(handled.p95).toBeLessThanOrEqual(HUGE_MS * MULT);
 });
 
+// plan 39: an autolink near the caret is reconciled on every keystroke (its line only)
+
+/** The links in the editor whose href isn't what their text spells (autolinks only). */
+const staleAutolinks = (page: import("@playwright/test").Page) =>
+  page.getByTestId("compose-body").evaluate((el) => [...el.querySelectorAll("a[data-rt-auto]")].filter((a) => a.getAttribute("href") !== a.textContent).map((a) => a.textContent));
+
+test("a 2 MB draft with an autolink on every line: typing at the end of one (the link grows each key) stays within a frame", async ({ app: page, server }) => {
+  const blocks: string[] = [];
+  let size = 0;
+  for (let i = 0; size < 2_000_000; i++) {
+    const url = `https://acme.example/notas/${i}`;
+    const b = `<div>${i} ${LINE} <a href="${url}">${url}</a></div>`;
+    blocks.push(b);
+    size += b.length;
+  }
+  const { editor, openMs } = await hugeDraft(page, server, { bodyText: "x", bodyHtml: blocks.join("") });
+  expect(stat("2 MB draft (autolinks): open + r → editable", HUGE_OPEN_MS, [openMs]).max).toBeLessThanOrEqual(HUGE_OPEN_MS * MULT);
+  await page.keyboard.press("ControlOrMeta+End");
+  const before = (await composerProbe(page)).links?.length ?? 0;
+  const handled = await typeAndMeasure(page, "2 MB draft (autolinks): typing that extends one", "/resumen-final");
+  // the last line's link took every key, and every link is what its text says
+  expect(await editor.evaluate((el) => el.lastElementChild!.querySelector("a")!.getAttribute("href"))).toMatch(/\/resumen-final$/);
+  expect(await staleAutolinks(page)).toEqual([]);
+  // the plugin's own work per key: one line, not the draft
+  const own = stat("2 MB draft (autolinks): the live-link reconciliation per key", LINKS_MS, ((await composerProbe(page)).links ?? []).slice(before));
+  expect(handled.p95).toBeLessThanOrEqual(HUGE_MS * MULT);
+  expect(own.p95).toBeLessThanOrEqual(LINKS_MS * MULT);
+});
+
+/** The live-link plugin's own work for a keystroke next to an autolink (its line: ~1 ms measured on 30,000 children). */
+const LINKS_MS = 4;
+
+/**
+ * A paragraph of 30,000 formatted runs is the worst line there is for this:
+ * ProseMirror's view walks every child of a line whenever a mark in it
+ * changes (as ⌘B on one word does), ~13 ms here, and an autolink's href
+ * changes with every key typed in it. The gate holds the plugin's own work
+ * and what a key in the link costs over a key in plain text of that line.
+ */
+test("a 250 KB paragraph with a mark on every other word and an autolink at its end: the plugin's work per key stays small", async ({ app: page, server }) => {
+  const words: string[] = [];
+  let size = 0;
+  for (let i = 0; size < 250_000; i++) {
+    const w = i % 2 ? `<b>palabra${i}</b>` : `palabra${i}`;
+    words.push(w);
+    size += w.length + 1;
+  }
+  const url = "https://acme.example/propuesta";
+  const { editor, openMs } = await hugeDraft(page, server, { bodyText: "x", bodyHtml: `<div>${words.join(" ")} <a href="${url}">${url}</a></div>` });
+  expect(stat("250 KB dense paragraph: open + r → editable", HUGE_OPEN_MS, [openMs]).max).toBeLessThanOrEqual(HUGE_OPEN_MS * MULT);
+  // plain text first, in the middle of the line, far from the link; then the end of the link (a DOM caret the editor reads)
+  const caret = (where: "middle" | "end") =>
+    editor.evaluate((el, where) => {
+      const p = el.firstElementChild!;
+      const node = where === "end" ? p.lastChild!.firstChild! : p.childNodes[Math.floor(p.childNodes.length / 2)]!;
+      const text = node.nodeType === 3 ? (node as Text) : (node.firstChild as Text);
+      getSelection()!.collapse(text, where === "end" ? text.data.length : 0);
+    }, where);
+  await caret("middle");
+  await page.waitForTimeout(50);
+  const plain = await typeAndMeasure(page, "250 KB dense paragraph: typing plain text in it", "Hola ");
+  await caret("end");
+  await page.waitForTimeout(50);
+  const before = (await composerProbe(page)).links?.length ?? 0;
+  const inLink = await typeAndMeasure(page, "250 KB dense paragraph: typing that extends its autolink", "/version-dos");
+  expect(await editor.evaluate((el) => el.querySelector("a[data-rt-auto]")!.getAttribute("href"))).toBe(`${url}/version-dos`);
+  const own = stat("250 KB dense paragraph: the live-link reconciliation per key", LINKS_MS, ((await composerProbe(page)).links ?? []).slice(before));
+  expect(own.p95).toBeLessThanOrEqual(LINKS_MS * MULT);
+  // ProseMirror's redraw of the line for the changed mark included: within a frame and a half of a plain key
+  expect(inLink.p50).toBeLessThanOrEqual(plain.p50 + 25 * MULT);
+});
+
 // ───────────────────────────── plan 24: the List layout ─────────────────────────────
 
 interface PageCycles {

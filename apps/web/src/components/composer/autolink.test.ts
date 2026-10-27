@@ -4,7 +4,8 @@
  * handler as ProseMirror would call them, keys through the keymaps. After
  * every step an autolink's href is what its text spells.
  */
-import { schema, spelledHref } from "@terno/richtext";
+import { cleanPastedHtml, parseHtml, schema, spelledHref } from "@terno/richtext";
+import { JSDOM } from "jsdom";
 import { closeHistory, redo, undo } from "prosemirror-history";
 import type { Mark, Node as PMNode } from "prosemirror-model";
 import { EditorState, TextSelection, type Transaction } from "prosemirror-state";
@@ -432,6 +433,20 @@ describe("paste", () => {
     let any = false;
     textSlice("see https://a.com", false).content.descendants((n) => void (any ||= n.marks.length > 0));
     expect(any).toBe(false);
+  });
+
+  it("a pasted autolink whose href its text doesn't spell (a partial copy, a forged data-rt-auto) is put right, or unlinked", () => {
+    const { window } = new JSDOM("<!doctype html><html><body></body></html>");
+    const slice = (html: string) => {
+      const d = parseHtml(cleanPastedHtml(`<div data-pm-slice="1 1 []">${html}</div>`, window.document.implementation), window.document.implementation);
+      return d.slice(1, d.content.size - 1);
+    };
+    const v = editor(p("a  b  c"));
+    v.dispatch(v.state.tr.replace(3, 3, slice('<a href="https://santo.com" data-rt-auto="">https://santo.co</a>')));
+    caret(v, after(v, "b "));
+    v.dispatch(v.state.tr.replace(v.state.selection.from, v.state.selection.from, slice('<a href="https://evil.example" data-rt-auto="">click here</a>')));
+    expect(text(v)).toBe("a https://santo.co b click here c");
+    expect(links(v.state)).toEqual([{ text: "https://santo.co", href: "https://santo.co", auto: true }]);
   });
 
   it("a paste over lines with autolinks is reconciled line by line", () => {

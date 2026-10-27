@@ -244,3 +244,24 @@ test("a plain draft from before plan 16, never edited, still sends one text/plai
   expect(mail.raw).not.toMatch(/multipart/);
   expect((await parseRaw(mail.raw)).text).toContain("Texto plano de antes");
 });
+
+test("plan 39: an autolink edited after it was linked is sent with the href its text spells now, never the old one", async ({ app: page, server }) => {
+  await focusList(page);
+  await page.keyboard.press("c");
+  await page.getByTestId("compose-to").fill("ana@example.com");
+  await page.getByTestId("compose-subject").fill("El enlace");
+  await body(page).click();
+  await page.keyboard.type("Mira https://santo.com y dime");
+  await expect(body(page).locator("a")).toHaveAttribute("href", "https://santo.com");
+  // back to the end of the link (past the words after it), ".com" deleted, "qwe.com" typed
+  for (let i = 0; i < " y dime".length; i++) await page.keyboard.press("ArrowLeft");
+  for (let i = 0; i < 4; i++) await page.keyboard.press("Backspace");
+  await page.keyboard.type("qwe.com");
+  await expect(body(page).locator("a")).toHaveAttribute("href", "https://santoqwe.com");
+  await page.keyboard.press("ControlOrMeta+Enter");
+  const parsed = await parseRaw((await captured(server)).raw);
+  const sent = fragment(parsed.html!);
+  expect(sent).toContain('<a href="https://santoqwe.com">https://santoqwe.com</a>');
+  expect(sent).not.toMatch(/santo\.com/);
+  expect(parsed.text!.replace(/\r\n/g, "\n").trimEnd()).toBe("Mira https://santoqwe.com y dime");
+});

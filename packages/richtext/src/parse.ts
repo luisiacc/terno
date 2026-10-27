@@ -93,8 +93,8 @@ export function cleanDom(body: HTMLElement, { own }: ParseOptions): void {
     if (html.style) filterStyle(html, own ? OWN_STYLE : FOREIGN_STYLE);
     for (const attr of Array.from(el.attributes)) {
       const n = attr.name.toLowerCase();
-      // data-rt-auto (Terno's copy of an autolink) only makes a link follow its text: harmless from anywhere
-      const keep = n === "style" || n === "data-pm-slice" || (name === "a" && ((n === "href" && isSafeHref(attr.value)) || n === "data-rt-auto")) || (n === "start" && name === "ol") || (own && name === "font" && (n === "face" || n === "size" || n === "color"));
+      // data-rt-auto / data-rt-manual (Terno's copy of a link): which kind it is; an autolink only ever follows its text, so harmless from anywhere
+      const keep = n === "style" || n === "data-pm-slice" || (name === "a" && ((n === "href" && isSafeHref(attr.value)) || n === "data-rt-auto" || n === "data-rt-manual")) || (n === "start" && name === "ol") || (own && name === "font" && (n === "face" || n === "size" || n === "color"));
       if (!keep) el.removeAttribute(attr.name);
     }
   }

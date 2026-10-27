@@ -97,7 +97,7 @@ export const schema = new Schema({
       attrs: { href: {}, auto: { default: false } },
       inclusive: false,
       parseDOM: [{ tag: "a[href]", getAttrs: linkAttrs }],
-      toDOM: (mark) => ["a", mark.attrs.auto ? { href: mark.attrs.href, rel: "noopener noreferrer nofollow", "data-rt-auto": "" } : { href: mark.attrs.href, rel: "noopener noreferrer nofollow" }, 0],
+      toDOM: (mark) => ["a", { href: mark.attrs.href, rel: "noopener noreferrer nofollow", [mark.attrs.auto ? "data-rt-auto" : "data-rt-manual"]: "" }, 0],
     },
     bold: {
       parseDOM: [
@@ -168,19 +168,21 @@ export const schema = new Schema({
 });
 
 /**
- * A link read from HTML. Mail HTML carries only href, so a link whose text
- * spells its href is an autolink again on reopen (the same document back).
- * Terno's own copy marks autolinks (data-rt-auto): one gets the href its
- * text spells, or no link when the copied part spells none (a part of
- * "https://santo.com" never points to santo.com).
+ * A link read from HTML. The editor's own DOM (re-read as it is edited) and
+ * Terno's copies say which kind a link is (data-rt-auto, data-rt-manual):
+ * read back as drawn, so a re-read mark equals the one drawn (a different
+ * one made ProseMirror retype the whole link, and drop it). Mail HTML carries
+ * only href: a link whose text spells its href is an autolink again on
+ * reopen (the same document back). An autolink pasted with an href its text
+ * doesn't spell is put right by the editor's live links, like any edit.
  */
 function linkAttrs(dom: HTMLElement) {
   const href = (dom.getAttribute("href") ?? "").trim();
   if (!isSafeHref(href)) return false;
+  if (dom.hasAttribute("data-rt-auto")) return { href, auto: true };
+  if (dom.hasAttribute("data-rt-manual")) return { href, auto: false };
   // a line break in it is a delimiter, as in the editor: such a link spells nothing
-  const spelled = dom.querySelector("br") ? null : spelledHref(dom.textContent ?? "");
-  if (dom.hasAttribute("data-rt-auto")) return spelled ? { href: spelled, auto: true } : false;
-  return { href, auto: spelled === href };
+  return { href, auto: !dom.querySelector("br") && spelledHref(dom.textContent ?? "") === href };
 }
 
 function fontAttrs(font: Font | null) {

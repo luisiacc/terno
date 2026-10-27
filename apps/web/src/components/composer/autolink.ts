@@ -338,7 +338,8 @@ function flushSoon(view: EditorView): void {
   if (tr) view.dispatch(tr);
 }
 
-export function liveLinks(): Plugin<Pending> {
+/** `probe`: test builds time each reconciliation (window.__composer.links, the perf suite's gate on this plugin's own work). */
+export function liveLinks(probe?: (name: string, value: number) => void): Plugin<Pending> {
   return new Plugin<Pending>({
     key: liveKey,
     state: {
@@ -352,10 +353,12 @@ export function liveLinks(): Plugin<Pending> {
       },
     },
     appendTransaction(trs, _old, state) {
+      const t0 = import.meta.env.VITE_RENDER_PROBE ? performance.now() : 0;
       const ranges = changedRanges(trs, (tr) => !isComposition(tr) && tr.getMeta(liveKey) === undefined);
       if (!ranges.length) return null;
       const tr = state.tr;
       reconcile(tr, ranges);
+      if (import.meta.env.VITE_RENDER_PROBE) probe?.("links", performance.now() - t0);
       return tr.docChanged ? tr.setMeta(liveKey, "own") : null;
     },
     props: {

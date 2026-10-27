@@ -416,7 +416,7 @@ export function createPlugins(): Plugin[] {
       ],
     }),
     // plan 39: an autolink's href follows its text
-    liveLinks(),
+    liveLinks(ghostProbe),
     keymap(mod),
     // Esc belongs to the composer (collapse, leave), not to "select the parent node"
     keymap(BASE_KEYS),

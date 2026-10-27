@@ -243,27 +243,25 @@ describe("the link mark's auto attribute", () => {
     ]);
   });
 
-  it("parse: Terno's copy of an autolink (data-rt-auto) goes where its text says, or is no link", () => {
+  it("parse: the editor's DOM and Terno's copies are read back as drawn (data-rt-auto, data-rt-manual), whatever the text", () => {
     const paste = (html: string) => parseHtml(cleanPastedHtml(`<div data-pm-slice="1 1 []">${html}</div>`, impl), impl);
-    expect(links(paste('<a href="https://santo.com" data-rt-auto="">https://santo.co</a>'))).toEqual([{ text: "https://santo.co", href: "https://santo.co", auto: true }]);
-    expect(links(paste('<a href="https://santo.com" data-rt-auto="">anto.com</a>'))).toEqual([]);
-    // from anywhere: it can only make a link follow its text
-    expect(links(parseHtml('<a href="https://evil.example" data-rt-auto="">https://bank.example</a>', impl))).toEqual([{ text: "https://bank.example", href: "https://bank.example", auto: true }]);
+    // (the editor's live links put a pasted autolink right; the mail written from it is honest whatever: below)
+    expect(links(paste('<a href="https://santo.com" data-rt-auto="">https://santo.co</a>'))).toEqual([{ text: "https://santo.co", href: "https://santo.com", auto: true }]);
+    expect(links(paste('<a href="https://x.com" data-rt-manual="">https://x.com</a>'))).toEqual([{ text: "https://x.com", href: "https://x.com", auto: false }]);
     expect(links(parseHtml('<a href="javascript:alert(1)" data-rt-auto="">https://x.com</a>', impl))).toEqual([]);
   });
 
   it("parse: a link with a line break in it spells nothing (a break ends a token)", () => {
-    const d = parseHtml('<div><a href="https://x.comfoo" data-rt-auto="">https://x.com<br>foo</a></div>', impl);
-    expect(links(d)).toEqual([]);
     expect(links(parseHtml('<div><a href="https://x.comfoo">https://x.com<br>foo</a></div>', impl)).every((l) => !l.auto)).toBe(true);
   });
 
-  it("the editor's DOM and copies mark autolinks; the mail HTML doesn't", () => {
+  it("the editor's DOM and copies say which kind a link is; the mail HTML doesn't", () => {
     const d = doc(p(t("https://x.com", autoLink("https://x.com"))));
     expect(toEmailHtml(d)).toBe('<div><a href="https://x.com">https://x.com</a></div>');
     const spec = schema.marks.link.spec.toDOM!(autoLink("https://x.com"), true) as [string, Record<string, string>];
     expect(spec[1]["data-rt-auto"]).toBe("");
     const manual = schema.marks.link.spec.toDOM!(manualLink("https://x.com"), true) as [string, Record<string, string>];
+    expect(manual[1]["data-rt-manual"]).toBe("");
     expect("data-rt-auto" in manual[1]).toBe(false);
   });
 
