@@ -1154,7 +1154,7 @@ export class BackendCore {
       const life = this.lifetime(accountId);
       try { return await run(); }
       catch (error) {
-        await this.recoverSignIn(accountId, flow, life);
+        await this.recoverDroppedSignIn(accountId, flow, life);
         throw error;
       }
     })();
@@ -1164,7 +1164,12 @@ export class BackendCore {
   }
 
   /** A failed newer intent can also inherit the previous intent's deliberate drop. */
-  async recoverSignIn(accountId: number, flow: AbortController, expected = this.lifetimes.get(accountId)): Promise<void> {
+  async recoverSignIn(accountId: number, flow: AbortController): Promise<void> {
+    await this.credentialFlows.get(accountId)?.catch(() => {});
+    await this.recoverDroppedSignIn(accountId, flow, this.lifetimes.get(accountId));
+  }
+
+  private async recoverDroppedSignIn(accountId: number, flow: AbortController, expected: AccountLifetime | undefined): Promise<void> {
     const active = () => !!expected && expected.abort.signal.aborted && !expected.removing && this.lifetimes.get(accountId) === expected && this.signIns.get(accountId) === flow && !flow.signal.aborted && !this.abort.signal.aborted && !this.stopped;
     if (!active()) return;
     const account = await this.store.accounts.get(accountId);

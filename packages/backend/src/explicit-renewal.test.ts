@@ -52,6 +52,30 @@ async function setup(kind: "SQL" | "IndexedDB") {
 }
 
 describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal", (kind) => {
+  it("failed newer consent waits for an admitted replacement before reopening", async () => {
+    const t = await setup(kind), entered = t.gate(), blocked = t.gate(), declined = t.gate();
+    const commit = t.backend.store.secrets.commit.bind(t.backend.store.secrets);
+    vi.spyOn(t.backend.store.secrets, "commit").mockImplementationOnce(async (...args) => { entered.release(); await blocked.promise; return commit(...args); });
+    t.answer({ refreshToken: "admitted-replacement" });
+    const old = outcome(t.client.call("accounts.reconnect", { id: t.account.id })); await entered.promise;
+    const create = t.registry.create.bind(t.registry);
+    const reopened = vi.spyOn(t.registry, "create").mockImplementation((ctx) => {
+      const loadedGrant = ctx.getSecret("refreshToken");
+      return { ...create(ctx), async verify() { if (await loadedGrant !== await t.backend.getSecret(t.name)) throw new ProviderAuthError("synthetic stale grant"); } };
+    });
+    t.connect.mockImplementationOnce(async () => { declined.release(); throw new Error("synthetic consent declined"); });
+    let settled = false;
+    const newer = outcome(t.client.call("accounts.reconnect", { id: t.account.id })).then((value) => { settled = true; return value; });
+    await declined.promise;
+    for (let i = 0; i < 10; i++) await new Promise<void>((r) => setImmediate(r));
+    const premature = reopened.mock.calls.length, recoveredEarly = settled;
+    blocked.release(); expect(await old).toHaveProperty("error"); expect(await newer).toHaveProperty("error");
+    const provider = await t.backend.provider(t.account.id);
+    await expect(provider!.verify()).resolves.toBeUndefined();
+    expect(await t.backend.getSecret(t.name)).toBe("admitted-replacement");
+    expect(recoveredEarly).toBe(false); expect(premature).toBe(0);
+  });
+
   it("initial omission and malformed present values save no new account", async () => {
     const t = await setup(kind); const before = (await t.client.call("app.bootstrap", {})).accounts.map((a) => ({ id: a.id, email: a.email }));
     for (const refreshToken of [null, undefined, "", 123]) {
