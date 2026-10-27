@@ -13,6 +13,8 @@ const DISPLAYS = new Set(["none", "contents", "block", "inline", "inline-block",
 const INLINE_DISPLAYS = new Set(["inline", "inline-block", "inline-flex", "inline-grid", "inline-table", "contents"]);
 const HEIGHT_BOXES = new Set(["block", "flow-root", "list-item", "inline-block", "flex", "inline-flex", "grid", "inline-grid", "table-caption"]);
 const DEFAULT_DISPLAY = new Map([["title", "none"], ["slot", "contents"], ["button", "inline-block"], ["input", "inline-block"], ["marquee", "inline-block"], ["meter", "inline-block"], ["progress", "inline-block"], ["select", "inline-block"], ["textarea", "inline-block"], ["table", "table"], ["caption", "table-caption"], ["thead", "table-header-group"], ["tbody", "table-row-group"], ["tfoot", "table-footer-group"], ["tr", "table-row"], ["td", "table-cell"], ["th", "table-cell"], ["col", "table-column"], ["colgroup", "table-column-group"]]);
+// Chromium's retained legend rendering normalizes these authored values before box decisions.
+const LEGEND_DISPLAY = new Map([["none", "none"], ["contents", "contents"], ["inline", "block"], ["inline-block", "block"], ["block", "block"], ["flow-root", "flow-root"], ["list-item", "list-item"], ["flex", "flex"], ["grid", "grid"], ["inline-flex", "flex"], ["inline-grid", "grid"], ["table", "table"], ["inline-table", "table"], ["table-row-group", "block"], ["table-header-group", "block"], ["table-footer-group", "block"], ["table-row", "block"], ["table-cell", "block"], ["table-column", "block"], ["table-column-group", "block"], ["table-caption", "block"]]);
 const LENGTHS = new Set(["px", "em", "rem", "ex", "ch", "cap", "ic", "lh", "rlh", "vw", "vh", "vmin", "vmax", "svh", "lvh", "dvh", "cm", "mm", "q", "in", "pt", "pc"]);
 const PROPERTIES = new Set(["display", "visibility", "opacity", "max-height", "overflow", "overflow-x", "overflow-y"]);
 const INITIAL = new Map([["display", "inline"], ["opacity", "positive"], ["max-height", "none"], ["overflow", "visible"], ["overflow-x", "visible"], ["overflow-y", "visible"]]);
@@ -123,7 +125,8 @@ export async function htmlToText(html: string): Promise<string> {
     const source = attrs.get("style");
     const style = source ? inlineStyle(source) : EMPTY_STYLE;
     const authoredDisplay = style.get("display")?.value;
-    const display = authoredDisplay ?? DEFAULT_DISPLAY.get(node.tagName) ?? (BLOCKS.has(node.tagName) ? "block" : "inline");
+    const specifiedDisplay = authoredDisplay ?? DEFAULT_DISPLAY.get(node.tagName) ?? (BLOCKS.has(node.tagName) ? "block" : "inline");
+    const display = node.tagName === "legend" ? LEGEND_DISPLAY.get(specifiedDisplay) ?? specifiedDisplay : specifiedDisplay;
     const hidden = attrs.get("hidden")?.trim().toLowerCase();
     const overflow = verticalOverflow(style);
     if (display === "none" || display === "table-column" || display === "table-column-group" || (attrs.has("hidden") && (!authoredDisplay || hidden === "until-found")) || (display !== "contents" && style.get("opacity")?.value === "0") || (HEIGHT_BOXES.has(display) && style.get("max-height")?.value === "0" && overflow !== "visible")) continue;

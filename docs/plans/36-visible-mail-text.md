@@ -180,3 +180,7 @@ Required read-only follow-up critique completed exit0 with four points (`/tmp/te
 ### Public-oracle follow-up: body TITLE
 
 Observed7unit/native/IDB and2WASM red failures after correcting the newly generated body-title-with-display expectation to the public reader's visible result. TITLE is now retained with default none; head exclusion is unchanged. Authored body display:block exposes useful text as the reader does, while the earlier body-title-without-style and head-title regressions remain excluded. Green15unit and4WASM checks. `/tmp/terno-visible-r2-title-*` records the red/green. The refinement/critique was completed before this production change; no history rewrite or MIME/UI edits.
+
+### Public-oracle follow-up: finite legend rendering
+
+Observed48unit/native/IDB and12WASM red failures after correcting the new legend-inline phrase expectation and adding public21-value/42-predicate controls. Legend's effective display is now normalized through the audited closed21-value map before any suppression, opacity, clipping or boundary decision; authored display remains separate for hidden/importance semantics. Positive unclipped column/group and inline-table controls prevent unconditional-column pruning from falsely passing the matrix. Boxless contents stays boxless; ordinary/until-found hidden and important precedence remain. Green127unit and24WASM checks, `/tmp/terno-visible-r2-legend-*`. This is a finite retained-HTML rendering interaction, not generic UA/stylesheet/layout computation. Default title/head and all preceding corrections remain covered.

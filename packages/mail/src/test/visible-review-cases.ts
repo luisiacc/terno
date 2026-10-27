@@ -859,7 +859,10 @@ visibleReviewCases.push(
 
 for (const tag of ["center", "dir", "menu", "hgroup", "search", "legend", "summary"]) {
   visibleReviewCases.push({ name: `R2-F5 retained ${tag} has default block boundaries`, html: `<${tag}>Visible</${tag}><${tag}>phrase</${tag}>`, text: "Visible phrase", value: "visible phrase", query: '"visible phrase"', matches: true });
-  for (const display of ["inline", "contents"]) visibleReviewCases.push({ name: `R2-F5 ${tag} ${display} overrides default boundaries`, html: `<${tag} style="display:${display}">un</${tag}><${tag} style="display:${display}">broken</${tag}>`, text: "unbroken", value: "unbroken", query: "unbroken", matches: true });
+  for (const display of ["inline", "contents"]) {
+    const text = tag === "legend" && display === "inline" ? "un broken" : "unbroken";
+    visibleReviewCases.push({ name: `R2-F5 ${tag} ${display} resolved boundaries`, html: `<${tag} style="display:${display}">un</${tag}><${tag} style="display:${display}">broken</${tag}>`, text, value: text, query: text === "unbroken" ? "unbroken" : '\"un broken\"', matches: true });
+  }
 }
 visibleReviewCases.push({ name: "R2-F5 default center does not override hidden", html: '<center hidden>phantomneedle</center><p>Useful</p>', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false });
 visiblePolicyCases.push(
@@ -871,3 +874,227 @@ visibleReviewCases.push(
   { name: "R2-F3 body title authored display is retained", html: '<p>Useful</p><title style="display:block">phantomneedle</title>', text: "Useful phantomneedle", value: "phantomneedle", query: "phantomneedle", matches: true },
   { name: "R2-F3 head title stays outside reader body", html: '<head><title style="display:block">phantomneedle</title></head><body><p>Useful</p></body>', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false },
 );
+visibleReviewCases.push(
+  { name: "R2 legend inline height applies after normalization", html: '<legend style="display:inline;max-height:0;overflow:hidden">phantomneedle</legend><p>Useful</p>', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false },
+  { name: "R2 legend table cell height applies after normalization", html: '<legend style="display:table-cell;max-height:0;overflow:hidden">phantomneedle</legend><p>Useful</p>', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false },
+  { name: "R2 legend table column text has a real block box", html: '<legend style="display:table-column">Useful policy</legend><p>Tail</p>', text: "Useful policy Tail", value: "useful policy", query: '"useful policy"', matches: true },
+  { name: "R2 legend table column group text has a real block box", html: '<legend style="display:table-column-group">Useful policy</legend><p>Tail</p>', text: "Useful policy Tail", value: "useful policy", query: '"useful policy"', matches: true },
+  { name: "R2 legend inline table keeps positive height", html: '<legend style="display:inline-table;max-height:0;overflow:hidden">Useful policy</legend><p>Tail</p>', text: "Useful policy Tail", value: "useful policy", query: '"useful policy"', matches: true },
+  { name: "R2 legend important inline beats contents before normalization", html: '<legend style="display:inline!important;display:contents;max-height:0;overflow:hidden">phantomneedle</legend><p>Useful</p>', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false },
+  { name: "R2 legend contents remains boxless", html: '<legend style="display:contents;opacity:0;max-height:0;overflow:hidden">Useful policy</legend><p>Tail</p>', text: "Useful policy Tail", value: "useful policy", query: '"useful policy"', matches: true },
+  { name: "R2 legend default still obeys ordinary hidden", html: '<legend hidden>phantomneedle</legend><p>Useful</p>', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false },
+  { name: "R2 legend until found remains excluded", html: '<legend hidden=" until-found " style="display:inline">phantomneedle</legend><p>Useful</p>', text: "Useful", value: "phantomneedle", query: "phantomneedle", matches: false },
+);
+
+visiblePolicyCases.push(...[
+  {
+    "name": "R2 legend public matrix display none opacity:0",
+    "html": "<legend style=\"display:none;opacity:0\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display none max-height:0;overflow:hidden",
+    "html": "<legend style=\"display:none;max-height:0;overflow:hidden\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display contents opacity:0",
+    "html": "<legend style=\"display:contents;opacity:0\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Useful policy Tail"
+  },
+  {
+    "name": "R2 legend public matrix display contents max-height:0;overflow:hidden",
+    "html": "<legend style=\"display:contents;max-height:0;overflow:hidden\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Useful policy Tail"
+  },
+  {
+    "name": "R2 legend public matrix display inline opacity:0",
+    "html": "<legend style=\"display:inline;opacity:0\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display inline max-height:0;overflow:hidden",
+    "html": "<legend style=\"display:inline;max-height:0;overflow:hidden\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display inline-block opacity:0",
+    "html": "<legend style=\"display:inline-block;opacity:0\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display inline-block max-height:0;overflow:hidden",
+    "html": "<legend style=\"display:inline-block;max-height:0;overflow:hidden\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display block opacity:0",
+    "html": "<legend style=\"display:block;opacity:0\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display block max-height:0;overflow:hidden",
+    "html": "<legend style=\"display:block;max-height:0;overflow:hidden\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display flow-root opacity:0",
+    "html": "<legend style=\"display:flow-root;opacity:0\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display flow-root max-height:0;overflow:hidden",
+    "html": "<legend style=\"display:flow-root;max-height:0;overflow:hidden\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display list-item opacity:0",
+    "html": "<legend style=\"display:list-item;opacity:0\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display list-item max-height:0;overflow:hidden",
+    "html": "<legend style=\"display:list-item;max-height:0;overflow:hidden\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display flex opacity:0",
+    "html": "<legend style=\"display:flex;opacity:0\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display flex max-height:0;overflow:hidden",
+    "html": "<legend style=\"display:flex;max-height:0;overflow:hidden\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display grid opacity:0",
+    "html": "<legend style=\"display:grid;opacity:0\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display grid max-height:0;overflow:hidden",
+    "html": "<legend style=\"display:grid;max-height:0;overflow:hidden\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display inline-flex opacity:0",
+    "html": "<legend style=\"display:inline-flex;opacity:0\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display inline-flex max-height:0;overflow:hidden",
+    "html": "<legend style=\"display:inline-flex;max-height:0;overflow:hidden\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display inline-grid opacity:0",
+    "html": "<legend style=\"display:inline-grid;opacity:0\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display inline-grid max-height:0;overflow:hidden",
+    "html": "<legend style=\"display:inline-grid;max-height:0;overflow:hidden\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display table opacity:0",
+    "html": "<legend style=\"display:table;opacity:0\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display table max-height:0;overflow:hidden",
+    "html": "<legend style=\"display:table;max-height:0;overflow:hidden\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Useful policy Tail"
+  },
+  {
+    "name": "R2 legend public matrix display inline-table opacity:0",
+    "html": "<legend style=\"display:inline-table;opacity:0\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display inline-table max-height:0;overflow:hidden",
+    "html": "<legend style=\"display:inline-table;max-height:0;overflow:hidden\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Useful policy Tail"
+  },
+  {
+    "name": "R2 legend public matrix display table-row-group opacity:0",
+    "html": "<legend style=\"display:table-row-group;opacity:0\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display table-row-group max-height:0;overflow:hidden",
+    "html": "<legend style=\"display:table-row-group;max-height:0;overflow:hidden\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display table-header-group opacity:0",
+    "html": "<legend style=\"display:table-header-group;opacity:0\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display table-header-group max-height:0;overflow:hidden",
+    "html": "<legend style=\"display:table-header-group;max-height:0;overflow:hidden\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display table-footer-group opacity:0",
+    "html": "<legend style=\"display:table-footer-group;opacity:0\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display table-footer-group max-height:0;overflow:hidden",
+    "html": "<legend style=\"display:table-footer-group;max-height:0;overflow:hidden\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display table-row opacity:0",
+    "html": "<legend style=\"display:table-row;opacity:0\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display table-row max-height:0;overflow:hidden",
+    "html": "<legend style=\"display:table-row;max-height:0;overflow:hidden\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display table-cell opacity:0",
+    "html": "<legend style=\"display:table-cell;opacity:0\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display table-cell max-height:0;overflow:hidden",
+    "html": "<legend style=\"display:table-cell;max-height:0;overflow:hidden\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display table-column opacity:0",
+    "html": "<legend style=\"display:table-column;opacity:0\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display table-column max-height:0;overflow:hidden",
+    "html": "<legend style=\"display:table-column;max-height:0;overflow:hidden\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display table-column-group opacity:0",
+    "html": "<legend style=\"display:table-column-group;opacity:0\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display table-column-group max-height:0;overflow:hidden",
+    "html": "<legend style=\"display:table-column-group;max-height:0;overflow:hidden\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display table-caption opacity:0",
+    "html": "<legend style=\"display:table-caption;opacity:0\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  },
+  {
+    "name": "R2 legend public matrix display table-caption max-height:0;overflow:hidden",
+    "html": "<legend style=\"display:table-caption;max-height:0;overflow:hidden\"><b>Useful policy</b></legend><p>Tail</p>",
+    "text": "Tail"
+  }
+]);
