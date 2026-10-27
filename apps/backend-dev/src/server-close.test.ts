@@ -34,11 +34,27 @@ async function completed(promise: Promise<unknown>, ms: number): Promise<boolean
   } finally { clearTimeout(timer); }
 }
 
-async function event(emitter: EventEmitter, name: string): Promise<unknown[]> {
-  const abort = new AbortController();
-  const timer = setTimeout(() => abort.abort(new Error(`missing ${name}`)), 2000);
-  try { return await once(emitter, name, { signal: abort.signal }); }
-  finally { clearTimeout(timer); }
+function eventScope() {
+  const pending = new Map<AbortController, Promise<unknown[]>>();
+  const watch = (emitter: EventEmitter, name: string) => {
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(new Error(`missing ${name}`)), 2000);
+    const result = once(emitter, name, { signal: abort.signal }).finally(() => { clearTimeout(timer); pending.delete(abort); });
+    pending.set(abort, result);
+    void result.catch(() => {});
+    return result;
+  };
+  const dispose = async () => {
+    const waits = [...pending];
+    for (const [abort] of waits) abort.abort(new Error("fixture closed"));
+    await Promise.allSettled(waits.map(([, result]) => result));
+  };
+  return { watch, dispose };
+}
+
+async function settleCloses(promises: Promise<void>[], ms = 5000): Promise<PromiseSettledResult<void>[] | undefined> {
+  const joined = Promise.allSettled(promises);
+  return await completed(joined, ms) ? await joined : undefined;
 }
 
 const header = "GET /?token=shutdown-fixture HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n";
@@ -47,18 +63,21 @@ async function withHost(body: (fixture: {
   host: Awaited<ReturnType<typeof startDevServer>>; server: Server; wss: import("ws").WebSocketServer;
   own: <T extends Socket | WebSocket>(peer: T) => T; release: (() => void)[];
   failure: { expected?: unknown };
+  watch: ReturnType<typeof eventScope>["watch"];
 }) => Promise<void>): Promise<void> {
   const dir = mkdtempSync(join(tmpdir(), "terno-dev-close-control-"));
   const peers: (Socket | WebSocket)[] = [], release: (() => void)[] = [];
   const failure: { expected?: unknown } = {};
+  const { watch, dispose } = eventScope();
   let host: Awaited<ReturnType<typeof startDevServer>> | undefined, storeClosed = false;
   try {
     const index = observed.servers.length, sockets = observed.sockets.length;
     host = await startDevServer({ port: 0, dataDir: dir, token: "shutdown-fixture", seed: false, autoSync: false, iconTransport: null });
     const close = host.backend.store.close.bind(host.backend.store);
     vi.spyOn(host.backend.store, "close").mockImplementation(async () => { await close(); storeClosed = true; });
-    await body({ host, server: observed.servers[index]!, wss: observed.sockets[sockets]!, own: (peer) => { peers.push(peer); return peer; }, release, failure });
+    await body({ host, server: observed.servers[index]!, wss: observed.sockets[sockets]!, own: (peer) => { peers.push(peer); return peer; }, release, failure, watch });
   } finally {
+    await dispose();
     for (const done of release) done();
     for (const peer of peers) { if (peer instanceof WebSocket) peer.terminate(); else peer.destroy(); }
     try {
@@ -75,12 +94,13 @@ async function withHost(body: (fixture: {
   }
 }
 
-it.each(["no partial peer", "partial peer", "peer destroyed before close"] as const)("real development host closes with %s", async (scenario) => {
+it.each(["no partial peer", "partial peer", "partial peer after slow setup", "peer destroyed before close"] as const)("real development host closes with %s", async (scenario) => {
   const dir = mkdtempSync(join(tmpdir(), "terno-dev-close-"));
   const stages: string[] = [];
   let raw: Socket | undefined, ws: WebSocket | undefined, closing: Promise<void> | undefined;
   let awaitingAccept: ((socket: Socket) => void) | undefined;
   let backendStopped = false;
+  const { watch: event, dispose } = eventScope();
   const seen = observed.servers.length;
   let host: Awaited<ReturnType<typeof startDevServer>> | undefined;
   try {
@@ -104,7 +124,7 @@ it.each(["no partial peer", "partial peer", "peer destroyed before close"] as co
       const bootstrap = client.call("app.bootstrap", {});
       expect(await completed(bootstrap, 2000)).toBe(true);
       expect(await bootstrap).toHaveProperty("accounts");
-      const clientClosed = event(ws, "close");
+      if (scenario === "partial peer after slow setup") vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
       stages.push("bootstrap-finished");
       if (scenario !== "no partial peer") {
         const port = Number(new URL(host.url).port);
@@ -135,6 +155,14 @@ it.each(["no partial peer", "partial peer", "peer destroyed before close"] as co
           for (const code of aborted) expect(["HPE_INVALID_EOF_STATE", "ECONNRESET"]).toContain(code);
         }
       }
+      if (scenario === "partial peer after slow setup") {
+        await vi.advanceTimersByTimeAsync(2100);
+        vi.useRealTimers();
+        expect(ws.readyState).toBe(WebSocket.OPEN);
+        stages.push("setup-finished-after-old-close-deadline");
+      }
+      expect(ws.readyState).toBe(WebSocket.OPEN);
+      const clientClosed = event(ws, "close");
       stages.push("close-requested"); closing = host.close();
       expect(await completed(closing, 5000), JSON.stringify({ scenario, stages })).toBe(true);
       expect(backendStopped).toBe(true);
@@ -142,6 +170,8 @@ it.each(["no partial peer", "partial peer", "peer destroyed before close"] as co
       expect(ws.readyState).toBe(WebSocket.CLOSED);
       expect(accepted.size).toBe(0);
     } finally {
+      await dispose();
+      vi.useRealTimers();
       raw?.destroy(); ws?.terminate();
       closing ??= host.close();
       let cleaned = false;
@@ -159,8 +189,36 @@ it.each(["no partial peer", "partial peer", "peer destroyed before close"] as co
   }
 }, 20_000);
 
+it("bounds a cleanup join while real transport completion is withheld", async () => {
+  await withHost(async ({ host, server, release }) => {
+    let reached!: () => void, unblock!: () => void;
+    const entered = new Promise<void>((resolve) => { reached = resolve; });
+    const gate = new Promise<void>((resolve) => { unblock = resolve; }); release.push(unblock);
+    const close = server.close.bind(server);
+    vi.spyOn(server, "close").mockImplementation((callback) => close((error) => {
+      reached(); void gate.then(() => callback?.(error));
+    }));
+    const closing = host.close();
+    expect(await completed(entered, 2000)).toBe(true);
+    const joined = settleCloses([closing], 20);
+    expect(await completed(joined, 100), "fixture cleanup must report a still-held transport without hanging").toBe(true);
+    expect(await joined).toBeUndefined();
+  });
+}, 10_000);
+
+it("disposes an abandoned event observation when its owned fixture closes", async () => {
+  let server!: Server, count = 0, pending: Promise<unknown[]> | undefined;
+  try {
+    await withHost(async ({ server: actual, watch }) => {
+      server = actual; count = server.listenerCount("upgrade");
+      pending = watch(server, "upgrade"); void pending.catch(() => {});
+    });
+    expect(server.listenerCount("upgrade")).toBe(count);
+  } finally { await pending?.catch(() => {}); }
+}, 10_000);
+
 it.each(["late headers", "close inside headers"])("rejects upgrade admission during %s", async (scenario) => {
-  await withHost(async ({ host, server, wss, own }) => {
+  await withHost(async ({ host, server, wss, own, watch: event }) => {
     const admitted = vi.spyOn(host.backend, "connect");
     const accepted = event(server, "connection");
     const raw = own(connect(Number(new URL(host.url).port), "127.0.0.1"));
@@ -191,7 +249,7 @@ it.each([
   ["wrong", undefined],
   ["shutdown-fixture", "https://foreign.invalid"],
 ] as const)("keeps upgrade authentication for token %s and origin %s", async (token, origin) => {
-  await withHost(async ({ host, own }) => {
+  await withHost(async ({ host, own, watch: event }) => {
     const admitted = vi.spyOn(host.backend, "connect");
     const ws = own(new WebSocket(`${host.url}?token=${token}`, origin ? { origin } : undefined));
     ws.on("error", () => {});
@@ -242,32 +300,36 @@ it.each([false, true])("preserves cleanup errors while closing the store (multip
 }, 10_000);
 
 it("concurrent host closes join the first backend cleanup", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "terno-dev-close-join-"));
-  const host = await startDevServer({ port: 0, dataDir: dir, token: "shutdown-join", seed: false, autoSync: false, iconTransport: null });
-  let reached!: () => void, release!: () => void;
-  const entered = new Promise<void>((resolve) => { reached = resolve; });
-  const gate = new Promise<void>((resolve) => { release = resolve; });
-  const realStoreClose = host.backend.store.close.bind(host.backend.store);
-  let calls = 0, firstDone = false, secondDone = false, storeClosed = false;
-  const storeClose = vi.spyOn(host.backend.store, "close").mockImplementation(async () => { calls++; reached(); await gate; await realStoreClose(); storeClosed = true; });
-  const first = host.close(); first.then(() => { firstDone = true; }, () => { firstDone = true; });
-  let second: Promise<void> | undefined;
-  try {
-    expect(await completed(entered, 5000), "the real first stop reached store cleanup").toBe(true);
-    second = host.close(); second.then(() => { secondDone = true; }, () => { secondDone = true; });
-    await nextTurn(); await nextTurn();
-    expect(firstDone).toBe(false);
-    expect(secondDone, "a second host close must join the still-held first cleanup").toBe(false);
-    release(); await Promise.all([first, second]);
-    await host.close();
-    expect(calls).toBe(1);
-  } finally {
-    release();
-    const results = await Promise.allSettled([first, ...(second ? [second] : [])]);
-    storeClose.mockRestore();
-    const errors = results.filter((result) => result.status === "rejected");
-    if (storeClosed) rmSync(dir, { recursive: true, force: true });
-    console.info("DEV_CLOSE_JOIN_CLEANUP", JSON.stringify({ dir, removed: !existsSync(dir), calls, storeClosed }));
-    expect(errors).toEqual([]);
-  }
+  await withHost(async ({ host, release: releases }) => {
+    let reached!: () => void, release!: () => void;
+    const entered = new Promise<void>((resolve) => { reached = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; }); releases.push(release);
+    const realStoreClose = vi.mocked(host.backend.store.close).getMockImplementation()!;
+    let calls = 0, firstDone = false, secondDone = false;
+    const storeClose = vi.spyOn(host.backend.store, "close").mockImplementation(async () => { calls++; reached(); await gate; await realStoreClose(); });
+    let first: Promise<void> | undefined, second: Promise<void> | undefined, results: PromiseSettledResult<void>[] | undefined;
+    try {
+      first = host.close(); first.then(() => { firstDone = true; }, () => { firstDone = true; });
+      expect(await completed(entered, 5000), "the real first stop reached store cleanup").toBe(true);
+      second = host.close(); second.then(() => { secondDone = true; }, () => { secondDone = true; });
+      await nextTurn(); await nextTurn();
+      expect(firstDone).toBe(false);
+      expect(secondDone, "a second host close must join the still-held first cleanup").toBe(false);
+      release();
+      results = await settleCloses([first, second]);
+      expect(results).toEqual([{ status: "fulfilled", value: undefined }, { status: "fulfilled", value: undefined }]);
+      expect(await completed(host.close(), 2000)).toBe(true);
+      expect(calls).toBe(1);
+    } finally {
+      release();
+      try {
+        results = await settleCloses([...(first ? [first] : []), ...(second ? [second] : [])]);
+        expect(results, "fixture cleanup must settle within its deadline").toBeDefined();
+        expect(results?.filter((result) => result.status === "rejected")).toEqual([]);
+      } finally {
+        storeClose.mockRestore();
+        console.info("DEV_CLOSE_JOIN_CLEANUP", JSON.stringify({ calls, joined: results !== undefined }));
+      }
+    }
+  });
 }, 20_000);
