@@ -20,6 +20,7 @@ async function setup(kind: "SQL" | "IDB" | "IDB instant", automatic = false) {
   let historyRefusal: number | undefined;
   let heldHistory: { captured: ReturnType<typeof gate>; response: ReturnType<typeof gate> } | undefined;
   let heldMutation: { at: number; captured: ReturnType<typeof gate>; response: ReturnType<typeof gate> } | undefined;
+  let heldSend: { captured: ReturnType<typeof gate>; response: ReturnType<typeof gate> } | undefined;
   let minimalRequests = 0;
   const labels = new Set(["INBOX", "UNREAD"]);
   const mutations: unknown[] = [];
@@ -29,6 +30,10 @@ async function setup(kind: "SQL" | "IDB" | "IDB instant", automatic = false) {
       const provider = createGmailApiProvider({ ...ctx, fetch: async (input, init) => {
       requests++;
       const url = new URL(String(input));
+      if (url.pathname.endsWith("/messages/send")) {
+        if (heldSend) { heldSend.captured.release(); await heldSend.response.promise; }
+        return Response.json({ id: "sent-synthetic" });
+      }
       if (url.pathname.endsWith("/profile")) return Response.json({ historyId: String(history) });
       if (url.pathname.endsWith("/history")) {
         const held = heldHistory;
@@ -66,7 +71,7 @@ async function setup(kind: "SQL" | "IDB" | "IDB instant", automatic = false) {
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "synthetic", origin: "renderer" });
   const client = new RpcClient(c);
-  cleanups.push(async () => { heldHistory?.response.release(); heldMutation?.response.release(); response.release(); freshResponse.release(); client.close(); await backend.stop(); rmSync(dir, { recursive: true, force: true }); });
+  cleanups.push(async () => { heldHistory?.response.release(); heldMutation?.response.release(); heldSend?.response.release(); response.release(); freshResponse.release(); client.close(); await backend.stop(); rmSync(dir, { recursive: true, force: true }); });
   await backend.ready;
   const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
   await backend.syncAccount(account.id);
@@ -76,6 +81,7 @@ async function setup(kind: "SQL" | "IDB" | "IDB instant", automatic = false) {
     refuseHistory(status: number) { historyRefusal = status; heldHistory = { captured: gate(), response: gate() }; return heldHistory; },
     allowHistory() { historyRefusal = undefined; },
     holdMutation(at: number) { heldMutation = { at, captured: gate(), response: gate() }; return heldMutation; },
+    holdSend() { heldSend = { captured: gate(), response: gate() }; return heldSend; },
     minimalRequests: () => minimalRequests,
     setEmptyHistory() { emptyHistory = true; }, setRemote(next: string[]) { labels.clear(); for (const label of next) labels.add(label); }, requests: () => requests, setCapable(value: boolean) { authoritative = value; }, remoteLabels: () => [...labels], hold() { hold = true; blockFresh = true; history++; }, releaseFresh() { blockFresh = false; freshResponse.release(); } };
 }
@@ -136,6 +142,72 @@ it("retirement forgets an automatic trailing reconciliation", async () => {
 });
 
 
+
+it("terminal flag outcomes reconcile once at the claimed worker batch boundary", async () => {
+  const t = await setup("SQL", true);
+  vi.spyOn(t.backend, "kickWorker").mockImplementation(() => {});
+  for (const action of ["markRead", "star", "archive"] as const) await t.backend.store.threads.act({ threadIds: [t.threadId], action, signal: null, now: 1 });
+  const sync = vi.spyOn(t.backend, "syncAccount");
+  const held = t.holdMutation(2);
+  const worker = t.backend.runWorker();
+  try {
+    await held.captured.promise;
+    expect.soft(sync).not.toHaveBeenCalled();
+  } finally { held.response.release(); expect(await worker).toBe(3); }
+  await Promise.all(sync.mock.results.map((result) => result.value));
+  expect(sync).toHaveBeenCalledTimes(1);
+  expect(t.mutations).toHaveLength(3);
+  expect((await t.backend.store.debug.snapshot()).ops.map((op) => op.state)).toEqual(["succeeded", "succeeded", "succeeded"]);
+  sync.mockClear();
+  await t.backend.store.threads.act({ threadIds: [t.threadId], action: "unstar", signal: null, now: 2 });
+  expect(await t.backend.runWorker()).toBe(1);
+  await Promise.all(sync.mock.results.map((result) => result.value));
+  expect(sync).toHaveBeenCalledTimes(1);
+});
+
+it("a stalled sibling Send does not hold a finished account's flag reconciliation", async () => {
+  const t = await setup("SQL", true);
+  vi.spyOn(t.backend, "kickWorker").mockImplementation(() => {});
+  const { account: sibling } = await t.backend.store.accounts.create({ kind: "gmail", email: "sibling@example.test", displayName: "Sibling", color: "indigo", now: 2 });
+  await t.backend.syncAccount(sibling.id);
+  await t.backend.store.threads.act({ threadIds: [t.threadId], action: "markRead", signal: null, now: 2 });
+  const flag = (await t.backend.store.debug.snapshot()).ops[0]!;
+  const send = await t.backend.store.compose.queueSend({ accountId: sibling.id, to: [{ name: "", email: "recipient@example.test" }], cc: [], bcc: [], subject: "Synthetic", bodyText: "Exact send", recordReply: false, now: 2 });
+  const complete = t.backend.store.ops.complete.bind(t.backend.store.ops), committed = gate();
+  vi.spyOn(t.backend.store.ops, "complete").mockImplementation(async (...args) => {
+    const result = await complete(...args);
+    if (args[0] === flag.id) committed.release();
+    return result;
+  });
+  const sync = vi.spyOn(t.backend, "syncAccount");
+  const held = t.holdSend();
+  const worker = t.backend.runWorker();
+  try {
+    await Promise.all([held.captured.promise, committed.promise]);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(sync).toHaveBeenCalledExactlyOnceWith(t.account.id);
+    expect((await t.backend.store.ops.get(send.opId))?.state).toBe("running");
+  } finally { held.response.release(); expect(await worker).toBe(2); }
+  await Promise.all(sync.mock.results.map((result) => result.value));
+  expect((await t.backend.store.ops.get(send.opId))?.state).toBe("succeeded");
+});
+
+it("a committed terminal flag still reconciles when its event cannot be emitted", async () => {
+  const t = await setup("SQL", true);
+  vi.spyOn(t.backend, "kickWorker").mockImplementation(() => {});
+  await t.backend.store.threads.act({ threadIds: [t.threadId], action: "markRead", signal: null, now: 1 });
+  const emit = t.backend.server.emit.bind(t.backend.server);
+  vi.spyOn(t.backend.server, "emit").mockImplementation((name, payload) => {
+    if (name === "op" && payload && typeof payload === "object" && "state" in payload && payload.state === "succeeded") throw new Error("Synthetic terminal event failure");
+    emit(name, payload);
+  });
+  const sync = vi.spyOn(t.backend, "syncAccount");
+  expect(await t.backend.runWorker()).toBe(1);
+  await Promise.all(sync.mock.results.map((result) => result.value));
+  expect(sync).toHaveBeenCalledExactlyOnceWith(t.account.id);
+  expect(t.mutations).toHaveLength(1);
+  expect((await t.backend.store.debug.snapshot()).ops[0]?.state).toBe("succeeded");
+});
 
 describe.each(["SQL", "IDB", "IDB instant"] as const)("%s settled flag observation", (kind) => {
   it.each(["markRead", "star", "archive"] as const)("fresh snapshots reconcile acknowledged %s even after its history was consumed", async (action) => {

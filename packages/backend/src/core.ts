@@ -1378,38 +1378,46 @@ export class BackendCore {
           for (const op of batch) this.undispatched.add(op.id);
           const byAccount = new Map<number, OpRow[]>();
           for (const op of batch) byAccount.set(op.account_id, [...(byAccount.get(op.account_id) ?? []), op]);
-          await Promise.all(
-            [...byAccount.values()].map(async (ops) => {
-              for (const op of ops) {
-                const recovery: { record?: () => Promise<void> } = {};
+          const reconciliations = new Set<number>();
+          const reconcile = (accountId: number) => {
+            if (reconciliations.delete(accountId)) this.reconcileFlags([accountId]);
+          };
+          try {
+            await Promise.all(
+              [...byAccount.values()].map(async (ops) => {
                 try {
-                  await this.executeOp(op, recovery);
-                } catch (error) {
-                  // never strand the rest of the batch in "running"
-                  captureError(error, { code: "ops.crashed", fields: { opKind: opKindOf(op.kind) } });
-                  this.log("error", `op ${op.id} crashed`, error instanceof Error ? error.stack : error);
-                  try {
-                    if (this.store.isOpen) {
-                      if (recovery.record) await recovery.record();
-                      else if ((await this.store.ops.get(op.id))?.state === "running") {
-                        if (this.sendsInFlight.has(op.id)) await this.store.ops.markUnknown(op.id, String(error), this.now());
-                        else await this.store.ops.fail(op.id, String(error), true, this.now());
+                  for (const op of ops) {
+                    const recovery: { record?: () => Promise<void> } = {};
+                    try {
+                      await this.executeOp(op, recovery, reconciliations);
+                    } catch (error) {
+                      // never strand the rest of the batch in "running"
+                      captureError(error, { code: "ops.crashed", fields: { opKind: opKindOf(op.kind) } });
+                      this.log("error", `op ${op.id} crashed`, error instanceof Error ? error.stack : error);
+                      try {
+                        if (this.store.isOpen) {
+                          if (recovery.record) await recovery.record();
+                          else if ((await this.store.ops.get(op.id))?.state === "running") {
+                            if (this.sendsInFlight.has(op.id)) await this.store.ops.markUnknown(op.id, String(error), this.now());
+                            else await this.store.ops.fail(op.id, String(error), true, this.now());
+                          }
+                          const after = await this.store.ops.get(op.id);
+                          if (after) this.announceOp(after, reconciliations);
+                        }
+                      } catch (recoveryError) {
+                        // A running send stays noneligible until storage recovers or startup marks it unknown.
+                        captureError(recoveryError, { code: "ops.crashed", fields: { opKind: opKindOf(op.kind) } });
+                        this.log("error", `op ${op.id} recovery failed`, recoveryError instanceof Error ? recoveryError.stack : recoveryError);
                       }
-                      const after = await this.store.ops.get(op.id);
-                      if (after) this.announceOp(after);
+                    } finally {
+                      this.undispatched.delete(op.id);
+                      if (this.sendsInFlight.delete(op.id) && this.sendsInFlight.size === 0) for (const settle of this.sendsSettled.splice(0)) settle();
                     }
-                  } catch (recoveryError) {
-                    // A running send stays noneligible until storage recovers or startup marks it unknown.
-                    captureError(recoveryError, { code: "ops.crashed", fields: { opKind: opKindOf(op.kind) } });
-                    this.log("error", `op ${op.id} recovery failed`, recoveryError instanceof Error ? recoveryError.stack : recoveryError);
                   }
-                } finally {
-                  this.undispatched.delete(op.id);
-                  if (this.sendsInFlight.delete(op.id) && this.sendsInFlight.size === 0) for (const settle of this.sendsSettled.splice(0)) settle();
-                }
-              }
-            }),
-          );
+                } finally { reconcile(ops[0]!.account_id); }
+              }),
+            );
+          } finally { for (const id of reconciliations) reconcile(id); }
           processed += batch.length;
         }
       } while (this.workerKicked && !this.stopped && !this.draining && this.connectivity.online);
@@ -1437,7 +1445,7 @@ export class BackendCore {
     if (replacement && this.current(replacement)) await this.resumeAuth(op.account_id);
   }
 
-  private async executeOp(claimed: OpRow, recovery: { record?: () => Promise<void> }): Promise<void> {
+  private async executeOp(claimed: OpRow, recovery: { record?: () => Promise<void> }, reconciliations: Set<number>): Promise<void> {
     // Re-read right before dispatch: while earlier ops of the batch ran, this one may have
     // been superseded (deleted), pruned (deleted messages) or narrowed.
     const stored = await this.store.ops.get(claimed.id);
@@ -1460,7 +1468,7 @@ export class BackendCore {
       await this.store.ops.awaitAuth(op.id, encodeText(L("errors.waitingForSignIn")), this.now());
       await this.parkedAcrossSignIn(op.account_id, credentials);
       const after = await this.store.ops.get(op.id);
-      if (after) this.announceOp(after);
+      if (after) this.announceOp(after, reconciliations);
       return;
     }
     // A send owns its drain slot while its immutable attachments are prepared.
@@ -1545,7 +1553,7 @@ export class BackendCore {
     }
     if (this.stopped && !this.store.isOpen) return;
     const after = await this.store.ops.get(op.id);
-    if (after) this.announceOp(after); // a superseded op is simply gone
+    if (after) this.announceOp(after, reconciliations); // a superseded op is simply gone
   }
 
   /**
@@ -1577,9 +1585,9 @@ export class BackendCore {
     return true;
   }
 
-  private announceOp(op: OpRow): void {
+  private announceOp(op: OpRow, reconciliations: Set<number>): void {
+    if (operationFlagFields(op.kind).length && ["succeeded", "failed", "unknown"].includes(op.state)) reconciliations.add(op.account_id);
     this.server.emit("op", this.opInfo(op));
-    if (operationFlagFields(op.kind).length && ["succeeded", "failed", "unknown"].includes(op.state)) this.reconcileFlags([op.account_id]);
   }
 
   opInfo(op: OpRow): OpInfo {
