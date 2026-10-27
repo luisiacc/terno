@@ -233,6 +233,7 @@ describe("IMAP provider against ImapKit", () => {
     const thread = (await client.call("threads.list", { view: "inbox" })).items.find((t) => t.subject === "Keep target")!;
     expect(thread).toBeDefined();
     ctl.setFlags("INBOX", [other.uid], ["\\Deleted"], "add");
+    expect(ctl.getMessage("INBOX", other.uid).flags).toContain("\\Deleted");
     const mutations: string[] = [];
     imap.server.script.add({ on: "command", run: true, when: (context) => {
       if (/^(?:UID )?(?:COPY|MOVE|STORE|EXPUNGE)$/.test(context.command ?? "")) {
@@ -252,6 +253,41 @@ describe("IMAP provider against ImapKit", () => {
     expect.soft(ctl.listMessages("Archive")).toHaveLength(0);
     expect.soft(await client.call("ops.list", {})).toEqual([expect.objectContaining({ kind: "archive", state: "failed", attempts: 1, lastErrorI18n: { key: "errors.imap.unsafeMove" } })]);
     expect((await client.call("threads.get", { threadId: thread.id })).messages[0]?.bodyText).toBe("Exact target body\n");
+  });
+
+  it("uses UIDPLUS fallback without expunging unrelated Deleted mail", async () => {
+    const { imap, backend, client, addAccount } = await setup({ imap: { plugins: ["IDLE", "UIDPLUS", "SPECIAL-USE", "ENABLE", "CONDSTORE"] } });
+    const ctl = imap.server.control;
+    const targetRaw = raw({ subject: "Targeted fallback", body: "Exact fallback body" });
+    const otherRaw = raw({ subject: "Unrelated Deleted", body: "Exact unrelated body" });
+    const target = ctl.addMessage("INBOX", { raw: targetRaw });
+    const other = ctl.addMessage("INBOX", { raw: otherRaw });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const thread = (await client.call("threads.list", { view: "inbox" })).items.find((t) => t.subject === "Targeted fallback")!;
+    ctl.setFlags("INBOX", [other.uid], ["\\Deleted"], "add");
+    expect(ctl.getMessage("INBOX", other.uid).flags).toContain("\\Deleted");
+    const commands: { command: string; mailbox: string | null; line: string }[] = [];
+    imap.server.script.add({ on: "command", run: true, when: (context) => {
+      if (/^(?:UID )?(?:COPY|MOVE|STORE|EXPUNGE)$/.test(context.command ?? "")) {
+        if (commands.length >= 32) throw new Error("Unexpected unbounded IMAP mutations");
+        commands.push({ command: context.command!, mailbox: context.mailbox, line: context.data.trim() });
+      }
+      return false;
+    } });
+    await client.call("threads.act", { threadIds: [thread.id], action: "archive" });
+    await backend.runWorker();
+    expect(commands.map((c) => c.command)).toEqual(["UID COPY", "UID STORE", "UID EXPUNGE"]);
+    expect(commands.every((c) => c.mailbox === "INBOX")).toBe(true);
+    expect(commands[2]!.line).toMatch(new RegExp(`UID EXPUNGE ${target.uid}$`));
+    const remaining = ctl.listMessages("INBOX", { raw: true });
+    expect(remaining.map((m) => m.uid)).toEqual([other.uid]);
+    expect(remaining[0]!.raw?.toString()).toBe(otherRaw);
+    expect(remaining[0]!.flags).toContain("\\Deleted");
+    expect(ctl.listMessages("Archive", { raw: true }).map((m) => m.raw?.toString())).toEqual([targetRaw]);
+    expect(await client.call("ops.list", {})).toEqual([expect.objectContaining({ kind: "archive", state: "succeeded", attempts: 1 })]);
+    await backend.syncAccount(account.id);
+    expect((await client.call("threads.get", { threadId: thread.id })).messages[0]?.bodyText).toBe("Exact fallback body\n");
   });
 
   it("archives on the server with MOVE and keeps the message (now in Archive) after resync", async () => {

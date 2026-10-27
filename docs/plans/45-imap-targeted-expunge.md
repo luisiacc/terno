@@ -52,3 +52,12 @@ The first vertical correction addresses the observed true-MOVE fallback refusal.
 ## First atomic correction qualification
 
 The true-move guard refuses the reproduced unsupported fallback before COPY/STORE/EXPUNGE and preserves exact target/unrelated raw bytes, the unrelated Deleted flag, local target body and a failed public operation. The existing native MOVE control also passes:2focused cases in `imap-targeted-expunge-first-green.txt` (normal test budget, no globalSetup/worker emission). Mail, i18n and both backend typechecks, owned oxlint and scoped diff check pass. This first boundary adds the paired localized refusal and matches pinned ImapFlow's effective rev2 semantics without a deep import. No ordinary-path request or migration is added. The capability matrix, UIDPLUS wire fallback, empty-role/Create, read-only sources, All Mail delete, refusal/reopen/Undo and reconnect qualification remain open; fresh independent whole-slice review follows those corrections. No broader IMAP or performance approval.
+
+
+The no-MOVE/UIDPLUS successful-path control passes through the real public backend: the wire is exactly UID COPY, UID STORE and UID EXPUNGE for the requested UID, from Inbox. The unrelated Deleted UID, exact raw bytes and flag survive; the target's raw bytes reach Archive, its operation succeeds once and its local body remains exact after sync. `imap-targeted-expunge-uidplus-control.txt` is a new GREEN control, not claimed old-product RED. It does not qualify an interrupted/partial fallback or missing COPYUID recovery.
+
+
+The first UIDPLUS-control capture is not sufficient evidence: owned lint caught a single-backslash source literal, which JavaScript interpreted as the keyword Deleted rather than the system flag. Preserve that passing capture and lint failure; it is a fixture error, not a product result. Correct the literal and require the actual remote system flag before the operation in both refusal and UIDPLUS cases, then rerun the paired controls before claiming qualified preservation.
+
+
+The corrected paired system-flag controls pass2/2 in `imap-targeted-expunge-system-flag-green.txt`; both first require the remote unrelated UID to carry the actual system flag. The refusal case preserves both messages with zero mutations. The UIDPLUS case preserves that unrelated UID/flag/raw while UID EXPUNGE names only the target. Corrected owned lint passes. The prior malformed-flag control is retained solely as a disclosed fixture failure of qualification.
