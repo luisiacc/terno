@@ -94,16 +94,22 @@ const subscribeControllers = (l: () => void) => {
 export function registerController(key: string, c: ComposerController): () => void {
   controllers.set(key, c);
   const pending = pendingFocus.get(key);
+  let consumed = false;
   try {
     notify();
     // a focus asked for before the editor existed (the chunk was still loading)
-    if (pending) {
+    if (pending && pendingFocus.get(key) === pending) {
       pendingFocus.delete(key);
-      c.focus(pending);
+      pending.stop();
+      consumed = true;
+      c.focus(pending.where);
     }
   } catch (error) {
     if (controllers.get(key) === c) controllers.delete(key);
-    if (pending && !pendingFocus.has(key)) pendingFocus.set(key, pending);
+    if (consumed && pending && !pending.cancelled && !pendingFocus.has(key)) {
+      pendingFocus.set(key, pending);
+      pending.start();
+    }
     notify();
     throw error;
   }
@@ -128,18 +134,31 @@ export function useFormatState(c: ComposerController | null): FormatState {
   return useSyncExternalStore(c ? c.subscribe : noop, c ? c.getState : () => EMPTY_FORMAT);
 }
 
-const pendingFocus = new Map<string, "end" | "keep">();
-/**
- * Puts focus in a draft's body: now if its editor is there, else as soon as
- * it mounts (the editor chunk may still be loading). A later request for
- * another draft replaces nothing: each draft keeps its own.
- */
-export function focusBody(key: string, where: "end" | "keep" = "end"): void {
+type PendingFocus = { where: "end" | "keep"; cancelled: boolean; start: () => void; stop: () => void };
+const pendingFocus = new Map<string, PendingFocus>();
+/** Puts focus in a draft now, or when its editor registers. */
+export function focusBody(key: string, where: "end" | "keep" = "end", watch?: (cancel: () => void) => () => void): () => void {
+  const old = pendingFocus.get(key);
+  if (old) { old.cancelled = true; old.stop(); pendingFocus.delete(key); }
   const c = controllers.get(key);
-  if (c) c.focus(where);
-  else pendingFocus.set(key, where);
+  if (c) { c.focus(where); return () => {}; }
+  let stop = () => {};
+  const pending: PendingFocus = { where, cancelled: false, start: () => { stop = watch?.(cancel) ?? (() => {}); }, stop: () => { stop(); stop = () => {}; } };
+  const cancel = () => {
+    pending.cancelled = true;
+    pending.stop();
+    if (pendingFocus.get(key) === pending) pendingFocus.delete(key);
+  };
+  pendingFocus.set(key, pending);
+  pending.start();
+  return cancel;
 }
-export const cancelFocusBody = (key: string): boolean => pendingFocus.delete(key);
+export const cancelFocusBody = (key: string): boolean => {
+  const pending = pendingFocus.get(key);
+  if (!pending) return false;
+  pending.cancelled = true; pending.stop(); pendingFocus.delete(key);
+  return true;
+};
 
 // ── the format bar's visibility, remembered on this device
 
