@@ -140,8 +140,30 @@ export function DraftFieldsForm({ d, accounts, showSubject, flat }: { d: LocalDr
   const subject = subjectOpen || showSubject || d.subjectEdited;
   const update = (patch: Partial<DraftFields>) => editDraft(d.key, patch);
   /** a recipient field's change: the addresses the user put in are theirs now, no longer Terno's (Codex review 9) */
-  const recipients = (field: "to" | "cc" | "bcc", text: string, authored: readonly string[]) => {
-    editDraftRecipients(d.key, field, text, authored);
+  const canEditRecipients = () => {
+    const current = useDrafts.getState().drafts[d.key];
+    return !!current && current.id === d.id && current.generation === d.generation && !current.sending && !draftEditsHeld();
+  };
+  const recipients = (field: "to" | "cc" | "bcc", text: string, authored: readonly string[]): boolean => {
+    if (!canEditRecipients()) return false;
+    const before = useDrafts.getState().drafts[d.key]!;
+    const expectedAuto = authored.length ? before.auto[field].filter((email) => !authored.includes(email.toLowerCase())) : before.auto[field];
+    const sameOwner = (current: LocalDraft | undefined) => !!current && current.key === before.key && current.id === before.id && current.generation === before.generation && current.accountId === before.accountId && current.mode === before.mode && current.threadId === before.threadId && current.inReplyToMessageId === before.inReplyToMessageId && current.forwardOfMessageId === before.forwardOfMessageId && current.uiState === before.uiState && current.recovery === before.recovery;
+    const matches = (current: LocalDraft, value: string, auto: readonly string[]) => current[`${field}Text`] === value && current.auto[field].length === auto.length && current.auto[field].every((entry, i) => entry === auto[i]);
+    let changed = false, transitions = 0;
+    const stop = useDrafts.subscribe((state, previous) => {
+      const a = previous.drafts[d.key], b = state.drafts[d.key];
+      if (!sameOwner(a) || !sameOwner(b)) { changed = true; return; }
+      if (!matches(a!, b![`${field}Text`], b!.auto[field])) {
+        transitions++;
+        if (transitions !== 1 || !matches(a!, before[`${field}Text`], before.auto[field]) || !matches(b!, text, expectedAuto)) changed = true;
+      }
+    });
+    try {
+      const accepted = editDraftRecipients(d.key, field, text, authored);
+      const current = useDrafts.getState().drafts[d.key];
+      return accepted && !changed && sameOwner(current) && matches(current!, text, expectedAuto);
+    } finally { stop(); }
   };
   const toggle = (open: boolean, set: (v: boolean) => void, label: string, field: string, testId: string) =>
     !open && (
@@ -178,7 +200,7 @@ export function DraftFieldsForm({ d, accounts, showSubject, flat }: { d: LocalDr
         </Row>
       )}
       <Row label={t("compose.to")} htmlFor={`${id}-to`}>
-        <RecipientInput id={`${id}-to`} testId="compose-to" label={t("compose.to")} className={input} value={d.toText} onChange={(v, a) => recipients("to", v, a)} placeholder={t("compose.toPlaceholder")} accountId={d.accountId} others={[d.ccText, d.bccText]} />
+        <RecipientInput id={`${id}-to`} testId="compose-to" label={t("compose.to")} readOnly={d.sending} canEdit={canEditRecipients} className={input} value={d.toText} onChange={(v, a) => recipients("to", v, a)} placeholder={t("compose.toPlaceholder")} accountId={d.accountId} others={[d.ccText, d.bccText]} />
         <span className="mt-2 flex shrink-0 gap-0.5 self-start">
           {toggle(cc, setCc, t("compose.cc"), "cc", "compose-show-cc")}
           {toggle(bcc, setBcc, t("compose.bcc"), "bcc", "compose-show-bcc")}
@@ -186,10 +208,10 @@ export function DraftFieldsForm({ d, accounts, showSubject, flat }: { d: LocalDr
         </span>
       </Row>
       <Row label={t("compose.cc")} htmlFor={`${id}-cc`} hidden={!cc}>
-        <RecipientInput id={`${id}-cc`} testId="compose-cc" label={t("compose.cc")} className={input} value={d.ccText} onChange={(v, a) => (setCc(true), recipients("cc", v, a))} accountId={d.accountId} others={[d.toText, d.bccText]} />
+        <RecipientInput id={`${id}-cc`} testId="compose-cc" label={t("compose.cc")} readOnly={d.sending} canEdit={canEditRecipients} className={input} value={d.ccText} onChange={(v, a) => (setCc(true), recipients("cc", v, a))} accountId={d.accountId} others={[d.toText, d.bccText]} />
       </Row>
       <Row label={t("compose.bcc")} htmlFor={`${id}-bcc`} hidden={!bcc}>
-        <RecipientInput id={`${id}-bcc`} testId="compose-bcc" label={t("compose.bcc")} className={input} value={d.bccText} onChange={(v, a) => (setBcc(true), recipients("bcc", v, a))} accountId={d.accountId} others={[d.toText, d.ccText]} />
+        <RecipientInput id={`${id}-bcc`} testId="compose-bcc" label={t("compose.bcc")} readOnly={d.sending} canEdit={canEditRecipients} className={input} value={d.bccText} onChange={(v, a) => (setBcc(true), recipients("bcc", v, a))} accountId={d.accountId} others={[d.toText, d.ccText]} />
       </Row>
       <Row label={t("compose.subject")} htmlFor={`${id}-subject`} hidden={!subject}>
         <input id={`${id}-subject`} data-testid="compose-subject" className={input} value={d.subject} onChange={(e) => update({ subject: e.target.value, subjectEdited: true })} />

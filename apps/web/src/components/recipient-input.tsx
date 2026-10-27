@@ -52,6 +52,8 @@ export function RecipientInput({
   testId,
   value,
   onChange,
+  readOnly = false,
+  canEdit = () => true,
   accountId,
   others,
   className,
@@ -62,7 +64,9 @@ export function RecipientInput({
   testId: string;
   value: string;
   /** `authored`: the addresses the user put in with this change (no longer Terno's auto ones) */
-  onChange: (value: string, authored: string[]) => void;
+  onChange: (value: string, authored: string[]) => boolean | void;
+  readOnly?: boolean;
+  canEdit?: () => boolean;
   accountId: number;
   /** the draft's other recipient fields (their addresses aren't suggested again) */
   others: readonly string[];
@@ -109,13 +113,15 @@ export function RecipientInput({
 
   const emit = (next: FieldState, added: readonly Address[] = []) => {
     const v = serialize(next);
-    if (v === emitted.current && added.length === 0) return;
+    if (v === emitted.current && added.length === 0) return true;
+    if (onChange(v, added.map((a) => a.email.toLowerCase())) === false) return false;
     emitted.current = v;
-    onChange(v, added.map((a) => a.email.toLowerCase()));
+    return true;
   };
 
   /** A change to the field: one undo step (typing: one per run, a run ends at a space or any other change). */
   const apply = (next: FieldState, o: { added?: readonly Address[]; typing?: boolean } = {}) => {
+    if (!canEdit() || !emit(next, o.added)) return false;
     const h = history.current;
     if (!o.typing || !h.typing) {
       h.undo.push(field);
@@ -124,13 +130,15 @@ export function RecipientInput({
     h.redo = [];
     h.typing = !!o.typing && !/\s$/.test(next.text);
     setField(next);
-    emit(next, o.added);
+    return true;
   };
 
   const step = (from: "undo" | "redo") => {
     const h = history.current;
-    const prev = h[from].pop();
-    if (!prev) return;
+    if (!canEdit()) return;
+    const prev = h[from].at(-1);
+    if (!prev || !emit(prev)) return;
+    h[from].pop();
     h[from === "undo" ? "redo" : "undo"].push(field);
     h.typing = false;
     const back = prev.chips.length - field.chips.length;
@@ -144,7 +152,6 @@ export function RecipientInput({
     close();
     setField(prev);
     setSelected(new Set());
-    emit(prev);
     inputRef.current?.focus();
     caretAfter.current = prev.text.length;
   };
@@ -171,7 +178,7 @@ export function RecipientInput({
     setItems(narrowed);
     setActive(0);
     void suggestRecipients({ query: tok.query, exclude, accountId }).then((r) => {
-      if (mine !== seq.current || document.activeElement !== inputRef.current) return;
+      if (mine !== seq.current || !canEdit() || document.activeElement !== inputRef.current) return;
       // the index is being built the first time: ask again shortly
       if (!r.ready && !retried) {
         setTimeout(() => {
@@ -188,6 +195,7 @@ export function RecipientInput({
   };
 
   const accept = (a: Address) => {
+    if (!canEdit()) return;
     const el = inputRef.current;
     const tok = token.current ?? (el ? tokenAt(field.text, el.selectionStart ?? field.text.length) : null);
     // only a suggestion for what is typed now
@@ -203,11 +211,11 @@ export function RecipientInput({
   };
 
   const commitTyped = () => {
-    if (!field.text.trim()) return false;
+    if (!canEdit() || !field.text.trim()) return false;
     const { state, added } = commit(field);
+    if (!apply(state, { added })) return false;
     if (!added.length && field.text.trim()) setAnnounce(t("compose.recipients.already", { name: field.text.trim() }));
     else if (added.length) setAnnounce(t("compose.recipients.added", { count: added.length, name: added[0]!.name || added[0]!.email }));
-    apply(state, { added });
     return true;
   };
 
@@ -232,16 +240,18 @@ export function RecipientInput({
   };
 
   const removeChips = (keys: ReadonlySet<number>) => {
+    if (!canEdit()) return;
     const gone = field.chips.filter((c) => keys.has(c.key));
     if (!gone.length) return;
+    if (!apply(remove(field, keys))) return;
     setAnnounce(t("compose.recipients.removed", { count: gone.length, name: chipLabel(gone[0]!) }));
-    apply(remove(field, keys));
     focusInput(0);
   };
 
   const editChip = (key: number) => {
+    if (!canEdit()) return;
     const next = edit(field, key);
-    apply(next);
+    if (!apply(next)) return;
     focusInput();
     caretAfter.current = next.text.length;
   };
@@ -486,6 +496,7 @@ export function RecipientInput({
   };
 
   const onPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    if (!canEdit()) { e.preventDefault(); return; }
     const pasted = e.clipboardData.getData("text/plain");
     if (!pastedAddresses(pasted)) return;
     e.preventDefault();
@@ -494,8 +505,7 @@ export function RecipientInput({
     close();
     // duplicates: what this field and the other fields already have (plan 18); entries that aren't addresses stay
     const { state, added } = insert({ ...field, text: "" }, typedAddresses(text), others.flatMap(emailsIn));
-    setAnnounce(t("compose.recipients.added", { count: added.length, name: added[0]?.name || added[0]?.email || "" }));
-    apply({ ...state, at: state.chips.length }, { added });
+    if (apply({ ...state, at: state.chips.length }, { added })) setAnnounce(t("compose.recipients.added", { count: added.length, name: added[0]?.name || added[0]?.email || "" }));
   };
 
   const collapsed = !focused && field.chips.length > COLLAPSE_OVER && !field.text;
@@ -523,7 +533,7 @@ export function RecipientInput({
         close();
         // what was typed becomes a chip; the input goes back after the chips
         if (field.text.trim()) commitTyped();
-        else if (field.at !== field.chips.length) setField({ ...field, at: field.chips.length });
+        else if (canEdit() && field.at !== field.chips.length) setField({ ...field, at: field.chips.length });
       }}
     >
       {shown.length > 0 && (
@@ -562,6 +572,7 @@ export function RecipientInput({
         data-testid={testId}
         className={cn(className, "h-7 min-w-24 basis-24")}
         value={field.text}
+        readOnly={readOnly}
         placeholder={field.chips.length ? undefined : placeholder}
         autoComplete="off"
         spellCheck={false}
@@ -577,8 +588,8 @@ export function RecipientInput({
           prefetchRecipientInitials(accountId);
         }}
         onChange={(e) => {
-          apply({ ...field, text: e.target.value }, { typing: true });
-          lookup(e.target.value, e.target.selectionStart ?? e.target.value.length);
+          if (!canEdit()) return;
+          if (apply({ ...field, text: e.target.value }, { typing: true })) lookup(e.target.value, e.target.selectionStart ?? e.target.value.length);
         }}
         onKeyDown={onKeyDown}
         onPaste={onPaste}
