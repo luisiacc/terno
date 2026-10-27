@@ -142,7 +142,7 @@ import {
 import type { Key, MemDb } from "./mem";
 import { IdbProviderStore } from "./provider-store";
 import { createMemDb, EARLY_TABLES, idbExists, LATE_TABLES, LOGICAL_SCHEMA, loadAll, SEARCH_SCHEMA, openIdb, persist, readAll, readLazy, writeMeta } from "./schema";
-import { answeredThreads, backfillSlice, FactsQueue, factsReady, ownMailChanged, referencesOfOwn, resetFacts, startRescan } from "./facts";
+import { answeredThreads, arrivalRows, backfillSlice, FactsQueue, factsReady, ownMailChanged, referencesOfOwn, resetFacts, startRescan } from "./facts";
 import { sameRevision, SearchCancelledError, type AutocompleteSource, type ContactBatch, type ContactMessage, type SentText } from "@terno/store";
 import { contactOf, isLearnable, sentOf } from "./autocomplete";
 import { appendOutbox, checkCursor, columnsOf, materializeChanges, pageOf, planScan, scanPage, searchChangeIds, searchHead } from "./search";
@@ -909,6 +909,7 @@ export class IdbMailStore implements MailStore {
       ),
     remove: (ids) => this.command(() => ({ touched: [...deleteMessages(this.c, ids)] }), { durability: "relaxed" }),
     pendingMessageIds: (accountId) => this.read(() => messagesWithPendingOps(this.c, accountId)),
+    arrivals: (ids) => this.read(() => arrivalRows(this.db, ids)),
   };
 
   // ───────────────────────────── ops ─────────────────────────────

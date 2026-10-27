@@ -152,6 +152,12 @@ const es = {
   "settings.general.suggestions.hint": "Completa frases a partir del correo que has enviado. Se aprende y se guarda en este dispositivo.",
   // plan 38
   "settings.general.notifications": "Notificaciones",
+  "settings.general.notify": "Notificaciones del sistema",
+  "settings.general.notify.hint": "Correo nuevo de personas a las que has escrito, respuestas en tus conversaciones y lo que Gmail marca como importante, mientras Terno está abierto. macOS pide permiso la primera vez; si se ven en la pantalla bloqueada lo decide Ajustes del Sistema → Notificaciones.",
+  "settings.general.notify.hintWeb": "Correo nuevo de personas a las que has escrito, respuestas en tus conversaciones y lo que Gmail marca como importante, mientras esta pestaña está abierta en segundo plano.",
+  "settings.general.notify.denied": "Tu navegador bloquea las notificaciones de Terno. Permítelas en los ajustes de este sitio y vuelve a activarlas.",
+  "settings.general.notifyPreview": "Mostrar remitente y asunto",
+  "settings.general.notifyPreview.hint": "Desactivado, una notificación solo dice cuántos mensajes nuevos hay.",
   "settings.general.badge": "Mostrar los no leídos en el Dock",
   "settings.general.badge.hint": "Conversaciones sin leer en Entrada de todas las cuentas, el mismo número que en la barra lateral.",
   "settings.general.badgeWeb": "Mostrar los no leídos en el icono de la app",
@@ -1502,6 +1508,12 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "web.desktopOnly.agents.body": "Claude Code y Codex se conectan a Terno por un socket local (MCP), que un navegador no puede ofrecer.",
   "web.provider.desktopOnly": "IMAP/SMTP necesita la app de escritorio: un navegador no puede abrir conexiones IMAP ni SMTP.",
   "web.provider.gmailInPage": "En el navegador, Gmail se conecta con el inicio de sesión de Google de esta página.",
+
+  // ── system notifications (plan 38)
+  "notify.count": { one: "# mensaje nuevo", other: "# mensajes nuevos" },
+  "notify.new": "Correo nuevo",
+  "notify.from.two": "De {a} y {b}",
+  "notify.from.many": { one: "De {a}, {b} y # más", other: "De {a}, {b} y # más" },
 
   // ── ui components
   // @ui

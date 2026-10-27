@@ -46,6 +46,8 @@ const SERVER: AppSettings = {
   senderIcons: false,
   googlePhotos: {},
   dockBadge: true,
+  notifications: true,
+  notificationPreview: true,
   theme: "dark",
   design: "macos",
   lightTheme: "terno-light",

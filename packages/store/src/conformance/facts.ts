@@ -312,5 +312,39 @@ export function defineFactsConformance(fresh: () => Promise<MailStore>, reopen: 
       expect(counts.inboxWaiting).toBe(waiting.length);
       for (const a of snap.accounts) expect(counts.inboxWaitingByAccount?.[a.id] ?? 0).toBe(waiting.filter((t) => t.accountId === a.id).length);
     });
+
+  describe("arrivals: new mail read back for notifications (plan 38)", () => {
+    it("reads each message as it is now: its flags, its conversation's Inbox, your conversation, own and written; missing ids skipped", async () => {
+      const store = await fresh();
+      const [a] = await withAccounts(store);
+      // you wrote to Carlos; a reply comes back in that conversation
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "mine", rfcMessageId: "mine@x", from: addr("me0@example.com"), to: [addr("carlos@acme.com")], isSent: true, inInbox: false, date: NOW - DAY })]);
+      const r = await ingest(store, [
+        msg({ accountId: a!, providerMsgId: "reply", inReplyTo: "mine@x", references: ["mine@x"], from: addr("carlos+work@acme.com", "Carlos"), to: [addr("me0@example.com")], subject: "Re: hola", snippet: "¡Gracias!", date: NOW - 60_000 }),
+        msg({ accountId: a!, providerMsgId: "news", from: addr("boletin@xataka.com"), listId: "boletin.xataka.com", gmailLabels: ["INBOX", "IMPORTANT"], bulk: true, date: NOW - 30_000 }),
+        msg({ accountId: a!, providerMsgId: "self", from: addr("ME0@example.com"), to: [addr("me0@example.com")], date: NOW - 20_000 }),
+        msg({ accountId: a!, providerMsgId: "read", from: addr("ana@friends.com"), isRead: true, date: NOW - 10_000 }),
+      ]);
+      expect(r.inserted).toHaveLength(4);
+      const rows = await store.sync.arrivals([...r.inserted, 999_999]);
+      const by = (pid: string) => rows.find((x) => x.fromEmail.toLowerCase().includes(pid.toLowerCase()));
+      expect(rows).toHaveLength(4);
+      expect(by("carlos")).toMatchObject({ fromName: "Carlos", subject: "Re: hola", snippet: "¡Gracias!", isRead: false, inInbox: true, written: true, own: false, yourConversation: true, isSent: false });
+      expect(by("xataka")).toMatchObject({ listId: "boletin.xataka.com", isBulk: true, written: false, yourConversation: false });
+      expect(JSON.parse(by("xataka")!.gmailLabels!)).toContain("IMPORTANT");
+      expect(by("ME0")).toMatchObject({ own: true });
+      expect(by("friends")).toMatchObject({ isRead: true });
+      expect(await store.sync.arrivals([])).toEqual([]);
+    });
+
+    it("a filter's archive in the same ingest is what it reads; a conversation archived by another message reads out of the Inbox", async () => {
+      const store = await fresh();
+      const [a] = await withAccounts(store);
+      await store.filters.save({ name: "away", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "subject", op: "contains", value: "receipt" }], actions: [{ type: "archive" }] } }, NOW);
+      const r = await ingest(store, [msg({ accountId: a!, providerMsgId: "f", subject: "Your receipt", from: addr("ana@friends.com"), date: NOW })]);
+      const [row] = await store.sync.arrivals(r.inserted);
+      expect(row).toMatchObject({ inInbox: false });
+    });
+  });
   });
 }

@@ -67,7 +67,7 @@ import {
 import { autoReasons, categoryStats, countScope, pendingSuggestions, predictThread, quickActions, resolveScope } from "./categorize-bulk";
 import { startCheckpointWorker, type CheckpointWorker } from "./checkpoint";
 import { adoptProviderThread, deleteMessages, findIngestMessage, ingestMessages, recomputeThreads, setMessageBody } from "./ingest";
-import { answeredThreads, backfillSlice, factsIdle, ownMailChanged, referencesOfOwn, resetFacts, startRescan } from "./facts";
+import { answeredThreads, arrivalRows, backfillSlice, factsIdle, ownMailChanged, referencesOfOwn, resetFacts, startRescan } from "./facts";
 import { changeOwner, claimOwner, getOwner } from "./owner";
 import { countScopeThreads, getCounts, getSummaries, getThread, listThreads, scopeThreadIds, SUMMARY_COLUMNS, toSummary, type SummaryRow } from "./queries";
 import {
@@ -468,6 +468,7 @@ export class SqlMailStore implements MailStore {
       }),
     remove: async (ids) => ({ touched: [...deleteMessages(this.db, ids)] }),
     pendingMessageIds: async (accountId) => messagesWithPendingOps(this.db, accountId),
+    arrivals: async (ids) => arrivalRows(this.db, ids),
   };
 
   // ───────────────────────────── ops ─────────────────────────────

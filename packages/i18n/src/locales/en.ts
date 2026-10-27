@@ -158,6 +158,12 @@ const en = {
   "settings.general.suggestions.hint": "Completes sentences from mail you've sent. It's learned and kept on this device.",
   // plan 38
   "settings.general.notifications": "Notifications",
+  "settings.general.notify": "System notifications",
+  "settings.general.notify.hint": "New mail from people you’ve written to, replies in your conversations, and mail Gmail marks important, while Terno is running. macOS asks the first time; whether previews show on the lock screen is up to System Settings → Notifications.",
+  "settings.general.notify.hintWeb": "New mail from people you’ve written to, replies in your conversations, and mail Gmail marks important, while this tab is open in the background.",
+  "settings.general.notify.denied": "Your browser blocks notifications from Terno. Allow them in this site’s settings, then turn this on again.",
+  "settings.general.notifyPreview": "Show sender and subject",
+  "settings.general.notifyPreview.hint": "Off, a notification only says how many new messages there are.",
   "settings.general.badge": "Show unread count in the Dock",
   "settings.general.badge.hint": "Unread conversations in the Inbox of every account, the same number as in the sidebar.",
   "settings.general.badgeWeb": "Show unread count on the app icon",
@@ -1510,6 +1516,12 @@ It contains none of your mail, contacts, settings or keys.
   "web.desktopOnly.agents.body": "Claude Code and Codex connect to Terno over a local socket (MCP), which a browser can’t provide.",
   "web.provider.desktopOnly": "IMAP/SMTP needs the desktop app: a browser can’t open IMAP or SMTP connections.",
   "web.provider.gmailInPage": "In the browser, Gmail connects with Google sign-in on this page.",
+
+  // ── system notifications (plan 38)
+  "notify.count": { one: "# new message", other: "# new messages" },
+  "notify.new": "New mail",
+  "notify.from.two": "From {a} and {b}",
+  "notify.from.many": { one: "From {a}, {b} and # other", other: "From {a}, {b} and # others" },
 
   // ── ui components
   // @ui

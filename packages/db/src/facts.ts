@@ -1,4 +1,4 @@
-import { addressKey, automatedLevel, threadFactsNewestFirst, type Address, type FactContext, type FactRow, type ThreadFacts } from "@terno/core";
+import { addressKey, automatedLevel, threadFactsNewestFirst, type Address, type ArrivalRow, type FactContext, type FactRow, type ThreadFacts } from "@terno/core";
 import type { Db } from "./sqlite";
 
 /**
@@ -375,5 +375,52 @@ export function resetFacts(db: Db): void {
     db.run("DELETE FROM correspondents");
     setSenderJobs(db, []);
     setPhase(db, db.get("SELECT 1 FROM threads LIMIT 1") ? { phase: "senders", after: 0 } : { phase: "done" });
+  });
+}
+
+/**
+ * Plan 38: newly inserted messages as they are now, for the notification rule. By primary
+ * key and one correspondent per sender: what it costs follows the ids, never the mailbox.
+ */
+export function arrivalRows(db: Db, ids: readonly number[]): ArrivalRow[] {
+  if (ids.length === 0) return [];
+  const rows = db.all<{ id: number; thread_id: number; account_id: number; date: number; from_name: string; from_email: string; subject: string; snippet: string; is_read: number; is_sent: number; is_draft: number; in_inbox: number; thread_inbox: number; thread_sent: number; is_trash: number; is_spam: number; list_id: string | null; is_bulk: number; gmail_labels: string | null }>(
+    `SELECT m.id, m.thread_id, m.account_id, m.date, m.from_name, m.from_email, m.subject, m.snippet, m.is_read, m.is_sent, m.is_draft, m.in_inbox,
+       t.in_inbox AS thread_inbox, t.has_sent AS thread_sent, m.is_trash, m.is_spam, m.list_id, m.is_bulk, m.gmail_labels
+     FROM messages m JOIN threads t ON t.id = m.thread_id WHERE m.id IN (SELECT value FROM json_each(?))`,
+    JSON.stringify(ids),
+  );
+  if (rows.length === 0) return [];
+  const own = ownAddresses(db);
+  const written = new Map<string, boolean>();
+  const writtenTo = (key: string) => {
+    let w = written.get(key);
+    if (w === undefined) written.set(key, (w = db.get<{ written: number }>("SELECT written FROM correspondents WHERE email = ?", key)?.written === 1));
+    return w;
+  };
+  return rows.map((r) => {
+    const key = addressKey(r.from_email);
+    return {
+      id: r.id,
+      threadId: r.thread_id,
+      accountId: r.account_id,
+      date: r.date,
+      fromName: r.from_name,
+      fromEmail: r.from_email,
+      subject: r.subject,
+      snippet: r.snippet,
+      isRead: r.is_read === 1,
+      isSent: r.is_sent === 1,
+      isDraft: r.is_draft === 1,
+      inInbox: r.in_inbox === 1 && r.thread_inbox === 1,
+      isTrash: r.is_trash === 1,
+      isSpam: r.is_spam === 1,
+      listId: r.list_id,
+      isBulk: r.is_bulk === 1,
+      gmailLabels: r.gmail_labels,
+      own: own.has(key),
+      written: writtenTo(key),
+      yourConversation: r.thread_sent === 1,
+    };
   });
 }

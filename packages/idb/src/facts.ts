@@ -1,4 +1,4 @@
-import { addressKey, automatedLevel, FACTS_WINDOW, newestMessages, threadFacts, type Address, type FactContext, type FactRow, type ThreadFacts } from "@terno/core";
+import { addressKey, automatedLevel, FACTS_WINDOW, newestMessages, threadFacts, type Address, type ArrivalRow, type FactContext, type FactRow, type ThreadFacts } from "@terno/core";
 import type { MemDb, Row, Table } from "./mem";
 
 /**
@@ -506,4 +506,43 @@ export function resetFacts(db: MemDb): void {
   for (const r of t(db, "correspondents").all()) t(db, "correspondents").delete(r.email);
   setSenderJobs(db, []);
   setPhase(db, t(db, "threads").size > 0 ? { phase: "senders", after: 0 } : { phase: "done" });
+}
+
+/** Plan 38: newly inserted messages as they are now (SQLite's arrivalRows): by key, one correspondent per sender. */
+export function arrivalRows(db: MemDb, ids: readonly number[]): ArrivalRow[] {
+  const messages = t(db, "messages");
+  const threads = t(db, "threads");
+  const correspondents = t(db, "correspondents");
+  let own: Set<string> | null = null;
+  const out: ArrivalRow[] = [];
+  for (const id of ids) {
+    const m = messages.get(id);
+    const thread = m ? threads.get(m.thread_id) : undefined;
+    if (!m || !thread) continue;
+    own ??= ownAddresses(db);
+    const key = addressKey(m.from_email);
+    out.push({
+      id: m.id,
+      threadId: m.thread_id,
+      accountId: m.account_id,
+      date: m.date,
+      fromName: m.from_name ?? "",
+      fromEmail: m.from_email ?? "",
+      subject: m.subject ?? "",
+      snippet: m.snippet ?? "",
+      isRead: m.is_read === 1,
+      isSent: m.is_sent === 1,
+      isDraft: m.is_draft === 1,
+      inInbox: m.in_inbox === 1 && thread.in_inbox === 1,
+      isTrash: m.is_trash === 1,
+      isSpam: m.is_spam === 1,
+      listId: m.list_id ?? null,
+      isBulk: m.is_bulk === 1,
+      gmailLabels: m.gmail_labels ?? null,
+      own: own.has(key),
+      written: correspondents.get(key)?.written === 1,
+      yourConversation: thread.has_sent === 1,
+    });
+  }
+  return out;
 }
