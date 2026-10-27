@@ -44,6 +44,7 @@ async function pendingMailbox(dir: string) {
 }
 
 const factsOf = async (store: MailStore) => (await store.debug.snapshot()).threads.map((t) => [t.id, t.person, t.waitingSince]);
+const gate = () => { let release!: () => void; const promise = new Promise<void>((resolve) => { release = resolve; }); return { promise, release }; };
 
 describe("the facts backfill (plan 17)", () => {
   it("runs at start, in slices, until every thread's facts are back; the waiting count then becomes known", async () => {
@@ -68,17 +69,40 @@ describe("the facts backfill (plan 17)", () => {
     const dir = tempDir();
     const { backend, expected } = await pendingMailbox(dir);
     let slices = 0;
+    type Progress = { phase: string; after: number };
+    let progress: Progress | null = null;
+    const entered = gate(), release = gate(), stopEntered = gate();
+    cleanups.push(async () => release.release());
     const real = backend.store.facts.backfill.bind(backend.store.facts);
     vi.spyOn(backend.store.facts, "backfill").mockImplementation(async () => {
       slices++;
-      return real({ limit: 5 });
+      if (slices === 4) { entered.release(); await release.promise; }
+      const result = await real({ limit: 5 });
+      if (slices === 4) progress = await backend.store.settings.get<Progress | null>("facts_backfill", null);
+      return result;
     });
-    void backend.start();
-    await vi.waitFor(() => expect(slices).toBeGreaterThan(3));
-    await backend.stop();
+    const stop = backend.facts.stop.bind(backend.facts);
+    vi.spyOn(backend.facts, "stop").mockImplementation(async () => { stopEntered.release(); await stop(); });
+    const started = backend.start();
+    let stopping: Promise<void> | undefined;
+    try {
+      await entered.promise;
+      let stopped = false;
+      stopping = backend.stop().then(() => { stopped = true; });
+      await stopEntered.promise;
+      expect(stopped).toBe(false);
+      expect(slices).toBe(4);
+    } finally {
+      release.release();
+      await stopping;
+      await started;
+    }
     const done = slices;
+    expect(progress).not.toBeNull();
+    expect(progress!.after).toBeGreaterThan(0);
     // a fresh backend on the same file: the store's progress says where to go on
     const again = backendAt(dir);
+    expect(await again.store.settings.get<Progress | null>("facts_backfill", null)).toEqual(progress);
     expect(await again.store.facts.idle()).toBe(false);
     await again.start();
     await again.facts.idle();
