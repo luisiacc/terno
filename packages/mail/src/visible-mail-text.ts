@@ -9,22 +9,28 @@ const NON_CONTENT = new Set(["head", "title", "script", "style", "template", "if
 const BLOCKS = new Set(["address", "article", "aside", "blockquote", "br", "caption", "dd", "div", "dl", "dt", "fieldset", "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "li", "main", "nav", "ol", "p", "pre", "section", "table", "tbody", "td", "th", "thead", "tr", "ul"]);
 const DISPLAYS = new Set(["none", "contents", "block", "inline", "inline-block", "flow-root", "list-item", "flex", "inline-flex", "grid", "inline-grid", "table", "inline-table", "table-row-group", "table-header-group", "table-footer-group", "table-row", "table-column-group", "table-column", "table-cell", "table-caption"]);
 const LENGTHS = new Set(["px", "em", "rem", "ex", "ch", "cap", "ic", "lh", "rlh", "vw", "vh", "vmin", "vmax", "svh", "lvh", "dvh", "cm", "mm", "q", "in", "pt", "pc"]);
-const PROPERTIES = new Set(["display", "visibility", "opacity", "max-height", "overflow", "overflow-y"]);
+const PROPERTIES = new Set(["display", "visibility", "opacity", "max-height", "overflow", "overflow-x", "overflow-y"]);
+const OVERFLOWS = new Set(["visible", "hidden", "clip", "scroll", "auto"]);
 type Style = Map<string, { value: string; important: boolean }>;
 const EMPTY_STYLE: Style = new Map();
 
 function scalar(property: string, source: string): string | undefined {
   const tokens: { type: number; value: string }[] = [];
   tokenize(source, (type, start, end) => {
-    if (type !== tokenTypes.WhiteSpace && type !== tokenTypes.Comment && tokens.length < 2) tokens.push({ type, value: source.slice(start, end) });
+    if (type !== tokenTypes.WhiteSpace && type !== tokenTypes.Comment && tokens.length < 3) tokens.push({ type, value: source.slice(start, end) });
   });
+  if (property === "overflow" && tokens.length === 2) {
+    const values = tokens.map((token) => ident.decode(token.value).toLowerCase());
+    if (tokens.every((token) => token.type === tokenTypes.Ident) && values.every((value) => OVERFLOWS.has(value))) return values.join(" ");
+    return;
+  }
   if (tokens.length !== 1) return;
   const token = tokens[0]!;
   if (token.type === tokenTypes.Ident) {
     const value = ident.decode(token.value).toLowerCase();
     if (property === "display" && DISPLAYS.has(value)) return value;
     if (property === "visibility" && ["visible", "hidden", "collapse", "inherit", "unset", "initial"].includes(value)) return value;
-    if ((property === "overflow" || property === "overflow-y") && ["visible", "hidden", "clip", "scroll", "auto"].includes(value)) return value;
+    if ((property === "overflow" || property === "overflow-x" || property === "overflow-y") && OVERFLOWS.has(value)) return value;
     if (property === "max-height" && value === "none") return value;
   }
   if (property === "opacity" && (token.type === tokenTypes.Number || token.type === tokenTypes.Percentage)) {
@@ -42,6 +48,10 @@ function scalar(property: string, source: string): string | undefined {
   }
 }
 
+function setInlineValue(values: Style, property: string, value: string, important: boolean): void {
+  if (!values.get(property)?.important || important) values.set(property, { value, important });
+}
+
 function inlineStyle(source: string): Style {
   const values: Style = new Map();
   // Values stay Raw: arbitrary nested functions must never recurse through a CSS value parser.
@@ -55,11 +65,20 @@ function inlineStyle(source: string): Style {
     if (!PROPERTIES.has(property)) return;
     const value = scalar(property, node.value.value);
     if (value === undefined) return;
-    const key = property === "overflow" ? "overflow-y" : property;
-    const old = values.get(key);
-    if (!old?.important || important) values.set(key, { value, important });
+    if (property === "overflow") {
+      const space = value.indexOf(" ");
+      setInlineValue(values, "overflow-x", space < 0 ? value : value.slice(0, space), important);
+      setInlineValue(values, "overflow-y", space < 0 ? value : value.slice(space + 1), important);
+    } else setInlineValue(values, property, value, important);
   });
   return values;
+}
+
+function verticalOverflow(style: Style): string {
+  const x = style.get("overflow-x")?.value ?? "visible";
+  const y = style.get("overflow-y")?.value ?? "visible";
+  if (x === "visible" || x === "clip") return y;
+  return y === "visible" ? "auto" : y === "clip" ? "hidden" : y;
 }
 
 let ready: Promise<void> | undefined;
@@ -93,8 +112,8 @@ export async function htmlToText(html: string): Promise<string> {
     const style = source ? inlineStyle(source) : EMPTY_STYLE;
     const display = style.get("display")?.value;
     const hidden = attrs.get("hidden");
-    const overflow = style.get("overflow-y");
-    if (display === "none" || (attrs.has("hidden") && (!display || hidden?.toLowerCase() === "until-found")) || style.get("opacity")?.value === "0" || (style.get("max-height")?.value === "0" && ["hidden", "clip"].includes(overflow?.value ?? ""))) continue;
+    const overflow = verticalOverflow(style);
+    if (display === "none" || (attrs.has("hidden") && (!display || hidden?.toLowerCase() === "until-found")) || style.get("opacity")?.value === "0" || (style.get("max-height")?.value === "0" && overflow !== "visible")) continue;
     const visibility = style.get("visibility")?.value;
     const invisible = visibility === "hidden" || visibility === "collapse" || (visibility !== "visible" && visibility !== "initial" && frame.invisible);
     const block = BLOCKS.has(node.tagName);
