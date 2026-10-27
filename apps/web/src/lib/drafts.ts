@@ -413,7 +413,7 @@ function save(key: string, copy = false): Promise<void> {
         const refused = e?.code === "BAD_REQUEST" || e?.code === "NOT_FOUND" || e?.code === "STALE" || e?.code === "FORBIDDEN";
         const reason = Array.isArray(e?.details) && e.details.some((issue: { code?: string }) => issue?.code === "too_big") ? "size" : e?.details?.reason;
         const known = reason === "assets" || reason === "account" || reason === "context" || reason === "size" ? reason : "invalid";
-        put({ ...cur, status: "error", tooLong: false, recovery: refused && !uncertain ? { state: "refused", reason: known } : { state: "unknown", ...(refused ? { reason: known } : {}) } });
+        put({ ...cur, ...(refused && !uncertain && !cur.attachments?.length ? { attachmentOwner: false } : {}), status: "error", tooLong: false, recovery: refused && !uncertain ? { state: "refused", reason: known } : { state: "unknown", ...(refused ? { reason: known } : {}) } });
         return;
       }
       // refused as invalid (past the size limits): trying again won't help until it changes; Retry stays

@@ -56,6 +56,29 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("the draft writer", () => {
+  it.each(["account", "assets", "unknown", "earlier unknown"] as const)("removal during copy releases only confirmed obsolete ownership: %s", async (outcome) => {
+    const k = draft();
+    editDraft(k, { bodyText: "exact work", ccText: "unfinished@", attachments: [{ assetId: "asset", filename: "x", mime: "text/plain", size: 0 }] });
+    await vi.advanceTimersByTimeAsync(800); await answer();
+    stored.delete(state(k).id!); editDraft(k, { subject: "latest" });
+    await vi.advanceTimersByTimeAsync(800); await answer();
+    if (outcome === "earlier unknown") {
+      const first = copyDraft(k); calls.shift()!.reject(new Error("timeout")); await first;
+    }
+    const copying = copyDraft(k);
+    editDraft(k, { attachments: [] });
+    expect(draftSenderLocked(state(k))).toBe(true);
+    calls.shift()!.reject(outcome === "unknown" ? new Error("timeout") : { code: "NOT_FOUND", details: { reason: outcome === "earlier unknown" ? "account" : outcome } });
+    await copying;
+    const uncertain = outcome === "unknown" || outcome === "earlier unknown";
+    expect(draftSenderLocked(state(k))).toBe(uncertain);
+    editDraft(k, { accountId: 2 });
+    expect(state(k)).toMatchObject({ accountId: uncertain ? 1 : 2, bodyText: "exact work", ccText: "unfinished@", subject: "latest", attachments: [] });
+    if (!uncertain) {
+      const repaired = copyDraft(k); await answer(); await repaired;
+      expect(state(k)).toMatchObject({ status: "saved", recovery: undefined, accountId: 2, bodyText: "exact work", ccText: "unfinished@" });
+    }
+  });
   it("keeps From locked if an attached save is in flight or the removal fails, until an empty revision is acknowledged", async () => {
     const key = draft();
     const ref = { assetId: "asset", filename: "x", mime: "text/plain", size: 0 };
