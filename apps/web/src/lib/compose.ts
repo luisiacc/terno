@@ -118,9 +118,12 @@ export const supersedeCompose = (): void => {
 
 /** Asks the inline draft to take focus (only an explicit open does; coming back to a thread never does). */
 export function focusDraft(key: string, target: "body" | "to", owner?: number) {
+  const current = intent;
+  if (owner !== undefined && owner !== current) return;
+  if (focusLease && focusLease.intent !== owner) releaseFocusLease(focusLease, false);
+  if (intent !== current) return;
   const focusSeq = ++seq;
   if (focusLease && focusLease.intent === owner) { focusLease.key = key; focusLease.seq = focusSeq; }
-  else if (focusLease) releaseFocusLease(focusLease, false);
   setApp({ draftFocus: { key, target, seq: focusSeq } });
 }
 
