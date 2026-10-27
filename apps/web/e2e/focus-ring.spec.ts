@@ -66,4 +66,15 @@ test.describe("focus rings @design", () => {
     await expect(add).toBeFocused();
     await expect(add).toHaveCSS("opacity", "1");
   });
+
+  test("F6 to the snackbar's Undo shows where focus went", async ({ app: page }) => {
+    await page.mouse.move(1300, 100);
+    await openRow(page, 1);
+    await page.keyboard.press("e"); // archive: a shortcut, no ring
+    await expect(page.getByTestId("snack-action")).toBeVisible();
+    await expect(page.locator("html")).not.toHaveAttribute("data-focus-ring");
+    await page.keyboard.press("F6");
+    await expect(page.getByTestId("snack-action")).toBeFocused();
+    expect((await ringed(page))!.ring).toBe(true);
+  });
 });

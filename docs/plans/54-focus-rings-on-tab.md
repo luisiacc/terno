@@ -62,3 +62,10 @@ Round 1 found one problem (medium): gating the whole `focus-visible` variant als
 
 - The selected Local card no longer carries the autofocus ring.
 - The old baseline also showed a stale gap under More, a paint artifact of the below-More layer. The layout probe measured a 0 px group in both builds, and main's own screenshot of the sidebar shows no gap.
+
+Round 2 found two gaps (both P2):
+
+- F6, the documented jump to the snackbar, cleared the ring, so focus landed on Undo with no cue. F6 now sets the flag like Tab.
+- Only the key name was checked, so Cmd/Ctrl+Enter (send) kept the ring, and the reply bar focused after sending showed one. Any Cmd, Ctrl or Alt combination now counts as a shortcut and clears the flag, while a lone modifier (and Shift with an arrow) changes nothing.
+
+Regressions: unit cases for F6, the chords and lone modifiers, plus an e2e from archive (`e`) to F6 requiring a ring on Undo. All fail on the previous tracker.
