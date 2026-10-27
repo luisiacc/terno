@@ -89,6 +89,34 @@ export function defineDraftRecoveryConformance(name: string, harness: StoreHarne
       expect(JSON.parse((await store.ops.get(sent.opId))!.payload_json)).toMatchObject({ inReplyTo: ref, references: [ref === "x@example.test" ? "ancestor@example.test" : "older@example.test", ref], ...(crossAccount ? { providerThreadId: null } : {}) });
     });
 
+    it.each([["reply", false], ["reply", true], ["forward", false], ["forward", true]] as const)("a living %s source fences a reused conversation after reopen (cross-account %s)", async (mode, crossAccount) => {
+      let store = await open(); const [a, b] = await withAccounts(store);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "first", rfcMessageId: "first@example.test" }), msg({ accountId: a!, providerMsgId: "source", rfcMessageId: "source@example.test" })]);
+      const stale = await threadOf(store, "source"), original = (await store.threads.get(stale))!.messages[0]!;
+      const fields = { accountId: crossAccount ? b! : a!, threadId: stale, mode, inReplyToMessageId: mode === "reply" ? original.id : null, forwardOfMessageId: mode === "forward" ? original.id : null, to: [{ name: "Pérez, Ana", email: "bob@" }], cc: [], subject: "exact subject", bodyText: "authored", bodyHtml: "<div><b>authored</b></div>", quotedText: "> exact quote", includeQuote: true };
+      const old = (await store.drafts.save(fields, 0))!;
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "bridge", references: ["first@example.test", "source@example.test"] })]);
+      store = await harness.reopen(store); opened.push(store);
+      await ingest(store, [msg({ accountId: fields.accountId, providerMsgId: "unrelated", rfcMessageId: "unrelated@example.test" })]);
+      const merged = await threadOf(store, "bridge"), unrelated = await threadOf(store, "unrelated");
+      expect(unrelated).toBe(stale); expect(merged).not.toBe(stale);
+      expect((await store.threads.get(merged))!.messages.map((m) => m.id)).toContain(original.id);
+      expect((await store.threads.get(unrelated))!.messages.map((m) => m.id)).not.toContain(original.id);
+      await store.drafts.delete(old.id, old.generation);
+      const copy = (await store.drafts.save(fields, 1))!;
+      const expected = { thread_id: crossAccount ? null : merged, mode, in_reply_to_message_id: fields.inReplyToMessageId, forward_of_message_id: fields.forwardOfMessageId, body_html: fields.bodyHtml, quoted_text: fields.quotedText, to_json: JSON.stringify(fields.to) };
+      expect(copy).toMatchObject(expected);
+      const standalone = (await store.drafts.save({ ...fields, threadId: null }, 2))!;
+      expect(standalone).toMatchObject({ ...expected, thread_id: null });
+      const update = (await store.drafts.save({ ...fields, threadId: undefined, id: standalone.id, generation: standalone.generation, baseRevision: standalone.revision }, 3))!;
+      expect(update).toMatchObject({ ...expected, id: standalone.id, thread_id: null });
+      const implicit = (await store.drafts.save({ ...fields, threadId: undefined }, 4))!;
+      expect(implicit).toMatchObject({ ...expected, thread_id: mode === "reply" ? expected.thread_id : null });
+      store = await harness.reopen(store); opened.push(store);
+      expect((await store.drafts.list()).find((d) => d.id === copy.id)).toMatchObject(expected);
+      expect((await store.drafts.list()).find((d) => d.id === standalone.id)).toMatchObject({ ...expected, thread_id: null });
+    });
+
     it("normalizes vanished local context atomically, retains authored fields, and classifies account/assets refusal", async () => {
       const store = await open(); const [a] = await withAccounts(store);
       const input = { accountId: a!, to: [{ name: "", email: "bob@" }], cc: [], subject: "keep", bodyText: "text", quotedText: "> quote", includeQuote: true, mode: "reply" as const, threadId: 999999, inReplyToMessageId: 999999 };

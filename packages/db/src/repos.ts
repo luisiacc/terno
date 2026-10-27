@@ -679,7 +679,8 @@ export function saveDraft(db: Db, d: DraftInput, now = Date.now()): DraftRow | n
   const forward = exists(forwardOf) ? forwardOf : null;
   const source = original ?? (forward ? db.get<{ thread_id: number; account_id: number }>("SELECT thread_id, account_id FROM messages WHERE id = ?", forward) : undefined);
   const thread = requestedThread !== null ? db.get<{ id: number; account_id: number }>("SELECT id, account_id FROM threads WHERE id = ?", requestedThread) : undefined;
-  const threadId = requestedThread === null ? null : thread?.account_id === d.accountId ? thread.id : source?.account_id === d.accountId ? source.thread_id : null;
+  const sourceThread = source?.thread_id === requestedThread ? thread : source ? db.get<{ id: number; account_id: number }>("SELECT id, account_id FROM threads WHERE id = ?", source.thread_id) : undefined;
+  const threadId = requestedThread === null ? null : source ? (source.account_id === d.accountId && sourceThread?.account_id === d.accountId ? sourceThread.id : null) : thread?.account_id === d.accountId ? thread.id : null;
   const lost = !reply && !forward && (requestedThread !== threadId || !exists(inReplyTo) || !exists(forwardOf));
   const values = {
     account_id: d.accountId,

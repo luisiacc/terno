@@ -1477,7 +1477,8 @@ export function saveDraft(c: Ctx, d: DraftInput, now: number): DraftRow | null {
   const forward = exists(forwardOf) ? forwardOf : null;
   const source = original ?? (forward ? T(c, "messages").get(forward) : undefined);
   const thread = requestedThread !== null ? T(c, "threads").get(requestedThread) : undefined;
-  const threadId = requestedThread === null ? null : thread?.account_id === d.accountId ? thread.id : source?.account_id === d.accountId ? source.thread_id : null;
+  const sourceThread = source?.thread_id === requestedThread ? thread : source ? T(c, "threads").get(source.thread_id) : undefined;
+  const threadId = requestedThread === null ? null : source ? (source.account_id === d.accountId && sourceThread?.account_id === d.accountId ? sourceThread.id : null) : thread?.account_id === d.accountId ? thread.id : null;
   const lost = !reply && !forward && (requestedThread !== threadId || !exists(inReplyTo) || !exists(forwardOf));
   const values = {
     account_id: d.accountId,
