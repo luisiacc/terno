@@ -12,7 +12,8 @@
  * real show still called), list mail none, and its click opens the
  * conversation. Whether macOS draws the banner depends on the permission
  * given to the bundle id (dev.terno.mail) and its signature: the native
- * banner is captured best effort with `screencapture`, never asserted.
+ * banner is captured best effort with `screencapture` only when
+ * TERNO_SMOKE_SCREENSHOT=1 (it captures the whole screen), never asserted.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
@@ -131,13 +132,16 @@ test("after an IMAP account's first sync, a person's mail through IDLE makes one
   imap.control.addMessage("INBOX", { raw: raw({ from: "Boletín <boletin@xataka.example>", subject: "Novedades de la semana", listId: "boletin.xataka.example" }) });
   imap.control.addMessage("INBOX", { raw: raw({ from: "Valeria Núñez <valeria@studio.example>", subject: "¿Comemos el jueves?", body: "Hay un sitio nuevo cerca de la oficina." }) });
   await expect.poll(async () => (await notices()).length, { timeout: 30_000 }).toBe(1);
-  // the real banner, if macOS lets this bundle post (best effort, never asserted)
-  mkdirSync(SHOTS, { recursive: true });
-  await new Promise((r) => setTimeout(r, 1200));
-  try {
-    execFileSync("screencapture", ["-x", join(SHOTS, "macos-banner.png")], { timeout: 10_000 });
-  } catch {
-    // no screen-recording permission for this shell: the calls are what's asserted
+  // the real banner, if macOS lets this bundle post: a capture of the whole screen, so only when asked for
+  // (TERNO_SMOKE_SCREENSHOT=1); best effort, never asserted
+  if (process.env.TERNO_SMOKE_SCREENSHOT === "1") {
+    mkdirSync(SHOTS, { recursive: true });
+    await new Promise((r) => setTimeout(r, 1200));
+    try {
+      execFileSync("screencapture", ["-x", join(SHOTS, "macos-banner.png")], { timeout: 10_000 });
+    } catch {
+      // no screen-recording permission for this shell: the calls are what's asserted
+    }
   }
   expect((await notices())[0]).toEqual({ title: "Valeria Núñez", subtitle: "¿Comemos el jueves?", body: "Hay un sitio nuevo cerca de la oficina." });
   // the badge counted both arrivals
