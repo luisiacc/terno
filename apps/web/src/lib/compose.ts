@@ -63,8 +63,9 @@ export function registerReaderFocusDestination(threadId: number, token: object):
     destination.active = false;
     const captured = focusLease?.destination === destination ? focusLease : null;
     queueMicrotask(() => {
-      if (destination.active || destination.generation !== generation) return;
-      if (readerDestinations.get(threadId) === destination) readerDestinations.delete(threadId);
+      if (destination.active || destination.generation !== generation || readerDestinations.get(threadId) !== destination) return;
+      readerDestinations.delete(threadId);
+      expireDraftPresentation(threadId);
       if (captured && focusLease === captured && captured.destination === destination && captured.intent === intent) supersedeCompose();
     });
   };
