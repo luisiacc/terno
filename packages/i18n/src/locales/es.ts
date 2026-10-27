@@ -927,6 +927,7 @@ const es = {
   "compose.recipients.summary": { one: "{names} y # más", other: "{names} y # más" },
   "compose.sending": "Enviando…",
   "compose.sendFailed": "No se pudo enviar: {error}",
+  "compose.readChanged": "El borrador cambió mientras se leía. Tus cambios siguen aquí. Inténtalo de nuevo.",
   "compose.converted.reply": "Convertido en Responder",
   "compose.converted.replyAll": "Convertido en Responder a todos",
   "compose.converted.forward": "Convertido en Reenviar",

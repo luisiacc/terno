@@ -934,6 +934,7 @@ const en = {
   "compose.recipients.summary": { one: "{names} and # more", other: "{names} and # more" },
   "compose.sending": "Sending…",
   "compose.sendFailed": "Couldn’t send: {error}",
+  "compose.readChanged": "Your draft changed while it was being read. Your changes are still here. Try again.",
   "compose.converted.reply": "Converted to a reply",
   "compose.converted.replyAll": "Converted to reply all",
   "compose.converted.forward": "Converted to a forward",

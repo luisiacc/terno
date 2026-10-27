@@ -77,3 +77,29 @@ it("does not automatically reread after a failed Send materialization", async ()
     expect(rpc.call).not.toHaveBeenCalled();
   } finally { try { if (key) forgetDraft(key); source?.dispose(); } finally { useApp.setState(previousApp, true); vi.useRealTimers(); } }
 });
+
+it("explains an unstable Send read and leaves the newer body unsent", async () => {
+  vi.useFakeTimers();
+  const previousApp = getApp();
+  const { useSnack, dismissSnack } = await import("./snack");
+  let key: string | undefined, source: ReturnType<typeof attachBody> | undefined, replacement: ReturnType<typeof attachBody> | undefined;
+  let body = "earlier", reads = 0;
+  try {
+    setApp({ accounts: [{ id: 1, email: "me@example.test" } as Account], accountId: 1 });
+    rpc.call.mockClear();
+    key = createDraft({ ...newFields(1), toText: "ana@example.test" });
+    source = attachBody(key, () => {
+      reads++;
+      const captured = body;
+      if (reads === 1) { body = "newer"; replacement = attachBody(key!, () => ({ text: body, html: `<p>${body}</p>` })); }
+      return { text: captured, html: `<p>${captured}</p>` };
+    });
+    source.changed();
+    expect(await sendDraft(key)).toBe(false);
+    expect(useSnack.getState().current?.message).toContain("Your draft changed while it was being read. Your changes are still here. Try again.");
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(reads).toBe(1);
+    expect(rpc.call).not.toHaveBeenCalled();
+    expect(body).toBe("newer");
+  } finally { try { if (key) forgetDraft(key); source?.dispose(); replacement?.dispose(); dismissSnack(); } finally { useApp.setState(previousApp, true); vi.useRealTimers(); } }
+});

@@ -31,3 +31,22 @@ it.each(["publication edit", "publication revert", "reader edit", "source replac
     } finally { off(); }
   } finally { source.dispose(); replacement?.dispose(); forgetDraft(key); vi.useRealTimers(); }
 });
+
+it("explains an unstable read while retaining the newer body", () => {
+  vi.useFakeTimers();
+  const key = createDraft(newFields(1));
+  let text = "first", reads = 0;
+  let source: ReturnType<typeof attachBody>;
+  source = attachBody(key, () => {
+    reads++;
+    const captured = text;
+    if (reads === 1) { text = "newer"; source.changed(); }
+    return { text: captured, html: `<p>${captured}</p>` };
+  });
+  try {
+    source.changed();
+    expect(() => materialize(key)).toThrow("Your draft changed while it was being read. Your changes are still here. Try again.");
+    expect(reads).toBe(1);
+    expect(materialize(key)).toMatchObject({ bodyText: "newer", bodyHtml: "<p>newer</p>" });
+  } finally { source.dispose(); forgetDraft(key); vi.useRealTimers(); }
+});

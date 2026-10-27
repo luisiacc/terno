@@ -1,4 +1,5 @@
 import { formatAddressList, isValidEmail, parseAddressList, type Address } from "@terno/core";
+import { t } from "@terno/i18n";
 import type { Draft, DraftAddress, DraftMode } from "@terno/core/rpc";
 import { create } from "zustand";
 import { emailDocument, GAP, signatureHtml, textToHtml } from "@terno/richtext/quote";
@@ -361,11 +362,11 @@ export function materialize(key: string): LocalDraft | undefined {
   };
   let body: ReturnType<BodyReader>;
   try { body = source.read(); } catch (error) { return fail(error); }
-  if (sources.get(key) !== source || source.detached !== detached || source.editVersion !== version || get(key) !== d) return fail(new Error("Draft body changed while reading"));
+  if (sources.get(key) !== source || source.detached !== detached || source.editVersion !== version || get(key) !== d) return fail(new Error(t("compose.readChanged")));
   const { html, text } = body;
   const next = { ...d, bodyHtml: html, bodyText: text, canonical: source.canonical };
   put(next);
-  if (sources.get(key) !== source || source.detached !== detached || source.editVersion !== version || get(key) !== next) return fail(new Error("Draft body changed while reading"));
+  if (sources.get(key) !== source || source.detached !== detached || source.editVersion !== version || get(key) !== next) return fail(new Error(t("compose.readChanged")));
   source.dirty = false;
   source.failed = false;
   return next;
