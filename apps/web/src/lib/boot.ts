@@ -1,7 +1,7 @@
 import { localized } from "~/lib/i18n";
 import { t } from "@terno/i18n";
 import type { DesignId } from "@terno/core";
-import { draftsSaved, flushAllDrafts, loadDrafts } from "~/lib/drafts";
+import { acquireDraftHold, trackDraftComposition, draftsSaved, flushAllDrafts, loadDrafts } from "~/lib/drafts";
 import { client, connectBackend } from "~/rpc/connection";
 import { removeFromCategory } from "~/lib/categorize";
 import { getApp, navigate, setApp, setCategories } from "~/state/app";
@@ -19,6 +19,9 @@ import { accountsChanged, announceParkedSend } from "~/lib/sign-in";
 
 export async function boot(): Promise<void> {
   startDiag();
+  trackDraftComposition();
+  // Registered before readiness: an update cannot miss a document still starting.
+  window.ternoDesktop?.onFlushDrafts?.(() => draftsSaved(4000), acquireDraftHold);
   try {
     await connectBackend();
     const b = await client.call("app.bootstrap", {});
@@ -29,12 +32,11 @@ export async function boot(): Promise<void> {
     void loadDrafts().catch((error) => console.warn("[drafts] could not load", error));
     // best effort when the page goes away (the autosave pause may not have ended)
     window.addEventListener("pagehide", () => void flushAllDrafts());
-    // desktop: before any quit or update, main waits (5 s at most) until what is written is saved
-    window.ternoDesktop?.onFlushDrafts?.(() => draftsSaved(4000));
     // desktop: main pushes the update state (nothing is checked here)
     startUpdates();
     exposeForTests({
       regressions,
+      acquireDraftHold,
       updateAppearance,
       getApp,
       loadedIds: () => useList.getState().items.map((t) => t.id),

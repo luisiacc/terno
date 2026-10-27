@@ -278,6 +278,7 @@ const sendsIdleWaiters: (() => void)[] = [];
 const flushers = new Set<number>();
 let flushSeq = 0;
 const flushWaiters = new Map<string, (saved: boolean) => void>();
+const heldWindows = new Map<string, { window: BrowserWindow; id: number }>();
 let updates: UpdateController | null = null;
 
 ipcMain.on("terno:flush-ready", (e) => {
@@ -290,17 +291,25 @@ ipcMain.on("terno:flush-done", (e, id: unknown, saved: unknown) => {
   flushWaiters.delete(key);
 });
 
-function flushWindows(): Promise<boolean>[] {
+function flushWindows(hold: boolean): Promise<boolean>[] {
   return [...windows]
-    .filter((w) => !w.isDestroyed() && flushers.has(w.webContents.id))
+    .filter((w) => !w.isDestroyed())
     .map(
       (w) =>
         new Promise<boolean>((resolve) => {
+          if (!flushers.has(w.webContents.id)) { resolve(false); return; }
           const id = ++flushSeq;
-          flushWaiters.set(`${w.webContents.id}:${id}`, resolve);
-          w.webContents.send("terno:flush-drafts", id);
+          const key = `${w.webContents.id}:${id}`;
+          flushWaiters.set(key, resolve);
+          if (hold) heldWindows.set(key, { window: w, id });
+          w.webContents.send("terno:flush-drafts", id, hold);
         }),
     );
+}
+
+function releaseFlushWindows(): void {
+  for (const { window, id } of heldWindows.values()) if (!window.isDestroyed()) window.webContents.send("terno:flush-release", id);
+  heldWindows.clear();
 }
 
 function shutdownBackend(o: { deadlineMs: number; force: boolean }): Promise<BackendOutcome> | null {
@@ -322,8 +331,9 @@ function stopBackend() {
 
 async function shutdown(force: boolean, trigger: "quit" | "restart"): Promise<ShutdownOutcome> {
   const started = Date.now();
-  const r = await coordinateShutdown({ flushWindows, shutdownBackend, setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) }, { force });
+  const r = await coordinateShutdown({ flushWindows, releaseWindows: releaseFlushWindows, shutdownBackend, setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) }, { force });
   flushWaiters.clear();
+  shutdownWaiters.clear();
   if (r.draftsTimedOut) diagLog.warn("shutdown.drafts_timeout", { count: r.draftsTimedOut });
   diagLog.info("shutdown.done", { outcome: r.outcome, durationMs: Date.now() - started, trigger });
   // an update's restart never kills a backend that didn't answer (it may be mid-send): the install waits instead
@@ -331,12 +341,25 @@ async function shutdown(force: boolean, trigger: "quit" | "restart"): Promise<Sh
   return r.outcome;
 }
 
-/** "Restart now": the shutdown not forced (a send in flight answers "sending" and the backend keeps running). */
+function enableReload(enabled: boolean): void {
+  const visit = (menu: Electron.Menu) => {
+    for (const item of menu.items) {
+      if (item.role === "reload" || item.role === "forceReload") item.enabled = enabled;
+      if (item.submenu) visit(item.submenu);
+    }
+  };
+  const menu = Menu.getApplicationMenu();
+  if (menu) visit(menu);
+}
+
+/** "Restart now": a send in flight defers installation and restores editing. */
 async function shutdownForInstall(): Promise<ShutdownOutcome> {
   if (quitState !== "running") return "closed";
   quitState = "stopping";
+  enableReload(false);
   const outcome = await shutdown(false, "restart");
   quitState = outcome === "closed" ? "stopped" : "running";
+  enableReload(quitState === "running");
   return outcome;
 }
 
@@ -448,6 +471,7 @@ ipcMain.on("terno:appearance", (event, value: unknown) => {
 // ───────────────────────────── windows ─────────────────────────────
 
 function createWindow() {
+  if (quitState !== "running") return;
   const isMac = process.platform === "darwin";
   const saved = appearance ?? readAppearance();
   if (saved && !appearance) {
@@ -502,6 +526,7 @@ function createWindow() {
     return { action: "deny" };
   });
   win.webContents.on("will-navigate", (event, url) => {
+    if (quitState !== "running") { event.preventDefault(); return; }
     if (!url.startsWith("app://") && !(isDev && url.startsWith(process.env.TERNO_DEV_URL!))) event.preventDefault();
   });
 
@@ -511,6 +536,7 @@ function createWindow() {
 
 /** Menu commands go to the focused Terno window's renderer, which applies them like their keys. */
 function sendCommand(command: MenuCommand) {
+  if (quitState !== "running") return;
   const win = BrowserWindow.getFocusedWindow() ?? [...windows][0];
   if (win && windows.has(win) && !win.isDestroyed()) win.webContents.send("terno:command", command);
 }
@@ -531,6 +557,7 @@ function buildMenu() {
     checkForUpdates,
   });
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+  enableReload(quitState === "running");
 }
 
 // ───────────────────────────── language ─────────────────────────────
@@ -608,6 +635,8 @@ if (!app.requestSingleInstanceLock()) {
       onSendsIdle: (cb) => void sendsIdleWaiters.push(cb),
       recover: () => {
         quitState = "running";
+        releaseFlushWindows();
+        enableReload(true);
         restartEngine();
       },
     });

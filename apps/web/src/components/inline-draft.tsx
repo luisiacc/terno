@@ -172,6 +172,7 @@ export function DraftFieldsForm({ d, accounts, showSubject, flat }: { d: LocalDr
 
 /** What the draft's save state says, for screen readers too: "saved" only for an acknowledged revision. */
 export function SaveState({ d }: { d: LocalDraft }) {
+  const held = useDrafts((s) => s.held);
   const action = useRef<HTMLButtonElement | null>(null);
   const actionRef = useCallback((node: HTMLButtonElement | null) => {
     if (!node && action.current === document.activeElement) {
@@ -186,7 +187,7 @@ export function SaveState({ d }: { d: LocalDraft }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-x-1 text-xs text-muted-foreground" data-testid="draft-status">
       <span aria-live="polite" aria-atomic="true">
-        {message ? t(`compose.recovery.${message}`) : d.status === "saved" ? t("compose.status.saved") : null}
+        {held ? t("compose.status.restart") : message ? t(`compose.recovery.${message}`) : d.status === "saved" ? t("compose.status.saved") : null}
         {recovery?.state === "unknown" && recovery.reason && ` ${t(`compose.recovery.${recovery.reason}`)}`}
       </span>
       {recovery && (

@@ -36,7 +36,7 @@ import { TextSelection, type EditorState } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
-import { attachBody, useDrafts } from "~/lib/drafts";
+import { attachBody, draftEditsHeld, useDrafts } from "~/lib/drafts";
 import { suggestText } from "~/lib/autocomplete";
 import { setApp, useApp } from "~/state/app";
 import { parseAddressList } from "@terno/core";
@@ -130,7 +130,7 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
   const wrapRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const version = useDrafts((s) => s.drafts[draftKey]?.bodyVersion ?? 0);
-  const sending = useDrafts((s) => s.drafts[draftKey]?.sending ?? false);
+  const sending = useDrafts((s) => s.held || (s.drafts[draftKey]?.sending ?? false));
   const sendingRef = useRef(sending);
   sendingRef.current = sending;
   const versionRef = useRef(version);
@@ -162,7 +162,7 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
       const view = viewRef.current;
       if (!view) return;
       const t0 = performance.now();
-      const next = formatState(view.state, !sendingRef.current);
+      const next = formatState(view.state, !sendingRef.current && !draftEditsHeld());
       if (import.meta.env.VITE_RENDER_PROBE) probe("format", performance.now() - t0);
       if (!sameFormat(next, format)) {
         format = next;
@@ -180,7 +180,7 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
     };
     const editor = createEditor(mount, {
       state,
-      editable: () => !sendingRef.current,
+      editable: () => !sendingRef.current && !draftEditsHeld(),
       attributes: {
         role: "textbox",
         "aria-multiline": "true",
@@ -202,7 +202,7 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
         onUpdate: schedule,
         onLink: () => openLinkRef.current(),
         openLink,
-        ghost: ghostHooks(draftKey, () => !sendingRef.current, (text) => {
+        ghost: ghostHooks(draftKey, () => !sendingRef.current && !draftEditsHeld(), (text) => {
           const el = announceRef.current;
           if (el) el.textContent = t("compose.suggest.announce", { text: text.trim() });
         }),
@@ -227,7 +227,7 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
     const controller: ComposerController = {
       run: (command: FormatCommand) => {
         // nothing changes under a send in flight (the draft is sending what is there now)
-        if (sendingRef.current) return;
+        if (sendingRef.current || draftEditsHeld()) return;
         COMMANDS[command](view.state, view.dispatch, view);
         view.focus();
       },
@@ -246,11 +246,11 @@ export function RichBody({ draftKey, placeholder, className }: { draftKey: strin
       },
     };
     function run(cmd: (s: EditorState, d?: EditorView["dispatch"]) => boolean, focusAfter = true) {
-      if (sendingRef.current) return;
+      if (sendingRef.current || draftEditsHeld()) return;
       cmd(view.state, view.dispatch);
       if (focusAfter) view.focus();
     }
-    format = formatState(view.state, !sendingRef.current);
+    format = formatState(view.state, !sendingRef.current && !draftEditsHeld());
     refreshRef.current = schedule;
     // the stand-in had focus (typed into or not): the editor that replaces it takes it
     const standInFocused = takeStandInFocus(draftKey);

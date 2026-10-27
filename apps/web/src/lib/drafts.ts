@@ -102,14 +102,61 @@ export type DraftFields = Pick<
 >;
 
 interface DraftsState {
+  held: boolean;
   drafts: Record<string, LocalDraft>;
 }
 
-export const useDrafts = create<DraftsState>(() => ({ drafts: {} }));
+export const useDrafts = create<DraftsState>(() => ({ drafts: {}, held: false }));
 
 let changeVersion = 0;
 /** Constant-time fence for page transitions, including coalesced editor changes. */
 export const draftChangeVersion = (): number => changeVersion;
+
+let pendingWork = 0, holds = 0;
+let holdFocus: HTMLElement | null = null;
+export const draftEditsHeld = (): boolean => holds > 0;
+export const draftWorkPending = (): boolean => pendingWork > 0;
+
+/** Accepted async intent must finish before shutdown can freeze and acknowledge its fields. */
+export function beginDraftWork(): (() => void) | null {
+  if (draftEditsHeld()) return null;
+  pendingWork++; changeVersion++;
+  let done = false;
+  return () => { if (!done) { done = true; pendingWork--; changeVersion++; } };
+}
+
+const inputEvents = ["beforeinput", "keydown", "pointerdown", "click", "paste", "cut", "drop", "compositionstart"];
+const holdInput = (event: Event) => { event.preventDefault(); event.stopImmediatePropagation(); };
+
+/** A request-scoped lease; release never rebuilds or moves the editor/selection. */
+export function acquireDraftHold(): (() => void) | null {
+  if (draftWorkPending() || Object.values(useDrafts.getState().drafts).some((d) => d.sending)) return null;
+  if (++holds === 1) {
+    holdFocus = typeof document !== "undefined" && document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (typeof document !== "undefined") for (const type of inputEvents) document.addEventListener(type, holdInput, true);
+    useDrafts.setState({ held: true });
+  }
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    if (--holds === 0) {
+      if (typeof document !== "undefined") for (const type of inputEvents) document.removeEventListener(type, holdInput, true);
+      useDrafts.setState({ held: false });
+      const focus = holdFocus; holdFocus = null;
+      if (focus && typeof requestAnimationFrame !== "undefined") requestAnimationFrame(() => {
+        if (!draftEditsHeld() && focus.isConnected && (document.activeElement === document.body || document.activeElement === focus)) focus.focus({ preventScroll: true });
+      });
+    }
+  };
+}
+
+/** IME text is accepted work until composition ends; never ACK an unfinished composition. */
+export function trackDraftComposition(): void {
+  let finish: (() => void) | null = null;
+  document.addEventListener("compositionstart", () => { finish ??= beginDraftWork(); }, true);
+  document.addEventListener("compositionend", () => { finish?.(); finish = null; }, true);
+}
 
 const get = (key: string): LocalDraft | undefined => useDrafts.getState().drafts[key];
 const put = (d: LocalDraft) => useDrafts.setState((s) => ({ drafts: { ...s.drafts, [d.key]: d } }));
@@ -223,7 +270,7 @@ export function attachBody(key: string, read: BodyReader, options: { canonical?:
   return {
     changed() {
       const d = get(key);
-      if (!d || d.sending) return;
+      if (!d || d.sending || draftEditsHeld()) return;
       changeVersion++;
       // an unsaved revision is already pending for this body: the save will serialize the latest document, so only
       // the debounce moves (no store update per keystroke: nothing re-renders while typing)
@@ -296,6 +343,7 @@ const newKey = () => `local-${Date.now().toString(36)}-${(++seq).toString(36)}`;
 
 /** A new draft (not saved until the user writes something). Returns its key. */
 export function createDraft(fields: DraftFields): string {
+  if (draftEditsHeld()) throw new Error("Draft editing is held for shutdown");
   changeVersion++;
   const key = newKey();
   put({ key, id: null, revision: 0, status: "clean", localRev: 0, savedRev: 0, updatedAt: now(), sending: false, bodyVersion: 0, canonical: false, tooLong: false, ...fields });
@@ -305,12 +353,13 @@ export function createDraft(fields: DraftFields): string {
 export const draftSenderLocked = (d: LocalDraft): boolean => Boolean(d.attachments?.length || d.attachmentOwner);
 
 /** An edit: the content changes now, the save follows (800 ms after the last edit, ≤ 5 s while typing). */
-export function editDraft(key: string, patch: Partial<DraftFields>): void {
+export function editDraft(key: string, patch: Partial<DraftFields>): boolean {
+  if (draftEditsHeld()) return false;
   // a body patch is compared with the body as the editor has it now
   const d = "bodyText" in patch || "bodyHtml" in patch ? materialize(key) : get(key);
   // nothing changes under a send in flight (it is sending what is there now)
-  if (!d || d.sending) return;
-  if (patch.accountId !== undefined && patch.accountId !== d.accountId && draftSenderLocked(d)) return;
+  if (!d || d.sending) return false;
+  if (patch.accountId !== undefined && patch.accountId !== d.accountId && draftSenderLocked(d)) return false;
   changeVersion++;
   const bodyChanged = (patch.bodyText !== undefined && patch.bodyText !== d.bodyText) || (patch.bodyHtml !== undefined && patch.bodyHtml !== d.bodyHtml);
   put({
@@ -328,12 +377,13 @@ export function editDraft(key: string, patch: Partial<DraftFields>): void {
     if (source) source.dirty = false;
   }
   schedule(key);
+  return true;
 }
 
 /** UI state (open/collapsed) changes: saved with the draft, but not an authored edit. */
 export function setDraftUi(key: string, uiState: LocalDraft["uiState"]): void {
   const d = get(key);
-  if (!d || d.uiState === uiState) return;
+  if (draftEditsHeld() || !d || d.uiState === uiState) return;
   changeVersion++;
   put({ ...d, uiState });
   if (d.id !== null) {
@@ -459,7 +509,7 @@ export function markDraftMissing(key: string): void {
 /** Explicit intent only: an unknown previous copy may already exist, as the action explains. */
 export function copyDraft(key: string): Promise<void> {
   const d = get(key);
-  if (!d?.recovery || d.sending || writers.get(key)?.stopping) return Promise.resolve();
+  if (draftEditsHeld() || !d?.recovery || d.sending || writers.get(key)?.stopping) return Promise.resolve();
   const w = writer(key);
   if (w.inflight) return w.inflight;
   changeVersion++;
@@ -518,7 +568,7 @@ async function settle(key: string): Promise<LocalDraft | undefined> {
 
 /** The draft as it is now, after any save in flight answered, ready to send. */
 export async function draftForSend(key: string): Promise<LocalDraft | undefined> {
-  if (get(key)?.recovery || writers.get(key)?.stopping) return undefined;
+  if (draftEditsHeld() || get(key)?.recovery || writers.get(key)?.stopping) return undefined;
   const w = writer(key);
   w.stopping = "send";
   const d = await settle(key);
@@ -551,7 +601,7 @@ export function forgetDraft(key: string): void {
 /** Deletes a draft; returns what it was, for "Undo". */
 export async function discardDraft(key: string): Promise<LocalDraft | undefined> {
   // a send in flight decides: sent, it is gone; failed, it stays for another try
-  if (get(key)?.sending || writers.get(key)?.stopping) return undefined;
+  if (draftEditsHeld() || get(key)?.sending || writers.get(key)?.stopping) return undefined;
   const w = writer(key);
   w.stopping = "discard";
   const d = await settle(key);

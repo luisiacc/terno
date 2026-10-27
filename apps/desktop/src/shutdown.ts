@@ -4,7 +4,8 @@
  *
  * 1. Every window flushes its drafts (saved through the backend, which is
  *    still running) and acknowledges; a window that doesn't within
- *    DRAFTS_DEADLINE_MS is counted and not waited for.
+ *    DRAFTS_DEADLINE_MS is counted. Updates hold editing until closure, or
+ *    release the hold when any acknowledgement/deadline defers installation.
  * 2. The backend stops starting ops, gives a send in flight until
  *    SEND_DEADLINE_MS, closes the database (WAL checkpointed) and answers.
  *    For a plain quit (`force`) it closes even if a send is still going (the
@@ -22,8 +23,9 @@ export type BackendOutcome = "closed" | "forced" | "sending";
 export type ShutdownOutcome = BackendOutcome | "timeout" | "unsaved";
 
 export interface ShutdownDeps {
-  /** one promise per window that can flush, resolved by its acknowledgement */
-  flushWindows(): Promise<void | boolean>[];
+  /** One ACK per window; hold=true keeps editing paused until release or committed closure. */
+  flushWindows(hold: boolean): Promise<void | boolean>[];
+  releaseWindows?(): void;
   /** asks the backend to shut down; null when there is no backend running */
   shutdownBackend(o: { deadlineMs: number; force: boolean }): Promise<BackendOutcome> | null;
   setTimeout(fn: () => void, ms: number): unknown;
@@ -55,13 +57,19 @@ export async function coordinateShutdown(deps: ShutdownDeps, o: ShutdownOptions)
   const sendMs = o.sendDeadlineMs ?? SEND_DEADLINE_MS;
   const graceMs = o.graceMs ?? BACKEND_GRACE_MS;
 
-  const acks = deps.flushWindows().map((p) => within<"saved" | "unsaved" | "timeout">(deps, p.then((saved) => saved === false ? "unsaved" : "saved", () => "unsaved"), draftsMs, "timeout"));
-  const results = await Promise.all(acks);
-  const draftsTimedOut = results.filter((result) => result === "timeout").length;
-  if (!o.force && results.some((result) => result !== "saved")) return { outcome: "unsaved", draftsTimedOut };
+  let committed = false;
+  try {
+    const acks = deps.flushWindows(!o.force).map((p) => within<"saved" | "unsaved" | "timeout">(deps, p.then((saved) => saved === false ? "unsaved" : "saved", () => "unsaved"), draftsMs, "timeout"));
+    const results = await Promise.all(acks);
+    const draftsTimedOut = results.filter((result) => result === "timeout").length;
+    if (!o.force && results.some((result) => result !== "saved")) return { outcome: "unsaved", draftsTimedOut };
 
-  const backend = deps.shutdownBackend({ deadlineMs: sendMs, force: o.force });
-  if (!backend) return { outcome: "closed", draftsTimedOut };
-  const outcome = await within<ShutdownOutcome>(deps, backend.catch(() => "timeout" as const), sendMs + graceMs, "timeout");
-  return { outcome, draftsTimedOut };
+    const backend = deps.shutdownBackend({ deadlineMs: sendMs, force: o.force });
+    if (!backend) { committed = true; return { outcome: "closed", draftsTimedOut }; }
+    const outcome = await within<ShutdownOutcome>(deps, backend.catch(() => "timeout" as const), sendMs + graceMs, "timeout");
+    committed = outcome === "closed" || outcome === "forced";
+    return { outcome, draftsTimedOut };
+  } catch {
+    return { outcome: "timeout", draftsTimedOut: 0 };
+  } finally { if (!committed) deps.releaseWindows?.(); }
 }

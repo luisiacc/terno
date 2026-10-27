@@ -107,7 +107,7 @@ export function takeEarly(key: string): { base: { text: string; html: string }; 
 export function ComposerBody({ draftKey, placeholder, className }: { draftKey: string; placeholder: string; className?: string }) {
   const rich = useRich();
   // read-only under a send in flight, as the editor is (what is typed then couldn't be part of it)
-  const sending = useDrafts((s) => s.drafts[draftKey]?.sending ?? false);
+  const sending = useDrafts((s) => s.held || (s.drafts[draftKey]?.sending ?? false));
   if (rich) return <rich.RichBody draftKey={draftKey} placeholder={placeholder} className={className} />;
   return (
     <div

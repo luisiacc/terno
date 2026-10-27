@@ -127,3 +127,29 @@ test("missing account and files stay explicit; removing refs permits the sole co
   await page.getByTestId("draft-save-copy").click(); await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
   expect((await server.backend.store.drafts.list())[0]).toMatchObject({ account_id: remaining.id, body_text: "account recovery text retained", attachments_json: "[]" });
 });
+
+test("restart hold preserves the rich document, caret, history and marks until cancellation @design", async ({ app: page, server }, info) => {
+  await openRow(page, 0); await page.getByTestId("quick-reply").click();
+  const body = page.getByTestId("compose-body"); await body.fill("exact rich work");
+  await body.press("Meta+a"); await body.press("Meta+b"); await body.press("ArrowRight"); await body.press("ArrowLeft");
+  await page.getByTestId("format-italic").click(); await expect(page.getByTestId("format-italic")).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(async () => (await server.backend.store.drafts.list())[0]?.body_text).toBe("exact rich work");
+  const html = await body.innerHTML();
+  const caret = await page.evaluate(() => ({ offset: window.getSelection()?.anchorOffset, text: window.getSelection()?.anchorNode?.textContent }));
+  await page.evaluate("window.releaseDraftHold = window.__terno.acquireDraftHold()");
+  await expect(page.getByTestId("draft-status")).toHaveText("Preparing to restart. Draft editing is paused.");
+  await page.keyboard.type("blocked"); await page.keyboard.press("Meta+z"); await page.keyboard.press("c");
+  expect(await body.innerHTML()).toBe(html);
+  expect(await page.evaluate(() => ({ offset: window.getSelection()?.anchorOffset, text: window.getSelection()?.anchorNode?.textContent }))).toEqual(caret);
+  for (const theme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: theme }); await stabilize(page);
+    expect((await new AxeBuilder({ page }).include("[data-testid=composer]").analyze()).violations).toEqual([]);
+    await page.screenshot({ path: `${shots}/restart-${info.project.name}-${theme}.png` });
+  }
+  await page.evaluate("window.releaseDraftHold()");
+  await expect(body).toBeFocused();
+  await expect(page.getByTestId("format-italic")).toHaveAttribute("aria-pressed", "true");
+  await page.clock.setFixedTime(new Date((await page.evaluate(() => Date.now())) + 1000));
+  await page.keyboard.type("X"); await expect(body.locator("i")).toHaveText("X");
+  await body.press("Meta+z"); expect(await body.innerHTML()).toBe(html);
+});

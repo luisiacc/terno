@@ -6,7 +6,7 @@ vi.mock("~/rpc/connection", () => ({ client: { call: rpc } }));
 const { attachFiles, attachmentUploading } = await import("./attachments");
 const { openCompose } = await import("./compose");
 const { convertFields, newFields, replyFields } = await import("./compose-fields");
-const { attachBody, createDraft, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, setDraftTransport, useDrafts } = await import("./drafts");
+const { acquireDraftHold, attachBody, createDraft, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, setDraftTransport, useDrafts } = await import("./drafts");
 const { setApp } = await import("~/state/app");
 const { invalidateThreads, useThreads } = await import("~/state/threads");
 const { resetSnacks } = await import("./snack");
@@ -168,4 +168,15 @@ it("upload final budget cannot overwrite newer coalesced editor content or publi
   expect(useDrafts.getState().drafts[key]!.attachments).toBeUndefined();
   expect(rpc).toHaveBeenCalledWith("attachments.discard", { accountId: 1, assetId: "staged" });
   reader.dispose();
+});
+
+it("a pending Forward retains its accepted intent and defers a shutdown hold until source admission settles", async () => {
+  setup(); useThreads.setState({ details: new Map([[7, thread()]]) });
+  let finish!: (a: AttachmentRef) => void, reached!: () => void;
+  const waiting = new Promise<void>((r) => { reached = r; });
+  rpc.mockImplementation(() => { reached(); return new Promise<AttachmentRef>((r) => { finish = r; }); });
+  const pending = openCompose("forward", 7); await waiting;
+  expect(acquireDraftHold()).toBeNull(); finish(ref); await pending;
+  expect(Object.values(useDrafts.getState().drafts)[0]).toMatchObject({ mode: "forward", attachments: [{ ...ref, contentId: null }] });
+  const release = acquireDraftHold(); expect(release).toBeTypeOf("function"); release!();
 });

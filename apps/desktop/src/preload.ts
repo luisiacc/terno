@@ -72,16 +72,28 @@ contextBridge.exposeInMainWorld("ternoDesktop", {
     },
   },
   // before any quit or update: main asks, the page saves every draft and answers (main waits 5 s at most)
-  onFlushDrafts: (flush: () => Promise<boolean>) => {
-    const relay = (_e: unknown, id: unknown) => {
-      void Promise.resolve()
-        .then(flush)
-        .catch(() => false)
-        .then((saved) => ipcRenderer.send("terno:flush-done", id, saved === true));
+  onFlushDrafts: (flush: () => Promise<boolean>, acquire?: () => (() => void) | null) => {
+    const leases = new Map<unknown, () => void>();
+    const release = (_e: unknown, id: unknown) => { leases.get(id)?.(); leases.delete(id); };
+    const relay = (_e: unknown, id: unknown, hold: unknown) => {
+      try {
+        if (hold === true) {
+          const lease = acquire?.();
+          if (!lease) { ipcRenderer.send("terno:flush-done", id, false); return; }
+          leases.set(id, lease);
+        }
+        void flush().catch(() => false).then((saved) => ipcRenderer.send("terno:flush-done", id, saved === true));
+      } catch { ipcRenderer.send("terno:flush-done", id, false); }
     };
     ipcRenderer.on("terno:flush-drafts", relay);
+    ipcRenderer.on("terno:flush-release", release);
     ipcRenderer.send("terno:flush-ready");
-    return () => ipcRenderer.removeListener("terno:flush-drafts", relay);
+    return () => {
+      ipcRenderer.removeListener("terno:flush-drafts", relay);
+      ipcRenderer.removeListener("terno:flush-release", release);
+      for (const lease of leases.values()) lease();
+      leases.clear();
+    };
   },
   // the Archivo and Ver menus' commands, whitelisted
   onCommand: (listener: (command: MenuCommand) => void) => {

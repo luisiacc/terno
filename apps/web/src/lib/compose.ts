@@ -10,7 +10,7 @@ import { invalidateThreads, loadThread } from "~/state/threads";
 import { registerUndo, snack } from "./snack";
 import { answered, convertFields, forwardAccountMismatch, newFields, replyFields, mergeAttachmentRefs } from "./compose-fields";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
-import { authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, type LocalDraft } from "./drafts";
+import { beginDraftWork, draftEditsHeld, authored, createDraft, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, type LocalDraft } from "./drafts";
 
 /**
  * Writing mail: which draft a reply, reply-all, forward or new message opens,
@@ -53,6 +53,12 @@ const written = (d: LocalDraft) => d.bodyText.trim() !== "" || d.subjectEdited |
  * target: nothing happens.
  */
 export async function openCompose(mode: DraftMode = "new", threadId: number | null = getApp().selectedId): Promise<void> {
+  const finish = beginDraftWork();
+  if (!finish) return;
+  try { await openComposeNow(mode, threadId); } finally { finish(); }
+}
+
+async function openComposeNow(mode: DraftMode, threadId: number | null): Promise<void> {
   const mine = ++intent;
   let takeFocus = true;
   const active = typeof document === "undefined" ? null : document.activeElement;
@@ -235,6 +241,7 @@ function showRecipient(key: string, field: "to" | "cc" | "bcc") {
 }
 
 async function send(key: string): Promise<boolean> {
+  if (draftEditsHeld()) return false;
   if (useDrafts.getState().drafts[key]?.recovery) { snack.error(t("compose.recovery.sendBlocked")); return false; }
   if (attachmentUploading(key)) { snack.error(t("attachments.adding")); return false; }
   // read-only from here: nothing typed while the save in flight settles can fall between it and the send

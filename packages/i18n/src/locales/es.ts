@@ -874,6 +874,7 @@ const es = {
   "compose.recovery.another": "Guardar otra copia",
   "compose.recovery.sendBlocked": "Guarda una copia antes de enviar. El borrador original puede haberse enviado.",
   "compose.recovery.conflict": "Este borrador cambió en otro lugar. Revisa el borrador guardado antes de enviar.",
+  "compose.status.restart": "Preparando el reinicio. La edición de borradores está en pausa.",
   "compose.status.saved": "Borrador guardado",
   "compose.status.failed": "No se pudo guardar · <retry>Reintentar</retry>",
   "compose.discard": "Descartar borrador",

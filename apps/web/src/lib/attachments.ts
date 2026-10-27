@@ -5,7 +5,7 @@ import { textToHtmlChunks } from "@terno/richtext/quote";
 import { getApp, useApp } from "~/state/app";
 import { mergeAttachmentRefs } from "./compose-fields";
 import { client } from "~/rpc/connection";
-import { editDraft, fieldsOf, flushDraft, materialize, sendBody, sendHtml, useDrafts, type DraftFields } from "./drafts";
+import { beginDraftWork, editDraft, fieldsOf, flushDraft, materialize, sendBody, sendHtml, useDrafts, type DraftFields } from "./drafts";
 import { snack } from "./snack";
 
 export const useAttachmentUploads = create<{ keys: Set<string> }>(() => ({ keys: new Set() }));
@@ -33,6 +33,12 @@ export async function draftAttachmentBudget(d: DraftFields, signature = ""): Pro
 }
 
 export async function attachFiles(key: string, files: readonly File[]): Promise<void> {
+  const finish = beginDraftWork();
+  if (!finish) return;
+  try { await attachFilesNow(key, files); } finally { finish(); }
+}
+
+async function attachFilesNow(key: string, files: readonly File[]): Promise<void> {
   const draft = materialize(key);
   if (!draft || draft.sending || draft.recovery || attachmentUploading(key) || !files.length) return;
   if (!getApp().accounts.some((a) => a.id === draft.accountId)) { snack.error(t("errors.accountGone")); return; }
@@ -81,7 +87,7 @@ export async function attachFiles(key: string, files: readonly File[]): Promise<
     const final = current(true);
     if (final.localRev !== live.localRev || final.bodyVersion !== live.bodyVersion || final.bodyText !== live.bodyText || final.bodyHtml !== live.bodyHtml || getApp().accounts.find((a) => a.id === live.accountId)?.signature !== signatureNow) throw new Error(t("attachments.unavailable"));
     if (!fits) throw new Error(t("attachments.tooLarge"));
-    editDraft(key, { attachments });
+    if (!editDraft(key, { attachments })) throw new Error(t("attachments.unavailable"));
     adopted = true;
     await flushDraft(key);
   } catch (error) {

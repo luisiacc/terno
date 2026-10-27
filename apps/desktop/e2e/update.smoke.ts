@@ -19,6 +19,7 @@ import type { AddressInfo } from "node:net";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { SMTPServer } from "smtp-server";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
 
@@ -210,6 +211,39 @@ test("unsaved recovery holds a packaged update restart and a deliberate copy kee
     const copy = db.prepare("SELECT id, body_text FROM drafts LIMIT 1").get()!;
     expect(copy.id).not.toBe(original); expect(copy.body_text).toBe("packaged exact work latest");
   } finally { db.close(); }
+});
+
+test("saved renderer ACK holds editing throughout a real active-send drain, then releases on defer", async () => {
+  let releaseSmtp = () => {}, received = false;
+  const smtp = new SMTPServer({ authOptional: true, disabledCommands: ["STARTTLS"], logger: false,
+    onAuth: (_auth, _session, callback) => callback(null, { user: "synthetic" }),
+    onData(stream, _session, callback) { stream.resume(); stream.on("end", () => { let released = false; releaseSmtp = () => { if (!released) { released = true; callback(); } }; received = true; }); },
+  });
+  await new Promise<void>((r) => smtp.listen(0, "127.0.0.1", r));
+  const port = (smtp.server.address() as AddressInfo).port;
+  try {
+    stage({ tamper: false });
+    await launch({ TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_TEST_SMTP_PORT: String(port) });
+    await updates("check"); await updates("download");
+    await expect.poll(async () => (await state()).status, { timeout: 180_000 }).toBe("ready");
+    await page.getByTestId("thread-row").first().click(); await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); await page.keyboard.press("r");
+    const body = page.getByTestId("compose-body"); await body.fill("synthetic active send"); await body.press("Meta+Enter");
+    await expect.poll(() => received, { timeout: 20_000 }).toBe(true);
+    await page.getByRole("button", { name: "Compose", exact: true }).click(); await body.fill("exact retained work");
+    await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+    await page.getByTestId("update-pill").click(); await page.getByTestId("update-restart").click();
+    await expect(page.getByTestId("draft-status")).toHaveText("Preparing to restart. Draft editing is paused.");
+    await body.focus(); await page.keyboard.type(" must not replace work");
+    await expect(body).toHaveText("exact retained work"); expect(bundleVersion()).toBe("0.1.0");
+    expect((await app!.evaluate(({ app: a }) => a.getAppMetrics())).some((m) => m.type === "Utility")).toBe(true);
+    await expect.poll(async () => (await state()).status, { timeout: 45_000 }).toBe("ready");
+    await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+    await page.keyboard.press("Escape"); await body.focus(); await body.press("End"); await page.keyboard.type(" editing restored");
+    await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+    const db = new DatabaseSync(join(profile(), "terno.db"));
+    try { expect(db.prepare("SELECT body_text FROM drafts LIMIT 1").get()?.body_text).toBe("exact retained work editing restored"); } finally { db.close(); }
+    const closing = app!.waitForEvent("close", { timeout: 180_000 }); releaseSmtp(); await closing; app = null;
+  } finally { releaseSmtp(); await new Promise<void>((r) => smtp.close(() => r())); }
 });
 
 test("an update downloads, Squirrel swaps the bundle and relaunches it, the profile is intact and the new version acknowledges", async () => {

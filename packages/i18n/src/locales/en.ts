@@ -880,6 +880,7 @@ const en = {
   "compose.recovery.another": "Save another copy",
   "compose.recovery.sendBlocked": "Save a copy before sending. The original draft may already have been sent.",
   "compose.recovery.conflict": "This draft changed elsewhere. Review the saved draft before sending.",
+  "compose.status.restart": "Preparing to restart. Draft editing is paused.",
   "compose.status.saved": "Draft saved",
   "compose.status.failed": "Couldn’t save · <retry>Retry</retry>",
   "compose.discard": "Discard draft",

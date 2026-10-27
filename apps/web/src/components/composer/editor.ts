@@ -530,6 +530,7 @@ export function createEditor(
     attributes: o.attributes,
     editable: o.editable,
     dispatchTransaction(tr) {
+      if (!o.editable()) return;
       const next = view.state.apply(tr);
       view.updateState(next);
       if (tr.docChanged) o.hooks.onChange();
