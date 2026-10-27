@@ -472,11 +472,23 @@ export class SqlMailStore implements MailStore {
 
   // ───────────────────────────── ops ─────────────────────────────
 
+  private async preparedFlagOutcome<T>(id: string, run: () => T | Promise<T>): Promise<T> {
+    const op = getOp(this.db, id);
+    const clock = op?.kind !== "send" && op && sqlFlags(this.db).clock(op.account_id);
+    if (clock && !clock.phase) await this.sync.beginObservation(op!.account_id, { authoritativeFlags: true });
+    return run();
+  }
+
+  private async recoverFlagOperations(now: number) {
+    for (const clock of sqlFlags(this.db).clocks()) if (!clock.phase) await this.sync.beginObservation(clock.account_id, { authoritativeFlags: true });
+    return recoverOps(this.db, now);
+  }
+
   readonly ops: MailStore["ops"] = {
     claimReady: async (now, limit) => claimReadyOps(this.db, now, limit),
     get: async (id) => getOp(this.db, id),
     complete: async (id, result, now) =>
-      this.db.tx(() => {
+      this.preparedFlagOutcome(id, () => this.db.tx(() => {
         const op = getOp(this.db, id);
         completeOp(this.db, id, now);
         const touched: number[] = [];
@@ -496,9 +508,9 @@ export class SqlMailStore implements MailStore {
           }
         }
         return { touched, deltas };
-      }),
+      })),
     fail: async (id, error, retryable, now, park) =>
-      this.db.tx(() => {
+      this.preparedFlagOutcome(id, () => this.db.tx(() => {
         const current = getOp(this.db, id);
         if (current && current.state !== "running") return current.state;
         const state = failOp(this.db, id, error, retryable, now, park);
@@ -510,17 +522,17 @@ export class SqlMailStore implements MailStore {
           recomputeThreads(this.db, new Set([...(row ? [row.thread_id] : []), ...answeredThreads(this.db, referencesOfOwn(this.db, [localId]))]));
         }
         return state;
-      }),
-    markUnknown: async (id, error, now) => markOpUnknown(this.db, id, error, now),
+      })),
+    markUnknown: async (id, error, now) => this.preparedFlagOutcome(id, () => this.db.tx(() => markOpUnknown(this.db, id, error, now))),
     awaitAuth: async (id, error, now) => awaitAuthOp(this.db, id, error, now),
     release: async (id, now) => releaseOp(this.db, id, now),
     resumeAuth: async (accountId, now) => this.db.tx(() => resumeAuthOps(this.db, accountId, now)),
     resumeNetwork: async (accountId, now) => this.db.tx(() => resumeNetworkOps(this.db, accountId, now)),
-    recover: async (now) => recoverOps(this.db, now),
+    recover: async (now) => this.recoverFlagOperations(now),
     nextAttemptAt: async () => nextOpAttemptAt(this.db),
     recent: async (limit) => listRecentOps(this.db, limit),
     resolveUnknown: async (id, resolution, now) =>
-      this.db.tx(() => {
+      this.preparedFlagOutcome(id, () => this.db.tx(() => {
         const flagBefore = flagEpochs(sqlFlags(this.db));
         const op = getOp(this.db, id);
         if (!op || op.state !== "unknown") throw new RpcError("NOT_FOUND", L("errors.opResolved"));
@@ -550,7 +562,7 @@ export class SqlMailStore implements MailStore {
           if (local) return { touched: [...deleteMessages(this.db, [local.id])] };
         }
         return { touched: [], ...flagReconciliation(sqlFlags(this.db), flagBefore) };
-      }),
+      })),
   };
 
   // ───────────────────────────── compose ─────────────────────────────

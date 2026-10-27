@@ -121,5 +121,42 @@ export function defineDurableFlagIntentConformance(name: string, harness: StoreH
       for (const expectedProviderMsgId of [undefined, "other"]) await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId, flags: { isRead: true, isSent: true }, gmailLabels: ["TRASH"] }], observation!);
       expect((await store.debug.snapshot()).messages[0]).toMatchObject({ isRead: false, isSent: false, gmailLabels: '["INBOX"]' });
     });
+
+    it("a legacy acknowledgement after cancelled INIT retains fresh snapshot ownership", async () => {
+      const store = await harness.open(); stores.push(store);
+      const [a] = await withAccounts(store, 1);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "legacy-ack" })]);
+      await store.threads.act({ threadIds: [await threadOf(store, "legacy-ack")], action: "archive", signal: null, now: 1 });
+      const [op] = await store.ops.claimReady(2, 20);
+      let reads = 0;
+      const cancelled = new Error("synthetic initialization cancellation");
+      await expect(store.sync.beginObservation(a!, { authoritativeFlags: true, signal: { get aborted() { return ++reads > 1; }, reason: cancelled } })).rejects.toBe(cancelled);
+      await store.ops.complete(op!.id, undefined, 3);
+      await observe(store, a!);
+      const id = (await store.debug.snapshot()).messages[0]!.id;
+      expect((await store.providerStore(a!).pendingFlagSnapshots({ limit: 50 })).items).toEqual([{ id, providerMsgId: "legacy-ack" }]);
+      await store.sync.updateFlags(a!, [{ messageId: id, flags: { inInbox: true } }]);
+      expect((await store.debug.snapshot()).messages[0]!.inInbox).toBe(false);
+    });
+
+    it("READY recovery waits for effect metadata before pruning an older running target", async () => {
+      let store = await harness.open(); stores.push(store);
+      const [a] = await withAccounts(store, 1);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "recover" })]);
+      const threadId = await threadOf(store, "recover");
+      await observe(store, a!);
+      await store.threads.act({ threadIds: [threadId], action: "markRead", signal: null, now: 1 });
+      await store.ops.claimReady(2, 20);
+      const newer = await store.threads.act({ threadIds: [threadId], action: "markUnread", signal: null, now: 3 });
+      store = await harness.reopen(store); stores.push(store);
+      await store.ops.recover(4);
+      expect((await store.ops.claimReady(5, 20)).map((op) => op.id)).toEqual(newer.opIds);
+      await store.ops.complete(newer.opIds[0]!, undefined, 6);
+      const id = (await store.debug.snapshot()).messages[0]!.id;
+      const fresh = await observe(store, a!);
+      await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "recover", flags: { isRead: true } }], fresh!);
+      expect((await store.debug.snapshot()).messages[0]!.isRead).toBe(true);
+      expect((await store.providerStore(a!).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
+    });
   });
 }
