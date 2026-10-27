@@ -125,3 +125,20 @@ it("discard Undo retains positive intent and Send transfers only the exact messa
     expect(useDrafts.getState().drafts[restored]).toBeUndefined();
   } finally { forgetDraft(key); if (restored) forgetDraft(restored); vi.clearAllMocks(); }
 });
+
+it("delayed hydration after navigation retains work as an expired lookup candidate", async () => {
+  const { loadDrafts, shownDraftKey } = await import("./drafts");
+  const { installComposeFollowsSelection } = await import("./compose");
+  const { contract } = await import("@terno/core/rpc");
+  let resolve!: (value: import("@terno/core/rpc").Draft[]) => void;
+  setApp({ selectedId: 7, readerOpen: true, compose: null, checked: new Set(), scope: null });
+  const stop = installComposeFollowsSelection();
+  const incoming = { ...contract["drafts.save"].params.parse({ accountId: 2, threadId: null, mode: "reply", inReplyToMessageId: 3, showSourceContext: true, bodyText: "exact delayed work" }), id: 93, generation: "incoming-generation", revision: 5, presentationThreadId: 7, format: 2, subjectEdited: false, quotedText: "", includeQuote: false, forwardOfMessageId: null, uiState: "open", updatedAt: 0 } as import("@terno/core/rpc").Draft;
+  try {
+    const pending = loadDrafts(() => new Promise((done) => { resolve = done; }));
+    setApp({ selectedId: 8 }); setApp({ selectedId: 7 });
+    resolve([incoming]); await pending;
+    expect(shownDraftKey(useDrafts.getState().drafts, 7, null)).toBeNull();
+    expect(useDrafts.getState().drafts["srv-93"]).toMatchObject({ id: 93, generation: "incoming-generation", revision: 5, bodyText: "exact delayed work", showSourceContext: true, presentationExpired: true });
+  } finally { stop(); forgetDraft("srv-93"); }
+});

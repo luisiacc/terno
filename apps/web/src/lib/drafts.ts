@@ -116,6 +116,7 @@ interface DraftsState {
 export const useDrafts = create<DraftsState>(() => ({ drafts: {}, held: false }));
 
 let changeVersion = 0;
+let presentationNavigation = 0;
 /** Constant-time fence for page transitions, including coalesced editor changes. */
 export const draftChangeVersion = (): number => changeVersion;
 
@@ -706,12 +707,16 @@ export function restoreDiscarded(d: LocalDraft): string {
 
 /** At startup: every stored draft, as the backend has it. */
 export async function loadDrafts(list: () => Promise<Draft[]> = () => client.call("drafts.list", {})): Promise<void> {
-  const before = changeVersion;
+  const before = changeVersion, navigation = presentationNavigation;
   const stored = await list();
   if (changeVersion !== before) return;
   useDrafts.setState((s) => {
     const drafts = { ...s.drafts };
-    for (const d of stored) if (!Object.values(drafts).some((x) => x.id === d.id)) { changeVersion++; drafts[`srv-${d.id}`] = fromServer(d); }
+    for (const d of stored) if (!Object.values(drafts).some((x) => x.id === d.id)) {
+      changeVersion++;
+      const local = fromServer(d);
+      drafts[local.key] = d.showSourceContext && navigation !== presentationNavigation ? { ...local, presentationExpired: true } : local;
+    }
     return { drafts };
   });
 }
@@ -727,6 +732,7 @@ export const draftPresentationThread = (d: LocalDraft): number | null => d.prese
 
 /** Leaving Reader retires cached placement, not the durable source intent or authored fields. */
 export function expireDraftPresentation(threadId: number): void {
+  presentationNavigation++;
   useDrafts.setState((s) => {
     let drafts = s.drafts;
     for (const d of Object.values(s.drafts)) {
