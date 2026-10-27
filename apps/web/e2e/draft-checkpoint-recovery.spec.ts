@@ -7,14 +7,14 @@ import { expect, stabilize, test } from "./fixtures";
 const shots = process.env.TERNO_R6_CHECKPOINT_SHOTS ?? mkdtempSync(join(tmpdir(), "terno-r6-checkpoint-"));
 mkdirSync(shots, { recursive: true });
 
-type Probe = { composerReadFault(enabled?: boolean): number; throwIn(area: string): void; composerDoc(): unknown; parseMailHtml(html: string): unknown };
+type Probe = { composerReadFault(enabled?: boolean): number; throwIn(area: string): void; composerDoc(): unknown; setComposerCaret(index: number, offset?: number): boolean; parseMailHtml(html: string): unknown };
 const fault = (page: import("@playwright/test").Page, enabled?: boolean) => page.evaluate((value) => (window as unknown as { __terno: Probe }).__terno.composerReadFault(value), enabled);
 const selection = (page: import("@playwright/test").Page) => page.evaluate(() => {
   const s = window.getSelection();
   return { anchor: s?.anchorOffset, focus: s?.focusOffset, anchorText: s?.anchorNode?.textContent, focusText: s?.focusNode?.textContent };
 });
 
-test("fatal Review restores a persistently unread rich checkpoint @design", async ({ app: page, server }, info) => {
+for (const position of ["backward range", "italic caret"] as const) test(`fatal Review restores a persistently unread rich checkpoint with ${position} @design`, async ({ app: page, server }, info) => {
   let navigations = 0;
   page.on("framenavigated", (frame) => { if (frame === page.mainFrame()) navigations++; });
   try {
@@ -29,15 +29,20 @@ test("fatal Review restores a persistently unread rich checkpoint @design", asyn
     await server.backend.store.drafts.delete(original.id, original.generation);
     await fault(page, true);
     await body.focus(); await body.press("End"); await page.keyboard.type(" latest");
-    await body.press("ArrowLeft"); await page.getByTestId("format-italic").click();
+    if (position === "italic caret") expect(await page.evaluate(() => (window as unknown as { __terno: Probe }).__terno.setComposerCaret(0, 6))).toBe(true);
+    else await body.press("ArrowLeft");
+    await page.getByTestId("format-italic").click();
     await expect(page.getByTestId("format-italic")).toHaveAttribute("aria-pressed", "true");
     const html = await body.innerHTML();
-    await body.evaluate((el) => {
+    expect(html).toBe("<p><b>authored rich work latest</b></p>");
+    if (position === "backward range") await body.evaluate((el) => {
       el.focus(); const node = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode()!;
       const s = window.getSelection()!; s.setBaseAndExtent(node, 6, node, 2); document.dispatchEvent(new Event("selectionchange"));
     });
+    await expect(page.getByTestId("format-italic")).toHaveAttribute("aria-pressed", position === "backward range" ? "false" : "true");
     const beforeSelection = await selection(page);
-    expect(beforeSelection.anchor).toBeGreaterThan(beforeSelection.focus!);
+    if (position === "backward range") expect(beforeSelection.anchor).toBeGreaterThan(beforeSelection.focus!);
+    else expect(beforeSelection.anchor).toBe(beforeSelection.focus);
     const italic = await page.getByTestId("format-italic").getAttribute("aria-pressed");
     const doc = await page.evaluate(() => (window as unknown as { __terno: Probe }).__terno.composerDoc());
     const beforeSendReads = await fault(page);
@@ -70,7 +75,7 @@ test("fatal Review restores a persistently unread rich checkpoint @design", asyn
     for (const theme of ["light", "dark"] as const) {
       await page.emulateMedia({ colorScheme: theme }); await stabilize(page);
       expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
-      await page.screenshot({ path: join(shots, `checkpoint-${info.project.name}-${theme}.png`) });
+      await page.screenshot({ path: join(shots, `checkpoint-${position.replace(" ", "-")}-${info.project.name}-${theme}.png`) });
     }
     await page.getByTestId("recovery-details").click();
     await expect(page.getByTestId("app-boundary")).toBeVisible(); expect(await fault(page)).toBe(reads);
