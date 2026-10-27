@@ -245,3 +245,5 @@ Also from the same pass: the scroll tests wait for the slide's animations to end
   - The More restart check passes.
   - `update.smoke.ts:249` passed 3 of 3 on its own.
   - `people.smoke.ts:83` (a v13 profile migration) fails 3 of 3, and fails on the base commit's own packaged build too. It's the desktop side of the known legacy-migration failures.
+
+**After rebasing onto `4d16b34` (main with plan 39):** no conflicts, and main had touched no baseline and no sidebar code. The full `pnpm test:e2e` gave 1,066 passed and 12 failed: the known `attachments` and `reader:66` failures (×3 designs), `resign-in:126` (it fails on base too), and `selection.spec.ts:81` in Lumen, which passed 3 of 3 on its own. Every baseline matched.
