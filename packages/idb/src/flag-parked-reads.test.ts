@@ -1,3 +1,4 @@
+import { legacyImage } from "./test/legacy-stores";
 import "fake-indexeddb/auto";
 import { expect, it, vi } from "vitest";
 import { ingest, msg, withAccounts } from "@terno/store/conformance";
@@ -43,7 +44,7 @@ for (const instantSearch of [false, true]) it(`reaffirmation avoids loading park
 
 it("rebuilds the memory index when opening physical 8 logical 21 metadata", async () => {
   const { IDBFactory } = await import("fake-indexeddb");
-  const { databaseName } = await import("./schema");
+  const { databaseName, IDB_VERSION } = await import("./schema");
   const factory = new IDBFactory(), name = crypto.randomUUID();
   const request = <T>(r: IDBRequest<T>) => new Promise<T>((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
   let store = await IdbMailStore.open({ name, factory, instantSearch: false, platform });
@@ -74,7 +75,7 @@ it("rebuilds the memory index when opening physical 8 logical 21 metadata", asyn
     raw.close(); raw = undefined;
     const legacyName = crypto.randomUUID(), create = factory.open(databaseName(legacyName), 8);
     create.onupgradeneeded = () => {
-      for (const saved of image) {
+      for (const saved of legacyImage(image, 8)) {
         const table = create.result.createObjectStore(saved.name, { keyPath: saved.keyPath, autoIncrement: saved.autoIncrement });
         for (const index of saved.indexes) table.createIndex(index.name, index.keyPath, { unique: index.unique, multiEntry: index.multiEntry });
         saved.values.forEach((value, i) => table.put(saved.name === "meta" && saved.keys[i] === "logicalSchema" ? 21 : value, saved.keys[i]!));
@@ -86,7 +87,7 @@ it("rebuilds the memory index when opening physical 8 logical 21 metadata", asyn
     raw.close(); raw = undefined;
     store = await IdbMailStore.open({ name: legacyName, factory, instantSearch: false, platform });
     raw = await request(factory.open(databaseName(legacyName)));
-    expect(raw.version).toBe(10);
+    expect(raw.version).toBe(IDB_VERSION);
     raw.close(); raw = undefined;
     const fresh = await store.sync.beginObservation(account!, { authoritativeFlags: true });
     await store.sync.updateFlags(account!, [{ messageId: message.id, expectedProviderMsgId: "upgrade", flags: { isRead: false } }], fresh!);

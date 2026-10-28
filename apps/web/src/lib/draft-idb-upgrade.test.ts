@@ -1,8 +1,8 @@
 import "fake-indexeddb/auto";
 import { expect, it } from "vitest";
-import { databaseName, openIdb } from "../../../../packages/idb/src/schema";
+import { databaseName, IDB_VERSION, openIdb } from "../../../../packages/idb/src/schema";
 
-it("upgrades a minimal v8 drafts+meta row fixture to physical10 without rewriting work and refuses v8 reopen", async () => {
+it("upgrades a minimal v8 drafts+meta row fixture to physical11 without rewriting work and refuses v8 reopen", async () => {
   const name = crypto.randomUUID(), fullName = databaseName(name);
   const legacy = await new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(fullName, 8);
@@ -13,7 +13,7 @@ it("upgrades a minimal v8 drafts+meta row fixture to physical10 without rewritin
   await new Promise<void>((resolve, reject) => { const tx = legacy.transaction("drafts", "readwrite"); tx.objectStore("drafts").put(value, 1); tx.oncomplete = () => resolve(); tx.onabort = () => reject(tx.error); });
   legacy.close();
   const current = await openIdb(indexedDB, name);
-  expect(current.version).toBe(10);
+  expect(current.version).toBe(IDB_VERSION);
   const restored = await new Promise<unknown>((resolve, reject) => { const req = current.transaction("drafts").objectStore("drafts").get(1); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
   expect(restored).toEqual(value);
   expect(restored).not.toHaveProperty("show_source_context");

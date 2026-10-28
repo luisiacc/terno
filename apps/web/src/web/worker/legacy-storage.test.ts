@@ -16,6 +16,7 @@ async function legacyDb(name: string, version: number, rows: number): Promise<vo
   const open = indexedDB.open(name, version);
   open.onupgradeneeded = () => {
     open.result.createObjectStore("threads");
+    open.result.createObjectStore("ops");
     open.result.createObjectStore("meta");
     open.result.createObjectStore("log", { keyPath: "id", autoIncrement: true }).createIndex("byKind", "kind", { unique: false });
   };
@@ -65,7 +66,7 @@ describe("web storage from when the app was called Única", () => {
 
   it("copies a database whole: version, stores, indexes, keys and records", async () => {
     await legacyDb("unica-x", 3, 1200);
-    expect(await copyIdbDatabase(indexedDB, "unica-x", "terno-x")).toEqual({ threads: 1200, meta: 1, log: 2 });
+    expect(await copyIdbDatabase(indexedDB, "unica-x", "terno-x")).toEqual({ threads: 1200, meta: 1, log: 2, ops: 0 });
     const db = await request(indexedDB.open("terno-x"));
     expect(db.version).toBe(3);
     const tx = db.transaction(["threads", "meta", "log"]);

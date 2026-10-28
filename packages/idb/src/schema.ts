@@ -1,3 +1,4 @@
+import { OP_STORAGE_VERSION, OP_PART_STORES, decodeOpImage, inspectOpLayout, prepareOpWrites, type OpPartImage, type OpPartStore } from "./op-storage";
 import { installAssetAccounting } from "./asset-accounting";
 import { MemDb, type Committed, type ForeignKey, type Key, type Row, type Table, type TableSpec } from "./mem";
 import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertainty";
@@ -12,7 +13,7 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * Version 6 adds attachment assets (SQL v16); SQL v17 adds an in-memory partial index, with no persisted shape change.
  * Version 10 fences older adapters from mailboxes with incomplete-save markers.
  */
-export const IDB_VERSION = 10;
+export const IDB_VERSION = OP_STORAGE_VERSION;
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
 export const LOGICAL_SCHEMA = 23;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
@@ -135,13 +136,6 @@ function request<T>(r: IDBRequest<T>): Promise<T> {
   return pending;
 }
 
-function done(tx: IDBTransaction): Promise<void> {
-  return new Promise((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
-  });
-}
-
 /** A write that completed after an error may have persisted only part of a command. */
 export class PartialCommit extends Error {
   constructor(readonly original: unknown) { super("IndexedDB completed after a write error"); }
@@ -241,6 +235,7 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       try { tx.abort(); } catch { /* The open result still must be refused. */ }
     };
     const upgrade = (track: TrackRequest, scan: TrackCursor) => {
+      if (event.oldVersion < OP_STORAGE_VERSION) for (const name of OP_PART_STORES) db.createObjectStore(name);
       if (event.oldVersion >= 1) {
         if (event.oldVersion < 8) for (const name of ["flag_clocks", "message_flag_intents", "flag_op_effects"]) db.createObjectStore(name);
         if (event.oldVersion < 7) db.createObjectStore("draft_counter");
@@ -359,46 +354,85 @@ const idbKey = (t: Table, key: Key): IDBValidKey => (t.spec.key.length === 1 ? (
 export const EARLY_TABLES = PERSISTED.filter((t) => !t.lazy && t.early).map((t) => t.name);
 export const LATE_TABLES = PERSISTED.filter((t) => !t.lazy && !t.early).map((t) => t.name);
 
-/** Reads tables into memory (bodies stay in IndexedDB), with the meta store. */
+type Snapshot = {
+  tables: Map<string, Row[]>;
+  meta: Record<string, unknown>;
+  opKeys: IDBValidKey[];
+  parts: Record<OpPartStore, OpPartImage>;
+};
+
+/** One completed physical snapshot; missing observable child success is refusal. */
+function physicalSnapshot(idb: IDBDatabase, names: readonly string[]): Promise<Snapshot> {
+  const hasOps = names.includes("ops"), split = hasOps && idb.version >= OP_STORAGE_VERSION;
+  const scope = [...new Set([...names, "meta", ...(split ? OP_PART_STORES : [])])];
+  return new Promise((resolve, reject) => {
+    let tx: IDBTransaction;
+    try { tx = idb.transaction(scope, "readonly"); }
+    catch { reject(new UncertainWriteError("unreadable")); return; }
+    const tables = new Map<string, Row[]>();
+    const parts: Record<OpPartStore, OpPartImage> = {
+      op_control: { keys: [], values: [] },
+      op_target: { keys: [], values: [] },
+      op_error: { keys: [], values: [] },
+    };
+    let opKeys: IDBValidKey[] = [], metaKeys: IDBValidKey[] = [], metaValues: unknown[] = [];
+    let failed = false, queued = false, accepted = 0, observed = 0;
+    let failure: unknown;
+    const abort = (error: unknown) => {
+      if (!failed) { failed = true; failure = error; }
+      try { tx.abort(); } catch { /* Actual completion still owns admission. */ }
+    };
+    const watch = <T>(r: IDBRequest<T>, receive: (value: T) => void) => {
+      accepted++;
+      r.addEventListener("error", () => abort(new UncertainWriteError("unreadable")));
+      r.addEventListener("success", () => {
+        try { receive(r.result); observed++; } catch (error) { abort(error); }
+      });
+    };
+    tx.addEventListener("error", () => { failed = true; failure ??= new UncertainWriteError("unreadable"); }, true);
+    tx.addEventListener("abort", () => reject(failure ?? new UncertainWriteError("unreadable")));
+    tx.addEventListener("complete", () => {
+      if (failed || !queued || accepted !== observed || metaKeys.length !== metaValues.length) {
+        reject(failure ?? new UncertainWriteError("unreadable")); return;
+      }
+      if (metaKeys.some((key) => key === UNCERTAINTY_KEY)) { reject(new UncertainWriteError()); return; }
+      resolve({ tables, opKeys, parts, meta: Object.fromEntries(metaKeys.map((key, i) => [String(key), metaValues[i]])) });
+    });
+    try {
+      if (hasOps) inspectOpLayout(idb, tx);
+      for (const name of names) watch(tx.objectStore(name).getAll() as IDBRequest<Row[]>, (rows) => tables.set(name, rows));
+      watch(tx.objectStore("meta").getAllKeys(), (keys) => { metaKeys = keys; });
+      watch(tx.objectStore("meta").getAll(), (values) => { metaValues = values; });
+      if (hasOps) watch(tx.objectStore("ops").getAllKeys(), (keys) => { opKeys = keys; });
+      if (split) for (const name of OP_PART_STORES) {
+        watch(tx.objectStore(name).getAllKeys(), (keys) => { parts[name].keys = keys; });
+        watch(tx.objectStore(name).getAll(), (values) => { parts[name].values = values; });
+      }
+      queued = true;
+    } catch (error) { abort(error); }
+  });
+}
+
+/** Reads logical tables eagerly, including effective operation controls. */
 export async function loadAll(
-  idb: IDBDatabase,
-  mem: MemDb,
-  timings: Record<string, number> = {},
+  idb: IDBDatabase, mem: MemDb, timings: Record<string, number> = {},
   eager: readonly string[] = [...EARLY_TABLES, ...LATE_TABLES],
-  /** given: memory is built in ~8 ms slices with a yield between them (the late tables load while the app runs) */
   yieldTo?: () => Promise<void>,
 ): Promise<Record<string, unknown>> {
   const started = performance.now();
-  const tx = idb.transaction([...eager, "meta"], "readonly");
-  const finished = done(tx);
-  void finished.catch(() => {});
-  let tables: Row[][], metaKeys: IDBValidKey[], metaValues: unknown[];
-  try {
-    [tables, metaKeys, metaValues] = await Promise.all([
-      Promise.all(eager.map((name) => request(tx.objectStore(name).getAll() as IDBRequest<Row[]>))),
-      request(tx.objectStore("meta").getAllKeys()),
-      request(tx.objectStore("meta").getAll()),
-    ]);
-    await finished;
-  } catch (error) {
-    try { tx.abort(); } catch { /* It may already be terminating. */ }
-    await finished.catch(() => {});
-    throw error;
-  }
+  const image = await physicalSnapshot(idb, eager);
   timings.read = performance.now() - started;
+  if (eager.includes("ops")) await decodeOpImage(image.opKeys, image.tables.get("ops")!, image.parts, yieldTo ? { yield: yieldTo } : undefined);
   let slice = performance.now();
-  for (const [i, name] of eager.entries()) {
-    const t = mem.table(name);
-    for (const row of tables[i]!) {
-      t.load(row);
-      if (yieldTo && performance.now() - slice > 8) {
-        await yieldTo();
-        slice = performance.now();
-      }
+  for (const name of eager) {
+    const table = mem.table(name);
+    for (const row of image.tables.get(name)!) {
+      table.load(row);
+      if (yieldTo && performance.now() - slice > 8) { await yieldTo(); slice = performance.now(); }
     }
   }
   timings.build = performance.now() - started - timings.read;
-  return Object.fromEntries(metaKeys.map((k, i) => [String(k), metaValues[i]]));
+  return image.meta;
 }
 
 export async function writeMeta(idb: IDBDatabase, values: Record<string, unknown>): Promise<void> {
@@ -411,24 +445,42 @@ export async function writeMeta(idb: IDBDatabase, values: Record<string, unknown
 }
 
 /** One readwrite transaction with every row a store command touched. Resolves once IndexedDB committed it. */
-export async function persist(idb: IDBDatabase, commit: Committed, durability: "strict" | "relaxed"): Promise<void> {
+export async function persist(idb: IDBDatabase, commit: Committed, durability: "strict" | "relaxed", host?: { yield(): Promise<void> }): Promise<void> {
   const stores = [...commit.writes.keys()].filter((t) => !TABLES.find((s) => s.name === t.spec.name)?.memoryOnly);
-  if (stores.length === 0) return;
-  const names = stores.map((t) => t.spec.name);
-  names.push("meta");
-  const tx = idb.transaction(
-    names,
-    "readwrite",
-    { durability },
-  );
+  if (!stores.length) return;
+  const plans = await prepareOpWrites(commit, host);
+  const hasOps = stores.some((t) => t.spec.name === "ops");
+  const names = [...new Set([...stores.map((t) => t.spec.name), "meta", ...(hasOps ? OP_PART_STORES : [])])];
+  const tx = idb.transaction(names, "readwrite", { durability });
   await writeTransaction(tx, (track) => {
-    for (const t of stores) {
-      const store = tx.objectStore(t.spec.name);
-      for (const [key, row] of commit.writes.get(t)!) {
-        if (row) track(store.put(row, idbKey(t, key)));
-        else track(store.delete(idbKey(t, key)));
+    for (const table of stores) {
+      if (table.spec.name === "ops") continue;
+      for (const [key, row] of commit.writes.get(table)!) {
+        if (row) track(tx.objectStore(table.spec.name).put(row, idbKey(table, key)));
+        else track(tx.objectStore(table.spec.name).delete(idbKey(table, key)));
       }
     }
+    const iterator = plans[Symbol.iterator]();
+    const next = (): void => {
+      const item = iterator.next();
+      if (item.done) return;
+      const plan = item.value;
+      const body: [string, Row | null][] = [];
+      if (plan.kind === "delete" || plan.kind === "base") {
+        body.push(["ops", plan.kind === "base" ? plan.value : null]);
+        for (const name of OP_PART_STORES) body.push([name, null]);
+      } else {
+        body.push(["op_control", plan.control]);
+        if (plan.target) body.push(["op_target", plan.target]);
+        if (plan.error) body.push(["op_error", plan.error]);
+      }
+      body.forEach(([name, value], i) => {
+        const store = tx.objectStore(name);
+        if (value === null) track(store.delete(plan.key), i === body.length - 1 ? next : undefined);
+        else track(store.put(value, plan.key), i === body.length - 1 ? next : undefined);
+      });
+    };
+    next();
   });
 }
 
@@ -461,10 +513,10 @@ export async function readLazyRange(idb: IDBDatabase, table: string, after: numb
   return request(tx.objectStore(table).getAll(range, count) as IDBRequest<Row[]>);
 }
 
-/** Every persisted row, straight from IndexedDB (debug.verify compares it with memory). */
-export async function readAll(idb: IDBDatabase): Promise<Map<string, Row[]>> {
-  const names = PERSISTED.filter((t) => !t.lazy).map((t) => t.name);
-  const tx = idb.transaction(names, "readonly");
-  const all = await Promise.all(names.map((n) => request(tx.objectStore(n).getAll() as IDBRequest<Row[]>)));
-  return new Map(names.map((n, i) => [n, all[i]!]));
+/** Effective logical disk rows, after one completed admitted snapshot. */
+export async function readAll(idb: IDBDatabase, host?: { yield(): Promise<void> }): Promise<Map<string, Row[]>> {
+  const names = PERSISTED.filter((table) => !table.lazy).map((table) => table.name);
+  const image = await physicalSnapshot(idb, names);
+  await decodeOpImage(image.opKeys, image.tables.get("ops")!, image.parts, host);
+  return image.tables;
 }

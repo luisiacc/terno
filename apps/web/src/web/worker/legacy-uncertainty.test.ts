@@ -8,7 +8,7 @@ const complete = (tx: IDBTransaction) => new Promise<void>((resolve, reject) => 
 
 async function mailbox(factory: IDBFactory, name: string, dirty: boolean) {
   const open = factory.open(name, 1);
-  open.onupgradeneeded = () => { open.result.createObjectStore("meta"); open.result.createObjectStore("threads"); };
+  open.onupgradeneeded = () => { open.result.createObjectStore("meta"); open.result.createObjectStore("threads"); open.result.createObjectStore("ops"); };
   const db = await request(open);
   try {
     const tx = db.transaction(["meta", "threads"], "readwrite"), ended = complete(tx);
@@ -191,7 +191,7 @@ it.each([false, true])("requires confirmed journal ownership before creating the
   const factory = new IDBFactory();
   await mailbox(factory, "unica-case", false);
   const open = factory.open(MIGRATION_JOURNAL, 1);
-  open.onupgradeneeded = () => open.result.createObjectStore("copies").put({ from: "other", state: "copied" }, "anchor");
+  open.onupgradeneeded = () => open.result.createObjectStore("copies").put({ from: "unica-anchor", state: "copied" }, "terno-anchor");
   (await request(open)).close();
   const before = await snapshot(factory), put = IDBObjectStore.prototype.put, transaction = IDBDatabase.prototype.transaction;
   let hits = 0, errors = 0, batches = 0, terminal: string | null = null;
@@ -210,7 +210,7 @@ it.each([false, true])("requires confirmed journal ownership before creating the
     tx.addEventListener("complete", () => { terminal = "complete"; });
     tx.addEventListener("abort", () => { terminal = "abort"; });
     // Earlier capture listener hides this real ConstraintError from both later observers.
-    return this.add(value, "anchor");
+    return this.add(value, "terno-anchor");
   });
   try {
     const error = await migrateLegacyIdb(factory, "case", undefined, { afterBatch: async () => { batches++; throw new Error("copy started without ownership"); } }).then(() => null, (failure: unknown) => failure);

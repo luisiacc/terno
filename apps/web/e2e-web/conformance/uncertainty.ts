@@ -3,7 +3,7 @@ import { UNCERTAINTY_KEY, UncertainWriteError } from "@terno/idb/uncertainty";
 import { ingest, msg, withAccounts } from "@terno/store/conformance";
 import { expect, it } from "./shim";
 import { legacyStores } from "../../../../packages/idb/src/test/legacy-stores";
-import { openIdb } from "../../../../packages/idb/src/schema";
+import { IDB_VERSION, openIdb } from "../../../../packages/idb/src/schema";
 
 const request = <T,>(r: IDBRequest<T>) => new Promise<T>((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
 const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setTimeout(resolve, 0)) };
@@ -110,7 +110,7 @@ export function defineUncertaintyConformance() {
         raw = await request(indexedDB.open(databaseName(name)));
         const tx = raw.transaction(["cat_move_rows", "meta"]), rows = tx.objectStore("cat_move_rows");
         const [keys, marker] = await Promise.all([request(rows.getAllKeys()), request(tx.objectStore("meta").getKey(UNCERTAINTY_KEY))]);
-        expect({ version: raw.version, keys, marker }).toEqual(preventError ? { version: 10, keys: [[5, 9, 1]], marker: UNCERTAINTY_KEY } : { version: 1, keys: [[5, 9], [5, 10]], marker: undefined });
+        expect({ version: raw.version, keys, marker }).toEqual(preventError ? { version: IDB_VERSION, keys: [[5, 9, 1]], marker: UNCERTAINTY_KEY } : { version: 1, keys: [[5, 9], [5, 10]], marker: undefined });
         raw.close(); raw = undefined;
         if (preventError) {
           expect(error).toBeInstanceOf(UncertainWriteError);

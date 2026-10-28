@@ -1,5 +1,6 @@
 import type { SAHPoolUtil, Sqlite3Static } from "@sqlite.org/sqlite-wasm";
-import { assertCertain, UncertainWriteError } from "@terno/idb/uncertainty";
+import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "@terno/idb/uncertainty";
+import { OP_PART_STORES, readOpCopyBatch, validateCompleteOpStorage, type OpPhysicalStore } from "@terno/idb/op-storage";
 
 /**
  * The web build was called Única: its IndexedDB databases were "unica-<name>"
@@ -112,8 +113,10 @@ async function certainDatabases(factory: IDBFactory, ...names: string[]): Promis
         else {
           const keysOnly = (name === "unica-keys" || name === "terno-keys") && db.objectStoreNames.length === 1 && db.objectStoreNames.contains("keys");
           if (!keysOnly) throw new UncertainWriteError("unreadable");
-          const keys = db.transaction("keys").objectStore("keys");
-          if (keys.keyPath !== null || keys.autoIncrement || keys.indexNames.length) throw new UncertainWriteError("unreadable");
+          const tx = db.transaction("keys"), ended = copyReadEnd(tx), keys = tx.objectStore("keys");
+          const valid = keys.keyPath === null && !keys.autoIncrement && !keys.indexNames.length;
+          await ended;
+          if (!valid) throw new UncertainWriteError("unreadable");
         }
       }
       finally { db.close(); }
@@ -123,61 +126,224 @@ async function certainDatabases(factory: IDBFactory, ...names: string[]): Promis
   }
 }
 
-/**
- * Copies a whole database: same version, same object stores and indexes,
- * every record (in batches, so no transaction holds a whole mailbox), then
- * checks every store's count. The target must not exist.
- */
-export async function copyIdbDatabase(factory: IDBFactory, from: string, to: string, afterBatch?: () => Promise<void>): Promise<Record<string, number>> {
-  await certainDatabases(factory, from, to);
-  const source = await request(factory.open(from));
-  try {
-    const stores = [...source.objectStoreNames].map((name) => {
-      const s = source.transaction(name).objectStore(name);
-      return { name, keyPath: s.keyPath, autoIncrement: s.autoIncrement, indexes: [...s.indexNames].map((i) => s.index(i)).map((i) => ({ name: i.name, keyPath: i.keyPath, unique: i.unique, multiEntry: i.multiEntry })) };
+type CopyManifest = { version: number; stores: {
+  name: string; keyPath: string | string[] | null; autoIncrement: boolean;
+  indexes: { name: string; keyPath: string | string[]; unique: boolean; multiEntry: boolean }[];
+}[] };
+type CopyReceipt = { from: string; to: string; manifest: CopyManifest; lease: { lost: boolean } };
+const unreadableCopy = () => new UncertainWriteError("unreadable", new Error("Could not inspect operation copy"));
+const yieldCopy = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+function watchCopy(db: IDBDatabase, lease: { lost: boolean }) {
+  let closed = false;
+  const close = () => { if (!closed) { closed = true; db.close(); } };
+  db.addEventListener("versionchange", () => { lease.lost = true; close(); });
+  return close;
+}
+function keyPathEqual(a: string | string[] | null, b: string | string[] | null): boolean {
+  return typeof a === "string" || a === null ? a === b : Array.isArray(b) && a.length === b.length && a.every((v, i) => v === b[i]);
+}
+function manifestEqual(a: CopyManifest, b: CopyManifest): boolean {
+  return a.version === b.version && a.stores.length === b.stores.length && a.stores.every((x, i) => {
+    const y = b.stores[i]!;
+    return x.name === y.name && x.autoIncrement === y.autoIncrement && keyPathEqual(x.keyPath, y.keyPath)
+      && x.indexes.length === y.indexes.length && x.indexes.every((v, j) => {
+        const w = y.indexes[j]!;
+        return v.name === w.name && v.unique === w.unique && v.multiEntry === w.multiEntry && keyPathEqual(v.keyPath, w.keyPath);
+      });
+  });
+}
+function keysOnly(name: string, manifest: CopyManifest): boolean {
+  const store = manifest.stores[0];
+  return (name === "unica-keys" || name === "terno-keys") && manifest.stores.length === 1 && store?.name === "keys"
+    && store.keyPath === null && !store.autoIncrement && !store.indexes.length;
+}
+async function copyManifest(db: IDBDatabase): Promise<CopyManifest> {
+  const manifest: CopyManifest = { version: db.version, stores: [] };
+  let slice = performance.now();
+  for (const name of db.objectStoreNames) {
+    const descriptor = await new Promise<{ spec: CopyManifest["stores"][number]; indexNames: string[] }>((resolve, reject) => {
+      let tx: IDBTransaction;
+      try { tx = db.transaction(name, "readonly"); } catch { reject(unreadableCopy()); return; }
+      let result: { spec: CopyManifest["stores"][number]; indexNames: string[] } | undefined, failed = false;
+      tx.addEventListener("error", () => { failed = true; }, true);
+      tx.addEventListener("abort", () => reject(unreadableCopy()));
+      tx.addEventListener("complete", () => failed || !result ? reject(unreadableCopy()) : resolve(result));
+      try {
+        const store = tx.objectStore(name);
+        result = { spec: { name, keyPath: store.keyPath, autoIncrement: store.autoIncrement, indexes: [] }, indexNames: [...store.indexNames] };
+      } catch { failed = true; try { tx.abort(); } catch { /* Join terminal. */ } }
     });
+    for (const indexName of descriptor.indexNames) {
+      const index = await new Promise<CopyManifest["stores"][number]["indexes"][number]>((resolve, reject) => {
+        let tx: IDBTransaction;
+        try { tx = db.transaction(name, "readonly"); } catch { reject(unreadableCopy()); return; }
+        let result: CopyManifest["stores"][number]["indexes"][number] | undefined, failed = false;
+        tx.addEventListener("error", () => { failed = true; }, true);
+        tx.addEventListener("abort", () => reject(unreadableCopy()));
+        tx.addEventListener("complete", () => failed || !result ? reject(unreadableCopy()) : resolve(result));
+        try {
+          const value = tx.objectStore(name).index(indexName);
+          result = { name: indexName, keyPath: value.keyPath, unique: value.unique, multiEntry: value.multiEntry };
+        } catch { failed = true; try { tx.abort(); } catch { /* Join terminal. */ } }
+      });
+      descriptor.spec.indexes.push(index);
+      if (performance.now() - slice > 8) { await yieldCopy(); slice = performance.now(); }
+    }
+    manifest.stores.push(descriptor.spec);
+    if (performance.now() - slice > 8) { await yieldCopy(); slice = performance.now(); }
+  }
+  return manifest;
+}
+
+async function existingCopy(factory: IDBFactory, name: string): Promise<IDBDatabase> {
+  if (!(await idbExists(factory, name))) throw unreadableCopy();
+  const open = factory.open(name);
+  open.onupgradeneeded = () => open.transaction!.abort();
+  return request(open);
+}
+async function completeCopySource(factory: IDBFactory, name: string): Promise<CopyManifest> {
+  await certainDatabases(factory, name);
+  const db = await existingCopy(factory, name), lease = { lost: false }, close = watchCopy(db, lease);
+  try {
+    const manifest = await copyManifest(db);
+    if (!keysOnly(name, manifest)) await validateCompleteOpStorage(db);
+    if (lease.lost) throw unreadableCopy();
+    return manifest;
+  } finally { close(); }
+}
+async function disposablePrefix(factory: IDBFactory, from: string, to: string, source: CopyManifest): Promise<void> {
+  if (idbName(from) !== to) throw unreadableCopy();
+  await certainDatabases(factory, from, to);
+  if (!(await idbExists(factory, to))) return;
+  const db = await existingCopy(factory, to), lease = { lost: false }, close = watchCopy(db, lease);
+  try {
+    if (!manifestEqual(source, await copyManifest(db)) || lease.lost) throw unreadableCopy();
+  } finally { close(); }
+}
+function copyBatch(db: IDBDatabase, name: string, after: IDBValidKey | undefined): Promise<{ keys: IDBValidKey[]; values: unknown[] }> {
+  if (name === "ops" || (OP_PART_STORES as readonly string[]).includes(name)) return readOpCopyBatch(db, name as OpPhysicalStore, after, BATCH);
+  return new Promise((resolve, reject) => {
+    let tx: IDBTransaction;
+    try { tx = db.transaction([...new Set([name, ...(db.objectStoreNames.contains("meta") ? ["meta"] : [])])], "readonly"); }
+    catch { reject(unreadableCopy()); return; }
+    let failed = false, pending = 2, ready = false, keys: IDBValidKey[] = [], values: unknown[] = [];
+    let dirty = false;
+    const fail = () => { failed = true; try { tx.abort(); } catch { /* Join terminal. */ } };
+    tx.addEventListener("error", fail, true);
+    tx.addEventListener("abort", () => reject(dirty ? new UncertainWriteError() : unreadableCopy()));
+    tx.addEventListener("complete", () => {
+      if (failed || !ready || keys.length !== values.length) reject(dirty ? new UncertainWriteError() : unreadableCopy());
+      else resolve({ keys, values });
+    });
+    const body = () => {
+      try {
+        const range = after === undefined ? undefined : IDBKeyRange.lowerBound(after, true);
+        const k = tx.objectStore(name).getAllKeys(range, BATCH), v = tx.objectStore(name).getAll(range, BATCH);
+        k.addEventListener("success", () => { keys = k.result; if (--pending === 0) ready = true; });
+        v.addEventListener("success", () => { values = v.result; if (--pending === 0) ready = true; });
+      } catch { fail(); }
+    };
+    try {
+      if (db.objectStoreNames.contains("meta")) {
+        const guard = tx.objectStore("meta").getKey(UNCERTAINTY_KEY);
+        guard.addEventListener("success", () => {
+          if (guard.result !== undefined) { dirty = true; fail(); } else body();
+        });
+      } else body();
+    } catch { fail(); }
+  });
+}
+async function copyDatabase(factory: IDBFactory, from: string, to: string, afterBatch: (() => Promise<void>) | undefined, mailbox: boolean): Promise<{ counts: Record<string, number>; receipt: CopyReceipt }> {
+  await certainDatabases(factory, from, to);
+  const source = await existingCopy(factory, from), lease = { lost: false }, closeSource = watchCopy(source, lease);
+  try {
+    const manifest = await copyManifest(source);
+    if (mailbox && !keysOnly(from, manifest) && !source.objectStoreNames.contains("ops")) throw unreadableCopy();
     const open = factory.open(to, source.version);
-    open.onupgradeneeded = (e) => {
-      if (e.oldVersion !== 0) {
-        open.transaction!.abort();
-        return;
-      }
-      for (const s of stores) {
-        const store = open.result.createObjectStore(s.name, { keyPath: s.keyPath, autoIncrement: s.autoIncrement });
-        for (const i of s.indexes) store.createIndex(i.name, i.keyPath, { unique: i.unique, multiEntry: i.multiEntry });
+    open.onupgradeneeded = (event) => {
+      if (event.oldVersion !== 0) { open.transaction!.abort(); return; }
+      for (const spec of manifest.stores) {
+        const store = open.result.createObjectStore(spec.name, { keyPath: spec.keyPath, autoIncrement: spec.autoIncrement });
+        for (const index of spec.indexes) store.createIndex(index.name, index.keyPath, { unique: index.unique, multiEntry: index.multiEntry });
       }
     };
-    const target = await request(open);
+    const target = await request(open), closeTarget = watchCopy(target, lease);
     try {
       const counts: Record<string, number> = {};
-      for (const s of stores) {
-        let after: IDBValidKey | undefined;
+      let slice = performance.now();
+      for (const spec of manifest.stores) {
+        let after: IDBValidKey | undefined, copied = 0;
         for (;;) {
-          const range = after === undefined ? undefined : IDBKeyRange.lowerBound(after, true);
-          const read = source.transaction(s.name).objectStore(s.name);
-          const [keys, values] = await Promise.all([request(read.getAllKeys(range, BATCH)), request(read.getAll(range, BATCH))]);
-          if (keys.length === 0) break;
-          const tx = target.transaction(s.name, "readwrite");
-          const write = tx.objectStore(s.name);
+          if (lease.lost) throw unreadableCopy();
+          const batch = await copyBatch(source, spec.name, after);
+          if (!batch.keys.length) break;
+          const tx = target.transaction(spec.name, "readwrite");
           await committed(tx, (track) => {
-            for (let i = 0; i < keys.length; i++) track(write.put(values[i], s.keyPath === null ? keys[i] : undefined));
+            for (let i = 0; i < batch.keys.length; i++) track(tx.objectStore(spec.name).put(batch.values[i], spec.keyPath === null ? batch.keys[i] : undefined));
           });
+          copied += batch.keys.length;
+          after = batch.keys[batch.keys.length - 1];
           await afterBatch?.();
-          after = keys[keys.length - 1];
+          if (performance.now() - slice > 8) { await yieldCopy(); slice = performance.now(); }
+          if (batch.keys.length < BATCH) break;
+        }
+        counts[spec.name] = copied;
+      }
+      // Verify target keys/parts/row counts without fetching BASE wire again.
+      for (const spec of manifest.stores) {
+        let after: IDBValidKey | undefined, count = 0;
+        for (;;) {
+          const keys = await copyKeyBatch(target, spec.name, after);
+          if (!keys.length) break;
+          count += keys.length; after = keys[keys.length - 1];
+          if (performance.now() - slice > 8) { await yieldCopy(); slice = performance.now(); }
           if (keys.length < BATCH) break;
         }
-        const [a, b] = await Promise.all([request(source.transaction(s.name).objectStore(s.name).count()), request(target.transaction(s.name).objectStore(s.name).count())]);
-        if (a !== b) throw new Error(`${from} → ${to}: ${s.name} has ${b} of ${a} records`);
-        counts[s.name] = b;
+        if (count !== counts[spec.name]) throw unreadableCopy();
       }
       await certainDatabases(factory, from, to);
-      return counts;
-    } finally {
-      target.close();
-    }
-  } finally {
-    source.close();
-  }
+      if (!manifestEqual(manifest, await copyManifest(target)) || lease.lost) throw unreadableCopy();
+      return { counts, receipt: { from, to, manifest, lease } };
+    } finally { closeTarget(); }
+  } finally { closeSource(); }
+}
+function copyKeyBatch(db: IDBDatabase, name: string, after: IDBValidKey | undefined): Promise<IDBValidKey[]> {
+  return new Promise((resolve, reject) => {
+    let tx: IDBTransaction;
+    try { tx = db.transaction([...new Set([name, ...(db.objectStoreNames.contains("meta") ? ["meta"] : [])])], "readonly"); }
+    catch { reject(unreadableCopy()); return; }
+    let keys: IDBValidKey[] = [], ready = false, failed = false, dirty = false;
+    const fail = () => { failed = true; try { tx.abort(); } catch { /* Join terminal. */ } };
+    tx.addEventListener("error", fail, true);
+    tx.addEventListener("abort", () => reject(dirty ? new UncertainWriteError() : unreadableCopy()));
+    tx.addEventListener("complete", () => failed || !ready ? reject(dirty ? new UncertainWriteError() : unreadableCopy()) : resolve(keys));
+    const body = () => {
+      try {
+        const r = tx.objectStore(name).getAllKeys(after === undefined ? undefined : IDBKeyRange.lowerBound(after, true), BATCH);
+        r.addEventListener("success", () => { keys = r.result; ready = true; });
+      } catch { fail(); }
+    };
+    if (db.objectStoreNames.contains("meta")) {
+      try {
+        const guard = tx.objectStore("meta").getKey(UNCERTAINTY_KEY);
+        guard.addEventListener("success", () => { if (guard.result !== undefined) { dirty = true; fail(); } else body(); });
+      } catch { fail(); }
+    } else body();
+  });
+}
+function copyReadEnd(tx: IDBTransaction): Promise<void> {
+  const ended = new Promise<void>((resolve, reject) => {
+    let failed = false;
+    tx.addEventListener("error", () => { failed = true; }, true);
+    tx.addEventListener("complete", () => failed ? reject(unreadableCopy()) : resolve());
+    tx.addEventListener("abort", () => reject(unreadableCopy()));
+  });
+  void ended.catch(() => {});
+  return ended;
+}
+export async function copyIdbDatabase(factory: IDBFactory, from: string, to: string, afterBatch?: () => Promise<void>): Promise<Record<string, number>> {
+  return (await copyDatabase(factory, from, to, afterBatch, false)).counts;
 }
 
 function deleteIdb(factory: IDBFactory, name: string): Promise<void> {
@@ -214,69 +380,105 @@ async function journalWrite(journal: IDBDatabase, to: string, value: CopyState |
 }
 
 async function journalEntries(journal: IDBDatabase): Promise<Map<string, CopyState>> {
-  const store = journal.transaction("copies").objectStore("copies");
-  const [keys, values] = await Promise.all([request(store.getAllKeys()), request(store.getAll())]);
-  return new Map(keys.map((k, i) => [String(k), values[i] as CopyState]));
+  const image = await new Promise<{ keys: IDBValidKey[]; values: unknown[] }>((resolve, reject) => {
+    const tx = journal.transaction("copies", "readonly");
+    let keys: IDBValidKey[] = [], values: unknown[] = [], observed = 0, failed = false;
+    const fail = () => { failed = true; try { tx.abort(); } catch { /* Join terminal. */ } };
+    tx.addEventListener("error", fail, true);
+    tx.addEventListener("abort", () => reject(unreadableCopy()));
+    tx.addEventListener("complete", () => failed || observed !== 2 || keys.length !== values.length
+      ? reject(unreadableCopy()) : resolve({ keys, values }));
+    try {
+      const k = tx.objectStore("copies").getAllKeys(), v = tx.objectStore("copies").getAll();
+      k.addEventListener("success", () => { keys = k.result; observed++; });
+      v.addEventListener("success", () => { values = v.result; observed++; });
+    } catch { fail(); }
+  });
+  const entries = new Map<string, CopyState>();
+  let slice = performance.now();
+  for (let i = 0; i < image.keys.length; i++) {
+    const key = image.keys[i], value = image.values[i] as Partial<CopyState> | null;
+    if (typeof key !== "string" || !value || typeof value !== "object" || Object.getPrototypeOf(value) !== Object.prototype
+      || Reflect.ownKeys(value).length !== 2 || !Object.hasOwn(value, "from") || !Object.hasOwn(value, "state")
+      || typeof value.from !== "string" || (value.state !== "copying" && value.state !== "copied") || idbName(value.from) !== key) throw unreadableCopy();
+    entries.set(key, value as CopyState);
+    if (performance.now() - slice > 8) { await yieldCopy(); slice = performance.now(); }
+  }
+  return entries;
 }
 
 /** Every legacy IndexedDB database (the key store first, the mailboxes) to its Terno name. */
 export async function migrateLegacyIdb(factory: IDBFactory, mailbox: string, log: Log = () => {}, options: { afterBatch?: (to: string) => Promise<void> } = {}): Promise<string[]> {
   const report: string[] = [];
   const names = (await legacyIdbNames(factory, mailbox)).sort((a, b) => Number(b.endsWith("-keys")) - Number(a.endsWith("-keys")));
-  const hadJournal = await idbExists(factory, MIGRATION_JOURNAL);
-  if (names.length === 0 && !hadJournal) return report;
+  if (!names.length && !(await idbExists(factory, MIGRATION_JOURNAL))) return report;
   for (const from of names) await certainDatabases(factory, from, idbName(from)!);
   const journal = await openJournal(factory);
   try {
     const entries = await journalEntries(journal);
     for (const from of names) {
-      const to = idbName(from)!;
-      const state = entries.get(to)?.state;
+      const to = idbName(from)!, entry = entries.get(to);
+      if (entry && entry.from !== from) throw unreadableCopy();
       await certainDatabases(factory, from, to);
-      if (state === "copied") {
-        // verified before the tab went away: only the cleanup was left
+      if (entry?.state === "copied") {
+        const source = await completeCopySource(factory, from);
+        const target = await completeCopySource(factory, to);
+        if (!manifestEqual(source, target)) throw unreadableCopy();
+        await certainDatabases(factory, from, to);
         await deleteIdb(factory, from);
+        await certainDatabases(factory, to);
         await journalWrite(journal, to, null);
         report.push(`IndexedDB ${from} → ${to} (finished)`);
         continue;
       }
-      if (state === "copying") {
-        log(`IndexedDB ${to} is an interrupted copy of ${from}: copying it again`);
+      if (entry?.state === "copying") {
+        const source = await completeCopySource(factory, from);
+        await disposablePrefix(factory, from, to, source);
+        await certainDatabases(factory, from, to);
         await deleteIdb(factory, to);
       } else if (await idbExists(factory, to)) {
         log(`IndexedDB ${from} left alone: ${to} exists`);
         continue;
       }
+      await certainDatabases(factory, from, to);
       await journalWrite(journal, to, { from, state: "copying" });
-      let counts: Record<string, number>;
+      let copied: Awaited<ReturnType<typeof copyDatabase>>;
       try {
-        counts = await copyIdbDatabase(factory, from, to, options.afterBatch && (() => options.afterBatch!(to)));
+        copied = await copyDatabase(factory, from, to, options.afterBatch && (() => options.afterBatch!(to)), true);
       } catch (error) {
         if (error instanceof UncertainWriteError) throw error;
+        const source = await completeCopySource(factory, from);
+        await disposablePrefix(factory, from, to, source);
         await certainDatabases(factory, from, to);
-        // a partial copy goes (and its record after it); the legacy database stays as it was
         await deleteIdb(factory, to);
+        await certainDatabases(factory, from);
         await journalWrite(journal, to, null);
-        throw new Error(`${from}: ${error instanceof Error ? error.message : String(error)}`);
+        throw error;
       }
+      if (copied.receipt.lease.lost || copied.receipt.from !== from || copied.receipt.to !== to) throw unreadableCopy();
       await certainDatabases(factory, from, to);
       await journalWrite(journal, to, { from, state: "copied" });
-      await deleteIdb(factory, from);
-      await journalWrite(journal, to, null);
-      report.push(`IndexedDB ${from} → ${to} (${Object.values(counts).reduce((a, b) => a + b, 0)} records)`);
-    }
-    for (const [to, { from, state }] of await journalEntries(journal)) {
+      if (copied.receipt.lease.lost) throw unreadableCopy();
       await certainDatabases(factory, from, to);
-      // a record whose legacy database is gone: a verified copy is simply done; an unverified one is kept and reported
-      if (state === "copied") await journalWrite(journal, to, null);
-      else log(`IndexedDB ${to}: an interrupted copy of ${from}, which no longer exists; kept as it is`);
+      await deleteIdb(factory, from);
+      await certainDatabases(factory, to);
+      await journalWrite(journal, to, null);
+      report.push(`IndexedDB ${from} → ${to} (${Object.values(copied.counts).reduce((a, b) => a + b, 0)} records)`);
+    }
+    for (const [to, entry] of await journalEntries(journal)) {
+      await certainDatabases(factory, entry.from, to);
+      if (entry.state === "copied") {
+        const source = await idbExists(factory, entry.from) ? await completeCopySource(factory, entry.from) : null;
+        const target = await completeCopySource(factory, to);
+        if (source && !manifestEqual(source, target)) throw unreadableCopy();
+        await certainDatabases(factory, entry.from, to);
+        await journalWrite(journal, to, null);
+      } else log(`IndexedDB ${to}: an interrupted copy of ${entry.from}, which no longer exists; kept as it is`);
     }
     const empty = (await journalEntries(journal)).size === 0;
     journal.close();
     if (empty) await deleteIdb(factory, MIGRATION_JOURNAL);
-  } finally {
-    journal.close();
-  }
+  } finally { journal.close(); }
   return report;
 }
 

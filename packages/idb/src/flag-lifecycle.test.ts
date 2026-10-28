@@ -1,3 +1,4 @@
+import { legacyImage } from "./test/legacy-stores";
 import "fake-indexeddb/auto";
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, expect, it, vi } from "vitest";
@@ -98,9 +99,10 @@ it("upgrades a genuine physical7 mailbox and creates required physical flag inde
   await ingest(source, [msg({ accountId: a!, providerMsgId: "physical7" })]);
   const action = await source.threads.act({ threadIds: [await threadOf(source, "physical7")], action: "archive", signal: null, now: 1 });
   const sourceDb = await request(factory.open(databaseName(source.name)));
-  const names = [...sourceDb.objectStoreNames].filter((name) => !["flag_clocks", "message_flag_intents", "flag_op_effects"].includes(name));
-  const read = sourceDb.transaction(names, "readonly");
-  const copied = await Promise.all(names.map(async (name) => ({ name, keys: await request(read.objectStore(name).getAllKeys()), values: await request(read.objectStore(name).getAll()) })));
+  const sourceNames = [...sourceDb.objectStoreNames];
+  const read = sourceDb.transaction(sourceNames, "readonly");
+  const copied = legacyImage(await Promise.all(sourceNames.map(async (name) => ({ name, keys: await request(read.objectStore(name).getAllKeys()), values: await request(read.objectStore(name).getAll()) }))), 7);
+  const names = copied.map((store) => store.name);
   const oldName = crypto.randomUUID(), create = factory.open(databaseName(oldName), 7);
   create.onupgradeneeded = () => { for (const name of names) create.result.createObjectStore(name); };
   const old = await request(create), write = old.transaction(names, "readwrite"), done = committed(write);

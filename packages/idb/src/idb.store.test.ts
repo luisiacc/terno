@@ -6,7 +6,7 @@ import { ingest, msg, withAccounts } from "@terno/store/conformance";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMemDb, databaseName, IDB_VERSION, openIdb } from "./schema";
 import { IdbMailStore } from "./store";
-import { legacyStores } from "./test/legacy-stores";
+import { legacyImage, legacyStores } from "./test/legacy-stores";
 
 const platform: Pick<Platform, "uuid" | "yield"> = { uuid: () => crypto.randomUUID(), yield: () => new Promise((r) => setTimeout(r, 0)) };
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
@@ -252,7 +252,7 @@ it("version 4 messages default Reply-To on read without rewriting persisted mail
   raw.push(source);
   const names = Array.from(source.objectStoreNames);
   const tx = source.transaction(names, "readonly");
-  const rows = await Promise.all(names.map(async (table) => ({ table, rows: await req(tx.objectStore(table).getAll()), keys: await req(tx.objectStore(table).getAllKeys()) })));
+  const rows = legacyImage(await Promise.all(names.map(async (table) => ({ name: table, values: await req(tx.objectStore(table).getAll()), keys: await req(tx.objectStore(table).getAllKeys()) }))), 4).map(({ name, values, keys }) => ({ table: name, rows: values, keys }));
   source.close();
   const name = `${store.name}-v4`;
   const legacy = indexedDB.open(databaseName(name), 4);

@@ -102,14 +102,29 @@ async function renameToLegacy(page: Page): Promise<void> {
     ]) {
       if (!(await indexedDB.databases()).some((d) => d.name === from)) continue;
       const src = await req(indexedDB.open(from!));
+      const manifestTx = src.transaction([...src.objectStoreNames], "readonly");
+      const manifestDone = new Promise<void>((resolve, reject) => { manifestTx.oncomplete = () => resolve(); manifestTx.onabort = () => reject(manifestTx.error); });
+      const manifest = [...src.objectStoreNames].map((name) => {
+        const store = manifestTx.objectStore(name);
+        return { name, keyPath: store.keyPath, autoIncrement: store.autoIncrement, indexes: [...store.indexNames].map((name) => {
+          const index = store.index(name);
+          return { name, keyPath: index.keyPath, unique: index.unique, multiEntry: index.multiEntry };
+        }) };
+      });
+      await manifestDone;
       const open = indexedDB.open(to!, src.version);
       open.onupgradeneeded = () => {
-        for (const name of src.objectStoreNames) open.result.createObjectStore(name);
+        for (const spec of manifest) {
+          const store = open.result.createObjectStore(spec.name, { keyPath: spec.keyPath, autoIncrement: spec.autoIncrement });
+          for (const index of spec.indexes) store.createIndex(index.name, index.keyPath, { unique: index.unique, multiEntry: index.multiEntry });
+        }
       };
       const dst = await req(open);
       for (const name of src.objectStoreNames) {
-        const s = src.transaction(name).objectStore(name);
+        const read = src.transaction(name), readDone = new Promise<void>((resolve, reject) => { read.oncomplete = () => resolve(); read.onabort = () => reject(read.error); });
+        const s = read.objectStore(name);
         const [keys, values] = await Promise.all([req(s.getAllKeys()), req(s.getAll())]);
+        await readDone;
         const tx = dst.transaction(name, "readwrite");
         keys.forEach((k, i) => tx.objectStore(name).put(values[i], k));
         await new Promise((r) => (tx.oncomplete = r));

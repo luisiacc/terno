@@ -250,7 +250,7 @@ export class IdbMailStore implements MailStore {
         // a new database: its epoch, the search log's head
         db.tx(() => db.table("search_state").insert({ id: 1, epoch: o.platform.uuid(), seq: 0, bytes: 0 }));
         const commit = db.takeCommit()!;
-        await persist(idb, commit, "strict");
+        await persist(idb, commit, "strict", o.platform);
         db.confirm();
       }
       if (meta.logicalSchema === undefined) await writeMeta(idb, { logicalSchema: LOGICAL_SCHEMA, createdAt: Date.now() });
@@ -341,7 +341,7 @@ export class IdbMailStore implements MailStore {
         let release!: () => void;
         this.inflight = new Promise<void>((resolve) => { release = resolve; });
         try {
-          await persist(this.idb, commit, o.durability ?? "strict");
+          await persist(this.idb, commit, o.durability ?? "strict", this.o.platform);
           this.db.confirm();
         } catch (error) {
           if (error instanceof PartialCommit || error instanceof UncertainWriteError) {
@@ -1548,7 +1548,7 @@ export class IdbMailStore implements MailStore {
       await this.settled();
       // memory and IndexedDB hold the same rows, and every index agrees with its table
       await this.exclusive(async () => {
-        const stored = await readAll(this.idb);
+        const stored = await readAll(this.idb, this.o.platform);
         for (const [name, rows] of stored) {
           const t = this.db.table<R>(name);
           if (rows.length !== t.size) throw new Error(`${name}: ${rows.length} rows in IndexedDB, ${t.size} in memory`);

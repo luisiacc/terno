@@ -37,6 +37,7 @@ interface UndoEntry {
   table: Table;
   key: Key;
   prev: Row | undefined;
+  forceRebase?: boolean;
   /** a change to what a lazy table knows is absent (not a write): whether the key was known absent before */
   wasAbsent?: boolean;
 }
@@ -145,7 +146,7 @@ export class Table<R extends Row = Row> {
 
   /** INSERT OR REPLACE */
   put(row: R): R {
-    this.write(this.withId(row), row);
+    this.write(this.withId(row), row, true);
     return row;
   }
 
@@ -156,7 +157,7 @@ export class Table<R extends Row = Row> {
     const newKey = this.keyOfRow(next);
     if (newKey !== oldKey) {
       this.remove(oldKey);
-      this.write(newKey, next);
+      this.write(newKey, next, true);
     } else this.write(oldKey, next);
     return next;
   }
@@ -179,10 +180,10 @@ export class Table<R extends Row = Row> {
     return this.keyOfRow(row);
   }
 
-  private write(k: Key, row: R): void {
+  private write(k: Key, row: R, forceRebase = false): void {
     this.db.checkParents(this.spec.name, row);
     const prev = this.rows.get(k);
-    this.db.logUndo(this, k, prev);
+    this.db.logUndo(this, k, prev, false, forceRebase);
     this.set(k, row, prev);
   }
 
@@ -266,6 +267,7 @@ export class Table<R extends Row = Row> {
 export interface Committed {
   /** the final state of every row the transaction touched (null: deleted) */
   writes: Map<Table, Map<Key, Row | null>>;
+  opPreimages?: Map<Key, { before: Row | undefined; forceRebase: boolean }>;
 }
 
 export class MemDb {
@@ -316,9 +318,9 @@ export class MemDb {
     this.undo.push({ table, key, prev: undefined, wasAbsent: table.absent.has(key) });
   }
 
-  logUndo(table: Table, key: Key, prev: Row | undefined, blind = false): void {
+  logUndo(table: Table, key: Key, prev: Row | undefined, blind = false, forceRebase = false): void {
     if (!this.undo) throw new Error(`write to ${table.spec.name} outside a transaction`);
-    this.undo.push({ table, key, prev: blind ? BLIND : prev });
+    this.undo.push({ table, key, prev: blind ? BLIND : prev, ...(forceRebase && table.spec.name === "ops" ? { forceRebase: true } : {}) });
   }
 
   /** FOREIGN KEY: a row may only point at rows that exist (SQLite with foreign_keys = ON) */
@@ -376,13 +378,21 @@ export class MemDb {
       return null;
     }
     const writes = new Map<Table, Map<Key, Row | null>>();
+    let opPreimages: Committed["opPreimages"];
     for (const e of log) {
       if (e.wasAbsent !== undefined) continue;
+      if (e.table.spec.name === "ops") {
+        opPreimages ??= new Map();
+        const forceRebase = !!e.forceRebase || e.prev === undefined || e.prev === BLIND;
+        const first = opPreimages.get(e.key);
+        if (!opPreimages.has(e.key)) opPreimages.set(e.key, { before: e.prev === BLIND ? undefined : e.prev, forceRebase });
+        else if (forceRebase) first!.forceRebase = true;
+      }
       let m = writes.get(e.table);
       if (!m) writes.set(e.table, (m = new Map()));
       m.set(e.key, e.table.rows.get(e.key) ?? null);
     }
-    return { writes };
+    return { writes, ...(opPreimages ? { opPreimages } : {}) };
   }
 
   /** keys of the given tables the uncommitted unit touched (deletes included) */

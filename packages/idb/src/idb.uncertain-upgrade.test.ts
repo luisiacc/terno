@@ -4,6 +4,7 @@ import { ingest, memoryFiles, msg, withAccounts } from "@terno/store/conformance
 import { expect, it, vi } from "vitest";
 import { databaseName, IDB_VERSION, LOGICAL_SCHEMA } from "./schema";
 import { IdbMailStore } from "./store";
+import { legacyImage } from "./test/legacy-stores";
 import { UNCERTAINTY_KEY, UncertainWriteError } from "./uncertainty";
 
 const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
@@ -30,9 +31,16 @@ async function image(db: IDBDatabase): Promise<StoreImage[]> {
   await finished; return values;
 }
 
-// Fixture model: copy actual physical10/logical23 stores, indexes, keys and values to v9.
+function withEmptyParts(source: StoreImage[]): StoreImage[] {
+  return [...source, ...["op_control", "op_target", "op_error"].map((name) => ({
+    name, keyPath: null, autoIncrement: false, indexes: [], keys: [], values: [],
+  }))].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+}
+
+// Fixture model: reconstruct fixed physical9 stores with effective wide operations.
 // This deliberately does not execute an old binary or assert older historical manifests.
 async function copyAsV9(factory: IDBFactory, name: string, source: StoreImage[]) {
+  source = legacyImage(source, 9);
   const open = factory.open(databaseName(name), 9);
   open.onupgradeneeded = () => {
     for (const saved of source) {
@@ -44,12 +52,12 @@ async function copyAsV9(factory: IDBFactory, name: string, source: StoreImage[])
   return request(open);
 }
 
-it("preserves a complete canonical physical9/logical23 fixture through the physical10 downgrade barrier", async () => {
+it("preserves a complete canonical physical9/logical23 fixture through the physical11 downgrade barrier", async () => {
   const factory = new IDBFactory(), name = crypto.randomUUID();
   const seed = await IdbMailStore.open({ factory, name: `${name}-source`, instantSearch: false, platform });
   let store: IdbMailStore | undefined, raw: IDBDatabase | undefined;
   try {
-    expect({ physical: IDB_VERSION, logical: LOGICAL_SCHEMA }).toEqual({ physical: 10, logical: 23 });
+    expect({ physical: IDB_VERSION, logical: LOGICAL_SCHEMA }).toEqual({ physical: 11, logical: 23 });
     const [account] = await withAccounts(seed, 1);
     const id = (await ingest(seed, [msg({ accountId: account!, providerMsgId: "fixture-message", bodyText: "preserved canonical body" })])).inserted[0]!;
     const message = (await seed.debug.snapshot()).messages[0]!;
@@ -63,8 +71,8 @@ it("preserves a complete canonical physical9/logical23 fixture through the physi
     const publicBefore = { snapshot: await seed.debug.snapshot(), drafts: await seed.drafts.list(), head: await seed.feed.head() };
     await seed.close();
     raw = await request(factory.open(databaseName(`${name}-source`)));
-    expect(raw.version).toBe(10);
-    const original = await image(raw);
+    expect(raw.version).toBe(IDB_VERSION);
+    const original = legacyImage(await image(raw), 9);
     expect(original.find((s) => s.name === "meta")?.values[original.find((s) => s.name === "meta")!.keys.indexOf("logicalSchema")]).toBe(23);
     expect(original.find((s) => s.name === "drafts")?.values).toHaveLength(3);
     expect(original.find((s) => s.name === "search_state")?.values).toHaveLength(1);
@@ -77,11 +85,81 @@ it("preserves a complete canonical physical9/logical23 fixture through the physi
     expect({ snapshot: await store.debug.snapshot(), drafts: await store.drafts.list(), head: await store.feed.head() }).toEqual(publicBefore);
     await store.debug.verify(); await store.close();
     raw = await request(factory.open(databaseName(name)));
-    expect(raw.version).toBe(10);
-    expect(await image(raw)).toEqual(original);
+    expect(raw.version).toBe(IDB_VERSION);
+    expect(await image(raw)).toEqual(withEmptyParts(original));
     raw.close(); raw = undefined;
     await expect(request(factory.open(databaseName(name), 9))).rejects.toMatchObject({ name: "VersionError" });
   } finally { vi.restoreAllMocks(); raw?.close(); await store?.close(); await seed.close(); }
+});
+
+it("preserves a complete canonical physical10/logical23 fixture through the physical11 downgrade barrier", async () => {
+  const factory = new IDBFactory(), name = crypto.randomUUID();
+  const seedName = `${name}-v10-source`;
+  const seed = await IdbMailStore.open({ factory, name: seedName, instantSearch: false, platform });
+  const opened: IdbMailStore[] = [seed];
+  let raw: IDBDatabase | undefined;
+  let cleanupFailure: PromiseRejectedResult | undefined;
+  try {
+    expect({ physical: IDB_VERSION, logical: LOGICAL_SCHEMA }).toEqual({ physical: 11, logical: 23 });
+    const [account] = await withAccounts(seed, 1);
+    await ingest(seed, [msg({ accountId: account!, providerMsgId: "physical10-message", bodyText: "exact physical10 message body" })]);
+    await seed.drafts.save({ accountId: account!, to: [], cc: [], subject: "physical10 draft", bodyText: "exact physical10 draft body" }, 17);
+    const queued = await seed.compose.queueSend({ accountId: account!, to: [{ name: "", email: "recipient@example.com" }], cc: [], bcc: [], subject: "physical10 send", bodyText: "exact physical10 wire body", recordReply: false, now: 20 });
+    expect((await seed.ops.claimReady(21, 1)).map((op) => op.id)).toEqual([queued.opId]);
+    await seed.ops.awaitAuth(queued.opId, "exact physical10 auth error", 22);
+    const publicBefore = { snapshot: await seed.debug.snapshot(), drafts: await seed.drafts.list(), head: await seed.feed.head(), ops: await seed.ops.recent(100) };
+    await seed.close();
+    raw = await request(factory.open(databaseName(seedName)));
+    const original = legacyImage(await image(raw), 10);
+    expect(original.some((store) => ["op_control", "op_target", "op_error"].includes(store.name))).toBe(false);
+    const base = original.find((store) => store.name === "ops")!;
+    const legacyOp = base.values[base.keys.indexOf(queued.opId)] as Record<string, unknown>;
+    const expectedOp = publicBefore.ops.find((op) => op.id === queued.opId)!;
+    expect(legacyOp).toMatchObject(expectedOp);
+    expect(legacyOp.last_error).toBe("exact physical10 auth error");
+    raw.close(); raw = undefined;
+    // Reconstruct a complete fixed v10 image; this never executes an older binary.
+    const old = factory.open(databaseName(name), 10);
+    old.onupgradeneeded = () => {
+      for (const saved of original) {
+        const store = old.result.createObjectStore(saved.name, { keyPath: saved.keyPath, autoIncrement: saved.autoIncrement });
+        for (const index of saved.indexes) store.createIndex(index.name, index.keyPath, { unique: index.unique, multiEntry: index.multiEntry });
+        saved.values.forEach((value, i) => store.put(value, saved.keys[i]!));
+      }
+    };
+    raw = await request(old);
+    expect(raw.version).toBe(10); expect(await image(raw)).toEqual(original);
+    raw.close(); raw = undefined;
+    let store = await IdbMailStore.open({ factory, name, instantSearch: false, platform }); opened.push(store);
+    expect({ snapshot: await store.debug.snapshot(), drafts: await store.drafts.list(), head: await store.feed.head(), ops: await store.ops.recent(100) }).toEqual(publicBefore);
+    await store.debug.verify(); await store.close();
+    raw = await request(factory.open(databaseName(name)));
+    expect(raw.version).toBe(11); expect(await image(raw)).toEqual(withEmptyParts(original));
+    raw.close(); raw = undefined;
+    // The barrier must protect a now-stale wide BASE after a real public control transition.
+    store = await IdbMailStore.open({ factory, name, instantSearch: false, platform }); opened.push(store);
+    expect(await store.ops.resumeAuth(account!, 23)).toEqual([queued.opId]);
+    expect((await store.ops.claimReady(24, 1)).map((op) => op.id)).toEqual([queued.opId]);
+    const latest = (await store.ops.get(queued.opId))!;
+    expect(latest.state).toBe("running"); expect(legacyOp.state).not.toBe(latest.state);
+    await store.close();
+    store = await IdbMailStore.open({ factory, name, instantSearch: false, platform }); opened.push(store);
+    expect(await store.ops.get(queued.opId)).toEqual(latest);
+    await store.debug.verify(); await store.close();
+    raw = await request(factory.open(databaseName(name)));
+    const after = await image(raw);
+    expect(after.find((entry) => entry.name === "ops")).toEqual(base);
+    const control = after.find((entry) => entry.name === "op_control")!;
+    expect(control.values[control.keys.indexOf(queued.opId)]).toMatchObject({ state: "running", attempts: latest.attempts });
+    raw.close(); raw = undefined;
+    await expect(request(factory.open(databaseName(name), 10))).rejects.toMatchObject({ name: "VersionError" });
+  } finally {
+    raw?.close();
+    const closed = await Promise.allSettled(opened.map((store) => store.close()));
+    const removals = await Promise.allSettled([databaseName(name), databaseName(seedName)].map((dbName) => request(factory.deleteDatabase(dbName))));
+    cleanupFailure = [...closed, ...removals].find((result) => result.status === "rejected");
+  }
+  if (cleanupFailure) throw cleanupFailure.reason;
 });
 
 it("refuses a completed upgrade whose inspection success was hidden", async () => {
@@ -92,7 +170,7 @@ it("refuses a completed upgrade whose inspection success was hidden", async () =
     await seed.settings.set("retained", "exact");
     await seed.close();
     raw = await request(factory.open(databaseName(`${name}-source`)));
-    const before = await image(raw); raw.close();
+    const before = legacyImage(await image(raw), 9); raw.close();
     raw = await copyAsV9(factory, name, before); raw.close(); raw = undefined;
     const getKey = IDBObjectStore.prototype.getKey, open = factory.open.bind(factory);
     let hits = 0, terminal: string | null = null;
@@ -116,7 +194,7 @@ it("refuses a completed upgrade whose inspection success was hidden", async () =
     expect(() => acquired!.transaction("meta")).toThrow(expect.objectContaining({ name: "InvalidStateError" }));
     vi.restoreAllMocks();
     raw = await request(factory.open(databaseName(name)));
-    expect(raw.version).toBe(10);
+    expect(raw.version).toBe(IDB_VERSION);
     expect(await image(raw)).toEqual(before);
   } finally { vi.restoreAllMocks(); raw?.close(); acquired?.close(); await store?.close(); await seed.close(); }
 });
@@ -128,7 +206,7 @@ it("classifies an aborted upgrade whose inspection error was hidden as unreadabl
   try {
     await seed.settings.set("retained", "exact aborted upgrade control"); await seed.close();
     raw = await request(factory.open(databaseName(`${name}-source`)));
-    const before = await image(raw); raw.close();
+    const before = legacyImage(await image(raw), 9); raw.close();
     raw = await copyAsV9(factory, name, before); raw.close(); raw = undefined;
     const getKey = IDBObjectStore.prototype.getKey, getAll = IDBObjectStore.prototype.getAll;
     let hits = 0, errors = 0, rowReads = 0, terminal: string | null = null;
@@ -192,7 +270,7 @@ function observeAdmission() {
   return { counts, terminals };
 }
 
-for (const version of [1, 2, 4, 6, 9]) {
+for (const version of [1, 2, 4, 6, 8, 9, 10]) {
   it.each([
     { label: "dirty", marker: { version: 1 } },
     { label: "present undefined", marker: undefined },
@@ -201,7 +279,7 @@ for (const version of [1, 2, 4, 6, 9]) {
     const factory = new IDBFactory(), name = crypto.randomUUID();
     let raw: IDBDatabase | undefined = await sentinel(factory, name, version, marker), exposed: IdbMailStore | undefined;
     try {
-      const before = await image(raw); raw.close(); raw = undefined;
+      const before = legacyImage(await image(raw), 9); raw.close(); raw = undefined;
       const observation = observeAdmission();
       const error = await IdbMailStore.open({ factory, name, instantSearch: true, platform }).then((store) => { exposed = store; return null; }, (failure: unknown) => failure);
       expect(observation.counts).toEqual({ guards: 1, rowReads: 0, rowWrites: 0, schemaWrites: 0 });
@@ -220,7 +298,7 @@ it("latches dirty upgrade refusal even when abort is refused and the open actual
   const factory = new IDBFactory(), name = crypto.randomUUID();
   let raw: IDBDatabase | undefined = await sentinel(factory, name, 1, undefined), exposed: IdbMailStore | undefined, acquired: IDBDatabase | undefined;
   try {
-    const before = await image(raw); raw.close(); raw = undefined;
+    const before = legacyImage(await image(raw), 9); raw.close(); raw = undefined;
     const open = factory.open.bind(factory), abort = IDBTransaction.prototype.abort, close = IDBDatabase.prototype.close;
     let successes = 0, refused = 0, closes = 0;
     vi.spyOn(factory, "open").mockImplementation((...args) => {
@@ -243,7 +321,7 @@ it("latches dirty upgrade refusal even when abort is refused and the open actual
     vi.restoreAllMocks();
     raw = await request(factory.open(databaseName(name)));
     // The injected refused abort really committed the version bump; it did not authorize row migration.
-    expect(raw.version).toBe(10); expect(await image(raw)).toEqual(before);
+    expect(raw.version).toBe(IDB_VERSION); expect(await image(raw)).toEqual(before);
   } finally { vi.restoreAllMocks(); acquired?.close(); raw?.close(); await exposed?.close(); }
 });
 
@@ -251,7 +329,7 @@ it.each([false, true])("retains an unreadable upgrade cause across abort refusal
   const factory = new IDBFactory(), name = crypto.randomUUID();
   let raw: IDBDatabase | undefined = await sentinel(factory, name, 2, { version: 1 }), exposed: IdbMailStore | undefined;
   try {
-    const before = await image(raw); raw.close(); raw = undefined;
+    const before = legacyImage(await image(raw), 9); raw.close(); raw = undefined;
     const getKey = IDBObjectStore.prototype.getKey, abort = IDBTransaction.prototype.abort;
     const injected = new Error("upgrade guard could not enqueue");
     let hits = 0, refused = 0, terminal: string | undefined;
@@ -274,7 +352,7 @@ it.each([false, true])("retains an unreadable upgrade cause across abort refusal
     expect(exposed !== undefined).toBe(false); expect(error).toBeInstanceOf(UncertainWriteError);
     expect(error).toMatchObject({ reason: "unreadable", cause: injected }); expect((error as Error).cause).toBe(injected);
     vi.restoreAllMocks(); raw = await request(factory.open(databaseName(name)));
-    expect(raw.version).toBe(refuseAbort ? 10 : 2); expect(await image(raw)).toEqual(before);
+    expect(raw.version).toBe(refuseAbort ? IDB_VERSION : 2); expect(await image(raw)).toEqual(before);
   } finally { vi.restoreAllMocks(); raw?.close(); await exposed?.close(); }
 });
 
@@ -336,10 +414,10 @@ it("closes its admitted connection on versionchange so a subsequent version is n
     const close = IDBDatabase.prototype.close;
     let closes = 0, upgrades = 0, blocked = 0;
     vi.spyOn(IDBDatabase.prototype, "close").mockImplementation(function (this: IDBDatabase) { closes++; return close.call(this); });
-    const open = factory.open(databaseName(name), 11);
+    const open = factory.open(databaseName(name), IDB_VERSION + 1);
     open.addEventListener("blocked", () => { blocked++; });
     open.addEventListener("upgradeneeded", () => { upgrades++; });
     newer = await request(open);
-    expect({ closes, upgrades, blocked, version: newer.version }).toEqual({ closes: 1, upgrades: 1, blocked: 0, version: 11 });
+    expect({ closes, upgrades, blocked, version: newer.version }).toEqual({ closes: 1, upgrades: 1, blocked: 0, version: IDB_VERSION + 1 });
   } finally { vi.restoreAllMocks(); newer?.close(); await store.close(); }
 });

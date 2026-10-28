@@ -6,7 +6,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./uncertainty": "./src/uncertainty.ts"
+    "./uncertainty": "./src/uncertainty.ts",
+    "./op-storage": "./src/op-storage.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
