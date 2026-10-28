@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Account, ThreadDetail } from "@terno/core";
 
 const { loadThread, details } = vi.hoisted(() => ({ loadThread: vi.fn(), details: new Map<number, ThreadDetail>() }));
-vi.mock("~/state/threads", () => ({ loadThread, invalidateThreads: vi.fn(), useThreads: { getState: () => ({ details }) } }));
+vi.mock("~/state/threads", () => ({ loadThread, invalidateThreads: vi.fn(), useThreads: { getState: () => ({ details }), subscribe: () => () => {} } }));
 vi.mock("~/rpc/connection", () => ({ client: { call: async (method: string) => method === "drafts.sourceContext" ? { threadId: 7, accountId: 1 } : { assetId: "source-asset", filename: "empty", mime: "text/plain", size: 0 } } }));
 const { openCompose } = await import("./compose");
 const { replyFields } = await import("./compose-fields");

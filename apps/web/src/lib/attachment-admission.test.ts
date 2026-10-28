@@ -10,6 +10,7 @@ const { acquireDraftHold, attachBody, createDraft, draftWorkPending, editDraft, 
 const { getApp, setApp, useApp } = await import("~/state/app");
 const { invalidateThreads, useThreads } = await import("~/state/threads");
 const { resetSnacks, useSnack } = await import("./snack");
+const { useForwardFiles } = await import("./forward-files");
 const account = { id: 1, email: "me@test.com" } as Account;
 const ref: AttachmentRef = { assetId: "source", filename: "source.bin", mime: "application/octet-stream", size: 0 };
 const violations: unknown[] = [], releases: (() => void)[] = [], disposals: (() => void)[] = [];
@@ -147,6 +148,8 @@ beforeEach(() => {
     else if (method === "attachments.create") expect(params).toEqual({ accountId: 1, filename: "upload.bin", mime: "application/octet-stream", size: 1 });
     else if (method === "attachments.append") expect(params).toEqual({ accountId: 1, assetId: "staged", index: 0, dataBase64: "/w==" });
     else if (method === "attachments.seal" || method === "attachments.discard") expect(params).toEqual({ accountId: 1, assetId: "staged" });
+    // plan 60: a forward's missing files are asked for again in the background
+    else if (method === "attachments.retry") expect(params).toEqual({ accountId: 1, messageId: 3 });
     else throw new Error(`Unexpected fixture RPC ${method}`);
     return rpc(method, params);
   }))));
@@ -194,11 +197,17 @@ it("deduplicates repeated source IDs for fresh and authored Forward while retain
   expect(convertFields(before, "forward", detail, account).attachments).toEqual([ref]);
 });
 
-it("a conflicting duplicate source occurrence is refused instead of hidden by deduplication", async () => {
-  expectedTrace = () => [infoCall];
+it("a conflicting duplicate source occurrence stays out instead of hidden by deduplication", async () => {
+  // plan 60: the forward opens without it, and asks for the original again (one try's retry and refetch)
+  expectedTrace = () => [infoCall, contextCall, ["attachments.retry", { accountId: 1, messageId: 3 }], ["threads.get", { threadId: 7 }]];
   setup(); useThreads.setState({ details: new Map([[7, thread([ref, { ...ref, filename: "different" }])]]) }); rpc.mockResolvedValue(ref);
+  threadGet.mockResolvedValue(thread([ref, { ...ref, filename: "different" }]));
   await openCompose("forward", 7);
-  expect(Object.values(useDrafts.getState().drafts)).toEqual([]);
+  // plan 60: the forward opens; neither occurrence is trusted, so the file isn't in it
+  expect(Object.values(useDrafts.getState().drafts)).toMatchObject([{ mode: "forward", attachments: [] }]);
+  // the background try has asked and looked again (its next one is seconds away)
+  await vi.waitFor(() => expect(useForwardFiles.getState()[Object.keys(useDrafts.getState().drafts)[0]!]).toEqual({ status: "fetching", names: ["source.bin", "different"] }));
+  await vi.waitFor(() => expect(threadGet).toHaveBeenCalledTimes(1));
 });
 
 it.each(["fresh", "untouched", "authored"])("%s Forward checks the actual combined message including signature before any mutation", async (kind) => {
@@ -306,7 +315,7 @@ it("two simultaneous uploads to one key admit only the explicit first selection"
 });
 
 it.each(["body", "recipients", "account", "recovery", "signature", "navigation", "source"])("conversion cannot publish a budget checked before a late %s change", async (scenario) => {
-  expectedTrace = () => scenario === "source" ? [infoCall, ["threads.get", { threadId: 7 }]] : scenario === "signature" ? [infoCall, contextCall] : [infoCall];
+  expectedTrace = () => scenario === "source" ? [infoCall, ["threads.get", { threadId: 7 }], contextCall] : scenario === "signature" ? [infoCall, contextCall] : [infoCall];
   setup();
   const detail = thread(); detail.messages[0]!.bodyText = "&".repeat(40_000);
   useThreads.setState({ details: new Map([[7, detail]]) });
@@ -314,12 +323,14 @@ it.each(["body", "recipients", "account", "recovery", "signature", "navigation",
   editDraft(key, { bodyText: "preserved", bodyHtml: "<div>preserved</div>" });
   let expected = fieldsOf(useDrafts.getState().drafts[key]!);
   let settled = false, callback: ReturnType<typeof later> | undefined;
-  const result: ThreadDetail = { ...detail, messages: [{ ...detail.messages[0]!, attachmentState: "pending" }] };
+  // plan 60: the refreshed original no longer has the file; the open starts over with it (plan 57) and admits afresh
+  const result: ThreadDetail = { ...detail, messages: [{ ...detail.messages[0]!, attachmentState: "complete", attachments: [] }] };
   let arrive!: () => void, release!: () => void;
   const waiting = new Promise<void>(resolve => { arrive = resolve; }), gate = new Promise<void>(resolve => { release = resolve; });
   releases.push(release);
   threadGet.mockImplementation(async () => { arrive(); await gate; return result; });
   rpc.mockImplementation(async (method: string) => {
+    if (method === "attachments.retry") return { ok: true };
     checked(() => { expect(method).toBe("attachments.info"); expect(callback).toBeUndefined(); });
     callback = later(() => {
       if (scenario === "body") editDraft(key, { bodyText: "late body", bodyHtml: "<div>late body</div>" });
@@ -357,6 +368,11 @@ it.each(["body", "recipients", "account", "recovery", "signature", "navigation",
   } else { release(); try { await opening; } finally { settled = true; } }
   expect(callback).toBeDefined(); await callback!.pending; callback!.assert();
   if (scenario === "source") expect(threadGet).toHaveBeenCalledWith("threads.get", { threadId: 7 });
+  if (scenario === "source") {
+    // the change replaced the conversation: the open starts over with it (plan 57) and admits afresh, not with the stale budget
+    expect(useDrafts.getState().drafts[key]).toMatchObject({ mode: "forward", attachments: [], bodyText: "preserved" });
+    return;
+  }
   expect(fieldsOf(useDrafts.getState().drafts[key]!)).toEqual(expected);
   expect(useDrafts.getState().drafts[key]!.mode).toBe("reply");
 });

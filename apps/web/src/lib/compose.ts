@@ -624,7 +624,12 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     const snapshot = existing;
     const checked = new Map<string, AttachmentRef | null>();
     for (const part of parts) {
-      if (checked.has(part.assetId!)) continue;
+      // the same file named twice with different details: neither is trusted (it stays out, and is asked for)
+      if (checked.has(part.assetId!)) {
+        const known = checked.get(part.assetId!);
+        if (known && (known.filename !== part.filename || known.mime !== part.mime || known.size !== part.size || (known.contentId ?? null) !== (part.contentId ?? null))) checked.set(part.assetId!, null);
+        continue;
+      }
       let info: AttachmentRef | null = null;
       try { info = await client.call("attachments.info", { accountId: message.accountId, assetId: part.assetId! }); } catch { /* not ready: it follows */ }
       checked.set(part.assetId!, info && info.filename === part.filename && info.mime === part.mime && info.size === part.size && (info.contentId ?? null) === (part.contentId ?? null) ? { assetId: part.assetId!, filename: part.filename, mime: part.mime, size: part.size, contentId: part.contentId ?? null } : null);

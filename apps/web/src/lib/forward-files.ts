@@ -242,9 +242,17 @@ async function settleOnce(s: Session, detail: ThreadDetail | null): Promise<bool
     setState(s.key, { status: "account", account: getApp().accounts.find((a) => a.id === s.accountId)?.email ?? "" });
     return false;
   }
+  // the same file named twice with different details: neither is trusted
+  const details = new Map<string, string>(), conflicting = new Set<string>();
+  for (const part of message.attachments) {
+    if (!part.assetId) continue;
+    const said = JSON.stringify([part.filename, part.mime, part.size, part.contentId ?? null]);
+    if ((details.get(part.assetId) ?? said) !== said) conflicting.add(part.assetId);
+    details.set(part.assetId, said);
+  }
   const refs: AttachmentRef[] = [];
   for (const part of message.attachments) {
-    if (!part.assetId || seen.has(part.assetId) || s.unconfirmed.has(part.assetId)) continue;
+    if (!part.assetId || seen.has(part.assetId) || s.unconfirmed.has(part.assetId) || conflicting.has(part.assetId) || refs.some((r) => r.assetId === part.assetId)) continue;
     let ref = s.verified.get(part.assetId);
     if (!ref) {
       const round = s.round;
