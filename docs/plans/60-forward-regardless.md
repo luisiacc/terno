@@ -100,3 +100,18 @@ The critique's 12 points, and what changed:
     - `drafts-attachments-store.test.ts`: unavailable capture now converts to a forward without files and allows the retry RPC.
     - `forward-capture.spec.ts` keeps its authored-body, autosave and reload coverage.
     - A real-store test covers background adoption.
+
+**Code review (6 rounds; every finding fixed with a regression test in `forward-files.test.ts` that fails without the fix):**
+
+- **Round 1:**
+  - Exhausted tries kept their watchers and thread alive. They now stop, and the status stays.
+  - Per-draft memory leaked. One shared drafts watch now forgets a draft that goes or stops forwarding, and confirmed refs are per session.
+  - A forward of an original with no files asked for From. Completion is now checked before the account pause.
+  - The size note outlived the forward. The shared watch clears it.
+- **Round 2:** the last try gave up while a look started by its own refetch was still confirming. Looks now share one running promise.
+- **Round 3:** a save made by adoption notifies synchronously, which re-entered the look before its guard was up (stack overflow). The guard is now published before the first step.
+- **Round 4:** parts that couldn't be confirmed before a capture retry weren't asked about after it. They are now cleared after each retry.
+- **Round 5:**
+  - A check begun before a retry that failed after it hid the part again. Checks now carry a round.
+  - From changed during the last retry ended in "failed". It now pauses for the account.
+- **Round 6:** no findings.
