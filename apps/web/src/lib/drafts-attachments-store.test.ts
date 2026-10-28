@@ -177,7 +177,10 @@ for (const adapter of ["SQL", "IDB"] as const) {
       await ingest(store, [msg({ accountId: a!, providerMsgId: "source", attachments: kind === "none" ? [] : [{ filename: "source.bin", mime: "application/octet-stream", size: bytes.length, ...(kind === "unavailable" ? {} : { bytes }) }] })]);
       const detail = (await store.threads.get(await threadOf(store, "source")))!;
       sourceMessageId = detail.messages[0]!.id; sourceAssetId = detail.messages[0]!.attachments[0]?.assetId ?? undefined;
-      expectedTrace = () => kind === "unavailable" ? [] : kind === "none" ? [["drafts.sourceContext", { messageId: sourceMessageId }]] : [["attachments.info", { accountId: a, assetId: sourceAssetId }], ["drafts.sourceContext", { messageId: sourceMessageId }]];
+      // plan 60: a stored file is confirmed before the account rule refuses (only confirmed files tie a forward to A), so the
+      // refused From-B open checks it once and the From-A open again; with nothing stored, the forward opens on B
+      const info: RpcCall = ["attachments.info", { accountId: a, assetId: sourceAssetId }], context: RpcCall = ["drafts.sourceContext", { messageId: sourceMessageId }];
+      expectedTrace = () => kind === "unavailable" || kind === "none" ? [context] : [info, info, context];
       const fields = replyFields("reply", detail, account);
       const key = createDraft(fields);
       useThreads.setState({ details: new Map([[detail.thread.id, detail]]) });
