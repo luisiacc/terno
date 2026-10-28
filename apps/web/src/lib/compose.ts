@@ -185,12 +185,22 @@ export const supersedeCompose = (): void => {
 export function focusDraft(key: string, target: "body" | "to", owner?: number) {
   const current = intent;
   if (owner !== undefined && owner !== current) return;
-  if (focusLease && focusLease.intent !== owner) releaseFocusLease(focusLease, false);
-  if (intent !== current) return;
-  const focusSeq = ++seq;
-  const leased = !!focusLease && focusLease.intent === owner;
-  if (leased) { focusLease!.key = key; focusLease!.seq = focusSeq; }
-  setApp({ draftFocus: { key, target, seq: focusSeq, ...(leased ? { leased: true as const } : {}) } });
+  const originalLease = focusLease && focusLease.intent === owner ? focusLease : null;
+  const cancellation = originalLease ? undefined : { cancelled: false };
+  const active = typeof document === "undefined" ? null : document.activeElement, previousSeq = seq;
+  const moved = (event: FocusEvent) => { if (cancellation && event.target !== active) cancellation.cancelled = true; };
+  if (cancellation && typeof document !== "undefined") document.addEventListener("focusin", moved, true);
+  try {
+    if (focusLease && focusLease.intent !== owner) releaseFocusLease(focusLease, false);
+    if (intent !== current || seq !== previousSeq || cancellation?.cancelled || (originalLease && (focusLease !== originalLease || !originalLease.valid))) return;
+    const focusSeq = ++seq;
+    if (originalLease) { originalLease.key = key; originalLease.seq = focusSeq; }
+    const request = { key, target, seq: focusSeq, ...(originalLease ? { leased: true as const } : { cancellation: cancellation! }) };
+    setApp({ draftFocus: request });
+    if (cancellation?.cancelled && getApp().draftFocus === request) setApp({ draftFocus: null });
+  } finally {
+    if (cancellation && typeof document !== "undefined") document.removeEventListener("focusin", moved, true);
+  }
 }
 
 /** Does a draft carry anything the user wrote? */

@@ -378,7 +378,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
       if (useApp.getState().draftFocus === focus) setApp({ draftFocus: null });
       return;
     }
-    focusSoon(focus.target === "to" ? "[data-testid=compose-to]" : "[data-testid=compose-body]", rootRef.current, 12, focus.leased ? (fallback) => finishComposeFocus(focus.key, focus.seq, fallback) : undefined, focus.leased ? () => composeFocusPending(threadId, focus.key, focus.seq) : undefined);
+    focusSoon(focus.target === "to" ? "[data-testid=compose-to]" : "[data-testid=compose-body]", rootRef.current, 12, focus.leased ? (fallback) => finishComposeFocus(focus.key, focus.seq, fallback) : focus.cancellation ? () => !focus.cancellation!.cancelled : undefined, focus.leased ? () => composeFocusPending(threadId, focus.key, focus.seq) : focus.cancellation ? () => !focus.cancellation!.cancelled : undefined);
     if (useApp.getState().draftFocus === focus) setApp({ draftFocus: null });
   }, [focus?.seq]);
 
