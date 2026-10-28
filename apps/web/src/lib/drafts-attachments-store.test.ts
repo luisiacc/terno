@@ -13,7 +13,7 @@ import { SqlMailStore } from "../../../../packages/db/src/sql-store";
 
 const { attachmentRpc } = vi.hoisted(() => ({ attachmentRpc: vi.fn() }));
 vi.mock("~/rpc/connection", () => ({ client: { call: attachmentRpc } }));
-const { attachBody, copyDraft, draftsSaved, draftWorkPending, materialize, resumeDraft, retryDraft, createDraft, editDraft, flushDraft: flush, fromServer, forgetDraft, setDraftTransport: applyDraftTransport, useDrafts } = await import("./drafts");
+const { attachBody, copyDraft, draftsSaved, draftWorkPending, materialize, resumeDraft, retryDraft, createDraft, editDraft, flushDraft: flush, fromServer, forgetDraft, recipients, setDraftTransport: applyDraftTransport, useDrafts } = await import("./drafts");
 
 const { openCompose: compose, supersedeCompose } = await import("./compose");
 const { convertFields, replyFields } = await import("./compose-fields");
@@ -36,41 +36,120 @@ const work = new Map<Promise<unknown>, string>(), transports = new Set<Promise<u
 let cleanupFailed = false;
 let previousApp: ReturnType<typeof getApp>, previousThreads: ReturnType<typeof useThreads.getState>;
 function checked<T>(check: () => T): T { try { return check(); } catch (error) { violations.push(error); throw error; } }
-function own<T>(pending: Promise<T>, label: string): Promise<T> {
-  work.set(pending, label); void pending.then(() => work.delete(pending), () => work.delete(pending)); return pending;
+type Outcome = { state: "pending" } | { state: "fulfilled"; value: unknown } | { state: "rejected"; error: unknown };
+type Completion = { label: string; outcome: Outcome };
+type Invocation = Completion & { ordinal: number; method: string; params: unknown };
+type RpcCall = [string, unknown];
+type Refusal = { ordinal: number; method: string; params: unknown; outcome: Exclude<Outcome, { state: "pending" }>; consumed: number };
+const operations: Completion[] = [], transportOutcomes: Invocation[] = [], rpcOutcomes: Invocation[] = [], refusals: Refusal[] = [];
+const rpcPending = new Set<Promise<unknown>>();
+const afterCleanup: (() => void)[] = [];
+let expectedTrace: () => RpcCall[] = () => [];
+let draining: Promise<void> | undefined;
+let captured: { operations: Completion[]; transports: Invocation[]; rpc: Invocation[] } | undefined;
+function observe<T>(pending: Promise<T>, entry: Completion): Promise<T> {
+  void pending.then(value => { entry.outcome = { state: "fulfilled", value }; }, error => { entry.outcome = { state: "rejected", error }; });
+  return pending;
+}
+function invocation(list: Invocation[], method: string, params: unknown): Invocation {
+  const entry: Invocation = { ordinal: list.length + 1, method, params: structuredClone(params), label: method, outcome: { state: "pending" } };
+  list.push(entry);
+  return entry;
+}
+function routed<T>(method: string, params: unknown, call: () => Promise<T>): Promise<T> {
+  const entry = invocation(rpcOutcomes, method, params);
+  try {
+    const pending = call(); rpcPending.add(pending);
+    void pending.then(() => rpcPending.delete(pending), () => rpcPending.delete(pending));
+    return observe(pending, entry);
+  }
+  catch (error) { entry.outcome = { state: "rejected", error }; throw error; }
+}
+function own<T>(promise: Promise<T>, label: string): Promise<T> {
+  const entry: Completion = { label, outcome: { state: "pending" } }; operations.push(entry);
+  work.set(promise, label);
+  void promise.then(() => work.delete(promise), () => work.delete(promise));
+  return observe(promise, entry);
 }
 function openCompose(...args: Parameters<typeof compose>) { return own(compose(...args), "compose"); }
-function flushDraft(key: string) { return own(flush(key), "flush"); }
 function setDraftTransport(call: Parameters<typeof applyDraftTransport>[0]) {
   applyDraftTransport((method, params) => {
-    checked(() => { contract[method].params.parse(params); });
-    const pending = call(method, params); transports.add(pending);
-    void pending.then(() => transports.delete(pending), () => transports.delete(pending));
-    return pending;
+    const entry = invocation(transportOutcomes, method, params);
+    const refusal = refusals.find(expected => expected.ordinal === entry.ordinal);
+    if (refusal) refusal.consumed++;
+    try {
+      checked(() => { contract[method].params.parse(params); });
+      const pending = call(method, params);
+      transports.add(pending);
+      void pending.then(() => transports.delete(pending), () => transports.delete(pending));
+      return observe(pending, entry);
+    } catch (error) { entry.outcome = { state: "rejected", error }; throw error; }
   });
 }
 async function bounded<T>(pending: Promise<T>, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  try { return await Promise.race([pending, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`${label}: pending ${[...work.values()].join(", ")}; transports ${transports.size}`)), 5000); })]); }
+  try { return await Promise.race([pending, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`${label}: pending ${[...work.values()].join(", ")}; transports ${transports.size}; RPCs ${rpcPending.size}`)), 5000); })]); }
   finally { clearTimeout(timer); }
 }
-async function drain() {
-  for (const release of releases) release();
-  try {
-    await bounded((async () => {
-      await Promise.all(work.keys());
-      await Promise.all(Object.keys(useDrafts.getState().drafts).map(flush));
-      await Promise.all(transports);
-    })(), "fixture drain");
-  } catch (error) { cleanupFailed = true; throw error; }
+function drain(): Promise<void> {
+  if (draining) return draining;
+  for (const release of releases) { try { release(); } catch (error) { violations.push(error); } }
+  draining = bounded((async () => {
+    await Promise.allSettled(work.keys());
+    await Promise.allSettled(Object.keys(useDrafts.getState().drafts).map(key => own(flush(key), "cleanup flush")));
+    while (work.size || transports.size || rpcPending.size) await Promise.allSettled([...work.keys(), ...transports, ...rpcPending]);
+    captured = { operations: operations.map(entry => ({ ...entry })), transports: transportOutcomes.map(entry => ({ ...entry })), rpc: rpcOutcomes.map(entry => ({ ...entry })) };
+  })(), "fixture drain").catch(error => { cleanupFailed = true; throw error; });
+  return draining;
 }
-beforeEach(() => { expect(draftWorkPending()).toBe(false); previousApp = getApp(); previousThreads = useThreads.getState(); cleanupFailed = false; violations.length = 0; releases.length = 0; });
+function resetOutcomes() {
+  operations.length = 0; transportOutcomes.length = 0; rpcOutcomes.length = 0; refusals.length = 0; afterCleanup.length = 0;
+  draining = undefined; captured = undefined; expectedTrace = () => [];
+}
+function assertOutcomes() {
+  expect(captured, "completed fixture drain").toBeDefined();
+  const complete = captured!;
+  expect(work.size).toBe(0); expect(transports.size).toBe(0); expect(rpcPending.size).toBe(0);
+  expect(operations).toHaveLength(complete.operations.length);
+  expect(transportOutcomes).toHaveLength(complete.transports.length); expect(rpcOutcomes).toHaveLength(complete.rpc.length);
+  for (const check of afterCleanup) check();
+  for (const entry of complete.operations) expect(entry.outcome.state, `Unexpected operation outcome: ${entry.label}`).toBe("fulfilled");
+  for (const entry of complete.transports) {
+    const refusal = refusals.find(expected => expected.ordinal === entry.ordinal);
+    if (refusal) {
+      expect([entry.method, entry.params], "exact predeclared refusal request").toEqual([refusal.method, refusal.params]);
+      expect(entry.outcome.state, "exact predeclared refusal outcome").toBe(refusal.outcome.state);
+      if (entry.outcome.state === "rejected" && refusal.outcome.state === "rejected") expect(entry.outcome.error).toBe(refusal.outcome.error);
+      if (entry.outcome.state === "fulfilled" && refusal.outcome.state === "fulfilled") expect(entry.outcome.value).toBe(refusal.outcome.value);
+    } else {
+      expect(entry.outcome.state, `Unexpected transport outcome: ${entry.ordinal} ${entry.method}`).toBe("fulfilled");
+      if (entry.outcome.state === "fulfilled") expect(entry.outcome.value, "Undefined transport outcome").toBeDefined();
+      if (entry.outcome.state === "fulfilled") expect(entry.outcome.value, "Unexpected null transport outcome").not.toBeNull();
+    }
+  }
+  for (const refusal of refusals) expect(refusal.consumed, "exact refusal count").toBe(1);
+  for (const entry of complete.rpc) {
+    expect(entry.outcome.state, `Unexpected RPC outcome: ${entry.method}`).toBe("fulfilled");
+    if (entry.outcome.state === "fulfilled") expect(entry.outcome.value, `Undefined RPC outcome: ${entry.method}`).toBeDefined();
+    if (entry.outcome.state === "fulfilled") expect(entry.outcome.value, `Unexpected null RPC outcome: ${entry.method}`).not.toBeNull();
+  }
+  expect(complete.rpc.map(entry => [entry.method, entry.params]), "complete fixture RPC trace").toEqual(expectedTrace());
+}
+function flushDraft(key: string) { return own(flush(key), "flush"); }
+function saveParams(key: string, patch: Partial<DraftInput> = {}): DraftInput {
+  const d = useDrafts.getState().drafts[key]!;
+  return structuredClone({ id: d.id ?? undefined, generation: d.generation, baseRevision: d.id !== null ? d.revision : undefined,
+    accountId: d.accountId, threadId: d.threadId, mode: d.mode, to: recipients(d.toText, d.auto.to), cc: recipients(d.ccText, d.auto.cc), bcc: recipients(d.bccText, d.auto.bcc),
+    subject: d.subject, subjectEdited: d.subjectEdited, bodyText: d.bodyText, bodyHtml: d.bodyHtml, attachments: d.attachments ?? [], quotedText: d.quotedText,
+    includeQuote: d.includeQuote, inReplyToMessageId: d.inReplyToMessageId, forwardOfMessageId: d.forwardOfMessageId, showSourceContext: d.showSourceContext ?? false, uiState: d.uiState, ...patch });
+}
+beforeEach(() => { expect(draftWorkPending()).toBe(false); previousApp = getApp(); previousThreads = useThreads.getState(); cleanupFailed = false; resetOutcomes(); violations.length = 0; releases.length = 0; });
 afterEach(async () => {
   if (cleanupFailed) throw new Error("Fixture cleanup incomplete; dependent teardown skipped");
   await drain(); supersedeCompose();
   for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key);
   useApp.setState(previousApp, true); useThreads.setState(previousThreads, true); attachmentRpc.mockReset(); resetSnacks();
-  expect(draftWorkPending()).toBe(false); expect(violations).toEqual([]);
+  expect(draftWorkPending()).toBe(false); expect(violations).toEqual([]); assertOutcomes();
 });
 
 for (const adapter of ["SQL", "IDB"] as const) {
@@ -82,7 +161,7 @@ for (const adapter of ["SQL", "IDB"] as const) {
     try {
       const [a, b] = await withAccounts(store);
       let sourceMessageId: number | undefined, sourceAssetId: string | undefined;
-      attachmentRpc.mockImplementation(async (method: string, p: { accountId: number; assetId: string; messageId: number }) => {
+      attachmentRpc.mockImplementation((method: string, p: { accountId: number; assetId: string; messageId: number }) => routed(method, p, async () => {
         checked(() => {
           if (method === "drafts.sourceContext") expect(p).toEqual({ messageId: sourceMessageId });
           else if (method === "attachments.info") expect(p).toEqual({ accountId: a, assetId: sourceAssetId });
@@ -91,12 +170,13 @@ for (const adapter of ["SQL", "IDB"] as const) {
         if (method === "drafts.sourceContext") return store.drafts.sourceContext(p.messageId);
         if (method === "attachments.info") return store.attachments.info(p.accountId, p.assetId);
         throw new Error("Unexpected fixture RPC");
-      });
+      }));
       const accounts = await store.accounts.list(), account = accounts.find((x) => x.id === a)!;
       const bytes = kind === "empty" ? new Uint8Array() : new Uint8Array([0, 255, 128]);
       await ingest(store, [msg({ accountId: a!, providerMsgId: "source", attachments: kind === "none" ? [] : [{ filename: "source.bin", mime: "application/octet-stream", size: bytes.length, ...(kind === "unavailable" ? {} : { bytes }) }] })]);
       const detail = (await store.threads.get(await threadOf(store, "source")))!;
       sourceMessageId = detail.messages[0]!.id; sourceAssetId = detail.messages[0]!.attachments[0]?.assetId ?? undefined;
+      expectedTrace = () => kind === "unavailable" ? [] : kind === "none" ? [["drafts.sourceContext", { messageId: sourceMessageId }]] : [["attachments.info", { accountId: a, assetId: sourceAssetId }], ["drafts.sourceContext", { messageId: sourceMessageId }]];
       const fields = replyFields("reply", detail, account);
       const key = createDraft(fields);
       useThreads.setState({ details: new Map([[detail.thread.id, detail]]) });
@@ -207,6 +287,7 @@ for (const adapter of ["SQL", "IDB"] as const) {
         const result = await store.drafts.save(input, 2); return result ? apiDraft(result) : null;
       });
       editDraft(d.key, { bodyText: "submitted" });
+      refusals.push({ ordinal: 1, method: "drafts.save", params: saveParams(d.key), outcome: { state: "fulfilled", value: null }, consumed: 0 });
       const flushing = flushDraft(d.key); await Promise.race([waiting, flushing.then(() => { throw new Error("Flush settled before terminal-save gate"); })]);
       let text = "latest bold";
       body = attachBody(d.key, () => ({ html: `<div><b>${text}</b></div>`, text })); body.changed();

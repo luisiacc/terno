@@ -26,37 +26,113 @@ const work = new Map<Promise<unknown>, string>(), transports = new Set<Promise<u
 let cleanupFailed = false;
 let previousApp: ReturnType<typeof getApp>, previousThreads: ReturnType<typeof useThreads.getState>;
 function checked<T>(check: () => T): T { try { return check(); } catch (error) { violations.push(error); throw error; } }
-function own<T>(pending: Promise<T>, label: string): Promise<T> {
-  work.set(pending, label); void pending.then(() => work.delete(pending), () => work.delete(pending)); return pending;
+type Outcome = { state: "pending" } | { state: "fulfilled"; value: unknown } | { state: "rejected"; error: unknown };
+type Completion = { label: string; outcome: Outcome };
+type Invocation = Completion & { ordinal: number; method: string; params: unknown };
+type RpcCall = [string, unknown];
+type Refusal = { ordinal: number; method: string; params: unknown; outcome: Exclude<Outcome, { state: "pending" }>; consumed: number };
+const operations: Completion[] = [], transportOutcomes: Invocation[] = [], rpcOutcomes: Invocation[] = [], refusals: Refusal[] = [];
+const rpcPending = new Set<Promise<unknown>>();
+const afterCleanup: (() => void)[] = [];
+let expectedTrace: () => RpcCall[] = () => [];
+let draining: Promise<void> | undefined;
+let captured: { operations: Completion[]; transports: Invocation[]; rpc: Invocation[] } | undefined;
+function observe<T>(pending: Promise<T>, entry: Completion): Promise<T> {
+  void pending.then(value => { entry.outcome = { state: "fulfilled", value }; }, error => { entry.outcome = { state: "rejected", error }; });
+  return pending;
+}
+function invocation(list: Invocation[], method: string, params: unknown): Invocation {
+  const entry: Invocation = { ordinal: list.length + 1, method, params: structuredClone(params), label: method, outcome: { state: "pending" } };
+  list.push(entry);
+  return entry;
+}
+function routed<T>(method: string, params: unknown, call: () => Promise<T>): Promise<T> {
+  const entry = invocation(rpcOutcomes, method, params);
+  try {
+    const pending = call(); rpcPending.add(pending);
+    void pending.then(() => rpcPending.delete(pending), () => rpcPending.delete(pending));
+    return observe(pending, entry);
+  }
+  catch (error) { entry.outcome = { state: "rejected", error }; throw error; }
+}
+function own<T>(promise: Promise<T>, label: string): Promise<T> {
+  const entry: Completion = { label, outcome: { state: "pending" } }; operations.push(entry);
+  work.set(promise, label);
+  void promise.then(() => work.delete(promise), () => work.delete(promise));
+  return observe(promise, entry);
 }
 function openCompose(...args: Parameters<typeof compose>) { return own(compose(...args), "compose"); }
-function flushDraft(key: string) { return own(flush(key), "flush"); }
 function setDraftTransport(call: Parameters<typeof applyDraftTransport>[0]) {
   applyDraftTransport((method, params) => {
-    checked(() => { expect(method).toBe("drafts.save"); contract["drafts.save"].params.parse(params); });
-    const pending = call(method, params); transports.add(pending);
-    void pending.then(() => transports.delete(pending), () => transports.delete(pending)); return pending;
+    const entry = invocation(transportOutcomes, method, params);
+    const refusal = refusals.find(expected => expected.ordinal === entry.ordinal);
+    if (refusal) refusal.consumed++;
+    try {
+      checked(() => { expect(method).toBe("drafts.save"); contract["drafts.save"].params.parse(params); });
+      const pending = call(method, params);
+      transports.add(pending);
+      void pending.then(() => transports.delete(pending), () => transports.delete(pending));
+      return observe(pending, entry);
+    } catch (error) { entry.outcome = { state: "rejected", error }; throw error; }
   });
 }
-async function drain() {
-  for (const release of releases) release();
+async function bounded<T>(pending: Promise<T>, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    await Promise.race([(async () => {
-      await Promise.all(work.keys());
-      await Promise.all(Object.keys(useDrafts.getState().drafts).map(flush));
-      await Promise.all(transports);
-    })(), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`Fixture drain pending: ${[...work.values()].join(", ")}; transports ${transports.size}`)), 5000); })]);
-  } catch (error) { cleanupFailed = true; throw error; }
+  try { return await Promise.race([pending, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`${label}: pending ${[...work.values()].join(", ")}; transports ${transports.size}; RPCs ${rpcPending.size}`)), 5000); })]); }
   finally { clearTimeout(timer); }
 }
-beforeEach(() => { expect(draftWorkPending()).toBe(false); previousApp = getApp(); previousThreads = useThreads.getState(); cleanupFailed = false; violations.length = 0; releases.length = 0; });
+function drain(): Promise<void> {
+  if (draining) return draining;
+  for (const release of releases) { try { release(); } catch (error) { violations.push(error); } }
+  draining = bounded((async () => {
+    await Promise.allSettled(work.keys());
+    await Promise.allSettled(Object.keys(useDrafts.getState().drafts).map(key => own(flush(key), "cleanup flush")));
+    while (work.size || transports.size || rpcPending.size) await Promise.allSettled([...work.keys(), ...transports, ...rpcPending]);
+    captured = { operations: operations.map(entry => ({ ...entry })), transports: transportOutcomes.map(entry => ({ ...entry })), rpc: rpcOutcomes.map(entry => ({ ...entry })) };
+  })(), "fixture drain").catch(error => { cleanupFailed = true; throw error; });
+  return draining;
+}
+function resetOutcomes() {
+  operations.length = 0; transportOutcomes.length = 0; rpcOutcomes.length = 0; refusals.length = 0; afterCleanup.length = 0;
+  draining = undefined; captured = undefined; expectedTrace = () => [];
+}
+function assertOutcomes() {
+  expect(captured, "completed fixture drain").toBeDefined();
+  const complete = captured!;
+  expect(work.size).toBe(0); expect(transports.size).toBe(0); expect(rpcPending.size).toBe(0);
+  expect(operations).toHaveLength(complete.operations.length);
+  expect(transportOutcomes).toHaveLength(complete.transports.length); expect(rpcOutcomes).toHaveLength(complete.rpc.length);
+  for (const check of afterCleanup) check();
+  for (const entry of complete.operations) expect(entry.outcome.state, `Unexpected operation outcome: ${entry.label}`).toBe("fulfilled");
+  for (const entry of complete.transports) {
+    const refusal = refusals.find(expected => expected.ordinal === entry.ordinal);
+    if (refusal) {
+      expect([entry.method, entry.params], "exact predeclared refusal request").toEqual([refusal.method, refusal.params]);
+      expect(entry.outcome.state, "exact predeclared refusal outcome").toBe(refusal.outcome.state);
+      if (entry.outcome.state === "rejected" && refusal.outcome.state === "rejected") expect(entry.outcome.error).toBe(refusal.outcome.error);
+      if (entry.outcome.state === "fulfilled" && refusal.outcome.state === "fulfilled") expect(entry.outcome.value).toBe(refusal.outcome.value);
+    } else {
+      expect(entry.outcome.state, `Unexpected transport outcome: ${entry.ordinal} ${entry.method}`).toBe("fulfilled");
+      if (entry.outcome.state === "fulfilled") expect(entry.outcome.value, "Undefined transport outcome").toBeDefined();
+      if (entry.outcome.state === "fulfilled") expect(entry.outcome.value, "Unexpected null transport outcome").not.toBeNull();
+    }
+  }
+  for (const refusal of refusals) expect(refusal.consumed, "exact refusal count").toBe(1);
+  for (const entry of complete.rpc) {
+    expect(entry.outcome.state, `Unexpected RPC outcome: ${entry.method}`).toBe("fulfilled");
+    if (entry.outcome.state === "fulfilled") expect(entry.outcome.value, `Undefined RPC outcome: ${entry.method}`).toBeDefined();
+    if (entry.outcome.state === "fulfilled") expect(entry.outcome.value, `Unexpected null RPC outcome: ${entry.method}`).not.toBeNull();
+  }
+  expect(complete.rpc.map(entry => [entry.method, entry.params]), "complete fixture RPC trace").toEqual(expectedTrace());
+}
+function flushDraft(key: string) { return own(flush(key), "flush"); }
+beforeEach(() => { expect(draftWorkPending()).toBe(false); previousApp = getApp(); previousThreads = useThreads.getState(); cleanupFailed = false; resetOutcomes(); violations.length = 0; releases.length = 0; });
 afterEach(async () => {
   if (cleanupFailed) throw new Error("Fixture drain incomplete; dependent cleanup skipped");
   await drain(); supersedeCompose();
   for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key);
   useApp.setState(previousApp, true); useThreads.setState(previousThreads, true); rpc.mockReset(); resetSnacks();
-  expect(draftWorkPending()).toBe(false); expect(violations).toEqual([]);
+  expect(draftWorkPending()).toBe(false); expect(violations).toEqual([]); assertOutcomes();
 });
 
 for (const adapter of ["SQL", "IDB"] as const) it.each([99, 100])(`${adapter}: upload completion validates latest Forward union and cleans only unadopted refs (%i files)`, async (count) => {
@@ -76,7 +152,15 @@ for (const adapter of ["SQL", "IDB"] as const) it.each([99, 100])(`${adapter}: u
     const gate = new Promise<void>((r) => { release = r; }), waiting = new Promise<void>((r) => { reached = r; });
     releases.push(release);
     const sealed: string[] = [];
-    rpc.mockImplementation(async (method: string, p: { accountId: number; assetId: string; filename: string; mime: string; size: number; messageId: number }) => {
+    expectedTrace = () => {
+      const source = detail.messages[0]!.attachments[0]!;
+      const create = (index: number): RpcCall => ["attachments.create", { accountId: a, filename: `authored-${index}.txt`, mime: "text/plain", size: 0 }];
+      const asset = (method: string, index: number): RpcCall => [method, { accountId: a, assetId: staged[index]!.assetId }];
+      return [create(0), ["attachments.info", { accountId: a, assetId: source.assetId }], ["drafts.sourceContext", { messageId: detail.messages[0]!.id }], asset("attachments.seal", 0),
+        ...Array.from({ length: count - 1 }, (_, index) => [create(index + 1), asset("attachments.seal", index + 1)]).flat(),
+        ...(count === 100 ? Array.from({ length: count }, (_, index) => asset("attachments.discard", index)) : [])];
+    };
+    rpc.mockImplementation((method: string, p: { accountId: number; assetId: string; filename: string; mime: string; size: number; messageId: number }) => routed(method, p, async () => {
       checked(() => {
         if (method === "drafts.sourceContext") expect(p).toEqual({ messageId: detail.messages[0]!.id });
         else if (method === "attachments.info") expect(p).toEqual({ accountId: a, assetId: detail.messages[0]!.attachments[0]!.assetId });
@@ -94,7 +178,7 @@ for (const adapter of ["SQL", "IDB"] as const) it.each([99, 100])(`${adapter}: u
       if (method === "attachments.seal") { await store.attachments.seal(p.accountId, p.assetId); sealed.push(p.assetId); return { ok: true }; }
       if (method === "attachments.discard") { await store.attachments.discard(p.accountId, p.assetId); return { ok: true }; }
       throw new Error(`Unexpected fixture RPC ${method}`);
-    });
+    }));
     const pending = own(attachFiles(key, Array.from({ length: count }, (_, i) => new File([], `authored-${i}.txt`, { type: "text/plain" }))), "upload");
     await Promise.race([waiting, pending.then(() => { throw new Error("Upload settled before create gate"); })]);
     expect(acquireDraftHold()).toBeNull();
