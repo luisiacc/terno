@@ -30,8 +30,8 @@ interface Session extends Source {
   key: string;
   attempt: number;
   timer?: ReturnType<typeof setTimeout>;
-  /** tries run one at a time; a draft or thread change while one runs asks for one more look */
-  busy: boolean;
+  /** looks run one at a time: one asked for meanwhile waits for it (and makes it look once more) */
+  running: Promise<boolean> | null;
   again: boolean;
   /** waiting for the original's account in From (no try runs meanwhile) */
   paused: boolean;
@@ -103,7 +103,7 @@ export function fetchForwardFiles(key: string, source: Source, placed: readonly 
   const seen = offered.get(id) ?? new Set((d.attachments ?? []).map((a) => a.assetId));
   for (const ref of placed) seen.add(ref.assetId);
   offered.set(id, seen);
-  const session: Session = { ...source, key, attempt: 0, busy: false, again: false, paused: false, unconfirmed: new Set(), verified: new Map(), detail: null, unsubscribe: () => {} };
+  const session: Session = { ...source, key, attempt: 0, running: null, again: false, paused: false, unconfirmed: new Set(), verified: new Map(), detail: null, unsubscribe: () => {} };
   sessions.set(key, session);
   const stopDrafts = useDrafts.subscribe((state, previous) => {
     const live = state.drafts[key];
@@ -124,7 +124,7 @@ export function fetchForwardFiles(key: string, source: Source, placed: readonly 
 
 /** Forward pressed on a forward already open: a fetch that failed (or never ran, after a reload) runs again. */
 export async function ensureForwardFiles(key: string, threadId: number): Promise<void> {
-  if (sessions.get(key)?.timer || sessions.get(key)?.busy) return;
+  if (sessions.get(key)?.timer || sessions.get(key)?.running) return;
   const d = useDrafts.getState().drafts[key];
   if (!d || d.mode !== "forward" || d.forwardOfMessageId === null || d.forwardOfMessageId === undefined) return;
   const known = sources.get(key);
@@ -193,28 +193,29 @@ async function attempt(s: Session): Promise<void> {
 
 /** A look outside the tries (a draft or thread change), with the last thread seen unless a newer one came. */
 function look(s: Session, detail?: ThreadDetail): void {
-  if (detail) s.detail = detail;
-  if (s.busy) { s.again = true; return; }
-  if (s.detail) void settle(s, s.detail);
+  if (detail || s.detail) void settle(s, detail ?? null);
 }
 
 /**
  * Takes in what the original has on the device that the draft hasn't had yet, and
  * says what's still missing. true: nothing more to do (all here, the original gone, too large).
  */
-async function settle(s: Session, detail: ThreadDetail | null): Promise<boolean> {
-  if (!alive(s)) return true;
-  if (s.busy) { if (detail) s.detail = detail; s.again = true; return false; }
-  s.busy = true;
-  try {
-    let done = false;
-    do {
-      s.again = false;
-      done = await settleOnce(s, detail ?? s.detail);
-      detail = s.detail;
-    } while (!done && s.again && alive(s));
-    return done;
-  } finally { s.busy = false; }
+function settle(s: Session, detail: ThreadDetail | null): Promise<boolean> {
+  if (!alive(s)) return Promise.resolve(true);
+  if (detail) s.detail = detail;
+  // one already running (a thread refetch started it): its answer, after one more look with the newest thread
+  if (s.running) { s.again = true; return s.running; }
+  s.running = (async () => {
+    try {
+      let done = false;
+      do {
+        s.again = false;
+        done = await settleOnce(s, s.detail);
+      } while (!done && s.again && alive(s));
+      return done;
+    } finally { s.running = null; }
+  })();
+  return s.running;
 }
 
 async function settleOnce(s: Session, detail: ThreadDetail | null): Promise<boolean> {

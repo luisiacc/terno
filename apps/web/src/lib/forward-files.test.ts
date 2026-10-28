@@ -214,6 +214,28 @@ it("the size note goes when the draft stops being that forward", async () => {
   expect(useForwardFiles.getState()[key]).toBeUndefined();
 });
 
+// Codex review round 2: the last try's own refetch starts the check; the try waits for it instead of giving up under it
+it("a file the last try's refetch brings joins even while its check is still running", async () => {
+  vi.useFakeTimers();
+  backend(notCaptured());
+  let tries = 0, release!: () => void;
+  const confirmed = new Promise<void>((r) => { release = r; });
+  rpc.mockImplementation(async (method: string) => {
+    if (method === "attachments.retry") { tries++; return { ok: true }; }
+    if (method === "threads.get") { const d = tries >= 3 ? captured() : notCaptured(); useThreads.setState({ details: new Map([[7, d]]) }); return d; }
+    if (method === "attachments.info") { await confirmed; return ref; }
+    return { ok: true };
+  });
+  await openCompose("forward", 7);
+  const key = theDraft().key;
+  await vi.advanceTimersByTimeAsync(FORWARD_FILE_DELAYS[1] + FORWARD_FILE_DELAYS[2] + 1);
+  expect(tries).toBe(3);
+  expect(useForwardFiles.getState()[key]?.status).toBe("fetching");
+  release();
+  await vi.waitFor(() => expect(useDrafts.getState().drafts[key]!.attachments).toEqual([ref]));
+  await vi.waitFor(() => expect(useForwardFiles.getState()[key]).toBeUndefined());
+});
+
 it("names the files in English and Spanish", async () => {
   expect(t("compose.forwardFiles.failed", { count: 1, names: "report.pdf" })).toBe("Couldn’t get report.pdf, so this forward won’t include it.");
   expect(t("compose.forwardFiles.failed", { count: 2, names: "a.pdf and b.pdf" })).toBe("Couldn’t get a.pdf and b.pdf, so this forward won’t include them.");
