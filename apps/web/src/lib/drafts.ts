@@ -782,7 +782,6 @@ export function setDraftUi(key: string, uiState: LocalDraft["uiState"]): void {
   let complete = false;
   try {
     useDrafts.setState(after, true);
-    if (d.id !== null) schedule(key);
     complete = true;
   } finally {
     const read = frame.read;
@@ -795,6 +794,7 @@ export function setDraftUi(key: string, uiState: LocalDraft["uiState"]): void {
     frame.closed = true; frame.read = undefined; frame.frontier = undefined;
     uiFrame = frame.parent;
   }
+  if (d.id !== null) schedule(key);
 }
 
 function schedule(key: string): void {
